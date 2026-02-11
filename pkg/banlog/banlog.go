@@ -6,6 +6,8 @@
 //
 // meta:name="banlog"
 // meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Central ban logging with audit trail support"
 // meta:inventory.files="/var/log/nftban/bans.log"
 // meta:inventory.binaries=""

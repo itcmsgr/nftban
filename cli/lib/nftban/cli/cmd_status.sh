@@ -3,15 +3,15 @@
 # NFTBan v1.3.0 - Global Status Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+#
 # meta:name="cmd_status"
 # meta:type="cli"
+# meta:header="Global Status Command"
+# meta:version="1.3.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-05"
+# meta:homepage="https://nftban.com"
+#
 # meta:description="Provides consolidated system status overview (firewall, services, protections, alerts)"
-# meta:input="Command line options (--json, --quiet)"
-# meta:output="Formatted status dashboard with health indicators"
-# meta:depends="bash,nftban_output.sh,nftban_health.sh"
-# meta:platform="linux"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft,systemctl"
 # meta:inventory.env_vars=""
@@ -19,6 +19,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-05"
 
 
 # =============================================================================

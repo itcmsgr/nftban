@@ -1,5 +1,20 @@
+// =============================================================================
+// NFTBan v1.0 - Safe File Operations
+// =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+// meta:name="file"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Safe file operations with symlink and traversal protection"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
 
 package safety
 

@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Service Security Validator
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-#
 # meta:name="validate-service-security"
-# meta:type="tools"
-# meta:header="Validate systemd service security matches contract"
+# meta:type="tool"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Ensures systemd service security matches the contract"
 # meta:inventory.files=""
 # meta:inventory.binaries="grep,awk,sed"
@@ -18,11 +14,8 @@
 # meta:inventory.config_files="install/config/service-security.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="user"
-#
-# meta:created_date="2026-01-10"
-# meta:updated_date="2026-01-10"
-#
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage:
 #   ./tools/validate-service-security.sh [--strict]
 #

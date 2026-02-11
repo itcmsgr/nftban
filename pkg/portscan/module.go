@@ -2,20 +2,11 @@
 // NFTBan v1.0 - Port Scan Detection Module (Go Wrapper)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Package: portscan
-// Purpose: Go module wrapper for portscan detection, integrates with event bus
-//
-// Architecture:
-// - Wraps the bash dual-mode implementation (classic/suricata/hybrid)
-// - Publishes events to the central event bus
-// - Subscribes to portscan events from other modules
-// - Runs periodic detection cycles via goroutine
-//
-// The bash scripts remain the implementation layer, this module provides:
-// - Event bus integration
-// - Daemon lifecycle management
-// - Metrics collection
-//
+// meta:name="module"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Go module wrapper for portscan detection with event bus integration"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""

@@ -1,30 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Prometheus Installation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Install and configure Prometheus for NFTBan metrics
-# Location: /usr/lib/nftban/setup/install_prometheus.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:name="install_prometheus"
 # meta:type="setup"
-# meta:header="Prometheus Installation"
 # meta:version="1.0.0"
-#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Install and configure Prometheus for NFTBan metrics"
 # meta:inventory.files=""
-# meta:inventory.binaries="curl,tar,install"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR"
-# meta:inventory.config_files="/etc/prometheus/prometheus.yml"
-# meta:inventory.systemd_units="prometheus.service"
-# meta:inventory.network="https://github.com/prometheus/prometheus"
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-16"
-# meta:updated_date="2026-01-15"
-# =============================================================================
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

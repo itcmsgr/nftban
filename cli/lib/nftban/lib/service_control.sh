@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Service Control Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Centralized service enable/disable logic for NFTBan
-# Location: /usr/lib/nftban/lib/service_control.sh
-#
-# meta:name="service_control"
-# meta:type="lib"
-# meta:header="Service Control Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Centralized service control for enable/disable NFTBan and subsystems"
-# meta:input="Service name (nftban, nftables, suricata, login)"
-# meta:output="Service state changes and status"
-#
-# **Inventory & Requirements**
+# meta:name="service_control" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized service control for enable/disable NFTBan and subsystems"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,nftban,nftban-core"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
@@ -26,9 +8,6 @@
 # meta:inventory.systemd_units="nftables.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-#
-# meta:created_date="2025-12-02"
-# =============================================================================
 
 set -Eeuo pipefail
 

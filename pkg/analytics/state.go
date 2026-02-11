@@ -1,5 +1,20 @@
+// =============================================================================
+// NFTBan v1.0 - Analytics State Management
+// =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+// meta:name="state"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="State management for analytics data with persistence"
+// meta:inventory.files="/var/lib/nftban/analytics"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
 
 package analytics
 

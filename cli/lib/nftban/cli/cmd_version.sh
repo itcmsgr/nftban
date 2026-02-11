@@ -12,14 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="Display NFTBan version information"
-# meta:input="Optional flags: --short, --numeric, --check"
-# meta:output="Version information"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,version.sh"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

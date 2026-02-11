@@ -6,7 +6,8 @@
 // Purpose: Track detection scores per IP and trigger bans at threshold
 //
 // meta:name="scorer"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:package="detector"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-12"

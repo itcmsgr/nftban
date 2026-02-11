@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Command Testing Framework
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Test all CLI commands to detect silent failures and hanging commands
-#
-# Author: Antonios Voulvoulis <contact@nftban.com>
-# Created: 2025-11-24
+# =============================================================================
+# NFTBan v1.0.0 - Command Testing Framework
+# =============================================================================
+# meta:name="test_all_commands"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Test all CLI commands to detect silent failures and hanging commands"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,nftban,timeout"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
-set -u
+set -Eeuo pipefail
 
 # =============================================================================
 # CONFIGURATION

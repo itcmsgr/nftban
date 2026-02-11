@@ -2,12 +2,18 @@
 // NFTBan v1.0 - Kernel/Netfilter Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Collects kernel and netfilter metrics:
-//   - Conntrack count and utilization
-//   - Softnet drops
-//   - NIC RX drops
-//
+// meta:name="collector_kernel"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Collects kernel and netfilter metrics including conntrack and softnet"
+// meta:inventory.files="/proc/sys/net/netfilter"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Generate Polkit Rules from Templates
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
-# Purpose: Generate polkit rules from templates using central config values
-#          Used by install.sh and DEB/RPM post-install scripts
-#
-# Usage:
-#   ./generate_polkit_rules.sh [--source-dir /path/to/templates]
-#
-# Templates:
-#   - 50-nftban-port-status.rules.in  -> @NFTBAN_BIN@
-#   - 50-nftban-auth.rules.in         -> @NFTBAN_AUTH_BIN@
-#
-# Config source: /etc/nftban/nftban.conf
-# Output:        /usr/share/polkit-1/rules.d/*.rules
-# =============================================================================
+# meta:name="generate_polkit_rules"
+# meta:type="helper"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Generate polkit rules from templates using central config values"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf

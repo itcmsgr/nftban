@@ -1,41 +1,18 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Unified Prometheus Metrics Exporter (BASH FALLBACK)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_prometheus_exporter"
 # meta:type="exporter"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-17"
 # meta:description="Consolidated all-in-one metrics exporter: blocks, bandwidth, counters, health"
-# meta:input="NFTables sets/counters, /proc/net/*, nftban state, system stats"
-# meta:output="Prometheus text exposition format metrics to textfile collector"
-# meta:depends="bash,bc,date,awk,grep,nft,ss"
 # meta:inventory.files=""
-# meta:inventory.binaries="nft,ss,bc"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_DATA_DIR"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units="nftban-unified-exporter.timer"
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-# =============================================================================
-# Purpose: Export comprehensive NFTBan metrics in Prometheus text exposition format
-# Location: /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh
-#
-# ⚠️ COMPATIBILITY FALLBACK: This bash exporter is used when Go binary unavailable.
-# For better performance, install nftban-core (Go exporter runs 20x faster).
-# See: METRICS-MIGRATION.md
-#
-# **Metrics Collected**
-# - Block metrics: total, permanent, temporary, by-country
-# - Bandwidth metrics: RX/TX bytes/packets/Mbps per interface, protocol stats, connections
-# - NFTables counters: packets/bytes per rule/action/reason
-# - NFTables set sizes: element counts for all sets
-# - Health metrics: component status (nftables, polkit, ssh)
-# - Performance metrics: exporter duration, last update timestamp
-# =============================================================================
+# meta:inventory.privileges=""
 
-# Enhanced strict mode
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027

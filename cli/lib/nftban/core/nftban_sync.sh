@@ -3,18 +3,11 @@
 # NFTBan v1.0.0 - Sync Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Atomic firewall reload using Go-based sync engine
-#
 # meta:name="nftban_sync"
-# meta:type="module"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-18"
-#
 # meta:description="Atomic firewall reload using Go-based sync engine"
-# meta:input="Configuration files (whitelist, blacklist, feeds, geoban)"
-# meta:output="Updated nftables ruleset with preserved Fail2Ban state"
-# meta:depends="bash,nftables,nftban-core"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries="nftban-core,nft"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
@@ -24,7 +17,7 @@
 # meta:inventory.privileges="nftban"
 # =============================================================================
 
-# Strict mode
+set -Eeuo pipefail
 umask 027
 
 # Constants - sync is a subcommand of nftban-core, not a separate binary

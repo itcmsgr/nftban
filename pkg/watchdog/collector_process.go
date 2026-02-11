@@ -2,13 +2,18 @@
 // NFTBan v1.0 - Process Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Collects process-level metrics from /proc/self:
-//   - RSS (Resident Set Size)
-//   - CPU percentage (computed from utime+stime)
-//   - Open file descriptors
-//   - Thread count
-//
+// meta:name="collector_process"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Collects process-level metrics from /proc/self"
+// meta:inventory.files="/proc/self"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

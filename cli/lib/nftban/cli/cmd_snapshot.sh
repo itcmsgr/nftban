@@ -12,14 +12,8 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="Create snapshots of NFTBan configuration and statistics"
-# meta:input="Subcommand (create, list)"
-# meta:output="Snapshot file path or list of snapshots"
-#
-# **Inventory & Requirements**
-# meta:depends="bash"
-# meta:inventory.files="cli/lib/nftban/cli/cmd_snapshot.sh"
+# meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_DATA_DIR"
 # meta:inventory.config_files=""

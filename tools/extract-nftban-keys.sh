@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Config Key Extractor
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Extract all KEY=VALUE entries from config files and emit starter JSON
-#
+# =============================================================================
+# NFTBan v1.0.0 - Config Key Extractor
+# =============================================================================
 # meta:name="extract-nftban-keys"
 # meta:type="tool"
-# meta:header="Config Key Extraction Tool"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Scans config tree, extracts keys, infers types, emits registry skeleton"
 # meta:inventory.files=""
 # meta:inventory.binaries="find,awk,jq"
@@ -19,10 +14,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="user"
-#
-# meta:created_date="2026-01-11"
-# meta:updated_date="2026-01-11"
+# meta:inventory.privileges="none"
 # =============================================================================
 #
 # Usage:

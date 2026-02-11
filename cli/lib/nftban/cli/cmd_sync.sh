@@ -5,23 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI command for atomic firewall reload
 #
-# meta:name="nftban_cmd_sync"
+# meta:name="cmd_sync"
 # meta:type="cli"
+# meta:header="Sync CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-18"
+# meta:homepage="https://nftban.com"
 #
 # meta:description="CLI command for atomic firewall reload"
-# meta:input="Subcommands (validate, status, help) and flags (--dry-run)"
-# meta:output="Firewall sync status and results"
-# meta:depends="bash,nftban_sync.sh"
-#
-# meta:inventory.files="nftban_sync.sh"
+# meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
+#
+# meta:created_date="2025-11-18"
 # =============================================================================
 
 # Strict mode

@@ -12,11 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="User-friendly CLI for Suricata IDS installation and management"
-# meta:input="Commands: install, enable, disable, status, rules"
-# meta:output="Automated Suricata setup and control"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

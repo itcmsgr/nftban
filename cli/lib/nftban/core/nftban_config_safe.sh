@@ -3,28 +3,21 @@
 # NFTBan v1.0.0 - Safe Configuration Loader
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Secure configuration file parser - prevents code execution
-#
-# meta:name=nftban_config_safe
-# meta:type=core
-# meta:header=Safe Configuration Loader
-# meta:version=1.0.0
+# meta:name="nftban_config_safe"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Secure configuration file parser that prevents arbitrary code execution
-# meta:input=Configuration files with key=value pairs
-# meta:output=Safely loaded environment variables
-#
-# **Inventory & Requirements**
-# meta:depends=bash
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Secure configuration file parser that prevents arbitrary code execution"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
-# Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

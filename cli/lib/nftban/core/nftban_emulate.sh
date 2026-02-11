@@ -4,13 +4,10 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_emulate"
-# meta:type="module"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Simulates packet evaluation to show what nftban would do"
-# meta:input="IP address, protocol, port, direction"
-# meta:output="JSON result with decision (allow/block)"
-# meta:depends="common.sh, nft"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""
@@ -19,10 +16,8 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 # =============================================================================
-# Usage:
-#   source nftban_emulate.sh
-#   nftban_emulate_packet "8.8.8.8" "tcp" "22" "in"
-# =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_EMULATE_LOADED:-}" ]] && return 0

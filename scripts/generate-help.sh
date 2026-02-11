@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Help Generator from Registry
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Generate task-grouped CLI help from commands.registry.yml
-#
+# =============================================================================
+# NFTBan v1.0.0 - Help Generator from Registry
+# =============================================================================
 # meta:name="generate-help"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-12-01"
 # meta:description="Generate task-grouped CLI help from commands.registry.yml"
-#
 # meta:inventory.files="commands.registry.yml"
 # meta:inventory.binaries="yq"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
@@ -18,7 +15,7 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
+# =============================================================================
 # Usage: ./scripts/generate-help.sh [--profile operator|auditor]
 # Output: Formatted help text for nftban help command
 # =============================================================================

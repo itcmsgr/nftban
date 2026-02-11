@@ -1,26 +1,20 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Periodic Maintenance Runner
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Run periodic maintenance tasks (feeds, GeoIP, cleanup)
-#
-# meta:name=cron_run
-# meta:type=cron
-# meta:header=Periodic Maintenance Runner
-# meta:version=1.0.0
+# meta:name="cron_run"
+# meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Automated periodic maintenance tasks including feed updates and GeoIP database refresh
-# meta:input=System time and configuration settings
-# meta:output=Updated threat feeds and GeoIP databases
-#
-# **Inventory & Requirements**
-# meta:depends=bash,date,systemctl
-#
-# meta:created_date=2025-11-05
+# meta:description="Automated periodic maintenance tasks including feed updates and GeoIP database refresh"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,date,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 set -Eeuo pipefail

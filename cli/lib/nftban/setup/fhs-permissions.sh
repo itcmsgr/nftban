@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - FHS File Permissions (GENERATED)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
 # meta:name="fhs-permissions"
 # meta:type="setup"
-# meta:header="FHS File Permissions"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Sets file permissions during package installation (GENERATED)"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
@@ -18,14 +11,10 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2026-02-08"
-# meta:updated_date="2026-02-08"
+# meta:inventory.privileges=""
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
-# =============================================================================
 
 set -Eeuo pipefail
 

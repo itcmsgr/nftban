@@ -5,6 +5,8 @@
 //
 // meta:name="timeutil"
 // meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Centralized time formatting and parsing utilities"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

@@ -5,6 +5,8 @@
 //
 // meta:name="util"
 // meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Common utility functions (JSON, parsing, etc.)"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

@@ -6,11 +6,13 @@
 # Purpose: Intelligent interface detection for Suricata af-packet configuration
 #
 # meta:name="cmd_suricata_iface"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Suricata Interface Module"
 # meta:version="1.12.0"
-# meta:description="Interface detection and configuration for Suricata af-packet"
-# meta:parent="cmd_suricata.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Interface detection and configuration for Suricata af-packet"
 # meta:inventory.files="/etc/nftban/conf.d/suricata/interfaces.conf"
 # meta:inventory.binaries="ip"
 # meta:inventory.env_vars="SURICATA_IFACE_MODE,SURICATA_IFACES,SURICATA_ALLOW_MULTI"

@@ -1,38 +1,18 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Portscan Metrics Exporter
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Export port scan detection metrics in Prometheus text exposition format
-# Location: /usr/lib/nftban/exporters/nftban_portscan_exporter.sh
+# meta:name="nftban_portscan_exporter"
+# meta:type="exporter"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-#
-# meta:name=nftban_portscan_exporter
-# meta:type=exporter
-# meta:header=Portscan Metrics Exporter
-# meta:version=1.0.0
-#
-# **Description & Purpose**
-# meta:description=Export port scan detection and blocking metrics for Prometheus
-# meta:input=/var/log/nftban/nftban-actions.log, /etc/nftban/conf.d/portscan.conf
-# meta:output=Prometheus text exposition format metrics appended to main metrics file
-#
-# **Metrics Collected**
-# - nftban_portscan_monitored_ports: Number of ports being monitored
-# - nftban_portscan_blocked_24h: Port scans blocked in last 24 hours
-# - nftban_portscan_blocked_total: Total port scans blocked
-# - nftban_portscan_module_enabled: Whether portscan module is enabled (0/1)
-#
-# **Inventory & Requirements**
-# meta:depends=bash,jq,date
-# meta:requires_env=NFTBAN_LIB_DIR
-#
-# meta:created_date=2025-11-19
-# =============================================================================
+# meta:description="Export port scan detection and blocking metrics for Prometheus"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
-# Enhanced strict mode
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027

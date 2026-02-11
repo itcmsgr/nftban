@@ -2,13 +2,18 @@
 // NFTBan v1.0 - System Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Collects system-level metrics:
-//   - Load average
-//   - I/O wait percentage
-//   - Memory usage
-//   - Disk usage
-//
+// meta:name="collector_system"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Collects system-level metrics including load, memory, and disk usage"
+// meta:inventory.files="/proc/loadavg,/proc/meminfo,/proc/stat"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

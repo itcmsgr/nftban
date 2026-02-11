@@ -2,13 +2,18 @@
 // NFTBan v1.0 - Flight Recorder
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Flight recorder for post-mortem analysis:
-//   - Ring buffer of recent events in memory
-//   - Periodic snapshots written to disk
-//   - Event log with JSON format
-//   - Profile storage with retention limits
-//
+// meta:name="flight_recorder"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Flight recorder for post-mortem analysis with ring buffer and disk snapshots"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

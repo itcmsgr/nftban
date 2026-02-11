@@ -1,35 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Centralized Logging Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Centralized logging for all NFTBan modules
-#
 # meta:name="nftban_logger"
 # meta:type="helper"
-# meta:header="Logging Module"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
 # meta:description="Centralized logging to files and stdout for all modules"
-# meta:input="Log level, module name, message"
-# meta:output="Log entries to files and stdout"
-#
-# **Inventory & Requirements**
-# meta:depends="bash>=4.0"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_LOG_FILE, NFTBAN_LOG_LEVEL, NFTBAN_LOG_STDOUT, NFTBAN_LOG_FILE_ENABLED, NFTBAN_LOG_FORMAT, NFTBAN_MODULE_NAME"
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges=""
-#
-# meta:created_date="2025-11-24"
-# meta:updated_date="2025-11-24"
-# =============================================================================
 
 set -Eeuo pipefail
 

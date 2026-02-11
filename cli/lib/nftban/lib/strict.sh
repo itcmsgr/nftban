@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Strict Mode Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="strict"
-# meta:type="library"
-# meta:header="Strict Mode Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-# meta:description="Provides consistent strict mode configuration for all bash scripts"
-# meta:input="None (sourced by other scripts)"
-# meta:output="Sets shell options and error handlers"
-# meta:depends="bash>=4.0"
+# meta:name="strict" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Provides consistent strict mode configuration for all bash scripts"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CLI_ERROR_LOG,NFTBAN_ENABLE_ERROR_LOGGING"
@@ -20,18 +8,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# meta:created_date="2025-11-24"
-#
-# **Usage**
-# Source this file at the beginning of every bash script:
-#   source "${NFTBAN_LIB_DIR}/lib/strict.sh"
-#
-# **Error Logging**
-# Errors are automatically logged to /var/log/nftban/cli-errors.log
-# Configure with:
-#   export NFTBAN_CLI_ERROR_LOG="/custom/path/errors.log"  # Custom log path
-#   export NFTBAN_ENABLE_ERROR_LOGGING=0                    # Disable logging
-# =============================================================================
+
+set -Eeuo pipefail
 
 set -Eeuo pipefail
 

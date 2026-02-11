@@ -5,23 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Quick validation that CLI commands are working
 #
-# meta:name=cmd_test
-# meta:type=cli
-# meta:header=NFTBan Command Testing
-# meta:version=1.0.0
+# meta:name="cmd_test"
+# meta:type="cli"
+# meta:header="NFTBan Command Testing"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Quick test of critical CLI commands to detect failures
-# meta:input=None
-# meta:output=Pass/Fail results for each command
+# meta:description="Quick test of critical CLI commands to detect failures"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
-#
-# meta:created_date=2025-11-24
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-24"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

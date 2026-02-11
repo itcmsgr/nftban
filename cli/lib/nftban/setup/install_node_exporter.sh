@@ -1,28 +1,10 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Node Exporter Installation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Install and configure Prometheus Node Exporter for NFTBan metrics
-# Location: /usr/lib/nftban/setup/install_node_exporter.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-# nftban — Simplifying Linux Firewall Management
-#
 # meta:name="install_node_exporter"
 # meta:type="setup"
-# meta:header="Node Exporter Installation"
 # meta:version="1.0.0"
-#
-# **Description & Purpose**
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Install and configure Node Exporter with textfile collector for NFTBan metrics"
-# meta:input="User choices (package vs binary installation)"
-# meta:output="Configured Node Exporter service"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,wget|curl,tar"
-#
-# meta:created_date="2025-11-17"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -30,7 +12,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges=""
-# =============================================================================
 
 # Enhanced strict mode
 set -Eeuo pipefail

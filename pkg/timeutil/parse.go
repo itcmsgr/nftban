@@ -3,6 +3,8 @@
 //
 // meta:name="timeutil_parse"
 // meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Duration parsing with day/week support"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

@@ -1,32 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - CLI Command Common Helpers
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Shared helper functions for CLI command handlers (cmd_*.sh)
-#
-# meta:name="cmd_common"
-# meta:type="library"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Reduces boilerplate in CLI handlers by providing common functions"
+# meta:name="cmd_common" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Reduces boilerplate in CLI handlers by providing common functions"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LIB_DIR"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# meta:created_date="2026-01-02"
-#
-# **Usage**
-# Source at the beginning of cmd_*.sh files:
-#   source "${NFTBAN_LIB_DIR}/lib/cmd_common.sh"
-# =============================================================================
 
-# =============================================================================
-# GUARD: Prevent double-loading
-# =============================================================================
+set -Eeuo pipefail
 
+# Guard: Prevent double-loading
 [[ -n "${NFTBAN_CMD_COMMON_LOADED:-}" ]] && return 0
 
 # =============================================================================

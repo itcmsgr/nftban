@@ -1,46 +1,15 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Pipeline Validation Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Shared validation functions for metrics pipeline health
-#
-# meta:name="nftban_pipeline_validation"
-# meta:type="lib"
-# meta:header="Pipeline Validation Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Validates metrics pipeline health for watchdog capability detection"
-# meta:input="N/A (library only)"
-# meta:output="Pipeline status codes and validation results"
-#
-# **Pipeline Health Model**
-#   Validation A: NFTBan metrics endpoint (local .prom file or HTTP)
-#   Validation B: Agent scraping (vmagent or prometheus-agent)
-#   Validation C: Remote write health (agent -> remote TSDB)
-#
-# **Pipeline Status Codes**
-#   0 = FAIL (pipeline broken)
-#   1 = DEGRADED (partial functionality)
-#   2 = OK (full functionality)
-#
-# **Watchdog Capability**
-#   LOCAL: Always available, no metrics pipeline needed
-#   PERF: Requires healthy pipeline (status >= 1)
-#
-# meta:created_date="2026-01-04"
-# meta:updated_date="2026-01-04"
+# meta:name="nftban_pipeline_validation" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Validates metrics pipeline health for watchdog capability detection"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges=""
-# =============================================================================
+# meta:inventory.privileges="none"
+
+set -Eeuo pipefail
 
 set -Eeuo pipefail
 

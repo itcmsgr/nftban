@@ -3,8 +3,8 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftbackend"
-// meta:type="go"
-// meta:version="1.8.0"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Serialized nftables write operations via netlink"
 // meta:depends="github.com/google/nftables,github.com/itcmsgr/nftban/pkg/sync"

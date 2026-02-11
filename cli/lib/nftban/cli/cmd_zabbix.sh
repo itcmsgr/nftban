@@ -12,13 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="Manage Zabbix trapper metrics integration"
-# meta:input="Subcommands (setup, status, test, push, reload, template, discover, targets, config)"
-# meta:output="Zabbix integration status and configuration"
-#
-# **Inventory & Requirements**
-# meta:depends="systemd,zabbix-sender(optional)"
 # meta:inventory.files=""
 # meta:inventory.binaries="zabbix_sender(optional)"
 # meta:inventory.env_vars=""

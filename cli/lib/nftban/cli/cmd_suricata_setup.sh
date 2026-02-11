@@ -6,11 +6,13 @@
 # Purpose: Install, enable, disable, and status commands for Suricata
 #
 # meta:name="cmd_suricata_setup"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Suricata Setup Module"
 # meta:version="1.0.0"
-# meta:description="Install, enable, disable, and status commands for Suricata"
-# meta:parent="cmd_suricata.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Install, enable, disable, and status commands for Suricata"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

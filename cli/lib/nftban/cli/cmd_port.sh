@@ -52,15 +52,9 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="CLI interface for port status reporting"
-# meta:input="Port filters, output format, mail options"
-# meta:output="Port status reports (terminal, HTML, mail)"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,nftban_report_port.sh"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="ss,nft"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""

@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Maintenance Script (Always Active)
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Critical maintenance tasks that run even when NFTBan is disabled
-#
 # meta:name="maintenance"
-# meta:type="cron"
+# meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-05"
-#
 # meta:description="Runs critical safety checks (SSH monitoring, autoheal, IP changes)"
-# meta:input="None (runs automatically every 15 minutes)"
-# meta:output="Logs to journal and maintenance.log"
-# meta:depends="bash,systemctl,nft"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,nft"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LOG_DIR"

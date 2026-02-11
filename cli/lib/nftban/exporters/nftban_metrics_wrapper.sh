@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Metrics Exporter - Hybrid Wrapper
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Auto-detect and use best available metrics exporter
-# Location: /usr/lib/nftban/exporters/nftban_metrics_wrapper.sh
-#
-# This wrapper provides automatic fallback:
-#   1. Try Go-based exporter (fast, low CPU)
-#   2. Fall back to bash exporter (slower, but works everywhere)
-#
-# meta:name=nftban_metrics_wrapper
-# meta:type=exporter
-# meta:version=1.0.0
-# =============================================================================
+# meta:name="nftban_metrics_wrapper"
+# meta:type="exporter"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Auto-detect and use best available metrics exporter"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
-set -Eeu pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

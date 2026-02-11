@@ -7,11 +7,13 @@
 #          geoip, pro, install, registries
 #
 # meta:name="cmd_health_components"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Health Check Components Module"
 # meta:version="1.0.0"
-# meta:description="Component health checks: services, modules, binaries, permissions, geoip, pro, install, registries"
-# meta:parent="cmd_health.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Component health checks: services, modules, binaries, permissions, geoip, pro, install, registries"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

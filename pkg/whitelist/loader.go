@@ -3,7 +3,8 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="loader"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
 // meta:description="Loads and manages IP whitelist entries from config files"

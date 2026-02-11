@@ -7,37 +7,21 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Web hosting panel firewall integration and management
 #
-# meta:name=cmd_panel
-# meta:type=cli
-# meta:header=Panel CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_panel"
+# meta:type="cli"
+# meta:header="Panel CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Manage web hosting panel firewall integration (DirectAdmin, cPanel, Plesk)
-# meta:input=Panel name and action (enable, disable, status, report, repair, test)
-# meta:output=Panel configuration status and firewall rules
-#
-# **Usage**
-#   nftban panel <panel_name> <action>
-#
-# **Supported Panels**
-#   directadmin (da)     - DirectAdmin Control Panel
-#   cpanel (cp)          - cPanel/WHM Control Panel
-#   plesk                - Plesk Control Panel
-#   cwp                  - CentOS Web Panel
-#   cyberpanel           - CyberPanel
-#   interworx            - InterWorx
-#   vesta                - VestaCP / HestiaCP
-#
-# **Actions**
-#   enable    - Enable panel ports in firewall
-#   disable   - Disable panel ports in firewall
-#   status    - Show panel port configuration status
-#   report    - Generate detailed report (ports, IPs, config)
-#   repair    - Fix/update configuration files
-#   test      - Test panel connectivity and configuration
+# meta:description="Manage web hosting panel firewall integration (DirectAdmin, cPanel, Plesk)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 # =============================================================================

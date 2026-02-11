@@ -2,14 +2,12 @@
 // NFTBan v1.0 - nftband Daemon
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Binary: nftband
-// Purpose: Single daemon that runs all nftban modules
-//
 // meta:name="nftband"
-// meta:type="binary"
+// meta:type="cmd"
 // meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-// meta:homepage="https://nftban.com"
+// meta:description="Single daemon that runs all nftban modules with HTTP API and Unix socket"
+//
 // meta:inventory.files="/usr/lib/nftban/bin/nftband"
 // meta:inventory.binaries="nftband"
 // meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LOG_DIR"

@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Binary Download with SLSA Verification
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="download_binaries"
-# meta:type="installer"
+# meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Download and verify NFTBan Go binaries from GitHub releases"
-# meta:input="VERSION tag (optional, default: latest)"
-# meta:output="Downloaded and verified binaries"
-# meta:depends="curl, jq, sha256sum"
 # meta:inventory.files=""
 # meta:inventory.binaries="nftban-core, nftband, nftban-ui, nftban-ui-auth"
 # meta:inventory.env_vars="DOWNLOAD_DIR, INSTALL_DIR, SKIP_INSTALL"

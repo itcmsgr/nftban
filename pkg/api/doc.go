@@ -3,7 +3,8 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="doc"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-21"
 // meta:description="Package documentation for NFTBan API handlers"

@@ -34,23 +34,24 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for nftables service management
 #
-# meta:name=cmd_nftables
-# meta:type=cli
-# meta:header=NFTables Service CLI
-# meta:version=1.0.0
+# meta:name="cmd_nftables"
+# meta:type="cli"
+# meta:header="NFTables Service CLI"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI handler for nftables service management
-# meta:input=Command line arguments (start, stop, restart, enable, disable, status)
-# meta:output=Service management output
+# meta:description="CLI handler for nftables service management"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl,nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftables.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,systemctl,nft
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

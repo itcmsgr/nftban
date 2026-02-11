@@ -2,11 +2,18 @@
 // NFTBan v1.0 - Persistence Package
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// This package handles persistent ban storage in /etc/nftban/blacklist.d/.
-// It is ONLY called by the nftband daemon - CLI must use IPC.
-//
-// See: ARCHITECTURE-NFT-POLICY.md
+// meta:name="blacklistd"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Persistent ban storage in /etc/nftban/blacklist.d/"
+// meta:inventory.files="/etc/nftban/blacklist.d"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package persistence

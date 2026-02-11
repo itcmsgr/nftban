@@ -30,23 +30,24 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle services status CLI commands
 #
-# meta:name=cmd_services
-# meta:type=cli
-# meta:header=Services CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_services"
+# meta:type="cli"
+# meta:header="Services CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI interface for system services status reporting
-# meta:input=Output format, service management options
-# meta:output=Services status reports (terminal, HTML, mail)
+# meta:description="CLI interface for system services status reporting"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_report_services.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

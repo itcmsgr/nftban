@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Smoke Test Suite
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Quick health check of CLI - detects stuck/failed scripts
-#
 # meta:name="smoke_test"
 # meta:type="test"
-# meta:header="Smoke Test Suite"
-# meta:version="1.1.0"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
+# meta:description="CLI health check with ban lifecycle verification"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban,nft,bash,bc,timeout"
+# meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6,NFTBAN_LOG_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftband.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+# Purpose: Quick health check of CLI - detects stuck/failed scripts
 #
 # **How It Works**
 # 1. Enables debug trace temporarily
@@ -24,20 +30,6 @@
 #   ./smoke_test.sh --quick      # Quick test (core commands only)
 #   ./smoke_test.sh --lifecycle  # Ban lifecycle tests only
 #   ./smoke_test.sh --check      # Just check trace log for orphans
-#
-# meta:description="CLI health check with ban lifecycle verification"
-# meta:depends="bash,nft,nftban"
-#
-# meta:inventory.files=""
-# meta:inventory.binaries="nftban,nft"
-# meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6"
-# meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units=""
-# meta:inventory.network=""
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-12-04"
-# meta:updated_date="2026-02-01"
 # =============================================================================
 
 set -Eeuo pipefail

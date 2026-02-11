@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Version Bumper Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# meta:name="bump_version"
+# meta:name="bump-version"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Automatically bumps version number in the VERSION file"
-# meta:input="major, minor, patch, or specific version"
-# meta:output="Updated VERSION file"
-# meta:depends="bash"
 # meta:inventory.files="VERSION"
-# meta:inventory.binaries=""
+# meta:inventory.binaries="bash"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -26,7 +23,7 @@
 #   ./scripts/bump-version.sh 1.2.3    # Set to specific version
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION_FILE="$SCRIPT_DIR/../VERSION"

@@ -1,27 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Task Queue System (Retry + DLQ)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Async task queue with retry, exponential backoff, and dead-letter queue
-#
 # meta:name="nftban_task_queue"
-# meta:type="module"
+# meta:type="helper"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-11-05"
-#
 # meta:description="Async task queue with retry, exponential backoff, and dead-letter queue"
-# meta:input="Task type, description, optional payload file"
-# meta:output="Task files in queue directories, Prometheus metrics"
-# meta:depends="bash,find,date,stat,flock,logger"
-#
-# meta:inventory.files="nftban.conf,nftban_feeds.sh,nftban_geoban.sh"
-# meta:inventory.binaries="find,date,stat,flock,logger,xxd,head"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR,NFTBAN_LOG_DIR,NFTBAN_RUN_DIR,NFTBAN_LIB_DIR,NFTBAN_QUEUE_MAX_RETRIES,NFTBAN_QUEUE_BACKOFF_BASE_SECONDS,NFTBAN_QUEUE_BACKOFF_MAX_SECONDS,NFTBAN_QUEUE_LOCK_STUCK_THRESHOLD,NFTBAN_QUEUE_MAX_PENDING,NFTBAN_QUEUE_DLQ_AUTO_RETENTION_DAYS"
-# meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban-queue.timer,nftban-queue.service"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban"
+# meta:inventory.privileges=""
 #
 # Architecture:
 #   pending/  - New tasks waiting to be processed

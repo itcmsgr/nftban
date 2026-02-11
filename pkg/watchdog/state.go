@@ -2,20 +2,18 @@
 // NFTBan v1.0 - Watchdog State Machine
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Manages pressure state transitions with hysteresis to prevent flapping.
-//
-// Hysteresis rules:
-//   - Enter WARN at score >= 60
-//   - Exit WARN when score < 50 for 30s
-//   - Enter CRITICAL at score >= 80
-//   - Exit CRITICAL when score < 70 for 60s
-//
-// Operating modes derived from worst dimension:
-//   - NORMAL: all OK
-//   - DEGRADED: any WARN
-//   - SURVIVAL: any CRITICAL
-//
+// meta:name="state"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Manages pressure state transitions with hysteresis to prevent flapping"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

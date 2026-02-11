@@ -12,23 +12,17 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="Interactive TUI menu using whiptail/dialog for easier navigation"
-# meta:input="User menu selections"
-# meta:output="Executes selected commands and displays results"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,whiptail|dialog"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="whiptail"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 
 set -Eeuo pipefail
 

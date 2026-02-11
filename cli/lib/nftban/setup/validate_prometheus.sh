@@ -1,30 +1,18 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # verbose used in eval context
-# =============================================================================
-# NFTBan v1.0.0 - Prometheus Validation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Validate Prometheus installation and NFTBan metrics integration
-# Location: /usr/lib/nftban/setup/validate_prometheus.sh
+# meta:name="validate_prometheus"
+# meta:type="setup"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-#
-# meta:name=validate_prometheus
-# meta:type=setup
-# meta:header=Prometheus Validation
-# meta:version=1.0.0
-#
-# **Description & Purpose**
-# meta:description=Validate Prometheus installation and NFTBan metrics collection
-# meta:input=Running Prometheus instance
-# meta:output=Validation report with pass/fail status
-#
-# **Inventory & Requirements**
-# meta:depends=bash,curl,systemctl,jq
-#
-# meta:created_date=2025-11-17
-# =============================================================================
+# meta:description="Validate Prometheus installation and NFTBan metrics collection"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 # Enhanced strict mode
 set -Eeuo pipefail

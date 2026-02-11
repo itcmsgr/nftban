@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Distro Config Integration Test
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# =============================================================================
+# NFTBan v1.0.0 - Distro Config Integration Test
+# =============================================================================
+# meta:name="test_distro_integration"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Test parser module with distribution configs"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash"
+# meta:inventory.env_vars="NFTBAN_DISTRO_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Purpose: Test parser module with distribution configs
 # Usage: ./test_distro_integration.sh [parser_path] [config_dir]
 #

@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.9.4 - Report Data Collection Module (SINGLE SOURCE OF TRUTH)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Unified data collection for all reports, emails, and templates
-#
-# meta:name="nftban_report_data"
-# meta:type="library"
-# meta:header="Report Data Collection Module"
-# meta:version="1.9.5"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# meta:description="Centralized data collection using nft_schema.sh SSOT"
-# meta:input="nft_schema.sh counting functions, system state"
-# meta:output="Template variables for reports and emails"
-# meta:depends="nft_schema.sh"
-# meta:created_date="2026-02-04"
-# meta:updated_date="2026-02-04"
-#
+# meta:name="nftban_report_data" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized data collection using nft_schema.sh SSOT"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -26,7 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-# =============================================================================
 
 set -Eeuo pipefail
 

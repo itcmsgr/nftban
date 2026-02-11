@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Version Management Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Single source of truth for all version numbers
-#
-# meta:name="version"
-# meta:type="library"
-# meta:header="Version Management"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Centralized version management for all NFTBan components"
-# meta:input="None (sourced by other scripts)"
-# meta:output="Version constants and functions"
-#
-# **Inventory & Requirements**
-# meta:depends="bash>=4.0"
+# meta:name="version" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized version management for all NFTBan components"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -26,13 +8,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
-# **Usage**
-# Source this file to get version information:
-#   source "${NFTBAN_LIB_DIR}/lib/version.sh"
-#   echo "$NFTBAN_VERSION"
-#
-# meta:created_date="2025-11-24"
+
+set -Eeuo pipefail
 # =============================================================================
 
 set -Eeuo pipefail

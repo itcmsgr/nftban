@@ -1,32 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Suricata Effective Configuration Generator
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
-#
 # meta:name="suricata_effective_config"
 # meta:type="helper"
-# meta:header="Suricata Effective Configuration Generator"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# meta:description="Generates effective Suricata config: Profile ∩ Services ∩ ModuleOverlaps ∩ LocalOverrides"
-# meta:input="Profile, module states, service detection"
-# meta:output="enable.conf, disable.conf.d/*, effective.json"
-# meta:depends="bash>=4.0"
-#
-# meta:inventory.files="/etc/nftban/suricata/*, /etc/suricata/disable.conf.d/*"
-# meta:inventory.binaries="suricata-update"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
-# meta:inventory.config_files="/etc/nftban/suricata/config/profile.conf"
-# meta:inventory.systemd_units="suricata.service"
+# meta:description="Generates effective Suricata config: Profile, Services, ModuleOverlaps, LocalOverrides"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for modifications)"
-#
-# meta:created_date="2026-02-10"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 

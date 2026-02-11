@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - File Utility Functions
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Centralized file age/freshness checking utilities
-#
-# meta:name="nftban_file_utils"
-# meta:type="library"
-# meta:header="File Utility Functions"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# meta:description="Centralized file age, freshness, and staleness checking utilities"
-# meta:input="File paths and age thresholds"
-# meta:output="File age in seconds, freshness/staleness boolean results"
-# meta:depends="bash,stat,date"
+# meta:name="nftban_file_utils" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized file age, freshness, and staleness checking utilities"
 # meta:inventory.files="/usr/lib/nftban/lib/nftban_file_utils.sh"
 # meta:inventory.binaries="stat,date"
 # meta:inventory.env_vars=""
@@ -23,13 +8,9 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# meta:created_date="2026-02-07"
-# =============================================================================
-#
-# PURPOSE:
-# This library provides centralized file age/freshness checking functions
-# to replace duplicated logic across health checks, stats, and other modules.
-#
+
+set -Eeuo pipefail
+
 # USAGE:
 #   source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
 #

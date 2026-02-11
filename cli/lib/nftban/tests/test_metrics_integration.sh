@@ -1,26 +1,20 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v0.6.0 - Metrics Integration Test Suite
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: End-to-end integration testing of metrics system
-# Location: /usr/share/nftban/tests/test_metrics_integration.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
+# =============================================================================
+# NFTBan v1.0.0 - Metrics Integration Test Suite
+# =============================================================================
 # meta:name="test_metrics_integration"
-# meta:type="testing"
-# meta:header="Metrics Integration Tests"
-# meta:version="0.6.0"
-#
-# meta:created_date="2025-11-17"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="End-to-end integration testing of metrics system"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="bash,systemctl,curl"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units=""
+# meta:inventory.systemd_units="nftban-unified-exporter.timer,nftban-unified-exporter.service,node_exporter.service,prometheus.service,grafana-server.service"
 # meta:inventory.network=""
-# meta:inventory.privileges=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 set -Eeuo pipefail

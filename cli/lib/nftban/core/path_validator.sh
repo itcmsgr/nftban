@@ -3,27 +3,21 @@
 # NFTBan v1.0.0 - Path Validator Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Detects and validates critical command paths across different OS distributions
-#
-# meta:name=path_validator
-# meta:type=tool
-# meta:header=Path Validator Module
-# meta:version=1.0.0
+# meta:name="path_validator"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Cross-platform command path detection and validation for critical system utilities
-# meta:input=Command names to locate
-# meta:output=Validated absolute paths to system commands
-#
-# **Inventory & Requirements**
-# meta:depends=bash,which
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Cross-platform command path detection and validation for critical system utilities"
+# meta:inventory.files=""
+# meta:inventory.binaries="which"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
+set -Eeuo pipefail
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PATH DETECTION AND VALIDATION

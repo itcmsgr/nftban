@@ -5,18 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Debug and troubleshooting tools
 #
-# meta:name=cmd_debug
-# meta:type=cli
-# meta:header=Debug Command
-# meta:version=1.0.0
+# meta:name="cmd_debug"
+# meta:type="cli"
+# meta:header="Debug Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:description=Debug tools: trace enable/disable, log viewing, diagnostics
-# meta:depends=bash,nftban_trace.sh
+# meta:description="Debug tools: trace enable/disable, log viewing, diagnostics"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-12-04
-# meta:updated_date=2025-12-04
+# meta:created_date="2025-12-04"
+# meta:updated_date="2025-12-04"
 # =============================================================================
 
 set -Eeuo pipefail

@@ -6,11 +6,13 @@
 # Purpose: Local, Custom, and Recommend commands for Suricata
 #
 # meta:name="cmd_suricata_advanced"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Suricata Advanced Commands Module"
 # meta:version="1.0.0"
-# meta:description="Local, Custom, and Recommend commands for Suricata"
-# meta:parent="cmd_suricata.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Local, Custom, and Recommend commands for Suricata"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

@@ -1,31 +1,23 @@
 #!/usr/bin/env bash
-
 # =============================================================================
-# NFTBan v1.0 - Services Report Core Module
+# NFTBan v1.0.0 - Services Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: System services status scanning and reporting
-#
-# meta:name=nftban_report_services
-# meta:type=core
-# meta:header=Services Report Core
-# meta:version=1.0.0
+# meta:name="nftban_report_services"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Scans and reports status of all required system services
-# meta:input=Service check options, output format
-# meta:output=Service status reports (terminal, HTML, mail)
-#
-# **Inventory & Requirements**
-# meta:depends=bash,systemctl
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Scans and reports status of all required system services"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
-# Strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

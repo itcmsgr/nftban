@@ -1,33 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - Auto-Heal Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="autoheal.sh"
+# meta:name="autoheal"
 # meta:type="helper"
-# meta:header="Auto-Heal System Configuration"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
 # meta:description="Automatically fixes common configuration issues using FHS spec"
-# meta:input="None"
-# meta:output="Fixed system state"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,nftban_fhs_spec.sh"
 # meta:inventory.files=""
-# meta:inventory.binaries="install,chown,chmod,systemctl"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
-# meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban-maintenance.timer"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-10-26"
-# meta:updated_date="2026-01-15"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

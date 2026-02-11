@@ -1,36 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - Suricata IDS Installation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Install and configure Suricata IDS for NFTBan (from source)
-# Location: /usr/lib/nftban/setup/install_suricata.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:name="install_suricata"
 # meta:type="setup"
-# meta:header="Suricata IDS Installation"
 # meta:version="1.0.0"
-#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Install and configure Suricata IDS from source"
 # meta:inventory.files=""
-# meta:inventory.binaries="curl,tar,make,install"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR"
-# meta:inventory.config_files="/etc/suricata/suricata.yaml"
-# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-29"
-# meta:updated_date="2026-01-15"
-# =============================================================================
-#
-# This script compiles Suricata from source for distributions where
-# packages are not available (e.g., CentOS Stream 10).
-#
-# Similar to install_victoriametrics.sh pattern.
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

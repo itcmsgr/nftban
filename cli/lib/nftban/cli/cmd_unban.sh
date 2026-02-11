@@ -5,24 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unban IP addresses using nftban-core
 #
-# meta:name=cmd_unban
-# meta:type=cli
-# meta:header=Unban Command
-# meta:version=1.0.0
+# meta:name="cmd_unban"
+# meta:type="cli"
+# meta:header="Unban Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Unban IP addresses using nftban-core
-# meta:input=IP address
-# meta:output=Unban confirmation or error message
+# meta:description="Unban IP addresses using nftban-core"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban-core
-#
-# meta:created_date=2025-11-24
-# meta:updated_date=2025-11-26
+# meta:created_date="2025-11-24"
+# meta:updated_date="2025-11-26"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${CMD_UNBAN_LOADED:-}" ]] && return 0

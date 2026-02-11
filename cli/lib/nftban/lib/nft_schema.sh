@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Canonical NFT Schema Specification
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Single source of truth for nftables table/set/chain structure
-#
-# meta:name="nft_schema"
-# meta:type="library"
-# meta:header="NFT Schema Specification"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Canonical nftables schema to prevent table structure drift"
-# meta:input="None (defines constants)"
-# meta:output="Table/set/chain specifications and validation functions"
-#
-# **Inventory & Requirements**
-# meta:depends="bash>=4.0,nftables>=0.9.3"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -26,9 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
-# meta:created_date="2025-11-27"
-# =============================================================================
 
 set -Eeuo pipefail
 

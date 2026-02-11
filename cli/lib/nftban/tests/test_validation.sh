@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Validation Library Test Suite
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="test_validation"
 # meta:type="test"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Test NFTBan validation library functions"
-# meta:input="None"
-# meta:output="Test results (pass/fail)"
-# meta:depends="validation.sh"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="bash"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -20,7 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 
-set -uo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

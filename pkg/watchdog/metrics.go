@@ -3,7 +3,8 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="metrics"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-01-15"
 // meta:description="Prometheus metrics for the watchdog system"

@@ -2,10 +2,11 @@
 // NFTBan v1.0 - Watchdog Config Loader
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Loads watchdog configuration from /etc/nftban/conf.d/watchdog.conf
-// Falls back to defaults for missing values.
-//
+// meta:name="config_loader"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Loads watchdog configuration from /etc/nftban/conf.d/watchdog.conf"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""

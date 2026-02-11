@@ -2,13 +2,18 @@
 // NFTBan v1.0 - Watchdog Action Executor
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Action executor provides automatic alignment actions:
-//   - Throttle: Reduce worker count, disable expensive collectors
-//   - Profiler: Capture CPU/heap/goroutine profiles
-//   - MemoryValve: Call debug.FreeOSMemory under safe conditions
-//   - DegradeMode: Limit functionality to core operations
-//
+// meta:name="executor"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Action executor for throttle, profiler, and memory valve operations"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

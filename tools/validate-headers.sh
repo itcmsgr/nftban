@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Header & Metadata Validator
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="validate-headers"
-# meta:type="script"
+# meta:type="tool"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-01-07"
 # meta:description="Pre-commit hook to validate SPDX + meta tags + inventory keys + Bash set flags"
-# meta:input="Git staged files"
-# meta:output="Validation errors to stderr, exit code 0/1"
-# meta:depends="git, grep, head"
 # meta:inventory.files=""
-# meta:inventory.binaries="git, grep, head"
+# meta:inventory.binaries="git,grep,head"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""

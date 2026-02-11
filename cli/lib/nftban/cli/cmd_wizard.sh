@@ -5,22 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive wizard for NFTBan configuration
 #
-# meta:name=cmd_wizard
-# meta:type=cli
-# meta:header=NFTBan Installation Wizard
-# meta:version=1.0.0
+# meta:name="cmd_wizard"
+# meta:type="cli"
+# meta:header="NFTBan Installation Wizard"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Interactive wizard that detects environment and configures NFTBan
-# meta:input=User answers to 3 simple questions
-# meta:output=Generated configuration + enabled modules
+# meta:description="Interactive wizard that detects environment and configures NFTBan"
+# meta:inventory.files=""
+# meta:inventory.binaries="nproc,awk,ss"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nproc,awk,ss
-#
-# meta:created_date=2025-12-05
+# meta:created_date="2025-12-05"
 # =============================================================================
 
 set -Eeuo pipefail

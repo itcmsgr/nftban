@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Unified Metrics Exporter (Loader)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_unified_exporter"
 # meta:type="exporter"
@@ -9,12 +6,12 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Unified exporter - collects once, exports to all configured targets"
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/lib/nftban/bin/nftban-core"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
-# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftban/conf.d/metrics.conf,/etc/nftban/conf.d/zabbix.conf,/etc/nftban/conf.d/connectors.conf"
-# meta:inventory.systemd_units="nftban-unified-exporter.timer"
-# meta:inventory.network="outbound:10051/tcp,outbound:9200/tcp,outbound:9092/tcp"
-# meta:inventory.privileges="nftban"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 #
 # SENIOR DESIGN RATIONALE:
 # ========================
