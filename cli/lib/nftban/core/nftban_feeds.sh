@@ -374,41 +374,30 @@ nftban_feeds_enable() {
 # Disable a feed
 nftban_feeds_disable() {
     local feed_name="$1"
-    local feed_lowercase
-    feed_lowercase=$(echo "$feed_name" | tr '[:upper:]' '[:lower:]')
-    local feed_file="${NFTBAN_FEEDS_STORAGE_DIR}/${feed_lowercase}.txt"
 
-    # Disable feed in config
+    # Disable feed
     nftban_feeds_set_property "$feed_name" "ENABLED" "false"
     nftban_feeds_log INFO "Feed disabled: $feed_name"
 
+    # Show immediate feedback
     echo "✓ Feed disabled: $feed_name"
     echo ""
 
-    # Clear the feed file
-    if [[ -f "$feed_file" ]]; then
-        local ip_count
-        ip_count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
-        : > "$feed_file"
-        echo "   ✅ Feed file cleared ($ip_count IPs)"
-    fi
-
-    # Re-sync all feeds to nftables (only enabled feeds will be loaded)
-    # This is required because IPs are stored as optimized CIDR ranges
-    # Individual IP deletion won't work - must rebuild blacklist
-    echo ""
-    echo "🔄 Rebuilding blacklist (only enabled feeds)..."
-    if nftban_feeds_sync_to_nftables 2>/dev/null; then
-        nftban_feeds_log INFO "Feed $feed_name IPs removed via full sync"
-        echo "   ✅ Blacklist rebuilt - $feed_name IPs removed"
+    # ARCHITECTURE COMPLIANCE: Always use timer-based queue for nftables sync
+    # NEVER execute synchronous sync - all feeds/ban/unban/countries managed by timer
+    # This prevents 30+ second hangs with large feed sets and respects async architecture
+    if command -v nftban_queue_add &>/dev/null; then
+        nftban_queue_add "feeds_sync" "Feed disabled: $feed_name" >/dev/null 2>&1
+        echo "✅ Feed disabled successfully"
+        echo "   NFTables update queued (processed every 2 minutes)"
+        echo "   Check queue: tail -f /var/log/nftban/queue.log"
+        echo ""
     else
-        nftban_feeds_log WARN "Sync failed, IPs will be removed on next update"
-        echo "   ⚠️  Sync pending - run 'nftban feeds update' to apply"
+        nftban_feeds_log "WARN" "Queue function not available, sync will run on next timer cycle"
+        echo "✅ Feed disabled successfully"
+        echo "   NFTables will sync on next timer cycle (every 2 minutes)"
+        echo ""
     fi
-
-    echo ""
-    echo "✅ Feed disabled"
-    echo ""
 }
 
 # Update single feed
