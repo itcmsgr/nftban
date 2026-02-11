@@ -363,6 +363,82 @@ nft_smart_unban() {
 }
 
 # =============================================================================
+# v1.1 ASYNC IPC FUNCTIONS (Source-Aware)
+# =============================================================================
+
+# Replace entire set with elements from file (async, for feeds/geoban)
+# Usage: nft_ipc_replace_set <set_name> <elements_file> [source]
+# Note: Daemon reads file directly (file-based protocol for large payloads)
+nft_ipc_replace_set() {
+    local set_name="$1"
+    local elements_file="$2"
+    local source="${3:-unknown}"
+
+    # Validate file exists
+    if [[ ! -f "$elements_file" ]]; then
+        echo '{"success":false,"error":"file not found"}'
+        return 1
+    fi
+
+    # Send file path (daemon reads directly)
+    local params
+    params=$(jq -nc \
+        --arg set "$set_name" \
+        --arg file "$elements_file" \
+        --arg source "$source" \
+        '{set: $set, file: $file, source: $source, delete_file: true}')
+
+    nft_ipc_request "replace_set" "$params"
+}
+
+# Flush all elements from a source (async)
+# Usage: nft_ipc_flush_source <source>
+nft_ipc_flush_source() {
+    local source="$1"
+
+    [[ -z "$source" ]] && { echo "ERROR: source required" >&2; return 1; }
+
+    local params
+    params=$(jq -nc --arg source "$source" '{source: $source}')
+
+    nft_ipc_request "flush_source" "$params"
+}
+
+# Unban from specific source's sets
+# Usage: nft_ipc_unban_source <ip> <source>
+nft_ipc_unban_source() {
+    local ip="$1"
+    local source="$2"
+
+    [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
+    [[ -z "$source" ]] && { echo "ERROR: source required" >&2; return 1; }
+
+    local params
+    params=$(jq -nc --arg ip "$ip" --arg source "$source" '{ip: $ip, source: $source}')
+
+    nft_ipc_request "unban" "$params"
+}
+
+# Unban from ALL sets where IP exists (async)
+# Usage: nft_ipc_unban_any <ip>
+nft_ipc_unban_any() {
+    local ip="$1"
+
+    [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
+
+    local params
+    params=$(jq -nc --arg ip "$ip" '{ip: $ip, any: true}')
+
+    nft_ipc_request "unban" "$params"
+}
+
+# Get queue status (sync)
+# Usage: nft_ipc_queue_status
+nft_ipc_queue_status() {
+    nft_ipc_request "status" "{}"
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -384,6 +460,13 @@ export -f nft_ipc_check
 export -f nft_ipc_status
 export -f nft_smart_ban
 export -f nft_smart_unban
+
+# v1.1 async functions
+export -f nft_ipc_replace_set
+export -f nft_ipc_flush_source
+export -f nft_ipc_unban_source
+export -f nft_ipc_unban_any
+export -f nft_ipc_queue_status
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)

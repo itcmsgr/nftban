@@ -76,6 +76,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/itcmsgr/nftban/pkg/stats"
 	nftsync "github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/opqueue"
 	"github.com/itcmsgr/nftban/pkg/watchdog"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 	"golang.org/x/sys/unix"
@@ -176,6 +177,10 @@ type Daemon struct {
 	socketLn  net.Listener
 	httpSrv   *http.Server
 	configDir string             // Config directory for whitelist loading
+
+	// v1.13.0: Async IPC operation queue
+	opQueue     *opqueue.OpQueue     // Async operation queue for batched netlink
+	sourceIndex *opqueue.SourceIndex // Source tracking for shared sets
 }
 
 // isWhitelisted checks if an IP is in the whitelist.
@@ -379,6 +384,46 @@ func (d *Daemon) initWatchdog() error {
 	return nil
 }
 
+// initOpQueue initializes the async operation queue (v1.13.0)
+func (d *Daemon) initOpQueue() error {
+	// Get NFTManager from backend for shared netlink connection
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return fmt.Errorf("nftbackend has no NFTManager")
+	}
+
+	// Create backend wrapper for opqueue
+	wrapper, err := opqueue.NewNFTBackendWrapper(nft)
+	if err != nil {
+		return fmt.Errorf("failed to create NFTBackendWrapper: %w", err)
+	}
+
+	// Create OpQueue with default config
+	d.opQueue = opqueue.NewOpQueue(wrapper, opqueue.DefaultQueueConfig())
+
+	// Create SourceIndex for tracking element sources
+	_, _, dataDir, _ := getDaemonPaths()
+	d.sourceIndex = opqueue.NewSourceIndex(dataDir + "/source_index.jsonl")
+
+	// Load persisted source index
+	if err := d.sourceIndex.LoadFromDisk(); err != nil {
+		log.Printf("[OpQueue] Warning: failed to load source index: %v", err)
+	}
+
+	// Start async workers
+	d.opQueue.Start(d.ctx)
+	go d.sourceIndex.StartBackgroundSaver(d.ctx)
+
+	// Reconcile source index with actual nft state
+	go func() {
+		time.Sleep(5 * time.Second) // Wait for daemon to fully start
+		d.sourceIndex.ReconcileWithBackend(wrapper)
+	}()
+
+	log.Println("[OpQueue] Async operation queue initialized")
+	return nil
+}
+
 func printHelp() {
 	fmt.Println("nftband - NFTBan Daemon")
 	fmt.Println()
@@ -430,6 +475,11 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 	defer os.Remove(getPidFile())
+
+	// Initialize OpQueue and SourceIndex (v1.13.0 async IPC)
+	if err := d.initOpQueue(); err != nil {
+		log.Printf("Warning: OpQueue init failed: %v (async operations disabled)", err)
+	}
 
 	// Register modules
 	d.registerModules()
@@ -921,6 +971,13 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleEvictOldBansRequest(req.Params)
 	case "permanent_ban_stats":
 		return d.handlePermanentBanStatsRequest()
+	// v1.13.0: Async IPC handlers
+	case "replace_set":
+		return d.handleReplaceSetRequest(req.Params)
+	case "flush_source":
+		return d.handleFlushSourceRequest(req.Params)
+	case "queue_status":
+		return d.handleQueueStatusRequest()
 	default:
 		return SocketResponse{
 			Success: false,
@@ -1696,6 +1753,16 @@ func (d *Daemon) waitForShutdown() {
 	// Stop all modules
 	if err := d.registry.StopAll(); err != nil {
 		log.Printf("Module stop error: %v", err)
+	}
+
+	// Stop OpQueue and save SourceIndex (v1.13.0)
+	if d.opQueue != nil {
+		log.Println("Stopping OpQueue...")
+		d.opQueue.Stop()
+	}
+	if d.sourceIndex != nil {
+		log.Println("Saving SourceIndex...")
+		d.sourceIndex.Stop()
 	}
 
 	// Close event bus
@@ -2620,4 +2687,147 @@ func (d *Daemon) logProfileCapture(logPath, profileType, filename string) {
 		filename,
 	)
 	f.WriteString(line)
+}
+
+// =============================================================================
+// v1.13.0: ASYNC IPC HANDLERS
+// =============================================================================
+
+// handleReplaceSetRequest handles bulk replace_set operations via file
+// This is for feeds/geoban that need atomic flush+bulk-add
+func (d *Daemon) handleReplaceSetRequest(params map[string]any) SocketResponse {
+	if d.opQueue == nil {
+		return SocketResponse{Success: false, Error: "OpQueue not initialized"}
+	}
+
+	setName, _ := params["set"].(string)
+	filePath, _ := params["file"].(string)
+	source, _ := params["source"].(string)
+	deleteFile, _ := params["delete_file"].(bool)
+
+	if setName == "" {
+		return SocketResponse{Success: false, Error: "missing set parameter"}
+	}
+	if filePath == "" {
+		return SocketResponse{Success: false, Error: "missing file parameter"}
+	}
+	if source == "" {
+		source = "unknown"
+	}
+
+	// Read elements from file with security checks
+	result, err := opqueue.SecureReadElementsFile(filePath)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to read file: " + err.Error()}
+	}
+
+	// Queue the replace operation
+	if err := d.opQueue.EnqueueReplace(setName, result.Elements, source); err != nil {
+		return SocketResponse{Success: false, Error: "failed to queue replace: " + err.Error()}
+	}
+
+	// Optionally delete the file after reading
+	if deleteFile {
+		os.Remove(filePath)
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"set":      setName,
+			"source":   source,
+			"elements": result.Count,
+			"queued":   true,
+		},
+	}
+}
+
+// handleFlushSourceRequest removes all elements from a source
+// Uses SourceIndex to find elements belonging to a source, then unbans them
+func (d *Daemon) handleFlushSourceRequest(params map[string]any) SocketResponse {
+	if d.opQueue == nil || d.sourceIndex == nil {
+		return SocketResponse{Success: false, Error: "OpQueue/SourceIndex not initialized"}
+	}
+
+	source, _ := params["source"].(string)
+	if source == "" {
+		return SocketResponse{Success: false, Error: "missing source parameter"}
+	}
+
+	// Get source configuration to determine target sets
+	cfg, found := opqueue.GetSourceConfig(source)
+	if !found {
+		return SocketResponse{Success: false, Error: "unknown source: " + source}
+	}
+
+	// For dedicated sets (feeds/geoban), just flush the set
+	if cfg.AllowBulk && !cfg.AllowBan {
+		// Queue flush for IPv4 and IPv6 sets
+		if err := d.opQueue.EnqueueFlush(cfg.IPv4Set); err != nil {
+			log.Printf("[FlushSource] Warning: failed to queue flush %s: %v", cfg.IPv4Set, err)
+		}
+		if err := d.opQueue.EnqueueFlush(cfg.IPv6Set); err != nil {
+			log.Printf("[FlushSource] Warning: failed to queue flush %s: %v", cfg.IPv6Set, err)
+		}
+
+		return SocketResponse{
+			Success: true,
+			Data: map[string]any{
+				"source": source,
+				"sets":   []string{cfg.IPv4Set, cfg.IPv6Set},
+				"action": "flush_set",
+				"queued": true,
+			},
+		}
+	}
+
+	// For shared sets (auto/manual), use source index to find and unban elements
+	unbanned := 0
+	for _, setName := range []string{cfg.IPv4Set, cfg.IPv6Set} {
+		elements := d.sourceIndex.GetElementsBySource(setName, source)
+		for _, elem := range elements {
+			// Remove from source index
+			d.sourceIndex.Remove(setName, elem, source)
+
+			// Only unban if no other sources remain
+			if d.sourceIndex.ShouldDelete(setName, elem) {
+				if err := d.opQueue.EnqueueUnban(setName, elem, source); err != nil {
+					log.Printf("[FlushSource] Warning: failed to queue unban %s: %v", elem, err)
+					continue
+				}
+				unbanned++
+			}
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"source":   source,
+			"unbanned": unbanned,
+			"action":   "source_unban",
+			"queued":   true,
+		},
+	}
+}
+
+// handleQueueStatusRequest returns OpQueue statistics
+func (d *Daemon) handleQueueStatusRequest() SocketResponse {
+	if d.opQueue == nil {
+		return SocketResponse{Success: false, Error: "OpQueue not initialized"}
+	}
+
+	stats := d.opQueue.Stats()
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"pending_count":   stats.PendingCount,
+			"total_queued":    stats.TotalQueued,
+			"total_applied":   stats.TotalApplied,
+			"total_dropped":   stats.TotalDropped,
+			"last_flush_time": stats.LastFlushTime.Format(time.RFC3339),
+			"queue_depth":     d.opQueue.QueueDepth(),
+		},
+	}
 }
