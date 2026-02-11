@@ -1182,10 +1182,11 @@ nftban_watchdog_metrics_export() {
         echo ""
 
         # Count alerts by severity
+        # Note: Use || true to prevent exit code 1 when incrementing from 0 with set -e
         local warning_count=0 critical_count=0
         for alert in "${WATCHDOG_ALERTS[@]}"; do
-            [[ "$alert" == *"[WARNING]"* ]] && ((warning_count++))
-            [[ "$alert" == *"[CRITICAL]"* ]] && ((critical_count++))
+            [[ "$alert" == *"[WARNING]"* ]] && ((warning_count++)) || true
+            [[ "$alert" == *"[CRITICAL]"* ]] && ((critical_count++)) || true
         done
 
         echo "# HELP nftban_watchdog_alert_total Count of alerts by severity"
@@ -1229,7 +1230,7 @@ nftban_watchdog_cleanup_old() {
     if [[ -d "$NFTBAN_WATCHDOG_REPORT_DIR" ]]; then
         while IFS= read -r -d '' file; do
             rm -f "$file"
-            ((removed++))
+            ((removed++)) || true
         done < <(find "$NFTBAN_WATCHDOG_REPORT_DIR" -name "*.report" -type f -mtime +"$retention_days" -print0 2>/dev/null)
     fi
 
@@ -1252,7 +1253,7 @@ nftban_watchdog_cleanup_all() {
     if [[ -d "$stats_history_dir" ]]; then
         removed=0
         while IFS= read -r -d '' file; do
-            rm -f "$file" && ((removed++))
+            rm -f "$file" && { ((removed++)) || true; }
         done < <(find "$stats_history_dir" -name "*.json" -type f -mtime +30 -print0 2>/dev/null)
         [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old stats history files (>30 days)"
         total_removed=$((total_removed + removed))
@@ -1264,7 +1265,7 @@ nftban_watchdog_cleanup_all() {
     if [[ -d "$profiles_dir" ]]; then
         removed=0
         while IFS= read -r -d '' file; do
-            rm -f "$file" && ((removed++))
+            rm -f "$file" && { ((removed++)) || true; }
         done < <(find "$profiles_dir" -type f -mtime +"$profile_retention" -print0 2>/dev/null)
         [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old profile captures (>${profile_retention} days)"
         total_removed=$((total_removed + removed))
@@ -1276,7 +1277,7 @@ nftban_watchdog_cleanup_all() {
     if [[ -d "$recorder_dir" ]]; then
         removed=0
         while IFS= read -r -d '' file; do
-            rm -f "$file" && ((removed++))
+            rm -f "$file" && { ((removed++)) || true; }
         done < <(find "$recorder_dir" -type f -mtime +"$recorder_retention" -print0 2>/dev/null)
         [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old recorder files (>${recorder_retention} days)"
         total_removed=$((total_removed + removed))
@@ -1903,19 +1904,24 @@ _watchdog_append_trend() {
     # Since we don't have direct network metrics, use load as proxy
     local net_score=0
     local load5="${WATCHDOG_RESULTS[load_5m]:-0}"
+    # Sanitize load5 - ensure it's a valid number
+    [[ ! "$load5" =~ ^[0-9.]+$ ]] && load5="0"
+
     # Convert load to percentage-like score (load of 4 = 100% for 4-core system)
     if command -v nproc &>/dev/null; then
         local ncpu
         ncpu=$(nproc 2>/dev/null || echo 4)
         # Avoid division by zero and floating point
-        if [[ $ncpu -gt 0 ]]; then
+        if [[ $ncpu -gt 0 && -n "$load5" ]]; then
             # Multiply load by 100, then divide by ncpu for percentage
             # Use awk for floating point math
             net_score=$(awk -v load="$load5" -v cpu="$ncpu" 'BEGIN {
+                if (cpu <= 0) cpu = 1;
                 score = (load * 100) / cpu;
                 if (score > 100) score = 100;
+                if (score < 0) score = 0;
                 printf "%.0f", score
-            }')
+            }' 2>/dev/null) || net_score=0
         fi
     fi
 
@@ -2059,7 +2065,7 @@ _watchdog_output_summary() {
         local shown=0
         for alert in "${WATCHDOG_ALERTS[@]}"; do
             echo "  $alert"
-            ((shown++))
+            ((shown++)) || true
             [[ $shown -ge 2 ]] && break
         done
         if [[ $alert_count -gt 2 ]]; then
