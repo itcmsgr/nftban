@@ -454,15 +454,49 @@ EOF
 }
 
 collect_suricata_metrics() {
+    # Skip collection if Suricata integration is not enabled
+    if [[ "${NFTBAN_SURICATA_ENABLED:-false}" != "true" ]]; then
+        cat <<EOF
+{
+  "suricata": {
+    "enabled": false
+  }
+}
+EOF
+        return 0
+    fi
+
     local up=0 alerts_total=0 rules_total=0 rules_filtered=0 bans_total=0
     local eve_errors=0 last_alert=0 rule_profile="unknown"
     local sev1=0 sev2=0 sev3=0 sev4=0
     # shellcheck disable=SC2034  # categories reserved for future category breakdown
     declare -A categories
 
+    # Performance metrics (for capacity planning and lessons learned)
+    local memory_rss_mb=0 capture_kernel_packets=0 capture_kernel_drops=0
+    local flow_memuse=0 tcp_memuse=0 memcap_pressure=0
+    local ring_size=0 tpacket_version="unknown" capture_threads=0
+    local uptime_seconds=0 decoder_bytes=0
+
+    # Additional health/capacity metrics
+    local decoder_pkts=0 decoder_invalid=0 flow_total=0 tcp_sessions=0
+    local tcp_ssn_memcap_drop=0 tcp_segment_memcap_drop=0 flow_memcap_drops=0
+    local flow_emerg_mode_entered=0 tcp_reassembly_gap=0
+    local system_memory_available_mb=0 system_cpu_cores=0
+
     # Check if Suricata is running
     if systemctl is-active suricata.service &>/dev/null; then
         up=1
+
+        # Collect performance metrics only when running
+        # Memory RSS (MB)
+        memory_rss_mb=$(ps aux 2>/dev/null | awk '/[S]uricata-Main/ {sum+=$6} END {printf "%.0f", sum/1024}') || memory_rss_mb=0
+        [[ -z "$memory_rss_mb" || "$memory_rss_mb" == "0" ]] && \
+            memory_rss_mb=$(ps aux 2>/dev/null | awk '/[s]uricata/ && !/grep/ {sum+=$6} END {printf "%.0f", sum/1024}') || memory_rss_mb=0
+
+        # Capture threads (worker threads)
+        capture_threads=$(ps -eLf 2>/dev/null | grep -c '[S]uricata.*W#') || capture_threads=0
+        [[ "$capture_threads" -eq 0 ]] && capture_threads=$(nproc 2>/dev/null || echo 1)
     fi
 
     # EVE JSON parsing (last 10000 lines for performance)
@@ -545,9 +579,73 @@ collect_suricata_metrics() {
         eve_errors=$(grep -ci "parse.*error\|invalid.*json\|malformed" "$suricata_log" 2>/dev/null) || eve_errors=0
     fi
 
+    # Performance metrics from stats.log (only if running)
+    if [[ "$up" -eq 1 ]]; then
+        local stats_log="/var/log/suricata/stats.log"
+        # Find latest stats.log (may be rotated)
+        if [[ ! -s "$stats_log" ]]; then
+            stats_log=$(ls -t /var/log/suricata/stats.log* 2>/dev/null | head -1)
+        fi
+
+        if [[ -f "$stats_log" && -s "$stats_log" ]]; then
+            # Get last stats block (tail -100 covers one full interval)
+            local stats_block
+            stats_block=$(tail -100 "$stats_log" 2>/dev/null)
+
+            # Extract key metrics from last stats block
+            capture_kernel_packets=$(echo "$stats_block" | awk '/capture.kernel_packets.*Total/ {v=$NF} END {print v+0}')
+            capture_kernel_drops=$(echo "$stats_block" | awk '/capture.kernel_drops.*Total/ {v=$NF} END {print v+0}')
+            decoder_bytes=$(echo "$stats_block" | awk '/decoder.bytes.*Total/ {v=$NF} END {print v+0}')
+            decoder_pkts=$(echo "$stats_block" | awk '/decoder.pkts.*Total/ {v=$NF} END {print v+0}')
+            decoder_invalid=$(echo "$stats_block" | awk '/decoder.invalid.*Total/ {v=$NF} END {print v+0}')
+            flow_memuse=$(echo "$stats_block" | awk '/flow.memuse.*Total/ {v=$NF} END {print v+0}')
+            flow_total=$(echo "$stats_block" | awk '/flow.total.*Total/ {v=$NF} END {print v+0}')
+            tcp_memuse=$(echo "$stats_block" | awk '/tcp.memuse.*Total/ {v=$NF} END {print v+0}')
+            tcp_sessions=$(echo "$stats_block" | awk '/tcp.sessions.*Total/ {v=$NF} END {print v+0}')
+            tcp_reassembly_gap=$(echo "$stats_block" | awk '/tcp.reassembly_gap.*Total/ {v=$NF} END {print v+0}')
+            memcap_pressure=$(echo "$stats_block" | awk '/memcap_pressure[^_].*Total/ {v=$NF} END {print v+0}')
+
+            # Critical capacity drop indicators
+            tcp_ssn_memcap_drop=$(echo "$stats_block" | awk '/tcp.ssn_memcap_drop.*Total/ {v=$NF} END {print v+0}')
+            tcp_segment_memcap_drop=$(echo "$stats_block" | awk '/tcp.segment_memcap_drop.*Total/ {v=$NF} END {print v+0}')
+            flow_memcap_drops=$(echo "$stats_block" | awk '/flow.memcap.*Total/ {v=$NF} END {print v+0}')
+            flow_emerg_mode_entered=$(echo "$stats_block" | awk '/flow.emerg_mode_entered.*Total/ {v=$NF} END {print v+0}')
+
+            # Parse uptime from stats header (format: uptime: 0d, 00h 03m 39s)
+            local uptime_str
+            uptime_str=$(echo "$stats_block" | grep -oP 'uptime: \K[^)]+' | tail -1)
+            if [[ -n "$uptime_str" ]]; then
+                local days hours mins secs
+                days=$(echo "$uptime_str" | grep -oP '\d+(?=d)' || echo 0)
+                hours=$(echo "$uptime_str" | grep -oP '\d+(?=h)' || echo 0)
+                mins=$(echo "$uptime_str" | grep -oP '\d+(?=m)' || echo 0)
+                secs=$(echo "$uptime_str" | grep -oP '\d+(?=s)' || echo 0)
+                uptime_seconds=$(( (days*86400) + (hours*3600) + (mins*60) + secs ))
+            fi
+        fi
+
+        # Ring size and tpacket version from suricata.yaml
+        local suricata_yaml="/etc/suricata/suricata.yaml"
+        if [[ -f "$suricata_yaml" ]]; then
+            ring_size=$(grep -E '^\s+ring-size:' "$suricata_yaml" 2>/dev/null | head -1 | awk '{print $2}' | tr -cd '0-9')
+            [[ -z "$ring_size" ]] && ring_size=0
+
+            if grep -qE '^\s+tpacket-v3:\s*yes' "$suricata_yaml" 2>/dev/null; then
+                tpacket_version="v3"
+            else
+                tpacket_version="v2"
+            fi
+        fi
+
+        # System context metrics (for capacity planning)
+        system_cpu_cores=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
+        system_memory_available_mb=$(awk '/MemAvailable/ {printf "%.0f", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+    fi
+
     cat <<EOF
 {
   "suricata": {
+    "enabled": true,
     "up": $up,
     "alerts_total": $alerts_total,
     "alerts_by_severity": {
@@ -562,7 +660,35 @@ collect_suricata_metrics() {
     "bans_total": $bans_total,
     "eve_parse_errors": $eve_errors,
     "last_alert_timestamp": $last_alert,
-    "rule_profile": "$rule_profile"
+    "rule_profile": "$rule_profile",
+    "performance": {
+      "memory_rss_mb": ${memory_rss_mb:-0},
+      "capture_kernel_packets": ${capture_kernel_packets:-0},
+      "capture_kernel_drops": ${capture_kernel_drops:-0},
+      "decoder_pkts": ${decoder_pkts:-0},
+      "decoder_bytes": ${decoder_bytes:-0},
+      "decoder_invalid": ${decoder_invalid:-0},
+      "flow_total": ${flow_total:-0},
+      "flow_memuse": ${flow_memuse:-0},
+      "tcp_sessions": ${tcp_sessions:-0},
+      "tcp_memuse": ${tcp_memuse:-0},
+      "tcp_reassembly_gap": ${tcp_reassembly_gap:-0},
+      "memcap_pressure": ${memcap_pressure:-0},
+      "ring_size": ${ring_size:-0},
+      "tpacket_version": "$tpacket_version",
+      "capture_threads": ${capture_threads:-0},
+      "uptime_seconds": ${uptime_seconds:-0}
+    },
+    "capacity_drops": {
+      "tcp_ssn_memcap_drop": ${tcp_ssn_memcap_drop:-0},
+      "tcp_segment_memcap_drop": ${tcp_segment_memcap_drop:-0},
+      "flow_memcap_drops": ${flow_memcap_drops:-0},
+      "flow_emerg_mode_entered": ${flow_emerg_mode_entered:-0}
+    },
+    "system": {
+      "cpu_cores": ${system_cpu_cores:-0},
+      "memory_available_mb": ${system_memory_available_mb:-0}
+    }
   }
 }
 EOF
