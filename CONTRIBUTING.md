@@ -4,7 +4,7 @@ Thank you for your interest in contributing to NFTBAN! This document provides gu
 
 ## About the Project
 
-**NFTBAN** is an enterprise-grade firewall management engine built on Linux nftables. The name stands for **NFTables BAN actions**, emphasizing the system's foundation on native nftables technology for high-performance, kernel-level packet filtering.
+**NFTBan** is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks. The name stands for **NFTables BAN actions**, emphasizing the system's foundation on native nftables technology for kernel-level packet filtering.
 
 ## Project Terminology
 
