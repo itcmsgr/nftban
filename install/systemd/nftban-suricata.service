@@ -43,7 +43,13 @@ SupplementaryGroups=suricata
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 
-# PRECONDITION: Verify Suricata has rules loaded before starting EVE reader
+# PRECONDITION 1: Ensure EVE log file exists
+# Suricata 7.x with threaded:yes only creates file on first event
+# Without this, nftban-suricata fails if no alerts have been generated yet
+# Bug fix v1.12.8: Service was failing with "no such file or directory" after logrotate
+ExecStartPre=/bin/bash -c 'mkdir -p /var/log/nftban/suricata && touch /var/log/nftban/suricata/eve-alerts.json && chown suricata:nftban /var/log/nftban/suricata/eve-alerts.json && chmod 640 /var/log/nftban/suricata/eve-alerts.json'
+
+# PRECONDITION 2: Verify Suricata has rules loaded before starting EVE reader
 # Without rules, Suricata produces no alerts → nftban has nothing to process
 # This prevents "silent failure" where service runs but provides no protection
 ExecStartPre=/usr/sbin/nftban suricata rules verify --quiet

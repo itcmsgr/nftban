@@ -83,6 +83,7 @@
 }
 
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
+# Bug fix v1.12.8: Ownership must be suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/eve-alerts.json {
     daily
     rotate 7
@@ -90,7 +91,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 nftban nftban
+    create 0640 suricata nftban
     copytruncate
     size 50M
     postrotate
@@ -100,6 +101,7 @@
 }
 
 # Suricata eve-audit.json (optional, higher volume when enabled)
+# Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/eve-audit.json {
     daily
     rotate 3
@@ -107,7 +109,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 nftban nftban
+    create 0640 suricata nftban
     copytruncate
     size 100M
     postrotate
@@ -116,6 +118,7 @@
 }
 
 # Suricata eve-stats.json (optional, for capacity planning)
+# Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/eve-stats.json {
     weekly
     rotate 2
@@ -123,11 +126,12 @@
     delaycompress
     missingok
     notifempty
-    create 0640 nftban nftban
+    create 0640 suricata nftban
     copytruncate
 }
 
 # Fast.log for Suricata
+# Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/fast.log {
     weekly
     rotate 4
@@ -135,11 +139,12 @@
     delaycompress
     missingok
     notifempty
-    create 0640 nftban nftban
+    create 0640 suricata nftban
     copytruncate
 }
 
 # Stats.log for Suricata
+# Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/stats.log {
     weekly
     rotate 4
@@ -147,7 +152,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 nftban nftban
+    create 0640 suricata nftban
     copytruncate
 }
 
