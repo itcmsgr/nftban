@@ -810,11 +810,20 @@ EXAMPLES:
     # View logs
     tail -f ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log
 
+FILE LOCATIONS:
+    ┌──────────────┬───────────────────────────────┬──────────────────────────┐
+    │ Purpose      │ Path                          │ Variable                 │
+    ├──────────────┼───────────────────────────────┼──────────────────────────┤
+    │ Parsed feeds │ /var/lib/nftban/feeds/        │ NFTBAN_FEEDS_STORAGE_DIR │
+    │ Cache/temp   │ /var/cache/nftban/feeds/      │ NFTBAN_FEEDS_CACHE_DIR   │
+    │ Config       │ /etc/nftban/conf.d/feeds.conf │ NFTBAN_FEEDS_CONFIG      │
+    │ Log          │ /var/log/nftban/feeds.log     │ NFTBAN_FEEDS_LOG         │
+    └──────────────┴───────────────────────────────┴──────────────────────────┘
+
 NOTES:
     • ALL feeds are DISABLED by default for safety
     • Use 'select' for easy numbered selection interface
     • Feeds are updated automatically if FEEDS_AUTO_UPDATE=true
-    • Each feed has dedicated log at ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log
 
 HELP
 }
