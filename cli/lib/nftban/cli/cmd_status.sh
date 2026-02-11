@@ -307,10 +307,7 @@ output_terminal() {
                 local m
                 m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
                 [[ "$m" =~ ^[0-9]+$ ]] || continue
-                if (( m > freshest_mtime )); then
-                    freshest_mtime=$m
-                    freshest_file="$f"
-                fi
+                (( m > freshest_mtime )) && freshest_mtime=$m
             done
             shopt -u nullglob
 

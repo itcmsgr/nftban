@@ -436,7 +436,6 @@ nftban_ddos_status() {
                 # Binary + service OK → EVE log must be the issue
                 # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
                 local diag_eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
-                local diag_eve="${DDOS_SURICATA_EVE_FILE:-${diag_eve_dir}/eve-alerts.json}"
                 local diag_freshest_mtime=0
 
                 shopt -s nullglob
