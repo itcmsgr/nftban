@@ -50,8 +50,18 @@ _nftban_read_version() {
 NFTBAN_VERSION=$(_nftban_read_version)
 readonly NFTBAN_VERSION
 
-# Parse version components
-IFS='.' read -r NFTBAN_VERSION_MAJOR NFTBAN_VERSION_MINOR NFTBAN_VERSION_PATCH <<< "$NFTBAN_VERSION"
+# Parse version components (safely handle non-standard formats)
+# Use subshell to avoid IFS contamination from strict.sh
+if [[ "$NFTBAN_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+    NFTBAN_VERSION_MAJOR="${BASH_REMATCH[1]}"
+    NFTBAN_VERSION_MINOR="${BASH_REMATCH[2]}"
+    NFTBAN_VERSION_PATCH="${BASH_REMATCH[3]}"
+else
+    # Fallback for non-standard versions (e.g., "unknown", "dev")
+    NFTBAN_VERSION_MAJOR="0"
+    NFTBAN_VERSION_MINOR="0"
+    NFTBAN_VERSION_PATCH="0"
+fi
 readonly NFTBAN_VERSION_MAJOR
 readonly NFTBAN_VERSION_MINOR
 readonly NFTBAN_VERSION_PATCH
