@@ -280,29 +280,36 @@ nftban_health_fix_permissions() {
         # Fix Suricata permissions for NFTBan integration
         # Suricata writes to LOG_DIR/suricata/, nftban needs to read eve-alerts.json
         # Bug fix v1.12.8: Create directory and EVE file if missing (prevents daemon startup failure)
+        # Bug fix v1.12.9: Detect Suricata user (suricata on RHEL, root on Debian/Ubuntu)
         local suricata_dir="${NFTBAN_LOG_DIR}/suricata"
         local suricata_fixed=0
+        local suri_user="root"
+
+        # Detect Suricata user (suricata on RHEL/AlmaLinux, root on Debian/Ubuntu)
+        if id suricata >/dev/null 2>&1; then
+            suri_user="suricata"
+        fi
 
         # Create Suricata log directory if missing (per FHS spec)
         if [[ ! -d "$suricata_dir" ]]; then
             mkdir -p "$suricata_dir" 2>/dev/null
-            chown suricata:nftban "$suricata_dir" 2>/dev/null
+            chown "${suri_user}:nftban" "$suricata_dir" 2>/dev/null
             chmod 770 "$suricata_dir" 2>/dev/null
-            echo "  ✓ Created ${suricata_dir} (suricata:nftban, 770)"
+            echo "  ✓ Created ${suricata_dir} (${suri_user}:nftban, 770)"
             suricata_fixed=1
         fi
 
         if [[ -d "$suricata_dir" ]]; then
-            # Add suricata user to nftban group (if not already)
+            # Add suricata user to nftban group (if suricata user exists)
             # This allows suricata to traverse /var/log/nftban/ (owned by nftban:nftban)
-            if id suricata >/dev/null 2>&1; then
+            if [[ "$suri_user" == "suricata" ]]; then
                 if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
                     usermod -aG nftban suricata 2>/dev/null && suricata_fixed=1
                 fi
             fi
 
-            # Fix directory: suricata:nftban with 770 (suricata writes, nftban reads)
-            chown suricata:nftban "$suricata_dir" 2>/dev/null
+            # Fix directory: suri_user:nftban with 770 (suricata writes, nftban reads)
+            chown "${suri_user}:nftban" "$suricata_dir" 2>/dev/null
             chmod 770 "$suricata_dir" 2>/dev/null
 
             # CRITICAL: Create eve-alerts.json if missing
@@ -311,24 +318,24 @@ nftban_health_fix_permissions() {
             local eve_file="${suricata_dir}/eve-alerts.json"
             if [[ ! -f "$eve_file" ]]; then
                 touch "$eve_file" 2>/dev/null
-                chown suricata:nftban "$eve_file" 2>/dev/null
+                chown "${suri_user}:nftban" "$eve_file" 2>/dev/null
                 chmod 640 "$eve_file" 2>/dev/null
-                echo "  ✓ Created ${eve_file} (suricata:nftban, 640)"
+                echo "  ✓ Created ${eve_file} (${suri_user}:nftban, 640)"
                 suricata_fixed=1
             else
                 # Fix ownership if exists
-                chown suricata:nftban "$eve_file" 2>/dev/null
+                chown "${suri_user}:nftban" "$eve_file" 2>/dev/null
                 chmod 640 "$eve_file" 2>/dev/null
             fi
 
             # Fix suricata.log similarly
             if [[ -f "${suricata_dir}/suricata.log" ]]; then
-                chown suricata:nftban "${suricata_dir}/suricata.log" 2>/dev/null
+                chown "${suri_user}:nftban" "${suricata_dir}/suricata.log" 2>/dev/null
                 chmod 640 "${suricata_dir}/suricata.log" 2>/dev/null
             fi
 
             if [[ $suricata_fixed -eq 1 ]]; then
-                echo "  ✓ Fixed ${suricata_dir} permissions (suricata:nftban, 770)"
+                echo "  ✓ Fixed ${suricata_dir} permissions (${suri_user}:nftban, 770)"
                 : $((fixed_count++))
             fi
         fi
