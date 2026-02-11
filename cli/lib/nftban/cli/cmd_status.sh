@@ -295,27 +295,48 @@ output_terminal() {
 
         if [[ "$_suricata_active" == "true" ]]; then
             # Service is running — verify EVE log is fresh (same check as portscan/ddos)
-            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
+            # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
+            local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-${eve_dir}/eve-alerts.json}"
             local eve_fresh=false
-            if [[ -f "$eve_file" ]]; then
-                local eve_mtime eve_age now_ts
-                # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-                eve_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
+            local freshest_mtime=0 freshest_file=""
+
+            shopt -s nullglob
+            for f in "$eve_dir"/eve-alerts*.json; do
+                [[ -f "$f" ]] || continue
+                local m
+                m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+                [[ "$m" =~ ^[0-9]+$ ]] || continue
+                if (( m > freshest_mtime )); then
+                    freshest_mtime=$m
+                    freshest_file="$f"
+                fi
+            done
+            shopt -u nullglob
+
+            if [[ $freshest_mtime -gt 0 ]]; then
+                local now_ts eve_age
                 # Use timestamp library with fallback
                 if declare -f nftban_timestamp_unix &>/dev/null; then
                     now_ts=$(nftban_timestamp_unix)
                 else
                     now_ts=$(date +%s)
                 fi
-                eve_age=$(( now_ts - eve_mtime ))
+                eve_age=$(( now_ts - freshest_mtime ))
                 [[ $eve_age -le $eve_threshold ]] && eve_fresh=true
             fi
 
             if [[ "$eve_fresh" == "true" ]]; then
                 suricata_eve_ok=true
-                # Check rules_loaded from EVE JSON stats
+                # Check rules_loaded from any EVE JSON file (main or threaded)
                 local rules_loaded=0
-                rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$eve_file" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+                shopt -s nullglob
+                for ef in "$eve_file" "$eve_dir"/eve-alerts.*.json; do
+                    [[ -f "$ef" ]] || continue
+                    rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$ef" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+                    [[ "${rules_loaded:-0}" -gt 0 ]] && break
+                done
+                shopt -u nullglob
 
                 if [[ "${rules_loaded:-0}" -eq 0 ]]; then
                     suricata_status="BROKEN (0 rules loaded!)"
