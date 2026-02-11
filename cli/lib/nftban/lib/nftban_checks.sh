@@ -39,6 +39,33 @@ _checks_timestamp() {
     date -u '+%Y-%m-%dT%H:%M:%SZ'
 }
 
+# _checks_eve_freshest_mtime - Returns freshest mtime across eve-alerts*.json
+# Handles Suricata 7.x threaded logging (eve-alerts.1.json, eve-alerts.2.json, etc.)
+# Args: $1=eve_dir
+# Returns: epoch seconds via stdout, or 0 if no matching files found
+_checks_eve_freshest_mtime() {
+    local eve_dir="${1:?missing eve_dir}"
+    local freshest=0
+    local f m
+
+    # Ensure glob expands to nothing instead of literal pattern
+    shopt -s nullglob
+
+    for f in "$eve_dir"/eve-alerts*.json; do
+        # Skip non-regular files and symlinks to missing targets
+        [[ -f "$f" ]] || continue
+
+        # stat may fail (permissions/race). Ignore failures safely.
+        if m=$(stat -L -c %Y -- "$f" 2>/dev/null); then
+            [[ "$m" =~ ^[0-9]+$ ]] || continue
+            (( m > freshest )) && freshest="$m"
+        fi
+    done
+
+    shopt -u nullglob
+    echo "$freshest"
+}
+
 # _checks_json_result - Builds consistent JSON output
 # Args: $1=ok(true/false), $2=data_json, $3=error_msg
 _checks_json_result() {
@@ -64,9 +91,11 @@ _checks_json_result() {
 # nftban_check_suricata_status - Full Suricata health check
 # Returns JSON with: installed, service_active, eve_fresh, rules_loaded
 # Return 0 always (check executed), data shows actual state
+# NOTE: Supports Suricata 7.x threaded logging (eve-alerts.1.json, eve-alerts.2.json, etc.)
 nftban_check_suricata_status() {
     # Use FHS central config paths
-    local eve_file="${1:-${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
+    local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+    local eve_file="${1:-${eve_dir}/eve-alerts.json}"
     local eve_threshold="${2:-${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}}"  # seconds
 
     local installed="false"
@@ -77,6 +106,7 @@ nftban_check_suricata_status() {
     local rules_loaded=0
     local banning_active="false"
     local status_text="not_installed"
+    local eve_source="none"
 
     # Tier 1: Binary check
     if command -v suricata &>/dev/null; then
@@ -89,20 +119,41 @@ nftban_check_suricata_status() {
             status_text="running_no_eve"
 
             # Tier 3: EVE freshness check
-            if [[ -f "$eve_file" ]] || [[ -L "$eve_file" ]]; then
+            # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
+            local freshest_mtime now_ts
+            freshest_mtime=$(_checks_eve_freshest_mtime "$eve_dir")
+            now_ts=$(date +%s)
+
+            if [[ $freshest_mtime -gt 0 ]]; then
                 eve_exists="true"
-                local eve_mtime now_ts
-                # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-                eve_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
-                now_ts=$(date +%s)
-                eve_age=$(( now_ts - eve_mtime ))
+                eve_age=$(( now_ts - freshest_mtime ))
+
+                # Determine which file was freshest (for logging/debugging)
+                if [[ -f "$eve_file" ]]; then
+                    local main_mtime
+                    main_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || main_mtime=0
+                    if [[ $main_mtime -eq $freshest_mtime ]]; then
+                        eve_source="main"
+                    else
+                        eve_source="threaded"
+                    fi
+                else
+                    eve_source="threaded"
+                fi
 
                 if [[ $eve_age -le $eve_threshold ]]; then
                     eve_fresh="true"
                     status_text="active"
 
-                    # Get rules_loaded from EVE JSON stats
-                    rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$eve_file" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+                    # Get rules_loaded from any EVE JSON file that has stats
+                    # Check main file first, then any threaded files
+                    shopt -s nullglob
+                    for ef in "$eve_file" "$eve_dir"/eve-alerts.*.json; do
+                        [[ -f "$ef" ]] || continue
+                        rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$ef" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+                        [[ "${rules_loaded:-0}" -gt 0 ]] && break
+                    done
+                    shopt -u nullglob
                     rules_loaded="${rules_loaded:-0}"
 
                     if [[ "$rules_loaded" -eq 0 ]]; then
@@ -120,11 +171,11 @@ nftban_check_suricata_status() {
         fi
     fi
 
-    # Build data JSON
+    # Build data JSON (added eve_source for debugging threaded vs main file)
     local data
-    data=$(printf '{"installed":%s,"service_active":%s,"eve_exists":%s,"eve_fresh":%s,"eve_age_sec":%d,"eve_threshold_sec":%d,"rules_loaded":%d,"banning_active":%s,"status":"%s"}' \
+    data=$(printf '{"installed":%s,"service_active":%s,"eve_exists":%s,"eve_fresh":%s,"eve_age_sec":%d,"eve_threshold_sec":%d,"eve_source":"%s","rules_loaded":%d,"banning_active":%s,"status":"%s"}' \
         "$installed" "$service_active" "$eve_exists" "$eve_fresh" \
-        "$eve_age" "$eve_threshold" "$rules_loaded" "$banning_active" "$status_text")
+        "$eve_age" "$eve_threshold" "$eve_source" "$rules_loaded" "$banning_active" "$status_text")
 
     _checks_json_result "true" "$data" ""
     return 0
@@ -423,24 +474,42 @@ nftban_check_config_exists() {
 # =============================================================================
 
 # nftban_check_eve_freshness - Check EVE log freshness only
-# Args: $1=eve_file, $2=threshold_seconds
+# Args: $1=eve_file (or eve_dir), $2=threshold_seconds
 # Returns JSON with: exists, fresh, age_sec
+# NOTE: Supports Suricata 7.x threaded logging (eve-alerts.1.json, eve-alerts.2.json, etc.)
 nftban_check_eve_freshness() {
     # Use FHS central config paths
-    local eve_file="${1:-${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
+    local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+    local eve_file="${1:-${eve_dir}/eve-alerts.json}"
     local threshold="${2:-${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}}"
 
     local exists="false"
     local fresh="false"
     local age_sec=-1
     local status_text="missing"
+    local eve_source="none"
 
-    if [[ -f "$eve_file" ]] || [[ -L "$eve_file" ]]; then
+    # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
+    local freshest_mtime now_ts
+    freshest_mtime=$(_checks_eve_freshest_mtime "$eve_dir")
+    now_ts=$(date +%s)
+
+    if [[ $freshest_mtime -gt 0 ]]; then
         exists="true"
-        local mtime now_ts
-        mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || mtime=0
-        now_ts=$(date +%s)
-        age_sec=$(( now_ts - mtime ))
+        age_sec=$(( now_ts - freshest_mtime ))
+
+        # Determine source (main vs threaded)
+        if [[ -f "$eve_file" ]]; then
+            local main_mtime
+            main_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || main_mtime=0
+            if [[ $main_mtime -eq $freshest_mtime ]]; then
+                eve_source="main"
+            else
+                eve_source="threaded"
+            fi
+        else
+            eve_source="threaded"
+        fi
 
         if [[ $age_sec -le $threshold ]]; then
             fresh="true"
@@ -451,8 +520,8 @@ nftban_check_eve_freshness() {
     fi
 
     local data
-    data=$(printf '{"path":"%s","exists":%s,"fresh":%s,"age_sec":%d,"threshold_sec":%d,"status":"%s"}' \
-        "$eve_file" "$exists" "$fresh" "$age_sec" "$threshold" "$status_text")
+    data=$(printf '{"path":"%s","exists":%s,"fresh":%s,"age_sec":%d,"threshold_sec":%d,"eve_source":"%s","status":"%s"}' \
+        "$eve_file" "$exists" "$fresh" "$age_sec" "$threshold" "$eve_source" "$status_text")
 
     _checks_json_result "true" "$data" ""
     return 0

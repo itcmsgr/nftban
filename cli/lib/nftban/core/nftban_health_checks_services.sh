@@ -201,6 +201,7 @@ nftban_health_check_daemon() {
 nftban_health_check_suricata() {
     # Comprehensive Suricata IDS health check
     # Returns: 0=OK, 1=Warning, 2=Error
+    # NOTE: Supports Suricata 7.x threaded logging (eve-alerts.1.json, eve-alerts.2.json, etc.)
 
     local status=$HEALTH_OK
     local suricata_issues=()
@@ -222,50 +223,72 @@ nftban_health_check_suricata() {
         fi
     fi
 
-    # 3. Check eve-alerts.json log file exists and has recent activity
-    local eve_log="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
-    if [[ -f "$eve_log" ]]; then
-        # Check if file has been modified in last 10 minutes (600s)
-        # Use shared library function if available, fallback to inline calculation
-        local age
-        if declare -f nftban_file_age >/dev/null 2>&1; then
-            age=$(nftban_file_age "$eve_log")
-        else
-            local last_modified current_time
-            # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-            last_modified=$(stat -L -c %Y "$eve_log" 2>/dev/null || echo 0)
-            current_time=$(date +%s)
-            age=$((current_time - last_modified))
+    # 3. Check eve-alerts*.json log files exist and have recent activity
+    # Support Suricata 7.x threaded logging (eve-alerts.1.json, eve-alerts.2.json, etc.)
+    local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+    local eve_log="${NFTBAN_SURICATA_EVE_LOG:-${eve_dir}/eve-alerts.json}"
+
+    # Helper: Find freshest mtime across all eve-alerts*.json files
+    local freshest_mtime=0
+    local freshest_file=""
+    local total_size=0
+
+    shopt -s nullglob
+    for f in "$eve_dir"/eve-alerts*.json; do
+        [[ -f "$f" ]] || continue
+        local m s
+        m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+        s=$(stat -c %s -- "$f" 2>/dev/null) || s=0
+        [[ "$m" =~ ^[0-9]+$ ]] || continue
+        total_size=$((total_size + s))
+        if (( m > freshest_mtime )); then
+            freshest_mtime=$m
+            freshest_file="$f"
         fi
+    done
+    shopt -u nullglob
+
+    if [[ $freshest_mtime -gt 0 ]]; then
+        # Check if freshest file has been modified in last 10 minutes (600s)
+        local current_time age
+        current_time=$(date +%s)
+        age=$((current_time - freshest_mtime))
 
         if [[ $age -gt 600 ]]; then
-            suricata_issues+=("eve-alerts.json not updated in 10+ minutes (may be stalled)")
+            if [[ "$freshest_file" != "$eve_log" ]]; then
+                suricata_issues+=("EVE logs not updated in 10+ minutes (threaded: $freshest_file is ${age}s old)")
+            else
+                suricata_issues+=("eve-alerts.json not updated in 10+ minutes (may be stalled)")
+            fi
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
 
-        # Check file size (warn if > 1GB)
-        local file_size
-        file_size=$(stat -c %s "$eve_log" 2>/dev/null || echo 0)
-        if [[ $file_size -gt 1073741824 ]]; then
-            suricata_issues+=("eve-alerts.json large ($(numfmt --to=iec "$file_size")), consider log rotation")
+        # Check total file size (warn if > 1GB across all EVE files)
+        if [[ $total_size -gt 1073741824 ]]; then
+            suricata_issues+=("EVE logs large ($(numfmt --to=iec "$total_size" 2>/dev/null || echo "${total_size}B")), consider log rotation")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
     elif systemctl is-active --quiet suricata.service 2>/dev/null; then
-        # Service running but no log file
-        suricata_issues+=("Suricata running but eve-alerts.json not found at $eve_log")
+        # Service running but no log files found
+        suricata_issues+=("Suricata running but no eve-alerts*.json found in $eve_dir")
         status=$HEALTH_ERROR
     fi
 
     # 4. CRITICAL: Check if rules are actually loaded (rules_loaded > 0)
     if systemctl is-active --quiet suricata.service 2>/dev/null; then
         local rules_loaded=0
-        # Try to get rules_loaded from EVE JSON stats
-        if [[ -f "${eve_log}" ]]; then
-            rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "${eve_log}" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
-        fi
+        # Try to get rules_loaded from any EVE JSON file (main or threaded)
+        shopt -s nullglob
+        for ef in "$eve_log" "$eve_dir"/eve-alerts.*.json; do
+            [[ -f "$ef" ]] || continue
+            rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$ef" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+            [[ "${rules_loaded:-0}" -gt 0 ]] && break
+        done
+        shopt -u nullglob
+
         # Fallback: check suricata.rules file exists and has content
         if [[ "${rules_loaded:-0}" -eq 0 ]]; then
-            local rules_file="${DISTRO_PATHS[suricata_rules_dir]}/suricata.rules"
+            local rules_file="${DISTRO_PATHS[suricata_rules_dir]:-/var/lib/suricata/rules}/suricata.rules"
             if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then
                 rules_loaded=$(grep -c "^alert" "$rules_file" 2>/dev/null || echo "0")
             fi

@@ -434,18 +434,26 @@ nftban_ddos_status() {
                 echo "  Fix:       systemctl start suricata"
             else
                 # Binary + service OK → EVE log must be the issue
-                local diag_eve="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
-                if [[ ! -f "$diag_eve" ]]; then
-                    echo "  Reason:    EVE log not found at $diag_eve"
+                # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
+                local diag_eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+                local diag_eve="${DDOS_SURICATA_EVE_FILE:-${diag_eve_dir}/eve-alerts.json}"
+                local diag_freshest_mtime=0
+
+                shopt -s nullglob
+                for f in "$diag_eve_dir"/eve-alerts*.json; do
+                    [[ -f "$f" ]] || continue
+                    local m
+                    m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+                    [[ "$m" =~ ^[0-9]+$ ]] || continue
+                    (( m > diag_freshest_mtime )) && diag_freshest_mtime=$m
+                done
+                shopt -u nullglob
+
+                if [[ $diag_freshest_mtime -eq 0 ]]; then
+                    echo "  Reason:    EVE log not found in $diag_eve_dir"
                     echo "  Fix:       Check Suricata output config (suricata.yaml)"
                 else
-                    local diag_age
-                    # Use shared library if available, fallback to inline calculation
-                    if type -t nftban_file_age &>/dev/null; then
-                        diag_age=$(nftban_file_age "$diag_eve")
-                    else
-                        diag_age=$(( $(date +%s) - $(stat -c %Y "$diag_eve" 2>/dev/null || echo 0) ))
-                    fi
+                    local diag_age=$(( $(date +%s) - diag_freshest_mtime ))
                     echo "  Reason:    EVE log stale (last update ${diag_age}s ago, threshold: ${DDOS_EVE_FRESHNESS_THRESHOLD:-60}s)"
                     echo "  Fix:       Check Suricata is processing traffic: suricata --build-info"
                     echo "             Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"

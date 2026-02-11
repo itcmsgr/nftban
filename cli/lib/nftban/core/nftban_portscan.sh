@@ -522,18 +522,37 @@ nftban_portscan_status() {
     if [[ "$suricata_available" == "true" ]]; then
         echo "  Available:   ✅ YES - Suricata is installed and running"
         echo "  Service:     $(systemctl is-active suricata 2>/dev/null || echo 'unknown')"
-        local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
-        if [[ -f "$eve_file" ]]; then
-            local eve_age
-            # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-            eve_age=$(( $(date +%s) - $(stat -L -c %Y "$eve_file" 2>/dev/null || echo 0) ))
+
+        # Support Suricata 7.x threaded logging: check all eve-alerts*.json files
+        local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+        local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-${eve_dir}/eve-alerts.json}"
+        local freshest_mtime=0 freshest_file="" now_ts eve_age
+
+        shopt -s nullglob
+        for f in "$eve_dir"/eve-alerts*.json; do
+            [[ -f "$f" ]] || continue
+            local m
+            m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+            [[ "$m" =~ ^[0-9]+$ ]] || continue
+            if (( m > freshest_mtime )); then
+                freshest_mtime=$m
+                freshest_file="$f"
+            fi
+        done
+        shopt -u nullglob
+
+        if [[ $freshest_mtime -gt 0 ]]; then
+            now_ts=$(date +%s)
+            eve_age=$(( now_ts - freshest_mtime ))
+            local source_note=""
+            [[ "$freshest_file" != "$eve_file" ]] && source_note=" (threaded)"
             if [[ $eve_age -lt 300 ]]; then
-                echo "  EVE Log:     ✅ Active (updated ${eve_age}s ago)"
+                echo "  EVE Log:     ✅ Active (updated ${eve_age}s ago${source_note})"
             else
-                echo "  EVE Log:     ⚠️  Stale (last update ${eve_age}s ago)"
+                echo "  EVE Log:     ⚠️  Stale (last update ${eve_age}s ago${source_note})"
             fi
         else
-            echo "  EVE Log:     ❌ Not found at $eve_file"
+            echo "  EVE Log:     ❌ Not found in $eve_dir"
         fi
     else
         echo "  Available:   ❌ NO - Suricata not available for detection"
@@ -545,14 +564,26 @@ nftban_portscan_status() {
             echo "  Fix:         systemctl start suricata"
         else
             # Binary exists and service running — EVE log must be the issue
-            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
-            if [[ ! -f "$eve_file" ]]; then
-                echo "  Reason:      EVE log not found at $eve_file"
+            # Support Suricata 7.x threaded logging
+            local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
+            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-${eve_dir}/eve-alerts.json}"
+            local freshest_mtime=0
+
+            shopt -s nullglob
+            for f in "$eve_dir"/eve-alerts*.json; do
+                [[ -f "$f" ]] || continue
+                local m
+                m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+                [[ "$m" =~ ^[0-9]+$ ]] || continue
+                (( m > freshest_mtime )) && freshest_mtime=$m
+            done
+            shopt -u nullglob
+
+            if [[ $freshest_mtime -eq 0 ]]; then
+                echo "  Reason:      EVE log not found in $eve_dir"
                 echo "  Fix:         Check Suricata output config (suricata.yaml)"
             else
-                local eve_age
-                # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-                eve_age=$(( $(date +%s) - $(stat -L -c %Y "$eve_file" 2>/dev/null || echo 0) ))
+                local eve_age=$(( $(date +%s) - freshest_mtime ))
                 echo "  Reason:      EVE log stale (last update ${eve_age}s ago, threshold: ${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}s)"
                 echo "  Fix:         Check Suricata is processing traffic: suricata --build-info"
                 echo "               Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"
