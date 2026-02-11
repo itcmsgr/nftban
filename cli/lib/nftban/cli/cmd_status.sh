@@ -299,7 +299,7 @@ output_terminal() {
             local eve_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"
             local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-${eve_dir}/eve-alerts.json}"
             local eve_fresh=false
-            local freshest_mtime=0 freshest_file=""
+            local freshest_mtime=0
 
             shopt -s nullglob
             for f in "$eve_dir"/eve-alerts*.json; do
