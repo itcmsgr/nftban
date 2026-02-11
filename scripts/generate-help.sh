@@ -111,7 +111,7 @@ get_command_info() {
     local command="$1"
     local field="$2"
 
-    yq -r ".\"$command\".\"$field\" // empty" "$REGISTRY" 2>/dev/null
+    yq -r ".\"$command\".\"$field\" // \"\"" "$REGISTRY" 2>/dev/null
 }
 
 should_show_for_profile() {
@@ -155,20 +155,18 @@ generate_global_options() {
     echo "Global Options:"
 
     # Parse global_options from registry and format for display
-    yq -r '
-        .global_options | to_entries |
-        map(
-            "  " + .key +
-            (if .value.aliases then ", " + (.value.aliases | join(", ")) else "" end) +
-            "    " + .value.description
-        ) | .[]
-    ' "$REGISTRY" 2>/dev/null | while read -r line; do
+    # Note: Use process substitution (not pipe) to avoid subshell where local fails with set -e
+    # Note: yq v4 (mikefarah/yq) syntax - uses to_entries[] and select() instead of if/then/else
+    local opt desc
+    while read -r line; do
         # Reformat for alignment (option on left, description on right)
-        local opt desc
         opt=$(echo "$line" | sed 's/    .*//')
         desc=$(echo "$line" | sed 's/.*    //')
         printf "  %-18s %s\n" "$opt" "$desc"
-    done
+    done < <(yq -r '
+        .global_options | to_entries[] |
+        "  " + .key + ((.value.aliases | select(.) | ", " + join(", ")) // "") + "    " + .value.description
+    ' "$REGISTRY" 2>/dev/null)
 }
 
 generate_help_header() {
@@ -231,7 +229,9 @@ generate_group_section() {
 
         local risk
         risk=$(get_command_info "$cmd" "risk")
-        local risk_icon="${RISK_ICONS[$risk]:-}"
+        # Note: Empty array subscript fails with set -u, so check first
+        local risk_icon=""
+        [[ -n "$risk" ]] && risk_icon="${RISK_ICONS[$risk]:-}"
 
         # Format: command (icon) - description
         printf "  %-20s %s  %s\n" "$cmd" "$risk_icon" "$description"
