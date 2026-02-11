@@ -358,8 +358,27 @@ if systemctl list-unit-files suricata.service &>/dev/null 2>&1; then
         log_info "✅ Suricata service is running"
     fi
 
-    # Verify eve-alerts.json is being written (use central config path)
+    # Verify eve-alerts.json exists and is being written (use central config path)
     EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
+    EVE_DIR=$(dirname "$EVE_LOG")
+
+    # CRITICAL: Create EVE directory and file if missing
+    # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates file on first event
+    # nftban-suricata daemon requires file to exist on startup
+    if [ ! -d "$EVE_DIR" ]; then
+        mkdir -p "$EVE_DIR" 2>/dev/null
+        chown suricata:nftban "$EVE_DIR" 2>/dev/null
+        chmod 770 "$EVE_DIR" 2>/dev/null
+        log_info "Created Suricata log directory: $EVE_DIR"
+    fi
+
+    if [ ! -f "$EVE_LOG" ]; then
+        touch "$EVE_LOG" 2>/dev/null
+        chown suricata:nftban "$EVE_LOG" 2>/dev/null
+        chmod 640 "$EVE_LOG" 2>/dev/null
+        log_info "Created Suricata EVE log file: $EVE_LOG"
+    fi
+
     if [ -f "$EVE_LOG" ]; then
         # Check if file is recent (modified in last 5 minutes)
         if [ "$(find "$EVE_LOG" -mmin -5 2>/dev/null)" ]; then
@@ -368,7 +387,7 @@ if systemctl list-unit-files suricata.service &>/dev/null 2>&1; then
             log_warn "Suricata eve-alerts.json not recently updated - may not be capturing traffic"
         fi
     else
-        log_warn "Suricata eve-alerts.json not found at $EVE_LOG"
+        log_warn "Failed to create Suricata eve-alerts.json at $EVE_LOG"
     fi
 else
     log_warn "Suricata not installed - IDS protection disabled"

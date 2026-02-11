@@ -215,7 +215,35 @@ LOGINEOF
         fi
 
         # ======================================================================
-        # STEP 8: Enable default services and timers
+        # STEP 8: Create Suricata EVE log directory and file
+        # ======================================================================
+        # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates EVE file on first event
+        # nftban-suricata daemon requires file to exist on startup
+        SURICATA_LOG_DIR="/var/log/nftban/suricata"
+        SURICATA_EVE_FILE="${SURICATA_LOG_DIR}/eve-alerts.json"
+        if id suricata >/dev/null 2>&1; then
+            # Suricata is installed - create log directory and EVE file
+            if [ ! -d "$SURICATA_LOG_DIR" ]; then
+                mkdir -p "$SURICATA_LOG_DIR"
+                chown suricata:nftban "$SURICATA_LOG_DIR"
+                chmod 770 "$SURICATA_LOG_DIR"
+                echo "Created Suricata log directory: $SURICATA_LOG_DIR"
+            fi
+            if [ ! -f "$SURICATA_EVE_FILE" ]; then
+                touch "$SURICATA_EVE_FILE"
+                chown suricata:nftban "$SURICATA_EVE_FILE"
+                chmod 640 "$SURICATA_EVE_FILE"
+                echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
+            fi
+            # Add suricata to nftban group for log directory traversal
+            if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
+                usermod -aG nftban suricata 2>/dev/null && \
+                    echo "Added suricata user to nftban group"
+            fi
+        fi
+
+        # ======================================================================
+        # STEP 9: Enable default services and timers
         # ======================================================================
         systemctl enable nftban-login-monitor.service >/dev/null 2>&1 || true
         systemctl start nftban-login-monitor.service >/dev/null 2>&1 || true
@@ -226,7 +254,7 @@ LOGINEOF
         done
 
         # ======================================================================
-        # STEP 9: Security - Protect nft_schema.sh from modification
+        # STEP 10: Security - Protect nft_schema.sh from modification
         # ======================================================================
         if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
             chmod 444 /usr/lib/nftban/lib/nft_schema.sh
