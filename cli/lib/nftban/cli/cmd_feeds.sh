@@ -814,7 +814,7 @@ NOTES:
     • ALL feeds are DISABLED by default for safety
     • Use 'select' for easy numbered selection interface
     • Feeds are updated automatically if FEEDS_AUTO_UPDATE=true
-    • Each feed has dedicated log at \${NFTBAN_LOG_DIR}/feeds.log
+    • Each feed has dedicated log at /var/log/nftban/feeds.log
 
 HELP
 }

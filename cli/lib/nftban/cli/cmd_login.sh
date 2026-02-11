@@ -675,7 +675,7 @@ NFTBAN_LOGIN_ALERT_GEOIP=true
 NFTBAN_LOGIN_ALERT_FORMAT=html
 
 # Log file location
-NFTBAN_LOGIN_ALERT_LOG=\${NFTBAN_LOG_DIR:-/var/log/nftban}/login_alert.log
+NFTBAN_LOGIN_ALERT_LOG=${NFTBAN_LOG_DIR:-/var/log/nftban}/login_alert.log
 
 # Monitor interval (seconds)
 NFTBAN_LOGIN_MONITOR_INTERVAL=5
