@@ -227,8 +227,8 @@ EOF
     elif [[ "$format" == "numeric" ]]; then
         nftban_version_numeric
     elif [[ "$format" == "check" ]]; then
-        nftban_version_check_requirements
-        if [[ $? -eq 0 ]]; then
+        # Use proper conditional to avoid set -e triggering on non-zero return
+        if nftban_version_check_requirements; then
             echo "✅ All requirements met"
             return 0
         else
@@ -242,6 +242,7 @@ EOF
         nftban_version_info
     fi
 
+    # Completion marker for test validation (only on success path)
     echo "# NFTBAN_CMD_EXIT: version"
     return 0
 }
