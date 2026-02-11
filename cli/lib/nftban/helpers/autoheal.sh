@@ -362,19 +362,26 @@ if systemctl list-unit-files suricata.service &>/dev/null 2>&1; then
     EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
     EVE_DIR=$(dirname "$EVE_LOG")
 
+    # Bug fix v1.12.9: Detect Suricata user (suricata on RHEL, root on Debian/Ubuntu)
+    if id suricata >/dev/null 2>&1; then
+        SURI_USER="suricata"
+    else
+        SURI_USER="root"
+    fi
+
     # CRITICAL: Create EVE directory and file if missing
     # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates file on first event
     # nftban-suricata daemon requires file to exist on startup
     if [ ! -d "$EVE_DIR" ]; then
         mkdir -p "$EVE_DIR" 2>/dev/null
-        chown suricata:nftban "$EVE_DIR" 2>/dev/null
+        chown "${SURI_USER}:nftban" "$EVE_DIR" 2>/dev/null
         chmod 770 "$EVE_DIR" 2>/dev/null
-        log_info "Created Suricata log directory: $EVE_DIR"
+        log_info "Created Suricata log directory: $EVE_DIR (owner: $SURI_USER)"
     fi
 
     if [ ! -f "$EVE_LOG" ]; then
         touch "$EVE_LOG" 2>/dev/null
-        chown suricata:nftban "$EVE_LOG" 2>/dev/null
+        chown "${SURI_USER}:nftban" "$EVE_LOG" 2>/dev/null
         chmod 640 "$EVE_LOG" 2>/dev/null
         log_info "Created Suricata EVE log file: $EVE_LOG"
     fi

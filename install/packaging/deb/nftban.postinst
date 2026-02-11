@@ -219,23 +219,36 @@ LOGINEOF
         # ======================================================================
         # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates EVE file on first event
         # nftban-suricata daemon requires file to exist on startup
+        # Bug fix v1.12.9: Handle Debian/Ubuntu where Suricata runs as root (no suricata user)
         SURICATA_LOG_DIR="/var/log/nftban/suricata"
         SURICATA_EVE_FILE="${SURICATA_LOG_DIR}/eve-alerts.json"
+
+        # Detect Suricata user: suricata (RHEL/AlmaLinux) or root (Debian/Ubuntu)
         if id suricata >/dev/null 2>&1; then
-            # Suricata is installed - create log directory and EVE file
-            if [ ! -d "$SURICATA_LOG_DIR" ]; then
-                mkdir -p "$SURICATA_LOG_DIR"
-                chown suricata:nftban "$SURICATA_LOG_DIR"
-                chmod 770 "$SURICATA_LOG_DIR"
-                echo "Created Suricata log directory: $SURICATA_LOG_DIR"
-            fi
-            if [ ! -f "$SURICATA_EVE_FILE" ]; then
-                touch "$SURICATA_EVE_FILE"
-                chown suricata:nftban "$SURICATA_EVE_FILE"
-                chmod 640 "$SURICATA_EVE_FILE"
-                echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
-            fi
-            # Add suricata to nftban group for log directory traversal
+            SURI_USER="suricata"
+        else
+            # Debian/Ubuntu: Suricata runs as root
+            SURI_USER="root"
+        fi
+
+        # Create log directory if needed
+        if [ ! -d "$SURICATA_LOG_DIR" ]; then
+            mkdir -p "$SURICATA_LOG_DIR"
+            chown "${SURI_USER}:nftban" "$SURICATA_LOG_DIR"
+            chmod 770 "$SURICATA_LOG_DIR"
+            echo "Created Suricata log directory: $SURICATA_LOG_DIR (owner: $SURI_USER)"
+        fi
+
+        # Create EVE file if needed
+        if [ ! -f "$SURICATA_EVE_FILE" ]; then
+            touch "$SURICATA_EVE_FILE"
+            chown "${SURI_USER}:nftban" "$SURICATA_EVE_FILE"
+            chmod 640 "$SURICATA_EVE_FILE"
+            echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
+        fi
+
+        # Add suricata user to nftban group (only if suricata user exists)
+        if [ "$SURI_USER" = "suricata" ]; then
             if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
                 usermod -aG nftban suricata 2>/dev/null && \
                     echo "Added suricata user to nftban group"
