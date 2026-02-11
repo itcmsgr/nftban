@@ -1,30 +1,18 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Central Audit Log Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Central audit trail for all NFTBan actions
-#
 # meta:name="nftban_audit"
 # meta:type="helper"
-# meta:header="Audit Trail Module"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
 # meta:description="Logs all security-relevant actions (bans, unbans, config changes) to audit trail"
-# meta:input="Action type, target, reason, user"
-# meta:output="JSON-formatted audit entries to nftban-actions.log"
-# meta:depends="bash>=4.0"
-# meta:created_date="2025-11-24"
-# meta:updated_date="2026-02-07"
-# meta:inventory.files="/var/log/nftban/nftban-actions.log"
+# meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_AUDIT_ENABLED,NFTBAN_AUDIT_FORMAT"
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban"
-# =============================================================================
+# meta:inventory.privileges=""
+
 set -Eeuo pipefail
 
 # =============================================================================

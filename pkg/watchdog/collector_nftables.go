@@ -2,15 +2,18 @@
 // NFTBan v1.0 - nftables Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Collects nftables metrics:
-//   - Total rules count
-//   - Total sets count
-//   - Elements per set
-//   - Whether rules have counters enabled
-//   - Last apply latency
-//
-// Uses google/nftables library for netlink access (no shelling out).
+// meta:name="collector_nftables"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Collects nftables metrics via netlink including rules, sets, elements"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

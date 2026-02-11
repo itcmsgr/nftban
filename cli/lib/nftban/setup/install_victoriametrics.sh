@@ -1,31 +1,18 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120  # Function designed to accept optional args
-# =============================================================================
-# NFTBan v1.0.0 - VictoriaMetrics Installation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Install and configure VictoriaMetrics for NFTBan metrics
-# Location: /usr/lib/nftban/setup/install_victoriametrics.sh
-#
 # meta:name="install_victoriametrics"
 # meta:type="setup"
-# meta:header="VictoriaMetrics Installation"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Install and configure VictoriaMetrics from official GitHub releases"
-# meta:inventory.files="/etc/victoriametrics/scrape.yml,/var/lib/victoriametrics"
-# meta:inventory.binaries="curl,tar,useradd,systemctl"
-# meta:inventory.env_vars="VM_VERSION"
-# meta:inventory.config_files="/etc/victoriametrics/scrape.yml"
-# meta:inventory.systemd_units="victoriametrics.service"
-# meta:inventory.network="127.0.0.1:8428"
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-28"
-# meta:updated_date="2026-01-09"
-# =============================================================================
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

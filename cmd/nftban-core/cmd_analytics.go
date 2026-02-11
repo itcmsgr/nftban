@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="cmd_analytics"
+// meta:type="cmd"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Analytics subcommand for ban statistics and country-based reporting"
+//
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars="NFTBAN_DATA_DIR"
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 
 package main
 

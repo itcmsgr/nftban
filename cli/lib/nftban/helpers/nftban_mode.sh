@@ -1,33 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Mode Management Helper Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
-#
 # meta:name="nftban_mode"
 # meta:type="helper"
-# meta:header="Mode Management Helper"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Shared mode management functions for portscan, ddos, and login modules"
-# meta:input="Module name, mode variable name, config path, display name"
-# meta:output="Mode show/set operations with JSON support"
-# meta:depends="bash>=4.0,jq (optional)"
-#
 # meta:inventory.files=""
-# meta:inventory.binaries="systemctl,grep,sed,mkdir,chmod,chown"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for set operations)"
-#
-# meta:created_date="2026-02-02"
-# meta:updated_date="2026-02-02"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 

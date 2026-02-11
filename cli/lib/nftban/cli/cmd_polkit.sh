@@ -5,18 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI wrapper for Polkit authorization validation
 #
-# meta:name=cmd_polkit
-# meta:type=cli
-# meta:header=Polkit Authorization Command
-# meta:version=1.0.24
+# meta:name="cmd_polkit"
+# meta:type="cli"
+# meta:header="Polkit Authorization Command"
+# meta:version="1.0.24"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:description=Validate Polkit rules for NFTBan RBAC (operator/auditor/panel)
-# meta:depends=bash,polkit_validator.sh
+# meta:description="Validate Polkit rules for NFTBan RBAC (operator/auditor/panel)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2026-01-02
-# meta:updated_date=2026-01-02
+# meta:created_date="2026-01-02"
+# meta:updated_date="2026-01-02"
 # =============================================================================
 
 set -Eeuo pipefail

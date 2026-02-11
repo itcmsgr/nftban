@@ -2,20 +2,11 @@
 // NFTBan v1.0 - DDoS Protection Module (Go Wrapper)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Package: ddos
-// Purpose: Go module wrapper for DDoS protection, integrates with event bus
-//
-// Architecture:
-// - Wraps the bash dual-mode implementation (classic/suricata/hybrid)
-// - Publishes events to the central event bus
-// - Subscribes to ban events from other modules
-// - Runs periodic checks via goroutine
-//
-// The bash scripts remain the implementation layer, this module provides:
-// - Event bus integration
-// - Daemon lifecycle management
-// - Metrics collection
-//
+// meta:name="module"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Go module wrapper for DDoS protection with event bus integration"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""

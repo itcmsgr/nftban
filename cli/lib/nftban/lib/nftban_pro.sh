@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Pro Subscription Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Server ID, inventory collection, license management for NFTBan Pro
-#
-# meta:name="nftban_pro"
-# meta:type="lib"
-# meta:header="Pro Subscription Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# meta:description="Manages NFTBan Pro subscription, inventory, and license"
+# meta:name="nftban_pro" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Manages NFTBan Pro subscription, inventory, and license"
 # meta:inventory.files=""
 # meta:inventory.binaries="curl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
@@ -20,10 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network="https://api.nftban.com"
 # meta:inventory.privileges="nftban"
-#
-# meta:created_date="2026-01-08"
-# meta:updated_date="2026-01-08"
-# =============================================================================
 
 set -Eeuo pipefail
 

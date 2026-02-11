@@ -2,13 +2,18 @@
 // NFTBan v1.0 - Go Runtime Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Collects Go runtime metrics:
-//   - Goroutine count
-//   - Heap allocation/usage
-//   - GC statistics
-//   - GOMEMLIMIT
-//
+// meta:name="collector_runtime"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Collects Go runtime metrics including goroutines, heap, and GC stats"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

@@ -6,7 +6,8 @@
 // Purpose: Signal-based control panel authentication failure detection
 //
 // meta:name="panel_detector"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:package="detector"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-12"

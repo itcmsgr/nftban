@@ -1,18 +1,22 @@
-#!/bin/bash
-# shellcheck disable=SC2155  # Readonly assignments are safe
+#!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
-#
+# shellcheck disable=SC2155  # Readonly assignments are safe
+# =============================================================================
+# NFTBan v1.0.0 - Package Build Script
+# =============================================================================
 # meta:name="build_packages"
-# meta:type="packaging"
+# meta:type="script"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Build script for nftban-metrics DEB and RPM packages"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="dpkg-deb,rpmbuild"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges=""
+# meta:inventory.privileges="none"
+# =============================================================================
 #
 # Build script for nftban-metrics DEB and RPM packages
 #

@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Distro Config Validation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# =============================================================================
+# NFTBan v1.0.0 - Distro Config Validation Script
+# =============================================================================
+# meta:name="validate_distro_configs"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Validate distribution configuration files"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Purpose: Validate distribution configuration files
 # Usage: ./validate_distro_configs.sh [config_dir]
 #

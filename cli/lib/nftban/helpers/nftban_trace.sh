@@ -1,34 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Debug Trace Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Script execution tracing for debugging stuck/failed scripts
-#
-# meta:name=nftban_trace
-# meta:type=helper
-# meta:header=Debug Trace Module
-# meta:version=1.0.0
+# meta:name="nftban_trace"
+# meta:type="helper"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Logs START/END of scripts with unique trace IDs to detect stuck scripts
-# meta:input=Module name, optional function name
-# meta:output=Trace entries to debug_trace.log
-#
-# **Usage**
-# 1. Source this library at start of script
-# 2. Call nftban_trace_start "module_name" at beginning
-# 3. Call nftban_trace_end at end (uses same trace ID)
-# 4. If script crashes, START entry exists without END = problem found
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
-#
-# meta:created_date=2025-12-04
-# meta:updated_date=2025-12-04
-# =============================================================================
+# meta:description="Logs START/END of scripts with unique trace IDs to detect stuck scripts"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+
+set -Eeuo pipefail
 
 # =============================================================================
 # MODULE GUARD

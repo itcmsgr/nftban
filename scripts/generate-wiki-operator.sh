@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Wiki Generator (Operator View)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Generate complete CLI Commands Reference for operators
-#
+# =============================================================================
+# NFTBan v1.0.0 - Wiki Generator (Operator View)
+# =============================================================================
+# meta:name="generate-wiki-operator"
+# meta:type="script"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Generate complete CLI Commands Reference for operators"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,yq"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage: ./scripts/generate-wiki-operator.sh > wiki/CLI-Commands-Reference.md
 # Output: Markdown wiki page with all commands (operator view)
 #
-# CRITICAL: This script uses 'set -euo pipefail' and will EXIT IMMEDIATELY on
+# CRITICAL: This script uses 'set -Eeuo pipefail' and will EXIT IMMEDIATELY on
 # any error. Never redirect both stdout AND stderr to a file (don't use &>).
 # Use > for stdout only, so error messages appear on terminal, not in docs.
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # SAFETY: Verify we're not being redirected incorrectly
 # If both stdout AND stderr are redirected to the same file, errors would be

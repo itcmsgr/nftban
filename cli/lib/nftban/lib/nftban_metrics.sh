@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Metrics Stack Management (Shared Library)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Shared functions for Prometheus/VictoriaMetrics/Node Exporter management
-#
-# meta:name="nftban_metrics"
-# meta:type="lib"
-# meta:header="Metrics Stack Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)"
-# meta:input="N/A (library only)"
-# meta:output="Functions for Prometheus/VictoriaMetrics/Node Exporter/NFTBan metrics"
-#
-# **Inventory & Requirements**
-# meta:depends="systemd,nftban_distro.sh"
+# meta:name="nftban_metrics" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,curl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
@@ -26,10 +8,6 @@
 # meta:inventory.systemd_units="prometheus.service,node_exporter.service,nftban-unified-exporter.timer"
 # meta:inventory.network="localhost:9090,localhost:9100,localhost:8428"
 # meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-28"
-# meta:updated_date="2026-01-09"
-# =============================================================================
 
 set -Eeuo pipefail
 

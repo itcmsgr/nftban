@@ -6,11 +6,13 @@
 # Purpose: Rules, SID, and Category management commands for Suricata
 #
 # meta:name="cmd_suricata_rules"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Suricata Rules Module"
 # meta:version="1.0.0"
-# meta:description="Rules, SID, and Category management commands for Suricata"
-# meta:parent="cmd_suricata.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Rules, SID, and Category management commands for Suricata"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Watchdog Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="types"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Type definitions for watchdog pressure dimensions and metrics"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

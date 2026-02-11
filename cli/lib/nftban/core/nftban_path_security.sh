@@ -3,27 +3,21 @@
 # NFTBan v1.0.0 - Path Validation & Write Security Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Secure path validation for file writes (reports, exports, logs)
-#
-# meta:name=nftban_path_security
-# meta:type=core
-# meta:header=Path Validation & Write Security
-# meta:version=1.0.0
+# meta:name="nftban_path_security"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Secure path validation to prevent path traversal and unauthorized writes
-# meta:input=File paths for validation
-# meta:output=Validated safe paths or rejection with error messages
-#
-# **Inventory & Requirements**
-# meta:depends=bash,realpath
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Secure path validation to prevent path traversal and unauthorized writes"
+# meta:inventory.files=""
+# meta:inventory.binaries="realpath"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 # =============================================================================
 
+set -Eeuo pipefail
 
 # Module guard
 [[ -n "${NFTBAN_PATH_SECURITY_LOADED:-}" ]] && return 0

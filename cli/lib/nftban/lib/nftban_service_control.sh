@@ -1,34 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Service Control Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Low-level systemd service/timer control primitives
-# Location: /usr/lib/nftban/lib/nftban_service_control.sh
-#
-# meta:name="nftban_service_control"
-# meta:type="library"
-# meta:header="Service Control Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Low-level systemd service and timer control primitives for NFTBan"
-# meta:input="Service or timer unit names"
-# meta:output="Exit codes (0=success, 1=failure) and status strings"
-#
-# **Inventory & Requirements**
+# meta:name="nftban_service_control" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Low-level systemd service and timer control primitives for NFTBan"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for start/stop/restart)"
-#
-# meta:created_date="2026-02-07"
-# =============================================================================
+# meta:inventory.privileges="root"
 
 set -Eeuo pipefail
 

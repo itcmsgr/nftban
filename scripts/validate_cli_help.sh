@@ -1,18 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - CLI Help Validation Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="validate_cli_help"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Validates that all CLI commands have proper help functions"
-# meta:input="None"
-# meta:output="Validation report (pass/fail)"
-# meta:depends="bash"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="bash,grep"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -26,7 +23,7 @@
 #   N - Number of commands missing help
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 CLI_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli"
 

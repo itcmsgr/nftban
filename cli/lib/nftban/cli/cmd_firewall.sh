@@ -19,10 +19,13 @@
 # meta:inventory.config_files="/etc/nftban/conf.d/fwlog.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for reload, logs enable/disable)"
+# meta:inventory.privileges="root"
 #
 # meta:created_date="2025-11-13"
 # meta:updated_date="2026-01-23"
+# =============================================================================
+
+set -Eeuo pipefail
 
 
 # =============================================================================

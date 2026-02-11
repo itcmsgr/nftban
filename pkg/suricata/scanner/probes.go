@@ -3,7 +3,8 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="probes"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
 // meta:description="Deep protocol detection for HTTP, SSH, TLS, MySQL, etc."

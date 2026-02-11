@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - vmagent Installation and Configuration
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Install and configure vmagent for metrics remote_write
-#
 # meta:name="install_vmagent"
 # meta:type="setup"
-# meta:header="vmagent Installation"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Install vmagent for remote metrics submission"
 # meta:inventory.files=""
-# meta:inventory.binaries="curl,tar,install,systemctl"
-# meta:inventory.env_vars="VMAGENT_VERSION"
-# meta:inventory.config_files="/etc/vmagent/vmagent.yml"
-# meta:inventory.systemd_units="vmagent.service"
-# meta:inventory.network="127.0.0.1:8429"
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2026-01-08"
-# meta:updated_date="2026-01-15"
-# =============================================================================
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 

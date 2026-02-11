@@ -6,7 +6,8 @@
 // Purpose: Go module for login monitoring with signal-based detection
 //
 // meta:name="loginmon_module"
-// meta:type="go"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:package="loginmon"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-12"

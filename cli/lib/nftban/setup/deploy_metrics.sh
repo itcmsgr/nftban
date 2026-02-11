@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - One-Command Metrics Deployment
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Automated end-to-end metrics deployment
-# Location: /usr/lib/nftban/setup/deploy_metrics.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:name="deploy_metrics"
-# meta:type="deployment"
-# meta:header="Metrics Deployment Automation"
+# meta:type="setup"
 # meta:version="1.0.0"
-#
-# meta:created_date="2025-11-17"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Automated end-to-end metrics deployment"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -21,7 +12,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges=""
-# =============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'

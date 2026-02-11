@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Installation Verification Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="verify_installation"
-# meta:type="installer"
+# meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Verify all files are correctly installed on target system"
-# meta:input="--verbose flag (optional)"
-# meta:output="Verification report (pass/fail)"
-# meta:depends="bash"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

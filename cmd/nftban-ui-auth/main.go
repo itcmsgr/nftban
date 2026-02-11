@@ -2,9 +2,11 @@
 // NFTBan UI Auth Daemon - PAM Authentication Service
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Purpose: Socket-activated PAM authentication daemon for NFTBan Web GUI
-// Usage: Systemd socket-activated, listens on /run/nftban-ui/auth.sock
-// Architecture: Root daemon + UNIX socket + direct PAM (no su, no setuid)
+// meta:name="nftban-ui-auth"
+// meta:type="cmd"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Socket-activated PAM authentication daemon for NFTBan Web GUI"
 //
 // meta:inventory.files=""
 // meta:inventory.binaries="nftban-ui-auth"

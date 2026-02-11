@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
-# NFTBan Shared Color Definitions
-# Copyright (c) 2024-2026 NFTBAN Project / Antonios Voulvoulis
 # SPDX-License-Identifier: MPL-2.0
-#
-# meta:name="colors"
-# meta:type="library"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Shared terminal color definitions for consistent output"
+# meta:name="colors" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared terminal color definitions for consistent output"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

@@ -13,12 +13,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="Automated updates with auto-detection of install type (loader)"
-# meta:input="Update subcommand and options"
-# meta:output="Update status and results"
-#
-# **Inventory & Requirements**
 # meta:inventory.files="/etc/nftban/update.conf"
 # meta:inventory.binaries="curl"
 # meta:inventory.env_vars="NFTBAN_UPDATE_SOURCE"

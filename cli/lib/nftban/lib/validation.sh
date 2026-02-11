@@ -1,46 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Input Validation Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Comprehensive input validation and sanitization
-#
-# meta:name=validation
-# meta:type=library
-# meta:header=Input Validation Library
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Validates and sanitizes all user inputs to prevent injection attacks
-# meta:input=User-provided strings, IPs, ports, paths, etc.
-# meta:output=Boolean validation results and sanitized values
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
-#
-# **Usage**
-# Source this file to validate inputs:
-#   source "${NFTBAN_LIB_DIR}/lib/validation.sh"
-#   nftban_validate_ip "192.168.1.1" || echo "Invalid IP"
-#
-# **Security Notes**
-# Protects against:
-# - Command injection
-# - Path traversal
-# - SQL injection (for database operations)
-# - XSS (for GUI operations)
-# - Integer overflow
-# - Format string attacks
-#
-# meta:created_date=2025-11-24
-# =============================================================================
+# meta:name="validation" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Validates and sanitizes all user inputs to prevent injection attacks"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 
-# =============================================================================
-# GUARD: Prevent double-loading
-# =============================================================================
+set -Eeuo pipefail
 
+# Guard: Prevent double-loading
 [[ -n "${NFTBAN_VALIDATION_LOADED:-}" ]] && return 0
 
 # =============================================================================

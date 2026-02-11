@@ -1,29 +1,11 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # verbose used in eval context
-# =============================================================================
-# NFTBan v1.0.0 - Node Exporter Validation Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Validate Node Exporter installation and configuration
-# Location: /usr/lib/nftban/setup/validate_node_exporter.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-# nftban — Simplifying Linux Firewall Management
-#
 # meta:name="validate_node_exporter"
 # meta:type="setup"
-# meta:header="Node Exporter Validation"
 # meta:version="1.0.0"
-#
-# **Description & Purpose**
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Validate Node Exporter installation and NFTBan metrics integration"
-# meta:input="Running Node Exporter instance"
-# meta:output="Validation report with pass/fail status"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,curl,systemctl,netstat|ss"
-#
-# meta:created_date="2025-11-17"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -31,7 +13,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges=""
-# =============================================================================
 
 # Enhanced strict mode
 set -Eeuo pipefail

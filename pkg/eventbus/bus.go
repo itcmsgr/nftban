@@ -2,23 +2,18 @@
 // NFTBan v1.0 - Event Bus
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Package: eventbus
-// Purpose: Central event distribution for inter-module communication
-//
-// Architecture:
-// - All modules publish events to the bus
-// - Subscribers receive events asynchronously
-// - Supports type-specific and wildcard subscriptions
-// - Thread-safe for concurrent access
-//
-// Usage:
-//
-//	bus := eventbus.New()
-//	bus.Subscribe(eventbus.EventBan, func(e eventbus.Event) {
-//	    log.Printf("IP %s was banned: %s", e.IP, e.Message)
-//	})
-//	bus.Publish(eventbus.Event{Type: eventbus.EventBan, IP: "1.2.3.4"})
-//
+// meta:name="bus"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Central event distribution for inter-module communication"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package eventbus

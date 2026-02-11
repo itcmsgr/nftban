@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.24 - Polkit Authorization Validator
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Comprehensive validation of Polkit rules for NFTBan RBAC
-#
+# =============================================================================
+# NFTBan v1.0.0 - Polkit Authorization Validator
+# =============================================================================
+# meta:name="polkit_validator"
+# meta:type="test"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Comprehensive validation of Polkit rules for NFTBan RBAC"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,pkcheck,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # Features:
 #   - Static content analysis (wildcards, pkexec, typos, whitelists)
 #   - File presence, permissions, and ownership checks
@@ -18,7 +29,6 @@
 #   0 = All checks passed
 #   1 = Critical security failure
 #   2 = Warning (non-critical issues)
-#
 # =============================================================================
 
 set -Eeuo pipefail

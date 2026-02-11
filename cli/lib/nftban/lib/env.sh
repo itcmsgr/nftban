@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Environment Loader
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="env"
-# meta:type="library"
-# meta:header="Environment Loader"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-# meta:description="Central environment variable defaults for all NFTBan scripts"
-# meta:input="None (sourced by other scripts)"
-# meta:output="Exports NFTBAN_* environment variables with defaults"
-# meta:depends="bash"
+# meta:name="env" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Central environment variable defaults for all NFTBan scripts"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR,NFTBAN_LOG_DIR,NFTBAN_CACHE_DIR,NFTBAN_DATA_DIR"
@@ -20,17 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# meta:created_date="2026-01-15"
-# =============================================================================
-#
-# PURPOSE:
-# This is the SINGLE SOURCE OF TRUTH for NFTBan environment defaults.
-# Source this file FIRST in any script that may run independently.
-#
-# USAGE:
-#   source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
-#
-# =============================================================================
 
 set -Eeuo pipefail
 

@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.7.0 - Capability-Based Prerequisite Checker
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_prereq"
-# meta:type="lib"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2026-01-28"
-# meta:description="Shared prerequisite checking with distro-aware package suggestions"
-# meta:input="Capability IDs mapped to binaries and distro packages"
-# meta:output="Prereq status, distro-correct install hints"
-# meta:depends="bash,nftban_distro_config.sh(optional)"
-# meta:platform="linux"
+# meta:name="nftban_prereq" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared prerequisite checking with distro-aware package suggestions"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -19,13 +8,9 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# =============================================================================
-#
-# DESIGN PRINCIPLE: Check CAPABILITIES (binaries), not packages.
-# Map capabilities → distro packages via nftban_distro_get_package().
-# Commands never hardcode package names — the distro config is the
-# single source of truth for package naming.
-#
+
+set -Eeuo pipefail
+
 # Usage:
 #   source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
 #

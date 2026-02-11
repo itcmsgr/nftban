@@ -1,30 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Grafana Dashboard Provisioning Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Automatically provision NFTBan dashboards to Grafana
-# Location: /usr/lib/nftban/setup/provision_grafana_dashboards.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:name="provision_grafana_dashboards"
 # meta:type="setup"
-# meta:header="Grafana Dashboard Provisioning"
 # meta:version="1.0.0"
-#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Automatically provision NFTBan dashboards to Grafana"
 # meta:inventory.files=""
-# meta:inventory.binaries="cp,chown,chmod,find,systemctl"
-# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units="grafana-server.service"
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-17"
-# meta:updated_date="2026-01-15"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

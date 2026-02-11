@@ -1,30 +1,15 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Exporter Utilities Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Common utility functions for Prometheus metrics exporters
-# Location: /usr/lib/nftban/lib/exporter_utils.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# meta:name=exporter_utils
-# meta:type=lib
-# meta:header=Exporter Utilities Library
-# meta:version=1.0.0
-#
-# **Description & Purpose**
-# meta:description=Common utility functions shared across all Prometheus exporters
-# meta:input=Metric name, type, help text, values
-# meta:output=Prometheus text exposition format
-#
-# **Functions Provided**
-# - write_metric(): Write a metric in Prometheus text exposition format
-# - write_metric_simple(): Simple single-value metric writer
-# - init_metrics_file(): Initialize an empty metrics file
-#
-# meta:created_date=2025-12-02
-# =============================================================================
+# meta:name="exporter_utils" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Common utility functions shared across all Prometheus exporters"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+
+set -Eeuo pipefail
 
 # Guard against multiple sourcing
 [[ -n "${_NFTBAN_EXPORTER_UTILS_LOADED:-}" ]] && return 0

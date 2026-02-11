@@ -2,6 +2,19 @@
 // NFTBan v1.0 - Dynamic Watchdog Package
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="doc"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Package documentation for NFTBan watchdog system"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
 //
 // Package watchdog implements a dynamic runtime watchdog for nftban that:
 //

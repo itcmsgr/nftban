@@ -1,21 +1,18 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Installation Test Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="test_installation"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Tests that installation completed correctly"
-# meta:input="mode (cli, gui, all)"
-# meta:output="Test results (pass/fail)"
-# meta:depends="bash, systemd"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="bash,systemctl,nft,nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units=""
+# meta:inventory.systemd_units="nftban-health.timer"
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
 # =============================================================================
@@ -23,7 +20,7 @@
 #        mode: cli (default), gui, all
 # =============================================================================
 
-set -uo pipefail
+set -Eeuo pipefail
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

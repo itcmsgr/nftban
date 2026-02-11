@@ -1,18 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Test Server Cleanup Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="test_server_cleanup"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Removes NFTBan completely from test server for clean reinstall"
-# meta:input="None"
-# meta:output="Clean server state"
-# meta:depends="systemd, nft"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="systemctl,nft,userdel,groupdel"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -23,7 +20,7 @@
 #        OR: ./scripts/test_server_cleanup.sh (run on server directly)
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

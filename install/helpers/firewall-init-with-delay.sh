@@ -1,16 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Firewall Init Helper (systemd-safe)
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="firewall_init_with_delay"
-# meta:type="installer"
+# meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Initialize firewall with optional startup delay"
-# meta:input="NFTBAN_STARTUP_DELAY from config"
-# meta:output="Initialized firewall via CLI"
-# meta:depends="nft, nftban CLI"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars="NFTBAN_STARTUP_DELAY"
@@ -18,8 +15,6 @@
 # meta:inventory.systemd_units="nftban-firewall-init.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-# meta:called_by="systemd (nftban-firewall-init.service)"
-# meta:runs_as="root"
 # =============================================================================
 #
 # SECURITY: This script is called directly by systemd to prevent command

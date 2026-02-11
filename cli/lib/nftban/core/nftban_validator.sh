@@ -4,22 +4,11 @@
 # NFTBan v1.0.0 - NFTables Validator Core Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Core validation and checking functions for nftables structure
-#
 # meta:name="nftban_validator"
 # meta:type="core"
-# meta:header="NFTBan Validator Library"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
 # meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
-# meta:input="Spec file (JSON), live nftables ruleset, IP/port values"
-# meta:output="Validation results, IP/port status, firewall statistics (JSON or human-readable)"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,nft,jq"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft,jq"
 # meta:inventory.env_vars=""
@@ -27,10 +16,9 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-13"
-# meta:updated_date="2026-01-20"
+# =============================================================================
 
+set -Eeuo pipefail
 
 # =============================================================================
 # CONFIGURATION

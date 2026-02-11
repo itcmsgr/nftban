@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan IPC Lab Test Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
+# =============================================================================
+# NFTBan v1.0.0 - IPC Lab Test Script
+# =============================================================================
+# meta:name="lab-test-ipc"
+# meta:type="script"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Validate IPC architecture before enabling CI enforcement"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,socat,nft,go,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftband.socket,nftband.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # PURPOSE: Validate IPC architecture before enabling CI enforcement
 #
 # USAGE:
@@ -16,7 +28,7 @@
 #   1 = Test failures (do NOT enable CI enforcement)
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colors
 RED='\033[0;31m'

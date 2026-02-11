@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Metrics Helpers Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Helper functions for metrics management (conflict detection, config)
-#
-# meta:name="nftban_metrics_helpers"
-# meta:type="lib"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Metrics conflict detection and configuration helpers"
-#
+# meta:name="nftban_metrics_helpers" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Metrics conflict detection and configuration helpers"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -18,7 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-# =============================================================================
 
 set -Eeuo pipefail
 

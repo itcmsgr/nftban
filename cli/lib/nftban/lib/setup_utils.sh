@@ -1,33 +1,15 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Setup Utilities Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Common utility functions for setup scripts
-# Location: /usr/lib/nftban/lib/setup_utils.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# meta:name=setup_utils
-# meta:type=lib
-# meta:header=Setup Utilities Library
-# meta:version=1.0.0
-#
-# **Description & Purpose**
-# meta:description=Common utility functions shared across all setup scripts
-# meta:input=None
-# meta:output=Utility functions for printing, distro detection, root checks
-#
-# **Functions Provided**
-# - print_status(): Print success message with green checkmark
-# - print_error(): Print error message with red X to stderr
-# - print_info(): Print info message with yellow indicator
-# - check_root(): Verify script is running as root
-# - detect_distro(): Detect Linux distribution ID
-# - detect_pkg_manager(): Detect package manager for distro
-#
-# meta:created_date=2025-12-02
-# =============================================================================
+# meta:name="setup_utils" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Common utility functions shared across all setup scripts"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+
+set -Eeuo pipefail
 
 # Guard against multiple sourcing
 [[ -n "${_NFTBAN_SETUP_UTILS_LOADED:-}" ]] && return 0

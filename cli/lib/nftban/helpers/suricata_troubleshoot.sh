@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - Suricata Troubleshooting & Verification Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="suricata_troubleshoot.sh"
+# meta:name="suricata_troubleshoot"
 # meta:type="helper"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Diagnose Suricata issues and verify proper operation"
-# meta:input="CLI arguments"
-# meta:output="Diagnostic report"
-# meta:depends="nftban.conf"
-# meta:inventory.files="/var/log/nftban/suricata/"
-# meta:inventory.binaries="suricata,suricatasc"
-# meta:inventory.env_vars="SURICATA_BIN,SURICATA_YAML,EVE_LOG"
-# meta:inventory.config_files="/etc/suricata/suricata.yaml"
-# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="read"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

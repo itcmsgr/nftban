@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Metrics Modes Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Mode handler functions for metrics enable (A, B, C1, C2, Pro, Remote)
-#
-# meta:name="nftban_metrics_modes"
-# meta:type="lib"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Metrics mode handlers for different agent/storage combinations"
-#
+# meta:name="nftban_metrics_modes" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Metrics mode handlers for different agent/storage combinations"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -18,7 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-# =============================================================================
 
 set -Eeuo pipefail
 

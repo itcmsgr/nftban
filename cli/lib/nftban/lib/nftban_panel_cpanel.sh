@@ -1,34 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.8.15 - cPanel/WHM Panel Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: cPanel/WHM control panel firewall integration
-#
-# meta:name="nftban_panel_cpanel"
-# meta:type="library"
-# meta:header="cPanel Panel Library"
-# meta:version="1.8.15"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
-# meta:input="Panel actions and configuration"
-# meta:output="Panel status, firewall rules, diagnostic reports"
-#
-# **Inventory & Requirements**
-# meta:inventory.files="cli/lib/nftban/lib/nftban_panel_cpanel.sh"
+# meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
+# meta:inventory.files=""
 # meta:inventory.binaries="whmapi1"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/panels/cpanel/main.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-#
-# meta:created_date="2025-10-26"
-# meta:updated_date="2026-02-01"
-# =============================================================================
 
 set -Eeuo pipefail
 

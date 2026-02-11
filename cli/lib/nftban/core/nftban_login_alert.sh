@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Login Monitor with Auto-Ban
+# NFTBan v1.0.0 - Login Monitor with Auto-Ban
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_login_alert"
 # meta:type="core"
-# meta:header="Login Alert Module"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
 # meta:description="Monitors system logins, detects brute-force, and auto-bans attackers"
-# meta:depends="nftban_distro_config.sh,nftban_geoip_go.sh,last,journalctl"
 # meta:inventory.files=""
-# meta:inventory.binaries=""
+# meta:inventory.binaries="last,journalctl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/login_alert.conf"
 # meta:inventory.systemd_units="nftban-login-monitor.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-# meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-22"
 # =============================================================================
 
-# Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

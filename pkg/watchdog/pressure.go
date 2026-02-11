@@ -2,15 +2,18 @@
 // NFTBan v1.0 - Pressure Score Calculator
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Calculates pressure scores per dimension from collected metrics.
-// Each dimension produces a score from 0-100:
-//
-//   CPU: Process CPU%, system load, softnet drops
-//   MEM: RSS vs budget, heap vs GOMEMLIMIT, GC fraction, RSS slope
-//   IO:  iowait%, disk usage, log partition fullness
-//   NET: conntrack utilization, softnet drops rate, nft apply latency
-//
+// meta:name="pressure"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Calculates pressure scores per dimension from collected metrics"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog

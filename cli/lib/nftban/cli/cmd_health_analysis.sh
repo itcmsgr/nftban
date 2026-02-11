@@ -6,11 +6,13 @@
 # Purpose: Analysis health checks: conflicts, config, rbl, posture, gui
 #
 # meta:name="cmd_health_analysis"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Health Check Analysis Module"
 # meta:version="1.0.0"
-# meta:description="Analysis health checks: conflicts, config, rbl, posture, gui"
-# meta:parent="cmd_health.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Analysis health checks: conflicts, config, rbl, posture, gui"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

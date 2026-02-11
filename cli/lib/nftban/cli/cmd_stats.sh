@@ -12,13 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="CLI interface for statistics and metrics collection and display"
-# meta:input="Statistics query parameters and display options"
-# meta:output="Statistics dashboard, metrics, and analytics"
-#
-# **Inventory & Requirements**
-# meta:depends="nftban_stats.sh"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft,curl,jq"
 # meta:inventory.env_vars="NFTBAN_API_URL"

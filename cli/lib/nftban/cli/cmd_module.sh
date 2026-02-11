@@ -37,13 +37,7 @@ fi
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="CLI interface for module inventory and validation reporting"
-# meta:input="Output format, mail options, validation flags"
-# meta:output="Module inventory reports with validation (terminal, HTML, mail)"
-#
-# **Inventory & Requirements**
-# meta:depends="bash,nftban_report_module.sh"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -52,9 +46,8 @@ fi
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# meta:contributors="Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

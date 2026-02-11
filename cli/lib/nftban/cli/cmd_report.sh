@@ -37,14 +37,7 @@ fi
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
 # meta:description="CLI interface for report generation and automated scheduling"
-# meta:input="Report type, format, and scheduling parameters"
-# meta:output="Generated reports in text, JSON, or HTML format"
-#
-# **Inventory & Requirements**
-# meta:depends="nftban_stats.sh,nftban_report_engine.sh"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

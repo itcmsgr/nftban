@@ -3,6 +3,8 @@
 //
 // meta:name="util_parse"
 // meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Common parsing utilities (bool, float, int)"
 // meta:inventory.files=""
 // meta:inventory.binaries=""

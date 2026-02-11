@@ -2,9 +2,18 @@
 // NFTBan v1.0 - Atomic File Writer
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// Atomic file writes using write-temp + fsync + rename pattern.
-// Ensures corruption resistance per approval conditions.
+// meta:name="writer"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Atomic file writes using write-temp + fsync + rename pattern"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package stats

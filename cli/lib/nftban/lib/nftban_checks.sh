@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Shared Check Functions Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Unified check functions for health, status, and smoke commands
-#
-# meta:name="nftban_checks"
-# meta:type="library"
-# meta:header="Shared Check Functions"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Pure check functions returning consistent JSON, reusable across health/status/smoke"
-# meta:input="Service names, file paths, timer names"
-# meta:output="JSON objects with {ok, checked_at, data, error} contract"
-#
-# **Inventory & Requirements**
-# meta:depends="bash>=4.0,jq"
+# meta:name="nftban_checks" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Pure check functions returning consistent JSON, reusable across health/status/smoke"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,stat,file"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR,NFTBAN_LOG_DIR,PORTSCAN_EVE_FRESHNESS_THRESHOLD"
@@ -26,13 +8,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
-# **Contract**
-# - All functions return JSON to stdout
-# - JSON format: {"ok":bool,"checked_at":"ISO8601Z","data":{...},"error":""}
-# - Return 0 if check executed (even if service is down/broken)
-# - Return non-zero ONLY if the check itself cannot be performed
-# - NEVER call exit() - caller decides what to do
+
+set -Eeuo pipefail
 # - NO side effects, NO global state mutations
 # - NO stdout noise except the JSON result
 #

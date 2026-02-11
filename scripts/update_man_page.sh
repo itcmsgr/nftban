@@ -1,19 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Man Page Update Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 # meta:name="update_man_page"
 # meta:type="script"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
 # meta:description="Updates man page version, date, and adds new commands"
-# meta:input="action (version, preview, check, install, add)"
-# meta:output="Updated man page"
-# meta:depends="groff, man"
 # meta:inventory.files="install/man/man8/nftban.8"
-# meta:inventory.binaries=""
-# meta:inventory.env_vars=""
+# meta:inventory.binaries="groff,man,gzip,mandb"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""

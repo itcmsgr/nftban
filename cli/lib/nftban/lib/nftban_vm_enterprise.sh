@@ -1,35 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - VictoriaMetrics Enterprise Key Management
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Manage VictoriaMetrics Enterprise trial keys
-#
-# meta:name=nftban_vm_enterprise
-# meta:type=lib
-# meta:header=VictoriaMetrics Enterprise Key Management
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Secure management of VictoriaMetrics Enterprise trial keys
-# meta:input=Enterprise trial key (user-provided)
-# meta:output=Secure key storage and systemd environment configuration
-#
-# **Inventory & Requirements**
-# meta:depends=systemd
-#
-# **IMPORTANT**
-# - NFTBan does NOT ship Enterprise binaries
-# - NFTBan does NOT intermediate licensing
-# - Users contact VictoriaMetrics directly for trials/licenses
-# - Key is user-provided and user-managed
-# - Key value must NEVER be logged
-#
-# meta:created_date=2026-01-09
-# meta:updated_date=2026-01-09
-# =============================================================================
+# meta:name="nftban_vm_enterprise" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Secure management of VictoriaMetrics Enterprise trial keys"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 
 set -Eeuo pipefail
 

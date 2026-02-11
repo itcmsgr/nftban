@@ -1,19 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - NFT Fragment Renderer Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
-# PURPOSE: Renders .nft ruleset fragments from configuration and applies them
-#          via IPC to the nftband daemon. This is the Wave 3 migration pattern
-#          for chain/rule creation.
-#
-# ARCHITECTURE: See ARCHITECTURE-NFT-POLICY.md and docs/design/WAVE3-NFT-FRAGMENTS.md
-#
-# meta:name="nft_fragment"
-# meta:type="lib"
-# meta:version="1.0.0"
-# meta:description="Fragment renderer for nftables rulesets"
+# meta:name="nft_fragment" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
 # meta:inventory.files="/etc/nftban/rules.d"
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""
@@ -21,7 +8,6 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
-# =============================================================================
 
 set -Eeuo pipefail
 

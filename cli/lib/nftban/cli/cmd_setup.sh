@@ -29,15 +29,24 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive setup wizard for first-time installation
 #
-# meta:name=cmd_setup
-# meta:type=cli
-# meta:header=Setup Wizard CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_setup"
+# meta:type="cli"
+# meta:header="Setup Wizard CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:created_date=2025-11-06
-# meta:updated_date=2025-11-24
+# meta:description="Interactive setup wizard for first-time installation"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-06"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

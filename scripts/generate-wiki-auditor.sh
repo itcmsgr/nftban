@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Wiki Generator (Auditor View)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Generate CLI Commands Reference for auditors (read-only)
-#
+# =============================================================================
+# NFTBan v1.0.0 - Wiki Generator (Auditor View)
+# =============================================================================
+# meta:name="generate-wiki-auditor"
+# meta:type="script"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Generate CLI Commands Reference for auditors (read-only)"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,yq"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage: ./scripts/generate-wiki-auditor.sh > wiki/CLI-Commands-Reference-Auditor.md
 # Output: Markdown wiki page with auditor-visible commands only
 #
-# CRITICAL: This script uses 'set -euo pipefail' and will EXIT IMMEDIATELY on
+# CRITICAL: This script uses 'set -Eeuo pipefail' and will EXIT IMMEDIATELY on
 # any error. Never redirect both stdout AND stderr to a file (don't use &>).
 # Use > for stdout only, so error messages appear on terminal, not in docs.
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # SAFETY: Verify we're not being redirected incorrectly
 if [[ ! -t 1 ]] && [[ ! -t 2 ]]; then

@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Timestamp Utility Library
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Unified timestamp generation and formatting functions
-#
-# meta:name="nftban_timestamp"
-# meta:type="library"
-# meta:header="Timestamp Utilities"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Centralized timestamp generation for all NFTBan components"
-# meta:input="None (sourced by other scripts)"
-# meta:output="Formatted timestamp strings"
-#
-# **Inventory & Requirements**
-# meta:depends="bash>=4.0"
+# meta:name="nftban_timestamp" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized timestamp generation for all NFTBan components"
 # meta:inventory.files=""
 # meta:inventory.binaries="date"
 # meta:inventory.env_vars=""
@@ -26,13 +8,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
-# **Usage**
-# Source this file to get timestamp functions:
-#   source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
-#   echo "$(nftban_timestamp)"           # 2025-12-04T14:30:45Z
-#   echo "$(nftban_timestamp_unix)"      # 1733322645
-#   echo "$(nftban_timestamp_log)"       # [2025-12-04 14:30:45]
+
+set -Eeuo pipefail
 #   echo "$(nftban_timestamp_file)"      # 20251204_143045
 #   echo "$(nftban_timestamp_relative 300)" # 5 minutes ago
 #

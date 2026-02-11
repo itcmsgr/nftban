@@ -29,23 +29,24 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for permission management and auditing
 #
-# meta:name=cmd_permissions
-# meta:type=cli
-# meta:header=Permissions CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_permissions"
+# meta:type="cli"
+# meta:header="Permissions CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI interface for permission management and auditing
-# meta:input=Command line arguments for permission operations
-# meta:output=Permission status, audit results, and enforcement reports
+# meta:description="CLI interface for permission management and auditing"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# **Inventory & Requirements**
-# meta:depends=nftban_permissions.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 

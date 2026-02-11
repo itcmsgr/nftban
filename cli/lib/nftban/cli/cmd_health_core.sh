@@ -6,11 +6,13 @@
 # Purpose: Core health check commands: check, summary, json, report, fix
 #
 # meta:name="cmd_health_core"
-# meta:type="submodule"
+# meta:type="cli"
+# meta:header="Health Check Core Module"
 # meta:version="1.0.0"
-# meta:description="Core health check commands: check, summary, json, report, fix"
-# meta:parent="cmd_health.sh"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
+# meta:description="Core health check commands: check, summary, json, report, fix"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

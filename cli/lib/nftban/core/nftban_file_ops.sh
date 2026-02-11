@@ -3,27 +3,21 @@
 # NFTBan v1.0.0 - Atomic File Operations Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Atomic file write operations to prevent race conditions
-#
-# meta:name=nftban_file_ops
-# meta:type=core
-# meta:header=Atomic File Operations
-# meta:version=1.0.0
+# meta:name="nftban_file_ops"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Atomic file write operations to prevent race conditions and corruption
-# meta:input=File content via stdin
-# meta:output=Safely written files with preserved permissions
-#
-# **Inventory & Requirements**
-# meta:depends=bash,mktemp,mv
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Atomic file write operations to prevent race conditions and corruption"
+# meta:inventory.files=""
+# meta:inventory.binaries="mktemp,mv"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

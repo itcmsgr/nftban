@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.3.0 - Inventory Aggregator & Validator
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# =============================================================================
+# NFTBan v1.0.0 - Inventory Aggregator & Validator
+# =============================================================================
 # meta:name="inventory-aggregate"
 # meta:type="tool"
-# meta:version="1.3.0"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2026-01-22"
 # meta:description="Aggregates meta:inventory.* from all files, validates dependencies"
-# meta:input="Codebase files with meta:inventory.* headers"
-# meta:output="JSON inventory report, validation results"
-# meta:depends="bash,grep,jq,find"
 # meta:inventory.files=""
 # meta:inventory.binaries="grep,jq,find"
 # meta:inventory.env_vars=""

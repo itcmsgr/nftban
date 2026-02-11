@@ -3,29 +3,21 @@
 # NFTBan v1.0.0 - Security & Capability Helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Capability checks and helpers for privileged operations
-#
-# meta:name=nftban_security
-# meta:type=core
-# meta:header=Security & Capability Helper
-# meta:version=1.0.0
+# meta:name="nftban_security"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Provides capability checking functions for CAP_NET_ADMIN
-# meta:input=None
-# meta:output=Return codes (0=success, 1=failure)
-#
-# **Inventory & Requirements**
-# meta:depends=nft,bash
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# meta:contributors=ChatGPT (OpenAI) - Architecture and implementation guidance
+# meta:description="Provides capability checking functions for CAP_NET_ADMIN"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
-# Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 

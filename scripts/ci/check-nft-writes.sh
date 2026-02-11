@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - CI Gate: nft Write Detection (v2.0)
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
-# PURPOSE: Enforce single-writer architecture for nftables operations.
-#
+# =============================================================================
+# NFTBan v1.0.0 - CI Gate: nft Write Detection
+# =============================================================================
+# meta:name="check-nft-writes"
+# meta:type="script"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Enforce single-writer architecture for nftables operations"
+# meta:inventory.files=""
+# meta:inventory.binaries="bash,grep"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # TWO-TIER ENFORCEMENT:
 #   WRITE operations - ENFORCED (blocks PR when not in allowed paths)
 #   READ operations  - WARNED (allowed temporarily during migration)
@@ -19,7 +29,7 @@
 #   ./scripts/ci/check-nft-writes.sh --warn-all   # Warn only (migration mode)
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Mode
 WARN_ALL=0

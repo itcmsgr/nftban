@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - Suricata Rules Initial Setup
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Initial Suricata rules download and configuration
-# Location: /usr/lib/nftban/setup/setup_suricata_rules.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:name="setup_suricata_rules"
 # meta:type="setup"
-# meta:header="Suricata Rules Setup"
 # meta:version="1.0.0"
-#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Download and configure Suricata rules using suricata-update"
 # meta:inventory.files=""
-# meta:inventory.binaries="suricata-update,systemctl"
-# meta:inventory.env_vars="SURICATA_RULES_DIR"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units="suricata.service"
-# meta:inventory.network="ET/Open rules repository"
-# meta:inventory.privileges="root"
-#
-# meta:created_date="2025-11-29"
-# =============================================================================
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

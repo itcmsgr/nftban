@@ -1,24 +1,15 @@
 #!/usr/bin/env bash
-
-# =============================================================================
-# NFTBan v1.0.0 - Plesk Panel Library
-# =============================================================================
-#
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Plesk control panel firewall integration
-#
-# meta:name=nftban_panel_plesk
-# meta:type=library
-# meta:header=Plesk Panel Library
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Plesk panel integration with enable/disable/status/report/repair/test
-# meta:input=Panel actions and configuration
-# meta:output=Panel status, firewall rules, diagnostic reports
-# =============================================================================
+# meta:name="nftban_panel_plesk" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Plesk panel integration with enable/disable/status/report/repair/test"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/conf.d/panels/plesk/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+
+set -Eeuo pipefail
 
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_PANEL_PLESK_LOADED:-}" ]] && return 0

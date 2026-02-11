@@ -1,7 +1,20 @@
-// NFTBan v0.50 - Network Monitoring API Handlers
+// =============================================================================
+// NFTBan v1.0 - Network Monitoring API Handlers
+// =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2025 Antonios Voulvoulis
-// Homepage: https://github.com/itcmsgr/nftban
+// meta:name="network_handlers"
+// meta:type="package"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:description="Network monitoring API handlers for bandwidth and interface stats"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
 
 package api
 

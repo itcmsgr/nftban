@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: MPL-2.0
 //
 // meta:name="ssh_detector_test"
-// meta:type="go-test"
-// meta:package="detector"
+// meta:type="package"
+// meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-12"
 // meta:description="Unit tests and benchmarks for SSH detector"

@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Central Metrics Collector
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_metrics_collector"
 # meta:type="exporter"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:version="1.0.0"
-# meta:created_date="2026-01-24"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Central metrics collector - collect once, export to any backend"
-# meta:inventory.files="/var/cache/nftban/metrics/"
+# meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
-# meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban-metrics-collector.timer"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root"
-# =============================================================================
+# meta:inventory.privileges=""
 #
 # ARCHITECTURE:
 #   This collector runs periodically and stores metrics in JSON format.

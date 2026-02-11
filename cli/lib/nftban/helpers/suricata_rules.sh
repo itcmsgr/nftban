@@ -1,32 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan - Suricata Rules Management Helper Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
-#
 # meta:name="suricata_rules"
 # meta:type="helper"
-# meta:header="Suricata Rules Management Helper"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Shared functions for Suricata rules, categories, and SID management"
-# meta:input="Rule files, SIDs, categories"
-# meta:output="Rule modifications, status reports"
-# meta:depends="bash>=4.0,suricata-update"
-#
-# meta:inventory.files="/etc/nftban/suricata/rules/*"
-# meta:inventory.binaries="suricata-update,suricata"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
-# meta:inventory.config_files="/etc/nftban/suricata/rules/disable.conf,enable.conf,categories.enabled"
-# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for modifications)"
-#
-# meta:created_date="2026-02-02"
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 

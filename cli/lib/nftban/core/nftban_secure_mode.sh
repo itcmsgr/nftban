@@ -3,27 +3,21 @@
 # NFTBan v1.0.0 - Secure Mode Directive
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Generic security wrapper - source this to enable automatic security
-#
-# meta:name=nftban_secure_mode
-# meta:type=core
-# meta:header=Secure Mode Directive
-# meta:version=1.0.0
+# meta:name="nftban_secure_mode"
+# meta:type="core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Secure-by-default environment with automatic file write validation and path security
-# meta:input=Scripts sourcing this module
-# meta:output=Automatically secured file operations with audit logging
-#
-# **Inventory & Requirements**
-# meta:depends=nftban_path_security.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="Secure-by-default environment with automatic file write validation and path security"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 # =============================================================================
 
+set -Eeuo pipefail
 
 # Module guard
 [[ -n "${NFTBAN_SECURE_MODE_LOADED:-}" ]] && return 0

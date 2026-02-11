@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - Grafana Datasource Configuration Script
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Configure Prometheus datasource in Grafana
-# Location: /usr/lib/nftban/setup/configure_grafana_datasource.sh
+# meta:name="configure_grafana_datasource"
+# meta:type="setup"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# meta:name=configure_grafana_datasource
-# meta:type=setup
-# meta:header=Grafana Datasource Configuration
-# meta:version=1.0.0
-#
-# meta:created_date=2025-11-17
-# =============================================================================
+# meta:description="Configure Prometheus datasource in Grafana"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 IFS=$'\n\t'

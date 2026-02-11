@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - Config Schema Expander
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-#
 # meta:name="expand-config-schema"
 # meta:type="tool"
-# meta:header="Schema generation tool"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Transforms registry-skeleton.json into full config-schema.json"
 # meta:inventory.files=""
 # meta:inventory.binaries="jq"
@@ -18,10 +14,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="user"
-#
-# meta:created_date="2026-01-11"
-# meta:updated_date="2026-01-11"
+# meta:inventory.privileges="none"
 # =============================================================================
 
 set -Eeuo pipefail

@@ -1,27 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0 - IPC Client Library for Bash
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-#
-# PURPOSE: Provides IPC communication with nftband daemon for all nftables
-#          WRITE operations. All bash scripts MUST use these functions instead
-#          of calling nft directly.
-#
-# ARCHITECTURE: See ARCHITECTURE-NFT-POLICY.md
-#
-# meta:name="nft_ipc"
-# meta:type="lib"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:name="nft_ipc" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="IPC client library for nftband daemon communication"
 # meta:inventory.files="/usr/lib/nftban/lib/nft_ipc.sh"
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_DAEMON_SOCKET, NFTBAN_IPC_TIMEOUT, NFTBAN_EMERGENCY_MODE"
+# meta:inventory.env_vars="NFTBAN_DAEMON_SOCKET,NFTBAN_IPC_TIMEOUT,NFTBAN_EMERGENCY_MODE"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
-# meta:inventory.network="/run/nftban/nftband.sock (Unix)"
+# meta:inventory.network="/run/nftban/nftband.sock"
 # meta:inventory.privileges="nftban"
-# =============================================================================
 
 set -Eeuo pipefail
 

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Check Functions Smoke Test
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Unit tests for nftban_checks.sh shared functions
-#
-# meta:name="checks_smoke"
+# =============================================================================
+# NFTBan v1.0.0 - Check Functions Smoke Test
+# =============================================================================
+# meta:name="test_checks"
 # meta:type="test"
 # meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Smoke tests for shared check functions library"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries="bash,jq"
 # meta:inventory.env_vars=""
@@ -17,8 +15,8 @@
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="none"
-#
-# Usage: ./tests/checks_smoke.sh [--verbose]
+# =============================================================================
+# Usage: ./tests/test_checks.sh [--verbose]
 #
 # Exit codes:
 #   0 - All tests passed

@@ -5,23 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Validate nftables structure against NFTBan specification
 #
-# meta:name=cmd_validate
-# meta:type=cli
-# meta:header=Validate Command
-# meta:version=1.0.0
+# meta:name="cmd_validate"
+# meta:type="cli"
+# meta:header="Validate Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Validate nftables structure and ruleset against NFTBan spec
-# meta:input=None (reads live nftables)
-# meta:output=Validation results (errors, warnings, passes)
+# meta:description="Validate nftables structure and ruleset against NFTBan spec"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_validator
-#
-# meta:created_date=2025-11-14
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-14"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 # Strict mode

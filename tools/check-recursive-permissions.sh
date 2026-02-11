@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
 # =============================================================================
 # NFTBan v1.0.0 - CI Guard: Block Recursive Permissions
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-#
 # meta:name="check-recursive-permissions"
-# meta:type="tools"
-# meta:header="CI Permission Guard"
+# meta:type="tool"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
 # meta:description="Prevent introduction of recursive permission commands"
 # meta:inventory.files=""
 # meta:inventory.binaries="git,grep"
@@ -18,11 +14,8 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="user"
-#
-# meta:created_date="2026-01-10"
-# meta:updated_date="2026-01-10"
-#
+# meta:inventory.privileges="none"
+# =============================================================================
 # This script blocks:
 #   - chmod -R (recursive mode changes)
 #   - chown -R (recursive ownership changes)

@@ -1,26 +1,17 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan Unified Metrics Exporter - Export Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Export functions: Prometheus, Zabbix, Generic Connectors
-#
 # meta:name="nftban_unified_exporter_export"
-# meta:type="submodule"
+# meta:type="exporter"
 # meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Export functions: Prometheus, Zabbix, Generic Connectors"
-# meta:parent="nftban_unified_exporter.sh"
-#
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban"
-#
-# Loaded by: nftban_unified_exporter.sh (inherits strict mode)
-# =============================================================================
+# meta:inventory.privileges=""
 
 set -Eeuo pipefail
 

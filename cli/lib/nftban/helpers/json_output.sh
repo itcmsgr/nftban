@@ -1,28 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# NFTBan v1.0.0 - JSON Output Helper Module
-# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: JSON output support for all CLI commands
-#
-# meta:name=json_output
-# meta:type=helper
-# meta:header=JSON Output Module
-# meta:version=1.0.0
+# meta:name="json_output"
+# meta:type="helper"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Provides JSON output format for CLI commands when --json flag is used
-# meta:input=Command results in various formats
-# meta:output=JSON-formatted responses
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0,jq (optional, has fallback)
-#
-# meta:created_date=2025-11-24
-# meta:updated_date=2025-11-24
-# =============================================================================
+# meta:description="Provides JSON output format for CLI commands when --json flag is used"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+
+set -Eeuo pipefail
 
 
 # =============================================================================

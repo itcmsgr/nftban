@@ -1,33 +1,13 @@
 #!/usr/bin/env bash
-
-# =============================================================================
-# NFTBan v1.0.0 - Panel Common Library
-# =============================================================================
-#
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Common helper functions for web hosting panel integrations
-#
-# meta:name="nftban_panel_common"
-# meta:type="library"
-# meta:header="Panel Common Library"
-# meta:version="1.0.0"
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage="https://nftban.com"
-#
-# **Description & Purpose**
-# meta:description="Shared utility functions for panel firewall management"
-# meta:input="Port numbers, panel names, panel metadata fields"
-# meta:output="Port status, panel info, configuration status"
-#
-# **Inventory & Requirements**
+# meta:name="nftban_panel_common" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared utility functions for panel firewall management"
 # meta:inventory.files=""
-# meta:inventory.binaries="nft ss"
+# meta:inventory.binaries="nft,ss"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/panels/*/main.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
-# =============================================================================
 
 set -Eeuo pipefail
 
