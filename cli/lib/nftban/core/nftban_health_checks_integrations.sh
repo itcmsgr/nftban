@@ -165,44 +165,76 @@ nftban_health_check_metrics() {
         metrics_issues+=("ℹ️ Pipeline validation library not installed (optional for watchdog)")
     fi
 
-    # Check if metrics file exists and is recent (PRIMARY CHECK)
-    local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
-    if [[ -f "$metrics_file" ]]; then
-        local file_age
-        file_age=$(nftban_file_age "$metrics_file")
+    # PRIMARY CHECK: Unified exporter timer (nc-based, exports to ALL configured targets)
+    # The unified exporter collects metrics ONCE and sends to: Zabbix, Prometheus, Connectors
+    local unified_timer_ok=false
+    if nftban_timer_is_active "nftban-unified-exporter.timer"; then
+        metrics_issues+=("✓ Unified exporter timer: Active")
+        unified_timer_ok=true
+    elif nftban_service_exists "nftban-unified-exporter.timer"; then
+        metrics_issues+=("⚠ Unified exporter timer exists but not running")
+        metrics_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    else
+        metrics_issues+=("Unified exporter timer not installed")
+        metrics_issues+=("FIX: sudo ./install.sh systemd")
+        [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+    fi
 
-        if [[ $file_age -lt 120 ]]; then
-            metrics_issues+=("✓ Metrics exporter: Working (file ${file_age}s old)")
-            # Exporter is working - check timer status
-            if nftban_timer_is_active "nftban-unified-exporter.timer"; then
-                metrics_issues+=("✓ Metrics timer: Active")
-            else
-                metrics_issues+=("⚠ Metrics timer not active (but exporter is working)")
-                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
-            fi
-        elif [[ $file_age -lt 300 ]]; then
-            metrics_issues+=("⚠ Metrics file is ${file_age}s old (may be stale)")
-            [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+    # Load metrics config to check export targets
+    local metrics_conf="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
+    local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
+    [[ -f "$metrics_conf" ]] && source "$metrics_conf" 2>/dev/null || true
+    [[ -f "$metrics_local" ]] && source "$metrics_local" 2>/dev/null || true
+
+    # PROMETHEUS EXPORT CHECK (OPTIONAL - only if enabled)
+    # Note: Prometheus export is OPTIONAL. NFTBan's default is nc-based unified export.
+    local prometheus_export="${NFTBAN_EXPORT_PROMETHEUS:-auto}"
+
+    # Auto-detect: enable only if node_exporter textfile dir exists
+    if [[ "$prometheus_export" == "auto" ]]; then
+        if [[ -d "/var/lib/node_exporter/textfile_collector" ]]; then
+            prometheus_export="true"
         else
-            metrics_issues+=("Metrics file is stale (${file_age}s old)")
-            metrics_issues+=("Exporter may not be running or timer is disabled")
-            [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            prometheus_export="false"
+        fi
+    fi
+
+    if [[ "$prometheus_export" == "true" ]]; then
+        local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
+        if [[ -f "$metrics_file" ]]; then
+            local file_age
+            file_age=$(nftban_file_age "$metrics_file")
+
+            if [[ $file_age -lt 120 ]]; then
+                metrics_issues+=("✓ Prometheus export: Working (file ${file_age}s old)")
+            elif [[ $file_age -lt 300 ]]; then
+                metrics_issues+=("⚠ Prometheus export: File ${file_age}s old (may be stale)")
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            else
+                metrics_issues+=("⚠ Prometheus export: File stale (${file_age}s old)")
+                # Only ERROR if timer is also not running - may just be export lag
+                if [[ "$unified_timer_ok" != "true" ]]; then
+                    [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+                else
+                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                fi
+            fi
+        else
+            if [[ "$unified_timer_ok" == "true" ]]; then
+                metrics_issues+=("⚠ Prometheus export: No file yet (may be first run)")
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            else
+                metrics_issues+=("Prometheus export: Not working (no file, timer not running)")
+                [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            fi
         fi
     else
-        # No metrics file - check if timer exists
-        if nftban_service_exists "nftban-unified-exporter.timer"; then
-            if nftban_timer_is_active "nftban-unified-exporter.timer"; then
-                metrics_issues+=("Metrics timer active but no metrics file yet (may be first run)")
-                status=$HEALTH_WARNING
-            else
-                metrics_issues+=("Metrics timer exists but not running")
-                metrics_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
-                status=$HEALTH_ERROR
-            fi
-        else
-            metrics_issues+=("Metrics timer not installed")
-            metrics_issues+=("FIX: sudo ./install.sh systemd")
-            status=$HEALTH_ERROR
+        # Prometheus export explicitly disabled - this is OK, not an error
+        metrics_issues+=("ℹ️ Prometheus export: Disabled (NFTBAN_EXPORT_PROMETHEUS=false)")
+        # If timer is running, unified exporter still works for other targets (Zabbix, connectors)
+        if [[ "$unified_timer_ok" == "true" ]]; then
+            metrics_issues+=("  → Unified exporter still exports to other configured targets")
         fi
     fi
 
