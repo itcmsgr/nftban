@@ -93,11 +93,26 @@ validate_binary() {
         return 1
     fi
 
-    local file_type
-    file_type=$(file -b "$binary")
-    if [[ "$file_type" != *"ELF"* ]]; then
+    # Check ELF magic bytes (0x7f 'E' 'L' 'F')
+    # Use file command if available, otherwise check magic bytes directly
+    local is_elf=0
+    if command -v file >/dev/null 2>&1; then
+        local file_type
+        file_type=$(file -b "$binary")
+        if [[ "$file_type" == *"ELF"* ]]; then
+            is_elf=1
+        fi
+    else
+        # Fallback: Check ELF magic bytes directly (7f 45 4c 46 = \x7fELF)
+        local magic
+        magic=$(od -A n -t x1 -N 4 "$binary" 2>/dev/null | tr -d ' ')
+        if [[ "$magic" == "7f454c46" ]]; then
+            is_elf=1
+        fi
+    fi
+
+    if [[ $is_elf -ne 1 ]]; then
         log_error "Invalid binary (not ELF): $binary"
-        log_error "Got: $file_type"
         return 1
     fi
 
