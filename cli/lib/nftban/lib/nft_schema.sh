@@ -85,13 +85,39 @@ declare -g -A NFTBAN_IPV4_SETS=(
     # Whitelist - ALL trusted IPs consolidated
     ["whitelist_ipv4"]="ipv4_addr|interval|Whitelist (admin IPs + internal networks)"
 
-    # Blacklist - ALL blocked IPs consolidated by nftban-core
-    # Sources: manual bans + threat feeds + geoban + country blocking
-    # Supports BOTH permanent and temporary bans via timeout parameter
-    # - Permanent: nft add element ip nftban blacklist_ipv4 { 1.2.3.4 }
-    # - Temporary: nft add element ip nftban blacklist_ipv4 { 1.2.3.4 timeout 1h }
-    # Metadata (reason, date, source) stored in config files, NOT in NFT
-    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|Blacklist (permanent + temporary with timeout)"
+    # ==========================================================================
+    # SOURCE-SPECIFIC BLACKLIST SETS (v1.1 Async IPC Architecture)
+    # ==========================================================================
+    # Each source domain has its own set for clean lifecycle management:
+    # - Dedicated sets (feeds, geoban): Safe to flush on disable
+    # - Shared sets (auto, manual): Use timeout expiry or source index
+    #
+    # IMPORTANT: Go daemon is the ONLY writer via netlink. Shell modules
+    # MUST use IPC (ban/unban/replace_set), never direct nft commands.
+    # ==========================================================================
+
+    # Threat Intelligence Feeds (bulk replace via replace_set IPC)
+    # - CIDRs expected, need interval flag
+    # - Atomic replacement: flush + bulk add
+    ["feeds_ipv4"]="ipv4_addr|interval|Threat intelligence feeds (CIDRs)"
+
+    # Geographic Blocking (bulk replace via replace_set IPC)
+    # - Country CIDRs, need interval flag
+    # - Atomic replacement: flush + bulk add
+    ["geoban_ipv4"]="ipv4_addr|interval|Country/geo blocking (CIDRs)"
+
+    # Auto-Detection (login, portscan, ddos, suricata via ban/unban IPC)
+    # - Individual IPs with timeout, no interval needed
+    # - TTL=max coalescing in Go daemon
+    ["auto_ipv4"]="ipv4_addr|timeout|Auto-detected threats (login, portscan, ddos, suricata)"
+
+    # Manual CLI Bans (via ban/unban IPC)
+    # - Individual IPs, optional timeout
+    ["manual_ipv4"]="ipv4_addr|timeout|Manual CLI bans"
+
+    # Legacy unified blacklist (deprecated, kept for migration)
+    # TODO: Remove after v1.2 migration complete
+    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
 
     # Service ports
     ["tcp_ports"]="inet_service||Allowed TCP ports"
@@ -134,13 +160,32 @@ declare -g -A NFTBAN_IPV6_SETS=(
     # Whitelist - ALL trusted IPs consolidated
     ["whitelist_ipv6"]="ipv6_addr|interval|Whitelist (admin IPs + internal networks)"
 
-    # Blacklist - ALL blocked IPs consolidated by nftban-core
-    # Sources: manual bans + threat feeds + geoban + country blocking
-    # Supports BOTH permanent and temporary bans via timeout parameter
-    # - Permanent: nft add element ip6 nftban blacklist_ipv6 { 2001:db8::1 }
-    # - Temporary: nft add element ip6 nftban blacklist_ipv6 { 2001:db8::1 timeout 1h }
-    # Metadata (reason, date, source) stored in config files, NOT in NFT
-    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|Blacklist (permanent + temporary with timeout)"
+    # ==========================================================================
+    # SOURCE-SPECIFIC BLACKLIST SETS (v1.1 Async IPC Architecture)
+    # ==========================================================================
+    # Each source domain has its own set for clean lifecycle management:
+    # - Dedicated sets (feeds, geoban): Safe to flush on disable
+    # - Shared sets (auto, manual): Use timeout expiry or source index
+    #
+    # IMPORTANT: Go daemon is the ONLY writer via netlink. Shell modules
+    # MUST use IPC (ban/unban/replace_set), never direct nft commands.
+    # ==========================================================================
+
+    # Threat Intelligence Feeds (bulk replace via replace_set IPC)
+    ["feeds_ipv6"]="ipv6_addr|interval|Threat intelligence feeds (CIDRs)"
+
+    # Geographic Blocking (bulk replace via replace_set IPC)
+    ["geoban_ipv6"]="ipv6_addr|interval|Country/geo blocking (CIDRs)"
+
+    # Auto-Detection (login, portscan, ddos, suricata via ban/unban IPC)
+    ["auto_ipv6"]="ipv6_addr|timeout|Auto-detected threats (login, portscan, ddos, suricata)"
+
+    # Manual CLI Bans (via ban/unban IPC)
+    ["manual_ipv6"]="ipv6_addr|timeout|Manual CLI bans"
+
+    # Legacy unified blacklist (deprecated, kept for migration)
+    # TODO: Remove after v1.2 migration complete
+    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
 
     # Service ports
     ["tcp_ports"]="inet_service||Allowed TCP ports"
@@ -430,9 +475,15 @@ nftban_nft_get_table_for_ip() {
 }
 
 nftban_nft_get_set_name() {
-    # Get the correct set name for an IP and operation
-    # Args: $1 = IP address, $2 = operation
+    # Get the correct set name for an IP/source and operation
+    # Args: $1 = IP address, $2 = operation/source
     # Returns: set name
+    #
+    # v1.1 Architecture: Source-specific sets
+    # - feeds    → feeds_ipv4/ipv6
+    # - geoban   → geoban_ipv4/ipv6
+    # - login, portscan, ddos, suricata → auto_ipv4/ipv6
+    # - manual   → manual_ipv4/ipv6
 
     local ip="$1"
     local operation="$2"
@@ -446,22 +497,33 @@ nftban_nft_get_set_name() {
     fi
 
     case "$operation" in
-        ban|unban|blacklist)
-            echo "blacklist_${suffix}"
+        # Source-specific sets (v1.1)
+        feeds)
+            echo "feeds_${suffix}"
+            ;;
+        geoban|country)
+            echo "geoban_${suffix}"
+            ;;
+        login|portscan|portscan-classic|portscan-suricata|ddos|ddos-classic|ddos-suricata|suricata|auto)
+            echo "auto_${suffix}"
+            ;;
+        manual|cli)
+            echo "manual_${suffix}"
             ;;
         whitelist)
             echo "whitelist_${suffix}"
             ;;
-        tempban|fail2ban)
-            echo "temp_ban_${suffix}"
+        # Legacy operations (deprecated, maps to manual for backwards compat)
+        ban|unban|blacklist)
+            # TODO: Remove after v1.2 - use source-specific sets
+            echo "manual_${suffix}"
             ;;
-        feeds)
-            # Feeds are managed by nftban-core, not individual IPs
-            # Return set for individual IPs (not CIDRs)
-            echo "feeds_${suffix}"
+        tempban|fail2ban)
+            # Temporary bans go to auto set
+            echo "auto_${suffix}"
             ;;
         *)
-            echo "ERROR: Unknown operation: $operation" >&2
+            echo "ERROR: Unknown operation/source: $operation" >&2
             return 1
             ;;
     esac

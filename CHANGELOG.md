@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-02-12
+
+### Major Features
+
+- **feat(nft)**: v1.1 Async IPC Architecture with source-specific sets
+  - New `pkg/opqueue/` package for async operation queue with coalescing
+  - Source-specific sets: feeds, geoban, auto (login/portscan/ddos/suricata), manual
+  - TTL=max coalescing policy - never shortens a ban
+  - Barrier semantics for flush/replace operations
+  - Atomic counters for O(1) queue depth checks
+
+### New Components
+
+- **OpQueue Package** (`pkg/opqueue/`)
+  - `queue.go`: Main queue manager with per-set buffers
+  - `buffer.go`: Per-set coalescing with generation tracking
+  - `types.go`: Operation types and source routing configuration
+  - `source_index.go`: Persistent source tracking for shared sets
+  - `file_reader.go`: Secure file ingestion with TOCTOU protection
+  - `nftbackend_wrapper.go`: Adapter for existing nftbackend
+
+### Schema Changes
+
+- **nft_schema.sh**: Added 8 new source-specific sets
+  - `feeds_ipv4/ipv6`: Threat intelligence feeds (CIDRs, bulk replace)
+  - `geoban_ipv4/ipv6`: Geographic blocking (CIDRs, bulk replace)
+  - `auto_ipv4/ipv6`: Auto-detected threats (login, portscan, ddos, suricata)
+  - `manual_ipv4/ipv6`: Manual CLI bans
+  - Legacy `blacklist_ipv4/ipv6` deprecated but kept for migration
+
+### New IPC Methods
+
+- **nft_ipc.sh**: Added v1.1 async IPC functions
+  - `nft_ipc_replace_set()`: Bulk set replacement via file path
+  - `nft_ipc_flush_source()`: Remove all elements from a source
+  - `nft_ipc_unban_source()`: Unban from specific source's sets
+  - `nft_ipc_unban_any()`: Unban from ALL sets where IP exists
+  - `nft_ipc_queue_status()`: Get async queue statistics
+
+### Daemon Integration
+
+- **nftband**: OpQueue integration
+  - OpQueue and SourceIndex initialization on startup
+  - Background saver for SourceIndex (30s interval)
+  - Graceful shutdown with queue drain
+  - New IPC handlers: `replace_set`, `flush_source`, `queue_status`
+
+### Testing
+
+- Validated on lab servers with Go 1.22+
+
+---
+
 ## [1.12.5] - 2026-02-10
 
 ### Bug Fixes
