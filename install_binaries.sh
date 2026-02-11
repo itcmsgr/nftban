@@ -177,6 +177,9 @@ install_libraries() {
     cp "$SCRIPT_DIR/cli/lib/nftban/nftban_help.sh" "$LIB_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/cli/lib/nftban/helpers/json_output.sh" "$LIB_DIR/" 2>/dev/null || true
 
+    # Copy README explaining install-mirror layout
+    cp "$SCRIPT_DIR/cli/lib/nftban/README.md" "$LIB_DIR/" 2>/dev/null || true
+
     # Copy VERSION file
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         install -m 0644 -o root -g nftban "$SCRIPT_DIR/VERSION" "$LIB_DIR/VERSION"
