@@ -96,6 +96,49 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 0.3: Cleanup obsolete/stale files from previous versions
+        # =====================================================================
+        log_info "Cleaning up obsolete files from previous versions..."
+        OBSOLETE_CLEANED=0
+
+        # Remove nested nftban directory (stale from old installs)
+        if [[ -d "/usr/lib/nftban/lib/nftban" ]]; then
+            rm -rf "/usr/lib/nftban/lib/nftban"
+            log_info "Removed stale: /usr/lib/nftban/lib/nftban/"
+            ((OBSOLETE_CLEANED++)) || true
+        fi
+
+        # Remove nested etc directory (stale from old installs)
+        if [[ -d "/usr/lib/nftban/etc" ]]; then
+            rm -rf "/usr/lib/nftban/etc"
+            log_info "Removed stale: /usr/lib/nftban/etc/"
+            ((OBSOLETE_CLEANED++)) || true
+        fi
+
+        # Remove old cmd_health.sh at wrong location (moved to cli/)
+        if [[ -f "/usr/lib/nftban/core/cmd_health.sh" ]]; then
+            rm -f "/usr/lib/nftban/core/cmd_health.sh"
+            log_info "Removed stale: /usr/lib/nftban/core/cmd_health.sh"
+            ((OBSOLETE_CLEANED++)) || true
+        fi
+
+        # Remove json_output.sh at wrong location (moved to helpers/)
+        if [[ -f "/usr/lib/nftban/json_output.sh" ]]; then
+            rm -f "/usr/lib/nftban/json_output.sh"
+            log_info "Removed stale: /usr/lib/nftban/json_output.sh"
+            ((OBSOLETE_CLEANED++)) || true
+        fi
+
+        # Remove old cmd_ui.sh at root level (moved to cli/)
+        if [[ -f "/usr/lib/nftban/cmd_ui.sh" ]]; then
+            rm -f "/usr/lib/nftban/cmd_ui.sh"
+            log_info "Removed stale: /usr/lib/nftban/cmd_ui.sh"
+            ((OBSOLETE_CLEANED++)) || true
+        fi
+
+        [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Obsolete file cleanup complete"
+
+        # =====================================================================
         # STEP 0.5: Install/Upgrade yq v4 (mikefarah/yq) - REQUIRED
         # =====================================================================
         # WHY v4 IS REQUIRED:

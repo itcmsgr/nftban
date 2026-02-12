@@ -156,6 +156,49 @@ if [[ "$YQ_NEEDS_INSTALL" == "true" ]]; then
 fi
 
 # ==========================================================================
+# CLEANUP: Remove obsolete/stale files from previous versions
+# ==========================================================================
+echo "[NFTBan] Cleaning up obsolete files from previous versions..."
+OBSOLETE_CLEANED=0
+
+# Remove nested nftban directory (stale from old installs)
+if [ -d "%{_libdir}/nftban/lib/nftban" ]; then
+    rm -rf "%{_libdir}/nftban/lib/nftban"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/lib/nftban/"
+    OBSOLETE_CLEANED=$((OBSOLETE_CLEANED + 1))
+fi
+
+# Remove nested etc directory (stale from old installs)
+if [ -d "%{_libdir}/nftban/etc" ]; then
+    rm -rf "%{_libdir}/nftban/etc"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/etc/"
+    OBSOLETE_CLEANED=$((OBSOLETE_CLEANED + 1))
+fi
+
+# Remove old cmd_health.sh at wrong location (moved to cli/)
+if [ -f "%{_libdir}/nftban/core/cmd_health.sh" ]; then
+    rm -f "%{_libdir}/nftban/core/cmd_health.sh"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/core/cmd_health.sh"
+    OBSOLETE_CLEANED=$((OBSOLETE_CLEANED + 1))
+fi
+
+# Remove json_output.sh at wrong location (moved to helpers/)
+if [ -f "%{_libdir}/nftban/json_output.sh" ]; then
+    rm -f "%{_libdir}/nftban/json_output.sh"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/json_output.sh"
+    OBSOLETE_CLEANED=$((OBSOLETE_CLEANED + 1))
+fi
+
+# Remove old cmd_ui.sh at root level (moved to cli/)
+if [ -f "%{_libdir}/nftban/cmd_ui.sh" ]; then
+    rm -f "%{_libdir}/nftban/cmd_ui.sh"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/cmd_ui.sh"
+    OBSOLETE_CLEANED=$((OBSOLETE_CLEANED + 1))
+fi
+
+[ $OBSOLETE_CLEANED -gt 0 ] && echo "[NFTBan] Obsolete file cleanup complete" || echo "[NFTBan] No obsolete files found"
+
+# ==========================================================================
 # DIRECTADMIN PANEL: Add nftban to mysyslog group for logger access
 # ==========================================================================
 # DirectAdmin uses 'mysyslog' group for /dev/log socket permissions.
@@ -634,12 +677,14 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
 %dir %attr(770,root,nftban) /etc/nftban/suricata/state
 %dir %attr(770,root,nftban) /etc/nftban/suricata/state/last-good
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/state/ruleset.lock
 %config(noreplace) /etc/nftban/suricata/profiles/*
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/disable.conf
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/enable.conf
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/categories.enabled
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/local.rules
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/suricata.yaml.overlay
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/routing.conf
 # Suricata interface configuration (v1.12.0)
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/suricata
 %config(noreplace) %attr(640,root,nftban) /etc/nftban/conf.d/suricata/interfaces.conf
