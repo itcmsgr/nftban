@@ -315,7 +315,7 @@ nftban_detect_conflicting_tables() {
         if [[ -n "$table_input" ]]; then
             non_nftban_input_chains+="$table_line: $table_input"$'\n'
         fi
-    done < <(nft list tables 2>/dev/null | sed 's/^table //')
+    done < <(echo "$tables" | sed 's/^table //')
 
     if [[ -n "$non_nftban_input_chains" ]]; then
         local other_priorities
