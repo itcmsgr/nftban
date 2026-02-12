@@ -86,9 +86,15 @@ standard_params:
   time_range:
     --since: {type: string, format: "YYYY-MM-DD", description: "Start date"}
     --until: {type: string, format: "YYYY-MM-DD", description: "End date"}
-    --last: {type: string, values: ["1h", "24h", "7d", "30d"], description: "Relative time period"}
+    --last:
+      type: string
+      values: ["1h", "24h", "7d", "30d"]
+      description: "Relative time period"
   output:
-    --format: {type: enum, values: ["json", "csv", "text", "html"], description: "Output format"}
+    --format:
+      type: enum
+      values: ["json", "csv", "text", "html"]
+      description: "Output format"
     --output: {aliases: ["-o"], type: string, description: "Output file path"}
   filtering:
     --type: {aliases: ["-t"], type: string, description: "Filter by type"}
@@ -193,15 +199,25 @@ health:
       mutates: false
       description: "Run health diagnostics"
       options:
-        --auto-heal: {type: bool, description: "Automatically fix detected issues (runs as nftban user via polkit)"}
-        --quiet: {type: bool, description: "Minimal output (for cron/timer use)"}
-        --cache-status: {type: bool, description: "Write health status to cache for banner"}
+        --auto-heal:
+          type: bool
+          description: "Auto-fix issues via polkit"
+        --quiet:
+          type: bool
+          description: "Minimal output for cron"
+        --cache-status:
+          type: bool
+          description: "Write status to cache"
     fix:
       mutates: true
       description: "Auto-repair detected issues"
       requires_root: true
       arguments:
-        target: {type: enum, required: false, values: [permissions, directories, services, config, system, all], default: all}
+        target:
+          type: enum
+          required: false
+          values: [permissions, directories, services, config, all]
+          default: all
     summary:
       mutates: false
       description: "One-line health summary"
@@ -226,19 +242,30 @@ health:
       mutates: false
       description: "Verify installation completeness"
       options:
-        --verbose: {type: bool, alias: "-v", description: "Show detailed output"}
+        --verbose:
+          type: bool
+          alias: "-v"
+          description: "Show detailed output"
     conflicts:
       mutates: conditional
       description: "Detect and remove conflicting firewalls"
       requires_root: true
       options:
-        --fix: {type: bool, description: "Remove detected conflicts"}
-        --yes: {type: bool, alias: "-y", description: "Auto-confirm (no prompts)"}
+        --fix:
+          type: bool
+          description: "Remove detected conflicts"
+        --yes:
+          type: bool
+          alias: "-y"
+          description: "Auto-confirm"
     config:
       mutates: false
       description: "Show enabled modules and config status"
       options:
-        --verbose: {type: bool, alias: "-v", description: "Include config file paths"}
+        --verbose:
+          type: bool
+          alias: "-v"
+          description: "Include config paths"
 
 version:
   category: setup_discovery
@@ -401,7 +428,7 @@ check:
     target:
       type: string
       required: true
-      description: "IP address (203.0.113.50) or 'port' keyword followed by port number"
+      description: "IP address or 'port' keyword with port number"
   options:
     --json:
       type: bool
@@ -481,13 +508,19 @@ whitelist:
       mutates: true
       description: "Add IP to whitelist"
       arguments:
-        ip: {type: string, required: true, description: "IP address to whitelist"}
+        ip:
+          type: string
+          required: true
+          description: "IP address to whitelist"
     remove:
       mutates: true
       description: "Remove IP from whitelist"
       aliases: [rm, del, delete]
       arguments:
-        ip: {type: string, required: true, description: "IP address to remove"}
+        ip:
+          type: string
+          required: true
+          description: "IP address to remove"
     list:
       mutates: false
       description: "Show all whitelisted IPs"
@@ -522,7 +555,7 @@ whitelist-system:
 
 flush:
   category: immediate_action
-  description: "Emergency flush/reset of nftables sets (blacklist, whitelist, feeds, geoban)"
+  description: "Emergency flush/reset of nftables sets"
   risk: advanced
   audience: [cli]
   capability: enforcement
@@ -559,9 +592,15 @@ cleanup:
   output_modes: [json, text]
   has_json: true
   options:
-    --stats: {type: bool, required: false, description: "Show permanent ban statistics"}
-    --dry-run: {type: bool, required: false, description: "Preview which IPs would be evicted"}
-    --execute: {type: bool, required: false, description: "Actually evict old bans"}
+    --stats:
+      type: bool
+      description: "Show permanent ban statistics"
+    --dry-run:
+      type: bool
+      description: "Preview which IPs would be evicted"
+    --execute:
+      type: bool
+      description: "Actually evict old bans"
     --count: {type: int, required: false, description: "Process up to N IPs"}
     --json: {type: bool, required: false, description: "Output in JSON format"}
   examples:
@@ -724,12 +763,20 @@ login:
       mutates: true
       description: "Enable login monitoring (auto-installs service)"
       arguments:
-        target: {type: enum, required: false, values: [ssh, su, sudo, console, service, all], default: service}
+        target:
+          type: enum
+          required: false
+          values: [ssh, su, sudo, console, service, all]
+          default: service
     disable:
       mutates: true
       description: "Disable login monitoring"
       arguments:
-        target: {type: enum, required: false, values: [ssh, su, sudo, console, service, all], default: service}
+        target:
+          type: enum
+          required: false
+          values: [ssh, su, sudo, console, service, all]
+          default: service
     status:
       mutates: false
       description: "Show login monitor status"
@@ -744,7 +791,11 @@ login:
       mutates: false
       description: "View recent login alerts"
       arguments:
-        lines: {type: int, required: false, default: 50, description: "Number of lines to show"}
+        lines:
+          type: int
+          required: false
+          default: 50
+          description: "Number of lines to show"
     restart:
       mutates: true
       description: "Restart login monitor service"
@@ -760,11 +811,15 @@ login:
       mutates: conditional
       description: "Manage digest reports"
       arguments:
-        action: {type: enum, required: false, values: [status, send, clear], default: status}
+        action:
+          type: enum
+          required: false
+          values: [status, send, clear]
+          default: status
 
 botscan:
   category: active_protection
-  description: "Bot scanner detection (webshell probes, exploit scanners, bad bots)"
+  description: "Bot scanner detection (webshell probes, bad bots)"
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -788,7 +843,8 @@ botscan:
     status: {description: "Show bot scanner status and configuration"}
     stats: {description: "Show detection statistics (JSON supported)"}
     check: {description: "Run manual log analysis"}
-    patterns: {description: "Pattern management (list/add/remove/enable/disable)"}
+    patterns:
+      description: "Pattern management"
     history: {description: "Show detection history"}
     test: {description: "Test pattern matching against URLs or User-Agents"}
 
@@ -817,16 +873,24 @@ feeds:
       mutates: true
       description: "Enable a threat feed"
       arguments:
-        feed_name: {type: string, required: true, description: "Feed name to enable"}
+        feed_name:
+          type: string
+          required: true
+          description: "Feed name to enable"
       options:
         --json: {type: bool, description: "Output in JSON format"}
     disable:
       mutates: true
       description: "Disable a threat feed"
       arguments:
-        feed_name: {type: string, required: true, description: "Feed name to disable"}
+        feed_name:
+          type: string
+          required: true
+          description: "Feed name to disable"
       options:
-        --clean: {type: bool, description: "Also remove feed IPs from blacklist"}
+        --clean:
+          type: bool
+          description: "Also remove feed IPs"
         --json: {type: bool, description: "Output in JSON format"}
     enable-category:
       mutates: true
@@ -838,7 +902,10 @@ feeds:
       mutates: true
       description: "Update feed data"
       arguments:
-        feed_name: {type: string, required: false, description: "Specific feed (or all)"}
+        feed_name:
+          type: string
+          required: false
+          description: "Specific feed (or all)"
       options:
         --json: {type: bool, description: "Output in JSON format"}
     status:
@@ -855,7 +922,7 @@ feeds:
 
 rbl:
   category: active_protection
-  description: "RBL (Real-time Blackhole List) monitoring for server IP reputation"
+  description: "RBL monitoring for server IP reputation"
   risk: core
   audience: [cli, auditor]
   capability: status_read
@@ -903,7 +970,9 @@ rbl:
       mutates: false
       description: "Full server assessment (all IPs + hostname)"
       subcommands:
-        check: {mutates: false, description: "Check all server IPs against RBLs (--sequential for slow mode)"}
+        check:
+          mutates: false
+          description: "Check server IPs against RBLs"
     status:
       mutates: false
       description: "Show RBL monitoring status"
@@ -931,19 +1000,35 @@ rbl:
         test: {mutates: false, description: "Send test alert email"}
     critical:
       mutates: conditional
-      description: "Manage critical IPs for monitoring (mail, web, panel servers)"
+      description: "Manage critical IPs for monitoring"
       subcommands:
         list: {mutates: false, description: "Show configured critical IPs"}
-        add: {mutates: true, requires_root: true, description: "Add critical IP with tag"}
-        remove: {mutates: true, requires_root: true, description: "Remove critical IP"}
+        add:
+          mutates: true
+          requires_root: true
+          description: "Add critical IP with tag"
+        remove:
+          mutates: true
+          requires_root: true
+          description: "Remove critical IP"
     watchlist:
       mutates: conditional
-      description: "Monitor external IPs of interest (customers, partners, etc.)"
+      description: "Monitor external IPs of interest"
       subcommands:
-        list: {mutates: false, description: "Show all watched IPs"}
-        add: {mutates: true, requires_root: true, description: "Add IP to watchlist with description"}
-        remove: {mutates: true, requires_root: true, description: "Remove IP from watchlist"}
-        check: {mutates: false, description: "Check all watched IPs against RBLs (--alert to send notifications)"}
+        list:
+          mutates: false
+          description: "Show all watched IPs"
+        add:
+          mutates: true
+          requires_root: true
+          description: "Add IP to watchlist"
+        remove:
+          mutates: true
+          requires_root: true
+          description: "Remove IP from watchlist"
+        check:
+          mutates: false
+          description: "Check watched IPs against RBLs"
 
 trust:
   category: active_protection
@@ -1005,22 +1090,34 @@ geoban:
       mutates: true
       description: "Ban traffic from country"
       arguments:
-        countries: {type: string, required: true, description: "ISO country codes (CN RU KP)"}
+        countries:
+          type: string
+          required: true
+          description: "ISO codes (CN RU KP)"
     unban:
       mutates: true
       description: "Remove country ban"
       arguments:
-        countries: {type: string, required: true, description: "ISO country codes"}
+        countries:
+          type: string
+          required: true
+          description: "ISO country codes"
     whitelist:
       mutates: true
       description: "Whitelist country (allow only from these)"
       arguments:
-        countries: {type: string, required: true, description: "ISO country codes"}
+        countries:
+          type: string
+          required: true
+          description: "ISO country codes"
     unwhitelist:
       mutates: true
       description: "Remove country from whitelist"
       arguments:
-        countries: {type: string, required: true, description: "ISO country codes"}
+        countries:
+          type: string
+          required: true
+          description: "ISO country codes"
     list:
       mutates: false
       description: "List active country blocks"
@@ -1049,7 +1146,7 @@ geoban:
     - "nftban geoban whitelist US"
     - "nftban geoban list --json"
 
-# NOTE: cloudflare command removed in v1.10.0 - use "nftban trust ... CLOUDFLARE" instead
+# NOTE: cloudflare command removed in v1.10.0 - use "nftban trust" instead
 
 # =============================================================================
 # GROUP 3: INFRASTRUCTURE
@@ -1076,10 +1173,19 @@ firewall:
     - "nftban firewall logs enable --level drops"
     - "nftban firewall reload"
   subcommands:
-    validate: {mutates: false, description: "Validate nftables structure against NFTBan spec"}
-    check: {mutates: false, description: "Check if IP or port is blocked/allowed"}
-    stats: {mutates: false, description: "Show firewall statistics (tables, chains, sets)"}
-    reload: {mutates: true, requires_root: true, description: "Reload nftables ruleset"}
+    validate:
+      mutates: false
+      description: "Validate nftables structure"
+    check:
+      mutates: false
+      description: "Check if IP or port is blocked/allowed"
+    stats:
+      mutates: false
+      description: "Show firewall statistics"
+    reload:
+      mutates: true
+      requires_root: true
+      description: "Reload nftables ruleset"
     logs:
       mutates: conditional
       requires_root: conditional
@@ -1090,10 +1196,22 @@ firewall:
           requires_root: true
           description: "Enable firewall logging (modifies nftables rules)"
           options:
-            --level: {type: enum, values: [drops, accepts, all, alert], default: drops, description: "Logging level"}
-            --reason: {type: string, description: "Comma-separated reasons (banlist,invalid_state,ratelimit,policy_drop)"}
-            --rate: {type: string, default: "10/second", description: "Rate limit for log entries"}
-            --burst: {type: string, default: "50 packets", description: "Burst limit for log entries"}
+            --level:
+              type: enum
+              values: [drops, accepts, all, alert]
+              default: drops
+              description: "Logging level"
+            --reason:
+              type: string
+              description: "Comma-separated reasons"
+            --rate:
+              type: string
+              default: "10/second"
+              description: "Rate limit for log entries"
+            --burst:
+              type: string
+              default: "50 packets"
+              description: "Burst limit for log entries"
         disable:
           mutates: true
           requires_root: true
@@ -1105,21 +1223,58 @@ firewall:
           mutates: false
           description: "View and filter firewall logs"
           options:
-            --lines: {type: int, alias: "-n", default: 50, description: "Number of entries to show"}
-            --since: {type: string, description: "Time filter (e.g., '10 min ago', '1 hour ago')"}
-            --live: {type: bool, alias: "-f", description: "Live tail mode with auto-refresh"}
-            --interval: {type: int, alias: "-i", default: 3, description: "Refresh interval in seconds (live mode)"}
-            --ip: {type: string, description: "Filter by IP (source or destination)"}
-            --src: {type: string, description: "Filter by source IP only"}
-            --dst: {type: string, description: "Filter by destination IP only"}
-            --port: {type: string, description: "Filter by port (source or destination)"}
-            --proto: {type: enum, values: [tcp, udp, icmp], description: "Filter by protocol"}
-            --action: {type: enum, values: [drop, accept], description: "Filter by action"}
-            --reason: {type: string, description: "Filter by reason (banlist, invalid_state, etc.)"}
-            --json: {type: bool, description: "JSON output format"}
-            --csv: {type: bool, description: "CSV output format"}
-            --table: {type: bool, description: "Plain table output"}
-            --raw: {type: bool, description: "Raw kernel log format"}
+            --lines:
+              type: int
+              alias: "-n"
+              default: 50
+              description: "Number of entries"
+            --since:
+              type: string
+              description: "Time filter (e.g., '10 min ago')"
+            --live:
+              type: bool
+              alias: "-f"
+              description: "Live tail mode"
+            --interval:
+              type: int
+              alias: "-i"
+              default: 3
+              description: "Refresh interval (seconds)"
+            --ip:
+              type: string
+              description: "Filter by IP"
+            --src:
+              type: string
+              description: "Filter by source IP"
+            --dst:
+              type: string
+              description: "Filter by destination IP"
+            --port:
+              type: string
+              description: "Filter by port"
+            --proto:
+              type: enum
+              values: [tcp, udp, icmp]
+              description: "Filter by protocol"
+            --action:
+              type: enum
+              values: [drop, accept]
+              description: "Filter by action"
+            --reason:
+              type: string
+              description: "Filter by reason"
+            --json:
+              type: bool
+              description: "JSON output format"
+            --csv:
+              type: bool
+              description: "CSV output format"
+            --table:
+              type: bool
+              description: "Plain table output"
+            --raw:
+              type: bool
+              description: "Raw kernel log format"
 
 firewall-logs:
   category: infrastructure
@@ -1181,18 +1336,46 @@ config:
     - "nftban config reload"
     - "nftban config reload portscan"
   subcommands:
-    show: {mutates: false, description: "Show effective merged configuration"}
-    get: {mutates: false, description: "Get module configuration (merged)"}
-    defaults: {mutates: false, description: "Show default configuration values"}
-    overrides: {mutates: false, description: "Show local override values"}
-    set: {mutates: true, description: "Set configuration value in .conf.local", requires_root: true}
-    reset: {mutates: true, description: "Reset key to default (remove override)", requires_root: true}
-    reset-all: {mutates: true, description: "Reset all configuration to defaults", requires_root: true}
-    test: {mutates: false, description: "Validate configuration against schema"}
-    audit: {mutates: false, description: "Audit config for drift and deprecated keys"}
-    diff: {mutates: false, description: "Show differences between defaults and overrides"}
-    status: {mutates: false, description: "Show config tracking status for services"}
-    reload: {mutates: true, description: "Apply config changes to running services (SIGHUP)", requires_root: true}
+    show:
+      mutates: false
+      description: "Show effective merged configuration"
+    get:
+      mutates: false
+      description: "Get module configuration (merged)"
+    defaults:
+      mutates: false
+      description: "Show default configuration values"
+    overrides:
+      mutates: false
+      description: "Show local override values"
+    set:
+      mutates: true
+      requires_root: true
+      description: "Set configuration value"
+    reset:
+      mutates: true
+      requires_root: true
+      description: "Reset key to default"
+    reset-all:
+      mutates: true
+      requires_root: true
+      description: "Reset all configuration to defaults"
+    test:
+      mutates: false
+      description: "Validate configuration against schema"
+    audit:
+      mutates: false
+      description: "Audit config for drift"
+    diff:
+      mutates: false
+      description: "Show differences from defaults"
+    status:
+      mutates: false
+      description: "Show config tracking status"
+    reload:
+      mutates: true
+      requires_root: true
+      description: "Apply config changes (SIGHUP)"
   allowlist:
     paths:
       - /etc/nftban/nftban.conf
@@ -1200,7 +1383,7 @@ config:
 
 configaudit:
   category: infrastructure
-  description: "Audit configuration for drift, deprecated keys, and new options (alias for config audit)"
+  description: "Audit configuration for drift (alias for config audit)"
   risk: core
   audience: [cli, auditor]
   capability: config_view
@@ -1317,9 +1500,15 @@ permissions:
     - "nftban permissions enforce"
     - "nftban permissions enforce --dry-run"
   subcommands:
-    check: {mutates: false, description: "Check current permissions and report issues"}
-    enforce: {mutates: true, description: "Enforce secure permissions on all NFTBan files"}
-    fix: {mutates: true, description: "Alias for enforce"}
+    check:
+      mutates: false
+      description: "Check current permissions"
+    enforce:
+      mutates: true
+      description: "Enforce secure permissions"
+    fix:
+      mutates: true
+      description: "Alias for enforce"
 
 polkit:
   category: infrastructure
@@ -1343,9 +1532,16 @@ polkit:
     - "nftban polkit rules list"
     - "nftban polkit test"
   subcommands:
-    validate: {mutates: false, description: "Full validation (static + runtime)"}
-    static: {mutates: false, description: "Static-only checks (no test users)"}
-    runtime: {mutates: true, description: "Runtime tests with test users", requires_root: true}
+    validate:
+      mutates: false
+      description: "Full validation (static + runtime)"
+    static:
+      mutates: false
+      description: "Static-only checks (no test users)"
+    runtime:
+      mutates: true
+      requires_root: true
+      description: "Runtime tests with test users"
     status: {mutates: false, description: "Quick status of rules and groups"}
     groups: {mutates: conditional, description: "Manage authorization groups"}
     rules: {mutates: conditional, description: "View/install Polkit rules"}
@@ -1381,8 +1577,15 @@ stats:
       mutates: false
       description: "Show top banned IPs/countries"
       arguments:
-        type: {type: enum, required: false, values: [ips, countries, jails], default: ips}
-        limit: {type: int, required: false, default: 10}
+        type:
+          type: enum
+          required: false
+          values: [ips, countries, jails]
+          default: ips
+        limit:
+          type: int
+          required: false
+          default: 10
       options:
         --json: {type: bool, description: "Output in JSON format"}
         --since: {type: string, description: "Start date"}
@@ -1407,7 +1610,10 @@ stats:
       mutates: false
       description: "Live monitoring dashboard"
       options:
-        --interval: {type: int, default: 5, description: "Refresh interval in seconds"}
+        --interval:
+          type: int
+          default: 5
+          description: "Refresh interval (seconds)"
     export:
       mutates: false
       description: "Export statistics"
@@ -1456,12 +1662,26 @@ watchdog:
     report: {mutates: false, description: "Full detailed system report"}
     history: {mutates: false, description: "Show saved reports for auditing"}
     trend: {mutates: false, description: "7-day trend analysis"}
-    enable: {mutates: true, description: "Enable watchdog timer", requires_root: true}
-    disable: {mutates: true, description: "Disable watchdog timer", requires_root: true}
-    stats: {mutates: false, description: "Daemon runtime stats (memory, goroutines, IPC)"}
-    stats-history: {mutates: false, description: "Historical daemon stats (daily summaries)"}
-    snapshot: {mutates: true, description: "Capture pprof profile (heap/goroutine/cpu)"}
-    profiles: {mutates: false, description: "List captured pprof profiles"}
+    enable:
+      mutates: true
+      requires_root: true
+      description: "Enable watchdog timer"
+    disable:
+      mutates: true
+      requires_root: true
+      description: "Disable watchdog timer"
+    stats:
+      mutates: false
+      description: "Daemon runtime stats"
+    stats-history:
+      mutates: false
+      description: "Historical daemon stats"
+    snapshot:
+      mutates: true
+      description: "Capture pprof profile"
+    profiles:
+      mutates: false
+      description: "List captured pprof profiles"
 
 report:
   category: intelligence_reporting
@@ -1483,7 +1703,7 @@ report:
 
 metrics:
   category: intelligence_reporting
-  description: "Metrics collection with Prometheus or VictoriaMetrics (local or remote)"
+  description: "Metrics collection with Prometheus/VictoriaMetrics"
   risk: setup
   audience: [cli]
   capability: service_control
@@ -1560,7 +1780,7 @@ metrics:
       agent: prometheus
       storage: prometheus-local
       description: "Prometheus all-in-one: scrapes + stores locally"
-      command: "nftban metrics enable --agent=prometheus --storage=prometheus-local"
+      command: "nftban metrics enable --agent=prometheus"
       installs: [prometheus, node_exporter]
     C1:
       name: "Prometheus + VictoriaMetrics"
@@ -1574,8 +1794,8 @@ metrics:
       name: "vmagent Remote"
       agent: vmagent
       storage: remote
-      description: "vmagent ships to YOUR remote backend (Grafana Cloud, Mimir, etc.)"
-      command: "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=<URL>"
+      description: "vmagent ships to YOUR remote backend"
+      command: "nftban metrics enable --agent=vmagent"
       installs: [vmagent, node_exporter]
       requires: [remote-write-url]
     C2:
@@ -1606,11 +1826,10 @@ metrics:
   # ==========================================================================
   examples:
     # Prometheus setups
-    - "nftban metrics enable --agent=prometheus --storage=prometheus-local"
-    - "nftban metrics enable --agent=prometheus --storage=vm-local --retention=180d"
+    - "nftban metrics enable --agent=prometheus"
+    - "nftban metrics enable --agent=prometheus --storage=vm-local"
     # vmagent setups
-    - "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=https://vm.example.com/api/v1/write"
-    - "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=https://grafana.net/api/prom/push --token=/etc/nftban/grafana.token"
+    - "nftban metrics enable --agent=vmagent --storage=remote"
     - "nftban metrics enable --agent=vmagent --storage=vm-local"
     # NFTBan Pro
     - "nftban metrics enable --pro"
@@ -1681,7 +1900,10 @@ zabbix:
       options:
         --server: {type: string, description: "Zabbix server address"}
         --port: {type: int, default: 10051, description: "Zabbix server port"}
-        --hostname: {type: string, default: "auto", description: "Host name in Zabbix"}
+        --hostname:
+          type: string
+          default: "auto"
+          description: "Host name in Zabbix"
         --tls: {type: bool, description: "Enable TLS encryption"}
         --psk: {type: bool, description: "Use PSK authentication"}
         --non-interactive: {type: bool, description: "Non-interactive mode"}
@@ -1710,14 +1932,25 @@ zabbix:
       mutates: false
       description: "Export Zabbix template (5.x/6.x/7.x)"
       options:
-        --format: {type: enum, values: [xml, yaml], default: xml, description: "Output format"}
-        --version: {type: string, default: "5.0", description: "Zabbix version (5.0, 6.0, 7.0)"}
+        --format:
+          type: enum
+          values: [xml, yaml]
+          default: xml
+          description: "Output format"
+        --version:
+          type: string
+          default: "5.0"
+          description: "Zabbix version (5.0/6.0/7.0)"
         --output: {type: string, description: "Output file path"}
     discovery:
       mutates: false
       description: "Trigger LLD discovery data send"
       arguments:
-        type: {type: enum, required: false, values: [modules, interfaces, countries, feeds, timers, all], default: all}
+        type:
+          type: enum
+          required: false
+          values: [modules, interfaces, countries, feeds, timers, all]
+          default: all
     targets:
       mutates: conditional
       description: "Manage multiple Zabbix targets"
@@ -1733,9 +1966,18 @@ zabbix:
           arguments:
             name: {type: string, required: true, description: "Target name"}
           options:
-            --server: {type: string, required: true, description: "Zabbix server address"}
-            --port: {type: int, default: 10051, description: "Zabbix server port"}
-            --filter: {type: string, default: "all", description: "Metrics filter"}
+            --server:
+              type: string
+              required: true
+              description: "Zabbix server address"
+            --port:
+              type: int
+              default: 10051
+              description: "Zabbix server port"
+            --filter:
+              type: string
+              default: "all"
+              description: "Metrics filter"
         enable:
           mutates: true
           description: "Enable a target"
@@ -1764,8 +2006,14 @@ zabbix:
           mutates: true
           description: "Set configuration value"
           arguments:
-            key: {type: string, required: true, description: "Configuration key"}
-            value: {type: string, required: true, description: "Configuration value"}
+            key:
+              type: string
+              required: true
+              description: "Configuration key"
+            value:
+              type: string
+              required: true
+              description: "Configuration value"
         enable:
           mutates: true
           description: "Enable Zabbix integration"
@@ -1778,7 +2026,7 @@ zabbix:
 # =============================================================================
 connector:
   category: intelligence_reporting
-  description: "Generic connector export (Elasticsearch, Kafka, file, syslog, webhook)"
+  description: "Generic connector export (Elasticsearch, Kafka, etc.)"
   risk: core
   audience: [cli]
   capability: service_control
@@ -1850,22 +2098,42 @@ pro:
     - "nftban pro inventory show"
     - "nftban pro inventory run"
   subcommands:
-    status: {mutates: false, description: "Show Pro subscription status"}
-    enroll: {mutates: true, description: "Enroll server with Pro token"}
-    disable: {mutates: true, description: "Disable Pro (keeps token, stops vmagent)"}
+    status:
+      mutates: false
+      description: "Show Pro subscription status"
+    enroll:
+      mutates: true
+      description: "Enroll server with Pro token"
+    disable:
+      mutates: true
+      description: "Disable Pro (keeps token)"
     token:
       description: "Token lifecycle management"
       subcommands:
-        check: {mutates: false, description: "Verify token validity with Pro API"}
-        rotate: {mutates: true, description: "Request new token from Pro API"}
-        revoke: {mutates: true, description: "Revoke current token"}
+        check:
+          mutates: false
+          description: "Verify token validity"
+        rotate:
+          mutates: true
+          description: "Request new token from Pro API"
+        revoke:
+          mutates: true
+          description: "Revoke current token"
     inventory:
       description: "Server inventory management"
       subcommands:
-        show: {mutates: false, description: "Display current inventory JSON"}
-        run: {mutates: true, description: "Collect and submit inventory to Pro"}
-        submit: {mutates: true, description: "Force submit inventory (bypass checksum)"}
-    license-check: {mutates: true, description: "Check license status (called by timer)"}
+        show:
+          mutates: false
+          description: "Display current inventory JSON"
+        run:
+          mutates: true
+          description: "Collect and submit inventory"
+        submit:
+          mutates: true
+          description: "Force submit inventory"
+    license-check:
+      mutates: true
+      description: "Check license status (by timer)"
 
 gui:
   category: intelligence_reporting
@@ -1902,12 +2170,19 @@ geoip:
       description: "Lookup IP geolocation"
       arguments:
         ip: {type: string, required: true, description: "IP address to lookup"}
-        format: {type: enum, required: false, values: [json, compact, country], default: compact}
+        format:
+          type: enum
+          required: false
+          values: [json, compact, country]
+          default: compact
     bulk:
       mutates: false
       description: "Bulk IP lookup from file or stdin"
       arguments:
-        input_file: {type: string, required: false, description: "Input file (or stdin)"}
+        input_file:
+          type: string
+          required: false
+          description: "Input file (or stdin)"
     status:
       mutates: false
       description: "Show GeoIP system status and database info"
@@ -1937,7 +2212,10 @@ geoip:
           mutates: true
           description: "Set MaxMind license key"
           arguments:
-            key: {type: string, required: true, description: "MaxMind license key"}
+            key:
+              type: string
+              required: true
+              description: "MaxMind license key"
         test-download:
           mutates: false
           description: "Test database download"
@@ -1981,41 +2259,99 @@ suricata:
     daemon: {mutates: false, description: "Run alert processing daemon"}
     enable: {mutates: true, description: "Enable a detection filter"}
     disable: {mutates: true, description: "Disable a detection filter"}
-    set-threshold: {mutates: true, description: "Set scoring threshold for filter"}
-    set-action: {mutates: true, description: "Set action (alert/drop) for filter"}
+    set-threshold:
+      mutates: true
+      description: "Set scoring threshold"
+    set-action:
+      mutates: true
+      description: "Set action (alert/drop)"
     # Profiles
-    profile-detect: {mutates: false, description: "Auto-detect optimal profile"}
-    profile-apply: {mutates: true, description: "Apply profile (minimal/standard/maximum)"}
-    profile-show: {mutates: false, description: "Show current profile configuration"}
-    profile-validate: {mutates: false, description: "Validate profile configuration"}
+    profile-detect:
+      mutates: false
+      description: "Auto-detect optimal profile"
+    profile-apply:
+      mutates: true
+      description: "Apply profile"
+    profile-show:
+      mutates: false
+      description: "Show current profile config"
+    profile-validate:
+      mutates: false
+      description: "Validate profile config"
     # Service Detection
-    scan: {mutates: false, description: "Quick scan for running services"}
-    scan-deep: {mutates: false, description: "Deep service detection with port probing"}
+    scan:
+      mutates: false
+      description: "Quick scan for services"
+    scan-deep:
+      mutates: false
+      description: "Deep service detection"
     # Rules Management
-    rules-generate: {mutates: true, description: "Generate enabled rules list"}
-    rules-stats: {mutates: false, description: "Show rule statistics"}
-    rules-init: {mutates: true, description: "Initialize rule management system"}
-    rules-verify: {mutates: false, description: "Verify rules are present and loadable"}
-    rules-ensure: {mutates: true, description: "Auto-download rules if missing"}
+    rules-generate:
+      mutates: true
+      description: "Generate enabled rules list"
+    rules-stats:
+      mutates: false
+      description: "Show rule statistics"
+    rules-init:
+      mutates: true
+      description: "Initialize rule management"
+    rules-verify:
+      mutates: false
+      description: "Verify rules are loadable"
+    rules-ensure:
+      mutates: true
+      description: "Auto-download rules if missing"
     # SID Statistics
-    sid-stats: {mutates: false, description: "Show signature trigger statistics"}
-    sid-info: {mutates: false, description: "Show details for specific SID"}
-    sid-top: {mutates: false, description: "Show top triggered signatures"}
-    sid-recent: {mutates: false, description: "Show recently triggered signatures"}
-    stats-daemon: {mutates: false, description: "Run statistics collection daemon"}
+    sid-stats:
+      mutates: false
+      description: "Show signature trigger stats"
+    sid-info:
+      mutates: false
+      description: "Show details for specific SID"
+    sid-top:
+      mutates: false
+      description: "Show top triggered signatures"
+    sid-recent:
+      mutates: false
+      description: "Show recently triggered SIDs"
+    stats-daemon:
+      mutates: false
+      description: "Run statistics daemon"
     # Custom Rules
-    custom-add: {mutates: true, description: "Add a custom Suricata rule"}
-    custom-remove: {mutates: true, description: "Remove a custom rule by SID"}
-    custom-edit: {mutates: true, description: "Edit an existing custom rule"}
-    custom-list: {mutates: false, description: "List all custom rules"}
-    custom-validate: {mutates: false, description: "Validate custom rules syntax"}
-    custom-enable: {mutates: true, description: "Enable a custom rule"}
-    custom-disable: {mutates: true, description: "Disable a custom rule"}
-    custom-backup: {mutates: true, description: "Backup custom rules"}
-    custom-rollback: {mutates: true, description: "Restore from backup"}
+    custom-add:
+      mutates: true
+      description: "Add a custom Suricata rule"
+    custom-remove:
+      mutates: true
+      description: "Remove a custom rule by SID"
+    custom-edit:
+      mutates: true
+      description: "Edit an existing custom rule"
+    custom-list:
+      mutates: false
+      description: "List all custom rules"
+    custom-validate:
+      mutates: false
+      description: "Validate custom rules syntax"
+    custom-enable:
+      mutates: true
+      description: "Enable a custom rule"
+    custom-disable:
+      mutates: true
+      description: "Disable a custom rule"
+    custom-backup:
+      mutates: true
+      description: "Backup custom rules"
+    custom-rollback:
+      mutates: true
+      description: "Restore from backup"
     # Recommendations
-    recommend: {mutates: false, description: "Get rule recommendations for detected services"}
-    recommend-summary: {mutates: false, description: "Show recommendation summary"}
+    recommend:
+      mutates: false
+      description: "Get rule recommendations"
+    recommend-summary:
+      mutates: false
+      description: "Show recommendation summary"
 
 mail:
   category: intelligence_reporting
@@ -2279,7 +2615,7 @@ system:
 
 update:
   category: developer_sysadmin
-  description: "Multi-source updates (GitHub releases, git, local) with backup and rollback"
+  description: "Multi-source updates with backup and rollback"
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -2305,35 +2641,71 @@ update:
     - "nftban update auto status"
     - "nftban update auto disable"
   subcommands:
-    check: {mutates: false, description: "Check if updates are available (no changes)"}
-    status: {mutates: false, description: "Show current installation information"}
-    github: {mutates: true, description: "Update from GitHub releases (RPM/DEB packages)"}
-    git: {mutates: true, description: "Update from git repository (requires git install)"}
-    local: {mutates: true, description: "Install from local directory path"}
-    rollback: {mutates: true, description: "Restore previous version from backup"}
-    list: {mutates: false, description: "List available backups"}
-    force: {mutates: true, description: "Force reinstall/update (fixes dpkg, removes immutable flags)"}
-    repair: {mutates: true, description: "Fix broken install (dpkg state, immutable flags, restore backup)"}
+    check:
+      mutates: false
+      description: "Check if updates are available"
+    status:
+      mutates: false
+      description: "Show installation information"
+    github:
+      mutates: true
+      description: "Update from GitHub releases"
+    git:
+      mutates: true
+      description: "Update from git repository"
+    local:
+      mutates: true
+      description: "Install from local directory"
+    rollback:
+      mutates: true
+      description: "Restore previous version"
+    list:
+      mutates: false
+      description: "List available backups"
+    force:
+      mutates: true
+      description: "Force reinstall/update"
+    repair:
+      mutates: true
+      description: "Fix broken install"
     auto:
       mutates: true
-      description: "Manage auto-update timer (enable|disable|status)"
+      description: "Manage auto-update timer"
       subcommands:
-        enable: {mutates: true, description: "Enable weekly auto-updates (requires --email)"}
-        disable: {mutates: true, description: "Disable auto-updates"}
-        status: {mutates: false, description: "Show auto-update status"}
+        enable:
+          mutates: true
+          description: "Enable weekly auto-updates"
+        disable:
+          mutates: true
+          description: "Disable auto-updates"
+        status:
+          mutates: false
+          description: "Show auto-update status"
       options:
-        --email: {type: string, description: "Notification email (required for enable)"}
-    auto-run: {mutates: true, description: "Run auto-update (called by systemd timer)"}
+        --email:
+          type: string
+          description: "Notification email"
+    auto-run:
+      mutates: true
+      description: "Run auto-update (by timer)"
   config_file: "/etc/nftban/update.conf"
   config_vars:
-    NFTBAN_UPDATE_SOURCE: {default: "auto", description: "Update source (auto, github, git)"}
-    NFTBAN_GIT_REPO: {default: "/opt/nftban", description: "Git repository path"}
-    NFTBAN_GIT_BRANCH: {default: "main", description: "Git branch to track"}
-    NFTBAN_UPDATE_BACKUP_COUNT: {default: "3", description: "Backups to keep"}
+    NFTBAN_UPDATE_SOURCE:
+      default: "auto"
+      description: "Update source (auto/github/git)"
+    NFTBAN_GIT_REPO:
+      default: "/opt/nftban"
+      description: "Git repository path"
+    NFTBAN_GIT_BRANCH:
+      default: "main"
+      description: "Git branch to track"
+    NFTBAN_UPDATE_BACKUP_COUNT:
+      default: "3"
+      description: "Backups to keep"
 
 support:
   category: developer_sysadmin
-  description: "Collect diagnostic information for troubleshooting (support bundle)"
+  description: "Collect diagnostic information (support bundle)"
   risk: core
   audience: [cli, auditor]
   capability: logs_read
@@ -2350,9 +2722,15 @@ support:
     - "nftban support --output /home"
     - "nftban support-bundle"
   subcommands:
-    --quick: {mutates: false, description: "Quick terminal diagnostics (no file)"}
-    --network: {mutates: false, description: "Include network info (ip addr, routes, ports)"}
-    --output: {mutates: false, description: "Output directory (default: /tmp)"}
+    --quick:
+      mutates: false
+      description: "Quick terminal diagnostics"
+    --network:
+      mutates: false
+      description: "Include network info"
+    --output:
+      mutates: false
+      description: "Output directory"
   output_file: "/tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz"
   collects:
     - version.txt: "NFTBan version, git commit, VERSION file"
@@ -2378,7 +2756,7 @@ _metadata:
   version: "1.3"
   schema_version: "1.1"
   generated_date: "2026-01-23"
-  description: "Complete CLI parameter registry for Zabbix auto-registration and help generation"
+  description: "CLI registry for Zabbix and help generation"
   features:
     - "Full CLI options with types, defaults, and descriptions"
     - "Subcommand hierarchies with nested options"
