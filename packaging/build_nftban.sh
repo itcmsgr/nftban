@@ -691,27 +691,44 @@ mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
 
-# STEP 3: Set permissions
-echo "[NFTBan] Setting permissions..."
-chown root:nftban /etc/nftban 2>/dev/null || true
-chmod 750 /etc/nftban 2>/dev/null || true
-# CRITICAL: Fix conf.d permissions - services run as nftban user need group read access
-chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
-find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
-find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
-# Fix other config subdirs
-for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
-    if [ -d "/etc/nftban/\$subdir" ]; then
-        chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
-        find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
-        find "/etc/nftban/\$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
-    fi
-done
-chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban 2>/dev/null || true
-chmod 750 /var/lib/nftban /var/log/nftban 2>/dev/null || true
-chmod 755 /var/cache/nftban 2>/dev/null || true
+# =============================================================================
+# STEP 3: Set permissions via FHS spec (single source of truth - DEB parity)
+# =============================================================================
+# Uses the same centralized permission function as DEB postinst.
+# This ensures identical behavior across packaging formats and includes:
+# - Directory ownership and modes
+# - Auditor group ACLs
+# - Capability settings
+echo "[NFTBan] Setting permissions via FHS spec..."
 
-# Set executable on shell scripts
+if [ -f /usr/lib/nftban/setup/fhs-permissions.sh ]; then
+    # Source the central permissions script
+    . /usr/lib/nftban/setup/fhs-permissions.sh
+
+    # Call the single source-of-truth permission function
+    if declare -f nftban_install_set_file_permissions >/dev/null 2>&1; then
+        nftban_install_set_file_permissions
+        echo "[NFTBan] FHS permissions and ACLs configured"
+    else
+        echo "[NFTBan WARN] Permission function not found in fhs-permissions.sh"
+        # Fallback: minimal critical permissions
+        chown root:nftban /etc/nftban 2>/dev/null || true
+        chmod 750 /etc/nftban 2>/dev/null || true
+        chown -R nftban:nftban /var/lib/nftban /var/log/nftban 2>/dev/null || true
+    fi
+else
+    echo "[NFTBan WARN] fhs-permissions.sh not found - using fallback permissions"
+    # Fallback: minimal critical permissions only
+    chown root:nftban /etc/nftban 2>/dev/null || true
+    chmod 750 /etc/nftban 2>/dev/null || true
+    chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
+    find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
+    find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
+    chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban 2>/dev/null || true
+    chmod 750 /var/lib/nftban /var/log/nftban 2>/dev/null || true
+fi
+
+# Set executable on shell scripts (always needed after cp -r)
 find /usr/lib/nftban -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 
 # Set capabilities for nftban-core (allows non-root nftables operations)
