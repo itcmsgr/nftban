@@ -187,6 +187,59 @@ cmd_suricata_install() {
 }
 
 # =============================================================================
+# HELPER: Setup logrotate for Suricata logs
+# =============================================================================
+
+_suricata_setup_logrotate() {
+    # Install NFTBan-managed logrotate config for Suricata
+    # Uses 'su suricata suricata' to handle non-root log directory ownership
+    # This is separate from distro's /etc/logrotate.d/suricata to avoid conflicts
+
+    local logrotate_file="/etc/logrotate.d/nftban-suricata"
+    local suricata_user="suricata"
+    local suricata_group="suricata"
+
+    # Verify suricata user exists
+    if ! id "$suricata_user" &>/dev/null; then
+        echo "  ⊘ Suricata user not found, skipping logrotate setup"
+        return 0
+    fi
+
+    # Get actual group (might differ on some distros)
+    suricata_group=$(id -gn "$suricata_user" 2>/dev/null || echo "suricata")
+
+    echo "  → Setting up log rotation..."
+
+    cat > "$logrotate_file" << EOF
+# NFTBan-managed Suricata logrotate configuration
+# Installed by: nftban suricata enable
+# Safe to modify - will be overwritten on next 'nftban suricata enable'
+
+/var/log/suricata/*.log /var/log/suricata/*.json {
+    su ${suricata_user} ${suricata_group}
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0640 ${suricata_user} ${suricata_group}
+    sharedscripts
+    postrotate
+        /bin/kill -HUP \$(cat /var/run/suricata.pid 2>/dev/null) 2>/dev/null || true
+    endscript
+}
+EOF
+
+    # Validate config
+    if logrotate -d "$logrotate_file" &>/dev/null; then
+        echo "  ✓ Log rotation configured (7-day retention)"
+    else
+        echo "  ⊘ Logrotate config validation failed (not critical)"
+    fi
+}
+
+# =============================================================================
 # COMMAND: enable
 # =============================================================================
 
@@ -437,6 +490,9 @@ cmd_suricata_enable() {
             echo "  ✓ Rules update timer enabled (weekly Sunday 3 AM)" || \
             echo "  ⊘ Timer enable failed (not critical)"
     fi
+
+    # Setup logrotate for Suricata logs
+    _suricata_setup_logrotate
 
     echo ""
     echo "✅ Suricata IDS is now ENABLED and RUNNING"
