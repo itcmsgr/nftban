@@ -63,8 +63,55 @@ nftban_install_set_file_permissions() {
     find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban/suricata" -type f -name "*" -exec chmod 0640 {} \; 2>/dev/null || true
 
+    # Set up auditor ACLs
+    nftban_install_set_auditor_acls
+
+    return 0
+}
+
+# =============================================================================
+# AUDITOR ACL SETUP (not generated - manually maintained)
+# =============================================================================
+# Sets ACLs for nftban-auditor group read access to logs and reports.
+# ACLs are required because:
+#   - Base ownership (nftban:nftban) is needed for daemon writes
+#   - Auditors need read-only access without write permissions
+#   - ACLs layer on top of base permissions without changing ownership
+
+nftban_install_set_auditor_acls() {
+    # Check if setfacl is available
+    if ! command -v setfacl &>/dev/null; then
+        echo "[NFTBan] setfacl not available - auditor ACLs skipped (install acl package)" >&2
+        return 0
+    fi
+
+    # Check if nftban-auditor group exists
+    if ! getent group nftban-auditor &>/dev/null; then
+        return 0  # Silent - group created later or not needed
+    fi
+
+    echo "[NFTBan] Setting up auditor ACLs..."
+
+    # Log directory - traverse and read access
+    if [[ -d /var/log/nftban ]]; then
+        setfacl -m g:nftban-auditor:x /var/log/nftban 2>/dev/null || true
+        # Read access on audit-relevant logs
+        for logfile in bans.log login_monitor.log feeds.log nftban-actions.log ddos.log portscan.log; do
+            [[ -f "/var/log/nftban/$logfile" ]] && setfacl -m g:nftban-auditor:r "/var/log/nftban/$logfile" 2>/dev/null || true
+        done
+    fi
+
+    # Reports directory - traverse access to reach auditors/ subdir
+    if [[ -d /var/lib/nftban ]]; then
+        setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || true
+        [[ -d /var/lib/nftban/reports ]] && setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || true
+        [[ -d /var/lib/nftban/reports/auditors ]] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || true
+    fi
+
+    echo "[NFTBan] Auditor ACLs configured"
     return 0
 }
 
 # Export for sourcing
 export -f nftban_install_set_file_permissions
+export -f nftban_install_set_auditor_acls

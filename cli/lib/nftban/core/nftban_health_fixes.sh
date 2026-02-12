@@ -356,6 +356,81 @@ nftban_health_fix_permissions() {
         echo "  💡 Run with root privileges to fix:"
         echo "     sudo nftban health fix permissions"
     fi
+
+    # Also fix auditor ACLs if running as root
+    if [[ $running_as_root -eq 1 ]]; then
+        nftban_health_fix_auditor_acls
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# AUDITOR ACL SETUP
+# =============================================================================
+# Sets up ACLs for nftban-auditor group to have read access to logs and reports
+# without changing base ownership (nftban:nftban) needed for daemon writes.
+# This is required because:
+#   - Logs are owned by nftban:nftban for daemon write access
+#   - Auditors need read access but NOT write access
+#   - ACLs allow layered permissions without changing ownership
+
+nftban_health_fix_auditor_acls() {
+    # Check if setfacl is available
+    if ! command -v setfacl &>/dev/null; then
+        echo "  ⚠ setfacl not available - skipping auditor ACL setup"
+        echo "    Install acl package: apt install acl / dnf install acl"
+        return 0
+    fi
+
+    # Check if nftban-auditor group exists
+    if ! getent group nftban-auditor &>/dev/null; then
+        echo "  ⚠ nftban-auditor group not found - skipping auditor ACL setup"
+        return 0
+    fi
+
+    echo "  Setting up auditor ACLs (read-only access)..."
+
+    local acl_errors=0
+
+    # ==========================================================================
+    # Log directory - auditor needs traverse (x) and read (r) on specific logs
+    # ==========================================================================
+    if [[ -d /var/log/nftban ]]; then
+        # Traverse permission on log directory
+        setfacl -m g:nftban-auditor:x /var/log/nftban 2>/dev/null || ((++acl_errors))
+
+        # Read permission on key audit-relevant logs
+        for logfile in bans.log login_monitor.log feeds.log nftban-actions.log ddos.log portscan.log; do
+            if [[ -f "/var/log/nftban/$logfile" ]]; then
+                setfacl -m g:nftban-auditor:r "/var/log/nftban/$logfile" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    # ==========================================================================
+    # Reports directory - auditor needs traverse to reach auditors/ subdir
+    # ==========================================================================
+    if [[ -d /var/lib/nftban ]]; then
+        # Traverse permission on parent directories
+        setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || ((++acl_errors))
+
+        if [[ -d /var/lib/nftban/reports ]]; then
+            setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || ((++acl_errors))
+        fi
+
+        # Full access to auditors directory (group already owns it, but ACL ensures traversal)
+        if [[ -d /var/lib/nftban/reports/auditors ]]; then
+            setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || ((++acl_errors))
+        fi
+    fi
+
+    if [[ $acl_errors -eq 0 ]]; then
+        echo "  ✓ Auditor ACLs configured successfully"
+    else
+        echo "  ⚠ Some auditor ACLs could not be set ($acl_errors errors)"
+    fi
+
     return 0
 }
 
