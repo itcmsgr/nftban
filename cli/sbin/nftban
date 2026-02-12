@@ -52,7 +52,7 @@ export NFTBAN_VERSION
 # =============================================================================
 
 # Check if user has permission to read nftban config
-# Regular users must be in nftban-cli group OR run as root
+# Regular users must be in nftban group OR run as root
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && [[ ! -r "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     cat >&2 <<EOF
 
@@ -64,13 +64,16 @@ You do not have permission to run nftban.
 
 Requirements:
   • Be root (uid 0), OR
-  • Be a member of the 'nftban-cli' group
+  • Be a member of the 'nftban' group (operators)
 
 Current user: $(whoami) (uid: $(id -u))
 Current groups: $(id -Gn)
 
-To grant access, your administrator can run:
-  sudo usermod -aG nftban-cli $(whoami)
+To grant operator access, your administrator can run:
+  sudo usermod -aG nftban $(whoami)
+
+For read-only auditor access:
+  sudo usermod -aG nftban-auditor $(whoami)
 
 Then log out and log back in for the group to take effect.
 
