@@ -496,6 +496,60 @@ _nftban_login_classic_clear_ip() {
 }
 
 # =============================================================================
+# SMART LOG SOURCE DETECTION
+# =============================================================================
+
+# Check if a service has recent journal entries (smart detection)
+# Returns 0 if journal has entries, 1 if empty/unavailable
+_nftban_login_classic_journal_has_entries() {
+    local units="$1"
+    local check_window="${2:-5 min ago}"
+
+    # Build journalctl command to check for entries
+    local -a journal_cmd=(journalctl --since "$check_window" -q)
+
+    IFS=',' read -ra unit_array <<< "$units"
+    for unit in "${unit_array[@]}"; do
+        journal_cmd+=(-u "$unit")
+    done
+
+    # Check if any entries exist (limit to 1 for speed)
+    local count
+    count=$("${journal_cmd[@]}" 2>/dev/null | head -1 | wc -l)
+
+    [[ $count -gt 0 ]]
+}
+
+# Find available mail log file
+_nftban_login_classic_find_mail_log() {
+    local log_file=""
+    for f in "${LOGIN_SERVICE_MAIL_LOG:-}" \
+             "/var/log/maillog" \
+             "/var/log/mail.log"; do
+        if [[ -n "$f" ]] && [[ -f "$f" ]]; then
+            log_file="$f"
+            break
+        fi
+    done
+    echo "$log_file"
+}
+
+# Find available Exim log file
+_nftban_login_classic_find_exim_log() {
+    local log_file=""
+    for f in "${LOGIN_SERVICE_EXIM_LOG:-}" \
+             "/var/log/exim_mainlog" \
+             "/var/log/exim/mainlog" \
+             "/var/log/exim4/mainlog"; do
+        if [[ -n "$f" ]] && [[ -f "$f" ]]; then
+            log_file="$f"
+            break
+        fi
+    done
+    echo "$log_file"
+}
+
+# =============================================================================
 # MAIN OPERATIONS
 # =============================================================================
 
@@ -509,87 +563,119 @@ nftban_login_classic_start() {
     _LOGIN_CLASSIC_RUNNING=1
     nftban_login_log "INFO" "Starting classic mode monitoring"
 
-    # Start SSH monitor if detected
+    # =========================================================================
+    # SSH - always use journal (SSH always logs to systemd)
+    # =========================================================================
     if nftban_login_service_detected "ssh"; then
         local units="${LOGIN_SERVICE_SSH_UNITS:-sshd,ssh}"
+        nftban_login_log "INFO" "SSH: using journal ($units)"
         _nftban_login_classic_monitor_journal "ssh" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[ssh]=$!
     fi
 
-    # Start Dovecot monitor
+    # =========================================================================
+    # DOVECOT - smart detection: journal OR mail log file
+    # =========================================================================
     if nftban_login_service_detected "dovecot"; then
         local units="${LOGIN_SERVICE_DOVECOT_UNITS:-dovecot}"
-        _nftban_login_classic_monitor_journal "dovecot" "$units" "" &
-        _LOGIN_CLASSIC_MONITOR_PIDS[dovecot]=$!
+        if _nftban_login_classic_journal_has_entries "$units"; then
+            nftban_login_log "INFO" "Dovecot: using journal ($units)"
+            _nftban_login_classic_monitor_journal "dovecot" "$units" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[dovecot]=$!
+        else
+            local mail_log
+            mail_log=$(_nftban_login_classic_find_mail_log)
+            if [[ -n "$mail_log" ]]; then
+                nftban_login_log "INFO" "Dovecot: journal empty, using file ($mail_log)"
+                _nftban_login_classic_monitor_file "postfix_file" "$mail_log" "" &
+                _LOGIN_CLASSIC_MONITOR_PIDS[dovecot_file]=$!
+            else
+                nftban_login_log "WARN" "Dovecot: no log source available"
+            fi
+        fi
     fi
 
-    # Start Exim monitor
-    if nftban_login_service_detected "exim"; then
-        local units="${LOGIN_SERVICE_EXIM_UNITS:-exim,exim4}"
-        _nftban_login_classic_monitor_journal "exim" "$units" "" &
-        _LOGIN_CLASSIC_MONITOR_PIDS[exim]=$!
-    fi
-
-    # Start Postfix monitor (journalctl)
+    # =========================================================================
+    # POSTFIX - smart detection: journal OR mail log file (not both)
+    # =========================================================================
     if nftban_login_service_detected "postfix"; then
         local units="${LOGIN_SERVICE_POSTFIX_UNITS:-postfix}"
-        _nftban_login_classic_monitor_journal "postfix" "$units" "" &
-        _LOGIN_CLASSIC_MONITOR_PIDS[postfix]=$!
-    fi
+        # Also check postfix@- for Plesk/systemd template units
+        local extended_units="${units},postfix@-"
 
-    # Start mail log file monitor (for Plesk/rsyslog systems where SASL goes to maillog)
-    # This catches SASL failures that don't appear in journalctl -u postfix
-    local mail_log_file=""
-    for f in "${LOGIN_SERVICE_MAIL_LOG:-}" \
-             "/var/log/maillog" \
-             "/var/log/mail.log"; do
-        if [[ -n "$f" ]] && [[ -f "$f" ]]; then
-            mail_log_file="$f"
-            break
-        fi
-    done
-    if [[ -n "$mail_log_file" ]]; then
-        nftban_login_log "INFO" "Starting mail log file monitor ($mail_log_file)"
-        _nftban_login_classic_monitor_file "postfix_file" "$mail_log_file" "" &
-        _LOGIN_CLASSIC_MONITOR_PIDS[postfix_file]=$!
-    fi
-
-    # Start Exim log file monitor (for cPanel/DirectAdmin where Exim logs to file, not journald)
-    if nftban_login_service_detected "exim"; then
-        local exim_log_file=""
-        for f in "${LOGIN_SERVICE_EXIM_LOG:-}" \
-                 "/var/log/exim_mainlog" \
-                 "/var/log/exim/mainlog" \
-                 "/var/log/exim4/mainlog"; do
-            if [[ -n "$f" ]] && [[ -f "$f" ]]; then
-                exim_log_file="$f"
-                break
+        if _nftban_login_classic_journal_has_entries "$extended_units"; then
+            nftban_login_log "INFO" "Postfix: using journal ($units)"
+            _nftban_login_classic_monitor_journal "postfix" "$extended_units" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[postfix]=$!
+        else
+            local mail_log
+            mail_log=$(_nftban_login_classic_find_mail_log)
+            if [[ -n "$mail_log" ]]; then
+                nftban_login_log "INFO" "Postfix: journal empty, using file ($mail_log)"
+                _nftban_login_classic_monitor_file "postfix_file" "$mail_log" "" &
+                _LOGIN_CLASSIC_MONITOR_PIDS[postfix_file]=$!
+            else
+                nftban_login_log "WARN" "Postfix: no log source available"
             fi
-        done
-        if [[ -n "$exim_log_file" ]]; then
-            nftban_login_log "INFO" "Starting Exim log file monitor ($exim_log_file)"
-            _nftban_login_classic_monitor_file "exim_file" "$exim_log_file" "" &
-            _LOGIN_CLASSIC_MONITOR_PIDS[exim_file]=$!
+        fi
+    # If no postfix but dovecot wasn't started with file monitor, check mail log
+    elif [[ -z "${_LOGIN_CLASSIC_MONITOR_PIDS[dovecot_file]:-}" ]]; then
+        local mail_log
+        mail_log=$(_nftban_login_classic_find_mail_log)
+        if [[ -n "$mail_log" ]]; then
+            nftban_login_log "INFO" "Mail log: starting file monitor ($mail_log)"
+            _nftban_login_classic_monitor_file "postfix_file" "$mail_log" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[mail_file]=$!
         fi
     fi
 
-    # Start Pure-FTPd monitor
+    # =========================================================================
+    # EXIM - smart detection: journal OR exim log file (not both)
+    # =========================================================================
+    if nftban_login_service_detected "exim"; then
+        local units="${LOGIN_SERVICE_EXIM_UNITS:-exim,exim4}"
+
+        if _nftban_login_classic_journal_has_entries "$units"; then
+            nftban_login_log "INFO" "Exim: using journal ($units)"
+            _nftban_login_classic_monitor_journal "exim" "$units" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[exim]=$!
+        else
+            local exim_log
+            exim_log=$(_nftban_login_classic_find_exim_log)
+            if [[ -n "$exim_log" ]]; then
+                nftban_login_log "INFO" "Exim: journal empty, using file ($exim_log)"
+                _nftban_login_classic_monitor_file "exim_file" "$exim_log" "" &
+                _LOGIN_CLASSIC_MONITOR_PIDS[exim_file]=$!
+            else
+                nftban_login_log "WARN" "Exim: no log source available"
+            fi
+        fi
+    fi
+
+    # =========================================================================
+    # FTP SERVICES - use journal (FTP services typically log to systemd)
+    # =========================================================================
+
+    # Pure-FTPd
     if nftban_login_service_detected "pureftpd"; then
         local units="${LOGIN_SERVICE_PUREFTPD_UNITS:-pure-ftpd}"
+        nftban_login_log "INFO" "Pure-FTPd: using journal ($units)"
         _nftban_login_classic_monitor_journal "pureftpd" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[pureftpd]=$!
     fi
 
-    # Start vsftpd monitor
+    # vsftpd
     if nftban_login_service_detected "vsftpd"; then
         local units="${LOGIN_SERVICE_VSFTPD_UNITS:-vsftpd}"
+        nftban_login_log "INFO" "vsftpd: using journal ($units)"
         _nftban_login_classic_monitor_journal "vsftpd" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[vsftpd]=$!
     fi
 
-    # Start ProFTPD monitor
+    # ProFTPD
     if nftban_login_service_detected "proftpd"; then
         local units="${LOGIN_SERVICE_PROFTPD_UNITS:-proftpd}"
+        nftban_login_log "INFO" "ProFTPD: using journal ($units)"
         _nftban_login_classic_monitor_journal "proftpd" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[proftpd]=$!
     fi
