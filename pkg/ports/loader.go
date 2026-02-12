@@ -145,9 +145,14 @@ func loadPortFile(filePath string, config *PortConfig) error {
 			line = strings.TrimSpace(line[:idx])
 		}
 
-		// Parse format: PORT/PROTOCOL
-		// Examples: 22/T, 53/B, 80/T, 22/tcp, 53/udp
-		parts := strings.Split(line, "/")
+		// Parse format: PORT/PROTOCOL or PORT|PROTOCOL
+		// Examples: 22/T, 53/B, 80/T, 22/tcp, 53/udp, 10051|T, 10050|B
+		var parts []string
+		if strings.Contains(line, "|") {
+			parts = strings.Split(line, "|")
+		} else {
+			parts = strings.Split(line, "/")
+		}
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: Invalid port format at %s:%d: %s (expected PORT/PROTOCOL)\n",
 				filePath, lineNum, line)
