@@ -191,39 +191,41 @@ cmd_suricata_install() {
 # =============================================================================
 
 _suricata_setup_logrotate() {
-    # Install NFTBan-managed logrotate config for Suricata
-    # Uses 'su suricata suricata' to handle non-root log directory ownership
-    # This is separate from distro's /etc/logrotate.d/suricata to avoid conflicts
+    # Install NFTBan-managed logrotate config for NFTBan's Suricata logs
+    # NFTBan configures Suricata to write EVE to /var/log/nftban/suricata/
+    # NOT /var/log/suricata/ (that's distro default, we don't touch it)
 
     local logrotate_file="/etc/logrotate.d/nftban-suricata"
-    local suricata_user="suricata"
-    local suricata_group="suricata"
+    local log_dir="/var/log/nftban/suricata"
 
-    # Verify suricata user exists
-    if ! id "$suricata_user" &>/dev/null; then
-        echo "  ⊘ Suricata user not found, skipping logrotate setup"
+    # Verify log directory exists
+    if [[ ! -d "$log_dir" ]]; then
+        echo "  ⊘ NFTBan suricata log dir not found, skipping logrotate setup"
         return 0
     fi
 
-    # Get actual group (might differ on some distros)
-    suricata_group=$(id -gn "$suricata_user" 2>/dev/null || echo "suricata")
+    # Get ownership from the directory itself
+    local dir_user dir_group
+    dir_user=$(stat -c '%U' "$log_dir" 2>/dev/null || echo "suricata")
+    dir_group=$(stat -c '%G' "$log_dir" 2>/dev/null || echo "nftban")
 
     echo "  → Setting up log rotation..."
 
     cat > "$logrotate_file" << EOF
 # NFTBan-managed Suricata logrotate configuration
 # Installed by: nftban suricata enable
-# Safe to modify - will be overwritten on next 'nftban suricata enable'
+# Rotates NFTBan's EVE logs at /var/log/nftban/suricata/
+# Does NOT touch distro's /var/log/suricata/ (managed separately)
 
-/var/log/suricata/*.log /var/log/suricata/*.json {
-    su ${suricata_user} ${suricata_group}
+${log_dir}/*.json {
+    su ${dir_user} ${dir_group}
     daily
     missingok
     rotate 7
     compress
     delaycompress
     notifempty
-    create 0640 ${suricata_user} ${suricata_group}
+    create 0640 ${dir_user} ${dir_group}
     sharedscripts
     postrotate
         /bin/kill -HUP \$(cat /var/run/suricata.pid 2>/dev/null) 2>/dev/null || true
@@ -233,7 +235,7 @@ EOF
 
     # Validate config
     if logrotate -d "$logrotate_file" &>/dev/null; then
-        echo "  ✓ Log rotation configured (7-day retention)"
+        echo "  ✓ Log rotation configured (${log_dir}, 7-day retention)"
     else
         echo "  ⊘ Logrotate config validation failed (not critical)"
     fi
