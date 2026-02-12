@@ -420,8 +420,8 @@ nftban_banner_unified() {
     # Top border (use simple ASCII for SSH compatibility)
     echo -e "${dim}+$(nftban_repeat_char $width '-')+${reset}"
 
-    # Line 1: Icon + Health + Protection + Conflicts + Version + System Status
-    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - System Status${reset}"
+    # Line 1: Icon + Health + Protection + Conflicts + Version
+    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux IPS${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line1"
 
     # Line 2: Host, Kernel, Uptime
