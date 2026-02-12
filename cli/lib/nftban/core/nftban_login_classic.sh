@@ -264,6 +264,53 @@ _nftban_login_classic_process_web_log() {
             _nftban_login_classic_process_event "$ip" "unknown" "directadmin" "failed"
         fi
     fi
+
+    # Mail services (Postfix SASL, Dovecot) from /var/log/maillog or /var/log/mail.log
+    if [[ "$service" == "mail" ]] || [[ "$service" == "postfix_file" ]]; then
+        # Postfix SASL: "warning: hostname[IP]: SASL LOGIN authentication failed"
+        if [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*SASL.*authentication\ failed ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "postfix" "sasl_auth_fail"
+        # Alternative: "SASL ... failed ... [IP]"
+        elif [[ "$line" =~ SASL.*authentication\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "postfix" "sasl_auth_fail"
+        # Dovecot from mail log: "auth failed ... rip=IP"
+        elif [[ "$line" =~ [Aa]uth.*fail.*rip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "dovecot" "auth_fail"
+        # Generic authentication failure from mail log
+        elif [[ "$line" =~ [Aa]uthentication\ fail.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "mail" "auth_fail"
+        fi
+    fi
+
+    # Exim log file patterns (cPanel, DirectAdmin)
+    # Format: "2026-02-12 10:30:45 H=hostname [IP] ... authenticator failed"
+    # Or: "2026-02-12 10:30:45 [IP] rejected ... AUTH ... failed"
+    if [[ "$service" == "exim_file" ]]; then
+        # Exim authenticator failed: "H=hostname [IP] ... authenticator failed"
+        if [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*authenticator\ failed ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_fail"
+        # Exim AUTH failed: "[IP] ... AUTH ... failed"
+        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*AUTH.*failed ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_fail"
+        # Exim login failed: "login failed ... [IP]" or "[IP] ... login failed"
+        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*login\ failed ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "exim" "login_fail"
+        elif [[ "$line" =~ login\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "exim" "login_fail"
+        # Exim rejected AUTH: "rejected ... AUTH"
+        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*rejected.*AUTH ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_rejected"
+        fi
+    fi
 }
 
 # =============================================================================
@@ -304,8 +351,8 @@ _nftban_login_classic_process_event() {
         elapsed=$((now - first))
 
         if [[ $elapsed -lt $window ]]; then
-            # Within window - increment
-            ((_LOGIN_CLASSIC_FAIL_COUNT[$key]++))
+            # Within window - increment (|| true to avoid set -e exit)
+            ((_LOGIN_CLASSIC_FAIL_COUNT[$key]++)) || true
         else
             # Outside window - reset
             _LOGIN_CLASSIC_FAIL_COUNT[$key]=1
@@ -386,7 +433,8 @@ _nftban_login_classic_calculate_score() {
     local service_count=0
     for key in "${!_LOGIN_CLASSIC_FAIL_COUNT[@]}"; do
         if [[ "$key" == *":$ip" ]]; then
-            ((service_count++))
+            # Use || true to avoid set -e exit on 0++ (evaluates to false)
+            ((service_count++)) || true
         fi
     done
     if [[ $service_count -gt 1 ]]; then
@@ -482,11 +530,47 @@ nftban_login_classic_start() {
         _LOGIN_CLASSIC_MONITOR_PIDS[exim]=$!
     fi
 
-    # Start Postfix monitor
+    # Start Postfix monitor (journalctl)
     if nftban_login_service_detected "postfix"; then
         local units="${LOGIN_SERVICE_POSTFIX_UNITS:-postfix}"
         _nftban_login_classic_monitor_journal "postfix" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[postfix]=$!
+    fi
+
+    # Start mail log file monitor (for Plesk/rsyslog systems where SASL goes to maillog)
+    # This catches SASL failures that don't appear in journalctl -u postfix
+    local mail_log_file=""
+    for f in "${LOGIN_SERVICE_MAIL_LOG:-}" \
+             "/var/log/maillog" \
+             "/var/log/mail.log"; do
+        if [[ -n "$f" ]] && [[ -f "$f" ]]; then
+            mail_log_file="$f"
+            break
+        fi
+    done
+    if [[ -n "$mail_log_file" ]]; then
+        nftban_login_log "INFO" "Starting mail log file monitor ($mail_log_file)"
+        _nftban_login_classic_monitor_file "postfix_file" "$mail_log_file" "" &
+        _LOGIN_CLASSIC_MONITOR_PIDS[postfix_file]=$!
+    fi
+
+    # Start Exim log file monitor (for cPanel/DirectAdmin where Exim logs to file, not journald)
+    if nftban_login_service_detected "exim"; then
+        local exim_log_file=""
+        for f in "${LOGIN_SERVICE_EXIM_LOG:-}" \
+                 "/var/log/exim_mainlog" \
+                 "/var/log/exim/mainlog" \
+                 "/var/log/exim4/mainlog"; do
+            if [[ -n "$f" ]] && [[ -f "$f" ]]; then
+                exim_log_file="$f"
+                break
+            fi
+        done
+        if [[ -n "$exim_log_file" ]]; then
+            nftban_login_log "INFO" "Starting Exim log file monitor ($exim_log_file)"
+            _nftban_login_classic_monitor_file "exim_file" "$exim_log_file" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[exim_file]=$!
+        fi
     fi
 
     # Start Pure-FTPd monitor
@@ -501,6 +585,13 @@ nftban_login_classic_start() {
         local units="${LOGIN_SERVICE_VSFTPD_UNITS:-vsftpd}"
         _nftban_login_classic_monitor_journal "vsftpd" "$units" "" &
         _LOGIN_CLASSIC_MONITOR_PIDS[vsftpd]=$!
+    fi
+
+    # Start ProFTPD monitor
+    if nftban_login_service_detected "proftpd"; then
+        local units="${LOGIN_SERVICE_PROFTPD_UNITS:-proftpd}"
+        _nftban_login_classic_monitor_journal "proftpd" "$units" "" &
+        _LOGIN_CLASSIC_MONITOR_PIDS[proftpd]=$!
     fi
 
     # Start WordPress monitor (file-based)
