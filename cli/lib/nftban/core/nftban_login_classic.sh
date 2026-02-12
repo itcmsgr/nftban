@@ -180,6 +180,11 @@ _nftban_login_classic_process_message() {
             ip="${BASH_REMATCH[1]}"
             user="unknown"
         # SASL authentication failed (Postfix)
+        # Format: "warning: hostname[IP]: SASL LOGIN authentication failed"
+        elif [[ "$message" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*SASL.*authentication\ failed ]]; then
+            ip="${BASH_REMATCH[1]}"
+            user="unknown"
+        # Alternative SASL format (IP after SASL)
         elif [[ "$message" =~ SASL.*authentication\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"

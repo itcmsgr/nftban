@@ -34,6 +34,7 @@ Requires:       tar
 Requires:       grep
 Requires:       sed
 Requires:       gawk
+Requires:       bc
 Requires:       findutils
 Requires:       util-linux
 Requires:       iproute
