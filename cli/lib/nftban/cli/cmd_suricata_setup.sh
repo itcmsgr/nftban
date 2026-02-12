@@ -187,61 +187,6 @@ cmd_suricata_install() {
 }
 
 # =============================================================================
-# HELPER: Setup logrotate for Suricata logs
-# =============================================================================
-
-_suricata_setup_logrotate() {
-    # Install NFTBan-managed logrotate config for NFTBan's Suricata logs
-    # NFTBan configures Suricata to write EVE to /var/log/nftban/suricata/
-    # NOT /var/log/suricata/ (that's distro default, we don't touch it)
-
-    local logrotate_file="/etc/logrotate.d/nftban-suricata"
-    local log_dir="/var/log/nftban/suricata"
-
-    # Verify log directory exists
-    if [[ ! -d "$log_dir" ]]; then
-        echo "  ⊘ NFTBan suricata log dir not found, skipping logrotate setup"
-        return 0
-    fi
-
-    # Get ownership from the directory itself
-    local dir_user dir_group
-    dir_user=$(stat -c '%U' "$log_dir" 2>/dev/null || echo "suricata")
-    dir_group=$(stat -c '%G' "$log_dir" 2>/dev/null || echo "nftban")
-
-    echo "  → Setting up log rotation..."
-
-    cat > "$logrotate_file" << EOF
-# NFTBan-managed Suricata logrotate configuration
-# Installed by: nftban suricata enable
-# Rotates NFTBan's EVE logs at /var/log/nftban/suricata/
-# Does NOT touch distro's /var/log/suricata/ (managed separately)
-
-${log_dir}/*.json {
-    su ${dir_user} ${dir_group}
-    daily
-    missingok
-    rotate 7
-    compress
-    delaycompress
-    notifempty
-    create 0640 ${dir_user} ${dir_group}
-    sharedscripts
-    postrotate
-        /bin/kill -HUP \$(cat /var/run/suricata.pid 2>/dev/null) 2>/dev/null || true
-    endscript
-}
-EOF
-
-    # Validate config
-    if logrotate -d "$logrotate_file" &>/dev/null; then
-        echo "  ✓ Log rotation configured (${log_dir}, 7-day retention)"
-    else
-        echo "  ⊘ Logrotate config validation failed (not critical)"
-    fi
-}
-
-# =============================================================================
 # COMMAND: enable
 # =============================================================================
 
@@ -492,9 +437,6 @@ cmd_suricata_enable() {
             echo "  ✓ Rules update timer enabled (weekly Sunday 3 AM)" || \
             echo "  ⊘ Timer enable failed (not critical)"
     fi
-
-    # Setup logrotate for Suricata logs
-    _suricata_setup_logrotate
 
     echo ""
     echo "✅ Suricata IDS is now ENABLED and RUNNING"
