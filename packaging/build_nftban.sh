@@ -164,7 +164,7 @@ create_rpm_spec_nftban_core() {
 Name:           nftban-core
 Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
-Summary:        NFTBan Core - Adaptive firewall with threat intelligence
+Summary:        NFTBan - Open-source Linux IPS and nftables firewall manager
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/itcmsgr/nftban-dev
@@ -185,8 +185,8 @@ Requires:       bc
 Requires(pre):  shadow-utils
 
 %description
-NFTBan is an adaptive firewall system with threat intelligence integration.
-Features nftables v1.0 dual-table architecture (ip nftban + ip6 nftban).
+NFTBan is an open-source Linux IPS and nftables firewall manager with threat
+intelligence integration. Features nftables v1.0 dual-table architecture.
 
 %prep
 %autosetup
@@ -1064,9 +1064,9 @@ Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
 Maintainer: NFTBan Team <noreply@nftban.com>
-Description: NFTBan Core - Adaptive firewall with threat intelligence
- NFTBan is an adaptive firewall system with threat intelligence integration.
- Features nftables v1.0 dual-table architecture (ip nftban + ip6 nftban).
+Description: NFTBan - Open-source Linux IPS and nftables firewall manager
+ NFTBan is an open-source Linux IPS and nftables firewall manager with
+ threat intelligence integration. Features nftables v1.0 dual-table architecture.
  .
  This package includes:
   - nftban-core binary (Go)

@@ -168,8 +168,8 @@ generate_global_options() {
 
 generate_help_header() {
     cat <<'EOF'
-NFTBan - Adaptive Firewall Management
-======================================
+NFTBan - Open-source Linux IPS and nftables firewall manager
+=============================================================
 
 Usage: nftban <command> [subcommand] [options]
 

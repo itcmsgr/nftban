@@ -152,7 +152,8 @@ unset _cmd_suricata_modules _module _module_path _cmd_suricata_dir
 cmd_suricata_help() {
     cat << 'EOF'
 
-🛡️  NFTBan - Suricata IDS Management
+🛡️  NFTBan Suricata IDS Management
+    Open-source Linux IPS and nftables firewall manager
 
 USAGE:
     nftban suricata <command>

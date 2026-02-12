@@ -168,10 +168,10 @@ _nftban_ddos_banner() {
     if type -t nftban_banner >/dev/null 2>&1; then
         nftban_banner
     else
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║  🛡️  DDoS Protection                                     ║"
-        echo "║  nftban — Simplifying Linux Firewall Management         ║"
-        echo "╚══════════════════════════════════════════════════════════╝"
+        echo "╔═══════════════════════════════════════════════════════════════════════════╗"
+        echo "║  🛡️  DDoS Protection                                                      ║"
+        echo "║  NFTBan — Open-source Linux IPS and nftables firewall manager            ║"
+        echo "╚═══════════════════════════════════════════════════════════════════════════╝"
     fi
 }
 

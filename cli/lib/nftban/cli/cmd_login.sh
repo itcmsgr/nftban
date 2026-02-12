@@ -1091,7 +1091,7 @@ SYSTEMD SERVICE:
 
 For more information: https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference
 
-nftban — Simplifying Linux Firewall Management
+NFTBan — Open-source Linux IPS and nftables firewall manager
 EOF
 }
 

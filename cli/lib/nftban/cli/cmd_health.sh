@@ -346,7 +346,7 @@ NOTES:
     - Run 'check' after 'fix' to verify repairs
     - Health checks are non-destructive
 
-nftban — Simplifying Linux Firewall Management
+NFTBan — Open-source Linux IPS and nftables firewall manager
 EOF
 }
 
