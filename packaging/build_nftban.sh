@@ -237,6 +237,8 @@ cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 find %{buildroot}/etc/nftban/conf.d -name 'whitelist.txt' -delete 2>/dev/null || true
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
 install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
+install -D -m 0640 install/config/conf.d/metrics.conf %{buildroot}/etc/nftban/conf.d/metrics.conf
+install -D -m 0640 install/config/conf.d/persistent.conf %{buildroot}/etc/nftban/conf.d/persistent.conf
 
 # Pattern files (patterns.d for botscan)
 mkdir -p %{buildroot}/etc/nftban/patterns.d/botscan

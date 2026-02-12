@@ -84,7 +84,9 @@
 
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
 # Bug fix v1.12.8: Ownership must be suricata:nftban (Suricata writes, nftban reads)
+# Bug fix v1.13.x: su directive required - /var/log/nftban/suricata/ is non-root writable
 /var/log/nftban/suricata/eve-alerts.json {
+    su suricata nftban
     daily
     rotate 7
     compress
@@ -103,6 +105,7 @@
 # Suricata eve-audit.json (optional, higher volume when enabled)
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/eve-audit.json {
+    su suricata nftban
     daily
     rotate 3
     compress
@@ -120,6 +123,7 @@
 # Suricata eve-stats.json (optional, for capacity planning)
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/eve-stats.json {
+    su suricata nftban
     weekly
     rotate 2
     compress
@@ -133,6 +137,7 @@
 # Fast.log for Suricata
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/fast.log {
+    su suricata nftban
     weekly
     rotate 4
     compress
@@ -146,6 +151,7 @@
 # Stats.log for Suricata
 # Ownership: suricata:nftban (Suricata writes, nftban reads)
 /var/log/nftban/suricata/stats.log {
+    su suricata nftban
     weekly
     rotate 4
     compress
