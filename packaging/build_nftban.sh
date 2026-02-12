@@ -181,6 +181,7 @@ Requires:       curl
 Requires:       tar
 Requires:       gzip
 Requires:       pam
+Requires:       bc
 Requires(pre):  shadow-utils
 
 %description
@@ -1051,7 +1052,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: NFTBan Core - Adaptive firewall with threat intelligence
  NFTBan is an adaptive firewall system with threat intelligence integration.
