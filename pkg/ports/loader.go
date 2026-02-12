@@ -139,6 +139,12 @@ func loadPortFile(filePath string, config *PortConfig) error {
 			line = strings.TrimSpace(line[:idx])
 		}
 
+		// Skip lines that don't start with a digit (port numbers always start with digits)
+		// This handles [description] section fields like "name = ...", "priority = ..."
+		if len(line) == 0 || (line[0] < '0' || line[0] > '9') {
+			continue
+		}
+
 		// Handle INI-style format: "22/tcp = input" -> extract "22/tcp"
 		// Also handles simple format: "22/T"
 		if idx := strings.Index(line, "="); idx >= 0 {
