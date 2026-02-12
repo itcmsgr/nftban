@@ -83,6 +83,12 @@ nftban_health_fix_auditor_acls() {
         [[ -d /var/lib/nftban/reports/auditors ]] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || ((++acl_errors))
     fi
 
+    # Config directory - auditor needs read access to view (not modify) configuration
+    if [[ -d /etc/nftban ]]; then
+        setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || ((++acl_errors))
+        [[ -f /etc/nftban/nftban.conf ]] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
+    fi
+
     if [[ $acl_errors -eq 0 ]]; then
         echo "  ✓ Auditor ACLs configured successfully"
     else

@@ -665,6 +665,21 @@ smoke_test_auditor_acls() {
         fi
     fi
 
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    # Check ACL on /etc/nftban (config read access)
+    if [[ -d /etc/nftban ]]; then
+        if getfacl /etc/nftban 2>/dev/null | grep -q "group:nftban-auditor:"; then
+            log_pass "${test_name} — /etc/nftban has auditor ACL"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "${test_name} — /etc/nftban missing auditor ACL"
+            log "  Fix: nftban health fix permissions"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            ((++errors))
+        fi
+    fi
+
     if [[ $errors -eq 0 ]]; then
         log_pass "${test_name} — All auditor ACLs configured correctly"
     fi

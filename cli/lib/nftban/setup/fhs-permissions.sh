@@ -108,6 +108,12 @@ nftban_install_set_auditor_acls() {
         [[ -d /var/lib/nftban/reports/auditors ]] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || true
     fi
 
+    # Config directory - auditor read access for compliance review
+    if [[ -d /etc/nftban ]]; then
+        setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || true
+        [[ -f /etc/nftban/nftban.conf ]] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
+    fi
+
     echo "[NFTBan] Auditor ACLs configured"
     return 0
 }
