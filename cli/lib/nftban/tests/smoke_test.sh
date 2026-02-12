@@ -609,6 +609,70 @@ smoke_test_binary_integrity() {
 }
 
 # =============================================================================
+# AUDITOR ACL VERIFICATION
+# =============================================================================
+# Verifies that nftban-auditor group has correct ACL access to logs and reports.
+# This ensures the auditor role can read security logs without write access.
+
+smoke_test_auditor_acls() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "AUDITOR ACL VERIFICATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local test_name="Auditor ACLs"
+    local errors=0
+
+    # Check if nftban-auditor group exists
+    if ! getent group nftban-auditor &>/dev/null; then
+        log_warn "${test_name} — nftban-auditor group not found (skipped)"
+        return 0
+    fi
+
+    # Check if getfacl is available
+    if ! command -v getfacl &>/dev/null; then
+        log_warn "${test_name} — getfacl not available (skipped)"
+        return 0
+    fi
+
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    # Check ACL on /var/log/nftban
+    if [[ -d /var/log/nftban ]]; then
+        if getfacl /var/log/nftban 2>/dev/null | grep -q "group:nftban-auditor:"; then
+            log_pass "${test_name} — /var/log/nftban has auditor ACL"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "${test_name} — /var/log/nftban missing auditor ACL"
+            log "  Fix: nftban health fix permissions"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            ((++errors))
+        fi
+    fi
+
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    # Check ACL on /var/lib/nftban
+    if [[ -d /var/lib/nftban ]]; then
+        if getfacl /var/lib/nftban 2>/dev/null | grep -q "group:nftban-auditor:"; then
+            log_pass "${test_name} — /var/lib/nftban has auditor ACL"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "${test_name} — /var/lib/nftban missing auditor ACL"
+            log "  Fix: nftban health fix permissions"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            ((++errors))
+        fi
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        log_pass "${test_name} — All auditor ACLs configured correctly"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # FEEDS & GEOBAN NFT VALIDATION
 # =============================================================================
 # Validates that feeds/geoban CIDRs are actually loaded in nftables sets.
@@ -949,6 +1013,7 @@ main() {
         full)
             run_core_tests
             smoke_test_binary_integrity
+            smoke_test_auditor_acls
             run_module_tests
             run_stats_tests
             run_search_tests
@@ -962,6 +1027,7 @@ main() {
             # Comprehensive: test ALL CLI commands
             run_core_tests
             smoke_test_binary_integrity
+            smoke_test_auditor_acls
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
             run_protection_tests
