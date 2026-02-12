@@ -664,6 +664,16 @@ rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
 rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null || true
 rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
 
+# Remove stale nested directories from previous versions (v1.13.9 and earlier)
+if [ -d "/usr/lib/nftban/lib/nftban" ]; then
+    rm -rf "/usr/lib/nftban/lib/nftban"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/lib/nftban/"
+fi
+if [ -d "/usr/lib/nftban/etc" ]; then
+    rm -rf "/usr/lib/nftban/etc"
+    echo "[NFTBan] Removed stale: /usr/lib/nftban/etc/"
+fi
+
 echo "[NFTBan] Obsolete file cleanup complete"
 
 # =============================================================================
