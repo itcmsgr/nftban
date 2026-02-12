@@ -1,13 +1,13 @@
 Package: nftban-metrics
-Version: 1.7.0
+Version: 1.13.5
 Section: admin
 Priority: optional
 Architecture: all
-Depends: systemd (>= 232), nftban (>= 1.0.0)
-Recommends: prometheus-node-exporter, prometheus, grafana
+Depends: systemd (>= 250), nftban (>= 1.12.0)
+Recommends: prometheus-node-exporter, prometheus, grafana, logrotate
 Suggests: mailx
-Maintainer: NFTBan Development Team <noreply@nftban.org>
-Homepage: https://github.com/nftban/nftban
+Maintainer: Antonios Voulvoulis <contact@nftban.com>
+Homepage: https://nftban.com
 Description: NFTBan Prometheus/Grafana Integration
  This package provides Prometheus metrics collection for NFTBan firewall,
  including exporters, Grafana dashboards, and automated installation scripts.
