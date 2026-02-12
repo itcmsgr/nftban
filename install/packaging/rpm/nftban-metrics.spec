@@ -10,12 +10,12 @@ Release:        1%{?dist}
 Summary:        NFTBAN Metrics - Prometheus/Grafana observability for nftables firewall
 
 License:        MPL-2.0
-URL:            https://github.com/nftban/nftban
+URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
-Requires:       systemd >= 232
-Requires:       nftban >= 1.0.0
+Requires:       systemd >= 250
+Requires:       nftban >= 1.12.0
 Recommends:     node_exporter
 Recommends:     prometheus
 Recommends:     grafana

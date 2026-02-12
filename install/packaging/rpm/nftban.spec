@@ -401,23 +401,33 @@ fi
 # 2. Create Suricata EVE log directory and file
 # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates EVE file on first event
 # nftban-suricata daemon requires file to exist on startup
+# Bug fix v1.12.9: Detect Suricata user (suricata on RHEL, root on Debian/Ubuntu)
 SURICATA_LOG_DIR="/var/log/nftban/suricata"
 SURICATA_EVE_FILE="${SURICATA_LOG_DIR}/eve-alerts.json"
+
+# Detect Suricata user (suricata on RHEL/AlmaLinux, root on Debian/Ubuntu)
 if id suricata >/dev/null 2>&1; then
-    # Suricata is installed - create log directory and EVE file
-    if [ ! -d "$SURICATA_LOG_DIR" ]; then
-        mkdir -p "$SURICATA_LOG_DIR"
-        chown suricata:nftban "$SURICATA_LOG_DIR"
-        chmod 770 "$SURICATA_LOG_DIR"
-        echo "Created Suricata log directory: $SURICATA_LOG_DIR"
-    fi
-    if [ ! -f "$SURICATA_EVE_FILE" ]; then
-        touch "$SURICATA_EVE_FILE"
-        chown suricata:nftban "$SURICATA_EVE_FILE"
-        chmod 640 "$SURICATA_EVE_FILE"
-        echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
-    fi
-    # Add suricata to nftban group for log directory traversal
+    SURI_USER="suricata"
+else
+    SURI_USER="root"
+fi
+
+# Create directory with detected user ownership
+if [ ! -d "$SURICATA_LOG_DIR" ]; then
+    mkdir -p "$SURICATA_LOG_DIR"
+    chown "${SURI_USER}:nftban" "$SURICATA_LOG_DIR"
+    chmod 770 "$SURICATA_LOG_DIR"
+    echo "Created Suricata log directory: $SURICATA_LOG_DIR (owner: $SURI_USER)"
+fi
+if [ ! -f "$SURICATA_EVE_FILE" ]; then
+    touch "$SURICATA_EVE_FILE"
+    chown "${SURI_USER}:nftban" "$SURICATA_EVE_FILE"
+    chmod 640 "$SURICATA_EVE_FILE"
+    echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
+fi
+
+# Add suricata to nftban group for log directory traversal (only if suricata user exists)
+if [ "$SURI_USER" = "suricata" ]; then
     if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
         usermod -aG nftban suricata 2>/dev/null && \
             echo "Added suricata user to nftban group"
@@ -518,7 +528,7 @@ fi
 if [ $1 -ge 1 ]; then
     # Upgrade - restart running services (DEB parity)
     echo "Restarting NFTBan services after upgrade..."
-    systemctl try-restart nftband.service >/dev/null 2>&1 || true
+    systemctl try-restart nftban.service >/dev/null 2>&1 || true
     systemctl try-restart nftban-login-monitor.service >/dev/null 2>&1 || true
 fi
 
