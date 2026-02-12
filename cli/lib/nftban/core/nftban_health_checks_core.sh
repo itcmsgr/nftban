@@ -261,6 +261,85 @@ nftban_health_check_permissions() {
 }
 
 # =============================================================================
+# AUDITOR ACL CHECKS
+# =============================================================================
+# Verifies nftban-auditor group has correct ACL access for read-only audit.
+# ACLs should be set on: /etc/nftban, /var/log/nftban, /var/lib/nftban
+# This enables auto-heal to trigger ACL setup if missing.
+# =============================================================================
+
+nftban_health_check_auditor_acls() {
+    local auto_heal="${1:-0}"
+    local status=$HEALTH_OK
+    local acl_issues=()
+
+    # Skip if setfacl not available (ACLs not supported)
+    if ! command -v getfacl &>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["auditor_acls"]=$HEALTH_OK
+        return $HEALTH_OK
+    fi
+
+    # Skip if nftban-auditor group doesn't exist
+    if ! getent group nftban-auditor &>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["auditor_acls"]=$HEALTH_OK
+        return $HEALTH_OK
+    fi
+
+    # Critical directories that should have auditor ACLs
+    local acl_dirs=("/etc/nftban" "/var/log/nftban" "/var/lib/nftban")
+
+    for dir in "${acl_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+
+        # Check if nftban-auditor group has ACL entry (x permission for traversal)
+        if ! getfacl -p "$dir" 2>/dev/null | grep -q "^group:nftban-auditor:"; then
+            acl_issues+=("$dir missing auditor ACL")
+            status=$HEALTH_WARNING
+        fi
+    done
+
+    # Auto-heal: Set ACLs if missing
+    if [[ ${#acl_issues[@]} -gt 0 ]]; then
+        if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+            if [[ $EUID -eq 0 ]]; then
+                # Try to source and call the install ACL function
+                local lib_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+                if [[ -f "${lib_dir}/setup/fhs-permissions.sh" ]]; then
+                    # shellcheck source=/dev/null
+                    source "${lib_dir}/setup/fhs-permissions.sh" 2>/dev/null
+                    if declare -f nftban_install_set_auditor_acls &>/dev/null; then
+                        nftban_install_set_auditor_acls 2>/dev/null && {
+                            acl_issues+=("AUTO-FIXED: Auditor ACLs configured")
+                            status=$HEALTH_OK
+                        }
+                    fi
+                fi
+                # Fallback: Use health fix function if available
+                if [[ $status -ne $HEALTH_OK ]] && declare -f nftban_health_fix_auditor_acls &>/dev/null; then
+                    nftban_health_fix_auditor_acls 2>/dev/null && {
+                        acl_issues+=("AUTO-FIXED: Auditor ACLs configured (via health fix)")
+                        status=$HEALTH_OK
+                    }
+                fi
+            else
+                acl_issues+=("NEEDS ROOT: Run 'sudo nftban health fix permissions' to set ACLs")
+            fi
+        else
+            acl_issues+=("FIX: Run 'sudo nftban health fix permissions' or 'sudo nftban permissions enforce'")
+        fi
+    fi
+
+    [[ ${#acl_issues[@]} -gt 0 ]] && {
+        NFTBAN_HEALTH_ISSUES["auditor_acls"]="${acl_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Auditor ACL issues: ${acl_issues[*]}")
+        fi
+    }
+    NFTBAN_HEALTH_RESULTS["auditor_acls"]=$status
+    return $status
+}
+
+# =============================================================================
 # SYSTEM RESOURCE CHECKS
 # =============================================================================
 
@@ -429,6 +508,7 @@ export -f _health_file_age _health_file_fresh _health_http_check
 export -f _health_check_service _health_check_metrics_file
 export -f nftban_health_should_alert
 export -f nftban_health_check_binaries nftban_health_check_paths
-export -f nftban_health_check_permissions nftban_health_check_resources
+export -f nftban_health_check_permissions nftban_health_check_auditor_acls
+export -f nftban_health_check_resources
 export -f nftban_health_check_fhs nftban_health_check_queue_processor
 export -f nftban_health_check_nftban_bin

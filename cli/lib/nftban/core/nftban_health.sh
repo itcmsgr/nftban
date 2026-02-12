@@ -493,6 +493,7 @@ nftban_health_check_all() {
     nftban_health_check_binary_integrity || ((errors++))
     nftban_health_check_paths || ((errors++))
     nftban_health_check_permissions || ((warnings++))
+    nftban_health_check_auditor_acls "$auto_heal" || ((warnings++))
     nftban_health_check_config || ((warnings++))
     nftban_health_check_nftban_bin || ((errors++))
     nftban_health_check_queue_processor "$auto_heal" || ((errors++))
@@ -568,6 +569,7 @@ export -f nftban_health_check_binaries
 export -f nftban_health_check_binary_integrity
 export -f nftban_health_check_paths
 export -f nftban_health_check_permissions
+export -f nftban_health_check_auditor_acls
 export -f nftban_health_check_services
 export -f nftban_health_check_daemon
 export -f nftban_health_check_protection
