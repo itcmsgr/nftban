@@ -69,20 +69,20 @@ nftban_cmd_whitelist() {
         add)
             # Add IP to whitelist
             local ip="${1:-}"
-            if [[ -z "$ip" ]]; then
+            if [[ -z "$ip" || "$ip" == "--help" || "$ip" == "-h" ]]; then
                 echo "Usage: nftban whitelist add <IP>" >&2
                 echo "Example: nftban whitelist add 192.168.1.100" >&2
-                return 1
+                return 0
             fi
             nftban_whitelist_add_ip "$ip"
             ;;
         remove|rm|del|delete)
             # Remove IP from whitelist
             local ip="${1:-}"
-            if [[ -z "$ip" ]]; then
+            if [[ -z "$ip" || "$ip" == "--help" || "$ip" == "-h" ]]; then
                 echo "Usage: nftban whitelist remove <IP>" >&2
                 echo "Example: nftban whitelist remove 192.168.1.100" >&2
-                return 1
+                return 0
             fi
             nftban_whitelist_remove_ip "$ip"
             ;;
