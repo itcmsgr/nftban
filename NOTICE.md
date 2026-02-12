@@ -1,6 +1,6 @@
 # NOTICE
 
-**Project:** nftban — Simplifying Linux Firewall Management  
+**Project:** NFTBan — Open-source Linux IPS and nftables firewall manager  
 **Website:** https://nftban.com
 
 Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis.

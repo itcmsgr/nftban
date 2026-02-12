@@ -86,10 +86,10 @@ declare -gA _LOGIN_DETECTED_SERVICES=()   # Services detected on system
 
 nftban_login_banner() {
     cat <<'BANNER'
-╔══════════════════════════════════════════════════════════╗
-║  🔐 Login Monitor (v1.0 Dual-Mode)                       ║
-║  nftban — Simplifying Linux Firewall Management          ║
-╚══════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  🔐 Login Monitor (v1.0 Dual-Mode)                                        ║
+║  NFTBan — Open-source Linux IPS and nftables firewall manager             ║
+╚═══════════════════════════════════════════════════════════════════════════╝
 BANNER
 }
 

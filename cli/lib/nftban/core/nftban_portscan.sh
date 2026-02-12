@@ -96,10 +96,10 @@ declare -g _PORTSCAN_INITIALIZED=0       # Initialization flag
 
 nftban_portscan_banner() {
     cat <<'BANNER'
-╔══════════════════════════════════════════════════════════╗
-║  🔍 Port Scan Detection (v1.0 Dual-Mode)                ║
-║  nftban — Simplifying Linux Firewall Management         ║
-╚══════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  🔍 Port Scan Detection (v1.0 Dual-Mode)                                  ║
+║  NFTBan — Open-source Linux IPS and nftables firewall manager             ║
+╚═══════════════════════════════════════════════════════════════════════════╝
 BANNER
 }
 

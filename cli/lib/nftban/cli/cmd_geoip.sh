@@ -775,7 +775,7 @@ FILES AND LOCATIONS:
 ATTRIBUTION:
     IP Geolocation by DB-IP (https://db-ip.com)
 
-nftban — Simplifying Linux Firewall Management
+NFTBan — Open-source Linux IPS and nftables firewall manager
 EOF
 }
 

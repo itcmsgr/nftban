@@ -277,6 +277,6 @@ We appreciate your time and patience! 🎉
 
 ---
 
-**NFTBan Project** - Simplifying Linux Firewall Management
+**NFTBan Project** — Open-source Linux IPS and nftables firewall manager
 
 Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis

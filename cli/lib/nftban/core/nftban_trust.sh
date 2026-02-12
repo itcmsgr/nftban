@@ -150,10 +150,10 @@ _trust_log() {
 # =============================================================================
 nftban_trust_banner() {
     cat <<'BANNER'
-+----------------------------------------------------------+
-|  Trusted Providers Management                            |
-|  nftban - Simplifying Linux Firewall Management          |
-+----------------------------------------------------------+
++--------------------------------------------------------------------------+
+|  Trusted Providers Management                                            |
+|  NFTBan — Open-source Linux IPS and nftables firewall manager            |
++--------------------------------------------------------------------------+
 BANNER
 }
 

@@ -256,7 +256,7 @@ nftban_render_banner_simple() {
     local icons version motto
     icons="$(nftban_icon_pair)"
     version="$(nftban_get_version)"
-    motto="${NFTBAN_MOTTO:-Simplifying Linux Firewall Management}"
+    motto="${NFTBAN_MOTTO:-NFTBan — Open-source Linux IPS and nftables firewall manager}"
 
     echo -e "${NFTBAN_COLOR_BOLD}${icons} NFTBan v${version}${NFTBAN_COLOR_RESET}"
     echo -e "${NFTBAN_COLOR_DIM}${motto}${NFTBAN_COLOR_RESET}"
@@ -519,7 +519,7 @@ nftban_render_banner_full() {
     version="$(nftban_get_version)"
     host="$(nftban_get_hostname)"
     kernel="$(nftban_get_kernel)"
-    motto="${NFTBAN_MOTTO:-Simplifying Linux Firewall Management}"
+    motto="${NFTBAN_MOTTO:-NFTBan — Open-source Linux IPS and nftables firewall manager}"
 
     # Top border
     if [[ "$NFTBAN_COLOR" == "true" ]]; then

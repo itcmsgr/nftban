@@ -430,7 +430,7 @@ nftban_login_digest_send() {
         </div>
 
         <div class="footer">
-            <strong>nftban — Simplifying Linux Firewall Management</strong><br>
+            <strong>NFTBan — Open-source Linux IPS and nftables firewall manager</strong><br>
             <a href="https://nftban.com">https://nftban.com</a><br>
             Generated: $timestamp
         </div>
@@ -567,7 +567,7 @@ Additional Details:
 $details
 
 ---
-nftban — Simplifying Linux Firewall Management
+NFTBan — Open-source Linux IPS and nftables firewall manager
 https://nftban.com
 EOF
 )
@@ -745,7 +745,7 @@ nftban_login_send_html_alert() {
         </div>
 
         <div class="footer">
-            <strong>nftban — Simplifying Linux Firewall Management</strong><br>
+            <strong>NFTBan — Open-source Linux IPS and nftables firewall manager</strong><br>
             <a href="https://nftban.com">https://nftban.com</a>
         </div>
     </div>

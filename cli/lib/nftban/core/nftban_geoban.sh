@@ -862,10 +862,10 @@ nftban_geoban_unwhitelist_countries() {
 nftban_geoban_list() {
     nftban_geoban_check_enabled || return 1
 
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  🌍 GeoBan Active Countries                              ║"
-    echo "║  nftban — Simplifying Linux Firewall Management         ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
+    echo "╔═══════════════════════════════════════════════════════════════════════════╗"
+    echo "║  🌍 GeoBan Active Countries                                              ║"
+    echo "║  NFTBan — Open-source Linux IPS and nftables firewall manager            ║"
+    echo "╚═══════════════════════════════════════════════════════════════════════════╝"
     echo ""
 
     # Check for banned countries
@@ -998,10 +998,10 @@ nftban_geoban_update() {
 nftban_geoban_status() {
     nftban_geoban_check_enabled || return 1
 
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  🌍 GeoBan Status                                        ║"
-    echo "║  nftban — Simplifying Linux Firewall Management         ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
+    echo "╔═══════════════════════════════════════════════════════════════════════════╗"
+    echo "║  🌍 GeoBan Status                                                        ║"
+    echo "║  NFTBan — Open-source Linux IPS and nftables firewall manager            ║"
+    echo "╚═══════════════════════════════════════════════════════════════════════════╝"
     echo ""
 
     # Configuration

@@ -31,7 +31,7 @@ set -Eeuo pipefail
 # =============================================================================
 
 TITLE="NFTBAN — Interactive Menu"
-BACKTITLE="Adaptive firewall & ban management"
+BACKTITLE="NFTBan — Open-source Linux IPS and nftables firewall manager"
 
 # =============================================================================
 # UTILITY FUNCTIONS
