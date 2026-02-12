@@ -164,7 +164,7 @@ create_rpm_spec_nftban_core() {
 Name:           nftban-core
 Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
-Summary:        Open-source Linux Intrusion Prevention System (IPS) and nftables firewall manager
+Summary:        Open-source Linux IPS and nftables firewall manager
 
 License:        GPL-3.0-or-later
 URL:            https://nftban.com
@@ -185,13 +185,29 @@ Requires:       bc
 Requires(pre):  shadow-utils
 
 %description
-NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall
-manager built on nftables, designed to integrate cleanly with modern Linux
-security stacks.
+NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
+nftables firewall manager built for modern server and DevOps environments.
 
-Features deterministic threat enforcement with nftables v1.0 dual-table
-architecture (ip nftban + ip6 nftban), threat intelligence feeds, geographic
-blocking, and automated response to login abuse, port scans, and DDoS attacks.
+It uses a Go-based netlink daemon for asynchronous enforcement, applying
+security rules directly through the Linux kernel for low-latency threat
+response.
+
+Key features include:
+
+ * Native nftables integration designed for Linux 5.x+ systems,
+   ensuring predictable rule evaluation and efficient kernel execution.
+
+ * Dual-table architecture (ip nftban and ip6 nftban) providing
+   clean IPv4 and IPv6 isolation.
+
+ * Automated protection against SSH brute-force attacks,
+   login abuse, port scans, and DDoS activity.
+
+ * Support for real-time threat intelligence feeds and
+   geographic IP blocking (Geo-IP).
+
+ * Asynchronous rule management to maintain responsiveness
+   even under high traffic conditions.
 
 %prep
 %autosetup
@@ -1069,14 +1085,25 @@ Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
 Maintainer: NFTBan Team <noreply@nftban.com>
-Description: Open-source Linux Intrusion Prevention System (IPS) and nftables firewall manager
- NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall
- manager built on nftables, designed to integrate cleanly with modern Linux
- security stacks.
+Description: Open-source Linux IPS and nftables firewall manager
+ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
+ nftables firewall manager built for modern server and DevOps environments.
  .
- Features deterministic threat enforcement with nftables v1.0 dual-table
- architecture (ip nftban + ip6 nftban), threat intelligence feeds, geographic
- blocking, and automated response to login abuse, port scans, and DDoS attacks.
+ It uses a Go-based netlink daemon for asynchronous enforcement, applying
+ security rules directly through the Linux kernel for low-latency threat
+ response.
+ .
+ Key features include:
+  * Native nftables integration designed for Linux 5.x+ systems,
+    ensuring predictable rule evaluation and efficient kernel execution.
+  * Dual-table architecture (ip nftban and ip6 nftban) providing
+    clean IPv4 and IPv6 isolation.
+  * Automated protection against SSH brute-force attacks,
+    login abuse, port scans, and DDoS activity.
+  * Support for real-time threat intelligence feeds and
+    geographic IP blocking (Geo-IP).
+  * Asynchronous rule management to maintain responsiveness
+    even under high traffic conditions.
  .
  This package includes:
   - nftban-core binary (Go daemon)
