@@ -91,7 +91,8 @@ nftban_portscan_classic_load_config() {
 # =============================================================================
 
 # Log file for portscan classic mode
-readonly PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
+# Note: Not readonly - needs to be configurable via conf.d/portscan/classic.conf
+PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
 _nftban_portscan_classic_log() {
     local level="$1"
