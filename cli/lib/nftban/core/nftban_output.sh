@@ -420,8 +420,8 @@ nftban_banner_unified() {
     # Top border (use simple ASCII for SSH compatibility)
     echo -e "${dim}+$(nftban_repeat_char $width '-')+${reset}"
 
-    # Line 1: Icon + Health + Protection + Conflicts + Version
-    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux IPS${reset}"
+    # Line 1: Icon + Health + Protection + Conflicts + Version + Tagline
+    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux IPS & nftables FW${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line1"
 
     # Line 2: Host, Kernel, Uptime
@@ -451,8 +451,9 @@ nftban_banner_unified() {
         panel_info=" | Panel: ${cyan}${NFTBAN_DETECTED_PANEL}${reset}${dim}"
     fi
 
-    # Line 3: Uptime + Mode + Panel
-    local line3="${dim}Uptime: ${uptime_str} | Mode: ${mode}${panel_info}${reset}"
+    # Line 3: Uptime + Mode + Panel + Cmd
+    local cmd_info=" | Cmd: ${cyan}${mode}${reset}${dim}"
+    local line3="${dim}Uptime: ${uptime_str} | Mode: cli${panel_info}${cmd_info}${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line3"
 
     # Bottom border
