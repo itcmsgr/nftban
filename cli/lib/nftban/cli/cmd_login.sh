@@ -79,12 +79,17 @@ readonly NFTBAN_LOGIN_CLI_LOADED=1
 # =============================================================================
 
 
-# Load login alert module
+# Load login alert module (for alert functions)
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh"
 else
     echo "ERROR: Login alert module not found at ${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" >&2
     exit 1
+fi
+
+# Load main login module (for multi-service detection: SSH, Dovecot, Postfix, Exim)
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/core/nftban_login.sh"
 fi
 
 # =============================================================================
@@ -158,6 +163,23 @@ nftban_login_cmd_status() {
     echo "  SU: ${NFTBAN_LOGIN_ALERT_SU:-false}"
     echo "  SUDO: ${NFTBAN_LOGIN_ALERT_SUDO:-false}"
     echo "  Console: ${NFTBAN_LOGIN_ALERT_CONSOLE:-false}"
+
+    # Show detected mail services (if main login module loaded)
+    if declare -f nftban_login_init &>/dev/null; then
+        nftban_login_init 2>/dev/null || true
+        echo ""
+        echo "Mail Services (auto-detected):"
+        for svc in dovecot postfix exim; do
+            if nftban_login_service_detected "$svc" 2>/dev/null; then
+                echo "  $svc: ✅ detected"
+            else
+                echo "  $svc: ⚪ not installed"
+            fi
+        done
+        echo ""
+        echo "Active Mode: ${_LOGIN_ACTIVE_MODE:-classic}"
+    fi
+
     echo ""
     echo "Failed Attempts:"
     echo "  Alert on Failed: ${NFTBAN_LOGIN_ALERT_FAILED:-false}"
@@ -511,6 +533,7 @@ nftban_login_cmd_test() {
 
 nftban_login_cmd_run() {
     # Run login monitoring (for service)
+    # Uses consolidated login module for multi-service detection
 
     # Normalize boolean value (accepts true/TRUE/yes/YES/1/on/ON)
     local alert_enabled
@@ -530,8 +553,42 @@ nftban_login_cmd_run() {
         exit 1
     fi
 
-    # Start monitoring
-    nftban_login_monitor_all
+    # Use consolidated login module (SSH + mail services)
+    if declare -f nftban_login_start &>/dev/null; then
+        # Initialize and detect services
+        nftban_login_init || {
+            echo "ERROR: Failed to initialize login module" >&2
+            exit 1
+        }
+
+        # Build detected services list for banner
+        local detected_services=""
+        local all_services="ssh dovecot postfix exim"
+        for svc in $all_services; do
+            if nftban_login_service_detected "$svc" 2>/dev/null; then
+                [[ -n "$detected_services" ]] && detected_services+=","
+                detected_services+="$svc"
+            fi
+        done
+        [[ -z "$detected_services" ]] && detected_services="ssh"
+
+        # Startup banner for debugging
+        local timestamp
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        echo "[$timestamp] NFTBan Login Monitor starting"
+        echo "[$timestamp] Mode: ${_LOGIN_ACTIVE_MODE:-classic}"
+        echo "[$timestamp] Services monitored: $all_services"
+        echo "[$timestamp] Services detected: $detected_services"
+        logger -t nftban-login-monitor "Started: mode=${_LOGIN_ACTIVE_MODE:-classic} detected=$detected_services"
+
+        # Start consolidated monitoring (SSH + Dovecot + Postfix + Exim)
+        nftban_login_start
+    else
+        # Fallback to alert-only mode if main module not loaded
+        echo "WARNING: Main login module not loaded, using alert-only mode (SSH only)" >&2
+        logger -t nftban-login-monitor "Started: mode=alert-only (SSH only)"
+        nftban_login_monitor_all
+    fi
 }
 
 nftban_login_cmd_stats() {
