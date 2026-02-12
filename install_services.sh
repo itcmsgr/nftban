@@ -212,6 +212,7 @@ install_logrotate() {
 }
 
 /var/log/nftban/suricata/*.json /var/log/nftban/suricata/*.log {
+    su suricata nftban
     daily
     rotate ${suricata_rotate}
     compress
