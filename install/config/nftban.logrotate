@@ -82,6 +82,26 @@
     create 0640 nftban nftban
 }
 
+# =============================================================================
+# Additional module logs (Feeds, GeoBan, Botscan, etc.)
+# =============================================================================
+# These modules write logs that were previously missing from rotation
+/var/log/nftban/feeds.log
+/var/log/nftban/geoban.log
+/var/log/nftban/botscan.log
+/var/log/nftban/login_alert.log
+/var/log/nftban/update.log
+/var/log/nftban/cron.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
 # Bug fix v1.12.8: Ownership must be suricata:nftban (Suricata writes, nftban reads)
 # Bug fix v1.13.x: su directive required - /var/log/nftban/suricata/ is non-root writable
