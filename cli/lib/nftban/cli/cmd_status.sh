@@ -456,6 +456,7 @@ output_terminal() {
     # Login Monitor
     local login_status="UNKNOWN"
     local login_details=""
+    local mail_services=""
     if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
         login_status="ACTIVE"
         # Get monitoring targets from config
@@ -468,6 +469,21 @@ output_terminal() {
         [[ "${NFTBAN_LOGIN_ALERT_SSH:-true}" == "true" ]] && monitors="${monitors}SSH, "
         [[ "${NFTBAN_LOGIN_ALERT_SU:-true}" == "true" ]] && monitors="${monitors}SU, "
         [[ "${NFTBAN_LOGIN_ALERT_SUDO:-true}" == "true" ]] && monitors="${monitors}SUDO, "
+
+        # Detect mail services (Dovecot, Postfix, Exim)
+        if systemctl list-unit-files dovecot.service 2>/dev/null | grep -q dovecot; then
+            monitors="${monitors}Dovecot, "
+            mail_services="${mail_services}dovecot "
+        fi
+        if systemctl list-unit-files postfix.service 2>/dev/null | grep -q postfix; then
+            monitors="${monitors}Postfix, "
+            mail_services="${mail_services}postfix "
+        fi
+        if systemctl list-unit-files exim.service exim4.service 2>/dev/null | grep -q exim; then
+            monitors="${monitors}Exim, "
+            mail_services="${mail_services}exim "
+        fi
+
         monitors="${monitors%, }"
         [[ -n "$monitors" ]] && login_details="$monitors"
     elif systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
