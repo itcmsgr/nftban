@@ -164,10 +164,10 @@ create_rpm_spec_nftban_core() {
 Name:           nftban-core
 Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
-Summary:        NFTBan - Open-source Linux IPS and nftables firewall manager
+Summary:        Open-source Linux Intrusion Prevention System (IPS) and nftables firewall manager
 
 License:        GPL-3.0-or-later
-URL:            https://github.com/itcmsgr/nftban-dev
+URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  systemd-rpm-macros
@@ -185,8 +185,13 @@ Requires:       bc
 Requires(pre):  shadow-utils
 
 %description
-NFTBan is an open-source Linux IPS and nftables firewall manager with threat
-intelligence integration. Features nftables v1.0 dual-table architecture.
+NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall
+manager built on nftables, designed to integrate cleanly with modern Linux
+security stacks.
+
+Features deterministic threat enforcement with nftables v1.0 dual-table
+architecture (ip nftban + ip6 nftban), threat intelligence feeds, geographic
+blocking, and automated response to login abuse, port scans, and DDoS attacks.
 
 %prep
 %autosetup
@@ -1064,17 +1069,22 @@ Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
 Maintainer: NFTBan Team <noreply@nftban.com>
-Description: NFTBan - Open-source Linux IPS and nftables firewall manager
- NFTBan is an open-source Linux IPS and nftables firewall manager with
- threat intelligence integration. Features nftables v1.0 dual-table architecture.
+Description: Open-source Linux Intrusion Prevention System (IPS) and nftables firewall manager
+ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall
+ manager built on nftables, designed to integrate cleanly with modern Linux
+ security stacks.
+ .
+ Features deterministic threat enforcement with nftables v1.0 dual-table
+ architecture (ip nftban + ip6 nftban), threat intelligence feeds, geographic
+ blocking, and automated response to login abuse, port scans, and DDoS attacks.
  .
  This package includes:
-  - nftban-core binary (Go)
-  - nftban CLI
-  - Shell libraries
+  - nftban-core binary (Go daemon)
+  - nftban CLI (Bash)
+  - Shell libraries (/usr/lib/nftban)
   - NFT Schema v1.0 configuration
-  - Systemd units
-  - PolicyKit rules
+  - Systemd units and timers
+  - PolicyKit rules for privilege management
 EOF
 
     # Create preinst script for prerequisite checks
