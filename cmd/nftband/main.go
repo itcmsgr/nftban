@@ -34,8 +34,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -181,6 +184,11 @@ type Daemon struct {
 	// v1.13.0: Async IPC operation queue
 	opQueue     *opqueue.OpQueue     // Async operation queue for batched netlink
 	sourceIndex *opqueue.SourceIndex // Source tracking for shared sets
+
+	// v1.13.12: Config reload tracking
+	configHash    string       // SHA256 of loaded config files
+	lastReloadTs  time.Time    // When config was last loaded/reloaded
+	reloadMu      sync.RWMutex // Protects config reload operations
 }
 
 // isWhitelisted checks if an IP is in the whitelist.
@@ -480,6 +488,9 @@ func (d *Daemon) Run() error {
 	if err := d.initOpQueue(); err != nil {
 		log.Printf("Warning: OpQueue init failed: %v (async operations disabled)", err)
 	}
+
+	// Initialize config hash for reload tracking (v1.13.12)
+	d.initConfigHash()
 
 	// Register modules
 	d.registerModules()
@@ -978,6 +989,9 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleFlushSourceRequest(req.Params)
 	case "queue_status":
 		return d.handleQueueStatusRequest()
+	// v1.13.12: Config reload handler
+	case "reload":
+		return d.handleReloadRequest(req.Params)
 	default:
 		return SocketResponse{
 			Success: false,
@@ -1285,6 +1299,13 @@ func (d *Daemon) handlePermanentBanStatsRequest() SocketResponse {
 // handleStatusRequest returns daemon status
 func (d *Daemon) handleStatusRequest() SocketResponse {
 	stats := d.bus.Stats()
+
+	// Get config info (thread-safe)
+	d.reloadMu.RLock()
+	configHash := d.configHash
+	lastReload := d.lastReloadTs
+	d.reloadMu.RUnlock()
+
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
@@ -1293,6 +1314,9 @@ func (d *Daemon) handleStatusRequest() SocketResponse {
 			"modules":       len(d.registry.All()),
 			"events_total":  stats.Published,
 			"subscriptions": stats.Subscriptions,
+			// v1.13.12: Config reload tracking
+			"config_hash":   configHash,
+			"config_loaded": lastReload.Format(time.RFC3339),
 		},
 	}
 }
@@ -1730,13 +1754,29 @@ func (d *Daemon) startPprof() {
 	}()
 }
 
-// waitForShutdown blocks until SIGTERM/SIGINT
+// waitForShutdown blocks until SIGTERM/SIGINT, handles SIGHUP for config reload
 func (d *Daemon) waitForShutdown() {
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
-	sig := <-sigCh
-	log.Printf("Received %v, shutting down...", sig)
+	for {
+		sig := <-sigCh
+		switch sig {
+		case syscall.SIGHUP:
+			// Handle config reload
+			log.Println("Received SIGHUP, reloading configuration...")
+			if err := d.reloadConfig(); err != nil {
+				log.Printf("Config reload failed: %v", err)
+			} else {
+				log.Printf("Config reloaded successfully (hash: %s)", d.configHash[:16])
+			}
+			continue // Keep waiting for signals
+		case syscall.SIGTERM, syscall.SIGINT:
+			log.Printf("Received %v, shutting down...", sig)
+			// Fall through to shutdown
+		}
+		break // Exit loop for shutdown
+	}
 
 	// Publish shutdown event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStop, "nftband").
@@ -1772,6 +1812,103 @@ func (d *Daemon) waitForShutdown() {
 	d.cancel()
 
 	log.Println("nftband stopped")
+}
+
+// =============================================================================
+// CONFIG RELOAD (v1.13.12)
+// =============================================================================
+
+// computeConfigHash computes SHA256 hash of config files for change detection
+func (d *Daemon) computeConfigHash() (string, error) {
+	configDir := "/etc/nftban"
+	h := sha256.New()
+
+	// Hash main config files
+	files := []string{
+		filepath.Join(configDir, "nftban.conf"),
+		filepath.Join(configDir, "nftban.conf.local"),
+	}
+
+	for _, f := range files {
+		if data, err := os.ReadFile(f); err == nil {
+			h.Write([]byte(f + ":"))
+			h.Write(data)
+		}
+	}
+
+	// Hash module configs in conf.d/
+	confD := filepath.Join(configDir, "conf.d")
+	if entries, err := os.ReadDir(confD); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				// Module directory - hash main.conf and main.conf.local
+				for _, name := range []string{"main.conf", "main.conf.local"} {
+					f := filepath.Join(confD, entry.Name(), name)
+					if data, err := os.ReadFile(f); err == nil {
+						h.Write([]byte(f + ":"))
+						h.Write(data)
+					}
+				}
+			} else if strings.HasSuffix(entry.Name(), ".conf") {
+				// Top-level conf file
+				f := filepath.Join(confD, entry.Name())
+				if data, err := os.ReadFile(f); err == nil {
+					h.Write([]byte(f + ":"))
+					h.Write(data)
+				}
+			}
+		}
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// reloadConfig reloads configuration from disk
+// This is called on SIGHUP or via IPC reload request
+func (d *Daemon) reloadConfig() error {
+	d.reloadMu.Lock()
+	defer d.reloadMu.Unlock()
+
+	// Compute new hash before reload
+	newHash, err := d.computeConfigHash()
+	if err != nil {
+		return fmt.Errorf("failed to compute config hash: %w", err)
+	}
+
+	// Check if config actually changed
+	if newHash == d.configHash {
+		log.Println("Config unchanged, skipping reload")
+		return nil
+	}
+
+	// Reload config via nftbanconf package
+	if err := nftbanconf.Reload(); err != nil {
+		return fmt.Errorf("failed to reload config: %w", err)
+	}
+
+	// Update daemon state
+	oldHash := d.configHash
+	d.configHash = newHash
+	d.lastReloadTs = time.Now()
+
+	// Publish reload event
+	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleConfig, "nftband").
+		WithMessage(fmt.Sprintf("Config reloaded (hash: %s -> %s)", oldHash[:8], newHash[:8])).
+		WithSeverity(eventbus.SeverityInfo))
+
+	return nil
+}
+
+// initConfigHash initializes config hash on startup
+func (d *Daemon) initConfigHash() {
+	hash, err := d.computeConfigHash()
+	if err != nil {
+		log.Printf("Warning: failed to compute initial config hash: %v", err)
+		return
+	}
+	d.configHash = hash
+	d.lastReloadTs = time.Now()
+	log.Printf("Config hash initialized: %s", hash[:16])
 }
 
 // =============================================================================
@@ -2828,6 +2965,36 @@ func (d *Daemon) handleQueueStatusRequest() SocketResponse {
 			"total_dropped":   stats.TotalDropped,
 			"last_flush_time": stats.LastFlushTime.Format(time.RFC3339),
 			"queue_depth":     d.opQueue.QueueDepth(),
+		},
+	}
+}
+
+// =============================================================================
+// CONFIG RELOAD IPC HANDLER (v1.13.12)
+// =============================================================================
+
+// handleReloadRequest handles config reload request via IPC
+// Returns the new config hash and reload timestamp for verification
+func (d *Daemon) handleReloadRequest(params map[string]any) SocketResponse {
+	// Perform config reload
+	if err := d.reloadConfig(); err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	d.reloadMu.RLock()
+	hash := d.configHash
+	ts := d.lastReloadTs
+	d.reloadMu.RUnlock()
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"reloaded":    true,
+			"config_hash": hash,
+			"reloaded_at": ts.Format(time.RFC3339),
 		},
 	}
 }

@@ -60,6 +60,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh"
 fi
 
+# Load IPC library for reload verification
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh"
+fi
+
 # =============================================================================
 # USAGE
 # =============================================================================
@@ -318,8 +324,39 @@ declare -a _CONFIG_SIGHUP_SERVICES=(
     "nftban-suricata"
 )
 
+# Timer-based services (no reload needed - pick up config on next run)
+declare -a _CONFIG_TIMER_SERVICES=(
+    "feeds"
+    "metrics"
+    "zabbix"
+    "geoip"
+)
+
 # Config tracking directory
 readonly _CONFIG_TRACK_DIR="/run/nftban/config-loaded"
+
+# Check if daemon supports IPC reload (returns config_hash in status)
+# Returns: 0 if supports reload, 1 if not
+_config_daemon_supports_reload() {
+    local service="$1"
+    # Only nftband has IPC socket
+    [[ "$service" != "nftband" ]] && return 1
+
+    # Check if daemon responds to status with config_hash
+    # Use the helper function from nft_ipc.sh
+    nft_ipc_supports_reload 2>/dev/null
+}
+
+# Request reload via IPC and verify
+# Returns: 0 if reload confirmed, 1 if failed
+_config_ipc_reload() {
+    local service="$1"
+    [[ "$service" != "nftband" ]] && return 1
+
+    local response
+    response=$(nft_ipc_reload 2>/dev/null) || return 1
+    nft_ipc_success "$response"
+}
 
 _config_service_running() {
     systemctl is-active "${1}.service" &>/dev/null
@@ -387,16 +424,34 @@ _config_check_changes() {
 }
 
 nftban_cmd_config_reload() {
-    # Smart reload: validates config, then sends SIGHUP to running daemons
+    # Smart reload: prefers IPC reload with verification, falls back to SIGHUP
     # Timer-based services auto-reload on next run (no action needed)
     local module="${1:-all}"
     local reloaded=0
+    local signaled=0
     local failed=0
+    local needs_restart=0
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  NFTBan Configuration Reload"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+
+    # Check for timer-based module (no reload needed)
+    local timer_module=""
+    for tm in "${_CONFIG_TIMER_SERVICES[@]}"; do
+        if [[ "$module" == "$tm" ]]; then
+            timer_module="$tm"
+            break
+        fi
+    done
+    if [[ -n "$timer_module" ]]; then
+        echo "Module '$timer_module' is timer-based."
+        echo "Config changes take effect on next scheduled run."
+        echo ""
+        echo "To force immediate update: nftban $timer_module update"
+        return 0
+    fi
 
     # Step 1: Validate config
     echo "[1/2] Validating configuration..."
@@ -411,19 +466,43 @@ nftban_cmd_config_reload() {
     # Step 2: Reload services
     echo "[2/2] Reloading services..."
 
+    # Helper to reload a single service
+    _reload_service() {
+        local svc="$1"
+        printf "  %-30s " "$svc"
+
+        # Try IPC reload first (only nftband supports this)
+        if _config_daemon_supports_reload "$svc"; then
+            if _config_ipc_reload "$svc"; then
+                echo "[RELOADED via IPC]"
+                ((reloaded++))
+                return 0
+            else
+                echo "[IPC FAILED]"
+                ((failed++))
+                return 1
+            fi
+        fi
+
+        # Fall back to SIGHUP (signal sent, but daemon may not reload)
+        if _config_send_sighup "$svc"; then
+            echo "[SIGHUP sent - restart required]"
+            ((signaled++))
+            ((needs_restart++))
+            return 0
+        else
+            echo "[FAILED]"
+            ((failed++))
+            return 1
+        fi
+    }
+
     if [[ "$module" == "all" || "$module" == "--all" ]]; then
         # Reload all running SIGHUP-capable services
         local svc
         for svc in "${_CONFIG_SIGHUP_SERVICES[@]}"; do
             if _config_service_running "$svc"; then
-                printf "  %-30s " "$svc"
-                if _config_send_sighup "$svc"; then
-                    echo "[RELOADED]"
-                    ((reloaded++))
-                else
-                    echo "[FAILED]"
-                    ((failed++))
-                fi
+                _reload_service "$svc"
             fi
         done
     else
@@ -435,29 +514,47 @@ nftban_cmd_config_reload() {
             return 1
         fi
 
-        printf "  %-30s " "$service"
         if ! _config_service_running "$service"; then
+            printf "  %-30s " "$service"
             echo "[NOT RUNNING]"
-        elif _config_send_sighup "$service"; then
-            echo "[RELOADED]"
-            ((reloaded++))
         else
-            echo "[FAILED]"
-            ((failed++))
+            _reload_service "$service"
         fi
     fi
 
-    # Save checksums of loaded config
+    # Save checksums of loaded config (only if IPC confirmed reload)
     if [[ $reloaded -gt 0 ]]; then
         _config_save_loaded 2>/dev/null || true
     fi
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Result: $reloaded reloaded, $failed failed"
+    if [[ $reloaded -gt 0 ]]; then
+        echo "  Reloaded: $reloaded (verified via IPC)"
+    fi
+    if [[ $signaled -gt 0 ]]; then
+        echo "  Signaled: $signaled (SIGHUP sent)"
+    fi
+    if [[ $failed -gt 0 ]]; then
+        echo "  Failed: $failed"
+    fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Warning if services need restart
+    if [[ $needs_restart -gt 0 ]]; then
+        echo ""
+        echo "⚠ WARNING: $needs_restart service(s) received SIGHUP but daemon does not"
+        echo "  support hot-reload yet. Config changes may require service restart:"
+        echo ""
+        for svc in "${_CONFIG_SIGHUP_SERVICES[@]}"; do
+            if _config_service_running "$svc" && ! _config_daemon_supports_reload "$svc"; then
+                echo "    systemctl restart $svc"
+            fi
+        done
+    fi
+
     echo ""
-    echo "Note: Timer-based services (feeds, metrics, zabbix) auto-reload"
+    echo "Note: Timer-based services (feeds, metrics, zabbix, geoip) auto-reload"
     echo "      on their next scheduled run."
 
     [[ $failed -eq 0 ]]
