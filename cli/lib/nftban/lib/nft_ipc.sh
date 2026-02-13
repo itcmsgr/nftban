@@ -322,6 +322,35 @@ nft_ipc_status() {
 }
 
 # =============================================================================
+# CONFIG RELOAD (v1.13.12)
+# =============================================================================
+
+# Request config reload from daemon
+# Returns: JSON with {success, data: {reloaded, config_hash, reloaded_at}}
+# Usage: response=$(nft_ipc_reload)
+nft_ipc_reload() {
+    nft_ipc_request "reload" "{}"
+}
+
+# Get config hash from daemon status
+# Returns: config hash string or empty if not available
+# Usage: hash=$(nft_ipc_config_hash)
+nft_ipc_config_hash() {
+    local response
+    response=$(nft_ipc_status 2>/dev/null) || return 1
+    echo "$response" | jq -r '.data.config_hash // empty' 2>/dev/null
+}
+
+# Check if daemon supports config reload (has config_hash in status)
+# Returns: 0 if supports, 1 if not
+# Usage: if nft_ipc_supports_reload; then ...
+nft_ipc_supports_reload() {
+    local hash
+    hash=$(nft_ipc_config_hash 2>/dev/null)
+    [[ -n "$hash" ]]
+}
+
+# =============================================================================
 # EMERGENCY MODE FALLBACK
 # =============================================================================
 # These functions are ONLY for disaster recovery when daemon is unavailable.
@@ -516,6 +545,11 @@ export -f nft_ipc_flush_source
 export -f nft_ipc_unban_source
 export -f nft_ipc_unban_any
 export -f nft_ipc_queue_status
+
+# v1.13.12 config reload
+export -f nft_ipc_reload
+export -f nft_ipc_config_hash
+export -f nft_ipc_supports_reload
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)
