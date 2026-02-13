@@ -49,10 +49,11 @@ const (
 	EventFeedUpdate EventType = "feed_update"
 
 	// System events
-	EventHealthCheck EventType = "health_check"
-	EventModuleStart EventType = "module_start"
-	EventModuleStop  EventType = "module_stop"
-	EventError       EventType = "error"
+	EventHealthCheck  EventType = "health_check"
+	EventModuleStart  EventType = "module_start"
+	EventModuleStop   EventType = "module_stop"
+	EventConfigReload EventType = "config_reload"
+	EventError        EventType = "error"
 
 	// GeoIP events
 	EventGeoIPUpdate EventType = "geoip_update"
