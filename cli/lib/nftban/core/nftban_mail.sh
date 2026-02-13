@@ -848,10 +848,27 @@ Supported Methods (auto-detected in priority order):
   mailx     - Basic mail command (fallback)
 
 Usage:
-  nftban mail status              # Check mail system status
-  nftban mail port-status         # Check firewall ports
-  nftban mail test [email]        # Send test email
-  nftban mail {content} {email}   # Send email with content
+  nftban mail setup <email> [opts]  # Quick email configuration
+  nftban mail status                # Check mail system status
+  nftban mail port-status           # Check firewall ports
+  nftban mail test [email]          # Send test email
+  nftban mail {content} {email}     # Send email with content
+
+Setup Options:
+  --all       Enable all notification triggers
+  --test      Send test email after setup
+  --dry-run   Show what would be written
+  --show      Show current email configuration
+
+Quick Start:
+  # One command to enable all email notifications:
+  nftban mail setup admin@example.com --all --test
+
+  # Minimal setup (set recipient only):
+  nftban mail setup admin@example.com
+
+  # View current configuration:
+  nftban mail setup --show
 
 Examples:
   # Send test to default recipient
@@ -867,13 +884,19 @@ Examples:
   nftban mail /var/lib/nftban/reports/daily.html admin@example.com
 
 Direct SMTP Setup (if no local MTA):
-  Edit /etc/nftban/conf.d/mail.conf:
+  Edit /etc/nftban/conf.d/mail.conf.local:
     NFTBAN_SMTP_HOST="smtp.example.com"
     NFTBAN_SMTP_PORT="587"
     NFTBAN_SMTP_USER="user@example.com"
     NFTBAN_SMTP_PASS="password"
 
+Email Recipient Priority:
+  1. Module-specific override (e.g., PORTSCAN_NOTIFY_EMAIL_TO)
+  2. Global recipient: NFTBAN_MAIL_RECIPIENT
+  All modules fall back to global if module-specific is empty.
+
 Configuration: /etc/nftban/conf.d/mail.conf
+Local Override: /etc/nftban/conf.d/mail.conf.local
 Default Recipient: ${NFTBAN_MAIL_RECIPIENT:-not configured}
 Force Method: ${NFTBAN_MAIL_METHOD:-auto-detect}
 

@@ -832,8 +832,12 @@ nftban_portscan_classic_send_alert() {
     local message="Portscan detected: ${scan_type} scan from ${ip} (${port_count} ports)"
 
     # Email notification via NFTBan unified mail mechanism
-    if [[ "${PORTSCAN_NOTIFY_EMAIL:-false}" == "true" && -n "${PORTSCAN_NOTIFY_EMAIL_TO:-}" ]]; then
-        nftban_mail_send "$message" "${PORTSCAN_NOTIFY_EMAIL_TO}" 2>/dev/null || true
+    # Per-module override: PORTSCAN_NOTIFY_EMAIL_TO, fallback: NFTBAN_MAIL_RECIPIENT
+    if [[ "${PORTSCAN_NOTIFY_EMAIL:-false}" == "true" ]]; then
+        local recipient="${PORTSCAN_NOTIFY_EMAIL_TO:-${NFTBAN_MAIL_RECIPIENT:-}}"
+        if [[ -n "$recipient" ]]; then
+            nftban_mail_send "$message" "$recipient" 2>/dev/null || true
+        fi
     fi
 
     # Webhook notification

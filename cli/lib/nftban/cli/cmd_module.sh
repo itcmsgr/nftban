@@ -359,20 +359,22 @@ nftban_cmd_module() {
             # Mail module report
             # Args: [path] [recipient]
             local report_path="${1:-}"
-            local recipient="${2:-${NFTBAN_MAIL_REPORT_RECIPIENT:-}}"
+            # Per-module override: NFTBAN_MAIL_REPORT_RECIPIENT, fallback: NFTBAN_MAIL_RECIPIENT
+            local recipient="${2:-${NFTBAN_MAIL_REPORT_RECIPIENT:-${NFTBAN_MAIL_RECIPIENT:-}}}"
 
             # If no path and recipient is first arg (email pattern)
             if [[ -z "$recipient" && "$report_path" =~ @ ]]; then
                 recipient="$report_path"
                 report_path=""
             fi
-            
+
             # --email flag takes precedence
             [[ -n "$email_to" ]] && recipient="$email_to"
 
             if [[ -z "$recipient" ]]; then
                 echo "ERROR: No recipient specified" >&2
-                echo "Set NFTBAN_MAIL_REPORT_RECIPIENT in config or provide recipient as argument" >&2
+                echo "Set NFTBAN_MAIL_RECIPIENT (global) or NFTBAN_MAIL_REPORT_RECIPIENT (override)" >&2
+                echo "Quick setup: nftban mail setup your@email.com" >&2
                 echo "Usage: nftban module mail-report [path] [recipient]" >&2
                 echo "   or: nftban module mail-report recipient@example.com" >&2
                 echo "   or: nftban module mail-report --email recipient@example.com" >&2
