@@ -24,6 +24,9 @@ sysusers:
     - name: nftban-auditor
       system: true
       comment: "NFTBan auditor group (read-only report access)"
+    - name: nftban-panel
+      system: true
+      comment: "NFTBan panel group (limited operator actions for hosting panels)"
 
   users:
     - name: nftban
