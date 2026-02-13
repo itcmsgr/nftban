@@ -28,8 +28,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +40,36 @@ import (
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
+
+// setFeedFileOwnership sets nftban:nftban ownership and 0640 permissions on feed files
+// This allows the unified exporter (running as nftban user) to read feed files
+func setFeedFileOwnership(path string) error {
+	// Set permissions to 0640 (rw-r-----)
+	if err := os.Chmod(path, 0640); err != nil {
+		return fmt.Errorf("chmod failed: %w", err)
+	}
+
+	// Look up nftban user and group
+	nftbanUser, err := user.Lookup("nftban")
+	if err != nil {
+		// Fallback: just set group-readable (root:nftban)
+		if grp, err := user.LookupGroup("nftban"); err == nil {
+			if gid, err := strconv.Atoi(grp.Gid); err == nil {
+				_ = os.Chown(path, 0, gid)
+			}
+		}
+		return nil
+	}
+
+	uid, _ := strconv.Atoi(nftbanUser.Uid)
+	gid, _ := strconv.Atoi(nftbanUser.Gid)
+
+	if err := os.Chown(path, uid, gid); err != nil {
+		return fmt.Errorf("chown failed: %w", err)
+	}
+
+	return nil
+}
 
 // extractConfigValue extracts a config value, handling trailing comments
 // Input: "true"              # comment  -> Output: true
@@ -886,6 +918,12 @@ func downloadAndParseFeed(url, outputFile string) (int, error) {
 	if err := os.Rename(tmpFile, outputFile); err != nil {
 		os.Remove(tmpFile)
 		return 0, fmt.Errorf("failed to save feed file: %w", err)
+	}
+
+	// v1.13.12: Set nftban ownership so unified exporter can read feed files
+	if err := setFeedFileOwnership(outputFile); err != nil {
+		// Non-fatal - file was created successfully, just warn
+		fmt.Printf("⚠️  Warning: failed to set feed file permissions: %v\n", err)
 	}
 
 	return len(validIPs), nil
