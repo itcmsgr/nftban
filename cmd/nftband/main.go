@@ -38,7 +38,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -1892,7 +1891,7 @@ func (d *Daemon) reloadConfig() error {
 	d.lastReloadTs = time.Now()
 
 	// Publish reload event
-	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleConfig, "nftband").
+	d.bus.Publish(eventbus.NewEvent(eventbus.EventConfigReload, "nftband").
 		WithMessage(fmt.Sprintf("Config reloaded (hash: %s -> %s)", oldHash[:8], newHash[:8])).
 		WithSeverity(eventbus.SeverityInfo))
 
