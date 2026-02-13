@@ -924,7 +924,8 @@ nftban_rbl_send_alert() {
     local rbl="$2"
     local reason="$3"
     local tag="${4:-unknown}"
-    local email="${NFTBAN_RBL_ALERT_EMAIL:-}"
+    # Per-module override: NFTBAN_RBL_ALERT_EMAIL, fallback: NFTBAN_MAIL_RECIPIENT
+    local email="${NFTBAN_RBL_ALERT_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}"
 
     if [[ -z "$email" ]]; then
         return 0
@@ -1003,7 +1004,8 @@ nftban_rbl_send_degraded_alert() {
 
     local timeout_count="$1"
     local total_count="$2"
-    local email="${NFTBAN_RBL_ALERT_EMAIL:-}"
+    # Per-module override: NFTBAN_RBL_ALERT_EMAIL, fallback: NFTBAN_MAIL_RECIPIENT
+    local email="${NFTBAN_RBL_ALERT_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}"
 
     if [[ -z "$email" ]]; then
         return 0

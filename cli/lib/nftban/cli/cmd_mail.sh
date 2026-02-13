@@ -85,11 +85,65 @@ cmd_mail_help() {
     echo "Usage: nftban mail <subcommand>"
     echo ""
     echo "Subcommands:"
-    echo "  status      Check mail system status"
-    echo "  port-status Check mail ports in firewall"
-    echo "  test        Send test email"
-    echo "  spool       Mail spool management"
-    echo "  help        Show this help"
+    echo "  setup <email> [options]  Quick email configuration"
+    echo "  status                   Check mail system status"
+    echo "  port-status              Check mail ports in firewall"
+    echo "  test [email]             Send test email"
+    echo "  spool                    Mail spool management"
+    echo "  help                     Show this help"
+    echo ""
+    echo "Setup Options:"
+    echo "  --all       Enable all notification triggers"
+    echo "  --test      Send test email after setup"
+    echo "  --dry-run   Show what would be written (no changes)"
+    echo "  --show      Show current email configuration"
+    echo ""
+    echo "Examples:"
+    echo "  nftban mail setup admin@example.com --all --test"
+    echo "  nftban mail setup --show"
+    echo "  nftban mail test"
+}
+
+# =============================================================================
+# SETUP HELPER
+# =============================================================================
+
+_mail_setup_show() {
+    # Show effective email configuration
+    # Sources config files to get current values
+
+    local mail_conf="/etc/nftban/conf.d/mail.conf"
+    local mail_conf_local="/etc/nftban/conf.d/mail.conf.local"
+
+    # Source configs to get current values
+    [[ -f "$mail_conf" ]] && source "$mail_conf" 2>/dev/null || true
+    [[ -f "$mail_conf_local" ]] && source "$mail_conf_local" 2>/dev/null || true
+
+    echo "Email Configuration Status"
+    echo "=========================="
+    echo ""
+    echo "Global Settings:"
+    echo "  Enabled:   ${NFTBAN_MAIL_ENABLED:-NO}"
+    echo "  Recipient: ${NFTBAN_MAIL_RECIPIENT:-(not set)}"
+    echo "  Method:    ${NFTBAN_MAIL_METHOD:-auto-detect}"
+    echo "  Sender:    ${NFTBAN_SENDER:-nftban@\$(hostname)}"
+    echo ""
+    echo "Notification Triggers:"
+    echo "  Health Critical: ${NFTBAN_MAIL_ON_HEALTH_CRITICAL:-NO}"
+    echo "  Daily Report:    ${NFTBAN_MAIL_DAILY_REPORT:-NO}"
+    echo "  On Ban:          ${NFTBAN_MAIL_ON_BAN:-NO}"
+    echo "  Login Alert:     ${NFTBAN_MAIL_ON_LOGIN_ALERT:-NO}"
+    echo ""
+    echo "Per-Module Overrides (empty = uses global NFTBAN_MAIL_RECIPIENT):"
+    echo "  Portscan:    ${PORTSCAN_NOTIFY_EMAIL_TO:-(global)}"
+    echo "  RBL:         ${NFTBAN_RBL_ALERT_EMAIL:-(global)}"
+    echo "  Updates:     ${NFTBAN_UPDATE_NOTIFY_EMAIL:-(global)}"
+    echo "  Reports:     ${STATS_EMAIL_RECIPIENTS:-(global)}"
+    echo "  CLI Reports: ${NFTBAN_MAIL_REPORT_RECIPIENT:-(global)}"
+    echo ""
+    echo "Config Files:"
+    echo "  Main:  $mail_conf"
+    echo "  Local: $mail_conf_local $([[ -f "$mail_conf_local" ]] && echo "(exists)" || echo "(not created)")"
 }
 
 nftban_cmd_mail() {
@@ -130,6 +184,123 @@ nftban_cmd_mail() {
             fi
             nftban_mail_send_test "$recipient"
             return $?
+            ;;
+
+        setup)
+            # Quick email setup - writes to mail.conf.local only
+            local email=""
+            local enable_all=false
+            local do_test=false
+            local dry_run=false
+            local show_only=false
+
+            # Parse arguments
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --all) enable_all=true ;;
+                    --test) do_test=true ;;
+                    --dry-run) dry_run=true ;;
+                    --show) show_only=true ;;
+                    --help|-h) cmd_mail_help; return 0 ;;
+                    -*)
+                        echo "Unknown option: $1" >&2
+                        echo "Usage: nftban mail setup <email> [--all] [--test] [--dry-run] [--show]" >&2
+                        return 1
+                        ;;
+                    *)
+                        # First non-flag argument is the email
+                        [[ -z "$email" ]] && email="$1"
+                        ;;
+                esac
+                shift
+            done
+
+            # Show current config
+            if [[ "$show_only" == "true" ]]; then
+                _mail_setup_show
+                return 0
+            fi
+
+            # Validate email is provided
+            if [[ -z "$email" ]]; then
+                echo "Usage: nftban mail setup <email> [--all] [--test] [--dry-run]" >&2
+                echo "       nftban mail setup --show" >&2
+                echo ""
+                echo "Examples:" >&2
+                echo "  nftban mail setup admin@example.com --all --test" >&2
+                echo "  nftban mail setup admin@example.com" >&2
+                return 1
+            fi
+
+            # Validate email format
+            if ! nftban_mail_validate_address "$email"; then
+                echo "Error: Invalid email address: $email" >&2
+                return 1
+            fi
+
+            local conf_local="/etc/nftban/conf.d/mail.conf.local"
+
+            # Build config content
+            local config_content="# NFTBan Mail Configuration
+# Auto-generated by: nftban mail setup
+# Generated: $(date -Iseconds)
+#
+# This file overrides settings in mail.conf
+# Per-module overrides can still be set in module config files
+
+NFTBAN_MAIL_ENABLED=\"YES\"
+NFTBAN_MAIL_RECIPIENT=\"${email}\""
+
+            if [[ "$enable_all" == "true" ]]; then
+                config_content+="
+
+# All notification triggers enabled (--all flag)
+NFTBAN_MAIL_ON_HEALTH_CRITICAL=\"YES\"
+NFTBAN_MAIL_DAILY_REPORT=\"YES\"
+NFTBAN_MAIL_ON_BAN=\"YES\"
+NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
+            fi
+
+            # Dry run - just show what would be written
+            if [[ "$dry_run" == "true" ]]; then
+                echo "Dry run - would write to: $conf_local"
+                echo "---"
+                echo "$config_content"
+                echo "---"
+                return 0
+            fi
+
+            # Check if we can write
+            local conf_dir
+            conf_dir=$(dirname "$conf_local")
+            if [[ ! -d "$conf_dir" ]]; then
+                echo "Error: Config directory does not exist: $conf_dir" >&2
+                return 1
+            fi
+
+            # Write config
+            echo "$config_content" > "$conf_local"
+            chmod 640 "$conf_local" 2>/dev/null || true
+            chown root:nftban "$conf_local" 2>/dev/null || true
+
+            echo "Email configured successfully"
+            echo ""
+            echo "  Recipient: $email"
+            echo "  Config:    $conf_local"
+            [[ "$enable_all" == "true" ]] && echo "  Triggers:  All enabled (--all)"
+            echo ""
+            echo "All modules will now use this email unless overridden."
+
+            # Test if requested
+            if [[ "$do_test" == "true" ]]; then
+                echo ""
+                echo "Sending test email..."
+                # Re-source config to pick up new settings
+                source "$conf_local" 2>/dev/null || true
+                nftban_mail_send_test "$email"
+            fi
+
+            return 0
             ;;
 
         spool)

@@ -153,7 +153,8 @@ nftban_cmd_fhs() {
             # Mail FHS report
             # Args: [path] [recipient]
             local report_path="${1:-}"
-            local recipient="${2:-${NFTBAN_MAIL_REPORT_RECIPIENT:-}}"
+            # Per-module override: NFTBAN_MAIL_REPORT_RECIPIENT, fallback: NFTBAN_MAIL_RECIPIENT
+            local recipient="${2:-${NFTBAN_MAIL_REPORT_RECIPIENT:-${NFTBAN_MAIL_RECIPIENT:-}}}"
 
             # If no path and recipient is first arg (email pattern)
             if [[ -z "$recipient" && "$report_path" =~ @ ]]; then
@@ -163,7 +164,8 @@ nftban_cmd_fhs() {
 
             if [[ -z "$recipient" ]]; then
                 echo "ERROR: No recipient specified" >&2
-                echo "Set NFTBAN_MAIL_REPORT_RECIPIENT in config or provide recipient as argument" >&2
+                echo "Set NFTBAN_MAIL_RECIPIENT (global) or NFTBAN_MAIL_REPORT_RECIPIENT (override)" >&2
+                echo "Quick setup: nftban mail setup your@email.com" >&2
                 echo "Usage: nftban fhs mail-report [path] [recipient]" >&2
                 echo "   or: nftban fhs mail-report recipient@example.com" >&2
                 return 1
