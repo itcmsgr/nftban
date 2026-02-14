@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.12.6-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.15.0-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 58% Shell 42% Go](https://img.shields.io/badge/Code-58%25%20Shell%20%7C%2042%25%20Go-4EAA25.svg)]()
 [![FHS: Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
@@ -105,6 +105,8 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
 | **Suricata IDS Integration** | Optional deep packet inspection |
 | **Prometheus Metrics** | Observability for monitoring stacks |
+| **Zabbix Integration** | Native trapper protocol export to Zabbix server |
+| **Portal (pro.nftban.com)** | Centralized metrics aggregation and fleet management |
 | **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
 
 ---

@@ -77,7 +77,7 @@ detect_os() {
                 local major="${VERSION_ID%%.*}"
                 echo "debian${major}"
                 ;;
-            rhel|centos|rocky|almalinux|ol)
+            rhel|centos|rocky|almalinux|ol|centos-stream)
                 local major="${VERSION_ID%%.*}"
                 echo "el${major}"
                 ;;
@@ -117,9 +117,12 @@ download_package() {
             filename="nftban-${os}-${arch}.deb"
             ;;
         rpm)
-            # RPM uses x86_64 instead of amd64
+            # RPM uses different arch naming: amd64→x86_64, arm64→aarch64
             local rpm_arch="$arch"
-            [[ "$arch" == "amd64" ]] && rpm_arch="x86_64"
+            case "$arch" in
+                amd64)  rpm_arch="x86_64" ;;
+                arm64)  rpm_arch="aarch64" ;;
+            esac
             filename="nftban-${os}-${rpm_arch}.rpm"
             ;;
     esac
@@ -146,16 +149,20 @@ install_package() {
 
     case "$pkg_type" in
         deb)
-            if dpkg -i "$pkg_path"; then
+            # Use apt install to resolve dependencies (like README instructions)
+            if apt-get install -y "$pkg_path" 2>/dev/null || dpkg -i "$pkg_path"; then
                 ok "Package installed successfully"
                 return 0
             else
+                # Try to fix broken dependencies
+                apt-get install -f -y 2>/dev/null || true
                 error "Failed to install DEB package"
                 return 1
             fi
             ;;
         rpm)
-            if rpm -Uvh "$pkg_path"; then
+            # Use dnf/yum to resolve dependencies (like README instructions)
+            if dnf install -y "$pkg_path" 2>/dev/null || yum install -y "$pkg_path" 2>/dev/null || rpm -Uvh "$pkg_path"; then
                 ok "Package installed successfully"
                 return 0
             else

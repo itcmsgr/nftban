@@ -65,6 +65,10 @@ fi
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" 2>/dev/null || true
 
+# Load Portal configuration (for export_portal to pro.nftban.com)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)
 # =============================================================================
@@ -161,7 +165,8 @@ main() {
     if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]] \
         && [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]] \
         && [[ "${NFTBAN_EXPORT_PROMETHEUS:-false}" != "true" ]] \
-        && [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" != "true" ]]; then
+        && [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" != "true" ]] \
+        && [[ "${NFTBAN_PORTAL_ENABLED:-false}" != "true" ]]; then
         log_debug "No export targets enabled — skipping collection"
         exit 0
     fi
@@ -213,6 +218,11 @@ main() {
     # Connector exports (only if enabled)
     if [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" == "true" ]]; then
         export_connectors && ((export_count++)) || true
+    fi
+
+    # Portal export (pro.nftban.com - only if enabled)
+    if [[ "${NFTBAN_PORTAL_ENABLED:-false}" == "true" ]]; then
+        export_portal && ((export_count++)) || true
     fi
 
     # Calculate duration
