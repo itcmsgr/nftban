@@ -479,8 +479,6 @@ EOF
         -d "$payload" 2>/dev/null) || response=""
 
     http_code=$(echo "$response" | tail -1)
-    local body
-    body=$(echo "$response" | sed '$d')
 
     if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
         record_export_result "portal" "true"
