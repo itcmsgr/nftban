@@ -8,7 +8,7 @@
 # meta:name="cmd_update_methods"
 # meta:type="cli"
 # meta:header="Update Command Methods"
-# meta:version="1.3.0"
+# meta:version="1.14.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -152,19 +152,40 @@ _update_via_rpm() {
     _remove_immutable_flags
 
     # Install using dnf/yum to automatically resolve dependencies
-    # v1.14.0: Changed from rpm -Uvh to dnf install for dependency resolution
+    # v1.14.0: Changed from rpm -Uvh to dnf/yum install for dependency resolution
     _update_log INFO "Installing RPM package..."
-    local pkg_manager="dnf"
-    command -v dnf &>/dev/null || pkg_manager="yum"
 
-    if $pkg_manager install -y "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
-        _update_log OK "RPM installed successfully"
-        rm -f "$tmp_file"
-        return 0
+    # Detect package manager (dnf preferred, fallback to yum, then rpm)
+    local pkg_manager=""
+    if command -v dnf &>/dev/null; then
+        pkg_manager="dnf"
+    elif command -v yum &>/dev/null; then
+        pkg_manager="yum"
+    fi
+
+    if [[ -n "$pkg_manager" ]]; then
+        # Use dnf/yum for automatic dependency resolution
+        if $pkg_manager install -y "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+            _update_log OK "RPM installed successfully"
+            rm -f "$tmp_file"
+            return 0
+        else
+            _update_log ERROR "RPM installation failed"
+            rm -f "$tmp_file"
+            return 1
+        fi
     else
-        _update_log ERROR "RPM installation failed"
-        rm -f "$tmp_file"
-        return 1
+        # Fallback to rpm (no automatic dependency resolution)
+        _update_log WARN "dnf/yum not found, using rpm (dependencies may need manual install)"
+        if rpm -Uvh --force "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+            _update_log OK "RPM installed successfully"
+            rm -f "$tmp_file"
+            return 0
+        else
+            _update_log ERROR "RPM installation failed"
+            rm -f "$tmp_file"
+            return 1
+        fi
     fi
 }
 
