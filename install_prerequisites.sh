@@ -206,18 +206,95 @@ check_prerequisites() {
         PREREQ_FAILED=1
     fi
 
-    # CHECK 2: Required Commands
+    # CHECK 2: Required Commands (auto-install missing packages)
     echo ""
     log "Checking required commands..."
 
-    for cmd in nft systemctl ip iptables curl jq yq; do
+    # Map commands to packages by OS family
+    declare -A CMD_TO_PKG_DEB=(
+        [nft]="nftables"
+        [systemctl]="systemd"
+        [ip]="iproute2"
+        [iptables]="iptables"
+        [curl]="curl"
+        [jq]="jq"
+        [yq]="yq"
+        [gawk]="gawk"
+        [bc]="bc"
+    )
+    declare -A CMD_TO_PKG_RPM=(
+        [nft]="nftables"
+        [systemctl]="systemd"
+        [ip]="iproute"
+        [iptables]="iptables"
+        [curl]="curl"
+        [jq]="jq"
+        [yq]="yq"
+        [gawk]="gawk"
+        [bc]="bc"
+    )
+
+    local missing_pkgs=()
+    for cmd in nft systemctl ip iptables curl jq yq gawk bc; do
         if command -v $cmd &>/dev/null; then
             ok "Found: $cmd"
         else
-            error "MISSING: $cmd"
-            PREREQ_FAILED=1
+            warn "MISSING: $cmd - will attempt to install"
+            case "$ID" in
+                ubuntu|debian)
+                    [[ -n "${CMD_TO_PKG_DEB[$cmd]:-}" ]] && missing_pkgs+=("${CMD_TO_PKG_DEB[$cmd]}")
+                    ;;
+                rhel|centos|rocky|almalinux|fedora)
+                    [[ -n "${CMD_TO_PKG_RPM[$cmd]:-}" ]] && missing_pkgs+=("${CMD_TO_PKG_RPM[$cmd]}")
+                    ;;
+            esac
         fi
     done
+
+    # Auto-install missing packages
+    if [[ ${#missing_pkgs[@]} -gt 0 ]]; then
+        log "Installing missing packages: ${missing_pkgs[*]}"
+        case "$ID" in
+            ubuntu|debian)
+                # yq not in apt, install from GitHub
+                if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
+                    missing_pkgs=("${missing_pkgs[@]/yq/}")
+                    log "Installing yq from GitHub..."
+                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
+                    ok "Installed: yq"
+                fi
+                [[ ${#missing_pkgs[@]} -gt 0 ]] && apt-get update -qq && apt-get install -y "${missing_pkgs[@]}"
+                ;;
+            rhel|centos|rocky|almalinux)
+                # yq not in dnf, install from GitHub
+                if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
+                    missing_pkgs=("${missing_pkgs[@]/yq/}")
+                    log "Installing yq from GitHub..."
+                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
+                    ok "Installed: yq"
+                fi
+                [[ ${#missing_pkgs[@]} -gt 0 ]] && dnf install -y "${missing_pkgs[@]}"
+                ;;
+            fedora)
+                if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
+                    missing_pkgs=("${missing_pkgs[@]/yq/}")
+                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
+                    ok "Installed: yq"
+                fi
+                [[ ${#missing_pkgs[@]} -gt 0 ]] && dnf install -y "${missing_pkgs[@]}"
+                ;;
+        esac
+
+        # Verify installation
+        for cmd in nft systemctl ip iptables curl jq yq gawk bc; do
+            if command -v $cmd &>/dev/null; then
+                ok "Verified: $cmd"
+            else
+                error "FAILED to install: $cmd"
+                PREREQ_FAILED=1
+            fi
+        done
+    fi
 
     # CHECK 3: Kernel nftables Support
     echo ""
