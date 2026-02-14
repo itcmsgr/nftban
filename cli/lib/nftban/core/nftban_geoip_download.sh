@@ -86,7 +86,7 @@ _check_license_key() {
         echo "[ERROR] MaxMind license key not configured"
         echo ""
         echo "Please add your license key to:"
-        echo "  /etc/nftban/conf.d/geoip.conf"
+        echo "  ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoip.conf"
         echo ""
         echo "Get a free license key at:"
         echo "  https://www.maxmind.com/en/geolite2/signup"
@@ -101,7 +101,7 @@ _download_geoip() {
     local edition="${GEOIP_EDITION:-GeoLite2-City}"
     local db_url="${GEOIP_DOWNLOAD_URL:-https://download.maxmind.com/app/geoip_download}"
     local timeout="${GEOIP_TIMEOUT:-300}"
-    local db_dir="${GEOIP_DATABASE_DIR:-/var/lib/nftban/geoip}"
+    local db_dir="${GEOIP_DATABASE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip}"
     local tmp_file="/tmp/geoip-${edition}-$$.tar.gz"
 
     echo "[INFO] Downloading ${edition} database..."

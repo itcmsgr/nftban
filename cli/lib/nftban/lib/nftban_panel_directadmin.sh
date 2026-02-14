@@ -3,7 +3,7 @@
 # meta:name="nftban_panel_directadmin" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="DirectAdmin panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/panels/directadmin/main.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -207,7 +207,7 @@ EOF
 
     # Mark DirectAdmin panel as enabled in state file
     echo "Enabling DirectAdmin panel in NFTBan..."
-    local state_dir="/var/lib/nftban/panels"
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -287,7 +287,7 @@ nftban_panel_directadmin_disable() {
     echo "Disabling DirectAdmin panel in NFTBan..."
 
     # Mark DirectAdmin panel as disabled in state file
-    local state_dir="/var/lib/nftban/panels"
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -392,8 +392,8 @@ nftban_panel_directadmin_status() {
 
     # Configuration file
     echo "Configuration:"
-    if [[ -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
-        echo "  Config: ✓ /etc/nftban/conf.d/panels/directadmin/main.conf"
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
+        echo "  Config: ✓ ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
     else
         echo "  Config: ✗ NOT FOUND"
     fi
@@ -437,9 +437,9 @@ nftban_panel_directadmin_report() {
     echo "   ───────────────────────────────────────────────────"
 
     # Load config
-    if [[ -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "/etc/nftban/conf.d/panels/directadmin/main.conf"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
 
         echo "   TCP INPUT:  ${NFTBAN_DIRECTADMIN_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_DIRECTADMIN_TCP_OUT:-Not configured}"
@@ -521,8 +521,8 @@ nftban_panel_directadmin_report() {
     # Configuration files
     echo "6. CONFIGURATION FILES"
     echo "   ───────────────────────────────────────────────────"
-    echo "   /etc/nftban/conf.d/panels/directadmin/main.conf"
-    echo "   /etc/nftban/nftban.conf.local (customizations)"
+    echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
+    echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local (customizations)"
     echo "   /etc/fail2ban/jail.d/nftban-directadmin.conf"
     echo ""
 }
@@ -540,7 +540,7 @@ nftban_panel_directadmin_repair() {
     local repairs=0
 
     # Check configuration file
-    if [[ ! -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
+    if [[ ! -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
         ((repairs++))
