@@ -849,7 +849,7 @@ func validatePeerCredentials(conn net.Conn) (uint32, uint32, error) {
 	var credErr error
 
 	err = rawConn.Control(func(fd uintptr) {
-		cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED) //nolint:gosec // G115: fd always fits in int
 	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to control socket: %w", err)

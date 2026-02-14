@@ -253,7 +253,8 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		start := ipToUint32(ipNet.IP)
 		// Calculate end: broadcast address of the network
 		ones, bits := ipNet.Mask.Size()
-		hostBits := uint32(bits - ones)
+		// G115: bits-ones is always 0-32 for IPv4 (safe for uint32)
+		hostBits := uint32(bits - ones) //nolint:gosec // G115: IPv4 mask bits always 0-32
 		end := start + (1 << hostBits) - 1
 
 		intervals = append(intervals, ipv4Interval{Start: start, End: end})
