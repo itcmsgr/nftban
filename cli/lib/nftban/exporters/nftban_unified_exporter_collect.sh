@@ -1498,8 +1498,14 @@ generate_dropped_by_country() {
     # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
     # Or older: geoban entries with country: XX pattern
     if [[ -f "$bans_log" ]]; then
-        # Use awk to aggregate by country code
-        awk -F'|' -v now="$timestamp" '
+        # Use gawk to aggregate by country code (requires gawk for match() with capture)
+        # v1.13.13: Explicitly use gawk - added to package dependencies
+        if ! command -v gawk &>/dev/null; then
+            log_warn "gawk not installed - skipping country analytics"
+            echo "[]" > "$output_file"
+            return 0
+        fi
+        gawk -F'|' -v now="$timestamp" '
         BEGIN {
             # Initialize arrays
         }
@@ -1533,7 +1539,12 @@ generate_dropped_by_country() {
         }
         END {
             # Output as JSON array sorted by count
-            n = asorti(count, sorted)
+            # v1.13.13: POSIX-compatible (replaces gawk-only asorti)
+            n = 0
+            for (key in count) {
+                n++
+                sorted[n] = key
+            }
             # Simple bubble sort by value (descending)
             for (i = 1; i <= n; i++) {
                 for (j = i + 1; j <= n; j++) {
@@ -1615,8 +1626,14 @@ generate_dropped_by_port() {
     [[ ! -f "$log_file" ]] && log_file="$bans_log"
 
     if [[ -f "$log_file" ]]; then
-        # Use awk to extract and aggregate port data
-        awk -v now="$timestamp" '
+        # Use gawk to extract and aggregate port data (requires gawk for match() with capture)
+        # v1.13.13: Explicitly use gawk - added to package dependencies
+        if ! command -v gawk &>/dev/null; then
+            log_warn "gawk not installed - skipping port analytics"
+            echo "[]" > "$output_file"
+            return 0
+        fi
+        gawk -v now="$timestamp" '
         BEGIN {
             # Port patterns to look for
         }
@@ -1651,7 +1668,12 @@ generate_dropped_by_port() {
         }
         END {
             # Output as JSON array sorted by count (descending)
-            n = asorti(count, sorted)
+            # v1.13.13: POSIX-compatible (replaces gawk-only asorti)
+            n = 0
+            for (key in count) {
+                n++
+                sorted[n] = key
+            }
             # Bubble sort by value
             for (i = 1; i <= n; i++) {
                 for (j = i + 1; j <= n; j++) {

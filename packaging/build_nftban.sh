@@ -182,6 +182,7 @@ Requires:       tar
 Requires:       gzip
 Requires:       pam
 Requires:       bc
+Requires:       gawk
 Recommends:     bind-utils
 Recommends:     mailx
 Recommends:     socat
@@ -1087,7 +1088,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk
 Recommends: dnsutils, mailutils, socat, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
