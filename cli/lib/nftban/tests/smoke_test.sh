@@ -544,6 +544,100 @@ run_lifecycle_tests() {
 }
 
 # =============================================================================
+# PORT LIFECYCLE TESTS
+# =============================================================================
+# Verifies port add/remove with nft set assertions.
+# Uses high port numbers (59000-59999) to avoid conflicts.
+
+run_port_lifecycle_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "PORT LIFECYCLE TESTS"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Prerequisites
+    if ! systemctl is-active nftband &>/dev/null; then
+        log_warn "nftband not running — skipping port lifecycle tests"
+        log_warn "Start with: systemctl start nftband"
+        return 0
+    fi
+    if ! command -v nft &>/dev/null; then
+        log_warn "nft not found — skipping port lifecycle tests"
+        return 0
+    fi
+
+    # Source config for table names
+    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
+    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+
+    # Test ports — use high ephemeral range to avoid conflicts
+    local test_port_tcp="59001"
+    local test_port_udp="59002"
+    local test_port_both="59003"
+
+    log_info "Using test ports in 59000 range (ephemeral)"
+    log_info "Table: ${table_v4}"
+
+    # TCP port add → remove
+    smoke_lifecycle "TCP port add/remove" \
+        "nftban port add ${test_port_tcp} tcp" \
+        "nftban port remove ${test_port_tcp}" \
+        "${table_v4}" "tcp_ports" "${test_port_tcp}"
+
+    # UDP port add → remove
+    smoke_lifecycle "UDP port add/remove" \
+        "nftban port add ${test_port_udp} udp" \
+        "nftban port remove ${test_port_udp}" \
+        "${table_v4}" "udp_ports" "${test_port_udp}"
+
+    # Both TCP+UDP port add → remove (tests both sets)
+    log ""
+    log "─── Lifecycle: Both TCP+UDP port add/remove ───"
+
+    # Cleanup first
+    nftban port remove ${test_port_both} &>/dev/null || true
+    sleep 1
+
+    # Add port (both protocols)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if nftban port add ${test_port_both} both &>/dev/null; then
+        sleep 1
+        local tcp_ok=false udp_ok=false
+        _nft_set_contains "${table_v4}" "tcp_ports" "${test_port_both}" && tcp_ok=true
+        _nft_set_contains "${table_v4}" "udp_ports" "${test_port_both}" && udp_ok=true
+
+        if [[ "$tcp_ok" == "true" && "$udp_ok" == "true" ]]; then
+            log_pass "Both port add — ${test_port_both} in tcp_ports AND udp_ports"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "Both port add — TCP:${tcp_ok} UDP:${udp_ok} (expected both true)"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        log_fail "Both port add — command failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Remove port
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    nftban port remove ${test_port_both} &>/dev/null || true
+    sleep 1
+
+    local tcp_gone=true udp_gone=true
+    _nft_set_contains "${table_v4}" "tcp_ports" "${test_port_both}" && tcp_gone=false
+    _nft_set_contains "${table_v4}" "udp_ports" "${test_port_both}" && udp_gone=false
+
+    if [[ "$tcp_gone" == "true" && "$udp_gone" == "true" ]]; then
+        log_pass "Both port remove — ${test_port_both} absent from both sets"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "Both port remove — TCP gone:${tcp_gone} UDP gone:${udp_gone}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+# =============================================================================
 # BINARY INTEGRITY SMOKE TEST
 # =============================================================================
 # Validates that Go binaries are real ELF files (not corrupted or dummy files).
@@ -1157,6 +1251,7 @@ main() {
             run_help_tests
             run_protection_tests
             run_lifecycle_tests
+            run_port_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
             ;;
@@ -1169,6 +1264,7 @@ main() {
             run_extended_status_tests
             run_protection_tests
             run_lifecycle_tests
+            run_port_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
             ;;
