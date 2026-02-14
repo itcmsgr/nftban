@@ -51,6 +51,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -86,10 +87,13 @@ import (
 
 const (
 	// HTTP API default (can be overridden via NFTBAN_API_ADDR config)
-	DefaultHTTPAddr = ":8080"
+	DefaultHTTPAddr = "127.0.0.1:8080"
 
 	// Profiling (pprof) - localhost only for security
 	PprofAddr = "127.0.0.1:6060"
+
+	// MaxConcurrentIPCConns limits simultaneous IPC socket connections
+	MaxConcurrentIPCConns = 100
 )
 
 // getAPIAddr returns the HTTP API address from config or default
@@ -188,6 +192,19 @@ type Daemon struct {
 	configHash    string       // SHA256 of loaded config files
 	lastReloadTs  time.Time    // When config was last loaded/reloaded
 	reloadMu      sync.RWMutex // Protects config reload operations
+
+	// IPC rate limiting
+	connSem chan struct{} // Semaphore for limiting concurrent IPC connections
+
+	// IPC metrics tracking
+	activeConns     int64      // Current active connections (atomic)
+	peakConns       int64      // Peak connections since reset (atomic)
+	activeConnsMu   sync.Mutex // Protects peak calculation
+
+	// Signal handling for PID cleanup
+	sigCh           chan os.Signal // Signal channel for shutdown
+	startupComplete bool           // True when initialization is complete
+	sigMu           sync.Mutex     // Protects startupComplete
 }
 
 // isWhitelisted checks if an IP is in the whitelist.
@@ -339,6 +356,7 @@ func main() {
 		backend:   nftbackend.New(), // AUTHORITATIVE nft backend
 		stats:     stats.NewCollector(stats.DefaultConfig()),
 		configDir: configDir,
+		connSem:   make(chan struct{}, MaxConcurrentIPCConns),
 	}
 
 	// Initialize dynamic watchdog
@@ -481,7 +499,26 @@ func (d *Daemon) Run() error {
 	if err := d.writePidFile(); err != nil {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
-	defer os.Remove(getPidFile())
+
+	// Set up signal handler IMMEDIATELY after PID file creation to ensure cleanup
+	// even if a signal arrives during initialization. The handler checks startupComplete
+	// to decide whether to do minimal cleanup (during startup) or full graceful shutdown.
+	pidFile := getPidFile()
+	d.sigCh = make(chan os.Signal, 1)
+	signal.Notify(d.sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+
+	// Start unified signal handler goroutine
+	go d.handleSignals(pidFile)
+
+	// Defer PID file removal for normal shutdown path (also handles panics)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC during daemon operation: %v", r)
+			os.Remove(pidFile)
+			panic(r) // Re-panic after cleanup
+		}
+		os.Remove(pidFile)
+	}()
 
 	// Initialize OpQueue and SourceIndex (v1.13.0 async IPC)
 	if err := d.initOpQueue(); err != nil {
@@ -852,6 +889,7 @@ func validatePeerCredentials(conn net.Conn) (uint32, uint32, error) {
 func (d *Daemon) acceptSocketConnections() {
 	for {
 		conn, err := d.socketLn.Accept()
+		acceptTime := time.Now()
 		if err != nil {
 			// Check if we're shutting down
 			select {
@@ -863,7 +901,42 @@ func (d *Daemon) acceptSocketConnections() {
 			}
 		}
 
-		go d.handleSocketConnection(conn)
+		// Rate limit: acquire semaphore slot (non-blocking check first)
+		select {
+		case d.connSem <- struct{}{}:
+			// Got a slot - record wait time and update metrics
+			waitTime := time.Since(acceptTime).Seconds()
+			metrics.RecordIPCConnectionWait(waitTime)
+
+			// Track active connections
+			active := atomic.AddInt64(&d.activeConns, 1)
+			metrics.SetIPCConnectionsActive(int(active))
+			metrics.SetIPCSemaphoreAvailable(MaxConcurrentIPCConns - int(active))
+
+			// Track peak connections
+			d.activeConnsMu.Lock()
+			if active > d.peakConns {
+				d.peakConns = active
+				metrics.SetIPCConnectionsPeak(int(active))
+			}
+			d.activeConnsMu.Unlock()
+
+			// Handle connection
+			go func(c net.Conn) {
+				defer func() {
+					<-d.connSem // Release slot
+					newActive := atomic.AddInt64(&d.activeConns, -1)
+					metrics.SetIPCConnectionsActive(int(newActive))
+					metrics.SetIPCSemaphoreAvailable(MaxConcurrentIPCConns - int(newActive))
+				}()
+				d.handleSocketConnection(c)
+			}(conn)
+		default:
+			// At capacity, reject connection and record metric
+			metrics.RecordIPCRejection("at_capacity")
+			log.Printf("IPC rate limit: rejecting connection (max %d concurrent, peak %d)", MaxConcurrentIPCConns, atomic.LoadInt64(&d.peakConns))
+			conn.Close()
+		}
 	}
 }
 
@@ -891,6 +964,7 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 	// Defense-in-depth: socket permissions (0660 root:nftban) + credential check
 	uid, gid, err := validatePeerCredentials(conn)
 	if err != nil {
+		metrics.RecordIPCRejection("auth_failed")
 		log.Printf("Socket auth rejected: %v", err)
 		d.writeSocketResponse(conn, SocketResponse{
 			Success: false,
@@ -905,6 +979,7 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 	decoder := json.NewDecoder(conn)
 	var req SocketRequest
 	if err := decoder.Decode(&req); err != nil {
+		metrics.RecordIPCRejection("read_error")
 		d.writeSocketResponse(conn, SocketResponse{
 			Success: false,
 			Error:   "invalid request: " + err.Error(),
@@ -912,11 +987,21 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 		return
 	}
 
-	// Handle request with timing
+	// Handle request with timing and per-method metrics
 	start := time.Now()
 	resp := d.handleSocketRequest(req)
-	latency := time.Since(start).Nanoseconds()
-	d.stats.RecordIPCRequest(latency, resp.Success)
+	latencySec := time.Since(start).Seconds()
+	latencyNs := time.Since(start).Nanoseconds()
+
+	// Record both old-style stats and new Prometheus metrics
+	d.stats.RecordIPCRequest(latencyNs, resp.Success)
+	metrics.RecordIPCRequest(req.Method, resp.Success, latencySec)
+
+	// Log slow requests for investigation
+	if latencySec > 0.5 {
+		log.Printf("IPC slow request: method=%s latency=%.3fs success=%v", req.Method, latencySec, resp.Success)
+	}
+
 	d.writeSocketResponse(conn, resp)
 }
 
@@ -1753,15 +1838,23 @@ func (d *Daemon) startPprof() {
 	}()
 }
 
-// waitForShutdown blocks until SIGTERM/SIGINT, handles SIGHUP for config reload
-func (d *Daemon) waitForShutdown() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+// handleSignals is the unified signal handler that runs as a goroutine.
+// It handles all signals throughout the daemon lifecycle:
+// - During startup (startupComplete=false): minimal cleanup and exit
+// - After startup (startupComplete=true): graceful shutdown with full cleanup
+func (d *Daemon) handleSignals(pidFile string) {
+	for sig := range d.sigCh {
+		d.sigMu.Lock()
+		complete := d.startupComplete
+		d.sigMu.Unlock()
 
-	for {
-		sig := <-sigCh
 		switch sig {
 		case syscall.SIGHUP:
+			if !complete {
+				// Ignore SIGHUP during startup
+				log.Println("Ignoring SIGHUP during startup")
+				continue
+			}
 			// Handle config reload
 			log.Println("Received SIGHUP, reloading configuration...")
 			if err := d.reloadConfig(); err != nil {
@@ -1770,13 +1863,24 @@ func (d *Daemon) waitForShutdown() {
 				log.Printf("Config reloaded successfully (hash: %s)", d.configHash[:16])
 			}
 			continue // Keep waiting for signals
-		case syscall.SIGTERM, syscall.SIGINT:
-			log.Printf("Received %v, shutting down...", sig)
-			// Fall through to shutdown
-		}
-		break // Exit loop for shutdown
-	}
 
+		case syscall.SIGTERM, syscall.SIGINT:
+			if !complete {
+				// During startup: minimal cleanup and exit
+				log.Printf("Received %v during startup, cleaning up PID file...", sig)
+				os.Remove(pidFile)
+				os.Exit(1)
+			}
+			// After startup: graceful shutdown
+			log.Printf("Received %v, shutting down...", sig)
+			d.gracefulShutdown()
+			return
+		}
+	}
+}
+
+// gracefulShutdown performs orderly shutdown of all daemon components
+func (d *Daemon) gracefulShutdown() {
 	// Publish shutdown event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStop, "nftband").
 		WithMessage("NFTBan daemon shutting down").
@@ -1811,6 +1915,20 @@ func (d *Daemon) waitForShutdown() {
 	d.cancel()
 
 	log.Println("nftband stopped")
+}
+
+// waitForShutdown blocks until the signal handler completes shutdown
+func (d *Daemon) waitForShutdown() {
+	// Mark startup as complete so signal handler does graceful shutdown
+	d.sigMu.Lock()
+	d.startupComplete = true
+	d.sigMu.Unlock()
+
+	log.Println("Startup complete, waiting for shutdown signal...")
+
+	// Block until gracefulShutdown() is called by handleSignals
+	// We wait on the context which is cancelled during gracefulShutdown
+	<-d.ctx.Done()
 }
 
 // =============================================================================
