@@ -420,11 +420,15 @@ nftban_banner_unified() {
     # Top border (use simple ASCII for SSH compatibility)
     echo -e "${dim}+$(nftban_repeat_char $width '-')+${reset}"
 
+    # Emoji width compensation: emojis take 2 visual columns but printf counts ~1
+    # 🐧🛡️ (2 emojis) + 🟠/🟢/🔴 (1-3 status icons) = ~5 extra visual columns
+    local emoji_offset=5
+
     # Line 1: Icon + Health + Protection + Conflicts + Version + Tagline
     local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - Open-source Linux IPS & nftables FW${reset}"
-    printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line1"
+    printf "${dim}|${reset} %-$((width - 2 + emoji_offset))b ${dim}|${reset}\n" "$line1"
 
-    # Line 2: Host, Kernel, Uptime
+    # Line 2: Host, Kernel, Uptime (no emojis, no offset)
     local line2="${dim}Host: ${cyan}${hostname}${reset}${dim} | Kernel: ${kernel}${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line2"
 
