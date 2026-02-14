@@ -516,6 +516,21 @@ nft_ipc_queue_status() {
     nft_ipc_request "status" "{}"
 }
 
+# Load ports from ports.d into nftables sets
+# Usage: nft_ipc_load_ports
+# This reloads all ports from /etc/nftban/ports.d/*.conf into tcp_ports and udp_ports sets
+nft_ipc_load_ports() {
+    local response
+    response=$(nft_ipc_request "load_ports" "{}")
+
+    if nft_ipc_success "$response"; then
+        return 0
+    else
+        echo "ERROR: $(nft_ipc_error "$response")" >&2
+        return 1
+    fi
+}
+
 # =============================================================================
 # EXPORTS
 # =============================================================================
@@ -550,6 +565,9 @@ export -f nft_ipc_queue_status
 export -f nft_ipc_reload
 export -f nft_ipc_config_hash
 export -f nft_ipc_supports_reload
+
+# v1.15.0 port management
+export -f nft_ipc_load_ports
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)

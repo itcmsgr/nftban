@@ -301,45 +301,61 @@ nftban_cmd_port() {
 
             # Atomically add to nftables (if firewall is active)
             if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-                echo "⚡ Atomically adding port to firewall..."
+                echo "⚡ Adding port to firewall..."
 
                 local add_success=true
 
-                # Add to tcp_ports set (if TCP or both)
-                if [[ "$proto" == "T" || "$proto" == "B" ]]; then
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
-                        echo "  ✓ TCP port $port added to nftables (immediate)"
-                    else
-                        echo "  ⚠ Could not add TCP port atomically" >&2
-                        add_success=false
+                # Check if daemon is running first
+                if nft_ipc_is_daemon_running 2>/dev/null; then
+                    # Add to tcp_ports set (if TCP or both)
+                    if [[ "$proto" == "T" || "$proto" == "B" ]]; then
+                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
+                            echo "  ✓ TCP port $port added to nftables"
+                        else
+                            echo "  ⚠ Could not add TCP port" >&2
+                            add_success=false
+                        fi
                     fi
+
+                    # Add to udp_ports set (if UDP or both)
+                    if [[ "$proto" == "U" || "$proto" == "B" ]]; then
+                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
+                            echo "  ✓ UDP port $port added to nftables"
+                        else
+                            echo "  ⚠ Could not add UDP port" >&2
+                            add_success=false
+                        fi
+                    fi
+
+                    # If add failed, try full reload via daemon
+                    if [[ "$add_success" == "false" ]]; then
+                        echo ""
+                        echo "⚠ Reloading all ports via daemon..."
+                        if nft_ipc_load_ports 2>/dev/null; then
+                            echo "✓ Ports reloaded successfully"
+                            add_success=true
+                        fi
+                    fi
+                else
+                    # Daemon not running - use load_ports which will reload ALL ports from config
+                    echo "  ℹ Daemon not running, starting port reload..."
+                    add_success=false
                 fi
 
-                # Add to udp_ports set (if UDP or both)
-                if [[ "$proto" == "U" || "$proto" == "B" ]]; then
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
-                        echo "  ✓ UDP port $port added to nftables (immediate)"
-                    else
-                        echo "  ⚠ Could not add UDP port atomically" >&2
-                        add_success=false
-                    fi
-                fi
-
-                # Fallback to full reload if atomic failed
-                if [[ "$add_success" == "false" ]]; then
+                # Final status
+                if [[ "$add_success" == "true" ]]; then
                     echo ""
-                    echo "⚠ Atomic add failed, performing full firewall reload..."
-                    if nftban firewall reload >/dev/null 2>&1; then
-                        echo "✓ Firewall reloaded successfully"
-                    else
-                        echo "❌ Firewall reload failed" >&2
-                        echo "Run manually: nftban firewall reload" >&2
-                        return 1
-                    fi
+                    echo "✅ Port $port is now active in firewall"
+                else
+                    echo ""
+                    echo "⚠ Port saved to config but daemon not running"
+                    echo ""
+                    echo "To activate the port, start the daemon:"
+                    echo "  systemctl start nftband"
+                    echo ""
+                    echo "Or reload ports manually after starting daemon:"
+                    echo "  nftban port reload"
                 fi
-
-                echo ""
-                echo "✅ Port $port is now active in firewall (no restart needed)"
             else
                 echo "⚠ Firewall not initialized - port saved but not active yet"
                 echo "Run: nftban firewall init"
