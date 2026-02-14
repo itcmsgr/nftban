@@ -572,31 +572,37 @@ zabbix_export:
           value_type: CHAR
           description: 'NFTBan version installed'
           inventory_link: SOFTWARE_APP_A
+        - uuid: cca655049d69464d9e814e1995b329b3
+          name: 'NFTBan: Server panel'
+          type: TRAP
+          key: nftban.server.panel
+          value_type: CHAR
+          description: 'Hosting panel type (cpanel, plesk, directadmin, cwp, cyberpanel, hestia, none)'
         # =====================================================================
         # SERVER METRICS (numeric)
         # =====================================================================
         - uuid: 01e6a219518f4fc4bb22f4bd2e013ce4
           name: 'NFTBan: Load average (1m)'
           type: TRAP
-          key: nftban.server.load1
+          key: nftban.server.load_1m
           value_type: FLOAT
           description: '1-minute load average'
         - uuid: 97419ff6d45a451380d1de6e619ba3e8
           name: 'NFTBan: Load average (5m)'
           type: TRAP
-          key: nftban.server.load5
+          key: nftban.server.load_5m
           value_type: FLOAT
           description: '5-minute load average'
         - uuid: afddf4a9f46949eeb10564dcc581771f
           name: 'NFTBan: Load average (15m)'
           type: TRAP
-          key: nftban.server.load15
+          key: nftban.server.load_15m
           value_type: FLOAT
           description: '15-minute load average'
         - uuid: 0eff460d024b40f7a31e9953f8c9fde9
           name: 'NFTBan: Server CPU cores'
           type: TRAP
-          key: nftban.server.cpu.cores
+          key: nftban.server.cpu_cores
           value_type: UNSIGNED
           description: 'Number of CPU cores'
         - uuid: 9aa7cba6648d4b9b93ad0b280e766e23
@@ -616,7 +622,7 @@ zabbix_export:
         - uuid: 54b7f088ec594fcc9065cb1b1a11af68
           name: 'NFTBan: Server memory used percent'
           type: TRAP
-          key: nftban.server.memory_used_pct
+          key: nftban.server.mem_used_percent
           value_type: FLOAT
           units: '%'
           description: 'Memory utilization percentage'
@@ -634,7 +640,7 @@ zabbix_export:
           value_type: UNSIGNED
           units: B
           description: 'Total disk space'
-        - uuid: 76b35d001e5644238a0776722f1dfab5
+        - uuid: 64405eb42b58472382790f530c20be59
           name: 'NFTBan: Server disk used'
           type: TRAP
           key: nftban.server.disk_used
@@ -644,26 +650,26 @@ zabbix_export:
         - uuid: d7e834a64f704c679142c947289662a9
           name: 'NFTBan: Server disk used percent'
           type: TRAP
-          key: nftban.server.disk_used_pct
+          key: nftban.server.disk_used_percent
           value_type: FLOAT
           units: '%'
           description: 'Disk utilization percentage'
         # =====================================================================
         # CONNTRACK (Connection Tracking)
         # =====================================================================
-        - uuid: 1b442aee6cee4e8685d9efc1873e0bd5
+        - uuid: 3d545af23940428983a93a972d69ad49
           name: 'NFTBan: Conntrack entries'
           type: TRAP
           key: nftban.conntrack.entries
           value_type: UNSIGNED
           description: 'Current number of tracked connections'
-        - uuid: 862312942e174511bf43df19c7d840d8
+        - uuid: 73e2ef1411844dfa99af508889088651
           name: 'NFTBan: Conntrack max'
           type: TRAP
           key: nftban.conntrack.max
           value_type: UNSIGNED
           description: 'Maximum connection tracking table size'
-        - uuid: 09e73c4b041a4a81ab59d9b3e03f4cad
+        - uuid: 88f8fee00ab5476ab95bbd550900a736
           name: 'NFTBan: Conntrack utilization'
           type: TRAP
           key: nftban.conntrack.utilization
