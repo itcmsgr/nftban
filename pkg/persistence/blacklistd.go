@@ -110,10 +110,10 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 
 	// Acquire exclusive lock
 	// G115: f.Fd() returns uintptr, but file descriptors are small positive ints (safe)
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { //nolint:gosec // G115: fd always fits in int
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -: fd always fits in int
 		return "", "", fmt.Errorf("failed to lock %s: %w", targetFile, err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:gosec // G115: fd always fits in int
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -: fd always fits in int
 
 	// Check if IP already exists in this file
 	scanner := bufio.NewScanner(f)
@@ -230,10 +230,10 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 	// Acquire exclusive lock on original file
 	// This serializes concurrent access even across processes
 	// G115: f.Fd() returns uintptr, but file descriptors are small positive ints (safe)
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { //nolint:gosec // G115: fd always fits in int
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -: fd always fits in int
 		return false, fmt.Errorf("failed to lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:gosec // G115: fd always fits in int
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -: fd always fits in int
 
 	// Read all lines, filtering out the target IP
 	var lines []string
