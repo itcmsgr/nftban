@@ -252,6 +252,46 @@ var (
 	})
 
 	// =============================================================================
+	// Suricata Module Metrics
+	// =============================================================================
+
+	suricataEventsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "suricata",
+		Name:      "events_total",
+		Help:      "Total Suricata events processed from eve.json",
+	}, []string{"event_type"}) // event_type: alert, anomaly, dns, flow, http, etc.
+
+	suricataBansTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "suricata",
+		Name:      "bans_total",
+		Help:      "Total bans triggered by Suricata alerts",
+	}, []string{"category", "family"}) // category: ET SCAN, ET EXPLOIT, etc. family: ipv4, ipv6
+
+	suricataEveLagSeconds = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "suricata",
+		Name:      "eve_lag_seconds",
+		Help:      "Seconds since last EVE log event (freshness indicator)",
+	})
+
+	suricataProcessingLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Subsystem: "suricata",
+		Name:      "processing_latency_seconds",
+		Help:      "Time from EVE event to ban action",
+		Buckets:   prometheus.ExponentialBuckets(0.001, 2, 12), // 1ms to ~4s
+	})
+
+	suricataAlertsActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "suricata",
+		Name:      "alerts_active",
+		Help:      "Number of IPs currently tracked from Suricata alerts",
+	})
+
+	// =============================================================================
 	// IPC Metrics
 	// =============================================================================
 
@@ -583,6 +623,35 @@ func RecordDDoSMitigation(action string) {
 // SetDDoSActiveMitigations sets the number of currently active mitigations
 func SetDDoSActiveMitigations(count int) {
 	ddosActiveMitigations.Set(float64(count))
+}
+
+// =============================================================================
+// Suricata Metrics Recording Functions
+// =============================================================================
+
+// RecordSuricataEvent records a Suricata event from eve.json
+func RecordSuricataEvent(eventType string) {
+	suricataEventsTotal.WithLabelValues(eventType).Inc()
+}
+
+// RecordSuricataBan records a ban triggered by Suricata alert
+func RecordSuricataBan(category, family string) {
+	suricataBansTotal.WithLabelValues(category, family).Inc()
+}
+
+// SetSuricataEveLag sets the EVE log freshness (seconds since last event)
+func SetSuricataEveLag(lagSeconds float64) {
+	suricataEveLagSeconds.Set(lagSeconds)
+}
+
+// RecordSuricataProcessingLatency records time from EVE event to ban action
+func RecordSuricataProcessingLatency(latencySec float64) {
+	suricataProcessingLatency.Observe(latencySec)
+}
+
+// SetSuricataAlertsActive sets the number of IPs being tracked from alerts
+func SetSuricataAlertsActive(count int) {
+	suricataAlertsActive.Set(float64(count))
 }
 
 // =============================================================================
