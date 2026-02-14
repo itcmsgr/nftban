@@ -439,7 +439,7 @@ nftban_report_cmd_email_setup() {
     echo "═══════════════════════════════════════════════════════════════"
     echo ""
 
-    local mail_conf="/etc/nftban/conf.d/mail.conf"
+    local mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
 
     # Check if mail.conf exists
     if [[ ! -f "$mail_conf" ]]; then
@@ -899,8 +899,8 @@ nftban_report_cmd_run() {
     # Send login digest if mode is digest or both (only for daily reports)
     if [[ "$frequency" == "daily" ]]; then
         # Load login alert config
-        local login_config="/etc/nftban/conf.d/login_alert.conf"
-        local login_config_local="/etc/nftban/conf.d/login_alert.conf.local"
+        local login_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
+        local login_config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
         [[ -f "$login_config" ]] && source "$login_config"
         [[ -f "$login_config_local" ]] && source "$login_config_local"
 

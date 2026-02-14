@@ -66,8 +66,8 @@ readonly NFTBAN_CLI_PERMISSIONS_LOADED=1
 
 # Load permissions module
 if ! declare -f nftban_permissions_enforce_all >/dev/null 2>&1; then
-    if [[ -f "/usr/lib/nftban/core/nftban_permissions.sh" ]]; then
-        source "/usr/lib/nftban/core/nftban_permissions.sh" || {
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_permissions.sh" ]]; then
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_permissions.sh" || {
             echo "ERROR: Failed to load permissions module" >&2
             return 1
         }

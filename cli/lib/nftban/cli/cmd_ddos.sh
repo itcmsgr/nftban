@@ -182,9 +182,9 @@ _nftban_ddos_stats_json() {
     local ddos_mode="classic"
     local rate_limit=0
     local suricata_available="false"
-    local config_file="/etc/nftban/conf.d/ddos.conf"
-    local config_main="/etc/nftban/conf.d/ddos/main.conf"
-    local config_classic="/etc/nftban/conf.d/ddos/classic.conf"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos.conf"
+    local config_main="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf"
+    local config_classic="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/classic.conf"
 
     # Check if Suricata is available
     if systemctl is-active suricata.service >/dev/null 2>&1; then

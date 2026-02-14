@@ -104,8 +104,8 @@ nftban_gui_cleanup_old_state() {
     fi
 
     # Remove old placeholder stubs from .real/ directory
-    if [[ -d "/usr/lib/nftban/bin/.real" ]]; then
-        for stub in /usr/lib/nftban/bin/.real/*; do
+    if [[ -d "${NFTBAN_LIB_DIR}/bin/.real" ]]; then
+        for stub in "${NFTBAN_LIB_DIR}"/bin/.real/*; do
             if [[ -f "$stub" ]] && [[ $(stat -c%s "$stub") -lt 200 ]]; then
                 rm -f "$stub" 2>/dev/null || true
             fi
@@ -271,7 +271,7 @@ nftban_gui_enable() {
 
     echo "  Using source: $src_dir"
 
-    local bin_dir="/usr/lib/nftban/bin"
+    local bin_dir="${NFTBAN_LIB_DIR}/bin"
     mkdir -p "$bin_dir"
 
     # Compile nftban-core (consolidated binary)
@@ -500,7 +500,7 @@ nftban_gui_status() {
         # Check Go binaries
         echo ""
         echo "Performance:      Go binaries"
-        local bin_dir="/usr/lib/nftban/bin"
+        local bin_dir="${NFTBAN_LIB_DIR}/bin"
 
         # Check nftban-core (consolidated binary)
         if [[ -x "$bin_dir/nftban-core" ]]; then
@@ -573,7 +573,7 @@ nftban_gui_recompile() {
     echo "  Using source: $src_dir"
     echo ""
 
-    local bin_dir="/usr/lib/nftban/bin"
+    local bin_dir="${NFTBAN_LIB_DIR}/bin"
     mkdir -p "$bin_dir"
 
     # Compile nftban-core (consolidated binary)

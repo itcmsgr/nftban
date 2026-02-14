@@ -583,19 +583,19 @@ _verify_runtime_configs() {
 
     # Critical config files that MUST exist for nftban to work
     local critical_configs=(
-        "/etc/nftban/nftban.conf"
-        "/etc/nftban/conf.d/mail.conf"
-        "/etc/nftban/conf.d/stats.conf"
-        "/etc/nftban/conf.d/ddos/main.conf"
-        "/etc/nftban/conf.d/portscan/main.conf"
-        "/etc/nftban/conf.d/login/main.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
     )
 
     # Suricata config files (required if Suricata is enabled)
     local suricata_configs=(
-        "/etc/nftban/suricata/config/profile.conf"
-        "/etc/nftban/suricata/suricata.yaml.overlay"
-        "/etc/nftban/conf.d/suricata/interfaces.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/config/profile.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/suricata.yaml.overlay"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/suricata/interfaces.conf"
     )
 
     echo "  Checking critical config files..."
