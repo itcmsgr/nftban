@@ -151,9 +151,13 @@ _update_via_rpm() {
     # Remove immutable flags before rpm (nft_schema.sh is chattr +i for security)
     _remove_immutable_flags
 
-    # Install
+    # Install using dnf/yum to automatically resolve dependencies
+    # v1.14.0: Changed from rpm -Uvh to dnf install for dependency resolution
     _update_log INFO "Installing RPM package..."
-    if rpm -Uvh --force "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+    local pkg_manager="dnf"
+    command -v dnf &>/dev/null || pkg_manager="yum"
+
+    if $pkg_manager install -y "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
         _update_log OK "RPM installed successfully"
         rm -f "$tmp_file"
         return 0
@@ -235,36 +239,43 @@ _update_via_deb() {
         }
     fi
 
-    # Install
-    # Use DEBIAN_FRONTEND=noninteractive to prevent dpkg from asking questions
+    # Install using apt to automatically resolve dependencies
+    # v1.14.0: Changed from dpkg -i to apt install for dependency resolution
     _update_log INFO "Installing DEB package..."
-    local dpkg_result
+    local apt_result
     export DEBIAN_FRONTEND=noninteractive
+
+    # apt install ./file.deb automatically resolves dependencies
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
-        _update_log INFO "Force mode: using dpkg --force-overwrite --force-confnew"
-        dpkg_result=$(dpkg -i --force-overwrite --force-confnew "$tmp_file" 2>&1) && {
-            echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
+        _update_log INFO "Force mode: using apt install with --allow-downgrades"
+        apt_result=$(apt-get install -y --allow-downgrades -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1) && {
+            echo "$apt_result" | while IFS= read -r line; do echo "    $line"; done
             _update_log OK "DEB installed successfully"
             rm -f "$tmp_file"
             return 0
         }
     else
-        # Use --force-confnew to auto-accept new config files without prompting
-        dpkg_result=$(dpkg -i --force-confnew "$tmp_file" 2>&1) && {
-            echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
+        apt_result=$(apt-get install -y -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1) && {
+            echo "$apt_result" | while IFS= read -r line; do echo "    $line"; done
             _update_log OK "DEB installed successfully"
             rm -f "$tmp_file"
             return 0
         }
     fi
-    # Installation failed
-    echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
-    _update_log ERROR "DEB installation failed"
-    # In force mode, attempt dpkg configure to clean up
-    if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
-        _update_log INFO "Force mode: running dpkg --configure -a after failed install..."
-        dpkg --configure -a 2>&1 | while IFS= read -r line; do echo "    $line"; done || true
+
+    # Installation failed - try to fix broken packages
+    echo "$apt_result" | while IFS= read -r line; do echo "    $line"; done
+    _update_log WARN "apt install failed, attempting to fix dependencies..."
+    apt-get --fix-broken install -y 2>&1 | while IFS= read -r line; do echo "    $line"; done
+
+    # Retry after fixing
+    if apt-get install -y -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1; then
+        _update_log OK "DEB installed successfully (after dependency fix)"
+        rm -f "$tmp_file"
+        return 0
     fi
+
+    _update_log ERROR "DEB installation failed"
     rm -f "$tmp_file"
     return 1
 }
