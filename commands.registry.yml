@@ -1416,7 +1416,7 @@ configtest:
 
 port:
   category: infrastructure
-  description: "Port allow/block management"
+  description: "Port allow/block management with protocol and direction control"
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -1427,11 +1427,71 @@ port:
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban port list"
-    - "nftban port add 8080"
+    - "nftban port status"
+    - "nftban port add 80 tcp in"
+    - "nftban port add 443 both inout"
+    - "nftban port add 10050 tcp in"
+    - "nftban port add 25 tcp out"
     - "nftban port remove 8080"
-    - "nftban port check 443"
+    - "nftban port block 3389"
+    - "nftban port unblock 3389"
     - "nftban port status --json"
+  subcommands:
+    status:
+      mutates: false
+      description: "Show port status (listening ports vs firewall rules)"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    detailed:
+      mutates: false
+      description: "Show detailed status with BIND and PROCESS columns"
+    add:
+      mutates: true
+      description: "Add port to whitelist (all arguments required)"
+      arguments:
+        port:
+          type: int
+          required: true
+          description: "Port number (1-65535)"
+        protocol:
+          type: enum
+          values: [tcp, udp, both]
+          required: true
+          description: "Protocol: tcp, udp, or both"
+        direction:
+          type: enum
+          values: [in, out, inout]
+          required: true
+          description: "Direction: in (INPUT), out (OUTPUT), or inout (both)"
+    remove:
+      mutates: true
+      description: "Remove port from whitelist"
+      arguments:
+        port: {type: int, required: true, description: "Port number"}
+    block:
+      mutates: true
+      description: "Block port (alias for remove)"
+      arguments:
+        port: {type: int, required: true, description: "Port number"}
+    unblock:
+      mutates: true
+      description: "Unblock port (adds with both/inout)"
+      arguments:
+        port: {type: int, required: true, description: "Port number"}
+    html-report:
+      mutates: false
+      description: "Generate HTML port status report"
+    mail-report:
+      mutates: false
+      description: "Email port status report"
+      arguments:
+        path: {type: string, required: false, description: "Report file path"}
+        recipient: {type: string, required: false, description: "Email recipient"}
+    allow-panel:
+      mutates: true
+      description: "Allow control panel ports (e.g., DirectAdmin)"
+      arguments:
+        panel: {type: enum, values: [directadmin], required: true, description: "Panel name"}
 
 profile:
   category: infrastructure
