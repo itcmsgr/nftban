@@ -128,6 +128,26 @@ log_info "Permission fixes complete ($fixed_perms items fixed)"
 find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 # Make binaries executable
 find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
+# =============================================================================
+# CRITICAL: Fix /var/lib/nftban file permissions (feeds, banned, whitelist, etc.)
+# v1.13.12: Go binaries may create files with root:root - fix them for exporter access
+# =============================================================================
+log_info "Fixing /var/lib/nftban file permissions..."
+if [ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}" ]; then
+    # Fix all files EXCEPT auditors directory (which has different ownership)
+    find "${NFTBAN_DATA_DIR:-/var/lib/nftban}" -type f \
+        -not -path "*/reports/auditors/*" \
+        \( -not -user nftban -o -not -group nftban \) \
+        -exec chown nftban:nftban {} \; 2>/dev/null || true
+
+    find "${NFTBAN_DATA_DIR:-/var/lib/nftban}" -type f \
+        -not -path "*/reports/auditors/*" \
+        -not -perm 640 \
+        -exec chmod 640 {} \; 2>/dev/null || true
+
+    log_info "✅ /var/lib/nftban files fixed (nftban:nftban 0640)"
+fi
 # CRITICAL: Set CAP_NET_ADMIN on nftban-core for GUI ban/unban functionality
 if [ -x "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" ]; then
     setcap cap_net_admin+ep "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" 2>/dev/null || log_warn "Failed to set CAP_NET_ADMIN on nftban-core"
