@@ -314,7 +314,7 @@ cmd_suricata_services() {
             echo ""
 
             # Show current config files
-            local config_dir="/etc/nftban/suricata/config"
+            local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/config"
 
             if [[ -f "$config_dir/suricata.auto.conf" ]]; then
                 echo "Auto-detected configuration:"

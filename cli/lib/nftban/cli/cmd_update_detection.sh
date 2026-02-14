@@ -388,8 +388,8 @@ _get_current_version() {
             ;;
         *)
             # Try reading from installed version file
-            if [[ -f "/usr/lib/nftban/VERSION" ]]; then
-                cat "/usr/lib/nftban/VERSION"
+            if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" ]]; then
+                cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION"
             else
                 echo "unknown"
             fi

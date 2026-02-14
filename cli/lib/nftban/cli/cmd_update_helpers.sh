@@ -146,7 +146,7 @@ _remove_immutable_flags() {
     done
 
     # Critical file that is known to be immutable
-    local schema="/usr/lib/nftban/lib/nft_schema.sh"
+    local schema="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
 
     # Helper to check if file has immutable flag
     _has_immutable() {
@@ -169,9 +169,9 @@ _remove_immutable_flags() {
     fi
 
     local dirs_to_check=(
-        "/usr/lib/nftban"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
         "/usr/sbin/nftban"
-        "/etc/nftban"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     )
 
     for path in "${dirs_to_check[@]}"; do

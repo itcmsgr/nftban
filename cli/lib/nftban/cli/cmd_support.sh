@@ -461,7 +461,7 @@ _collect_binaries() {
         # Go binary versions
         echo "=== Go Binary Versions ==="
         for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
-            local bin_path="/usr/lib/nftban/bin/$binary"
+            local bin_path="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/$binary"
             [[ "$binary" == "nftban-ui" ]] && bin_path="/usr/sbin/nftban-ui"
             [[ "$binary" == "nftban-ui-auth" ]] && bin_path="/usr/libexec/nftban-ui-auth"
 
@@ -523,13 +523,13 @@ _collect_distro_config() {
 
         # Distro config file
         echo "=== Distro Config Files ==="
-        ls -la /etc/nftban/distros/ 2>&1 || echo "/etc/nftban/distros/ not found"
+        ls -la "${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/" 2>&1 || echo "${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/ not found"
         echo ""
 
         # Active distro config
         local distro_id="${ID:-unknown}"
         local distro_version="${VERSION_ID:-unknown}"
-        local expected_config="/etc/nftban/distros/${distro_id}-${distro_version}.conf"
+        local expected_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/${distro_id}-${distro_version}.conf"
         echo "=== Expected Config: $expected_config ==="
         if [[ -f "$expected_config" ]]; then
             echo "EXISTS: yes"
@@ -649,7 +649,7 @@ _collect_geoip() {
         echo "# Collected: $(date -Iseconds)"
         echo ""
 
-        local db_path="/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+        local db_path="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip/dbip-country-lite.mmdb"
         echo "=== Database File ==="
         if [[ -f "$db_path" ]]; then
             echo "Path: $db_path"
