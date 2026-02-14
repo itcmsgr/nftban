@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-02-14
+
+### Major Features
+
+- **feat(portal)**: pro.nftban.com Portal Integration
+  - New `export_portal()` function with REAL_ACK semantics (HTTP 2xx confirmation)
+  - Server inventory push: CPU, RAM, disk, OS, network, modules to portal
+  - Unique host identification via `/etc/machine-id` or SHA256(MAC + hostname)
+  - Module status tracking per server
+  - Portal config template: `setup/portal.conf`
+
+- **feat(metrics)**: Phase 1 Reconciliation Metrics
+  - Export tracking counters per target:
+    - `nftban_export_attempts_total{target}`
+    - `nftban_export_success_total{target}`
+    - `nftban_export_failures_total{target}`
+    - `nftban_export_duration_ms{target}`
+    - `nftban_export_last_success_timestamp{target}`
+  - Persistent state in `/var/cache/nftban/stats/export_tracking.dat`
+  - All export functions now track success/failure with reason codes
+
+### Schema Updates (Portal)
+
+- **Server Inventory Tables** (metricsnftban/06-PORTAL-SCHEMA.md):
+  - `nftban_host`: Server registry with hardware, OS, network info
+  - `nftban_host_module`: Module status per server
+  - `nftban_host_export_target`: Export target health per server
+  - Upsert functions for real-time inventory updates
+  - Fleet-wide queries for version management and health monitoring
+
+### Enhancements
+
+- **feat(export)**: Robust nc agent improvements
+  - Configurable timeout via `NFTBAN_ZABBIX_TIMEOUT` (default: 10s)
+  - Better error categorization for failure tracking
+  - Phase 1 metrics track all export targets: prometheus, zabbix, portal, elasticsearch, kafka, file
+
+### Documentation
+
+- Updated `05-RECONCILIATION-METRICS.md` with Reality vs Spec section
+- Added ACK semantics table per export target type
+- New `07-PORTAL-PAGES.md` portal UI specification
+
+---
+
+## [1.14.1] - 2026-02-13
+
+### Bug Fixes
+
+- **fix(update)**: Use package managers for dependency resolution
+  - DEB: apt-get install (not dpkg) ensures new deps like gawk install
+  - RPM: dnf → yum → rpm fallback chain for updates
+  - Fixes issue where dependencies weren't installed on updates
+
+---
+
 ## [1.13.0] - 2026-02-12
 
 ### Major Features
