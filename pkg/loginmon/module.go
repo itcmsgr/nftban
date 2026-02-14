@@ -57,6 +57,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 const (
@@ -352,67 +353,67 @@ func (m *Module) parseShellConfig(content string) {
 		case "SSH_FAILED_PASSWORD_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.SSHFailedPassword = int16(v)
+			m.config.SSHFailedPassword = safeconv.ToInt16OrDefault(v, 10)
 		case "SSH_INVALID_USER_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.SSHInvalidUser = int16(v)
+			m.config.SSHInvalidUser = safeconv.ToInt16OrDefault(v, 10)
 		case "SSH_PREAUTH_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.SSHPreauth = int16(v)
+			m.config.SSHPreauth = safeconv.ToInt16OrDefault(v, 10)
 		case "SSH_TOO_MANY_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.SSHTooMany = int16(v)
+			m.config.SSHTooMany = safeconv.ToInt16OrDefault(v, 10)
 		case "SSH_ROOT_ATTEMPT_BONUS":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.SSHRootAttempt = int16(v)
+			m.config.SSHRootAttempt = safeconv.ToInt16OrDefault(v, 10)
 
 		// Mail score deltas
 		case "DOVECOT_AUTH_FAIL_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.DovecotAuthFail = int16(v)
+			m.config.DovecotAuthFail = safeconv.ToInt16OrDefault(v, 10)
 		case "POSTFIX_SASL_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.PostfixSASL = int16(v)
+			m.config.PostfixSASL = safeconv.ToInt16OrDefault(v, 10)
 		case "EXIM_AUTH_FAIL_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.EximAuthFail = int16(v)
+			m.config.EximAuthFail = safeconv.ToInt16OrDefault(v, 10)
 
 		// FTP score deltas
 		case "FTP_AUTH_FAIL_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.FTPAuthFail = int16(v)
+			m.config.FTPAuthFail = safeconv.ToInt16OrDefault(v, 10)
 
 		// Panel score deltas
 		case "DIRECTADMIN_LOGIN_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.DirectAdminLogin = int16(v)
+			m.config.DirectAdminLogin = safeconv.ToInt16OrDefault(v, 10)
 		case "CPANEL_LOGIN_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.CPanelLogin = int16(v)
+			m.config.CPanelLogin = safeconv.ToInt16OrDefault(v, 10)
 		case "PLESK_LOGIN_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.PleskLogin = int16(v)
+			m.config.PleskLogin = safeconv.ToInt16OrDefault(v, 10)
 
 		// WordPress score deltas
 		case "WORDPRESS_XMLRPC_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.WordPressXMLRPC = int16(v)
+			m.config.WordPressXMLRPC = safeconv.ToInt16OrDefault(v, 10)
 		case "WORDPRESS_WPLOGIN_SCORE":
 			var v int
 			fmt.Sscanf(value, "%d", &v)
-			m.config.WordPressWPLogin = int16(v)
+			m.config.WordPressWPLogin = safeconv.ToInt16OrDefault(v, 10)
 		}
 	}
 }
