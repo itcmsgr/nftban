@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/safeconv"
 	"github.com/prometheus/procfs"
 )
 
@@ -79,8 +78,8 @@ func (c *ProcessCollector) Collect(ctx context.Context, snapshot *Snapshot) erro
 	}
 
 	snapshot.Process.PID = os.Getpid()
-	snapshot.Process.RSS = safeconv.ToUint64OrZero(stat.ResidentMemory())
-	snapshot.Process.VMS = safeconv.ToUint64OrZero(stat.VirtualMemory())
+	snapshot.Process.RSS = uint64(stat.ResidentMemory()) // uint→uint64 is always safe
+	snapshot.Process.VMS = uint64(stat.VirtualMemory())  // uint→uint64 is always safe
 	snapshot.Process.Threads = stat.NumThreads
 	snapshot.Process.Uptime = time.Since(c.startTime).Seconds()
 	snapshot.Process.CPUPct = c.calculateCPUPercent(stat)
