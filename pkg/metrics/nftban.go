@@ -270,6 +270,43 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 14), // 0.1ms to ~1.6s
 	}, []string{"method"})
 
+	// IPC Connection Metrics (for bottleneck identification)
+	ipcConnectionsActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "connections_active",
+		Help:      "Number of currently active IPC connections (0 to max concurrent)",
+	})
+
+	ipcConnectionsRejectedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "connections_rejected_total",
+		Help:      "Total IPC connections rejected by reason",
+	}, []string{"reason"}) // reason: at_capacity, auth_failed, read_error
+
+	ipcConnectionWaitSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "connection_wait_seconds",
+		Help:      "Time spent waiting for semaphore slot before processing",
+		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 12), // 0.1ms to ~400ms
+	})
+
+	ipcSemaphoreAvailable = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "semaphore_available",
+		Help:      "Number of available IPC semaphore slots (max - active)",
+	})
+
+	ipcConnectionsPeak = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "connections_peak",
+		Help:      "Peak concurrent connections since last reset (high water mark)",
+	})
+
 	// =============================================================================
 	// Active Bans Gauge
 	// =============================================================================
@@ -560,6 +597,32 @@ func RecordIPCRequest(method string, success bool, latencySec float64) {
 	}
 	ipcRequestsTotal.WithLabelValues(method, status).Inc()
 	ipcLatency.WithLabelValues(method).Observe(latencySec)
+}
+
+// SetIPCConnectionsActive sets the current number of active IPC connections
+func SetIPCConnectionsActive(count int) {
+	ipcConnectionsActive.Set(float64(count))
+}
+
+// RecordIPCRejection records an IPC connection rejection with reason
+// Reasons: "at_capacity", "auth_failed", "read_error", "timeout"
+func RecordIPCRejection(reason string) {
+	ipcConnectionsRejectedTotal.WithLabelValues(reason).Inc()
+}
+
+// RecordIPCConnectionWait records time spent waiting for semaphore slot
+func RecordIPCConnectionWait(waitSec float64) {
+	ipcConnectionWaitSeconds.Observe(waitSec)
+}
+
+// SetIPCSemaphoreAvailable sets the number of available semaphore slots
+func SetIPCSemaphoreAvailable(available int) {
+	ipcSemaphoreAvailable.Set(float64(available))
+}
+
+// SetIPCConnectionsPeak sets the peak concurrent connections (high water mark)
+func SetIPCConnectionsPeak(peak int) {
+	ipcConnectionsPeak.Set(float64(peak))
 }
 
 // =============================================================================

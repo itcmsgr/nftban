@@ -492,40 +492,62 @@ nftban_portscan_classic_process_logs() {
     local cutoff_time
     cutoff_time=$((current_time - time_window))
 
+    # Escape regex metacharacters in log prefixes for safe use in grep -E
+    # This prevents injection attacks if config values contain special characters
+    local log_prefix_escaped log_prefix_legacy_escaped
+    log_prefix_escaped=$(printf '%s' "$log_prefix" | sed 's/[][\.|$(){}?+*^]/\\&/g')
+    log_prefix_legacy_escaped=$(printf '%s' "$log_prefix_legacy" | sed 's/[][\.|$(){}?+*^]/\\&/g')
+
     # Read recent log entries - handle both file and journalctl
     # Accept both new and legacy prefixes for backwards compatibility
-    local log_cmd
+    # Use process substitution with direct commands instead of eval for safety
     if [[ "$log_source" == "journalctl" ]]; then
         # Use journalctl for kernel logs on systemd systems
-        # Match both prefixes using extended regex
-        log_cmd="{ journalctl -k --since '${time_window} seconds ago' --no-pager 2>/dev/null | grep -E '${log_prefix}|${log_prefix_legacy}' || true; } | tail -1000"
         _nftban_portscan_classic_log "DEBUG" "Reading from journalctl (kernel logs)"
+        while IFS= read -r line; do
+            local parsed
+            parsed=$(nftban_portscan_classic_parse_line "$line") || continue
+
+            IFS='|' read -r src_ip dst_ip dst_port proto <<< "$parsed"
+
+            # Skip whitelisted IPs - HARD GATE (no state accumulation)
+            if nftban_portscan_classic_is_whitelisted "$src_ip"; then
+                continue
+            fi
+
+            # Emit micro-event for stealth aggregation (uses original log timestamp)
+            local log_ts
+            log_ts=$(_nftban_portscan_extract_timestamp "$line")
+            _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
+
+            # Record this connection for realtime detection
+            nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
+
+        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | tail -1000)
     else
         # grep returns 1 when no matches found - use || true to handle this
-        log_cmd="{ grep -E '${log_prefix}|${log_prefix_legacy}' '$log_source' 2>/dev/null || true; } | tail -1000"
         _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
+        while IFS= read -r line; do
+            local parsed
+            parsed=$(nftban_portscan_classic_parse_line "$line") || continue
+
+            IFS='|' read -r src_ip dst_ip dst_port proto <<< "$parsed"
+
+            # Skip whitelisted IPs - HARD GATE (no state accumulation)
+            if nftban_portscan_classic_is_whitelisted "$src_ip"; then
+                continue
+            fi
+
+            # Emit micro-event for stealth aggregation (uses original log timestamp)
+            local log_ts
+            log_ts=$(_nftban_portscan_extract_timestamp "$line")
+            _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
+
+            # Record this connection for realtime detection
+            nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
+
+        done < <({ grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" "$log_source" 2>/dev/null || true; } | tail -1000)
     fi
-
-    while IFS= read -r line; do
-        local parsed
-        parsed=$(nftban_portscan_classic_parse_line "$line") || continue
-
-        IFS='|' read -r src_ip dst_ip dst_port proto <<< "$parsed"
-
-        # Skip whitelisted IPs - HARD GATE (no state accumulation)
-        if nftban_portscan_classic_is_whitelisted "$src_ip"; then
-            continue
-        fi
-
-        # Emit micro-event for stealth aggregation (uses original log timestamp)
-        local log_ts
-        log_ts=$(_nftban_portscan_extract_timestamp "$line")
-        _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
-
-        # Record this connection for realtime detection
-        nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
-
-    done < <(eval "$log_cmd")
 
     # Analyze and block if needed
     nftban_portscan_classic_analyze_all
