@@ -148,7 +148,7 @@ nftban_service_auto_start() {
 nftban_resolve_firewall_conflicts() {
     local conflicts_found=0
     local backup_dir
-    backup_dir="/var/lib/nftban/backups/firewall-migration-$(date +%Y%m%d-%H%M%S)"
+    backup_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backups/firewall-migration-$(date +%Y%m%d-%H%M%S)"
 
     echo ""
     echo "Checking for conflicting firewalls..."

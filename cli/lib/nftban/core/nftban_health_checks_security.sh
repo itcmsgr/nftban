@@ -236,7 +236,7 @@ nftban_health_check_protection() {
 
     local status=$HEALTH_OK
     local protection_issues=()
-    local protection_file="/var/lib/nftban/state/protection.json"
+    local protection_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/protection.json"
 
     if [[ -f "$protection_file" ]]; then
         # Protection is active - feeds or geoban were skipped
@@ -278,8 +278,8 @@ nftban_health_check_memory_protection() {
     local status=$HEALTH_OK
     local mp_issues=()
 
-    local protection_file="/var/lib/nftban/state/protection.json"
-    local permanent_bans_file="/var/lib/nftban/state/permanent_bans.json"
+    local protection_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/protection.json"
+    local permanent_bans_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/permanent_bans.json"
     local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
 
     # =========================================================================
