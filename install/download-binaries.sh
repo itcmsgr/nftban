@@ -64,6 +64,109 @@ detect_arch() {
     esac
 }
 
+detect_os() {
+    # Returns: ubuntu22.04, ubuntu24.04, debian12, debian13, el9, el10
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        case "$ID" in
+            ubuntu)
+                echo "ubuntu${VERSION_ID}"
+                ;;
+            debian)
+                local major="${VERSION_ID%%.*}"
+                echo "debian${major}"
+                ;;
+            rhel|centos|rocky|almalinux|ol)
+                local major="${VERSION_ID%%.*}"
+                echo "el${major}"
+                ;;
+            fedora)
+                echo "el10"  # Fedora uses el10 compatible packages
+                ;;
+            *)
+                echo "unknown"
+                ;;
+        esac
+    else
+        echo "unknown"
+    fi
+}
+
+get_package_type() {
+    if command -v dpkg &>/dev/null; then
+        echo "deb"
+    elif command -v rpm &>/dev/null; then
+        echo "rpm"
+    else
+        echo "none"
+    fi
+}
+
+download_package() {
+    local version="$1"
+    local os="$2"
+    local arch="$3"
+    local pkg_type="$4"
+
+    local filename=""
+    local url=""
+
+    case "$pkg_type" in
+        deb)
+            filename="nftban-${os}-${arch}.deb"
+            ;;
+        rpm)
+            # RPM uses x86_64 instead of amd64
+            local rpm_arch="$arch"
+            [[ "$arch" == "amd64" ]] && rpm_arch="x86_64"
+            filename="nftban-${os}-${rpm_arch}.rpm"
+            ;;
+    esac
+
+    url="${GITHUB_RELEASES}/${version}/${filename}"
+
+    log "Attempting to download package: $filename"
+
+    if curl -fsSL -o "$DOWNLOAD_DIR/$filename" "$url" 2>/dev/null; then
+        ok "Downloaded: $filename"
+        echo "$DOWNLOAD_DIR/$filename"
+        return 0
+    else
+        warn "Package not found: $filename"
+        return 1
+    fi
+}
+
+install_package() {
+    local pkg_path="$1"
+    local pkg_type="$2"
+
+    log "Installing package: $(basename "$pkg_path")"
+
+    case "$pkg_type" in
+        deb)
+            if dpkg -i "$pkg_path"; then
+                ok "Package installed successfully"
+                return 0
+            else
+                error "Failed to install DEB package"
+                return 1
+            fi
+            ;;
+        rpm)
+            if rpm -Uvh "$pkg_path"; then
+                ok "Package installed successfully"
+                return 0
+            else
+                error "Failed to install RPM package"
+                return 1
+            fi
+            ;;
+    esac
+    return 1
+}
+
 get_latest_version() {
     log "Fetching latest release version..."
     local latest
@@ -347,9 +450,13 @@ echo ""
 
 # Setup
 ARCH=$(detect_arch)
+OS=$(detect_os)
+PKG_TYPE=$(get_package_type)
 mkdir -p "$DOWNLOAD_DIR"
 
 log "Architecture: $ARCH"
+log "OS: $OS"
+log "Package type: $PKG_TYPE"
 log "Download dir: $DOWNLOAD_DIR"
 echo ""
 
@@ -360,7 +467,35 @@ fi
 log "Version: $VERSION"
 echo ""
 
-# Download all binaries
+# Try package-based installation first (preferred)
+PKG_INSTALLED=0
+if [[ "$PKG_TYPE" != "none" && "$OS" != "unknown" ]]; then
+    log "Attempting package-based installation..."
+    if pkg_path=$(download_package "$VERSION" "$OS" "$ARCH" "$PKG_TYPE"); then
+        if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
+            if install_package "$pkg_path" "$PKG_TYPE"; then
+                PKG_INSTALLED=1
+                ok "NFTBan installed via $PKG_TYPE package"
+                echo ""
+                echo "================================================"
+                echo "  Installation Complete!"
+                echo "================================================"
+                echo ""
+                echo "Run: nftban version"
+                echo ""
+                exit 0
+            fi
+        else
+            ok "Package downloaded to: $pkg_path"
+            exit 0
+        fi
+    fi
+    echo ""
+    log "Package not available, falling back to binary download..."
+    echo ""
+fi
+
+# Fallback: Download raw binaries
 download_all "$VERSION" "$ARCH"
 echo ""
 
