@@ -182,6 +182,10 @@ Requires:       tar
 Requires:       gzip
 Requires:       pam
 Requires:       bc
+Recommends:     bind-utils
+Recommends:     mailx
+Recommends:     socat
+Recommends:     newt
 Requires(pre):  shadow-utils
 
 %description
@@ -1084,6 +1088,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc
+Recommends: dnsutils, mailutils, socat, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
