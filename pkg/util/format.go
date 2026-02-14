@@ -22,7 +22,11 @@
 
 package util
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/itcmsgr/nftban/pkg/safeconv"
+)
 
 // FormatBytes formats a byte count into a human-readable string.
 // Uses binary units (1024-based): B, KB, MB, GB, TB, PB, EB.
@@ -41,5 +45,5 @@ func FormatBytes(bytes int64) string {
 
 // FormatBytesUint formats an unsigned byte count into a human-readable string.
 func FormatBytesUint(bytes uint64) string {
-	return FormatBytes(int64(bytes))
+	return FormatBytes(safeconv.Uint64ToInt64OrMax(bytes))
 }

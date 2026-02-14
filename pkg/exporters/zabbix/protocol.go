@@ -30,6 +30,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 // =============================================================================
@@ -401,7 +403,9 @@ func ValidateKey(key string) error {
 
 	// Keys can contain: a-z, A-Z, 0-9, _, ., -, and [] for parameters
 	for i, c := range key {
-		if !isValidKeyChar(byte(c)) {
+		// Use safeconv for rune->byte (non-ASCII automatically invalid)
+		b := safeconv.RuneToByteOrDefault(c, 0)
+		if !isValidKeyChar(b) {
 			return fmt.Errorf("invalid character '%c' at position %d", c, i)
 		}
 	}

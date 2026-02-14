@@ -16,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"syscall"
+
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 const (
@@ -100,7 +102,7 @@ func SecureReadElementsFile(path string) (*FileReadResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open failed: %w", err)
 	}
-	file := os.NewFile(uintptr(fd), path)
+	file := os.NewFile(safeconv.IntToUintptrOrZero(fd), path)
 	defer file.Close()
 
 	// Verify inode matches (TOCTOU protection)
@@ -236,7 +238,7 @@ func SecureOpenElementsFile(path string, config StreamingBatchConfig) (*Streamin
 	if err != nil {
 		return nil, fmt.Errorf("open failed: %w", err)
 	}
-	file := os.NewFile(uintptr(fd), path)
+	file := os.NewFile(safeconv.IntToUintptrOrZero(fd), path)
 
 	// Verify inode matches (TOCTOU protection)
 	if stat != nil {

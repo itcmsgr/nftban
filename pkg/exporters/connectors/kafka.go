@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/logx"
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 // =============================================================================
@@ -283,6 +284,7 @@ func (c *KafkaConnector) Send(ctx context.Context, records []Record) error {
 		for _, conn := range conns {
 			err := c.produce(conn, c.config.Topic, messages)
 			if err == nil {
+				// #nosec G115 - int to int64 conversion is always safe (int64 can hold any int value)
 				c.RecordSend(len(records), int64(len(messages)*100), time.Since(start))
 				return nil
 			}
@@ -315,13 +317,16 @@ func (c *KafkaConnector) apiVersions(conn net.Conn) error {
 	req := &bytes.Buffer{}
 
 	// API Key (18 = ApiVersions)
+	// #nosec G115 - constant value 18 fits in int16
 	binary.Write(req, binary.BigEndian, int16(18))
 	// API Version
+	// #nosec G115 - constant value 0 fits in int16
 	binary.Write(req, binary.BigEndian, int16(0))
 	// Correlation ID
 	binary.Write(req, binary.BigEndian, corrID)
 	// Client ID
 	clientID := "nftban"
+	// #nosec G115 - clientID is constant "nftban" (6 bytes), fits in int16
 	binary.Write(req, binary.BigEndian, int16(len(clientID)))
 	req.WriteString(clientID)
 
@@ -346,33 +351,40 @@ func (c *KafkaConnector) produce(conn net.Conn, topic string, messages []kafkaMe
 	req := &bytes.Buffer{}
 
 	// API Key (0 = Produce)
+	// #nosec G115 - constant value 0 fits in int16
 	binary.Write(req, binary.BigEndian, int16(0))
 	// API Version
+	// #nosec G115 - constant value 3 fits in int16
 	binary.Write(req, binary.BigEndian, int16(3))
 	// Correlation ID
 	binary.Write(req, binary.BigEndian, corrID)
 	// Client ID
 	clientID := "nftban"
+	// #nosec G115 - clientID is constant "nftban" (6 bytes), fits in int16
 	binary.Write(req, binary.BigEndian, int16(len(clientID)))
 	req.WriteString(clientID)
 
 	// Transactional ID (null)
+	// #nosec G115 - constant value -1 fits in int16
 	binary.Write(req, binary.BigEndian, int16(-1))
 
 	// Acks
-	binary.Write(req, binary.BigEndian, int16(c.config.Acks))
+	binary.Write(req, binary.BigEndian, safeconv.ToInt16OrDefault(c.config.Acks, 1))
 
 	// Timeout
+	// #nosec G115 - constant value 30000 fits in int32
 	binary.Write(req, binary.BigEndian, int32(30000))
 
 	// Topic array (1 topic)
+	// #nosec G115 - constant value 1 fits in int32
 	binary.Write(req, binary.BigEndian, int32(1))
 
 	// Topic name
-	binary.Write(req, binary.BigEndian, int16(len(topic)))
+	binary.Write(req, binary.BigEndian, safeconv.ToInt16OrDefault(len(topic), 0))
 	req.WriteString(topic)
 
 	// Partition array (1 partition)
+	// #nosec G115 - constant value 1 fits in int32
 	binary.Write(req, binary.BigEndian, int32(1))
 
 	// Partition
@@ -380,13 +392,13 @@ func (c *KafkaConnector) produce(conn net.Conn, topic string, messages []kafkaMe
 	if partition < 0 {
 		partition = 0
 	}
-	binary.Write(req, binary.BigEndian, int32(partition))
+	binary.Write(req, binary.BigEndian, safeconv.ToInt32OrDefault(partition, 0))
 
 	// Build record batch
 	recordBatch := c.buildRecordBatch(messages)
 
 	// Record batch size
-	binary.Write(req, binary.BigEndian, int32(len(recordBatch)))
+	binary.Write(req, binary.BigEndian, safeconv.ToInt32OrDefault(len(recordBatch), 0))
 	req.Write(recordBatch)
 
 	// Send request
@@ -413,13 +425,16 @@ func (c *KafkaConnector) buildRecordBatch(messages []kafkaMessage) []byte {
 	batch := &bytes.Buffer{}
 
 	// Base offset
+	// #nosec G115 - constant value 0 fits in int64
 	binary.Write(batch, binary.BigEndian, int64(0))
 
 	// Batch length placeholder
 	lengthPos := batch.Len()
+	// #nosec G115 - constant value 0 fits in int32
 	binary.Write(batch, binary.BigEndian, int32(0))
 
 	// Partition leader epoch
+	// #nosec G115 - constant value -1 fits in int32
 	binary.Write(batch, binary.BigEndian, int32(-1))
 
 	// Magic byte (2 for v2)
@@ -427,13 +442,15 @@ func (c *KafkaConnector) buildRecordBatch(messages []kafkaMessage) []byte {
 
 	// CRC placeholder
 	crcPos := batch.Len()
+	// #nosec G115 - constant value 0 fits in int32
 	binary.Write(batch, binary.BigEndian, int32(0))
 
 	// Attributes
+	// #nosec G115 - constant value 0 fits in int16
 	binary.Write(batch, binary.BigEndian, int16(0))
 
 	// Last offset delta
-	binary.Write(batch, binary.BigEndian, int32(len(messages)-1))
+	binary.Write(batch, binary.BigEndian, safeconv.ToInt32OrDefault(len(messages)-1, 0))
 
 	// First timestamp
 	now := time.Now().UnixMilli()
@@ -443,16 +460,19 @@ func (c *KafkaConnector) buildRecordBatch(messages []kafkaMessage) []byte {
 	binary.Write(batch, binary.BigEndian, now)
 
 	// Producer ID
+	// #nosec G115 - constant value -1 fits in int64
 	binary.Write(batch, binary.BigEndian, int64(-1))
 
 	// Producer epoch
+	// #nosec G115 - constant value -1 fits in int16
 	binary.Write(batch, binary.BigEndian, int16(-1))
 
 	// Base sequence
+	// #nosec G115 - constant value -1 fits in int32
 	binary.Write(batch, binary.BigEndian, int32(-1))
 
 	// Records count
-	binary.Write(batch, binary.BigEndian, int32(len(messages)))
+	binary.Write(batch, binary.BigEndian, safeconv.ToInt32OrDefault(len(messages), 0))
 
 	// Records
 	for i, msg := range messages {
@@ -462,7 +482,7 @@ func (c *KafkaConnector) buildRecordBatch(messages []kafkaMessage) []byte {
 	// Update batch length
 	batchLen := batch.Len() - lengthPos - 4
 	batchBytes := batch.Bytes()
-	binary.BigEndian.PutUint32(batchBytes[lengthPos:], uint32(batchLen))
+	binary.BigEndian.PutUint32(batchBytes[lengthPos:], safeconv.ToUint32OrZero(batchLen))
 
 	// Update CRC
 	crcData := batchBytes[crcPos+4:]
@@ -473,6 +493,7 @@ func (c *KafkaConnector) buildRecordBatch(messages []kafkaMessage) []byte {
 }
 
 // writeRecord writes a single record
+// Note: int to int64 conversions below are always safe (int64 can hold any int value)
 func (c *KafkaConnector) writeRecord(buf *bytes.Buffer, offset int, msg kafkaMessage, baseTime int64) {
 	record := &bytes.Buffer{}
 
@@ -483,13 +504,16 @@ func (c *KafkaConnector) writeRecord(buf *bytes.Buffer, offset int, msg kafkaMes
 	c.writeVarint(record, 0)
 
 	// Offset delta (varint)
+	// #nosec G115 - int to int64 is always safe
 	c.writeVarint(record, int64(offset))
 
 	// Key length (varint)
+	// #nosec G115 - int to int64 is always safe
 	c.writeVarint(record, int64(len(msg.Key)))
 	record.Write(msg.Key)
 
 	// Value length (varint)
+	// #nosec G115 - int to int64 is always safe
 	c.writeVarint(record, int64(len(msg.Value)))
 	record.Write(msg.Value)
 
@@ -497,13 +521,15 @@ func (c *KafkaConnector) writeRecord(buf *bytes.Buffer, offset int, msg kafkaMes
 	c.writeVarint(record, 0)
 
 	// Write record length and data
+	// #nosec G115 - int to int64 is always safe
 	c.writeVarint(buf, int64(record.Len()))
 	buf.Write(record.Bytes())
 }
 
 // writeVarint writes a variable-length integer
 func (c *KafkaConnector) writeVarint(buf *bytes.Buffer, v int64) {
-	uv := uint64((v << 1) ^ (v >> 63)) // zigzag encode
+	// #nosec G115 - intentional zigzag encoding: maps signed int64 to unsigned uint64
+	uv := uint64((v << 1) ^ (v >> 63))
 	for uv >= 0x80 {
 		buf.WriteByte(byte(uv) | 0x80)
 		uv >>= 7
@@ -519,7 +545,7 @@ func (c *KafkaConnector) sendRequest(conn net.Conn, data []byte) error {
 
 	// Write length
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+	binary.BigEndian.PutUint32(lenBuf, safeconv.ToUint32OrZero(len(data)))
 	if _, err := conn.Write(lenBuf); err != nil {
 		return err
 	}
