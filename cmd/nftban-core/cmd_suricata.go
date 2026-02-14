@@ -452,7 +452,7 @@ func cmdSuricataDaemon() error {
 	}
 	fmt.Println()
 
-	// Create ban handler using existing netlink infrastructure
+	// Create ban handler using IPC to nftband daemon
 	banHandler, err := suricata.NewNetlinkBanHandler()
 	if err != nil {
 		return fmt.Errorf("failed to create ban handler: %w", err)
