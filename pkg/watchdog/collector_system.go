@@ -28,6 +28,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 // SystemCollector collects OS-level metrics
@@ -194,8 +196,8 @@ func (c *SystemCollector) collectDiskUsage(snapshot *Snapshot) {
 		return
 	}
 
-	totalBytes := stat.Blocks * uint64(stat.Bsize)
-	freeBytes := stat.Bfree * uint64(stat.Bsize)
+	totalBytes := stat.Blocks * safeconv.Int64ToUint64OrZero(stat.Bsize)
+	freeBytes := stat.Bfree * safeconv.Int64ToUint64OrZero(stat.Bsize)
 
 	if totalBytes > 0 {
 		usedBytes := totalBytes - freeBytes

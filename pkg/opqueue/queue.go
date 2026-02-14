@@ -18,6 +18,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
 // FastOp represents a high-priority operation (ban, unban, flush_source, flush_set)
@@ -232,7 +234,7 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 	}
 
 	s.fastPending.Add(-int64(len(batch)))
-	s.totalApplied.Add(uint64(applied))
+	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
 	s.lastFastFlush.Store(time.Now())
 }
 
@@ -331,7 +333,7 @@ func (s *Scheduler) processBulkJob(ctx context.Context, job BulkJob) {
 	}
 
 	s.bulkPending.Add(-1)
-	s.totalApplied.Add(uint64(applied))
+	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
 	s.lastBulkFlush.Store(time.Now())
 	log.Printf("[scheduler] bulk replace_set %s: %d elements applied", setName, applied)
 }
@@ -402,7 +404,7 @@ func (s *Scheduler) processBulkJobDirect(job BulkJob) {
 	}
 
 	s.bulkPending.Add(-1)
-	s.totalApplied.Add(uint64(applied))
+	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
 	log.Printf("[scheduler] bulk replace_set %s: %d elements applied (shutdown)", setName, applied)
 }
 
@@ -480,7 +482,7 @@ func (s *Scheduler) EnqueueBulkFromFile(ctx context.Context, setName, filePath, 
 	}
 
 	// Update stats
-	s.totalApplied.Add(uint64(totalApplied))
+	s.totalApplied.Add(safeconv.ToUint64OrZero(totalApplied))
 	s.lastBulkFlush.Store(time.Now())
 
 	log.Printf("[scheduler] streaming bulk replace_set %s: %d elements applied", setName, totalApplied)
@@ -641,7 +643,7 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 		// Flush pending ops first (they'll be discarded by replace anyway)
 		result := buf.flush(q.backend, q.config.MaxBatchSize)
 		q.pendingCount.Add(-int64(countBefore))
-		q.totalApplied.Add(uint64(result.Applied))
+		q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
 	}
 
 	// Determine table
@@ -682,7 +684,7 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 	}
 
 	// Update stats
-	q.totalApplied.Add(uint64(totalApplied))
+	q.totalApplied.Add(safeconv.ToUint64OrZero(totalApplied))
 	q.lastFlushTime.Store(time.Now())
 
 	log.Printf("[opqueue] streaming replace_set %s: %d elements applied", setName, totalApplied)
@@ -783,7 +785,7 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 
 	// Update counters
 	q.pendingCount.Add(-int64(countBefore))
-	q.totalApplied.Add(uint64(result.Applied))
+	q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
 	q.lastFlushTime.Store(time.Now())
 
 	// Re-enqueue post-barrier ops EXTERNALLY (not inside flush)

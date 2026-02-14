@@ -80,6 +80,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/stats"
 	nftsync "github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/opqueue"
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 	"github.com/itcmsgr/nftban/pkg/watchdog"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 	"golang.org/x/sys/unix"
@@ -648,7 +649,7 @@ func (d *Daemon) Run() error {
 		if b == 0 {
 			break
 		}
-		kernelBytes = append(kernelBytes, byte(b))
+		kernelBytes = append(kernelBytes, safeconv.Int8ToByte(b))
 	}
 	kernel := string(kernelBytes)
 	arch := goruntime.GOARCH

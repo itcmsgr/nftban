@@ -254,7 +254,7 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		// Calculate end: broadcast address of the network
 		ones, bits := ipNet.Mask.Size()
 		// G115: bits-ones is always 0-32 for IPv4 (safe for uint32)
-		hostBits := uint32(bits - ones) // #nosec G115 -: IPv4 mask bits always 0-32
+		hostBits := uint32(bits - ones) // #nosec G115 - IPv4 mask bits always 0-32
 		end := start + (1 << hostBits) - 1
 
 		intervals = append(intervals, ipv4Interval{Start: start, End: end})
@@ -338,6 +338,7 @@ func mergeCIDRsIPv6WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		hostBits := bits - ones
 
 		// end = start + (2^hostBits - 1)
+		// #nosec G115 - hostBits is IPv6 mask bits (0-128), always fits in uint
 		hostCount := new(big.Int).Lsh(big.NewInt(1), uint(hostBits))
 		end := new(big.Int).Add(start, hostCount)
 		end.Sub(end, big.NewInt(1))
@@ -500,6 +501,7 @@ func rangeToCIDRsIPv4(start, end uint32) ([]string, error) {
 		if blockSize > uint64(^uint32(0))-uint64(start) {
 			break // Would overflow, we're done
 		}
+		// #nosec G115 - blockSize is bounded by rangeSize which fits in uint32
 		start += uint32(blockSize)
 	}
 
@@ -552,6 +554,7 @@ func rangeToCIDRsIPv6(start, end *big.Int) ([]string, error) {
 		// Don't exceed remaining range - reuse blockSize in loop
 		for blockSize.Cmp(rangeSize) > 0 && maxPrefixLen > 0 {
 			maxPrefixLen--
+			// #nosec G115 - maxPrefixLen is IPv6 prefix bits (0-128), always fits in uint
 			blockSize.Lsh(one, uint(maxPrefixLen))
 		}
 

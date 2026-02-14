@@ -24,6 +24,7 @@
 package watchdog
 
 import (
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -370,7 +371,7 @@ func (m *MetricsExporter) updateCostMetrics(snapshot *Snapshot) {
 
 	blockDelta := totalBlocks - m.lastBlocks
 	if blockDelta > minBlocks {
-		rssDelta := int64(snapshot.Process.RSS) - int64(m.lastRSS)
+		rssDelta := safeconv.Uint64ToInt64OrMax(snapshot.Process.RSS) - safeconv.Uint64ToInt64OrMax(m.lastRSS)
 		if rssDelta > 0 && blockDelta > 0 {
 			costPerBlock := float64(rssDelta) / float64(blockDelta)
 			costBytesPerBlockRSS.Set(costPerBlock)

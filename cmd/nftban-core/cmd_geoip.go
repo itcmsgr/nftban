@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/safeconv"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/oschwald/maxminddb-golang"
 )
@@ -212,7 +213,7 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 
 	metadata := db.Metadata
 	fmt.Printf("  ✅ Database Type: %s\n", metadata.DatabaseType)
-	fmt.Printf("  ✅ Build Date: %s\n", time.Unix(int64(metadata.BuildEpoch), 0).Format("2006-01-02"))
+	fmt.Printf("  ✅ Build Date: %s\n", time.Unix(safeconv.UintToInt64OrMax(metadata.BuildEpoch), 0).Format("2006-01-02"))
 	fmt.Printf("  ✅ Description: %s\n", metadata.Description["en"])
 	fmt.Println()
 
@@ -317,7 +318,7 @@ func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 	fmt.Println()
 	fmt.Println("Database Information:")
 	fmt.Printf("  Type: %s\n", metadata.DatabaseType)
-	fmt.Printf("  Build Date: %s\n", time.Unix(int64(metadata.BuildEpoch), 0).Format("2006-01-02"))
+	fmt.Printf("  Build Date: %s\n", time.Unix(safeconv.UintToInt64OrMax(metadata.BuildEpoch), 0).Format("2006-01-02"))
 	fmt.Printf("  Description: %s\n", metadata.Description["en"])
 	fmt.Printf("  IP Version: %d\n", metadata.IPVersion)
 	fmt.Printf("  Node Count: %d\n", metadata.NodeCount)

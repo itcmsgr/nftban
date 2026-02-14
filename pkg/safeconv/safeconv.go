@@ -205,3 +205,20 @@ func RuneToByteOrDefault(r rune, defaultVal byte) byte {
 func Int8ToByte(v int8) byte {
 	return byte(v)
 }
+
+// UintToInt64 converts uint to int64 with overflow check.
+// On 64-bit systems, uint can exceed MaxInt64.
+func UintToInt64(v uint) (int64, error) {
+	if v > math.MaxInt64 {
+		return 0, fmt.Errorf("uint %d overflows int64", v)
+	}
+	return int64(v), nil
+}
+
+// UintToInt64OrMax converts uint to int64, capping at MaxInt64 on overflow.
+func UintToInt64OrMax(v uint) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
