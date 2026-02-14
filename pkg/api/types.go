@@ -10,7 +10,7 @@
 // meta:description="Common type definitions for API request and response structures"
 // meta:input="None"
 // meta:output="None"
-// meta:depends="github.com/google/nftables,github.com/itcmsgr/nftban/pkg/sync"
+// meta:depends="github.com/itcmsgr/nftban/pkg/sync"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -23,17 +23,16 @@
 package api
 
 import (
-	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/sync"
 )
 
 // API holds dependencies for all API handlers
 type API struct {
 	NFT              *sync.NFTManager
-	WhitelistIPv4Set *nftables.Set
-	WhitelistIPv6Set *nftables.Set
-	BlacklistIPv4Set *nftables.Set
-	BlacklistIPv6Set *nftables.Set
+	WhitelistIPv4Set *sync.Set
+	WhitelistIPv6Set *sync.Set
+	BlacklistIPv4Set *sync.Set
+	BlacklistIPv6Set *sync.Set
 }
 
 // BatchRequest represents a batch add/remove operation

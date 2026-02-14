@@ -4,20 +4,20 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="ban_handler"
 // meta:type="package"
-// meta:version="1.0.0"
+// meta:version="1.1.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
-// meta:description="Implements ban operations using netlink infrastructure"
+// meta:description="Implements ban operations via IPC to nftband daemon"
 // meta:input="IP addresses to ban, ban duration"
-// meta:output="NFTables set modifications"
-// meta:depends="github.com/google/nftables,github.com/itcmsgr/nftban/pkg/sync"
+// meta:output="IPC requests to nftband daemon"
+// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/analytics,github.com/itcmsgr/nftban/pkg/banlog,github.com/itcmsgr/nftban/pkg/geoip"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files=""
 // meta:inventory.systemd_units=""
-// meta:inventory.network=""
-// meta:inventory.privileges="root"
+// meta:inventory.network="unix:/run/nftban/nftband.sock"
+// meta:inventory.privileges=""
 // =============================================================================
 
 package suricata
@@ -27,76 +27,71 @@ import (
 	"net"
 	"time"
 
-	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/analytics"
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/geoip"
-	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 )
 
-// NetlinkBanHandler implements BanHandler using the existing netlink infrastructure
-// This matches the existing fail2ban approach - uses sync.NFTManager for banning
-type NetlinkBanHandler struct {
-	nftManager *sync.NFTManager
+// IPCBanHandler implements BanHandler using IPC to the nftband daemon
+// This is the correct architecture: suricata module sends ban requests via IPC,
+// and the daemon handles the actual netlink operations.
+type IPCBanHandler struct {
+	client *ipc.Client
 }
 
-// NewNetlinkBanHandler creates a new ban handler using the existing netlink infrastructure
-func NewNetlinkBanHandler() (*NetlinkBanHandler, error) {
-	nftManager, err := sync.NewNFTManager()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create NFT manager: %w", err)
+// NewIPCBanHandler creates a new ban handler that uses IPC to communicate with nftband
+func NewIPCBanHandler() (*IPCBanHandler, error) {
+	client := ipc.NewClient()
+
+	// Verify daemon is reachable
+	if err := client.Ping(); err != nil {
+		return nil, fmt.Errorf("nftband daemon not reachable: %w", err)
 	}
 
-	return &NetlinkBanHandler{
-		nftManager: nftManager,
+	return &IPCBanHandler{
+		client: client,
 	}, nil
 }
 
-// BanIP bans an IP using the existing netlink/nftables infrastructure
-// This is the same mechanism used by fail2ban integration
-func (h *NetlinkBanHandler) BanIP(ip string, duration time.Duration, reason string) error {
+// NewIPCBanHandlerWithSocket creates a ban handler with a custom socket path (for testing)
+func NewIPCBanHandlerWithSocket(socketPath string) (*IPCBanHandler, error) {
+	client := ipc.NewClientWithSocket(socketPath)
+
+	// Verify daemon is reachable
+	if err := client.Ping(); err != nil {
+		return nil, fmt.Errorf("nftband daemon not reachable at %s: %w", socketPath, err)
+	}
+
+	return &IPCBanHandler{
+		client: client,
+	}, nil
+}
+
+// BanIP bans an IP by sending a request to the nftband daemon via IPC
+func (h *IPCBanHandler) BanIP(ip string, duration time.Duration, reason string) error {
 	// Validate IP
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		return fmt.Errorf("invalid IP address: %s", ip)
 	}
 
-	// Determine if IPv4 or IPv6
-	isIPv4 := parsedIP.To4() != nil
+	// Convert duration to seconds for IPC
+	// 0 duration means permanent ban
+	timeoutSecs := int(duration.Seconds())
 
-	// Get or create appropriate table
-	var family nftables.TableFamily
-	var setName string
-
-	if isIPv4 {
-		family = nftables.TableFamilyIPv4
-		setName = "blacklist_ipv4"
-	} else {
-		family = nftables.TableFamilyIPv6
-		setName = "blacklist_ipv6"
-	}
-
-	// Get table
-	table, err := h.nftManager.GetOrCreateTable(family)
+	// Send ban request to daemon via IPC
+	// The daemon handles all netlink operations
+	resp, err := h.client.Ban(ip, timeoutSecs, reason, "suricata")
 	if err != nil {
-		return fmt.Errorf("failed to get nftables table: %w", err)
+		return fmt.Errorf("IPC ban request failed: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("daemon rejected ban request: %s", resp.Error)
 	}
 
-	// Get set
-	set, err := h.nftManager.GetOrCreateSet(table, setName, isIPv4)
-	if err != nil {
-		return fmt.Errorf("failed to get blacklist set: %w", err)
-	}
-
-	// Add IP with timeout using existing netlink infrastructure
-	// This is the same AddIPWithTimeout used by cmdBan
-	// Ban happens FIRST - this is the critical path
-	if err := h.nftManager.AddIPWithTimeout(set, ip, duration); err != nil {
-		return fmt.Errorf("failed to add IP to nftables: %w", err)
-	}
-
-	// GeoIP enrichment happens AFTER ban is complete (async)
-	// This keeps the hot path fast - IP is already blocked
+	// GeoIP enrichment and logging happens AFTER ban is complete (async)
+	// This keeps the hot path fast - IP is already blocked by daemon
 	go func(ip, reason string) {
 		// Record analytics (if initialized)
 		// Analytics extracts service dynamically from reason parameter
@@ -121,9 +116,24 @@ func lookupGeoIP(ip string) (country string, city string) {
 	return geoip.LookupIP(ip)
 }
 
-// Close closes the ban handler and cleans up resources
-func (h *NetlinkBanHandler) Close() {
-	if h.nftManager != nil {
-		h.nftManager.Close()
-	}
+// Close closes the ban handler (IPC client has no cleanup needed)
+func (h *IPCBanHandler) Close() {
+	// IPC client doesn't require explicit cleanup
+	// Each request opens a new connection that is closed after response
+}
+
+// =============================================================================
+// Legacy NetlinkBanHandler - DEPRECATED
+// =============================================================================
+// The NetlinkBanHandler is kept for backward compatibility but should not be
+// used in new code. It violates the architecture by accessing netlink directly
+// instead of going through the nftband daemon via IPC.
+//
+// Use NewIPCBanHandler() instead of NewNetlinkBanHandler()
+// =============================================================================
+
+// NewNetlinkBanHandler is DEPRECATED - use NewIPCBanHandler instead
+// This function now returns an IPCBanHandler for backward compatibility
+func NewNetlinkBanHandler() (*IPCBanHandler, error) {
+	return NewIPCBanHandler()
 }
