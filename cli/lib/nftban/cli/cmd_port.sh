@@ -102,13 +102,23 @@ cmd_port_help() {
     echo "Usage: nftban port <subcommand> [options]"
     echo ""
     echo "Subcommands:"
-    echo "  status          Show port status"
-    echo "  detailed        Show detailed status"
-    echo "  add <port>      Add port to whitelist"
-    echo "  remove <port>   Remove port from whitelist"
-    echo "  block <port>    Block port"
-    echo "  unblock <port>  Unblock port"
-    echo "  help            Show full help"
+    echo "  status                            Show port status"
+    echo "  detailed                          Show detailed status"
+    echo "  add <port> <protocol> <direction> Add port to whitelist (REQUIRED args)"
+    echo "  remove <port>                     Remove port from whitelist"
+    echo "  block <port>                      Block port (remove from whitelist)"
+    echo "  unblock <port>                    Unblock port (add with both/inout)"
+    echo "  help                              Show full help"
+    echo ""
+    echo "Arguments for 'add':"
+    echo "  port:      1-65535"
+    echo "  protocol:  tcp | udp | both"
+    echo "  direction: in | out | inout"
+    echo ""
+    echo "Examples:"
+    echo "  nftban port add 80 tcp in         # Web server (incoming)"
+    echo "  nftban port add 443 both inout    # HTTPS (incoming + outgoing)"
+    echo "  nftban port add 10050 tcp in      # Zabbix agent (polled)"
 }
 
 nftban_cmd_port() {
@@ -230,19 +240,27 @@ nftban_cmd_port() {
 
         add)
             # Add port to whitelist
-            # Args: <port> [protocol]
+            # Args: <port> <protocol> <direction>  (ALL REQUIRED)
             local port="${1:-}"
-            local proto="${2:-both}"  # Default to BOTH protocols
+            local proto="${2:-}"
+            local direction="${3:-}"
 
-            if [[ -z "$port" ]]; then
-                echo "ERROR: Port number required" >&2
-                echo "Usage: nftban port add <port> [protocol]" >&2
-                echo "       protocol: both (default), tcp, or udp" >&2
+            # Show usage if missing arguments
+            if [[ -z "$port" ]] || [[ -z "$proto" ]] || [[ -z "$direction" ]]; then
+                echo "ERROR: All arguments required" >&2
+                echo "" >&2
+                echo "Usage: nftban port add <port> <protocol> <direction>" >&2
+                echo "" >&2
+                echo "  port:      1-65535" >&2
+                echo "  protocol:  tcp | udp | both" >&2
+                echo "  direction: in | out | inout" >&2
                 echo "" >&2
                 echo "Examples:" >&2
-                echo "  nftban port add 8080           # Add TCP+UDP port 8080 (safest)" >&2
-                echo "  nftban port add 53 udp         # Add only UDP port 53" >&2
-                echo "  nftban port add 443 tcp        # Add only TCP port 443" >&2
+                echo "  nftban port add 80 tcp in        # Web server (incoming only)" >&2
+                echo "  nftban port add 443 both inout   # HTTPS server + API calls" >&2
+                echo "  nftban port add 53 udp inout     # DNS (queries + responses)" >&2
+                echo "  nftban port add 10050 tcp in     # Zabbix agent (polled by server)" >&2
+                echo "  nftban port add 25 tcp out       # SMTP outbound only" >&2
                 return 1
             fi
 
@@ -253,23 +271,46 @@ nftban_cmd_port() {
                 return 1
             fi
 
-            # Normalize protocol
+            # Normalize and validate protocol
+            local proto_code proto_name
             case "${proto,,}" in
                 tcp|t)
-                    proto="T"
+                    proto_code="T"
                     proto_name="TCP"
                     ;;
                 udp|u)
-                    proto="U"
+                    proto_code="U"
                     proto_name="UDP"
                     ;;
-                both|b|tcp+udp)
-                    proto="B"
+                both|b)
+                    proto_code="B"
                     proto_name="TCP+UDP"
                     ;;
                 *)
                     echo "ERROR: Invalid protocol: $proto" >&2
                     echo "Valid protocols: tcp, udp, both" >&2
+                    return 1
+                    ;;
+            esac
+
+            # Normalize and validate direction
+            local dir_code dir_name
+            case "${direction,,}" in
+                in|i|input)
+                    dir_code="I"
+                    dir_name="INPUT"
+                    ;;
+                out|o|output)
+                    dir_code="O"
+                    dir_name="OUTPUT"
+                    ;;
+                inout|io|both)
+                    dir_code="IO"
+                    dir_name="INPUT+OUTPUT"
+                    ;;
+                *)
+                    echo "ERROR: Invalid direction: $direction" >&2
+                    echo "Valid directions: in, out, inout" >&2
                     return 1
                     ;;
             esac
@@ -282,21 +323,24 @@ nftban_cmd_port() {
             # Use 90-custom.conf for user-added ports
             local config_file="${NFTBAN_CONFIG_DIR}/ports.d/90-custom.conf"
 
-            # Check if port already exists
-            if [[ -f "$config_file" ]] && grep -qE "^${port}/" "$config_file" 2>/dev/null; then
-                echo "⚠ Port $port already in whitelist: $config_file" >&2
-                echo "Current entry:" >&2
-                grep -E "^${port}/" "$config_file" 2>/dev/null
+            # Build config entry: PORT/PROTOCOL/DIRECTION
+            local config_entry="${port}/${proto_code}/${dir_code}"
+
+            # Check if exact entry already exists
+            if [[ -f "$config_file" ]] && grep -qE "^${config_entry}$" "$config_file" 2>/dev/null; then
+                echo "⚠ Port already configured: $config_entry" >&2
                 return 0
             fi
 
-            # Add port to config (format: PORT/PROTOCOL where PROTOCOL is T, U, or B)
-            echo "# Added by: nftban port add $port $proto_name ($(date '+%Y-%m-%d %H:%M:%S'))" >> "$config_file"
-            echo "${port}/${proto}" >> "$config_file"
+            # Add port to config (format: PORT/PROTOCOL/DIRECTION)
+            echo "# Added by: nftban port add $port $proto_name $dir_name ($(date '+%Y-%m-%d %H:%M:%S'))" >> "$config_file"
+            echo "$config_entry" >> "$config_file"
             chmod 640 "$config_file"
             chown root:nftban "$config_file" 2>/dev/null || true
 
-            echo "✓ Port $port ($proto_name) added to whitelist: $config_file"
+            echo "✓ Port $port ($proto_name $dir_name) added to whitelist"
+            echo "  Config: $config_file"
+            echo "  Entry:  $config_entry"
             echo ""
 
             # Atomically add to nftables (if firewall is active)
@@ -307,23 +351,47 @@ nftban_cmd_port() {
 
                 # Check if daemon is running first
                 if nft_ipc_is_daemon_running 2>/dev/null; then
-                    # Add to tcp_ports set (if TCP or both)
-                    if [[ "$proto" == "T" || "$proto" == "B" ]]; then
-                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
-                            echo "  ✓ TCP port $port added to nftables"
-                        else
-                            echo "  ⚠ Could not add TCP port" >&2
-                            add_success=false
+                    # Add to tcp_ports sets based on protocol and direction
+                    if [[ "$proto_code" == "T" || "$proto_code" == "B" ]]; then
+                        # INPUT direction
+                        if [[ "$dir_code" == "I" || "$dir_code" == "IO" ]]; then
+                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_in" "$port" 2>/dev/null; then
+                                echo "  ✓ TCP port $port added to INPUT"
+                            else
+                                echo "  ⚠ Could not add TCP INPUT port" >&2
+                                add_success=false
+                            fi
+                        fi
+                        # OUTPUT direction
+                        if [[ "$dir_code" == "O" || "$dir_code" == "IO" ]]; then
+                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_out" "$port" 2>/dev/null; then
+                                echo "  ✓ TCP port $port added to OUTPUT"
+                            else
+                                echo "  ⚠ Could not add TCP OUTPUT port" >&2
+                                add_success=false
+                            fi
                         fi
                     fi
 
-                    # Add to udp_ports set (if UDP or both)
-                    if [[ "$proto" == "U" || "$proto" == "B" ]]; then
-                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
-                            echo "  ✓ UDP port $port added to nftables"
-                        else
-                            echo "  ⚠ Could not add UDP port" >&2
-                            add_success=false
+                    # Add to udp_ports sets based on protocol and direction
+                    if [[ "$proto_code" == "U" || "$proto_code" == "B" ]]; then
+                        # INPUT direction
+                        if [[ "$dir_code" == "I" || "$dir_code" == "IO" ]]; then
+                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports_in" "$port" 2>/dev/null; then
+                                echo "  ✓ UDP port $port added to INPUT"
+                            else
+                                echo "  ⚠ Could not add UDP INPUT port" >&2
+                                add_success=false
+                            fi
+                        fi
+                        # OUTPUT direction
+                        if [[ "$dir_code" == "O" || "$dir_code" == "IO" ]]; then
+                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports_out" "$port" 2>/dev/null; then
+                                echo "  ✓ UDP port $port added to OUTPUT"
+                            else
+                                echo "  ⚠ Could not add UDP OUTPUT port" >&2
+                                add_success=false
+                            fi
                         fi
                     fi
 
@@ -480,23 +548,36 @@ nftban_cmd_port() {
 
                 local remove_success=true
 
-                # Remove from tcp_ports set (if TCP or both)
+                # Extract direction from config entry (format: PORT/PROTO/DIR)
+                local removed_dir
+                removed_dir=$(echo "$port_line" | cut -d'/' -f3)
+                [[ -z "$removed_dir" ]] && removed_dir="IO"  # Legacy fallback
+
+                # Remove from tcp_ports sets (if TCP or both)
                 if [[ "$removed_proto" == "T" || "$removed_proto" == "B" ]]; then
-                    if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
-                        echo "  ✓ TCP port $port removed from nftables (immediate)"
-                    else
-                        echo "  ⚠ Could not remove TCP port atomically (may not exist)" >&2
-                        remove_success=false
+                    if [[ "$removed_dir" == "I" || "$removed_dir" == "IO" ]]; then
+                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_in" "$port" 2>/dev/null; then
+                            echo "  ✓ TCP port $port removed from INPUT"
+                        fi
+                    fi
+                    if [[ "$removed_dir" == "O" || "$removed_dir" == "IO" ]]; then
+                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_out" "$port" 2>/dev/null; then
+                            echo "  ✓ TCP port $port removed from OUTPUT"
+                        fi
                     fi
                 fi
 
-                # Remove from udp_ports set (if UDP or both)
+                # Remove from udp_ports sets (if UDP or both)
                 if [[ "$removed_proto" == "U" || "$removed_proto" == "B" ]]; then
-                    if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
-                        echo "  ✓ UDP port $port removed from nftables (immediate)"
-                    else
-                        echo "  ⚠ Could not remove UDP port atomically (may not exist)" >&2
-                        remove_success=false
+                    if [[ "$removed_dir" == "I" || "$removed_dir" == "IO" ]]; then
+                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports_in" "$port" 2>/dev/null; then
+                            echo "  ✓ UDP port $port removed from INPUT"
+                        fi
+                    fi
+                    if [[ "$removed_dir" == "O" || "$removed_dir" == "IO" ]]; then
+                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports_out" "$port" 2>/dev/null; then
+                            echo "  ✓ UDP port $port removed from OUTPUT"
+                        fi
                     fi
                 fi
 
@@ -574,7 +655,7 @@ nftban_cmd_port() {
 
         unblock)
             # Unblock port (add to whitelist)
-            # Default: unblocks TCP+UDP on both IPv4+IPv6
+            # Default: unblocks TCP+UDP on both INPUT+OUTPUT
             # Args: <port>
             local port="${1:-}"
 
@@ -583,17 +664,17 @@ nftban_cmd_port() {
                 echo "Usage: nftban port unblock <port>" >&2
                 echo "" >&2
                 echo "Examples:" >&2
-                echo "  nftban port unblock 8080    # Allow TCP+UDP port 8080 (safest)" >&2
+                echo "  nftban port unblock 8080    # Allow TCP+UDP port 8080 (inout)" >&2
                 echo "" >&2
-                echo "Note: This adds the port to the firewall whitelist." >&2
+                echo "Note: This adds the port to the firewall whitelist (both protocols, both directions)." >&2
                 return 1
             fi
 
-            echo "✅ Unblocking port $port (TCP+UDP on IPv4+IPv6)..."
+            echo "✅ Unblocking port $port (TCP+UDP, INPUT+OUTPUT)..."
             echo ""
 
-            # Call add with 'both' to allow TCP+UDP
-            nftban_cmd_port add "$port" "both"
+            # Call add with 'both' protocol and 'inout' direction
+            nftban_cmd_port add "$port" "both" "inout"
             local result=$?
 
             if [[ $result -eq 0 ]]; then
@@ -637,29 +718,44 @@ nftban_cmd_port() {
             nftban_banner
             echo ""
             echo "Usage:"
-            echo "  nftban port status [ports]       # Show port status (all or filtered)"
-            echo "  nftban port detailed [ports]     # Show detailed status with BIND and PROCESS"
-            echo "  nftban port add <port> [proto]   # Add port to whitelist (proto: both, tcp, udp)"
-            echo "  nftban port remove <port>        # Remove port from whitelist"
-            echo "  nftban port block <port>         # Block port (TCP+UDP, IPv4+IPv6)"
-            echo "  nftban port unblock <port>       # Unblock port (TCP+UDP, IPv4+IPv6)"
-            echo "  nftban port html-report          # Generate HTML report (coming soon)"
-            echo "  nftban port mail-report [path] [recipient]  # Mail report"
-            echo "  nftban port allow-panel <panel>  # Allow control panel ports in firewall"
-            echo "  nftban port help                 # Show this help"
+            echo "  nftban port status [ports]                    # Show port status (all or filtered)"
+            echo "  nftban port detailed [ports]                  # Show detailed status with BIND and PROCESS"
+            echo "  nftban port add <port> <protocol> <direction> # Add port (ALL args required)"
+            echo "  nftban port remove <port>                     # Remove port from whitelist"
+            echo "  nftban port block <port>                      # Block port (remove from whitelist)"
+            echo "  nftban port unblock <port>                    # Unblock port (both/inout)"
+            echo "  nftban port html-report                       # Generate HTML report"
+            echo "  nftban port mail-report [path] [recipient]    # Mail report"
+            echo "  nftban port allow-panel <panel>               # Allow control panel ports"
+            echo "  nftban port help                              # Show this help"
             echo ""
-            echo "Examples :"
+            echo "Add Arguments (ALL REQUIRED):"
+            echo "  port:      1-65535"
+            echo "  protocol:  tcp | udp | both"
+            echo "  direction: in | out | inout"
+            echo ""
+            echo "Examples:"
             echo "  nftban port status               # Show all listening ports"
             echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
             echo "  nftban port detailed             # Show detailed info with bind addresses"
-            echo "  nftban port add 8080             # Allow TCP+UDP port 8080 (safest)"
-            echo "  nftban port remove 8080          # Remove port 8080 from whitelist"
-            echo "  nftban port block 3389           # Block RDP port (TCP+UDP)"
-            echo "  nftban port unblock 3389         # Unblock RDP port (TCP+UDP)"
             echo ""
-            echo "Examples (Expert - specific protocols):"
-            echo "  nftban port add 53 udp           # Allow only UDP port 53 (DNS)"
-            echo "  nftban port add 443 tcp          # Allow only TCP port 443 (HTTPS)"
+            echo "  # Web server (incoming requests)"
+            echo "  nftban port add 80 tcp in"
+            echo "  nftban port add 443 both inout   # HTTPS + HTTP/3 QUIC"
+            echo ""
+            echo "  # Zabbix agent (server polls us)"
+            echo "  nftban port add 10050 tcp in"
+            echo ""
+            echo "  # DNS server"
+            echo "  nftban port add 53 both inout    # TCP+UDP, queries+responses"
+            echo ""
+            echo "  # SMTP relay (outbound only)"
+            echo "  nftban port add 25 tcp out"
+            echo ""
+            echo "  nftban port remove 8080          # Remove port 8080 from whitelist"
+            echo "  nftban port block 3389           # Block RDP port"
+            echo "  nftban port unblock 3389         # Unblock RDP port (both/inout)"
+            echo ""
             echo "  nftban port mail-report ${NFTBAN_DATA_DIR}/reports/port_report.html admin@example.com"
             echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
             echo ""

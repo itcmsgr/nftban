@@ -572,67 +572,79 @@ run_port_lifecycle_tests() {
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
 
     # Test ports — use high ephemeral range to avoid conflicts
-    local test_port_tcp="59001"
-    local test_port_udp="59002"
-    local test_port_both="59003"
+    local test_port_tcp_in="59001"
+    local test_port_tcp_out="59002"
+    local test_port_udp_in="59003"
+    local test_port_both_inout="59004"
 
     log_info "Using test ports in 59000 range (ephemeral)"
     log_info "Table: ${table_v4}"
+    log_info "New 4-set architecture: tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out"
 
-    # TCP port add → remove
-    smoke_lifecycle "TCP port add/remove" \
-        "nftban port add ${test_port_tcp} tcp" \
-        "nftban port remove ${test_port_tcp}" \
-        "${table_v4}" "tcp_ports" "${test_port_tcp}"
+    # TCP INPUT port add → remove
+    smoke_lifecycle "TCP INPUT port add/remove" \
+        "nftban port add ${test_port_tcp_in} tcp in" \
+        "nftban port remove ${test_port_tcp_in}" \
+        "${table_v4}" "tcp_ports_in" "${test_port_tcp_in}"
 
-    # UDP port add → remove
-    smoke_lifecycle "UDP port add/remove" \
-        "nftban port add ${test_port_udp} udp" \
-        "nftban port remove ${test_port_udp}" \
-        "${table_v4}" "udp_ports" "${test_port_udp}"
+    # TCP OUTPUT port add → remove
+    smoke_lifecycle "TCP OUTPUT port add/remove" \
+        "nftban port add ${test_port_tcp_out} tcp out" \
+        "nftban port remove ${test_port_tcp_out}" \
+        "${table_v4}" "tcp_ports_out" "${test_port_tcp_out}"
 
-    # Both TCP+UDP port add → remove (tests both sets)
+    # UDP INPUT port add → remove
+    smoke_lifecycle "UDP INPUT port add/remove" \
+        "nftban port add ${test_port_udp_in} udp in" \
+        "nftban port remove ${test_port_udp_in}" \
+        "${table_v4}" "udp_ports_in" "${test_port_udp_in}"
+
+    # Both TCP+UDP, INOUT port add → remove (tests all 4 sets)
     log ""
-    log "─── Lifecycle: Both TCP+UDP port add/remove ───"
+    log "─── Lifecycle: Both TCP+UDP, INOUT port add/remove ───"
 
     # Cleanup first
-    nftban port remove ${test_port_both} &>/dev/null || true
+    nftban port remove ${test_port_both_inout} &>/dev/null || true
     sleep 1
 
-    # Add port (both protocols)
+    # Add port (both protocols, both directions)
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if nftban port add ${test_port_both} both &>/dev/null; then
+    if nftban port add ${test_port_both_inout} both inout &>/dev/null; then
         sleep 1
-        local tcp_ok=false udp_ok=false
-        _nft_set_contains "${table_v4}" "tcp_ports" "${test_port_both}" && tcp_ok=true
-        _nft_set_contains "${table_v4}" "udp_ports" "${test_port_both}" && udp_ok=true
+        local tcp_in_ok=false tcp_out_ok=false udp_in_ok=false udp_out_ok=false
+        _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_ok=true
+        _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_ok=true
+        _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_ok=true
+        _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_ok=true
 
-        if [[ "$tcp_ok" == "true" && "$udp_ok" == "true" ]]; then
-            log_pass "Both port add — ${test_port_both} in tcp_ports AND udp_ports"
+        if [[ "$tcp_in_ok" == "true" && "$tcp_out_ok" == "true" && "$udp_in_ok" == "true" && "$udp_out_ok" == "true" ]]; then
+            log_pass "Both/inout port add — ${test_port_both_inout} in all 4 sets"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else
-            log_fail "Both port add — TCP:${tcp_ok} UDP:${udp_ok} (expected both true)"
+            log_fail "Both/inout port add — tcp_in:${tcp_in_ok} tcp_out:${tcp_out_ok} udp_in:${udp_in_ok} udp_out:${udp_out_ok}"
             TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     else
-        log_fail "Both port add — command failed"
+        log_fail "Both/inout port add — command failed"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     # Remove port
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    nftban port remove ${test_port_both} &>/dev/null || true
+    nftban port remove ${test_port_both_inout} &>/dev/null || true
     sleep 1
 
-    local tcp_gone=true udp_gone=true
-    _nft_set_contains "${table_v4}" "tcp_ports" "${test_port_both}" && tcp_gone=false
-    _nft_set_contains "${table_v4}" "udp_ports" "${test_port_both}" && udp_gone=false
+    local tcp_in_gone=true tcp_out_gone=true udp_in_gone=true udp_out_gone=true
+    _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_gone=false
+    _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_gone=false
+    _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_gone=false
+    _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_gone=false
 
-    if [[ "$tcp_gone" == "true" && "$udp_gone" == "true" ]]; then
-        log_pass "Both port remove — ${test_port_both} absent from both sets"
+    if [[ "$tcp_in_gone" == "true" && "$tcp_out_gone" == "true" && "$udp_in_gone" == "true" && "$udp_out_gone" == "true" ]]; then
+        log_pass "Both/inout port remove — ${test_port_both_inout} absent from all 4 sets"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_fail "Both port remove — TCP gone:${tcp_gone} UDP gone:${udp_gone}"
+        log_fail "Both/inout port remove — tcp_in:${tcp_in_gone} tcp_out:${tcp_out_gone} udp_in:${udp_in_gone} udp_out:${udp_out_gone}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
