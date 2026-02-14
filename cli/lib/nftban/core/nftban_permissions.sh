@@ -256,7 +256,8 @@ perms_enforce_sbin() {
 
 perms_enforce_var_files() {
     # Enforce file permissions in /var/lib/nftban (directories handled by FHS spec)
-    # Security: files 0640
+    # Security: files nftban:nftban 0640
+    # v1.13.12: Added chown to fix files created by Go binaries with root:root
 
     perms_say "Enforcing file permissions in: $PERMS_VAR"
 
@@ -264,11 +265,15 @@ perms_enforce_var_files() {
 
     # Secure all files (excluding auditors which has special perms)
     if [[ -d "$PERMS_VAR" ]]; then
-        # Files 640 (only owner read/write, group read)
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -exec chmod 0640 {} \;
+        # Fix ownership: nftban:nftban (feeds, banned, whitelist, etc.)
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
 
-        # Files in auditors directory need group write
+        # Files 640 (only owner read/write, group read)
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -not -perm 0640 -exec chmod 0640 {} \;
+
+        # Files in auditors directory need group write with nftban-auditor group
         if [[ -d "$PERMS_VAR/reports/auditors" ]]; then
+            perms_run find "$PERMS_VAR/reports/auditors" -type f -exec chown root:nftban-auditor {} \;
             perms_run find "$PERMS_VAR/reports/auditors" -type f -exec chmod 0660 {} \;
         fi
     fi
