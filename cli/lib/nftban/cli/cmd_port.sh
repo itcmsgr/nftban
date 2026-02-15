@@ -479,7 +479,7 @@ nftban_cmd_port() {
             if [[ -d ${NFTBAN_CONFIG_DIR}/ports.d ]]; then
                 while IFS= read -r file; do
                     # Check if file contains the port
-                    if grep -qE "^${port}\|" "$file" 2>/dev/null; then
+                    if grep -qE "^${port}/" "$file" 2>/dev/null; then
                         # Check if it's a protected file (00-*.conf)
                         if [[ "$(basename "$file")" =~ ^00- ]]; then
                             protected_files+=("$file")
@@ -495,7 +495,7 @@ nftban_cmd_port() {
                 echo "⚠ WARNING: Port $port found in protected system files:" >&2
                 for file in "${protected_files[@]}"; do
                     echo "  - $file (PROTECTED - will not remove)" >&2
-                    grep -E "^${port}\|" "$file" 2>/dev/null | sed 's/^/    /' >&2
+                    grep -E "^${port}/" "$file" 2>/dev/null | sed 's/^/    /' >&2
                 done
                 echo "" >&2
 
