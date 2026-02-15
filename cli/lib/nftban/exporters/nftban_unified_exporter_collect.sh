@@ -86,6 +86,9 @@ collect_all_metrics() {
         metrics+="nftban_daemon_up $status $timestamp\n"
         metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
         metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
+        # Zabbix-specific: send version and mode as string values (template expects these)
+        metrics+="nftban.version.info |STRING|$version $timestamp\n"
+        metrics+="nftban.mode.info |STRING|$mode $timestamp\n"
         metrics+="nftban_uptime_seconds $uptime $timestamp\n"
         metrics+="nftban_pid $pid $timestamp\n"
 
@@ -138,8 +141,15 @@ collect_all_metrics() {
         active_total=$((active_v4 + active_v6))
 
         metrics+="nftban_active_count $active_total $timestamp\n"
+        # Zabbix-specific: nftban.blocks.total is what the template expects
+        metrics+="nftban_blocks_total $active_total $timestamp\n"
+        # Prometheus-style with labels (for Prometheus)
         metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
+        # Zabbix-specific: separate keys without labels (template expects nftban.active.bans)
+        metrics+="nftban.active.bans $active_total $timestamp\n"
+        metrics+="nftban.active.bans.ipv4 $active_v4 $timestamp\n"
+        metrics+="nftban.active.bans.ipv6 $active_v6 $timestamp\n"
 
         # Perm/temp breakdown (aligned with nftban stats dashboard)
         metrics+="nftban_blacklist_ipv4_perm $blacklist_v4_perm $timestamp\n"
@@ -163,6 +173,9 @@ collect_all_metrics() {
 
         # --- Feeds Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Check for feed data files in /var/lib/nftban/feeds/ (primary) or /var/cache/nftban/feeds/
+        # Per-feed details: name, IP count, IPv4/IPv6 breakdown
+        local feeds_json="["  # JSON array for Zabbix LLD/discovery
+        local feeds_json_first=1
         if should_collect_component "feeds"; then
             local feeds_data_dir="${NFTBAN_DATA_DIR}/feeds"
             [[ ! -d "$feeds_data_dir" ]] && feeds_data_dir="${NFTBAN_CACHE_DIR}/feeds"
@@ -179,15 +192,30 @@ collect_all_metrics() {
                     feeds_ips=$((feeds_ips + total_count))
                     feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
                     feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
+
+                    # Extract feed name from filename (e.g., sshblacklist.txt -> sshblacklist)
+                    local feed_name
+                    feed_name=$(basename "$feed_file" | sed 's/\.\(txt\|list\)$//')
+                    # Per-feed Prometheus metrics
+                    metrics+="nftban_feed_ips{name=\"$feed_name\"} $total_count $timestamp\n"
+                    metrics+="nftban_feed_ipv4{name=\"$feed_name\"} $v4_count $timestamp\n"
+                    metrics+="nftban_feed_ipv6{name=\"$feed_name\"} $v6_count $timestamp\n"
+                    # Build JSON for Zabbix discovery
+                    [[ $feeds_json_first -eq 0 ]] && feeds_json+=","
+                    feeds_json_first=0
+                    feeds_json+="{\"name\":\"$feed_name\",\"ips\":$total_count,\"ipv4\":$v4_count,\"ipv6\":$v6_count}"
                 done
             fi
         fi
+        feeds_json+="]"
         metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
         metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
         metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
         metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
         metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total $timestamp\n"
         metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
+        # Zabbix: JSON with all feeds for LLD/dashboard
+        metrics+="nftban.feeds.details |STRING|$feeds_json $timestamp\n"
 
         # --- Time-based ban stats (from log) ---
         # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
