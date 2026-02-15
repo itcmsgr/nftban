@@ -475,13 +475,11 @@ log "Version: $VERSION"
 echo ""
 
 # Try package-based installation first (preferred)
-PKG_INSTALLED=0
 if [[ "$PKG_TYPE" != "none" && "$OS" != "unknown" ]]; then
     log "Attempting package-based installation..."
     if pkg_path=$(download_package "$VERSION" "$OS" "$ARCH" "$PKG_TYPE"); then
         if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
             if install_package "$pkg_path" "$PKG_TYPE"; then
-                PKG_INSTALLED=1
                 ok "NFTBan installed via $PKG_TYPE package"
                 echo ""
                 echo "================================================"
