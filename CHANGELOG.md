@@ -5,7 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.15.0] - 2026-02-14
+## [1.15.0] - 2026-02-15
+
+### Added
+- **Directional Port Management**: Full IN/OUT direction support for port rules
+  - New nftables sets: `tcp_ports_in`, `tcp_ports_out`, `udp_ports_in`, `udp_ports_out`
+  - CLI: `nftban port add <port> <protocol> <direction>` (direction: in/out/inout)
+  - IPv4 AND IPv6 applied automatically for all port operations
+  - Backward compatible: legacy `tcp_ports`/`udp_ports` sets still populated
+
+### Changed
+- Port operations now apply to both IPv4 (`ip nftban`) and IPv6 (`ip6 nftban`) tables
+- Go port loader accepts 2-part (`PORT/PROTO`) and 3-part (`PORT/PROTO/DIR`) formats
+- Default direction for legacy 2-part format is `I` (INPUT)
+- Updated CLI help with architecture documentation
+- Updated validator to check all 6 port sets (4 directional + 2 legacy)
+
+### Fixed
+- cmd_port.sh was using non-existent set names (tcp_ports_in/out) - now schema defines them
+- IPv6 ports were not being added - now all port operations include IPv6
+- Go loader was rejecting 3-part config format - now accepts direction field
 
 ### Major Features
 

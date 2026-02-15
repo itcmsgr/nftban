@@ -48,7 +48,8 @@ nft_ipc_is_daemon_running() {
 # Returns: JSON response
 nft_ipc_request() {
     local method="$1"
-    local params="${2:-{}}"
+    local params="${2-}"
+    [[ -z "$params" ]] && params="{}"
 
     _nft_ipc_check_socat || return 1
 
@@ -568,6 +569,46 @@ export -f nft_ipc_supports_reload
 
 # v1.15.0 port management
 export -f nft_ipc_load_ports
+
+# Add port(s) atomically to nftables
+# Usage: nft_ipc_add_port PORT PROTOCOL DIRECTION
+#   PORT: port number (1-65535)
+#   PROTOCOL: tcp, udp, or both
+#   DIRECTION: in, out, or both
+nft_ipc_add_port() {
+    local port="${1:-}"
+    local protocol="${2:-tcp}"
+    local direction="${3:-in}"
+
+    [[ -z "$port" ]] && return 1
+
+    local json
+    json=$(printf '{"port":%d,"protocol":"%s","direction":"%s"}' "$port" "$protocol" "$direction")
+
+    local response
+    response=$(nft_ipc_request "add_port_element" "$json")
+    nft_ipc_success "$response"
+}
+
+# Delete port(s) atomically from nftables
+# Usage: nft_ipc_delete_port PORT PROTOCOL DIRECTION
+nft_ipc_delete_port() {
+    local port="${1:-}"
+    local protocol="${2:-tcp}"
+    local direction="${3:-in}"
+
+    [[ -z "$port" ]] && return 1
+
+    local json
+    json=$(printf '{"port":%d,"protocol":"%s","direction":"%s"}' "$port" "$protocol" "$direction")
+
+    local response
+    response=$(nft_ipc_request "delete_port_element" "$json")
+    nft_ipc_success "$response"
+}
+
+export -f nft_ipc_add_port
+export -f nft_ipc_delete_port
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)

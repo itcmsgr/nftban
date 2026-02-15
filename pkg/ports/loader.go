@@ -35,15 +35,20 @@ import (
 
 // PortRule represents a single port rule
 type PortRule struct {
-	Port     int    // Port number (e.g., 22, 80, 443)
-	Protocol string // "T" (TCP), "U" (UDP), or "B" (Both)
-	Source   string // Config file where this rule came from
+	Port      int    // Port number (e.g., 22, 80, 443)
+	Protocol  string // "T" (TCP), "U" (UDP), or "B" (Both)
+	Direction string // "I" (Input), "O" (Output), "IO" (Both) - default "I"
+	Source    string // Config file where this rule came from
 }
 
 // PortConfig holds all port rules loaded from configuration
 type PortConfig struct {
-	TCPPorts  []int            // All TCP ports (from T and B rules)
-	UDPPorts  []int            // All UDP ports (from U and B rules)
+	TCPPorts   []int            // All TCP ports (from T and B rules)
+	UDPPorts   []int            // All UDP ports (from U and B rules)
+	TCPPortsIn  []int           `json:"tcp_ports_in"`  // TCP ports for input direction
+	TCPPortsOut []int           `json:"tcp_ports_out"` // TCP ports for output direction
+	UDPPortsIn  []int           `json:"udp_ports_in"`  // UDP ports for input direction
+	UDPPortsOut []int           `json:"udp_ports_out"` // UDP ports for output direction
 	AllRules  []PortRule       // All rules with metadata
 	PortMap   map[int][]string // port -> protocols (for deduplication)
 }
@@ -159,8 +164,8 @@ func loadPortFile(filePath string, config *PortConfig) error {
 		} else {
 			parts = strings.Split(line, "/")
 		}
-		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: Invalid port format at %s:%d: %s (expected PORT/PROTOCOL)\n",
+		if len(parts) < 2 || len(parts) > 3 {
+			fmt.Fprintf(os.Stderr, "Warning: Invalid port format at %s:%d: %s (expected PORT/PROTOCOL or PORT/PROTOCOL/DIRECTION)\n",
 				filePath, lineNum, line)
 			continue
 		}
@@ -181,6 +186,24 @@ func loadPortFile(filePath string, config *PortConfig) error {
 			fmt.Fprintf(os.Stderr, "Warning: Invalid protocol at %s:%d: %s (expected T/tcp, U/udp, or B/both)\n",
 				filePath, lineNum, protocolRaw)
 			continue
+		}
+
+		// Parse direction if provided (3rd part), default to "I" (input)
+		direction := "I"
+		if len(parts) >= 3 {
+			dirRaw := strings.ToUpper(strings.TrimSpace(parts[2]))
+			switch dirRaw {
+			case "I", "IN", "INPUT":
+				direction = "I"
+			case "O", "OUT", "OUTPUT":
+				direction = "O"
+			case "IO", "INOUT", "BOTH":
+				direction = "IO"
+			default:
+				fmt.Fprintf(os.Stderr, "Warning: Invalid direction at %s:%d: %s (expected I, O, or IO)\n",
+					filePath, lineNum, dirRaw)
+				continue
+			}
 		}
 
 		// Check for port range (e.g., 35000-35999/T)
@@ -210,9 +233,10 @@ func loadPortFile(filePath string, config *PortConfig) error {
 
 		// Create rule
 		rule := PortRule{
-			Port:     port,
-			Protocol: protocol,
-			Source:   filePath,
+			Port:      port,
+			Protocol:  protocol,
+			Direction: direction,
+			Source:    filePath,
 		}
 		config.AllRules = append(config.AllRules, rule)
 
@@ -231,8 +255,13 @@ func loadPortFile(filePath string, config *PortConfig) error {
 func (c *PortConfig) deduplicatePorts() {
 	tcpSet := make(map[int]bool)
 	udpSet := make(map[int]bool)
+	tcpInSet := make(map[int]bool)
+	tcpOutSet := make(map[int]bool)
+	udpInSet := make(map[int]bool)
+	udpOutSet := make(map[int]bool)
 
 	for _, rule := range c.AllRules {
+		// Add to general TCP/UDP sets (backwards compatibility)
 		switch rule.Protocol {
 		case "T": // TCP only
 			tcpSet[rule.Port] = true
@@ -242,14 +271,66 @@ func (c *PortConfig) deduplicatePorts() {
 			tcpSet[rule.Port] = true
 			udpSet[rule.Port] = true
 		}
+
+		// Add to directional sets based on Direction field
+		switch rule.Direction {
+		case "I": // Input only
+			switch rule.Protocol {
+			case "T":
+				tcpInSet[rule.Port] = true
+			case "U":
+				udpInSet[rule.Port] = true
+			case "B":
+				tcpInSet[rule.Port] = true
+				udpInSet[rule.Port] = true
+			}
+		case "O": // Output only
+			switch rule.Protocol {
+			case "T":
+				tcpOutSet[rule.Port] = true
+			case "U":
+				udpOutSet[rule.Port] = true
+			case "B":
+				tcpOutSet[rule.Port] = true
+				udpOutSet[rule.Port] = true
+			}
+		case "IO": // Both directions
+			switch rule.Protocol {
+			case "T":
+				tcpInSet[rule.Port] = true
+				tcpOutSet[rule.Port] = true
+			case "U":
+				udpInSet[rule.Port] = true
+				udpOutSet[rule.Port] = true
+			case "B":
+				tcpInSet[rule.Port] = true
+				tcpOutSet[rule.Port] = true
+				udpInSet[rule.Port] = true
+				udpOutSet[rule.Port] = true
+			}
+		}
 	}
 
-	// Convert sets to sorted slices
+	// Convert sets to slices (general ports for backwards compatibility)
 	for port := range tcpSet {
 		c.TCPPorts = append(c.TCPPorts, port)
 	}
 	for port := range udpSet {
 		c.UDPPorts = append(c.UDPPorts, port)
+	}
+
+	// Convert directional sets to slices
+	for port := range tcpInSet {
+		c.TCPPortsIn = append(c.TCPPortsIn, port)
+	}
+	for port := range tcpOutSet {
+		c.TCPPortsOut = append(c.TCPPortsOut, port)
+	}
+	for port := range udpInSet {
+		c.UDPPortsIn = append(c.UDPPortsIn, port)
+	}
+	for port := range udpOutSet {
+		c.UDPPortsOut = append(c.UDPPortsOut, port)
 	}
 }
 

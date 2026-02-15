@@ -154,6 +154,27 @@ func cmdSync(cfg *nftbanconf.Config) error {
 		fmt.Printf("  UDP Ports: %.0f loaded\n", udp)
 	}
 
+	// Show directional port counts if present
+	tcpIn, _ := data["tcp_ports_in"].(float64)
+	tcpOut, _ := data["tcp_ports_out"].(float64)
+	udpIn, _ := data["udp_ports_in"].(float64)
+	udpOut, _ := data["udp_ports_out"].(float64)
+	if tcpIn > 0 || tcpOut > 0 || udpIn > 0 || udpOut > 0 {
+		fmt.Println("  Directional ports:")
+		if tcpIn > 0 {
+			fmt.Printf("    TCP Input:  %.0f\n", tcpIn)
+		}
+		if tcpOut > 0 {
+			fmt.Printf("    TCP Output: %.0f\n", tcpOut)
+		}
+		if udpIn > 0 {
+			fmt.Printf("    UDP Input:  %.0f\n", udpIn)
+		}
+		if udpOut > 0 {
+			fmt.Printf("    UDP Output: %.0f\n", udpOut)
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("Firewall is now in sync with configuration files.")
 	fmt.Println()

@@ -1041,6 +1041,10 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleSyncRequest(req.Params)
 	case "load_ports":
 		return d.handleLoadPortsRequest(req.Params)
+	case "add_port_element":
+		return d.handleAddPortElementRequest(req.Params)
+	case "delete_port_element":
+		return d.handleDeletePortElementRequest(req.Params)
 	case "load_cidrs":
 		return d.handleLoadCIDRsRequest(req.Params)
 	case "stats":
@@ -2108,6 +2112,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 
 	// Create and populate port sets if we have ports
 	if len(allPorts.AllRules) > 0 {
+		// Legacy sets (backward compatibility)
 		tcpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports")
 		if err != nil {
 			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
@@ -2128,7 +2133,41 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
 		}
 
-		// Load ports into sets
+		// Directional sets (new)
+		tcpInSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports_in")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_in set: " + err.Error()}
+		}
+		tcpInSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "tcp_ports_in")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_in set: " + err.Error()}
+		}
+		tcpOutSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports_out")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_out set: " + err.Error()}
+		}
+		tcpOutSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "tcp_ports_out")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_out set: " + err.Error()}
+		}
+		udpInSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "udp_ports_in")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_in set: " + err.Error()}
+		}
+		udpInSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports_in")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_in set: " + err.Error()}
+		}
+		udpOutSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "udp_ports_out")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_out set: " + err.Error()}
+		}
+		udpOutSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports_out")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_out set: " + err.Error()}
+		}
+
+		// Load legacy port sets (backward compatibility)
 		if len(allPorts.TCPPorts) > 0 {
 			if err := nft.AddPortElements(tcpSetV4, allPorts.TCPPorts); err != nil {
 				return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
@@ -2144,6 +2183,40 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			}
 			if err := nft.AddPortElements(udpSetV6, allPorts.UDPPorts); err != nil {
 				return SocketResponse{Success: false, Error: "failed to add IPv6 UDP ports: " + err.Error()}
+			}
+		}
+
+		// Load directional port sets
+		if len(allPorts.TCPPortsIn) > 0 {
+			if err := nft.AddPortElements(tcpInSetV4, allPorts.TCPPortsIn); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 TCP input ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(tcpInSetV6, allPorts.TCPPortsIn); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 TCP input ports: " + err.Error()}
+			}
+		}
+		if len(allPorts.TCPPortsOut) > 0 {
+			if err := nft.AddPortElements(tcpOutSetV4, allPorts.TCPPortsOut); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 TCP output ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(tcpOutSetV6, allPorts.TCPPortsOut); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 TCP output ports: " + err.Error()}
+			}
+		}
+		if len(allPorts.UDPPortsIn) > 0 {
+			if err := nft.AddPortElements(udpInSetV4, allPorts.UDPPortsIn); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 UDP input ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(udpInSetV6, allPorts.UDPPortsIn); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 UDP input ports: " + err.Error()}
+			}
+		}
+		if len(allPorts.UDPPortsOut) > 0 {
+			if err := nft.AddPortElements(udpOutSetV4, allPorts.UDPPortsOut); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 UDP output ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(udpOutSetV6, allPorts.UDPPortsOut); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 UDP output ports: " + err.Error()}
 			}
 		}
 	}
@@ -2386,6 +2459,10 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		"geoban_ipv6_loaded":     geobanIPv6Loaded,
 		"tcp_ports":              len(allPorts.TCPPorts),
 		"udp_ports":              len(allPorts.UDPPorts),
+		"tcp_ports_in":           len(allPorts.TCPPortsIn),
+		"tcp_ports_out":          len(allPorts.TCPPortsOut),
+		"udp_ports_in":           len(allPorts.UDPPortsIn),
+		"udp_ports_out":          len(allPorts.UDPPortsOut),
 		"pressure_level":         safety.GetMemoryPressureLevel().String(),
 	}
 
@@ -2443,6 +2520,7 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
 	}
 
+	// Legacy sets (backward compatibility)
 	tcpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports")
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
@@ -2453,12 +2531,31 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports set: " + err.Error()}
 	}
 
+	// Directional sets for IPv4
+	tcpInSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports_in")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_in set: " + err.Error()}
+	}
+	tcpOutSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports_out")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_out set: " + err.Error()}
+	}
+	udpInSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports_in")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_in set: " + err.Error()}
+	}
+	udpOutSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports_out")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports_out set: " + err.Error()}
+	}
+
 	// Create IPv6 table and sets
 	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
 	}
 
+	// Legacy sets for IPv6
 	tcpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports")
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports set: " + err.Error()}
@@ -2469,7 +2566,38 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
 	}
 
-	// Load ports into sets
+	// Directional sets for IPv6
+	tcpInSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports_in")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_in set: " + err.Error()}
+	}
+	tcpOutSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports_out")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_out set: " + err.Error()}
+	}
+	udpInSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports_in")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_in set: " + err.Error()}
+	}
+	udpOutSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports_out")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_out set: " + err.Error()}
+	}
+
+	// IMPORTANT: Flush all port sets first for idempotent reload
+	// This ensures removed ports in config are also removed from nftables
+	allPortSets := []*nftables.Set{
+		tcpSetV4, udpSetV4, tcpInSetV4, tcpOutSetV4, udpInSetV4, udpOutSetV4,
+		tcpSetV6, udpSetV6, tcpInSetV6, tcpOutSetV6, udpInSetV6, udpOutSetV6,
+	}
+	for _, set := range allPortSets {
+		if err := nft.FlushSet(set); err != nil {
+			log.Printf("[load_ports] Warning: failed to flush set %s: %v", set.Name, err)
+			// Continue anyway - set might be empty
+		}
+	}
+
+	// Load legacy port sets (backward compatibility)
 	if len(config.TCPPorts) > 0 {
 		if err := nft.AddPortElements(tcpSetV4, config.TCPPorts); err != nil {
 			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
@@ -2488,12 +2616,308 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		}
 	}
 
+	// Load directional port sets
+	if len(config.TCPPortsIn) > 0 {
+		if err := nft.AddPortElements(tcpInSetV4, config.TCPPortsIn); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP input ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(tcpInSetV6, config.TCPPortsIn); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP input ports: " + err.Error()}
+		}
+	}
+	if len(config.TCPPortsOut) > 0 {
+		if err := nft.AddPortElements(tcpOutSetV4, config.TCPPortsOut); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP output ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(tcpOutSetV6, config.TCPPortsOut); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP output ports: " + err.Error()}
+		}
+	}
+	if len(config.UDPPortsIn) > 0 {
+		if err := nft.AddPortElements(udpInSetV4, config.UDPPortsIn); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP input ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(udpInSetV6, config.UDPPortsIn); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP input ports: " + err.Error()}
+		}
+	}
+	if len(config.UDPPortsOut) > 0 {
+		if err := nft.AddPortElements(udpOutSetV4, config.UDPPortsOut); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP output ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(udpOutSetV6, config.UDPPortsOut); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP output ports: " + err.Error()}
+		}
+	}
+
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"tcp_ports": len(config.TCPPorts),
-			"udp_ports": len(config.UDPPorts),
-			"total":     len(config.AllRules),
+			"tcp_ports":     len(config.TCPPorts),
+			"udp_ports":     len(config.UDPPorts),
+			"tcp_ports_in":  len(config.TCPPortsIn),
+			"tcp_ports_out": len(config.TCPPortsOut),
+			"udp_ports_in":  len(config.UDPPortsIn),
+			"udp_ports_out": len(config.UDPPortsOut),
+			"total":         len(config.AllRules),
+		},
+	}
+}
+
+// handleAddPortElementRequest atomically adds port(s) to nftables sets
+// Params: ports ([]int), protocol (tcp/udp/both), direction (in/out/both)
+func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketResponse {
+	// Parse ports list
+	portsRaw, ok := params["ports"].([]any)
+	if !ok || len(portsRaw) == 0 {
+		// Try single port
+		if port, ok := params["port"].(float64); ok {
+			portsRaw = []any{port}
+		} else {
+			return SocketResponse{Success: false, Error: "missing ports parameter"}
+		}
+	}
+
+	var ports []int
+	for _, p := range portsRaw {
+		if pf, ok := p.(float64); ok {
+			if pf < 1 || pf > 65535 {
+				return SocketResponse{Success: false, Error: fmt.Sprintf("invalid port: %v", p)}
+			}
+			ports = append(ports, int(pf))
+		}
+	}
+
+	protocol, _ := params["protocol"].(string)
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	direction, _ := params["direction"].(string)
+	if direction == "" {
+		direction = "in"
+	}
+
+	// Initialize nftables manager
+	nft, err := nftsync.NewNFTManager()
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	}
+	defer nft.Close()
+
+	// Get tables
+	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
+	}
+	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
+	}
+
+	// Determine which sets to update
+	var setNames []string
+	switch strings.ToLower(protocol) {
+	case "tcp", "t":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"tcp_ports_in", "tcp_ports"} // Also update legacy set
+		case "out", "o", "output":
+			setNames = []string{"tcp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
+		default:
+			setNames = []string{"tcp_ports_in", "tcp_ports"}
+		}
+	case "udp", "u":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"udp_ports_in", "udp_ports"}
+		case "out", "o", "output":
+			setNames = []string{"udp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
+		default:
+			setNames = []string{"udp_ports_in", "udp_ports"}
+		}
+	case "both", "b":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+		case "out", "o", "output":
+			setNames = []string{"tcp_ports_out", "udp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
+		default:
+			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+		}
+	default:
+		setNames = []string{"tcp_ports_in", "tcp_ports"}
+	}
+
+	added := 0
+	for _, setName := range setNames {
+		// IPv4
+		set, err := nft.GetOrCreatePortSet(ipv4Table, setName)
+		if err != nil {
+			log.Printf("[add_port_element] Warning: failed to get IPv4 set %s: %v", setName, err)
+			continue
+		}
+		if err := nft.AddPortElements(set, ports); err != nil {
+			log.Printf("[add_port_element] Warning: failed to add to IPv4 %s: %v", setName, err)
+		} else {
+			added++
+		}
+
+		// IPv6
+		set, err = nft.GetOrCreatePortSet(ipv6Table, setName)
+		if err != nil {
+			log.Printf("[add_port_element] Warning: failed to get IPv6 set %s: %v", setName, err)
+			continue
+		}
+		if err := nft.AddPortElements(set, ports); err != nil {
+			log.Printf("[add_port_element] Warning: failed to add to IPv6 %s: %v", setName, err)
+		} else {
+			added++
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ports":     ports,
+			"protocol":  protocol,
+			"direction": direction,
+			"sets":      setNames,
+			"added":     added,
+		},
+	}
+}
+
+// handleDeletePortElementRequest atomically removes port(s) from nftables sets
+// Params: ports ([]int), protocol (tcp/udp/both), direction (in/out/both)
+func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketResponse {
+	// Parse ports list
+	portsRaw, ok := params["ports"].([]any)
+	if !ok || len(portsRaw) == 0 {
+		// Try single port
+		if port, ok := params["port"].(float64); ok {
+			portsRaw = []any{port}
+		} else {
+			return SocketResponse{Success: false, Error: "missing ports parameter"}
+		}
+	}
+
+	var ports []int
+	for _, p := range portsRaw {
+		if pf, ok := p.(float64); ok {
+			if pf < 1 || pf > 65535 {
+				return SocketResponse{Success: false, Error: fmt.Sprintf("invalid port: %v", p)}
+			}
+			ports = append(ports, int(pf))
+		}
+	}
+
+	protocol, _ := params["protocol"].(string)
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	direction, _ := params["direction"].(string)
+	if direction == "" {
+		direction = "in"
+	}
+
+	// Initialize nftables manager
+	nft, err := nftsync.NewNFTManager()
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	}
+	defer nft.Close()
+
+	// Get tables
+	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
+	}
+	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
+	}
+
+	// Determine which sets to update (same logic as add)
+	var setNames []string
+	switch strings.ToLower(protocol) {
+	case "tcp", "t":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"tcp_ports_in", "tcp_ports"}
+		case "out", "o", "output":
+			setNames = []string{"tcp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
+		default:
+			setNames = []string{"tcp_ports_in", "tcp_ports"}
+		}
+	case "udp", "u":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"udp_ports_in", "udp_ports"}
+		case "out", "o", "output":
+			setNames = []string{"udp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
+		default:
+			setNames = []string{"udp_ports_in", "udp_ports"}
+		}
+	case "both", "b":
+		switch strings.ToLower(direction) {
+		case "in", "i", "input":
+			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+		case "out", "o", "output":
+			setNames = []string{"tcp_ports_out", "udp_ports_out"}
+		case "both", "io", "b":
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
+		default:
+			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+		}
+	default:
+		setNames = []string{"tcp_ports_in", "tcp_ports"}
+	}
+
+	deleted := 0
+	for _, setName := range setNames {
+		// IPv4
+		set, err := nft.GetOrCreatePortSet(ipv4Table, setName)
+		if err != nil {
+			log.Printf("[delete_port_element] Warning: failed to get IPv4 set %s: %v", setName, err)
+			continue
+		}
+		if err := nft.DeletePortElements(set, ports); err != nil {
+			log.Printf("[delete_port_element] Warning: failed to delete from IPv4 %s: %v", setName, err)
+		} else {
+			deleted++
+		}
+
+		// IPv6
+		set, err = nft.GetOrCreatePortSet(ipv6Table, setName)
+		if err != nil {
+			log.Printf("[delete_port_element] Warning: failed to get IPv6 set %s: %v", setName, err)
+			continue
+		}
+		if err := nft.DeletePortElements(set, ports); err != nil {
+			log.Printf("[delete_port_element] Warning: failed to delete from IPv6 %s: %v", setName, err)
+		} else {
+			deleted++
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ports":     ports,
+			"protocol":  protocol,
+			"direction": direction,
+			"sets":      setNames,
+			"deleted":   deleted,
 		},
 	}
 }
