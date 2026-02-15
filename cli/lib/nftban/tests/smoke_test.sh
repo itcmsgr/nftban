@@ -570,6 +570,7 @@ run_port_lifecycle_tests() {
     [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
     [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
     # Test ports — use high ephemeral range to avoid conflicts
     local test_port_tcp_in="59001"
@@ -578,30 +579,48 @@ run_port_lifecycle_tests() {
     local test_port_both_inout="59004"
 
     log_info "Using test ports in 59000 range (ephemeral)"
-    log_info "Table: ${table_v4}"
-    log_info "New 4-set architecture: tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out"
+    log_info "Tables: ${table_v4}, ${table_v6}"
+    log_info "Directional architecture: tcp_ports_in/out, udp_ports_in/out (IPv4 + IPv6)"
 
-    # TCP INPUT port add → remove
-    smoke_lifecycle "TCP INPUT port add/remove" \
+    # TCP INPUT port add → remove (IPv4)
+    smoke_lifecycle "TCP INPUT port add/remove (IPv4)" \
         "nftban port add ${test_port_tcp_in} tcp in" \
         "nftban port remove ${test_port_tcp_in}" \
         "${table_v4}" "tcp_ports_in" "${test_port_tcp_in}"
 
-    # TCP OUTPUT port add → remove
-    smoke_lifecycle "TCP OUTPUT port add/remove" \
+    # TCP INPUT port add → remove (IPv6)
+    smoke_lifecycle "TCP INPUT port add/remove (IPv6)" \
+        "nftban port add ${test_port_tcp_in} tcp in" \
+        "nftban port remove ${test_port_tcp_in}" \
+        "${table_v6}" "tcp_ports_in" "${test_port_tcp_in}"
+
+    # TCP OUTPUT port add → remove (IPv4)
+    smoke_lifecycle "TCP OUTPUT port add/remove (IPv4)" \
         "nftban port add ${test_port_tcp_out} tcp out" \
         "nftban port remove ${test_port_tcp_out}" \
         "${table_v4}" "tcp_ports_out" "${test_port_tcp_out}"
 
-    # UDP INPUT port add → remove
-    smoke_lifecycle "UDP INPUT port add/remove" \
+    # TCP OUTPUT port add → remove (IPv6)
+    smoke_lifecycle "TCP OUTPUT port add/remove (IPv6)" \
+        "nftban port add ${test_port_tcp_out} tcp out" \
+        "nftban port remove ${test_port_tcp_out}" \
+        "${table_v6}" "tcp_ports_out" "${test_port_tcp_out}"
+
+    # UDP INPUT port add → remove (IPv4)
+    smoke_lifecycle "UDP INPUT port add/remove (IPv4)" \
         "nftban port add ${test_port_udp_in} udp in" \
         "nftban port remove ${test_port_udp_in}" \
         "${table_v4}" "udp_ports_in" "${test_port_udp_in}"
 
-    # Both TCP+UDP, INOUT port add → remove (tests all 4 sets)
+    # UDP INPUT port add → remove (IPv6)
+    smoke_lifecycle "UDP INPUT port add/remove (IPv6)" \
+        "nftban port add ${test_port_udp_in} udp in" \
+        "nftban port remove ${test_port_udp_in}" \
+        "${table_v6}" "udp_ports_in" "${test_port_udp_in}"
+
+    # Both TCP+UDP, INOUT port add → remove (tests all 4 sets in both IPv4 and IPv6)
     log ""
-    log "─── Lifecycle: Both TCP+UDP, INOUT port add/remove ───"
+    log "─── Lifecycle: Both TCP+UDP, INOUT port add/remove (IPv4 + IPv6) ───"
 
     # Cleanup first
     nftban port remove ${test_port_both_inout} &>/dev/null || true
@@ -611,17 +630,29 @@ run_port_lifecycle_tests() {
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     if nftban port add ${test_port_both_inout} both inout &>/dev/null; then
         sleep 1
-        local tcp_in_ok=false tcp_out_ok=false udp_in_ok=false udp_out_ok=false
-        _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_ok=true
-        _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_ok=true
-        _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_ok=true
-        _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_ok=true
+        # Check IPv4
+        local tcp_in_ok_v4=false tcp_out_ok_v4=false udp_in_ok_v4=false udp_out_ok_v4=false
+        _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_ok_v4=true
+        _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_ok_v4=true
+        _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_ok_v4=true
+        _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_ok_v4=true
 
-        if [[ "$tcp_in_ok" == "true" && "$tcp_out_ok" == "true" && "$udp_in_ok" == "true" && "$udp_out_ok" == "true" ]]; then
-            log_pass "Both/inout port add — ${test_port_both_inout} in all 4 sets"
+        # Check IPv6
+        local tcp_in_ok_v6=false tcp_out_ok_v6=false udp_in_ok_v6=false udp_out_ok_v6=false
+        _nft_set_contains "${table_v6}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_ok_v6=true
+        _nft_set_contains "${table_v6}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_ok_v6=true
+        _nft_set_contains "${table_v6}" "udp_ports_in" "${test_port_both_inout}" && udp_in_ok_v6=true
+        _nft_set_contains "${table_v6}" "udp_ports_out" "${test_port_both_inout}" && udp_out_ok_v6=true
+
+        local v4_ok=false v6_ok=false
+        [[ "$tcp_in_ok_v4" == "true" && "$tcp_out_ok_v4" == "true" && "$udp_in_ok_v4" == "true" && "$udp_out_ok_v4" == "true" ]] && v4_ok=true
+        [[ "$tcp_in_ok_v6" == "true" && "$tcp_out_ok_v6" == "true" && "$udp_in_ok_v6" == "true" && "$udp_out_ok_v6" == "true" ]] && v6_ok=true
+
+        if [[ "$v4_ok" == "true" && "$v6_ok" == "true" ]]; then
+            log_pass "Both/inout port add — ${test_port_both_inout} in all 4 sets (IPv4 + IPv6)"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else
-            log_fail "Both/inout port add — tcp_in:${tcp_in_ok} tcp_out:${tcp_out_ok} udp_in:${udp_in_ok} udp_out:${udp_out_ok}"
+            log_fail "Both/inout port add — IPv4[tcp_in:${tcp_in_ok_v4} tcp_out:${tcp_out_ok_v4} udp_in:${udp_in_ok_v4} udp_out:${udp_out_ok_v4}] IPv6[tcp_in:${tcp_in_ok_v6} tcp_out:${tcp_out_ok_v6} udp_in:${udp_in_ok_v6} udp_out:${udp_out_ok_v6}]"
             TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     else
@@ -634,17 +665,29 @@ run_port_lifecycle_tests() {
     nftban port remove ${test_port_both_inout} &>/dev/null || true
     sleep 1
 
-    local tcp_in_gone=true tcp_out_gone=true udp_in_gone=true udp_out_gone=true
-    _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_gone=false
-    _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_gone=false
-    _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_gone=false
-    _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_gone=false
+    # Check IPv4 removal
+    local tcp_in_gone_v4=true tcp_out_gone_v4=true udp_in_gone_v4=true udp_out_gone_v4=true
+    _nft_set_contains "${table_v4}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_gone_v4=false
+    _nft_set_contains "${table_v4}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_gone_v4=false
+    _nft_set_contains "${table_v4}" "udp_ports_in" "${test_port_both_inout}" && udp_in_gone_v4=false
+    _nft_set_contains "${table_v4}" "udp_ports_out" "${test_port_both_inout}" && udp_out_gone_v4=false
 
-    if [[ "$tcp_in_gone" == "true" && "$tcp_out_gone" == "true" && "$udp_in_gone" == "true" && "$udp_out_gone" == "true" ]]; then
-        log_pass "Both/inout port remove — ${test_port_both_inout} absent from all 4 sets"
+    # Check IPv6 removal
+    local tcp_in_gone_v6=true tcp_out_gone_v6=true udp_in_gone_v6=true udp_out_gone_v6=true
+    _nft_set_contains "${table_v6}" "tcp_ports_in" "${test_port_both_inout}" && tcp_in_gone_v6=false
+    _nft_set_contains "${table_v6}" "tcp_ports_out" "${test_port_both_inout}" && tcp_out_gone_v6=false
+    _nft_set_contains "${table_v6}" "udp_ports_in" "${test_port_both_inout}" && udp_in_gone_v6=false
+    _nft_set_contains "${table_v6}" "udp_ports_out" "${test_port_both_inout}" && udp_out_gone_v6=false
+
+    local v4_gone=false v6_gone=false
+    [[ "$tcp_in_gone_v4" == "true" && "$tcp_out_gone_v4" == "true" && "$udp_in_gone_v4" == "true" && "$udp_out_gone_v4" == "true" ]] && v4_gone=true
+    [[ "$tcp_in_gone_v6" == "true" && "$tcp_out_gone_v6" == "true" && "$udp_in_gone_v6" == "true" && "$udp_out_gone_v6" == "true" ]] && v6_gone=true
+
+    if [[ "$v4_gone" == "true" && "$v6_gone" == "true" ]]; then
+        log_pass "Both/inout port remove — ${test_port_both_inout} absent from all 4 sets (IPv4 + IPv6)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_fail "Both/inout port remove — tcp_in:${tcp_in_gone} tcp_out:${tcp_out_gone} udp_in:${udp_in_gone} udp_out:${udp_out_gone}"
+        log_fail "Both/inout port remove — IPv4[tcp_in:${tcp_in_gone_v4} tcp_out:${tcp_out_gone_v4} udp_in:${udp_in_gone_v4} udp_out:${udp_out_gone_v4}] IPv6[tcp_in:${tcp_in_gone_v6} tcp_out:${tcp_out_gone_v6} udp_in:${udp_in_gone_v6} udp_out:${udp_out_gone_v6}]"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }

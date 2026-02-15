@@ -248,9 +248,10 @@ func LoadAllPanelPorts(configDir string) (*PortConfig, error) {
 		// Add TCP IN ports (input chain - most common for panels)
 		for _, port := range panelCfg.TCPIn {
 			rule := PortRule{
-				Port:     port,
-				Protocol: "T",
-				Source:   fmt.Sprintf("panel:%s", panelName),
+				Port:      port,
+				Protocol:  "T",
+				Direction: "I",
+				Source:    fmt.Sprintf("panel:%s", panelName),
 			}
 			combined.AllRules = append(combined.AllRules, rule)
 			combined.PortMap[port] = append(combined.PortMap[port], "T")
@@ -259,9 +260,10 @@ func LoadAllPanelPorts(configDir string) (*PortConfig, error) {
 		// Add UDP IN ports
 		for _, port := range panelCfg.UDPIn {
 			rule := PortRule{
-				Port:     port,
-				Protocol: "U",
-				Source:   fmt.Sprintf("panel:%s", panelName),
+				Port:      port,
+				Protocol:  "U",
+				Direction: "I",
+				Source:    fmt.Sprintf("panel:%s", panelName),
 			}
 			combined.AllRules = append(combined.AllRules, rule)
 			combined.PortMap[port] = append(combined.PortMap[port], "U")

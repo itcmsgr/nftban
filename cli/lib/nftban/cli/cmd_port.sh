@@ -110,15 +110,29 @@ cmd_port_help() {
     echo "  unblock <port>                    Unblock port (add with both/inout)"
     echo "  help                              Show full help"
     echo ""
+    echo "Quick Start:"
+    echo "  nftban port add 80 tcp in         # Allow web server"
+    echo "  nftban port add 443 both inout    # Allow HTTPS + HTTP/3"
+    echo "  nftban port status                # Check current ports"
+    echo ""
     echo "Arguments for 'add':"
     echo "  port:      1-65535"
     echo "  protocol:  tcp | udp | both"
-    echo "  direction: in | out | inout"
+    echo "  direction: in (INPUT) | out (OUTPUT) | inout (INPUT+OUTPUT)"
     echo ""
-    echo "Examples:"
-    echo "  nftban port add 80 tcp in         # Web server (incoming)"
-    echo "  nftban port add 443 both inout    # HTTPS (incoming + outgoing)"
-    echo "  nftban port add 10050 tcp in      # Zabbix agent (polled)"
+    echo "NOTE: All port operations apply to both IPv4 and IPv6 tables automatically."
+    echo ""
+    echo "How It Works:"
+    echo "  Port rules are stored in /etc/nftban/ports.d/*.conf"
+    echo "  The daemon (nftband) loads ports into nftables via IPC."
+    echo ""
+    echo "Troubleshooting:"
+    echo "  If ports are not applied, check:"
+    echo "  1. Is the daemon running?  systemctl status nftband"
+    echo "  2. Check the config:       cat /etc/nftban/ports.d/90-custom.conf"
+    echo "  3. Force reload:           nftban reload"
+    echo ""
+    echo "For full help: nftban port help"
 }
 
 nftban_cmd_port() {
@@ -253,14 +267,16 @@ nftban_cmd_port() {
                 echo "" >&2
                 echo "  port:      1-65535" >&2
                 echo "  protocol:  tcp | udp | both" >&2
-                echo "  direction: in | out | inout" >&2
+                echo "  direction: in (INPUT) | out (OUTPUT) | inout (INPUT+OUTPUT)" >&2
+                echo "" >&2
+                echo "NOTE: All port operations apply to both IPv4 and IPv6 tables automatically." >&2
                 echo "" >&2
                 echo "Examples:" >&2
-                echo "  nftban port add 80 tcp in        # Web server (incoming only)" >&2
-                echo "  nftban port add 443 both inout   # HTTPS server + API calls" >&2
-                echo "  nftban port add 53 udp inout     # DNS (queries + responses)" >&2
+                echo "  nftban port add 80 tcp in        # Web server (inbound only)" >&2
+                echo "  nftban port add 443 both inout   # HTTPS + HTTP/3 QUIC (bidirectional)" >&2
+                echo "  nftban port add 25 tcp out       # SMTP outbound relay" >&2
+                echo "  nftban port add 53 both inout    # DNS server (TCP+UDP, bidirectional)" >&2
                 echo "  nftban port add 10050 tcp in     # Zabbix agent (polled by server)" >&2
-                echo "  nftban port add 25 tcp out       # SMTP outbound only" >&2
                 return 1
             fi
 
@@ -343,71 +359,23 @@ nftban_cmd_port() {
             echo "  Entry:  $config_entry"
             echo ""
 
-            # Atomically add to nftables (if firewall is active)
+            # Atomically add to nftables via IPC (if firewall is active)
             if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-                echo "⚡ Adding port to firewall..."
+                echo "⚡ Applying to firewall via IPC..."
 
-                local add_success=true
+                local add_success=false
 
-                # Check if daemon is running first
+                # Check if daemon is running and add port atomically
                 if nft_ipc_is_daemon_running 2>/dev/null; then
-                    # Add to tcp_ports sets based on protocol and direction
-                    if [[ "$proto_code" == "T" || "$proto_code" == "B" ]]; then
-                        # INPUT direction
-                        if [[ "$dir_code" == "I" || "$dir_code" == "IO" ]]; then
-                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_in" "$port" 2>/dev/null; then
-                                echo "  ✓ TCP port $port added to INPUT"
-                            else
-                                echo "  ⚠ Could not add TCP INPUT port" >&2
-                                add_success=false
-                            fi
-                        fi
-                        # OUTPUT direction
-                        if [[ "$dir_code" == "O" || "$dir_code" == "IO" ]]; then
-                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_out" "$port" 2>/dev/null; then
-                                echo "  ✓ TCP port $port added to OUTPUT"
-                            else
-                                echo "  ⚠ Could not add TCP OUTPUT port" >&2
-                                add_success=false
-                            fi
-                        fi
-                    fi
-
-                    # Add to udp_ports sets based on protocol and direction
-                    if [[ "$proto_code" == "U" || "$proto_code" == "B" ]]; then
-                        # INPUT direction
-                        if [[ "$dir_code" == "I" || "$dir_code" == "IO" ]]; then
-                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports_in" "$port" 2>/dev/null; then
-                                echo "  ✓ UDP port $port added to INPUT"
-                            else
-                                echo "  ⚠ Could not add UDP INPUT port" >&2
-                                add_success=false
-                            fi
-                        fi
-                        # OUTPUT direction
-                        if [[ "$dir_code" == "O" || "$dir_code" == "IO" ]]; then
-                            if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports_out" "$port" 2>/dev/null; then
-                                echo "  ✓ UDP port $port added to OUTPUT"
-                            else
-                                echo "  ⚠ Could not add UDP OUTPUT port" >&2
-                                add_success=false
-                            fi
-                        fi
-                    fi
-
-                    # If add failed, try full reload via daemon
-                    if [[ "$add_success" == "false" ]]; then
-                        echo ""
-                        echo "⚠ Reloading all ports via daemon..."
-                        if nft_ipc_load_ports 2>/dev/null; then
-                            echo "✓ Ports reloaded successfully"
-                            add_success=true
-                        fi
+                    # Use atomic add_port IPC - much faster than full reload
+                    if nft_ipc_add_port "$port" "$proto" "$direction" 2>/dev/null; then
+                        echo "  ✓ Port $port applied to firewall (IPv4 + IPv6)"
+                        add_success=true
+                    else
+                        echo "  ⚠ Could not add port via daemon" >&2
                     fi
                 else
-                    # Daemon not running - use load_ports which will reload ALL ports from config
-                    echo "  ℹ Daemon not running, starting port reload..."
-                    add_success=false
+                    echo "  ℹ Daemon not running"
                 fi
 
                 # Final status
@@ -542,60 +510,25 @@ nftban_cmd_port() {
             echo "✓ Port $port removed from $removed_count file(s)"
             echo ""
 
-            # Atomically remove from nftables (if firewall is active)
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1 && [[ -n "$removed_proto" ]]; then
-                echo "⚡ Atomically removing port from firewall..."
+            # Apply removal to nftables via IPC (if firewall is active)
+            # Delete from ALL protocol/direction combinations since config removal is global
+            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+                echo "⚡ Applying removal to firewall via IPC..."
 
-                local remove_success=true
-
-                # Extract direction from config entry (format: PORT/PROTO/DIR)
-                local removed_dir
-                removed_dir=$(echo "$port_line" | cut -d'/' -f3)
-                [[ -z "$removed_dir" ]] && removed_dir="IO"  # Legacy fallback
-
-                # Remove from tcp_ports sets (if TCP or both)
-                if [[ "$removed_proto" == "T" || "$removed_proto" == "B" ]]; then
-                    if [[ "$removed_dir" == "I" || "$removed_dir" == "IO" ]]; then
-                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_in" "$port" 2>/dev/null; then
-                            echo "  ✓ TCP port $port removed from INPUT"
-                        fi
-                    fi
-                    if [[ "$removed_dir" == "O" || "$removed_dir" == "IO" ]]; then
-                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_out" "$port" 2>/dev/null; then
-                            echo "  ✓ TCP port $port removed from OUTPUT"
-                        fi
-                    fi
-                fi
-
-                # Remove from udp_ports sets (if UDP or both)
-                if [[ "$removed_proto" == "U" || "$removed_proto" == "B" ]]; then
-                    if [[ "$removed_dir" == "I" || "$removed_dir" == "IO" ]]; then
-                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports_in" "$port" 2>/dev/null; then
-                            echo "  ✓ UDP port $port removed from INPUT"
-                        fi
-                    fi
-                    if [[ "$removed_dir" == "O" || "$removed_dir" == "IO" ]]; then
-                        if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports_out" "$port" 2>/dev/null; then
-                            echo "  ✓ UDP port $port removed from OUTPUT"
-                        fi
-                    fi
-                fi
-
-                # Fallback to full reload if atomic failed
-                if [[ "$remove_success" == "false" ]]; then
-                    echo ""
-                    echo "⚠ Atomic remove failed, performing full firewall reload..."
-                    if nftban firewall reload >/dev/null 2>&1; then
-                        echo "✓ Firewall reloaded successfully"
+                if nft_ipc_is_daemon_running 2>/dev/null; then
+                    # Use atomic delete_port IPC - remove from all sets (both protocols, both directions)
+                    if nft_ipc_delete_port "$port" "both" "both" 2>/dev/null; then
+                        echo "  ✓ Port $port removed from firewall (IPv4 + IPv6)"
+                        echo ""
+                        echo "✅ Port $port is now blocked in firewall"
                     else
-                        echo "❌ Firewall reload failed" >&2
-                        echo "Run manually: nftban firewall reload" >&2
-                        return 1
+                        echo "  ⚠ Could not remove port via daemon" >&2
+                        echo "  Run manually: nftban reload" >&2
                     fi
+                else
+                    echo "  ℹ Daemon not running - port removed from config only"
+                    echo "  Start daemon and reload: systemctl start nftband && nftban reload"
                 fi
-
-                echo ""
-                echo "✅ Port $port is now blocked in firewall (no restart needed)"
             else
                 echo "⚠ Firewall not initialized - port removed from config only"
             fi
@@ -717,44 +650,58 @@ nftban_cmd_port() {
             source "${LIB_DIR}/core/nftban_output.sh"
             nftban_banner
             echo ""
-            echo "Usage:"
-            echo "  nftban port status [ports]                    # Show port status (all or filtered)"
-            echo "  nftban port detailed [ports]                  # Show detailed status with BIND and PROCESS"
-            echo "  nftban port add <port> <protocol> <direction> # Add port (ALL args required)"
-            echo "  nftban port remove <port>                     # Remove port from whitelist"
-            echo "  nftban port block <port>                      # Block port (remove from whitelist)"
-            echo "  nftban port unblock <port>                    # Unblock port (both/inout)"
-            echo "  nftban port html-report                       # Generate HTML report"
-            echo "  nftban port mail-report [path] [recipient]    # Mail report"
-            echo "  nftban port allow-panel <panel>               # Allow control panel ports"
-            echo "  nftban port help                              # Show this help"
+            echo "USAGE:"
+            echo "  nftban port <subcommand> [options]"
             echo ""
-            echo "Add Arguments (ALL REQUIRED):"
+            echo "SUBCOMMANDS:"
+            echo "  status [ports]                    Show port status (all or filtered)"
+            echo "  detailed [ports]                  Show detailed status with BIND and PROCESS"
+            echo "  add <port> <protocol> <direction> Add port to whitelist (ALL args required)"
+            echo "  remove <port>                     Remove port from whitelist"
+            echo "  block <port>                      Block port (remove from whitelist)"
+            echo "  unblock <port>                    Unblock port (TCP+UDP, INPUT+OUTPUT)"
+            echo "  html-report                       Generate HTML report"
+            echo "  mail-report [path] [recipient]    Mail report"
+            echo "  allow-panel <panel>               Allow control panel ports"
+            echo "  help                              Show this help"
+            echo ""
+            echo "ADD ARGUMENTS (ALL REQUIRED):"
             echo "  port:      1-65535"
             echo "  protocol:  tcp | udp | both"
-            echo "  direction: in | out | inout"
+            echo "  direction: in (INPUT) | out (OUTPUT) | inout (INPUT+OUTPUT)"
             echo ""
-            echo "Examples:"
+            echo "ARCHITECTURE:"
+            echo "  All port operations apply to BOTH IPv4 and IPv6 tables automatically."
+            echo "  Ports are stored in 4 nftables sets per IP family:"
+            echo "    - tcp_ports_in   TCP ports allowed for INPUT (incoming connections)"
+            echo "    - tcp_ports_out  TCP ports allowed for OUTPUT (outgoing connections)"
+            echo "    - udp_ports_in   UDP ports allowed for INPUT (incoming packets)"
+            echo "    - udp_ports_out  UDP ports allowed for OUTPUT (outgoing packets)"
+            echo ""
+            echo "EXAMPLES:"
             echo "  nftban port status               # Show all listening ports"
             echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
             echo "  nftban port detailed             # Show detailed info with bind addresses"
             echo ""
-            echo "  # Web server (incoming requests)"
+            echo "  # Web server (inbound only)"
             echo "  nftban port add 80 tcp in"
-            echo "  nftban port add 443 both inout   # HTTPS + HTTP/3 QUIC"
+            echo "  nftban port add 443 both inout   # HTTPS + HTTP/3 QUIC (bidirectional)"
+            echo ""
+            echo "  # SMTP outbound relay"
+            echo "  nftban port add 25 tcp out"
+            echo ""
+            echo "  # DNS server (TCP+UDP, bidirectional)"
+            echo "  nftban port add 53 both inout"
             echo ""
             echo "  # Zabbix agent (server polls us)"
             echo "  nftban port add 10050 tcp in"
             echo ""
-            echo "  # DNS server"
-            echo "  nftban port add 53 both inout    # TCP+UDP, queries+responses"
-            echo ""
-            echo "  # SMTP relay (outbound only)"
-            echo "  nftban port add 25 tcp out"
+            echo "  # MySQL client (outbound connections only)"
+            echo "  nftban port add 3306 tcp out"
             echo ""
             echo "  nftban port remove 8080          # Remove port 8080 from whitelist"
             echo "  nftban port block 3389           # Block RDP port"
-            echo "  nftban port unblock 3389         # Unblock RDP port (both/inout)"
+            echo "  nftban port unblock 3389         # Unblock RDP port (TCP+UDP, both directions)"
             echo ""
             echo "  nftban port mail-report ${NFTBAN_DATA_DIR}/reports/port_report.html admin@example.com"
             echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
@@ -762,7 +709,7 @@ nftban_cmd_port() {
             echo "Note: For full panel management, use: nftban panel directadmin <action>"
             echo "      Actions: enable, disable, status, report, repair, test"
             echo ""
-            echo "Output Columns:"
+            echo "OUTPUT COLUMNS:"
             echo "  SERVICE  - Service name (from /etc/services or process name)"
             echo "  PORT     - Port number"
             echo "  PROTO    - Protocol (tcp/udp)"
@@ -773,22 +720,70 @@ nftban_cmd_port() {
             echo "  IPv6 OUT - IPv6 outbound firewall status"
             echo "  NOTES    - Additional info (bind scope, generic rules, etc.)"
             echo ""
-            echo "Detailed Mode Adds:"
+            echo "DETAILED MODE ADDS:"
             echo "  BIND     - Bind address (0.0.0.0, ::, 127.0.0.1, etc.)"
             echo "  PROCESS  - Process name and PID"
             echo ""
-            echo "Firewall Status:"
-            echo "  ✔ Allowed  - Port explicitly allowed in nftables"
-            echo "  ✖ Blocked  - Port explicitly blocked (drop/reject)"
-            echo "  ? No-rule  - No explicit rule (default policy applies)"
+            echo "FIREWALL STATUS:"
+            echo "  Allowed  - Port explicitly allowed in nftables"
+            echo "  Blocked  - Port explicitly blocked (drop/reject)"
+            echo "  No-rule  - No explicit rule (default policy applies)"
             echo ""
-            echo "Notes:"
+            echo "NOTES:"
             echo "  - Requires root privileges (sudo)"
             echo "  - Uses ss/lsof to detect listening services"
             echo "  - Parses nftables rules to determine firewall status"
             echo "  - 'generic' rules lack meta nfproto (affect both IPv4/IPv6)"
             echo "  - PUBLIC = binds to 0.0.0.0 or ::"
             echo "  - LOCAL-ONLY = binds to 127.0.0.1 or ::1"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "QUICK START"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  # Allow a web server"
+            echo "  nftban port add 80 tcp in"
+            echo "  nftban port add 443 both inout"
+            echo ""
+            echo "  # Allow a database (internal only)"
+            echo "  nftban port add 3306 tcp in"
+            echo ""
+            echo "  # Check current ports"
+            echo "  nftban port status"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "HOW IT WORKS"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Port rules are stored in ${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/*.conf"
+            echo "  The daemon (nftband) loads ports into nftables via IPC."
+            echo "  All operations apply to both IPv4 and IPv6 automatically."
+            echo ""
+            echo "  Config file priority (loaded in order):"
+            echo "    00-system.conf   - Protected system ports (SSH, etc.)"
+            echo "    50-services.conf - Common service ports"
+            echo "    90-custom.conf   - User-added ports (via 'nftban port add')"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "TROUBLESHOOTING"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  If ports are not applied, check:"
+            echo ""
+            echo "  1. Is the daemon running?"
+            echo "     systemctl status nftband"
+            echo ""
+            echo "  2. Check the config files:"
+            echo "     cat ${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/90-custom.conf"
+            echo ""
+            echo "  3. Force reload all ports:"
+            echo "     nftban reload"
+            echo ""
+            echo "  4. Verify firewall is initialized:"
+            echo "     nftban firewall status"
+            echo ""
+            echo "  5. Check for errors in logs:"
+            echo "     journalctl -u nftband -n 50"
             echo ""
             return 0
             ;;

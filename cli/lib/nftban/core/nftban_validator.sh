@@ -350,28 +350,47 @@ check_ip_or_port() {
 
     elif [[ "$value_type" == "port" ]]; then
         # For ports, check allowed port sets in ip nftban table
+        # Supports both legacy (tcp_ports/udp_ports) and directional sets
         processing_path+=("→ Checking ip nftban input (priority 0)")
 
-        # Check TCP ports
+        local matched_sets=()
+
+        # Check directional TCP port sets (new 4-set architecture)
+        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_in { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("tcp_ports_in")
+        fi
+        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_out { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("tcp_ports_out")
+        fi
+        # Check directional UDP port sets
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_in { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("udp_ports_in")
+        fi
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_out { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("udp_ports_out")
+        fi
+        # Check legacy TCP ports (backward compatibility)
         if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("tcp_ports")
+        fi
+        # Check legacy UDP ports (backward compatibility)
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports { "$value" } >/dev/null 2>&1; then
+            matched_sets+=("udp_ports")
+        fi
+
+        if [[ ${#matched_sets[@]} -gt 0 ]]; then
             status="allowed"
             matched_table="${NFTBAN_TABLE_IPV4}"
             matched_chain="input"
-            matched_set="tcp_ports"
+            # Report first matched set, but show all in processing path
+            matched_set="${matched_sets[0]}"
             verdict="accept"
             priority=0
-            processing_path+=("  ✅ MATCHED: tcp_ports → ACCEPT")
-        # Check UDP ports
-        elif nft get element ${NFTBAN_TABLE_IPV4} udp_ports { "$value" } >/dev/null 2>&1; then
-            status="allowed"
-            matched_table="${NFTBAN_TABLE_IPV4}"
-            matched_chain="input"
-            matched_set="udp_ports"
-            verdict="accept"
-            priority=0
-            processing_path+=("  ✅ MATCHED: udp_ports → ACCEPT")
+            local all_matches
+            all_matches=$(IFS=', '; echo "${matched_sets[*]}")
+            processing_path+=("  ✅ MATCHED: ${all_matches} → ACCEPT")
         else
-            processing_path+=("  ⊘ Not in tcp_ports or udp_ports")
+            processing_path+=("  ⊘ Not in any port sets (tcp/udp _ports_in/_ports_out or legacy)")
             processing_path+=("  → Default policy: DROP")
             status="blocked"
             matched_table="ip/ip6 nftban"
@@ -403,8 +422,16 @@ check_ip_or_port() {
         fi
     elif [[ "$value_type" == "port" ]]; then
         if [[ "$status" == "allowed" ]]; then
+            # Suggest removal from directional sets
+            actions+=("remove_from_tcp_ports_in" "remove_from_tcp_ports_out")
+            actions+=("remove_from_udp_ports_in" "remove_from_udp_ports_out")
+            # Legacy set actions
             actions+=("remove_from_tcp_ports" "remove_from_udp_ports")
         else
+            # Suggest adding to directional sets
+            actions+=("add_to_tcp_ports_in" "add_to_tcp_ports_out")
+            actions+=("add_to_udp_ports_in" "add_to_udp_ports_out")
+            # Legacy set actions
             actions+=("add_to_tcp_ports" "add_to_udp_ports")
         fi
     fi
@@ -514,6 +541,12 @@ get_firewall_stats() {
     local whitelist_ipv6_count=0
     local blacklist_ipv4_count=0
     local blacklist_ipv6_count=0
+    # Directional port sets (new 4-set architecture)
+    local tcp_ports_in_count=0
+    local tcp_ports_out_count=0
+    local udp_ports_in_count=0
+    local udp_ports_out_count=0
+    # Legacy port sets (backward compatibility)
     local tcp_ports_count=0
     local udp_ports_count=0
 
@@ -521,6 +554,12 @@ get_firewall_stats() {
     whitelist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     blacklist_ipv4_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     blacklist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    # Directional port sets
+    tcp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    tcp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    udp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    udp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    # Legacy port sets
     tcp_ports_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     udp_ports_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
 
@@ -535,6 +574,10 @@ get_firewall_stats() {
             --argjson whitelist_ipv6 "$whitelist_ipv6_count" \
             --argjson blacklist_ipv4 "$blacklist_ipv4_count" \
             --argjson blacklist_ipv6 "$blacklist_ipv6_count" \
+            --argjson tcp_ports_in "$tcp_ports_in_count" \
+            --argjson tcp_ports_out "$tcp_ports_out_count" \
+            --argjson udp_ports_in "$udp_ports_in_count" \
+            --argjson udp_ports_out "$udp_ports_out_count" \
             --argjson tcp_ports "$tcp_ports_count" \
             --argjson udp_ports "$udp_ports_count" \
             '{
@@ -549,8 +592,12 @@ get_firewall_stats() {
                     "ip6 nftban whitelist_ipv6": $whitelist_ipv6,
                     "ip nftban blacklist_ipv4": $blacklist_ipv4,
                     "ip6 nftban blacklist_ipv6": $blacklist_ipv6,
-                    "ip nftban tcp_ports": $tcp_ports,
-                    "ip nftban udp_ports": $udp_ports
+                    "ip nftban tcp_ports_in": $tcp_ports_in,
+                    "ip nftban tcp_ports_out": $tcp_ports_out,
+                    "ip nftban udp_ports_in": $udp_ports_in,
+                    "ip nftban udp_ports_out": $udp_ports_out,
+                    "ip nftban tcp_ports (legacy)": $tcp_ports,
+                    "ip nftban udp_ports (legacy)": $udp_ports
                 }
             }'
     else
@@ -567,8 +614,16 @@ get_firewall_stats() {
         echo "ip nftban (IPv4):"
         echo "  ├─ whitelist_ipv4:   $whitelist_ipv4_count IPs"
         echo "  ├─ blacklist_ipv4:   $blacklist_ipv4_count IPs (permanent + temporary)"
-        echo "  ├─ tcp_ports:        $tcp_ports_count ports"
-        echo "  └─ udp_ports:        $udp_ports_count ports"
+        echo "  │"
+        echo "  ├─ Directional Port Sets:"
+        echo "  │   ├─ tcp_ports_in:   $tcp_ports_in_count ports (inbound TCP)"
+        echo "  │   ├─ tcp_ports_out:  $tcp_ports_out_count ports (outbound TCP)"
+        echo "  │   ├─ udp_ports_in:   $udp_ports_in_count ports (inbound UDP)"
+        echo "  │   └─ udp_ports_out:  $udp_ports_out_count ports (outbound UDP)"
+        echo "  │"
+        echo "  └─ Legacy Port Sets:"
+        echo "      ├─ tcp_ports:      $tcp_ports_count ports"
+        echo "      └─ udp_ports:      $udp_ports_count ports"
         echo ""
         echo "ip6 nftban (IPv6):"
         echo "  ├─ whitelist_ipv6:   $whitelist_ipv6_count IPs"

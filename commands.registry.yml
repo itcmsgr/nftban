@@ -1416,7 +1416,7 @@ configtest:
 
 port:
   category: infrastructure
-  description: "Port allow/block management with protocol and direction control"
+  description: "Port allow/block management with protocol and direction control (IPv4+IPv6 applied automatically)"
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -1426,28 +1426,39 @@ port:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  notes:
+    - "All port rules apply to both IPv4 and IPv6 automatically"
+    - "Direction is required: in (inbound), out (outbound), or inout (bidirectional)"
+    - "Protocol is required: tcp, udp, or both"
   examples:
-    - "nftban port status"
-    - "nftban port add 80 tcp in"
-    - "nftban port add 443 both inout"
-    - "nftban port add 10050 tcp in"
-    - "nftban port add 25 tcp out"
-    - "nftban port remove 8080"
-    - "nftban port block 3389"
-    - "nftban port unblock 3389"
-    - "nftban port status --json"
+    - "nftban port status                    # Show all port rules and listening ports"
+    - "nftban port add 80 tcp in             # Allow HTTP inbound (IPv4+IPv6)"
+    - "nftban port add 443 both inout        # Allow HTTPS TCP+UDP bidirectional"
+    - "nftban port add 10050 tcp in          # Allow Zabbix agent inbound"
+    - "nftban port add 25 tcp out            # Allow SMTP outbound only"
+    - "nftban port add 53 udp inout          # Allow DNS UDP bidirectional"
+    - "nftban port remove 8080               # Remove port 8080 from whitelist"
+    - "nftban port block 3389                # Block RDP (alias for remove)"
+    - "nftban port unblock 3389              # Unblock RDP (adds with both/inout)"
+    - "nftban port status --json             # JSON output for scripting"
   subcommands:
     status:
       mutates: false
-      description: "Show port status (listening ports vs firewall rules)"
+      description: "Show port status (listening ports vs firewall rules, IPv4+IPv6)"
+      syntax: "nftban port status [--json]"
       options:
         --json: {type: bool, description: "Output in JSON format"}
+      notes:
+        - "Shows which ports are listening and which are allowed in firewall"
+        - "Compares active listeners against nftables whitelist rules"
     detailed:
       mutates: false
-      description: "Show detailed status with BIND and PROCESS columns"
+      description: "Show detailed status with BIND address and PROCESS columns"
+      syntax: "nftban port detailed"
     add:
       mutates: true
-      description: "Add port to whitelist (all arguments required)"
+      description: "Add port to whitelist (IPv4+IPv6 applied automatically)"
+      syntax: "nftban port add <port> <protocol> <direction>"
       arguments:
         port:
           type: int
@@ -1457,41 +1468,57 @@ port:
           type: enum
           values: [tcp, udp, both]
           required: true
-          description: "Protocol: tcp, udp, or both"
+          description: "Protocol: tcp, udp, or both (tcp+udp)"
         direction:
           type: enum
           values: [in, out, inout]
           required: true
-          description: "Direction: in (INPUT), out (OUTPUT), or inout (both)"
+          description: "Direction: in (inbound only), out (outbound only), or inout (bidirectional)"
+      notes:
+        - "Rules are added to both IPv4 and IPv6 nftables sets"
+        - "Use 'both' protocol for services that need TCP and UDP (e.g., DNS)"
+        - "Use 'inout' direction for bidirectional traffic (most services)"
     remove:
       mutates: true
-      description: "Remove port from whitelist"
+      description: "Remove port from whitelist (removes from all protocols/directions)"
+      syntax: "nftban port remove <port>"
       arguments:
-        port: {type: int, required: true, description: "Port number"}
+        port: {type: int, required: true, description: "Port number (1-65535)"}
     block:
       mutates: true
-      description: "Block port (alias for remove)"
+      description: "Block port - alias for remove (removes from whitelist)"
+      syntax: "nftban port block <port>"
       arguments:
-        port: {type: int, required: true, description: "Port number"}
+        port: {type: int, required: true, description: "Port number (1-65535)"}
     unblock:
       mutates: true
-      description: "Unblock port (adds with both/inout)"
+      description: "Unblock port - quick whitelist with protocol=both, direction=inout"
+      syntax: "nftban port unblock <port>"
       arguments:
-        port: {type: int, required: true, description: "Port number"}
+        port: {type: int, required: true, description: "Port number (1-65535)"}
+      notes:
+        - "Shortcut equivalent to: nftban port add <port> both inout"
+        - "Use 'add' command for more specific protocol/direction control"
     html-report:
       mutates: false
-      description: "Generate HTML port status report"
+      description: "Generate HTML port status report (includes IPv4+IPv6 rules)"
+      syntax: "nftban port html-report"
     mail-report:
       mutates: false
       description: "Email port status report"
+      syntax: "nftban port mail-report [recipient]"
       arguments:
         path: {type: string, required: false, description: "Report file path"}
         recipient: {type: string, required: false, description: "Email recipient"}
     allow-panel:
       mutates: true
-      description: "Allow control panel ports (e.g., DirectAdmin)"
+      description: "Allow control panel ports (auto-adds IPv4+IPv6 rules for panel services)"
+      syntax: "nftban port allow-panel <panel>"
       arguments:
         panel: {type: enum, values: [directadmin], required: true, description: "Panel name"}
+      notes:
+        - "Automatically whitelists all ports required by the control panel"
+        - "See 'nftban panel' command for more panel options"
 
 profile:
   category: infrastructure

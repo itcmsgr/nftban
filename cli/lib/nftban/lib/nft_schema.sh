@@ -119,9 +119,15 @@ declare -g -A NFTBAN_IPV4_SETS=(
     # TODO: Remove after v1.2 migration complete
     ["blacklist_ipv4"]="ipv4_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
 
-    # Service ports
-    ["tcp_ports"]="inet_service||Allowed TCP ports"
-    ["udp_ports"]="inet_service||Allowed UDP ports"
+    # Service ports (LEGACY - kept for backward compatibility)
+    ["tcp_ports"]="inet_service||Allowed TCP ports (legacy, use tcp_ports_in/out)"
+    ["udp_ports"]="inet_service||Allowed UDP ports (legacy, use udp_ports_in/out)"
+
+    # Directional port sets (v1.15.0 - full IN/OUT support)
+    ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
+    ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
+    ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
+    ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
 )
 
 # Chains in ip nftban (IPv4)
@@ -187,9 +193,15 @@ declare -g -A NFTBAN_IPV6_SETS=(
     # TODO: Remove after v1.2 migration complete
     ["blacklist_ipv6"]="ipv6_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
 
-    # Service ports
-    ["tcp_ports"]="inet_service||Allowed TCP ports"
-    ["udp_ports"]="inet_service||Allowed UDP ports"
+    # Service ports (LEGACY - kept for backward compatibility)
+    ["tcp_ports"]="inet_service||Allowed TCP ports (legacy, use tcp_ports_in/out)"
+    ["udp_ports"]="inet_service||Allowed UDP ports (legacy, use udp_ports_in/out)"
+
+    # Directional port sets (v1.15.0 - full IN/OUT support)
+    ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
+    ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
+    ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
+    ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
 )
 
 # Chains in ip6 nftban (IPv6)

@@ -136,19 +136,16 @@ nftban_panel_detect() {
 # PORT CHECK HELPER
 # =============================================================================
 
-# Check if a port is open in nftables
-# Usage: _nftban_panel_check_port <port>
-# Returns: 0 if port is open, 1 if closed
-#
-# Checks tcp_ports and udp_ports sets in nftables.
-# Architecture: NFTBan uses separate ip/ip6 tables (not inet).
-# Port sets are: "ip nftban tcp_ports" and "ip nftban udp_ports"
-_nftban_panel_check_port() {
-    local port="$1"
+# Check if a port exists in a specific nftables set
+# Usage: _nftban_panel_check_port_in_set <table_family> <set_name> <port>
+# Returns: 0 if port is in set, 1 if not
+_nftban_panel_check_port_in_set() {
+    local table_family="$1"
+    local set_name="$2"
+    local port="$3"
     local output
 
-    # Check tcp_ports set in ip nftban table (primary architecture)
-    output=$(nft list set ip nftban tcp_ports 2>/dev/null) || true
+    output=$(nft list set "$table_family" nftban "$set_name" 2>/dev/null) || true
     if [[ -n "$output" ]]; then
         # Match port as standalone number or in a list (e.g., "22, 80, 443" or "elements = { 22 }")
         # Port can appear as: standalone, comma-separated, or with spaces
@@ -156,29 +153,132 @@ _nftban_panel_check_port() {
             return 0
         fi
     fi
+    return 1
+}
 
-    # Check udp_ports set in ip nftban table
-    output=$(nft list set ip nftban udp_ports 2>/dev/null) || true
-    if [[ -n "$output" ]]; then
-        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
-            return 0
-        fi
-    fi
+# Check if a port is open in nftables (any direction)
+# Usage: _nftban_panel_check_port <port>
+# Returns: 0 if port is open, 1 if closed
+#
+# Checks both legacy (tcp_ports, udp_ports) and directional sets
+# (tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out).
+# Architecture: NFTBan uses separate ip/ip6 tables (not inet).
+_nftban_panel_check_port() {
+    local port="$1"
+
+    # Check directional sets first (v1.15.0+)
+    # TCP inbound/outbound
+    _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
+    _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
+    # UDP inbound/outbound
+    _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
+    _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
+
+    # Check legacy sets (backward compatibility)
+    _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+    _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
 
     # Fallback: Check legacy inet nftban table (for older installations)
-    output=$(nft list set inet nftban tcp_ports 2>/dev/null) || true
-    if [[ -n "$output" ]]; then
-        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
-            return 0
-        fi
-    fi
+    _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
+    _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
 
-    output=$(nft list set inet nftban udp_ports 2>/dev/null) || true
-    if [[ -n "$output" ]]; then
-        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
-            return 0
-        fi
-    fi
+    return 1
+}
+
+# Check if a port is allowed for a specific direction
+# Usage: _nftban_panel_check_port_direction <port> <direction>
+#   direction: "in" or "out"
+# Returns: 0 if port is allowed for that direction, 1 if not
+#
+# For inbound, checks: tcp_ports_in, udp_ports_in (and legacy sets)
+# For outbound, checks: tcp_ports_out, udp_ports_out (and legacy sets)
+_nftban_panel_check_port_direction() {
+    local port="$1"
+    local direction="$2"
+
+    case "$direction" in
+        in|inbound|input)
+            # Check directional inbound sets (v1.15.0+)
+            _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
+            _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
+            # Legacy sets (assume inbound for backward compatibility)
+            _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+            _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
+            _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
+            _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
+            ;;
+        out|outbound|output)
+            # Check directional outbound sets (v1.15.0+)
+            _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
+            _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
+            # Note: Legacy sets don't distinguish direction, so we include them
+            # for backward compatibility (they were typically INPUT-focused)
+            _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+            _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
+            ;;
+        *)
+            # Unknown direction, check all
+            _nftban_panel_check_port "$port" && return 0
+            ;;
+    esac
+
+    return 1
+}
+
+# Check if a port is allowed for a specific protocol and direction
+# Usage: _nftban_panel_check_port_proto <port> <proto> [direction]
+#   proto: "tcp" or "udp"
+#   direction: "in" or "out" (optional, defaults to checking both)
+# Returns: 0 if port is allowed, 1 if not
+_nftban_panel_check_port_proto() {
+    local port="$1"
+    local proto="$2"
+    local direction="${3:-}"
+
+    case "$proto" in
+        tcp|TCP)
+            if [[ -n "$direction" ]]; then
+                case "$direction" in
+                    in|inbound|input)
+                        _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
+                        _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+                        _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
+                        ;;
+                    out|outbound|output)
+                        _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
+                        _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+                        ;;
+                esac
+            else
+                # Check all TCP sets
+                _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
+                _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
+                _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
+                _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
+            fi
+            ;;
+        udp|UDP)
+            if [[ -n "$direction" ]]; then
+                case "$direction" in
+                    in|inbound|input)
+                        _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
+                        _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
+                        _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
+                        ;;
+                    out|outbound|output)
+                        _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
+                        _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
+                        ;;
+                esac
+            else
+                # Check all UDP sets
+                _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
+                _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
+                _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
+                _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
+            fi
+            ;;
+    esac
 
     return 1
 }
@@ -658,7 +758,10 @@ nftban_panel_vesta_test() {
 
 export -f nftban_panel_get_admin_email
 export -f nftban_panel_detect
+export -f _nftban_panel_check_port_in_set
 export -f _nftban_panel_check_port
+export -f _nftban_panel_check_port_direction
+export -f _nftban_panel_check_port_proto
 export -f _nftban_panel_check_cloudflare
 export -f _get_panel_info
 export -f nftban_panel_simple_help

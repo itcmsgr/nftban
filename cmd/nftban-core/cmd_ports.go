@@ -79,8 +79,8 @@ func cmdPortsList(portsDir string) error {
 
 	fmt.Printf("Found %d port rules:\n\n", len(config.AllRules))
 
-	// Group by protocol
-	fmt.Println("TCP Ports:")
+	// Group by protocol (legacy view)
+	fmt.Println("TCP Ports (all directions):")
 	tcpCount := 0
 	for _, port := range config.TCPPorts {
 		fmt.Printf("  %d", port)
@@ -96,7 +96,7 @@ func cmdPortsList(portsDir string) error {
 	}
 	fmt.Printf("  Total: %d TCP ports\n\n", len(config.TCPPorts))
 
-	fmt.Println("UDP Ports:")
+	fmt.Println("UDP Ports (all directions):")
 	udpCount := 0
 	for _, port := range config.UDPPorts {
 		fmt.Printf("  %d", port)
@@ -111,6 +111,18 @@ func cmdPortsList(portsDir string) error {
 		fmt.Println()
 	}
 	fmt.Printf("  Total: %d UDP ports\n\n", len(config.UDPPorts))
+
+	// Show directional breakdown if any directional rules exist
+	hasDirectional := len(config.TCPPortsIn) > 0 || len(config.TCPPortsOut) > 0 ||
+		len(config.UDPPortsIn) > 0 || len(config.UDPPortsOut) > 0
+	if hasDirectional {
+		fmt.Println("Directional Breakdown:")
+		fmt.Printf("  TCP Input:  %d ports\n", len(config.TCPPortsIn))
+		fmt.Printf("  TCP Output: %d ports\n", len(config.TCPPortsOut))
+		fmt.Printf("  UDP Input:  %d ports\n", len(config.UDPPortsIn))
+		fmt.Printf("  UDP Output: %d ports\n", len(config.UDPPortsOut))
+		fmt.Println()
+	}
 
 	return nil
 }

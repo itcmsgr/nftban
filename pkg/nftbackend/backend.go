@@ -32,6 +32,7 @@ package nftbackend
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"os/exec"
 	"strings"
@@ -120,6 +121,21 @@ func (b *Backend) initCachedObjects() {
 			b.setWhitelistIPv6 = set
 		}
 	}
+
+	// Initialize port sets (v1.15.0 - directional architecture)
+	// These must exist before any port operations can succeed
+	portSets := []string{"tcp_ports", "udp_ports", "tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"}
+	for _, setName := range portSets {
+		// IPv4
+		if _, err := b.nft.GetOrCreatePortSet(b.tableIPv4, setName); err != nil {
+			log.Printf("Warning: failed to create IPv4 port set %s: %v", setName, err)
+		}
+		// IPv6
+		if _, err := b.nft.GetOrCreatePortSet(b.tableIPv6, setName); err != nil {
+			log.Printf("Warning: failed to create IPv6 port set %s: %v", setName, err)
+		}
+	}
+	log.Printf("Port sets initialized: %v", portSets)
 }
 
 // ensureNetlink ensures NFTManager is initialized

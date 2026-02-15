@@ -81,7 +81,9 @@ _nftban() {
 
     # System & Infrastructure
     local nftables_cmds="status reload reset backup restore --json help"
-    local port_cmds="list add remove check status --json help"
+    local port_cmds="add remove block unblock status detailed list help"
+    local port_protocols="tcp udp both"
+    local port_directions="in out inout"
     local system_cmds="status enable disable install uninstall --json help"
 
     # Watchdog (System Resource Monitoring)
@@ -438,6 +440,14 @@ _nftban() {
                             ;;
                     esac
                     ;;
+                port)
+                    case "${sub_cmd}" in
+                        add|remove|block|unblock)
+                            # Expecting port number - show hint
+                            COMPREPLY=($(compgen -W "22 80 443 25 465 587 3306 5432 8080 8443" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
             esac
             ;;
         4)
@@ -476,6 +486,31 @@ _nftban() {
                         --url)
                             # URL completion - no suggestions
                             COMPREPLY=()
+                            ;;
+                    esac
+                    ;;
+                port)
+                    # After port number, suggest protocols
+                    local sub_cmd="${words[2]}"
+                    case "${sub_cmd}" in
+                        add|remove|block|unblock)
+                            COMPREPLY=($(compgen -W "${port_protocols}" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+            esac
+            ;;
+        5)
+            # Complete fifth-level arguments (e.g., nftban port add 80 tcp <direction>)
+            local main_cmd="${words[1]}"
+            local sub_cmd="${words[2]}"
+
+            case "${main_cmd}" in
+                port)
+                    case "${sub_cmd}" in
+                        add|remove|block|unblock)
+                            # After protocol, suggest directions
+                            COMPREPLY=($(compgen -W "${port_directions}" -- "${cur}"))
                             ;;
                     esac
                     ;;
