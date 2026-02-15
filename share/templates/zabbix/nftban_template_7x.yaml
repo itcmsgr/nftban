@@ -54,8 +54,8 @@ zabbix_export:
           name: 'NFTBan: Version'
           type: TRAP
           key: nftban.version.info
-          value_type: UNSIGNED
-          description: 'NFTBan version info (1 = present)'
+          value_type: TEXT
+          description: 'NFTBan version string (e.g., 1.15.0)'
         - uuid: 4847ad4a222b4e70a5ca7c7a5b971782
           name: 'NFTBan: Uptime'
           type: TRAP
@@ -73,8 +73,8 @@ zabbix_export:
           name: 'NFTBan: Operating mode'
           type: TRAP
           key: nftban.mode.info
-          value_type: UNSIGNED
-          description: 'Operating mode info (1 = present)'
+          value_type: TEXT
+          description: 'Operating mode (normal, learning, strict)'
         # =====================================================================
         # BAN STATISTICS
         # =====================================================================
@@ -163,6 +163,51 @@ zabbix_export:
           key: nftban.blacklist.ipv6.temp
           value_type: UNSIGNED
           description: 'Temporary IPv6 bans'
+        # =====================================================================
+        # FEEDS METRICS
+        # =====================================================================
+        - uuid: 02cd6c2453864fb289d7c8f0f495cb39
+          name: 'NFTBan: Feeds enabled'
+          type: TRAP
+          key: nftban.feeds.enabled
+          value_type: UNSIGNED
+          description: 'Number of threat feeds enabled'
+        - uuid: d16bc62a9be5455d8e434be82cd90435
+          name: 'NFTBan: Feeds loaded'
+          type: TRAP
+          key: nftban.feeds.loaded
+          value_type: UNSIGNED
+          description: 'Number of threat feeds successfully loaded'
+        - uuid: fc1d3d39ddf74cec9cbdcc6816401b0d
+          name: 'NFTBan: Feeds failed'
+          type: TRAP
+          key: nftban.feeds.failed
+          value_type: UNSIGNED
+          description: 'Number of threat feeds that failed to load'
+        - uuid: 0d004fac4dcf47b48735996816e4028f
+          name: 'NFTBan: Feeds IPs total'
+          type: TRAP
+          key: nftban.feeds.ips.total
+          value_type: UNSIGNED
+          description: 'Total IPs from all threat feeds'
+        - uuid: 67427da69a174440b41906aa98c731dd
+          name: 'NFTBan: Feeds IPv4 total'
+          type: TRAP
+          key: nftban.feeds.ipv4.total
+          value_type: UNSIGNED
+          description: 'Total IPv4 addresses from threat feeds'
+        - uuid: 0df0cfc06ba642a1b39f086a9e2f1345
+          name: 'NFTBan: Feeds IPv6 total'
+          type: TRAP
+          key: nftban.feeds.ipv6.total
+          value_type: UNSIGNED
+          description: 'Total IPv6 addresses from threat feeds'
+        - uuid: 846ebdf36a384c49b9ecbb544138b385
+          name: 'NFTBan: Feeds details'
+          type: TRAP
+          key: nftban.feeds.details
+          value_type: TEXT
+          description: 'JSON array with per-feed details (name, ips, ipv4, ipv6)'
         # =====================================================================
         # RESOURCE METRICS
         # =====================================================================
