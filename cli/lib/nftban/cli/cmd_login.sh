@@ -30,6 +30,12 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh"
 fi
+
+# Load distro config for dynamic paths (DISTRO_PATHS[systemd_system])
+# shellcheck source=/dev/null
+if [[ -z "${NFTBAN_DISTRO_CONFIG_LOADED:-}" ]] && [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
@@ -295,8 +301,10 @@ nftban_login_cmd_install() {
     echo ""
 
     # Check if service already exists (from package)
-    if [[ -f "/lib/systemd/system/${service_name}" ]] || \
-       [[ -f "/usr/lib/systemd/system/${service_name}" ]]; then
+    # Use distro-specific systemd path, fallback to common locations
+    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
+    if [[ -f "${systemd_system_dir}/${service_name}" ]] || \
+       [[ -f "/lib/systemd/system/${service_name}" ]]; then
         echo "✅ Service file exists (from package)"
 
         # Remove any duplicate in /etc/systemd/system/ that may override
@@ -382,9 +390,10 @@ nftban_login_cmd_enable() {
         service|"")
             # Enable and start systemd service (auto-install if needed)
             local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
             if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
                [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
-               [[ ! -f "/usr/lib/systemd/system/${service_name}" ]]; then
+               [[ ! -f "${systemd_system_dir}/${service_name}" ]]; then
                 echo "Installing login monitor service..."
                 nftban_login_cmd_install >/dev/null 2>&1
                 echo "✅ Service installed"
@@ -465,12 +474,13 @@ nftban_login_cmd_disable() {
         service|"")
             # Stop and disable systemd service
             local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "false" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "false" "$config_local"
             # Check all possible service file locations
             if [[ -f "/etc/systemd/system/${service_name}" ]] || \
                [[ -f "/lib/systemd/system/${service_name}" ]] || \
-               [[ -f "/usr/lib/systemd/system/${service_name}" ]]; then
+               [[ -f "${systemd_system_dir}/${service_name}" ]]; then
                 systemctl stop "${service_name}" 2>/dev/null || true
                 systemctl disable "${service_name}" 2>/dev/null || true
             fi
@@ -774,9 +784,10 @@ CONF
 
     # 3. Check service file
     local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
     if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
        [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
-       [[ ! -f "/usr/lib/systemd/system/${service_name}" ]]; then
+       [[ ! -f "${systemd_system_dir}/${service_name}" ]]; then
         echo "⚠️  Service not installed (run 'nftban login install')"
         ((issues_found++))
     else
@@ -840,9 +851,10 @@ nftban_login_cmd_restart() {
     echo "================================"
     echo ""
 
+    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
     if [[ ! -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
        [[ ! -f "/lib/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
-       [[ ! -f "/usr/lib/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
+       [[ ! -f "${systemd_system_dir}/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
         echo "ERROR: Service not installed. Run 'nftban login install' first." >&2
         return 1
     fi

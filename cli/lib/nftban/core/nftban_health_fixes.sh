@@ -1284,7 +1284,7 @@ nftban_health_fix_polkit() {
         return 0
     fi
 
-    local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"
+    local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-$(nftban_distro_get_polkit_dir)}"
     local source_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/packaging/polkit-1/rules.d"
     local fixed=0
     local failed=0

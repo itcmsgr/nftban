@@ -172,17 +172,21 @@ _nftban_portscan_suricata_eve_active() {
     local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local freshness="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
 
-    [[ -f "$eve_file" ]] || return 1
+    # Support Suricata 7.x threaded logging (writes to eve-alerts.1.json, eve-alerts.2.json, etc.)
+    local eve_dir="${eve_file%/*}"
+    local freshest_mtime=0
 
-    local file_mtime
-    # Use -L to follow symlinks (eve-alerts.json -> eve.json)
-    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || return 1
+    shopt -s nullglob
+    for f in "$eve_dir"/eve-alerts*.json; do
+        [[ -f "$f" ]] || continue
+        local m
+        m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+        (( m > freshest_mtime )) && freshest_mtime=$m
+    done
+    shopt -u nullglob
 
-    local current_time
-    current_time=$(date +%s)
-
-    local age
-    age=$((current_time - file_mtime))
+    [[ $freshest_mtime -eq 0 ]] && return 1
+    local age=$(( $(date +%s) - freshest_mtime ))
     [[ $age -le $freshness ]]
 }
 
