@@ -484,7 +484,6 @@ nftban_cmd_port() {
             fi
 
             local removed_count=0
-            local removed_proto=""
 
             for file in "${found_files[@]}"; do
                 echo "Removing port $port from: $file"
