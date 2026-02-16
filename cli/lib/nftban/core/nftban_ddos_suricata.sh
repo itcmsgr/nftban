@@ -171,24 +171,22 @@ nftban_ddos_suricata_eve_active() {
     local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local threshold="${DDOS_EVE_FRESHNESS_THRESHOLD:-60}"
 
-    # File must exist
-    [[ -f "$eve_file" ]] || return 1
+    # Support Suricata 7.x threaded logging (writes to eve-alerts.1.json, eve-alerts.2.json, etc.)
+    local eve_dir="${eve_file%/*}"
+    local freshest_mtime=0
 
-    # File must be readable
-    [[ -r "$eve_file" ]] || return 1
+    shopt -s nullglob
+    for f in "$eve_dir"/eve-alerts*.json; do
+        [[ -f "$f" ]] || continue
+        local m
+        m=$(stat -L -c %Y -- "$f" 2>/dev/null) || continue
+        (( m > freshest_mtime )) && freshest_mtime=$m
+    done
+    shopt -u nullglob
 
-    # Check freshness (modified within threshold seconds)
-    # Use -L to follow symlinks (backwards compatibility)
-    local now file_mtime age
-    now=$(date +%s)
-    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null || stat -L -f %m "$eve_file" 2>/dev/null)
-
-    if [[ -n "$file_mtime" ]]; then
-        age=$((now - file_mtime))
-        [[ $age -le $threshold ]] && return 0
-    fi
-
-    return 1
+    [[ $freshest_mtime -eq 0 ]] && return 1
+    local age=$(( $(date +%s) - freshest_mtime ))
+    [[ $age -le $threshold ]]
 }
 
 # Combined check: Is Suricata fully operational?
