@@ -494,9 +494,6 @@ nftban_cmd_port() {
                 port_line=$(grep -E "^${port}/" "$file" 2>/dev/null)
                 echo "  - $port_line"
 
-                # Extract protocol from line (format: PORT/PROTO)
-                removed_proto=$(echo "$port_line" | cut -d'/' -f2)
-
                 # Create backup
                 cp "$file" "${file}.backup.$(date +%Y%m%d-%H%M%S)"
 
