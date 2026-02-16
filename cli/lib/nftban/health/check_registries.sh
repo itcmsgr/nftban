@@ -24,8 +24,8 @@ set -Eeuo pipefail
 NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
-# Registry paths (relative to project root or installed paths)
-COMMANDS_REGISTRY="${NFTBAN_LIB_DIR}/../commands.registry.yml"
+# Registry paths (installed paths)
+COMMANDS_REGISTRY="${NFTBAN_CONFIG_DIR}/commands.registry.yml"
 CONFIG_REGISTRY="${NFTBAN_LIB_DIR}/data/config-registry.json"
 CONFIG_SCHEMA="${NFTBAN_LIB_DIR}/data/config-schema.json"
 REPORTS_REGISTRY="${NFTBAN_LIB_DIR}/data/reports-registry.json"
