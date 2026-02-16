@@ -489,10 +489,12 @@ nftban_cmd_port() {
             for file in "${found_files[@]}"; do
                 echo "Removing port $port from: $file"
 
-                # Show what we're removing and capture protocol
-                local port_line
+                # Show what we're removing and capture protocol/direction
+                local port_line removed_proto removed_dir
                 port_line=$(grep -E "^${port}/" "$file" 2>/dev/null)
-                echo "  - $port_line"
+                removed_proto=$(echo "$port_line" | cut -d'/' -f2)
+                removed_dir=$(echo "$port_line" | cut -d'/' -f3)
+                echo "  - $port_line (proto=$removed_proto, dir=$removed_dir)"
 
                 # Create backup
                 cp "$file" "${file}.backup.$(date +%Y%m%d-%H%M%S)"
