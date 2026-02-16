@@ -1275,13 +1275,40 @@ nftban_cmd_update() {
             _cmd_update_status
             ;;
         github)
-            _cmd_update_main "github" "${1:-}"
+            # Parse --force flag and version argument
+            local version_arg=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    -*) shift ;;  # Skip unknown flags
+                    *) version_arg="$1"; shift ;;
+                esac
+            done
+            _cmd_update_main "github" "$version_arg"
             ;;
         git)
-            _cmd_update_main "git" "${1:-}"
+            # Parse --force flag and branch argument
+            local branch_arg=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    -*) shift ;;
+                    *) branch_arg="$1"; shift ;;
+                esac
+            done
+            _cmd_update_main "git" "$branch_arg"
             ;;
         local)
-            _cmd_update_main "local" "${1:-}"
+            # Parse --force flag and path argument
+            local path_arg=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    -*) shift ;;
+                    *) path_arg="$1"; shift ;;
+                esac
+            done
+            _cmd_update_main "local" "$path_arg"
             ;;
         force|--force|reinstall)
             _NFTBAN_UPDATE_FORCE=1
