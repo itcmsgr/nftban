@@ -811,11 +811,13 @@ nftban_watchdog_get_top_cpu() {
         # Use awk for reliable parsing
         cpu_time=$(echo "$stat_line" | awk '{print $14 + $15}')
 
-        # Read status for memory
+        # Read status for memory (redirect failure is safe with || true)
         vmrss=0
-        while IFS=': ' read -r key value _; do
-            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
-        done < "/proc/$pid/status" 2>/dev/null
+        if [[ -r "/proc/$pid/status" ]]; then
+            while IFS=': ' read -r key value _; do
+                [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+            done < "/proc/$pid/status" 2>/dev/null || true
+        fi
 
         # Store: cpu_time pid vmrss_kb comm
         procs+=("$cpu_time $pid $vmrss $comm")
@@ -863,11 +865,13 @@ nftban_watchdog_get_top_mem() {
         # Read comm (process name)
         comm=$(cat "/proc/$pid/comm" 2>/dev/null) || continue
 
-        # Read status for memory
+        # Read status for memory (redirect failure is safe with || true)
         vmrss=0
-        while IFS=': ' read -r key value _; do
-            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
-        done < "/proc/$pid/status" 2>/dev/null
+        if [[ -r "/proc/$pid/status" ]]; then
+            while IFS=': ' read -r key value _; do
+                [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+            done < "/proc/$pid/status" 2>/dev/null || true
+        fi
 
         [[ $vmrss -gt 0 ]] && procs+=("$vmrss $pid $comm")
     done
@@ -1183,8 +1187,9 @@ nftban_watchdog_metrics_export() {
 
         # Count alerts by severity
         # Note: Use || true to prevent exit code 1 when incrementing from 0 with set -e
+        # Also guard against empty array with ${array[@]+"${array[@]}"} pattern for set -u
         local warning_count=0 critical_count=0
-        for alert in "${WATCHDOG_ALERTS[@]}"; do
+        for alert in ${WATCHDOG_ALERTS[@]+"${WATCHDOG_ALERTS[@]}"}; do
             [[ "$alert" == *"[WARNING]"* ]] && ((warning_count++)) || true
             [[ "$alert" == *"[CRITICAL]"* ]] && ((critical_count++)) || true
         done
@@ -1709,11 +1714,13 @@ nftban_watchdog_collect_module_resources() {
             daemon_cpu="${daemon_cpu:-0}"
         fi
 
-        # Get daemon memory from /proc/pid/status
+        # Get daemon memory from /proc/pid/status (redirect failure is safe with || true)
         local vmrss=0
-        while IFS=': ' read -r key value _; do
-            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
-        done < "/proc/$daemon_pid/status" 2>/dev/null
+        if [[ -r "/proc/$daemon_pid/status" ]]; then
+            while IFS=': ' read -r key value _; do
+                [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+            done < "/proc/$daemon_pid/status" 2>/dev/null || true
+        fi
         daemon_mem_bytes=$((vmrss * 1024))  # kB to bytes
     fi
 

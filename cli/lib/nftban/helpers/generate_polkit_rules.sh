@@ -19,9 +19,14 @@ set -Eeuo pipefail
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 
+# Source distro config for distribution-specific paths
+_NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+[[ -f "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+
 # Paths
 readonly NFTBAN_CONF="${NFTBAN_CONF:-${NFTBAN_CONFIG_DIR}/nftban.conf}"
-readonly POLKIT_RULES_DIR="${POLKIT_RULES_DIR:-/usr/share/polkit-1/rules.d}"
+readonly POLKIT_RULES_DIR="${POLKIT_RULES_DIR:-$(nftban_distro_get_polkit_dir)}"
 readonly TEMPLATE_DIR="${1:-/usr/share/nftban/polkit-templates}"
 
 # Colors

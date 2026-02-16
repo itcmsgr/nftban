@@ -95,13 +95,19 @@ if ! declare -f nftban_path_get_safe_output >/dev/null 2>&1; then
     fi
 fi
 
+# Load distro config for distribution-specific paths
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+fi
+
 # =============================================================================
 
 # CONFIGURATION
 # =============================================================================
 
 
-readonly NFTBAN_CRON_FILE="/etc/cron.d/nftban-stats"
+readonly NFTBAN_CRON_FILE="${DISTRO_PATHS[cron_d]:-/etc/cron.d}/nftban-stats"
 readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
 
 # =============================================================================

@@ -19,6 +19,14 @@ set -Eeuo pipefail
 readonly _NFTBAN_SERVICE_CONTROL_LOADED=1
 
 # =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+# Source distro config for DISTRO_PATHS (conditional, with fallback defaults)
+# shellcheck source=/usr/lib/nftban/lib/nftban_distro_config.sh
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" 2>/dev/null || true
+
+# =============================================================================
 # SERVICE STATUS FUNCTIONS
 # =============================================================================
 
@@ -54,7 +62,7 @@ nftban_service_exists() {
 
     # Fallback: check common unit file locations directly
     [[ -f "/etc/systemd/system/${service}" ]] && return 0
-    [[ -f "/usr/lib/systemd/system/${service}" ]] && return 0
+    [[ -f "${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}/${service}" ]] && return 0
     [[ -f "/lib/systemd/system/${service}" ]] && return 0
 
     return 1

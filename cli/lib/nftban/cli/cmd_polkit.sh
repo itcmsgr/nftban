@@ -33,6 +33,12 @@ set -Eeuo pipefail
 [[ -n "${CMD_POLKIT_LOADED:-}" ]] && return 0
 readonly CMD_POLKIT_LOADED=1
 
+# Source distro config for polkit path detection
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+fi
+
 # =============================================================================
 # COMMAND HANDLER
 # =============================================================================
@@ -141,7 +147,9 @@ nftban_polkit_status() {
     echo "==================="
     echo ""
 
-    local rule_dirs=("/etc/polkit-1/rules.d" "/usr/share/polkit-1/rules.d")
+    local polkit_dir
+    polkit_dir=$(nftban_distro_get_polkit_dir)
+    local rule_dirs=("$polkit_dir")
     local expected_files=("10-nftban-systemd.rules" "20-nftban-auditor.rules" "30-nftban-panel.rules")
     local obsolete_files=("50-nftban-auth.rules" "60-nftban-services.rules")
 
@@ -297,7 +305,9 @@ nftban_polkit_rules() {
             echo "NFTBan Polkit Rules"
             echo "==================="
             echo ""
-            local rule_dirs=("/etc/polkit-1/rules.d" "/usr/share/polkit-1/rules.d")
+            local polkit_dir
+            polkit_dir=$(nftban_distro_get_polkit_dir)
+            local rule_dirs=("$polkit_dir")
             for dir in "${rule_dirs[@]}"; do
                 if [[ -d "$dir" ]]; then
                     echo "Directory: $dir"
@@ -310,7 +320,9 @@ nftban_polkit_rules() {
         view)
             local file="${1:-10-nftban-systemd.rules}"
             local found=false
-            for dir in "/etc/polkit-1/rules.d" "/usr/share/polkit-1/rules.d"; do
+            local polkit_dir
+            polkit_dir=$(nftban_distro_get_polkit_dir)
+            for dir in "$polkit_dir"; do
                 if [[ -f "$dir/$file" ]]; then
                     echo "=== $dir/$file ==="
                     cat "$dir/$file"
@@ -329,7 +341,9 @@ nftban_polkit_rules() {
                 return 1
             fi
             local src_dir="${NFTBAN_LIB_DIR}/../packaging/polkit-1/rules.d"
-            local dest_dir="/etc/polkit-1/rules.d"
+            local polkit_dir
+            polkit_dir=$(nftban_distro_get_polkit_dir)
+            local dest_dir="$polkit_dir"
 
             # Try to find source directory
             if [[ ! -d "$src_dir" ]]; then

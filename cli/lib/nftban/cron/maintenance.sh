@@ -315,6 +315,13 @@ EOF
         # shellcheck disable=SC2034  # Reserved for IPv6 monitoring
         current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
 
+        # Validate IPv4 format - reject HTTP error messages and non-IP responses
+        # Must match exact IPv4 pattern: 1-3 digits, dot, 1-3 digits, dot, 1-3 digits, dot, 1-3 digits
+        if [[ -n "$current_ipv4" ]] && ! [[ "$current_ipv4" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            log "WARN" "Invalid IPv4 response from ifconfig.me (got: ${current_ipv4:0:50}...)"
+            current_ipv4=""
+        fi
+
         # Check if IPv4 changed
         if [[ -n "$current_ipv4" ]] && ! grep -q "$current_ipv4" "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" 2>/dev/null; then
             # Check if we already alerted about this IP
