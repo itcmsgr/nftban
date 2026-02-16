@@ -53,6 +53,8 @@ NFTBAN_PORT_TIMESTAMP="$(date --iso-8601=seconds)"
 NFTBAN_PORT_DETAILED="${NFTBAN_PORT_DETAILED:-0}"
 NFTBAN_PORT_OUTPUT_FORMAT="${NFTBAN_PORT_OUTPUT_FORMAT:-table}"
 NFTBAN_PORT_FILTER_PORTS="${NFTBAN_PORT_FILTER_PORTS:-}"
+NFTBAN_PORT_COLLAPSE_RANGES="${NFTBAN_PORT_COLLAPSE_RANGES:-1}"  # Collapse consecutive inactive ports into ranges
+NFTBAN_PORT_ACTIVE_ONLY="${NFTBAN_PORT_ACTIVE_ONLY:-0}"  # Only show ports with active services (hides passive FTP ranges)
 
 # Color symbols (use nftban_output.sh if available)
 if type -t nftban_render_banner >/dev/null 2>&1; then
@@ -408,6 +410,11 @@ nftban_port_render_json() {
             continue
         fi
 
+        # If --active flag set, skip ports without active services (hides passive FTP ranges etc.)
+        if (( NFTBAN_PORT_ACTIVE_ONLY )) && [[ "$running" != "yes" ]]; then
+            continue
+        fi
+
         local status_line
         status_line="$(nftban_port_determine_status "$port" "$proto")"
         local v4in v4out v6in v6out notes
@@ -569,6 +576,11 @@ nftban_port_render_table() {
 
         # Skip only if: NOT listening AND NOT in firewall
         if [[ "$running" != "yes" ]] && [[ "$in_firewall" == "false" ]]; then
+            continue
+        fi
+
+        # If --active flag set, skip ports without active services (hides passive FTP ranges etc.)
+        if (( NFTBAN_PORT_ACTIVE_ONLY )) && [[ "$running" != "yes" ]]; then
             continue
         fi
 

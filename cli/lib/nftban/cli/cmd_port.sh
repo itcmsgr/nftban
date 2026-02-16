@@ -154,22 +154,35 @@ nftban_cmd_port() {
             # Show port status (terminal output)
             # Optional: port filter as argument
             # NOTE: 'list' is deprecated, use 'status' instead
+            # Flags: --json, --active (hide ports without services)
 
-            # Check for --json flag
-            if [[ "${1:-}" == "--json" ]]; then
-                export NFTBAN_PORT_FILTER_PORTS="${2:-}"
-                export NFTBAN_PORT_DETAILED=0
-                export NFTBAN_PORT_OUTPUT_FORMAT="json"
-                nftban_port_report_status
-                return $?
+            local filter_ports="" show_active_only=0
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --json)
+                        export NFTBAN_PORT_OUTPUT_FORMAT="json"
+                        shift
+                        ;;
+                    --active)
+                        show_active_only=1
+                        shift
+                        ;;
+                    *)
+                        filter_ports="$1"
+                        shift
+                        ;;
+                esac
+            done
+
+            export NFTBAN_PORT_FILTER_PORTS="$filter_ports"
+            export NFTBAN_PORT_DETAILED=0
+            export NFTBAN_PORT_ACTIVE_ONLY="$show_active_only"
+
+            if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" != "json" ]]; then
+                nftban_banner
+                export NFTBAN_PORT_OUTPUT_FORMAT="table"
             fi
 
-            # Show standard banner
-            nftban_banner
-
-            export NFTBAN_PORT_FILTER_PORTS="${1:-}"
-            export NFTBAN_PORT_DETAILED=0
-            export NFTBAN_PORT_OUTPUT_FORMAT="table"
             nftban_port_report_status
             return $?
             ;;
@@ -652,7 +665,7 @@ nftban_cmd_port() {
             echo "  nftban port <subcommand> [options]"
             echo ""
             echo "SUBCOMMANDS:"
-            echo "  status [ports]                    Show port status (all or filtered)"
+            echo "  status [--active] [ports]         Show port status (--active hides inactive ports)"
             echo "  detailed [ports]                  Show detailed status with BIND and PROCESS"
             echo "  add <port> <protocol> <direction> Add port to whitelist (ALL args required)"
             echo "  remove <port>                     Remove port from whitelist"
