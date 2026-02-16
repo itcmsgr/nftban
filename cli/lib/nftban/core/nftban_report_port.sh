@@ -82,6 +82,85 @@ else
 fi
 
 # =============================================================================
+# HOSTING SERVICE NAME MAPPING
+# =============================================================================
+# Override IANA /etc/services with actual names used in modern hosting environments
+# Format: NFTBAN_HOSTING_SERVICES["port_proto"]="ServiceName"
+
+declare -g -A NFTBAN_HOSTING_SERVICES=(
+    # Mail services (correct names)
+    ["25_tcp"]="SMTP"
+    ["465_tcp"]="SMTPS"           # NOT "urd"
+    ["587_tcp"]="Submission"
+    ["993_tcp"]="IMAPS"
+    ["995_tcp"]="POP3S"
+    ["110_tcp"]="POP3"
+    ["143_tcp"]="IMAP"
+    ["4190_tcp"]="Sieve"          # Dovecot mail filtering
+
+    # cPanel/WHM
+    ["2077_tcp"]="WebDAV"         # NOT "tsrmagt"
+    ["2078_tcp"]="WebDAV-SSL"     # NOT "tpcsrvr"
+    ["2079_tcp"]="CalDAV"         # NOT "idware-router"
+    ["2080_tcp"]="CalDAV-SSL"
+    ["2082_tcp"]="cPanel"         # NOT "infowave"
+    ["2083_tcp"]="cPanel-SSL"     # NOT "radsec"
+    ["2086_tcp"]="WHM"            # NOT "gnunet"
+    ["2087_tcp"]="WHM-SSL"        # NOT "eli"
+    ["2095_tcp"]="Webmail"        # NOT "nbx-ser"
+    ["2096_tcp"]="Webmail-SSL"    # NOT "nbx-dir"
+
+    # DirectAdmin
+    ["2222_tcp"]="DirectAdmin"
+
+    # Plesk
+    ["8443_tcp"]="Plesk"
+    ["8447_tcp"]="Plesk-Update"
+    ["8880_tcp"]="Plesk-HTTP"
+
+    # Web servers
+    ["80_tcp"]="HTTP"
+    ["443_tcp"]="HTTPS"
+    ["8080_tcp"]="HTTP-Alt"
+    ["8443_tcp"]="HTTPS-Alt"
+
+    # DNS
+    ["53_tcp"]="DNS"
+    ["53_udp"]="DNS"
+    ["953_tcp"]="DNS-RNDC"        # NOT generic "rndc"
+
+    # Databases
+    ["3306_tcp"]="MySQL"
+    ["5432_tcp"]="PostgreSQL"
+    ["6379_tcp"]="Redis"
+    ["27017_tcp"]="MongoDB"
+
+    # Security/Monitoring
+    ["783_tcp"]="SpamAssassin"    # NOT "vopied"
+    ["11234_tcp"]="Imunify360"
+    ["8428_tcp"]="VictoriaMetrics"
+    ["9090_tcp"]="Prometheus"
+    ["9100_tcp"]="NodeExporter"
+
+    # FTP
+    ["20_tcp"]="FTP-Data"
+    ["21_tcp"]="FTP"
+    ["990_tcp"]="FTPS"
+
+    # SSH/Remote
+    ["22_tcp"]="SSH"
+    ["3389_tcp"]="RDP"
+
+    # Monitoring agents
+    ["10050_tcp"]="Zabbix-Agent"
+    ["10051_tcp"]="Zabbix-Trap"
+
+    # Time sync
+    ["123_udp"]="NTP"
+    ["323_udp"]="Chrony"          # NOT "brcd"
+)
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -343,6 +422,12 @@ nftban_port_detect_service() {
 
     local sname="${NFTBAN_PORT_SERVICE_NAME["${port}_${proto}"]-}"
 
+    # Priority 1: Check hosting-specific service names (overrides IANA)
+    if [[ -z "$sname" ]]; then
+        sname="${NFTBAN_HOSTING_SERVICES["${port}_${proto}"]-}"
+    fi
+
+    # Priority 2: Fallback to /etc/services (IANA names)
     if [[ -z "$sname" && -r /etc/services ]]; then
         sname="$(awk -v P="$port" -v R="$proto" '!/^#/ && NF >= 2 { if ($2 ~ P"/"R) { print $1; exit; } }' /etc/services 2>/dev/null || true)"
     fi
