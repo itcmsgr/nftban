@@ -319,18 +319,12 @@ nftban_polkit_rules() {
             ;;
         view)
             local file="${1:-10-nftban-systemd.rules}"
-            local found=false
             local polkit_dir
             polkit_dir=$(nftban_distro_get_polkit_dir)
-            for dir in "$polkit_dir"; do
-                if [[ -f "$dir/$file" ]]; then
-                    echo "=== $dir/$file ==="
-                    cat "$dir/$file"
-                    found=true
-                    break
-                fi
-            done
-            if [[ "$found" != true ]]; then
+            if [[ -f "$polkit_dir/$file" ]]; then
+                echo "=== $polkit_dir/$file ==="
+                cat "$polkit_dir/$file"
+            else
                 echo "ERROR: Rule file not found: $file" >&2
                 return 1
             fi
