@@ -1,3 +1,7 @@
+# =============================================================================
+# NFTBan - Project Health
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
 ---
 name: Project Health
 
@@ -59,14 +63,10 @@ jobs:
       - name: Run health check
         run: .github/ci/health_check.sh
 
-      - name: Secret scan with TruffleHog
-        uses: trufflesecurity/trufflehog@v3.88.1
-        with:
-          base: >-
-            ${{ github.event_name == 'pull_request' &&
-            github.event.pull_request.base.sha || '' }}
-          head: ${{ github.sha }}
-          extra_args: --only-verified
+      - name: Validate GitHub Actions workflows with actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          $(go env GOPATH)/bin/actionlint
 
       - name: Upload STATUS.md as artifact
         uses: actions/upload-artifact@v4

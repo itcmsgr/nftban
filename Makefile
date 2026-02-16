@@ -19,7 +19,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 
-.PHONY: all build clean test lint lint-headers lint-shell lint-go install help
+.PHONY: all build clean test fuzz fuzz-long lint lint-headers lint-shell lint-go install help
 
 # Default target
 all: build
@@ -40,6 +40,29 @@ test:
 	@echo "Running tests..."
 	@go test ./...
 	@./tests/test_all_commands.sh 2>/dev/null || true
+
+# Run fuzz tests (30 seconds per test)
+fuzz:
+	@echo "Running fuzz tests..."
+	@go test -fuzz=FuzzParseLogLine -fuzztime=30s ./pkg/parser/
+	@go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./pkg/parser/
+	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./pkg/parser/
+	@echo "Fuzz tests completed."
+
+# Run fuzz tests for longer duration (use for CI)
+fuzz-long:
+	@echo "Running extended fuzz tests (5 minutes each)..."
+	@go test -fuzz=FuzzParseLogLine -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzSSHDetector -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzMailDetector -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzFTPDetector -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzPanelDetector -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzParseFeedLine -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzParseBool -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzParseInt -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzParseDuration -fuzztime=5m ./pkg/parser/
+	@echo "Extended fuzz tests completed."
 
 # Run all linters
 lint: lint-headers lint-shell lint-go
@@ -82,6 +105,8 @@ help:
 	@echo "  make build         - Build all Go binaries"
 	@echo "  make clean         - Clean build artifacts"
 	@echo "  make test          - Run all tests"
+	@echo "  make fuzz          - Run fuzz tests (30 seconds each)"
+	@echo "  make fuzz-long     - Run extended fuzz tests (5 minutes each)"
 	@echo "  make lint          - Run all linters (headers, shell, go)"
 	@echo "  make lint-headers  - Validate HEADER_SPEC.md compliance"
 	@echo "  make lint-shell    - Run ShellCheck on Bash scripts"

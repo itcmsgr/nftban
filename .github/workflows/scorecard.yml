@@ -1,0 +1,72 @@
+# =============================================================================
+# NFTBan - OpenSSF Scorecard
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Automated security health assessment via OpenSSF Scorecard
+#
+# Runs on:
+#   - Weekly on Monday at 6:00 AM UTC
+#   - Push to main branch
+#
+# Outputs:
+#   - SARIF report uploaded to GitHub Security tab
+#   - Scorecard badge data for repository
+# =============================================================================
+
+name: OpenSSF Scorecard
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly: Monday 6:00 AM UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## OpenSSF Scorecard Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "OpenSSF Scorecard analyzes the project for security best practices:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch protection rules" >> $GITHUB_STEP_SUMMARY
+          echo "- Code review requirements" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency management" >> $GITHUB_STEP_SUMMARY
+          echo "- Security policy presence" >> $GITHUB_STEP_SUMMARY
+          echo "- Signed releases" >> $GITHUB_STEP_SUMMARY
+          echo "- Vulnerability disclosure process" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY

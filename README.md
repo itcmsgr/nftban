@@ -2,10 +2,13 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.15.0-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.15.1-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Code: 58% Shell 42% Go](https://img.shields.io/badge/Code-58%25%20Shell%20%7C%2042%25%20Go-4EAA25.svg)]()
-[![FHS: Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
+[![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev/)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=openssf%20scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
+[![Semgrep](https://img.shields.io/badge/Semgrep-enabled-blue?logo=semgrep)](https://semgrep.dev/)
+[![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
 
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
@@ -193,7 +196,7 @@ ip6 nftban {                 # IPv6 rules
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `nftban` | Bash CLI | Main command-line interface (54 commands) |
+| `nftban` | Bash CLI | Main command-line interface (76 commands) |
 | `nftban-core` | Go Binary | Backend for feeds, geoip, sync |
 | `nftban-ui` | Go Binary | Web interface server |
 
@@ -254,20 +257,38 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ---
 
+## Security & Supply Chain
+
+| Control | Status |
+|---------|--------|
+| **SLSA Level 3** | Provenance attestation for Go binaries |
+| **SBOM** | SPDX-JSON attached to every release |
+| **Vulnerability Scanning** | govulncheck, Trivy, gosec, CodeQL |
+| **Semgrep** | Static analysis for security patterns in Go and shell code |
+| **Dependency Review** | PR-level dependency vulnerability scanning |
+| **Secret Scanning** | gitleaks with SARIF upload |
+| **OpenSSF Scorecard** | Automated security posture assessment |
+
+See [SECURITY.md](SECURITY.md) for vulnerability disclosure policy and security architecture.
+
+---
+
 ## Documentation
 
 ### Getting Started
 - [Wiki Home](https://github.com/itcmsgr/nftban/wiki) — Complete documentation
-- [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) — All 54 commands
+- [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) — All commands
 - [Installation Guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide) — Prerequisites, install, post-config
 
-### Integration
-- [Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-IDS-Integration) — IDS/IPS setup guide
+### Architecture & Security
+- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
+- [Threat Model](docs/THREAT_MODEL.md) — Assets, adversaries, attack surfaces
+- [Security Policy](SECURITY.md) — Vulnerability reporting, privilege model
+- [Reproducible Builds](docs/REPRODUCIBLE_BUILDS.md) — Build verification
 
-### Security
-- [Security Policy](SECURITY.md) — Vulnerability reporting
-- [Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture) — Access control, Polkit integration
-- [Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide) — Hardening, monitoring, procedures
+### Integration
+- [Suricata IDS](https://github.com/itcmsgr/nftban/wiki/Suricata-IDS-Integration) — IDS/IPS setup
+- [Control Panels](https://github.com/itcmsgr/nftban/wiki/Panel-Integration) — cPanel, DirectAdmin, Plesk
 
 ### Community
 - Website: https://nftban.com

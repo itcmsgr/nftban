@@ -1,0 +1,55 @@
+# =============================================================================
+# NFTBan - Dependency Review
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Review dependencies for security vulnerabilities on pull requests
+#
+# Runs on:
+#   - Pull requests to main branch
+#
+# Outputs:
+#   - Blocks PRs that introduce high or critical severity vulnerabilities
+#   - Reports vulnerable dependencies in PR comments
+# =============================================================================
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Dependency Review Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Dependency Review scans for security vulnerabilities in dependencies:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Blocking Criteria" >> $GITHUB_STEP_SUMMARY
+          echo "- **High severity** vulnerabilities: Blocked" >> $GITHUB_STEP_SUMMARY
+          echo "- **Critical severity** vulnerabilities: Blocked" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Review the PR comments for detailed vulnerability information." >> $GITHUB_STEP_SUMMARY

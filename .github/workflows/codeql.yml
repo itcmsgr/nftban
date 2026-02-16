@@ -1,0 +1,107 @@
+# =============================================================================
+# NFTBan - CodeQL Analysis
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Deep static analysis of Go code using GitHub CodeQL
+#
+# Runs on:
+#   - Push to main branch
+#   - Pull requests to main branch
+#   - Weekly on Sunday at 3:00 AM UTC
+#
+# Outputs:
+#   - SARIF report uploaded to GitHub Security tab
+#   - Detailed code scanning alerts for security vulnerabilities
+#
+# Note: This complements gosec/staticcheck in secure-go.yml with deeper
+# semantic analysis including taint tracking and data flow analysis.
+# =============================================================================
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 0'  # Weekly: Sunday 3:00 AM UTC
+
+permissions:
+  security-events: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL Analysis (Go)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          # Use extended security queries for more thorough analysis
+          queries: security-extended
+
+      - name: Build Go code
+        run: go build ./...
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql-go
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## CodeQL Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "CodeQL has performed deep static analysis on the Go codebase:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Analysis Capabilities" >> $GITHUB_STEP_SUMMARY
+          echo "- **Data flow analysis**: Tracks how data flows through the program" >> $GITHUB_STEP_SUMMARY
+          echo "- **Taint tracking**: Identifies untrusted input reaching sensitive sinks" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security queries**: Detects common vulnerability patterns" >> $GITHUB_STEP_SUMMARY
+          echo "- **Code quality**: Identifies potential bugs and anti-patterns" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Vulnerability Categories" >> $GITHUB_STEP_SUMMARY
+          echo "- SQL injection" >> $GITHUB_STEP_SUMMARY
+          echo "- Command injection" >> $GITHUB_STEP_SUMMARY
+          echo "- Path traversal" >> $GITHUB_STEP_SUMMARY
+          echo "- Cross-site scripting (XSS)" >> $GITHUB_STEP_SUMMARY
+          echo "- Insecure deserialization" >> $GITHUB_STEP_SUMMARY
+          echo "- Hardcoded credentials" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the **Security** tab for detailed findings." >> $GITHUB_STEP_SUMMARY

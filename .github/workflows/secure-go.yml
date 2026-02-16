@@ -1,3 +1,8 @@
+# =============================================================================
+# NFTBan - Secure Go
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+
 name: Secure Go
 
 on:
@@ -115,7 +120,7 @@ jobs:
           PY
 
       - name: Upload gosec SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
           category: gosec
@@ -193,10 +198,28 @@ jobs:
           PY
 
       - name: Upload govulncheck SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
+
+      # ---- Trivy: filesystem vulnerability scanning ----
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy.sarif'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
 
       # ---- Generate security summary ----
       - name: Generate security summary
@@ -208,6 +231,7 @@ jobs:
           echo "- ✅ **staticcheck**: Go code quality and bug detection" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **gosec**: Security vulnerability scanner" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **govulncheck**: Go vulnerability database scanner" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **trivy**: Filesystem vulnerability scanner (HIGH/CRITICAL)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Results" >> $GITHUB_STEP_SUMMARY
           echo "Check the Security → Code scanning alerts tab for detailed findings." >> $GITHUB_STEP_SUMMARY
@@ -218,3 +242,4 @@ jobs:
           echo "- Insecure coding patterns (gosec)" >> $GITHUB_STEP_SUMMARY
           echo "- Code quality issues (staticcheck)" >> $GITHUB_STEP_SUMMARY
           echo "- Race conditions (go test -race)" >> $GITHUB_STEP_SUMMARY
+          echo "- Filesystem vulnerabilities (trivy)" >> $GITHUB_STEP_SUMMARY
