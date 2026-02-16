@@ -1,0 +1,95 @@
+# =============================================================================
+# NFTBan - Fuzz Testing Workflow
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Run fuzz tests to catch parsing regressions and edge cases
+#
+# Runs on:
+#   - Push to main branch
+#   - Weekly schedule (Sunday at 3:00 AM UTC)
+#   - Manual workflow dispatch
+#
+# Tests security-critical parsing functions:
+#   - FuzzParseLogLine: Login detection across SSH, Mail, FTP, Panel logs
+#   - FuzzParseFeedLine: IP/CIDR feed line parsing
+#   - FuzzValidateAndNormalizeIP: IP validation and normalization
+# =============================================================================
+
+name: Fuzz Tests
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Run weekly on Sunday at 3:00 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # FUZZ TESTING
+  # ===========================================================================
+  fuzz:
+    name: Fuzz Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-fuzz-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-fuzz-
+            ${{ runner.os }}-go-
+
+      - name: Cache fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build/fuzz
+          key: ${{ runner.os }}-fuzz-corpus-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-corpus-
+
+      - name: Run FuzzParseLogLine
+        run: |
+          echo "=== Fuzzing FuzzParseLogLine (30s) ==="
+          echo "Tests login detection across SSH, Mail, FTP, and Panel log formats"
+          go test -fuzz=FuzzParseLogLine -fuzztime=30s ./pkg/parser/
+
+      - name: Run FuzzParseFeedLine
+        run: |
+          echo "=== Fuzzing FuzzParseFeedLine (30s) ==="
+          echo "Tests IP/CIDR feed line parsing with comments and whitespace"
+          go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./pkg/parser/
+
+      - name: Run FuzzValidateAndNormalizeIP
+        run: |
+          echo "=== Fuzzing FuzzValidateAndNormalizeIP (30s) ==="
+          echo "Tests IP validation and normalization functions"
+          go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./pkg/parser/
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Fuzz Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Fuzz Target | Duration |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| FuzzParseLogLine | 30s |" >> $GITHUB_STEP_SUMMARY
+          echo "| FuzzParseFeedLine | 30s |" >> $GITHUB_STEP_SUMMARY
+          echo "| FuzzValidateAndNormalizeIP | 30s |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Total fuzz time: ~90 seconds" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,81 @@
+# =============================================================================
+# NFTBan - Semgrep Security Scanning
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Static analysis security scanning using Semgrep
+#
+# Runs on:
+#   - Push to main branch
+#   - Pull requests to main branch
+#   - Weekly on Sunday at 4:00 AM UTC
+#
+# Outputs:
+#   - SARIF report uploaded to GitHub Security tab
+#   - Security findings for Go code patterns
+#
+# Note: Uses --config auto for community-maintained security rules
+# covering OWASP Top 10, CWE patterns, and Go-specific vulnerabilities.
+# =============================================================================
+
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 0'  # Weekly: Sunday 4:00 AM UTC
+
+permissions:
+  security-events: write
+  contents: read
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep Scan
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Semgrep Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Semgrep has scanned the codebase for security vulnerabilities:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rules Applied" >> $GITHUB_STEP_SUMMARY
+          echo "- **OWASP Top 10**: Common web application security risks" >> $GITHUB_STEP_SUMMARY
+          echo "- **CWE Patterns**: Common Weakness Enumeration patterns" >> $GITHUB_STEP_SUMMARY
+          echo "- **Go Security**: Language-specific vulnerability patterns" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Vulnerability Categories" >> $GITHUB_STEP_SUMMARY
+          echo "- Command injection" >> $GITHUB_STEP_SUMMARY
+          echo "- SQL injection" >> $GITHUB_STEP_SUMMARY
+          echo "- Path traversal" >> $GITHUB_STEP_SUMMARY
+          echo "- Insecure deserialization" >> $GITHUB_STEP_SUMMARY
+          echo "- Hardcoded secrets" >> $GITHUB_STEP_SUMMARY
+          echo "- Insecure cryptography" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the **Security** tab for detailed findings." >> $GITHUB_STEP_SUMMARY

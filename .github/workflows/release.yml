@@ -12,7 +12,8 @@
 #   4. Generates SHA256SUMS for all artifacts
 #   5. Creates distro-specific package names (nftban-el9-x86_64.rpm, etc.)
 #   6. Creates MANIFEST.txt (file inventory)
-#   7. Uploads everything to GitHub Release
+#   7. Generates SBOM (sbom.spdx.json) for supply-chain compliance
+#   8. Uploads everything to GitHub Release
 # =============================================================================
 
 name: Release Packages
@@ -21,6 +22,10 @@ on:
   push:
     tags:
       - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write  # Required to create/edit GitHub Releases
@@ -270,6 +275,7 @@ jobs:
             "SHA256SUMS"
             "MANIFEST.txt"
             "VERIFY.txt"
+            "sbom.spdx.json"
           )
 
           # Get current release assets
@@ -398,6 +404,15 @@ jobs:
           # Remove leading spaces from heredoc
           sed -i 's/^          //' VERIFY.txt
 
+      - name: Generate SBOM (Software Bill of Materials)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/packages/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
       - name: Extract release notes
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
@@ -448,6 +463,7 @@ jobs:
             dist/packages/SHA256SUMS
             dist/packages/MANIFEST.txt
             dist/packages/VERIFY.txt
+            dist/packages/sbom.spdx.json
           body_path: dist/packages/RELEASE_NOTES.md
           draft: false
           prerelease: false

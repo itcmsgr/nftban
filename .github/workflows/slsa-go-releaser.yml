@@ -38,6 +38,10 @@ on:
         required: true
         default: 'v1.0.0'
 
+concurrency:
+  group: slsa-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write      # To upload release assets
   id-token: write      # For SLSA provenance signing

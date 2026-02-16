@@ -1,3 +1,8 @@
+# =============================================================================
+# NFTBan - Secret Scanning (Gitleaks)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+
 name: Secret Scanning (Gitleaks)
 
 on:
@@ -29,6 +34,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
+        with:
+          args: --report-format sarif --report-path gitleaks.sarif
+
+      - name: Upload Gitleaks SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
 
       - name: Generate summary
         if: always()
