@@ -80,7 +80,7 @@ jobs:
       id-token: write
       contents: write
       actions: read
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
       go-version: "1.23"
       # Config file specifies build parameters
@@ -97,7 +97,7 @@ jobs:
       id-token: write
       contents: write
       actions: read
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
       go-version: "1.23"
       config-file: .github/slsa/nftban-ui.yml
@@ -116,25 +116,25 @@ jobs:
 
     steps:
       - name: Download nftban-core artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build-nftban-core.outputs.go-binary-name }}
           path: dist/
 
       - name: Download nftban-core provenance
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build-nftban-core.outputs.go-provenance-name }}
           path: dist/
 
       - name: Download nftban-ui artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build-nftban-ui.outputs.go-binary-name }}
           path: dist/
 
       - name: Download nftban-ui provenance
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build-nftban-ui.outputs.go-provenance-name }}
           path: dist/
@@ -147,7 +147,7 @@ jobs:
       # provides cryptographic verification for these binaries.
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           tag_name: ${{ needs.get-tag.outputs.tag }}
           # Use single pattern to avoid duplicates (nftban-* matches .intoto.jsonl too)
