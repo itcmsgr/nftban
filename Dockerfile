@@ -13,7 +13,8 @@
 # =============================================================================
 
 # Stage 1: Build Go binaries
-FROM golang:1.23-alpine AS builder
+# Pinned to SHA for OpenSSF Scorecard compliance
+FROM golang:1.23-alpine@sha256:a7ecaac5efda22510d8c903bdc6b19026543f1eac3317d47363680df22161bd8 AS builder
 
 RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev
 
@@ -23,8 +24,8 @@ RUN go mod download
 
 COPY . .
 
-# Install templ for HTML template generation
-RUN go install github.com/a-h/templ/cmd/templ@latest
+# Install templ for HTML template generation (pinned version)
+RUN go install github.com/a-h/templ/cmd/templ@v0.3.977
 RUN templ generate
 
 # Build all binaries
@@ -33,7 +34,8 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o /out/nftband ./cmd/nftband
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/nftban-ui ./cmd/nftban-ui
 
 # Stage 2: Minimal runtime image
-FROM alpine:3.20
+# Pinned to SHA for OpenSSF Scorecard compliance
+FROM alpine:3.20@sha256:b0cb30c51c47cdfde647364301758b14c335dea2fddc9490d4f007d67ecb2538
 
 RUN apk add --no-cache \
     bash \

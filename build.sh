@@ -173,7 +173,7 @@ generate_templ() {
     # Check if templ is installed
     if ! command -v templ &>/dev/null; then
         log "Installing templ..."
-        go install github.com/a-h/templ/cmd/templ@latest || {
+        go install github.com/a-h/templ/cmd/templ@v0.3.977 || {
             error "Failed to install templ"
             return 1
         }

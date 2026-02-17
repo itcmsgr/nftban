@@ -47,10 +47,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck shfmt yamllint jq devscripts nftables libpam0g-dev
-          npm i -g markdownlint-cli2
+          npm i -g markdownlint-cli2@0.17.2
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Generate templ files
         run: $(go env GOPATH)/bin/templ generate
@@ -60,7 +60,7 @@ jobs:
 
       - name: Validate workflows with actionlint
         run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           $(go env GOPATH)/bin/actionlint -shellcheck=""
 
       - name: Upload STATUS.md as artifact
