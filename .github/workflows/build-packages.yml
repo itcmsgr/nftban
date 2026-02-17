@@ -21,6 +21,8 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: read-all
+
 jobs:
   # ==========================================================================
   # BUILD GO BINARIES

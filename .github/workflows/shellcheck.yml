@@ -21,6 +21,8 @@ concurrency:
   group: shellcheck-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: read-all
+
 jobs:
   shellcheck:
     name: ShellCheck - Find bash errors
