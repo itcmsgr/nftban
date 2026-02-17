@@ -140,8 +140,16 @@ func (d *FTPDetector) detectVsftpd(line []byte) (Verdict, bool) {
 
 	// Extract IP between quotes
 	ipStart := clientIdx + len(d.markerClient)
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.Index(line[ipStart:], d.markerQuote)
-	if ipEnd == -1 {
+	if ipEnd == -1 || ipEnd <= 0 {
+		return Verdict{}, false
+	}
+	// Bounds check: ensure we have valid slice
+	if ipStart+ipEnd > len(line) {
 		return Verdict{}, false
 	}
 
@@ -174,9 +182,17 @@ func (d *FTPDetector) detectProFTPD(line, lineLower []byte) (Verdict, bool) {
 	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
+		// Bounds check: ensure ipStart is within line
+		if ipStart >= len(line) {
+			return Verdict{}, false
+		}
 		ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t[]")
 		if ipEnd == -1 {
 			ipEnd = len(line) - ipStart
+		}
+		// Bounds check: ensure we have valid slice
+		if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+			return Verdict{}, false
 		}
 
 		ipBytes := line[ipStart : ipStart+ipEnd]

@@ -22,10 +22,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  security-events: write
-  id-token: write
-  contents: read
+permissions: read-all
 
 concurrency:
   group: scorecard-${{ github.ref }}
@@ -35,6 +32,11 @@ jobs:
   scorecard:
     name: OpenSSF Scorecard Analysis
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
 
     steps:
       - name: Checkout
