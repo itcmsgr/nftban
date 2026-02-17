@@ -226,6 +226,8 @@ nftban_metrics_disable() {
     # User overrides go to .conf.local — package defaults (.conf) are never modified
     local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
     touch "$local_conf"
+    chown root:nftban "$local_conf" 2>/dev/null || true
+    chmod 640 "$local_conf"
     if grep -q "^NFTBAN_METRICS_ENABLED=" "$local_conf"; then
         sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="false"/' "$local_conf" 2>/dev/null || true
     else
