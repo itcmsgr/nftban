@@ -66,7 +66,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Generate templ files
         run: $(go env GOPATH)/bin/templ generate
@@ -84,14 +84,14 @@ jobs:
 
       # ---- Staticcheck: Go code quality ----
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.5.1
 
       - name: Run staticcheck
         run: $(go env GOPATH)/bin/staticcheck ./...
 
       # ---- Gosec: security lint with SARIF upload ----
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
 
       - name: Run gosec (SARIF)
         run: $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./... || true
@@ -127,7 +127,7 @@ jobs:
 
       # ---- govulncheck: vulnerability intelligence with SARIF ----
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run govulncheck (JSON)
         run: $(go env GOPATH)/bin/govulncheck -json ./... > govulncheck.json || true

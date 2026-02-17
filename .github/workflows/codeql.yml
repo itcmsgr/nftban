@@ -63,7 +63,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
 
       - name: Generate templ files
         run: $(go env GOPATH)/bin/templ generate
