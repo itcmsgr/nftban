@@ -1,0 +1,39 @@
+# =============================================================================
+# NFTBan Docker Build Ignore
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+dist/
+*.tar.gz
+*.deb
+*.rpm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+coverage.out
+*.test
+testdata/
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# CI/CD (not needed in image)
+.github/
+
+# Development files
+.pre-commit-config.yaml
+.editorconfig
+Makefile
