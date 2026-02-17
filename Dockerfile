@@ -16,6 +16,7 @@
 # Pinned to SHA for OpenSSF Scorecard compliance
 FROM golang:1.23-alpine@sha256:a7ecaac5efda22510d8c903bdc6b19026543f1eac3317d47363680df22161bd8 AS builder
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev
 
 WORKDIR /src
@@ -24,31 +25,30 @@ RUN go mod download
 
 COPY . .
 
-# Install templ for HTML template generation (pinned version)
-RUN go install github.com/a-h/templ/cmd/templ@v0.3.977
-RUN templ generate
-
-# Build all binaries
-RUN CGO_ENABLED=1 GOOS=linux go build -o /out/nftban-core ./cmd/nftban-core
-RUN CGO_ENABLED=1 GOOS=linux go build -o /out/nftband ./cmd/nftband
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/nftban-ui ./cmd/nftban-ui
+# Install templ and generate files, then build all binaries
+RUN go install github.com/a-h/templ/cmd/templ@v0.3.977 && \
+    templ generate && \
+    mkdir -p /out && \
+    CGO_ENABLED=1 GOOS=linux go build -o /out/nftban-core ./cmd/nftban-core && \
+    CGO_ENABLED=1 GOOS=linux go build -o /out/nftband ./cmd/nftband && \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/nftban-ui ./cmd/nftban-ui
 
 # Stage 2: Minimal runtime image
 # Pinned to SHA for OpenSSF Scorecard compliance
 FROM alpine:3.20@sha256:b0cb30c51c47cdfde647364301758b14c335dea2fddc9490d4f007d67ecb2538
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache \
     bash \
     nftables \
     jq \
     curl \
     ca-certificates \
-    linux-pam
-
-# Create nftban user and directories
-RUN addgroup -S nftban && adduser -S -G nftban nftban
-RUN mkdir -p /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban
-RUN chown -R nftban:nftban /var/lib/nftban /var/log/nftban /run/nftban
+    linux-pam && \
+    addgroup -S nftban && \
+    adduser -S -G nftban nftban && \
+    mkdir -p /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban && \
+    chown -R nftban:nftban /var/lib/nftban /var/log/nftban /run/nftban
 
 # Copy binaries from builder
 COPY --from=builder /out/nftban-core /usr/bin/
@@ -59,10 +59,8 @@ COPY --from=builder /out/nftban-ui /usr/bin/
 COPY cli/sbin/nftban /usr/sbin/nftban
 COPY cli/lib/nftban /usr/lib/nftban
 
-# Copy default configuration
+# Copy default configuration and set permissions
 COPY cli/lib/nftban/setup/*.conf /etc/nftban/
-
-# Set permissions
 RUN chmod +x /usr/sbin/nftban /usr/bin/nftban-*
 
 # Version label
