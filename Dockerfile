@@ -15,7 +15,7 @@
 # Stage 1: Build Go binaries
 FROM golang:1.23-alpine AS builder
 
-RUN apk add --no-cache git make bash pam-dev gcc musl-dev
+RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev
 
 WORKDIR /src
 COPY go.mod go.sum ./
