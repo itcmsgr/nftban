@@ -149,6 +149,8 @@ cmd_suricata_install() {
     # Package defaults in nftban.conf are never modified by user operations
     local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
     touch "$local_conf"
+    chown root:nftban "$local_conf" 2>/dev/null || true
+    chmod 640 "$local_conf"
 
     if grep -q "^ENABLE_IDS_INTEGRATION=" "$local_conf"; then
         sed -i 's/^ENABLE_IDS_INTEGRATION=.*/ENABLE_IDS_INTEGRATION=1/' "$local_conf"

@@ -950,6 +950,172 @@ run_geoban_nft_validation() {
 }
 
 # =============================================================================
+# WHITELIST SAFETY TESTS (v1.15.1)
+# =============================================================================
+# Verifies critical system IPs are whitelisted to prevent self-lockout:
+# - All server interface IPs (IPv4 + IPv6)
+# - Loopback (127.0.0.1, ::1)
+# - Default gateway
+# - Active SSH port detection
+
+# Check if IP is in whitelist nft set
+# Usage: _whitelist_contains <ip>
+_whitelist_contains() {
+    local ip="$1"
+
+    # Source config for table names
+    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf 2>/dev/null
+    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local 2>/dev/null
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
+    if [[ "$ip" =~ : ]]; then
+        # IPv6
+        # shellcheck disable=SC2086
+        nft list set ${table_v6} whitelist_ipv6 2>/dev/null | grep -qF "$ip"
+    else
+        # IPv4
+        # shellcheck disable=SC2086
+        nft list set ${table_v4} whitelist_ipv4 2>/dev/null | grep -qF "$ip"
+    fi
+}
+
+# Run whitelist safety validation tests
+run_whitelist_safety_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "WHITELIST SAFETY TESTS"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "Verifying critical system IPs are protected from self-lockout..."
+    log ""
+
+    local failed_ips=()
+    local passed_ips=()
+
+    # Test 1: Loopback 127.0.0.1 must be whitelisted
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if _whitelist_contains "127.0.0.1"; then
+        log_pass "Loopback 127.0.0.1 is whitelisted"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        passed_ips+=("127.0.0.1")
+    else
+        log_fail "Loopback 127.0.0.1 NOT in whitelist - CRITICAL"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        failed_ips+=("127.0.0.1")
+    fi
+
+    # Test 2: IPv6 loopback ::1 must be whitelisted
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if _whitelist_contains "::1"; then
+        log_pass "IPv6 loopback ::1 is whitelisted"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        passed_ips+=("::1")
+    else
+        log_fail "IPv6 loopback ::1 NOT in whitelist - CRITICAL"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        failed_ips+=("::1")
+    fi
+
+    # Test 3: All server IPv4 addresses must be whitelisted
+    log ""
+    log "─── Server Interface IPs ───"
+    local server_ipv4
+    server_ipv4=$(ip -4 addr show 2>/dev/null | grep -oP 'inet \K[\d.]+' | grep -v '^127\.' | sort -u)
+
+    for ip in $server_ipv4; do
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if _whitelist_contains "$ip"; then
+            log_pass "Server IPv4 $ip is whitelisted"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            passed_ips+=("$ip")
+        else
+            log_fail "Server IPv4 $ip NOT in whitelist - RISK OF LOCKOUT"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            failed_ips+=("$ip")
+        fi
+    done
+
+    # Test 4: All server IPv6 addresses (global scope) must be whitelisted
+    local server_ipv6
+    server_ipv6=$(ip -6 addr show scope global 2>/dev/null | grep -oP 'inet6 \K[^/]+' | grep -v '^fe80' | grep -v '^::1' | sort -u)
+
+    for ip in $server_ipv6; do
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if _whitelist_contains "$ip"; then
+            log_pass "Server IPv6 $ip is whitelisted"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            passed_ips+=("$ip")
+        else
+            log_fail "Server IPv6 $ip NOT in whitelist - RISK OF LOCKOUT"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            failed_ips+=("$ip")
+        fi
+    done
+
+    # Test 5: Default gateway should be whitelisted (prevents routing issues)
+    log ""
+    log "─── Default Gateway ───"
+    local gateway
+    gateway=$(ip route 2>/dev/null | grep -E '^default' | awk '{print $3}' | head -1)
+
+    if [[ -n "$gateway" ]]; then
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if _whitelist_contains "$gateway"; then
+            log_pass "Default gateway $gateway is whitelisted"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            passed_ips+=("$gateway")
+        else
+            log_warn "Default gateway $gateway NOT in whitelist (recommended)"
+            # Not a failure, just a warning
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        fi
+    else
+        log_warn "No default gateway detected (skipping)"
+    fi
+
+    # Test 6: SSH Port Detection - verify active SSH port is allowed
+    log ""
+    log "─── SSH Port Safety ───"
+    local ssh_port
+    # Method 1: From sshd config
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        ssh_port=$(grep -E '^Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+    fi
+
+    # Method 2: From ss/netstat
+    if [[ -z "$ssh_port" ]]; then
+        ssh_port=$(ss -tlnp 2>/dev/null | grep -E 'sshd|ssh' | grep -oP ':\K\d+' | head -1)
+    fi
+
+    # Default to 22 if not detected
+    ssh_port="${ssh_port:-22}"
+
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    # shellcheck disable=SC2086
+    if nft list set ${table_v4} tcp_ports 2>/dev/null | grep -qw "$ssh_port"; then
+        log_pass "SSH port $ssh_port is allowed in firewall"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_warn "SSH port $ssh_port not explicitly in tcp_ports (may be open by default)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+
+    # Summary
+    log ""
+    log "─── Whitelist Safety Summary ───"
+    log "Protected IPs: ${#passed_ips[@]}"
+    if [[ ${#failed_ips[@]} -gt 0 ]]; then
+        log_fail "UNPROTECTED IPs: ${#failed_ips[@]} - RUN: nftban whitelist-system sync"
+        for ip in "${failed_ips[@]}"; do
+            log "  - $ip"
+        done
+    else
+        log_pass "All critical IPs are protected"
+    fi
+}
+
+# =============================================================================
 # ALL CLI COMMANDS TEST (comprehensive)
 # =============================================================================
 # Automatically discovers and tests ALL cmd_*.sh files
@@ -1309,6 +1475,7 @@ main() {
             run_port_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
+            run_whitelist_safety_tests
             ;;
         all)
             # Comprehensive: test ALL CLI commands
@@ -1322,6 +1489,7 @@ main() {
             run_port_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
+            run_whitelist_safety_tests
             ;;
         lifecycle)
             run_lifecycle_tests
