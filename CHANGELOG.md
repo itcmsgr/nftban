@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-02-17
+
+### Added
+- Whitelist Safety Tests for smoke test suite (prevents self-lockout)
+- Docker packaging with OpenSSF Scorecard compliance
+- Distro configs for CentOS, CentOS 9, CentOS Stream 9, Fedora, Fedora 43
+
+### Fixed
+- Handle missing suricata user in permission scripts
+- Secure config file permissions (root:nftban 0640)
+- Docker Hadolint compliance, USER directive, Alpine package
+- Accept 'force' without dashes as alias for --force in update command
+
+### Security
+- Pin all dependencies for supply chain compliance
+- Pin all GitHub Actions to SHA hashes
+- OpenSSF Scorecard 7+ rating achieved
+
+---
+
 ## [1.15.0] - 2026-02-15
 
 ### Added
