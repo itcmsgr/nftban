@@ -1,11 +1,8 @@
-# =============================================================================
-# NFTBan - Project Health
-# =============================================================================
-# SPDX-License-Identifier: MPL-2.0
 ---
+# SPDX-License-Identifier: MPL-2.0
 name: Project Health
 
-on:
+"on":
   push:
     branches: ["**"]
   pull_request:
