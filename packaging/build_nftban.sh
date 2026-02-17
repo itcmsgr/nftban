@@ -243,7 +243,7 @@ install -m 0755 cli/sbin/nftban-service-alert %{buildroot}/usr/lib/nftban/sbin/
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
 
 # Main configuration file
-install -D -m 0644 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.conf
+install -D -m 0640 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.conf
 
 # Libraries
 mkdir -p %{buildroot}/usr/lib/nftban/lib
@@ -1458,6 +1458,9 @@ mkdir -p /usr/share/nftban/templates/{mail,reports}
 # STEP 4: Set permissions
 chown root:nftban /etc/nftban
 chmod 750 /etc/nftban
+# Fix nftban.conf permissions (root:nftban 0640)
+chown root:nftban /etc/nftban/nftban.conf 2>/dev/null || true
+chmod 0640 /etc/nftban/nftban.conf 2>/dev/null || true
 # CRITICAL: Fix conf.d permissions - services run as nftban user need group read access
 chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
 find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
@@ -1627,7 +1630,7 @@ build_deb() {
 
     # Copy main configuration file
     mkdir -p "${deb_root}/etc/nftban"
-    install -m 0644 "${PROJECT_ROOT}/install/config/nftban.conf" "${deb_root}/etc/nftban/nftban.conf"
+    install -m 0640 "${PROJECT_ROOT}/install/config/nftban.conf" "${deb_root}/etc/nftban/nftban.conf"
 
     # Copy nftables config (to nftban dir to avoid conflict with system nftables package)
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"

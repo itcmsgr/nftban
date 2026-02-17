@@ -302,10 +302,16 @@ perms_enforce_log_files() {
                 perms_run usermod -aG nftban suricata
             fi
             # Directory: suricata:nftban 770 (suricata writes, nftban reads)
-            perms_run chown suricata:nftban "$PERMS_LOG/suricata"
+            # Only chown to suricata if user exists, otherwise use root
+            if id suricata &>/dev/null; then
+                perms_run chown suricata:nftban "$PERMS_LOG/suricata"
+                perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
+            else
+                perms_run chown root:nftban "$PERMS_LOG/suricata"
+                perms_run find "$PERMS_LOG/suricata" -type f -exec chown root:nftban {} \;
+            fi
             perms_run chmod 0770 "$PERMS_LOG/suricata"
-            # Files: suricata:nftban 640
-            perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
+            # Files: 640
             perms_run find "$PERMS_LOG/suricata" -type f -exec chmod 0640 {} \;
         fi
     fi
