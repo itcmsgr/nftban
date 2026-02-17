@@ -124,15 +124,16 @@ validate_structure() {
     # Single jq call checks all required tables at once, outputs missing ones
     # ==========================================================================
     local missing_tables
-    missing_tables=$(jq -r '
+    missing_tables=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
         # First arg ($spec) provides required tables, second ($ruleset) provides live state
-        .spec.expected_structure.validation_checks.required_tables // [] |
+        $spec.expected_structure.validation_checks.required_tables // [] |
         . as $required |
         # Build set of existing tables as "family name" strings
-        (.ruleset.nftables // [] | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
+        # Handle both formats: {"nftables": [...]} or direct array [...]
+        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
         # Output only tables that are required but not existing
         $required[] | select(. as $r | $existing | index($r) | not)
-    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
+    ' <<< 'null')
 
     while IFS= read -r table; do
         [[ -z "$table" ]] && continue
@@ -145,9 +146,10 @@ validate_structure() {
     # ==========================================================================
     local nftban_priority=-100
     local chain_issues
-    chain_issues=$(jq -r --argjson nftban_prio "$nftban_priority" '
+    chain_issues=$(jq -r --argjson nftban_prio "$nftban_priority" --argjson ruleset "$ruleset" '
         # Find all base chains on input/forward hooks (excluding nftban table)
-        (.nftables // []) |
+        # Handle both formats: {"nftables": [...]} or direct array [...]
+        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end) |
         map(select(.chain? and .chain.table != "nftban" and
                    (.chain.hook == "input" or .chain.hook == "forward"))) |
         # Output as tab-separated: family, table, name, hook, prio, severity
@@ -160,7 +162,7 @@ validate_structure() {
             (if (.chain.prio // 0) <= $nftban_prio then "critical" else "warning" end)
         ] | join("\t")) |
         .[]
-    ' <<< "$ruleset")
+    ' <<< 'null')
 
     # Process chain issues (no jq in loop - uses tab-separated values)
     while IFS=$'\t' read -r family table name hook prio severity; do
@@ -177,14 +179,15 @@ validate_structure() {
     # Single jq call checks all required sets at once, outputs missing ones
     # ==========================================================================
     local missing_sets
-    missing_sets=$(jq -r '
-        .spec.expected_structure.validation_checks.required_sets // [] |
+    missing_sets=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
+        $spec.expected_structure.validation_checks.required_sets // [] |
         . as $required |
         # Build set of existing sets as "family table name" strings
-        (.ruleset.nftables // [] | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
+        # Handle both formats: {"nftables": [...]} or direct array [...]
+        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
         # Output only sets that are required but not existing
         $required[] | select(. as $r | $existing | index($r) | not)
-    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
+    ' <<< 'null')
 
     while IFS= read -r set_path; do
         [[ -z "$set_path" ]] && continue
@@ -196,22 +199,23 @@ validate_structure() {
     # Single jq call checks all policy requirements, outputs mismatches as TSV
     # ==========================================================================
     local policy_issues
-    policy_issues=$(jq -r '
+    policy_issues=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
         # Build lookup of actual chain policies: key="family table chain", value=policy
-        (.ruleset.nftables // [] |
+        # Handle both formats: {"nftables": [...]} or direct array [...]
+        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end |
             map(select(.chain? and .chain.policy?) |
                 {key: "\(.chain.family) \(.chain.table) \(.chain.name)", value: .chain.policy}) |
             from_entries
         ) as $actual_policies |
         # Check each expected policy, output mismatches as tab-separated
-        (.spec.expected_structure.validation_checks.policy_checks // {}) |
+        ($spec.expected_structure.validation_checks.policy_checks // {}) |
         to_entries |
         map(
             select($actual_policies[.key] != null and $actual_policies[.key] != .value) |
             [.key, .value, $actual_policies[.key]] | join("\t")
         ) |
         .[]
-    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
+    ' <<< 'null')
 
     while IFS=$'\t' read -r chain_path expected_policy actual_policy; do
         [[ -z "$chain_path" ]] && continue
