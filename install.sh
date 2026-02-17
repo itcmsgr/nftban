@@ -56,7 +56,7 @@ error() { echo -e "${RED}[ ERROR ]${NC} $*" >&2; }
 info()  { echo -e "${CYAN}[  INFO ]${NC} $*"; }
 
 # Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || SCRIPT_DIR="$(pwd)"
 cd "$SCRIPT_DIR"
 
 # Configuration (exported for submodules)
