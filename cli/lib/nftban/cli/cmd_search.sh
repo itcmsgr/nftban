@@ -195,7 +195,7 @@ _search_nftables() {
         trap - ERR
         set +e
         # Add timeout to prevent hanging on large sets
-        timeout 2 nft get element "${table_family}" nftban "$set" { "$ip" } &>/dev/null
+        timeout 2 nft get element "${table_family}" nftban "$set" "{ $ip }" &>/dev/null
         local result=$?
         set -e
         eval "$old_trap"
