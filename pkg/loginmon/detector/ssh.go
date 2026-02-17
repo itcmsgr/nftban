@@ -120,6 +120,10 @@ func (d *SSHDetector) detectFailedPassword(line []byte) (Verdict, bool) {
 
 	// Extract IP: starts after "from ", ends at " port" or end
 	ipStart := fromIdx + len(d.markerFrom)
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.Index(line[ipStart:], d.markerPort)
 	if ipEnd == -1 {
 		// No " port" found, try to find end of IP by space or newline
@@ -127,6 +131,10 @@ func (d *SSHDetector) detectFailedPassword(line []byte) (Verdict, bool) {
 		if ipEnd == -1 {
 			ipEnd = len(line) - ipStart
 		}
+	}
+	// Bounds check: ensure we have valid slice
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
 	}
 
 	// Parse IP address (only allocation point)
@@ -174,9 +182,17 @@ func (d *SSHDetector) detectInvalidUser(line []byte) (Verdict, bool) {
 
 	// Extract IP
 	ipStart := fromIdx + len(d.markerFrom)
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t")
 	if ipEnd == -1 {
 		ipEnd = len(line) - ipStart
+	}
+	// Bounds check: ensure we have valid slice
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
 	}
 
 	ipBytes := line[ipStart : ipStart+ipEnd]
@@ -222,12 +238,14 @@ func (d *SSHDetector) detectPreauth(line []byte) (Verdict, bool) {
 	segment := line[ipStart:]
 
 	// Skip "authenticating user <user> " if present
-	if bytes.HasPrefix(segment, []byte("authenticating user ")) {
+	if len(segment) > 20 && bytes.HasPrefix(segment, []byte("authenticating user ")) {
 		// Find the IP after "authenticating user <user> "
 		space1 := bytes.IndexByte(segment[20:], ' ')
 		if space1 != -1 {
 			ipStart = ipStart + 20 + space1 + 1
-			segment = line[ipStart:]
+			if ipStart < len(line) {
+				segment = line[ipStart:]
+			}
 		}
 	}
 
@@ -261,9 +279,17 @@ func (d *SSHDetector) detectTooMany(line []byte) (Verdict, bool) {
 
 	// Extract IP
 	ipStart := fromIdx + len(d.markerFrom)
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t")
 	if ipEnd == -1 {
 		ipEnd = len(line) - ipStart
+	}
+	// Bounds check: ensure we have valid slice
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
 	}
 
 	ipBytes := line[ipStart : ipStart+ipEnd]

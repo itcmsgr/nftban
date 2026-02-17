@@ -113,9 +113,17 @@ func (d *MailDetector) detectDovecot(line []byte) (Verdict, bool) {
 
 	// Extract IP after "rip="
 	ipStart := ripIdx + len(d.markerRip)
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.IndexAny(line[ipStart:], ", \n\r\t")
 	if ipEnd == -1 {
 		ipEnd = len(line) - ipStart
+	}
+	// Bounds check: ensure we have valid slice
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
 	}
 
 	ipBytes := line[ipStart : ipStart+ipEnd]
