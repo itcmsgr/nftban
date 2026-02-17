@@ -39,12 +39,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
           go-version: '1.23'
 
@@ -58,7 +58,7 @@ jobs:
           ls -la bin/
 
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: go-binaries
           path: bin/
@@ -84,10 +84,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: go-binaries
           path: bin/
@@ -120,7 +120,7 @@ jobs:
           ls -la dist/packages/
 
       - name: Upload RPM packages (${{ matrix.distro }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rpm-${{ matrix.distro }}
           path: dist/packages/*.rpm
@@ -152,10 +152,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: go-binaries
           path: bin/
@@ -192,7 +192,7 @@ jobs:
           ls -la dist/packages/
 
       - name: Upload DEB packages (${{ matrix.distro }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: deb-${{ matrix.distro }}
           path: dist/packages/*.deb
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Validate VERSION file matches git tag
         run: |
@@ -220,7 +220,7 @@ jobs:
           echo "VERSION file ($FILE_VERSION) matches git tag (v$TAG_VERSION)"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: all-packages/
           # Continue even if some artifacts are missing (build failures)
@@ -405,7 +405,7 @@ jobs:
           sed -i 's/^          //' VERIFY.txt
 
       - name: Generate SBOM (Software Bill of Materials)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a # v0.9.0
         with:
           path: .
           format: spdx-json
@@ -453,7 +453,7 @@ jobs:
 
       - name: Upload to GitHub Release
         # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |
             dist/packages/*.rpm
