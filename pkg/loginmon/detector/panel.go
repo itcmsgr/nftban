@@ -119,9 +119,17 @@ func (d *PanelDetector) detectDirectAdmin(line []byte) (Verdict, bool) {
 
 	// Extract IP after "IP="
 	ipStart := ipIdx + 3 // len("IP=")
+	// Bounds check: ensure ipStart is within line
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
 	ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t,;")
 	if ipEnd == -1 {
 		ipEnd = len(line) - ipStart
+	}
+	// Bounds check: ensure we have valid slice
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
 	}
 
 	ipBytes := line[ipStart : ipStart+ipEnd]
@@ -153,9 +161,17 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 	ipIdx := bytes.Index(lineLower, d.markerIpLower)
 	if ipIdx != -1 {
 		ipStart := ipIdx + 3
+		// Bounds check: ensure ipStart is within line
+		if ipStart >= len(line) {
+			return Verdict{}, false
+		}
 		ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t,;\"'")
 		if ipEnd == -1 {
 			ipEnd = len(line) - ipStart
+		}
+		// Bounds check: ensure we have valid slice
+		if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+			return Verdict{}, false
 		}
 
 		ipBytes := line[ipStart : ipStart+ipEnd]
@@ -173,9 +189,17 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
+		// Bounds check: ensure ipStart is within line
+		if ipStart >= len(line) {
+			return Verdict{}, false
+		}
 		ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t,;\"'[]")
 		if ipEnd == -1 {
 			ipEnd = len(line) - ipStart
+		}
+		// Bounds check: ensure we have valid slice
+		if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+			return Verdict{}, false
 		}
 
 		ipBytes := line[ipStart : ipStart+ipEnd]
@@ -207,9 +231,17 @@ func (d *PanelDetector) detectPlesk(line, lineLower []byte) (Verdict, bool) {
 	fromIdx := bytes.LastIndex(lineLower, d.markerFrom)
 	if fromIdx != -1 {
 		ipStart := fromIdx + len(d.markerFrom)
+		// Bounds check: ensure ipStart is within line
+		if ipStart >= len(line) {
+			return Verdict{}, false
+		}
 		ipEnd := bytes.IndexAny(line[ipStart:], " \n\r\t,;\"'[]")
 		if ipEnd == -1 {
 			ipEnd = len(line) - ipStart
+		}
+		// Bounds check: ensure we have valid slice
+		if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+			return Verdict{}, false
 		}
 
 		ipBytes := line[ipStart : ipStart+ipEnd]
