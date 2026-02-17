@@ -56,19 +56,5 @@ jobs:
         with:
           sarif_file: scorecard.sarif
           category: scorecard
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "## OpenSSF Scorecard Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "OpenSSF Scorecard analyzes the project for security best practices:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Branch protection rules" >> $GITHUB_STEP_SUMMARY
-          echo "- Code review requirements" >> $GITHUB_STEP_SUMMARY
-          echo "- Dependency management" >> $GITHUB_STEP_SUMMARY
-          echo "- Security policy presence" >> $GITHUB_STEP_SUMMARY
-          echo "- Signed releases" >> $GITHUB_STEP_SUMMARY
-          echo "- Vulnerability disclosure process" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the Security tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+        # Note: No run: steps allowed when publish_results: true
+        # See: https://github.com/ossf/scorecard-action#workflow-restrictions
