@@ -7,6 +7,7 @@
 [![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev/)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=openssf%20scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959)
 [![Semgrep](https://img.shields.io/badge/Semgrep-enabled-blue?logo=semgrep)](https://semgrep.dev/)
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
