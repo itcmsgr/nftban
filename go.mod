@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/a-h/templ v0.3.977
 	github.com/coreos/go-systemd/v22 v22.6.0
-	github.com/golang-jwt/jwt/v5 v5.2.0
+	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/nftables v0.2.0
 	github.com/gorilla/mux v1.8.1
 	github.com/msteinert/pam/v2 v2.0.0
@@ -27,5 +27,5 @@ require (
 	github.com/prometheus/common v0.48.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
