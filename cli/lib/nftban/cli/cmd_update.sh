@@ -1279,7 +1279,7 @@ nftban_cmd_update() {
             local version_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
                     -*) shift ;;  # Skip unknown flags
                     *) version_arg="$1"; shift ;;
                 esac
@@ -1291,7 +1291,7 @@ nftban_cmd_update() {
             local branch_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
                     -*) shift ;;
                     *) branch_arg="$1"; shift ;;
                 esac
@@ -1303,7 +1303,7 @@ nftban_cmd_update() {
             local path_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
                     -*) shift ;;
                     *) path_arg="$1"; shift ;;
                 esac
