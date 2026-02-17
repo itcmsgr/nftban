@@ -340,7 +340,7 @@ jobs:
   # SUMMARY
   # ===========================================================================
   ci-summary:
-    name: CI Summary
+    name: CI
     runs-on: ubuntu-latest
     needs: [architecture-check, bash-check, go-check, build-verify, documentation-check]
     if: always()
