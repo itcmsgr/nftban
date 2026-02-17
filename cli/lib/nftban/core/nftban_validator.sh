@@ -122,18 +122,22 @@ validate_structure() {
     # ==========================================================================
     # BATCH CHECK: Required tables
     # Single jq call checks all required tables at once, outputs missing ones
+    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
+    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
     # ==========================================================================
     local missing_tables
-    missing_tables=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
-        # First arg ($spec) provides required tables, second ($ruleset) provides live state
-        $spec.expected_structure.validation_checks.required_tables // [] |
+    missing_tables=$(jq -r -n \
+        --slurpfile spec <(printf '%s' "$spec") \
+        --slurpfile ruleset <(printf '%s' "$ruleset") '
+        # First arg ($spec[0]) provides required tables, second ($ruleset[0]) provides live state
+        $spec[0].expected_structure.validation_checks.required_tables // [] |
         . as $required |
         # Build set of existing tables as "family name" strings
         # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
+        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
         # Output only tables that are required but not existing
         $required[] | select(. as $r | $existing | index($r) | not)
-    ' <<< 'null')
+    ')
 
     while IFS= read -r table; do
         [[ -z "$table" ]] && continue
@@ -143,13 +147,17 @@ validate_structure() {
     # ==========================================================================
     # BATCH CHECK: Priority safety (other firewall chains)
     # Single jq call finds all chains that might bypass NFTBan, outputs as TSV
+    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
+    # too long" errors when ruleset exceeds shell argument limits (~128KB)
     # ==========================================================================
     local nftban_priority=-100
     local chain_issues
-    chain_issues=$(jq -r --argjson nftban_prio "$nftban_priority" --argjson ruleset "$ruleset" '
+    chain_issues=$(jq -r -n \
+        --argjson nftban_prio "$nftban_priority" \
+        --slurpfile ruleset <(printf '%s' "$ruleset") '
         # Find all base chains on input/forward hooks (excluding nftban table)
         # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end) |
+        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end) |
         map(select(.chain? and .chain.table != "nftban" and
                    (.chain.hook == "input" or .chain.hook == "forward"))) |
         # Output as tab-separated: family, table, name, hook, prio, severity
@@ -162,7 +170,7 @@ validate_structure() {
             (if (.chain.prio // 0) <= $nftban_prio then "critical" else "warning" end)
         ] | join("\t")) |
         .[]
-    ' <<< 'null')
+    ')
 
     # Process chain issues (no jq in loop - uses tab-separated values)
     while IFS=$'\t' read -r family table name hook prio severity; do
@@ -177,17 +185,21 @@ validate_structure() {
     # ==========================================================================
     # BATCH CHECK: Required sets
     # Single jq call checks all required sets at once, outputs missing ones
+    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
+    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
     # ==========================================================================
     local missing_sets
-    missing_sets=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
-        $spec.expected_structure.validation_checks.required_sets // [] |
+    missing_sets=$(jq -r -n \
+        --slurpfile spec <(printf '%s' "$spec") \
+        --slurpfile ruleset <(printf '%s' "$ruleset") '
+        $spec[0].expected_structure.validation_checks.required_sets // [] |
         . as $required |
         # Build set of existing sets as "family table name" strings
         # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
+        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
         # Output only sets that are required but not existing
         $required[] | select(. as $r | $existing | index($r) | not)
-    ' <<< 'null')
+    ')
 
     while IFS= read -r set_path; do
         [[ -z "$set_path" ]] && continue
@@ -197,25 +209,29 @@ validate_structure() {
     # ==========================================================================
     # BATCH CHECK: Chain policies
     # Single jq call checks all policy requirements, outputs mismatches as TSV
+    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
+    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
     # ==========================================================================
     local policy_issues
-    policy_issues=$(jq -r --argjson spec "$spec" --argjson ruleset "$ruleset" '
+    policy_issues=$(jq -r -n \
+        --slurpfile spec <(printf '%s' "$spec") \
+        --slurpfile ruleset <(printf '%s' "$ruleset") '
         # Build lookup of actual chain policies: key="family table chain", value=policy
         # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset.nftables // $ruleset) | if type == "array" then . else [] end |
+        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end |
             map(select(.chain? and .chain.policy?) |
                 {key: "\(.chain.family) \(.chain.table) \(.chain.name)", value: .chain.policy}) |
             from_entries
         ) as $actual_policies |
         # Check each expected policy, output mismatches as tab-separated
-        ($spec.expected_structure.validation_checks.policy_checks // {}) |
+        ($spec[0].expected_structure.validation_checks.policy_checks // {}) |
         to_entries |
         map(
             select($actual_policies[.key] != null and $actual_policies[.key] != .value) |
             [.key, .value, $actual_policies[.key]] | join("\t")
         ) |
         .[]
-    ' <<< 'null')
+    ')
 
     while IFS=$'\t' read -r chain_path expected_policy actual_policy; do
         [[ -z "$chain_path" ]] && continue
@@ -325,7 +341,7 @@ check_ip_or_port() {
         processing_path+=("→ Checking ${table_family} nftban input (priority 0)")
 
         # Check whitelist first (highest priority in ruleset)
-        if nft get element "${table_family}" nftban "whitelist_${set_suffix}" { "$value" } >/dev/null 2>&1; then
+        if nft get element "${table_family}" nftban "whitelist_${set_suffix}" "{ $value }" >/dev/null 2>&1; then
             status="allowed"
             matched_table="${table_family} nftban"
             matched_chain="input"
@@ -334,7 +350,7 @@ check_ip_or_port() {
             priority=0
             processing_path+=("  ✅ MATCHED: whitelist_${set_suffix} → ACCEPT (full access)")
         # Check blacklist (permanent + temporary with timeout)
-        elif nft get element "${table_family}" nftban "blacklist_${set_suffix}" { "$value" } >/dev/null 2>&1; then
+        elif nft get element "${table_family}" nftban "blacklist_${set_suffix}" "{ $value }" >/dev/null 2>&1; then
             status="blocked"
             matched_table="${table_family} nftban"
             matched_chain="input"
@@ -360,25 +376,25 @@ check_ip_or_port() {
         local matched_sets=()
 
         # Check directional TCP port sets (new 4-set architecture)
-        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_in { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_in "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("tcp_ports_in")
         fi
-        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_out { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports_out "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("tcp_ports_out")
         fi
         # Check directional UDP port sets
-        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_in { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_in "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("udp_ports_in")
         fi
-        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_out { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_out "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("udp_ports_out")
         fi
         # Check legacy TCP ports (backward compatibility)
-        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("tcp_ports")
         fi
         # Check legacy UDP ports (backward compatibility)
-        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports { "$value" } >/dev/null 2>&1; then
+        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("udp_ports")
         fi
 
