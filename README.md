@@ -2,11 +2,11 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.15.1-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.16.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev/)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
-[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=openssf%20scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=openssf%20scorecard%207%2B)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959)
 [![Semgrep](https://img.shields.io/badge/Semgrep-enabled-blue?logo=semgrep)](https://semgrep.dev/)
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
@@ -112,6 +112,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **Zabbix Integration** | Native trapper protocol export to Zabbix server |
 | **Portal (pro.nftban.com)** | Centralized metrics aggregation and fleet management |
 | **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
+| **Whitelist Safety Tests** | Protected whitelists with automated safety validation |
 
 ---
 
@@ -268,7 +269,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 | **Semgrep** | Static analysis for security patterns in Go and shell code |
 | **Dependency Review** | PR-level dependency vulnerability scanning |
 | **Secret Scanning** | gitleaks with SARIF upload |
-| **OpenSSF Scorecard** | Automated security posture assessment |
+| **OpenSSF Scorecard** | Enterprise-grade security rating (7+) |
 
 See [SECURITY.md](SECURITY.md) for vulnerability disclosure policy and security architecture.
 
