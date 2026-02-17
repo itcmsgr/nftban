@@ -5,13 +5,13 @@
 ---
 name: Project Health
 
-"on":
+on:
   push:
-    branches: ["**"]  # run on all branches
-  pull_request:  # and on PRs
-  workflow_dispatch:  # manual trigger
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
   schedule:
-    - cron: "17 3 * * 1"  # weekly (Mon 03:17 UTC)
+    - cron: "17 3 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
