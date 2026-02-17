@@ -27,8 +27,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Minimal top-level permissions (OpenSSF Scorecard compliance)
 permissions:
-  contents: write  # Required to create/edit GitHub Releases
+  contents: read
 
 jobs:
   # ==========================================================================
@@ -205,6 +206,8 @@ jobs:
     name: Create GitHub Release
     needs: [build-rpm, build-deb]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create/edit GitHub Releases
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

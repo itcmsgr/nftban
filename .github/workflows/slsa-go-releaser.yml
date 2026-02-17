@@ -42,10 +42,11 @@ concurrency:
   group: slsa-${{ github.ref }}
   cancel-in-progress: false
 
+# Minimal top-level permissions (OpenSSF Scorecard compliance)
+# Job-level permissions are set for each job that needs write access
 permissions:
-  contents: write      # To upload release assets
-  id-token: write      # For SLSA provenance signing
-  actions: read        # To read workflow
+  contents: read
+  actions: read
 
 jobs:
   # ============================================================================
@@ -117,6 +118,8 @@ jobs:
     runs-on: ubuntu-latest
     # Run for workflow_run (after Release Packages) but not for manual dispatch
     if: ${{ github.event_name == 'workflow_run' }}
+    permissions:
+      contents: write  # To upload release assets
 
     steps:
       - name: Download nftban-core artifacts
