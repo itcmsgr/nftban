@@ -1739,6 +1739,12 @@ func (d *Daemon) handlePersistBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: err.Error()}
 	}
 
+	// Track permanent ban for protect/evict functionality
+	// This enables 'nftban protect' and 'nftban cleanup' commands to work
+	if err := safety.TrackPermanentBan(ip, reason, source, false); err != nil {
+		log.Printf("[PERSIST] Warning: failed to track permanent ban for %s: %v", ip, err)
+	}
+
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
@@ -1763,6 +1769,11 @@ func (d *Daemon) handleUnpersistBanRequest(params map[string]any) SocketResponse
 	filesModified, err := persistence.UnpersistBan(configDir, ip)
 	if err != nil {
 		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	// Remove from permanent ban tracking
+	if err := safety.RemovePermanentBan(ip); err != nil {
+		log.Printf("[UNPERSIST] Warning: failed to remove permanent ban tracking for %s: %v", ip, err)
 	}
 
 	return SocketResponse{

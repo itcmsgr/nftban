@@ -361,7 +361,7 @@ nftban_rbl_check_ip_parallel() {
         ) &
 
         pids+=($!)
-        ((job_count++))
+        job_count=$((job_count + 1))
 
         # Limit concurrent jobs
         if [[ $job_count -ge $jobs ]]; then
