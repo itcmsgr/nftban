@@ -176,7 +176,7 @@ The system follows a **single-writer architecture** where all nftables operation
 
 **Controls:**
 - nftables rules process packets at kernel level before reaching userspace
-- Blacklist checked before port allow rules (fixed in CVE-2024-NFTBAN-001)
+- Blacklist checked before port allow rules (fixed in NFTBan-SA-2024-001)
 - Atomic rule updates prevent bypass windows
 
 ### 4.2 User Space to Kernel Boundary
