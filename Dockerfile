@@ -71,6 +71,9 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/itcmsgr/nftban"
 LABEL org.opencontainers.image.licenses="MPL-2.0"
 
+# Run as non-root user (requires --cap-add NET_ADMIN at runtime for nftables)
+USER nftban
+
 # Default command
 ENTRYPOINT ["/usr/sbin/nftban"]
 CMD ["help"]
