@@ -258,14 +258,16 @@ All input is validated before processing:
 
 ## Known Security Advisories
 
-### CVE-2024-NFTBAN-001 - Rule Order Bypass
+### NFTBan-SA-2024-001 - Rule Order Bypass
 
 | Field | Value |
 |-------|-------|
+| **Advisory ID** | NFTBan-SA-2024-001 |
 | **Severity** | HIGH |
 | **Affected** | v0.32.5 and earlier |
-| **Fixed in** | v0.32.6 (2025-11-05) |
+| **Fixed in** | v0.32.6 (2024-11-05) |
 | **Status** | Patched in v1.0+ |
+| **CVE** | Not assigned (internal advisory) |
 
 **Issue:** Blacklist checks ran after port allow rules, allowing blacklisted IPs to bypass firewall.
 

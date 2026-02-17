@@ -2600,7 +2600,7 @@ NFTBan v1.0.0-beta is the first major release, featuring a complete architecture
 
 ### 🚨 CRITICAL SECURITY RELEASE
 
-**CVE-2024-NFTBAN-001** - Rule order vulnerability allowing blacklisted IPs to bypass firewall.
+**NFTBan-SA-2024-001** - Rule order vulnerability allowing blacklisted IPs to bypass firewall. (No CVE assigned)
 
 ### Fixed
 
