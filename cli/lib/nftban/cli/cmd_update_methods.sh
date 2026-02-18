@@ -165,24 +165,30 @@ _update_via_rpm() {
 
     if [[ -n "$pkg_manager" ]]; then
         # Use dnf/yum for automatic dependency resolution
-        if $pkg_manager install -y "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+        # Note: Use PIPESTATUS[0] to capture the actual package manager exit code
+        # instead of relying on pipeline exit status (fixes Fedora false-negative)
+        $pkg_manager install -y "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done
+        local pkg_exit="${PIPESTATUS[0]}"
+        if [[ "$pkg_exit" -eq 0 ]]; then
             _update_log OK "RPM installed successfully"
             rm -f "$tmp_file"
             return 0
         else
-            _update_log ERROR "RPM installation failed"
+            _update_log ERROR "RPM installation failed (exit code: $pkg_exit)"
             rm -f "$tmp_file"
             return 1
         fi
     else
         # Fallback to rpm (no automatic dependency resolution)
         _update_log WARN "dnf/yum not found, using rpm (dependencies may need manual install)"
-        if rpm -Uvh --force "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+        rpm -Uvh --force "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done
+        local rpm_exit="${PIPESTATUS[0]}"
+        if [[ "$rpm_exit" -eq 0 ]]; then
             _update_log OK "RPM installed successfully"
             rm -f "$tmp_file"
             return 0
         else
-            _update_log ERROR "RPM installation failed"
+            _update_log ERROR "RPM installation failed (exit code: $rpm_exit)"
             rm -f "$tmp_file"
             return 1
         fi

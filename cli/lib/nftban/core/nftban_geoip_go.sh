@@ -18,10 +18,10 @@
 # meta:output="Country codes and geographic information"
 #
 # **Inventory & Requirements**
-# meta:depends="nftban-geoip,GeoLite2-Country.mmdb"
-# meta:inventory.files="/usr/lib/nftban/bin/nftban-geoip"
-# meta:inventory.binaries="nftban-geoip"
-# meta:inventory.env_vars="NFTBAN_GEOIP_BIN,NFTBAN_GEOIP_TIMEOUT"
+# meta:depends="nftban-core,dbip-country-lite.mmdb"
+# meta:inventory.files="/usr/lib/nftban/bin/nftban-core"
+# meta:inventory.binaries="nftban-core"
+# meta:inventory.env_vars="NFTBAN_CORE_BIN,NFTBAN_GEOIP_TIMEOUT"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -43,23 +43,24 @@ readonly NFTBAN_GEOIP_GO_LOADED=1
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-readonly NFTBAN_GEOIP_BIN="${NFTBAN_GEOIP_BIN:-/usr/lib/nftban/bin/nftban-geoip}"
-readonly NFTBAN_GEOIP_TIMEOUT="${NFTBAN_GEOIP_TIMEOUT:-1}"  # seconds
+# GeoIP is a subcommand of nftban-core (same pattern as cmd_geoip.sh)
+readonly NFTBAN_CORE_BIN="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+readonly NFTBAN_GEOIP_TIMEOUT="${NFTBAN_GEOIP_TIMEOUT:-5}"  # seconds
 
 # =============================================================================
 # CORE FUNCTIONS
 # =============================================================================
 
 nftban_geoip_check_available() {
-    # Check if GO GeoIP binary is available
+    # Check if nftban-core geoip is available
     # Returns: 0 if available, 1 if not
 
-    if [[ ! -x "$NFTBAN_GEOIP_BIN" ]]; then
+    if [[ ! -x "$NFTBAN_CORE_BIN" ]]; then
         return 1
     fi
 
-    # Check if database exists
-    if ! timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" status &>/dev/null; then
+    # Check if database exists via geoip status
+    if ! timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_CORE_BIN" geoip status &>/dev/null; then
         return 1
     fi
 
@@ -85,9 +86,9 @@ nftban_geoip_lookup_fast() {
         return 1
     fi
 
-    # Call GO binary with timeout
+    # Call nftban-core geoip lookup with timeout
     local result
-    result=$(timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" lookup "$ip" 2>/dev/null)
+    result=$(timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_CORE_BIN" geoip lookup "$ip" --json 2>/dev/null)
 
     if [[ $? -eq 0 && -n "$result" ]]; then
         echo "$result"
@@ -209,22 +210,30 @@ nftban_geoip_get_compact_full() {
 nftban_geoip_bulk_lookup() {
     # Bulk lookup from file or stdin
     # Args: $1 = input file (optional, uses stdin if not provided)
-    # Returns: JSONL output (one JSON per line)
+    # Returns: One result per line (CC/Country format)
+    # Note: nftban-core geoip does not have bulk command, process line by line
 
     local input_file="${1:-}"
+    local ip
 
     if [[ -n "$input_file" && -f "$input_file" ]]; then
-        timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" bulk < "$input_file" 2>/dev/null
+        while IFS= read -r ip || [[ -n "$ip" ]]; do
+            [[ -z "$ip" || "$ip" =~ ^# ]] && continue
+            timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_CORE_BIN" geoip lookup "$ip" 2>/dev/null || echo "??/Unknown"
+        done < "$input_file"
     else
-        timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" bulk 2>/dev/null
+        while IFS= read -r ip || [[ -n "$ip" ]]; do
+            [[ -z "$ip" || "$ip" =~ ^# ]] && continue
+            timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_CORE_BIN" geoip lookup "$ip" 2>/dev/null || echo "??/Unknown"
+        done
     fi
 }
 
 nftban_geoip_status() {
     # Get GeoIP system status
-    # Returns: JSON with status info
+    # Returns: Status output from nftban-core geoip status
 
-    timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" status 2>/dev/null || echo '{"status":"error","message":"GeoIP binary not available"}'
+    timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_CORE_BIN" geoip status 2>/dev/null || echo '{"status":"error","message":"nftban-core geoip not available"}'
 }
 
 # =============================================================================
