@@ -184,10 +184,15 @@ Requires:       pam
 Requires:       bc
 Requires:       gawk
 Requires:       socat
+# ACL required on EL10/Fedora (not in default minimal install)
+%if 0%{?fedora} || 0%{?el10}
+Requires:       acl
+%else
+Recommends:     acl
+%endif
 Recommends:     bind-utils
 Recommends:     mailx
 Recommends:     newt
-Recommends:     acl
 Requires(pre):  shadow-utils
 
 %description
@@ -329,6 +334,7 @@ install -D -m 0644 install/systemd/nftban-suricata-stats.service %{buildroot}/us
 install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/systemd/system/nftban-ui.service
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
+install -D -m 0644 install/systemd/nftban-queue.timer %{buildroot}/usr/lib/systemd/system/nftban-queue.timer
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
 install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
 install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
@@ -674,17 +680,35 @@ usermod -a -G nftban root 2>/dev/null || true
 # =============================================================================
 # Order: yq -> cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
 
-# Link bundled yq if system yq not present (BUG-001 fix)
-if ! command -v yq >/dev/null 2>&1; then
-    if [ -x /usr/lib/nftban/bin/yq ]; then
-        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-        echo "[NFTBan] yq linked from bundled binary"
+# =============================================================================
+# STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED (BUG-001 fix)
+# =============================================================================
+# WHY v4 IS REQUIRED:
+#   - yq v3 (Python pip) is ~10x slower (0.17s vs 0.017s per call)
+#   - nftban help makes 100+ yq calls, causing timeout with v3
+#   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
+# SUPPLY-CHAIN SAFE: yq is bundled in package with SHA256 verification at build time
+echo "[NFTBan] Checking yq v4 (YAML processor)..."
+
+# Check if system yq is already v4
+if command -v yq >/dev/null 2>&1; then
+    YQ_VER=\$(yq --version 2>/dev/null | head -1 || echo "")
+    if echo "\$YQ_VER" | grep -qE "mikefarah|version v4"; then
+        echo "[NFTBan]   yq v4 found: \$YQ_VER"
+    else
+        # System has yq v3, use bundled v4
+        if [ -x /usr/lib/nftban/bin/yq ]; then
+            ln -sf /usr/lib/nftban/bin/yq /usr/local/bin/yq
+            echo "[NFTBan]   yq v4 linked from bundled binary (replaced v3)"
+        fi
     fi
-elif ! yq --version 2>/dev/null | grep -q "mikefarah"; then
-    # Wrong version (Python yq v3) - prefer bundled v4
+else
+    # No system yq, link bundled
     if [ -x /usr/lib/nftban/bin/yq ]; then
-        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-        echo "[NFTBan] yq v4 linked (replaced Python yq v3)"
+        ln -sf /usr/lib/nftban/bin/yq /usr/local/bin/yq
+        echo "[NFTBan]   yq v4 linked from bundled binary"
+    else
+        echo "[NFTBan WARN] WARNING: bundled yq not found - help command may be slow"
     fi
 fi
 
@@ -838,17 +862,20 @@ if [ -f /usr/lib/nftban/setup/fhs-permissions.sh ]; then
         # Fallback: minimal critical permissions
         chown root:nftban /etc/nftban 2>/dev/null || true
         chmod 750 /etc/nftban 2>/dev/null || true
-        chown -R nftban:nftban /var/lib/nftban /var/log/nftban 2>/dev/null || true
+        find /var/lib/nftban /var/log/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+        find /var/lib/nftban /var/log/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
     fi
 else
     echo "[NFTBan WARN] fhs-permissions.sh not found - using fallback permissions"
     # Fallback: minimal critical permissions only
     chown root:nftban /etc/nftban 2>/dev/null || true
     chmod 750 /etc/nftban 2>/dev/null || true
-    chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
+    find /etc/nftban/conf.d -type f -exec chown root:nftban {} \; 2>/dev/null || true
+    find /etc/nftban/conf.d -type d -exec chown root:nftban {} \; 2>/dev/null || true
     find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
     find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
-    chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban 2>/dev/null || true
+    find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+    find /var/lib/nftban /var/log/nftban /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
     chmod 750 /var/lib/nftban /var/log/nftban 2>/dev/null || true
 fi
 
@@ -910,7 +937,8 @@ else
     systemctl enable nftables 2>/dev/null || true
 fi
 
-# Enable nftband daemon socket (CRITICAL for CLI communication)
+# Enable and start nftband daemon socket and service (CRITICAL for CLI communication)
+# BUG-002 fix: Socket activation alone is unreliable on fresh install
 echo "[NFTBan] Starting nftband daemon..."
 systemctl enable --now nftband.socket 2>/dev/null || true
 
@@ -920,20 +948,15 @@ if [ "\$SKIP_DROP_CHAINS" -eq 1 ]; then
     echo "[NFTBan WARN] Safety mode: Skipping daemon sync (would create DROP chains)"
     echo "[NFTBan WARN] NFTBan daemon enabled but firewall NOT active"
 else
-    # Normal mode: Trigger socket activation via IPC call
+    # Normal mode: Start service explicitly then verify via sync
+    systemctl start nftband.service 2>/dev/null || true
+    echo "[NFTBan]   Socket and service started"
     sleep 1
     if timeout 10s nftban sync >/dev/null 2>&1; then
-        echo "[NFTBan]   Daemon activated via sync"
+        echo "[NFTBan]   Daemon verified via sync"
     else
-        # Retry once
         sleep 2
-        if timeout 10s nftban sync >/dev/null 2>&1; then
-            echo "[NFTBan]   Daemon activated via sync (retry)"
-        else
-            # Fallback: explicit service start
-            systemctl start nftband.service 2>/dev/null || true
-            echo "[NFTBan]   Daemon started (fallback mode)"
-        fi
+        timeout 10s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
     fi
 fi
 
@@ -991,6 +1014,7 @@ else
     done
     if [ "\$SYNC_SUCCESS" -eq 0 ]; then
         echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
+    fi
 fi
 
 # =============================================================================
@@ -1085,6 +1109,12 @@ else
     echo ""
 fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
+
+# FIX v1.17.0: Final cache ownership fix (exporter runs as nftban user)
+# Must be at END of post-install to catch any files created during setup
+# Using find instead of chown -R for safety (no symlink traversal)
+find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
 %preun
 # Remove immutable flag before uninstall/upgrade to allow RPM to replace/remove files
@@ -1297,8 +1327,8 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat
-Recommends: dnsutils, mailutils, whiptail
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl
+Recommends: dnsutils, mailutils, whiptail, policykit-1
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
@@ -1679,18 +1709,21 @@ chmod 750 /etc/nftban
 chown root:nftban /etc/nftban/nftban.conf 2>/dev/null || true
 chmod 0640 /etc/nftban/nftban.conf 2>/dev/null || true
 # CRITICAL: Fix conf.d permissions - services run as nftban user need group read access
-chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
+find /etc/nftban/conf.d -type f -exec chown root:nftban {} \; 2>/dev/null || true
+find /etc/nftban/conf.d -type d -exec chown root:nftban {} \; 2>/dev/null || true
 find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
 find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
 # Fix other config subdirs
 for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
     if [ -d "/etc/nftban/\$subdir" ]; then
-        chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type f -exec chown root:nftban {} \; 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type d -exec chown root:nftban {} \; 2>/dev/null || true
         find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
         find "/etc/nftban/\$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
     fi
 done
-chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban
+find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+find /var/lib/nftban /var/log/nftban /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 chmod 750 /var/lib/nftban /var/log/nftban
 chmod 755 /var/cache/nftban
 
@@ -1726,22 +1759,20 @@ echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
 systemctl enable nftables 2>/dev/null || true
 
-# Enable and start nftband daemon socket (CRITICAL for CLI communication)
+# Enable and start nftband daemon socket and service (CRITICAL for CLI communication)
+# BUG-002 fix: Socket activation alone is unreliable on fresh install
 echo "[NFTBan] Starting nftband daemon..."
 systemctl enable --now nftband.socket 2>/dev/null || true
+systemctl start nftband.service 2>/dev/null || true
+echo "[NFTBan]   Socket and service started"
 
-# Trigger socket activation via IPC call (ensures daemon starts deterministically)
+# Verify daemon is operational via sync
 sleep 1
 if timeout 10s nftban sync >/dev/null 2>&1; then
-    echo "[NFTBan]   Daemon activated via sync"
+    echo "[NFTBan]   Daemon verified via sync"
 else
     sleep 2
-    if timeout 10s nftban sync >/dev/null 2>&1; then
-        echo "[NFTBan]   Daemon activated via sync (retry)"
-    else
-        systemctl start nftband.service 2>/dev/null || true
-        echo "[NFTBan]   Daemon started (fallback mode)"
-    fi
+    timeout 10s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
 fi
 
 # Enable and start essential timers
@@ -1785,6 +1816,13 @@ else
     echo "[NFTBan WARN] Fix xt target issues, then run: systemctl start nftables"
 fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
+
+# FIX v1.17.0: Final cache ownership fix (exporter runs as nftban user)
+# Must be at END of post-install to catch any files created during setup
+# Using find instead of chown -R for safety (no symlink traversal)
+find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
+
 exit 0
 EOF
     fi
@@ -1959,6 +1997,7 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"

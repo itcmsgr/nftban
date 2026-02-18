@@ -463,7 +463,7 @@ install_dependencies() {
         warn "Package cache update failed (non-critical)"
     fi
 
-    local required_packages=(nftables jq socat curl wget git)
+    local required_packages=(nftables jq socat curl wget)
 
     log "Installing required packages..."
     local installed=0 failed=0
