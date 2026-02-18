@@ -748,50 +748,123 @@ echo "[NFTBan] Obsolete file cleanup complete"
 # =============================================================================
 echo "[NFTBan] Checking for conflicting firewalls..."
 
-CONFLICT=""
+CONFLICTS=""
 
 # Check CSF (ConfigServer Firewall)
 if systemctl is-active csf.service &>/dev/null 2>&1 || [[ -f /etc/csf/csf.conf ]]; then
-    CONFLICT="CSF (ConfigServer Firewall)"
+    CONFLICTS="\${CONFLICTS}CSF "
 fi
 
 # Check cPHulk (cPanel brute force)
 if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
-    CONFLICT="cPHulk (cPanel brute force protection)"
+    CONFLICTS="\${CONFLICTS}cPHulk "
 fi
 
 # Check UFW
 if systemctl is-active ufw.service &>/dev/null 2>&1; then
-    CONFLICT="UFW (Uncomplicated Firewall)"
+    CONFLICTS="\${CONFLICTS}UFW "
 fi
 
 # Check firewalld
 if systemctl is-active firewalld.service &>/dev/null 2>&1; then
-    CONFLICT="firewalld"
+    CONFLICTS="\${CONFLICTS}firewalld "
 fi
 
-# Abort if conflict found
-if [[ -n "\$CONFLICT" ]]; then
-    echo ""
-    echo "[NFTBan ERROR] =========================================="
-    echo "[NFTBan ERROR]  CONFLICTING FIREWALL DETECTED"
-    echo "[NFTBan ERROR] =========================================="
-    echo "[NFTBan ERROR] Found: \$CONFLICT"
-    echo ""
-    echo "[NFTBan ERROR] NFTBan requires exclusive firewall control."
-    echo "[NFTBan ERROR] You cannot run two firewalls simultaneously."
-    echo ""
-    echo "[NFTBan ERROR] To use NFTBan, first remove the conflict:"
-    echo "[NFTBan ERROR]   - CSF: csf -x && yum remove csf lfd"
-    echo "[NFTBan ERROR]   - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
-    echo "[NFTBan ERROR]   - UFW: ufw disable && apt remove ufw"
-    echo "[NFTBan ERROR]   - firewalld: systemctl disable --now firewalld"
-    echo ""
-    echo "[NFTBan ERROR] Then reinstall NFTBan."
-    exit 1
+# Check iptables service
+if systemctl is-active iptables.service &>/dev/null 2>&1; then
+    CONFLICTS="\${CONFLICTS}iptables "
 fi
 
-echo "[NFTBan] No conflicting firewalls found"
+# Handle conflicts
+if [[ -n "\$CONFLICTS" ]]; then
+    echo ""
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN]  CONFLICTING FIREWALLS DETECTED"
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN] Found: \$CONFLICTS"
+    echo ""
+
+    # Check for --takeover flag (env variable set by user)
+    if [[ "\${NFTBAN_TAKEOVER:-0}" == "1" ]]; then
+        echo "[NFTBan] --takeover mode: Disabling conflicting firewalls..."
+        echo ""
+
+        # Disable CSF
+        if [[ "\$CONFLICTS" == *"CSF"* ]]; then
+            echo "[NFTBan]   Disabling CSF..."
+            csf -x 2>/dev/null || true
+            systemctl disable csf lfd 2>/dev/null || true
+            systemctl stop csf lfd 2>/dev/null || true
+            echo "[NFTBan]   ✓ CSF disabled"
+        fi
+
+        # Disable cPHulk
+        if [[ "\$CONFLICTS" == *"cPHulk"* ]]; then
+            echo "[NFTBan]   Disabling cPHulk..."
+            if command -v whmapi1 &>/dev/null; then
+                whmapi1 configureservice service=cphulkd enabled=0 2>/dev/null || true
+            fi
+            systemctl disable cphulkd 2>/dev/null || true
+            systemctl stop cphulkd 2>/dev/null || true
+            echo "[NFTBan]   ✓ cPHulk disabled"
+        fi
+
+        # Disable UFW
+        if [[ "\$CONFLICTS" == *"UFW"* ]]; then
+            echo "[NFTBan]   Disabling UFW..."
+            ufw disable 2>/dev/null || true
+            systemctl disable ufw 2>/dev/null || true
+            systemctl stop ufw 2>/dev/null || true
+            echo "[NFTBan]   ✓ UFW disabled"
+        fi
+
+        # Disable firewalld
+        if [[ "\$CONFLICTS" == *"firewalld"* ]]; then
+            echo "[NFTBan]   Disabling firewalld..."
+            systemctl disable firewalld 2>/dev/null || true
+            systemctl stop firewalld 2>/dev/null || true
+            echo "[NFTBan]   ✓ firewalld disabled"
+        fi
+
+        # Disable iptables service
+        if [[ "\$CONFLICTS" == *"iptables"* ]]; then
+            echo "[NFTBan]   Disabling iptables service..."
+            systemctl disable iptables ip6tables 2>/dev/null || true
+            systemctl stop iptables ip6tables 2>/dev/null || true
+            echo "[NFTBan]   ✓ iptables service disabled"
+        fi
+
+        # Flush any remaining rules
+        echo "[NFTBan]   Flushing legacy rules..."
+        nft flush ruleset 2>/dev/null || true
+        iptables -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        ip6tables -F 2>/dev/null || true
+        ip6tables -X 2>/dev/null || true
+        echo "[NFTBan]   ✓ Legacy rules flushed"
+        echo ""
+        echo "[NFTBan] ✓ All conflicts removed. NFTBan is now THE firewall."
+        echo ""
+    else
+        # No takeover - abort with instructions
+        echo "[NFTBan ERROR] NFTBan requires exclusive firewall control."
+        echo "[NFTBan ERROR] You cannot run two firewalls simultaneously."
+        echo ""
+        echo "[NFTBan ERROR] Options:"
+        echo "[NFTBan ERROR]   1. Auto-takeover: NFTBAN_TAKEOVER=1 dnf install ./nftban-*.rpm"
+        echo "[NFTBan ERROR]   2. Manual removal:"
+        echo "[NFTBan ERROR]      - CSF: csf -x && yum remove csf lfd"
+        echo "[NFTBan ERROR]      - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+        echo "[NFTBan ERROR]      - UFW: ufw disable && apt remove ufw"
+        echo "[NFTBan ERROR]      - firewalld: systemctl disable --now firewalld"
+        echo "[NFTBan ERROR]      - iptables: systemctl disable --now iptables"
+        echo ""
+        echo "[NFTBan ERROR] Then reinstall NFTBan."
+        exit 1
+    fi
+else
+    echo "[NFTBan] No conflicting firewalls found"
+fi
 echo "[NFTBan] Configuring NFTBan v%{version}..."
 
 # STEP 1: Remove old systemd overrides (prevent conflicts with new package files)

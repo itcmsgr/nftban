@@ -144,50 +144,123 @@ case "$1" in
         log_info "Checking for conflicting firewalls..."
 
         NFTABLES_SAFE=1
-        CONFLICT=""
+        CONFLICTS=""
 
         # Check CSF (ConfigServer Firewall)
         if systemctl is-active csf.service &>/dev/null 2>&1 || [[ -f /etc/csf/csf.conf ]]; then
-            CONFLICT="CSF (ConfigServer Firewall)"
+            CONFLICTS="${CONFLICTS}CSF "
         fi
 
         # Check cPHulk (cPanel brute force)
         if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
-            CONFLICT="cPHulk (cPanel brute force protection)"
+            CONFLICTS="${CONFLICTS}cPHulk "
         fi
 
         # Check UFW
         if systemctl is-active ufw.service &>/dev/null 2>&1; then
-            CONFLICT="UFW (Uncomplicated Firewall)"
+            CONFLICTS="${CONFLICTS}UFW "
         fi
 
         # Check firewalld
         if systemctl is-active firewalld.service &>/dev/null 2>&1; then
-            CONFLICT="firewalld"
+            CONFLICTS="${CONFLICTS}firewalld "
         fi
 
-        # Abort if conflict found
-        if [[ -n "$CONFLICT" ]]; then
-            log_error ""
-            log_error "=========================================="
-            log_error " CONFLICTING FIREWALL DETECTED"
-            log_error "=========================================="
-            log_error "Found: $CONFLICT"
-            log_error ""
-            log_error "NFTBan requires exclusive firewall control."
-            log_error "You cannot run two firewalls simultaneously."
-            log_error ""
-            log_error "To use NFTBan, first remove the conflict:"
-            log_error "  - CSF: csf -x && apt remove csf lfd"
-            log_error "  - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
-            log_error "  - UFW: ufw disable && apt remove ufw"
-            log_error "  - firewalld: systemctl disable --now firewalld"
-            log_error ""
-            log_error "Then reinstall NFTBan."
-            exit 1
+        # Check iptables service
+        if systemctl is-active iptables.service &>/dev/null 2>&1; then
+            CONFLICTS="${CONFLICTS}iptables "
         fi
 
-        log_info "No conflicting firewalls found"
+        # Handle conflicts
+        if [[ -n "$CONFLICTS" ]]; then
+            log_warn ""
+            log_warn "=========================================="
+            log_warn " CONFLICTING FIREWALLS DETECTED"
+            log_warn "=========================================="
+            log_warn "Found: $CONFLICTS"
+            log_warn ""
+
+            # Check for --takeover flag (env variable set by user)
+            if [[ "${NFTBAN_TAKEOVER:-0}" == "1" ]]; then
+                log_info "--takeover mode: Disabling conflicting firewalls..."
+                log_info ""
+
+                # Disable CSF
+                if [[ "$CONFLICTS" == *"CSF"* ]]; then
+                    log_info "  Disabling CSF..."
+                    csf -x 2>/dev/null || true
+                    systemctl disable csf lfd 2>/dev/null || true
+                    systemctl stop csf lfd 2>/dev/null || true
+                    log_info "  ✓ CSF disabled"
+                fi
+
+                # Disable cPHulk
+                if [[ "$CONFLICTS" == *"cPHulk"* ]]; then
+                    log_info "  Disabling cPHulk..."
+                    if command -v whmapi1 &>/dev/null; then
+                        whmapi1 configureservice service=cphulkd enabled=0 2>/dev/null || true
+                    fi
+                    systemctl disable cphulkd 2>/dev/null || true
+                    systemctl stop cphulkd 2>/dev/null || true
+                    log_info "  ✓ cPHulk disabled"
+                fi
+
+                # Disable UFW
+                if [[ "$CONFLICTS" == *"UFW"* ]]; then
+                    log_info "  Disabling UFW..."
+                    ufw disable 2>/dev/null || true
+                    systemctl disable ufw 2>/dev/null || true
+                    systemctl stop ufw 2>/dev/null || true
+                    log_info "  ✓ UFW disabled"
+                fi
+
+                # Disable firewalld
+                if [[ "$CONFLICTS" == *"firewalld"* ]]; then
+                    log_info "  Disabling firewalld..."
+                    systemctl disable firewalld 2>/dev/null || true
+                    systemctl stop firewalld 2>/dev/null || true
+                    log_info "  ✓ firewalld disabled"
+                fi
+
+                # Disable iptables service
+                if [[ "$CONFLICTS" == *"iptables"* ]]; then
+                    log_info "  Disabling iptables service..."
+                    systemctl disable iptables ip6tables 2>/dev/null || true
+                    systemctl stop iptables ip6tables 2>/dev/null || true
+                    log_info "  ✓ iptables service disabled"
+                fi
+
+                # Flush any remaining rules
+                log_info "  Flushing legacy rules..."
+                nft flush ruleset 2>/dev/null || true
+                iptables -F 2>/dev/null || true
+                iptables -X 2>/dev/null || true
+                ip6tables -F 2>/dev/null || true
+                ip6tables -X 2>/dev/null || true
+                log_info "  ✓ Legacy rules flushed"
+                log_info ""
+                log_info "✓ All conflicts removed. NFTBan is now THE firewall."
+                log_info ""
+            else
+                # No takeover - abort with instructions
+                log_error "NFTBan requires exclusive firewall control."
+                log_error "You cannot run two firewalls simultaneously."
+                log_error ""
+                log_error "Options:"
+                log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install ./nftban-*.deb"
+                log_error "  2. Manual removal:"
+                log_error "     - CSF: csf -x && apt remove csf lfd"
+                log_error "     - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+                log_error "     - UFW: ufw disable && apt remove ufw"
+                log_error "     - firewalld: systemctl disable --now firewalld"
+                log_error "     - iptables: systemctl disable --now iptables"
+                log_error ""
+                log_error "Then reinstall NFTBan."
+                exit 1
+            fi
+        else
+            log_info "No conflicting firewalls found"
+        fi
 
         # =====================================================================
         # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED
