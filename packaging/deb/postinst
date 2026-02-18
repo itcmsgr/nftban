@@ -405,9 +405,25 @@ case "$1" in
             if ! deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
                 systemctl enable nftband.service >/dev/null 2>&1 || true
             fi
-            # Start using systemctl directly (more reliable)
+            # Start socket (creates the socket file)
             systemctl start nftband.socket >/dev/null 2>&1 || true
-            log_info "  NFTBand daemon enabled (single nftables writer)"
+
+            # Trigger socket activation via IPC call (ensures daemon starts)
+            # Use timeout to prevent blocking, retry once on failure
+            sleep 1
+            if timeout 10s nftban sync >/dev/null 2>&1; then
+                log_info "  NFTBand daemon activated via sync"
+            else
+                # Retry once after short delay
+                sleep 2
+                if timeout 10s nftban sync >/dev/null 2>&1; then
+                    log_info "  NFTBand daemon activated via sync (retry)"
+                else
+                    # Final fallback: explicit service start
+                    systemctl start nftband.service >/dev/null 2>&1 || true
+                    log_info "  NFTBand daemon started (fallback mode)"
+                fi
+            fi
 
             # Core timers (maintenance tasks) - with fallback
             for timer in nftban-maintenance.timer nftban-health.timer nftban-queue.timer nftban-unified-exporter.timer; do
@@ -430,6 +446,14 @@ case "$1" in
             # Start timers
             systemctl start nftban-maintenance.timer >/dev/null 2>&1 || true
             systemctl start nftban-health.timer >/dev/null 2>&1 || true
+
+            # Start queue timer only if unit file exists (BUG-005 fix)
+            if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+                systemctl start nftban-queue.timer >/dev/null 2>&1 || true
+                log_info "  Queue timer started"
+            else
+                log_warn "nftban-queue.timer not installed (optional)"
+            fi
 
             log_info "  Fresh install - timers enabled and started"
         fi
@@ -487,25 +511,100 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 11: Enable and start nftables AFTER whitelist is synced
+        # PREFLIGHT: Lockout Prevention (Detect-Only, Fail-Safe)
         # =====================================================================
-        # This ensures DROP policy only takes effect when SSH whitelist is in place
-        if systemctl is-active nftables >/dev/null 2>&1; then
-            log_info "Reloading nftables..."
-            systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
+        # CRITICAL: Never modify third-party firewall config
+        # CRITICAL: Never start nftables if unsafe
+        # CRITICAL: Always preserve SSH access
+        log_info "Preflight: Validating firewall safety..."
+        NFTABLES_SAFE=1
+
+        # Check 1: Detect incompatible xt target rules (BUG-008)
+        # DO NOT auto-modify - just detect and abort gracefully
+        # Check distro-specific nftables config path
+        if [[ -f /etc/nftables.conf ]]; then
+            NFT_CONFIG="/etc/nftables.conf"
+        elif [[ -f /etc/sysconfig/nftables.conf ]]; then
+            NFT_CONFIG="/etc/sysconfig/nftables.conf"
         else
-            log_info "Enabling and starting nftables..."
-            systemctl enable nftables 2>/dev/null || true
-            systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+            NFT_CONFIG=""
+        fi
+
+        if [[ -n "$NFT_CONFIG" && -f "$NFT_CONFIG" ]]; then
+            NFT_CHECK=$(nft -c -f "$NFT_CONFIG" 2>&1 || true)
+            if echo "$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
+                log_error ""
+                log_error "=========================================="
+                log_error " INCOMPATIBLE NFTABLES RULES DETECTED"
+                log_error "=========================================="
+                log_error "Your system has legacy iptables-xt rules that"
+                log_error "cannot be loaded by modern nftables."
+                log_error ""
+                log_error "NFTBan will NOT activate nftables to prevent lockout."
+                log_error ""
+                log_error "To fix manually:"
+                log_error "  1. Convert rules: iptables-save | iptables-restore-translate"
+                log_error "  2. Or remove legacy config: mv $NFT_CONFIG ${NFT_CONFIG}.bak"
+                log_error "  3. Then run: nftban sync && systemctl start nftables"
+                log_error ""
+                NFTABLES_SAFE=0
+            fi
+        fi
+
+        # Check 2: Verify whitelist has IPs
+        if [[ -f /etc/nftban/whitelist.d/00-system.conf ]]; then
+            if ! grep -qE "^[0-9]+\.[0-9]+" /etc/nftban/whitelist.d/00-system.conf 2>/dev/null; then
+                log_warn "No IPs detected in system whitelist"
+                log_warn "Your SSH IP may not be protected - please verify"
+            fi
+        fi
+
+        # Check 3: Verify nftban config is valid
+        if [[ -f /etc/nftban/nftables.conf ]]; then
+            if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
+                log_error "NFTBan nftables config validation failed"
+                NFTABLES_SAFE=0
+            fi
         fi
 
         # =====================================================================
-        # STEP 12: GeoIP Database (defer to background/first run)
+        # STEP 11: Enable and start nftables ONLY IF SAFE
         # =====================================================================
-        # GeoIP download can take 10-30 seconds depending on network
-        # Defer to maintenance timer for faster install
-        log_info "GeoIP database will be downloaded on first maintenance run"
-        log_info "  Manual download: nftban geoip update"
+        if [[ $NFTABLES_SAFE -eq 1 ]]; then
+            if systemctl is-active nftables >/dev/null 2>&1; then
+                log_info "Reloading nftables..."
+                systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
+            else
+                log_info "Enabling and starting nftables..."
+                systemctl enable nftables 2>/dev/null || true
+                systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+            fi
+        else
+            log_warn ""
+            log_warn "=========================================="
+            log_warn " NFTABLES NOT ACTIVATED (Safety Mode)"
+            log_warn "=========================================="
+            log_warn "Install completed but firewall is NOT active."
+            log_warn "SSH access is preserved. Fix issues above, then run:"
+            log_warn "  systemctl start nftables"
+            log_warn ""
+        fi
+
+        # =====================================================================
+        # STEP 12: GeoIP Database Download (with timeout for airgapped systems)
+        # =====================================================================
+        log_info "Downloading GeoIP database..."
+        if [[ -x /usr/lib/nftban/bin/nftban-core ]]; then
+            # Use timeout to prevent blocking on slow/no network (15s max)
+            if timeout 15s /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+                log_info "  GeoIP database downloaded successfully"
+            else
+                log_info "  GeoIP download skipped (timeout or no network)"
+                log_info "  Will auto-download on first timer run, or manual: nftban geoip update"
+            fi
+        else
+            log_warn "nftban-core not found, skipping GeoIP download"
+        fi
 
         # =====================================================================
         # STEP 13: Enable Login Monitoring (Default Protection)
