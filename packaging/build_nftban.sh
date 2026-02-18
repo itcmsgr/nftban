@@ -592,14 +592,7 @@ else
     echo ""
 fi
 
-# Check for CRB/PowerTools (informational)
-if dnf repolist enabled 2>/dev/null | grep -qE 'crb|powertools|codeready'; then
-    echo "[✓] CRB/PowerTools repository: enabled"
-else
-    echo "[i] Info: CRB repository not enabled (usually not needed)"
-    echo "    To enable: dnf config-manager --set-enabled crb"
-    echo ""
-fi
+# NOTE: CRB/PowerTools NOT required - all NFTBan deps are in base/AppStream repos
 
 # -----------------------------------------------------------------------------
 # CHECK 6: Network Connectivity (for GeoIP download)
