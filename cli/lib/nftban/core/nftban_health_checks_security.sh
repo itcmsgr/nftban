@@ -447,13 +447,20 @@ nftban_health_check_polkit() {
     local polkit_issues=()
 
     # Check if Polkit is available on the system
-    # POLKIT IS REQUIRED - it's part of NFTBan's security architecture
-    # All production systems MUST have polkit installed for privilege separation
+    # Polkit is required for non-root privilege separation
+    # Root-only deployments can operate without polkit
     if ! command -v pkaction >/dev/null 2>&1; then
-        polkit_issues+=("CRITICAL: Polkit not installed - security architecture compromised!")
-        polkit_issues+=("NFTBan requires polkit for privilege separation (nftban group)")
-        polkit_issues+=("FIX: Install polkit package (apt install policykit-1 / dnf install polkit)")
-        status=$HEALTH_ERROR
+        polkit_issues+=("Polkit not installed - privilege separation unavailable")
+        polkit_issues+=("FIX (Debian/Ubuntu): apt install policykit-1")
+        polkit_issues+=("FIX (RHEL/Rocky/Fedora): dnf install polkit")
+        # Downgrade to WARNING if running as root (polkit optional for root)
+        if [[ $EUID -eq 0 ]]; then
+            polkit_issues+=("INFO: Running as root - polkit is optional unless enabling group access")
+            status=$HEALTH_WARNING
+        else
+            polkit_issues+=("ERROR: Non-root execution requires polkit for privilege separation")
+            status=$HEALTH_ERROR
+        fi
     else
         # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)
         local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"

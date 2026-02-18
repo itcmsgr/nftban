@@ -162,7 +162,7 @@ nftban_health_should_alert() {
 
 nftban_health_check_binaries() {
     local status=$HEALTH_OK
-    local required_binaries=("nft" "systemctl" "journalctl" "awk" "sed" "grep" "jq" "curl" "wget" "socat" "git")
+    local required_binaries=("nft" "systemctl" "journalctl" "awk" "sed" "grep" "jq" "curl" "wget" "socat")
     local nftban_binaries=("${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftband")
     local mail_binaries=("mail" "sendmail")
 

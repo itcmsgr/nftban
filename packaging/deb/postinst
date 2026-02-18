@@ -139,35 +139,90 @@ case "$1" in
         [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Obsolete file cleanup complete"
 
         # =====================================================================
-        # STEP 0.5: Install/Upgrade yq v4 (mikefarah/yq) - REQUIRED
+        # STEP 0.4: CRITICAL PREFLIGHT - Check BEFORE any nftables changes
+        # =====================================================================
+        # v1.16.3: This MUST run before ANY nft commands to prevent lockout
+        # Three checks: (A) Live xt targets, (B) cPanel detection, (C) Set safety flags
+        log_info "Running critical preflight checks..."
+
+        NFTABLES_SAFE=1
+        CPANEL_MODE=0
+        SKIP_DROP_CHAINS=0
+
+        # (A) Check LIVE ruleset for xt targets (not just config file!)
+        # cPanel/iptables-nft creates xt rules that break nftables service
+        if command -v nft >/dev/null 2>&1; then
+            LIVE_CHECK=$(nft list ruleset 2>&1 || true)
+            if echo "$LIVE_CHECK" | grep -qE "xt target|xtables compat"; then
+                log_error ""
+                log_error "=========================================="
+                log_error " XT TARGET RULES DETECTED IN LIVE RULESET"
+                log_error "=========================================="
+                log_error "This system has iptables-nft xt compat rules loaded."
+                log_error "These are incompatible with nftables service management."
+                log_error ""
+                log_error "NFTBan will install but NOT activate nftables."
+                log_error "Existing firewall rules will remain unchanged."
+                log_error ""
+                NFTABLES_SAFE=0
+                SKIP_DROP_CHAINS=1
+            fi
+        fi
+
+        # (B) Detect cPanel - force coexist mode (don't manage nftables service)
+        if [[ -f /usr/local/cpanel/version ]]; then
+            CPANEL_VER=$(cat /usr/local/cpanel/version 2>/dev/null || echo "unknown")
+            log_warn ""
+            log_warn "=========================================="
+            log_warn " cPanel DETECTED (v${CPANEL_VER})"
+            log_warn "=========================================="
+            log_warn "NFTBan will operate in coexistence mode:"
+            log_warn "  - Will NOT manage nftables.service"
+            log_warn "  - Will NOT flush or replace existing rules"
+            log_warn "  - Will NOT create hook chains with DROP policy"
+            log_warn ""
+            CPANEL_MODE=1
+            SKIP_DROP_CHAINS=1
+        fi
+
+        # (C) Export flags for use by nftban commands during install
+        export NFTBAN_SKIP_DROP_CHAINS=$SKIP_DROP_CHAINS
+        export NFTBAN_CPANEL_MODE=$CPANEL_MODE
+
+        if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
+            log_warn "Safety mode: Hook chains with DROP policy will NOT be created"
+            log_warn "NFTBan sets/tables will be created but firewall won't block traffic"
+        fi
+
+        # =====================================================================
+        # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED
         # =====================================================================
         # WHY v4 IS REQUIRED:
         #   - yq v3 (Python pip) is ~10x slower (0.17s vs 0.017s per call)
         #   - nftban help makes 100+ yq calls, causing timeout with v3
         #   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
+        # SUPPLY-CHAIN SAFE: yq is bundled in package with SHA256 verification at build time
         log_info "Checking yq v4 (YAML processor)..."
 
-        YQ_NEEDS_INSTALL=false
+        # Check if system yq is already v4
         if command -v yq &>/dev/null; then
             YQ_VER=$(yq --version 2>/dev/null | head -1 || echo "")
             if [[ "$YQ_VER" == *"mikefarah"* ]] || [[ "$YQ_VER" == *"version v4"* ]]; then
                 log_info "yq v4 found: $YQ_VER"
             else
-                log_info "yq v3 (Python) detected - upgrading to v4 for performance..."
-                YQ_NEEDS_INSTALL=true
+                # System has yq v3, use bundled v4
+                if [[ -x /usr/lib/nftban/bin/yq ]]; then
+                    ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                    log_info "yq v4 linked from bundled binary (replaced v3)"
+                fi
             fi
         else
-            log_info "yq not found - installing v4..."
-            YQ_NEEDS_INSTALL=true
-        fi
-
-        if [[ "$YQ_NEEDS_INSTALL" == "true" ]]; then
-            YQ_URL="https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
-            if curl -sL "$YQ_URL" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq; then
-                [[ ! -e /usr/bin/yq ]] && ln -sf /usr/local/bin/yq /usr/bin/yq
-                log_info "yq v4 installed: $(/usr/local/bin/yq --version 2>/dev/null)"
+            # No system yq, link bundled
+            if [[ -x /usr/lib/nftban/bin/yq ]]; then
+                ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                log_info "yq v4 linked from bundled binary"
             else
-                log_info "WARNING: Failed to install yq v4 - help command may be slow"
+                log_warn "WARNING: bundled yq not found - help command may be slow"
             fi
         fi
 
@@ -391,7 +446,7 @@ case "$1" in
         # =====================================================================
         # STEP 8: Enable Timers and Services
         # =====================================================================
-        # NOW it's safe to enable services since whitelist is in place
+        # v1.16.3: Respect SKIP_DROP_CHAINS flag from preflight
         log_info "Enabling systemd timers and services..."
 
         # Fresh install - enable services
@@ -405,9 +460,35 @@ case "$1" in
             if ! deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
                 systemctl enable nftband.service >/dev/null 2>&1 || true
             fi
-            # Start using systemctl directly (more reliable)
-            systemctl start nftband.socket >/dev/null 2>&1 || true
-            log_info "  NFTBand daemon enabled (single nftables writer)"
+
+            # v1.16.3: In CPANEL_MODE or SKIP_DROP_CHAINS, don't trigger full sync
+            # which would create DROP chains and cause lockout
+            if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
+                log_warn "Safety mode: Skipping daemon sync (would create DROP chains)"
+                log_warn "NFTBan daemon enabled but firewall NOT active"
+                # Start socket only - don't trigger sync that creates structure
+                systemctl start nftband.socket >/dev/null 2>&1 || true
+            else
+                # Normal mode: Start socket and trigger sync
+                systemctl start nftband.socket >/dev/null 2>&1 || true
+
+                # Trigger socket activation via IPC call (ensures daemon starts)
+                # Use timeout to prevent blocking, retry once on failure
+                sleep 1
+                if timeout 10s nftban sync >/dev/null 2>&1; then
+                    log_info "  NFTBand daemon activated via sync"
+                else
+                    # Retry once after short delay
+                    sleep 2
+                    if timeout 10s nftban sync >/dev/null 2>&1; then
+                        log_info "  NFTBand daemon activated via sync (retry)"
+                    else
+                        # Final fallback: explicit service start
+                        systemctl start nftband.service >/dev/null 2>&1 || true
+                        log_info "  NFTBand daemon started (fallback mode)"
+                    fi
+                fi
+            fi
 
             # Core timers (maintenance tasks) - with fallback
             for timer in nftban-maintenance.timer nftban-health.timer nftban-queue.timer nftban-unified-exporter.timer; do
@@ -430,6 +511,14 @@ case "$1" in
             # Start timers
             systemctl start nftban-maintenance.timer >/dev/null 2>&1 || true
             systemctl start nftban-health.timer >/dev/null 2>&1 || true
+
+            # Start queue timer only if unit file exists (BUG-005 fix)
+            if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+                systemctl start nftban-queue.timer >/dev/null 2>&1 || true
+                log_info "  Queue timer started"
+            else
+                log_warn "nftban-queue.timer not installed (optional)"
+            fi
 
             log_info "  Fresh install - timers enabled and started"
         fi
@@ -470,42 +559,85 @@ case "$1" in
         systemctl daemon-reload
 
         # =====================================================================
-        # STEP 10: Sync whitelist.d files to nftables sets BEFORE nftables starts
+        # STEP 10: Sync whitelist.d files to nftables sets
         # =====================================================================
-        # ROOT CAUSE FIX: Previously nftables started with DROP policy BEFORE
-        # whitelist sync, causing SSH lockout. Now we sync FIRST.
-        # The nftables template has only default IPs, this loads the actual detected system IPs
-        # Use --quick to only sync whitelists/blacklists (skip feeds/geoban for fast install)
-        log_info "Syncing whitelist files to nftables..."
-        # Single attempt - nftband should be ready after socket activation above
-        if nftban sync --quick >/dev/null 2>&1; then
-            log_info "  Whitelist sync completed"
+        # v1.16.3: Skip if in safety mode (DROP chains not created)
+        if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
+            log_warn "Safety mode: Skipping whitelist sync (no nftables structure)"
         else
-            # One retry with short delay
-            sleep 0.5
-            nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
+            log_info "Syncing whitelist files to nftables..."
+            if nftban sync --quick >/dev/null 2>&1; then
+                log_info "  Whitelist sync completed"
+            else
+                sleep 0.5
+                nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
+            fi
         fi
 
         # =====================================================================
-        # STEP 11: Enable and start nftables AFTER whitelist is synced
+        # STEP 10.5: Additional config validation (secondary to STEP 0.4 preflight)
         # =====================================================================
-        # This ensures DROP policy only takes effect when SSH whitelist is in place
-        if systemctl is-active nftables >/dev/null 2>&1; then
-            log_info "Reloading nftables..."
-            systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
-        else
-            log_info "Enabling and starting nftables..."
-            systemctl enable nftables 2>/dev/null || true
-            systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+        # Config file validation (complements live ruleset check from STEP 0.4)
+        if [[ -f /etc/nftban/nftables.conf ]] && [[ $NFTABLES_SAFE -eq 1 ]]; then
+            if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
+                log_error "NFTBan nftables config validation failed"
+                NFTABLES_SAFE=0
+            fi
         fi
 
         # =====================================================================
-        # STEP 12: GeoIP Database (defer to background/first run)
+        # STEP 11: Enable and start nftables ONLY IF SAFE and NOT cPanel
         # =====================================================================
-        # GeoIP download can take 10-30 seconds depending on network
-        # Defer to maintenance timer for faster install
-        log_info "GeoIP database will be downloaded on first maintenance run"
-        log_info "  Manual download: nftban geoip update"
+        # v1.16.3: cPanel mode = never manage nftables.service
+        if [[ $CPANEL_MODE -eq 1 ]]; then
+            log_warn ""
+            log_warn "=========================================="
+            log_warn " cPanel MODE - nftables.service NOT managed"
+            log_warn "=========================================="
+            log_warn "NFTBan installed in coexistence mode."
+            log_warn "cPanel continues to manage firewall rules."
+            log_warn "NFTBan tables NOT created (no DROP policy chains)."
+            log_warn ""
+            log_info "To manually enable NFTBan protection later:"
+            log_info "  1. Disable cPanel firewall: csf -x (or via WHM)"
+            log_info "  2. Remove conflicts: nftban health conflicts --fix"
+            log_info "  3. Enable NFTBan: nftban sync && systemctl start nftables"
+            log_warn ""
+        elif [[ $NFTABLES_SAFE -eq 1 ]]; then
+            if systemctl is-active nftables >/dev/null 2>&1; then
+                log_info "Reloading nftables..."
+                systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
+            else
+                log_info "Enabling and starting nftables..."
+                systemctl enable nftables 2>/dev/null || true
+                systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+            fi
+        else
+            log_warn ""
+            log_warn "=========================================="
+            log_warn " NFTABLES NOT ACTIVATED (Safety Mode)"
+            log_warn "=========================================="
+            log_warn "Install completed but firewall is NOT active."
+            log_warn "SSH access is preserved. Fix issues above, then run:"
+            log_warn "  systemctl start nftables"
+            log_warn ""
+        fi
+
+        # =====================================================================
+        # STEP 12: GeoIP Database Download (with timeout for airgapped systems)
+        # =====================================================================
+        log_info "Downloading GeoIP database..."
+        if [[ -x /usr/lib/nftban/bin/nftban-core ]]; then
+            # Use timeout to prevent blocking on slow/no network (15s max)
+            if timeout 15s /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+                log_info "  GeoIP database downloaded successfully"
+            else
+                log_info "  GeoIP download skipped (timeout or no network)"
+                log_info "  Will auto-download on first timer run, or manual: nftban geoip update"
+            fi
+        else
+            log_warn "nftban-core not found, skipping GeoIP download"
+        fi
 
         # =====================================================================
         # STEP 13: Enable Login Monitoring (Default Protection)

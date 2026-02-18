@@ -25,9 +25,61 @@ permissions: read-all
 
 jobs:
   # ==========================================================================
+  # VALIDATE BUNDLED DEPENDENCIES (yq checksum consistency)
+  # ==========================================================================
+  validate-dependencies:
+    name: Validate bundled dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Validate yq checksums are consistent
+        run: |
+          echo "Checking yq SHA256 checksums across build files..."
+
+          # Extract all YQ_SHA256 values
+          CHECKSUMS=$(grep -roh 'YQ_SHA256="[a-f0-9]\{64\}"' packaging/ | sort -u)
+          COUNT=$(echo "$CHECKSUMS" | wc -l)
+
+          echo "Found $COUNT unique YQ_SHA256 definitions:"
+          echo "$CHECKSUMS"
+
+          if [[ $COUNT -ne 1 ]]; then
+            echo "ERROR: Multiple different yq checksums found!"
+            echo "All checksums must match. Found:"
+            grep -rn 'YQ_SHA256=' packaging/
+            exit 1
+          fi
+
+          # Extract the checksum value
+          YQ_SHA256=$(echo "$CHECKSUMS" | head -1 | cut -d'"' -f2)
+          echo "Verifying checksum: $YQ_SHA256"
+
+          # Download yq and verify
+          YQ_VERSION=$(grep -oh 'YQ_VERSION="[0-9.]*"' packaging/build_nftban.sh | head -1 | cut -d'"' -f2)
+          echo "yq version: $YQ_VERSION"
+
+          curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq_linux_amd64
+          ACTUAL_SHA=$(sha256sum /tmp/yq_linux_amd64 | cut -d' ' -f1)
+
+          echo "Expected: $YQ_SHA256"
+          echo "Actual:   $ACTUAL_SHA"
+
+          if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
+            echo "ERROR: yq checksum mismatch!"
+            echo "The bundled checksum is outdated. Update with:"
+            echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+            exit 1
+          fi
+
+          echo "✅ yq checksum validated successfully"
+
+  # ==========================================================================
   # BUILD GO BINARIES
   # ==========================================================================
   build-binaries:
+    needs: validate-dependencies
     name: Build Go binaries
     runs-on: ubuntu-latest
     steps:
@@ -119,8 +171,9 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
-            # Install build dependencies
-            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros make
+            # Install build dependencies (curl required for yq download)
+            # Note: --allowerasing handles curl-minimal vs curl conflict on Rocky/Alma
+            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
 
             # Build RPM
             chmod +x packaging/build_nftban.sh
@@ -222,9 +275,9 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
-            # Install build dependencies (with retry for transient mirror issues)
+            # Install build dependencies (curl required for yq download)
             for i in 1 2 3; do
-              apt-get update && apt-get install -y dpkg-dev build-essential file && break
+              apt-get update && apt-get install -y dpkg-dev build-essential file curl && break
               echo \"Retry \$i: apt-get failed, retrying in 5s...\"
               sleep 5
             done

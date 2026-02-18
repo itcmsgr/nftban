@@ -32,7 +32,6 @@ Depends: ${shlibs:Depends},
          findutils,
          util-linux,
          iproute2,
-         git,
          policykit-1,
          adduser,
          socat
