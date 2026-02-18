@@ -139,76 +139,55 @@ case "$1" in
         [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Obsolete file cleanup complete"
 
         # =====================================================================
-        # STEP 0.4: CRITICAL PREFLIGHT - Check BEFORE any nftables changes
+        # STEP 0.4: NFTBan is THE ONLY firewall - no coexistence
         # =====================================================================
-        # v1.16.3: This MUST run before ANY nft commands to prevent lockout
-        # Three checks: (A) Live xt targets, (B) cPanel detection, (C) Set safety flags
-        log_info "Running critical preflight checks..."
+        log_info "Checking for conflicting firewalls..."
 
         NFTABLES_SAFE=1
-        CPANEL_MODE=0
-        SKIP_DROP_CHAINS=0
+        CONFLICT=""
 
-        # (A) Check LIVE ruleset for xt targets (not just config file!)
-        # cPanel/iptables-nft creates xt rules that break nftables service
-        if command -v nft >/dev/null 2>&1; then
-            LIVE_CHECK=$(nft list ruleset 2>&1 || true)
-            if echo "$LIVE_CHECK" | grep -qE "xt target|xtables compat"; then
-                log_error ""
-                log_error "=========================================="
-                log_error " XT TARGET RULES DETECTED IN LIVE RULESET"
-                log_error "=========================================="
-                log_error "This system has iptables-nft xt compat rules loaded."
-                log_error "These are incompatible with nftables service management."
-                log_error ""
-                log_error "NFTBan will install but NOT activate nftables."
-                log_error "Existing firewall rules will remain unchanged."
-                log_error ""
-                NFTABLES_SAFE=0
-                SKIP_DROP_CHAINS=1
-            fi
+        # Check CSF (ConfigServer Firewall)
+        if systemctl is-active csf.service &>/dev/null 2>&1 || [[ -f /etc/csf/csf.conf ]]; then
+            CONFLICT="CSF (ConfigServer Firewall)"
         fi
 
-        # (B) Detect cPanel - force coexist mode (don't manage nftables service)
-        if [[ -f /usr/local/cpanel/version ]]; then
-            CPANEL_VER=$(cat /usr/local/cpanel/version 2>/dev/null || echo "unknown")
-            log_warn ""
-            log_warn "=========================================="
-            log_warn " cPanel DETECTED (v${CPANEL_VER})"
-            log_warn "=========================================="
-            log_warn "NFTBan will operate in coexistence mode:"
-            log_warn "  - Will NOT manage nftables.service"
-            log_warn "  - Will NOT flush or replace existing rules"
-            log_warn "  - Will NOT create hook chains with DROP policy"
-            log_warn ""
-            CPANEL_MODE=1
-            SKIP_DROP_CHAINS=1
+        # Check cPHulk (cPanel brute force)
+        if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
+            CONFLICT="cPHulk (cPanel brute force protection)"
         fi
 
-        # (C) Export flags for use by nftban commands during install
-        export NFTBAN_SKIP_DROP_CHAINS=$SKIP_DROP_CHAINS
-        export NFTBAN_CPANEL_MODE=$CPANEL_MODE
-
-        if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
-            log_warn "Safety mode: Hook chains with DROP policy will NOT be created"
-            log_warn "NFTBan sets/tables will be created but firewall won't block traffic"
-
-            # CRITICAL v1.17.0: Persist SKIP_DROP_CHAINS to config file
-            # Without this, nftban sync/reboot would recreate DROP chains and lock out server!
-            mkdir -p /etc/nftban/conf.d
-            cat > /etc/nftban/conf.d/firewall.conf << 'FIREWALL_EOF'
-# NFTBan Firewall Configuration
-# Auto-generated during install - DO NOT EDIT unless you know what you're doing
-#
-# SKIP_DROP_CHAINS=true prevents NFTBan from creating chains with DROP policy
-# This is required for cPanel/Plesk/DirectAdmin servers where panel manages firewall
-
-SKIP_DROP_CHAINS=true
-FIREWALL_MODE=coexist
-FIREWALL_EOF
-            chmod 0644 /etc/nftban/conf.d/firewall.conf
-            log_info "Created /etc/nftban/conf.d/firewall.conf with SKIP_DROP_CHAINS=true"
+        # Check UFW
+        if systemctl is-active ufw.service &>/dev/null 2>&1; then
+            CONFLICT="UFW (Uncomplicated Firewall)"
         fi
+
+        # Check firewalld
+        if systemctl is-active firewalld.service &>/dev/null 2>&1; then
+            CONFLICT="firewalld"
+        fi
+
+        # Abort if conflict found
+        if [[ -n "$CONFLICT" ]]; then
+            log_error ""
+            log_error "=========================================="
+            log_error " CONFLICTING FIREWALL DETECTED"
+            log_error "=========================================="
+            log_error "Found: $CONFLICT"
+            log_error ""
+            log_error "NFTBan requires exclusive firewall control."
+            log_error "You cannot run two firewalls simultaneously."
+            log_error ""
+            log_error "To use NFTBan, first remove the conflict:"
+            log_error "  - CSF: csf -x && apt remove csf lfd"
+            log_error "  - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+            log_error "  - UFW: ufw disable && apt remove ufw"
+            log_error "  - firewalld: systemctl disable --now firewalld"
+            log_error ""
+            log_error "Then reinstall NFTBan."
+            exit 1
+        fi
+
+        log_info "No conflicting firewalls found"
 
         # =====================================================================
         # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED
@@ -471,7 +450,6 @@ FIREWALL_EOF
         # =====================================================================
         # STEP 8: Enable Timers and Services
         # =====================================================================
-        # v1.16.3: Respect SKIP_DROP_CHAINS flag from preflight
         log_info "Enabling systemd timers and services..."
 
         # Fresh install - enable services
@@ -486,29 +464,20 @@ FIREWALL_EOF
                 systemctl enable nftband.service >/dev/null 2>&1 || true
             fi
 
-            # v1.16.3: In CPANEL_MODE or SKIP_DROP_CHAINS, don't trigger full sync
-            # which would create DROP chains and cause lockout
-            if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
-                log_warn "Safety mode: Skipping daemon sync (would create DROP chains)"
-                log_warn "NFTBan daemon enabled but firewall NOT active"
-                # Start socket only - don't trigger sync that creates structure
-                systemctl start nftband.socket >/dev/null 2>&1 || true
-            else
-                # Normal mode: Start socket and service explicitly
-                # BUG-002 fix: Socket activation alone is unreliable on fresh install
-                systemctl start nftband.socket >/dev/null 2>&1 || true
-                systemctl start nftband.service >/dev/null 2>&1 || true
-                log_info "  NFTBand socket and service started"
+            # Start socket and service explicitly
+            # BUG-002 fix: Socket activation alone is unreliable on fresh install
+            systemctl start nftband.socket >/dev/null 2>&1 || true
+            systemctl start nftband.service >/dev/null 2>&1 || true
+            log_info "  NFTBand socket and service started"
 
-                # Trigger sync to ensure daemon is operational
-                sleep 1
-                if timeout 10s nftban sync >/dev/null 2>&1; then
-                    log_info "  NFTBand daemon verified via sync"
-                else
-                    # Retry once after short delay
-                    sleep 2
-                    timeout 10s nftban sync >/dev/null 2>&1 || log_warn "NFTBand sync failed (non-critical)"
-                fi
+            # Trigger sync to ensure daemon is operational
+            sleep 1
+            if timeout 10s nftban sync >/dev/null 2>&1; then
+                log_info "  NFTBand daemon verified via sync"
+            else
+                # Retry once after short delay
+                sleep 2
+                timeout 10s nftban sync >/dev/null 2>&1 || log_warn "NFTBand sync failed (non-critical)"
             fi
 
             # Core timers (maintenance tasks) - with fallback
@@ -582,17 +551,12 @@ FIREWALL_EOF
         # =====================================================================
         # STEP 10: Sync whitelist.d files to nftables sets
         # =====================================================================
-        # v1.16.3: Skip if in safety mode (DROP chains not created)
-        if [[ $SKIP_DROP_CHAINS -eq 1 ]]; then
-            log_warn "Safety mode: Skipping whitelist sync (no nftables structure)"
+        log_info "Syncing whitelist files to nftables..."
+        if nftban sync --quick >/dev/null 2>&1; then
+            log_info "  Whitelist sync completed"
         else
-            log_info "Syncing whitelist files to nftables..."
-            if nftban sync --quick >/dev/null 2>&1; then
-                log_info "  Whitelist sync completed"
-            else
-                sleep 0.5
-                nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
-            fi
+            sleep 0.5
+            nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
         fi
 
         # =====================================================================
@@ -607,24 +571,9 @@ FIREWALL_EOF
         fi
 
         # =====================================================================
-        # STEP 11: Enable and start nftables ONLY IF SAFE and NOT cPanel
+        # STEP 11: Enable and start nftables
         # =====================================================================
-        # v1.16.3: cPanel mode = never manage nftables.service
-        if [[ $CPANEL_MODE -eq 1 ]]; then
-            log_warn ""
-            log_warn "=========================================="
-            log_warn " cPanel MODE - nftables.service NOT managed"
-            log_warn "=========================================="
-            log_warn "NFTBan installed in coexistence mode."
-            log_warn "cPanel continues to manage firewall rules."
-            log_warn "NFTBan tables NOT created (no DROP policy chains)."
-            log_warn ""
-            log_info "To manually enable NFTBan protection later:"
-            log_info "  1. Disable cPanel firewall: csf -x (or via WHM)"
-            log_info "  2. Remove conflicts: nftban health conflicts --fix"
-            log_info "  3. Enable NFTBan: nftban sync && systemctl start nftables"
-            log_warn ""
-        elif [[ $NFTABLES_SAFE -eq 1 ]]; then
+        if [[ $NFTABLES_SAFE -eq 1 ]]; then
             if systemctl is-active nftables >/dev/null 2>&1; then
                 log_info "Reloading nftables..."
                 systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"

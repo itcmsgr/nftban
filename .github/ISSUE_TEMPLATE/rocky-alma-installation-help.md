@@ -8,8 +8,8 @@ assignees: ''
 
 ## System Information
 
-**Operating System:** (Rocky Linux 9 / AlmaLinux 9 / Rocky Linux 8 / AlmaLinux 8)
-**NFTBan Version:** (e.g., 0.32.5)
+**Operating System:** (Rocky Linux 9/10 / AlmaLinux 9/10)
+**NFTBan Version:** (e.g., 1.17.0)
 
 ## Installation Command You Tried
 
@@ -29,19 +29,13 @@ Before opening this issue, please run these commands and paste the output:
 
 ```bash
 # 1. Check OS version
-cat /etc/os-release
+cat /etc/os-release | grep -E "^NAME|^VERSION"
 
-# 2. Check enabled repositories
-dnf repolist enabled | grep -E 'epel|crb|powertools'
+# 2. Check nftables
+rpm -q nftables
 
-# 3. Check for conflicting repos
-dnf repolist enabled | grep -E 'testing|modular|next'
-
-# 4. Check for manual Go installation
-ls -la /usr/local/go 2>/dev/null || echo "No manual Go found"
-
-# 5. Check golang package
-rpm -qa | grep golang
+# 3. Check systemd
+systemctl --version | head -1
 ```
 
 **Paste output here:**
@@ -49,62 +43,34 @@ rpm -qa | grep golang
 [paste here]
 ```
 
-## Have You Read the Installation Guide?
+## Installation Steps
 
-- [ ] Yes, I have read `/usr/share/nftban/docs/QUICK-START.md` (after install)
-- [ ] Yes, I have run `scripts/distro-setup/rocky.sh` or `almalinux.sh`
-- [ ] No, I haven't seen them yet
-
-## Common Solutions (Try These First!)
-
-### Solution 1: Enable EPEL + CRB Repos
-
-**For Rocky/Alma 9:**
-```bash
-sudo dnf clean all
-sudo dnf install -y epel-release
-sudo dnf config-manager --set-enabled crb
-sudo dnf distro-sync -y
-sudo dnf install -y nftban-x86_64.rpm
-```
-
-**For Rocky/Alma 8:**
-```bash
-sudo dnf clean all
-sudo dnf install -y epel-release
-sudo dnf config-manager --set-enabled powertools
-sudo dnf distro-sync -y
-sudo dnf install -y nftban-x86_64.rpm
-```
-
-### Solution 2: Disable Conflicting Testing Repos
+NFTBan v1.17.0+ uses **pre-compiled binaries** - no CRB/PowerTools needed!
 
 ```bash
-sudo dnf config-manager --set-disabled epel-testing epel-modular epel-next epel-next-testing
-sudo dnf distro-sync -y
+# Download
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
+
+# Install (all deps are in base repos)
+sudo dnf install -y ./nftban-el9-x86_64.rpm
+
+# Enable
+sudo nftban enable
 ```
 
-### Solution 3: Remove Manual Go Installation
+## Common Issues
 
-```bash
-sudo rm -rf /usr/local/go
-sudo dnf install -y golang
-```
+### "Unable to find a match: nftban"
+Use local file install: `dnf install -y ./nftban-*.rpm` (note the `./`)
 
-### Solution 4: Fix Package Version Mismatches
+### "nftables not available"
+Install nftables: `dnf install -y nftables`
 
-```bash
-sudo dnf clean all
-sudo rm -rf /var/cache/dnf
-sudo dnf distro-sync -y
-```
+### Panel server (cPanel/Plesk/DirectAdmin)
+Disable CSF/cPHulk first, then install NFTBan. Run `nftban panel cpanel enable` to open panel ports.
 
 ---
 
 ## Additional Context
 
 Add any other context about the problem here.
-
-**Did any of the common solutions above work?**
-- [ ] Yes, Solution #___ fixed it
-- [ ] No, still having issues
