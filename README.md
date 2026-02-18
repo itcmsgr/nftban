@@ -38,9 +38,8 @@ sudo apt update && sudo apt install -y ./nftban-debian12-amd64.deb && sudo nftba
 
 #### Rocky / AlmaLinux / RHEL 9
 ```bash
-sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
-sudo dnf install -y nftban-el9-x86_64.rpm && sudo nftban enable
+sudo dnf install -y ./nftban-el9-x86_64.rpm && sudo nftban enable
 ```
 
 ### Tier 1 — Future Platforms
@@ -53,9 +52,8 @@ sudo apt update && sudo apt install -y ./nftban-debian13-amd64.deb && sudo nftba
 
 #### Rocky / AlmaLinux / RHEL 10
 ```bash
-sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
-sudo dnf install -y nftban-el10-x86_64.rpm && sudo nftban enable
+sudo dnf install -y ./nftban-el10-x86_64.rpm && sudo nftban enable
 ```
 
 ### Tier 2 — Legacy Platforms
