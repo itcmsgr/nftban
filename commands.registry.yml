@@ -2850,7 +2850,7 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 54
+  total_commands: 76
   commands_with_json: 43
   commands_without_json: 11
   commands_with_full_options: 25
