@@ -172,7 +172,8 @@ jobs:
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # Install build dependencies (curl required for yq download)
-            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
+            # Note: --allowerasing handles curl-minimal vs curl conflict on Rocky/Alma
+            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
 
             # Build RPM
             chmod +x packaging/build_nftban.sh
