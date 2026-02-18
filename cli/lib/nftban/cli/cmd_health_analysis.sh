@@ -128,13 +128,25 @@ nftban_health_cmd_conflicts() {
         echo "│  ✓ ufw           not installed                            │"
     fi
 
-    # CSF
-    if [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
-        echo "│  ✗ CSF           ACTIVE (production mode)                 │"
+    # CSF - Check BOTH service status AND config file
+    # Root cause fix: Previously only checked config, not service state
+    # CSF can be disabled (csf -x) but config still has TESTING="0"
+    local csf_service_active=false
+    if systemctl is-active --quiet lfd 2>/dev/null; then
+        csf_service_active=true
+    elif command -v csf &>/dev/null && csf -s 2>&1 | grep -q "csf is enabled"; then
+        csf_service_active=true
+    fi
+
+    if [[ "$csf_service_active" == "true" ]] && [[ -f /etc/csf/csf.conf ]]; then
+        if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+            echo "│  ✗ CSF           ACTIVE (production mode)                 │"
+        else
+            echo "│  ✗ CSF           ACTIVE (testing mode)                    │"
+        fi
         has_conflicts=true
     elif [[ -f /etc/csf/csf.conf ]]; then
-        echo "│  ⚠ CSF           installed (testing mode)                 │"
-        has_conflicts=true
+        echo "│  ✓ CSF           disabled (no conflict)                   │"
     else
         echo "│  ✓ CSF           not installed                            │"
     fi
