@@ -727,9 +727,63 @@ fi
 echo "[NFTBan] Obsolete file cleanup complete"
 
 # =============================================================================
+# CRITICAL PREFLIGHT: Check BEFORE any nftables changes (v1.16.3)
+# =============================================================================
+# Three checks: (A) Live xt targets, (B) cPanel detection, (C) Set safety flags
+echo "[NFTBan] Running critical preflight checks..."
+
+NFTABLES_SAFE=1
+CPANEL_MODE=0
+SKIP_DROP_CHAINS=0
+
+# (A) Check LIVE ruleset for xt targets (not just config file!)
+# cPanel/iptables-nft creates xt rules that break nftables service
+if command -v nft >/dev/null 2>&1; then
+    LIVE_CHECK=$(nft list ruleset 2>&1 || true)
+    if echo "$LIVE_CHECK" | grep -qE "xt target|xtables compat"; then
+        echo ""
+        echo "[NFTBan ERROR] =========================================="
+        echo "[NFTBan ERROR]  XT TARGET RULES DETECTED IN LIVE RULESET"
+        echo "[NFTBan ERROR] =========================================="
+        echo "[NFTBan ERROR] This system has iptables-nft xt compat rules loaded."
+        echo "[NFTBan ERROR] These are incompatible with nftables service management."
+        echo ""
+        echo "[NFTBan ERROR] NFTBan will install but NOT activate nftables."
+        echo "[NFTBan ERROR] Existing firewall rules will remain unchanged."
+        echo ""
+        NFTABLES_SAFE=0
+        SKIP_DROP_CHAINS=1
+    fi
+fi
+
+# (B) Detect cPanel - force coexist mode (don't manage nftables service)
+if [ -f /usr/local/cpanel/version ]; then
+    CPANEL_VER=$(cat /usr/local/cpanel/version 2>/dev/null || echo "unknown")
+    echo ""
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN]  cPanel DETECTED (v${CPANEL_VER})"
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN] NFTBan will operate in coexistence mode:"
+    echo "[NFTBan WARN]   - Will NOT manage nftables.service"
+    echo "[NFTBan WARN]   - Will NOT flush or replace existing rules"
+    echo "[NFTBan WARN]   - Will NOT create hook chains with DROP policy"
+    echo ""
+    CPANEL_MODE=1
+    SKIP_DROP_CHAINS=1
+fi
+
+# (C) Export flags for use by nftban commands during install
+export NFTBAN_SKIP_DROP_CHAINS=$SKIP_DROP_CHAINS
+export NFTBAN_CPANEL_MODE=$CPANEL_MODE
+
+if [ $SKIP_DROP_CHAINS -eq 1 ]; then
+    echo "[NFTBan WARN] Safety mode: Hook chains with DROP policy will NOT be created"
+    echo "[NFTBan WARN] NFTBan sets/tables will be created but firewall won't block traffic"
+fi
+
+# =============================================================================
 # Rest of install flow continues below...
 # =============================================================================
-# This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
 
 echo "[NFTBan] Configuring NFTBan v%{version}..."
 
@@ -840,26 +894,37 @@ fi
 echo "[NFTBan] Enabling systemd services..."
 %systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer nftban-unified-exporter.timer
 
-# Enable nftables
-systemctl enable nftables 2>/dev/null || true
+# Enable nftables (unless in cPanel mode)
+if [ "\$CPANEL_MODE" -eq 1 ]; then
+    echo "[NFTBan] cPanel mode: NOT enabling nftables.service"
+else
+    systemctl enable nftables 2>/dev/null || true
+fi
 
-# Enable and start nftband daemon socket (CRITICAL for CLI communication)
+# Enable nftband daemon socket (CRITICAL for CLI communication)
 echo "[NFTBan] Starting nftband daemon..."
 systemctl enable --now nftband.socket 2>/dev/null || true
 
-# Trigger socket activation via IPC call (ensures daemon starts deterministically)
-sleep 1
-if timeout 10s nftban sync >/dev/null 2>&1; then
-    echo "[NFTBan]   Daemon activated via sync"
+# v1.16.3: In CPANEL_MODE or SKIP_DROP_CHAINS, don't trigger full sync
+# which would create DROP chains and cause lockout
+if [ "\$SKIP_DROP_CHAINS" -eq 1 ]; then
+    echo "[NFTBan WARN] Safety mode: Skipping daemon sync (would create DROP chains)"
+    echo "[NFTBan WARN] NFTBan daemon enabled but firewall NOT active"
 else
-    # Retry once
-    sleep 2
+    # Normal mode: Trigger socket activation via IPC call
+    sleep 1
     if timeout 10s nftban sync >/dev/null 2>&1; then
-        echo "[NFTBan]   Daemon activated via sync (retry)"
+        echo "[NFTBan]   Daemon activated via sync"
     else
-        # Fallback: explicit service start
-        systemctl start nftband.service 2>/dev/null || true
-        echo "[NFTBan]   Daemon started (fallback mode)"
+        # Retry once
+        sleep 2
+        if timeout 10s nftban sync >/dev/null 2>&1; then
+            echo "[NFTBan]   Daemon activated via sync (retry)"
+        else
+            # Fallback: explicit service start
+            systemctl start nftband.service 2>/dev/null || true
+            echo "[NFTBan]   Daemon started (fallback mode)"
+        fi
     fi
 fi
 
@@ -900,24 +965,23 @@ if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
     fi
 fi
 
-# STEP 10: Sync whitelist.d files to nftables sets BEFORE starting nftables
-# ROOT CAUSE FIX: Previously nftables started with DROP policy BEFORE whitelist
-# sync, causing SSH lockout. Now we sync FIRST, then start nftables.
-# The nftables template has only default IPs, this loads the actual detected system IPs
-echo "[NFTBan] Syncing whitelist files to nftables..."
-# Wait for nftband daemon to be ready (socket activation)
-SYNC_SUCCESS=0
-for i in 1 2 3; do
-    sleep 1
-    # Use nftban CLI sync command (connects to nftband daemon)
-    if nftban sync >/dev/null 2>&1; then
-        SYNC_SUCCESS=1
-        echo "[NFTBan]   Whitelist sync completed successfully"
-        break
-    fi
-done
-if [ "\$SYNC_SUCCESS" -eq 0 ]; then
-    echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
+# STEP 10: Sync whitelist.d files to nftables sets
+# v1.16.3: Skip if in safety mode (DROP chains not created)
+if [ "\$SKIP_DROP_CHAINS" -eq 1 ]; then
+    echo "[NFTBan WARN] Safety mode: Skipping whitelist sync (no nftables structure)"
+else
+    echo "[NFTBan] Syncing whitelist files to nftables..."
+    SYNC_SUCCESS=0
+    for i in 1 2 3; do
+        sleep 1
+        if nftban sync >/dev/null 2>&1; then
+            SYNC_SUCCESS=1
+            echo "[NFTBan]   Whitelist sync completed successfully"
+            break
+        fi
+    done
+    if [ "\$SYNC_SUCCESS" -eq 0 ]; then
+        echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
 fi
 
 # =============================================================================
@@ -977,8 +1041,22 @@ if [ -f /etc/nftban/nftables.conf ]; then
     fi
 fi
 
-# STEP 11: Load nftables configuration ONLY IF SAFE
-if [ "\$NFTABLES_SAFE" -eq 1 ]; then
+# STEP 11: Load nftables configuration ONLY IF SAFE and NOT cPanel
+# v1.16.3: cPanel mode = never manage nftables.service
+if [ "\$CPANEL_MODE" -eq 1 ]; then
+    echo ""
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN]  cPanel MODE - nftables.service NOT managed"
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN] NFTBan installed in coexistence mode."
+    echo "[NFTBan WARN] cPanel continues to manage firewall rules."
+    echo "[NFTBan WARN] NFTBan tables NOT created (no DROP policy chains)."
+    echo ""
+    echo "[NFTBan] To manually enable NFTBan protection later:"
+    echo "[NFTBan]   1. Review/migrate cPanel firewall rules"
+    echo "[NFTBan]   2. Run: nftban firewall takeover"
+    echo ""
+elif [ "\$NFTABLES_SAFE" -eq 1 ]; then
     if systemctl is-active nftables >/dev/null 2>&1; then
         systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
     else
