@@ -1758,6 +1758,16 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
 
+    # Download yq at BUILD time (supply-chain safe - not at install time)
+    # SHA256 verified before bundling in package
+    local YQ_VERSION="4.44.1"
+    local YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
+    log_info "Downloading yq v${YQ_VERSION} for bundling..."
+    curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o "${BUILD_DIR}/yq_linux_amd64"
+    echo "${YQ_SHA256}  ${BUILD_DIR}/yq_linux_amd64" | sha256sum -c - || { log_error "yq checksum verification failed!"; exit 1; }
+    install -m 0755 "${BUILD_DIR}/yq_linux_amd64" "${deb_root}/usr/lib/nftban/bin/yq"
+    log_info "yq v${YQ_VERSION} bundled (SHA256 verified)"
+
     # Copy helper scripts to /usr/lib/nftban/sbin/
     # CRITICAL: These scripts are executed by systemd services and MUST have 755 permissions
     # Bug fix v1.9.4: Ensure sbin scripts are always installed with correct permissions

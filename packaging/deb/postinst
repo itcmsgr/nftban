@@ -139,35 +139,34 @@ case "$1" in
         [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Obsolete file cleanup complete"
 
         # =====================================================================
-        # STEP 0.5: Install/Upgrade yq v4 (mikefarah/yq) - REQUIRED
+        # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED
         # =====================================================================
         # WHY v4 IS REQUIRED:
         #   - yq v3 (Python pip) is ~10x slower (0.17s vs 0.017s per call)
         #   - nftban help makes 100+ yq calls, causing timeout with v3
         #   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
+        # SUPPLY-CHAIN SAFE: yq is bundled in package with SHA256 verification at build time
         log_info "Checking yq v4 (YAML processor)..."
 
-        YQ_NEEDS_INSTALL=false
+        # Check if system yq is already v4
         if command -v yq &>/dev/null; then
             YQ_VER=$(yq --version 2>/dev/null | head -1 || echo "")
             if [[ "$YQ_VER" == *"mikefarah"* ]] || [[ "$YQ_VER" == *"version v4"* ]]; then
                 log_info "yq v4 found: $YQ_VER"
             else
-                log_info "yq v3 (Python) detected - upgrading to v4 for performance..."
-                YQ_NEEDS_INSTALL=true
+                # System has yq v3, use bundled v4
+                if [[ -x /usr/lib/nftban/bin/yq ]]; then
+                    ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                    log_info "yq v4 linked from bundled binary (replaced v3)"
+                fi
             fi
         else
-            log_info "yq not found - installing v4..."
-            YQ_NEEDS_INSTALL=true
-        fi
-
-        if [[ "$YQ_NEEDS_INSTALL" == "true" ]]; then
-            YQ_URL="https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
-            if curl -sL "$YQ_URL" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq; then
-                [[ ! -e /usr/bin/yq ]] && ln -sf /usr/local/bin/yq /usr/bin/yq
-                log_info "yq v4 installed: $(/usr/local/bin/yq --version 2>/dev/null)"
+            # No system yq, link bundled
+            if [[ -x /usr/lib/nftban/bin/yq ]]; then
+                ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                log_info "yq v4 linked from bundled binary"
             else
-                log_info "WARNING: Failed to install yq v4 - help command may be slow"
+                log_warn "WARNING: bundled yq not found - help command may be slow"
             fi
         fi
 
