@@ -362,6 +362,7 @@ nftban_feeds_enable() {
                 echo ""
             fi
         fi
+        return 0
     else
         if [[ "$quiet" != "true" ]]; then
             echo "❌ Feed download failed (check /var/log/nftban/feeds.log)"
@@ -398,6 +399,8 @@ nftban_feeds_disable() {
         echo "   NFTables will sync on next timer cycle (every 2 minutes)"
         echo ""
     fi
+
+    return 0
 }
 
 # Update single feed

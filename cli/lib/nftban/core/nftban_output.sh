@@ -711,9 +711,13 @@ nftban_module_loaded_verbose() {
 # =============================================================================
 
 # Show error banner (always shown, even in minimal mode)
+# Also logs to journald for centralized error tracking (BUG-003 fix)
 nftban_error_banner() {
     local message="$1"
     local style="${NFTBAN_ERROR_BANNER_STYLE:-box}"
+
+    # Log to journald
+    logger -t nftban -p user.err "[ERROR] ${message}" 2>/dev/null || true
 
     case "$style" in
         box)
@@ -757,9 +761,13 @@ nftban_error_banner_minimal() {
 }
 
 # Warning banner
+# Also logs to journald for centralized warning tracking (BUG-003 fix)
 nftban_warning_banner() {
     local message="$1"
     local style="${NFTBAN_WARNING_BANNER_STYLE:-line}"
+
+    # Log to journald
+    logger -t nftban -p user.warning "[WARN] ${message}" 2>/dev/null || true
 
     case "$style" in
         line)
@@ -986,38 +994,42 @@ nftban_version_compare() {
 # Usage: nftban_output <type> <message>
 # Types: info, success, error, warning, header, debug
 #
+# Errors and warnings are also logged to journald via logger -t nftban
+#
+# BUG-008 fix: Uses NFTBAN_COLOR_* variables instead of hardcoded ANSI codes.
+# When NFTBAN_COLOR is false (e.g., output redirected to file), these variables
+# are empty strings, preventing ANSI escape codes from appearing in log files.
+#
 nftban_output() {
     local type="${1:-info}"
     local message="${2:-}"
     local prefix=""
     local color_code=""
-    local reset=""
 
-    # Use colors if terminal supports it
-    if [[ "${NFTBAN_COLOR:-true}" == "true" ]] && [[ -t 1 ]]; then
-        reset="\033[0m"
-        case "$type" in
-            error)   color_code="\033[0;31m"; prefix="[ERROR]" ;;
-            warning) color_code="\033[0;33m"; prefix="[WARN]" ;;
-            success) color_code="\033[0;32m"; prefix="[OK]" ;;
-            info)    color_code="\033[0;34m"; prefix="[INFO]" ;;
-            header)  color_code="\033[1;36m"; prefix="==>" ;;
-            debug)   color_code="\033[0;90m"; prefix="[DEBUG]" ;;
-            *)       color_code=""; prefix="[$type]" ;;
-        esac
-        echo -e "${color_code}${prefix}${reset} ${message}"
-    else
-        case "$type" in
-            error)   prefix="[ERROR]" ;;
-            warning) prefix="[WARN]" ;;
-            success) prefix="[OK]" ;;
-            info)    prefix="[INFO]" ;;
-            header)  prefix="==>" ;;
-            debug)   prefix="[DEBUG]" ;;
-            *)       prefix="[$type]" ;;
-        esac
-        echo "${prefix} ${message}"
-    fi
+    # Log errors and warnings to journald (BUG-003 fix)
+    case "$type" in
+        error)
+            logger -t nftban -p user.err "[ERROR] ${message}" 2>/dev/null || true
+            ;;
+        warning)
+            logger -t nftban -p user.warning "[WARN] ${message}" 2>/dev/null || true
+            ;;
+    esac
+
+    # Determine prefix based on type
+    # BUG-008: Use NFTBAN_COLOR_* variables (empty when colors disabled)
+    case "$type" in
+        error)   prefix="[ERROR]"; color_code="${NFTBAN_COLOR_RED}" ;;
+        warning) prefix="[WARN]";  color_code="${NFTBAN_COLOR_YELLOW}" ;;
+        success) prefix="[OK]";    color_code="${NFTBAN_COLOR_GREEN}" ;;
+        info)    prefix="[INFO]";  color_code="${NFTBAN_COLOR_BLUE:-${NFTBAN_COLOR_CYAN}}" ;;
+        header)  prefix="==>";     color_code="${NFTBAN_COLOR_BOLD}${NFTBAN_COLOR_CYAN}" ;;
+        debug)   prefix="[DEBUG]"; color_code="${NFTBAN_COLOR_GRAY}" ;;
+        *)       prefix="[$type]"; color_code="" ;;
+    esac
+
+    # Output with or without colors (NFTBAN_COLOR_* are empty strings when disabled)
+    echo -e "${color_code}${prefix}${NFTBAN_COLOR_RESET} ${message}"
 }
 
 # Export function for subshells

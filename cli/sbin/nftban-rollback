@@ -72,8 +72,10 @@ if [[ -f "$ROLLBACK_FLAG" ]]; then
         else
             echo "  ✗ ERROR: Failed to apply backup ruleset!"
             echo ""
-            echo "Emergency: Flushing all rules for safety..."
-            nft flush ruleset || true
+            echo "Emergency: Removing nftban tables for safety..."
+            # CRITICAL FIX: Never use 'flush ruleset' - destroys cPanel/UFW/CSF rules
+            nft delete table inet nftban 2>/dev/null || true
+            nft delete table ip nftban 2>/dev/null || true
             exit 2
         fi
 

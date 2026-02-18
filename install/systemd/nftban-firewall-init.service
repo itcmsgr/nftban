@@ -54,8 +54,9 @@ ExecStart=/usr/lib/nftban/helpers/firewall-init-with-delay.sh
 
 # NOTE: Snapshot save will be done by snapshot timer (not here)
 
-# On stop, flush firewall (safety measure)
-ExecStop=/bin/sh -c 'command -v nft >/dev/null 2>&1 && nft flush ruleset || true'
+# On stop, only remove nftban table (NEVER flush ruleset - destroys cPanel/UFW/CSF rules)
+# CRITICAL FIX: v1.17.0 - Previous "flush ruleset" caused lockouts on panel servers
+ExecStop=/bin/sh -c 'command -v nft >/dev/null 2>&1 && nft delete table inet nftban 2>/dev/null; nft delete table ip nftban 2>/dev/null; true'
 
 # Don't restart on failure (would cause loops)
 Restart=no

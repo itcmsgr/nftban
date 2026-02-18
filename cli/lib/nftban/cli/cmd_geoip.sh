@@ -73,9 +73,10 @@ nftban_cmd_geoip() {
 
     local subcommand="${1:-}"
 
-    if [[ -z "$subcommand" ]]; then
+    # Handle help flags first (CLI-003 fix: return 0 for --help)
+    if [[ -z "$subcommand" || "$subcommand" == "-h" || "$subcommand" == "--help" || "$subcommand" == "help" ]]; then
         nftban_geoip_cmd_help
-        return 1
+        return 0
     fi
 
     # Shift to get remaining args
