@@ -40,6 +40,14 @@ _NFTBAN_HEALTH_FIXES_LOADED=1
 
 # Default paths (for direct sourcing compatibility)
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+
+# Load firewall config if exists (CRITICAL: SKIP_DROP_CHAINS for cPanel/panel servers)
+# v1.17.0: This prevents lockout on panel servers by respecting coexist mode
+if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/firewall.conf" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/conf.d/firewall.conf"
+fi
 
 # AUTO-FIX FUNCTIONS
 # =============================================================================
