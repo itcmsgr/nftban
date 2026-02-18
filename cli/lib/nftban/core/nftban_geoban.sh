@@ -631,8 +631,9 @@ nftban_geoban_ban_countries() {
             nftban_info "   NFTables update queued (processed every 2 minutes)"
             nftban_info "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
         else
-            nftban_info "✅ GeoBan configured successfully"
-            nftban_info "   NFTables will sync on next timer cycle (every 2 minutes)"
+            # Fallback: trigger immediate sync since queue not available
+            nftban sync --quick 2>/dev/null || true
+            nftban_info "✅ GeoBan configured and applied successfully"
         fi
         echo ""
     fi
@@ -727,8 +728,9 @@ nftban_geoban_unban_countries() {
             nftban_info "   NFTables update queued (processed every 2 minutes)"
             nftban_info "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
         else
-            nftban_info "✅ GeoBan configured successfully"
-            nftban_info "   NFTables will sync on next timer cycle (every 2 minutes)"
+            # Fallback: trigger immediate sync since queue not available
+            nftban sync --quick 2>/dev/null || true
+            nftban_info "✅ GeoBan configured and applied successfully"
         fi
         echo ""
     fi

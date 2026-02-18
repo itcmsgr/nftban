@@ -152,6 +152,12 @@ nftban_cmd_mail() {
     # Handle mail subcommands
     # Args: $@ = mail subcommand and arguments
 
+    # CLI-002 fix: Handle --help before any MTA checks
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        cmd_mail_help
+        return 0
+    fi
+
     local subcmd="${1:-help}"
     shift || true
 

@@ -665,13 +665,15 @@ nftban_feeds_enable_json() {
             local data
             data=$(json_build_object "feed" "$feed" "enabled" "true" "ip_count" "$count")
             json_output "true" "$data"
+            return 0
         else
             json_output "false" '{}' "Failed to enable feed: $feed"
             return 1
         fi
     else
-        # Human-readable mode
+        # Human-readable mode - propagate return code
         nftban_feeds_enable "$feed"
+        return $?
     fi
 }
 
@@ -686,13 +688,15 @@ nftban_feeds_disable_json() {
             local data
             data=$(json_build_object "feed" "$feed" "enabled" "false")
             json_output "true" "$data"
+            return 0
         else
             json_output "false" '{}' "Failed to disable feed: $feed"
             return 1
         fi
     else
-        # Human-readable mode
+        # Human-readable mode - propagate return code
         nftban_feeds_disable "$feed"
+        return $?
     fi
 }
 

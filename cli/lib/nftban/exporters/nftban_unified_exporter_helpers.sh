@@ -128,8 +128,23 @@ acquire_lock() {
     local lock_fd=200
     local lock_timeout="${NFTBAN_COLLECT_LOCK_TIMEOUT:-10}"
 
-    # Create lock file
+    # Create lock file directory
     mkdir -p "$(dirname "$METRICS_LOCK")"
+
+    # FIX v1.17.0: Ensure lock file is writable by current user
+    # If lock file exists but we can't write to it, remove and recreate
+    if [[ -f "$METRICS_LOCK" ]] && [[ ! -w "$METRICS_LOCK" ]]; then
+        rm -f "$METRICS_LOCK" 2>/dev/null || {
+            log_error "Cannot remove stale lock file: $METRICS_LOCK (permission denied)"
+            log_error "Fix: sudo rm -f $METRICS_LOCK && sudo chown nftban:nftban $(dirname $METRICS_LOCK)"
+            exit 1
+        }
+    fi
+    touch "$METRICS_LOCK" 2>/dev/null || {
+        log_error "Cannot create lock file: $METRICS_LOCK (permission denied)"
+        exit 1
+    }
+
     eval "exec $lock_fd>$METRICS_LOCK"
 
     # Try to acquire lock with timeout (blocking)

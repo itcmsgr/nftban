@@ -68,6 +68,24 @@ nftban_cmd_setup() {
     # Interactive setup wizard for first-time installation
     # Args: [--auto] for non-interactive mode
 
+    # CLI-004 fix: Handle --help before interactive mode
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]]; then
+        echo "Usage: nftban setup [--auto]"
+        echo ""
+        echo "Interactive setup wizard for first-time NFTBan installation."
+        echo ""
+        echo "Options:"
+        echo "  --auto    Non-interactive mode (auto-fix everything)"
+        echo "  --help    Show this help message"
+        echo ""
+        echo "The wizard will:"
+        echo "  1. Fix all permissions"
+        echo "  2. Create missing directories"
+        echo "  3. Run health check"
+        echo "  4. Enable NFTBan services (optional)"
+        return 0
+    fi
+
     local AUTO_MODE=false
     if [[ "${1:-}" == "--auto" ]]; then
         AUTO_MODE=true

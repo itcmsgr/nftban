@@ -374,11 +374,13 @@ _cmd_zabbix_setup() {
         fi
 
         # Check if port already exists in ports.d
+        # Format is PORT/PROTO/DIR where PROTO=T(tcp)|U(udp)|B(both) and DIR=I(in)|O(out)|IO(inout)
         local port_exists=false
         local existing_file=""
         for f in "${NFTBAN_CONFIG_DIR}/ports.d"/*.conf; do
             [[ -f "$f" ]] || continue
-            if grep -qE "^${port}/tcp.*=.*output" "$f" 2>/dev/null; then
+            # Check for output (O) or inout (IO) direction
+            if grep -qE "^${port}/T/(O|IO)$" "$f" 2>/dev/null; then
                 port_exists=true
                 existing_file="$f"
                 break
@@ -389,22 +391,15 @@ _cmd_zabbix_setup() {
             _zabbix_print_info "Port $port/tcp output already configured in: $existing_file"
         else
             # Use nftban port add command (single point of truth)
+            # Syntax: nftban port add <port> <protocol> <direction>
+            # Direction: in, out, inout
             _zabbix_print_info "Adding port $port/tcp (output) via nftban port add..."
 
-            # Build IP version flags
-            local ip_flags=""
-            [[ "$ipv4" == "true" ]] && ip_flags="--ipv4"
-            [[ "$ipv6" == "true" ]] && ip_flags="$ip_flags --ipv6"
-
-            # Use nftban port add with direction and note
-            if nftban port add "$port" tcp \
-                --direction output \
-                --note "Zabbix server: $server" \
-                --file 99-zabbix.conf \
-                $ip_flags 2>/dev/null; then
-                _zabbix_print_success "Port $port/tcp added to firewall"
+            # Use nftban port add with positional arguments
+            if nftban port add "$port" tcp out 2>/dev/null; then
+                _zabbix_print_success "Port $port/tcp (output) added to firewall"
             else
-                # Fallback: create config directly if port add doesn't support all options
+                # Fallback: create config directly using correct format
                 local port_conf="${NFTBAN_CONFIG_DIR}/ports.d/99-zabbix.conf"
                 mkdir -p "$(dirname "$port_conf")"
 
@@ -415,23 +410,14 @@ _cmd_zabbix_setup() {
 # Created: $(date '+%Y-%m-%d %H:%M:%S')
 # Server:  $server
 # Purpose: Allow outbound metrics push to Zabbix trapper port
+# Format:  PORT/PROTO/DIR where PROTO=T(tcp)|U(udp)|B(both), DIR=I(in)|O(out)|IO(inout)
 # =============================================================================
 
-[ports]
 # Zabbix trapper port - OUTBOUND connection to monitoring server
+# Added by: nftban zabbix setup ($(date '+%Y-%m-%d %H:%M:%S'))
+${port}/T/O
 EOF
-                [[ "$ipv4" == "true" ]] && echo "${port}/tcp = output,ipv4  # Zabbix: $server" >> "$port_conf"
-                [[ "$ipv6" == "true" ]] && echo "${port}/tcp = output,ipv6  # Zabbix: $server" >> "$port_conf"
-
-                cat >> "$port_conf" << EOF
-
-[description]
-name = Zabbix Metrics Export
-priority = normal
-server = $server
-note = Outbound connection to Zabbix server for trapper metrics push
-EOF
-                chmod 644 "$port_conf"
+                chmod 640 "$port_conf"
                 chown root:nftban "$port_conf" 2>/dev/null || true
                 _zabbix_print_success "Port configuration saved: $port_conf"
             fi
