@@ -806,6 +806,15 @@ mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
 
+# Prometheus textfile_collector directory (BUG-009 fix)
+# Required by nftban-unified-exporter.service ReadWritePaths directive
+if [[ ! -d /var/lib/node_exporter/textfile_collector ]]; then
+    mkdir -p /var/lib/node_exporter/textfile_collector
+    chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+    chmod 755 /var/lib/node_exporter/textfile_collector
+    echo "[NFTBan] Created: /var/lib/node_exporter/textfile_collector"
+fi
+
 # =============================================================================
 # STEP 3: Set permissions via FHS spec (single source of truth - DEB parity)
 # =============================================================================
@@ -1654,6 +1663,14 @@ mkdir -p /var/log/nftban/reports
 mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
+
+# Prometheus textfile_collector directory (BUG-009 fix)
+# Required by nftban-unified-exporter.service ReadWritePaths directive
+if [[ ! -d /var/lib/node_exporter/textfile_collector ]]; then
+    mkdir -p /var/lib/node_exporter/textfile_collector
+    chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+    chmod 755 /var/lib/node_exporter/textfile_collector
+fi
 
 # STEP 4: Set permissions
 chown root:nftban /etc/nftban
