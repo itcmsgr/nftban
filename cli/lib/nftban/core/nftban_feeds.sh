@@ -356,7 +356,8 @@ nftban_feeds_enable() {
             fi
         else
             # Queue function not available, note in logs
-            nftban_feeds_log "WARN" "Queue function not available, sync will run on next timer cycle"
+            # BUG-MED-005 FIX: Add || true to prevent log failure from affecting exit code
+            nftban_feeds_log "WARN" "Queue function not available, sync will run on next timer cycle" || true
             if [[ "$quiet" != "true" ]]; then
                 echo "   NFTables will sync on next timer cycle (every 2 minutes)"
                 echo ""

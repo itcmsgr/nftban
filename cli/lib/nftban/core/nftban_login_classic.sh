@@ -105,7 +105,9 @@ _nftban_login_classic_monitor_journal() {
     nftban_login_log "INFO" "Starting journal monitor for $service (units: $units)"
 
     # Build journalctl command
-    local -a journal_cmd=(journalctl -f -n 0)
+    # BUG-MED-003 FIX: Remove -n 0 flag - incompatible with systemd 257+ (Fedora 43+)
+    # The -f flag already implies "start from now", -n 0 caused pipe issues
+    local -a journal_cmd=(journalctl -f)
 
     # Add units
     IFS=',' read -ra unit_array <<< "$units"
