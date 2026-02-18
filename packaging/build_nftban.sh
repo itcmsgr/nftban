@@ -187,6 +187,7 @@ Requires:       socat
 Recommends:     bind-utils
 Recommends:     mailx
 Recommends:     newt
+Recommends:     acl
 Requires(pre):  shadow-utils
 
 %description
@@ -223,9 +224,18 @@ echo "Using pre-built nftban-core binary"
 ls -la bin/
 
 %install
+# Download yq at BUILD time (supply-chain safe - not at install time)
+# SHA256 verified before bundling in package
+YQ_VERSION="4.44.1"
+YQ_SHA256="a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7"
+echo "Downloading yq v\${YQ_VERSION} for bundling..."
+curl -sL "https://github.com/mikefarah/yq/releases/download/v\${YQ_VERSION}/yq_linux_amd64" -o yq_linux_amd64
+echo "\${YQ_SHA256}  yq_linux_amd64" | sha256sum -c - || { echo "yq checksum verification failed!"; exit 1; }
+
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
+install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
 install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
@@ -662,7 +672,21 @@ usermod -a -G nftban root 2>/dev/null || true
 # =============================================================================
 # NFTBan v1.0.19 - SAFE INSTALL/UPGRADE FLOW
 # =============================================================================
-# Order: cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+# Order: yq -> cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+
+# Link bundled yq if system yq not present (BUG-001 fix)
+if ! command -v yq >/dev/null 2>&1; then
+    if [ -x /usr/lib/nftban/bin/yq ]; then
+        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+        echo "[NFTBan] yq linked from bundled binary"
+    fi
+elif ! yq --version 2>/dev/null | grep -q "mikefarah"; then
+    # Wrong version (Python yq v3) - prefer bundled v4
+    if [ -x /usr/lib/nftban/bin/yq ]; then
+        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+        echo "[NFTBan] yq v4 linked (replaced Python yq v3)"
+    fi
+fi
 
 # =============================================================================
 # STEP 0: Cleanup obsolete files from previous versions
@@ -792,10 +816,16 @@ if command -v nftban >/dev/null 2>&1; then
     nftban whitelist-system sync 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
 fi
 
-# STEP 6: Download GeoIP database (free DB-IP version)
+# STEP 6: Download GeoIP database (free DB-IP version, with timeout)
 echo "[NFTBan] Downloading GeoIP database..."
 if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
+    # Use timeout to prevent blocking on slow/no network (15s max)
+    if timeout 15s /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+        echo "[NFTBan]   GeoIP database downloaded successfully"
+    else
+        echo "[NFTBan]   GeoIP download skipped (timeout or no network)"
+        echo "[NFTBan]   Will auto-download on first timer run, or manual: nftban geoip update"
+    fi
 fi
 
 # STEP 7: Enforce permissions and health check
@@ -817,13 +847,35 @@ systemctl enable nftables 2>/dev/null || true
 echo "[NFTBan] Starting nftband daemon..."
 systemctl enable --now nftband.socket 2>/dev/null || true
 
+# Trigger socket activation via IPC call (ensures daemon starts deterministically)
+sleep 1
+if timeout 10s nftban sync >/dev/null 2>&1; then
+    echo "[NFTBan]   Daemon activated via sync"
+else
+    # Retry once
+    sleep 2
+    if timeout 10s nftban sync >/dev/null 2>&1; then
+        echo "[NFTBan]   Daemon activated via sync (retry)"
+    else
+        # Fallback: explicit service start
+        systemctl start nftband.service 2>/dev/null || true
+        echo "[NFTBan]   Daemon started (fallback mode)"
+    fi
+fi
+
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
-systemctl enable --now nftban-queue.timer 2>/dev/null || true
+
+# Start queue timer only if unit file exists (BUG-005 fix)
+if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+    systemctl enable --now nftban-queue.timer 2>/dev/null || true
+else
+    echo "[NFTBan WARN] nftban-queue.timer not installed (optional)"
+fi
 
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
@@ -868,16 +920,82 @@ if [ "\$SYNC_SUCCESS" -eq 0 ]; then
     echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
 fi
 
-# STEP 11: Load nftables configuration AFTER whitelist is synced
-# This ensures DROP policy only takes effect when SSH whitelist is in place
-if systemctl is-active nftables >/dev/null 2>&1; then
-    systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
+# =============================================================================
+# PREFLIGHT: Lockout Prevention (Detect-Only, Fail-Safe)
+# =============================================================================
+# CRITICAL: Never modify third-party firewall config
+# CRITICAL: Never start nftables if unsafe
+# CRITICAL: Always preserve SSH access
+echo "[NFTBan] Preflight: Validating firewall safety..."
+NFTABLES_SAFE=1
+
+# Check 1: Detect incompatible xt target rules (BUG-008)
+# DO NOT auto-modify - just detect and abort gracefully
+# Get distro-specific nftables config path
+if [ -f /etc/sysconfig/nftables.conf ]; then
+    NFT_CONFIG="/etc/sysconfig/nftables.conf"
+elif [ -f /etc/nftables.conf ]; then
+    NFT_CONFIG="/etc/nftables.conf"
 else
-    systemctl enable nftables 2>/dev/null || true
-    systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
+    NFT_CONFIG=""
 fi
 
-echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+if [ -n "\$NFT_CONFIG" ] && [ -f "\$NFT_CONFIG" ]; then
+    NFT_CHECK=\$(nft -c -f "\$NFT_CONFIG" 2>&1 || true)
+    if echo "\$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
+        echo ""
+        echo "[NFTBan ERROR] =========================================="
+        echo "[NFTBan ERROR]  INCOMPATIBLE NFTABLES RULES DETECTED"
+        echo "[NFTBan ERROR] =========================================="
+        echo "[NFTBan ERROR] Your system has legacy iptables-xt rules that"
+        echo "[NFTBan ERROR] cannot be loaded by modern nftables."
+        echo ""
+        echo "[NFTBan ERROR] NFTBan will NOT activate nftables to prevent lockout."
+        echo ""
+        echo "[NFTBan ERROR] To fix manually:"
+        echo "[NFTBan ERROR]   1. Convert rules: iptables-save | iptables-restore-translate"
+        echo "[NFTBan ERROR]   2. Or remove legacy config: mv \$NFT_CONFIG \${NFT_CONFIG}.bak"
+        echo "[NFTBan ERROR]   3. Then run: nftban sync && systemctl start nftables"
+        echo ""
+        NFTABLES_SAFE=0
+    fi
+fi
+
+# Check 2: Verify whitelist has IPs
+if [ -f /etc/nftban/whitelist.d/00-system.conf ]; then
+    if ! grep -qE "^[0-9]+\\.[0-9]+" /etc/nftban/whitelist.d/00-system.conf 2>/dev/null; then
+        echo "[NFTBan WARN] No IPs detected in system whitelist"
+        echo "[NFTBan WARN] Your SSH IP may not be protected - please verify"
+    fi
+fi
+
+# Check 3: Verify nftban config is valid
+if [ -f /etc/nftban/nftables.conf ]; then
+    if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
+        echo "[NFTBan ERROR] NFTBan nftables config validation failed"
+        NFTABLES_SAFE=0
+    fi
+fi
+
+# STEP 11: Load nftables configuration ONLY IF SAFE
+if [ "\$NFTABLES_SAFE" -eq 1 ]; then
+    if systemctl is-active nftables >/dev/null 2>&1; then
+        systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
+    else
+        systemctl enable nftables 2>/dev/null || true
+        systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
+    fi
+    echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+else
+    echo ""
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN]  NFTABLES NOT ACTIVATED (Safety Mode)"
+    echo "[NFTBan WARN] =========================================="
+    echo "[NFTBan WARN] Install completed but firewall is NOT active."
+    echo "[NFTBan WARN] SSH access is preserved. Fix issues above, then run:"
+    echo "[NFTBan WARN]   systemctl start nftables"
+    echo ""
+fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 
 %preun
@@ -1516,25 +1634,60 @@ systemctl enable nftables 2>/dev/null || true
 echo "[NFTBan] Starting nftband daemon..."
 systemctl enable --now nftband.socket 2>/dev/null || true
 
+# Trigger socket activation via IPC call (ensures daemon starts deterministically)
+sleep 1
+if timeout 10s nftban sync >/dev/null 2>&1; then
+    echo "[NFTBan]   Daemon activated via sync"
+else
+    sleep 2
+    if timeout 10s nftban sync >/dev/null 2>&1; then
+        echo "[NFTBan]   Daemon activated via sync (retry)"
+    else
+        systemctl start nftband.service 2>/dev/null || true
+        echo "[NFTBan]   Daemon started (fallback mode)"
+    fi
+fi
+
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
-systemctl enable --now nftban-queue.timer 2>/dev/null || true
+
+# Start queue timer only if unit file exists
+if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+    systemctl enable --now nftban-queue.timer 2>/dev/null || true
+fi
 
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
-# STEP 10: Start or reload nftables
-if systemctl is-active nftables >/dev/null 2>&1; then
-    systemctl reload nftables 2>/dev/null || true
-else
-    systemctl start nftables 2>/dev/null || true
+# PREFLIGHT: Check for xt target incompatibility before nftables start
+NFTABLES_SAFE=1
+NFT_CONFIG=""
+[ -f /etc/nftables.conf ] && NFT_CONFIG="/etc/nftables.conf"
+[ -f /etc/sysconfig/nftables.conf ] && NFT_CONFIG="/etc/sysconfig/nftables.conf"
+if [ -n "$NFT_CONFIG" ] && [ -f "$NFT_CONFIG" ]; then
+    if nft -c -f "$NFT_CONFIG" 2>&1 | grep -qE "xt target|xtables compat"; then
+        echo "[NFTBan ERROR] Incompatible xt target rules detected in $NFT_CONFIG"
+        echo "[NFTBan ERROR] NFTBan will NOT activate nftables to prevent lockout."
+        NFTABLES_SAFE=0
+    fi
 fi
 
-echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+# STEP 10: Start or reload nftables ONLY IF SAFE
+if [ "$NFTABLES_SAFE" -eq 1 ]; then
+    if systemctl is-active nftables >/dev/null 2>&1; then
+        systemctl reload nftables 2>/dev/null || true
+    else
+        systemctl start nftables 2>/dev/null || true
+    fi
+    echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+else
+    echo "[NFTBan WARN] NFTABLES NOT ACTIVATED (Safety Mode)"
+    echo "[NFTBan WARN] Fix xt target issues, then run: systemctl start nftables"
+fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 exit 0
 EOF
