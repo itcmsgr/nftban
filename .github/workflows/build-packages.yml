@@ -367,11 +367,16 @@ jobs:
             rpm_artifact: rpm-el9
 
     steps:
+      - name: Wait for artifact availability
+        run: sleep 10
+
       - name: Download RPM packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ matrix.rpm_artifact }}
           path: ./packages
+        timeout-minutes: 2
+        continue-on-error: false
 
       - name: Test installation on ${{ matrix.distro }}
         run: |

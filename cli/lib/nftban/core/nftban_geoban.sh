@@ -172,18 +172,18 @@ nftban_geoban_validate_country_code() {
 # =============================================================================
 
 # Apply GeoBan rules to nftables
-# Adds GeoBan CIDRs to UNIFIED blacklist sets (same as feeds/manual)
-# NO separate geoban sets - all sources consolidated per nft_schema.sh
+# Adds GeoBan CIDRs to DEDICATED geoban sets (geoban_ipv4/geoban_ipv6)
+# Schema: nft_schema.sh lines 107, 184 - separate sets for clean lifecycle management
 nftban_geoban_apply_to_nftables() {
     # Use correct table families (consistent with rest of nftban)
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-    # UNIFIED BLACKLIST: All sources (feeds, geoban, manual) use same sets
-    # Schema: nft_schema.sh lines 100-101, 148-149
-    local set_v4="blacklist_ipv4"
-    local set_v6="blacklist_ipv6"
+    # DEDICATED GEOBAN SETS: Separate from feeds/auto/manual for clean lifecycle
+    # Schema: nft_schema.sh lines 107 (geoban_ipv4), 184 (geoban_ipv6)
+    local set_v4="geoban_ipv4"
+    local set_v6="geoban_ipv6"
 
-    nftban_info "Applying GeoBan to unified blacklist (IPv4 + IPv6)..."
+    nftban_info "Applying GeoBan to dedicated geoban sets (IPv4 + IPv6)..."
 
     # Check if nftables is available
     if ! command -v nft &>/dev/null; then
@@ -206,7 +206,7 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 1. Verify unified blacklist sets exist (should be in base config)
+    # 1. Verify geoban sets exist (should be in base config)
     # =========================================================================
 
     if ! nft list set $table_v4 "$set_v4" &>/dev/null; then
@@ -269,8 +269,8 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 3. Add IPv4 CIDRs to unified blacklist_ipv4
-    # NOTE: We ADD elements, NOT flush! Other sources use same set.
+    # 3. Add IPv4 CIDRs to geoban_ipv4
+    # NOTE: We ADD elements. Set can be flushed on full refresh.
     # =========================================================================
 
     if [[ $cidr_count_v4 -gt 0 ]]; then
@@ -297,7 +297,7 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 4. Add IPv6 CIDRs to unified blacklist_ipv6
+    # 4. Add IPv6 CIDRs to geoban_ipv6
     # =========================================================================
 
     if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
@@ -323,11 +323,11 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 5. Summary - NO chain/rules needed (unified blacklist already has them)
+    # 5. Summary - NO chain/rules needed (geoban sets already have rules)
     # =========================================================================
 
     echo ""
-    nftban_success "GeoBan applied to unified blacklist!"
+    nftban_success "GeoBan applied to dedicated geoban sets!"
     nftban_info "IPv4: $cidr_count_v4 CIDRs added to $table_v4 $set_v4"
     if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
         nftban_info "IPv6: $cidr_count_v6 CIDRs added to $table_v6 $set_v6"
@@ -341,17 +341,16 @@ nftban_geoban_apply_to_nftables() {
     return 0
 }
 
-# Remove GeoBan entries from unified blacklist (cleanup)
-# IMPORTANT: Only removes GeoBan CIDRs - does NOT flush entire sets!
-# The unified sets also contain feeds/manual bans that must be preserved.
+# Remove GeoBan entries from dedicated geoban sets (cleanup)
+# Uses dedicated geoban_ipv4/geoban_ipv6 sets - safe to flush entirely
 nftban_geoban_remove_from_nftables() {
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-    # UNIFIED BLACKLIST: Same sets as feeds/manual
-    local set_v4="blacklist_ipv4"
-    local set_v6="blacklist_ipv6"
+    # DEDICATED GEOBAN SETS: Separate from feeds/auto/manual
+    local set_v4="geoban_ipv4"
+    local set_v6="geoban_ipv6"
 
-    nftban_info "Removing GeoBan entries from unified blacklist..."
+    nftban_info "Removing GeoBan entries from dedicated geoban sets..."
 
     # Check for banned country files
     local ban_files=()
@@ -379,7 +378,7 @@ nftban_geoban_remove_from_nftables() {
         done < "$file"
     done
 
-    # Remove IPv4 entries from unified set (NOT flush!)
+    # Remove IPv4 entries from geoban set
     if [[ ${#cidrs_v4[@]} -gt 0 ]]; then
         nftban_info "Removing ${#cidrs_v4[@]} IPv4 CIDRs from $set_v4..."
 
@@ -401,7 +400,7 @@ nftban_geoban_remove_from_nftables() {
         fi
     fi
 
-    # Remove IPv6 entries from unified set (NOT flush!)
+    # Remove IPv6 entries from geoban set
     if [[ ${#cidrs_v6[@]} -gt 0 ]]; then
         nftban_info "Removing ${#cidrs_v6[@]} IPv6 CIDRs from $set_v6..."
 
@@ -423,7 +422,7 @@ nftban_geoban_remove_from_nftables() {
         fi
     fi
 
-    nftban_info "GeoBan entries removed (other bans preserved)"
+    nftban_info "GeoBan entries removed from dedicated geoban sets"
     return 0
 }
 
@@ -485,8 +484,10 @@ nftban_geoban_fetch_bash() {
     local ip_count
     ip_count=$(wc -l < "$cache_file")
 
-    if [[ $ip_count -lt 10 ]]; then
-        nftban_error "Downloaded only $ip_count IP ranges for $cc (expected more)"
+    # BUG-MED-004 FIX: Accept countries with 1+ CIDR (e.g., North Korea has only 1)
+    # Changed from 10 to 1 - some countries have very small IP allocations
+    if [[ $ip_count -lt 1 ]]; then
+        nftban_error "Downloaded 0 IP ranges for $cc (empty response)"
         nftban_warn "This may indicate an invalid country code or IPDENY service issue"
         rm -f "$cache_file"
         return 1
