@@ -370,6 +370,15 @@ case "$1" in
         # Shared data
         mkdir -p /usr/share/nftban/templates/{mail,reports}
 
+        # Prometheus textfile_collector directory (BUG-009 fix)
+        # Required by nftban-unified-exporter.service ReadWritePaths directive
+        if [[ ! -d /var/lib/node_exporter/textfile_collector ]]; then
+            mkdir -p /var/lib/node_exporter/textfile_collector
+            chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+            chmod 755 /var/lib/node_exporter/textfile_collector
+            log_info "  Created: /var/lib/node_exporter/textfile_collector"
+        fi
+
         # =====================================================================
         # STEP 4: Set Permissions (FHS Compliant - Generated from fhs-spec.yaml)
         # =====================================================================

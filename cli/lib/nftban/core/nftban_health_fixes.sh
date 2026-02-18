@@ -1131,12 +1131,56 @@ nftban_health_fix_nftables() {
     # Auto-heal missing nftables tables, sets, and chains
     # Uses canonical schema from nft_schema.sh as single source of truth
     # Returns: 0=fixed, 1=partial, 2=failed
+    #
+    # ==========================================================================
+    # LOCKOUT PREVENTION (v1.16.1)
+    # ==========================================================================
+    # ROOT CAUSE: This function creates chains with "policy drop" which blocks
+    # ALL traffic by default, including SSH. If the whitelist (server IPs, SSH
+    # IPs) is not synced to nftables BEFORE creating DROP chains, the admin
+    # gets locked out of the server.
+    #
+    # SOLUTION: Always sync whitelist FIRST, before creating any chains.
+    # This is a defense-in-depth measure - the caller should also sync whitelist,
+    # but we do it here too to protect against direct function calls.
+    # ==========================================================================
 
     echo "Checking nftables structure..."
 
     if ! command -v nft &>/dev/null; then
         echo "  ✖ nft command not found"
         return 2
+    fi
+
+    # ==========================================================================
+    # STEP 0: LOCKOUT PREVENTION - Sync whitelist BEFORE creating DROP chains
+    # ==========================================================================
+    # If nftban tables already exist with DROP policy, we need whitelist synced.
+    # If tables don't exist, we create them, then add chains - still need whitelist.
+    # Either way: ALWAYS sync whitelist first.
+    if declare -f nftban_health_fix_whitelist >/dev/null 2>&1; then
+        echo "  → Pre-sync: Ensuring server IPs are whitelisted (lockout prevention)..."
+        if ! nftban_health_fix_whitelist 2>/dev/null; then
+            # Try loading the module and retry
+            if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_system_ip.sh" ]]; then
+                source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_system_ip.sh" 2>/dev/null || true
+            fi
+            nftban_health_fix_whitelist 2>/dev/null || {
+                echo "  ⚠ WARNING: Could not sync whitelist - proceeding with caution"
+                echo "    If locked out, recover via console and run: nftban whitelist sync"
+            }
+        fi
+    else
+        # Try to load and call the whitelist sync function
+        if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_system_ip.sh" ]]; then
+            echo "  → Pre-sync: Loading system IP module for lockout prevention..."
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_system_ip.sh" 2>/dev/null || true
+            if declare -f nftban_whitelist_system_sync >/dev/null 2>&1; then
+                nftban_whitelist_system_sync 2>/dev/null || {
+                    echo "  ⚠ WARNING: Could not sync whitelist"
+                }
+            fi
+        fi
     fi
 
     # Ensure schema is loaded

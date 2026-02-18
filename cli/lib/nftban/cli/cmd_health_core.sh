@@ -269,16 +269,54 @@ nftban_health_cmd_fix() {
             nftban_health_fix_polkit
             ;;
         nftables)
+            # CRITICAL: Always sync whitelist BEFORE fixing nftables
+            # ROOT CAUSE: nftables fix creates chains with DROP policy
+            # Without whitelist sync first, SSH gets blocked = lockout
+            echo "=== WHITELIST SYNC (lockout prevention) ==="
+            nftban_health_fix_whitelist || {
+                echo "  ⚠ Whitelist sync failed - aborting nftables fix"
+                echo "  Manual fix: nftban whitelist sync && nftban health fix nftables"
+                return 1
+            }
+            echo ""
             nftban_health_fix_nftables
             ;;
         daemon|memory)
             nftban_health_fix_daemon_memory
             ;;
+        whitelist)
+            # Sync server IPs to whitelist (lockout prevention)
+            echo "=== WHITELIST SYNC ==="
+            nftban_health_fix_whitelist
+            ;;
         all)
+            # =================================================================
+            # FIX ORDER IS CRITICAL TO PREVENT SSH LOCKOUT
+            # =================================================================
+            # ROOT CAUSE (v1.16.0 bug): nftban_health_fix_nftables() creates
+            # chains with "policy drop" which blocks all traffic including SSH.
+            # If whitelist is not synced FIRST, the admin gets locked out.
+            #
+            # CORRECT ORDER:
+            # 1. Fix directories (needed for whitelist sync)
+            # 2. Fix permissions (needed for nftables access)
+            # 3. Fix whitelist (MUST be BEFORE nftables creates DROP chains)
+            # 4. Fix nftables (safe now - whitelist has SSH IPs)
+            # 5. Fix everything else
+            # =================================================================
             nftban_health_fix_directories
             nftban_health_fix_permissions
             nftban_health_fix_system_config
             nftban_health_fix_services
+            # CRITICAL: Sync whitelist BEFORE creating DROP policy chains
+            # This ensures SSH and server IPs are whitelisted first
+            echo ""
+            echo "=== WHITELIST SYNC (lockout prevention) ==="
+            nftban_health_fix_whitelist || {
+                echo "  ⚠ Whitelist sync failed - proceeding with caution"
+            }
+            echo ""
+            # Now safe to create/fix nftables structure
             nftban_health_fix_nftables
             nftban_health_fix_polkit
             nftban_health_fix_daemon_memory
@@ -289,7 +327,7 @@ nftban_health_cmd_fix() {
             ;;
         *)
             echo "ERROR: Invalid fix target: $what" >&2
-            echo "Valid targets: permissions, directories, services, config, polkit, nftables, daemon, all" >&2
+            echo "Valid targets: permissions, directories, services, config, polkit, nftables, whitelist, daemon, all" >&2
             return 1
             ;;
     esac
