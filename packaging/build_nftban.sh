@@ -803,6 +803,22 @@ export NFTBAN_CPANEL_MODE=\$CPANEL_MODE
 if [ \$SKIP_DROP_CHAINS -eq 1 ]; then
     echo "[NFTBan WARN] Safety mode: Hook chains with DROP policy will NOT be created"
     echo "[NFTBan WARN] NFTBan sets/tables will be created but firewall won't block traffic"
+
+    # CRITICAL v1.17.0: Persist SKIP_DROP_CHAINS to config file
+    # Without this, nftban sync/reboot would recreate DROP chains and lock out server!
+    mkdir -p /etc/nftban/conf.d
+    cat > /etc/nftban/conf.d/firewall.conf << 'FIREWALL_EOF'
+# NFTBan Firewall Configuration
+# Auto-generated during install - DO NOT EDIT unless you know what you're doing
+#
+# SKIP_DROP_CHAINS=true prevents NFTBan from creating chains with DROP policy
+# This is required for cPanel/Plesk/DirectAdmin servers where panel manages firewall
+
+SKIP_DROP_CHAINS=true
+FIREWALL_MODE=coexist
+FIREWALL_EOF
+    chmod 0644 /etc/nftban/conf.d/firewall.conf
+    echo "[NFTBan]   Created /etc/nftban/conf.d/firewall.conf with SKIP_DROP_CHAINS=true"
 fi
 
 # =============================================================================
