@@ -848,15 +848,9 @@ if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
     fi
 fi
 
-# Load nftables configuration
-if systemctl is-active nftables >/dev/null 2>&1; then
-    systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
-else
-    systemctl enable nftables 2>/dev/null || true
-    systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
-fi
-
-# STEP 10: Sync whitelist.d files to nftables sets
+# STEP 10: Sync whitelist.d files to nftables sets BEFORE starting nftables
+# ROOT CAUSE FIX: Previously nftables started with DROP policy BEFORE whitelist
+# sync, causing SSH lockout. Now we sync FIRST, then start nftables.
 # The nftables template has only default IPs, this loads the actual detected system IPs
 echo "[NFTBan] Syncing whitelist files to nftables..."
 # Wait for nftband daemon to be ready (socket activation)
@@ -872,6 +866,15 @@ for i in 1 2 3; do
 done
 if [ "\$SYNC_SUCCESS" -eq 0 ]; then
     echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
+fi
+
+# STEP 11: Load nftables configuration AFTER whitelist is synced
+# This ensures DROP policy only takes effect when SSH whitelist is in place
+if systemctl is-active nftables >/dev/null 2>&1; then
+    systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
+else
+    systemctl enable nftables 2>/dev/null || true
+    systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
 fi
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."

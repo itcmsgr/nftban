@@ -469,27 +469,11 @@ case "$1" in
         log_info "Reloading systemd daemon..."
         systemctl daemon-reload
 
-        # Enable and start nftables
-        if systemctl is-active nftables >/dev/null 2>&1; then
-            log_info "Reloading nftables..."
-            systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
-        else
-            log_info "Enabling and starting nftables..."
-            systemctl enable nftables 2>/dev/null || true
-            systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
-        fi
-
         # =====================================================================
-        # STEP 10: GeoIP Database (defer to background/first run)
+        # STEP 10: Sync whitelist.d files to nftables sets BEFORE nftables starts
         # =====================================================================
-        # GeoIP download can take 10-30 seconds depending on network
-        # Defer to maintenance timer for faster install
-        log_info "GeoIP database will be downloaded on first maintenance run"
-        log_info "  Manual download: nftban geoip update"
-
-        # =====================================================================
-        # STEP 11: Sync whitelist.d files to nftables sets
-        # =====================================================================
+        # ROOT CAUSE FIX: Previously nftables started with DROP policy BEFORE
+        # whitelist sync, causing SSH lockout. Now we sync FIRST.
         # The nftables template has only default IPs, this loads the actual detected system IPs
         # Use --quick to only sync whitelists/blacklists (skip feeds/geoban for fast install)
         log_info "Syncing whitelist files to nftables..."
@@ -503,7 +487,28 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 12: Enable Login Monitoring (Default Protection)
+        # STEP 11: Enable and start nftables AFTER whitelist is synced
+        # =====================================================================
+        # This ensures DROP policy only takes effect when SSH whitelist is in place
+        if systemctl is-active nftables >/dev/null 2>&1; then
+            log_info "Reloading nftables..."
+            systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
+        else
+            log_info "Enabling and starting nftables..."
+            systemctl enable nftables 2>/dev/null || true
+            systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+        fi
+
+        # =====================================================================
+        # STEP 12: GeoIP Database (defer to background/first run)
+        # =====================================================================
+        # GeoIP download can take 10-30 seconds depending on network
+        # Defer to maintenance timer for faster install
+        log_info "GeoIP database will be downloaded on first maintenance run"
+        log_info "  Manual download: nftban geoip update"
+
+        # =====================================================================
+        # STEP 13: Enable Login Monitoring (Default Protection)
         # =====================================================================
         log_info "Enabling login monitoring (SSH/FTP brute-force protection)..."
         if command -v nftban >/dev/null 2>&1; then
@@ -515,7 +520,7 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 13: Set immutable flags on security-critical files
+        # STEP 14: Set immutable flags on security-critical files
         # =====================================================================
         log_info "Setting immutable flags on security files..."
         for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
