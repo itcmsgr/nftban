@@ -227,7 +227,7 @@ ls -la bin/
 # Download yq at BUILD time (supply-chain safe - not at install time)
 # SHA256 verified before bundling in package
 YQ_VERSION="4.44.1"
-YQ_SHA256="a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7"
+YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
 echo "Downloading yq v\${YQ_VERSION} for bundling..."
 curl -sL "https://github.com/mikefarah/yq/releases/download/v\${YQ_VERSION}/yq_linux_amd64" -o yq_linux_amd64
 echo "\${YQ_SHA256}  yq_linux_amd64" | sha256sum -c - || { echo "yq checksum verification failed!"; exit 1; }
