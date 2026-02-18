@@ -1262,11 +1262,18 @@ nftban_health_fix_nftables() {
     done
 
     # Fix 4: Create missing chains (IPv4)
+    # CRITICAL FIX v1.17.0: Check SKIP_DROP_CHAINS for cPanel/panel servers
     local chain_name chain_spec chain_type chain_hook chain_priority chain_policy
     for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
         if ! nft list chain ${NFTBAN_TABLE_IPV4} "$chain_name" &>/dev/null; then
             chain_spec="${NFTBAN_IPV4_CHAINS[$chain_name]}"
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+
+            # LOCKOUT PREVENTION: In cPanel/panel mode, NEVER create DROP chains
+            if [[ "${SKIP_DROP_CHAINS:-false}" == "true" && "$chain_policy" == "drop" ]]; then
+                echo "  → Skipping chain $chain_name (cPanel mode: DROP chains disabled)"
+                continue
+            fi
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV4} $chain_name"
             if nft add chain ${NFTBAN_TABLE_IPV4} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
@@ -1279,10 +1286,17 @@ nftban_health_fix_nftables() {
     done
 
     # Fix 5: Create missing chains (IPv6)
+    # CRITICAL FIX v1.17.0: Check SKIP_DROP_CHAINS for cPanel/panel servers
     for chain_name in "${!NFTBAN_IPV6_CHAINS[@]}"; do
         if ! nft list chain ${NFTBAN_TABLE_IPV6} "$chain_name" &>/dev/null; then
             chain_spec="${NFTBAN_IPV6_CHAINS[$chain_name]}"
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+
+            # LOCKOUT PREVENTION: In cPanel/panel mode, NEVER create DROP chains
+            if [[ "${SKIP_DROP_CHAINS:-false}" == "true" && "$chain_policy" == "drop" ]]; then
+                echo "  → Skipping IPv6 chain $chain_name (cPanel mode: DROP chains disabled)"
+                continue
+            fi
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV6} $chain_name"
             if nft add chain ${NFTBAN_TABLE_IPV6} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then

@@ -226,6 +226,37 @@ nftban_detect_iptables_service() {
 }
 
 # =============================================================================
+# XTABLES COMPAT DETECTION (xt target rules in live nftables)
+# =============================================================================
+
+nftban_detect_xt_compat() {
+    # Detect xtables compatibility rules in the live nftables ruleset
+    # These are created when iptables-nft translates iptables rules to nftables
+    # and indicate active iptables-nft usage that may conflict with NFTBan
+    # Returns: 0=not found, 1=xt compat rules detected
+
+    local status=0
+
+    # Check if nft command exists
+    if ! command -v nft &>/dev/null; then
+        return 0
+    fi
+
+    # Check live ruleset for xt target or xtables compat markers
+    if nft list ruleset 2>/dev/null | grep -qE "xt target|xtables compat"; then
+        status=1
+        NFTBAN_FIREWALL_CONFLICTS+=("XT-COMPAT: iptables-nft compatibility rules detected in live ruleset")
+        NFTBAN_FIREWALL_CONFLICTS+=("  └─ These rules are created by iptables-nft and may conflict with NFTBan")
+        NFTBAN_FIREWALL_FIXES+=("Flush iptables-nft rules to remove xt compat entries:")
+        NFTBAN_FIREWALL_FIXES+=("  iptables -F && iptables -X && ip6tables -F && ip6tables -X")
+        NFTBAN_FIREWALL_FIXES+=("  nft delete table ip filter 2>/dev/null; nft delete table ip6 filter 2>/dev/null")
+        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+    fi
+
+    return $status
+}
+
+# =============================================================================
 # CONFLICTING NFTABLES TABLES DETECTION
 # =============================================================================
 
@@ -514,6 +545,7 @@ nftban_detect_all_conflicts() {
     nftban_detect_fail2ban || true
     nftban_detect_iptables_nft || true
     nftban_detect_iptables_service || true
+    nftban_detect_xt_compat || true
     nftban_detect_conflicting_tables || true
     nftban_detect_firewalld || true
     nftban_detect_ufw || true
@@ -1193,6 +1225,7 @@ export -f nftban_remove_conflicts
 export -f nftban_detect_fail2ban
 export -f nftban_detect_iptables_nft
 export -f nftban_detect_iptables_service
+export -f nftban_detect_xt_compat
 export -f nftban_detect_conflicting_tables
 export -f nftban_detect_firewalld
 export -f nftban_detect_ufw

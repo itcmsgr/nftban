@@ -279,6 +279,27 @@ perms_enforce_var_files() {
     fi
 }
 
+perms_enforce_cache_files() {
+    # FIX v1.17.0: Enforce file permissions in /var/cache/nftban
+    # The unified exporter runs as nftban user and needs write access
+    # Files created by root during install must be fixed
+
+    local PERMS_CACHE="/var/cache/nftban"
+
+    perms_say "Enforcing file permissions in: $PERMS_CACHE"
+
+    if [[ -d "$PERMS_CACHE" ]]; then
+        # Fix ownership: nftban:nftban for all files (exporter runs as nftban)
+        perms_run find "$PERMS_CACHE" -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
+
+        # Fix directory ownership recursively
+        perms_run find "$PERMS_CACHE" -type d \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
+
+        # Files 0640 (owner read/write, group read)
+        perms_run find "$PERMS_CACHE" -type f -not -perm 0640 -exec chmod 0640 {} \;
+    fi
+}
+
 perms_enforce_log_files() {
     # Enforce file permissions in /var/log/nftban (directories handled by FHS spec)
     # Security: files 0640
@@ -429,6 +450,7 @@ nftban_permissions_enforce_all() {
         perms_enforce_sbin || errors=$((errors + 1))
         perms_enforce_var_files || errors=$((errors + 1))
         perms_enforce_log_files || errors=$((errors + 1))
+        perms_enforce_cache_files || errors=$((errors + 1))
     fi
 
     perms_say ""

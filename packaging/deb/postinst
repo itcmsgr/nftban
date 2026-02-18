@@ -478,24 +478,20 @@ case "$1" in
                 # Start socket only - don't trigger sync that creates structure
                 systemctl start nftband.socket >/dev/null 2>&1 || true
             else
-                # Normal mode: Start socket and trigger sync
+                # Normal mode: Start socket and service explicitly
+                # BUG-002 fix: Socket activation alone is unreliable on fresh install
                 systemctl start nftband.socket >/dev/null 2>&1 || true
+                systemctl start nftband.service >/dev/null 2>&1 || true
+                log_info "  NFTBand socket and service started"
 
-                # Trigger socket activation via IPC call (ensures daemon starts)
-                # Use timeout to prevent blocking, retry once on failure
+                # Trigger sync to ensure daemon is operational
                 sleep 1
                 if timeout 10s nftban sync >/dev/null 2>&1; then
-                    log_info "  NFTBand daemon activated via sync"
+                    log_info "  NFTBand daemon verified via sync"
                 else
                     # Retry once after short delay
                     sleep 2
-                    if timeout 10s nftban sync >/dev/null 2>&1; then
-                        log_info "  NFTBand daemon activated via sync (retry)"
-                    else
-                        # Final fallback: explicit service start
-                        systemctl start nftband.service >/dev/null 2>&1 || true
-                        log_info "  NFTBand daemon started (fallback mode)"
-                    fi
+                    timeout 10s nftban sync >/dev/null 2>&1 || log_warn "NFTBand sync failed (non-critical)"
                 fi
             fi
 
