@@ -739,8 +739,8 @@ SKIP_DROP_CHAINS=0
 # (A) Check LIVE ruleset for xt targets (not just config file!)
 # cPanel/iptables-nft creates xt rules that break nftables service
 if command -v nft >/dev/null 2>&1; then
-    LIVE_CHECK=$(nft list ruleset 2>&1 || true)
-    if echo "$LIVE_CHECK" | grep -qE "xt target|xtables compat"; then
+    LIVE_CHECK=\$(nft list ruleset 2>&1 || true)
+    if echo "\$LIVE_CHECK" | grep -qE "xt target|xtables compat"; then
         echo ""
         echo "[NFTBan ERROR] =========================================="
         echo "[NFTBan ERROR]  XT TARGET RULES DETECTED IN LIVE RULESET"
@@ -758,10 +758,10 @@ fi
 
 # (B) Detect cPanel - force coexist mode (don't manage nftables service)
 if [ -f /usr/local/cpanel/version ]; then
-    CPANEL_VER=$(cat /usr/local/cpanel/version 2>/dev/null || echo "unknown")
+    CPANEL_VER=\$(cat /usr/local/cpanel/version 2>/dev/null || echo "unknown")
     echo ""
     echo "[NFTBan WARN] =========================================="
-    echo "[NFTBan WARN]  cPanel DETECTED (v${CPANEL_VER})"
+    echo "[NFTBan WARN]  cPanel DETECTED (v\${CPANEL_VER})"
     echo "[NFTBan WARN] =========================================="
     echo "[NFTBan WARN] NFTBan will operate in coexistence mode:"
     echo "[NFTBan WARN]   - Will NOT manage nftables.service"
@@ -773,10 +773,10 @@ if [ -f /usr/local/cpanel/version ]; then
 fi
 
 # (C) Export flags for use by nftban commands during install
-export NFTBAN_SKIP_DROP_CHAINS=$SKIP_DROP_CHAINS
-export NFTBAN_CPANEL_MODE=$CPANEL_MODE
+export NFTBAN_SKIP_DROP_CHAINS=\$SKIP_DROP_CHAINS
+export NFTBAN_CPANEL_MODE=\$CPANEL_MODE
 
-if [ $SKIP_DROP_CHAINS -eq 1 ]; then
+if [ \$SKIP_DROP_CHAINS -eq 1 ]; then
     echo "[NFTBan WARN] Safety mode: Hook chains with DROP policy will NOT be created"
     echo "[NFTBan WARN] NFTBan sets/tables will be created but firewall won't block traffic"
 fi
