@@ -67,7 +67,7 @@ Use local file install: `dnf install -y ./nftban-*.rpm` (note the `./`)
 Install nftables: `dnf install -y nftables`
 
 ### Panel server (cPanel/Plesk/DirectAdmin)
-NFTBan auto-detects panels and enables coexist mode.
+Disable CSF/cPHulk first, then install NFTBan. Run `nftban panel cpanel enable` to open panel ports.
 
 ---
 

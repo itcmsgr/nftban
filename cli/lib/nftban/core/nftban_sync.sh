@@ -76,15 +76,6 @@ nftban_sync_full() {
         dry_run="--dry-run"
     fi
 
-    # Load firewall config for SKIP_DROP_CHAINS (v1.17.0: cPanel lockout prevention)
-    local firewall_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/firewall.conf"
-    if [[ -f "$firewall_conf" ]]; then
-        # shellcheck source=/dev/null
-        source "$firewall_conf"
-        export SKIP_DROP_CHAINS="${SKIP_DROP_CHAINS:-false}"
-        export FIREWALL_MODE="${FIREWALL_MODE:-standalone}"
-    fi
-
     # Check if Go binary exists
     if [[ ! -x "$NFTBAN_CORE_BIN" ]]; then
         nftban_output "error" "nftban-core binary not found: $NFTBAN_CORE_BIN"
