@@ -598,6 +598,11 @@ case "$1" in
             log_warn "cPanel continues to manage firewall rules."
             log_warn "NFTBan tables NOT created (no DROP policy chains)."
             log_warn ""
+            log_info "To manually enable NFTBan protection later:"
+            log_info "  1. Disable cPanel firewall: csf -x (or via WHM)"
+            log_info "  2. Remove conflicts: nftban health conflicts --fix"
+            log_info "  3. Enable NFTBan: nftban sync && systemctl start nftables"
+            log_warn ""
         elif [[ $NFTABLES_SAFE -eq 1 ]]; then
             if systemctl is-active nftables >/dev/null 2>&1; then
                 log_info "Reloading nftables..."

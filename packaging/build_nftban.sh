@@ -1053,8 +1053,9 @@ if [ "\$CPANEL_MODE" -eq 1 ]; then
     echo "[NFTBan WARN] NFTBan tables NOT created (no DROP policy chains)."
     echo ""
     echo "[NFTBan] To manually enable NFTBan protection later:"
-    echo "[NFTBan]   1. Review/migrate cPanel firewall rules"
-    echo "[NFTBan]   2. Run: nftban firewall takeover"
+    echo "[NFTBan]   1. Disable cPanel firewall: csf -x (or via WHM)"
+    echo "[NFTBan]   2. Remove conflicts: nftban health conflicts --fix"
+    echo "[NFTBan]   3. Enable NFTBan: nftban sync && systemctl start nftables"
     echo ""
 elif [ "\$NFTABLES_SAFE" -eq 1 ]; then
     if systemctl is-active nftables >/dev/null 2>&1; then
