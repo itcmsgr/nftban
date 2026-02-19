@@ -147,10 +147,10 @@ nftban_health_cmd_summary() {
     local result=0
     nftban_health_check_all >/dev/null 2>&1 || result=$?
 
-    # Render summary
+    # Render summary and return its exit code (0=OK, 1=WARNING, 2=ERROR)
+    # BUG-LOW-002 FIX: Use render_summary's return code, not check_all's
     nftban_health_render_summary
-
-    return $result
+    return $?
 }
 
 # =============================================================================

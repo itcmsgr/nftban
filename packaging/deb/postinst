@@ -247,7 +247,7 @@ case "$1" in
                 log_error "You cannot run two firewalls simultaneously."
                 log_error ""
                 log_error "Options:"
-                log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install ./nftban-*.deb"
+                log_error "  1. Auto-takeover: chattr -R -i /etc/nftban/ 2>/dev/null; apt remove --purge -y nftban-core; NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
                 log_error "  2. Manual removal:"
                 log_error "     - CSF: csf -x && apt remove csf lfd"
                 log_error "     - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
@@ -494,6 +494,60 @@ case "$1" in
         systemctl restart polkit 2>/dev/null || true
 
         # =====================================================================
+        # STEP 5.5: Auto-Enable Detected Control Panels (BUG-HIGH-002 fix)
+        # =====================================================================
+        # Prevents admin lockout by detecting installed panels and auto-enabling
+        # their ports BEFORE nftables starts. This creates the state file that
+        # the port loader uses to include panel ports.
+        log_info "Detecting installed control panels..."
+
+        DETECTED_PANEL="none"
+
+        # Inline panel detection (same logic as nftban_panel_detect)
+        if [[ -d /usr/local/directadmin ]]; then
+            DETECTED_PANEL="directadmin"
+        elif [[ -d /usr/local/cpanel ]]; then
+            DETECTED_PANEL="cpanel"
+        elif [[ -d /usr/local/psa ]]; then
+            DETECTED_PANEL="plesk"
+        elif [[ -d /usr/local/CyberCP ]]; then
+            DETECTED_PANEL="cyberpanel"
+        elif [[ -d /usr/local/hestia ]]; then
+            DETECTED_PANEL="hestia"
+        elif [[ -d /usr/local/vesta ]]; then
+            DETECTED_PANEL="vesta"
+        elif [[ -d /usr/local/cwpsrv ]]; then
+            DETECTED_PANEL="cwp"
+        elif [[ -d /usr/local/interworx ]]; then
+            DETECTED_PANEL="interworx"
+        fi
+
+        if [[ "$DETECTED_PANEL" != "none" ]]; then
+            log_info "  Detected control panel: ${DETECTED_PANEL^^}"
+
+            # Create panel state directory
+            mkdir -p /var/lib/nftban/panels
+
+            # Create state file with panel enabled
+            # This file is read by pkg/ports/panel_loader.go to include panel ports
+            {
+                echo "# NFTBan Panel State Configuration"
+                echo "# Format: panelname=enabled|disabled"
+                echo "# This file is automatically managed by 'nftban panel' commands"
+                echo "# Auto-generated during install on $(date -Iseconds)"
+                echo ""
+                echo "${DETECTED_PANEL}=enabled"
+            } > /var/lib/nftban/panels/enabled.conf
+
+            log_info "  Panel marked as enabled - ports will be loaded into firewall"
+
+            # Note: Panel-specific license server whitelisting is NOT auto-enabled
+            # Admin can enable via: nftban panel <name> enable (to configure licensing)
+        else
+            log_info "  No control panel detected - using generic configuration"
+        fi
+
+        # =====================================================================
         # STEP 6: **SAFETY** Auto-Whitelist System IPs
         # =====================================================================
         # CRITICAL: This MUST happen BEFORE enabling any firewall services
@@ -586,13 +640,18 @@ case "$1" in
             log_info "  Fresh install - timers enabled and started"
         fi
 
-        # Upgrade - restart services if running
+        # Upgrade - ensure services are enabled and restart if running
+        # BUG-MED-001 fix: Older versions may not have enabled nftband.service
         if [ -n "$2" ]; then
+            # Ensure nftband.service is enabled (may be missing from older installs)
+            if ! deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
+                systemctl enable nftband.service >/dev/null 2>&1 || true
+            fi
             deb-systemd-invoke try-restart nftband.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui.service >/dev/null 2>&1 || true
-            log_info "  Upgrade - services restarted"
+            log_info "  Upgrade - services enabled and restarted"
         fi
 
         # =====================================================================
@@ -692,6 +751,123 @@ case "$1" in
             else
                 log_warn "  Login monitoring enable failed (run manually: nftban login enable)"
             fi
+        fi
+
+        # =====================================================================
+        # STEP 13.5: Auto-enable panel ports (BUG-HIGH-002 fix)
+        # =====================================================================
+        # Detect hosting panels and auto-enable their management ports
+        # to prevent lockout during install on panel servers.
+        log_info "Detecting hosting panels..."
+
+        PANEL_DETECTED="none"
+        PANEL_PORTS=""
+        PANEL_NAME=""
+
+        # Detect panel type (same logic as nftban_panel_detect)
+        if [[ -d /usr/local/cpanel ]]; then
+            PANEL_DETECTED="cpanel"
+            PANEL_NAME="cPanel/WHM"
+            # Critical cPanel/WHM management ports (TCP inbound)
+            PANEL_PORTS="2082,2083,2086,2087"
+
+            # cPanel iptables-nft cleanup: Remove legacy xt_target rules that break nftables
+            # These rules use "xt target REDIRECT" which modern nftables cannot load
+            for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+                if [[ -f "$nft_conf" ]] && grep -q "xt target\|xtables compat" "$nft_conf" 2>/dev/null; then
+                    log_info "  cPanel: Cleaning iptables-nft legacy rules from $nft_conf"
+                    cp "$nft_conf" "${nft_conf}.cpanel.bak"
+                    cat > "$nft_conf" << 'NFTCONF'
+#!/usr/sbin/nft -f
+# nftables configuration - managed by NFTBan
+# cPanel legacy iptables-nft rules backed up to .cpanel.bak
+# These rules used xt_target REDIRECT which is incompatible with modern nftables
+
+flush ruleset
+
+# Load NFTBan firewall configuration
+include "/etc/nftban/nftables.conf"
+NFTCONF
+                    log_info "  cPanel: Legacy rules backed up, NFTBan config enabled"
+                fi
+            done
+        elif [[ -d /usr/local/directadmin ]]; then
+            PANEL_DETECTED="directadmin"
+            PANEL_NAME="DirectAdmin"
+            # DirectAdmin management port (TCP inbound)
+            PANEL_PORTS="2222"
+        elif [[ -d /usr/local/psa ]]; then
+            PANEL_DETECTED="plesk"
+            PANEL_NAME="Plesk"
+            # Plesk management ports (TCP inbound)
+            PANEL_PORTS="8443,8880"
+        elif [[ -d /usr/local/CyberCP ]]; then
+            PANEL_DETECTED="cyberpanel"
+            PANEL_NAME="CyberPanel"
+            # CyberPanel management ports (TCP inbound)
+            PANEL_PORTS="7080,8090"
+        elif [[ -d /usr/local/hestia ]]; then
+            PANEL_DETECTED="hestia"
+            PANEL_NAME="HestiaCP"
+            # HestiaCP management port (TCP inbound)
+            PANEL_PORTS="8083"
+        elif [[ -d /usr/local/vesta ]]; then
+            PANEL_DETECTED="vesta"
+            PANEL_NAME="VestaCP"
+            # VestaCP management port (TCP inbound)
+            PANEL_PORTS="8083"
+        elif [[ -d /usr/local/cwpsrv ]]; then
+            PANEL_DETECTED="cwp"
+            PANEL_NAME="CentOS Web Panel"
+            # CWP management ports (TCP inbound)
+            PANEL_PORTS="2030,2031"
+        elif [[ -d /usr/local/interworx ]]; then
+            PANEL_DETECTED="interworx"
+            PANEL_NAME="InterWorx"
+            # InterWorx management ports (TCP inbound)
+            PANEL_PORTS="2080,2443"
+        fi
+
+        if [[ "$PANEL_DETECTED" != "none" ]]; then
+            log_info "  Detected: $PANEL_NAME"
+            log_info "  Auto-enabling panel management ports: $PANEL_PORTS"
+
+            # Create ports.d directory if missing
+            mkdir -p /etc/nftban/ports.d
+            chmod 750 /etc/nftban/ports.d
+            chown root:nftban /etc/nftban/ports.d 2>/dev/null || true
+
+            # Use dedicated panel port config file (idempotent)
+            PANEL_PORT_FILE="/etc/nftban/ports.d/10-panel.conf"
+
+            # Only add if not already configured (idempotent)
+            if [[ ! -f "$PANEL_PORT_FILE" ]] || ! grep -q "^# Panel: $PANEL_NAME" "$PANEL_PORT_FILE" 2>/dev/null; then
+                {
+                    echo "# ============================================="
+                    echo "# NFTBan Auto-Detected Panel Ports"
+                    echo "# Generated during install: $(date '+%Y-%m-%d %H:%M:%S')"
+                    echo "# Panel: $PANEL_NAME"
+                    echo "# ============================================="
+                    echo "# Format: PORT/PROTOCOL/DIRECTION"
+                    echo "# T=TCP, U=UDP, B=Both | I=Input, O=Output, IO=Both"
+                    echo ""
+                    # Add each port as TCP inbound (panel management ports)
+                    IFS=',' read -ra PORT_ARRAY <<< "$PANEL_PORTS"
+                    for port in "${PORT_ARRAY[@]}"; do
+                        echo "# $PANEL_NAME port $port (TCP inbound)"
+                        echo "${port}/T/I"
+                    done
+                } > "$PANEL_PORT_FILE"
+
+                chmod 640 "$PANEL_PORT_FILE"
+                chown root:nftban "$PANEL_PORT_FILE" 2>/dev/null || true
+                log_info "  Created: $PANEL_PORT_FILE"
+                log_info "  Panel ports will be active after firewall sync"
+            else
+                log_info "  Panel ports already configured (skipping)"
+            fi
+        else
+            log_info "  No hosting panel detected (standalone server)"
         fi
 
         # =====================================================================

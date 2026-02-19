@@ -2734,7 +2734,7 @@ func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketRespon
 			setNames = []string{"tcp_ports_in", "tcp_ports"} // Also update legacy set
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
 		default:
 			setNames = []string{"tcp_ports_in", "tcp_ports"}
@@ -2745,7 +2745,7 @@ func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketRespon
 			setNames = []string{"udp_ports_in", "udp_ports"}
 		case "out", "o", "output":
 			setNames = []string{"udp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
 		default:
 			setNames = []string{"udp_ports_in", "udp_ports"}
@@ -2756,7 +2756,7 @@ func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketRespon
 			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out", "udp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
 		default:
 			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
@@ -2863,7 +2863,7 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 			setNames = []string{"tcp_ports_in", "tcp_ports"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
 		default:
 			setNames = []string{"tcp_ports_in", "tcp_ports"}
@@ -2874,7 +2874,7 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 			setNames = []string{"udp_ports_in", "udp_ports"}
 		case "out", "o", "output":
 			setNames = []string{"udp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
 		default:
 			setNames = []string{"udp_ports_in", "udp_ports"}
@@ -2885,7 +2885,7 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out", "udp_ports_out"}
-		case "both", "io", "b":
+		case "both", "io", "b", "inout":
 			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
 		default:
 			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
@@ -2896,10 +2896,14 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 
 	deleted := 0
 	for _, setName := range setNames {
-		// IPv4
-		set, err := nft.GetOrCreatePortSet(ipv4Table, setName)
+		// IPv4 - use GetPortSet (not GetOrCreatePortSet) to avoid creating empty sets
+		set, err := nft.GetPortSet(ipv4Table, setName)
 		if err != nil {
 			log.Printf("[delete_port_element] Warning: failed to get IPv4 set %s: %v", setName, err)
+			continue
+		}
+		if set == nil {
+			// Set doesn't exist - nothing to delete (idempotent)
 			continue
 		}
 		if err := nft.DeletePortElements(set, ports); err != nil {
@@ -2908,10 +2912,14 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 			deleted++
 		}
 
-		// IPv6
-		set, err = nft.GetOrCreatePortSet(ipv6Table, setName)
+		// IPv6 - use GetPortSet (not GetOrCreatePortSet) to avoid creating empty sets
+		set, err = nft.GetPortSet(ipv6Table, setName)
 		if err != nil {
 			log.Printf("[delete_port_element] Warning: failed to get IPv6 set %s: %v", setName, err)
+			continue
+		}
+		if set == nil {
+			// Set doesn't exist - nothing to delete (idempotent)
 			continue
 		}
 		if err := nft.DeletePortElements(set, ports); err != nil {
