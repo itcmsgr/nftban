@@ -230,14 +230,50 @@ case "$1" in
                     log_info "  ✓ iptables service disabled"
                 fi
 
-                # Flush any remaining rules
+                # =====================================================================
+                # CRITICAL: Create emergency SSH/panel protection BEFORE any flush
+                # This prevents lockout during takeover (v1.17.4 fix)
+                # =====================================================================
+                log_info "  Creating emergency access protection..."
+
+                # Detect current SSH port
+                EMERGENCY_SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | awk '{print $4}' | sed 's/.*://' | head -1)
+                EMERGENCY_SSH_PORT=${EMERGENCY_SSH_PORT:-22}
+                log_info "  Detected SSH on port: $EMERGENCY_SSH_PORT"
+
+                # Detect panel ports
+                EMERGENCY_PANEL_PORTS=""
+                [[ -d /usr/local/cpanel ]] && EMERGENCY_PANEL_PORTS="2082 2083 2086 2087"
+                [[ -d /usr/local/directadmin ]] && EMERGENCY_PANEL_PORTS="2222"
+                [[ -d /usr/local/psa ]] && EMERGENCY_PANEL_PORTS="8443 8880"
+                [[ -d /usr/local/hestia ]] && EMERGENCY_PANEL_PORTS="8083"
+                [[ -d /usr/local/CyberCP ]] && EMERGENCY_PANEL_PORTS="7080 8090"
+                [[ -n "$EMERGENCY_PANEL_PORTS" ]] && log_info "  Detected panel ports: $EMERGENCY_PANEL_PORTS"
+
+                # Create emergency protection table with HIGHEST priority (-500)
+                nft add table inet nftban_install_emergency 2>/dev/null || true
+                nft 'add chain inet nftban_install_emergency input { type filter hook input priority -500; policy accept; }' 2>/dev/null || true
+                nft add rule inet nftban_install_emergency input tcp dport $EMERGENCY_SSH_PORT accept 2>/dev/null || true
+                nft add rule inet nftban_install_emergency input ct state established,related accept 2>/dev/null || true
+
+                # Add panel ports to emergency table
+                for port in $EMERGENCY_PANEL_PORTS; do
+                    nft add rule inet nftban_install_emergency input tcp dport $port accept 2>/dev/null || true
+                done
+                log_info "  ✓ Emergency protection active"
+
+                # Flush legacy rules (but NOT our emergency table)
                 log_info "  Flushing legacy rules..."
-                nft flush ruleset 2>/dev/null || true
+                # Flush specific tables instead of entire ruleset to preserve emergency table
+                for table in $(nft list tables 2>/dev/null | grep -v nftban_install_emergency | awk '{print $2, $3}'); do
+                    nft flush table $table 2>/dev/null || true
+                    nft delete table $table 2>/dev/null || true
+                done
                 iptables -F 2>/dev/null || true
                 iptables -X 2>/dev/null || true
                 ip6tables -F 2>/dev/null || true
                 ip6tables -X 2>/dev/null || true
-                log_info "  ✓ Legacy rules flushed"
+                log_info "  ✓ Legacy rules flushed (emergency protection preserved)"
                 log_info ""
                 log_info "✓ All conflicts removed. NFTBan is now THE firewall."
                 log_info ""
@@ -909,6 +945,15 @@ NFTCONF
             fi
         done
         log_info "  Security files protected (immutable)"
+
+        # =====================================================================
+        # Cleanup emergency protection table (v1.17.4)
+        # =====================================================================
+        # NFTBan is now fully operational, emergency protection no longer needed
+        if nft list table inet nftban_install_emergency >/dev/null 2>&1; then
+            nft delete table inet nftban_install_emergency 2>/dev/null || true
+            log_info "Emergency protection table cleaned up"
+        fi
 
         # =====================================================================
         # Installation Complete
