@@ -110,6 +110,12 @@ nftban_cmd_sync() {
             nftban_sync_full --dry-run
             ;;
 
+        --quick|-q|quick)
+            # BUG-LOW-001 FIX: Quick sync for postinst (skip feeds/geoban)
+            # Called by geoban.sh as fallback when queue unavailable
+            nftban_sync_full --quick
+            ;;
+
         *)
             nftban_output "error" "Unknown sync subcommand: $subcommand"
             nftban_output "info" "Run 'nftban sync help' for usage"

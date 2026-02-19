@@ -927,6 +927,25 @@ func (m *NFTManager) GetSetCount(set *nftables.Set) (int, error) {
 	return len(elements), nil
 }
 
+// GetPortSet retrieves an existing port set without creating it
+// Returns nil, nil if the set doesn't exist (not an error - idempotent behavior)
+// Port sets use TypeInetService (uint16) for port numbers
+func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
+	sets, err := m.conn.GetSets(table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sets: %w", err)
+	}
+
+	for _, set := range sets {
+		if set.Name == setName {
+			return set, nil
+		}
+	}
+
+	// Set doesn't exist - return nil without error (idempotent)
+	return nil, nil
+}
+
 // GetOrCreatePortSet creates or gets an existing port set for TCP or UDP
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
@@ -992,6 +1011,7 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 }
 
 // DeletePortElements removes port numbers from a port set
+// Returns nil for "no such file" errors (idempotent - element already doesn't exist)
 func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
 	if len(ports) == 0 {
 		return nil
@@ -1011,6 +1031,13 @@ func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
 	}
 
 	if err := m.conn.Flush(); err != nil {
+		// Tolerate "no such file" errors - element already doesn't exist (idempotent)
+		errStr := err.Error()
+		if strings.Contains(errStr, "no such file") ||
+			strings.Contains(errStr, "does not exist") ||
+			strings.Contains(errStr, "ENOENT") {
+			return nil // Idempotent: element already gone
+		}
 		return fmt.Errorf("failed to flush port delete: %w", err)
 	}
 
