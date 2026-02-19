@@ -141,6 +141,14 @@ nftban_cmd_firewall() {
             shift
             firewall_reload "$@"
             ;;
+        rebuild)
+            shift
+            firewall_rebuild "$@"
+            ;;
+        reset)
+            shift
+            firewall_reset "$@"
+            ;;
         *)
             echo "Error: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
@@ -331,6 +339,196 @@ firewall_reload() {
 }
 
 # =============================================================================
+# SUBCOMMAND: REBUILD
+# =============================================================================
+
+firewall_rebuild() {
+    # Rebuild nftables schema from scratch (keeps existing IPs in sets)
+    # This is the correct way to fix corrupted schema
+    local force=false
+    local quiet=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f)
+                force=true
+                shift
+                ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            --help|-h)
+                show_rebuild_help
+                return 0
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    [[ "$quiet" == "false" ]] && echo "Rebuilding NFTBan firewall schema..."
+
+    # Step 1: Backup current IPs from sets (preserve bans/whitelist)
+    local backup_dir="/var/lib/nftban/backup"
+    mkdir -p "$backup_dir"
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    [[ "$quiet" == "false" ]] && echo "  [1/5] Backing up current sets..."
+    nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
+    nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
+    nft list set ip nftban geoban_ipv4 2>/dev/null > "$backup_dir/geoban_ipv4_$timestamp.txt" || true
+    nft list set ip nftban feeds_ipv4 2>/dev/null > "$backup_dir/feeds_ipv4_$timestamp.txt" || true
+
+    # Step 2: Remove rogue tables (keep only NFTBan tables)
+    [[ "$quiet" == "false" ]] && echo "  [2/5] Removing rogue tables..."
+    local ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$|^table inet (filter|nftban)$"
+    local ALL_TABLES
+    ALL_TABLES=$(nft list tables 2>/dev/null || true)
+
+    while IFS= read -r table_line; do
+        [[ -z "$table_line" ]] && continue
+        if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
+            local TABLE_SPEC="${table_line#table }"
+            if nft delete table $TABLE_SPEC 2>/dev/null; then
+                [[ "$quiet" == "false" ]] && echo "    Deleted rogue table: $TABLE_SPEC"
+            fi
+        fi
+    done <<< "$ALL_TABLES"
+
+    # Step 3: Flush NFTBan tables (but don't delete them)
+    [[ "$quiet" == "false" ]] && echo "  [3/5] Flushing NFTBan tables..."
+    nft flush table ip nftban 2>/dev/null || true
+    nft flush table ip6 nftban 2>/dev/null || true
+
+    # Step 4: Reload schema from config
+    [[ "$quiet" == "false" ]] && echo "  [4/5] Rebuilding schema from config..."
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    if [[ -f "$nftban_conf" ]]; then
+        if ! nft -f "$nftban_conf" 2>&1; then
+            echo "Error: Failed to load NFTBan schema from $nftban_conf" >&2
+            echo "Try: nftban firewall reset --force" >&2
+            return 1
+        fi
+    else
+        echo "Error: NFTBan config not found: $nftban_conf" >&2
+        return 1
+    fi
+
+    # Step 5: Re-sync system whitelist
+    [[ "$quiet" == "false" ]] && echo "  [5/5] Re-syncing system whitelist..."
+    nftban whitelist sync >/dev/null 2>&1 || true
+
+    [[ "$quiet" == "false" ]] && echo ""
+    [[ "$quiet" == "false" ]] && echo "Schema rebuilt successfully!"
+    [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/*_$timestamp.txt"
+
+    # Validate the new schema
+    [[ "$quiet" == "false" ]] && echo ""
+    [[ "$quiet" == "false" ]] && firewall_validate --quiet && echo "Schema validation: PASSED" || echo "Schema validation: WARNING (check with nftban firewall validate)"
+
+    return 0
+}
+
+# =============================================================================
+# SUBCOMMAND: RESET
+# =============================================================================
+
+firewall_reset() {
+    # Complete firewall reset - flush everything and rebuild clean
+    # WARNING: This will remove all bans, whitelists, and geoban data!
+    local force=false
+    local quiet=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f)
+                force=true
+                shift
+                ;;
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            --help|-h)
+                show_reset_help
+                return 0
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ "$force" == "false" ]]; then
+        echo "WARNING: This will completely reset the firewall!"
+        echo ""
+        echo "The following will be DELETED:"
+        echo "  - All banned IPs"
+        echo "  - All whitelisted IPs (will be re-synced)"
+        echo "  - All GeoBan entries"
+        echo "  - All threat feed entries"
+        echo ""
+        echo "Use --force to confirm, or Ctrl+C to cancel."
+        return 1
+    fi
+
+    [[ "$quiet" == "false" ]] && echo "Performing complete firewall reset..."
+
+    # Step 1: Stop nftban services temporarily
+    [[ "$quiet" == "false" ]] && echo "  [1/6] Stopping NFTBan services..."
+    systemctl stop nftban-maintenance.timer 2>/dev/null || true
+    systemctl stop nftband 2>/dev/null || true
+
+    # Step 2: Backup current ruleset
+    local backup_dir="/var/lib/nftban/backup"
+    mkdir -p "$backup_dir"
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    [[ "$quiet" == "false" ]] && echo "  [2/6] Backing up current ruleset..."
+    nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
+
+    # Step 3: Flush everything
+    [[ "$quiet" == "false" ]] && echo "  [3/6] Flushing all nftables rules..."
+    nft flush ruleset 2>/dev/null || true
+
+    # Step 4: Reload NFTBan schema
+    [[ "$quiet" == "false" ]] && echo "  [4/6] Loading clean NFTBan schema..."
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    if [[ -f "$nftban_conf" ]]; then
+        if ! nft -f "$nftban_conf" 2>&1; then
+            echo "Error: Failed to load NFTBan schema" >&2
+            echo "Restoring backup..." >&2
+            nft -f "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
+            return 1
+        fi
+    fi
+
+    # Step 5: Re-sync system whitelist (lockout protection)
+    [[ "$quiet" == "false" ]] && echo "  [5/6] Re-syncing system whitelist..."
+    nftban whitelist sync >/dev/null 2>&1 || true
+
+    # Step 6: Restart services
+    [[ "$quiet" == "false" ]] && echo "  [6/6] Restarting NFTBan services..."
+    systemctl start nftban-maintenance.timer 2>/dev/null || true
+    systemctl start nftband 2>/dev/null || true
+
+    [[ "$quiet" == "false" ]] && echo ""
+    [[ "$quiet" == "false" ]] && echo "Firewall reset complete!"
+    [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/ruleset_$timestamp.nft"
+    [[ "$quiet" == "false" ]] && echo ""
+    [[ "$quiet" == "false" ]] && echo "Next steps:"
+    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban geoban sync' to restore GeoBan"
+    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban feeds sync' to restore threat feeds"
+
+    return 0
+}
+
+# =============================================================================
 # HELP FUNCTIONS
 # =============================================================================
 
@@ -345,7 +543,9 @@ Subcommands:
   check         Check if IP or port is blocked/allowed
   stats         Show firewall statistics (tables, chains, sets, IPs)
   logs          View and filter firewall logs (on-demand)
-  reload        Reload nftables ruleset
+  reload        Reload nftables ruleset from config
+  rebuild       Rebuild schema (fix corruption, keeps IPs)
+  reset         Complete reset (flush all, rebuild clean)
   help          Show this help message
 
 Examples:
@@ -355,6 +555,8 @@ Examples:
   nftban firewall stats
   nftban firewall logs show --live
   nftban firewall reload
+  nftban firewall rebuild
+  nftban firewall reset --force
 
 Global options:
   --json        Output results as JSON (for GUI integration)
@@ -477,6 +679,79 @@ Output includes:
   - Total counts (tables, chains, sets, rules)
   - ip/ip6 nftban: whitelist, blacklist, tcp_ports, udp_ports
   - ip/ip6 nftban: temp_whitelist, temp_ban (with auto-expire)
+
+EOF
+}
+
+show_rebuild_help() {
+    cat <<'EOF'
+Usage: nftban firewall rebuild [OPTIONS]
+
+Rebuild nftables schema from scratch while preserving IP data.
+
+Use this when:
+  - Schema is corrupted (validation errors)
+  - Rogue tables detected (ip raw, ip6 raw, etc.)
+  - After manual nft commands broke the structure
+
+What it does:
+  1. Backs up current IPs from all sets
+  2. Removes rogue tables (non-NFTBan tables)
+  3. Flushes NFTBan tables
+  4. Reloads schema from /etc/nftban/nftables.conf
+  5. Re-syncs system whitelist
+
+Options:
+  --force, -f   Skip confirmation prompts
+  --quiet, -q   Suppress progress output
+  -h, --help    Show this help message
+
+Examples:
+  nftban firewall rebuild
+  nftban firewall rebuild --force
+
+Note: For complete reset (lose all data), use:
+  nftban firewall reset --force
+
+EOF
+}
+
+show_reset_help() {
+    cat <<'EOF'
+Usage: nftban firewall reset [OPTIONS]
+
+Complete firewall reset - flush everything and rebuild clean.
+
+WARNING: This DELETES all:
+  - Banned IPs
+  - Whitelisted IPs (auto-resynced after)
+  - GeoBan entries
+  - Threat feed entries
+
+Use this when:
+  - Schema is completely broken
+  - Need to start fresh
+  - firewall rebuild fails
+
+What it does:
+  1. Stops NFTBan services
+  2. Backs up current ruleset
+  3. Flushes ALL nftables rules
+  4. Loads clean NFTBan schema
+  5. Re-syncs system whitelist (lockout protection)
+  6. Restarts NFTBan services
+
+Options:
+  --force, -f   Required to confirm the reset
+  --quiet, -q   Suppress progress output
+  -h, --help    Show this help message
+
+Examples:
+  nftban firewall reset --force
+
+After reset, restore data with:
+  nftban geoban sync
+  nftban feeds sync
 
 EOF
 }
