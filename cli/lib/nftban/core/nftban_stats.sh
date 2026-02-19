@@ -443,10 +443,12 @@ nftban_stats_count_rules() {
     # Returns: Integer count of rules
     #
     # SINGLE SOURCE OF TRUTH: Direct nft query (no caching needed - fast operation)
+    # v1.18.0: Use ip nftban table (not inet nftban)
 
-    local count
-    count=$(nft list table inet nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
-    echo "$count"
+    local count_v4 count_v6
+    count_v4=$(nft list table ip nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
+    count_v6=$(nft list table ip6 nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
+    echo "$((count_v4 + count_v6))"
 }
 
 # =============================================================================

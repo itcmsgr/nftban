@@ -236,9 +236,10 @@ func BenchmarkFastLaneDuringBulk(b *testing.B) {
 	}
 
 	// Enqueue bulk job (runs in background)
+	// v2.1: All bans go to unified blacklist
 	go func() {
 		for i := 0; i < 10; i++ {
-			_ = scheduler.EnqueueBulk("feeds_ipv4", bulkElements, "bench")
+			_ = scheduler.EnqueueBulk("blacklist_ipv4", bulkElements, "bench")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -257,7 +258,7 @@ func BenchmarkFastLaneDuringBulk(b *testing.B) {
 			Element: fmt.Sprintf("192.168.1.%d", i%255),
 			TTL:     3600,
 		}
-		_ = scheduler.EnqueueFast("auto_ipv4", op)
+		_ = scheduler.EnqueueFast("blacklist_ipv4", op)
 		totalLatency += time.Since(start)
 	}
 

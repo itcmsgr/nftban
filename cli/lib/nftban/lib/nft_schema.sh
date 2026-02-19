@@ -81,49 +81,24 @@ readonly NFTBAN_TABLE_IPV4_NAME="nftban"
 readonly NFTBAN_TABLE_IPV4="${NFTBAN_TABLE_IPV4_FAMILY} ${NFTBAN_TABLE_IPV4_NAME}"
 
 # Sets in ip nftban (IPv4)
+# =============================================================================
+# v2.1 MINIMAL SCHEMA - CIDR Aggregation, No IP Duplicates
+# =============================================================================
+# Only 2 IP sets + 4 directional port sets per table
+# - Feeds, geoban, auto, manual ALL go to blacklist_ipv4 (no separate sets)
+# - Temp bans use timeout parameter (auto-expire)
+# - Source tracking done in daemon database
+# - CIDR aggregation reduces memory usage
+# =============================================================================
 declare -g -A NFTBAN_IPV4_SETS=(
-    # Whitelist - ALL trusted IPs consolidated
-    ["whitelist_ipv4"]="ipv4_addr|interval|Whitelist (admin IPs + internal networks)"
+    # Whitelist - trusted IPs/networks (CIDR aggregated)
+    ["whitelist_ipv4"]="ipv4_addr|interval|Trusted IPs/networks"
 
-    # ==========================================================================
-    # SOURCE-SPECIFIC BLACKLIST SETS (v1.1 Async IPC Architecture)
-    # ==========================================================================
-    # Each source domain has its own set for clean lifecycle management:
-    # - Dedicated sets (feeds, geoban): Safe to flush on disable
-    # - Shared sets (auto, manual): Use timeout expiry or source index
-    #
-    # IMPORTANT: Go daemon is the ONLY writer via netlink. Shell modules
-    # MUST use IPC (ban/unban/replace_set), never direct nft commands.
-    # ==========================================================================
+    # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
+    # Temp bans use timeout parameter (auto-expire)
+    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|All bans (feeds+geoban+auto+manual)"
 
-    # Threat Intelligence Feeds (bulk replace via replace_set IPC)
-    # - CIDRs expected, need interval flag
-    # - Atomic replacement: flush + bulk add
-    ["feeds_ipv4"]="ipv4_addr|interval|Threat intelligence feeds (CIDRs)"
-
-    # Geographic Blocking (bulk replace via replace_set IPC)
-    # - Country CIDRs, need interval flag
-    # - Atomic replacement: flush + bulk add
-    ["geoban_ipv4"]="ipv4_addr|interval|Country/geo blocking (CIDRs)"
-
-    # Auto-Detection (login, portscan, ddos, suricata via ban/unban IPC)
-    # - Individual IPs with timeout, no interval needed
-    # - TTL=max coalescing in Go daemon
-    ["auto_ipv4"]="ipv4_addr|timeout|Auto-detected threats (login, portscan, ddos, suricata)"
-
-    # Manual CLI Bans (via ban/unban IPC)
-    # - Individual IPs, optional timeout
-    ["manual_ipv4"]="ipv4_addr|timeout|Manual CLI bans"
-
-    # Legacy unified blacklist (deprecated, kept for migration)
-    # TODO: Remove after v1.2 migration complete
-    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
-
-    # Service ports (LEGACY - kept for backward compatibility)
-    ["tcp_ports"]="inet_service||Allowed TCP ports (legacy, use tcp_ports_in/out)"
-    ["udp_ports"]="inet_service||Allowed UDP ports (legacy, use udp_ports_in/out)"
-
-    # Directional port sets (v1.15.0 - full IN/OUT support)
+    # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
@@ -132,10 +107,10 @@ declare -g -A NFTBAN_IPV4_SETS=(
 
 # Chains in ip nftban (IPv4)
 # BASE CHAINS (mandatory - always present)
-# PRIORITY -100: Ensures NFTBan runs BEFORE any panel firewalls (CSF, Plesk, etc. use priority 0)
+# PRIORITY 0: Standard filter priority (v1.18.0 schema consolidation)
 declare -g -A NFTBAN_IPV4_CHAINS=(
-    ["input"]="filter|input|-100|drop|Main IPv4 input chain (priority -100: before panel firewalls)"
-    ["forward"]="filter|forward|-100|drop|IPv4 forward chain (priority -100: before panel firewalls)"
+    ["input"]="filter|input|0|drop|Main IPv4 input chain (priority 0: standard filter)"
+    ["forward"]="filter|forward|0|drop|IPv4 forward chain (priority 0: standard filter)"
     ["output"]="filter|output|0|accept|IPv4 output chain"
 )
 
@@ -162,42 +137,18 @@ readonly NFTBAN_TABLE_IPV6_NAME="nftban"
 readonly NFTBAN_TABLE_IPV6="${NFTBAN_TABLE_IPV6_FAMILY} ${NFTBAN_TABLE_IPV6_NAME}"
 
 # Sets in ip6 nftban (IPv6)
+# =============================================================================
+# v2.1 MINIMAL SCHEMA - Same as IPv4 (CIDR aggregated, no IP duplicates)
+# =============================================================================
 declare -g -A NFTBAN_IPV6_SETS=(
-    # Whitelist - ALL trusted IPs consolidated
-    ["whitelist_ipv6"]="ipv6_addr|interval|Whitelist (admin IPs + internal networks)"
+    # Whitelist - trusted IPv6/networks (CIDR aggregated)
+    ["whitelist_ipv6"]="ipv6_addr|interval|Trusted IPv6/networks"
 
-    # ==========================================================================
-    # SOURCE-SPECIFIC BLACKLIST SETS (v1.1 Async IPC Architecture)
-    # ==========================================================================
-    # Each source domain has its own set for clean lifecycle management:
-    # - Dedicated sets (feeds, geoban): Safe to flush on disable
-    # - Shared sets (auto, manual): Use timeout expiry or source index
-    #
-    # IMPORTANT: Go daemon is the ONLY writer via netlink. Shell modules
-    # MUST use IPC (ban/unban/replace_set), never direct nft commands.
-    # ==========================================================================
+    # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
+    # Temp bans use timeout parameter (auto-expire)
+    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|All bans (feeds+geoban+auto+manual)"
 
-    # Threat Intelligence Feeds (bulk replace via replace_set IPC)
-    ["feeds_ipv6"]="ipv6_addr|interval|Threat intelligence feeds (CIDRs)"
-
-    # Geographic Blocking (bulk replace via replace_set IPC)
-    ["geoban_ipv6"]="ipv6_addr|interval|Country/geo blocking (CIDRs)"
-
-    # Auto-Detection (login, portscan, ddos, suricata via ban/unban IPC)
-    ["auto_ipv6"]="ipv6_addr|timeout|Auto-detected threats (login, portscan, ddos, suricata)"
-
-    # Manual CLI Bans (via ban/unban IPC)
-    ["manual_ipv6"]="ipv6_addr|timeout|Manual CLI bans"
-
-    # Legacy unified blacklist (deprecated, kept for migration)
-    # TODO: Remove after v1.2 migration complete
-    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|DEPRECATED: Use feeds/geoban/auto/manual sets"
-
-    # Service ports (LEGACY - kept for backward compatibility)
-    ["tcp_ports"]="inet_service||Allowed TCP ports (legacy, use tcp_ports_in/out)"
-    ["udp_ports"]="inet_service||Allowed UDP ports (legacy, use udp_ports_in/out)"
-
-    # Directional port sets (v1.15.0 - full IN/OUT support)
+    # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
@@ -206,10 +157,10 @@ declare -g -A NFTBAN_IPV6_SETS=(
 
 # Chains in ip6 nftban (IPv6)
 # BASE CHAINS (mandatory - always present)
-# PRIORITY -100: Ensures NFTBan runs BEFORE any panel firewalls (CSF, Plesk, etc. use priority 0)
+# PRIORITY 0: Standard filter priority (v1.18.0 schema consolidation)
 declare -g -A NFTBAN_IPV6_CHAINS=(
-    ["input"]="filter|input|-100|drop|Main IPv6 input chain (priority -100: before panel firewalls)"
-    ["forward"]="filter|forward|-100|drop|IPv6 forward chain (priority -100: before panel firewalls)"
+    ["input"]="filter|input|0|drop|Main IPv6 input chain (priority 0: standard filter)"
+    ["forward"]="filter|forward|0|drop|IPv6 forward chain (priority 0: standard filter)"
     ["output"]="filter|output|0|accept|IPv6 output chain"
 )
 
@@ -395,22 +346,23 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 # UDP: (empty by default, add as needed)
 #
 # =============================================================================
-# TEMP_BAN OPTIONS
+# v1.18.0 AUTO BAN ARCHITECTURE
+# =============================================================================
+# v2.1 UNIFIED BLACKLIST ARCHITECTURE
 # =============================================================================
 #
-# Temporary bans (fail2ban) can be stored in TWO ways:
+# All ban sources (feeds, geoban, auto-detect, manual) go to:
+#   - blacklist_ipv4 in "ip nftban" table
+#   - blacklist_ipv6 in "ip6 nftban" table
 #
-# OPTION A: Same table as permanent bans (simpler)
-#   - temp_ban_ipv4 set in "ip nftban" table
-#   - Advantage: One table, simpler rule order
-#   - Disadvantage: Atomic reload must preserve temp_ban set
+# Temp bans use timeout flag (auto-expire).
+# Source tracking done in daemon database, NOT separate nft sets.
 #
-# OPTION B: Separate runtime table (current approach on lab1)
-#   - temp_ban_v4 set in "inet nftban_runtime" table
-#   - Advantage: Runtime state isolated, never touched by reloads
-#   - Disadvantage: Extra table, more complex
-#
-# RECOMMENDED: Option A (simpler, one table per family)
+# Benefits:
+#   - CIDR aggregation (lower memory)
+#   - No IP duplicates across sets
+#   - Faster lookup (single set)
+#   - Simpler validation
 # =============================================================================
 
 # =============================================================================
@@ -487,15 +439,12 @@ nftban_nft_get_table_for_ip() {
 }
 
 nftban_nft_get_set_name() {
-    # Get the correct set name for an IP/source and operation
+    # Get the correct set name for an IP and operation
     # Args: $1 = IP address, $2 = operation/source
     # Returns: set name
     #
-    # v1.1 Architecture: Source-specific sets
-    # - feeds    → feeds_ipv4/ipv6
-    # - geoban   → geoban_ipv4/ipv6
-    # - login, portscan, ddos, suricata → auto_ipv4/ipv6
-    # - manual   → manual_ipv4/ipv6
+    # v2.1 Architecture: All bans go to unified blacklist
+    # Source tracking done in daemon database
 
     local ip="$1"
     local operation="$2"
@@ -509,34 +458,13 @@ nftban_nft_get_set_name() {
     fi
 
     case "$operation" in
-        # Source-specific sets (v1.1)
-        feeds)
-            echo "feeds_${suffix}"
-            ;;
-        geoban|country)
-            echo "geoban_${suffix}"
-            ;;
-        login|portscan|portscan-classic|portscan-suricata|ddos|ddos-classic|ddos-suricata|suricata|auto)
-            echo "auto_${suffix}"
-            ;;
-        manual|cli)
-            echo "manual_${suffix}"
-            ;;
-        whitelist)
+        # Whitelist operations
+        whitelist|trust)
             echo "whitelist_${suffix}"
             ;;
-        # Legacy operations (deprecated, maps to manual for backwards compat)
-        ban|unban|blacklist)
-            # TODO: Remove after v1.2 - use source-specific sets
-            echo "manual_${suffix}"
-            ;;
-        tempban|fail2ban)
-            # Temporary bans go to auto set
-            echo "auto_${suffix}"
-            ;;
-        *)
-            echo "ERROR: Unknown operation/source: $operation" >&2
-            return 1
+        # v2.1: ALL ban sources go to unified blacklist
+        feeds|geoban|country|login|portscan|ddos|suricata|auto|manual|cli|ban|unban|blacklist|tempban|fail2ban|*)
+            echo "blacklist_${suffix}"
             ;;
     esac
 }
@@ -626,24 +554,40 @@ nftban_nft_count_whitelist() {
 }
 
 nftban_nft_count_all_sets() {
-    # Get counts for all standard sets in one call
-    # Returns JSON with all counts for efficient batch operations
+    # Get counts for all v2.1 sets in one call
+    # Returns JSON with all counts for efficient batch operations and unified metrics
+    # v2.1: Only whitelist + blacklist (all bans unified)
 
-    local bl_v4 bl_v6 wl_v4 wl_v6 temp_v4 temp_v6
+    # Core IP sets (v2.1 minimal schema)
+    local bl_v4 bl_v6 wl_v4 wl_v6
+    bl_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+    bl_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+    wl_v4=$(nftban_nft_count_set ip nftban whitelist_ipv4 2>/dev/null || echo 0)
+    wl_v6=$(nftban_nft_count_set ip6 nftban whitelist_ipv6 2>/dev/null || echo 0)
 
-    bl_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4)
-    bl_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6)
-    wl_v4=$(nftban_nft_count_set ip nftban whitelist_ipv4)
-    wl_v6=$(nftban_nft_count_set ip6 nftban whitelist_ipv6)
-    temp_v4=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4)
-    temp_v6=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6)
+    # Directional port sets (v2.1)
+    local tcp_in tcp_out udp_in udp_out
+    tcp_in=$(nftban_nft_count_set ip nftban tcp_ports_in 2>/dev/null || echo 0)
+    tcp_out=$(nftban_nft_count_set ip nftban tcp_ports_out 2>/dev/null || echo 0)
+    udp_in=$(nftban_nft_count_set ip nftban udp_ports_in 2>/dev/null || echo 0)
+    udp_out=$(nftban_nft_count_set ip nftban udp_ports_out 2>/dev/null || echo 0)
 
     cat <<EOF
 {
-  "blacklist": {"ipv4": $bl_v4, "ipv6": $bl_v6, "total": $((bl_v4 + bl_v6))},
+  "schema_version": "2.1",
   "whitelist": {"ipv4": $wl_v4, "ipv6": $wl_v6, "total": $((wl_v4 + wl_v6))},
-  "temporary": {"ipv4": $temp_v4, "ipv6": $temp_v6, "total": $((temp_v4 + temp_v6))},
-  "permanent": {"ipv4": $((bl_v4 - temp_v4)), "ipv6": $((bl_v6 - temp_v6)), "total": $((bl_v4 + bl_v6 - temp_v4 - temp_v6))}
+  "blacklist": {"ipv4": $bl_v4, "ipv6": $bl_v6, "total": $((bl_v4 + bl_v6)), "note": "all bans unified (feeds+geoban+auto+manual)"},
+  "ports": {
+    "tcp_in": $tcp_in, "tcp_out": $tcp_out,
+    "udp_in": $udp_in, "udp_out": $udp_out,
+    "total_open": $((tcp_in + udp_in))
+  },
+  "totals": {
+    "blocked_ipv4": $bl_v4,
+    "blocked_ipv6": $bl_v6,
+    "blocked_total": $((bl_v4 + bl_v6)),
+    "whitelisted": $((wl_v4 + wl_v6))
+  }
 }
 EOF
 }

@@ -172,18 +172,17 @@ nftban_geoban_validate_country_code() {
 # =============================================================================
 
 # Apply GeoBan rules to nftables
-# Adds GeoBan CIDRs to DEDICATED geoban sets (geoban_ipv4/geoban_ipv6)
-# Schema: nft_schema.sh lines 107, 184 - separate sets for clean lifecycle management
+# v2.1: Adds GeoBan CIDRs to main blacklist_ipv4/blacklist_ipv6 sets
+# No separate geoban sets - CIDR aggregation, lower memory, no duplicates
 nftban_geoban_apply_to_nftables() {
     # Use correct table families (consistent with rest of nftban)
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-    # DEDICATED GEOBAN SETS: Separate from feeds/auto/manual for clean lifecycle
-    # Schema: nft_schema.sh lines 107 (geoban_ipv4), 184 (geoban_ipv6)
-    local set_v4="geoban_ipv4"
-    local set_v6="geoban_ipv6"
+    # v2.1: All bans go to main blacklist (source tracked in daemon DB)
+    local set_v4="blacklist_ipv4"
+    local set_v6="blacklist_ipv6"
 
-    nftban_info "Applying GeoBan to dedicated geoban sets (IPv4 + IPv6)..."
+    nftban_info "Applying GeoBan to blacklist sets (v2.1: unified blacklist)..."
 
     # Check if nftables is available
     if ! command -v nft &>/dev/null; then
@@ -269,7 +268,7 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 3. Add IPv4 CIDRs to geoban_ipv4
+    # 3. Add IPv4 CIDRs to blacklist_ipv4
     # NOTE: We ADD elements. Set can be flushed on full refresh.
     # =========================================================================
 
@@ -297,7 +296,7 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
-    # 4. Add IPv6 CIDRs to geoban_ipv6
+    # 4. Add IPv6 CIDRs to blacklist_ipv6
     # =========================================================================
 
     if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
@@ -342,13 +341,13 @@ nftban_geoban_apply_to_nftables() {
 }
 
 # Remove GeoBan entries from dedicated geoban sets (cleanup)
-# Uses dedicated geoban_ipv4/geoban_ipv6 sets - safe to flush entirely
+# Uses dedicated blacklist_ipv4/blacklist_ipv6 sets - safe to flush entirely
 nftban_geoban_remove_from_nftables() {
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
     # DEDICATED GEOBAN SETS: Separate from feeds/auto/manual
-    local set_v4="geoban_ipv4"
-    local set_v6="geoban_ipv6"
+    local set_v4="blacklist_ipv4"
+    local set_v6="blacklist_ipv6"
 
     nftban_info "Removing GeoBan entries from dedicated geoban sets..."
 

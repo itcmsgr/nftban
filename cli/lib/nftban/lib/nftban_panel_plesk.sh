@@ -84,7 +84,7 @@ Key Ports:
 Configuration Files:
   /etc/nftban/conf.d/panels/plesk/main.conf       - Main configuration
   /etc/nftban/nftban.conf.local                   - Your customizations
-  /etc/fail2ban/jail.d/nftban-plesk.conf          - Fail2ban integration
+  /etc/nftban/conf.d/login.conf                   - Login monitoring (brute-force)
 
 Examples:
   # Initial setup
@@ -477,13 +477,11 @@ nftban_panel_plesk_report() {
         recommendations+=("Open Plesk Updater port: nftban panel plesk enable")
     fi
 
-    # Check Fail2ban
-    if systemctl is-active fail2ban >/dev/null 2>&1; then
-        if [[ -f "/etc/fail2ban/jail.d/nftban-plesk.conf" ]]; then
-            recommendations+=("✓ Fail2ban Plesk jail available")
-        fi
+    # v2.1: Check native login monitoring (replaces fail2ban)
+    if nftban login status &>/dev/null; then
+        recommendations+=("✓ Native login monitoring enabled")
     else
-        recommendations+=("Consider installing fail2ban for brute-force protection")
+        recommendations+=("Enable login monitoring: nftban login enable")
     fi
 
     if [[ ${#recommendations[@]} -eq 0 ]]; then
@@ -500,7 +498,7 @@ nftban_panel_plesk_report() {
     echo "   ───────────────────────────────────────────────────"
     echo "   /etc/nftban/conf.d/panels/plesk/main.conf"
     echo "   /etc/nftban/nftban.conf.local (customizations)"
-    echo "   /etc/fail2ban/jail.d/nftban-plesk.conf"
+    echo "   /etc/nftban/conf.d/login.conf (brute-force protection)"
     echo ""
 }
 

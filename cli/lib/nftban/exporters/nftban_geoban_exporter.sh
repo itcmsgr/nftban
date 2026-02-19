@@ -99,10 +99,10 @@ collect_geoban_ips_by_country() {
             local country
             country=$(echo "$set_name" | grep -oP 'geoban_\K[a-z]{2}' || echo "unknown")
 
-            # Count elements in set
+            # Count elements in set (v1.18.0: use ip nftban table)
             local ip_count=0
-            if nft list set inet filter "$set_name" 2>/dev/null | grep -q 'elements'; then
-                ip_count=$(nft list set inet filter "$set_name" 2>/dev/null | \
+            if nft list set ip nftban "$set_name" 2>/dev/null | grep -q 'elements'; then
+                ip_count=$(nft list set ip nftban "$set_name" 2>/dev/null | \
                     { grep -oP 'elements = \{ \K[^}]*' || true; } | tr ',' '\n' | wc -l || echo 0)
             fi
 

@@ -377,11 +377,12 @@ firewall_rebuild() {
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
 
+    # v2.1: Only whitelist + blacklist sets exist (feeds/geoban merged into blacklist)
     [[ "$quiet" == "false" ]] && echo "  [1/5] Backing up current sets..."
     nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
     nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
-    nft list set ip nftban geoban_ipv4 2>/dev/null > "$backup_dir/geoban_ipv4_$timestamp.txt" || true
-    nft list set ip nftban feeds_ipv4 2>/dev/null > "$backup_dir/feeds_ipv4_$timestamp.txt" || true
+    nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
+    nft list set ip6 nftban blacklist_ipv6 2>/dev/null > "$backup_dir/blacklist_ipv6_$timestamp.txt" || true
 
     # Step 2: Remove rogue tables (keep only NFTBan tables)
     [[ "$quiet" == "false" ]] && echo "  [2/5] Removing rogue tables..."

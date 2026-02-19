@@ -110,7 +110,7 @@ func FlushHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[AUDIT] User %s flushed runtime bans (temp_ban_v4 + temp_ban_v6)", claims.Username)
+	log.Printf("[AUDIT] User %s flushed runtime bans (blacklist_ipv4 + blacklist_ipv6)", claims.Username)
 	respondJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Runtime bans flushed successfully"})
 }
 
