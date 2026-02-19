@@ -89,7 +89,8 @@ nftban_portscan_suricata_load_config() {
 # =============================================================================
 
 # Log file for portscan suricata mode
-readonly PORTSCAN_SURICATA_LOG_FILE="${PORTSCAN_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-suricata.log}"
+# Default log file (can be overridden by config)
+: "${PORTSCAN_SURICATA_LOG_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-suricata.log}"
 
 _nftban_portscan_suricata_log() {
     local level="$1"

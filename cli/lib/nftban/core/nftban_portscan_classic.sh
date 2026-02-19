@@ -1002,7 +1002,8 @@ nftban_portscan_classic_run() {
 # Uses scoring from nftban_portscan_suricata.sh patterns.
 
 # Sensitive ports (higher weight in scoring)
-readonly PORTSCAN_SENSITIVE_PORTS="${PORTSCAN_SENSITIVE_PORTS:-22,23,25,53,80,110,111,135,139,143,389,443,445,465,512,513,514,587,631,873,902,1080,1433,1521,2049,2375,3306,3389,5000,5432,5601,5900,6379,8080,8443,9000,9200,9300,11211,27017}"
+# Sensitive ports - higher weight in scoring (can be overridden by config)
+: "${PORTSCAN_SENSITIVE_PORTS:=22,23,25,53,80,110,111,135,139,143,389,443,445,465,512,513,514,587,631,873,902,1080,1433,1521,2049,2375,3306,3389,5000,5432,5601,5900,6379,8080,8443,9000,9200,9300,11211,27017}"
 
 # Aggregation function - called by maintenance.sh every 15 min
 nftban_portscan_aggregate() {
