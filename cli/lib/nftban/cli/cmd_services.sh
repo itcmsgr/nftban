@@ -215,21 +215,19 @@ nftban_services_check_health() {
 
     local issues=0
 
-    # Check critical services (v2.1: only nftables required, fail2ban removed)
-    for service_name in "nftables"; do
-        if [[ -n "${NFTBAN_SERVICE_STATUS[$service_name]:-}" ]]; then
-            local info="${NFTBAN_SERVICE_STATUS[$service_name]}"
-            local status="${info%%|*}"
+    # Check critical services (v1.18: only nftables required, fail2ban removed)
+    if [[ -n "${NFTBAN_SERVICE_STATUS[nftables]:-}" ]]; then
+        local info="${NFTBAN_SERVICE_STATUS[nftables]}"
+        local status="${info%%|*}"
 
-            if [[ "$status" != "RUNNING" ]]; then
-                echo "⚠ $service_name is not running" >&2
-                issues=$((issues + 1))
-            fi
-        else
-            echo "❌ $service_name not found" >&2
+        if [[ "$status" != "RUNNING" ]]; then
+            echo "⚠ nftables is not running" >&2
             issues=$((issues + 1))
         fi
-    done
+    else
+        echo "❌ nftables not found" >&2
+        issues=$((issues + 1))
+    fi
 
     if [[ $issues -eq 0 ]]; then
         echo "✅ All critical services are running"
