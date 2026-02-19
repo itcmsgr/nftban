@@ -1034,10 +1034,27 @@ systemctl enable nftables 2>/dev/null || true
 # BUG-002 fix: Socket activation alone is unreliable on fresh install
 # BUG-MED-001 fix: Must enable nftband.service for boot persistence
 echo "[NFTBan] Starting nftband daemon..."
-systemctl enable --now nftband.socket 2>/dev/null || true
 
-# Enable AND start service explicitly then verify via sync
-systemctl enable nftband.service 2>/dev/null || true
+# Ensure systemd recognizes unit files before enabling
+systemctl daemon-reload 2>/dev/null || true
+
+# Enable socket and service with retry (v1.17.3 robustness fix)
+for attempt in 1 2 3; do
+    systemctl enable nftband.socket 2>/dev/null && break
+    sleep 1
+done
+for attempt in 1 2 3; do
+    systemctl enable nftband.service 2>/dev/null && break
+    sleep 1
+done
+
+# Verify enable succeeded, warn if not
+if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+    echo "[NFTBan WARN] nftband.service not enabled (run: systemctl enable nftband.service)"
+fi
+
+# Start socket and service
+systemctl start nftband.socket 2>/dev/null || true
 systemctl start nftband.service 2>/dev/null || true
 echo "[NFTBan]   Socket and service started"
 sleep 1
@@ -1941,8 +1958,26 @@ systemctl enable nftables 2>/dev/null || true
 
 # Enable and start nftband daemon socket and service (CRITICAL for CLI communication)
 # BUG-002 fix: Socket activation alone is unreliable on fresh install
+# BUG-MED-001 fix: Must enable nftband.service for boot persistence
 echo "[NFTBan] Starting nftband daemon..."
-systemctl enable --now nftband.socket 2>/dev/null || true
+
+# Enable socket and service with retry (v1.17.3 robustness fix)
+for attempt in 1 2 3; do
+    systemctl enable nftband.socket 2>/dev/null && break
+    sleep 1
+done
+for attempt in 1 2 3; do
+    systemctl enable nftband.service 2>/dev/null && break
+    sleep 1
+done
+
+# Verify enable succeeded, warn if not
+if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+    echo "[NFTBan WARN] nftband.service not enabled (run: systemctl enable nftband.service)"
+fi
+
+# Start socket and service
+systemctl start nftband.socket 2>/dev/null || true
 systemctl start nftband.service 2>/dev/null || true
 echo "[NFTBan]   Socket and service started"
 

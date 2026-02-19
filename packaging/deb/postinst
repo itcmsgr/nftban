@@ -584,11 +584,27 @@ case "$1" in
             # NFTBand daemon (SINGLE nftables writer - MUST start first)
             # Socket activation: nftband.socket creates socket, service receives FD
             # Use deb-systemd-helper first, fallback to systemctl if it fails
-            if ! deb-systemd-helper enable nftband.socket >/dev/null 2>&1; then
-                systemctl enable nftband.socket >/dev/null 2>&1 || true
-            fi
-            if ! deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
-                systemctl enable nftband.service >/dev/null 2>&1 || true
+            # v1.17.3 robustness: add retry and verification
+            for attempt in 1 2 3; do
+                if deb-systemd-helper enable nftband.socket >/dev/null 2>&1; then
+                    break
+                elif systemctl enable nftband.socket >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+            for attempt in 1 2 3; do
+                if deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
+                    break
+                elif systemctl enable nftband.service >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            # Verify enable succeeded
+            if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+                log_warn "nftband.service not enabled (run: systemctl enable nftband.service)"
             fi
 
             # Start socket and service explicitly
@@ -642,11 +658,23 @@ case "$1" in
 
         # Upgrade - ensure services are enabled and restart if running
         # BUG-MED-001 fix: Older versions may not have enabled nftband.service
+        # v1.17.3 robustness: add retry and verification
         if [ -n "$2" ]; then
             # Ensure nftband.service is enabled (may be missing from older installs)
-            if ! deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
-                systemctl enable nftband.service >/dev/null 2>&1 || true
+            for attempt in 1 2 3; do
+                if deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
+                    break
+                elif systemctl enable nftband.service >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            # Verify enable succeeded
+            if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+                log_warn "nftband.service not enabled (run: systemctl enable nftband.service)"
             fi
+
             deb-systemd-invoke try-restart nftband.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
