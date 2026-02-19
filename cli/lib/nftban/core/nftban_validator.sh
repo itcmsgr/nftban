@@ -149,8 +149,9 @@ validate_structure() {
     # Single jq call finds all chains that might bypass NFTBan, outputs as TSV
     # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
     # too long" errors when ruleset exceeds shell argument limits (~128KB)
+    # v1.18.0: Changed to priority 0 (standard filter priority)
     # ==========================================================================
-    local nftban_priority=-100
+    local nftban_priority=0
     local chain_issues
     chain_issues=$(jq -r -n \
         --argjson nftban_prio "$nftban_priority" \
@@ -420,21 +421,19 @@ check_ip_or_port() {
         fi
     fi
 
-    # Determine available actions
+    # Determine available actions (v1.18.0: use _ipv4/_ipv6 naming)
     local actions=()
     if [[ "$value_type" == "ip" ]]; then
         if [[ "$status" == "allowed" ]]; then
-            if [[ "$matched_set" == "whitelist_v4" ]]; then
+            if [[ "$matched_set" == "whitelist_ipv4" || "$matched_set" == "whitelist_ipv6" ]]; then
                 actions+=("remove_from_whitelist" "add_to_blacklist")
-            elif [[ "$matched_set" == "temp_whitelist_v4" ]]; then
-                actions+=("remove_from_temp_whitelist" "add_to_blacklist")
             fi
         elif [[ "$status" == "blocked" ]]; then
-            if [[ "$matched_set" == "blacklist_v4" ]]; then
+            # v2.1: All bans are in unified blacklist_ipv4/ipv6 set
+            if [[ "$matched_set" == "blacklist_ipv4" || "$matched_set" == "blacklist_ipv6" ]]; then
                 actions+=("remove_from_blacklist" "add_to_whitelist")
-            elif [[ "$matched_set" == "temp_ban_v4" ]]; then
-                actions+=("remove_from_temp_ban" "add_to_whitelist")
             else
+                # Unknown set - offer whitelist as fallback
                 actions+=("add_to_whitelist")
             fi
         else

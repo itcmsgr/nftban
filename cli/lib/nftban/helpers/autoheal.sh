@@ -424,6 +424,44 @@ else
 fi
 
 # =============================================================================
+# 10. Validate and auto-repair NFT schema (v1.17.7)
+# =============================================================================
+log_info "Validating NFT schema..."
+
+NFTBAN_CMD="${NFTBAN_BIN:-/usr/sbin/nftban}"
+
+# Check if required tables exist
+if ! nft list table ip nftban &>/dev/null; then
+    log_warn "NFTBan IPv4 table missing - attempting rebuild..."
+    if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+        log_info "✅ Schema rebuilt successfully"
+    else
+        log_error "Schema rebuild failed - manual intervention required"
+        log_error "Try: nftban firewall reset --force"
+    fi
+elif ! nft list table ip6 nftban &>/dev/null; then
+    log_warn "NFTBan IPv6 table missing - attempting rebuild..."
+    if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+        log_info "✅ Schema rebuilt successfully"
+    else
+        log_warn "IPv6 schema rebuild failed (IPv6 support optional)"
+    fi
+else
+    # Tables exist - validate schema structure
+    SCHEMA_ERRORS=$("$NFTBAN_CMD" firewall validate --quiet 2>&1 | grep -c "ERROR" || echo "0")
+    if [[ "$SCHEMA_ERRORS" -gt 0 ]]; then
+        log_warn "Schema validation found $SCHEMA_ERRORS error(s) - attempting rebuild..."
+        if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
+            log_info "✅ Schema rebuilt after validation errors"
+        else
+            log_error "Schema rebuild failed - manual intervention required"
+        fi
+    else
+        log_info "✅ NFT schema validation passed"
+    fi
+fi
+
+# =============================================================================
 # Automatically fix common issues
 # =============================================================================
 log_info "Running automated fixes..."

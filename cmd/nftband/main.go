@@ -2305,12 +2305,12 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				feedsMemNeeded = estimatedFeedBytes
 				// Skip feeds but continue with sync - don't fail entirely
 			} else {
-			// Load IPv4 feeds into DEDICATED feeds_ipv4 set (not blacklist)
-			// This prevents geoban from flushing feeds when it loads
+			// v2.1: Load feeds into unified blacklist_ipv4/ipv6 sets (CIDR aggregated)
+			// All ban sources now use the same blacklist - daemon tracks source in DB
 			if len(ipv4CIDRs) > 0 {
-				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "feeds_ipv4", true)
+				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
 				if err != nil {
-					log.Printf("[SYNC] Warning: Failed to create feeds_ipv4 set: %v", err)
+					log.Printf("[SYNC] Warning: Failed to get blacklist_ipv4 set: %v", err)
 				} else {
 					if stats, err := nft.AddCIDRElementsWithStats(feedSetV4, ipv4CIDRs); err != nil {
 						log.Printf("[SYNC] Warning: Failed to load feeds IPv4: %v", err)
@@ -2321,11 +2321,11 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				}
 			}
 
-			// Load IPv6 feeds into DEDICATED feeds_ipv6 set
+			// Load IPv6 feeds into unified blacklist_ipv6 set
 			if len(ipv6CIDRs) > 0 {
-				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "feeds_ipv6", false)
+				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
 				if err != nil {
-					log.Printf("[SYNC] Warning: Failed to create feeds_ipv6 set: %v", err)
+					log.Printf("[SYNC] Warning: Failed to get blacklist_ipv6 set: %v", err)
 				} else {
 					if stats, err := nft.AddCIDRElementsWithStats(feedSetV6, ipv6CIDRs); err != nil {
 						log.Printf("[SYNC] Warning: Failed to load feeds IPv6: %v", err)
@@ -2392,12 +2392,12 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 					geobanMemNeeded = estimatedGeoBytes
 					// Skip geoban but continue with sync - don't fail entirely
 				} else {
-				// Load IPv4 geoban CIDRs into DEDICATED geoban_ipv4 set (not blacklist)
-				// This prevents conflicts with feeds and dynamic bans
+				// v2.1: Load geoban CIDRs into unified blacklist_ipv4/ipv6 sets
+				// All ban sources now use the same blacklist - CIDR aggregation prevents duplicates
 				if len(geobanData.IPv4) > 0 {
-					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "geoban_ipv4", true)
+					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
 					if err != nil {
-						log.Printf("[SYNC] Warning: Failed to create geoban_ipv4 set: %v", err)
+						log.Printf("[SYNC] Warning: Failed to get blacklist_ipv4 set: %v", err)
 					} else {
 						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4); err != nil {
 							log.Printf("[SYNC] Warning: Failed to load geoban IPv4: %v", err)
@@ -2408,11 +2408,11 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 					}
 				}
 
-				// Load IPv6 geoban CIDRs into DEDICATED geoban_ipv6 set
+				// Load IPv6 geoban CIDRs into unified blacklist_ipv6 set
 				if len(geobanData.IPv6) > 0 {
-					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "geoban_ipv6", false)
+					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
 					if err != nil {
-						log.Printf("[SYNC] Warning: Failed to create geoban_ipv6 set: %v", err)
+						log.Printf("[SYNC] Warning: Failed to get blacklist_ipv6 set: %v", err)
 					} else {
 						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6); err != nil {
 							log.Printf("[SYNC] Warning: Failed to load geoban IPv6: %v", err)

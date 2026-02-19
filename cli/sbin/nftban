@@ -818,38 +818,29 @@ main() {
             # This case only handles legacy 'list' command for GUI compatibility
             case "$1" in
                 list)
-                    # List ALL banned IPs across all categories (JSON output for GUI)
-                    # Fixed v0.6.2: Now includes temp_ban, blacklist, feeds, geoban (all categories)
+                    # List ALL banned IPs (JSON output for GUI)
+                    # v2.1: Single blacklist set (all sources: feeds, geoban, auto, manual)
+                    # Source tracking done in daemon database
 
-                    # Temporary bans (with expiration) - list IPs
-                    local temp_v4_ips temp_v6_ips
-                    temp_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} temp_ban_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
-                    temp_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} temp_ban_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
+                    # Whitelist IPs
+                    local white_v4_ips white_v6_ips
+                    white_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
+                    white_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
 
-                    # Permanent blacklist - list IPs
+                    # Blacklist IPs (ALL bans: feeds, geoban, auto, manual)
                     local black_v4_ips black_v6_ips
-                    black_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
-                    black_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
-
-                    # Feeds - count only (too many to list individually)
-                    local feed_v4_count feed_v6_count
-                    feed_v4_count=$(nft list set ${NFTBAN_TABLE_IPV4} feed_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
-                    feed_v6_count=$(nft list set ${NFTBAN_TABLE_IPV6} feed_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
-
-                    # Geoban - count only
-                    local geoban_v4_count geoban_v6_count
-                    geoban_v4_count=$(nft list set ${NFTBAN_TABLE_IPV4} geoban_blocked_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
-                    geoban_v6_count=$(nft list set ${NFTBAN_TABLE_IPV6} geoban_blocked_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
+                    black_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
+                    black_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
 
                     # Build JSON arrays
-                    local temp_v4_json="[]"
-                    if [[ -n "$temp_v4_ips" ]]; then
-                        temp_v4_json=$(echo "$temp_v4_ips" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+                    local white_v4_json="[]"
+                    if [[ -n "$white_v4_ips" ]]; then
+                        white_v4_json=$(echo "$white_v4_ips" | jq -R -s -c 'split("\n") | map(select(length > 0))')
                     fi
 
-                    local temp_v6_json="[]"
-                    if [[ -n "$temp_v6_ips" ]]; then
-                        temp_v6_json=$(echo "$temp_v6_ips" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+                    local white_v6_json="[]"
+                    if [[ -n "$white_v6_ips" ]]; then
+                        white_v6_json=$(echo "$white_v6_ips" | jq -R -s -c 'split("\n") | map(select(length > 0))')
                     fi
 
                     local black_v4_json="[]"
@@ -863,45 +854,26 @@ main() {
                     fi
 
                     # Calculate totals
-                    local total_temp=$(($(echo "$temp_v4_ips" | wc -w) + $(echo "$temp_v6_ips" | wc -w)))
+                    local total_white=$(($(echo "$white_v4_ips" | wc -w) + $(echo "$white_v6_ips" | wc -w)))
                     local total_black=$(($(echo "$black_v4_ips" | wc -w) + $(echo "$black_v6_ips" | wc -w)))
-                    local total_feeds=$((feed_v4_count + feed_v6_count))
-                    local total_geoban=$((geoban_v4_count + geoban_v6_count))
-                    local grand_total=$((total_temp + total_black + total_feeds + total_geoban))
 
-                    # Output structured JSON
+                    # Output structured JSON (v2.1 schema)
                     cat <<EOF
 {
-  "temporary": {
-    "ipv4": $temp_v4_json,
-    "ipv6": $temp_v6_json,
-    "total": $total_temp
+  "whitelist": {
+    "ipv4": $white_v4_json,
+    "ipv6": $white_v6_json,
+    "total": $total_white
   },
   "blacklist": {
     "ipv4": $black_v4_json,
     "ipv6": $black_v6_json,
-    "total": $total_black
-  },
-  "feeds": {
-    "ipv4_count": $feed_v4_count,
-    "ipv6_count": $feed_v6_count,
-    "total": $total_feeds,
-    "note": "Feed IPs not listed individually (too many)"
-  },
-  "geoban": {
-    "ipv4_count": $geoban_v4_count,
-    "ipv6_count": $geoban_v6_count,
-    "total": $total_geoban,
-    "note": "Geoban IPs not listed individually"
+    "total": $total_black,
+    "note": "All bans (feeds+geoban+auto+manual) - source tracking in daemon DB"
   },
   "summary": {
-    "total_blocked": $grand_total,
-    "by_category": {
-      "temporary": $total_temp,
-      "permanent": $total_black,
-      "feeds": $total_feeds,
-      "geoban": $total_geoban
-    }
+    "total_whitelisted": $total_white,
+    "total_blocked": $total_black
   }
 }
 EOF

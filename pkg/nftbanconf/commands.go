@@ -298,23 +298,8 @@ func (c *CommandPaths) NFTSetWhitelist(ipv4 bool) string {
 	return nft.WhitelistIPv6
 }
 
-// NFTSetTempBan returns the temp ban set name for the given IP family
-func (c *CommandPaths) NFTSetTempBan(ipv4 bool) string {
-	nft := GetNFT()
-	if ipv4 {
-		return nft.TempBanIPv4
-	}
-	return nft.TempBanIPv6
-}
-
-// NFTSetGeoBlock returns the geo block set name for the given IP family
-func (c *CommandPaths) NFTSetGeoBlock(ipv4 bool) string {
-	nft := GetNFT()
-	if ipv4 {
-		return nft.GeoBlockIPv4
-	}
-	return nft.GeoBlockIPv6
-}
+// v2.1: All bans go to blacklist (NFTSetBlacklist)
+// Source tracking (feeds, geoban, auto, manual) is done in daemon database
 
 // =============================================================================
 // Feature Check Helpers

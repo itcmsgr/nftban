@@ -199,15 +199,29 @@ _restore_system_whitelist() {
         return 0
     fi
 
-    # Add IPv4 system IPs back
+    # Add IPv4 system IPs back via IPC (v1.18.0: IPC-only writes)
     if [[ -n "$ips_v4" ]]; then
-        nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+        if declare -f nft_ipc_add_element &>/dev/null; then
+            for ip in $ips_v4; do
+                nft_ipc_add_element "$NFTBAN_TABLE_IPV4" "whitelist_ipv4" "$ip" 2>/dev/null || true
+            done
+        else
+            # Fallback for emergency - direct nft (should rarely be used)
+            nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+        fi
         echo "  Restored $count_v4 IPv4 system IPs"
     fi
 
-    # Add IPv6 system IPs back
+    # Add IPv6 system IPs back via IPC (v1.18.0: IPC-only writes)
     if [[ -n "$ips_v6" ]]; then
-        nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+        if declare -f nft_ipc_add_element &>/dev/null; then
+            for ip in $ips_v6; do
+                nft_ipc_add_element "$NFTBAN_TABLE_IPV6" "whitelist_ipv6" "$ip" 2>/dev/null || true
+            done
+        else
+            # Fallback for emergency - direct nft (should rarely be used)
+            nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+        fi
         echo "  Restored $count_v6 IPv6 system IPs"
     fi
 }

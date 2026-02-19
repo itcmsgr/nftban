@@ -275,11 +275,11 @@ nftban_detect_conflicting_tables() {
     local tables
     tables=$(nft list tables 2>/dev/null || echo "")
 
-    # Get NFTBan's input chain priority (should be -100)
+    # Get NFTBan's input chain priority (v1.18.0: standardized to 0)
     # shellcheck disable=SC2034  # nftban_priority documents expected default
-    local nftban_priority=-100
+    local nftban_priority=0
     local actual_nftban_prio
-    actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // -100' | head -1 || echo "-100")
+    actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
 
     # Check for known conflicting tables with PRIORITY-BASED SAFETY
 
@@ -295,9 +295,9 @@ nftban_detect_conflicting_tables() {
             NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip filter' table (priority $filter_prio) runs before NFTBan (priority $actual_nftban_prio)")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
         else
-            # SAFE: NFTBan runs first (priority -100 < filter priority 0)
+            # INFO: Filter table exists, check priority
             status=1
-            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists (priority $filter_prio) - NFTBan runs first (safe)")
+            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists (priority $filter_prio) - NFTBan has same priority")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
         fi
     fi
@@ -327,7 +327,7 @@ nftban_detect_conflicting_tables() {
     fi
 
     # 4. Check for INPUT chain priority conflicts (non-nftban chains only)
-    # nftban uses priority -100 for input in both ip/ip6 nftban tables
+    # v1.18.0: nftban uses priority 0 for input in both ip/ip6 nftban tables
     # We need to detect if OTHER tables have INPUT chains that might conflict
     local non_nftban_input_chains
     non_nftban_input_chains=""
@@ -355,9 +355,9 @@ nftban_detect_conflicting_tables() {
             NFTBAN_FIREWALL_CONFLICTS+=("INPUT CHAINS: Non-nftban tables have input hooks")
             NFTBAN_FIREWALL_CONFLICTS+=("  └─ Tables: $(echo "$non_nftban_input_chains" | cut -d: -f1 | tr '\n' ' ')")
             [[ $status -eq 0 ]] && status=1
-            # Only WARNING if priority could conflict (>= -100)
+            # Only WARNING if priority could conflict (>= 0)
             local high_prio
-            high_prio=$(echo "$other_priorities" | grep -oE '[-0-9]+' | awk '$1 >= -100' | head -1 || true)
+            high_prio=$(echo "$other_priorities" | grep -oE '[-0-9]+' | awk '$1 >= 0' | head -1 || true)
             if [[ -n "$high_prio" ]]; then
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
             else

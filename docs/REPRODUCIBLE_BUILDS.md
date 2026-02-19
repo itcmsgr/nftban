@@ -68,7 +68,7 @@ CGO_ENABLED=0 go build -trimpath \
   ./cmd/nftban-ui
 ```
 
-Replace `vX.Y.Z` with the actual version tag (e.g., `v1.16.0`).
+Replace `vX.Y.Z` with the actual version tag (e.g., `v1.18.0`).
 
 ### Local Development Build
 
@@ -110,7 +110,7 @@ ls -la bin/
 ### Step 1: Download Release Artifacts
 
 ```bash
-VERSION="v1.16.0"  # Replace with target version
+VERSION="v1.18.0"  # Replace with target version
 
 # Download binary and provenance
 wget "https://github.com/itcmsgr/nftban/releases/download/${VERSION}/nftban-core-linux-amd64"
@@ -190,7 +190,7 @@ slsa-verifier verify-artifact nftban-ui-linux-amd64 \
 slsa-verifier verify-artifact nftban-core-linux-amd64 \
   --provenance-path nftban-core-linux-amd64.intoto.jsonl \
   --source-uri github.com/itcmsgr/nftban \
-  --source-tag v1.16.0
+  --source-tag v1.18.0
 ```
 
 ### Expected Output

@@ -48,8 +48,9 @@ REQUIRED_SECTIONS=("distro" "package_manager" "packages" "services" "paths")
 declare -A REQUIRED_FIELDS
 REQUIRED_FIELDS[distro]="id name version family"
 REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd query_cmd"
-REQUIRED_FIELDS[packages]="nftables curl bash systemd fail2ban mail golang"
-REQUIRED_FIELDS[services]="cron rsyslog fail2ban nftables sshd"
+# v2.1: fail2ban removed - use native login monitoring
+REQUIRED_FIELDS[packages]="nftables curl bash systemd mail golang"
+REQUIRED_FIELDS[services]="cron rsyslog nftables sshd"
 REQUIRED_FIELDS[paths]="nft systemctl journalctl"
 
 # =============================================================================

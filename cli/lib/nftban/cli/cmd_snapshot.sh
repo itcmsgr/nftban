@@ -88,11 +88,11 @@ nftban_snapshot_create() {
         echo "  \"version\": \"$(cat /usr/share/nftban/VERSION 2>/dev/null || echo 'unknown')\","
         echo "  \"hostname\": \"$(hostname -f 2>/dev/null || hostname)\","
 
-        # NFT stats
+        # NFT stats (v1.18.0: use ip/ip6 tables, not inet)
         local banned_v4=0 banned_v6=0
         if command -v nft &>/dev/null; then
-            banned_v4=$(nft list set inet nftban blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
-            banned_v6=$(nft list set inet nftban blacklist_ipv6 2>/dev/null | grep -c "elements" || echo "0")
+            banned_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
+            banned_v6=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements" || echo "0")
         fi
         echo "  \"banned_ipv4\": $banned_v4,"
         echo "  \"banned_ipv6\": $banned_v6,"
