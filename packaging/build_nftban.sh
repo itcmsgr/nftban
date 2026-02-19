@@ -834,14 +834,51 @@ if [[ -n "\$CONFLICTS" ]]; then
             echo "[NFTBan]   ✓ iptables service disabled"
         fi
 
-        # Flush any remaining rules
+        # =====================================================================
+        # CRITICAL: Create emergency SSH/panel protection BEFORE any flush
+        # This prevents lockout during takeover (v1.17.4 fix)
+        # =====================================================================
+        echo "[NFTBan]   Creating emergency access protection..."
+
+        # Detect current SSH port
+        EMERGENCY_SSH_PORT=\$(ss -tlnp 2>/dev/null | grep sshd | awk '{print \$4}' | sed 's/.*://' | head -1)
+        EMERGENCY_SSH_PORT=\${EMERGENCY_SSH_PORT:-22}
+        echo "[NFTBan]   Detected SSH on port: \$EMERGENCY_SSH_PORT"
+
+        # Detect panel ports
+        EMERGENCY_PANEL_PORTS=""
+        [[ -d /usr/local/cpanel ]] && EMERGENCY_PANEL_PORTS="2082 2083 2086 2087"
+        [[ -d /usr/local/directadmin ]] && EMERGENCY_PANEL_PORTS="2222"
+        [[ -d /usr/local/psa ]] && EMERGENCY_PANEL_PORTS="8443 8880"
+        [[ -d /usr/local/hestia ]] && EMERGENCY_PANEL_PORTS="8083"
+        [[ -d /usr/local/CyberCP ]] && EMERGENCY_PANEL_PORTS="7080 8090"
+        [[ -n "\$EMERGENCY_PANEL_PORTS" ]] && echo "[NFTBan]   Detected panel ports: \$EMERGENCY_PANEL_PORTS"
+
+        # Create emergency protection table with HIGHEST priority (-500)
+        # This table survives specific table flushes
+        nft add table inet nftban_install_emergency 2>/dev/null || true
+        nft 'add chain inet nftban_install_emergency input { type filter hook input priority -500; policy accept; }' 2>/dev/null || true
+        nft add rule inet nftban_install_emergency input tcp dport \$EMERGENCY_SSH_PORT accept 2>/dev/null || true
+        nft add rule inet nftban_install_emergency input ct state established,related accept 2>/dev/null || true
+
+        # Add panel ports to emergency table
+        for port in \$EMERGENCY_PANEL_PORTS; do
+            nft add rule inet nftban_install_emergency input tcp dport \$port accept 2>/dev/null || true
+        done
+        echo "[NFTBan]   ✓ Emergency protection active"
+
+        # Flush legacy rules (but NOT our emergency table)
         echo "[NFTBan]   Flushing legacy rules..."
-        nft flush ruleset 2>/dev/null || true
+        # Flush specific tables instead of entire ruleset to preserve emergency table
+        for table in \$(nft list tables 2>/dev/null | grep -v nftban_install_emergency | awk '{print \$2, \$3}'); do
+            nft flush table \$table 2>/dev/null || true
+            nft delete table \$table 2>/dev/null || true
+        done
         iptables -F 2>/dev/null || true
         iptables -X 2>/dev/null || true
         ip6tables -F 2>/dev/null || true
         ip6tables -X 2>/dev/null || true
-        echo "[NFTBan]   ✓ Legacy rules flushed"
+        echo "[NFTBan]   ✓ Legacy rules flushed (emergency protection preserved)"
         echo ""
         echo "[NFTBan] ✓ All conflicts removed. NFTBan is now THE firewall."
         echo ""
@@ -1034,10 +1071,27 @@ systemctl enable nftables 2>/dev/null || true
 # BUG-002 fix: Socket activation alone is unreliable on fresh install
 # BUG-MED-001 fix: Must enable nftband.service for boot persistence
 echo "[NFTBan] Starting nftband daemon..."
-systemctl enable --now nftband.socket 2>/dev/null || true
 
-# Enable AND start service explicitly then verify via sync
-systemctl enable nftband.service 2>/dev/null || true
+# Ensure systemd recognizes unit files before enabling
+systemctl daemon-reload 2>/dev/null || true
+
+# Enable socket and service with retry (v1.17.3 robustness fix)
+for attempt in 1 2 3; do
+    systemctl enable nftband.socket 2>/dev/null && break
+    sleep 1
+done
+for attempt in 1 2 3; do
+    systemctl enable nftband.service 2>/dev/null && break
+    sleep 1
+done
+
+# Verify enable succeeded, warn if not
+if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+    echo "[NFTBan WARN] nftband.service not enabled (run: systemctl enable nftband.service)"
+fi
+
+# Start socket and service
+systemctl start nftband.socket 2>/dev/null || true
 systemctl start nftband.service 2>/dev/null || true
 echo "[NFTBan]   Socket and service started"
 sleep 1
@@ -1109,8 +1163,9 @@ fi
 echo "[NFTBan] Preflight: Validating firewall safety..."
 NFTABLES_SAFE=1
 
-# Check 1: Detect incompatible xt target rules (BUG-008)
-# DO NOT auto-modify - just detect and abort gracefully
+# Check 1: Detect and AUTO-FIX incompatible xt target rules (v1.17.5)
+# cPanel/WHM creates iptables-nft rules with "xt target REDIRECT" that modern nftables cannot load
+# This affects BOTH RPM and DEB distros when cPanel is installed
 # Get distro-specific nftables config path
 if [ -f /etc/sysconfig/nftables.conf ]; then
     NFT_CONFIG="/etc/sysconfig/nftables.conf"
@@ -1124,20 +1179,24 @@ if [ -n "\$NFT_CONFIG" ] && [ -f "\$NFT_CONFIG" ]; then
     NFT_CHECK=\$(nft -c -f "\$NFT_CONFIG" 2>&1 || true)
     if echo "\$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
         echo ""
-        echo "[NFTBan ERROR] =========================================="
-        echo "[NFTBan ERROR]  INCOMPATIBLE NFTABLES RULES DETECTED"
-        echo "[NFTBan ERROR] =========================================="
-        echo "[NFTBan ERROR] Your system has legacy iptables-xt rules that"
-        echo "[NFTBan ERROR] cannot be loaded by modern nftables."
+        echo "[NFTBan] =========================================="
+        echo "[NFTBan]  INCOMPATIBLE IPTABLES-NFT RULES DETECTED"
+        echo "[NFTBan] =========================================="
+        echo "[NFTBan] File: \$NFT_CONFIG"
+        echo "[NFTBan] Issue: Legacy xt target rules (cPanel/iptables-nft)"
         echo ""
-        echo "[NFTBan ERROR] NFTBan will NOT activate nftables to prevent lockout."
+        echo "[NFTBan] AUTO-FIXING: Backing up and replacing config..."
+        cp "\$NFT_CONFIG" "\${NFT_CONFIG}.xt-backup.\$(date +%%Y%%m%%d%%H%%M%%S)"
+        cat > "\$NFT_CONFIG" << 'NFTCLEAN'
+#!/usr/sbin/nft -f
+# NFTBan v1.17.5 - Clean nftables config
+# Original backed up to *.xt-backup.* (had incompatible xt target rules)
+# Load NFTBan firewall configuration
+include "/etc/nftban/nftables.conf"
+NFTCLEAN
+        echo "[NFTBan] ✓ Config replaced with clean NFTBan loader"
+        echo "[NFTBan] ✓ Original backed up to \${NFT_CONFIG}.xt-backup.*"
         echo ""
-        echo "[NFTBan ERROR] To fix manually:"
-        echo "[NFTBan ERROR]   1. Convert rules: iptables-save | iptables-restore-translate"
-        echo "[NFTBan ERROR]   2. Or remove legacy config: mv \$NFT_CONFIG \${NFT_CONFIG}.bak"
-        echo "[NFTBan ERROR]   3. Then run: nftban sync && systemctl start nftables"
-        echo ""
-        NFTABLES_SAFE=0
     fi
 fi
 
@@ -1165,6 +1224,11 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
         systemctl enable nftables 2>/dev/null || true
         systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
     fi
+
+    # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
+    # The nftables.conf template resets the tcp_ports set, so we must re-add ports
+    sleep 1
+    nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 else
     echo ""
@@ -1177,6 +1241,13 @@ else
     echo ""
 fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
+
+# Cleanup emergency protection table (v1.17.4)
+# NFTBan is now fully operational, emergency protection no longer needed
+if nft list table inet nftban_install_emergency >/dev/null 2>&1; then
+    nft delete table inet nftban_install_emergency 2>/dev/null || true
+    echo "[NFTBan] Emergency protection table cleaned up"
+fi
 
 # =============================================================================
 # STEP 11.5: Auto-enable panel ports (BUG-HIGH-002 fix)
@@ -1941,8 +2012,26 @@ systemctl enable nftables 2>/dev/null || true
 
 # Enable and start nftband daemon socket and service (CRITICAL for CLI communication)
 # BUG-002 fix: Socket activation alone is unreliable on fresh install
+# BUG-MED-001 fix: Must enable nftband.service for boot persistence
 echo "[NFTBan] Starting nftband daemon..."
-systemctl enable --now nftband.socket 2>/dev/null || true
+
+# Enable socket and service with retry (v1.17.3 robustness fix)
+for attempt in 1 2 3; do
+    systemctl enable nftband.socket 2>/dev/null && break
+    sleep 1
+done
+for attempt in 1 2 3; do
+    systemctl enable nftband.service 2>/dev/null && break
+    sleep 1
+done
+
+# Verify enable succeeded, warn if not
+if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
+    echo "[NFTBan WARN] nftband.service not enabled (run: systemctl enable nftband.service)"
+fi
+
+# Start socket and service
+systemctl start nftband.socket 2>/dev/null || true
 systemctl start nftband.service 2>/dev/null || true
 echo "[NFTBan]   Socket and service started"
 
@@ -1970,16 +2059,24 @@ fi
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
-# PREFLIGHT: Check for xt target incompatibility before nftables start
+# PREFLIGHT: Detect and AUTO-FIX incompatible xt target rules (v1.17.5)
+# cPanel/WHM creates iptables-nft rules with "xt target REDIRECT" that modern nftables cannot load
 NFTABLES_SAFE=1
 NFT_CONFIG=""
 [ -f /etc/nftables.conf ] && NFT_CONFIG="/etc/nftables.conf"
 [ -f /etc/sysconfig/nftables.conf ] && NFT_CONFIG="/etc/sysconfig/nftables.conf"
 if [ -n "$NFT_CONFIG" ] && [ -f "$NFT_CONFIG" ]; then
     if nft -c -f "$NFT_CONFIG" 2>&1 | grep -qE "xt target|xtables compat"; then
-        echo "[NFTBan ERROR] Incompatible xt target rules detected in $NFT_CONFIG"
-        echo "[NFTBan ERROR] NFTBan will NOT activate nftables to prevent lockout."
-        NFTABLES_SAFE=0
+        echo "[NFTBan] Incompatible xt target rules detected in $NFT_CONFIG"
+        echo "[NFTBan] AUTO-FIXING: Backing up and replacing config..."
+        cp "$NFT_CONFIG" "${NFT_CONFIG}.xt-backup.$(date +%Y%m%d%H%M%S)"
+        cat > "$NFT_CONFIG" << 'NFTCLEAN'
+#!/usr/sbin/nft -f
+# NFTBan v1.17.5 - Clean nftables config
+# Original backed up (had incompatible xt target rules)
+include "/etc/nftban/nftables.conf"
+NFTCLEAN
+        echo "[NFTBan] ✓ Config replaced, original backed up"
     fi
 fi
 
@@ -1990,6 +2087,11 @@ if [ "$NFTABLES_SAFE" -eq 1 ]; then
     else
         systemctl start nftables 2>/dev/null || true
     fi
+
+    # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
+    # The nftables.conf template resets the tcp_ports set, so we must re-add ports
+    sleep 1
+    nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 else
     echo "[NFTBan WARN] NFTABLES NOT ACTIVATED (Safety Mode)"

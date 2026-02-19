@@ -330,6 +330,59 @@ else
 fi
 
 # =============================================================================
+# 8. Auto-fix cPanel/iptables-nft legacy rules (v1.17.5)
+# =============================================================================
+# cPanel and some systems create iptables-nft rules with "xt target REDIRECT"
+# that modern nftables cannot load. This causes nftables.service to fail
+# and can lock out servers during install/update.
+log_info "Checking for incompatible xt target rules..."
+
+NFT_CONFIG=""
+if [ -f "/etc/sysconfig/nftables.conf" ]; then
+    NFT_CONFIG="/etc/sysconfig/nftables.conf"
+elif [ -f "/etc/nftables.conf" ]; then
+    NFT_CONFIG="/etc/nftables.conf"
+fi
+
+if [ -n "$NFT_CONFIG" ]; then
+    # Test if config can be loaded without errors
+    NFT_CHECK=$(nft -c -f "$NFT_CONFIG" 2>&1 || true)
+    if echo "$NFT_CHECK" | grep -qE "xt target|xtables compat"; then
+        log_warn "Detected incompatible xt target rules in $NFT_CONFIG"
+        log_info "AUTO-FIXING: Backing up and replacing config..."
+
+        # Backup original
+        cp "$NFT_CONFIG" "${NFT_CONFIG}.xt-backup.$(date +%Y%m%d%H%M%S)"
+        log_info "Backup saved to ${NFT_CONFIG}.xt-backup.*"
+
+        # Replace with clean include of NFTBan config
+        cat > "$NFT_CONFIG" << 'NFTCLEAN'
+#!/usr/sbin/nft -f
+# NFTBan v1.17.5 - Clean nftables config (auto-fixed by autoheal)
+# Original backed up with .xt-backup.* extension
+# xt target rules removed to prevent nftables.service failure
+include "/etc/nftban/nftables.conf"
+NFTCLEAN
+
+        log_info "✅ Fixed $NFT_CONFIG - xt target rules removed"
+
+        # Restart nftables service if it was failed
+        if systemctl is-failed --quiet nftables.service 2>/dev/null; then
+            log_info "Restarting nftables.service after fix..."
+            if systemctl restart nftables.service 2>/dev/null; then
+                log_info "✅ nftables.service restarted successfully"
+            else
+                log_warn "nftables.service restart failed - check: journalctl -u nftables.service"
+            fi
+        fi
+    else
+        log_info "✅ No incompatible xt target rules detected"
+    fi
+else
+    log_info "No system nftables.conf found (using NFTBan direct)"
+fi
+
+# =============================================================================
 # Automatically fix common issues
 # =============================================================================
 log_info "Running automated fixes..."
