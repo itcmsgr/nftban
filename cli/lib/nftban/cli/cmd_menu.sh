@@ -321,22 +321,23 @@ screen_profile() {
 screen_protect() {
     # Protection modules screen
     local choice
+    # v2.1: fail2ban removed - use native login monitoring instead
     choice="$(ui_menu "Protection Modules" "$BACKTITLE" \
         ddos "DDoS protection" \
         portscan "Port-scan detection" \
         login "Login monitoring" \
-        fail2ban "Fail2ban integration" \
         cloudflare "Cloudflare integration" \
         feeds "Threat-intel feeds" \
+        geoban "Geographic blocking" \
         back "Back")" || return
 
     case "$choice" in
         ddos) screen_ddos ;;
         portscan) screen_portscan ;;
         login) screen_login ;;
-        fail2ban) screen_fail2ban ;;
         cloudflare) screen_cloudflare ;;
         feeds) screen_feeds ;;
+        geoban) screen_geoban ;;
         back) ;;
     esac
 }
@@ -401,22 +402,20 @@ screen_login() {
     esac
 }
 
-screen_fail2ban() {
-    # Fail2ban integration screen
+screen_geoban() {
+    # Geographic blocking screen (v2.1)
     local choice
-    choice="$(ui_menu "Fail2ban" "$BACKTITLE" \
+    choice="$(ui_menu "GeoBan" "$BACKTITLE" \
         status "Status summary" \
-        jails "List enabled jails" \
-        available "List available jails" \
-        banned "List banned IPs" \
-        health-fix "Health check & auto-fix" \
+        list "List blocked countries" \
+        enable "Enable GeoBan" \
+        disable "Disable GeoBan" \
         back "Back")" || return
     case "$choice" in
-        status) run_cmd "F2B Status" nftban fail2ban status ;;
-        jails) run_cmd "F2B Jails" nftban fail2ban jails ;;
-        available) run_cmd "F2B Available Jails" nftban fail2ban available ;;
-        banned) run_cmd "F2B Banned" nftban fail2ban banned ;;
-        health-fix) require_root && run_cmd "F2B Health Fix" nftban fail2ban health-fix ;;
+        status) run_cmd "GeoBan Status" nftban geoban status ;;
+        list) run_cmd "Blocked Countries" nftban geoban list ;;
+        enable) require_root && run_cmd "Enable GeoBan" nftban geoban enable ;;
+        disable) require_root && run_cmd "Disable GeoBan" nftban geoban disable ;;
         back) ;;
     esac
 }

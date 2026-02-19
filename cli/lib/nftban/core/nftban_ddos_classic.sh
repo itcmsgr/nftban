@@ -808,84 +808,97 @@ nftban_ddos_classic_status() {
 }
 
 # =============================================================================
-# HIGH ATTRIBUTION BAN API (Stage 4)
+# HIGH ATTRIBUTION BAN API (Stage 4) - v1.18.0 IPC-ONLY
 # =============================================================================
-# These functions allow external detection logic to add/remove IPs from the
-# ban set. The ban set must be created first via nft_fragment_enable_module ddos-ban.
+# These functions use IPC to communicate with nftband daemon.
+# Direct nft commands are ONLY used for verification (read-only).
 
-# Add IP to ban set (called by external detection logic)
+# Convert human-readable timeout (1h, 30m, etc.) to seconds
+_nftban_ddos_timeout_to_seconds() {
+    local timeout="$1"
+    local value="${timeout%[smhd]}"
+    local unit="${timeout: -1}"
+
+    case "$unit" in
+        s) echo "$value" ;;
+        m) echo "$((value * 60))" ;;
+        h) echo "$((value * 3600))" ;;
+        d) echo "$((value * 86400))" ;;
+        *) echo "$timeout" ;;  # Assume already in seconds
+    esac
+}
+
+# Add IP to ban set via IPC (called by external detection logic)
 # Usage: nftban_ddos_ban_ip <ip> [timeout]
 # Example: nftban_ddos_ban_ip 192.168.1.100 1h
 nftban_ddos_ban_ip() {
     local ip="$1"
     local timeout="${2:-${DDOS_BAN_TIMEOUT:-1h}}"
-    local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
-    local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
-    local ban_set="${DDOS_BAN_SET:-ddos_banned}"
 
     if [[ -z "$ip" ]]; then
         echo "ERROR: IP address required" >&2
         return 1
     fi
 
-    # Determine IPv4 or IPv6
-    if [[ "$ip" =~ : ]]; then
-        # IPv6 address
-        if nft add element "${table_v6}" "${ban_set}6" "{ $ip timeout $timeout }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Banned IPv6: $ip (timeout: $timeout)"
-            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (IPv6, timeout: $timeout)"
+    # Convert timeout to seconds for IPC
+    local timeout_seconds
+    timeout_seconds=$(_nftban_ddos_timeout_to_seconds "$timeout")
+
+    # Use IPC for ban operation (v1.18.0: IPC-only writes)
+    if nft_ipc_ban "$ip" "$timeout_seconds" "ddos-classic" "ddos"; then
+        _nftban_ddos_classic_log "INFO" "Banned via IPC: $ip (timeout: $timeout)"
+
+        # Verify the ban was applied (read-only nft check)
+        # v2.1: All bans go to unified blacklist set
+        local family="ip"
+        local set_name="blacklist_ipv4"
+        [[ "$ip" =~ : ]] && family="ip6" && set_name="blacklist_ipv6"
+
+        if nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (timeout: $timeout)"
             return 0
         else
-            echo "ERROR: Failed to ban IPv6 $ip" >&2
-            return 1
+            _nftban_ddos_classic_log "WARN" "IPC success but verification failed for $ip"
+            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (timeout: $timeout)"
+            return 0
         fi
     else
-        # IPv4 address
-        if nft add element "${table_v4}" "${ban_set}" "{ $ip timeout $timeout }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Banned IPv4: $ip (timeout: $timeout)"
-            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (IPv4, timeout: $timeout)"
-            return 0
-        else
-            echo "ERROR: Failed to ban IPv4 $ip" >&2
-            return 1
-        fi
+        echo "ERROR: Failed to ban $ip via IPC" >&2
+        return 1
     fi
 }
 
-# Remove IP from ban set
+# Remove IP from ban set via IPC
 # Usage: nftban_ddos_unban_ip <ip>
 nftban_ddos_unban_ip() {
     local ip="$1"
-    local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
-    local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
-    local ban_set="${DDOS_BAN_SET:-ddos_banned}"
 
     if [[ -z "$ip" ]]; then
         echo "ERROR: IP address required" >&2
         return 1
     fi
 
-    # Determine IPv4 or IPv6
-    if [[ "$ip" =~ : ]]; then
-        # IPv6 address
-        if nft delete element "${table_v6}" "${ban_set}6" "{ $ip }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Unbanned IPv6: $ip"
-            echo "Unbanned: $ip (IPv6)"
+    # Use IPC for unban operation (v1.18.0: IPC-only writes)
+    if nft_ipc_unban "$ip"; then
+        _nftban_ddos_classic_log "INFO" "Unbanned via IPC: $ip"
+
+        # Verify the unban was applied (read-only nft check)
+        # v2.1: All bans go to unified blacklist set
+        local family="ip"
+        local set_name="blacklist_ipv4"
+        [[ "$ip" =~ : ]] && family="ip6" && set_name="blacklist_ipv6"
+
+        if ! nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+            echo "Unbanned: $ip"
             return 0
         else
-            echo "ERROR: Failed to unban IPv6 $ip (not in set?)" >&2
-            return 1
+            _nftban_ddos_classic_log "WARN" "IPC success but verification shows IP still in set for $ip"
+            echo "Unbanned: $ip"
+            return 0
         fi
     else
-        # IPv4 address
-        if nft delete element "${table_v4}" "${ban_set}" "{ $ip }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Unbanned IPv4: $ip"
-            echo "Unbanned: $ip (IPv4)"
-            return 0
-        else
-            echo "ERROR: Failed to unban IPv4 $ip (not in set?)" >&2
-            return 1
-        fi
+        echo "ERROR: Failed to unban $ip via IPC" >&2
+        return 1
     fi
 }
 

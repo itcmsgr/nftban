@@ -572,19 +572,19 @@ nftban_feeds_update_all() {
 
 # Sync all enabled feeds to nftables (Go-optimized with bash fallback)
 nftban_feeds_sync_to_nftables() {
-    nftban_feeds_log INFO "Syncing feeds to nftables (v0.7.3 architecture)..."
+    nftban_feeds_log INFO "Syncing feeds to nftables (v2.1 architecture)..."
 
-    # v0.7.3: Feeds add directly to existing blacklist_ipv4/blacklist_ipv6 sets
-    # No separate feed sets needed - unified blacklist approach
+    # v2.1: Feeds go to main blacklist_ipv4/blacklist_ipv6 sets
+    # No separate feeds sets - CIDR aggregation, lower memory, no duplicates
 
-    # Verify blacklist sets exist (should be created by nftables-safe.conf)
+    # Verify blacklist sets exist (should be created by nftables.conf)
     if ! nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 >/dev/null 2>&1; then
-        nftban_feeds_log ERROR "IPv4 blacklist set missing! Run: nftban nftables init"
+        nftban_feeds_log ERROR "IPv4 blacklist set missing! Run: nftban firewall rebuild"
         return 1
     fi
 
     if ! nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 >/dev/null 2>&1; then
-        nftban_feeds_log ERROR "IPv6 blacklist set missing! Run: nftban nftables init"
+        nftban_feeds_log ERROR "IPv6 blacklist set missing! Run: nftban firewall rebuild"
         return 1
     fi
 
@@ -939,13 +939,13 @@ nftban_feeds_sync_to_nftables_bash() {
         ipv6_count=$(wc -l < "$ipv6_list")
     fi
 
-    # Build nftables file for atomic reload (v0.7.3 architecture - dual tables)
+    # Build nftables file for atomic reload (v1.18.0 architecture - dedicated feed sets)
     local nft_file="${NFTBAN_FEEDS_CACHE_DIR}/feeds.nft"
     cat > "$nft_file" << EOF
 #!/usr/sbin/nft -f
 # NFTBan Feed Sync - Generated $(date)
 # IPv4: $ipv4_count | IPv6: $ipv6_count
-# Architecture: v0.7.3 (dual ip/ip6 tables, unified blacklist sets)
+# Architecture: v2.1 (feeds go to main blacklist sets)
 
 EOF
 

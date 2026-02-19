@@ -247,14 +247,15 @@ run_all_tests() {
     test_command "whitelist list" "nftban whitelist list"
 
     # Module Commands - Status Only (non-destructive)
+    # v2.1: fail2ban removed - use native login monitoring
     echo ""
     echo "=== MODULES - STATUS ==="
     test_command "ddos status" "nftban ddos status"
     test_command "portscan status" "nftban portscan status"
-    test_command "fail2ban status" "nftban fail2ban status"
+    test_command "login status" "nftban login status"
     test_command "feeds status" "nftban feeds status"
     test_command "feeds list" "nftban feeds list"
-    test_command "login status" "nftban login status"
+    test_command "geoban status" "nftban geoban status"
 
     # GeoBan Commands
     echo ""

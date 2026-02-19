@@ -157,8 +157,8 @@ curl = curl
 
 [services]
 cron = crond
-fail2ban = fail2ban
 nftables = nftables
+rsyslog = rsyslog
 
 [paths]
 nft = /usr/sbin/nft
@@ -196,8 +196,8 @@ curl = curl
 
 [services]
 cron = cron
-fail2ban = fail2ban
 nftables = nftables
+rsyslog = rsyslog
 
 [paths]
 nft = /usr/sbin/nft

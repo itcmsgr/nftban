@@ -196,24 +196,8 @@ nftban_services_fix() {
         fi
     fi
 
-    # Try to start fail2ban
-    if [[ -n "${NFTBAN_SERVICE_STATUS[fail2ban]:-}" ]]; then
-        local info="${NFTBAN_SERVICE_STATUS[fail2ban]}"
-        local status="${info%%|*}"
-
-        if [[ "$status" != "RUNNING" ]]; then
-            echo "Starting fail2ban service..."
-            if systemctl start fail2ban.service 2>/dev/null; then
-                echo "  ✅ fail2ban started successfully"
-                fixed=$((fixed + 1))
-            else
-                echo "  ❌ Failed to start fail2ban"
-                failed=$((failed + 1))
-            fi
-        else
-            echo "✅ fail2ban already running"
-        fi
-    fi
+    # v2.1: fail2ban removed - use native login monitoring instead
+    # NFTBan now handles intrusion prevention directly
 
     echo ""
     echo "Summary: ${fixed} started, ${failed} failed"
@@ -231,8 +215,8 @@ nftban_services_check_health() {
 
     local issues=0
 
-    # Check critical services
-    for service_name in "nftables" "fail2ban"; do
+    # Check critical services (v2.1: only nftables required, fail2ban removed)
+    for service_name in "nftables"; do
         if [[ -n "${NFTBAN_SERVICE_STATUS[$service_name]:-}" ]]; then
             local info="${NFTBAN_SERVICE_STATUS[$service_name]}"
             local status="${info%%|*}"
@@ -282,11 +266,13 @@ nftban_services_show_help() {
     echo ""
     echo "SERVICES MONITORED:"
     echo "    • nftables         Netfilter firewall (required)"
-    echo "    • fail2ban         Intrusion prevention (required)"
+    echo "    • nftband          NFTBan daemon for IPC (recommended)"
     echo "    • golang           GeoIP features (optional)"
     echo "    • mailx            Email notifications (optional)"
     echo "    • curl             Feed downloads (required)"
     echo "    • jq               JSON processing (optional)"
+    echo ""
+    echo "NOTE: fail2ban removed in v2.1 - use native login monitoring instead"
     echo ""
 }
 

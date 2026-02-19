@@ -37,6 +37,9 @@ readonly NFTBAN_SYSTEM_IP_LOADED=1
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
 fi
+# v1.18.0: IPC library for daemon communication
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 
 : "${NFTBAN_WHITELIST_SYSTEM:=/etc/nftban/whitelist.d/00-system.conf}"
 
@@ -195,14 +198,20 @@ HEADER
         echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" >> "$NFTBAN_WHITELIST_SYSTEM"
     fi
 
-    # Also add to nftables immediately (don't wait for sync)
-    if command -v nft &>/dev/null; then
+    # Also add to nftables immediately via IPC (v1.18.0: IPC-only writes)
+    if declare -f nft_ipc_add_element &>/dev/null; then
         if [[ "$ip" =~ : ]]; then
             # IPv6
-            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null || true
+            if nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null; then
+                # Verify addition (read-only check)
+                nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || true
+            fi
         else
             # IPv4
-            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null || true
+            if nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null; then
+                # Verify addition (read-only check)
+                nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || true
+            fi
         fi
     fi
 

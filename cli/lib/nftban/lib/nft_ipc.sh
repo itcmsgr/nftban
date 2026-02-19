@@ -394,6 +394,7 @@ nft_emergency_ban() {
 }
 
 # Emergency unban - direct nft call
+# v1.18.0: Tries all ban sets (blacklist, auto, manual) to find the IP
 nft_emergency_unban() {
     [[ "$NFTBAN_EMERGENCY_MODE" != "1" ]] && {
         echo "ERROR: Emergency mode not enabled. Set NFTBAN_EMERGENCY_MODE=1" >&2
@@ -402,12 +403,18 @@ nft_emergency_unban() {
     _nft_emergency_warning
 
     local ip="$1"
+    local removed=0
 
+    # v2.1: All bans are in unified blacklist set (no separate auto/manual sets)
     if [[ "$ip" == *:* ]]; then
-        nft delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null
+        # IPv6 - unified blacklist
+        nft delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null && ((removed++)) || true
     else
-        nft delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null
+        # IPv4 - unified blacklist
+        nft delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null && ((removed++)) || true
     fi
+
+    [[ $removed -gt 0 ]] && return 0 || return 1
 }
 
 # =============================================================================

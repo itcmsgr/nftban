@@ -82,10 +82,10 @@ type FirewallConfig struct {
 	// UDPPorts contains allowed UDP ports
 	UDPPorts []int `json:"udp_ports"`
 
-	// RuntimeBans contains Fail2Ban temp_ban_v4/v6 to preserve
+	// RuntimeBans contains blacklist_ipv4/ipv6 sets (v2.1: unified blacklist)
 	RuntimeBans *SetData `json:"runtime_bans,omitempty"`
 
-	// RuntimeWhitelist contains temp_whitelist_v4/v6 to preserve
+	// RuntimeWhitelist contains temporary whitelist entries to preserve
 	RuntimeWhitelist *SetData `json:"runtime_whitelist,omitempty"`
 }
 

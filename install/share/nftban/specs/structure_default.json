@@ -1,259 +1,224 @@
 {
-  "version": "2.1",
-  "description": "NFTBan nftables structure specification - Separate ip/ip6 architecture",
-  "last_updated": "2026-01-20",
-  "architecture_notes": {
-    "design": "Separate ip/ip6 tables (NOT inet combined)",
-    "rationale": [
-      "Cleaner: No _v4/_v6 suffixes on set names within each table",
-      "Simpler: No ip/ip6 prefixes in rules (kernel knows family)",
-      "Performance: Kernel routes by family first anyway",
-      "Maintenance: Clear separation, easier to debug"
-    ],
-    "priority_design": {
-      "input": -100,
-      "forward": -100,
-      "output": 0,
-      "rationale": "Priority -100 ensures NFTBan runs BEFORE panel firewalls (CSF, Plesk, DirectAdmin use priority 0)"
+  "schema_version": "2.1",
+  "description": "NFTBan v2.1 - Directional Stateful Architecture with CIDR aggregation",
+
+  "modules": {
+    "description": "Modules are DISABLED by default. When disabled, they are NOT loaded (zero overhead).",
+    "available": {
+      "ddos": {
+        "default": "disabled",
+        "config": "/etc/nftban/conf.d/ddos/classic.conf",
+        "override": "/etc/nftban/conf.d/ddos/classic.conf.local",
+        "enable": "nftban ddos enable",
+        "provides": ["ct_limits", "syn_rate_limit", "icmp_rate_limit"]
+      },
+      "portscan": {
+        "default": "disabled",
+        "config": "/etc/nftban/conf.d/portscan/portscan.conf",
+        "override": "/etc/nftban/conf.d/portscan/portscan.conf.local",
+        "enable": "nftban portscan enable",
+        "provides": ["portscan_detection", "auto_ban"]
+      },
+      "feeds": {
+        "default": "disabled",
+        "config": "/etc/nftban/conf.d/feeds/feeds.conf",
+        "override": "/etc/nftban/conf.d/feeds/feeds.conf.local",
+        "enable": "nftban feeds enable",
+        "provides": ["threat_intelligence", "auto_update"],
+        "target_set": "blacklist_{family}"
+      },
+      "geoban": {
+        "default": "disabled",
+        "config": "/etc/nftban/conf.d/geoban/geoban.conf",
+        "override": "/etc/nftban/conf.d/geoban/geoban.conf.local",
+        "enable": "nftban geoban enable",
+        "provides": ["country_blocking"],
+        "target_set": "blacklist_{family}"
+      },
+      "login": {
+        "default": "disabled",
+        "config": "/etc/nftban/conf.d/login/login.conf",
+        "override": "/etc/nftban/conf.d/login/login.conf.local",
+        "enable": "nftban login enable",
+        "provides": ["ssh_brute_force", "pam_integration"],
+        "target_set": "blacklist_{family}"
+      }
     },
-    "reference": "See nft_schema.sh for canonical specification"
+    "config_hierarchy": [
+      "Module config: /etc/nftban/conf.d/<module>/<module>.conf (defaults)",
+      "User override: /etc/nftban/conf.d/<module>/<module>.conf.local (survives upgrades)"
+    ]
   },
-  "expected_structure": {
+
+  "nftables": {
     "tables": {
       "ip nftban": {
-        "description": "IPv4 NFTBan firewall table",
-        "required": true,
-        "chains": {
-          "input": {
-            "type": "filter",
-            "hook": "input",
-            "priority": -100,
-            "policy": "drop",
-            "required": true,
-            "description": "Main input chain (priority -100: before panel firewalls)"
-          },
-          "forward": {
-            "type": "filter",
-            "hook": "forward",
-            "priority": -100,
-            "policy": "drop",
-            "required": true,
-            "description": "Forward chain (priority -100: before panel firewalls)"
-          },
-          "output": {
-            "type": "filter",
-            "hook": "output",
-            "priority": 0,
-            "policy": "accept",
-            "required": true,
-            "description": "Output chain"
-          }
-        },
+        "family": "ip",
         "sets": {
           "whitelist_ipv4": {
             "type": "ipv4_addr",
-            "flags": "interval",
-            "required": true,
-            "description": "IPv4 whitelist - full access"
+            "flags": ["interval"],
+            "description": "Permanent trusted IPv4 addresses"
           },
           "blacklist_ipv4": {
             "type": "ipv4_addr",
-            "flags": "interval,timeout",
-            "required": true,
-            "description": "IPv4 blacklist - permanent + temporary with timeout"
+            "flags": ["interval", "timeout"],
+            "description": "All banned IPv4 addresses (manual + feeds + geoip + temp bans)"
           },
-          "tcp_ports": {
+          "tcp_ports_in": {
             "type": "inet_service",
-            "required": true,
-            "description": "Allowed TCP ports (22, 80, 443)"
+            "flags": [],
+            "description": "Allowed inbound TCP service ports (INPUT chain)"
           },
-          "udp_ports": {
+          "tcp_ports_out": {
             "type": "inet_service",
-            "required": true,
-            "description": "Allowed UDP ports"
+            "flags": [],
+            "description": "Allowed outbound TCP service ports (OUTPUT chain)"
+          },
+          "udp_ports_in": {
+            "type": "inet_service",
+            "flags": [],
+            "description": "Allowed inbound UDP service ports (INPUT chain)"
+          },
+          "udp_ports_out": {
+            "type": "inet_service",
+            "flags": [],
+            "description": "Allowed outbound UDP service ports (OUTPUT chain)"
           }
-        }
-      },
-      "ip6 nftban": {
-        "description": "IPv6 NFTBan firewall table",
-        "required": true,
+        },
         "chains": {
           "input": {
             "type": "filter",
             "hook": "input",
-            "priority": -100,
+            "priority": 0,
             "policy": "drop",
-            "required": true,
-            "description": "Main input chain (priority -100: before panel firewalls)"
+            "rule_order": [
+              "ct_invalid_drop",
+              "loopback_accept",
+              "whitelist_accept",
+              "blacklist_drop",
+              "ct_established_accept",
+              "icmp_allow",
+              "ct_limits",
+              "tcp_in_allow",
+              "udp_in_allow",
+              "default_drop"
+            ]
           },
           "forward": {
             "type": "filter",
             "hook": "forward",
-            "priority": -100,
-            "policy": "drop",
-            "required": true,
-            "description": "Forward chain (priority -100: before panel firewalls)"
+            "priority": 0,
+            "policy": "drop"
           },
           "output": {
             "type": "filter",
             "hook": "output",
             "priority": 0,
             "policy": "accept",
-            "required": true,
-            "description": "Output chain"
+            "optional_enforcement": ["tcp_ports_out", "udp_ports_out"]
           }
-        },
+        }
+      },
+
+      "ip6 nftban": {
+        "family": "ip6",
         "sets": {
           "whitelist_ipv6": {
             "type": "ipv6_addr",
-            "flags": "interval",
-            "required": true,
-            "description": "IPv6 whitelist - full access"
+            "flags": ["interval"],
+            "description": "Permanent trusted IPv6 addresses"
           },
           "blacklist_ipv6": {
             "type": "ipv6_addr",
-            "flags": "interval,timeout",
-            "required": true,
-            "description": "IPv6 blacklist - permanent + temporary with timeout"
+            "flags": ["interval", "timeout"],
+            "description": "All banned IPv6 addresses (manual + feeds + geoip + temp bans)"
           },
-          "tcp_ports": {
+          "tcp_ports_in": {
             "type": "inet_service",
-            "required": true,
-            "description": "Allowed TCP ports"
+            "flags": [],
+            "description": "Allowed inbound TCP service ports (INPUT chain)"
           },
-          "udp_ports": {
+          "tcp_ports_out": {
             "type": "inet_service",
-            "required": true,
-            "description": "Allowed UDP ports"
+            "flags": [],
+            "description": "Allowed outbound TCP service ports (OUTPUT chain)"
+          },
+          "udp_ports_in": {
+            "type": "inet_service",
+            "flags": [],
+            "description": "Allowed inbound UDP service ports (INPUT chain)"
+          },
+          "udp_ports_out": {
+            "type": "inet_service",
+            "flags": [],
+            "description": "Allowed outbound UDP service ports (OUTPUT chain)"
+          }
+        },
+        "chains": {
+          "input": {
+            "type": "filter",
+            "hook": "input",
+            "priority": 0,
+            "policy": "drop",
+            "rule_order": [
+              "ct_invalid_drop",
+              "loopback_accept",
+              "whitelist_accept",
+              "blacklist_drop",
+              "ct_established_accept",
+              "icmpv6_allow_nd",
+              "ct_limits",
+              "tcp_in_allow",
+              "udp_in_allow",
+              "default_drop"
+            ]
+          },
+          "forward": {
+            "type": "filter",
+            "hook": "forward",
+            "priority": 0,
+            "policy": "drop"
+          },
+          "output": {
+            "type": "filter",
+            "hook": "output",
+            "priority": 0,
+            "policy": "accept",
+            "optional_enforcement": ["tcp_ports_out", "udp_ports_out"]
           }
         }
       }
     },
-    "deprecated_tables": {
-      "description": "Tables that should NOT exist (legacy from upgrades)",
-      "tables": [
-        "inet nftban",
-        "inet nftban_main",
-        "inet nftban_runtime"
-      ],
-      "reason": "OLD v0.6.x dual-stack approach - migrate to ip/ip6 tables"
-    },
-    "priority_safety": {
-      "description": "NFTBan must run BEFORE other firewall chains on same hook",
-      "nftban_priority": -100,
-      "safe_if": "nftban_priority < other_chain_priority",
-      "panels_use_priority_0": ["CSF", "Plesk", "DirectAdmin"],
-      "validation_rules": {
-        "critical": "Other chain on same hook has priority <= NFTBan priority (tie or earlier)",
-        "warning": "Other firewall chains detected (ip/ip6 filter) but NFTBan runs first",
-        "ok": "No conflicting chains, or NFTBan is earliest"
+
+    "ban_pipeline": {
+      "all_bans_target_set": "blacklist_{family}",
+      "sources": {
+        "manual": { "target": "blacklist_{family}", "timeout_supported": true },
+        "feeds": { "target": "blacklist_{family}", "timeout_supported": false },
+        "geoip": { "target": "blacklist_{family}", "timeout_supported": false },
+        "temp": { "target": "blacklist_{family}", "timeout_supported": true }
       }
     },
-    "rule_order": {
-      "description": "Expected rule processing order in input chain (SECURITY CRITICAL)",
-      "order": [
-        {
-          "position": 1,
-          "pattern": "ct state invalid drop",
-          "description": "Drop invalid packets first"
-        },
-        {
-          "position": 2,
-          "pattern": "iif \"lo\" accept",
-          "description": "Allow loopback"
-        },
-        {
-          "position": 3,
-          "pattern": "saddr @whitelist accept",
-          "description": "Whitelist (bypass all checks)"
-        },
-        {
-          "position": 4,
-          "pattern": "saddr @blacklist drop",
-          "description": "Blacklist BEFORE established (security fix!)"
-        },
-        {
-          "position": 5,
-          "pattern": "ct state established,related accept",
-          "description": "NOW allow established (safe after bans)"
-        },
-        {
-          "position": 6,
-          "pattern": "icmp type",
-          "description": "ICMP rules"
-        },
-        {
-          "position": 7,
-          "pattern": "tcp dport @tcp_ports accept",
-          "description": "Allow TCP ports"
-        },
-        {
-          "position": 8,
-          "pattern": "udp dport @udp_ports accept",
-          "description": "Allow UDP ports"
-        },
-        {
-          "position": 9,
-          "pattern": "drop",
-          "description": "Default deny (catch-all)"
-        }
-      ],
-      "security_note": "Blacklist MUST come BEFORE 'ct state established' to block banned IPs immediately!"
+
+    "connection_limits": {
+      "enabled": true,
+      "mode": "ct_count",
+      "default_threshold": 100,
+      "applies_to": ["ip nftban:input", "ip6 nftban:input"],
+      "configurable_via": "ddos.conf",
+      "note": "Connection limits remain chain rules (not sets). Whitelisted IPs bypass all limits."
     },
-    "validation_checks": {
-      "required_tables": [
-        "ip nftban",
-        "ip6 nftban"
-      ],
-      "priority_check": {
-        "nftban_must_be_earliest": true,
-        "nftban_priority": -100,
-        "warn_if_other_chains_exist": true
-      },
-      "required_sets": [
-        "ip nftban whitelist_ipv4",
-        "ip nftban blacklist_ipv4",
-        "ip nftban tcp_ports",
-        "ip nftban udp_ports",
-        "ip6 nftban whitelist_ipv6",
-        "ip6 nftban blacklist_ipv6",
-        "ip6 nftban tcp_ports",
-        "ip6 nftban udp_ports"
-      ],
-      "policy_checks": {
-        "ip nftban input": "drop",
-        "ip nftban forward": "drop",
-        "ip nftban output": "accept",
-        "ip6 nftban input": "drop",
-        "ip6 nftban forward": "drop",
-        "ip6 nftban output": "accept"
-      }
-    }
-  },
-  "severity_levels": {
-    "critical": {
-      "description": "Security-critical issues that must be fixed immediately",
-      "examples": [
-        "Missing ip nftban table",
-        "Wrong policy (accept instead of drop)",
-        "Forbidden table exists (inet filter bypassing NFTBan)",
-        "Blacklist after established (security bug)"
-      ]
+
+    "directional_ports": {
+      "enabled": true,
+      "sets": ["tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"],
+      "directions": ["in", "out", "inout"]
     },
-    "warning": {
-      "description": "Issues that may cause unexpected behavior",
-      "examples": [
-        "Missing optional sets",
-        "Missing ip6 nftban table (IPv6 disabled)",
-        "Rule order not matching spec"
-      ]
-    },
-    "info": {
-      "description": "Informational messages",
-      "examples": [
-        "Legacy tables detected (can be removed)",
-        "Additional custom tables detected"
-      ]
+
+    "icmp_policy": {
+      "ipv4": "essential_only",
+      "ipv6": "essential_plus_neighbor_discovery"
     }
   }
 }

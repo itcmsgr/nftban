@@ -270,7 +270,8 @@ test_package_lookups() {
 
     # Test common packages
     local pkg
-    for pkg in nftables curl bash systemd fail2ban mail golang; do
+    # v2.1: fail2ban removed - use native login monitoring
+    for pkg in nftables curl bash systemd mail golang; do
         local result
         result=$(nftban_distro_get_package "$pkg" 2>/dev/null || echo "")
         test_assert_not_empty "$result" "Package lookup: $pkg"
@@ -296,7 +297,8 @@ test_service_lookups() {
 
     # Test common services
     local svc
-    for svc in cron rsyslog fail2ban nftables sshd; do
+    # v2.1: fail2ban removed - use native login monitoring
+    for svc in cron rsyslog nftables sshd; do
         local result
         result=$(nftban_distro_get_service "$svc" 2>/dev/null || echo "")
         test_assert_not_empty "$result" "Service lookup: $svc"

@@ -149,90 +149,92 @@ type sourceConfig struct {
 }
 
 // sourceConfigs maps source names to their configuration
+// v2.1: ALL sources route to unified blacklist_ipv4/ipv6 sets
+// Source tracking is maintained in daemon database, not separate nft sets
 var sourceConfigs = map[string]sourceConfig{
-	// Bulk sources (use replace_set)
+	// Bulk sources (use replace_set for CIDR aggregation)
 	"feeds": {
-		IPv4Set:   "feeds_ipv4",
-		IPv6Set:   "feeds_ipv6",
+		IPv4Set:   "blacklist_ipv4",
+		IPv6Set:   "blacklist_ipv6",
 		AllowBulk: true,
 		AllowBan:  false,
 	},
 	"geoban": {
-		IPv4Set:   "geoban_ipv4",
-		IPv6Set:   "geoban_ipv6",
+		IPv4Set:   "blacklist_ipv4",
+		IPv6Set:   "blacklist_ipv6",
 		AllowBulk: true,
 		AllowBan:  false,
 	},
 
-	// Auto-detection sources (all share auto_* sets)
+	// Auto-detection sources (all route to blacklist with timeout)
 	"login": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 3600, // 1 hour
 	},
 	"portscan": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 7200, // 2 hours
 	},
 	"portscan-classic": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 7200,
 	},
 	"portscan-suricata": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 7200,
 	},
 	"ddos": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 3600,
 	},
 	"ddos-classic": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 3600,
 	},
 	"ddos-suricata": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 3600,
 	},
 	"suricata": {
-		IPv4Set:    "auto_ipv4",
-		IPv6Set:    "auto_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 3600,
 	},
 
-	// Manual CLI
+	// Manual CLI (permanent bans by default)
 	"manual": {
-		IPv4Set:    "manual_ipv4",
-		IPv6Set:    "manual_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 0, // Permanent by default
 	},
 	"cli": {
-		IPv4Set:    "manual_ipv4",
-		IPv6Set:    "manual_ipv6",
+		IPv4Set:    "blacklist_ipv4",
+		IPv6Set:    "blacklist_ipv6",
 		AllowBulk:  false,
 		AllowBan:   true,
 		DefaultTTL: 0,
@@ -268,12 +270,11 @@ func GetTargetSet(source, ip string) string {
 }
 
 // GetAllSets returns all known set names
+// v2.1: Unified schema - only whitelist + blacklist IP sets
 func GetAllSets() []string {
 	return []string{
-		"feeds_ipv4", "feeds_ipv6",
-		"geoban_ipv4", "geoban_ipv6",
-		"auto_ipv4", "auto_ipv6",
-		"manual_ipv4", "manual_ipv6",
+		"whitelist_ipv4", "whitelist_ipv6",
+		"blacklist_ipv4", "blacklist_ipv6",
 	}
 }
 

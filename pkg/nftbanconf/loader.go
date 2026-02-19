@@ -168,10 +168,8 @@ type NFTables struct {
 	BlacklistIPv6   string
 	WhitelistIPv4   string
 	WhitelistIPv6   string
-	TempBanIPv4     string
-	TempBanIPv6     string
-	GeoBlockIPv4    string
-	GeoBlockIPv6    string
+	// v2.1: All ban sources (feeds, geoban, auto, manual) go to blacklist
+	// Source tracking done in daemon database, not separate nft sets
 }
 
 var (
@@ -660,10 +658,7 @@ func defaultNFTables() *NFTables {
 		BlacklistIPv6: "blacklist_ipv6",
 		WhitelistIPv4: "whitelist_ipv4",
 		WhitelistIPv6: "whitelist_ipv6",
-		TempBanIPv4:   "temp_ban_ipv4",
-		TempBanIPv6:   "temp_ban_ipv6",
-		GeoBlockIPv4:  "geo_block_ipv4",
-		GeoBlockIPv6:  "geo_block_ipv6",
+		// v2.1: All bans go to blacklist (source tracked in DB)
 	}
 }
 

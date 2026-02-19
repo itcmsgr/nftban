@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-19
+
+### BREAKING CHANGES (Major Schema Overhaul - "Directional Stateful Architecture")
+
+- **UNIFIED BLACKLIST**: All bans now go to single `blacklist_ipv4/ipv6` set
+  - No separate feeds_ipv4, geoban_ipv4, auto_ipv4, manual_ipv4 sets
+  - CIDR aggregation prevents IP duplicates, reduces memory usage
+  - Source tracking maintained in daemon database (not nftables)
+  - Temp bans use nftables timeout flag (auto-expire)
+
+- **MINIMAL SCHEMA**: Only 4 IP sets per table
+  - `whitelist_ipv4/ipv6`: Trusted IPs/networks (interval flags)
+  - `blacklist_ipv4/ipv6`: All bans (interval + timeout flags)
+  - Port sets: `tcp_ports_in/out`, `udp_ports_in/out` (directional)
+  - Tables: `ip nftban`, `ip6 nftban` (separate, not inet dual-stack)
+
+- **IPC-ONLY WRITES**: All modifications go through Go daemon
+  - Shell modules no longer write directly to nftables
+  - Read-only `nft` commands used only for validation
+  - Ensures CIDR aggregation and source tracking
+
+- **FAIL2BAN REMOVED**: Use native login monitoring
+  - `nftban login` module replaces fail2ban jails
+  - Panel integrations updated to use native monitoring
+  - Conflict detection retained for migration assistance
+
+### Added
+- CVE-2025-NFTBAN-001 protection: Blacklist BEFORE `ct state established`
+- ICMPv6 full ND support (router/neighbor solicitation/advertisement)
+- Module system: modules disabled by default (zero overhead when disabled)
+- CT limits configurable via `ddos.conf` (SSH: 10, HTTP: 100)
+
+### Changed
+- Go daemon routes ALL sources to unified blacklist sets
+- Shell modules verify IPC operations via read-only nft
+- Metrics track source counts but all data in unified blacklist
+- Panel files recommend native login monitoring over fail2ban
+
+### Removed
+- Separate `feeds_ipv4/ipv6` nftables sets (merged into blacklist)
+- Separate `geoban_ipv4/ipv6` nftables sets (merged into blacklist)
+- Separate `auto_ipv4/ipv6` nftables sets (merged into blacklist)
+- Separate `manual_ipv4/ipv6` nftables sets (merged into blacklist)
+- fail2ban as service dependency (use native login monitoring)
+- fail2ban menu option and status command
+
+---
+
+## [1.18.0] - 2026-02-19
+
+### BREAKING CHANGES (Major Schema Revision)
+
+- **SCHEMA**: Consolidated NFT schema per Final_v1_18 specification
+  - Tables: `ip nftban` (required), `ip6 nftban` (recommended)
+  - Sets: `whitelist_ipv4/ipv6`, `blacklist_ipv4/ipv6`, `feeds_ipv4/ipv6`, `geoban_ipv4/ipv6`, `auto_ipv4/ipv6`, `manual_ipv4/ipv6`
+  - Port sets: `tcp_ports_in/out`, `udp_ports_in/out` (directional)
+  - Chain priority: 0 (standard filter priority)
+  - Full ICMPv6 ND support (nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert)
+
+- **IPC-ONLY**: All write operations now require Go daemon
+  - Ban/unban operations via IPC only
+  - Port add/remove via IPC only
+  - Whitelist operations via IPC only
+  - Direct `nft add/delete` commands removed from shell modules
+
+- **RULE ORDER**: Security-critical order enforced
+  - Blacklist BEFORE `ct state established` (CVE-2024-NFTBAN-001 prevention)
+  - Validator checks rule order on every validation
+
+### Added
+- NFT schema validation documentation (`docs/NFT-Schema-Validation.md`)
+- Enhanced metrics for all IPC operations
+- ICMPv6 full ND support (nd-router-*, nd-neighbor-*)
+- Auto/manual source-specific ban sets for lifecycle management
+
+### Changed
+- All shell modules migrated to IPC pattern
+- Metrics collectors use schema functions (O(1) JSON counting)
+- Exporters updated for consolidated schema
+- Chain priorities standardized to 0 (from -100)
+- Feeds module uses dedicated `feeds_ipv4/ipv6` sets (not legacy blacklist)
+
+### Fixed
+- **nftban_geoban_exporter.sh**: Wrong table reference (`inet filter` → `ip nftban`)
+- **nftban_feeds.sh**: Now uses dedicated `feeds_ipv4` set (not legacy blacklist)
+- **nftban_ddos_classic.sh**: Migrated from direct nft to IPC
+- **nftban_system_ip.sh**: Migrated from direct nft to IPC
+- **cmd_whitelist.sh**: Migrated from direct nft to IPC
+
+---
+
 ## [1.16.4] - 2026-02-18
 
 ### Fixed
