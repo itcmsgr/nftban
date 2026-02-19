@@ -383,6 +383,47 @@ else
 fi
 
 # =============================================================================
+# 9. Remove rogue nftables tables (v1.17.6)
+# =============================================================================
+# iptables-nft, docker, fail2ban can create rogue tables like "ip raw", "ip filter"
+# These interfere with NFTBan and cause schema corruption
+log_info "Checking for rogue nftables tables..."
+
+# Allowed tables (NFTBan + system default)
+ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$|^table inet (filter|nftban)$"
+
+# Get all tables
+ALL_TABLES=$(nft list tables 2>/dev/null || true)
+
+# Find and remove rogue tables
+ROGUE_COUNT=0
+while IFS= read -r table_line; do
+    [[ -z "$table_line" ]] && continue
+
+    # Check if table is allowed
+    if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
+        ROGUE_COUNT=$((ROGUE_COUNT + 1))
+        log_warn "Detected rogue table: $table_line"
+
+        # Extract table family and name (e.g., "table ip raw" -> "ip raw")
+        TABLE_SPEC="${table_line#table }"
+
+        # Delete the rogue table
+        if nft delete table $TABLE_SPEC 2>/dev/null; then
+            log_info "✅ Deleted rogue table: $TABLE_SPEC"
+        else
+            log_error "Failed to delete rogue table: $TABLE_SPEC"
+        fi
+    fi
+done <<< "$ALL_TABLES"
+
+if [[ $ROGUE_COUNT -eq 0 ]]; then
+    log_info "✅ No rogue tables detected - schema clean"
+else
+    log_info "Removed $ROGUE_COUNT rogue table(s)"
+fi
+
+# =============================================================================
 # Automatically fix common issues
 # =============================================================================
 log_info "Running automated fixes..."
