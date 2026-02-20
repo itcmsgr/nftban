@@ -201,7 +201,7 @@ jobs:
         run: go test -race -v ./...
 
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.5.1
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
 
       - name: Run staticcheck
         run: $(go env GOPATH)/bin/staticcheck ./...
