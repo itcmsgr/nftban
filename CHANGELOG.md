@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.2] - 2026-02-20
+
+### Fixed
+
+- **Panel ports now open in ALL directions (in/out)**
+  - `LoadAllPanelPorts()` was only loading TCP_IN and UDP_IN
+  - Now loads all 4 directions: TCP_IN, TCP_OUT, UDP_IN, UDP_OUT
+  - Affects all panels: DirectAdmin, cPanel, Plesk, CWP, CyberPanel, InterWorx, Vesta
+
+### Changed
+
+- Panel enable/disable now correctly applies bidirectional port rules
+- Panel status shows all directional ports
+
+---
+
 ## [1.18.1] - 2026-02-20
 
 ### Fixed

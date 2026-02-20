@@ -245,7 +245,7 @@ func LoadAllPanelPorts(configDir string) (*PortConfig, error) {
 			continue
 		}
 
-		// Add TCP IN ports (input chain - most common for panels)
+		// Add TCP IN ports (input chain)
 		for _, port := range panelCfg.TCPIn {
 			rule := PortRule{
 				Port:      port,
@@ -257,7 +257,19 @@ func LoadAllPanelPorts(configDir string) (*PortConfig, error) {
 			combined.PortMap[port] = append(combined.PortMap[port], "T")
 		}
 
-		// Add UDP IN ports
+		// Add TCP OUT ports (output chain) - v1.18.2: Full bidirectional support
+		for _, port := range panelCfg.TCPOut {
+			rule := PortRule{
+				Port:      port,
+				Protocol:  "T",
+				Direction: "O",
+				Source:    fmt.Sprintf("panel:%s", panelName),
+			}
+			combined.AllRules = append(combined.AllRules, rule)
+			combined.PortMap[port] = append(combined.PortMap[port], "T")
+		}
+
+		// Add UDP IN ports (input chain)
 		for _, port := range panelCfg.UDPIn {
 			rule := PortRule{
 				Port:      port,
@@ -269,9 +281,17 @@ func LoadAllPanelPorts(configDir string) (*PortConfig, error) {
 			combined.PortMap[port] = append(combined.PortMap[port], "U")
 		}
 
-		// Note: TCP_OUT and UDP_OUT are for OUTPUT chain rules
-		// For now we focus on INPUT chain (most panels only need INPUT)
-		// Future enhancement: Support OUTPUT chain port rules
+		// Add UDP OUT ports (output chain) - v1.18.2: Full bidirectional support
+		for _, port := range panelCfg.UDPOut {
+			rule := PortRule{
+				Port:      port,
+				Protocol:  "U",
+				Direction: "O",
+				Source:    fmt.Sprintf("panel:%s", panelName),
+			}
+			combined.AllRules = append(combined.AllRules, rule)
+			combined.PortMap[port] = append(combined.PortMap[port], "U")
+		}
 	}
 
 	// Deduplicate
