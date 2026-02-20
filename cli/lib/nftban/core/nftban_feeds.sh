@@ -408,9 +408,8 @@ nftban_feeds_disable() {
     # v1.18.1 FIX: Trigger IPC flush_source to remove feed IPs from nftables immediately
     # This uses sourceIndex-based removal (not set flush) to preserve other sources
     if [[ -S "${NFTBAN_SOCKET:-/var/run/nftban/nftband.sock}" ]]; then
-        local flush_result
-        if flush_result=$(echo '{"action":"flush_source","params":{"source":"feeds"}}' | \
-            socat - UNIX-CONNECT:"${NFTBAN_SOCKET:-/var/run/nftban/nftband.sock}" 2>/dev/null); then
+        if echo '{"action":"flush_source","params":{"source":"feeds"}}' | \
+            socat - UNIX-CONNECT:"${NFTBAN_SOCKET:-/var/run/nftban/nftband.sock}" >/dev/null 2>&1; then
             nftban_feeds_log INFO "IPC flush_source triggered for feeds"
             echo "✓ Feed IPs removal queued via IPC"
         else
