@@ -178,15 +178,12 @@ nftban_cmd_firewall() {
 # =============================================================================
 
 # Exit codes for strict mode (Single Firewall Authority)
-# These constants are used via return $VALIDATE_* statements
-# shellcheck disable=SC2034
-VALIDATE_OK=0
-# shellcheck disable=SC2034
-VALIDATE_STRUCTURE_ERROR=1
-VALIDATE_POLICYKIT_MISSING=10
-VALIDATE_FIREWALL_CONFLICT=20
-VALIDATE_NFT_COLLISION=30
-VALIDATE_ENV_ERROR=40
+readonly VALIDATE_OK=0
+readonly VALIDATE_STRUCTURE_ERROR=1
+readonly VALIDATE_POLICYKIT_MISSING=10
+readonly VALIDATE_FIREWALL_CONFLICT=20
+readonly VALIDATE_NFT_COLLISION=30
+readonly VALIDATE_ENV_ERROR=40
 
 firewall_validate() {
     # Validate nftables structure against NFTBan specification
@@ -232,22 +229,22 @@ firewall_validate() {
         return $VALIDATE_ENV_ERROR
     fi
 
-    local validation_result=0
+    local validation_result=$VALIDATE_OK
 
     # Run structure validation
     if [[ "$output_json" == "true" ]]; then
-        validate_structure "true" || validation_result=$?
+        validate_structure "true" || validation_result=$VALIDATE_STRUCTURE_ERROR
     else
-        validate_structure "false" || validation_result=$?
+        validate_structure "false" || validation_result=$VALIDATE_STRUCTURE_ERROR
     fi
 
     # If strict mode, run additional checks
     if [[ "$strict_mode" == "true" ]]; then
-        local strict_exit=0
+        local strict_exit=$VALIDATE_OK
         _firewall_validate_strict "$output_json" || strict_exit=$?
 
         # Return the more severe exit code
-        if [[ $strict_exit -ne 0 ]]; then
+        if [[ $strict_exit -ne $VALIDATE_OK ]]; then
             return $strict_exit
         fi
     fi
@@ -287,7 +284,7 @@ _firewall_validate_strict() {
     [[ "$json_mode" == "false" ]] && echo "STRICT PREFLIGHT: PASSED"
     [[ "$json_mode" == "false" ]] && echo "NFTBan is sole firewall authority - enforce mode OK"
 
-    return 0
+    return $VALIDATE_OK
 }
 
 _check_policykit() {
