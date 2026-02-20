@@ -247,6 +247,8 @@ nftban_complete() {
         echo "support"
         echo "support-bundle"
         echo "pro"
+        # PREFLIGHT
+        echo "preflight"
         return 0
     fi
 
@@ -601,6 +603,11 @@ nftban_complete() {
                 echo "--dry-run"
                 echo "--execute"
                 echo "--count"
+                echo "--json"
+                echo "help"
+                ;;
+            preflight)
+                echo "--strict"
                 echo "--json"
                 echo "help"
                 ;;

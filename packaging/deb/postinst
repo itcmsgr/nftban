@@ -611,9 +611,57 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 7.5: Strict Preflight Check - Gate Service Enablement
+        # =====================================================================
+        # This is the AUTHORITATIVE check that gates service enablement.
+        # If preflight fails, NFTBan installs but does NOT enforce.
+        # This allows package install to succeed while requiring admin action.
+        log_info "Running strict preflight check..."
+
+        PREFLIGHT_PASSED=1
+        PREFLIGHT_REASON=""
+        PREFLIGHT_ACTION=""
+        PREFLIGHT_OUTPUT=""
+
+        if [[ -f /usr/lib/nftban/core/nftban_strict_preflight.sh ]]; then
+            # Source the preflight library
+            # shellcheck source=/dev/null
+            source /usr/lib/nftban/core/nftban_strict_preflight.sh
+
+            # Capture preflight output and exit code
+            # Note: strict_preflight emits to stderr, which we capture
+            PREFLIGHT_EXIT=0
+            PREFLIGHT_OUTPUT=$(strict_preflight 2>&1) || PREFLIGHT_EXIT=$?
+
+            if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
+                PREFLIGHT_PASSED=0
+                PREFLIGHT_REASON=$(preflight_exit_code_to_string "$PREFLIGHT_EXIT")
+                PREFLIGHT_ACTION=$(preflight_get_remediation "$PREFLIGHT_EXIT")
+
+                # Extract the detailed message from preflight output
+                PREFLIGHT_MESSAGE=$(echo "$PREFLIGHT_OUTPUT" | grep -oP '(?<=: ).*' | tail -1)
+                [[ -z "$PREFLIGHT_MESSAGE" ]] && PREFLIGHT_MESSAGE="$PREFLIGHT_REASON"
+
+                log_error ""
+                log_error "Strict preflight failed - refusing to enable enforcement"
+                log_error "Reason: $PREFLIGHT_MESSAGE"
+                log_error "Fix: $PREFLIGHT_ACTION"
+                log_error "NFTBan is installed but NOT enforcing."
+                log_error "Fix the issue and run: dpkg-reconfigure nftban-core"
+                log_error ""
+            else
+                log_info "  Strict preflight passed - safe to enable enforcement"
+            fi
+        else
+            log_warn "Preflight library not found - skipping strict check"
+        fi
+
+        # =====================================================================
         # STEP 8: Enable Timers and Services
         # =====================================================================
-        log_info "Enabling systemd timers and services..."
+        # ONLY enable services if preflight passed
+        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
+            log_info "Enabling systemd timers and services..."
 
         # Fresh install - enable services
         if [ -z "$2" ]; then
@@ -718,10 +766,14 @@ case "$1" in
             log_info "  Upgrade - services enabled and restarted"
         fi
 
+        fi  # End of PREFLIGHT_PASSED check for service enablement
+
         # =====================================================================
         # STEP 9: Configure nftables and reload
         # =====================================================================
-        log_info "Configuring nftables service..."
+        # Skip if preflight failed
+        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
+            log_info "Configuring nftables service..."
 
         # Source distro config library to get correct paths
         if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
@@ -955,21 +1007,37 @@ NFTCONF
             log_info "Emergency protection table cleaned up"
         fi
 
+        fi  # End of PREFLIGHT_PASSED check (STEP 9-14)
+
         # =====================================================================
         # Installation Complete
         # =====================================================================
-        log_info ""
-        log_info "========================================"
-        log_info " NFTBan v${NFTBAN_VERSION} Installation Complete!"
-        log_info "========================================"
-        log_info ""
-        log_info "Quick Start:"
-        log_info "  nftban status              # System overview"
-        log_info "  nftban health              # Health check"
-        log_info "  nftban whitelist-system show  # View safety whitelist"
-        log_info ""
-        log_info "Your IP has been auto-whitelisted to prevent lockout."
-        log_info ""
+        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
+            log_info ""
+            log_info "========================================"
+            log_info " NFTBan v${NFTBAN_VERSION} Installation Complete!"
+            log_info "========================================"
+            log_info ""
+            log_info "Quick Start:"
+            log_info "  nftban status              # System overview"
+            log_info "  nftban health              # Health check"
+            log_info "  nftban whitelist-system show  # View safety whitelist"
+            log_info ""
+            log_info "Your IP has been auto-whitelisted to prevent lockout."
+            log_info ""
+        else
+            log_warn ""
+            log_warn "========================================"
+            log_warn " NFTBan v${NFTBAN_VERSION} Files Installed"
+            log_warn "========================================"
+            log_warn ""
+            log_warn "ENFORCEMENT DISABLED due to preflight failure."
+            log_warn ""
+            log_warn "To enable NFTBan after fixing conflicts:"
+            log_warn "  1. Fix the issue reported above"
+            log_warn "  2. Run: dpkg-reconfigure nftban-core"
+            log_warn ""
+        fi
         ;;
 esac
 

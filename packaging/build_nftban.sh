@@ -1379,6 +1379,25 @@ fi
 
 # Inform user about leftover files on complete removal
 if [ \$1 -eq 0 ]; then
+    # Remove nftables tables (CRITICAL)
+    if command -v nft >/dev/null 2>&1; then
+        nft delete table ip nftban 2>/dev/null || true
+        nft delete table ip6 nftban 2>/dev/null || true
+    fi
+
+    # Remove tmpfiles.d configuration
+    rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
+    rm -f /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+
+    # Remove logrotate configuration
+    rm -f /etc/logrotate.d/nftban 2>/dev/null || true
+
+    # Remove polkit rules (policies handled by RPM)
+    rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
+
+    # Note: /etc/nftban is preserved by RPM %config(noreplace)
+    # User can remove manually: rm -rf /etc/nftban /var/lib/nftban /var/log/nftban
+
     echo "nftban: Configuration files in /etc/nftban/ have been preserved."
     echo "nftban: Log files in /var/log/nftban/ have been preserved."
     echo "nftban: User accounts and groups have NOT been removed."
@@ -1578,8 +1597,8 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl
-Recommends: dnsutils, mailutils, whiptail, policykit-1
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl, policykit-1
+Recommends: dnsutils, mailutils, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
@@ -2005,6 +2024,48 @@ if command -v nftban >/dev/null 2>&1; then
     nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
+# STEP 8.5: Strict Preflight Check - Gate Service Enablement
+# This is the AUTHORITATIVE check that gates service enablement.
+# If preflight fails, NFTBan installs but does NOT enforce.
+echo "[NFTBan] Running strict preflight check..."
+
+PREFLIGHT_PASSED=1
+PREFLIGHT_REASON=""
+PREFLIGHT_ACTION=""
+
+if [ -f /usr/lib/nftban/core/nftban_strict_preflight.sh ]; then
+    # Source the preflight library
+    . /usr/lib/nftban/core/nftban_strict_preflight.sh
+
+    # Capture preflight output and exit code
+    PREFLIGHT_EXIT=0
+    PREFLIGHT_OUTPUT=$(strict_preflight 2>&1) || PREFLIGHT_EXIT=$?
+
+    if [ $PREFLIGHT_EXIT -ne 0 ]; then
+        PREFLIGHT_PASSED=0
+        PREFLIGHT_REASON=$(preflight_exit_code_to_string "$PREFLIGHT_EXIT")
+        PREFLIGHT_ACTION=$(preflight_get_remediation "$PREFLIGHT_EXIT")
+
+        # Extract the detailed message from preflight output
+        PREFLIGHT_MESSAGE=$(echo "$PREFLIGHT_OUTPUT" | grep -oP '(?<=: ).*' | tail -1)
+        [ -z "$PREFLIGHT_MESSAGE" ] && PREFLIGHT_MESSAGE="$PREFLIGHT_REASON"
+
+        echo ""
+        echo "[NFTBan ERROR] Strict preflight failed - refusing to enable enforcement"
+        echo "[NFTBan ERROR] Reason: $PREFLIGHT_MESSAGE"
+        echo "[NFTBan ERROR] Fix: $PREFLIGHT_ACTION"
+        echo "[NFTBan ERROR] NFTBan is installed but NOT enforcing."
+        echo "[NFTBan ERROR] Fix the issue and run: dpkg-reconfigure nftban-core"
+        echo ""
+    else
+        echo "[NFTBan]   Strict preflight passed - safe to enable enforcement"
+    fi
+else
+    echo "[NFTBan WARN] Preflight library not found - skipping strict check"
+fi
+
+# Only enable services if preflight passed
+if [ "$PREFLIGHT_PASSED" -eq 1 ]; then
 # STEP 9: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
@@ -2098,6 +2159,23 @@ else
     echo "[NFTBan WARN] Fix xt target issues, then run: systemctl start nftables"
 fi
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
+
+fi  # End of PREFLIGHT_PASSED check
+
+# Handle preflight failure case - show final message
+if [ "$PREFLIGHT_PASSED" -ne 1 ]; then
+    echo ""
+    echo "[NFTBan] ========================================"
+    echo "[NFTBan]  NFTBan Files Installed"
+    echo "[NFTBan] ========================================"
+    echo "[NFTBan]"
+    echo "[NFTBan] ENFORCEMENT DISABLED due to preflight failure."
+    echo "[NFTBan]"
+    echo "[NFTBan] To enable NFTBan after fixing conflicts:"
+    echo "[NFTBan]   1. Fix the issue reported above"
+    echo "[NFTBan]   2. Run: dpkg-reconfigure nftban-core"
+    echo ""
+fi
 
 # =============================================================================
 # STEP 10.5: Auto-enable panel ports (BUG-HIGH-002 fix)

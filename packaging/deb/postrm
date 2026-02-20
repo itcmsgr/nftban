@@ -50,9 +50,34 @@ case "$1" in
         deb-systemd-helper unmask nftban-ui-auth.socket >/dev/null || true
         deb-systemd-helper unmask nftban-ui-auth.service >/dev/null || true
 
+        # Remove nftables tables (CRITICAL - firewall rules persist otherwise)
+        if command -v nft >/dev/null 2>&1; then
+            nft delete table ip nftban 2>/dev/null || true
+            nft delete table ip6 nftban 2>/dev/null || true
+        fi
+
+        # Remove ALL configuration and data directories
+        rm -rf /etc/nftban 2>/dev/null || true
+        rm -rf /var/lib/nftban 2>/dev/null || true
+        rm -rf /var/log/nftban 2>/dev/null || true
+        rm -rf /var/cache/nftban 2>/dev/null || true
+        rm -rf /usr/share/nftban 2>/dev/null || true
+
+        # Remove tmpfiles.d configuration
+        rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
+        rm -f /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+
+        # Remove logrotate configuration
+        rm -f /etc/logrotate.d/nftban 2>/dev/null || true
+
+        # Remove polkit policies and rules
+        rm -f /usr/share/polkit-1/actions/com.nftban.* 2>/dev/null || true
+        rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
+
         # Informational message
-        echo "nftban-ui: Configuration files in /etc/nftban/ and /etc/pam.d/ have been removed."
-        echo "nftban-ui: User accounts and groups have NOT been removed (manual cleanup required if needed)."
+        echo "nftban: Complete purge finished."
+        echo "nftban: All configuration, data, logs, cache, and firewall rules have been removed."
+        echo "nftban: User accounts and groups have NOT been removed (manual cleanup required if needed)."
         ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
