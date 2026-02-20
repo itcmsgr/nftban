@@ -8,7 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/nftables v0.2.0
 	github.com/gorilla/mux v1.8.1
-	github.com/msteinert/pam/v2 v2.0.0
+	github.com/msteinert/pam/v2 v2.1.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.19.0
