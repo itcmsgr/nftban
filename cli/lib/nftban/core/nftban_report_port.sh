@@ -288,14 +288,14 @@ nftban_port_gather_nft_rules() {
     RULESET_RAW="$(nft list ruleset 2>/dev/null || true)"
     [[ -z "$RULESET_RAW" ]] && return
 
-    # First, gather set-based rules (tcp dport @tcp_ports, etc.)
+    # First, gather set-based rules (tcp dport @tcp_ports_in, etc.)
     local set_rules=()
     local line cur_chain=""
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([[:alnum:]_-]+) ]]; then
             cur_chain="${BASH_REMATCH[1]}"; continue
         fi
-        # Detect set-based rules: tcp dport @tcp_ports accept
+        # Detect set-based rules: tcp dport @tcp_ports_in accept
         # Note: May have 'counter' between set and action
         if [[ "$line" =~ (tcp|udp)[[:space:]]+dport[[:space:]]+@([[:alnum:]_-]+)[[:space:]].*(accept|drop|reject) ]]; then
             local proto="${BASH_REMATCH[1]}" set_name="${BASH_REMATCH[2]}" action="${BASH_REMATCH[3]}"

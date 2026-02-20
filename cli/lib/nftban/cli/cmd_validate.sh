@@ -119,7 +119,7 @@ DESCRIPTION:
 
   - Required tables (ip nftban, ip6 nftban)
   - Forbidden tables (inet filter, ip filter - these bypass NFTBan!)
-  - Required sets (whitelist_ipv4, blacklist_ipv4, tcp_ports, etc.)
+  - Required sets (whitelist_ipv4, blacklist_ipv4, tcp_ports_in, etc.)
   - Correct chain policies (input=drop, output=accept)
   - Proper priority ordering
 

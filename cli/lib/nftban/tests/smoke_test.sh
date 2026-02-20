@@ -1205,11 +1205,11 @@ run_whitelist_safety_tests() {
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     # shellcheck disable=SC2086
-    if nft list set ${table_v4} tcp_ports 2>/dev/null | grep -qw "$ssh_port"; then
+    if nft list set ${table_v4} tcp_ports_in 2>/dev/null | grep -qw "$ssh_port"; then
         log_pass "SSH port $ssh_port is allowed in firewall"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_warn "SSH port $ssh_port not explicitly in tcp_ports (may be open by default)"
+        log_warn "SSH port $ssh_port not explicitly in tcp_ports_in (may be open by default)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 

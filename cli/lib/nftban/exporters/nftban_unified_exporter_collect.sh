@@ -679,20 +679,84 @@ collect_all_metrics() {
 
         # --- Watchdog Metrics (component: watchdog) ---
         if should_collect_component "watchdog"; then
+            # Pressure scores from watchdog.status file
             if [[ -f "${NFTBAN_RUN_DIR}/watchdog.status" ]]; then
                 if head -1 "${NFTBAN_RUN_DIR}/watchdog.status" | grep -q "^{"; then
-                    local cpu_score mem_score io_score
+                    local cpu_score mem_score io_score net_score watchdog_mode
                     cpu_score=$(jq -r '.cpu_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
                     mem_score=$(jq -r '.mem_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
                     io_score=$(jq -r '.io_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
+                    net_score=$(jq -r '.net_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
+                    watchdog_mode=$(jq -r '.mode // "NORMAL"' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "NORMAL")
 
                     metrics+="nftban_watchdog_cpu_score $cpu_score $timestamp\n"
                     metrics+="nftban_watchdog_mem_score $mem_score $timestamp\n"
                     metrics+="nftban_watchdog_io_score $io_score $timestamp\n"
+                    metrics+="nftban_watchdog_net_score $net_score $timestamp\n"
+                    # Mode as numeric: 0=NORMAL, 1=DEGRADED, 2=SURVIVAL
+                    local mode_num=0
+                    case "$watchdog_mode" in
+                        DEGRADED) mode_num=1 ;;
+                        SURVIVAL) mode_num=2 ;;
+                    esac
+                    metrics+="nftban_watchdog_mode $mode_num $timestamp\n"
                 fi
                 metrics+="nftban_watchdog_up 1 $timestamp\n"
             else
                 metrics+="nftban_watchdog_up 0 $timestamp\n"
+            fi
+
+            # Daemon runtime stats via IPC (heap, gc, ipc, throughput)
+            # Only collect if daemon is running (socket exists)
+            if [[ -S "${NFTBAN_RUN_DIR}/nftband.sock" ]]; then
+                local daemon_stats_json
+                daemon_stats_json=$(timeout 5 nftban watchdog stats --json 2>/dev/null) || daemon_stats_json=""
+
+                if [[ -n "$daemon_stats_json" ]] && echo "$daemon_stats_json" | jq -e '.daemon' &>/dev/null; then
+                    # Extract all values in single jq call for efficiency
+                    local stats_values
+                    stats_values=$(echo "$daemon_stats_json" | jq -r '[
+                        .daemon.uptime_seconds // 0,
+                        .runtime.memory_heap_mb // 0,
+                        .runtime.memory_sys_mb // 0,
+                        .runtime.goroutines // 0,
+                        .runtime.gc_cycles // 0,
+                        .runtime.gc_pause_ms // 0,
+                        .throughput.bans_total // 0,
+                        .throughput.unbans_total // 0,
+                        .throughput.events_total // 0,
+                        .throughput.bans_per_min // 0,
+                        .ipc.requests_total // 0,
+                        .ipc.avg_latency_ms // 0,
+                        .ipc.errors_total // 0
+                    ] | @tsv' 2>/dev/null) || stats_values=""
+
+                    if [[ -n "$stats_values" ]]; then
+                        local d_uptime d_heap d_sys d_goroutines d_gc_cycles d_gc_pause
+                        local d_bans d_unbans d_events d_bans_min d_ipc_req d_ipc_lat d_ipc_err
+                        IFS=$'\t' read -r d_uptime d_heap d_sys d_goroutines d_gc_cycles d_gc_pause \
+                            d_bans d_unbans d_events d_bans_min d_ipc_req d_ipc_lat d_ipc_err <<< "$stats_values"
+
+                        # Daemon runtime metrics
+                        metrics+="nftban_daemon_uptime_seconds $d_uptime $timestamp\n"
+                        metrics+="nftban_daemon_memory_heap_mb $d_heap $timestamp\n"
+                        metrics+="nftban_daemon_memory_sys_mb $d_sys $timestamp\n"
+                        metrics+="nftban_daemon_goroutines $d_goroutines $timestamp\n"
+                        metrics+="nftban_daemon_gc_cycles_total $d_gc_cycles $timestamp\n"
+                        metrics+="nftban_daemon_gc_pause_ms $d_gc_pause $timestamp\n"
+
+                        # Throughput metrics
+                        metrics+="nftban_daemon_bans_total $d_bans $timestamp\n"
+                        metrics+="nftban_daemon_unbans_total $d_unbans $timestamp\n"
+                        metrics+="nftban_daemon_events_total $d_events $timestamp\n"
+                        metrics+="nftban_daemon_bans_per_minute $d_bans_min $timestamp\n"
+
+                        # IPC metrics
+                        metrics+="nftban_daemon_ipc_requests_total $d_ipc_req $timestamp\n"
+                        metrics+="nftban_daemon_ipc_latency_avg_ms $d_ipc_lat $timestamp\n"
+                        metrics+="nftban_daemon_ipc_errors_total $d_ipc_err $timestamp\n"
+                    fi
+                fi
             fi
         fi
 

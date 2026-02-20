@@ -188,24 +188,24 @@ EOF
             log "INFO" "Atomically updating firewall whitelist for SSH port..."
             if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
                 # Firewall is active - do atomic whitelist update
-                # This only updates the tcp_ports set, not the entire firewall
-                if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports >/dev/null 2>&1; then
+                # This only updates the tcp_ports_in set, not the entire firewall
+                if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in >/dev/null 2>&1; then
                     # FIRST: Add the NEW port (safety - ensure SSH access before removing old)
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports "$SSH_PORT"; then
+                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT"; then
                         log "INFO" "SSH port $SSH_PORT added to firewall (via daemon)"
                         # Also add to IPv6 table
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports "$SSH_PORT" 2>/dev/null || true
+                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
 
                         # THEN: Remove the OLD port if it was auto-added and is different
                         if [[ -n "$OLD_SSH_PORT" ]]; then
                             log "INFO" "Removing old SSH port $OLD_SSH_PORT from firewall..."
-                            if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports "$OLD_SSH_PORT"; then
+                            if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$OLD_SSH_PORT"; then
                                 log "INFO" "Old SSH port $OLD_SSH_PORT removed from IPv4 firewall"
                             else
                                 log "WARN" "Failed to remove old port $OLD_SSH_PORT from IPv4 (may not exist)"
                             fi
                             # Also remove from IPv6
-                            nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports "$OLD_SSH_PORT" 2>/dev/null || true
+                            nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$OLD_SSH_PORT" 2>/dev/null || true
                         fi
 
                         log "INFO" "ALERT: SSH port changed and firewall updated (no lockout risk)"

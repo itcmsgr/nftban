@@ -126,7 +126,7 @@ nftban_portscan_load_config() {
     fi
 
     # Set defaults
-    : "${PORTSCAN_ENABLED:=true}"
+    : "${PORTSCAN_ENABLED:=false}"
     : "${PORTSCAN_MODE:=auto}"
     : "${PORTSCAN_AUTO_CHECK_SERVICE:=true}"
     : "${PORTSCAN_AUTO_CHECK_BINARY:=true}"
