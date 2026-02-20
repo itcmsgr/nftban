@@ -389,8 +389,9 @@ fi
 # These interfere with NFTBan and cause schema corruption
 log_info "Checking for rogue nftables tables..."
 
-# Allowed tables (NFTBan + system default)
-ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$|^table inet (filter|nftban)$"
+# Allowed tables (v1.18.0: ONLY ip/ip6 nftban - NO inet tables!)
+# CVE-2025-NFTBAN-001: inet filter at priority 0 bypasses NFTBan protection
+ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$"
 
 # Get all tables
 ALL_TABLES=$(nft list tables 2>/dev/null || true)
