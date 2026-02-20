@@ -184,6 +184,7 @@ Requires:       pam
 Requires:       bc
 Requires:       gawk
 Requires:       socat
+Requires:       polkit
 # ACL required on EL10/Fedora (not in default minimal install)
 %if 0%{?fedora} || 0%{?el10}
 Requires:       acl
@@ -750,8 +751,10 @@ echo "[NFTBan] Checking for conflicting firewalls..."
 
 CONFLICTS=""
 
-# Check CSF (ConfigServer Firewall)
-if systemctl is-active csf.service &>/dev/null 2>&1 || [[ -f /etc/csf/csf.conf ]]; then
+# Check CSF/LFD (ConfigServer Firewall + Login Failure Daemon)
+if systemctl is-active csf.service &>/dev/null 2>&1 || \
+   systemctl is-active lfd.service &>/dev/null 2>&1 || \
+   [[ -f /etc/csf/csf.conf ]]; then
     CONFLICTS="\${CONFLICTS}CSF "
 fi
 
@@ -2027,41 +2030,52 @@ fi
 # STEP 8.5: Strict Preflight Check - Gate Service Enablement
 # This is the AUTHORITATIVE check that gates service enablement.
 # If preflight fails, NFTBan installs but does NOT enforce.
+# Uses consolidated command: nftban firewall validate --strict
 echo "[NFTBan] Running strict preflight check..."
 
 PREFLIGHT_PASSED=1
-PREFLIGHT_REASON=""
-PREFLIGHT_ACTION=""
+PREFLIGHT_EXIT=0
 
-if [ -f /usr/lib/nftban/core/nftban_strict_preflight.sh ]; then
-    # Source the preflight library
-    . /usr/lib/nftban/core/nftban_strict_preflight.sh
-
-    # Capture preflight output and exit code
-    PREFLIGHT_EXIT=0
-    PREFLIGHT_OUTPUT=$(strict_preflight 2>&1) || PREFLIGHT_EXIT=$?
+if command -v nftban >/dev/null 2>&1; then
+    # Use consolidated command for strict validation
+    # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
+    PREFLIGHT_OUTPUT=$(nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
 
     if [ $PREFLIGHT_EXIT -ne 0 ]; then
         PREFLIGHT_PASSED=0
-        PREFLIGHT_REASON=$(preflight_exit_code_to_string "$PREFLIGHT_EXIT")
-        PREFLIGHT_ACTION=$(preflight_get_remediation "$PREFLIGHT_EXIT")
 
-        # Extract the detailed message from preflight output
-        PREFLIGHT_MESSAGE=$(echo "$PREFLIGHT_OUTPUT" | grep -oP '(?<=: ).*' | tail -1)
-        [ -z "$PREFLIGHT_MESSAGE" ] && PREFLIGHT_MESSAGE="$PREFLIGHT_REASON"
+        # Map exit code to reason and action
+        case $PREFLIGHT_EXIT in
+            10)
+                PREFLIGHT_REASON="policykit-1 missing"
+                PREFLIGHT_ACTION="Install policykit-1 package"
+                ;;
+            20)
+                PREFLIGHT_REASON="Firewall conflict (fail2ban/ufw/firewalld/csf active)"
+                PREFLIGHT_ACTION="systemctl disable --now <conflicting-service>"
+                ;;
+            30)
+                PREFLIGHT_REASON="NFTables collision (non-NFTBan input hooks)"
+                PREFLIGHT_ACTION="nft flush ruleset && nftban firewall rebuild"
+                ;;
+            *)
+                PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)"
+                PREFLIGHT_ACTION="nftban firewall validate --strict"
+                ;;
+        esac
 
         echo ""
         echo "[NFTBan ERROR] Strict preflight failed - refusing to enable enforcement"
-        echo "[NFTBan ERROR] Reason: $PREFLIGHT_MESSAGE"
+        echo "[NFTBan ERROR] Reason: $PREFLIGHT_REASON"
         echo "[NFTBan ERROR] Fix: $PREFLIGHT_ACTION"
         echo "[NFTBan ERROR] NFTBan is installed but NOT enforcing."
-        echo "[NFTBan ERROR] Fix the issue and run: dpkg-reconfigure nftban-core"
+        echo "[NFTBan ERROR] Fix the issue and re-run installation"
         echo ""
     else
         echo "[NFTBan]   Strict preflight passed - safe to enable enforcement"
     fi
 else
-    echo "[NFTBan WARN] Preflight library not found - skipping strict check"
+    echo "[NFTBan WARN] nftban command not found - skipping strict preflight"
 fi
 
 # Only enable services if preflight passed
