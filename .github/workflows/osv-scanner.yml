@@ -51,10 +51,9 @@ jobs:
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
         with:
           scan-args: |-
-            --recursive
+            --lockfile=go.mod
             --format=sarif
             --output=osv-results.sarif
-            ./
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3.32.3
