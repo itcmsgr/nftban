@@ -27,9 +27,8 @@ on:
   schedule:
     - cron: '0 4 * * 0'  # Weekly: Sunday 4:00 AM UTC
 
-permissions:
-  security-events: write
-  contents: read
+# Minimal top-level permissions (OpenSSF Scorecard compliance)
+permissions: read-all
 
 concurrency:
   group: semgrep-${{ github.ref }}
@@ -39,6 +38,9 @@ jobs:
   semgrep:
     name: Semgrep Scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Required to upload SARIF results
+      contents: read          # Required to checkout code
     container:
       image: semgrep/semgrep
 

@@ -83,7 +83,7 @@ jobs:
       actions: read
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
-      go-version: "1.23"
+      go-version: "1.24"
       # Config file specifies build parameters
       config-file: .github/slsa/nftban-core.yml
       evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
@@ -102,7 +102,7 @@ jobs:
       actions: read
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
-      go-version: "1.23"
+      go-version: "1.24"
       config-file: .github/slsa/nftban-ui.yml
       evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
       # Upload provenance directly to release (fixes workflow_run trigger skip)
