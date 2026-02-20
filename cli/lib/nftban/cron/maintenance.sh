@@ -528,7 +528,7 @@ EOF
     # ==========================================================================
     # 7. Portscan Stealth Aggregation (Every 15 min)
     # ==========================================================================
-    log "INFO" "[7/8] Running portscan stealth aggregation..."
+    log "INFO" "[7/9] Running portscan stealth aggregation..."
 
     # Load portscan module for aggregation
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
@@ -549,9 +549,85 @@ EOF
     fi
 
     # ==========================================================================
-    # 8. Complete
+    # 8. Firewall Conflict Drift Detection (Every 15 min)
     # ==========================================================================
-    log "INFO" "[8/8] NFTBan Maintenance Complete"
+    log "INFO" "[8/9] Checking for firewall conflicts (drift guard)..."
+
+    # Load conflict detection library
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" 2>/dev/null || true
+
+        # Reset conflict state
+        NFTBAN_FIREWALL_CONFLICTS=()
+        NFTBAN_FIREWALL_FIXES=()
+        NFTBAN_FIREWALL_SEVERITY=${CONFLICT_NONE:-0}
+
+        # Run all conflict detectors
+        if declare -f nftban_detect_all_conflicts >/dev/null 2>&1; then
+            nftban_detect_all_conflicts 2>/dev/null || true
+
+            # Check severity (CONFLICT_CRITICAL=3)
+            if [[ ${NFTBAN_FIREWALL_SEVERITY:-0} -ge 3 ]]; then
+                log "CRITICAL" "Firewall conflicts detected!"
+                for conflict in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
+                    log "WARN" "  $conflict"
+                done
+
+                # Read policy from config (default: alert)
+                local drift_policy="${NFTBAN_DRIFT_POLICY:-alert}"
+
+                case "$drift_policy" in
+                    auto)
+                        log "INFO" "DRIFT_POLICY=auto - Auto-disabling conflicts..."
+                        # Use existing removal functions
+                        for conflict in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
+                            case "$conflict" in
+                                *CSF*|*LFD*)
+                                    declare -f nftban_remove_csf >/dev/null 2>&1 && nftban_remove_csf 2>/dev/null || true
+                                    ;;
+                                *UFW*)
+                                    declare -f nftban_remove_ufw >/dev/null 2>&1 && nftban_remove_ufw 2>/dev/null || true
+                                    ;;
+                                *firewalld*|*FIREWALLD*)
+                                    declare -f nftban_remove_firewalld >/dev/null 2>&1 && nftban_remove_firewalld 2>/dev/null || true
+                                    ;;
+                                *fail2ban*|*FAIL2BAN*)
+                                    declare -f nftban_remove_fail2ban >/dev/null 2>&1 && nftban_remove_fail2ban 2>/dev/null || true
+                                    ;;
+                            esac
+                        done
+                        log "INFO" "Conflicts auto-disabled"
+                        ;;
+                    alert)
+                        log "WARN" "DRIFT_POLICY=alert - Admin action required!"
+                        log "WARN" "Run: nftban health conflicts --fix"
+                        # Send alert if mail configured
+                        if declare -f nftban_mail_send >/dev/null 2>&1; then
+                            nftban_mail_send "NFTBan DRIFT ALERT: Firewall conflicts detected on $(hostname). Run: nftban health conflicts --fix" 2>/dev/null || true
+                        fi
+                        ;;
+                    quarantine)
+                        log "CRITICAL" "DRIFT_POLICY=quarantine - Stopping NFTBan to prevent firewall fight!"
+                        systemctl stop nftban 2>/dev/null || true
+                        ;;
+                    *)
+                        log "INFO" "DRIFT_POLICY=$drift_policy - No action taken"
+                        ;;
+                esac
+            else
+                log "INFO" "Firewall conflict check: OK (no conflicts)"
+            fi
+        else
+            log "WARN" "Conflict detection function not available"
+        fi
+    else
+        log "INFO" "Conflict detection: Skipped (library not found)"
+    fi
+
+    # ==========================================================================
+    # 9. Complete
+    # ==========================================================================
+    log "INFO" "[9/9] NFTBan Maintenance Complete"
 
     return 0
 }

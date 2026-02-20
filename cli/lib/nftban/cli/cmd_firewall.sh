@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.3.1 - Firewall Management Command
+# NFTBan v1.4.0 - Firewall Management Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Firewall structure validation, IP/port checking, logs, and statistics
+# Purpose: Firewall validation, conflicts, stats, logs, and enterprise rollback
 #
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.3.1"
+# meta:version="1.4.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# meta:description="Comprehensive firewall management: validate, check, stats, logs, reload"
+# meta:description="Firewall management: validate --strict, conflicts, restore, rebuild, reset"
 # meta:inventory.files=""
-# meta:inventory.binaries="nft,journalctl"
+# meta:inventory.binaries="nft,journalctl,systemctl"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/conf.d/fwlog.conf"
-# meta:inventory.systemd_units=""
+# meta:inventory.systemd_units="fail2ban.service,firewalld.service,ufw.service,lfd.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2025-11-13"
-# meta:updated_date="2026-01-23"
+# meta:updated_date="2026-02-20"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -149,6 +149,22 @@ nftban_cmd_firewall() {
             shift
             firewall_reset "$@"
             ;;
+        conflicts)
+            # Delegate to health conflicts (single implementation)
+            shift
+            if [[ -f "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh"
+                nftban_health_cmd_conflicts "$@"
+            else
+                echo "Error: Health analysis module not found" >&2
+                return 1
+            fi
+            ;;
+        restore)
+            shift
+            firewall_restore "$@"
+            ;;
         *)
             echo "Error: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
@@ -161,17 +177,35 @@ nftban_cmd_firewall() {
 # SUBCOMMAND: VALIDATE
 # =============================================================================
 
+# Exit codes for strict mode (Single Firewall Authority)
+declare -gr VALIDATE_OK=0
+declare -gr VALIDATE_STRUCTURE_ERROR=1
+declare -gr VALIDATE_POLICYKIT_MISSING=10
+declare -gr VALIDATE_FIREWALL_CONFLICT=20
+declare -gr VALIDATE_NFT_COLLISION=30
+declare -gr VALIDATE_ENV_ERROR=40
+
 firewall_validate() {
     # Validate nftables structure against NFTBan specification
-    # Args: [--json]
+    # Args: [--strict] [--json]
+    #
+    # --strict: Enforce Single Firewall Authority
+    #   - policykit-1 MANDATORY on Debian/Ubuntu
+    #   - No competing firewalls (fail2ban, ufw, firewalld, csf)
+    #   - No non-NFTBan active input hooks
 
     local output_json=false
+    local strict_mode=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --json)
                 output_json=true
+                shift
+                ;;
+            --strict|-s)
+                strict_mode=true
                 shift
                 ;;
             -h|--help)
@@ -192,14 +226,224 @@ firewall_validate() {
         source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh"
     else
         echo "Error: Cannot find nftban_validator.sh" >&2
-        return 1
+        return $VALIDATE_ENV_ERROR
     fi
 
-    # Run validation
+    local validation_result=0
+
+    # Run structure validation
     if [[ "$output_json" == "true" ]]; then
-        validate_structure "true"
+        validate_structure "true" || validation_result=$?
     else
-        validate_structure "false"
+        validate_structure "false" || validation_result=$?
+    fi
+
+    # If strict mode, run additional checks
+    if [[ "$strict_mode" == "true" ]]; then
+        local strict_result
+        strict_result=$(_firewall_validate_strict "$output_json")
+        local strict_exit=$?
+
+        # Return the more severe exit code
+        if [[ $strict_exit -ne 0 ]]; then
+            return $strict_exit
+        fi
+    fi
+
+    return $validation_result
+}
+
+# =============================================================================
+# STRICT MODE VALIDATION (Single Firewall Authority)
+# =============================================================================
+
+_firewall_validate_strict() {
+    # Enforce Single Firewall Authority
+    # Returns: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
+    local json_mode="${1:-false}"
+    local exit_code=0
+
+    [[ "$json_mode" == "false" ]] && echo ""
+    [[ "$json_mode" == "false" ]] && echo "STRICT MODE: Single Firewall Authority Check"
+    [[ "$json_mode" == "false" ]] && echo "=============================================="
+
+    # Check 1: policykit-1 on Debian/Ubuntu
+    local policykit_result
+    policykit_result=$(_check_policykit "$json_mode")
+    local policykit_exit=$?
+    if [[ $policykit_exit -ne 0 ]]; then
+        return $VALIDATE_POLICYKIT_MISSING
+    fi
+
+    # Check 2: Firewall authority conflicts
+    local conflict_result
+    conflict_result=$(_check_firewall_conflicts "$json_mode")
+    local conflict_exit=$?
+    if [[ $conflict_exit -ne 0 ]]; then
+        return $VALIDATE_FIREWALL_CONFLICT
+    fi
+
+    # Check 3: NFTables hook collisions (non-NFTBan active input hooks)
+    local collision_result
+    collision_result=$(_check_nft_collisions "$json_mode")
+    local collision_exit=$?
+    if [[ $collision_exit -ne 0 ]]; then
+        return $VALIDATE_NFT_COLLISION
+    fi
+
+    [[ "$json_mode" == "false" ]] && echo ""
+    [[ "$json_mode" == "false" ]] && echo "STRICT PREFLIGHT: PASSED"
+    [[ "$json_mode" == "false" ]] && echo "NFTBan is sole firewall authority - enforce mode OK"
+
+    return 0
+}
+
+_check_policykit() {
+    # Check policykit-1 on Debian/Ubuntu (MANDATORY)
+    local json_mode="${1:-false}"
+
+    # Detect distro
+    local distro_id=""
+    local distro_like=""
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        distro_id="${ID:-}"
+        distro_like="${ID_LIKE:-}"
+    fi
+
+    # Only check on Debian/Ubuntu family
+    local is_debian_ubuntu=false
+    case "$distro_id" in
+        debian|ubuntu) is_debian_ubuntu=true ;;
+    esac
+    [[ "$distro_like" == *debian* ]] && is_debian_ubuntu=true
+    [[ "$distro_like" == *ubuntu* ]] && is_debian_ubuntu=true
+
+    if [[ "$is_debian_ubuntu" == "false" ]]; then
+        [[ "$json_mode" == "false" ]] && echo "[OK] policykit-1: Not required (non-Debian/Ubuntu)"
+        return 0
+    fi
+
+    # Check policykit-1 package
+    if command -v dpkg-query &>/dev/null; then
+        if dpkg-query -W -f='${Status}\n' policykit-1 2>/dev/null | grep -q "install ok installed"; then
+            [[ "$json_mode" == "false" ]] && echo "[OK] policykit-1: Installed"
+            return 0
+        else
+            [[ "$json_mode" == "false" ]] && echo "[FAIL] policykit-1: MISSING (required on Debian/Ubuntu)"
+            [[ "$json_mode" == "false" ]] && echo "       Fix: apt-get install -y policykit-1"
+            return 1
+        fi
+    else
+        [[ "$json_mode" == "false" ]] && echo "[WARN] policykit-1: Cannot verify (dpkg-query missing)"
+        return 1
+    fi
+}
+
+_check_firewall_conflicts() {
+    # Check for competing firewall authorities
+    local json_mode="${1:-false}"
+
+    # Load firewall conflicts library
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh"
+    else
+        [[ "$json_mode" == "false" ]] && echo "[WARN] Cannot load conflict detection library"
+        return 0  # Don't fail if library missing
+    fi
+
+    # Run all conflict detection
+    nftban_detect_all_conflicts
+    local severity=$?
+
+    # CRITICAL (3) = hard fail, WARNING (2) = fail in strict mode
+    if [[ $severity -ge $CONFLICT_WARNING ]]; then
+        [[ "$json_mode" == "false" ]] && echo "[FAIL] Firewall authority conflict detected"
+        for conflict in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
+            [[ "$json_mode" == "false" ]] && echo "       $conflict"
+        done
+        [[ "$json_mode" == "false" ]] && echo ""
+        [[ "$json_mode" == "false" ]] && echo "       Remediation:"
+        for fix in "${NFTBAN_FIREWALL_FIXES[@]}"; do
+            [[ "$json_mode" == "false" ]] && echo "       $fix"
+        done
+        return 1
+    elif [[ $severity -eq $CONFLICT_INFO ]]; then
+        [[ "$json_mode" == "false" ]] && echo "[OK] Firewall conflicts: Minor (non-blocking)"
+        return 0
+    else
+        [[ "$json_mode" == "false" ]] && echo "[OK] Firewall conflicts: None detected"
+        return 0
+    fi
+}
+
+_check_nft_collisions() {
+    # Check for non-NFTBan tables with active input hooks
+    local json_mode="${1:-false}"
+
+    # Get current ruleset
+    local ruleset
+    ruleset=$(nft -a list ruleset 2>/dev/null) || {
+        [[ "$json_mode" == "false" ]] && echo "[WARN] Cannot read nftables ruleset"
+        return 0
+    }
+
+    # Parse for non-nftban active input hooks
+    # Active = has policy != accept OR has actual rules
+    local collisions
+    collisions=$(echo "$ruleset" | awk '
+        BEGIN { family=""; table=""; chain=""; in_chain=0; has_hook=0; policy=""; rule_count=0; }
+        /^table / { family=$2; table=$3; gsub(/{.*/, "", table); next }
+        /^[[:space:]]*chain / {
+            chain=$2; gsub(/{.*/, "", chain);
+            in_chain=1; has_hook=0; policy=""; rule_count=0;
+            next
+        }
+        in_chain && /hook[[:space:]]+input/ {
+            has_hook=1
+            if (match($0, /policy[[:space:]]+([a-zA-Z]+)/, m)) policy=m[1]
+            next
+        }
+        in_chain && /^[[:space:]]+/ {
+            line=$0
+            if (index(line, "hook ") > 0) next
+            if (index(line, "type ") > 0) next
+            if (match(line, /^[[:space:]]*policy[[:space:]]/)) next
+            if (match(line, /(saddr|daddr|sport|dport|tcp|udp|icmp|ct |counter|drop|reject|accept|log|meta|iif|oif)/)) {
+                rule_count++
+            }
+            next
+        }
+        /^[[:space:]]*}[[:space:]]*$/ {
+            if (in_chain && has_hook) {
+                is_nftban = (table == "nftban") ? 1 : 0
+                if (!is_nftban) {
+                    is_active = 0
+                    if (policy != "" && policy != "accept") is_active = 1
+                    if (rule_count > 0) is_active = 1
+                    if (is_active) {
+                        printf "%s %s|%s|policy=%s|rules=%d\n", family, table, chain, policy, rule_count
+                    }
+                }
+            }
+            in_chain=0
+            next
+        }
+    ')
+
+    if [[ -n "$collisions" ]]; then
+        [[ "$json_mode" == "false" ]] && echo "[FAIL] Non-NFTBan active input hooks detected:"
+        echo "$collisions" | while IFS= read -r line; do
+            [[ "$json_mode" == "false" ]] && echo "       $line"
+        done
+        [[ "$json_mode" == "false" ]] && echo ""
+        [[ "$json_mode" == "false" ]] && echo "       Fix: nft flush ruleset && nftban firewall rebuild"
+        return 1
+    else
+        [[ "$json_mode" == "false" ]] && echo "[OK] NFTables hooks: No conflicting input hooks"
+        return 0
     fi
 }
 
@@ -530,6 +774,203 @@ firewall_reset() {
 }
 
 # =============================================================================
+# SUBCOMMAND: RESTORE (Enterprise Rollback)
+# =============================================================================
+
+firewall_restore() {
+    # Enterprise rollback - restore previous firewall state
+    # Usage: nftban firewall restore <action>
+    # Actions:
+    #   list      - Show available backups
+    #   backup    - Create manual backup
+    #   <file>    - Restore from specific backup file
+    #   fail2ban  - Re-enable fail2ban
+    #   csf       - Re-enable CSF
+    #   ufw       - Re-enable UFW
+    #   firewalld - Re-enable firewalld
+
+    local action="${1:-list}"
+    shift 2>/dev/null || true
+
+    case "$action" in
+        -h|--help|help)
+            show_restore_help
+            return 0
+            ;;
+        list)
+            _restore_list_backups
+            ;;
+        backup)
+            _restore_create_backup "$@"
+            ;;
+        fail2ban|csf|ufw|firewalld)
+            _restore_previous_firewall "$action"
+            ;;
+        *)
+            # Assume it's a backup file path
+            if [[ -f "$action" ]]; then
+                _restore_from_file "$action"
+            elif [[ -f "/var/lib/nftban/backup/$action" ]]; then
+                _restore_from_file "/var/lib/nftban/backup/$action"
+            else
+                echo "Error: Unknown action or backup file not found: $action" >&2
+                show_restore_help
+                return 1
+            fi
+            ;;
+    esac
+}
+
+_restore_list_backups() {
+    local backup_dir="/var/lib/nftban/backup"
+
+    echo "Available NFTBan Backups"
+    echo "========================"
+    echo ""
+
+    if [[ ! -d "$backup_dir" ]]; then
+        echo "No backup directory found: $backup_dir"
+        return 0
+    fi
+
+    local count=0
+    for f in "$backup_dir"/ruleset_*.nft; do
+        [[ -f "$f" ]] || continue
+        local fname
+        fname=$(basename "$f")
+        local fsize
+        fsize=$(stat -c%s "$f" 2>/dev/null || echo "?")
+        local fdate
+        fdate=$(stat -c%y "$f" 2>/dev/null | cut -d. -f1 || echo "?")
+        printf "  %-40s %8s bytes  %s\n" "$fname" "$fsize" "$fdate"
+        count=$((count + 1))
+    done
+
+    if [[ $count -eq 0 ]]; then
+        echo "  No backups found"
+    fi
+
+    echo ""
+    echo "To restore: nftban firewall restore <filename>"
+}
+
+_restore_create_backup() {
+    local backup_dir="/var/lib/nftban/backup"
+    local label="${1:-manual}"
+
+    mkdir -p "$backup_dir"
+
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_file="$backup_dir/ruleset_${label}_$timestamp.nft"
+
+    echo "Creating backup..."
+    if nft list ruleset > "$backup_file" 2>/dev/null; then
+        echo "Backup saved: $backup_file"
+        return 0
+    else
+        echo "Error: Failed to create backup" >&2
+        return 1
+    fi
+}
+
+_restore_from_file() {
+    local backup_file="$1"
+
+    echo "Restoring from: $backup_file"
+    echo ""
+
+    # Safety: stop NFTBan services first
+    echo "[1/4] Stopping NFTBan services..."
+    systemctl stop nftban-maintenance.timer 2>/dev/null || true
+    systemctl stop nftband 2>/dev/null || true
+
+    # Flush current ruleset
+    echo "[2/4] Flushing current ruleset..."
+    nft flush ruleset 2>/dev/null || true
+
+    # Restore backup
+    echo "[3/4] Restoring backup..."
+    if ! nft -f "$backup_file" 2>&1; then
+        echo "Error: Failed to restore backup" >&2
+        echo "Attempting to reload NFTBan schema..." >&2
+        nft -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf" 2>/dev/null || true
+        return 1
+    fi
+
+    # Restart services
+    echo "[4/4] Restarting NFTBan services..."
+    systemctl start nftban-maintenance.timer 2>/dev/null || true
+    systemctl start nftband 2>/dev/null || true
+
+    echo ""
+    echo "Restore complete!"
+}
+
+_restore_previous_firewall() {
+    local firewall="$1"
+
+    echo "Restoring previous firewall: $firewall"
+    echo "======================================="
+    echo ""
+    echo "WARNING: This will disable NFTBan and re-enable $firewall"
+    echo ""
+
+    # Step 1: Disable NFTBan
+    echo "[1/4] Disabling NFTBan services..."
+    systemctl stop nftban-maintenance.timer 2>/dev/null || true
+    systemctl stop nftband 2>/dev/null || true
+    systemctl disable nftban-maintenance.timer 2>/dev/null || true
+    systemctl disable nftband 2>/dev/null || true
+
+    # Step 2: Flush NFTBan tables
+    echo "[2/4] Flushing NFTBan nftables..."
+    nft delete table ip nftban 2>/dev/null || true
+    nft delete table ip6 nftban 2>/dev/null || true
+
+    # Step 3: Re-enable previous firewall
+    echo "[3/4] Re-enabling $firewall..."
+    case "$firewall" in
+        fail2ban)
+            systemctl enable fail2ban 2>/dev/null || true
+            systemctl start fail2ban 2>/dev/null || true
+            ;;
+        csf)
+            if command -v csf &>/dev/null; then
+                csf -e 2>/dev/null || true
+            fi
+            systemctl enable lfd 2>/dev/null || true
+            systemctl start lfd 2>/dev/null || true
+            ;;
+        ufw)
+            systemctl enable ufw 2>/dev/null || true
+            systemctl start ufw 2>/dev/null || true
+            ufw enable 2>/dev/null || true
+            ;;
+        firewalld)
+            systemctl enable firewalld 2>/dev/null || true
+            systemctl start firewalld 2>/dev/null || true
+            ;;
+    esac
+
+    # Step 4: Verify
+    echo "[4/4] Verifying..."
+    if systemctl is-active --quiet "$firewall" 2>/dev/null; then
+        echo ""
+        echo "$firewall is now ACTIVE"
+        echo "NFTBan has been disabled"
+        echo ""
+        echo "To return to NFTBan:"
+        echo "  systemctl disable --now $firewall"
+        echo "  nftban enable all"
+    else
+        echo ""
+        echo "WARNING: $firewall may not have started correctly"
+        echo "Check: systemctl status $firewall"
+    fi
+}
+
+# =============================================================================
 # HELP FUNCTIONS
 # =============================================================================
 
@@ -537,36 +978,95 @@ show_firewall_help() {
     cat <<'EOF'
 Usage: nftban firewall <subcommand> [options]
 
-Firewall structure validation, IP/port checking, and statistics.
+Firewall structure validation, IP/port checking, and management.
 
-Subcommands:
-  validate      Validate nftables structure against NFTBan spec
+Validation & Diagnostics:
+  validate      Validate nftables structure (use --strict for full check)
+  conflicts     Detect conflicting firewalls (fail2ban, ufw, etc.)
   check         Check if IP or port is blocked/allowed
   stats         Show firewall statistics (tables, chains, sets, IPs)
-  logs          View and filter firewall logs (on-demand)
+  logs          View and filter firewall logs
+
+Operations:
   reload        Reload nftables ruleset from config
   rebuild       Rebuild schema (fix corruption, keeps IPs)
   reset         Complete reset (flush all, rebuild clean)
-  help          Show this help message
+  restore       Enterprise rollback (restore previous state)
 
 Examples:
-  nftban firewall validate
+  # Validate with strict mode (recommended before enabling)
+  nftban firewall validate --strict
+
+  # Check for conflicting firewalls
+  nftban firewall conflicts
+
+  # Quick checks
   nftban firewall check 1.2.3.4
-  nftban firewall check 22
   nftban firewall stats
-  nftban firewall logs show --live
-  nftban firewall reload
-  nftban firewall rebuild
-  nftban firewall reset --force
+
+  # Recovery operations
+  nftban firewall rebuild              # Fix corruption
+  nftban firewall reset --force        # Full reset
+  nftban firewall restore list         # Show backups
+  nftban firewall restore fail2ban     # Rollback to fail2ban
 
 Global options:
   --json        Output results as JSON (for GUI integration)
   -h, --help    Show help for specific subcommand
 
-For detailed help on a subcommand:
+Exit codes (validate --strict):
+  0   OK - NFTBan is sole firewall authority
+  10  policykit-1 missing (Debian/Ubuntu)
+  20  Firewall conflict (fail2ban/ufw/firewalld/csf active)
+  30  NFTables collision (non-NFTBan input hooks)
+
+For detailed help:
   nftban firewall validate --help
-  nftban firewall check --help
-  nftban firewall stats --help
+  nftban firewall restore --help
+
+EOF
+}
+
+show_restore_help() {
+    cat <<'EOF'
+Usage: nftban firewall restore <action>
+
+Enterprise rollback - restore previous firewall state.
+
+Actions:
+  list              Show available backup files
+  backup [label]    Create manual backup with optional label
+  <filename>        Restore from specific backup file
+  fail2ban          Disable NFTBan, re-enable fail2ban
+  csf               Disable NFTBan, re-enable CSF
+  ufw               Disable NFTBan, re-enable UFW
+  firewalld         Disable NFTBan, re-enable firewalld
+
+Examples:
+  # List available backups
+  nftban firewall restore list
+
+  # Create manual backup
+  nftban firewall restore backup pre-upgrade
+
+  # Restore from backup file
+  nftban firewall restore ruleset_20260220_143000.nft
+
+  # Rollback to previous firewall
+  nftban firewall restore fail2ban
+
+Backup location: /var/lib/nftban/backup/
+
+What 'restore <firewall>' does:
+  1. Stops NFTBan services
+  2. Disables NFTBan services
+  3. Flushes NFTBan nftables
+  4. Re-enables specified firewall
+  5. Starts specified firewall
+
+To return to NFTBan after rollback:
+  systemctl disable --now <firewall>
+  nftban enable all
 
 EOF
 }
@@ -577,28 +1077,53 @@ Usage: nftban firewall validate [OPTIONS]
 
 Validate nftables structure against NFTBan specification.
 
-Checks:
+Standard Checks:
   - Required tables exist (ip nftban, ip6 nftban)
   - Forbidden tables don't exist (inet filter - bypasses NFTBan!)
   - Required sets exist (whitelist_ipv4, blacklist_ipv4, tcp_ports, etc.)
   - Chain policies are correct (input=drop, output=accept)
   - Priority order is correct (-10, -5, 0)
 
+Strict Mode (--strict): Single Firewall Authority
+  - policykit-1 MANDATORY on Debian/Ubuntu
+  - No competing firewalls (fail2ban, ufw, firewalld, csf, iptables)
+  - No non-NFTBan active input hooks in nftables
+
 Options:
+  --strict, -s  Enforce Single Firewall Authority (recommended)
   --json        Output results as JSON
   -h, --help    Show this help message
 
 Exit codes:
   0   All validation checks passed (OK)
-  1   Validation warnings or errors found
+  1   Structure validation errors
+  10  policykit-1 missing (Debian/Ubuntu only)
+  20  Firewall authority conflict (fail2ban/ufw/firewalld/csf active)
+  30  NFTables hook collision (non-NFTBan active input hooks)
+  40  Environment error (missing commands/libraries)
 
 Examples:
+  # Standard validation
   nftban firewall validate
-  nftban firewall validate --json
 
-Spec file location (priority order):
-  1. /etc/nftban/spec.json (user override)
-  2. /usr/share/nftban/specs/structure_default.json (default)
+  # Strict mode - enforce single firewall authority
+  nftban firewall validate --strict
+
+  # JSON output for automation
+  nftban firewall validate --strict --json
+
+  # Use in scripts
+  if nftban firewall validate --strict; then
+    nftban enable all
+  else
+    echo "Fix issues before enabling NFTBan"
+    exit $?
+  fi
+
+See also:
+  nftban health conflicts    - Detect and fix conflicting firewalls
+  nftban firewall rebuild    - Rebuild schema (preserves IPs)
+  nftban firewall reset      - Complete reset (flush all data)
 
 EOF
 }
