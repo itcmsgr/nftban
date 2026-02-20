@@ -117,8 +117,8 @@ _rollback_show() {
     # Count blocked IPs
     local blocked_v4=0 blocked_v6=0
     if [[ "$tables_exist" == "yes" ]]; then
-        blocked_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-        blocked_v6=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+        blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+        blocked_v6=$(timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
     fi
     echo "  Blocked IPs:        IPv4=$blocked_v4, IPv6=$blocked_v6"
 

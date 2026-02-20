@@ -750,7 +750,7 @@ EOF
 
     # Verify SSH port is actually in nftables (v0.7.3: check IPv4 table)
     if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-        if ! nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$current_ssh_port"; then
+        if ! timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$current_ssh_port"; then
             ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports set")
             ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
             status=$HEALTH_ERROR
@@ -758,7 +758,7 @@ EOF
 
         # Check for stale old SSH port in firewall (cleanup detection)
         if [[ -n "$old_ssh_port" ]]; then
-            if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$old_ssh_port"; then
+            if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$old_ssh_port"; then
                 ssh_issues+=("CLEANUP: Old SSH port $old_ssh_port still in firewall tcp_ports set")
                 ssh_issues+=("Run 'nftban firewall reload' to remove old port")
                 [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING

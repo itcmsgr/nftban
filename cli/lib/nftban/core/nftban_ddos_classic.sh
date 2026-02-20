@@ -914,16 +914,16 @@ nftban_ddos_list_banned() {
     echo ""
 
     echo "IPv4 banned IPs (${ban_set}):"
-    if nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -q "elements"; then
-        nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
+    if timeout 10s nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -q "elements"; then
+        timeout 10s nft list set "${table_v4}" "${ban_set}" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
     else
         echo "  (none)"
     fi
 
     echo ""
     echo "IPv6 banned IPs (${ban_set}6):"
-    if nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -q "elements"; then
-        nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
+    if timeout 10s nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -q "elements"; then
+        timeout 10s nft list set "${table_v6}" "${ban_set}6" 2>/dev/null | grep -A100 "elements" | grep -v "elements" | tr ',' '\n' | sed 's/[{}]//g' | sed 's/^[ \t]*/  /'
     else
         echo "  (none)"
     fi

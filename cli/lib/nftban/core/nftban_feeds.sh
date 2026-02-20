@@ -606,12 +606,12 @@ nftban_feeds_sync_to_nftables() {
     # No separate feeds sets - CIDR aggregation, lower memory, no duplicates
 
     # Verify blacklist sets exist (should be created by nftables.conf)
-    if ! nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 >/dev/null 2>&1; then
+    if ! timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 >/dev/null 2>&1; then
         nftban_feeds_log ERROR "IPv4 blacklist set missing! Run: nftban firewall rebuild"
         return 1
     fi
 
-    if ! nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 >/dev/null 2>&1; then
+    if ! timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 >/dev/null 2>&1; then
         nftban_feeds_log ERROR "IPv6 blacklist set missing! Run: nftban firewall rebuild"
         return 1
     fi

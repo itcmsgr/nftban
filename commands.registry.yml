@@ -266,6 +266,22 @@ health:
           type: bool
           alias: "-v"
           description: "Include config paths"
+    analysis:
+      mutates: false
+      description: "Run deep health analysis with recommendations"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+        --verbose: {type: bool, description: "Show detailed analysis"}
+    components:
+      mutates: false
+      description: "Check health of individual NFTBan components"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    core:
+      mutates: false
+      description: "Check core system health (nftables, services, permissions)"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 version:
   category: setup_discovery
@@ -343,6 +359,46 @@ modes:
   examples:
     - "nftban modes"
     - "nftban modes --json"
+
+preflight:
+  category: setup_discovery
+  description: "Pre-installation system checks and compatibility validation"
+  risk: core
+  audience: [cli]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban preflight"
+    - "nftban preflight --strict"
+    - "nftban preflight --json"
+  options:
+    --strict:
+      type: bool
+      description: "Fail on any warning (not just errors)"
+    --json:
+      type: bool
+      description: "Output in JSON format"
+  subcommands:
+    check:
+      mutates: false
+      description: "Run all preflight checks"
+    firewall:
+      mutates: false
+      description: "Check for conflicting firewall software"
+    dependencies:
+      mutates: false
+      description: "Verify required dependencies are installed"
+    permissions:
+      mutates: false
+      description: "Check filesystem permissions"
+    network:
+      mutates: false
+      description: "Validate network configuration"
 
 # =============================================================================
 # GROUP 1: IMMEDIATE ACTION
@@ -2439,6 +2495,33 @@ suricata:
     recommend-summary:
       mutates: false
       description: "Show recommendation summary"
+    # Advanced Operations
+    advanced:
+      mutates: conditional
+      description: "Advanced Suricata operations and tuning"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    iface:
+      mutates: conditional
+      description: "Manage Suricata network interface configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    rules:
+      mutates: conditional
+      description: "Comprehensive rule management (generate, verify, ensure)"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    setup:
+      mutates: true
+      description: "Initial Suricata integration setup and configuration"
+      requires_root: true
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    tools:
+      mutates: false
+      description: "Suricata diagnostic and utility tools"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 mail:
   category: intelligence_reporting
@@ -2775,6 +2858,20 @@ update:
     auto-run:
       mutates: true
       description: "Run auto-update (by timer)"
+    # Internal helpers (used by update process)
+    backup:
+      mutates: true
+      description: "Create backup before update"
+      requires_root: true
+    detection:
+      mutates: false
+      description: "Detect installation source and update method"
+    helpers:
+      mutates: false
+      description: "Update helper utilities and functions"
+    methods:
+      mutates: false
+      description: "Update method implementations (github, git, local)"
   config_file: "/etc/nftban/update.conf"
   config_vars:
     NFTBAN_UPDATE_SOURCE:
@@ -2789,6 +2886,52 @@ update:
     NFTBAN_UPDATE_BACKUP_COUNT:
       default: "3"
       description: "Backups to keep"
+
+rollback:
+  category: developer_sysadmin
+  description: "Restore previous NFTBan version from backup"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban rollback"
+    - "nftban rollback --list"
+    - "nftban rollback --dry-run"
+    - "nftban rollback --version 1.17.0"
+    - "nftban rollback --json"
+  options:
+    --list:
+      type: bool
+      description: "List available rollback points"
+    --version:
+      type: string
+      description: "Rollback to specific version"
+    --dry-run:
+      type: bool
+      description: "Preview rollback without executing"
+    --json:
+      type: bool
+      description: "Output in JSON format"
+    --force:
+      type: bool
+      description: "Force rollback without confirmation"
+  subcommands:
+    list:
+      mutates: false
+      description: "List available backup versions"
+    status:
+      mutates: false
+      description: "Show current rollback status"
+    execute:
+      mutates: true
+      description: "Execute rollback to previous version"
+      requires_root: true
 
 support:
   category: developer_sysadmin
@@ -2840,9 +2983,9 @@ support:
 # =============================================================================
 
 _metadata:
-  version: "1.3"
+  version: "1.4"
   schema_version: "1.1"
-  generated_date: "2026-01-23"
+  generated_date: "2026-02-20"
   description: "CLI registry for Zabbix and help generation"
   features:
     - "Full CLI options with types, defaults, and descriptions"
@@ -2850,10 +2993,10 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 76
-  commands_with_json: 43
+  total_commands: 78
+  commands_with_json: 45
   commands_without_json: 11
-  commands_with_full_options: 25
+  commands_with_full_options: 27
   missing_json:
     - debug
     - gui
@@ -2868,12 +3011,12 @@ _metadata:
     - wizard
     - trust
   task_groups:
-    setup_discovery: 8
+    setup_discovery: 9
     immediate_action: 8
     active_protection: 10
     infrastructure: 9
     intelligence_reporting: 11
-    developer_sysadmin: 10
+    developer_sysadmin: 11
   risk_levels:
     core: 26
     setup: 7

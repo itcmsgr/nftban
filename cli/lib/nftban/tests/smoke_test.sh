@@ -83,6 +83,49 @@ log_fail() { log "${RED}[FAIL]${NC} $*"; }
 log_warn() { log "${YELLOW}[WARN]${NC} $*"; }
 log_timeout() { log "${RED}[TIMEOUT]${NC} $*"; }
 
+# Section progress marker - shows current section (helps identify hangs)
+CURRENT_SECTION=""
+log_section() {
+    CURRENT_SECTION="$1"
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "▶ SECTION: $CURRENT_SECTION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# Cleanup trap - ensures completion marker prints even on failure/interrupt
+# Called via: trap '_smoke_cleanup $?' EXIT INT TERM
+_smoke_cleanup() {
+    local exit_code="${1:-0}"
+    local smoke_status
+
+    # Determine status
+    if [[ $exit_code -eq 0 ]]; then
+        smoke_status="SUCCESS"
+    else
+        smoke_status="FAILED"
+    fi
+
+    # Calculate duration if SMOKE_START_TS is set
+    local duration_sec=0
+    if [[ -n "${SMOKE_START_TS:-}" ]]; then
+        duration_sec=$(( $(date +%s) - SMOKE_START_TS ))
+    fi
+
+    # Print completion marker (always, even on failure)
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo "═══ SMOKE_TEST_COMPLETE: ${smoke_status} ═══"
+    echo "═══ Duration: ${duration_sec}s | Exit: ${exit_code} | $(date -Is) ═══"
+    echo "═══════════════════════════════════════════════════════════════════"
+
+    # Actionable failure hint
+    if [[ "$smoke_status" == "FAILED" ]]; then
+        echo ""
+        echo "To find failures: grep -E '\\[FAIL\\]|\\[TIMEOUT\\]' ${SMOKE_LOG:-/tmp/nftban_smoke_*.log}"
+    fi
+}
+
 banner() {
     cat <<'BANNER'
 ╔══════════════════════════════════════════════════════════════╗
@@ -846,17 +889,63 @@ smoke_test_auditor_acls() {
 # Validates that feeds/geoban CIDRs are actually loaded in nftables sets.
 # Non-destructive: checks current state without modifying sets.
 
-# Get element count from an nft set
+# Get element count from an nft set (enterprise-grade: never hang)
 # Usage: _nft_set_count <nft_table> <set_name>
-# Returns: element count (0 if set empty or doesn't exist)
+# Returns: element count, or "[FAIL]..." on error
+# Strategy: JSON+jq (fast, no dump) → timeout+text fallback → explicit fail
 _nft_set_count() {
     local nft_table="$1"
-    local nft_set="$2"
-    local count
-    # Count elements - each element line has format "element_value," or "element_value timeout..."
+    local setname="$2"
+    local timeout_sec=10
+
+    # Hard requirement: nft must exist
+    if ! command -v nft &>/dev/null; then
+        echo "[FAIL] nft missing"
+        return 2
+    fi
+
+    # 1) Fast path: nft JSON + jq (no element dump, bounded by timeout)
+    if command -v jq &>/dev/null; then
+        local out
+        # shellcheck disable=SC2086
+        if out="$(timeout ${timeout_sec}s nft -j list set ${nft_table} ${setname} 2>/dev/null)"; then
+            # Count elements safely even if "elem" key missing
+            # nft JSON: { "nftables":[ { "set": { "elem":[ ... ] } } ] }
+            local cnt
+            cnt="$(jq -r '
+                .nftables[]
+                | objects
+                | .set? // empty
+                | .elem? // []
+                | length
+            ' <<<"$out" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+            echo "${cnt:-0}"
+            return 0
+        fi
+        # JSON path timed out or failed, fall through to text method
+    fi
+
+    # 2) Fallback: timeout + plain list (can be slow, but bounded)
+    local text_out exit_code
     # shellcheck disable=SC2086
-    count=$(nft list set ${nft_table} "${nft_set}" 2>/dev/null | grep -cE '^\s+[0-9a-fA-F.:/-]+' || echo "0")
+    text_out="$(timeout ${timeout_sec}s nft list set ${nft_table} ${setname} 2>/dev/null)"
+    exit_code=$?
+
+    if [[ $exit_code -eq 124 ]]; then
+        echo "[TIMEOUT] set ${nft_table} ${setname}"
+        return 124
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        echo "[FAIL] nft list set ${nft_table} ${setname} (exit=$exit_code)"
+        return 1
+    fi
+
+    # Count non-comment, non-empty lines with IP/CIDR patterns
+    local count
+    count=$(echo "$text_out" | grep -cE '^\s+[0-9a-fA-F.:/-]+' || echo "0")
     echo "$count"
+    return 0
 }
 
 # Validate CIDRs loaded in nft set
@@ -869,8 +958,30 @@ smoke_validate_nft_set() {
 
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
 
-    local count
+    local count exit_code
     count=$(_nft_set_count "${nft_table}" "${nft_set}")
+    exit_code=$?
+
+    # Handle [TIMEOUT] response
+    if [[ "$count" == "[TIMEOUT]"* ]]; then
+        log_timeout "${name} — ${count}"
+        TESTS_TIMEOUT=$((TESTS_TIMEOUT + 1))
+        return 1
+    fi
+
+    # Handle [FAIL] response
+    if [[ "$count" == "[FAIL]"* ]]; then
+        log_fail "${name} — ${count}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        return 1
+    fi
+
+    # Handle non-numeric result (shouldn't happen, but be safe)
+    if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+        log_warn "${name} — Unexpected response: ${count}"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+        return 0
+    fi
 
     if [[ "$count" -ge "$min_expected" ]]; then
         log_pass "${name} — ${count} elements in ${nft_set} (min: ${min_expected})"
@@ -1188,6 +1299,14 @@ run_extended_status_tests() {
 # =============================================================================
 
 generate_report() {
+    local duration_sec="${1:-0}"
+    local duration_str
+    if [[ $duration_sec -ge 60 ]]; then
+        duration_str="$((duration_sec / 60))m $((duration_sec % 60))s"
+    else
+        duration_str="${duration_sec}s"
+    fi
+
     log ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log "SMOKE TEST RESULTS"
@@ -1197,6 +1316,7 @@ generate_report() {
     log "${GREEN}Passed:          $TESTS_PASSED${NC}"
     log "${RED}Failed:          $TESTS_FAILED${NC}"
     log "${RED}Timeouts:        $TESTS_TIMEOUT${NC}"
+    log "${YELLOW}Skipped:         $TESTS_SKIPPED${NC}"
     log "${RED}Orphan Traces:   $TESTS_ORPHANS${NC}"
     log ""
 
@@ -1204,13 +1324,15 @@ generate_report() {
     [[ $TESTS_TOTAL -gt 0 ]] && pass_rate=$((TESTS_PASSED * 100 / TESTS_TOTAL))
 
     log "Pass Rate:       ${pass_rate}%"
+    log "Duration:        ${duration_str}"
     log ""
     log "Log file:        $SMOKE_LOG"
     log "Trace log:       $TRACE_LOG"
     log ""
 
-    # Final verdict
+    # Final verdict (completion marker handled by trap)
     local total_problems=$((TESTS_FAILED + TESTS_TIMEOUT + TESTS_ORPHANS))
+
     if [[ $total_problems -eq 0 ]]; then
         log "${GREEN}✅ ALL SMOKE TESTS PASSED${NC}"
         return 0
@@ -1450,9 +1572,21 @@ main() {
     # Run smoke tests
     banner
     log ""
-    log "Started: $(date)"
+
+    # Track start time for duration calculation
+    local SMOKE_START_TS
+    SMOKE_START_TS=$(date +%s)
+
+    # Clear start marker with ISO timestamp
+    log "═══════════════════════════════════════════════════════════════════"
+    log "═══ SMOKE_TEST_START: $(date -Is) ═══"
+    log "═══════════════════════════════════════════════════════════════════"
     log "Mode: $mode"
+    log "Log:  $SMOKE_LOG"
     log ""
+
+    # Trap to ensure completion marker prints even on failure/interrupt
+    trap '_smoke_cleanup $?' EXIT INT TERM
 
     # Enable tracing
     enable_trace
@@ -1503,13 +1637,21 @@ main() {
     # Disable tracing
     disable_trace
 
-    # Generate report
-    generate_report
+    # Calculate duration (using SMOKE_START_TS set earlier, for trap compatibility)
+    local duration_sec
+    duration_sec=$(( $(date +%s) - SMOKE_START_TS ))
+
+    # Generate report with duration
+    local report_exit=0
+    generate_report "$duration_sec" || report_exit=$?
 
     # Send email report if requested
     if [[ -n "$EMAIL_RECIPIENT" ]]; then
         send_email_report "$EMAIL_RECIPIENT"
     fi
+
+    # Exit with report status (trap will print completion marker)
+    exit $report_exit
 }
 
 # Run if executed directly
