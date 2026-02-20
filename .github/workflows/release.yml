@@ -28,8 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 # Minimal top-level permissions (OpenSSF Scorecard compliance)
-permissions:
-  contents: read
+permissions: read-all
 
 jobs:
   # ==========================================================================
