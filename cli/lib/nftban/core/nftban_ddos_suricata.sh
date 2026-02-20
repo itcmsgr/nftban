@@ -513,7 +513,7 @@ nftban_ddos_suricata_enable() {
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
 
-    if ! nft list set $table "$set" &>/dev/null; then
+    if ! timeout 10s nft list set $table "$set" &>/dev/null; then
         local set_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-set-$$.nft"
         echo "add set $table $set { type ipv4_addr; flags timeout; }" > "$set_fragment"
         nft_ipc_apply_ruleset "$set_fragment" 2>/dev/null || true
@@ -640,7 +640,7 @@ nftban_ddos_suricata_status() {
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
     local blocked_count
-    blocked_count=$(nft list set $table "$set" 2>/dev/null | grep -c "timeout" || echo "0")
+    blocked_count=$(timeout 10s nft list set $table "$set" 2>/dev/null | grep -c "timeout" || echo "0")
     echo "Currently Blocked: $blocked_count IPs"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

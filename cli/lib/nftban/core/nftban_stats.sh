@@ -866,9 +866,9 @@ nftban_stats_generate_dashboard() {
         black_v6_temp=$(nftban_stats_get_unified ".blacklist.ipv6.temporary" "0")
     else
         # Fallback: Direct nftables query
-        if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
             local v4_output
-            v4_output=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
+            v4_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
             black_v4_temp=$(echo "$v4_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
             black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=${black_v4:-0}
@@ -876,9 +876,9 @@ nftban_stats_generate_dashboard() {
             black_v4_perm=$((black_v4 - black_v4_temp))
             [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
         fi
-        if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
             local v6_output
-            v6_output=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
+            v6_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
             black_v6_temp=$(echo "$v6_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
             black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=${black_v6:-0}
@@ -1158,7 +1158,7 @@ nftban_stats_generate_dashboard() {
             END {
                 printf "%d %d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0, suricata+0
             }
-        ' "$bans_log" <(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
+        ' "$bans_log" <(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
 
         if [[ -n "$counts_result" ]]; then
             local counts_array
@@ -1207,8 +1207,8 @@ nftban_stats_generate_dashboard() {
     if [[ $total_black -gt 0 ]]; then
         echo "CURRENT ACTIVE BANS (sample)"
         echo "───────────────────────────────────────────────────────────"
-        if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
-            nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | \
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
+            timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | \
                 grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | \
                 awk 'NR<=5 {print "  " $1}' 2>/dev/null || true
         fi

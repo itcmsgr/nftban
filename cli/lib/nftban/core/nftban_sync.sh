@@ -170,10 +170,10 @@ nftban_sync_status() {
     local set_name
     for set_name in whitelist_ipv4 blacklist_ipv4; do
         local count=0
-        if nft list set ${NFTBAN_TABLE_IPV4} "$set_name" &>/dev/null; then
+        if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" &>/dev/null; then
             # Count elements properly - handle empty sets and multiline output
             local elements_line
-            elements_line=$(nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
+            elements_line=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
             if [[ -n "$elements_line" && "$elements_line" != "elements = { }" ]]; then
                 count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9]" || echo 0)
             fi
@@ -187,10 +187,10 @@ nftban_sync_status() {
     nftban_output "info" "Key sets (IPv6):"
     for set_name in whitelist_ipv6 blacklist_ipv6; do
         local count=0
-        if nft list set ${NFTBAN_TABLE_IPV6} "$set_name" &>/dev/null; then
+        if timeout 10s nft list set ${NFTBAN_TABLE_IPV6} "$set_name" &>/dev/null; then
             # Count elements properly - handle empty sets and multiline output
             local elements_line
-            elements_line=$(nft list set ${NFTBAN_TABLE_IPV6} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
+            elements_line=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
             if [[ -n "$elements_line" && "$elements_line" != "elements = { }" ]]; then
                 count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9a-fA-F:]" || echo 0)
             fi

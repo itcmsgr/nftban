@@ -314,7 +314,7 @@ nftban_port_gather_nft_rules() {
         # Get set contents (v0.7.3: check IPv4 table, could also check IPv6)
         # Note: elements may span multiple lines, so we use tr to join lines first
         local set_contents
-        set_contents=$(nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | tr '\n' ' ' | grep -oP 'elements = \{\K[^}]+' || true)
+        set_contents=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | tr '\n' ' ' | grep -oP 'elements = \{\K[^}]+' || true)
         if [[ -n "$set_contents" ]]; then
             # Parse ports from set (handles: 22, 80, 443, etc.)
             local port

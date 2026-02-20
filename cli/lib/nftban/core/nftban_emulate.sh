@@ -209,7 +209,7 @@ _check_ip_in_set() {
     local check_ip="$3"
 
     local set_content
-    set_content=$(nft list set "$family" nftban "$set_name" 2>/dev/null)
+    set_content=$(timeout 10s nft list set "$family" nftban "$set_name" 2>/dev/null)
     [[ -z "$set_content" ]] && return 1
 
     # Extract elements section - handle multi-line nft output
