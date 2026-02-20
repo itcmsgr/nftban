@@ -1228,10 +1228,46 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
         systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
     fi
 
-    # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
-    # The nftables.conf template resets port sets, so we must re-add ports
+    # v1.18.7: Schema migration - auto rebuild ONLY if schema changed
+    CURRENT_SCHEMA="2.1"
+    SCHEMA_FILE="/etc/nftban/.schema_version"
+    INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
+
     sleep 1
-    nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
+    if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
+        echo "[NFTBan] Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
+        echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
+        if nftban firewall rebuild >/dev/null 2>&1; then
+            echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
+            # Sync configs to load all values (ports, whitelist, blacklist)
+            nftban sync >/dev/null 2>&1 || true
+            echo "[NFTBan] Schema migration complete."
+        else
+            echo "[NFTBan WARN] Firewall rebuild failed - run manually: nftban firewall rebuild"
+        fi
+    else
+        # Schema unchanged - just sync (preserves temp bans)
+        nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
+    fi
+
+    # v1.18.7: Auto-detect and protect services
+    echo "[NFTBan] Detecting services..."
+
+    # Detect panel and enable ports
+    DETECTED_PANEL=$(nftban panel detect 2>/dev/null || echo "none")
+    if [[ "$DETECTED_PANEL" != "none" && -n "$DETECTED_PANEL" ]]; then
+        echo "[NFTBan] Panel detected: $DETECTED_PANEL - enabling ports..."
+        nftban panel "$DETECTED_PANEL" enable >/dev/null 2>&1 || true
+    fi
+
+    # Enable login monitor (auto-detects services: ssh, dovecot, exim, etc.)
+    nftban login enable >/dev/null 2>&1 || true
+    systemctl restart nftban-login-monitor.service 2>/dev/null || true
+
+    # Show detected services
+    DETECTED_SERVICES=$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
+    echo "[NFTBan] Login protection enabled for:$DETECTED_SERVICES"
+
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 else
     echo ""
@@ -2163,10 +2199,46 @@ if [ "$NFTABLES_SAFE" -eq 1 ]; then
         systemctl start nftables 2>/dev/null || true
     fi
 
-    # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
-    # The nftables.conf template resets port sets, so we must re-add ports
+    # v1.18.7: Schema migration - auto rebuild ONLY if schema changed
+    CURRENT_SCHEMA="2.1"
+    SCHEMA_FILE="/etc/nftban/.schema_version"
+    INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
+
     sleep 1
-    nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
+    if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
+        echo "[NFTBan] Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
+        echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
+        if nftban firewall rebuild >/dev/null 2>&1; then
+            echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
+            # Sync configs to load all values (ports, whitelist, blacklist)
+            nftban sync >/dev/null 2>&1 || true
+            echo "[NFTBan] Schema migration complete."
+        else
+            echo "[NFTBan WARN] Firewall rebuild failed - run manually: nftban firewall rebuild"
+        fi
+    else
+        # Schema unchanged - just sync (preserves temp bans)
+        nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
+    fi
+
+    # v1.18.7: Auto-detect and protect services
+    echo "[NFTBan] Detecting services..."
+
+    # Detect panel and enable ports
+    DETECTED_PANEL=$(nftban panel detect 2>/dev/null || echo "none")
+    if [[ "$DETECTED_PANEL" != "none" && -n "$DETECTED_PANEL" ]]; then
+        echo "[NFTBan] Panel detected: $DETECTED_PANEL - enabling ports..."
+        nftban panel "$DETECTED_PANEL" enable >/dev/null 2>&1 || true
+    fi
+
+    # Enable login monitor (auto-detects services: ssh, dovecot, exim, etc.)
+    nftban login enable >/dev/null 2>&1 || true
+    systemctl restart nftban-login-monitor.service 2>/dev/null || true
+
+    # Show detected services
+    DETECTED_SERVICES=$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
+    echo "[NFTBan] Login protection enabled for:$DETECTED_SERVICES"
+
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 else
     echo "[NFTBan WARN] NFTABLES NOT ACTIVATED (Safety Mode)"

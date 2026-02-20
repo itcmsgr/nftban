@@ -589,14 +589,14 @@ nftban_login_cmd_run() {
         echo "[$timestamp] Mode: ${_LOGIN_ACTIVE_MODE:-classic}"
         echo "[$timestamp] Services monitored: $all_services"
         echo "[$timestamp] Services detected: $detected_services"
-        logger -t nftban-login-monitor "Started: mode=${_LOGIN_ACTIVE_MODE:-classic} detected=$detected_services"
+        logger -t nftban-login-monitor "Started: mode=${_LOGIN_ACTIVE_MODE:-classic} detected=$detected_services" 2>/dev/null || true
 
         # Start consolidated monitoring (SSH + Dovecot + Postfix + Exim)
         nftban_login_start
     else
         # Fallback to alert-only mode if main module not loaded
         echo "WARNING: Main login module not loaded, using alert-only mode (SSH only)" >&2
-        logger -t nftban-login-monitor "Started: mode=alert-only (SSH only)"
+        logger -t nftban-login-monitor "Started: mode=alert-only (SSH only)" 2>/dev/null || true
         nftban_login_monitor_all
     fi
 }
