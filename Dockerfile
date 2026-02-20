@@ -14,7 +14,7 @@
 
 # Stage 1: Build Go binaries
 # Pinned to SHA for OpenSSF Scorecard compliance
-FROM golang:1.23-alpine@sha256:a7ecaac5efda22510d8c903bdc6b19026543f1eac3317d47363680df22161bd8 AS builder
+FROM golang:1.24-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev
