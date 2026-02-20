@@ -313,6 +313,17 @@ Source → Build → Attest → Release → Verify
 - **Signed Releases**: GPG-signed tags and artifacts
 - **Pinned Dependencies**: All GitHub Actions pinned to SHAs
 
+### Security Dashboards
+
+| Dashboard | Description |
+|-----------|-------------|
+| [Security Overview](https://github.com/itcmsgr/nftban/security) | All security features |
+| [Code Scanning](https://github.com/itcmsgr/nftban/security/code-scanning) | SAST results (CodeQL, Semgrep, gosec, ShellCheck) |
+| [Dependabot](https://github.com/itcmsgr/nftban/security/dependabot) | Dependency CVE alerts |
+| [Secret Scanning](https://github.com/itcmsgr/nftban/security/secret-scanning) | Exposed credential detection |
+| [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban) | Security health score (7+/10) |
+| [Workflow Status](https://github.com/itcmsgr/nftban/actions) | CI/CD pipeline status |
+
 ### Vulnerability Disclosure
 
 We follow **coordinated disclosure** with a 90-day fix window. Report vulnerabilities to:
