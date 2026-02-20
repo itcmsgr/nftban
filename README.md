@@ -4,13 +4,21 @@
 
 [![Version](https://img.shields.io/badge/version-1.18.3-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 
-**Security & Supply Chain:**
+### CI/CD Status
+
+[![CI](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml)
+[![Build Packages](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml)
+[![Docker](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml)
+[![ShellCheck](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml)
+
+### Security & Supply Chain
 
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX--JSON-blue)](https://github.com/itcmsgr/nftban/releases)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=OpenSSF%20Scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959)
 [![CodeQL](https://github.com/itcmsgr/nftban/actions/workflows/codeql.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/codeql.yml)
@@ -18,7 +26,7 @@
 [![OSV-Scanner](https://github.com/itcmsgr/nftban/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/osv-scanner.yml)
 [![Trivy](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml)
 [![gitleaks](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml)
-[![ShellCheck](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml)
+[![Fuzz Testing](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml)
 
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
 
