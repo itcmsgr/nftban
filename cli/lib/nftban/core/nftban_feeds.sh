@@ -374,32 +374,59 @@ nftban_feeds_enable() {
 }
 
 # Disable a feed
+# v1.18.1 FIX: Also removes cached feed file and triggers IPC flush for immediate effect
 nftban_feeds_disable() {
     local feed_name="$1"
+    local feed_name_lower
+    feed_name_lower=$(echo "$feed_name" | tr '[:upper:]' '[:lower:]')
 
-    # Disable feed
+    # Disable feed in config
     nftban_feeds_set_property "$feed_name" "ENABLED" "false"
     nftban_feeds_log INFO "Feed disabled: $feed_name"
 
     # Show immediate feedback
-    echo "✓ Feed disabled: $feed_name"
-    echo ""
+    echo "✓ Feed disabled in config: $feed_name"
 
-    # ARCHITECTURE COMPLIANCE: Always use timer-based queue for nftables sync
-    # NEVER execute synchronous sync - all feeds/ban/unban/countries managed by timer
-    # This prevents 30+ second hangs with large feed sets and respects async architecture
+    # v1.18.1 FIX: Delete cached feed file to prevent reloading on next sync
+    local feed_cache_file="${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds/storage}/${feed_name_lower}.txt"
+    local feed_data_file="${NFTBAN_FEEDS_DATA_DIR:-/var/lib/nftban/feeds}/${feed_name_lower}.txt"
+    local removed_files=0
+
+    for cache_file in "$feed_cache_file" "$feed_data_file"; do
+        if [[ -f "$cache_file" ]]; then
+            if rm -f "$cache_file" 2>/dev/null; then
+                nftban_feeds_log INFO "Removed cached feed file: $cache_file"
+                ((removed_files++))
+            fi
+        fi
+    done
+
+    if [[ $removed_files -gt 0 ]]; then
+        echo "✓ Removed $removed_files cached feed file(s)"
+    fi
+
+    # v1.18.1 FIX: Trigger IPC flush_source to remove feed IPs from nftables immediately
+    # This uses sourceIndex-based removal (not set flush) to preserve other sources
+    if [[ -S "${NFTBAN_SOCKET:-/var/run/nftban/nftband.sock}" ]]; then
+        local flush_result
+        if flush_result=$(echo '{"action":"flush_source","params":{"source":"feeds"}}' | \
+            socat - UNIX-CONNECT:"${NFTBAN_SOCKET:-/var/run/nftban/nftband.sock}" 2>/dev/null); then
+            nftban_feeds_log INFO "IPC flush_source triggered for feeds"
+            echo "✓ Feed IPs removal queued via IPC"
+        else
+            nftban_feeds_log WARN "IPC flush_source failed, queuing for timer"
+        fi
+    fi
+
+    # Queue feeds_sync as fallback (ensures eventual consistency)
     if command -v nftban_queue_add &>/dev/null; then
         nftban_queue_add "feeds_sync" "Feed disabled: $feed_name" >/dev/null 2>&1
-        echo "✅ Feed disabled successfully"
-        echo "   NFTables update queued (processed every 2 minutes)"
-        echo "   Check queue: tail -f /var/log/nftban/queue.log"
-        echo ""
-    else
-        nftban_feeds_log "WARN" "Queue function not available, sync will run on next timer cycle"
-        echo "✅ Feed disabled successfully"
-        echo "   NFTables will sync on next timer cycle (every 2 minutes)"
-        echo ""
     fi
+
+    echo ""
+    echo "✅ Feed disabled successfully"
+    echo "   Config: disabled, Cache: cleared, NFT: removal queued"
+    echo ""
 
     return 0
 }
@@ -457,11 +484,13 @@ nftban_feeds_update_single() {
     chown nftban:nftban "$parsed_file" 2>/dev/null || true
     chmod 640 "$parsed_file" 2>/dev/null || true
     local ip_count
-    ip_count=$(echo "$parse_result" | grep -c .)
+    # v1.18.1 FIX: Prevent exit code 1 when parse_result is empty
+    ip_count=$(echo "$parse_result" | grep -c . || echo "0")
 
     # Validate minimum entries
     local min_entries
-    min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+')
+    # v1.18.1 FIX: Prevent exit code 1 when config missing or no match
+    min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+' || echo "10")
     min_entries=${min_entries:-10}
 
     # Final validation
