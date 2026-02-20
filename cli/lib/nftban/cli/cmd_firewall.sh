@@ -178,6 +178,7 @@ nftban_cmd_firewall() {
 # =============================================================================
 
 # Exit codes for strict mode (Single Firewall Authority)
+# shellcheck disable=SC2034  # These are exit code constants, used via $VALIDATE_*
 declare -gr VALIDATE_OK=0
 declare -gr VALIDATE_STRUCTURE_ERROR=1
 declare -gr VALIDATE_POLICYKIT_MISSING=10
@@ -240,9 +241,8 @@ firewall_validate() {
 
     # If strict mode, run additional checks
     if [[ "$strict_mode" == "true" ]]; then
-        local strict_result
-        strict_result=$(_firewall_validate_strict "$output_json")
-        local strict_exit=$?
+        local strict_exit=0
+        _firewall_validate_strict "$output_json" || strict_exit=$?
 
         # Return the more severe exit code
         if [[ $strict_exit -ne 0 ]]; then
@@ -261,33 +261,23 @@ _firewall_validate_strict() {
     # Enforce Single Firewall Authority
     # Returns: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
     local json_mode="${1:-false}"
-    local exit_code=0
 
     [[ "$json_mode" == "false" ]] && echo ""
     [[ "$json_mode" == "false" ]] && echo "STRICT MODE: Single Firewall Authority Check"
     [[ "$json_mode" == "false" ]] && echo "=============================================="
 
     # Check 1: policykit-1 on Debian/Ubuntu
-    local policykit_result
-    policykit_result=$(_check_policykit "$json_mode")
-    local policykit_exit=$?
-    if [[ $policykit_exit -ne 0 ]]; then
+    if ! _check_policykit "$json_mode"; then
         return $VALIDATE_POLICYKIT_MISSING
     fi
 
     # Check 2: Firewall authority conflicts
-    local conflict_result
-    conflict_result=$(_check_firewall_conflicts "$json_mode")
-    local conflict_exit=$?
-    if [[ $conflict_exit -ne 0 ]]; then
+    if ! _check_firewall_conflicts "$json_mode"; then
         return $VALIDATE_FIREWALL_CONFLICT
     fi
 
     # Check 3: NFTables hook collisions (non-NFTBan active input hooks)
-    local collision_result
-    collision_result=$(_check_nft_collisions "$json_mode")
-    local collision_exit=$?
-    if [[ $collision_exit -ne 0 ]]; then
+    if ! _check_nft_collisions "$json_mode"; then
         return $VALIDATE_NFT_COLLISION
     fi
 

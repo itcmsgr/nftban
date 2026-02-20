@@ -39,7 +39,6 @@ _NFTBAN_CMD_PREFLIGHT_LOADED=1
 # =============================================================================
 
 nftban_cmd_preflight() {
-    local strict_mode=false
     local json_mode=false
     local quiet_mode=false
 
@@ -47,7 +46,7 @@ nftban_cmd_preflight() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --strict|-s)
-                strict_mode=true
+                # Always strict - this flag is accepted but ignored
                 shift
                 ;;
             --json|-j)
@@ -69,8 +68,7 @@ nftban_cmd_preflight() {
         esac
     done
 
-    # Default to strict mode (that's the whole point of preflight)
-    strict_mode=true
+    # Preflight is ALWAYS strict mode (that's its purpose)
 
     # Delegate to firewall validate --strict
     local exit_code=0

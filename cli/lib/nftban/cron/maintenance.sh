@@ -557,8 +557,9 @@ EOF
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" 2>/dev/null || true
 
-        # Reset conflict state
+        # Reset conflict state (these are populated by nftban_detect_all_conflicts)
         NFTBAN_FIREWALL_CONFLICTS=()
+        # shellcheck disable=SC2034  # Used by conflict detection library
         NFTBAN_FIREWALL_FIXES=()
         NFTBAN_FIREWALL_SEVERITY=${CONFLICT_NONE:-0}
 
