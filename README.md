@@ -2,15 +2,31 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.18.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.18.3-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg)](https://go.dev/)
-[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
-[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=openssf%20scorecard%207%2B)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959)
-[![Semgrep](https://img.shields.io/badge/Semgrep-enabled-blue?logo=semgrep)](https://semgrep.dev/)
-[![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
+[![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
+
+### CI/CD Status
+
+[![CI](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml)
+[![Build Packages](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml)
+[![Docker](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml)
+[![ShellCheck](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml)
+
+### Security & Supply Chain
+
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX--JSON-blue)](https://github.com/itcmsgr/nftban/releases)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban?label=OpenSSF%20Scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959)
+[![CodeQL](https://github.com/itcmsgr/nftban/actions/workflows/codeql.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/codeql.yml)
+[![Semgrep](https://github.com/itcmsgr/nftban/actions/workflows/semgrep.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/semgrep.yml)
+[![OSV-Scanner](https://github.com/itcmsgr/nftban/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/osv-scanner.yml)
+[![Trivy](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml)
+[![gitleaks](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml)
+[![Fuzz Testing](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml)
 
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
 
@@ -263,17 +279,66 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ## Security & Supply Chain
 
-| Control | Status |
-|---------|--------|
-| **SLSA Level 3** | Provenance attestation for Go binaries |
-| **SBOM** | SPDX-JSON attached to every release |
-| **Vulnerability Scanning** | govulncheck, Trivy, gosec, CodeQL |
-| **Semgrep** | Static analysis for security patterns in Go and shell code |
-| **Dependency Review** | PR-level dependency vulnerability scanning |
-| **Secret Scanning** | gitleaks with SARIF upload |
-| **OpenSSF Scorecard** | Enterprise-grade security rating (7+) |
+NFTBan follows **defense-in-depth** security practices with **12 automated security tools** across our CI/CD pipeline.
 
-See [SECURITY.md](SECURITY.md) for vulnerability disclosure policy and security architecture.
+### Security Certifications & Compliance
+
+| Certification | Status | Badge |
+|--------------|--------|-------|
+| **OpenSSF Scorecard** | 7+ / 10 | [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/itcmsgr/nftban)](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban) |
+| **OpenSSF Best Practices** | Passing | [![CII Best Practices](https://www.bestpractices.dev/projects/11959/badge)](https://www.bestpractices.dev/projects/11959) |
+| **SLSA Level 3** | Provenance | [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev) |
+| **SBOM** | Every Release | SPDX-JSON format |
+
+### Automated Security Pipeline
+
+<table>
+<tr><th>Category</th><th>Tool</th><th>Purpose</th><th>Frequency</th></tr>
+<tr><td rowspan="4"><b>SAST</b></td><td>CodeQL</td><td>Semantic code analysis for Go</td><td>Every PR + Push</td></tr>
+<tr><td>Semgrep</td><td>Pattern-based security rules (Go + Shell)</td><td>Every PR + Push</td></tr>
+<tr><td>gosec</td><td>Go-specific security linting</td><td>Every PR + Push</td></tr>
+<tr><td>ShellCheck</td><td>Shell script security analysis</td><td>Every PR + Push</td></tr>
+<tr><td rowspan="3"><b>SCA</b></td><td>govulncheck</td><td>Go module vulnerability scanning</td><td>Every PR + Push</td></tr>
+<tr><td>OSV-Scanner</td><td>Google OSV database scanning</td><td>Every PR + Weekly</td></tr>
+<tr><td>Trivy</td><td>Container & dependency CVE scanning</td><td>Every PR + Push</td></tr>
+<tr><td rowspan="2"><b>Secrets</b></td><td>gitleaks</td><td>Secret detection in commits</td><td>Every PR + Push</td></tr>
+<tr><td>GitHub Secret Scanning</td><td>Known secret pattern detection</td><td>Continuous</td></tr>
+<tr><td rowspan="2"><b>Supply Chain</b></td><td>SLSA Provenance</td><td>Cryptographic build attestation</td><td>Every Release</td></tr>
+<tr><td>Dependency Review</td><td>PR-level dependency diff analysis</td><td>Every PR</td></tr>
+<tr><td><b>Fuzzing</b></td><td>go-fuzz</td><td>Automated fuzz testing</td><td>Nightly</td></tr>
+</table>
+
+### Supply Chain Security
+
+```
+Source → Build → Attest → Release → Verify
+   ↓       ↓        ↓         ↓        ↓
+  Git   Hermetic  SLSA L3   SBOM    sigstore
+```
+
+- **SLSA Level 3**: Hermetic builds with non-forgeable provenance
+- **SBOM**: Full Software Bill of Materials (SPDX-JSON) for every release
+- **Signed Releases**: GPG-signed tags and artifacts
+- **Pinned Dependencies**: All GitHub Actions pinned to SHAs
+
+### Security Dashboards
+
+| Dashboard | Description |
+|-----------|-------------|
+| [Security Overview](https://github.com/itcmsgr/nftban/security) | All security features |
+| [Code Scanning](https://github.com/itcmsgr/nftban/security/code-scanning) | SAST results (CodeQL, Semgrep, gosec, ShellCheck) |
+| [Dependabot](https://github.com/itcmsgr/nftban/security/dependabot) | Dependency CVE alerts |
+| [Secret Scanning](https://github.com/itcmsgr/nftban/security/secret-scanning) | Exposed credential detection |
+| [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban) | Security health score (7+/10) |
+| [Workflow Status](https://github.com/itcmsgr/nftban/actions) | CI/CD pipeline status |
+
+### Vulnerability Disclosure
+
+We follow **coordinated disclosure** with a 90-day fix window. Report vulnerabilities to:
+- **Email**: security@nftban.com
+- **GitHub Security Advisories**: [Report a vulnerability](https://github.com/itcmsgr/nftban/security/advisories/new)
+
+See [SECURITY.md](SECURITY.md) for complete security policy, threat model, and architecture.
 
 ---
 
