@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1] - 2026-02-20
+
+### Fixed
+
+- **CRITICAL: Feeds/GeoIP coexistence bug** (CVE-2025-NFTBAN-002)
+  - `handleFlushSourceRequest()` was flushing entire `blacklist_ipv4/ipv6` sets
+  - This wiped geoban entries when disabling feeds, and vice versa
+  - Now uses sourceIndex-based removal to preserve other sources' entries
+
+- **Feed disable incomplete cleanup**
+  - `nftban feeds disable` now automatically removes cached feed files
+  - Triggers IPC `flush_source` for immediate nftables cleanup
+  - No longer requires manual `--clean` flag or `firewall rebuild`
+
+- **Exit code 1 on success**
+  - Fixed grep commands in feeds module that returned exit code 1 on empty results
+  - Commands now return exit code 0 on successful operation with warnings
+
+### Changed
+
+- `--clean` flag for `nftban feeds disable` is now default behavior (kept for backwards compat)
+- All sources using shared `blacklist_*` sets use sourceIndex-based removal
+
+---
+
 ## [1.18.0] - 2026-02-19
 
 ### BREAKING CHANGES (Major Schema Overhaul - "Unified Blacklist Architecture")
