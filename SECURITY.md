@@ -10,11 +10,12 @@ NFTBan is an enterprise-grade Linux Intrusion Prevention System (IPS) and firewa
 
 | Version | Support Status |
 |---------|----------------|
-| 1.15.x  | Full support (security fixes, bug fixes, features) |
-| 1.14.x  | Security fixes only |
-| < 1.14  | **Not supported** - upgrade immediately |
+| 1.18.x  | **Current** - Full support (security fixes, bug fixes, features) |
+| 1.17.x  | Security fixes only |
+| 1.16.x  | Security fixes only |
+| < 1.16  | **Not supported** - upgrade immediately |
 
-**Recommendation:** Always run the latest stable release (currently v1.15.x) for optimal security and performance.
+**Recommendation:** Always run the latest stable release (currently v1.18.x) for optimal security and performance.
 
 ### Supported Platforms by Tier
 
@@ -346,11 +347,82 @@ We recognize security researchers who responsibly disclose vulnerabilities:
 
 ---
 
+## Automated Security Pipeline (CI/CD)
+
+NFTBan employs **16 GitHub Actions workflows** with **12 dedicated security tools** running on every commit and PR.
+
+### Security Certifications
+
+| Certification | Level | Verification |
+|--------------|-------|--------------|
+| **OpenSSF Scorecard** | 7+ / 10 | [View Score](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban) |
+| **OpenSSF Best Practices** | Passing | [View Badge](https://www.bestpractices.dev/projects/11959) |
+| **SLSA Provenance** | Level 3 | Hermetic builds, non-forgeable provenance |
+| **SBOM** | SPDX-JSON | Attached to every release |
+
+### Security Tools by Category
+
+#### Static Application Security Testing (SAST)
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **CodeQL** | `codeql.yml` | Semantic code analysis for Go |
+| **Semgrep** | `semgrep.yml` | Pattern-based security rules (Go + Shell) |
+| **gosec** | `secure-go.yml` | Go-specific security linting |
+| **ShellCheck** | `shellcheck.yml` | Shell script security analysis |
+
+#### Software Composition Analysis (SCA)
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **govulncheck** | `secure-go.yml` | Go module vulnerability scanning |
+| **OSV-Scanner** | `osv-scanner.yml` | Google OSV database scanning |
+| **Trivy** | `secure-go.yml` | Container & dependency CVE scanning |
+| **Dependency Review** | `dependency-review.yml` | PR-level dependency diff analysis |
+
+#### Secret Detection
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **gitleaks** | `gitleaks.yml` | Secret detection in commits |
+| **GitHub Secret Scanning** | Native | Known secret pattern detection |
+
+#### Supply Chain Security
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **SLSA Provenance** | `slsa-go-releaser.yml` | Cryptographic build attestation |
+| **OpenSSF Scorecard** | `scorecard.yml` | Security health assessment |
+| **Syft SBOM** | `release.yml` | Software Bill of Materials generation |
+
+#### Quality & Fuzzing
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **go-fuzz** | `fuzz.yml` | Automated fuzz testing |
+| **Go Test** | `ci.yml` | Unit and integration tests |
+
+### SARIF Integration
+
+All security tools upload findings to GitHub Security tab in SARIF format for unified vulnerability tracking and remediation workflow.
+
+### Vulnerability Response SLA
+
+| Severity | Detection → Fix SLA |
+|----------|---------------------|
+| **Critical** | 24-48 hours |
+| **High** | 7 days |
+| **Medium** | 30 days |
+| **Low** | Next release |
+
+---
+
 ## Additional Resources
 
-- [Security Architecture](https://github.com/nftban/nftban/wiki/Security-Architecture) - Detailed security model
-- [Security Operations Guide](https://github.com/nftban/nftban/wiki/Security-Operations-Guide) - Hardening procedures
-- [Groups and Permissions](https://github.com/nftban/nftban/wiki/Groups-and-Permissions) - Access control details
+- [Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture) - Detailed security model
+- [Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide) - Hardening procedures
+- [Groups and Permissions](https://github.com/itcmsgr/nftban/wiki/Groups-and-Permissions) - Access control details
+- [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/itcmsgr/nftban) - Live security score
 
 ---
 

@@ -25,7 +25,7 @@ require (
 	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/net v0.45.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )

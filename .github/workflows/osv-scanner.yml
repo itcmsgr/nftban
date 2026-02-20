@@ -1,0 +1,64 @@
+# =============================================================================
+# NFTBan - OSV-Scanner (Open Source Vulnerabilities)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Scan dependencies for known vulnerabilities using Google OSV database
+#
+# Runs on:
+#   - Push to main branch
+#   - Pull requests to main
+#   - Weekly on Monday at 6:00 AM UTC
+#
+# Features:
+#   - Scans Go modules (go.mod/go.sum)
+#   - Scans lockfiles (package-lock.json, etc.)
+#   - SARIF output for GitHub Security tab integration
+#   - Supports osv-scanner.toml for ignoring false positives
+# =============================================================================
+
+name: OSV-Scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly: Monday 6:00 AM UTC
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: osv-scanner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  osv-scan:
+    name: OSV Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action@19ec1eb4500edbd6df0dc3dd0efc138ea6e02f0c # v2.0.2
+        with:
+          scan-args: |-
+            --recursive
+            --format=sarif
+            --output=osv-results.sarif
+            ./
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3.32.3
+        if: always()
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner
