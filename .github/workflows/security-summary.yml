@@ -1,0 +1,204 @@
+# =============================================================================
+# NFTBan - Security Summary & Alerts
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Aggregate security findings from all tools and create summary report
+#
+# Runs on:
+#   - Daily at 7:00 AM UTC
+#   - Manual trigger
+#
+# Features:
+#   - Aggregates alerts from all security tools
+#   - Creates GitHub Issue if HIGH/CRITICAL found
+#   - Generates security report artifact
+#   - Tracks vulnerability trends
+# =============================================================================
+
+name: Security Summary
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # Daily 7:00 AM UTC
+  workflow_dispatch:
+    inputs:
+      create_issue:
+        description: 'Create issue even if no critical findings'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+  security-events: read
+  issues: write
+
+concurrency:
+  group: security-summary
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    name: Aggregate Security Findings
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get Code Scanning Alerts
+        id: code-scanning
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all open code scanning alerts
+          ALERTS=$(gh api repos/${{ github.repository }}/code-scanning/alerts \
+            --jq '[.[] | select(.state == "open")] | group_by(.rule.security_severity_level) |
+            {
+              critical: [.[] | select(.[0].rule.security_severity_level == "critical")] | length,
+              high: [.[] | select(.[0].rule.security_severity_level == "high")] | length,
+              medium: [.[] | select(.[0].rule.security_severity_level == "medium")] | length,
+              low: [.[] | select(.[0].rule.security_severity_level == "low")] | length,
+              total: [.[]] | add | length
+            }' 2>/dev/null || echo '{"critical":0,"high":0,"medium":0,"low":0,"total":0}')
+
+          echo "alerts=$ALERTS" >> $GITHUB_OUTPUT
+          echo "Code Scanning Alerts: $ALERTS"
+
+      - name: Get Dependabot Alerts
+        id: dependabot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all open Dependabot alerts
+          ALERTS=$(gh api repos/${{ github.repository }}/dependabot/alerts \
+            --jq '[.[] | select(.state == "open")] | group_by(.security_vulnerability.severity) |
+            {
+              critical: [.[] | select(.[0].security_vulnerability.severity == "critical")] | length,
+              high: [.[] | select(.[0].security_vulnerability.severity == "high")] | length,
+              medium: [.[] | select(.[0].security_vulnerability.severity == "medium")] | length,
+              low: [.[] | select(.[0].security_vulnerability.severity == "low")] | length,
+              total: [.[]] | add | length
+            }' 2>/dev/null || echo '{"critical":0,"high":0,"medium":0,"low":0,"total":0}')
+
+          echo "alerts=$ALERTS" >> $GITHUB_OUTPUT
+          echo "Dependabot Alerts: $ALERTS"
+
+      - name: Get Secret Scanning Alerts
+        id: secrets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(gh api repos/${{ github.repository }}/secret-scanning/alerts \
+            --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo "0")
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Secret Scanning Alerts: $COUNT"
+
+      - name: Generate Security Report
+        id: report
+        run: |
+          DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          # Parse JSON safely
+          CS_CRITICAL=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.critical // 0')
+          CS_HIGH=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.high // 0')
+          CS_MEDIUM=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.medium // 0')
+          CS_TOTAL=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.total // 0')
+
+          DB_CRITICAL=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.critical // 0')
+          DB_HIGH=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.high // 0')
+          DB_MEDIUM=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.medium // 0')
+          DB_TOTAL=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.total // 0')
+
+          SECRETS=${{ steps.secrets.outputs.count }}
+
+          # Calculate totals
+          TOTAL_CRITICAL=$((CS_CRITICAL + DB_CRITICAL))
+          TOTAL_HIGH=$((CS_HIGH + DB_HIGH))
+          TOTAL_MEDIUM=$((CS_MEDIUM + DB_MEDIUM))
+          TOTAL_ALL=$((CS_TOTAL + DB_TOTAL + SECRETS))
+
+          # Determine status
+          if [ "$TOTAL_CRITICAL" -gt 0 ] || [ "$SECRETS" -gt 0 ]; then
+            STATUS="CRITICAL"
+            EMOJI="🔴"
+          elif [ "$TOTAL_HIGH" -gt 0 ]; then
+            STATUS="HIGH"
+            EMOJI="🟠"
+          elif [ "$TOTAL_MEDIUM" -gt 0 ]; then
+            STATUS="MEDIUM"
+            EMOJI="🟡"
+          elif [ "$TOTAL_ALL" -gt 0 ]; then
+            STATUS="LOW"
+            EMOJI="🔵"
+          else
+            STATUS="CLEAN"
+            EMOJI="🟢"
+          fi
+
+          # Create report
+          cat > security-report.md << EOF
+          # $EMOJI NFTBan Security Summary - $DATE
+
+          ## Overall Status: **$STATUS**
+
+          | Category | Critical | High | Medium | Low | Total |
+          |----------|----------|------|--------|-----|-------|
+          | Code Scanning | $CS_CRITICAL | $CS_HIGH | $CS_MEDIUM | - | $CS_TOTAL |
+          | Dependabot | $DB_CRITICAL | $DB_HIGH | $DB_MEDIUM | - | $DB_TOTAL |
+          | Secret Scanning | - | - | - | - | $SECRETS |
+          | **Total** | **$TOTAL_CRITICAL** | **$TOTAL_HIGH** | **$TOTAL_MEDIUM** | - | **$TOTAL_ALL** |
+
+          ## Quick Links
+
+          - [Code Scanning Alerts](https://github.com/${{ github.repository }}/security/code-scanning)
+          - [Dependabot Alerts](https://github.com/${{ github.repository }}/security/dependabot)
+          - [Secret Scanning](https://github.com/${{ github.repository }}/security/secret-scanning)
+          - [Security Overview](https://github.com/${{ github.repository }}/security)
+          - [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/${{ github.repository }})
+
+          ## Automated Fixes
+
+          - **Dependabot PRs**: Check [Pull Requests](https://github.com/${{ github.repository }}/pulls?q=is%3Aopen+label%3Adependencies) for auto-fix PRs
+          - **go mod tidy**: Run locally to update go.sum after merging dependency PRs
+
+          ---
+          *Generated by Security Summary workflow*
+          EOF
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "total_critical=$TOTAL_CRITICAL" >> $GITHUB_OUTPUT
+          echo "total_high=$TOTAL_HIGH" >> $GITHUB_OUTPUT
+          echo "secrets=$SECRETS" >> $GITHUB_OUTPUT
+
+          cat security-report.md
+
+      - name: Upload Security Report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-report-${{ github.run_number }}
+          path: security-report.md
+          retention-days: 90
+
+      - name: Create Issue for Critical/High Findings
+        if: steps.report.outputs.total_critical != '0' || steps.report.outputs.total_high != '0' || steps.report.outputs.secrets != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if issue already exists
+          EXISTING=$(gh issue list --label "security-alert" --state open --json number --jq 'length')
+
+          if [ "$EXISTING" -eq 0 ]; then
+            gh issue create \
+              --title "🔴 Security Alert: ${{ steps.report.outputs.status }} severity findings detected" \
+              --body-file security-report.md \
+              --label "security-alert,priority:high"
+            echo "Created new security alert issue"
+          else
+            echo "Security alert issue already exists, skipping creation"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Security Summary" >> $GITHUB_STEP_SUMMARY
+          cat security-report.md >> $GITHUB_STEP_SUMMARY

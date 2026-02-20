@@ -3,32 +3,69 @@
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 
 version: 2
+
+# Enable automatic security updates (creates PRs for CVEs)
+# This is in addition to version updates below
+
 updates:
-  # Go modules
+  # Go modules - SECURITY CRITICAL
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"  # Daily for faster CVE response
+    open-pull-requests-limit: 10
     commit-message:
       prefix: "deps(go)"
     labels:
       - "dependencies"
       - "go"
+      - "security"
+    # Group minor/patch updates to reduce PR noise
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Prioritize security updates
+    reviewers:
+      - "itcmsgr"
+    assignees:
+      - "itcmsgr"
 
-  # GitHub Actions
+  # GitHub Actions - SUPPLY CHAIN SECURITY
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
+      interval: "daily"  # Daily for CI security
+    open-pull-requests-limit: 10
     commit-message:
       prefix: "deps(actions)"
     labels:
       - "dependencies"
       - "github-actions"
+      - "security"
+    groups:
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(docker)"
+    labels:
+      - "dependencies"
+      - "docker"
 
   # npm (for UI if applicable)
   - package-ecosystem: "npm"
