@@ -52,13 +52,15 @@ set -Eeuo pipefail
 _NFTBAN_STRICT_PREFLIGHT_LOADED=1
 
 # =============================================================================
-# EXIT CODES
+# EXIT CODES (exported for use by callers)
 # =============================================================================
+# shellcheck disable=SC2034  # PREFLIGHT_OK is exported for external use
 declare -gr PREFLIGHT_OK=0
 declare -gr PREFLIGHT_POLICYKIT_MISSING=10
 declare -gr PREFLIGHT_FIREWALL_CONFLICT=20
 declare -gr PREFLIGHT_NFT_COLLISION=30
 declare -gr PREFLIGHT_ENV_UNSUPPORTED=40
+export PREFLIGHT_OK PREFLIGHT_POLICYKIT_MISSING PREFLIGHT_FIREWALL_CONFLICT PREFLIGHT_NFT_COLLISION PREFLIGHT_ENV_UNSUPPORTED
 
 # =============================================================================
 # OUTPUT HELPERS
@@ -350,8 +352,6 @@ strict_preflight() {
     # Run all strict preflight checks
     # Usage: strict_preflight [--json]
     # Returns: 0=OK, 10/20/30/40=failure (see exit codes above)
-
-    local rc=0
 
     # Parse args
     _preflight_want_json=0

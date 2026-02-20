@@ -92,7 +92,7 @@ nftban_cmd_preflight() {
     # Usage: nftban preflight [--strict] [--json]
 
     local json_mode=false
-    local strict_mode=true  # Default is strict mode
+    # Strict mode is always enabled (default behavior)
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -102,7 +102,7 @@ nftban_cmd_preflight() {
                 shift
                 ;;
             --strict|-s)
-                strict_mode=true
+                # strict_mode already true by default, this flag is for explicit invocation
                 shift
                 ;;
             -h|--help|help)
