@@ -401,7 +401,7 @@ _get_ban_details() {
     local set="$3"
 
     # Try to get element with timeout info
-    nft list set "$table" "$set" | grep "$ip" || echo "No details available"
+    timeout 10s nft list set "$table" "$set" | grep "$ip" || echo "No details available"
 }
 
 # Search for port in nftables and config files
@@ -411,14 +411,14 @@ _search_port() {
 
     # Search in nftables tcp_ports set (v0.7.3: ip nftban + ip6 nftban tables)
     # Note: Both IPv4 and IPv6 tables have tcp_ports sets, check both
-    if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$port" || \
-       nft list set ${NFTBAN_TABLE_IPV6} tcp_ports 2>/dev/null | grep -qw "$port"; then
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} tcp_ports 2>/dev/null | grep -qw "$port"; then
         found_in+=("nftables:tcp_ports")
     fi
 
     # Search in nftables udp_ports set (v0.7.3: ip nftban + ip6 nftban tables)
-    if nft list set ${NFTBAN_TABLE_IPV4} udp_ports 2>/dev/null | grep -qw "$port" || \
-       nft list set ${NFTBAN_TABLE_IPV6} udp_ports 2>/dev/null | grep -qw "$port"; then
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} udp_ports 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} udp_ports 2>/dev/null | grep -qw "$port"; then
         found_in+=("nftables:udp_ports")
     fi
 
@@ -512,7 +512,7 @@ _display_results() {
                     local ban_info set_name timeout_str expires_str
                     set_name="blacklist_ipv4"
                     [[ "$ip" == *:* ]] && set_name="blacklist_ipv6"
-                    ban_info=$(nft list set "$table" "$set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
+                    ban_info=$(timeout 10s nft list set "$table" "$set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
                     if [[ "$ban_info" == *"timeout"* ]]; then
                         # Extract timeout info: "timeout 1h expires 55m30s123ms,"
                         timeout_str=$(echo "$ban_info" | grep -oE 'timeout [0-9]+[smhd]' | head -1) || true

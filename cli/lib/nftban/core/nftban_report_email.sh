@@ -67,14 +67,14 @@ nftban_report_email_generate() {
 
     # Count blocked IPs from nft blacklist set
     local blocked_ips=0
-    if nft list set ip nftban blacklist_ipv4 &>/dev/null; then
-        blocked_ips=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+    if timeout 10s nft list set ip nftban blacklist_ipv4 &>/dev/null; then
+        blocked_ips=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
     fi
 
     # Count whitelist
     local whitelist_count=0
-    if nft list set ip nftban whitelist_ipv4 &>/dev/null; then
-        whitelist_count=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+    if timeout 10s nft list set ip nftban whitelist_ipv4 &>/dev/null; then
+        whitelist_count=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
     fi
 
     # ==========================================================================
@@ -226,7 +226,7 @@ nftban_report_email_generate() {
                 fi
                 ;;
             geoip)
-                if nft list set ip nftban geo_block &>/dev/null 2>&1; then
+                if timeout 10s nft list set ip nftban geo_block &>/dev/null 2>&1; then
                     status="Active"; color="#22c55e"; icon="&#10004;"
                 fi
                 ;;
@@ -251,8 +251,8 @@ nftban_report_email_generate() {
 
     # Get IPs from actual nftables blacklist (not config files)
     local blacklist_ips=""
-    if nft list set ip nftban blacklist_ipv4 &>/dev/null; then
-        blacklist_ips=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | \
+    if timeout 10s nft list set ip nftban blacklist_ipv4 &>/dev/null; then
+        blacklist_ips=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | \
             grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
             sort -u | tr '\n' ',' | sed 's/,$//')  # Convert to comma-separated for Go
     fi
