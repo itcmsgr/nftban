@@ -20,7 +20,7 @@ _nftban() {
     # MONITORING: gui metrics stats report fhs module services timers mail
     # DEBUG: debug smoke emulate setup menu
 
-    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix"
+    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -109,11 +109,12 @@ _nftban() {
     local unprotect_cmds="--json help"
     local cleanup_cmds="--stats --dry-run --execute --count --json help"
 
-    # New commands (connector, modes, snapshot, zabbix)
+    # New commands (connector, modes, snapshot, zabbix, preflight)
     local connector_cmds="list add enable disable test show push --json help"
     local modes_cmds="--json help"
     local snapshot_cmds="create list --json help"
     local zabbix_cmds="setup status test push reload template discover targets config --json help"
+    local preflight_cmds="--strict --json help"
 
     # Global options available for most commands
     local global_opts="--json --help --version -h"
@@ -338,6 +339,9 @@ _nftban() {
                     ;;
                 zabbix)
                     COMPREPLY=($(compgen -W "${zabbix_cmds}" -- "${cur}"))
+                    ;;
+                preflight)
+                    COMPREPLY=($(compgen -W "${preflight_cmds}" -- "${cur}"))
                     ;;
 
                 # Fallback

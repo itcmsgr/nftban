@@ -169,6 +169,8 @@ uninstall_services() {
     local service_patterns=(
         "nftban-*.service"
         "nftban-*.timer"
+        "nftband.service"
+        "nftband.socket"
     )
 
     local stopped=0
@@ -306,11 +308,56 @@ uninstall_nftables() {
 uninstall_polkit() {
     log "Removing polkit policies..."
 
-    if [[ -f "/usr/share/polkit-1/actions/com.nftban.auth.policy" ]]; then
-        rm -f /usr/share/polkit-1/actions/com.nftban.auth.policy
-        ok "Polkit policy removed"
+    local removed=0
+
+    # Remove polkit action files
+    for file in /usr/share/polkit-1/actions/com.nftban.*; do
+        if [[ -f "$file" ]]; then
+            echo "  Removing: $(basename "$file")"
+            rm -f "$file"
+            removed=$((removed + 1))
+        fi
+    done
+
+    # Remove polkit rules
+    for file in /etc/polkit-1/rules.d/*nftban*.rules; do
+        if [[ -f "$file" ]]; then
+            echo "  Removing: $(basename "$file")"
+            rm -f "$file"
+            removed=$((removed + 1))
+        fi
+    done
+
+    if [[ $removed -gt 0 ]]; then
+        ok "Removed $removed polkit policy/rule(s)"
     else
-        ok "No polkit policy found"
+        ok "No polkit policies found"
+    fi
+}
+
+uninstall_tmpfiles() {
+    log "Removing tmpfiles.d configuration..."
+
+    local removed=0
+    for file in /etc/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf; do
+        if [[ -f "$file" ]]; then
+            echo "  Removing: $file"
+            rm -f "$file"
+            removed=$((removed + 1))
+        fi
+    done
+
+    # Remove logrotate config
+    if [[ -f /etc/logrotate.d/nftban ]]; then
+        echo "  Removing: /etc/logrotate.d/nftban"
+        rm -f /etc/logrotate.d/nftban
+        removed=$((removed + 1))
+    fi
+
+    if [[ $removed -gt 0 ]]; then
+        ok "Removed $removed system config(s)"
+    else
+        ok "No tmpfiles.d configs found"
     fi
 }
 
@@ -341,6 +388,7 @@ uninstall_data() {
             "/var/lib/nftban"
             "/var/log/nftban"
             "/var/cache/nftban"
+            "/usr/share/nftban"
         )
 
         local removed=0
@@ -440,6 +488,9 @@ uninstall_nftables
 echo ""
 
 uninstall_polkit
+echo ""
+
+uninstall_tmpfiles
 echo ""
 
 uninstall_configs
