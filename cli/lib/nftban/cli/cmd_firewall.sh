@@ -178,13 +178,15 @@ nftban_cmd_firewall() {
 # =============================================================================
 
 # Exit codes for strict mode (Single Firewall Authority)
-# shellcheck disable=SC2034  # These are exit code constants, used via $VALIDATE_*
-declare -gr VALIDATE_OK=0
-declare -gr VALIDATE_STRUCTURE_ERROR=1
-declare -gr VALIDATE_POLICYKIT_MISSING=10
-declare -gr VALIDATE_FIREWALL_CONFLICT=20
-declare -gr VALIDATE_NFT_COLLISION=30
-declare -gr VALIDATE_ENV_ERROR=40
+# These constants are used via return $VALIDATE_* statements
+# shellcheck disable=SC2034
+VALIDATE_OK=0
+# shellcheck disable=SC2034
+VALIDATE_STRUCTURE_ERROR=1
+VALIDATE_POLICYKIT_MISSING=10
+VALIDATE_FIREWALL_CONFLICT=20
+VALIDATE_NFT_COLLISION=30
+VALIDATE_ENV_ERROR=40
 
 firewall_validate() {
     # Validate nftables structure against NFTBan specification
