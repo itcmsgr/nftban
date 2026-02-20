@@ -2123,28 +2123,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 
 	// Create and populate port sets if we have ports
 	if len(allPorts.AllRules) > 0 {
-		// Legacy sets (backward compatibility)
-		tcpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports")
-		if err != nil {
-			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
-		}
-
-		tcpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "tcp_ports")
-		if err != nil {
-			return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports set: " + err.Error()}
-		}
-
-		udpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "udp_ports")
-		if err != nil {
-			return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports set: " + err.Error()}
-		}
-
-		udpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports")
-		if err != nil {
-			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
-		}
-
-		// Directional sets (new)
+		// Directional port sets (v2.1 schema - NO legacy sets)
 		tcpInSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports_in")
 		if err != nil {
 			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_in set: " + err.Error()}
@@ -2176,25 +2155,6 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		udpOutSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports_out")
 		if err != nil {
 			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports_out set: " + err.Error()}
-		}
-
-		// Load legacy port sets (backward compatibility)
-		if len(allPorts.TCPPorts) > 0 {
-			if err := nft.AddPortElements(tcpSetV4, allPorts.TCPPorts); err != nil {
-				return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
-			}
-			if err := nft.AddPortElements(tcpSetV6, allPorts.TCPPorts); err != nil {
-				return SocketResponse{Success: false, Error: "failed to add IPv6 TCP ports: " + err.Error()}
-			}
-		}
-
-		if len(allPorts.UDPPorts) > 0 {
-			if err := nft.AddPortElements(udpSetV4, allPorts.UDPPorts); err != nil {
-				return SocketResponse{Success: false, Error: "failed to add IPv4 UDP ports: " + err.Error()}
-			}
-			if err := nft.AddPortElements(udpSetV6, allPorts.UDPPorts); err != nil {
-				return SocketResponse{Success: false, Error: "failed to add IPv6 UDP ports: " + err.Error()}
-			}
 		}
 
 		// Load directional port sets
@@ -2468,8 +2428,6 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		"feeds_ipv6_loaded":      feedsIPv6Loaded,
 		"geoban_ipv4_loaded":     geobanIPv4Loaded,
 		"geoban_ipv6_loaded":     geobanIPv6Loaded,
-		"tcp_ports":              len(allPorts.TCPPorts),
-		"udp_ports":              len(allPorts.UDPPorts),
 		"tcp_ports_in":           len(allPorts.TCPPortsIn),
 		"tcp_ports_out":          len(allPorts.TCPPortsOut),
 		"udp_ports_in":           len(allPorts.UDPPortsIn),
@@ -2511,9 +2469,11 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{
 			Success: true,
 			Data: map[string]any{
-				"message":   "no port rules configured",
-				"tcp_ports": 0,
-				"udp_ports": 0,
+				"message":       "no port rules configured",
+				"tcp_ports_in":  0,
+				"tcp_ports_out": 0,
+				"udp_ports_in":  0,
+				"udp_ports_out": 0,
 			},
 		}
 	}
@@ -2531,18 +2491,7 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
 	}
 
-	// Legacy sets (backward compatibility)
-	tcpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
-	}
-
-	udpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports set: " + err.Error()}
-	}
-
-	// Directional sets for IPv4
+	// Directional port sets for IPv4 (v2.1 schema - NO legacy sets)
 	tcpInSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports_in")
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports_in set: " + err.Error()}
@@ -2566,18 +2515,7 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
 	}
 
-	// Legacy sets for IPv6
-	tcpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports set: " + err.Error()}
-	}
-
-	udpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports")
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
-	}
-
-	// Directional sets for IPv6
+	// Directional port sets for IPv6 (v2.1 schema - NO legacy sets)
 	tcpInSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports_in")
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports_in set: " + err.Error()}
@@ -2598,8 +2536,8 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 	// IMPORTANT: Flush all port sets first for idempotent reload
 	// This ensures removed ports in config are also removed from nftables
 	allPortSets := []*nftables.Set{
-		tcpSetV4, udpSetV4, tcpInSetV4, tcpOutSetV4, udpInSetV4, udpOutSetV4,
-		tcpSetV6, udpSetV6, tcpInSetV6, tcpOutSetV6, udpInSetV6, udpOutSetV6,
+		tcpInSetV4, tcpOutSetV4, udpInSetV4, udpOutSetV4,
+		tcpInSetV6, tcpOutSetV6, udpInSetV6, udpOutSetV6,
 	}
 	for _, set := range allPortSets {
 		if err := nft.FlushSet(set); err != nil {
@@ -2608,26 +2546,7 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		}
 	}
 
-	// Load legacy port sets (backward compatibility)
-	if len(config.TCPPorts) > 0 {
-		if err := nft.AddPortElements(tcpSetV4, config.TCPPorts); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(tcpSetV6, config.TCPPorts); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP ports: " + err.Error()}
-		}
-	}
-
-	if len(config.UDPPorts) > 0 {
-		if err := nft.AddPortElements(udpSetV4, config.UDPPorts); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP ports: " + err.Error()}
-		}
-		if err := nft.AddPortElements(udpSetV6, config.UDPPorts); err != nil {
-			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP ports: " + err.Error()}
-		}
-	}
-
-	// Load directional port sets
+	// Load directional port sets (v2.1 schema)
 	if len(config.TCPPortsIn) > 0 {
 		if err := nft.AddPortElements(tcpInSetV4, config.TCPPortsIn); err != nil {
 			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP input ports: " + err.Error()}
@@ -2664,8 +2583,6 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"tcp_ports":     len(config.TCPPorts),
-			"udp_ports":     len(config.UDPPorts),
 			"tcp_ports_in":  len(config.TCPPortsIn),
 			"tcp_ports_out": len(config.TCPPortsOut),
 			"udp_ports_in":  len(config.UDPPortsIn),
@@ -2725,44 +2642,44 @@ func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketRespon
 		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
 	}
 
-	// Determine which sets to update
+	// Determine which sets to update (v2.1 schema - directional only)
 	var setNames []string
 	switch strings.ToLower(protocol) {
 	case "tcp", "t":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"tcp_ports_in", "tcp_ports"} // Also update legacy set
+			setNames = []string{"tcp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
+			setNames = []string{"tcp_ports_in", "tcp_ports_out"}
 		default:
-			setNames = []string{"tcp_ports_in", "tcp_ports"}
+			setNames = []string{"tcp_ports_in"}
 		}
 	case "udp", "u":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"udp_ports_in", "udp_ports"}
+			setNames = []string{"udp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"udp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
+			setNames = []string{"udp_ports_in", "udp_ports_out"}
 		default:
-			setNames = []string{"udp_ports_in", "udp_ports"}
+			setNames = []string{"udp_ports_in"}
 		}
 	case "both", "b":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "udp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out", "udp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"}
 		default:
-			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "udp_ports_in"}
 		}
 	default:
-		setNames = []string{"tcp_ports_in", "tcp_ports"}
+		setNames = []string{"tcp_ports_in"}
 	}
 
 	added := 0
@@ -2854,44 +2771,44 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
 	}
 
-	// Determine which sets to update (same logic as add)
+	// Determine which sets to update (v2.1 schema - directional only)
 	var setNames []string
 	switch strings.ToLower(protocol) {
 	case "tcp", "t":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"tcp_ports_in", "tcp_ports"}
+			setNames = []string{"tcp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"tcp_ports_in", "tcp_ports_out", "tcp_ports"}
+			setNames = []string{"tcp_ports_in", "tcp_ports_out"}
 		default:
-			setNames = []string{"tcp_ports_in", "tcp_ports"}
+			setNames = []string{"tcp_ports_in"}
 		}
 	case "udp", "u":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"udp_ports_in", "udp_ports"}
+			setNames = []string{"udp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"udp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"udp_ports_in", "udp_ports_out", "udp_ports"}
+			setNames = []string{"udp_ports_in", "udp_ports_out"}
 		default:
-			setNames = []string{"udp_ports_in", "udp_ports"}
+			setNames = []string{"udp_ports_in"}
 		}
 	case "both", "b":
 		switch strings.ToLower(direction) {
 		case "in", "i", "input":
-			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "udp_ports_in"}
 		case "out", "o", "output":
 			setNames = []string{"tcp_ports_out", "udp_ports_out"}
 		case "both", "io", "b", "inout":
-			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"}
 		default:
-			setNames = []string{"tcp_ports_in", "udp_ports_in", "tcp_ports", "udp_ports"}
+			setNames = []string{"tcp_ports_in", "udp_ports_in"}
 		}
 	default:
-		setNames = []string{"tcp_ports_in", "tcp_ports"}
+		setNames = []string{"tcp_ports_in"}
 	}
 
 	deleted := 0

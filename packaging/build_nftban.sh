@@ -1229,7 +1229,7 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     fi
 
     # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
-    # The nftables.conf template resets the tcp_ports set, so we must re-add ports
+    # The nftables.conf template resets port sets, so we must re-add ports
     sleep 1
     nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
@@ -2164,7 +2164,7 @@ if [ "$NFTABLES_SAFE" -eq 1 ]; then
     fi
 
     # v1.17.4: Re-sync ports AFTER nftables starts (fixes panel port lockout)
-    # The nftables.conf template resets the tcp_ports set, so we must re-add ports
+    # The nftables.conf template resets port sets, so we must re-add ports
     sleep 1
     nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Post-start sync failed"
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."

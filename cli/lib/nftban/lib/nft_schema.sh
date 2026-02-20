@@ -26,7 +26,7 @@ readonly NFTBAN_NFT_SCHEMA_LOADED=1
 # ✅ Cleaner:      No _v4/_v6 suffixes on set names
 # ✅ Simpler:      No ip/ip6 prefixes in rules (kernel knows family)
 # ✅ Performance:  Kernel routes by family first anyway
-# ✅ Port mgmt:    Each family has own tcp_ports/udp_ports sets
+# ✅ Port mgmt:    Each family has own directional port sets (tcp_ports_in/out, udp_ports_in/out)
 # ✅ Maintenance:  Clear separation, easier to debug
 # ✅ Efficiency:   No mixed-family lookups, direct routing
 #
@@ -199,7 +199,7 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 # Purpose: Limit concurrent connections per IP to prevent resource exhaustion
 #
 # Example rules for input chain:
-#   ct state new tcp dport @tcp_ports \
+#   ct state new tcp dport @tcp_ports_in \
 #     meter syn_flood { ip saddr limit rate 100/second burst 200 } accept
 #
 #   ct state new tcp dport 22 \
@@ -259,7 +259,7 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 # Helper chains MUST be called from input chain in this order:
 # 1. After: ct state established,related accept
 # 2. Before: ICMP rules
-# 3. Before: Service rules (tcp dport @tcp_ports)
+# 3. Before: Service rules (tcp dport @tcp_ports_in)
 #
 # Example input chain with helper chains:
 #
@@ -277,8 +277,8 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 #
 #       # Service rules
 #       ip protocol icmp icmp type { ... } accept
-#       tcp dport @tcp_ports ct state new accept
-#       udp dport @udp_ports ct state new accept
+#       tcp dport @tcp_ports_in ct state new accept
+#       udp dport @udp_ports_in ct state new accept
 #       drop
 #   }
 #
@@ -295,9 +295,9 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 # Purpose: Rate limiting and connection limits
 # Rules:
 #   # SYN flood protection
-#   tcp flags syn tcp dport @tcp_ports \
+#   tcp flags syn tcp dport @tcp_ports_in \
 #       meter syn_flood { ip saddr limit rate 10/second burst 20 } return
-#   tcp flags syn tcp dport @tcp_ports drop
+#   tcp flags syn tcp dport @tcp_ports_in drop
 #
 #   # Connection limits per service
 #   tcp dport 22 ct state new ct count over 5 drop
@@ -314,31 +314,33 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
 # =============================================================================
 #
 # Port sets define which services are exposed to the internet.
-# Each family (ip/ip6) has its own port sets.
+# Each family (ip/ip6) has its own directional port sets.
 #
-# SET DEFINITIONS:
-# ----------------
-# tcp_ports: TCP services (SSH, HTTP, HTTPS, custom)
-# udp_ports: UDP services (DNS, NTP, VPN, custom)
+# SET DEFINITIONS (v2.1 directional model):
+# -----------------------------------------
+# tcp_ports_in:  Inbound TCP services (SSH, HTTP, HTTPS, custom)
+# tcp_ports_out: Outbound TCP services (DNS, API calls, custom)
+# udp_ports_in:  Inbound UDP services (DNS, NTP, custom)
+# udp_ports_out: Outbound UDP services (DNS, NTP, VPN, custom)
 #
 # ADVANTAGES OF PORT SETS:
 # -------------------------
 # ✅ Dynamic updates: Add/remove ports without firewall reload
 # ✅ Atomic changes: Port list updates are atomic operations
-# ✅ Cleaner rules: Single rule "tcp dport @tcp_ports accept"
+# ✅ Cleaner rules: Single rule "tcp dport @tcp_ports_in accept"
 # ✅ Less error-prone: No need to duplicate port lists across rules
 #
 # EXAMPLE USAGE IN INPUT CHAIN:
 # ------------------------------
-# tcp dport @tcp_ports ct state new ct count over 50 drop comment "CT limit"
-# tcp dport @tcp_ports accept comment "TCP services"
-# udp dport @udp_ports accept comment "UDP services"
+# tcp dport @tcp_ports_in ct state new ct count over 50 drop comment "CT limit"
+# tcp dport @tcp_ports_in accept comment "TCP services"
+# udp dport @udp_ports_in accept comment "UDP services"
 #
 # RUNTIME MANAGEMENT:
 # -------------------
-# Add port:    nft add element ip nftban tcp_ports { 8080 }
-# Remove port: nft delete element ip nftban tcp_ports { 8080 }
-# List ports:  nft list set ip nftban tcp_ports
+# Add port:    nft add element ip nftban tcp_ports_in { 8080 }
+# Remove port: nft delete element ip nftban tcp_ports_in { 8080 }
+# List ports:  nft list set ip nftban tcp_ports_in
 #
 # DEFAULT PORTS:
 # --------------
@@ -919,10 +921,11 @@ nftban_nft_validate_full() {
     [[ -z "$ipv4_bl" ]] && ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -c "," || echo 0)
     # shellcheck disable=SC2034  # Reserved for IPv6 stats
     ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
-    ipv4_udp=$(nft list set ip nftban udp_ports 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
+    ipv4_tcp=$(nft list set ip nftban tcp_ports_in 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
+    ipv4_udp=$(nft list set ip nftban udp_ports_in 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
     ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
 
-    echo "   IPv4: whitelist=${ipv4_wl:-0}, blacklist=active, tcp_ports=${ipv4_tcp:-0}, udp_ports=${ipv4_udp:-0}"
+    echo "   IPv4: whitelist=${ipv4_wl:-0}, blacklist=active, tcp_ports_in=${ipv4_tcp:-0}, udp_ports_in=${ipv4_udp:-0}"
     echo "   IPv6: whitelist=${ipv6_wl:-0}, blacklist=active"
 
     # Summary
@@ -986,15 +989,25 @@ export -f nftban_nft_report_status
 #     comment "Temporary bans from fail2ban"
 #   }
 #
-#   set tcp_ports {
+#   set tcp_ports_in {
 #     type inet_service
-#     comment "Allowed TCP ports"
+#     comment "Allowed TCP ports (inbound)"
 #     elements = { 22, 80, 443 }
 #   }
 #
-#   set udp_ports {
+#   set tcp_ports_out {
 #     type inet_service
-#     comment "Allowed UDP ports"
+#     comment "Allowed TCP ports (outbound)"
+#   }
+#
+#   set udp_ports_in {
+#     type inet_service
+#     comment "Allowed UDP ports (inbound)"
+#   }
+#
+#   set udp_ports_out {
+#     type inet_service
+#     comment "Allowed UDP ports (outbound)"
 #   }
 #
 #   # === INPUT CHAIN ===
@@ -1035,10 +1048,10 @@ export -f nftban_nft_report_status
 #       comment "HTTP(S): max 50 concurrent per IP"
 #
 #     # 9. TCP SERVICES (with ct limits applied above)
-#     tcp dport @tcp_ports accept comment "TCP services"
+#     tcp dport @tcp_ports_in accept comment "TCP services"
 #
 #     # 10. UDP SERVICES
-#     udp dport @udp_ports accept comment "UDP services"
+#     udp dport @udp_ports_in accept comment "UDP services"
 #
 #     # 11. DEFAULT DENY (log dropped packets)
 #     log prefix "nftban: drop: " limit rate 10/minute

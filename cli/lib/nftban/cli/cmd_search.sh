@@ -409,17 +409,25 @@ _search_port() {
     local port="$1"
     local found_in=()
 
-    # Search in nftables tcp_ports set (v0.7.3: ip nftban + ip6 nftban tables)
-    # Note: Both IPv4 and IPv6 tables have tcp_ports sets, check both
-    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$port" || \
-       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} tcp_ports 2>/dev/null | grep -qw "$port"; then
-        found_in+=("nftables:tcp_ports")
+    # Search in nftables tcp_ports_in/tcp_ports_out sets (v2.1 directional schema)
+    # Note: Both IPv4 and IPv6 tables have directional port sets, check both
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} tcp_ports_in 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:tcp_ports_in")
+    fi
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_out 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} tcp_ports_out 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:tcp_ports_out")
     fi
 
-    # Search in nftables udp_ports set (v0.7.3: ip nftban + ip6 nftban tables)
-    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} udp_ports 2>/dev/null | grep -qw "$port" || \
-       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} udp_ports 2>/dev/null | grep -qw "$port"; then
-        found_in+=("nftables:udp_ports")
+    # Search in nftables udp_ports_in/udp_ports_out sets (v2.1 directional schema)
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} udp_ports_in 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} udp_ports_in 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:udp_ports_in")
+    fi
+    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} udp_ports_out 2>/dev/null | grep -qw "$port" || \
+       timeout 10s nft list set ${NFTBAN_TABLE_IPV6} udp_ports_out 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:udp_ports_out")
     fi
 
     # Search in config files
@@ -634,7 +642,7 @@ DESCRIPTION:
     - CIDR containment (checks if IP falls within any CIDR range in feeds)
 
     Port Search:
-    - nftables port sets (tcp_ports, udp_ports)
+    - nftables port sets (tcp_ports_in/out, udp_ports_in/out)
     - Port configuration files (${NFTBAN_CONFIG_DIR}/ports.d/*.conf)
 
     If IP/port is found, shows location and details.
@@ -770,13 +778,13 @@ nftban_cmd_search() {
             echo ""
             echo "═══════════════════════════════════════════════════════════════"
         else
-            echo "✗ STATUS: NOT WHITELISTED (port is blocked by default)"
+            echo "X STATUS: NOT WHITELISTED (port is blocked by default)"
             echo ""
             echo "Not found in:"
-            echo "───────────────────────────────────────────────────────────────"
-            echo "  ✗ nftables tcp_ports set"
-            echo "  ✗ nftables udp_ports set"
-            echo "  ✗ ${NFTBAN_CONFIG_DIR}/ports.d/*.conf"
+            echo "-------------------------------------------------------------------"
+            echo "  X nftables tcp_ports_in/tcp_ports_out sets"
+            echo "  X nftables udp_ports_in/udp_ports_out sets"
+            echo "  X ${NFTBAN_CONFIG_DIR}/ports.d/*.conf"
             echo ""
             echo "To whitelist this port, use:"
             echo "  nftban port add $query tcp     # For TCP"

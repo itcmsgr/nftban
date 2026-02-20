@@ -124,7 +124,7 @@ func (b *Backend) initCachedObjects() {
 
 	// Initialize port sets (v1.15.0 - directional architecture)
 	// These must exist before any port operations can succeed
-	portSets := []string{"tcp_ports", "udp_ports", "tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"}
+	portSets := []string{"tcp_ports_in", "tcp_ports_out", "udp_ports_in", "udp_ports_out"}
 	for _, setName := range portSets {
 		// IPv4
 		if _, err := b.nft.GetOrCreatePortSet(b.tableIPv4, setName); err != nil {
@@ -342,7 +342,7 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 // AddElementRequest for generic set element operations
 type AddElementRequest struct {
 	Table   string // e.g., "ip nftban", "ip6 nftban"
-	Set     string // e.g., "whitelist_ipv4", "tcp_ports"
+	Set     string // e.g., "whitelist_ipv4", "tcp_ports_in"
 	Element string // e.g., "1.2.3.4", "8080"
 	Timeout int    // seconds, 0 = permanent
 }

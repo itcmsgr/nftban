@@ -1069,7 +1069,7 @@ Validate nftables structure against NFTBan specification.
 Standard Checks:
   - Required tables exist (ip nftban, ip6 nftban)
   - Forbidden tables don't exist (inet filter - bypasses NFTBan!)
-  - Required sets exist (whitelist_ipv4, blacklist_ipv4, tcp_ports, etc.)
+  - Required sets exist (whitelist_ipv4, blacklist_ipv4, tcp_ports_in, etc.)
   - Chain policies are correct (input=drop, output=accept)
   - Priority order is correct (-10, -5, 0)
 
@@ -1192,7 +1192,7 @@ Examples:
 
 Output includes:
   - Total counts (tables, chains, sets, rules)
-  - ip/ip6 nftban: whitelist, blacklist, tcp_ports, udp_ports
+  - ip/ip6 nftban: whitelist, blacklist, tcp_ports_in/out, udp_ports_in/out
   - ip/ip6 nftban: temp_whitelist, temp_ban (with auto-expire)
 
 EOF
