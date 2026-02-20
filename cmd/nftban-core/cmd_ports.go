@@ -258,15 +258,21 @@ func cmdPortsLoad(portsDir string) error {
 	fmt.Printf("✅ Port rules loaded successfully!\n")
 	fmt.Println()
 
-	if tcp, ok := data["tcp_ports"].(float64); ok {
-		fmt.Printf("TCP ports loaded: %.0f\n", tcp)
+	if tcpIn, ok := data["tcp_ports_in"].(float64); ok {
+		fmt.Printf("TCP ports (input) loaded: %.0f\n", tcpIn)
 	}
-	if udp, ok := data["udp_ports"].(float64); ok {
-		fmt.Printf("UDP ports loaded: %.0f\n", udp)
+	if tcpOut, ok := data["tcp_ports_out"].(float64); ok {
+		fmt.Printf("TCP ports (output) loaded: %.0f\n", tcpOut)
+	}
+	if udpIn, ok := data["udp_ports_in"].(float64); ok {
+		fmt.Printf("UDP ports (input) loaded: %.0f\n", udpIn)
+	}
+	if udpOut, ok := data["udp_ports_out"].(float64); ok {
+		fmt.Printf("UDP ports (output) loaded: %.0f\n", udpOut)
 	}
 	fmt.Println()
 	fmt.Println("Port sets are now configured in nftables.")
-	fmt.Println("Use firewall rules to reference @tcp_ports and @udp_ports sets.")
+	fmt.Println("Use firewall rules to reference @tcp_ports_in, @tcp_ports_out, @udp_ports_in, @udp_ports_out sets.")
 	fmt.Println()
 
 	return nil

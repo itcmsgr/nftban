@@ -76,11 +76,17 @@ type FirewallConfig struct {
 	// Geoban contains all country-based blocking data
 	Geoban *SetData `json:"geoban"`
 
-	// TCPPorts contains allowed TCP ports
-	TCPPorts []int `json:"tcp_ports"`
+	// TCPPortsIn contains allowed TCP ports for input direction
+	TCPPortsIn []int `json:"tcp_ports_in"`
 
-	// UDPPorts contains allowed UDP ports
-	UDPPorts []int `json:"udp_ports"`
+	// TCPPortsOut contains allowed TCP ports for output direction
+	TCPPortsOut []int `json:"tcp_ports_out"`
+
+	// UDPPortsIn contains allowed UDP ports for input direction
+	UDPPortsIn []int `json:"udp_ports_in"`
+
+	// UDPPortsOut contains allowed UDP ports for output direction
+	UDPPortsOut []int `json:"udp_ports_out"`
 
 	// RuntimeBans contains blacklist_ipv4/ipv6 sets (v2.1: unified blacklist)
 	RuntimeBans *SetData `json:"runtime_bans,omitempty"`
@@ -92,11 +98,13 @@ type FirewallConfig struct {
 // NewFirewallConfig creates empty firewall configuration
 func NewFirewallConfig() *FirewallConfig {
 	return &FirewallConfig{
-		Whitelist: NewSetData("whitelist"),
-		Blacklist: NewSetData("blacklist"),
-		Feeds:     make(map[string]*SetData),
-		Geoban:    NewSetData("geoban"),
-		TCPPorts:  make([]int, 0),
-		UDPPorts:  make([]int, 0),
+		Whitelist:   NewSetData("whitelist"),
+		Blacklist:   NewSetData("blacklist"),
+		Feeds:       make(map[string]*SetData),
+		Geoban:      NewSetData("geoban"),
+		TCPPortsIn:  make([]int, 0),
+		TCPPortsOut: make([]int, 0),
+		UDPPortsIn:  make([]int, 0),
+		UDPPortsOut: make([]int, 0),
 	}
 }

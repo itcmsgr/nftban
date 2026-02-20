@@ -371,7 +371,7 @@ check_ip_or_port() {
 
     elif [[ "$value_type" == "port" ]]; then
         # For ports, check allowed port sets in ip nftban table
-        # Supports both legacy (tcp_ports/udp_ports) and directional sets
+        # Uses directional sets (tcp_ports_in/out, udp_ports_in/out) - v2.1 schema
         processing_path+=("→ Checking ip nftban input (priority 0)")
 
         local matched_sets=()
@@ -390,14 +390,8 @@ check_ip_or_port() {
         if nft get element ${NFTBAN_TABLE_IPV4} udp_ports_out "{ $value }" >/dev/null 2>&1; then
             matched_sets+=("udp_ports_out")
         fi
-        # Check legacy TCP ports (backward compatibility)
-        if nft get element ${NFTBAN_TABLE_IPV4} tcp_ports "{ $value }" >/dev/null 2>&1; then
-            matched_sets+=("tcp_ports")
-        fi
-        # Check legacy UDP ports (backward compatibility)
-        if nft get element ${NFTBAN_TABLE_IPV4} udp_ports "{ $value }" >/dev/null 2>&1; then
-            matched_sets+=("udp_ports")
-        fi
+        # NOTE: Legacy tcp_ports/udp_ports sets removed in v2.1 schema
+        # Only directional sets (tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out) are supported
 
         if [[ ${#matched_sets[@]} -gt 0 ]]; then
             status="allowed"
@@ -441,17 +435,13 @@ check_ip_or_port() {
         fi
     elif [[ "$value_type" == "port" ]]; then
         if [[ "$status" == "allowed" ]]; then
-            # Suggest removal from directional sets
+            # Suggest removal from directional sets (v2.1 schema)
             actions+=("remove_from_tcp_ports_in" "remove_from_tcp_ports_out")
             actions+=("remove_from_udp_ports_in" "remove_from_udp_ports_out")
-            # Legacy set actions
-            actions+=("remove_from_tcp_ports" "remove_from_udp_ports")
         else
-            # Suggest adding to directional sets
+            # Suggest adding to directional sets (v2.1 schema)
             actions+=("add_to_tcp_ports_in" "add_to_tcp_ports_out")
             actions+=("add_to_udp_ports_in" "add_to_udp_ports_out")
-            # Legacy set actions
-            actions+=("add_to_tcp_ports" "add_to_udp_ports")
         fi
     fi
 
@@ -573,14 +563,11 @@ get_firewall_stats() {
     whitelist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     blacklist_ipv4_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     blacklist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    # Directional port sets
+    # Directional port sets (v2.1 schema)
     tcp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     tcp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     udp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     udp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    # Legacy port sets
-    tcp_ports_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    udp_ports_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
 
     # Output results
     if [[ "$output_json" == "true" ]]; then
@@ -597,8 +584,6 @@ get_firewall_stats() {
             --argjson tcp_ports_out "$tcp_ports_out_count" \
             --argjson udp_ports_in "$udp_ports_in_count" \
             --argjson udp_ports_out "$udp_ports_out_count" \
-            --argjson tcp_ports "$tcp_ports_count" \
-            --argjson udp_ports "$udp_ports_count" \
             '{
                 summary: {
                     tables: $tables,
@@ -614,9 +599,7 @@ get_firewall_stats() {
                     "ip nftban tcp_ports_in": $tcp_ports_in,
                     "ip nftban tcp_ports_out": $tcp_ports_out,
                     "ip nftban udp_ports_in": $udp_ports_in,
-                    "ip nftban udp_ports_out": $udp_ports_out,
-                    "ip nftban tcp_ports (legacy)": $tcp_ports,
-                    "ip nftban udp_ports (legacy)": $udp_ports
+                    "ip nftban udp_ports_out": $udp_ports_out
                 }
             }'
     else
@@ -634,15 +617,11 @@ get_firewall_stats() {
         echo "  ├─ whitelist_ipv4:   $whitelist_ipv4_count IPs"
         echo "  ├─ blacklist_ipv4:   $blacklist_ipv4_count IPs (permanent + temporary)"
         echo "  │"
-        echo "  ├─ Directional Port Sets:"
-        echo "  │   ├─ tcp_ports_in:   $tcp_ports_in_count ports (inbound TCP)"
-        echo "  │   ├─ tcp_ports_out:  $tcp_ports_out_count ports (outbound TCP)"
-        echo "  │   ├─ udp_ports_in:   $udp_ports_in_count ports (inbound UDP)"
-        echo "  │   └─ udp_ports_out:  $udp_ports_out_count ports (outbound UDP)"
-        echo "  │"
-        echo "  └─ Legacy Port Sets:"
-        echo "      ├─ tcp_ports:      $tcp_ports_count ports"
-        echo "      └─ udp_ports:      $udp_ports_count ports"
+        echo "  └─ Port Sets (v2.1 directional):"
+        echo "      ├─ tcp_ports_in:   $tcp_ports_in_count ports (inbound TCP)"
+        echo "      ├─ tcp_ports_out:  $tcp_ports_out_count ports (outbound TCP)"
+        echo "      ├─ udp_ports_in:   $udp_ports_in_count ports (inbound UDP)"
+        echo "      └─ udp_ports_out:  $udp_ports_out_count ports (outbound UDP)"
         echo ""
         echo "ip6 nftban (IPv6):"
         echo "  ├─ whitelist_ipv6:   $whitelist_ipv6_count IPs"

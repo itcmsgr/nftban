@@ -160,27 +160,18 @@ _nftban_panel_check_port_in_set() {
 # Usage: _nftban_panel_check_port <port>
 # Returns: 0 if port is open, 1 if closed
 #
-# Checks both legacy (tcp_ports, udp_ports) and directional sets
-# (tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out).
+# Checks directional sets (tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out).
 # Architecture: NFTBan uses separate ip/ip6 tables (not inet).
 _nftban_panel_check_port() {
     local port="$1"
 
-    # Check directional sets first (v1.15.0+)
+    # Check directional sets (v2.1 schema)
     # TCP inbound/outbound
     _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
     _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
     # UDP inbound/outbound
     _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
     _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
-
-    # Check legacy sets (backward compatibility)
-    _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
-    _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
-
-    # Fallback: Check legacy inet nftban table (for older installations)
-    _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
-    _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
 
     return 1
 }
@@ -190,31 +181,22 @@ _nftban_panel_check_port() {
 #   direction: "in" or "out"
 # Returns: 0 if port is allowed for that direction, 1 if not
 #
-# For inbound, checks: tcp_ports_in, udp_ports_in (and legacy sets)
-# For outbound, checks: tcp_ports_out, udp_ports_out (and legacy sets)
+# For inbound, checks: tcp_ports_in, udp_ports_in
+# For outbound, checks: tcp_ports_out, udp_ports_out
 _nftban_panel_check_port_direction() {
     local port="$1"
     local direction="$2"
 
     case "$direction" in
         in|inbound|input)
-            # Check directional inbound sets (v1.15.0+)
+            # Check directional inbound sets (v2.1 schema)
             _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
             _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
-            # Legacy sets (assume inbound for backward compatibility)
-            _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
-            _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
-            _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
-            _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
             ;;
         out|outbound|output)
-            # Check directional outbound sets (v1.15.0+)
+            # Check directional outbound sets (v2.1 schema)
             _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
             _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
-            # Note: Legacy sets don't distinguish direction, so we include them
-            # for backward compatibility (they were typically INPUT-focused)
-            _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
-            _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
             ;;
         *)
             # Unknown direction, check all
@@ -241,20 +223,15 @@ _nftban_panel_check_port_proto() {
                 case "$direction" in
                     in|inbound|input)
                         _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
-                        _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
-                        _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
                         ;;
                     out|outbound|output)
                         _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
-                        _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
                         ;;
                 esac
             else
-                # Check all TCP sets
+                # Check all TCP sets (v2.1 schema)
                 _nftban_panel_check_port_in_set "ip" "tcp_ports_in" "$port" && return 0
                 _nftban_panel_check_port_in_set "ip" "tcp_ports_out" "$port" && return 0
-                _nftban_panel_check_port_in_set "ip" "tcp_ports" "$port" && return 0
-                _nftban_panel_check_port_in_set "inet" "tcp_ports" "$port" && return 0
             fi
             ;;
         udp|UDP)
@@ -262,20 +239,15 @@ _nftban_panel_check_port_proto() {
                 case "$direction" in
                     in|inbound|input)
                         _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
-                        _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
-                        _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
                         ;;
                     out|outbound|output)
                         _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
-                        _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
                         ;;
                 esac
             else
-                # Check all UDP sets
+                # Check all UDP sets (v2.1 schema)
                 _nftban_panel_check_port_in_set "ip" "udp_ports_in" "$port" && return 0
                 _nftban_panel_check_port_in_set "ip" "udp_ports_out" "$port" && return 0
-                _nftban_panel_check_port_in_set "ip" "udp_ports" "$port" && return 0
-                _nftban_panel_check_port_in_set "inet" "udp_ports" "$port" && return 0
             fi
             ;;
     esac

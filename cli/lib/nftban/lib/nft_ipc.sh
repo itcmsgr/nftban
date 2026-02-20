@@ -526,7 +526,7 @@ nft_ipc_queue_status() {
 
 # Load ports from ports.d into nftables sets
 # Usage: nft_ipc_load_ports
-# This reloads all ports from /etc/nftban/ports.d/*.conf into tcp_ports and udp_ports sets
+# This reloads all ports from /etc/nftban/ports.d/*.conf into directional port sets
 nft_ipc_load_ports() {
     local response
     response=$(nft_ipc_request "load_ports" "{}")

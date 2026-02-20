@@ -147,11 +147,11 @@ func cmdSync(cfg *nftbanconf.Config) error {
 		fmt.Printf("  Geoban IPv6: %.0f ranges loaded\n", v)
 	}
 
-	if tcp, ok := data["tcp_ports"].(float64); ok && tcp > 0 {
-		fmt.Printf("  TCP Ports: %.0f loaded\n", tcp)
+	if tcp, ok := data["tcp_ports_in"].(float64); ok && tcp > 0 {
+		fmt.Printf("  TCP Ports (In): %.0f loaded\n", tcp)
 	}
-	if udp, ok := data["udp_ports"].(float64); ok && udp > 0 {
-		fmt.Printf("  UDP Ports: %.0f loaded\n", udp)
+	if udp, ok := data["udp_ports_in"].(float64); ok && udp > 0 {
+		fmt.Printf("  UDP Ports (In): %.0f loaded\n", udp)
 	}
 
 	// Show directional port counts if present

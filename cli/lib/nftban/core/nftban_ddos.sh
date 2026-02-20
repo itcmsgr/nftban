@@ -133,7 +133,7 @@ _nftban_ddos_load_config() {
     fi
 
     # Set defaults
-    : "${DDOS_ENABLED:=true}"
+    : "${DDOS_ENABLED:=false}"
     : "${DDOS_MODE:=auto}"
     : "${DDOS_AUTO_CHECK_SERVICE:=true}"
     : "${DDOS_AUTO_CHECK_BINARY:=true}"
