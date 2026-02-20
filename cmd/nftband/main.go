@@ -3442,6 +3442,8 @@ func (d *Daemon) handleReplaceSetRequest(params map[string]any) SocketResponse {
 
 // handleFlushSourceRequest removes all elements from a source
 // Uses SourceIndex to find elements belonging to a source, then unbans them
+// v1.18.1 FIX: Uses sourceIndex for ALL sources using shared blacklist_* sets
+// to prevent coexistence bugs (feeds flush wiping geoban entries)
 func (d *Daemon) handleFlushSourceRequest(params map[string]any) SocketResponse {
 	if d.opQueue == nil || d.sourceIndex == nil {
 		return SocketResponse{Success: false, Error: "OpQueue/SourceIndex not initialized"}
@@ -3458,9 +3460,14 @@ func (d *Daemon) handleFlushSourceRequest(params map[string]any) SocketResponse 
 		return SocketResponse{Success: false, Error: "unknown source: " + source}
 	}
 
-	// For dedicated sets (feeds/geoban), just flush the set
-	if cfg.AllowBulk && !cfg.AllowBan {
-		// Queue flush for IPv4 and IPv6 sets
+	// v1.18.1 FIX: Check if source uses shared blacklist sets
+	// In unified blacklist architecture, feeds/geoban/manual all share blacklist_ipv4/ipv6
+	// We must use sourceIndex-based removal to avoid wiping other sources' entries
+	isSharedSet := cfg.IPv4Set == "blacklist_ipv4" || cfg.IPv6Set == "blacklist_ipv6"
+
+	// Only use full flush for truly dedicated sets (not blacklist_*)
+	if cfg.AllowBulk && !cfg.AllowBan && !isSharedSet {
+		// Queue flush for dedicated IPv4 and IPv6 sets (e.g., feeds_ipv4, geoban_ipv4)
 		if err := d.opQueue.EnqueueFlush(cfg.IPv4Set); err != nil {
 			log.Printf("[FlushSource] Warning: failed to queue flush %s: %v", cfg.IPv4Set, err)
 		}
@@ -3479,7 +3486,8 @@ func (d *Daemon) handleFlushSourceRequest(params map[string]any) SocketResponse 
 		}
 	}
 
-	// For shared sets (auto/manual), use source index to find and unban elements
+	// For shared sets (blacklist_*), use source index to find and unban only this source's elements
+	// This prevents feeds flush from wiping geoban/manual entries (coexistence bug fix)
 	unbanned := 0
 	for _, setName := range []string{cfg.IPv4Set, cfg.IPv6Set} {
 		elements := d.sourceIndex.GetElementsBySource(setName, source)

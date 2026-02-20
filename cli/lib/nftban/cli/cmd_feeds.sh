@@ -534,12 +534,11 @@ nftban_cmd_feeds() {
             if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
                 nftban_require_net_admin_or_exit
             fi
-            # Parse --clean flag
-            local clean_mode=false
+            # Parse feed name (v1.18.1: --clean is now default behavior)
             local feed_name=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --clean) clean_mode=true ;;
+                    --clean) ;; # v1.18.1: now default, kept for backwards compat
                     --json) ;; # already handled
                     -*) echo "Unknown option: $1" >&2; exit 1 ;;
                     *) feed_name="$1" ;;
@@ -548,26 +547,14 @@ nftban_cmd_feeds() {
             done
             if [[ -z "$feed_name" ]]; then
                 if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-                    json_output "false" '{}' "Usage: nftban feeds disable <feed_name> [--clean]"
+                    json_output "false" '{}' "Usage: nftban feeds disable <feed_name>"
                 else
-                    echo "ERROR: Usage: nftban feeds disable <feed_name> [--clean]" >&2
-                    echo "       --clean: Also remove feed IPs from blacklist" >&2
+                    echo "ERROR: Usage: nftban feeds disable <feed_name>" >&2
                 fi
                 exit 1
             fi
+            # v1.18.1: nftban_feeds_disable now handles cache cleanup + IPC flush automatically
             nftban_feeds_disable_json "$feed_name" "$json_mode"
-            # If --clean, also flush the feed IPs from blacklist
-            if [[ "$clean_mode" == "true" ]]; then
-                echo ""
-                echo "Removing feed IPs from blacklist (--clean)..."
-                # Source the flush command and call feeds flush
-                if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_flush.sh" ]]; then
-                    source "${NFTBAN_LIB_DIR}/cli/cmd_flush.sh"
-                    _flush_feeds true false  # skip_confirm=true, dry_run=false
-                else
-                    echo "WARN: cmd_flush.sh not found, cannot clean IPs" >&2
-                fi
-            fi
             ;;
         enable-cat|enable-category)
             # Check CAP_NET_ADMIN capability for nftables modifications
