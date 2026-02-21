@@ -61,15 +61,19 @@ check_dependencies() {
     local missing=()
     local fatal=0
 
-    # MANDATORY: Check Go (required for binary compilation)
-    if ! command -v go >/dev/null 2>&1; then
+    # Check Go - required ONLY if pre-built binaries don't exist
+    # CI downloads pre-built binaries, so Go is not needed in container
+    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -x "${PROJECT_ROOT}/bin/nftband" ]]; then
+        log_success "Pre-built binaries found in bin/ - Go not required"
+    elif ! command -v go >/dev/null 2>&1; then
         log_error "╔══════════════════════════════════════════════════════════════════╗"
         log_error "║  FATAL: Go is NOT installed - CANNOT build nftband binaries!    ║"
         log_error "╠══════════════════════════════════════════════════════════════════╣"
-        log_error "║  Install Go 1.21+:                                               ║"
-        log_error "║    Fedora/RHEL: sudo dnf install golang                          ║"
-        log_error "║    Debian/Ubuntu: sudo apt install golang-go                     ║"
-        log_error "║    Or download: https://go.dev/dl/                               ║"
+        log_error "║  Either:                                                          ║"
+        log_error "║    1. Install Go 1.21+:                                           ║"
+        log_error "║       Fedora/RHEL: sudo dnf install golang                        ║"
+        log_error "║       Debian/Ubuntu: sudo apt install golang-go                   ║"
+        log_error "║    2. Or place pre-built binaries in bin/ directory               ║"
         log_error "╚══════════════════════════════════════════════════════════════════╝"
         fatal=1
     else
@@ -94,9 +98,12 @@ check_dependencies() {
         command -v rpmbuild >/dev/null || missing+=("rpmbuild")
     fi
 
+    # MANDATORY: curl (required to download yq during package build)
+    command -v curl >/dev/null || missing+=("curl")
+
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_error "Missing: ${missing[*]}"
-        log_info "Install: sudo dnf install rpm-build dpkg-dev"
+        log_info "Install: sudo dnf install rpm-build dpkg-dev curl"
         fatal=1
     fi
 
