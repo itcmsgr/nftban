@@ -1284,14 +1284,14 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     # v1.18.7: Schema migration - auto rebuild ONLY if schema changed
     CURRENT_SCHEMA="2.1"
     SCHEMA_FILE="/etc/nftban/.schema_version"
-    INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
+    INSTALLED_SCHEMA=\$(cat "\$SCHEMA_FILE" 2>/dev/null || echo "1.0")
 
     sleep 1
-    if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
-        echo "[NFTBan] Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
+    if [[ "\$INSTALLED_SCHEMA" != "\$CURRENT_SCHEMA" ]]; then
+        echo "[NFTBan] Schema migration: \$INSTALLED_SCHEMA -> \$CURRENT_SCHEMA"
         echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
         if nftban firewall rebuild >/dev/null 2>&1; then
-            echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
+            echo "\$CURRENT_SCHEMA" > "\$SCHEMA_FILE"
             # Sync configs to load all values (ports, whitelist, blacklist)
             nftban sync >/dev/null 2>&1 || true
             echo "[NFTBan] Schema migration complete."
@@ -1307,10 +1307,10 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     echo "[NFTBan] Detecting services..."
 
     # Detect panel and enable ports
-    DETECTED_PANEL=$(nftban panel detect 2>/dev/null || echo "none")
-    if [[ "$DETECTED_PANEL" != "none" && -n "$DETECTED_PANEL" ]]; then
-        echo "[NFTBan] Panel detected: $DETECTED_PANEL - enabling ports..."
-        nftban panel "$DETECTED_PANEL" enable >/dev/null 2>&1 || true
+    DETECTED_PANEL=\$(nftban panel detect 2>/dev/null || echo "none")
+    if [[ "\$DETECTED_PANEL" != "none" && -n "\$DETECTED_PANEL" ]]; then
+        echo "[NFTBan] Panel detected: \$DETECTED_PANEL - enabling ports..."
+        nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
     fi
 
     # Enable login monitor (auto-detects services: ssh, dovecot, exim, etc.)
@@ -1318,8 +1318,8 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     systemctl restart nftban-login-monitor.service 2>/dev/null || true
 
     # Show detected services
-    DETECTED_SERVICES=$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
-    echo "[NFTBan] Login protection enabled for:$DETECTED_SERVICES"
+    DETECTED_SERVICES=\$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
+    echo "[NFTBan] Login protection enabled for:\$DETECTED_SERVICES"
 
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 else
