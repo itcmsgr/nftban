@@ -621,8 +621,7 @@ run_lifecycle_tests() {
     nftban ban "$conflict_ip2" --reason smoke_test &>/dev/null || true
     sleep 1
     # Then whitelist (should remove from blacklist)
-    local wl_output
-    wl_output=$(nftban whitelist add "$conflict_ip2" 2>&1) || true
+    nftban whitelist add "$conflict_ip2" &>/dev/null || true
     # Verify it's no longer in blacklist
     if ! nft get element ${table_v4} blacklist_ipv4 "{ $conflict_ip2 }" &>/dev/null; then
         log_pass "Whitelist correctly removed IP from blacklist"
