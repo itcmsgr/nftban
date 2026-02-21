@@ -59,10 +59,24 @@ declare -gA _LOGIN_CLASSIC_FAIL_COUNT=()
 declare -gA _LOGIN_CLASSIC_FAIL_FIRST=()
 # Last seen service per IP (IP -> service)
 declare -gA _LOGIN_CLASSIC_LAST_SERVICE=()
+# Username enumeration tracking (IP -> comma-separated usernames)
+declare -gA _LOGIN_CLASSIC_USERS_PER_IP=()
+# Velocity tracking (IP -> timestamp of first event in burst window)
+declare -gA _LOGIN_CLASSIC_VELOCITY_FIRST=()
+# Velocity event count (IP -> count in velocity window)
+declare -gA _LOGIN_CLASSIC_VELOCITY_COUNT=()
+# Score tracking (IP -> current score) for decay (v1.18.9)
+declare -gA _LOGIN_CLASSIC_SCORE=()
+# Score timestamp (IP -> last event timestamp) for decay (v1.18.9)
+declare -gA _LOGIN_CLASSIC_SCORE_TIME=()
+# Distributed attack tracking (username -> comma-separated IPs) (v1.18.9)
+declare -gA _LOGIN_CLASSIC_USER_IPS=()
 # Running flag
 declare -g _LOGIN_CLASSIC_RUNNING=0
 # PIDs of background monitors
 declare -gA _LOGIN_CLASSIC_MONITOR_PIDS=()
+# Persistent journal cursor file (v1.18.9)
+declare -g _LOGIN_CLASSIC_CURSOR_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/login-journal-cursor"
 
 # =============================================================================
 # INITIALIZATION
@@ -88,6 +102,36 @@ nftban_login_classic_init() {
     : "${LOGIN_CLASSIC_BAN_DURATION_SHORT:=900}"
     : "${LOGIN_CLASSIC_BAN_DURATION_LONG:=3600}"
 
+    # Username enumeration detection (v1.18.8)
+    : "${LOGIN_CLASSIC_ENUMERATION_THRESHOLD:=5}"
+    : "${LOGIN_CLASSIC_SCORE_ENUMERATION:=0.20}"
+
+    # Velocity/burst detection (v1.18.8)
+    : "${LOGIN_CLASSIC_VELOCITY_WINDOW:=30}"
+    : "${LOGIN_CLASSIC_VELOCITY_THRESHOLD:=5}"
+    : "${LOGIN_CLASSIC_SCORE_VELOCITY:=0.25}"
+
+    # Score decay over time (v1.18.9) - prevent permanent score inflation
+    : "${LOGIN_CLASSIC_SCORE_DECAY_RATE:=0.01}"    # Score points to decay per minute
+    : "${LOGIN_CLASSIC_SCORE_DECAY_INTERVAL:=60}"   # Seconds between decay applications
+
+    # Distributed attack detection (v1.18.9) - same username from multiple IPs
+    : "${LOGIN_CLASSIC_DISTRIBUTED_THRESHOLD:=3}"   # IPs per username to trigger
+    : "${LOGIN_CLASSIC_SCORE_DISTRIBUTED:=0.30}"    # Score bonus for distributed attack
+
+    # Persistent event cursor (v1.18.9) - prevent double-processing on restart
+    : "${LOGIN_CLASSIC_CURSOR_ENABLED:=true}"
+    mkdir -p "$(dirname "$_LOGIN_CLASSIC_CURSOR_FILE")" 2>/dev/null || true
+
+    # bc dependency validation with integer fallback (v1.18.8)
+    if ! command -v bc &>/dev/null; then
+        nftban_login_log "WARN" "bc not found, using integer scoring mode"
+        export LOGIN_USE_INTEGER_SCORING=1
+        # Convert float thresholds to integer (multiply by 100)
+        : "${LOGIN_CLASSIC_THRESHOLD_BLOCK_SHORT_INT:=45}"
+        : "${LOGIN_CLASSIC_THRESHOLD_BLOCK_LONG_INT:=65}"
+    fi
+
     return 0
 }
 
@@ -109,6 +153,17 @@ _nftban_login_classic_monitor_journal() {
     # The -f flag already implies "start from now", -n 0 caused pipe issues
     local -a journal_cmd=(journalctl -f)
 
+    # Persistent cursor support (v1.18.9) - prevent double-processing on restart
+    local cursor_file="${_LOGIN_CLASSIC_CURSOR_FILE}.${service}"
+    if [[ "${LOGIN_CLASSIC_CURSOR_ENABLED:-true}" == "true" && -f "$cursor_file" ]]; then
+        local saved_cursor
+        saved_cursor=$(cat "$cursor_file" 2>/dev/null)
+        if [[ -n "$saved_cursor" ]]; then
+            journal_cmd+=(--after-cursor="$saved_cursor")
+            nftban_login_log "INFO" "Resuming $service from saved cursor"
+        fi
+    fi
+
     # Add units
     IFS=',' read -ra unit_array <<< "$units"
     for unit in "${unit_array[@]}"; do
@@ -117,8 +172,15 @@ _nftban_login_classic_monitor_journal() {
 
     # Use JSON output if jq is available
     if command -v jq &>/dev/null && [[ "${LOGIN_CLASSIC_JOURNALCTL_JSON:-true}" == "true" ]]; then
-        journal_cmd+=(--output=json)
+        journal_cmd+=(--output=json --show-cursor)
         "${journal_cmd[@]}" 2>/dev/null | while read -r line; do
+            # Save cursor for persistence (v1.18.9)
+            local cursor
+            cursor=$(echo "$line" | jq -r '.__CURSOR // empty' 2>/dev/null)
+            if [[ -n "$cursor" && "${LOGIN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]]; then
+                echo "$cursor" > "$cursor_file" 2>/dev/null || true
+            fi
+
             local message
             message=$(echo "$line" | jq -r '.MESSAGE // empty' 2>/dev/null) || continue
             [[ -z "$message" ]] && continue
@@ -267,6 +329,33 @@ _nftban_login_classic_process_web_log() {
         fi
     fi
 
+    # cPanel login failure (v1.18.8)
+    # Format: "FAILED LOGIN user=admin ip=1.2.3.4" or "Invalid credentials for user..."
+    if [[ "$service" == "cpanel" ]]; then
+        if [[ "$line" =~ FAILED.*ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "failed"
+        elif [[ "$line" =~ [Ii]nvalid.*ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "invalid"
+        fi
+    fi
+
+    # Plesk login failure (v1.18.8)
+    # Format: "Authentication failed for user admin from 1.2.3.4"
+    if [[ "$service" == "plesk" ]]; then
+        if [[ "$line" =~ [Aa]uthentication\ failed.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
+        elif [[ "$line" =~ [Ll]ogin\ failed.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
+        elif [[ "$line" =~ [Ii]nvalid\ credentials.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "plesk" "invalid"
+        fi
+    fi
+
     # Mail services (Postfix SASL, Dovecot) from /var/log/maillog or /var/log/mail.log
     if [[ "$service" == "mail" ]] || [[ "$service" == "postfix_file" ]]; then
         # Postfix SASL: "warning: hostname[IP]: SASL LOGIN authentication failed"
@@ -316,6 +405,66 @@ _nftban_login_classic_process_web_log() {
 }
 
 # =============================================================================
+# SCORE DECAY (v1.18.9)
+# =============================================================================
+
+# Apply score decay over time to prevent permanent inflation
+_nftban_login_classic_apply_decay() {
+    local ip="$1"
+    local now
+    now=$(date +%s)
+
+    # Get last score time
+    local last_time="${_LOGIN_CLASSIC_SCORE_TIME[$ip]:-}"
+    if [[ -z "$last_time" ]]; then
+        _LOGIN_CLASSIC_SCORE_TIME[$ip]=$now
+        return 0
+    fi
+
+    # Calculate elapsed minutes
+    local elapsed=$((now - last_time))
+    local decay_interval="${LOGIN_CLASSIC_SCORE_DECAY_INTERVAL:-60}"
+
+    if [[ $elapsed -lt $decay_interval ]]; then
+        return 0  # Not enough time passed
+    fi
+
+    # Calculate decay amount
+    local decay_rate="${LOGIN_CLASSIC_SCORE_DECAY_RATE:-0.01}"
+    local minutes=$((elapsed / 60))
+    local current_score="${_LOGIN_CLASSIC_SCORE[$ip]:-0}"
+
+    if [[ "$current_score" == "0" ]]; then
+        _LOGIN_CLASSIC_SCORE_TIME[$ip]=$now
+        return 0
+    fi
+
+    # Apply decay (score -= decay_rate * minutes)
+    local new_score
+    if command -v bc &>/dev/null; then
+        new_score=$(echo "$current_score - ($decay_rate * $minutes)" | bc -l)
+        # Ensure non-negative
+        if (( $(echo "$new_score < 0" | bc -l) )); then
+            new_score="0"
+        fi
+    else
+        # Integer fallback
+        local decay_amount=$((minutes * 1))  # 1 point per minute
+        local int_score=$((current_score * 100))
+        int_score=$((int_score - decay_amount))
+        [[ $int_score -lt 0 ]] && int_score=0
+        new_score=$int_score
+    fi
+
+    _LOGIN_CLASSIC_SCORE[$ip]="$new_score"
+    _LOGIN_CLASSIC_SCORE_TIME[$ip]=$now
+
+    if [[ "$new_score" != "$current_score" ]]; then
+        nftban_login_log "DEBUG" "Score decay for $ip: $current_score -> $new_score (${minutes}m elapsed)"
+    fi
+}
+
+# =============================================================================
 # EVENT PROCESSING
 # =============================================================================
 
@@ -331,6 +480,35 @@ _nftban_login_classic_process_event() {
     # Skip whitelisted IPs
     if _nftban_login_classic_is_whitelisted "$ip"; then
         return 0
+    fi
+
+    # Track unique usernames per IP for enumeration detection (v1.18.8)
+    if [[ -n "$user" && "$user" != "unknown" ]]; then
+        local ip_users="${_LOGIN_CLASSIC_USERS_PER_IP[$ip]:-}"
+        if [[ ! ",$ip_users," == *",$user,"* ]]; then
+            _LOGIN_CLASSIC_USERS_PER_IP[$ip]="${ip_users:+$ip_users,}$user"
+        fi
+
+        # Track distributed attacks - same username from multiple IPs (v1.18.9)
+        local user_ips="${_LOGIN_CLASSIC_USER_IPS[$user]:-}"
+        if [[ ! ",$user_ips," == *",$ip,"* ]]; then
+            _LOGIN_CLASSIC_USER_IPS[$user]="${user_ips:+$user_ips,}$ip"
+        fi
+    fi
+
+    # Apply score decay before calculating new score (v1.18.9)
+    _nftban_login_classic_apply_decay "$ip"
+
+    # Track velocity (rapid-fire attacks) (v1.18.8)
+    local velocity_first="${_LOGIN_CLASSIC_VELOCITY_FIRST[$ip]:-}"
+    local velocity_window="${LOGIN_CLASSIC_VELOCITY_WINDOW:-30}"
+    if [[ -z "$velocity_first" ]] || [[ $((now - velocity_first)) -gt $velocity_window ]]; then
+        # Reset velocity tracking
+        _LOGIN_CLASSIC_VELOCITY_FIRST[$ip]=$now
+        _LOGIN_CLASSIC_VELOCITY_COUNT[$ip]=1
+    else
+        # Increment velocity counter
+        ((_LOGIN_CLASSIC_VELOCITY_COUNT[$ip]++)) || true
     fi
 
     # Get service-specific thresholds
@@ -443,6 +621,33 @@ _nftban_login_classic_calculate_score() {
         score=$(echo "$score + ${LOGIN_CLASSIC_SCORE_MULTI_SERVICE:-0.15}" | bc -l)
     fi
 
+    # Username enumeration detection (v1.18.8)
+    local unique_users=0
+    if [[ -n "${_LOGIN_CLASSIC_USERS_PER_IP[$ip]:-}" ]]; then
+        unique_users=$(echo "${_LOGIN_CLASSIC_USERS_PER_IP[$ip]}" | tr ',' '\n' | wc -l)
+    fi
+    if [[ $unique_users -gt ${LOGIN_CLASSIC_ENUMERATION_THRESHOLD:-5} ]]; then
+        score=$(echo "$score + ${LOGIN_CLASSIC_SCORE_ENUMERATION:-0.20}" | bc -l)
+        nftban_login_log "DEBUG" "Enumeration detected from $ip: $unique_users unique users"
+    fi
+
+    # Velocity/burst detection (v1.18.8)
+    local velocity_count="${_LOGIN_CLASSIC_VELOCITY_COUNT[$ip]:-0}"
+    if [[ $velocity_count -gt ${LOGIN_CLASSIC_VELOCITY_THRESHOLD:-5} ]]; then
+        score=$(echo "$score + ${LOGIN_CLASSIC_SCORE_VELOCITY:-0.25}" | bc -l)
+        nftban_login_log "DEBUG" "Velocity attack detected from $ip: $velocity_count events in ${LOGIN_CLASSIC_VELOCITY_WINDOW:-30}s"
+    fi
+
+    # Distributed attack detection (v1.18.9) - same username from multiple IPs
+    if [[ -n "$user" && "$user" != "unknown" && -n "${_LOGIN_CLASSIC_USER_IPS[$user]:-}" ]]; then
+        local unique_ips_for_user
+        unique_ips_for_user=$(echo "${_LOGIN_CLASSIC_USER_IPS[$user]}" | tr ',' '\n' | wc -l)
+        if [[ $unique_ips_for_user -ge ${LOGIN_CLASSIC_DISTRIBUTED_THRESHOLD:-3} ]]; then
+            score=$(echo "$score + ${LOGIN_CLASSIC_SCORE_DISTRIBUTED:-0.30}" | bc -l)
+            nftban_login_log "DEBUG" "Distributed attack on user $user: $unique_ips_for_user IPs"
+        fi
+    fi
+
     # Service-specific multiplier
     local multiplier_var="LOGIN_SERVICE_${service^^}_RISK_MULTIPLIER"
     local multiplier="${!multiplier_var:-1.0}"
@@ -495,6 +700,10 @@ _nftban_login_classic_clear_ip() {
         fi
     done
     unset "_LOGIN_CLASSIC_LAST_SERVICE[$ip]"
+    # Clear enumeration and velocity tracking (v1.18.8)
+    unset "_LOGIN_CLASSIC_USERS_PER_IP[$ip]"
+    unset "_LOGIN_CLASSIC_VELOCITY_FIRST[$ip]"
+    unset "_LOGIN_CLASSIC_VELOCITY_COUNT[$ip]"
 }
 
 # =============================================================================
@@ -703,6 +912,34 @@ nftban_login_classic_start() {
         if [[ -f "$log_file" ]]; then
             _nftban_login_classic_monitor_file "directadmin" "$log_file" "" &
             _LOGIN_CLASSIC_MONITOR_PIDS[directadmin]=$!
+        fi
+    fi
+
+    # =========================================================================
+    # CPANEL - file-based monitoring (v1.18.8)
+    # =========================================================================
+    if nftban_login_service_detected "cpanel"; then
+        local log_file="${LOGIN_SERVICE_CPANEL_LOG:-/usr/local/cpanel/logs/login_log}"
+        if [[ -f "$log_file" ]]; then
+            nftban_login_log "INFO" "cPanel: starting file monitor ($log_file)"
+            _nftban_login_classic_monitor_file "cpanel" "$log_file" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[cpanel]=$!
+        else
+            nftban_login_log "WARN" "cPanel: log file not found ($log_file)"
+        fi
+    fi
+
+    # =========================================================================
+    # PLESK - file-based monitoring (v1.18.8)
+    # =========================================================================
+    if nftban_login_service_detected "plesk"; then
+        local log_file="${LOGIN_SERVICE_PLESK_LOG:-/var/log/plesk/panel.log}"
+        if [[ -f "$log_file" ]]; then
+            nftban_login_log "INFO" "Plesk: starting file monitor ($log_file)"
+            _nftban_login_classic_monitor_file "plesk" "$log_file" "" &
+            _LOGIN_CLASSIC_MONITOR_PIDS[plesk]=$!
+        else
+            nftban_login_log "WARN" "Plesk: log file not found ($log_file)"
         fi
     fi
 

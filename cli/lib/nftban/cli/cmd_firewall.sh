@@ -187,7 +187,7 @@ readonly VALIDATE_ENV_ERROR=40
 
 firewall_validate() {
     # Validate nftables structure against NFTBan specification
-    # Args: [--strict] [--json]
+    # Args: [--strict] [--json] [--quiet]
     #
     # --strict: Enforce Single Firewall Authority
     #   - policykit-1 MANDATORY on Debian/Ubuntu
@@ -196,6 +196,7 @@ firewall_validate() {
 
     local output_json=false
     local strict_mode=false
+    local quiet_mode=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -206,6 +207,10 @@ firewall_validate() {
                 ;;
             --strict|-s)
                 strict_mode=true
+                shift
+                ;;
+            --quiet|-q)
+                quiet_mode=true
                 shift
                 ;;
             -h|--help)
@@ -225,14 +230,16 @@ firewall_validate() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh"
     else
-        echo "Error: Cannot find nftban_validator.sh" >&2
+        [[ "$quiet_mode" != "true" ]] && echo "Error: Cannot find nftban_validator.sh" >&2
         return $VALIDATE_ENV_ERROR
     fi
 
     local validation_result=$VALIDATE_OK
 
-    # Run structure validation
-    if [[ "$output_json" == "true" ]]; then
+    # Run structure validation (quiet mode suppresses all output)
+    if [[ "$quiet_mode" == "true" ]]; then
+        validate_structure "false" >/dev/null 2>&1 || validation_result=$VALIDATE_STRUCTURE_ERROR
+    elif [[ "$output_json" == "true" ]]; then
         validate_structure "true" || validation_result=$VALIDATE_STRUCTURE_ERROR
     else
         validate_structure "false" || validation_result=$VALIDATE_STRUCTURE_ERROR
@@ -241,7 +248,11 @@ firewall_validate() {
     # If strict mode, run additional checks
     if [[ "$strict_mode" == "true" ]]; then
         local strict_exit=$VALIDATE_OK
-        _firewall_validate_strict "$output_json" || strict_exit=$?
+        if [[ "$quiet_mode" == "true" ]]; then
+            _firewall_validate_strict "$output_json" >/dev/null 2>&1 || strict_exit=$?
+        else
+            _firewall_validate_strict "$output_json" || strict_exit=$?
+        fi
 
         # Return the more severe exit code
         if [[ $strict_exit -ne $VALIDATE_OK ]]; then

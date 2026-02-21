@@ -85,7 +85,7 @@ Key Ports:
 Configuration Files:
   /etc/nftban/conf.d/panels/cpanel/main.conf       - Main configuration
   /etc/nftban/nftban.conf.local                    - Your customizations
-  /etc/nftban/conf.d/login.conf                    - Login monitoring (brute-force)
+  /etc/nftban/conf.d/login/main.conf                    - Login monitoring (brute-force)
 
 Examples:
   # Initial setup
@@ -534,7 +534,7 @@ nftban_panel_cpanel_report() {
     echo "   ───────────────────────────────────────────────────"
     echo "   /etc/nftban/conf.d/panels/cpanel/main.conf"
     echo "   /etc/nftban/nftban.conf.local (customizations)"
-    echo "   /etc/nftban/conf.d/login.conf (brute-force protection)"
+    echo "   /etc/nftban/conf.d/login/main.conf (brute-force protection)"
     echo ""
 }
 

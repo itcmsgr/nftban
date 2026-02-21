@@ -327,6 +327,16 @@ nftban_login_detect_services() {
         _LOGIN_DETECTED_SERVICES[directadmin]=1
     fi
 
+    # cPanel/WHM
+    if [[ -d "/usr/local/cpanel" ]]; then
+        _LOGIN_DETECTED_SERVICES[cpanel]=1
+    fi
+
+    # Plesk
+    if [[ -d "/usr/local/psa" ]] || [[ -d "/opt/psa" ]]; then
+        _LOGIN_DETECTED_SERVICES[plesk]=1
+    fi
+
     # WordPress - check if Apache/Nginx is running and wp-config.php exists somewhere
     if [[ -n "${_LOGIN_DETECTED_SERVICES[apache]:-}" ]] || [[ -n "${_LOGIN_DETECTED_SERVICES[nginx]:-}" ]]; then
         if find /var/www -name "wp-config.php" -type f 2>/dev/null | head -1 | grep -q .; then
@@ -341,20 +351,30 @@ nftban_login_detect_services() {
     fi
 }
 
-# Check if a service exists
+# Check if a service exists (distro-agnostic: Debian + RPM)
 _nftban_login_service_exists() {
     local service="$1"
 
-    # Check systemd
+    # Method 1: systemctl show (most robust - asks systemd if it knows the unit)
     if command -v systemctl &>/dev/null; then
-        systemctl list-unit-files "${service}.service" 2>/dev/null | grep -q "$service" && return 0
+        local load_state
+        load_state=$(systemctl show "${service}.service" --property=LoadState 2>/dev/null | cut -d= -f2)
+        if [[ "$load_state" == "loaded" ]]; then
+            return 0
+        fi
+        # Fallback: check list-units for active/registered services
+        if systemctl list-units --full --all 2>/dev/null | grep -Fq "${service}.service"; then
+            return 0
+        fi
     fi
 
     # Check SysV init
     [[ -f "/etc/init.d/$service" ]] && return 0
 
-    # Check binary
+    # Check binary exists (fallback for non-systemd or manual installs)
     command -v "$service" &>/dev/null && return 0
+    [[ -x "/usr/sbin/$service" ]] && return 0
+    [[ -x "/usr/bin/$service" ]] && return 0
 
     return 1
 }
@@ -387,8 +407,8 @@ nftban_login_log() {
     # Log to file
     echo "[$timestamp] [$level] $message" >> "$NFTBAN_LOGIN_LOG_FILE"
 
-    # Log to syslog
-    logger -t "nftban-login" -p "auth.$level" "$message"
+    # Log to syslog (suppress errors if /dev/log unavailable in sandboxed service)
+    logger -t "nftban-login" -p "auth.$level" "$message" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -638,6 +658,18 @@ nftban_login_ban() {
     local reason="${2:-login_brute_force}"
     local duration="${3:-${LOGIN_DEFAULT_BAN_DURATION:-3600}}"
     local service="${4:-unknown}"
+
+    # v1.18.7: Check whitelist BEFORE banning - never ban whitelisted IPs
+    local whitelist_set
+    if [[ "$ip" =~ : ]]; then
+        whitelist_set="ip6 nftban whitelist_ipv6"
+    else
+        whitelist_set="ip nftban whitelist_ipv4"
+    fi
+    if nft get element ${whitelist_set} "{ $ip }" &>/dev/null; then
+        nftban_login_log "INFO" "Skipping ban for whitelisted IP: $ip"
+        return 0
+    fi
 
     if [[ "${LOGIN_ACTION_MODE:-both}" == "alert" ]]; then
         nftban_login_log "INFO" "Would ban $ip (alert-only mode)"

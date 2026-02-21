@@ -58,7 +58,7 @@ RestrictSUIDSGID=true
 LockPersonality=true
 
 # Minimal filesystem access
-ReadWritePaths=/var/log/nftban /var/lib/nftban /var/cache/nftban /run/nftban
+ReadWritePaths=/var/log/nftban /var/lib/nftban /var/cache/nftban /run/nftban /run/systemd/journal
 ReadOnlyPaths=/etc/nftban /usr/lib/nftban /usr/share/nftban
 
 # Network for IPC socket

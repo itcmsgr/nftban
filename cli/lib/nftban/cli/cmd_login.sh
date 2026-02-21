@@ -573,10 +573,10 @@ nftban_login_cmd_run() {
 
         # Build detected services list for banner
         local detected_services=""
-        local all_services="ssh dovecot postfix exim"
+        local all_services="ssh dovecot exim postfix apache nginx pureftpd vsftpd proftpd directadmin cpanel plesk"
         for svc in $all_services; do
             if nftban_login_service_detected "$svc" 2>/dev/null; then
-                [[ -n "$detected_services" ]] && detected_services+=","
+                [[ -n "$detected_services" ]] && detected_services+=" "
                 detected_services+="$svc"
             fi
         done
@@ -587,16 +587,15 @@ nftban_login_cmd_run() {
         timestamp=$(date '+%Y-%m-%d %H:%M:%S')
         echo "[$timestamp] NFTBan Login Monitor starting"
         echo "[$timestamp] Mode: ${_LOGIN_ACTIVE_MODE:-classic}"
-        echo "[$timestamp] Services monitored: $all_services"
         echo "[$timestamp] Services detected: $detected_services"
-        logger -t nftban-login-monitor "Started: mode=${_LOGIN_ACTIVE_MODE:-classic} detected=$detected_services"
+        logger -t nftban-login-monitor "Started: mode=${_LOGIN_ACTIVE_MODE:-classic} detected=$detected_services" 2>/dev/null || true
 
         # Start consolidated monitoring (SSH + Dovecot + Postfix + Exim)
         nftban_login_start
     else
         # Fallback to alert-only mode if main module not loaded
         echo "WARNING: Main login module not loaded, using alert-only mode (SSH only)" >&2
-        logger -t nftban-login-monitor "Started: mode=alert-only (SSH only)"
+        logger -t nftban-login-monitor "Started: mode=alert-only (SSH only)" 2>/dev/null || true
         nftban_login_monitor_all
     fi
 }
@@ -752,7 +751,7 @@ NFTBAN_LOGIN_WHITELIST=
 
 # Failed login tracking
 NFTBAN_LOGIN_ALERT_FAILED=true
-NFTBAN_LOGIN_FAILED_THRESHOLD=3
+NFTBAN_LOGIN_FAILED_THRESHOLD=9
 NFTBAN_LOGIN_FAILED_WINDOW=300
 CONF
             chmod 640 "$config_file"

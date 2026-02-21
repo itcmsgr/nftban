@@ -116,21 +116,34 @@ nftban_cmd_whitelist() {
 }
 
 # Add IP to whitelist via IPC (v1.18.0: IPC-only writes)
+# v1.18.7: Also removes from blacklist to prevent conflict
 nftban_whitelist_add_ip() {
     local ip="$1"
 
     # Validate IP format and determine family
-    local table set_name family
+    local table set_name blacklist_set family
     if [[ "$ip" =~ : ]]; then
         # IPv6
         table="ip6 nftban"
         set_name="whitelist_ipv6"
+        blacklist_set="blacklist_ipv6"
         family="IPv6"
     else
         # IPv4
         table="ip nftban"
         set_name="whitelist_ipv4"
+        blacklist_set="blacklist_ipv4"
         family="IPv4"
+    fi
+
+    # v1.18.7: First remove from blacklist if present (prevents whitelist/blacklist conflict)
+    if nft get element ${table} ${blacklist_set} "{ $ip }" &>/dev/null; then
+        if declare -f nft_ipc_delete_element &>/dev/null; then
+            nft_ipc_delete_element "$table" "$blacklist_set" "$ip" 2>/dev/null || true
+        else
+            nft delete element ${table} ${blacklist_set} "{ $ip }" 2>/dev/null || true
+        fi
+        echo "Removed $ip from blacklist (was banned)"
     fi
 
     # Use IPC for add operation

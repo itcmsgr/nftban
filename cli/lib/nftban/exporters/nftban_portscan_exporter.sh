@@ -25,7 +25,7 @@ umask 027
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR}"
 readonly OUTPUT_FILE="${NFTBAN_METRICS_FILE:-/var/lib/node_exporter/textfile_collector/nftban.prom}"
 readonly ACTIONS_LOG="${NFTBAN_LOG_DIR}/nftban-actions.log"
-readonly PORTSCAN_CONF="${NFTBAN_CONFIG_DIR}/conf.d/portscan.conf"
+readonly PORTSCAN_CONF="${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf"
 
 # =============================================================================
 # HELPER FUNCTIONS

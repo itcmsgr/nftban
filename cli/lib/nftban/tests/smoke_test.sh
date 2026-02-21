@@ -585,6 +585,54 @@ run_lifecycle_tests() {
         "nftban whitelist add ${test_wl_v6}" \
         "nftban whitelist remove ${test_wl_v6}" \
         "${table_v6}" "whitelist_ipv6" "${test_wl_v6}"
+
+    # v1.18.8: Whitelist/blacklist conflict detection tests
+    log ""
+    log "─────────────────────────────────────────────────────────────────"
+    log "CONFLICT DETECTION TESTS (v1.18.8)"
+    log "─────────────────────────────────────────────────────────────────"
+
+    # Test: Ban a whitelisted IP should fail gracefully
+    local conflict_ip="198.51.100.77"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    log ""
+    log "TEST: Ban whitelisted IP should fail"
+    # First add to whitelist
+    nftban whitelist add "$conflict_ip" &>/dev/null || true
+    # Try to ban (should fail with warning)
+    local ban_output
+    ban_output=$(nftban ban "$conflict_ip" --reason smoke_test 2>&1) || true
+    if echo "$ban_output" | grep -qiE "whitelist|cannot ban|warning"; then
+        log_pass "Ban correctly rejected whitelisted IP with warning"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "Ban did not warn about whitelisted IP"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    # Cleanup
+    nftban whitelist remove "$conflict_ip" &>/dev/null || true
+
+    # Test: Whitelist a banned IP should remove from blacklist
+    local conflict_ip2="198.51.100.78"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    log ""
+    log "TEST: Whitelist banned IP should remove from blacklist"
+    # First ban the IP
+    nftban ban "$conflict_ip2" --reason smoke_test &>/dev/null || true
+    sleep 1
+    # Then whitelist (should remove from blacklist)
+    local wl_output
+    wl_output=$(nftban whitelist add "$conflict_ip2" 2>&1) || true
+    # Verify it's no longer in blacklist
+    if ! nft get element ${table_v4} blacklist_ipv4 "{ $conflict_ip2 }" &>/dev/null; then
+        log_pass "Whitelist correctly removed IP from blacklist"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "IP still in blacklist after whitelisting"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    # Cleanup
+    nftban whitelist remove "$conflict_ip2" &>/dev/null || true
 }
 
 # =============================================================================
