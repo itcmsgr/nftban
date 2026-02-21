@@ -192,6 +192,20 @@ build_binaries() {
 }
 
 create_rpm_spec_nftban_core() {
+    # Validate required variables
+    if [[ -z "${BUILD_DIR:-}" ]]; then
+        log_error "BUILD_DIR is not set"
+        return 1
+    fi
+    if [[ -z "${PKG_VERSION:-}" ]]; then
+        log_error "PKG_VERSION is not set"
+        return 1
+    fi
+    if [[ ! -d "${BUILD_DIR}/SPECS" ]]; then
+        log_error "SPECS directory does not exist: ${BUILD_DIR}/SPECS"
+        return 1
+    fi
+
     cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
 %global debug_package %{nil}
@@ -1607,8 +1621,17 @@ build_rpm() {
 
     mkdir -p "${BUILD_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
+    # Debug: Show key variables
+    log_info "BUILD_DIR=${BUILD_DIR}"
+    log_info "PKG_VERSION=${PKG_VERSION}"
+    log_info "PKG_RELEASE=${PKG_RELEASE}"
+    log_info "PROJECT_ROOT=${PROJECT_ROOT}"
+
     # Create spec file
-    create_rpm_spec_nftban_core
+    create_rpm_spec_nftban_core || {
+        log_error "create_rpm_spec_nftban_core failed"
+        return 1
+    }
 
     # Validate spec file was created correctly
     local spec_file="${BUILD_DIR}/SPECS/nftban-core.spec"
