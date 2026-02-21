@@ -185,14 +185,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Check if issue already exists
-          EXISTING=$(gh issue list --label "security-alert" --state open --json number --jq 'length')
+          # Check if issue already exists (search by title pattern instead of label)
+          EXISTING=$(gh issue list --state open --json title --jq '[.[] | select(.title | startswith("🔴 Security Alert:"))] | length')
 
           if [ "$EXISTING" -eq 0 ]; then
+            # Create issue without labels (labels may not exist in repo)
             gh issue create \
               --title "🔴 Security Alert: ${{ steps.report.outputs.status }} severity findings detected" \
-              --body-file security-report.md \
-              --label "security-alert,priority:high"
+              --body-file security-report.md
             echo "Created new security alert issue"
           else
             echo "Security alert issue already exists, skipping creation"

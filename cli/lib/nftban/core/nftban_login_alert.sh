@@ -125,6 +125,60 @@ declare -A NFTBAN_FAILED_TIMESTAMPS
 NFTBAN_BAN_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
 # =============================================================================
+# EMAIL VALIDATION (v1.18.9)
+# =============================================================================
+
+nftban_login_alert_check_email() {
+    # Check if email is configured for alerts
+    # Returns: 0 if configured, 1 if not
+    # Usage: Call before starting monitoring or sending alerts
+
+    # Check global recipient first (primary)
+    if [[ -n "${NFTBAN_MAIL_RECIPIENT:-}" ]]; then
+        return 0
+    fi
+
+    # Check if mail module provides a recipient check
+    if declare -f nftban_mail_get_recipient &>/dev/null; then
+        local recipient
+        recipient=$(nftban_mail_get_recipient 2>/dev/null || true)
+        if [[ -n "$recipient" ]]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+nftban_login_alert_email_warning() {
+    # Display warning about missing email configuration
+    # Called at startup if email is not configured
+
+    cat >&2 <<'EOF'
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ⚠  EMAIL NOT CONFIGURED - LOGIN ALERTS WILL NOT BE SENT                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  To receive login alerts, configure email with one of these methods:        ║
+║                                                                              ║
+║  1. Quick setup (recommended):                                               ║
+║     nftban mail setup admin@example.com                                      ║
+║                                                                              ║
+║  2. Manual configuration:                                                    ║
+║     Edit /etc/nftban/mail.conf.local and set:                               ║
+║       NFTBAN_MAIL_RECIPIENT="admin@example.com"                             ║
+║                                                                              ║
+║  3. Panel users (cPanel/DirectAdmin/Plesk):                                  ║
+║     Email may be auto-detected from panel. Check with:                       ║
+║       nftban mail status                                                     ║
+║                                                                              ║
+║  Monitoring will continue - bans will work, but no email alerts.            ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+EOF
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -1021,10 +1075,50 @@ nftban_login_track_failed() {
     fi
 }
 
+nftban_login_monitor_console() {
+    # Monitor console/TTY logins via journalctl (v1.18.9)
+    # Detects local console logins (getty, physical access)
+
+    nftban_login_alert_log "Starting console login monitor"
+
+    while read -r line; do
+        local message
+        message=$(echo "$line" | jq -r '.MESSAGE // empty')
+        [[ -z "$message" ]] && continue
+
+        # Console login via getty/login
+        local console_login_pattern='LOGIN ON ([^ ]+) BY ([^ ]+)'
+        if [[ "$message" =~ $console_login_pattern ]]; then
+            local tty="${BASH_REMATCH[1]}"
+            local user="${BASH_REMATCH[2]}"
+
+            nftban_login_alert_log "Console login: $user on $tty"
+            if [[ "$user" == "root" ]]; then
+                nftban_login_send_alert "Console Login" "$user" "local" "CONSOLE" "SUSPICIOUS" "Root console login on $tty (physical access)"
+            else
+                nftban_login_send_alert "Console Login" "$user" "local" "CONSOLE" "SUCCESS" "Console login on $tty"
+            fi
+        fi
+
+        # PAM session opened on console
+        local pam_tty_pattern='pam_unix[(]login.*session opened for user ([^ ]+)'
+        if [[ "$message" =~ $pam_tty_pattern ]]; then
+            local user="${BASH_REMATCH[1]}"
+            nftban_login_alert_log "PAM console session: $user"
+        fi
+    done < <(journalctl SYSLOG_IDENTIFIER=login -f -n 0 --output=json 2>/dev/null)
+}
+
 nftban_login_monitor_all() {
     # Monitor all configured login types
 
     nftban_login_alert_log "Starting login monitoring (interval: ${NFTBAN_LOGIN_MONITOR_INTERVAL}s)"
+
+    # v1.18.9: Check email configuration and warn if not set
+    if ! nftban_login_alert_check_email; then
+        nftban_login_alert_email_warning
+        nftban_login_alert_log "WARNING: Email not configured - alerts will not be sent"
+    fi
 
     if [[ "$NFTBAN_LOGIN_ALERT_SSH" == "true" ]]; then
         nftban_login_monitor_ssh &
@@ -1038,6 +1132,11 @@ nftban_login_monitor_all() {
     # SUDO monitoring (v1.18.8)
     if [[ "${NFTBAN_LOGIN_ALERT_SUDO:-true}" == "true" ]]; then
         nftban_login_monitor_sudo &
+    fi
+
+    # Console login monitoring (v1.18.9)
+    if [[ "${NFTBAN_LOGIN_ALERT_CONSOLE:-false}" == "true" ]]; then
+        nftban_login_monitor_console &
     fi
 
     # Wait for all background jobs
@@ -1055,12 +1154,29 @@ nftban_login_alert_test() {
     echo "=================================="
     echo ""
 
+    # v1.18.9: Check email configuration first
+    local email_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
+    if ! nftban_login_alert_check_email; then
+        echo "ERROR: Email not configured!"
+        echo ""
+        nftban_login_alert_email_warning
+        echo ""
+        echo "Please configure email first, then retry test."
+        return 1
+    fi
+
+    # Get effective recipient
+    if declare -f nftban_mail_get_recipient &>/dev/null; then
+        email_recipient=$(nftban_mail_get_recipient 2>/dev/null || echo "$email_recipient")
+    fi
+
     # Check configuration
     echo "Configuration:"
     echo "  Enabled: $NFTBAN_LOGIN_ALERT_ENABLED"
-    echo "  Email: $NFTBAN_LOGIN_ALERT_EMAIL"
+    echo "  Email: $email_recipient"
     echo "  Format: $NFTBAN_LOGIN_ALERT_FORMAT"
     echo "  GeoIP: $NFTBAN_LOGIN_ALERT_GEOIP"
+    echo "  Mode: ${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
     echo ""
 
     # Check GeoIP
@@ -1082,7 +1198,7 @@ nftban_login_alert_test() {
         "SUCCESS" \
         "This is a test alert from NFTBan login monitoring system."
 
-    echo "✓ Test alert sent to $NFTBAN_LOGIN_ALERT_EMAIL"
+    echo "✓ Test alert sent to $email_recipient"
     echo ""
 }
 
@@ -1091,6 +1207,8 @@ nftban_login_alert_test() {
 # =============================================================================
 
 export -f nftban_login_alert_log
+export -f nftban_login_alert_check_email
+export -f nftban_login_alert_email_warning
 export -f nftban_login_write_bans_log
 export -f nftban_login_is_whitelisted
 export -f nftban_login_get_geoip
@@ -1104,6 +1222,7 @@ export -f nftban_login_send_html_alert
 export -f nftban_login_monitor_ssh
 export -f nftban_login_monitor_su
 export -f nftban_login_monitor_sudo
+export -f nftban_login_monitor_console
 export -f nftban_login_track_failed
 export -f nftban_login_monitor_all
 export -f nftban_login_alert_test
