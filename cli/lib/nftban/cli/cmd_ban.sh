@@ -104,13 +104,11 @@ nftban_cmd_ban() {
     cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_ban_usage || return 1
 
     # v1.18.8: Check if IP is whitelisted - warn user before banning
-    local whitelist_set blacklist_set
+    local whitelist_set
     if [[ "$ip" =~ : ]]; then
         whitelist_set="ip6 nftban whitelist_ipv6"
-        blacklist_set="ip6 nftban blacklist_ipv6"
     else
         whitelist_set="ip nftban whitelist_ipv4"
-        blacklist_set="ip nftban blacklist_ipv4"
     fi
 
     # Check whitelist conflict
