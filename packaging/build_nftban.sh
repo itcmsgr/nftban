@@ -2063,7 +2063,17 @@ if command -v nftban >/dev/null 2>&1; then
     nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
-# STEP 8.5: Strict Preflight Check - Gate Service Enablement
+# STEP 8.5: Cleanup rogue nftables tables before preflight
+# v1.18.7: Auto-cleanup common legacy tables that block install
+echo "[NFTBan] Cleaning up rogue nftables tables..."
+for rogue_table in "ip filter" "ip6 filter" "inet filter" "inet nftban_install_emergency"; do
+    if nft list table $rogue_table &>/dev/null; then
+        echo "[NFTBan]   Removing rogue table: $rogue_table"
+        nft delete table $rogue_table 2>/dev/null || true
+    fi
+done
+
+# STEP 8.6: Strict Preflight Check - Gate Service Enablement
 # This is the AUTHORITATIVE check that gates service enablement.
 # If preflight fails, NFTBan installs but does NOT enforce.
 # Uses consolidated command: nftban firewall validate --strict
@@ -2080,25 +2090,19 @@ if command -v nftban >/dev/null 2>&1; then
     if [ $PREFLIGHT_EXIT -ne 0 ]; then
         PREFLIGHT_PASSED=0
 
-        # Map exit code to reason and action
-        case $PREFLIGHT_EXIT in
-            10)
-                PREFLIGHT_REASON="policykit-1 missing"
-                PREFLIGHT_ACTION="Install policykit-1 package"
-                ;;
-            20)
-                PREFLIGHT_REASON="Firewall conflict (fail2ban/ufw/firewalld/csf active)"
-                PREFLIGHT_ACTION="systemctl disable --now <conflicting-service>"
-                ;;
-            30)
-                PREFLIGHT_REASON="NFTables collision (non-NFTBan input hooks)"
-                PREFLIGHT_ACTION="nft flush ruleset && nftban firewall rebuild"
-                ;;
-            *)
-                PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)"
-                PREFLIGHT_ACTION="nftban firewall validate --strict"
-                ;;
-        esac
+        # v1.18.7: Parse actual output for accurate error message
+        if echo "$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
+            PREFLIGHT_REASON=$(echo "$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1 | sed 's/.*CRITICAL: //')
+        else
+            # Fallback to exit code mapping
+            case $PREFLIGHT_EXIT in
+                10) PREFLIGHT_REASON="policykit-1 missing" ;;
+                20) PREFLIGHT_REASON="Firewall authority conflict" ;;
+                30) PREFLIGHT_REASON="NFTables hook collision" ;;
+                *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;
+            esac
+        fi
+        PREFLIGHT_ACTION="nftban firewall validate --strict"
 
         echo ""
         echo "[NFTBan ERROR] Strict preflight failed - refusing to enable enforcement"

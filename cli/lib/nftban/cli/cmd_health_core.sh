@@ -298,26 +298,81 @@ nftban_health_cmd_fix() {
             # If whitelist is not synced FIRST, the admin gets locked out.
             #
             # CORRECT ORDER:
-            # 1. Fix directories (needed for whitelist sync)
-            # 2. Fix permissions (needed for nftables access)
-            # 3. Fix whitelist (MUST be BEFORE nftables creates DROP chains)
-            # 4. Fix nftables (safe now - whitelist has SSH IPs)
-            # 5. Fix everything else
+            # 1. Remove conflicting firewalls (v1.18.7)
+            # 2. Fix directories (needed for whitelist sync)
+            # 3. Fix permissions (needed for nftables access)
+            # 4. Fix whitelist (MUST be BEFORE nftables creates DROP chains)
+            # 5. Fix nftables (safe now - whitelist has SSH IPs)
+            # 6. Auto-detect and enable services (v1.18.7)
+            # 7. Fix everything else
             # =================================================================
+
+            # v1.18.7: Remove conflicting firewalls automatically
+            echo "[1/9] Removing conflicting firewalls..."
+            if command -v apt-get &>/dev/null; then
+                # Debian/Ubuntu
+                apt-get remove -y ufw 2>/dev/null && echo "  ✓ Removed UFW" || true
+            elif command -v dnf &>/dev/null; then
+                # RHEL/Fedora
+                systemctl disable --now firewalld 2>/dev/null && echo "  ✓ Disabled firewalld" || true
+            fi
+            systemctl disable --now fail2ban 2>/dev/null && echo "  ✓ Disabled fail2ban" || true
+
+            echo ""
+            echo "[2/9] Fixing directories..."
             nftban_health_fix_directories
+
+            echo ""
+            echo "[3/9] Fixing permissions..."
             nftban_health_fix_permissions
             nftban_health_fix_system_config
             nftban_health_fix_services
+
             # CRITICAL: Sync whitelist BEFORE creating DROP policy chains
             # This ensures SSH and server IPs are whitelisted first
             echo ""
-            echo "=== WHITELIST SYNC (lockout prevention) ==="
+            echo "[4/9] WHITELIST SYNC (lockout prevention)..."
             nftban_health_fix_whitelist || {
                 echo "  ⚠ Whitelist sync failed - proceeding with caution"
             }
+
+            # v1.18.7: Clean rogue nftables tables before rebuild
             echo ""
+            echo "[5/9] Cleaning rogue nftables tables..."
+            for rogue_table in "ip filter" "ip6 filter" "inet filter" "inet nftban_install_emergency"; do
+                if nft list table $rogue_table &>/dev/null; then
+                    echo "  Removing: $rogue_table"
+                    nft delete table $rogue_table 2>/dev/null || true
+                fi
+            done
+
+            echo ""
+            echo "[6/9] Fixing nftables structure..."
             # Now safe to create/fix nftables structure
             nftban_health_fix_nftables
+
+            # v1.18.7: Download GeoIP database if missing
+            echo ""
+            echo "[7/9] Updating GeoIP database..."
+            if command -v nftban &>/dev/null; then
+                nftban geoip update 2>/dev/null || echo "  ⚠ GeoIP update failed (non-critical)"
+            fi
+
+            # v1.18.7: Auto-detect and enable services/panels
+            echo ""
+            echo "[8/9] Auto-detecting services and panels..."
+            if command -v nftban &>/dev/null; then
+                local detected_panel
+                detected_panel=$(nftban panel detect 2>/dev/null || echo "none")
+                if [[ "$detected_panel" != "none" && -n "$detected_panel" ]]; then
+                    echo "  Detected panel: $detected_panel"
+                    nftban panel "$detected_panel" enable 2>/dev/null || true
+                fi
+                nftban login enable 2>/dev/null && echo "  ✓ Login monitor enabled" || true
+            fi
+
+            echo ""
+            echo "[9/9] Fixing remaining components..."
             nftban_health_fix_polkit
             nftban_health_fix_daemon_memory
             # Run inline auto-heal checks (from log analysis bugs)
