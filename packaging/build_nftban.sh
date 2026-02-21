@@ -1610,6 +1610,24 @@ build_rpm() {
     # Create spec file
     create_rpm_spec_nftban_core
 
+    # Validate spec file was created correctly
+    local spec_file="${BUILD_DIR}/SPECS/nftban-core.spec"
+    if [[ ! -f "$spec_file" ]]; then
+        log_error "Spec file not created: $spec_file"
+        return 1
+    fi
+    local spec_size
+    spec_size=$(stat -c%s "$spec_file" 2>/dev/null || echo "0")
+    if [[ $spec_size -lt 1000 ]]; then
+        log_error "Spec file too small ($spec_size bytes), likely empty or corrupted"
+        log_error "Content:"
+        head -20 "$spec_file" || true
+        return 1
+    fi
+    log_success "Spec file created: $spec_file ($spec_size bytes)"
+    # Show first line to verify it's valid
+    log_info "Spec first line: $(head -1 "$spec_file")"
+
     # Create source tarball
     local tarball="nftban-core-${PKG_VERSION}.tar.gz"
 
