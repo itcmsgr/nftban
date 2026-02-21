@@ -20,7 +20,7 @@
 # meta:inventory.files="/var/lib/nftban/geoip/GeoLite2-City.mmdb"
 # meta:inventory.binaries="curl,tar"
 # meta:inventory.env_vars="NFTBAN_GEOIP_LICENSE_KEY"
-# meta:inventory.config_files="/etc/nftban/conf.d/geoip.conf"
+# meta:inventory.config_files="/etc/nftban/conf.d/geoip/main.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network="download.maxmind.com:443"
 # meta:inventory.privileges="nftban"
@@ -62,10 +62,14 @@ if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
 fi
 readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
-# Load GeoIP configuration
-if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip.conf" ]]; then
+# Load GeoIP configuration (base + local override)
+if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip.conf"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
+fi
+if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 fi
 
 # Load output module
@@ -86,7 +90,7 @@ _check_license_key() {
         echo "[ERROR] MaxMind license key not configured"
         echo ""
         echo "Please add your license key to:"
-        echo "  ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoip.conf"
+        echo "  ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoip/main.conf.local"
         echo ""
         echo "Get a free license key at:"
         echo "  https://www.maxmind.com/en/geolite2/signup"

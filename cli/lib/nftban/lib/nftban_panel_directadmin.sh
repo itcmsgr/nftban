@@ -89,7 +89,7 @@ Key Ports:
 Configuration Files:
   /etc/nftban/conf.d/panels/directadmin/main.conf - Main configuration
   /etc/nftban/nftban.conf.local                   - Your customizations
-  /etc/nftban/conf.d/login.conf                   - Login monitoring (brute-force)
+  /etc/nftban/conf.d/login/main.conf                   - Login monitoring (brute-force)
 
 Examples:
   # Initial setup
@@ -521,7 +521,7 @@ nftban_panel_directadmin_report() {
     echo "   ───────────────────────────────────────────────────"
     echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
     echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local (customizations)"
-    echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login.conf (brute-force protection)"
+    echo "   ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf (brute-force protection)"
     echo ""
 }
 

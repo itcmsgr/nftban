@@ -182,7 +182,6 @@ _nftban_ddos_stats_json() {
     local ddos_mode="classic"
     local rate_limit=0
     local suricata_available="false"
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos.conf"
     local config_main="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf"
     local config_classic="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/classic.conf"
 
@@ -207,10 +206,6 @@ _nftban_ddos_stats_json() {
                 ddos_mode="classic"
             fi
         fi
-    elif [[ -f "$config_file" ]]; then
-        local enabled_val2
-        enabled_val2=$(grep "^DDOS_ENABLED=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
-        [[ "$enabled_val2" == "true" ]] && ddos_enabled="true"
     fi
 
     # Get rate limit from classic config (if exists)

@@ -79,26 +79,39 @@ func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Allowed config files (whitelist)
+	// Uses canonical paths: subdirs for modules, flat for simple configs
 	allowedFiles := map[string]bool{
-		"nftban.conf":                          true,
-		"nftban.conf.local":                    true,
-		"conf.d/portscan.conf":                 true,
-		"conf.d/ddos.conf":                     true,
-		"conf.d/feeds.conf":                    true,
-		"conf.d/geoip.conf":                    true,
-		"conf.d/mail.conf":                     true,
-		"conf.d/log.conf":                      true,
-		"conf.d/services.conf":                 true,
-		"conf.d/banner.conf":                   true,
-		"conf.d/cloudflare.conf":               true,
-		"conf.d/panels/directadmin/main.conf":  true,
-		"conf.d/health.conf":                   true,
-		"conf.d/login_alert.conf":              true,
-		"conf.d/geoip/main.conf":               true,
-		"conf.d/geoban/main.conf":              true,
-		"conf.d/nftban-go.conf":                true, // Legacy (deprecated)
-		"conf.d/recovery.conf":                 true,
-		"conf.d/stats.conf":                    true,
+		// Main config
+		"nftban.conf":       true,
+		"nftban.conf.local": true,
+		// Module configs (subdirectory structure)
+		"conf.d/portscan/main.conf":       true,
+		"conf.d/portscan/main.conf.local": true,
+		"conf.d/ddos/main.conf":           true,
+		"conf.d/ddos/main.conf.local":     true,
+		"conf.d/login/main.conf":          true,
+		"conf.d/login/main.conf.local":    true,
+		"conf.d/geoip/main.conf":          true,
+		"conf.d/geoip/main.conf.local":    true,
+		"conf.d/geoban/main.conf":         true,
+		"conf.d/geoban/main.conf.local":   true,
+		"conf.d/rbl/main.conf":            true,
+		"conf.d/rbl/main.conf.local":      true,
+		"conf.d/botscan/main.conf":        true,
+		"conf.d/botscan/main.conf.local":  true,
+		// Panel configs
+		"conf.d/panels/directadmin/main.conf": true,
+		"conf.d/panels/cpanel/main.conf":      true,
+		"conf.d/panels/plesk/main.conf":       true,
+		// Flat configs (no subdirectory)
+		"conf.d/mail.conf":       true,
+		"conf.d/banner.conf":     true,
+		"conf.d/stats.conf":      true,
+		"conf.d/trust.conf":      true,
+		"conf.d/zabbix.conf":     true,
+		"conf.d/connectors.conf": true,
+		"conf.d/update.conf":     true,
+		"conf.d/recovery.conf":   true,
 	}
 
 	if !allowedFiles[configPath] {
