@@ -59,11 +59,29 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 check_dependencies() {
     local build_type="$1"
     local missing=()
+    local fatal=0
+
+    # MANDATORY: Check Go (required for binary compilation)
+    if ! command -v go >/dev/null 2>&1; then
+        log_error "╔══════════════════════════════════════════════════════════════════╗"
+        log_error "║  FATAL: Go is NOT installed - CANNOT build nftband binaries!    ║"
+        log_error "╠══════════════════════════════════════════════════════════════════╣"
+        log_error "║  Install Go 1.21+:                                               ║"
+        log_error "║    Fedora/RHEL: sudo dnf install golang                          ║"
+        log_error "║    Debian/Ubuntu: sudo apt install golang-go                     ║"
+        log_error "║    Or download: https://go.dev/dl/                               ║"
+        log_error "╚══════════════════════════════════════════════════════════════════╝"
+        fatal=1
+    else
+        local go_version
+        go_version=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+' | head -1)
+        log_success "Go ${go_version} found"
+    fi
 
     # Check build tools
     if [[ ! -x "${PROJECT_ROOT}/build.sh" ]]; then
         log_error "build.sh not found or not executable"
-        return 1
+        fatal=1
     fi
 
     # Check for DEB tools
@@ -79,6 +97,11 @@ check_dependencies() {
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_error "Missing: ${missing[*]}"
         log_info "Install: sudo dnf install rpm-build dpkg-dev"
+        fatal=1
+    fi
+
+    if [[ $fatal -eq 1 ]]; then
+        log_error "CANNOT PROCEED - fix prerequisites above first!"
         return 1
     fi
 
@@ -1636,7 +1659,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl, policykit-1
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl, polkitd | policykit-1
 Recommends: dnsutils, mailutils, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
