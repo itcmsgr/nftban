@@ -98,7 +98,7 @@ Enable IDS-assisted DDoS detection:
 .RS
 .B nftban ddos enable
 .br
-.B echo "DDOS_MODE=suricata" >> /etc/nftban/conf.d/ddos.conf
+.B echo "DDOS_MODE=suricata" >> /etc/nftban/conf.d/ddos/main.conf.local
 .RE
 
 .SS Portscan Module
@@ -107,7 +107,7 @@ Enable IDS-assisted portscan detection:
 .RS
 .B nftban portscan enable
 .br
-.B echo "PORTSCAN_MODE=suricata" >> /etc/nftban/conf.d/portscan.conf
+.B echo "PORTSCAN_MODE=suricata" >> /etc/nftban/conf.d/portscan/main.conf.local
 .RE
 
 .SH REQUIREMENTS
