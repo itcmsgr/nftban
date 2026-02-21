@@ -555,9 +555,6 @@ get_firewall_stats() {
     local tcp_ports_out_count=0
     local udp_ports_in_count=0
     local udp_ports_out_count=0
-    # Legacy port sets (backward compatibility)
-    local tcp_ports_count=0
-    local udp_ports_count=0
 
     whitelist_ipv4_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
     whitelist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
