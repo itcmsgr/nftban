@@ -105,6 +105,10 @@ NFTBAN_LOGIN_ALERT_FAILED="${NFTBAN_LOGIN_ALERT_FAILED:-true}"
 NFTBAN_LOGIN_FAILED_THRESHOLD="${NFTBAN_LOGIN_FAILED_THRESHOLD:-10}"
 NFTBAN_LOGIN_FAILED_WINDOW="${NFTBAN_LOGIN_FAILED_WINDOW:-300}"
 
+# Root login escalation settings (v1.18.8)
+NFTBAN_ROOT_MULTIPLIER="${NFTBAN_ROOT_MULTIPLIER:-2}"
+NFTBAN_ROOT_FORCE_ALERT="${NFTBAN_ROOT_FORCE_ALERT:-true}"
+
 # Email alert mode: realtime, digest, or both
 NFTBAN_LOGIN_ALERT_MODE="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
 NFTBAN_LOGIN_DIGEST_TIME="${NFTBAN_LOGIN_DIGEST_TIME:-08:00}"
@@ -843,6 +847,75 @@ nftban_login_monitor_ssh() {
     done < <(journalctl "${journal_units[@]}" -f -n 0 --output=json 2>/dev/null)
 }
 
+nftban_login_monitor_su() {
+    # Monitor SU (switch user) via journalctl SYSLOG_IDENTIFIER (v1.18.8)
+    # More portable than -u unit across distros
+
+    nftban_login_alert_log "Starting SU monitor"
+
+    while read -r line; do
+        local message
+        message=$(echo "$line" | jq -r '.MESSAGE // empty')
+        [[ -z "$message" ]] && continue
+
+        # SU session opened for user (privilege escalation)
+        local pam_pattern='pam_unix[(]su.*session opened for user ([^[:space:]]+) by ([^[:space:](]+)'
+        if [[ "$message" =~ $pam_pattern ]]; then
+            local target_user="${BASH_REMATCH[1]}"
+            local source_user="${BASH_REMATCH[2]}"
+
+            if [[ "$target_user" == "root" ]]; then
+                nftban_login_alert_log "SU to root: $source_user -> root"
+                nftban_login_send_alert "SU Escalation" "root" "local" "SU" "SUSPICIOUS" "User $source_user escalated to root via su"
+            fi
+        fi
+
+        # SU authentication failure
+        local su_fail_pattern='su.*[Aa]uthentication.failure|su.*FAILED'
+        if [[ "$message" =~ $su_fail_pattern ]]; then
+            nftban_login_alert_log "SU authentication failure detected"
+            # Note: SU failures are local, no IP to ban
+        fi
+    done < <(journalctl SYSLOG_IDENTIFIER=su -f -n 0 --output=json 2>/dev/null)
+}
+
+nftban_login_monitor_sudo() {
+    # Monitor SUDO via journalctl SYSLOG_IDENTIFIER (v1.18.8)
+    # More portable than -u unit across distros
+
+    nftban_login_alert_log "Starting SUDO monitor"
+
+    while read -r line; do
+        local message
+        message=$(echo "$line" | jq -r '.MESSAGE // empty')
+        [[ -z "$message" ]] && continue
+
+        # SUDO authentication failure
+        local sudo_fail_pattern='[Aa]uthentication.failure|auth.could.not.identify|incorrect.password'
+        if [[ "$message" =~ $sudo_fail_pattern ]]; then
+            local user=""
+            if [[ "$message" =~ user=([^[:space:];]+) ]]; then
+                user="${BASH_REMATCH[1]}"
+            fi
+            nftban_login_alert_log "SUDO auth failure for user: ${user:-unknown}"
+            # Note: SUDO failures are local, no IP to ban, but alert on repeated failures
+        fi
+
+        # SUDO command execution (for audit trail, not banning)
+        if [[ "$message" =~ COMMAND= ]] && [[ "$message" =~ USER=root ]]; then
+            # Root command via sudo - log for audit
+            local user=""
+            if [[ "$message" =~ ^([^[:space:]:]+) ]]; then
+                user="${BASH_REMATCH[1]}"
+            fi
+            # Only alert on high-risk commands if configured
+            if [[ "${NFTBAN_LOGIN_ALERT_SUDO_COMMANDS:-false}" == "true" ]]; then
+                nftban_login_alert_log "SUDO root command by: ${user:-unknown}"
+            fi
+        fi
+    done < <(journalctl SYSLOG_IDENTIFIER=sudo -f -n 0 --output=json 2>/dev/null)
+}
+
 nftban_login_track_failed() {
     # Track failed login attempts
     local user="$1"
@@ -872,8 +945,18 @@ nftban_login_track_failed() {
             # Increment counter
             NFTBAN_FAILED_ATTEMPTS[$key]=$((${NFTBAN_FAILED_ATTEMPTS[$key]} + 1))
 
+            # Root login escalation (v1.18.8)
+            # Apply multiplier for root login attempts (faster ban)
+            local effective_threshold=$NFTBAN_LOGIN_FAILED_THRESHOLD
+            if [[ "$user" == "root" || "$user" == "admin" || "$user" == "administrator" ]]; then
+                local root_multiplier="${NFTBAN_ROOT_MULTIPLIER:-2}"
+                # Divide threshold by multiplier (e.g., 10 / 2 = 5, so root bans at 5 failures)
+                effective_threshold=$((NFTBAN_LOGIN_FAILED_THRESHOLD / root_multiplier))
+                [[ $effective_threshold -lt 2 ]] && effective_threshold=2  # Minimum 2 attempts
+            fi
+
             # Check threshold
-            if [[ ${NFTBAN_FAILED_ATTEMPTS[$key]} -ge $NFTBAN_LOGIN_FAILED_THRESHOLD ]]; then
+            if [[ ${NFTBAN_FAILED_ATTEMPTS[$key]} -ge $effective_threshold ]]; then
                 nftban_login_alert_log "Multiple failed attempts: $user from $ip ($service)"
 
                 # Send alert
@@ -947,6 +1030,16 @@ nftban_login_monitor_all() {
         nftban_login_monitor_ssh &
     fi
 
+    # SU monitoring (v1.18.8)
+    if [[ "${NFTBAN_LOGIN_ALERT_SU:-true}" == "true" ]]; then
+        nftban_login_monitor_su &
+    fi
+
+    # SUDO monitoring (v1.18.8)
+    if [[ "${NFTBAN_LOGIN_ALERT_SUDO:-true}" == "true" ]]; then
+        nftban_login_monitor_sudo &
+    fi
+
     # Wait for all background jobs
     wait
 }
@@ -1009,6 +1102,8 @@ export -f nftban_login_send_alert
 export -f nftban_login_send_text_alert
 export -f nftban_login_send_html_alert
 export -f nftban_login_monitor_ssh
+export -f nftban_login_monitor_su
+export -f nftban_login_monitor_sudo
 export -f nftban_login_track_failed
 export -f nftban_login_monitor_all
 export -f nftban_login_alert_test
