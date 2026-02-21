@@ -98,12 +98,18 @@ check_dependencies() {
         command -v rpmbuild >/dev/null || missing+=("rpmbuild")
     fi
 
-    # MANDATORY: curl (required to download yq during package build)
+    # MANDATORY tools (must match CI requirements)
+    # CI: dnf install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
+    # CI: apt install dpkg-dev build-essential file curl
     command -v curl >/dev/null || missing+=("curl")
+    command -v tar >/dev/null || missing+=("tar")
+    command -v gzip >/dev/null || missing+=("gzip")
+    command -v file >/dev/null || missing+=("file")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_error "Missing: ${missing[*]}"
-        log_info "Install: sudo dnf install rpm-build dpkg-dev curl"
+        log_info "Install (RPM): sudo dnf install rpm-build rpmdevtools tar gzip make curl file"
+        log_info "Install (DEB): sudo apt install dpkg-dev build-essential curl file"
         fatal=1
     fi
 
