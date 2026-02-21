@@ -206,7 +206,10 @@ create_rpm_spec_nftban_core() {
         return 1
     fi
 
-    cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
+    log_info "Creating spec file at ${BUILD_DIR}/SPECS/nftban-core.spec"
+
+    # Use explicit file descriptor to catch cat errors
+    if ! cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
@@ -1608,6 +1611,12 @@ fi
 - Added helper chains (ddos_protection, portscan_detection)
 - Removed hardcoded table names
 EOF
+    then
+        log_error "Failed to write spec file"
+        return 1
+    fi
+    log_success "Spec file created"
+    return 0
 }
 
 build_rpm() {
@@ -2101,11 +2110,11 @@ find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
 find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
 # Fix other config subdirs
 for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
-    if [ -d "/etc/nftban/\$subdir" ]; then
-        find "/etc/nftban/\$subdir" -type f -exec chown root:nftban {} \; 2>/dev/null || true
-        find "/etc/nftban/\$subdir" -type d -exec chown root:nftban {} \; 2>/dev/null || true
-        find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
-        find "/etc/nftban/\$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
+    if [ -d "/etc/nftban/$subdir" ]; then
+        find "/etc/nftban/$subdir" -type f -exec chown root:nftban {} \; 2>/dev/null || true
+        find "/etc/nftban/$subdir" -type d -exec chown root:nftban {} \; 2>/dev/null || true
+        find "/etc/nftban/$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
+        find "/etc/nftban/$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
     fi
 done
 find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
