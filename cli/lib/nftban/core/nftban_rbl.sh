@@ -347,6 +347,7 @@ nftban_rbl_check_ip_parallel() {
     reversed_ip=$(nftban_rbl_reverse_ip "$ip")
     temp_dir=$(mktemp -d)
     # v1.19.0: Ensure temp cleanup on unexpected exit (R07)
+    # shellcheck disable=SC2064  # Intentional: expand $temp_dir NOW at set time (local var)
     trap "rm -rf '$temp_dir'" EXIT
 
     # Create list of RBL checks to run
