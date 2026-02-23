@@ -219,15 +219,22 @@ EOF
         }
     fi
 
-    # Update state file using a simple approach (create/update)
+    # v1.19.0: Preserve other panels' state when updating (R25)
+    local temp_file
+    temp_file=$(mktemp "${state_file}.XXXXXX")
     {
         echo "# NFTBan Panel State Configuration"
         echo "# Format: panelname=enabled|disabled"
         echo "# This file is automatically managed by 'nftban panel' commands"
         echo ""
+        if [[ -f "$state_file" ]]; then
+            grep -v "^directadmin=" "$state_file" 2>/dev/null | grep -v "^#" | grep -v "^$" || true
+        fi
         echo "directadmin=enabled"
-    } > "$state_file" || {
+    } > "$temp_file"
+    mv "$temp_file" "$state_file" || {
         echo "ERROR: Failed to write state file: $state_file" >&2
+        rm -f "$temp_file"
         return 1
     }
 
@@ -298,15 +305,22 @@ nftban_panel_directadmin_disable() {
         }
     fi
 
-    # Update state file
+    # v1.19.0: Preserve other panels' state when updating (R25)
+    local temp_file
+    temp_file=$(mktemp "${state_file}.XXXXXX")
     {
         echo "# NFTBan Panel State Configuration"
         echo "# Format: panelname=enabled|disabled"
         echo "# This file is automatically managed by 'nftban panel' commands"
         echo ""
+        if [[ -f "$state_file" ]]; then
+            grep -v "^directadmin=" "$state_file" 2>/dev/null | grep -v "^#" | grep -v "^$" || true
+        fi
         echo "directadmin=disabled"
-    } > "$state_file" || {
+    } > "$temp_file"
+    mv "$temp_file" "$state_file" || {
         echo "ERROR: Failed to write state file: $state_file" >&2
+        rm -f "$temp_file"
         return 1
     }
 
@@ -440,7 +454,13 @@ nftban_panel_directadmin_report() {
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
-
+    fi
+    # v1.19.0: Source .local override (user customizations survive package updates)
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf.local"
+    fi
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_DIRECTADMIN_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_DIRECTADMIN_TCP_OUT:-Not configured}"
         echo "   UDP INPUT:  ${NFTBAN_DIRECTADMIN_UDP_IN:-Not configured}"

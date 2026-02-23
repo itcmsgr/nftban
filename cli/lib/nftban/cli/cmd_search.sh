@@ -190,15 +190,13 @@ _search_nftables() {
     for set in "${all_sets[@]}"; do
         # Temporarily disable errexit and ERR trap for this check
         # Save current trap, disable it, then restore
-        local old_trap
-        old_trap=$(trap -p ERR)
-        trap - ERR
-        set +e
-        # Add timeout to prevent hanging on large sets
-        timeout 2 nft get element "${table_family}" nftban "$set" "{ $ip }" &>/dev/null
-        local result=$?
-        set -e
-        eval "$old_trap"
+        # v1.19.0: Replaced eval "$old_trap" with safe subshell pattern (R16)
+        local result
+        result=$(
+            set +e
+            timeout 2 nft get element "${table_family}" nftban "$set" "{ $ip }" &>/dev/null
+            echo $?
+        ) || true
 
         if [[ $result -eq 0 ]]; then
             # Normalize set names for display (remove _ipv4/_ipv6 suffix)

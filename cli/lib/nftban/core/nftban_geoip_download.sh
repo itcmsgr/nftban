@@ -106,22 +106,29 @@ _download_geoip() {
     local db_url="${GEOIP_DOWNLOAD_URL:-https://download.maxmind.com/app/geoip_download}"
     local timeout="${GEOIP_TIMEOUT:-300}"
     local db_dir="${GEOIP_DATABASE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip}"
-    local tmp_file="/tmp/geoip-${edition}-$$.tar.gz"
+    # v1.19.0: Use mktemp instead of PID-based temp files (R16)
+    local tmp_file
+    tmp_file=$(mktemp /tmp/geoip-${edition}.XXXXXX.tar.gz)
 
     echo "[INFO] Downloading ${edition} database..."
-    echo "[DEBUG] URL: ${db_url}"
+    echo "[DEBUG] URL: ${db_url} (key masked)"
 
-    # Build download URL with parameters
-    local download_url="${db_url}?edition_id=${edition}&license_key=${license_key}&suffix=tar.gz"
+    # v1.19.0: Use config file to pass license key, avoiding exposure in process args (R23)
+    local curl_config
+    curl_config=$(mktemp /tmp/nftban-geoip-curl.XXXXXX.conf)
+    chmod 600 "$curl_config"
+    echo "url = \"${db_url}?edition_id=${edition}&license_key=${license_key}&suffix=tar.gz\"" > "$curl_config"
 
-    # Download database
+    # Download database (key in config file, not visible in /proc/*/cmdline)
     if curl --proto '=https' --tlsv1.2 -sSf \
             --connect-timeout 30 \
             --max-time "${timeout}" \
             -o "${tmp_file}" \
-            "${download_url}"; then
+            -K "${curl_config}"; then
+        rm -f "$curl_config"
         echo "[INFO] Download complete"
     else
+        rm -f "$curl_config"
         echo "[ERROR] Download failed"
         rm -f "${tmp_file}"
         return 1
@@ -136,8 +143,8 @@ _download_geoip() {
 
     # Extract database
     echo "[INFO] Extracting database..."
-    local extract_dir="/tmp/geoip-extract-$$"
-    mkdir -p "${extract_dir}"
+    local extract_dir
+    extract_dir=$(mktemp -d /tmp/geoip-extract.XXXXXX)
 
     if tar -xzf "${tmp_file}" -C "${extract_dir}"; then
         echo "[INFO] Extraction complete"
@@ -156,9 +163,25 @@ _download_geoip() {
         return 1
     fi
 
-    # Move database to final location
+    # v1.19.0: Backup existing DB before overwrite + basic size validation (R04)
     local db_file
     db_file="${db_dir}/$(basename ${edition}).mmdb"
+
+    # Validate extracted file is non-trivial (> 100KB = likely valid mmdb)
+    local mmdb_size
+    mmdb_size=$(stat -c %s "$mmdb_file" 2>/dev/null || echo 0)
+    if [[ $mmdb_size -lt 102400 ]]; then
+        echo "[ERROR] Extracted database file is too small (${mmdb_size} bytes), possibly corrupt"
+        rm -rf "${tmp_file}" "${extract_dir}"
+        return 1
+    fi
+
+    # Backup existing database before overwrite
+    if [[ -f "${db_file}" ]]; then
+        cp -p "${db_file}" "${db_file}.backup"
+        echo "[INFO] Backed up existing database to ${db_file}.backup"
+    fi
+
     mv "${mmdb_file}" "${db_file}"
     chown nftban:nftban "${db_file}"
     chmod 640 "${db_file}"

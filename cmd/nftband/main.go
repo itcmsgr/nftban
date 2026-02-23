@@ -97,6 +97,26 @@ const (
 	MaxConcurrentIPCConns = 100
 )
 
+// validNFTBanTable checks table belongs to nftban
+func validNFTBanTable(table string) bool {
+	return table == "ip nftban" || table == "ip6 nftban"
+}
+
+// validNFTBanSet checks set is a known nftban set
+var knownNFTBanSets = map[string]bool{
+	"blacklist_ipv4": true, "blacklist_ipv6": true,
+	"whitelist_ipv4": true, "whitelist_ipv6": true,
+	"persistent_offenders_ipv4": true, "persistent_offenders_ipv6": true,
+	"bogon_ipv4": true, "bogon_ipv6": true,
+	"geoban_ipv4": true, "geoban_ipv6": true,
+	"tcp_ports_in": true, "tcp_ports_out": true,
+	"udp_ports_in": true, "udp_ports_out": true,
+}
+
+func validNFTBanSet(set string) bool {
+	return knownNFTBanSets[set]
+}
+
 // getAPIAddr returns the HTTP API address from config or default
 func getAPIAddr() string {
 	cfg := nftbanconf.MustLoad()
@@ -1426,6 +1446,14 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
+	// SECURITY: Validate IP address before processing
+	if net.ParseIP(ip) == nil {
+		// Also accept CIDR notation
+		if _, _, err := net.ParseCIDR(ip); err != nil {
+			return SocketResponse{Success: false, Error: "invalid IP address"}
+		}
+	}
+
 	// SECURITY: Check whitelist before banning (defense-in-depth)
 	if d.isWhitelisted(ip) {
 		log.Printf("[BAN] BLOCKED: %s is whitelisted, refusing IPC ban", ip)
@@ -1533,6 +1561,14 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
+	// SECURITY: Validate IP address before processing
+	if net.ParseIP(ip) == nil {
+		// Also accept CIDR notation
+		if _, _, err := net.ParseCIDR(ip); err != nil {
+			return SocketResponse{Success: false, Error: "invalid IP address"}
+		}
+	}
+
 	// Perform the unban via AUTHORITATIVE backend
 	result, err := d.backend.Unban(d.ctx, nftbackend.UnbanRequest{
 		IP: ip,
@@ -1580,6 +1616,12 @@ func (d *Daemon) handleAddElementRequest(params map[string]any) SocketResponse {
 	if table == "" || set == "" || element == "" {
 		return SocketResponse{Success: false, Error: "missing table, set, or element parameter"}
 	}
+	if !validNFTBanTable(table) {
+		return SocketResponse{Success: false, Error: "invalid table: must be 'ip nftban' or 'ip6 nftban'"}
+	}
+	if !validNFTBanSet(set) {
+		return SocketResponse{Success: false, Error: "invalid set: " + set}
+	}
 
 	timeout := 0
 	if t, ok := params["timeout"].(float64); ok {
@@ -1615,6 +1657,12 @@ func (d *Daemon) handleDeleteElementRequest(params map[string]any) SocketRespons
 	if table == "" || set == "" || element == "" {
 		return SocketResponse{Success: false, Error: "missing table, set, or element parameter"}
 	}
+	if !validNFTBanTable(table) {
+		return SocketResponse{Success: false, Error: "invalid table: must be 'ip nftban' or 'ip6 nftban'"}
+	}
+	if !validNFTBanSet(set) {
+		return SocketResponse{Success: false, Error: "invalid set: " + set}
+	}
 
 	err := d.backend.DeleteElement(d.ctx, nftbackend.DeleteElementRequest{
 		Table:   table,
@@ -1644,6 +1692,12 @@ func (d *Daemon) handleFlushSetRequest(params map[string]any) SocketResponse {
 	if table == "" || set == "" {
 		return SocketResponse{Success: false, Error: "missing table or set parameter"}
 	}
+	if !validNFTBanTable(table) {
+		return SocketResponse{Success: false, Error: "invalid table: must be 'ip nftban' or 'ip6 nftban'"}
+	}
+	if !validNFTBanSet(set) {
+		return SocketResponse{Success: false, Error: "invalid set: " + set}
+	}
 
 	err := d.backend.FlushSet(d.ctx, nftbackend.FlushSetRequest{
 		Table: table,
@@ -1672,8 +1726,31 @@ func (d *Daemon) handleApplyRulesetRequest(params map[string]any) SocketResponse
 		return SocketResponse{Success: false, Error: "missing file parameter"}
 	}
 
-	err := d.backend.ApplyRuleset(d.ctx, nftbackend.ApplyRulesetRequest{
-		FilePath: filePath,
+	// Security: reject path traversal attempts before any further processing
+	if strings.Contains(filePath, "..") {
+		return SocketResponse{Success: false, Error: "path traversal not allowed"}
+	}
+
+	// Security: restrict ruleset paths to allowed directories
+	absPath := filepath.Clean(filePath)
+	var err error
+	absPath, err = filepath.Abs(absPath)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "invalid file path: " + err.Error()}
+	}
+	// Double-check after Clean/Abs (defense-in-depth)
+	if strings.Contains(absPath, "..") {
+		return SocketResponse{Success: false, Error: "path traversal not allowed"}
+	}
+	runDir, configDir, dataDir, _ := getDaemonPaths()
+	if !strings.HasPrefix(absPath, dataDir+"/") &&
+		!strings.HasPrefix(absPath, configDir+"/") &&
+		!strings.HasPrefix(absPath, runDir+"/") {
+		return SocketResponse{Success: false, Error: "file path must be within " + dataDir + "/, " + configDir + "/, or " + runDir + "/"}
+	}
+
+	err = d.backend.ApplyRuleset(d.ctx, nftbackend.ApplyRulesetRequest{
+		FilePath: absPath,
 		Check:    check,
 	})
 	if err != nil {
@@ -2082,12 +2159,11 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "failed to load ports: " + err.Error()}
 	}
 
-	// Initialize nftables manager
-	nft, err := nftsync.NewNFTManager()
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	// Use backend's shared nftables manager
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
 	}
-	defer nft.Close()
 
 	// Get or create tables
 	tableIPv4, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
@@ -2478,12 +2554,11 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 		}
 	}
 
-	// Initialize nftables manager
-	nft, err := nftsync.NewNFTManager()
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	// Use backend's shared nftables manager
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
 	}
-	defer nft.Close()
 
 	// Create IPv4 table and sets
 	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
@@ -2625,12 +2700,11 @@ func (d *Daemon) handleAddPortElementRequest(params map[string]any) SocketRespon
 		direction = "in"
 	}
 
-	// Initialize nftables manager
-	nft, err := nftsync.NewNFTManager()
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	// Use backend's shared nftables manager
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
 	}
-	defer nft.Close()
 
 	// Get tables
 	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
@@ -2754,12 +2828,11 @@ func (d *Daemon) handleDeletePortElementRequest(params map[string]any) SocketRes
 		direction = "in"
 	}
 
-	// Initialize nftables manager
-	nft, err := nftsync.NewNFTManager()
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	// Use backend's shared nftables manager
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
 	}
-	defer nft.Close()
 
 	// Get tables
 	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
@@ -3003,12 +3076,11 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 
 // loadCIDRsIntoSets loads CIDRs into the appropriate nftables sets
 func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string) SocketResponse {
-	// Initialize nftables manager
-	nft, err := nftsync.NewNFTManager()
-	if err != nil {
-		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	// Use backend's shared nftables manager
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
 	}
-	defer nft.Close()
 
 	// Determine set names
 	var setNameV4, setNameV6 string
@@ -3322,6 +3394,9 @@ func (d *Daemon) handleReplaceSetRequest(params map[string]any) SocketResponse {
 
 	if setName == "" {
 		return SocketResponse{Success: false, Error: "missing set parameter"}
+	}
+	if !validNFTBanSet(setName) {
+		return SocketResponse{Success: false, Error: "invalid set: " + setName}
 	}
 	if filePath == "" {
 		return SocketResponse{Success: false, Error: "missing file parameter"}

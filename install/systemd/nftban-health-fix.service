@@ -45,12 +45,20 @@ SyslogIdentifier=nftban-health-fix
 # Resource limits
 MemoryMax=256M
 
-# Security - still apply some hardening
+# Security hardening (v1.19.0: kernel protections — R13)
+# ProtectSystem intentionally NOT set — service needs write access for permission fixes
 PrivateTmp=yes
 NoNewPrivileges=yes
-
-# Allow writes to system paths for fixes
-# ProtectSystem is NOT set - we need to fix permissions
+ProtectHome=yes
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+PrivateDevices=yes
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
 
 [Install]
 WantedBy=multi-user.target

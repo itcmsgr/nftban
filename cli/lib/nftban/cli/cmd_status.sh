@@ -534,10 +534,16 @@ output_terminal() {
     local rbl_last_check=""
 
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
-        if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
-            rbl_status="ENABLED"
-        fi
+    fi
+    # v1.19.0: Source .local override (user customizations survive package updates)
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
+    fi
+    if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
+        rbl_status="ENABLED"
     fi
 
     # Check last check time

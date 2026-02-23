@@ -120,10 +120,19 @@ verify_datasource() {
     local count=0
 
     while [[ $count -lt $retries ]]; do
-        if curl -s -u "$GRAFANA_USER:$GRAFANA_PASS" "$GRAFANA_URL/api/datasources" 2>/dev/null | grep -q "Prometheus"; then
+        # v1.19.0: Use .netrc to avoid credential exposure in process args (R23)
+        local _grafana_netrc
+        _grafana_netrc=$(mktemp /tmp/nftban-grafana.XXXXXX)
+        chmod 600 "$_grafana_netrc"
+        local _grafana_host
+        _grafana_host=$(echo "$GRAFANA_URL" | sed -E 's|https?://([^/:]+).*|\1|')
+        echo "machine $_grafana_host login $GRAFANA_USER password $GRAFANA_PASS" > "$_grafana_netrc"
+        if curl -s --netrc-file "$_grafana_netrc" "$GRAFANA_URL/api/datasources" 2>/dev/null | grep -q "Prometheus"; then
+            rm -f "$_grafana_netrc"
             print_status "Prometheus datasource configured successfully"
             return 0
         fi
+        rm -f "$_grafana_netrc"
         ((count++))
         sleep 1
     done

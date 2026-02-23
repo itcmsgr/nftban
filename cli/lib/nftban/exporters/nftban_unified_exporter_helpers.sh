@@ -145,11 +145,12 @@ acquire_lock() {
         exit 1
     }
 
-    eval "exec $lock_fd>$METRICS_LOCK"
+    # v1.19.0: Remove eval — use exec with explicit fd (R16)
+    exec 200>"$METRICS_LOCK"
 
     # Try to acquire lock with timeout (blocking)
     # This prevents silent metrics gaps when concurrent runs overlap
-    if ! timeout $lock_timeout flock $lock_fd 2>/dev/null; then
+    if ! timeout $lock_timeout flock 200 2>/dev/null; then
         log_error "Lock acquisition timed out after ${lock_timeout}s (concurrent exporter still running?)"
         log_error "Previous PID: $(cat "$METRICS_LOCK" 2>/dev/null || echo 'unknown')"
 
