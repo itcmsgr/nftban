@@ -206,8 +206,10 @@ nftban_botscan_remove_pattern() {
         return 1
     fi
 
-    # Remove pattern
-    sed -i "/^${name}|/d" "$custom_file"
+    # v1.19.0: Escape pattern name for safe sed usage (R23)
+    local safe_name
+    safe_name=$(printf '%s' "$name" | sed 's/[[\.*^$()+?{}|/]/\\&/g')
+    sed -i "/^${safe_name}|/d" "$custom_file"
     echo "Removed pattern: $name"
     return 0
 }
@@ -261,7 +263,8 @@ nftban_botscan_parse_line() {
     local ip url method status ua
 
     # Combined Log Format: IP - - [date] "METHOD URL PROTO" STATUS SIZE "REFERER" "UA"
-    if [[ "$line" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*\"([A-Z]+)\ ([^\"\ ]+).*\"\ ([0-9]+) ]]; then
+    # IPv4 and IPv6 compatible (v1.19.0)
+    if [[ "$line" =~ ^([0-9a-fA-F.:]+).*\"([A-Z]+)\ ([^\"\ ]+).*\"\ ([0-9]+) ]]; then
         ip="${BASH_REMATCH[1]}"
         method="${BASH_REMATCH[2]}"
         url="${BASH_REMATCH[3]}"
@@ -281,10 +284,20 @@ nftban_botscan_parse_line() {
     return 1
 }
 
-# Check if IP is whitelisted
+# Check if IP is whitelisted — v1.19.0: IPv4/IPv6 parity
 nftban_botscan_is_whitelisted() {
     local ip="$1"
     local ua="${2:-}"
+
+    # Localhost (both families)
+    [[ "$ip" == "127.0.0.1" || "$ip" == "::1" ]] && return 0
+
+    # Private networks (both families — never ban internal traffic)
+    [[ "$ip" =~ ^10\. ]] && return 0
+    [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && return 0
+    [[ "$ip" =~ ^192\.168\. ]] && return 0
+    [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
+    [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
 
     # Check global whitelist
     if [[ "$BOTSCAN_USE_GLOBAL_WHITELIST" == "true" ]]; then

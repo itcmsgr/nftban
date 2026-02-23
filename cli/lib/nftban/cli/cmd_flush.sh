@@ -32,7 +32,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-04"
-# meta:updated_date="2026-01-18"
+# meta:updated_date="2026-02-23"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -256,6 +256,49 @@ _confirm_flush() {
 }
 
 # =============================================================================
+# v1.19.0: IPC/EMERGENCY GATE HELPER (R20)
+# =============================================================================
+
+# Check daemon or emergency gate before flush operations
+# Sets _FLUSH_IPC_MODE: 0=IPC, 1=emergency direct, 2=error
+_flush_check_daemon() {
+    nftban_ipc_check_or_emergency
+    _FLUSH_IPC_MODE=$?
+    if [[ $_FLUSH_IPC_MODE -eq 2 ]]; then
+        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        return 1
+    fi
+    return 0
+}
+
+# v1.19.0: Flush a set through IPC or emergency direct access
+# Usage: _flush_set_via_ipc <table> <set_name>
+_flush_set_via_ipc() {
+    local table="$1"
+    local set_name="$2"
+
+    if [[ ${_FLUSH_IPC_MODE:-2} -eq 0 ]]; then
+        nft_ipc_flush_set "$table" "$set_name" 2>/dev/null
+    else
+        # Emergency direct nft access
+        nft flush set $table "$set_name" 2>/dev/null
+    fi
+}
+
+# v1.19.0: Apply ruleset file through IPC or emergency direct access
+# Usage: _apply_file_via_ipc <file_path>
+_apply_file_via_ipc() {
+    local file_path="$1"
+
+    if [[ ${_FLUSH_IPC_MODE:-2} -eq 0 ]]; then
+        nft_ipc_apply_ruleset "$file_path" 2>/dev/null
+    else
+        # Emergency direct nft access
+        nft -f "$file_path" 2>/dev/null
+    fi
+}
+
+# =============================================================================
 # FLUSH IMPLEMENTATIONS
 # =============================================================================
 
@@ -291,17 +334,20 @@ _flush_blacklist() {
     # Confirm
     _confirm_flush "blacklist" "$count_v4" "$count_v6" "$skip_confirm" || return 1
 
-    # Execute flush
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
+    # Execute flush via IPC
     echo ""
     echo "Flushing blacklist sets..."
 
-    if nft flush set $NFTBAN_TABLE_IPV4 blacklist_ipv4 2>/dev/null; then
+    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "blacklist_ipv4"; then
         echo "  [OK] Flushed blacklist_ipv4"
     else
         echo "  [WARN] Failed to flush blacklist_ipv4"
     fi
 
-    if nft flush set $NFTBAN_TABLE_IPV6 blacklist_ipv6 2>/dev/null; then
+    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "blacklist_ipv6"; then
         echo "  [OK] Flushed blacklist_ipv6"
     else
         echo "  [WARN] Failed to flush blacklist_ipv6"
@@ -348,17 +394,20 @@ _flush_whitelist() {
     # Confirm
     _confirm_flush "whitelist" "$count_v4" "$count_v6" "$skip_confirm" || return 1
 
-    # Execute flush
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
+    # Execute flush via IPC
     echo ""
     echo "Flushing whitelist sets..."
 
-    if nft flush set $NFTBAN_TABLE_IPV4 whitelist_ipv4 2>/dev/null; then
+    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "whitelist_ipv4"; then
         echo "  [OK] Flushed whitelist_ipv4"
     else
         echo "  [WARN] Failed to flush whitelist_ipv4"
     fi
 
-    if nft flush set $NFTBAN_TABLE_IPV6 whitelist_ipv6 2>/dev/null; then
+    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "whitelist_ipv6"; then
         echo "  [OK] Flushed whitelist_ipv6"
     else
         echo "  [WARN] Failed to flush whitelist_ipv6"
@@ -434,7 +483,10 @@ _flush_feeds() {
     # Confirm
     _confirm_flush "feeds" "$count_v4" "$count_v6" "$skip_confirm" || return 1
 
-    # Execute deletion (not flush - selective delete)
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
+    # Execute deletion via IPC (not flush - selective delete)
     echo ""
     echo "Removing feed IPs from blacklist..."
 
@@ -443,10 +495,12 @@ _flush_feeds() {
         local cidr_list="${cidrs_v4[*]}"
         cidr_list="${cidr_list// /, }"
 
-        local tmp_file="/tmp/nftban_flush_feeds_v4_$$.nft"
+        # v1.19.0: Use mktemp instead of PID-based temp files (R16)
+        local tmp_file
+        tmp_file=$(mktemp /tmp/nftban_flush_feeds_v4.XXXXXX.nft)
         echo "delete element $NFTBAN_TABLE_IPV4 blacklist_ipv4 { $cidr_list }" > "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if _apply_file_via_ipc "$tmp_file"; then
             echo "  [OK] Removed $count_v4 IPv4 feed entries"
         else
             echo "  [WARN] Some IPv4 entries may not exist in set"
@@ -459,10 +513,12 @@ _flush_feeds() {
         local cidr_list="${cidrs_v6[*]}"
         cidr_list="${cidr_list// /, }"
 
-        local tmp_file="/tmp/nftban_flush_feeds_v6_$$.nft"
+        # v1.19.0: Use mktemp instead of PID-based temp files (R16)
+        local tmp_file
+        tmp_file=$(mktemp /tmp/nftban_flush_feeds_v6.XXXXXX.nft)
         echo "delete element $NFTBAN_TABLE_IPV6 blacklist_ipv6 { $cidr_list }" > "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if _apply_file_via_ipc "$tmp_file"; then
             echo "  [OK] Removed $count_v6 IPv6 feed entries"
         else
             echo "  [WARN] Some IPv6 entries may not exist in set"
@@ -544,13 +600,18 @@ _flush_geoban() {
     # Confirm
     _confirm_flush "geoban" "$count_v4" "$count_v6" "$skip_confirm" || return 1
 
-    # Execute deletion
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
+    # Execute deletion via IPC
     echo ""
     echo "Removing geoban IPs from blacklist..."
 
     # IPv4 deletion (batch to avoid command line limit)
     if [[ ${#cidrs_v4[@]} -gt 0 ]]; then
-        local tmp_file="/tmp/nftban_flush_geoban_v4_$$.nft"
+        # v1.19.0: Use mktemp instead of PID-based temp files (R16)
+        local tmp_file
+        tmp_file=$(mktemp /tmp/nftban_flush_geoban_v4.XXXXXX.nft)
         echo -n "delete element $NFTBAN_TABLE_IPV4 blacklist_ipv4 { " > "$tmp_file"
         local first=true
         for cidr in "${cidrs_v4[@]}"; do
@@ -559,7 +620,7 @@ _flush_geoban() {
         done
         echo " }" >> "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if _apply_file_via_ipc "$tmp_file"; then
             echo "  [OK] Removed $count_v4 IPv4 geoban entries"
         else
             echo "  [WARN] Some IPv4 entries may not exist in set"
@@ -569,7 +630,9 @@ _flush_geoban() {
 
     # IPv6 deletion
     if [[ ${#cidrs_v6[@]} -gt 0 ]]; then
-        local tmp_file="/tmp/nftban_flush_geoban_v6_$$.nft"
+        # v1.19.0: Use mktemp instead of PID-based temp files (R16)
+        local tmp_file
+        tmp_file=$(mktemp /tmp/nftban_flush_geoban_v6.XXXXXX.nft)
         echo -n "delete element $NFTBAN_TABLE_IPV6 blacklist_ipv6 { " > "$tmp_file"
         local first=true
         for cidr in "${cidrs_v6[@]}"; do
@@ -578,7 +641,7 @@ _flush_geoban() {
         done
         echo " }" >> "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if _apply_file_via_ipc "$tmp_file"; then
             echo "  [OK] Removed $count_v6 IPv6 geoban entries"
         else
             echo "  [WARN] Some IPv6 entries may not exist in set"
@@ -626,9 +689,12 @@ _flush_ddos() {
     # Confirm
     _confirm_flush "ddos_blocked" "$count" "0" "$skip_confirm" || return 1
 
-    # Execute flush
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
+    # Execute flush via IPC
     echo ""
-    if nft flush set $NFTBAN_TABLE_IPV4 ddos_blocked 2>/dev/null; then
+    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked"; then
         echo "[OK] Flushed ddos_blocked set"
     else
         echo "[WARN] Failed to flush ddos_blocked"
@@ -672,22 +738,25 @@ _flush_all() {
         fi
     fi
 
+    # v1.19.0: Check daemon or emergency gate (R20)
+    _flush_check_daemon || return 1
+
     echo ""
     echo "Executing emergency flush..."
 
-    # Flush blacklist
-    nft flush set $NFTBAN_TABLE_IPV4 blacklist_ipv4 2>/dev/null && echo "[OK] Flushed blacklist_ipv4"
-    nft flush set $NFTBAN_TABLE_IPV6 blacklist_ipv6 2>/dev/null && echo "[OK] Flushed blacklist_ipv6"
+    # v1.19.0: Flush all sets via IPC (batched sequential requests)
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "blacklist_ipv4" && echo "[OK] Flushed blacklist_ipv4"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "blacklist_ipv6" && echo "[OK] Flushed blacklist_ipv6"
 
     # Flush whitelist
-    nft flush set $NFTBAN_TABLE_IPV4 whitelist_ipv4 2>/dev/null && echo "[OK] Flushed whitelist_ipv4"
-    nft flush set $NFTBAN_TABLE_IPV6 whitelist_ipv6 2>/dev/null && echo "[OK] Flushed whitelist_ipv6"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "whitelist_ipv4" && echo "[OK] Flushed whitelist_ipv4"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "whitelist_ipv6" && echo "[OK] Flushed whitelist_ipv6"
 
     # Flush DDoS
-    nft flush set $NFTBAN_TABLE_IPV4 ddos_blocked 2>/dev/null && echo "[OK] Flushed ddos_blocked"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked" && echo "[OK] Flushed ddos_blocked"
 
     # Flush portscan
-    nft flush set $NFTBAN_TABLE_IPV4 portscan_blocked 2>/dev/null && echo "[OK] Flushed portscan_blocked"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "portscan_blocked" && echo "[OK] Flushed portscan_blocked"
 
     # CRITICAL: Restore system whitelist immediately
     echo ""

@@ -745,14 +745,14 @@ if command -v yq >/dev/null 2>&1; then
     else
         # System has yq v3, use bundled v4
         if [ -x /usr/lib/nftban/bin/yq ]; then
-            ln -sf /usr/lib/nftban/bin/yq /usr/local/bin/yq
+            ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
             echo "[NFTBan]   yq v4 linked from bundled binary (replaced v3)"
         fi
     fi
 else
     # No system yq, link bundled
     if [ -x /usr/lib/nftban/bin/yq ]; then
-        ln -sf /usr/lib/nftban/bin/yq /usr/local/bin/yq
+        ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
         echo "[NFTBan]   yq v4 linked from bundled binary"
     else
         echo "[NFTBan WARN] WARNING: bundled yq not found - help command may be slow"

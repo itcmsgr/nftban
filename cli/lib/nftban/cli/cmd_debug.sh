@@ -407,13 +407,17 @@ nftban_debug_dump() {
         config)
             echo "=== Configuration ==="
             if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-                grep -v '^#' "${NFTBAN_CONFIG_DIR}/nftban.conf" | grep -v '^$'
+                # v1.19.0: Filter secrets from debug output (R42)
+                grep -v '^#' "${NFTBAN_CONFIG_DIR}/nftban.conf" | grep -v '^$' \
+                    | sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|APIKEY|API_KEY)=.*/\1=***REDACTED***/i'
             fi
             ;;
 
         env)
             echo "=== Environment Variables ==="
-            env | grep -E '^NFTBAN_' | sort
+            # v1.19.0: Filter secret-like env vars from debug output (R42)
+            env | grep -E '^NFTBAN_' | sort \
+                | sed -E 's/(TOKEN|PASSWORD|SECRET|KEY|APIKEY|API_KEY)=.*/\1=***REDACTED***/i'
             ;;
 
         services)

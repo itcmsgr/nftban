@@ -50,7 +50,7 @@ ExecStart=/usr/sbin/nftban update auto-run
 SuccessExitStatus=0 1 2
 
 # =============================================================================
-# SECURITY HARDENING
+# SECURITY HARDENING (v1.19.0: Grade D→A — R13)
 # =============================================================================
 
 # Run as root (required for package installation)
@@ -60,8 +60,26 @@ Group=root
 # Prevent privilege escalation
 NoNewPrivileges=true
 
-# Private /tmp for security
+# Filesystem hardening
+ProtectSystem=strict
+ProtectHome=true
 PrivateTmp=true
+ReadWritePaths=/var/log/nftban /var/lib/nftban /etc/nftban /usr/lib/nftban /usr/sbin/nftban /run/nftban
+
+# Kernel hardening
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+
+# System call filtering
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+
+# Network: update needs outbound HTTPS only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+PrivateDevices=true
 
 # =============================================================================
 # LOGGING

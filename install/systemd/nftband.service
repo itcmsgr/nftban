@@ -45,8 +45,9 @@ Documentation=man:nftban(8)
 Requires=nftband.socket
 After=nftband.socket
 
-# Start after network and nftables are ready
-After=network.target nftables.service
+# Start after network, nftables, and firewall-init are ready
+# v1.19.0: Ensure firewall-init creates tables BEFORE daemon starts (Task 46)
+After=network.target nftables.service nftban-firewall-init.service
 Wants=nftables.service
 
 [Service]

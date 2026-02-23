@@ -91,10 +91,17 @@ nftban_login_suricata_init() {
         return 1
     fi
 
-    # Load state from disk if exists
+    # Load state from disk if exists (safe line-by-line parsing, no source)
     local state_file="${LOGIN_SURICATA_STATE_FILE:-/var/lib/nftban/login-suricata-state.db}"
     if [[ -f "$state_file" ]]; then
-        source "$state_file" 2>/dev/null || true
+        while IFS='=' read -r key value; do
+            # Skip comments and blank lines
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            # Only allow known variable patterns with safe values
+            [[ "$key" =~ ^_LOGIN_SURICATA_(ALERT_COUNT|ALERT_FIRST|SCORES)(\[[^]]+\])?$ ]] || continue
+            [[ "$value" =~ ^[0-9a-zA-Z.,_:\ -]+$ ]] || continue
+            declare "$key=$value" 2>/dev/null || true
+        done < "$state_file"
     fi
 
     # Set defaults

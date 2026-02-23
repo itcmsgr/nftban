@@ -699,9 +699,15 @@ EOF
             # shellcheck disable=SC2206  # Word splitting intentional for SSL options
             [[ -n "$smtp_ssl_opts" ]] && curl_args+=($smtp_ssl_opts)
 
-            # Add authentication if configured
+            # v1.19.0: Add SMTP auth via netrc file to avoid credential exposure in process args (R23)
+            local _smtp_netrc=""
             if [[ -n "${NFTBAN_SMTP_USER:-}" ]]; then
-                curl_args+=(--user "${NFTBAN_SMTP_USER}:${NFTBAN_SMTP_PASS:-}")
+                _smtp_netrc=$(mktemp /tmp/nftban-smtp-netrc.XXXXXX)
+                chmod 600 "$_smtp_netrc"
+                local _smtp_host
+                _smtp_host=$(echo "${NFTBAN_SMTP_SERVER:-localhost}" | cut -d: -f1)
+                echo "machine $_smtp_host login ${NFTBAN_SMTP_USER} password ${NFTBAN_SMTP_PASS:-}" > "$_smtp_netrc"
+                curl_args+=(--netrc-file "$_smtp_netrc")
             fi
 
             # Create temporary email file with headers
@@ -729,6 +735,7 @@ CURLEOF
 
             # Cleanup
             rm -f "$tmp_email"
+            [[ -n "${_smtp_netrc:-}" ]] && rm -f "$_smtp_netrc"
 
             # Return curl result
             (( curl_result != 0 )) && return 1

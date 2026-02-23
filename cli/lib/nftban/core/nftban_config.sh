@@ -500,11 +500,23 @@ nftban_config_get() {
     # Get a global config value
     # Args: $1 = key name (e.g., NFTBAN_GUI_MODE)
     # Output: value (without quotes), or empty if not found
+    # v1.19.0: Check .local override first, then fall back to base config (R12)
 
     local key="$1"
     local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
+    local local_file="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
-    # Check main config file
+    # Check .local override first (user overrides take precedence)
+    if [[ -f "$local_file" ]]; then
+        local local_val
+        local_val=$(nftban_config_get_value "$local_file" "$key")
+        if [[ -n "$local_val" ]]; then
+            echo "$local_val"
+            return 0
+        fi
+    fi
+
+    # Fall back to main config file
     if [[ -f "$conf_file" ]]; then
         nftban_config_get_value "$conf_file" "$key"
         return 0

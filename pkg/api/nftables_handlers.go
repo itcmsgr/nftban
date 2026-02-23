@@ -159,12 +159,23 @@ func NFTablesValidateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // NFTablesSaveHandler saves the current nftables ruleset to a backup file
+// v1.19.0: Add size limit (R36) and fix permissions to 0640
 func NFTablesSaveHandler(w http.ResponseWriter, r *http.Request) {
+	// v1.19.0: Limit request body to 10MB to prevent DoS (R36)
+	const maxBackupSize = 10 * 1024 * 1024 // 10MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBackupSize)
+
 	var req struct {
 		Ruleset string `json:"ruleset"`
 	}
 
 	if !DecodeJSONBody(w, r, &req) {
+		return
+	}
+
+	// v1.19.0: Reject empty or oversized rulesets
+	if len(req.Ruleset) == 0 {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Ruleset cannot be empty"})
 		return
 	}
 
@@ -175,17 +186,17 @@ func NFTablesSaveHandler(w http.ResponseWriter, r *http.Request) {
 	backupPathWithTime := configDir + "/backups/nftables_" + timestamp + ".conf"
 
 	// Create backups directory if it doesn't exist
-	os.MkdirAll(configDir+"/backups", 0755)
+	os.MkdirAll(configDir+"/backups", 0750)
 
-	// Save with timestamp
-	if err := os.WriteFile(backupPathWithTime, []byte(req.Ruleset), 0644); err != nil {
+	// Save with timestamp — v1.19.0: permissions 0640 (R36)
+	if err := os.WriteFile(backupPathWithTime, []byte(req.Ruleset), 0640); err != nil {
 		log.Printf("[ERROR] Failed to save nftables backup: %v", err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to save backup: " + err.Error()})
 		return
 	}
 
-	// Also save to standard backup path
-	if err := os.WriteFile(backupPath, []byte(req.Ruleset), 0644); err != nil {
+	// Also save to standard backup path — v1.19.0: permissions 0640
+	if err := os.WriteFile(backupPath, []byte(req.Ruleset), 0640); err != nil {
 		log.Printf("[WARN] Failed to save to standard backup path: %v", err)
 	}
 

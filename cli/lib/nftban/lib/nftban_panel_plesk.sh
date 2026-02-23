@@ -436,7 +436,13 @@ nftban_panel_plesk_report() {
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf"
-
+    fi
+    # v1.19.0: Source .local override (user customizations survive package updates)
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf.local"
+    fi
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_PLESK_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_PLESK_TCP_OUT:-Not configured}"
         echo "   UDP INPUT:  ${NFTBAN_PLESK_UDP_IN:-Not configured}"

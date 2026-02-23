@@ -599,6 +599,7 @@ nftban_geoip_cmd_config() {
                     echo "Set key: nftban geoip config set-key YOUR_KEY" >&2
                     return 1
                 fi
+                # v1.19.0: Use curl config file to avoid key exposure in process args (R04)
                 test_url="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${GEOIP_MAXMIND_LICENSE_KEY}&suffix=tar.gz"
                 echo "Testing MaxMind download..."
             else
@@ -609,7 +610,22 @@ nftban_geoip_cmd_config() {
             echo "URL: ${test_url%%\?*}..."
             echo ""
 
-            if curl -I -L "$test_url" 2>&1 | head -20; then
+            local _curl_cfg=""
+            if [[ "$test_url" == *"license_key="* ]]; then
+                _curl_cfg=$(mktemp /tmp/nftban-geoip-test.XXXXXX)
+                chmod 600 "$_curl_cfg"
+                echo "url = \"${test_url}\"" > "$_curl_cfg"
+            fi
+
+            local _test_ok=false
+            if [[ -n "$_curl_cfg" ]]; then
+                curl -I -L -K "$_curl_cfg" 2>&1 | head -20 && _test_ok=true
+                rm -f "$_curl_cfg"
+            else
+                curl -I -L "$test_url" 2>&1 | head -20 && _test_ok=true
+            fi
+
+            if [[ "$_test_ok" == "true" ]]; then
                 echo ""
                 echo "✓ Download test PASSED"
                 echo "  Run: nftban geoip update"

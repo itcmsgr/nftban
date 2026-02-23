@@ -392,27 +392,28 @@ func (m *Module) handleDDoSEvent(e eventbus.Event) {
 	tracker.lastSeen = time.Now()
 
 	shouldBan := tracker.count >= m.config.EscalateThreshold
+	eventCount := tracker.count
+	// Escalate ban duration based on repeat offenses
+	banDuration := m.config.BanDurationShort
+	if eventCount >= m.config.EscalateThreshold*3 {
+		banDuration = m.config.BanDurationLong
+	} else if eventCount >= m.config.EscalateThreshold*2 {
+		banDuration = m.config.BanDurationMedium
+	}
+	if shouldBan {
+		m.bannedIPs[e.IP] = time.Now()
+	}
 	m.mu.Unlock()
 
 	// Trigger ban if threshold exceeded - escalating duration
 	if shouldBan && m.bus != nil {
-		m.bannedIPs[e.IP] = time.Now()
-
-		// Escalate ban duration based on repeat offenses
-		banDuration := m.config.BanDurationShort
-		if tracker.count >= m.config.EscalateThreshold*3 {
-			banDuration = m.config.BanDurationLong
-		} else if tracker.count >= m.config.EscalateThreshold*2 {
-			banDuration = m.config.BanDurationMedium
-		}
-
 		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
 			WithMessage("Banning " + e.IP + ": DDoS threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
 			WithData("duration", banDuration.String()).
 			WithData("reason", "ddos_protection").
-			WithData("event_count", tracker.count))
+			WithData("event_count", eventCount))
 	}
 }
 
