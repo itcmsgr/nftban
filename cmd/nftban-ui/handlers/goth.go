@@ -107,26 +107,6 @@ func (h *GOTHHandlers) requireOperator(w http.ResponseWriter, r *http.Request) b
 	return true
 }
 
-// requireCanAct checks if the authenticated user can perform runtime actions (ban/unban/whitelist).
-// Includes: nftban (admin) and nftban-panel (panel operators).
-// Returns true if authorized, false if not (and sends 403 response).
-// TODO(v1.19.1): Wire into action handlers (ban, unban, whitelist, flush).
-//
-//lint:ignore U1000 RBAC guard prepared for v1.19.1 action handler integration
-func (h *GOTHHandlers) requireCanAct(w http.ResponseWriter, r *http.Request) bool {
-	sess := h.getSessionFromRequest(r)
-	if sess == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	if !sess.HasGroup("nftban") && !sess.HasGroup("nftban-panel") {
-		log.Printf("[RBAC] User %s denied action access (groups: %v)", sess.Username, sess.Groups)
-		http.Error(w, "Forbidden: action role required", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
 // jsonMarshalHXTrigger builds a properly JSON-escaped HX-Trigger header value.
 // SECURITY FIX (R35): Prevents XSS via unescaped service/feed names in HTMX trigger headers.
 func jsonMarshalHXTrigger(message, msgType string) string {
