@@ -243,13 +243,28 @@ nftban_login_write_bans_log() {
 }
 
 nftban_login_is_whitelisted() {
-    # Check if IP is whitelisted
+    # Check if IP is whitelisted — v1.19.0: IPv4/IPv6 parity
     local ip="$1"
 
-    for whitelisted in $NFTBAN_LOGIN_WHITELIST; do
-        if [[ "$ip" == "$whitelisted" ]]; then
-            return 0
-        fi
+    # Localhost (both families)
+    [[ "$ip" == "127.0.0.1" || "$ip" == "::1" ]] && return 0
+
+    # Private networks (both families)
+    [[ "$ip" =~ ^10\. ]] && return 0
+    [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && return 0
+    [[ "$ip" =~ ^192\.168\. ]] && return 0
+    [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
+    [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
+
+    # Use central whitelist check if available (includes nftables sets + whitelist.d/)
+    if declare -f nftban_is_whitelisted &>/dev/null; then
+        nftban_is_whitelisted "$ip" && return 0
+    fi
+
+    # Fallback to config whitelist (exact match — covers both IPv4 and IPv6 literals)
+    local w
+    for w in $NFTBAN_LOGIN_WHITELIST; do
+        [[ "$ip" == "$w" ]] && return 0
     done
 
     return 1
@@ -855,7 +870,7 @@ nftban_login_monitor_ssh() {
         message=$(echo "$line" | jq -r '.MESSAGE // empty')
 
         # Successful login
-        if [[ "$message" =~ ^Accepted\ (password|publickey)\ for\ ([^[:space:]]+)\ from\ ([0-9.]+) ]]; then
+        if [[ "$message" =~ ^Accepted\ (password|publickey)\ for\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             local method="${BASH_REMATCH[1]}"
             local user="${BASH_REMATCH[2]}"
             local ip="${BASH_REMATCH[3]}"
@@ -868,7 +883,7 @@ nftban_login_monitor_ssh() {
         fi
 
         # Failed login (existing user)
-        if [[ "$message" =~ ^Failed\ (password|publickey)\ for\ ([^[:space:]]+)\ from\ ([0-9.]+) ]]; then
+        if [[ "$message" =~ ^Failed\ (password|publickey)\ for\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             local method="${BASH_REMATCH[1]}"
             local user="${BASH_REMATCH[2]}"
             local ip="${BASH_REMATCH[3]}"
@@ -877,7 +892,7 @@ nftban_login_monitor_ssh() {
         fi
 
         # Invalid user (username enumeration attack)
-        if [[ "$message" =~ ^Invalid\ user\ ([^[:space:]]+)\ from\ ([0-9.]+) ]]; then
+        if [[ "$message" =~ ^Invalid\ user\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             local user="${BASH_REMATCH[1]}"
             local ip="${BASH_REMATCH[2]}"
 
@@ -885,7 +900,7 @@ nftban_login_monitor_ssh() {
         fi
 
         # Failed password for invalid user
-        if [[ "$message" =~ ^Failed\ password\ for\ invalid\ user\ ([^[:space:]]+)\ from\ ([0-9.]+) ]]; then
+        if [[ "$message" =~ ^Failed\ password\ for\ invalid\ user\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             local user="${BASH_REMATCH[1]}"
             local ip="${BASH_REMATCH[2]}"
 
@@ -893,7 +908,7 @@ nftban_login_monitor_ssh() {
         fi
 
         # Too many authentication failures (rapid brute-force indicator)
-        if [[ "$message" =~ ^Received\ disconnect\ from\ ([0-9.]+).*[Tt]oo\ many\ authentication\ failures ]]; then
+        if [[ "$message" =~ ^Received\ disconnect\ from\ ([0-9a-fA-F.:]+).*[Tt]oo\ many\ authentication\ failures ]]; then
             local ip="${BASH_REMATCH[1]}"
 
             nftban_login_track_failed "unknown" "$ip" "SSH"
@@ -1019,49 +1034,56 @@ nftban_login_track_failed() {
 
                 # BAN THE IP (v1.0 replaces fail2ban)
                 local ban_reason="${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)"
-                nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
 
-                # Use NFTBAN_BIN from central config (set during install by install_configs.sh)
-                # Config is single source of truth - no runtime detection
-                local nftban_cmd="${NFTBAN_BIN:-/usr/sbin/nftban}"
-
-                # Pre-flight checks with clear error messages
-                if [[ ! -x "$nftban_cmd" ]]; then
-                    nftban_login_alert_log "ERROR: NFTBAN_BIN=$nftban_cmd not executable. Check config /etc/nftban/nftban.conf"
+                # Ban deduplication: skip if IP is already banned (v1.19.0)
+                if nft get element ip nftban blacklist_ipv4 "{ $ip }" &>/dev/null || \
+                   nft get element ip6 nftban blacklist_ipv6 "{ $ip }" &>/dev/null; then
+                    nftban_login_alert_log "IP $ip already banned, skipping duplicate ban"
                 else
-                    # Check if daemon socket exists (IPC required for banning)
-                    local ipc_socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
-                    if [[ ! -S "$ipc_socket" ]]; then
-                        nftban_login_alert_log "ERROR: Cannot ban $ip - daemon not running (socket missing: $ipc_socket)"
-                    else
-                        # Execute ban with captured error for debugging
-                        # Capture exit code properly before || true prevents set -e crash
-                        local ban_output ban_exit
-                        ban_output=$("$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>&1) && ban_exit=0 || ban_exit=$?
-                        if [[ $ban_exit -ne 0 ]]; then
-                            nftban_login_alert_log "ERROR: Ban failed (exit=$ban_exit): $ban_output"
-                        fi
-                    fi
-                fi
+                    nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
 
-                # Write to bans.log for stats integration (keeps both logs for compatibility)
-                # Get country code for bans.log entry
-                local country_code="UNK"
-                if [[ "$NFTBAN_LOGIN_ALERT_GEOIP" == "true" ]]; then
-                    # Extract just the country code from geoip output (e.g., "US" from "US, United States")
-                    local geoip_data
-                    geoip_data=$(nftban_login_get_geoip "$ip" 2>/dev/null)
-                    if [[ -n "$geoip_data" && "$geoip_data" != "GeoIP"* && "$geoip_data" != "Unknown" ]]; then
-                        # Extract first field (country code) if comma-separated
-                        country_code="${geoip_data%%,*}"
-                        country_code="${country_code%% *}"  # Remove trailing spaces
-                        # Ensure it's a valid 2-letter code
-                        if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
-                            country_code="UNK"
+                    # Use NFTBAN_BIN from central config (set during install by install_configs.sh)
+                    # Config is single source of truth - no runtime detection
+                    local nftban_cmd="${NFTBAN_BIN:-/usr/sbin/nftban}"
+
+                    # Pre-flight checks with clear error messages
+                    if [[ ! -x "$nftban_cmd" ]]; then
+                        nftban_login_alert_log "ERROR: NFTBAN_BIN=$nftban_cmd not executable. Check config /etc/nftban/nftban.conf"
+                    else
+                        # Check if daemon socket exists (IPC required for banning)
+                        local ipc_socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+                        if [[ ! -S "$ipc_socket" ]]; then
+                            nftban_login_alert_log "ERROR: Cannot ban $ip - daemon not running (socket missing: $ipc_socket)"
+                        else
+                            # Execute ban with captured error for debugging
+                            # Capture exit code properly before || true prevents set -e crash
+                            local ban_output ban_exit
+                            ban_output=$("$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>&1) && ban_exit=0 || ban_exit=$?
+                            if [[ $ban_exit -ne 0 ]]; then
+                                nftban_login_alert_log "ERROR: Ban failed (exit=$ban_exit): $ban_output"
+                            fi
                         fi
                     fi
+
+                    # Write to bans.log for stats integration (keeps both logs for compatibility)
+                    # Get country code for bans.log entry
+                    local country_code="UNK"
+                    if [[ "$NFTBAN_LOGIN_ALERT_GEOIP" == "true" ]]; then
+                        # Extract just the country code from geoip output (e.g., "US" from "US, United States")
+                        local geoip_data
+                        geoip_data=$(nftban_login_get_geoip "$ip" 2>/dev/null)
+                        if [[ -n "$geoip_data" && "$geoip_data" != "GeoIP"* && "$geoip_data" != "Unknown" ]]; then
+                            # Extract first field (country code) if comma-separated
+                            country_code="${geoip_data%%,*}"
+                            country_code="${country_code%% *}"  # Remove trailing spaces
+                            # Ensure it's a valid 2-letter code
+                            if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
+                                country_code="UNK"
+                            fi
+                        fi
+                    fi
+                    nftban_login_write_bans_log "$ip" "$ban_reason" "$country_code"
                 fi
-                nftban_login_write_bans_log "$ip" "$ban_reason" "$country_code"
 
                 # Reset counter
                 unset 'NFTBAN_FAILED_ATTEMPTS[$key]'

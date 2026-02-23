@@ -22,7 +22,7 @@
 [Unit]
 Description=NFTBan Pro License Check Timer
 Documentation=man:nftban(8)
-Requires=nftban-pro-license.service
+# v1.19.0: Removed Requires= — causes timer to stop when oneshot completes (Task 47)
 ConditionPathExists=/etc/nftban/pro.token
 
 [Timer]

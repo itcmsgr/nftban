@@ -24,12 +24,14 @@ package whitelist
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/feeds"
 	"github.com/itcmsgr/nftban/pkg/netutil"
+	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/util"
 )
 
@@ -131,6 +133,27 @@ func loadWhitelistFile(filePath string, ipv4Set, ipv6Set util.Set[string]) error
 // AddIP adds an IP to the appropriate whitelist file
 // Creates whitelist.d/99-manual.conf for manual additions
 func AddIP(configDir string, ipStr string) error {
+	// Reject /0 and /1 CIDR prefixes - would match entire address space
+	if strings.Contains(ipStr, "/") {
+		_, ipNet, err := net.ParseCIDR(ipStr)
+		if err == nil {
+			ones, _ := ipNet.Mask.Size()
+			if ones <= 1 {
+				return fmt.Errorf("refusing to whitelist /%d: would match entire address space", ones)
+			}
+		}
+	}
+
+	// v1.19.0: Reject bogon/reserved ranges (R23)
+	// Uses shared bogon filter from pkg/sync/cidr.go
+	filtered, stats := sync.FilterProblematicCIDRs([]string{ipStr})
+	if stats.Bogon > 0 || stats.TooLarge > 0 {
+		return fmt.Errorf("refusing to whitelist %s: bogon/reserved range", ipStr)
+	}
+	if len(filtered) == 0 {
+		return fmt.Errorf("refusing to whitelist %s: filtered as problematic", ipStr)
+	}
+
 	// Validate IP
 	normalizedIP, isIPv4, err := netutil.ValidateAndNormalizeIP(ipStr)
 	if err != nil {

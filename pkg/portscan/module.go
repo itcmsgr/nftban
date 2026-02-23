@@ -392,18 +392,22 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 	tracker.lastSeen = time.Now()
 
 	shouldBan := tracker.count >= m.config.BanThreshold
+	scanCount := tracker.count
+	banDuration := m.config.BanDuration
+	if shouldBan {
+		m.bannedIPs[e.IP] = time.Now()
+	}
 	m.mu.Unlock()
 
 	// Trigger ban if threshold exceeded
 	if shouldBan && m.bus != nil {
-		m.bannedIPs[e.IP] = time.Now()
 		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
 			WithMessage("Banning " + e.IP + ": portscan threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
-			WithData("duration", m.config.BanDuration.String()).
+			WithData("duration", banDuration.String()).
 			WithData("reason", "portscan_detection").
-			WithData("scan_count", tracker.count))
+			WithData("scan_count", scanCount))
 	}
 }
 

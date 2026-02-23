@@ -162,6 +162,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # v1.19.0: Verify SLSA provenance after build (R26)
+      - name: Install SLSA Verifier
+        run: |
+          curl -sSfL https://github.com/slsa-framework/slsa-verifier/releases/download/v2.7.0/slsa-verifier-linux-amd64 \
+            -o /usr/local/bin/slsa-verifier
+          chmod +x /usr/local/bin/slsa-verifier
+
+      - name: Verify SLSA Provenance
+        run: |
+          echo "Verifying SLSA provenance..."
+          for binary in dist/nftban-*; do
+            if [[ ! "$binary" =~ \.intoto\.jsonl$ ]] && [[ ! "$binary" =~ SHA256SUMS$ ]]; then
+              provenance="${binary}.intoto.jsonl"
+              if [ -f "$provenance" ]; then
+                echo "Verifying $(basename "$binary")..."
+                slsa-verifier verify-artifact "$binary" \
+                  --provenance-path "$provenance" \
+                  --source-uri github.com/itcmsgr/nftban || {
+                    echo "::warning::Provenance verification failed for $(basename "$binary")"
+                  }
+              fi
+            fi
+          done
+
       - name: Generate SLSA Summary
         run: |
           echo "## SLSA Level 3 Build Complete" >> $GITHUB_STEP_SUMMARY

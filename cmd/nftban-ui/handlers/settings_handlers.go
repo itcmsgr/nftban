@@ -24,6 +24,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"os"
@@ -618,17 +619,21 @@ func (h *GOTHHandlers) buildNetworkArgs(r *http.Request) ([]string, bool) {
 }
 
 // sendSettingsSuccess sends a success response (HTMX compatible)
+// v1.19.0: HTML-escape message to prevent XSS (R37)
 func (h *GOTHHandlers) sendSettingsSuccess(w http.ResponseWriter, message string) {
-	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s", "type": "success"}}`, message))
+	escaped := html.EscapeString(message)
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(escaped, "success"))
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<div class="alert alert-success">%s</div>`, message)
+	fmt.Fprintf(w, `<div class="alert alert-success">%s</div>`, escaped)
 }
 
 // sendSettingsError sends an error response (HTMX compatible)
+// v1.19.0: HTML-escape message to prevent XSS (R37)
 func (h *GOTHHandlers) sendSettingsError(w http.ResponseWriter, message string) {
-	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s", "type": "error"}}`, message))
+	escaped := html.EscapeString(message)
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(escaped, "error"))
 	w.WriteHeader(http.StatusBadRequest)
-	fmt.Fprintf(w, `<div class="alert alert-error">%s</div>`, message)
+	fmt.Fprintf(w, `<div class="alert alert-error">%s</div>`, escaped)
 }
 
 // extractJSON extracts JSON from CLI output that may contain non-JSON prefix/suffix

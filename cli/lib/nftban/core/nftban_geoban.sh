@@ -46,6 +46,10 @@ fi
 # Load IPC library for single-writer architecture
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
+# v1.19.0: Load shared CIDR merge library (eliminates "conflicting intervals" errors)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_dataset_cidr.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 
@@ -268,6 +272,50 @@ nftban_geoban_apply_to_nftables() {
     fi
 
     # =========================================================================
+    # 2b. v1.19.0: CIDR merge — eliminate overlapping intervals (Task 53)
+    #     Prevents nftables "conflicting intervals" errors
+    # =========================================================================
+
+    if declare -f nftban_cidr_merge &>/dev/null; then
+        if [[ $cidr_count_v4 -gt 0 ]]; then
+            local _geoban_tmp_v4 _geoban_merged_v4
+            _geoban_tmp_v4=$(mktemp /tmp/nftban_geoban_v4_XXXXXX)
+            _geoban_merged_v4=$(mktemp /tmp/nftban_geoban_v4m_XXXXXX)
+            printf '%s\n' "${cidrs_v4[@]}" > "$_geoban_tmp_v4"
+            nftban_cidr_merge "$_geoban_tmp_v4" "$_geoban_merged_v4" 4
+            # Reload merged CIDRs
+            cidrs_v4=()
+            while IFS= read -r line; do
+                [[ -n "$line" ]] && cidrs_v4+=("$line")
+            done < "$_geoban_merged_v4"
+            local new_count_v4=${#cidrs_v4[@]}
+            if [[ $new_count_v4 -lt $cidr_count_v4 ]]; then
+                nftban_info "IPv4 CIDR merge: $cidr_count_v4 -> $new_count_v4 (saved $((cidr_count_v4 - new_count_v4)) overlaps)"
+            fi
+            cidr_count_v4=$new_count_v4
+            rm -f "$_geoban_tmp_v4" "$_geoban_merged_v4"
+        fi
+
+        if [[ $cidr_count_v6 -gt 0 ]]; then
+            local _geoban_tmp_v6 _geoban_merged_v6
+            _geoban_tmp_v6=$(mktemp /tmp/nftban_geoban_v6_XXXXXX)
+            _geoban_merged_v6=$(mktemp /tmp/nftban_geoban_v6m_XXXXXX)
+            printf '%s\n' "${cidrs_v6[@]}" > "$_geoban_tmp_v6"
+            nftban_cidr_merge "$_geoban_tmp_v6" "$_geoban_merged_v6" 6
+            cidrs_v6=()
+            while IFS= read -r line; do
+                [[ -n "$line" ]] && cidrs_v6+=("$line")
+            done < "$_geoban_merged_v6"
+            local new_count_v6=${#cidrs_v6[@]}
+            if [[ $new_count_v6 -lt $cidr_count_v6 ]]; then
+                nftban_info "IPv6 CIDR merge: $cidr_count_v6 -> $new_count_v6 (saved $((cidr_count_v6 - new_count_v6)) overlaps)"
+            fi
+            cidr_count_v6=$new_count_v6
+            rm -f "$_geoban_tmp_v6" "$_geoban_merged_v6"
+        fi
+    fi
+
+    # =========================================================================
     # 3. Add IPv4 CIDRs to blacklist_ipv4
     # NOTE: We ADD elements. Set can be flushed on full refresh.
     # =========================================================================
@@ -282,7 +330,9 @@ nftban_geoban_apply_to_nftables() {
         done
         cidr_list_v4="${cidr_list_v4%,}"  # Remove trailing comma
 
-        local element_fragment="/etc/nftban/rules.d/geoban-elements-v4-$$.nft"
+        # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
+        local element_fragment
+        element_fragment=$(mktemp /tmp/nftban_geoban_frag_XXXXXX.nft)
         echo "add element $table_v4 $set_v4 { $cidr_list_v4 }" > "$element_fragment"
 
         if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
@@ -309,7 +359,9 @@ nftban_geoban_apply_to_nftables() {
         done
         cidr_list_v6="${cidr_list_v6%,}"  # Remove trailing comma
 
-        local element_fragment="/etc/nftban/rules.d/geoban-elements-v6-$$.nft"
+        # v1.19.0: Use mktemp (R17)
+        local element_fragment
+        element_fragment=$(mktemp /tmp/nftban_geoban_frag_XXXXXX.nft)
         echo "add element $table_v6 $set_v6 { $cidr_list_v6 }" > "$element_fragment"
 
         if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then

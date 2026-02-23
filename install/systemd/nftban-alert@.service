@@ -53,11 +53,23 @@ ExecStart=/usr/lib/nftban/sbin/nftban-service-alert %i
 # Timeout - alert should complete quickly
 TimeoutStartSec=60
 
-# Security hardening
+# Security hardening (v1.19.0: full sandboxing — R13)
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+PrivateDevices=yes
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+TasksMax=25
 ReadWritePaths=/var/log/nftban /var/lib/nftban
 
 # Logging

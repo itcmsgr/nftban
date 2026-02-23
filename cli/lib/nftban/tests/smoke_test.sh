@@ -476,8 +476,12 @@ smoke_lifecycle() {
     log ""
     log "─── Lifecycle: ${name} ───"
 
+    # v1.19.0: Replace eval with bash -c for command execution (R16)
+    # Commands are test harness strings (e.g., "nftban ban 198.51.100.1")
+    # that come from hardcoded test definitions, not user input.
+
     # Step 0: Cleanup — ensure test IP is not present
-    eval "${remove_cmd}" &>/dev/null || true
+    bash -c "${remove_cmd}" &>/dev/null || true
     sleep 1
 
     # Step 1: Baseline — IP must NOT be in set
@@ -492,7 +496,7 @@ smoke_lifecycle() {
 
     # Step 2: Add (ban or whitelist add)
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if ! eval "${add_cmd}" &>/dev/null; then
+    if ! bash -c "${add_cmd}" &>/dev/null; then
         log_fail "${name} add — command failed: ${add_cmd}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
         return 0
@@ -505,16 +509,16 @@ smoke_lifecycle() {
     else
         log_fail "${name} add — ${pattern} NOT found in ${nft_set}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        eval "${remove_cmd}" &>/dev/null || true
+        bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
 
     # Step 3: Remove (unban or whitelist remove)
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if ! eval "${remove_cmd}" &>/dev/null; then
+    if ! bash -c "${remove_cmd}" &>/dev/null; then
         log_fail "${name} remove — command failed: ${remove_cmd}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        eval "${remove_cmd}" &>/dev/null || true
+        bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
     sleep 1
@@ -522,7 +526,7 @@ smoke_lifecycle() {
     if _nft_set_contains "${nft_table}" "${nft_set}" "${pattern}"; then
         log_fail "${name} remove — ${pattern} still in ${nft_set}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        eval "${remove_cmd}" &>/dev/null || true
+        bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
     log_pass "${name} remove — ${pattern} absent from ${nft_set}"

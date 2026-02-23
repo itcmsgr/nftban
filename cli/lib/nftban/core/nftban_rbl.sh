@@ -169,14 +169,28 @@ nftban_rbl_reverse_ip() {
 
     # Detect IPv4 vs IPv6
     if [[ "$ip" =~ : ]]; then
-        # IPv6: Use nibble format with .ip6.arpa
-        # Note: Most RBLs don't support IPv6 yet, but we prepare for it
-        # Example: 2001:db8::1 -> 1.0.0.0...8.b.d.0.1.0.0.2.ip6.arpa
+        # v1.19.0: Full IPv6 nibble-format reverse (R23)
+        # Example: 2001:db8::1 -> 1.0.0.0...8.b.d.0.1.0.0.2
+        # First expand to full 32-char hex form
+        local expanded
+        if command -v python3 &>/dev/null; then
+            expanded=$(python3 -c "
+import ipaddress
+try:
+    addr = ipaddress.ip_address('$ip')
+    full = addr.exploded.replace(':','')
+    print('.'.join(reversed(full)))
+except:
+    print('')
+" 2>/dev/null) || expanded=""
+        fi
 
-        # Expand IPv6 to full form first (simplified approach)
-        # For production, would use 'sipcalc' or similar tool
-        # For now, just return the compressed form (most RBLs won't accept it anyway)
-        echo "$ip"  # Placeholder - full IPv6 reverse is complex
+        if [[ -n "$expanded" ]]; then
+            echo "$expanded"
+        else
+            # No python3 — cannot reverse IPv6, return empty to skip
+            echo ""
+        fi
     else
         # IPv4: Simple octet reversal
         echo "$ip" | awk -F. '{print $4"."$3"."$2"."$1}'
@@ -332,6 +346,9 @@ nftban_rbl_check_ip_parallel() {
 
     reversed_ip=$(nftban_rbl_reverse_ip "$ip")
     temp_dir=$(mktemp -d)
+    # v1.19.0: Ensure temp cleanup on unexpected exit (R07)
+    # shellcheck disable=SC2064  # Intentional: expand $temp_dir NOW at set time (local var)
+    trap "rm -rf '$temp_dir'" EXIT
 
     # Create list of RBL checks to run
     local rbl_list=()
@@ -434,8 +451,9 @@ nftban_rbl_check_ip_parallel() {
         fi
     done
 
-    # Cleanup temp dir
+    # Cleanup temp dir and reset trap
     rm -rf "$temp_dir"
+    trap - EXIT
 
     if [[ "$format" == "json" ]]; then
         echo ""
@@ -627,16 +645,39 @@ nftban_rbl_dns_lookup() {
     local lookup_host="${reversed_ip}.${rbl_domain}"
     local timeout="${NFTBAN_RBL_TIMEOUT:-4}"
 
+    # v1.19.0: Rate limiting - track query count per run (R23)
+    _NFTBAN_RBL_QUERY_COUNT=$(( ${_NFTBAN_RBL_QUERY_COUNT:-0} + 1 ))
+    local max_queries="${NFTBAN_RBL_MAX_QUERIES_PER_RUN:-500}"
+    if [[ $_NFTBAN_RBL_QUERY_COUNT -gt $max_queries ]]; then
+        echo "RATE_LIMITED"
+        return 0
+    fi
+
     # Perform DNS lookup with timeout
-    if timeout "$timeout" host -t A "$lookup_host" &>/dev/null; then
+    local dns_result
+    dns_result=$(timeout "$timeout" host -t A "$lookup_host" 2>/dev/null) || true
+    local exit_code=$?
+
+    if [[ $exit_code -eq 124 ]]; then
+        echo "TIMEOUT"
+        return 0
+    fi
+
+    if [[ -z "$dns_result" ]] || echo "$dns_result" | grep -q "not found\|NXDOMAIN"; then
+        echo "CLEAN"
+        return 0
+    fi
+
+    # v1.19.0: RFC 5782 validation - responses must be in 127.0.0.0/8 (R23)
+    local response_ip
+    response_ip=$(echo "$dns_result" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
+    if [[ -n "$response_ip" ]] && [[ "$response_ip" =~ ^127\. ]]; then
         echo "LISTED"
+    elif [[ -n "$response_ip" ]]; then
+        # Non-127.x.x.x response is invalid per RFC 5782 - treat as CLEAN
+        echo "CLEAN"
     else
-        local exit_code=$?
-        if [[ $exit_code -eq 124 ]]; then
-            echo "TIMEOUT"
-        else
-            echo "CLEAN"
-        fi
+        echo "LISTED"
     fi
 }
 
@@ -924,6 +965,14 @@ nftban_rbl_send_alert() {
     local rbl="$2"
     local reason="$3"
     local tag="${4:-unknown}"
+
+    # v1.19.0: Use alert throttle to prevent duplicate alerts (R07)
+    if declare -f nftban_should_alert &>/dev/null; then
+        if ! nftban_should_alert "rbl_${ip}_${rbl}" 43200; then
+            return 0  # Throttled (12-hour window per IP+RBL combination)
+        fi
+    fi
+
     # Per-module override: NFTBAN_RBL_ALERT_EMAIL, fallback: NFTBAN_MAIL_RECIPIENT
     local email="${NFTBAN_RBL_ALERT_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}"
 

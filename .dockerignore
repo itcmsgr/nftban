@@ -33,6 +33,18 @@ docs/
 # CI/CD (not needed in image)
 .github/
 
+# Secrets and credentials (v1.19.0: R41)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+credentials.json
+secrets.yaml
+token.txt
+
 # Development files
 .pre-commit-config.yaml
 .editorconfig

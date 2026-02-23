@@ -562,12 +562,20 @@ func (b *Backend) CheckIP(ctx context.Context, ip string) (bool, string, error) 
 		return false, "", fmt.Errorf("invalid IP: %s", ip)
 	}
 
-	isIPv6 := parsed.To4() == nil
+	// Determine family using To4() - handles IPv4-mapped IPv6 addresses correctly
+	ipv4 := parsed.To4()
+	isIPv6 := ipv4 == nil
+
+	// Normalize IP string for consistent comparison
+	normalizedIP := parsed.String()
+	if !isIPv6 {
+		normalizedIP = ipv4.String()
+	}
 
 	// Ensure netlink
 	if err := b.ensureNetlink(); err != nil {
 		// Fall back to CLI
-		return b.checkIPCLI(ctx, ip, isIPv6)
+		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
 	}
 
 	var set *nftables.Set
@@ -582,19 +590,19 @@ func (b *Backend) CheckIP(ctx context.Context, ip string) (bool, string, error) 
 
 	if set == nil {
 		// Fall back to CLI
-		return b.checkIPCLI(ctx, ip, isIPv6)
+		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
 	}
 
 	// Get set elements via netlink
 	elements, err := b.nft.GetSetElements(set)
 	if err != nil {
 		// Fall back to CLI on error
-		return b.checkIPCLI(ctx, ip, isIPv6)
+		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
 	}
 
 	// Check if IP is in elements
 	for _, elem := range elements {
-		if elem == ip || strings.HasPrefix(elem, ip+"/") || strings.Contains(elem, ip) {
+		if elem == normalizedIP || strings.HasPrefix(elem, normalizedIP+"/") {
 			return true, setName, nil
 		}
 	}
@@ -619,7 +627,9 @@ func (b *Backend) checkIPCLI(ctx context.Context, ip string, isIPv6 bool) (bool,
 		return false, "", fmt.Errorf("nft list set failed: %w", err)
 	}
 
-	if strings.Contains(string(output), ip) {
+	outputStr := string(output)
+	if strings.Contains(outputStr, ip+" ") || strings.Contains(outputStr, ip+",") ||
+		strings.Contains(outputStr, ip+"\n") || strings.Contains(outputStr, ip+"}") {
 		return true, set, nil
 	}
 

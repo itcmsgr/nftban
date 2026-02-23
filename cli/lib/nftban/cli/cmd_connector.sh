@@ -587,13 +587,25 @@ EOF
     case "$CONNECTOR_TYPE" in
         elasticsearch)
             local url="${CONNECTOR_ES_URL}/${CONNECTOR_ES_INDEX}/_doc"
-            local auth_opts=""
-            [[ -n "${CONNECTOR_ES_USER:-}" ]] && auth_opts="-u ${CONNECTOR_ES_USER}:${CONNECTOR_ES_PASS:-}"
+            # v1.19.0: Use .netrc file to avoid credential exposure in process args (R23)
+            local netrc_file=""
+            if [[ -n "${CONNECTOR_ES_USER:-}" ]]; then
+                netrc_file=$(mktemp /tmp/nftban-es-netrc.XXXXXX)
+                chmod 600 "$netrc_file"
+                # Extract hostname from URL for netrc format
+                local es_host
+                es_host=$(echo "$url" | sed -E 's|https?://([^/:]+).*|\1|')
+                echo "machine $es_host login ${CONNECTOR_ES_USER} password ${CONNECTOR_ES_PASS:-}" > "$netrc_file"
+            fi
 
-            # shellcheck disable=SC2086
-            if curl -sf -X POST "$url" -H "Content-Type: application/json" -d "$event_json" $auth_opts -o /dev/null; then
+            local curl_auth_args=()
+            [[ -n "$netrc_file" ]] && curl_auth_args=(--netrc-file "$netrc_file")
+
+            if curl -sf -X POST "$url" -H "Content-Type: application/json" -d "$event_json" "${curl_auth_args[@]}" -o /dev/null; then
+                [[ -n "$netrc_file" ]] && rm -f "$netrc_file"
                 _connector_print_success "Event pushed to Elasticsearch"
             else
+                [[ -n "$netrc_file" ]] && rm -f "$netrc_file"
                 _connector_print_error "Failed to push event"
                 return 1
             fi

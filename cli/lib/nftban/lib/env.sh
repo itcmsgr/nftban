@@ -41,6 +41,11 @@ if [[ -z "${NFTBAN_CONFIG_LOADED:-}" ]]; then
     if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR}/nftban.conf"
-        export NFTBAN_CONFIG_LOADED="true"
     fi
+    # v1.19.0: Source .local override (user customizations survive package updates)
+    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+    fi
+    export NFTBAN_CONFIG_LOADED="true"
 fi

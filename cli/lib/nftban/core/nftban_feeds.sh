@@ -53,6 +53,10 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null 
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
 
+# v1.19.0: Load shared CIDR merge library (shared with geoban)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_dataset_cidr.sh" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -451,11 +455,20 @@ nftban_feeds_update_single() {
     # Ensure directories exist
     mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" "$NFTBAN_FEEDS_CACHE_DIR"
 
-    # Download feed
-    local temp_file="${NFTBAN_FEEDS_CACHE_DIR}/${feed_name}.tmp"
-    nftban_feeds_log DEBUG "Downloading: $feed_url"
+    # TLS enforcement (v1.19.0): reject plaintext HTTP feed URLs
+    if [[ "$feed_url" =~ ^http:// ]]; then
+        nftban_feeds_log ERROR "Rejecting insecure HTTP feed URL (TLS required): $feed_url"
+        return 1
+    fi
 
-    if ! curl -sSL --max-time 30 "$feed_url" > "$temp_file" 2>/dev/null; then
+    # Download feed with configurable timeout (v1.19.0)
+    local feed_timeout="${FEEDS_DOWNLOAD_TIMEOUT:-30}"
+    local temp_file="${NFTBAN_FEEDS_CACHE_DIR}/${feed_name}.tmp"
+    nftban_feeds_log DEBUG "Downloading: $feed_url (timeout: ${feed_timeout}s)"
+
+    # v1.19.0: Add max download size limit to prevent DoS (R05)
+    local max_size="${FEEDS_MAX_DOWNLOAD_SIZE:-52428800}"  # 50MB default
+    if ! curl -sSL --connect-timeout "$feed_timeout" --max-time "$feed_timeout" --max-filesize "$max_size" "$feed_url" > "$temp_file" 2>/dev/null; then
         nftban_feeds_log ERROR "Download failed: $feed_name"
         rm -f "$temp_file"
         return 1
@@ -468,20 +481,35 @@ nftban_feeds_update_single() {
     local parsed_file="${NFTBAN_FEEDS_STORAGE_DIR}/${feed_name_lowercase}.txt"
     local parse_result=""
 
-    # Parse feed file to extract IPs (bash parser - handles all formats)
+    # Parse feed file to extract IPs and CIDRs (bash parser - handles all formats)
     # Note: Go binary is used for 'feeds load' and 'feeds sync' operations
-    parse_result=$(grep -v '^\s*$' "$temp_file" | \
+    # v1.19.0: Support both IPv4 and IPv6 addresses/CIDRs
+    local clean_lines
+    clean_lines=$(grep -v '^\s*$' "$temp_file" | \
                   grep -v '^\s*#' | \
                   grep -v '^\s*;' | \
                   sed 's/[[:space:]]*;.*//' | \
-                  sed 's/[[:space:]]*#.*//' | \
-                  grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?' | \
-                  sort -u)
+                  sed 's/[[:space:]]*#.*//')
 
-    # Save parsed IPs (set nftban ownership for group access)
-    echo "$parse_result" > "$parsed_file"
-    chown nftban:nftban "$parsed_file" 2>/dev/null || true
-    chmod 640 "$parsed_file" 2>/dev/null || true
+    # Extract IPv4 addresses/CIDRs
+    local ipv4_result
+    ipv4_result=$(echo "$clean_lines" | \
+                  grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?' || true)
+
+    # Extract IPv6 addresses/CIDRs (e.g., 2001:db8::/32, ::1, fe80::1/64)
+    local ipv6_result
+    ipv6_result=$(echo "$clean_lines" | \
+                  grep -oE '^[0-9a-fA-F:]+:+[0-9a-fA-F:]*((/[0-9]{1,3})?)' || true)
+
+    # Combine IPv4 and IPv6 results
+    parse_result=$(printf '%s\n%s' "$ipv4_result" "$ipv6_result" | grep -v '^\s*$' | sort -u)
+
+    # v1.19.0: Write to staging file first, validate, then atomically rename (R05)
+    # This preserves last-known-good data on validation failure
+    local staging_file="${parsed_file}.staging"
+    echo "$parse_result" > "$staging_file"
+    chown nftban:nftban "$staging_file" 2>/dev/null || true
+    chmod 640 "$staging_file" 2>/dev/null || true
     local ip_count
     # v1.18.1 FIX: Prevent exit code 1 when parse_result is empty
     ip_count=$(echo "$parse_result" | grep -c . || echo "0")
@@ -492,12 +520,26 @@ nftban_feeds_update_single() {
     min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+' || echo "10")
     min_entries=${min_entries:-10}
 
-    # Final validation
+    # Final validation — on failure, keep last-known-good parsed_file intact
     if [[ $ip_count -lt $min_entries ]]; then
         nftban_feeds_log ERROR "Feed has only $ip_count entries (minimum: $min_entries), rejecting: $feed_name"
-        rm -f "$temp_file" "$parsed_file"
+        rm -f "$temp_file" "$staging_file"
         return 1
     fi
+
+    # v1.19.0: Enforce FEEDS_MAX_ENTRIES — truncate oversized feeds to prevent memory exhaustion
+    local max_entries
+    max_entries=$(grep "^FEEDS_MAX_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+' || echo "500000")
+    max_entries=${max_entries:-500000}
+    if [[ $ip_count -gt $max_entries ]]; then
+        nftban_feeds_log WARNING "Feed $feed_name has $ip_count entries, truncating to $max_entries"
+        head -n "$max_entries" "$staging_file" > "${staging_file}.trunc"
+        mv "${staging_file}.trunc" "$staging_file"
+        ip_count=$max_entries
+    fi
+
+    # Validation passed — atomically promote staging to production
+    mv "$staging_file" "$parsed_file"
 
     nftban_feeds_log INFO "Feed updated: $feed_name ($ip_count IPs)"
 
@@ -521,6 +563,13 @@ nftban_feeds_update_single() {
 
 # Update all enabled feeds
 nftban_feeds_update_all() {
+    # v1.19.0: Check master enable switch (R05)
+    if [[ "${NFTBAN_FEEDS_ENABLED:-YES}" != "YES" ]]; then
+        nftban_feeds_log INFO "Feeds disabled (NFTBAN_FEEDS_ENABLED=${NFTBAN_FEEDS_ENABLED:-NO})"
+        echo "Feeds module is disabled. Enable with: nftban config set NFTBAN_FEEDS_ENABLED=YES"
+        return 0
+    fi
+
     # Check if another update is already running
     if _feeds_is_locked; then
         echo "⚠️  Another feed update is already running"
@@ -676,9 +725,16 @@ nftban_feeds_sync_to_nftables_go() {
 # =============================================================================
 
 # Merge overlapping CIDRs in a file
+# v1.19.0: Delegate to shared library if available, else use inline fallback
 # Usage: _feeds_merge_cidrs <input_file> <output_file> <ip_version>
 # ip_version: 4 or 6
 _feeds_merge_cidrs() {
+    # Prefer shared library (also used by geoban)
+    if declare -f nftban_cidr_merge &>/dev/null; then
+        nftban_cidr_merge "$@"
+        return $?
+    fi
+    # Inline fallback for backward compatibility:
     local input_file="$1"
     local output_file="$2"
     local ip_version="${3:-4}"
