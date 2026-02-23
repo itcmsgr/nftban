@@ -26,12 +26,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 )
+
+// validateIPOrCIDR validates that the input is a valid IP address or CIDR notation
+// v1.19.0: R15 — prevent malformed IPs reaching backend commands
+func validateIPOrCIDR(input string) bool {
+	// Try parsing as plain IP
+	if ip := net.ParseIP(input); ip != nil {
+		return true
+	}
+	// Try parsing as CIDR
+	if _, _, err := net.ParseCIDR(input); err == nil {
+		return true
+	}
+	return false
+}
 
 // BanHandler bans an IP address
 func BanHandler(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +62,12 @@ func BanHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.IP == "" {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP address is required"})
+		return
+	}
+
+	// v1.19.0: Validate IP format before passing to backend (R15)
+	if !validateIPOrCIDR(req.IP) {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid IP address format"})
 		return
 	}
 
@@ -83,6 +104,12 @@ func UnbanHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.IP == "" {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP address is required"})
+		return
+	}
+
+	// v1.19.0: Validate IP format before passing to backend (R15)
+	if !validateIPOrCIDR(req.IP) {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid IP address format"})
 		return
 	}
 
@@ -136,6 +163,12 @@ func WhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// v1.19.0: Validate IP format before passing to backend (R15)
+	if !validateIPOrCIDR(req.IP) {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid IP address format"})
+		return
+	}
+
 	args := []string{"whitelist", "add", req.IP}
 	if req.Comment != "" {
 		args = append(args, "--comment", req.Comment)
@@ -168,6 +201,12 @@ func WhitelistRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.IP == "" {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP address is required"})
+		return
+	}
+
+	// v1.19.0: Validate IP format before passing to backend (R15)
+	if !validateIPOrCIDR(req.IP) {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid IP address format"})
 		return
 	}
 

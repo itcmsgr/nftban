@@ -1427,7 +1427,7 @@ flush chain ${table_ipv4} ${chain}
 add rule ${table_ipv4} ${chain} tcp dport { ${tcp_ports} } accept
 
 # Allow specified UDP ports
-add rule ${table_ipv6} ${chain} udp dport { ${udp_ports} } accept
+add rule ${table_ipv4} ${chain} udp dport { ${udp_ports} } accept
 
 # --- IPv6 ---
 add chain ${table_ipv6} ${chain}

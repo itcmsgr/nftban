@@ -22,7 +22,7 @@
 [Unit]
 Description=NFTBan Periodic Health Check Timer
 Documentation=man:nftban(8)
-Requires=nftban-health.service
+# v1.19.0: Removed Requires= — causes timer to stop when oneshot completes (Task 47)
 
 [Timer]
 # Run daily at 03:00 AM (first in staggered sequence: health@03:00, feeds@03:20, suricata@03:40)

@@ -58,8 +58,23 @@ readonly NFTBAN_WATCHDOG_LOADED=1
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
+# v1.19.0: Source .local override (user customizations survive package updates)
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+fi
 
-# Watchdog defaults (can be overridden in conf.d/watchdog.conf)
+# Load watchdog-specific config (+ .local override)
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf"
+fi
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local"
+fi
+
+# Watchdog defaults (can be overridden in conf.d/watchdog/main.conf.local)
 : "${NFTBAN_WATCHDOG_ENABLED:=false}"
 : "${NFTBAN_WATCHDOG_INTERVAL:=120}"
 : "${NFTBAN_WATCHDOG_ALERT_THROTTLE:=3600}"

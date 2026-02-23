@@ -24,10 +24,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +59,111 @@ var (
 	lastNetTxBytes uint64
 	lastNetTime    time.Time
 )
+
+// =============================================================================
+// RBAC GROUP CONSTANTS AND HELPERS (R05)
+// =============================================================================
+//
+// NFTBan 3-Group Security Model for Web UI:
+//   - nftban (operator): full access - ban/unban, whitelist, feeds, config, restart
+//   - nftban-auditor:    read-only - view pages, stats, logs (NO actions)
+//   - nftban-panel:      dashboard + stats only (limited view, NO actions)
+//
+// All mutating handlers check group membership before proceeding.
+// Read-only handlers allow all authenticated users.
+// =============================================================================
+
+// validFeedNameRegex validates feed names to prevent shell metacharacter injection (R-feed)
+// Only allows alphanumeric characters, dots, underscores, and hyphens; must start with alphanum
+var validFeedNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// getSessionFromRequest retrieves the session from the request cookie.
+// Returns nil if no valid session exists (caller should have RequireSession middleware).
+func (h *GOTHHandlers) getSessionFromRequest(r *http.Request) *session.Session {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return nil
+	}
+	sess, err := h.SessionStore.Get(cookie.Value)
+	if err != nil {
+		return nil
+	}
+	return sess
+}
+
+// requireOperator checks if the authenticated user is in the nftban (operator) group.
+// Operators can: ban/unban, manage whitelist, manage feeds, change config, restart services.
+// Returns true if authorized, false if not (and sends 403 response).
+func (h *GOTHHandlers) requireOperator(w http.ResponseWriter, r *http.Request) bool {
+	sess := h.getSessionFromRequest(r)
+	if sess == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	if !sess.HasGroup("nftban") {
+		log.Printf("[RBAC] User %s denied operator access (groups: %v)", sess.Username, sess.Groups)
+		http.Error(w, "Forbidden: operator role required", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// requireCanAct checks if the authenticated user can perform runtime actions (ban/unban/whitelist).
+// Includes: nftban (admin) and nftban-panel (panel operators).
+// Returns true if authorized, false if not (and sends 403 response).
+func (h *GOTHHandlers) requireCanAct(w http.ResponseWriter, r *http.Request) bool {
+	sess := h.getSessionFromRequest(r)
+	if sess == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	if !sess.HasGroup("nftban") && !sess.HasGroup("nftban-panel") {
+		log.Printf("[RBAC] User %s denied action access (groups: %v)", sess.Username, sess.Groups)
+		http.Error(w, "Forbidden: action role required", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// jsonMarshalHXTrigger builds a properly JSON-escaped HX-Trigger header value.
+// SECURITY FIX (R35): Prevents XSS via unescaped service/feed names in HTMX trigger headers.
+func jsonMarshalHXTrigger(message, msgType string) string {
+	payload := map[string]interface{}{
+		"showToast": map[string]string{
+			"message": message,
+			"type":    msgType,
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		// Fallback to safe static string on marshal error
+		return `{"showToast": {"message": "Operation completed", "type": "info"}}`
+	}
+	return string(data)
+}
+
+// nftReadOnly executes a read-only nft command for status display.
+// v1.19.0: Centralizes remaining nft calls (R20). These are read-only queries
+// (list tables, list counters) that don't modify firewall state.
+// WRITE operations MUST go through daemon IPC — see pkg/api/ handlers.
+func nftReadOnly(args ...string) ([]byte, error) {
+	return exec.Command("nft", args...).CombinedOutput()
+}
+
+// validateFeedName checks that a feed name contains only safe characters (R-feed).
+// Returns an error if the name contains shell metacharacters or is invalid.
+func validateFeedName(name string) error {
+	if name == "" {
+		return fmt.Errorf("feed name is required")
+	}
+	if len(name) > 128 {
+		return fmt.Errorf("feed name too long (max 128 characters)")
+	}
+	if !validFeedNameRegex.MatchString(name) {
+		return fmt.Errorf("invalid feed name: must match [a-zA-Z0-9][a-zA-Z0-9._-]*")
+	}
+	return nil
+}
 
 // NewGOTHHandlers creates a new GOTHHandlers instance
 func NewGOTHHandlers(authService *auth.PAMAuth, sessionStore *session.Store) *GOTHHandlers {
@@ -387,6 +494,11 @@ func (h *GOTHHandlers) HandleIPCheck(w http.ResponseWriter, r *http.Request) {
 
 // HandleFlushTemp flushes temporary bans
 func (h *GOTHHandlers) HandleFlushTemp(w http.ResponseWriter, r *http.Request) {
+	// RBAC: flush requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	log.Printf("[GOTH] Flush temp bans requested")
 
 	// Execute flush command
@@ -394,14 +506,14 @@ func (h *GOTHHandlers) HandleFlushTemp(w http.ResponseWriter, r *http.Request) {
 		// Try alternative command
 		if _, err := execNFTBanCommand("flush-temp"); err != nil {
 			log.Printf("[GOTH] Flush temp failed: %v", err)
-			w.Header().Set("HX-Trigger", `{"showToast": {"message": "Failed to flush temp bans", "type": "error"}}`)
+			w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Failed to flush temp bans", "error"))
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	}
 
 	log.Printf("[GOTH] Temp bans flushed successfully")
-	w.Header().Set("HX-Trigger", `{"showToast": {"message": "Temporary bans cleared", "type": "success"}}`)
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Temporary bans cleared", "success"))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -417,6 +529,11 @@ var allowedRestartServices = map[string]bool{
 
 // HandleRestartService restarts a systemd service
 func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Request) {
+	// RBAC: service restart requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	serviceName := vars["service"]
 
@@ -424,7 +541,7 @@ func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Reque
 	// Prefix check alone could allow "nftban-../../malicious" type attacks
 	if !allowedRestartServices[serviceName] {
 		log.Printf("[GOTH] Service not in allowlist: %s", serviceName)
-		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Invalid service", "type": "error"}}`)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid service", "error"))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -434,28 +551,33 @@ func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Reque
 	// Execute restart
 	if output, err := exec.Command("systemctl", "restart", serviceName).CombinedOutput(); err != nil {
 		log.Printf("[GOTH] Restart %s failed: %v - %s", serviceName, err, string(output))
-		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "Failed to restart %s", "type": "error"}}`, serviceName))
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to restart %s", serviceName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	log.Printf("[GOTH] Service %s restarted successfully", serviceName)
-	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s restarted", "type": "success"}}`, serviceName))
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s restarted", serviceName), "success"))
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleHealthFix runs auto-heal to fix issues
 func (h *GOTHHandlers) HandleHealthFix(w http.ResponseWriter, r *http.Request) {
+	// RBAC: health fix requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	log.Printf("[GOTH] Health auto-fix requested")
 
 	// Execute health check with auto-heal flag
 	output, err := execNFTBanCommand("health", "check", "--auto-heal")
 	if err != nil {
 		log.Printf("[GOTH] Health auto-fix failed: %v - %s", err, output)
-		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Auto-heal completed with errors", "type": "warning"}}`)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Auto-heal completed with errors", "warning"))
 	} else {
 		log.Printf("[GOTH] Health auto-fix completed successfully")
-		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Auto-heal completed", "type": "success"}}`)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Auto-heal completed", "success"))
 	}
 
 	// Refresh the health content
@@ -465,45 +587,76 @@ func (h *GOTHHandlers) HandleHealthFix(w http.ResponseWriter, r *http.Request) {
 
 // HandleSyncFeeds syncs all threat feeds
 func (h *GOTHHandlers) HandleSyncFeeds(w http.ResponseWriter, r *http.Request) {
+	// RBAC: feed sync requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	log.Printf("[GOTH] Sync all feeds requested")
 
 	// Execute feeds sync command
 	if _, err := execNFTBanCommand("feeds", "sync"); err != nil {
 		log.Printf("[GOTH] Feed sync failed: %v", err)
-		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Feed sync failed", "type": "error"}}`)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Feed sync failed", "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	log.Printf("[GOTH] All feeds synced successfully")
-	w.Header().Set("HX-Trigger", `{"showToast": {"message": "Feeds synced successfully", "type": "success"}}`)
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Feeds synced successfully", "success"))
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleSyncFeed syncs a single threat feed
 func (h *GOTHHandlers) HandleSyncFeed(w http.ResponseWriter, r *http.Request) {
+	// RBAC: feed sync requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	feedName := vars["name"]
+
+	// SECURITY FIX (R-feed): Validate feed name to prevent shell metacharacter injection
+	if err := validateFeedName(feedName); err != nil {
+		log.Printf("[GOTH] Invalid feed name rejected: %s - %v", feedName, err)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid feed name", "error"))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	log.Printf("[GOTH] Sync feed requested: %s", feedName)
 
 	// Execute feed sync command
 	if _, err := execNFTBanCommand("feeds", "sync", feedName); err != nil {
 		log.Printf("[GOTH] Feed sync failed for %s: %v", feedName, err)
-		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "Failed to sync %s", "type": "error"}}`, feedName))
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to sync %s", feedName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	log.Printf("[GOTH] Feed %s synced successfully", feedName)
-	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s synced", "type": "success"}}`, feedName))
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s synced", feedName), "success"))
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleFeedToggle enables or disables a threat feed
 func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) {
+	// RBAC: feed toggle requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	feedName := vars["name"]
+
+	// SECURITY FIX (R-feed): Validate feed name to prevent shell metacharacter injection
+	if err := validateFeedName(feedName); err != nil {
+		log.Printf("[GOTH] Invalid feed name rejected: %s - %v", feedName, err)
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid feed name", "error"))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	log.Printf("[GOTH] Feed toggle requested: %s", feedName)
 
@@ -525,13 +678,13 @@ func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) 
 
 	if _, err := execNFTBanCommand("feeds", action, feedName); err != nil {
 		log.Printf("[GOTH] Feed %s %s failed: %v", action, feedName, err)
-		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "Failed to %s %s", "type": "error"}}`, action, feedName))
+		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to %s %s", action, feedName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	log.Printf("[GOTH] Feed %s %sd successfully", feedName, action)
-	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s %sd", "type": "success"}}`, feedName, action))
+	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s %sd", feedName, action), "success"))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -644,6 +797,11 @@ func executeBulkOperation(ips []string, opType bulkOperationType) BulkOperationR
 // POST /ui/action/bulk-unban
 // Accepts JSON array of IPs and unbans each one
 func (h *GOTHHandlers) HandleBulkUnban(w http.ResponseWriter, r *http.Request) {
+	// RBAC: bulk unban requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	var req BulkOperationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -684,6 +842,11 @@ func (h *GOTHHandlers) HandleBulkUnban(w http.ResponseWriter, r *http.Request) {
 // POST /ui/action/bulk-delete
 // Accepts JSON array of IPs and permanently deletes each ban
 func (h *GOTHHandlers) HandleBulkDelete(w http.ResponseWriter, r *http.Request) {
+	// RBAC: bulk delete requires operator role (R05)
+	if !h.requireOperator(w, r) {
+		return
+	}
+
 	var req BulkOperationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -830,7 +993,7 @@ func (h *GOTHHandlers) getIdentity() ui.SystemIdentity {
 
 func (h *GOTHHandlers) getPanelMode() string {
 	// Primary check: nftables must be working
-	output, err := exec.Command("nft", "list", "tables").Output()
+	output, err := nftReadOnly("list", "tables")
 	if err != nil {
 		return "error" // nftables not working at all
 	}
@@ -950,7 +1113,7 @@ func enrichWithNetworkStats(sec *ui.SecurityKPIs) {
 	sec.NetworkInMbps, sec.NetworkOutMbps = getNetworkBandwidth()
 
 	// Packet drop rate from nftables counters (rough estimate)
-	if output, err := exec.Command("nft", "list", "counters").CombinedOutput(); err == nil {
+	if output, err := nftReadOnly("list", "counters"); err == nil {
 		sec.PacketDropRate = strings.Count(string(output), "drop")
 	}
 }
@@ -1458,14 +1621,14 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 			nftMod.Enabled = true
 
 			// Check if nftban table exists
-			if output, err := exec.Command("nft", "list", "tables").Output(); err == nil {
+			if output, err := nftReadOnly("list", "tables"); err == nil {
 				if !strings.Contains(string(output), "nftban") {
 					nftMod.Status = "warning" // nftables running but no nftban table
 				}
 			}
 		} else {
 			// Check if nft command works at all
-			if _, err := exec.Command("nft", "list", "tables").Output(); err == nil {
+			if _, err := nftReadOnly("list", "tables"); err == nil {
 				nftMod.Status = "active" // nft works even if service not "active"
 				nftMod.Running = true
 			}
@@ -1546,7 +1709,7 @@ func (h *GOTHHandlers) getHealthItems() []ui.HealthItem {
 	}
 
 	// NFTables check
-	if output, err := exec.Command("nft", "list", "tables").Output(); err == nil {
+	if output, err := nftReadOnly("list", "tables"); err == nil {
 		if strings.Contains(string(output), "nftban") {
 			items = append(items, ui.HealthItem{Name: "NFTables", Status: "ok"})
 		} else {

@@ -21,7 +21,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-11"
+# meta:updated_date="2026-02-23"
 
 
 # =============================================================================
@@ -117,6 +117,7 @@ nftban_cmd_whitelist() {
 
 # Add IP to whitelist via IPC (v1.18.0: IPC-only writes)
 # v1.18.7: Also removes from blacklist to prevent conflict
+# v1.19.0: Enforced IPC-only path with daemon-running check (R20)
 nftban_whitelist_add_ip() {
     local ip="$1"
 
@@ -136,33 +137,55 @@ nftban_whitelist_add_ip() {
         family="IPv4"
     fi
 
+    # v1.19.0: Check daemon or emergency gate before any write operation
+    local ipc_mode
+    nftban_ipc_check_or_emergency
+    ipc_mode=$?
+    if [[ $ipc_mode -eq 2 ]]; then
+        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        return 1
+    fi
+
     # v1.18.7: First remove from blacklist if present (prevents whitelist/blacklist conflict)
     if nft get element ${table} ${blacklist_set} "{ $ip }" &>/dev/null; then
-        if declare -f nft_ipc_delete_element &>/dev/null; then
+        if [[ $ipc_mode -eq 0 ]]; then
             nft_ipc_delete_element "$table" "$blacklist_set" "$ip" 2>/dev/null || true
         else
+            # Emergency direct nft access (daemon down, emergency unlock present)
             nft delete element ${table} ${blacklist_set} "{ $ip }" 2>/dev/null || true
         fi
         echo "Removed $ip from blacklist (was banned)"
     fi
 
-    # Use IPC for add operation
-    if declare -f nft_ipc_add_element &>/dev/null && nft_ipc_add_element "$table" "$set_name" "$ip" 2>/dev/null; then
-        # Verify addition (read-only check)
-        if nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
-            echo "Added $ip to $family whitelist"
-            return 0
+    # Use IPC for add operation (or emergency direct access)
+    if [[ $ipc_mode -eq 0 ]]; then
+        if nft_ipc_add_element "$table" "$set_name" "$ip" 2>/dev/null; then
+            # Verify addition (read-only check)
+            if nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
+                echo "Added $ip to $family whitelist"
+                return 0
+            else
+                echo "Added $ip to $family whitelist (IPC success, verification pending)"
+                return 0
+            fi
         else
-            echo "Added $ip to $family whitelist (IPC success, verification pending)"
-            return 0
+            echo "ERROR: Failed to add $ip to whitelist via IPC" >&2
+            return 1
         fi
     else
-        echo "ERROR: Failed to add $ip to whitelist via IPC" >&2
-        return 1
+        # Emergency direct nft access
+        if nft add element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
+            echo "Added $ip to $family whitelist (emergency direct access)"
+            return 0
+        else
+            echo "ERROR: Failed to add $ip to whitelist (emergency)" >&2
+            return 1
+        fi
     fi
 }
 
 # Remove IP from whitelist via IPC (v1.18.0: IPC-only writes)
+# v1.19.0: Enforced IPC-only path with daemon-running check (R20)
 nftban_whitelist_remove_ip() {
     local ip="$1"
 
@@ -180,19 +203,39 @@ nftban_whitelist_remove_ip() {
         family="IPv4"
     fi
 
-    # Use IPC for delete operation
-    if declare -f nft_ipc_delete_element &>/dev/null && nft_ipc_delete_element "$table" "$set_name" "$ip" 2>/dev/null; then
-        # Verify removal (read-only check)
-        if ! nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
-            echo "Removed $ip from $family whitelist"
-            return 0
+    # v1.19.0: Check daemon or emergency gate before any write operation
+    local ipc_mode
+    nftban_ipc_check_or_emergency
+    ipc_mode=$?
+    if [[ $ipc_mode -eq 2 ]]; then
+        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        return 1
+    fi
+
+    # Use IPC for delete operation (or emergency direct access)
+    if [[ $ipc_mode -eq 0 ]]; then
+        if nft_ipc_delete_element "$table" "$set_name" "$ip" 2>/dev/null; then
+            # Verify removal (read-only check)
+            if ! nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
+                echo "Removed $ip from $family whitelist"
+                return 0
+            else
+                echo "Removed $ip from $family whitelist (IPC success, verification pending)"
+                return 0
+            fi
         else
-            echo "Removed $ip from $family whitelist (IPC success, verification pending)"
-            return 0
+            echo "ERROR: Failed to remove $ip from whitelist via IPC (may not exist)" >&2
+            return 1
         fi
     else
-        echo "ERROR: Failed to remove $ip from whitelist via IPC (may not exist)" >&2
-        return 1
+        # Emergency direct nft access
+        if nft delete element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
+            echo "Removed $ip from $family whitelist (emergency direct access)"
+            return 0
+        else
+            echo "ERROR: Failed to remove $ip from whitelist (emergency, may not exist)" >&2
+            return 1
+        fi
     fi
 }
 

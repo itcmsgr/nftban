@@ -85,10 +85,17 @@ declare -g _LOGIN_CLASSIC_CURSOR_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/login-jour
 nftban_login_classic_init() {
     nftban_login_log "INFO" "Initializing classic mode..."
 
-    # Load state from disk if exists
+    # Load state from disk if exists (safe line-by-line parsing, no source)
     local state_file="${LOGIN_CLASSIC_STATE_FILE:-/var/lib/nftban/login-classic-state.db}"
     if [[ -f "$state_file" ]]; then
-        source "$state_file" 2>/dev/null || true
+        while IFS='=' read -r key value; do
+            # Skip comments and blank lines
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            # Only allow known variable patterns with safe values
+            [[ "$key" =~ ^_LOGIN_CLASSIC_(FAIL_COUNT|FAIL_FIRST|LAST_SERVICE|USERS_PER_IP|VELOCITY_FIRST|VELOCITY_COUNT|SCORE|SCORE_TIME|USER_IPS)(\[[^]]+\])?$ ]] || continue
+            [[ "$value" =~ ^[0-9a-zA-Z.,_:\ -]+$ ]] || continue
+            declare "$key=$value" 2>/dev/null || true
+        done < "$state_file"
     fi
 
     # Ban threshold: 10 failures in 5 minutes (300 seconds) for all services
@@ -208,26 +215,26 @@ _nftban_login_classic_process_message() {
     # SSH patterns
     if [[ "$service" == "ssh" ]]; then
         # Failed password for user from IP
-        if [[ "$message" =~ Failed\ password\ for\ ([^[:space:]]+)\ from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$message" =~ Failed\ password\ for\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             user="${BASH_REMATCH[1]}"
             ip="${BASH_REMATCH[2]}"
         # Failed password for invalid user
-        elif [[ "$message" =~ Failed\ password\ for\ invalid\ user\ ([^[:space:]]+)\ from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$message" =~ Failed\ password\ for\ invalid\ user\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             user="${BASH_REMATCH[1]}"
             ip="${BASH_REMATCH[2]}"
             event_type="invalid_user"
         # Invalid user from IP
-        elif [[ "$message" =~ Invalid\ user\ ([^[:space:]]+)\ from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$message" =~ Invalid\ user\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
             user="${BASH_REMATCH[1]}"
             ip="${BASH_REMATCH[2]}"
             event_type="invalid_user"
         # Disconnected preauth (potential scan)
-        elif [[ "$message" =~ Disconnected\ from.*\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*preauth ]]; then
+        elif [[ "$message" =~ Disconnected\ from.*\ ([0-9a-fA-F.:]+).*preauth ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
             event_type="preauth"
         # Too many authentication failures
-        elif [[ "$message" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*[Tt]oo\ many\ authentication\ failures ]]; then
+        elif [[ "$message" =~ ([0-9a-fA-F.:]+).*[Tt]oo\ many\ authentication\ failures ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
             event_type="too_many"
@@ -237,19 +244,19 @@ _nftban_login_classic_process_message() {
     # Mail patterns (Dovecot, Exim, Postfix)
     if [[ "$service" == "dovecot" ]] || [[ "$service" == "exim" ]] || [[ "$service" == "postfix" ]]; then
         # Generic: auth failure from IP
-        if [[ "$message" =~ [Aa]uth.*fail.*rip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$message" =~ [Aa]uth.*fail.*rip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
-        elif [[ "$message" =~ [Aa]uthentication\ fail.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$message" =~ [Aa]uthentication\ fail.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
         # SASL authentication failed (Postfix)
         # Format: "warning: hostname[IP]: SASL LOGIN authentication failed"
-        elif [[ "$message" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*SASL.*authentication\ failed ]]; then
+        elif [[ "$message" =~ \[([0-9a-fA-F.:]+)\].*SASL.*authentication\ failed ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
         # Alternative SASL format (IP after SASL)
-        elif [[ "$message" =~ SASL.*authentication\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+        elif [[ "$message" =~ SASL.*authentication\ failed.*\[([0-9a-fA-F.:]+)\] ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
         fi
@@ -257,13 +264,13 @@ _nftban_login_classic_process_message() {
 
     # FTP patterns (Pure-FTPd, vsftpd)
     if [[ "$service" == "pureftpd" ]] || [[ "$service" == "vsftpd" ]] || [[ "$service" == "proftpd" ]]; then
-        if [[ "$message" =~ [Aa]uthentication\ fail.*@([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$message" =~ [Aa]uthentication\ fail.*@([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
-        elif [[ "$message" =~ FAIL\ LOGIN.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$message" =~ FAIL\ LOGIN.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
-        elif [[ "$message" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*Login\ failed ]]; then
+        elif [[ "$message" =~ \[([0-9a-fA-F.:]+)\].*Login\ failed ]]; then
             ip="${BASH_REMATCH[1]}"
             user="unknown"
         fi
@@ -304,10 +311,10 @@ _nftban_login_classic_process_web_log() {
 
     # WordPress/XML-RPC: POST to wp-login.php or xmlrpc.php
     if [[ "$service" == "wordpress" ]] || [[ "$service" == "xmlrpc" ]]; then
-        if [[ "$line" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*POST.*/wp-login\.php ]]; then
+        if [[ "$line" =~ ^([0-9a-fA-F.:]+).*POST.*/wp-login\.php ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "wordpress" "login_attempt"
-        elif [[ "$line" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*POST.*/xmlrpc\.php ]]; then
+        elif [[ "$line" =~ ^([0-9a-fA-F.:]+).*POST.*/xmlrpc\.php ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "xmlrpc" "xmlrpc_post"
         fi
@@ -315,7 +322,7 @@ _nftban_login_classic_process_web_log() {
 
     # Apache/Nginx HTTP auth failure (401)
     if [[ "$service" == "apache" ]] || [[ "$service" == "nginx" ]]; then
-        if [[ "$line" =~ user.*authentication\ failure.*client:\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$line" =~ user.*authentication\ failure.*client:\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "$service" "http_auth"
         fi
@@ -323,7 +330,7 @@ _nftban_login_classic_process_web_log() {
 
     # DirectAdmin
     if [[ "$service" == "directadmin" ]]; then
-        if [[ "$line" =~ FAILED\ LOGIN.*ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$line" =~ FAILED\ LOGIN.*ip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "directadmin" "failed"
         fi
@@ -332,10 +339,10 @@ _nftban_login_classic_process_web_log() {
     # cPanel login failure (v1.18.8)
     # Format: "FAILED LOGIN user=admin ip=1.2.3.4" or "Invalid credentials for user..."
     if [[ "$service" == "cpanel" ]]; then
-        if [[ "$line" =~ FAILED.*ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$line" =~ FAILED.*ip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "failed"
-        elif [[ "$line" =~ [Ii]nvalid.*ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$line" =~ [Ii]nvalid.*ip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "invalid"
         fi
@@ -344,13 +351,13 @@ _nftban_login_classic_process_web_log() {
     # Plesk login failure (v1.18.8)
     # Format: "Authentication failed for user admin from 1.2.3.4"
     if [[ "$service" == "plesk" ]]; then
-        if [[ "$line" =~ [Aa]uthentication\ failed.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        if [[ "$line" =~ [Aa]uthentication\ failed.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
-        elif [[ "$line" =~ [Ll]ogin\ failed.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$line" =~ [Ll]ogin\ failed.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
-        elif [[ "$line" =~ [Ii]nvalid\ credentials.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$line" =~ [Ii]nvalid\ credentials.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "plesk" "invalid"
         fi
@@ -359,19 +366,19 @@ _nftban_login_classic_process_web_log() {
     # Mail services (Postfix SASL, Dovecot) from /var/log/maillog or /var/log/mail.log
     if [[ "$service" == "mail" ]] || [[ "$service" == "postfix_file" ]]; then
         # Postfix SASL: "warning: hostname[IP]: SASL LOGIN authentication failed"
-        if [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*SASL.*authentication\ failed ]]; then
+        if [[ "$line" =~ \[([0-9a-fA-F.:]+)\].*SASL.*authentication\ failed ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "postfix" "sasl_auth_fail"
         # Alternative: "SASL ... failed ... [IP]"
-        elif [[ "$line" =~ SASL.*authentication\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+        elif [[ "$line" =~ SASL.*authentication\ failed.*\[([0-9a-fA-F.:]+)\] ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "postfix" "sasl_auth_fail"
         # Dovecot from mail log: "auth failed ... rip=IP"
-        elif [[ "$line" =~ [Aa]uth.*fail.*rip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$line" =~ [Aa]uth.*fail.*rip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "dovecot" "auth_fail"
         # Generic authentication failure from mail log
-        elif [[ "$line" =~ [Aa]uthentication\ fail.*from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        elif [[ "$line" =~ [Aa]uthentication\ fail.*from\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "mail" "auth_fail"
         fi
@@ -382,22 +389,22 @@ _nftban_login_classic_process_web_log() {
     # Or: "2026-02-12 10:30:45 [IP] rejected ... AUTH ... failed"
     if [[ "$service" == "exim_file" ]]; then
         # Exim authenticator failed: "H=hostname [IP] ... authenticator failed"
-        if [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*authenticator\ failed ]]; then
+        if [[ "$line" =~ \[([0-9a-fA-F.:]+)\].*authenticator\ failed ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_fail"
         # Exim AUTH failed: "[IP] ... AUTH ... failed"
-        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*AUTH.*failed ]]; then
+        elif [[ "$line" =~ \[([0-9a-fA-F.:]+)\].*AUTH.*failed ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_fail"
         # Exim login failed: "login failed ... [IP]" or "[IP] ... login failed"
-        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*login\ failed ]]; then
+        elif [[ "$line" =~ \[([0-9a-fA-F.:]+)\].*login\ failed ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "exim" "login_fail"
-        elif [[ "$line" =~ login\ failed.*\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+        elif [[ "$line" =~ login\ failed.*\[([0-9a-fA-F.:]+)\] ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "exim" "login_fail"
         # Exim rejected AUTH: "rejected ... AUTH"
-        elif [[ "$line" =~ \[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*rejected.*AUTH ]]; then
+        elif [[ "$line" =~ \[([0-9a-fA-F.:]+)\].*rejected.*AUTH ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "exim" "auth_rejected"
         fi
@@ -671,11 +678,15 @@ _nftban_login_classic_is_whitelisted() {
         [[ "$ip" == "::1" ]] && return 0
     fi
 
-    # Private networks
+    # Private networks — v1.19.0: IPv4 + IPv6 parity (RFC 1918 + RFC 4193)
     if [[ "${LOGIN_WHITELIST_PRIVATE:-true}" == "true" ]]; then
+        # IPv4 private (RFC 1918)
         [[ "$ip" =~ ^10\. ]] && return 0
         [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && return 0
         [[ "$ip" =~ ^192\.168\. ]] && return 0
+        # IPv6 private (RFC 4193 ULA + link-local)
+        [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
+        [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
     fi
 
     # Central whitelist check (SINGLE SOURCE OF TRUTH)
@@ -1015,7 +1026,7 @@ nftban_login_classic_test() {
     # Test pattern matching
     local test_line='Failed password for root from 192.168.1.100 port 22 ssh2'
     echo "  Testing pattern match..."
-    if [[ "$test_line" =~ Failed\ password\ for\ ([^[:space:]]+)\ from\ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    if [[ "$test_line" =~ Failed\ password\ for\ ([^[:space:]]+)\ from\ ([0-9a-fA-F.:]+) ]]; then
         echo "    User: ${BASH_REMATCH[1]}, IP: ${BASH_REMATCH[2]}"
         echo "    Pattern matching: OK"
     else

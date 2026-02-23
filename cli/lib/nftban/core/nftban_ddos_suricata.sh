@@ -405,15 +405,25 @@ _nftban_ddos_suricata_block_ip() {
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
 
-    # Use IPC to ban IP (daemon handles set creation if needed)
+    # v1.19.0: Propagate errors instead of silencing (R18)
+    local ban_rc=0
     if type -t nft_ipc_ban &>/dev/null; then
-        nft_ipc_ban "$ip" "$duration" "ddos_suricata:$reason" "ddos-suricata" 2>/dev/null
+        if ! nft_ipc_ban "$ip" "$duration" "ddos_suricata:$reason" "ddos-suricata"; then
+            ban_rc=1
+        fi
     else
-        # Fallback: try nft_ipc_add_element
-        nft_ipc_add_element "$table" "$set" "$ip" "$duration" 2>/dev/null
+        if ! nft_ipc_add_element "$table" "$set" "$ip" "$duration"; then
+            ban_rc=1
+        fi
     fi
 
-    _nftban_ddos_suricata_log "INFO" "BLOCKED ip=$ip duration=${duration}s reason=$reason"
+    if [[ "$ban_rc" -eq 0 ]]; then
+        _nftban_ddos_suricata_log "INFO" "BLOCKED ip=$ip duration=${duration}s reason=$reason"
+    else
+        _nftban_ddos_suricata_log "ERROR" "BAN_FAILED ip=$ip duration=${duration}s reason=$reason"
+    fi
+
+    return "$ban_rc"
 }
 
 # =============================================================================
@@ -447,18 +457,22 @@ _nftban_ddos_suricata_process_alerts() {
             _nftban_ddos_suricata_log "DEBUG" "ip=$ip severity=$severity score=$score action=$action sig=$signature"
         fi
 
+        # v1.19.0: Check return codes — only count successful bans (R18)
         case "$action" in
             block_permanent)
-                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_PERMANENT" "permanent_threat"
-                ((blocked++))
+                if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_PERMANENT" "permanent_threat"; then
+                    ((blocked++))
+                fi
                 ;;
             block_long)
-                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_LONG" "high_threat"
-                ((blocked++))
+                if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_LONG" "high_threat"; then
+                    ((blocked++))
+                fi
                 ;;
             block_short)
-                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_SHORT" "medium_threat"
-                ((blocked++))
+                if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_SHORT" "medium_threat"; then
+                    ((blocked++))
+                fi
                 ;;
             observe)
                 _nftban_ddos_suricata_log "INFO" "OBSERVE ip=$ip score=$score"

@@ -93,30 +93,31 @@ cmd_suricata_rules() {
             suricata-update update-sources 2>/dev/null || true
 
             # 4. Build suricata-update command with proper flags
-            local update_cmd="suricata-update"
+            # v1.19.0: Use array instead of eval (R16)
+            local -a update_args=()
 
             # Add disable.conf.d if it exists and has files
             local disable_dir="${SURICATA_CONFIG_DIR:-/etc/suricata}/disable.conf.d"
             if [[ -d "$disable_dir" ]]; then
                 for conf_file in "$disable_dir"/*.conf; do
-                    [[ -f "$conf_file" ]] && update_cmd+=" --disable-conf=$conf_file"
+                    [[ -f "$conf_file" ]] && update_args+=("--disable-conf=$conf_file")
                 done
             fi
 
             # Also include standard disable.conf if it exists
             local disable_conf="${SURICATA_CONFIG_DIR:-/etc/suricata}/disable.conf"
-            [[ -f "$disable_conf" ]] && update_cmd+=" --disable-conf=$disable_conf"
+            [[ -f "$disable_conf" ]] && update_args+=("--disable-conf=$disable_conf")
 
             # Include enable.conf if it exists
             local enable_conf="${SURICATA_CONFIG_DIR:-/etc/suricata}/enable.conf"
-            [[ -f "$enable_conf" ]] && update_cmd+=" --enable-conf=$enable_conf"
+            [[ -f "$enable_conf" ]] && update_args+=("--enable-conf=$enable_conf")
 
             # Include local rules if they exist
             local local_rules="${NFTBAN_SURICATA_DIR:-/etc/nftban/suricata}/rules/local.rules"
-            [[ -f "$local_rules" ]] && update_cmd+=" --local=$local_rules"
+            [[ -f "$local_rules" ]] && update_args+=("--local=$local_rules")
 
             echo "  → Downloading and filtering rules..."
-            if ! eval "$update_cmd"; then
+            if ! suricata-update "${update_args[@]}"; then
                 echo "  ✗ Rule update failed"
                 return 1
             fi

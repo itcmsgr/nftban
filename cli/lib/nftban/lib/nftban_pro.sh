@@ -355,6 +355,11 @@ EOF
 )
 
     # Submit to Pro endpoint
+    # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
+    local _pro_tmp_response
+    _pro_tmp_response=$(mktemp /tmp/nftban_pro_XXXXXX)
+    trap 'rm -f "$_pro_tmp_response"' RETURN
+
     local response
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
@@ -363,11 +368,11 @@ EOF
         -H "Content-Type: application/json" \
         -d "$payload" \
         -w "%{http_code}" \
-        -o /tmp/nftban_pro_inventory_response.$$ \
+        -o "$_pro_tmp_response" \
         "$NFTBAN_PRO_INVENTORY_URL" 2>/dev/null || echo "000")
 
-    response=$(cat /tmp/nftban_pro_inventory_response.$$ 2>/dev/null || echo "")
-    rm -f /tmp/nftban_pro_inventory_response.$$
+    response=$(cat "$_pro_tmp_response" 2>/dev/null || echo "")
+    rm -f "$_pro_tmp_response"
 
     case "$http_code" in
         200|201|202)
@@ -431,16 +436,21 @@ nftban_pro_check_license() {
     server_id=$(nftban_pro_get_server_id)
 
     # Query status endpoint
+    # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
+    local _pro_tmp_license
+    _pro_tmp_license=$(mktemp /tmp/nftban_pro_XXXXXX)
+    trap 'rm -f "$_pro_tmp_license"' RETURN
+
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
         -H "Authorization: Bearer $token" \
         -w "%{http_code}" \
-        -o /tmp/nftban_pro_license.$$ \
+        -o "$_pro_tmp_license" \
         "${NFTBAN_PRO_STATUS_URL}?server_id=${server_id}" 2>/dev/null || echo "000")
 
     local response
-    response=$(cat /tmp/nftban_pro_license.$$ 2>/dev/null || echo "")
-    rm -f /tmp/nftban_pro_license.$$
+    response=$(cat "$_pro_tmp_license" 2>/dev/null || echo "")
+    rm -f "$_pro_tmp_license"
 
     case "$http_code" in
         200)

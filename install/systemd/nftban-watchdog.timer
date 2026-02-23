@@ -25,7 +25,7 @@
 [Unit]
 Description=NFTBan System Watchdog Timer
 Documentation=man:nftban(8)
-Requires=nftban-watchdog.service
+# v1.19.0: Removed Requires= — causes timer to stop when oneshot completes (Task 47)
 
 [Timer]
 # Start 2 minutes after boot

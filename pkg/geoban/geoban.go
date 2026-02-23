@@ -35,7 +35,8 @@ const (
 	BanFilePrefix = "50-ban-"
 
 	// WhitelistFilePrefix is the prefix for whitelist config files
-	WhitelistFilePrefix = "50-whitelist-"
+	// v1.19.0: Fixed to match shell convention (was "50-whitelist-", shell uses "40-whitelist-")
+	WhitelistFilePrefix = "40-whitelist-"
 )
 
 // getDefaultGeobanDir returns geoban directory from central config

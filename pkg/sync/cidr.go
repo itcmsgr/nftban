@@ -26,6 +26,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net"
 	"runtime"
@@ -255,7 +256,13 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		ones, bits := ipNet.Mask.Size()
 		// G115: bits-ones is always 0-32 for IPv4 (safe for uint32)
 		hostBits := uint32(bits - ones) // #nosec G115 - IPv4 mask bits always 0-32
-		end := start + (1 << hostBits) - 1
+		var end uint32
+		if hostBits >= 32 {
+			// /0 prefix: 1<<32 overflows uint32, entire IPv4 space
+			end = math.MaxUint32
+		} else {
+			end = start + (1 << hostBits) - 1
+		}
 
 		intervals = append(intervals, ipv4Interval{Start: start, End: end})
 	}

@@ -11,6 +11,10 @@
 
 set -Eeuo pipefail
 
+# Double-load prevention
+[[ -n "${_NFTBAN_NFT_IPC_LOADED:-}" ]] && return 0 2>/dev/null || true
+readonly _NFTBAN_NFT_IPC_LOADED=1
+
 # Socket path for daemon communication
 NFTBAN_DAEMON_SOCKET="${NFTBAN_DAEMON_SOCKET:-/run/nftban/nftband.sock}"
 
@@ -616,6 +620,37 @@ nft_ipc_delete_port() {
 
 export -f nft_ipc_add_port
 export -f nft_ipc_delete_port
+
+# =============================================================================
+# v1.19.0: IPC-OR-EMERGENCY GATE (R20 + Task 23)
+# =============================================================================
+# Returns: 0=IPC available, 1=emergency direct, 2=error (no daemon, no gate)
+# Called by cmd_whitelist.sh and cmd_flush.sh before any nft operations
+
+nftban_ipc_check_or_emergency() {
+    local emergency_gate="/run/nftban/.emergency_unlock"
+
+    # 1. Check if daemon is running (preferred path)
+    if nft_ipc_is_daemon_running; then
+        return 0
+    fi
+
+    # 2. Check emergency unlock gate file
+    if [[ -f "$emergency_gate" ]]; then
+        echo "WARNING: Daemon not running. Using emergency direct access." >&2
+        logger -t nftban "EMERGENCY GATE: Direct nft access via $emergency_gate"
+        export NFTBAN_EMERGENCY_MODE=1
+        return 1
+    fi
+
+    # 3. No daemon, no emergency gate — fail
+    echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
+    echo "       For emergency access: touch $emergency_gate" >&2
+    return 2
+}
+
+# v1.19.0 emergency gate (exported after definition)
+export -f nftban_ipc_check_or_emergency
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)
