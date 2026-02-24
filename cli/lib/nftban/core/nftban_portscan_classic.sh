@@ -1140,7 +1140,12 @@ nftban_portscan_aggregate() {
                         --reason "portscan:stealth:$reason" \
                         --source "portscan-aggregate" 2>/dev/null && ((banned++))
                 elif type -t nft_ipc_ban &>/dev/null; then
-                    nft_ipc_ban "$src" "$duration" "portscan:stealth" "portscan-aggregate" 2>/dev/null && ((banned++))
+                    local ipc_result
+                    if ipc_result=$(nft_ipc_ban "$src" "$duration" "portscan:stealth" "portscan-aggregate" 2>&1); then
+                        ((banned++))
+                    else
+                        _nftban_portscan_classic_log "ERROR" "IPC ban failed for $src: $ipc_result"
+                    fi
                 fi
             fi
         fi

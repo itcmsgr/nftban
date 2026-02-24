@@ -38,6 +38,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -996,8 +997,8 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 	_ = uid // Available for audit logging if needed
 	_ = gid
 
-	// Read request
-	decoder := json.NewDecoder(conn)
+	// Read request (limit to 1 MB to prevent DoS via oversized payloads)
+	decoder := json.NewDecoder(io.LimitReader(conn, 1<<20))
 	var req SocketRequest
 	if err := decoder.Decode(&req); err != nil {
 		metrics.RecordIPCRejection("read_error")
@@ -1974,6 +1975,11 @@ func (d *Daemon) handleSignals(pidFile string) {
 
 // gracefulShutdown performs orderly shutdown of all daemon components
 func (d *Daemon) gracefulShutdown() {
+	// Close socket listener first to stop accepting new IPC connections
+	if d.socketLn != nil {
+		d.socketLn.Close()
+	}
+
 	// Publish shutdown event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStop, "nftband").
 		WithMessage("NFTBan daemon shutting down").

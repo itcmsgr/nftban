@@ -354,7 +354,7 @@ nftban_report_cmd_email() {
 
     nftban_stats_export_json "$report_json" "$since" "$until" &>/dev/null
 
-    if [[ "$attach_csv" == "true" ]]; then
+    if [[ "${attach_csv,,}" =~ ^(yes|true|1|on)$ ]]; then
         nftban_stats_export_csv "$report_csv" "$since" "$until" &>/dev/null
     fi
 
@@ -898,7 +898,7 @@ nftban_report_cmd_run() {
     nftban_report_generate_html "$output_file" "$since" "$until" "${REPORTS_THEME:-dark}"
 
     # Email if configured
-    if [[ "${STATS_EMAIL_ENABLED}" == "true" ]] && [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]]; then
+    if [[ "${STATS_EMAIL_ENABLED,,}" =~ ^(yes|true|1|on)$ ]] && [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]]; then
         nftban_report_cmd_email "${STATS_EMAIL_RECIPIENTS}" --format html --since "$since" --until "$until"
     fi
 
@@ -1012,7 +1012,7 @@ nftban_report_cmd_status() {
         mail_cmd="NOT FOUND"
     fi
 
-    if [[ "$mail_enabled" == "true" ]]; then
+    if [[ "${mail_enabled,,}" =~ ^(yes|true|1|on)$ ]]; then
         printf "  %-20s %s\n" "Status.............." "ENABLED"
     else
         printf "  %-20s %s\n" "Status.............." "DISABLED"
@@ -1152,7 +1152,9 @@ nftban_report_cmd_status() {
 
 _report_status_json() {
     # JSON output for report status
-    local mail_enabled="${MAIL_ENABLED:-${NFTBAN_MAIL_ENABLED:-false}}"
+    local mail_enabled_raw="${MAIL_ENABLED:-${NFTBAN_MAIL_ENABLED:-false}}"
+    local mail_enabled=false
+    [[ "${mail_enabled_raw,,}" =~ ^(yes|true|1|on)$ ]] && mail_enabled=true
     local mail_recipients="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
     local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
     local cron_file="${NFTBAN_CRON_FILE:-/etc/cron.d/nftban-stats}"

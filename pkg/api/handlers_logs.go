@@ -144,12 +144,18 @@ func LogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Legacy: No type specified, return journalctl logs
 	tailStr := r.URL.Query().Get("tail")
-	tail := "200"
+	tail := 200
 	if tailStr != "" {
-		tail = tailStr
+		if n, err := strconv.Atoi(tailStr); err == nil && n > 0 {
+			tail = n
+		}
+	}
+	// Cap at 10000 lines to match LogsViewerHandler limits
+	if tail > 10000 {
+		tail = 10000
 	}
 
-	output, err := execCommand("journalctl", "-u", "nftban", "-n", tail, "--no-pager")
+	output, err := execCommand("journalctl", "-u", "nftban", "-n", strconv.Itoa(tail), "--no-pager")
 	if err != nil {
 		log.Printf("[ERROR] Failed to get logs: %v", err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve logs"})

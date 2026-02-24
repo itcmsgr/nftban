@@ -95,8 +95,8 @@ nftban_cmd_preflight() {
                 echo "  Safe to enable NFTBan enforcement."
                 ;;
             10)
-                echo "  PREFLIGHT: FAILED (policykit-1 missing)"
-                echo "  Fix: apt-get install -y policykit-1"
+                echo "  PREFLIGHT: FAILED (polkit missing)"
+                echo "  Fix: apt-get install -y polkitd  (or policykit-1 on older releases)"
                 ;;
             20)
                 echo "  PREFLIGHT: FAILED (firewall conflicts detected)"

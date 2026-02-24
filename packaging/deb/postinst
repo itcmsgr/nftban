@@ -583,7 +583,7 @@ case "$1" in
                 else
                     # Fallback to exit code mapping
                     case $PREFLIGHT_EXIT in
-                        10) PREFLIGHT_REASON="policykit-1 missing" ;;
+                        10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
                         20) PREFLIGHT_REASON="Firewall authority conflict" ;;
                         30) PREFLIGHT_REASON="NFTables hook collision" ;;
                         *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;

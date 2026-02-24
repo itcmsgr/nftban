@@ -88,6 +88,27 @@ nftban_health_cmd_check() {
     local result=0
     nftban_health_check_all $auto_heal || result=$?
 
+    # BUG-N2 FIX: Derive canonical exit code from ERRORS/WARNINGS arrays
+    # so that 'check', 'summary', and cache all agree on severity.
+    # The arrays are the single source of truth populated by individual checks.
+    local error_count=0
+    local warning_count=0
+    if [[ -n "${NFTBAN_HEALTH_ERRORS+x}" ]]; then
+        error_count="${#NFTBAN_HEALTH_ERRORS[@]}"
+    fi
+    if [[ -n "${NFTBAN_HEALTH_WARNINGS+x}" ]]; then
+        warning_count="${#NFTBAN_HEALTH_WARNINGS[@]}"
+    fi
+
+    # Standardized exit codes: 0=OK, 1=WARNING, 2=ERROR
+    if [[ $error_count -gt 0 ]]; then
+        result=2
+    elif [[ $warning_count -gt 0 ]]; then
+        result=1
+    else
+        result=0
+    fi
+
     # Write health status to cache file (for banner display)
     if [[ $cache_status -eq 1 ]]; then
         # Load output module for cache write function
@@ -103,9 +124,9 @@ nftban_health_cmd_check() {
             # Fallback: write directly
             local cache_dir="${NFTBAN_CACHE_DIR}/health"
             mkdir -p "$cache_dir" 2>/dev/null || true
-            # Status codes: 0=OK, 1=WARNING, 2=ERROR, 3=SKIPPED, 4=NOT_INSTALLED
+            # Status codes: 0=OK, 1=WARNING, 2=ERROR
             case "$result" in
-                0|3|4) echo "OK" > "${cache_dir}/health_status.cache" ;;      # OK, SKIPPED, NOT_INSTALLED = OK for banner
+                0) echo "OK" > "${cache_dir}/health_status.cache" ;;
                 1) echo "WARNING" > "${cache_dir}/health_status.cache" ;;
                 2) echo "ERROR" > "${cache_dir}/health_status.cache" ;;
                 *) echo "UNKNOWN" > "${cache_dir}/health_status.cache" ;;

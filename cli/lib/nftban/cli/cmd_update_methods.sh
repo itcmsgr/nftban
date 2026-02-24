@@ -45,7 +45,13 @@ _get_latest_release() {
     }
 
     # Extract tag_name and remove 'v' prefix
-    echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/^v//'
+    local latest_version
+    if command -v jq &>/dev/null; then
+        latest_version=$(echo "$response" | jq -r '.tag_name // empty')
+    else
+        latest_version=$(echo "$response" | grep -oP '"tag_name":\s*"\K[^"]+')
+    fi
+    echo "${latest_version}" | sed 's/^v//'
 }
 
 _get_package_url() {
@@ -84,6 +90,28 @@ _download_package() {
             local size
             size=$(du -h "$output" | cut -f1)
             _update_log OK "Downloaded ($size)"
+
+            # SHA256 verification
+            local release_url pkg_filename tmp_dir
+            release_url="${url%/*}"
+            pkg_filename=$(basename "$url")
+            tmp_dir=$(dirname "$output")
+
+            if curl -fsSL "${release_url}/SHA256SUMS" -o "${tmp_dir}/SHA256SUMS" 2>/dev/null; then
+                local expected_hash actual_hash
+                expected_hash=$(grep "${pkg_filename}" "${tmp_dir}/SHA256SUMS" | awk '{print $1}')
+                actual_hash=$(sha256sum "${output}" | awk '{print $1}')
+                if [[ -n "$expected_hash" && "$expected_hash" != "$actual_hash" ]]; then
+                    _update_log ERROR "Package checksum verification FAILED!"
+                    rm -f "$output" "${tmp_dir}/SHA256SUMS"
+                    return 1
+                fi
+                _update_log INFO "Package checksum verified: OK"
+                rm -f "${tmp_dir}/SHA256SUMS"
+            else
+                _update_log WARN "SHA256SUMS not available - skipping verification"
+            fi
+
             return 0
         fi
     fi
