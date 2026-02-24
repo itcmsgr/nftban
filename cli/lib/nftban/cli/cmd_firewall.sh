@@ -325,18 +325,19 @@ _check_policykit() {
         return 0
     fi
 
-    # Check policykit-1 package
+    # Check polkit package (Debian 13+ renamed policykit-1 to polkitd)
     if command -v dpkg-query &>/dev/null; then
-        if dpkg-query -W -f='${Status}\n' policykit-1 2>/dev/null | grep -q "install ok installed"; then
-            [[ "$json_mode" == "false" ]] && echo "[OK] policykit-1: Installed"
+        if dpkg-query -W -f='${Status}\n' policykit-1 2>/dev/null | grep -q "install ok installed" || \
+           dpkg-query -W -f='${Status}\n' polkitd 2>/dev/null | grep -q "install ok installed"; then
+            [[ "$json_mode" == "false" ]] && echo "[OK] polkit: Installed"
             return 0
         else
-            [[ "$json_mode" == "false" ]] && echo "[FAIL] policykit-1: MISSING (required on Debian/Ubuntu)"
-            [[ "$json_mode" == "false" ]] && echo "       Fix: apt-get install -y policykit-1"
+            [[ "$json_mode" == "false" ]] && echo "[FAIL] polkit: MISSING (required on Debian/Ubuntu)"
+            [[ "$json_mode" == "false" ]] && echo "       Fix: apt-get install -y polkitd  (or policykit-1 on older releases)"
             return 1
         fi
     else
-        [[ "$json_mode" == "false" ]] && echo "[WARN] policykit-1: Cannot verify (dpkg-query missing)"
+        [[ "$json_mode" == "false" ]] && echo "[WARN] polkit: Cannot verify (dpkg-query missing)"
         return 1
     fi
 }

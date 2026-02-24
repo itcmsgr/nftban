@@ -574,6 +574,21 @@ EOF
     echo "$fragment_path"
 }
 
+# Remove only nftban-managed rules from raw prerouting chains
+# Uses comment-based matching to avoid destroying Docker/K8s rules
+# Usage: _nft_cleanup_synproxy_raw
+_nft_cleanup_synproxy_raw() {
+    local family
+    for family in ip ip6; do
+        nft -a list chain "$family" raw prerouting 2>/dev/null | \
+            grep -i 'comment.*"SYNPROXY:' | \
+            grep -oP 'handle \K\d+' | \
+            while read -r handle; do
+                nft delete rule "$family" raw prerouting handle "$handle" 2>/dev/null || true
+            done
+    done
+}
+
 # Render SYNPROXY cleanup fragment (for disable)
 nft_fragment_render_synproxy_cleanup() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
@@ -593,14 +608,13 @@ nft_fragment_render_synproxy_cleanup() {
 # Generated: ${timestamp}
 # Managed by nftband
 
-# Flush SYNPROXY chains
+# Flush SYNPROXY chains (nftban-owned, safe to flush entirely)
 flush chain ${table_ipv4} ${chain}
 flush chain ${table_ipv6} ${chain}
 
-# Remove raw table notrack rules (if possible)
-# Note: We flush but don't delete raw chains to avoid breaking other uses
-flush chain ip raw prerouting
-flush chain ip6 raw prerouting
+# NOTE: Raw prerouting cleanup is handled by _nft_cleanup_synproxy_raw()
+# which deletes only nftban-managed rules (matching comment "SYNPROXY:")
+# to avoid destroying Docker/K8s/other rules in the raw prerouting chain.
 EOF
     )
 
@@ -1590,6 +1604,10 @@ nft_fragment_disable_module() {
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-synproxy|ddos_synproxy|synproxy)
+            # First, remove nftban-managed rules from raw prerouting chains
+            # (targeted deletion to avoid destroying Docker/K8s rules)
+            _nft_cleanup_synproxy_raw
+            # Then flush nftban-owned SYNPROXY chains
             fragment_path=$(nft_fragment_render_synproxy_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
@@ -1643,6 +1661,7 @@ export -f nft_fragment_render_ddos_sanity_cleanup
 export -f nft_fragment_render_synproxy
 export -f nft_fragment_render_synproxy_raw
 export -f nft_fragment_render_synproxy_jump
+export -f _nft_cleanup_synproxy_raw
 export -f nft_fragment_render_synproxy_cleanup
 export -f nft_fragment_render_ddos_prefix
 export -f nft_fragment_render_ddos_prefix_jump

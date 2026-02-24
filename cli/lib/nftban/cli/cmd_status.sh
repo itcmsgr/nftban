@@ -239,7 +239,7 @@ output_terminal() {
     local master_status="ENABLED"
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         master_status="DISABLED (kernel)"
-    elif [[ "$master_enabled" == "false" ]]; then
+    elif [[ "${master_enabled,,}" =~ ^(no|false|0|off)$ ]]; then
         master_status="DISABLED (config)"
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
@@ -361,6 +361,8 @@ output_terminal() {
     [[ -f "$ddos_main" ]] && source "$ddos_main" 2>/dev/null || true
     [[ -f "$ddos_local" ]] && source "$ddos_local" 2>/dev/null || true
     ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-false}}"
+    # Normalize boolean (config may use YES/NO, true/false, 1/0, on/off)
+    [[ "${ddos_enabled,,}" =~ ^(yes|true|1|on)$ ]] && ddos_enabled="true" || ddos_enabled="false"
 
     # Check if DDoS rules actually exist in nftables
     local ddos_rules_exist="false"
@@ -387,6 +389,8 @@ output_terminal() {
     [[ -f "$portscan_main" ]] && source "$portscan_main" 2>/dev/null || true
     [[ -f "$portscan_local" ]] && source "$portscan_local" 2>/dev/null || true
     portscan_enabled="${PORTSCAN_ENABLED:-false}"
+    # Normalize boolean (config may use YES/NO, true/false, 1/0, on/off)
+    [[ "${portscan_enabled,,}" =~ ^(yes|true|1|on)$ ]] && portscan_enabled="true" || portscan_enabled="false"
 
     if [[ "$portscan_enabled" == "true" ]]; then
         if [[ "$suricata_eve_ok" == "true" ]]; then
@@ -466,9 +470,12 @@ output_terminal() {
         [[ -f "$login_local" ]] && source "$login_local" 2>/dev/null || true
 
         local monitors=""
-        [[ "${NFTBAN_LOGIN_ALERT_SSH:-true}" == "true" ]] && monitors="${monitors}SSH, "
-        [[ "${NFTBAN_LOGIN_ALERT_SU:-true}" == "true" ]] && monitors="${monitors}SU, "
-        [[ "${NFTBAN_LOGIN_ALERT_SUDO:-true}" == "true" ]] && monitors="${monitors}SUDO, "
+        local _ssh="${NFTBAN_LOGIN_ALERT_SSH:-true}"
+        local _su="${NFTBAN_LOGIN_ALERT_SU:-true}"
+        local _sudo="${NFTBAN_LOGIN_ALERT_SUDO:-true}"
+        [[ "${_ssh,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SSH, "
+        [[ "${_su,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SU, "
+        [[ "${_sudo,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SUDO, "
 
         # Detect mail services (Dovecot, Postfix, Exim)
         if systemctl list-unit-files dovecot.service 2>/dev/null | grep -q dovecot; then
@@ -607,7 +614,7 @@ output_terminal() {
     [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
     [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
 
-    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" == "true" ]]; then
+    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
         if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1; then
             zabbix_status="ACTIVE (${NFTBAN_ZABBIX_SERVER:-unconfigured})"
         else

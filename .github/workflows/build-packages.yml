@@ -98,6 +98,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libpam0g-dev
 
+      - name: Install templ code generator
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
+
       - name: Build binaries
         run: |
           chmod +x build.sh
@@ -107,7 +110,7 @@ jobs:
       - name: Validate binaries are real ELF files
         run: |
           echo "Validating Go binaries..."
-          for binary in bin/nftban-core bin/nftband; do
+          for binary in bin/nftban-core bin/nftband bin/nftban-ui bin/nftban-ui-auth; do
             if [[ -f "$binary" ]]; then
               file_type=$(file -b "$binary")
               if [[ "$file_type" != *"ELF"* ]]; then
@@ -207,7 +210,7 @@ jobs:
               cd /tmp/rpm-check
               rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idmv 2>/dev/null
 
-              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband; do
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth; do
                 if [[ -f "$binary" ]]; then
                   file_type=$(file -b "$binary")
                   if [[ "$file_type" != *"ELF"* ]]; then
@@ -315,7 +318,7 @@ jobs:
               ar x "$GITHUB_WORKSPACE/$deb"
               tar -xf data.tar.* 2>/dev/null || tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null
 
-              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband; do
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth; do
                 if [[ -f "$binary" ]]; then
                   file_type=$(file -b "$binary")
                   if [[ "$file_type" != *"ELF"* ]]; then

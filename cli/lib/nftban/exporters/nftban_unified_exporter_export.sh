@@ -138,6 +138,13 @@ export_prometheus() {
 
     # Convert to Prometheus format (remove timestamp for textfile collector)
     # Skip string metrics (|STRING|) as they are Zabbix-only
+    # Use mktemp in same directory for atomic rename on same filesystem
+    local tmp_prom
+    tmp_prom=$(mktemp "${output_file}.XXXXXX") || {
+        record_export_result "prometheus" "false" "mktemp_failed"
+        return 1
+    }
+
     if ! awk '{
         # Format: metric_name value timestamp -> metric_name value
         # Skip Zabbix string metrics (containing |STRING| prefix)
@@ -151,13 +158,14 @@ export_prometheus() {
                 printf "%s %s\n", $1, $2
             }
         }
-    }' "$METRICS_CACHE" > "${output_file}.tmp"; then
+    }' "$METRICS_CACHE" > "$tmp_prom"; then
+        rm -f "$tmp_prom" 2>/dev/null
         record_export_result "prometheus" "false" "awk_failed"
         return 1
     fi
 
-    mv "${output_file}.tmp" "$output_file"
-    chmod 644 "$output_file"
+    chmod 644 "$tmp_prom"
+    mv -f "$tmp_prom" "$output_file"
 
     record_export_result "prometheus" "true"
     log_info "Prometheus: exported to $output_file"

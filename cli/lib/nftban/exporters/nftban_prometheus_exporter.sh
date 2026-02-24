@@ -20,6 +20,7 @@ umask 027
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
 # CONFIGURATION
@@ -40,7 +41,8 @@ fi
 # Now make readonly after sourcing
 readonly NFTBAN_LIB_DIR
 readonly OUTPUT_FILE="${NFTBAN_METRICS_FILE:-/var/lib/node_exporter/textfile_collector/nftban.prom}"
-readonly TEMP_FILE="${OUTPUT_FILE}.$$"
+TEMP_FILE=$(mktemp "${OUTPUT_FILE}.XXXXXX")
+readonly TEMP_FILE
 readonly NFTBAN_STATE_DIR="${NFTBAN_DATA_DIR}"
 readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR}"
 readonly TEMP_DIR="${NFTBAN_RUN_DIR}"
@@ -1672,10 +1674,8 @@ collect_metrics() {
     # -------------------------------------------------------------------------
 
     # Atomic write: move temp file to final location
-    mv "$TEMP_FILE" "$OUTPUT_FILE"
-
-    # Set permissions (readable by node_exporter)
-    chmod 644 "$OUTPUT_FILE"
+    chmod 644 "$TEMP_FILE"
+    mv -f "$TEMP_FILE" "$OUTPUT_FILE"
 }
 
 # =============================================================================

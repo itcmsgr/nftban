@@ -705,6 +705,7 @@ echo ""
 getent group nftban >/dev/null || groupadd -r nftban
 getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
 getent group nftban-panel >/dev/null || groupadd -r nftban-panel
+getent group suricata >/dev/null || groupadd -r suricata
 
 # Backward compatibility: nftban-auditor → nftban-auditor (renamed in v1.0.19)
 if getent group nftban-auditor >/dev/null 2>&1; then
@@ -725,7 +726,28 @@ usermod -a -G nftban root 2>/dev/null || true
 # =============================================================================
 # NFTBan v1.0.19 - SAFE INSTALL/UPGRADE FLOW
 # =============================================================================
-# Order: yq -> cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+# Order: CVE check -> yq -> cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+
+# =============================================================================
+# STEP 0: Security Check - CVE-2025-NFTBAN-001 (Bug #19 fix)
+# =============================================================================
+# Check for conflicting inet filter table that can bypass nftban blocking
+if command -v nft >/dev/null 2>&1; then
+    if nft list table inet filter >/dev/null 2>&1; then
+        if [ "\$1" -ge 2 ] 2>/dev/null; then
+            # UPGRADE: Auto-clean the conflicting table
+            echo "[NFTBan WARN] Conflicting 'inet filter' table detected - auto-removing for upgrade"
+            nft delete table inet filter 2>/dev/null || true
+        else
+            # FRESH INSTALL: Hard-fail - admin must resolve conflict first
+            echo "[NFTBan ERROR] Conflicting 'inet filter' table detected!"
+            echo "[NFTBan ERROR] This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
+            echo "[NFTBan ERROR] Please run: nft delete table inet filter"
+            echo "[NFTBan ERROR] Then re-install the package."
+            exit 1
+        fi
+    fi
+fi
 
 # =============================================================================
 # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED (BUG-001 fix)
@@ -2182,7 +2204,7 @@ if command -v nftban >/dev/null 2>&1; then
         else
             # Fallback to exit code mapping
             case $PREFLIGHT_EXIT in
-                10) PREFLIGHT_REASON="policykit-1 missing" ;;
+                10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
                 20) PREFLIGHT_REASON="Firewall authority conflict" ;;
                 30) PREFLIGHT_REASON="NFTables hook collision" ;;
                 *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;
@@ -2558,7 +2580,8 @@ build_deb() {
     rm -rf "${deb_root}"
 
     # Create directory structure
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,polkit-1/rules.d,nftban/{blacklist.d,rules.d}},var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
+    # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{blacklist.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -2678,9 +2701,10 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-systemd.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-auditor.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/30-nftban-panel.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ (not /etc/polkit-1/rules.d/)
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-systemd.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-auditor.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/30-nftban-panel.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
 
     # Copy validator spec
     mkdir -p "${deb_root}/usr/share/nftban/specs"

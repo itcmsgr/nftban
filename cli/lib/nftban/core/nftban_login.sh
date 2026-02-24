@@ -62,6 +62,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
 # FHS COMPLIANT PATHS (uses central config from nftban.conf)

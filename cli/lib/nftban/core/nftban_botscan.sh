@@ -93,8 +93,9 @@ declare -gA _BOTSCAN_IP_HITS        # IP -> hit count
 declare -gA _BOTSCAN_IP_PATTERNS    # IP -> matched patterns
 declare -gA _BOTSCAN_IP_FIRST_SEEN  # IP -> first seen timestamp
 declare -gA _BOTSCAN_IP_LAST_SEEN   # IP -> last seen timestamp
-declare -gA _BOTSCAN_IP_404_COUNT   # IP -> 404 count
-declare -gA _BOTSCAN_PATTERNS       # Pattern name -> pattern definition
+declare -gA _BOTSCAN_IP_404_COUNT      # IP -> 404 count
+declare -gA _BOTSCAN_IP_404_FIRST_SEEN # IP -> 404 first seen timestamp
+declare -gA _BOTSCAN_PATTERNS          # Pattern name -> pattern definition
 
 # Initialize state
 nftban_botscan_init_state() {
@@ -103,6 +104,7 @@ nftban_botscan_init_state() {
     _BOTSCAN_IP_FIRST_SEEN=()
     _BOTSCAN_IP_LAST_SEEN=()
     _BOTSCAN_IP_404_COUNT=()
+    _BOTSCAN_IP_404_FIRST_SEEN=()
 }
 
 # =============================================================================
@@ -408,6 +410,7 @@ nftban_botscan_process_entry() {
     # Track 404s
     if [[ "$BOTSCAN_404_TRACKING" == "true" && "$status" == "404" ]]; then
         _BOTSCAN_IP_404_COUNT["$ip"]=$(( ${_BOTSCAN_IP_404_COUNT[$ip]:-0} + 1 ))
+        [[ -z "${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-}" ]] && _BOTSCAN_IP_404_FIRST_SEEN["$ip"]="$now"
     fi
 
     # Match against patterns (URL and user-agent)
@@ -467,12 +470,16 @@ nftban_botscan_analyze() {
         fi
     done
 
-    # Check 404 flood
+    # Check 404 flood (enforce BOTSCAN_404_WINDOW)
     if [[ "$BOTSCAN_404_TRACKING" == "true" ]]; then
+        local now_ts
+        now_ts=$(date +%s)
         for ip in "${!_BOTSCAN_IP_404_COUNT[@]}"; do
             local count="${_BOTSCAN_IP_404_COUNT[$ip]}"
-            if [[ "$count" -ge "$BOTSCAN_404_THRESHOLD" ]]; then
-                nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "404 flood: $count requests"
+            local first_seen="${_BOTSCAN_IP_404_FIRST_SEEN[$ip]:-$now_ts}"
+            local elapsed=$(( now_ts - first_seen ))
+            if [[ "$count" -ge "$BOTSCAN_404_THRESHOLD" && "$elapsed" -le "$BOTSCAN_404_WINDOW" ]]; then
+                nftban_botscan_ban_ip "$ip" "$BOTSCAN_404_BAN" "botscan-404" "404 flood: $count in ${elapsed}s"
                 banned=$((banned + 1))
             fi
         done

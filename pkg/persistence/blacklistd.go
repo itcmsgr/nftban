@@ -21,7 +21,6 @@ package persistence
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -101,7 +100,7 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 		return "", "", fmt.Errorf("failed to create blacklist.d: %w", err)
 	}
 
-	// Open file with O_RDWR|O_CREATE for locking and append
+	// Open file with O_RDWR|O_CREATE for locking and reading
 	f, err := os.OpenFile(targetFile, os.O_RDWR|os.O_CREATE, 0640)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open %s: %w", targetFile, err)
@@ -115,16 +114,19 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -: fd always fits in int
 
-	// Check if IP already exists in this file
+	// Read all existing lines, checking for duplicate IP
+	var lines []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := scanner.Text()
+		lines = append(lines, line)
+		trimmed := strings.TrimSpace(line)
 		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, "#") {
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		// Extract IP (before any comment)
-		fields := strings.Fields(line)
+		fields := strings.Fields(trimmed)
 		if len(fields) > 0 && fields[0] == ip {
 			return AlreadyPresent, mapping.filename, nil
 		}
@@ -133,39 +135,58 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 		return "", "", fmt.Errorf("failed to scan %s: %w", targetFile, err)
 	}
 
-	// Seek to end for append
-	stat, err := f.Stat()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to stat %s: %w", targetFile, err)
+	// Build new entry
+	var entry string
+	if reason != "" {
+		entry = fmt.Sprintf("%s  # %s", ip, reason)
+	} else {
+		entry = ip
 	}
 
-	// Add header if file is empty
-	if stat.Size() == 0 {
-		if _, err := f.WriteString(mapping.header); err != nil {
+	// Write to temp file in same directory (required for atomic rename)
+	tempPath := targetFile + ".tmp"
+	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- path validated via configMappings
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	// Write header if file was empty (no existing lines)
+	if len(lines) == 0 {
+		if _, err := tmpFile.WriteString(mapping.header); err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(tempPath)
 			return "", "", fmt.Errorf("failed to write header: %w", err)
+		}
+	} else {
+		// Write existing lines
+		for _, line := range lines {
+			if _, err := tmpFile.WriteString(line + "\n"); err != nil {
+				_ = tmpFile.Close()
+				_ = os.Remove(tempPath)
+				return "", "", fmt.Errorf("failed to write existing content: %w", err)
+			}
 		}
 	}
 
-	// Seek to end (after potential header write or existing content)
-	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		return "", "", fmt.Errorf("failed to seek: %w", err)
-	}
-
-	// Write entry
-	var entry string
-	if reason != "" {
-		entry = fmt.Sprintf("%s  # %s\n", ip, reason)
-	} else {
-		entry = fmt.Sprintf("%s\n", ip)
-	}
-
-	if _, err := f.WriteString(entry); err != nil {
+	// Append new entry
+	if _, err := tmpFile.WriteString(entry + "\n"); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
 		return "", "", fmt.Errorf("failed to write entry: %w", err)
 	}
 
-	// Sync to disk
-	if err := f.Sync(); err != nil {
-		return "", "", fmt.Errorf("failed to sync %s: %w", targetFile, err)
+	// Sync temp file to ensure data is on disk before rename
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
+		return "", "", fmt.Errorf("failed to sync temp file: %w", err)
+	}
+	_ = tmpFile.Close()
+
+	// Atomic rename (POSIX guarantees atomicity on same filesystem)
+	if err := os.Rename(tempPath, targetFile); err != nil {
+		os.Remove(tempPath)
+		return "", "", fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
 	return Created, mapping.filename, nil
@@ -263,30 +284,30 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 
 	// Write to temp file in same directory (required for atomic rename)
 	tempPath := filePath + ".tmp"
-	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- path validated
 	if err != nil {
 		return false, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	for _, line := range lines {
 		if _, err := tmpFile.WriteString(line + "\n"); err != nil {
-			tmpFile.Close()
-			os.Remove(tempPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tempPath)
 			return false, err
 		}
 	}
 
 	// Sync temp file to ensure data is on disk before rename
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		os.Remove(tempPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
 		return false, err
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Atomic rename (POSIX guarantees atomicity on same filesystem)
 	if err := os.Rename(tempPath, filePath); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return false, fmt.Errorf("failed to rename temp file: %w", err)
 	}
 

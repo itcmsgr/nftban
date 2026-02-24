@@ -37,6 +37,8 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
+# v1.19.0: Source .local override (user customizations survive package updates)
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
 # HELPER FUNCTIONS

@@ -20,6 +20,7 @@ umask 027
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # CONFIGURATION
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR}"
@@ -157,8 +158,14 @@ collect_portscan_metrics() {
     blocked_total=$(get_portscan_blocked_total)
     module_enabled=$(get_portscan_enabled)
 
-    # Append to main metrics file
+    # Atomic append: write to temp file, then merge with main metrics file
+    local tmp_prom
+    tmp_prom=$(mktemp "${OUTPUT_FILE}.XXXXXX") || return 1
+
+    # Copy existing content + append new portscan metrics
     {
+        cat "$OUTPUT_FILE" 2>/dev/null || true
+
         echo "# HELP nftban_portscan_monitored_ports Number of ports being monitored for port scans"
         echo "# TYPE nftban_portscan_monitored_ports gauge"
         echo "nftban_portscan_monitored_ports $monitored_ports"
@@ -178,7 +185,9 @@ collect_portscan_metrics() {
         echo "# TYPE nftban_portscan_module_enabled gauge"
         echo "nftban_portscan_module_enabled $module_enabled"
         echo ""
-    } >> "$OUTPUT_FILE"
+    } > "$tmp_prom"
+
+    mv -f "$tmp_prom" "$OUTPUT_FILE"
 }
 
 # =============================================================================
