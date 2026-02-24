@@ -24,7 +24,9 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strconv"
 )
 
 // FirewallCheckRequest represents the request body for firewall check
@@ -61,6 +63,16 @@ func FirewallCheckHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Value == "" {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Value is required"})
 		return
+	}
+
+	// Input validation: value must be a valid IPv4/IPv6 address or a valid port number (1-65535)
+	if net.ParseIP(req.Value) == nil {
+		// Not a valid IP, check if it's a valid port number
+		port, err := strconv.Atoi(req.Value)
+		if err != nil || port < 1 || port > 65535 {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid input: value must be a valid IPv4/IPv6 address or port number (1-65535)"})
+			return
+		}
 	}
 
 	// Execute nftban firewall check <value> --json

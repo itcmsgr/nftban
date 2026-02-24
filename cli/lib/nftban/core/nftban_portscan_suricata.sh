@@ -664,16 +664,23 @@ nftban_portscan_suricata_block_ip() {
             --score "$score"
     elif type -t nft_ipc_ban &>/dev/null; then
         # Use IPC to ban (single-writer architecture)
-        nft_ipc_ban "$ip" "$duration" "portscan:suricata:${level}:${scan_types}" "portscan-suricata" 2>/dev/null || true
+        local ipc_result
+        if ! ipc_result=$(nft_ipc_ban "$ip" "$duration" "portscan:suricata:${level}:${scan_types}" "portscan-suricata" 2>&1); then
+            _nftban_portscan_suricata_log "ERROR" "IPC ban failed for $ip: $ipc_result"
+        fi
     else
         # Fallback: Direct IPC add element
         local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
         local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
 
         if [[ "$ip" =~ : ]]; then
-            nft_ipc_add_element "$table_ipv6" "blacklist" "$ip" "$duration" 2>/dev/null || true
+            if ! nft_ipc_add_element "$table_ipv6" "blacklist" "$ip" "$duration"; then
+                _nftban_portscan_suricata_log "WARN" "IPC ban failed for $ip"
+            fi
         else
-            nft_ipc_add_element "$table_ipv4" "blacklist" "$ip" "$duration" 2>/dev/null || true
+            if ! nft_ipc_add_element "$table_ipv4" "blacklist" "$ip" "$duration"; then
+                _nftban_portscan_suricata_log "WARN" "IPC ban failed for $ip"
+            fi
         fi
     fi
 

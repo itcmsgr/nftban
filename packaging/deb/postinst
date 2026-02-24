@@ -67,11 +67,18 @@ case "$1" in
         # =====================================================================
         if command -v nft >/dev/null 2>&1; then
             if nft list table inet filter >/dev/null 2>&1; then
-                log_error "Conflicting 'inet filter' table detected!"
-                log_error "This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
-                log_error "Please run: nft delete table inet filter"
-                log_error "Then re-install the package."
-                exit 1
+                if [[ -n "${2:-}" ]]; then
+                    # UPGRADE: Auto-clean the conflicting table (STEP 7.4 also handles this)
+                    log_warn "Conflicting 'inet filter' table detected — auto-removing for upgrade"
+                    nft delete table inet filter 2>/dev/null || true
+                else
+                    # FRESH INSTALL: Hard-fail — admin must resolve conflict first
+                    log_error "Conflicting 'inet filter' table detected!"
+                    log_error "This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
+                    log_error "Please run: nft delete table inet filter"
+                    log_error "Then re-install the package."
+                    exit 1
+                fi
             fi
         fi
 
@@ -576,7 +583,7 @@ case "$1" in
                 else
                     # Fallback to exit code mapping
                     case $PREFLIGHT_EXIT in
-                        10) PREFLIGHT_REASON="policykit-1 missing" ;;
+                        10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
                         20) PREFLIGHT_REASON="Firewall authority conflict" ;;
                         30) PREFLIGHT_REASON="NFTables hook collision" ;;
                         *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;

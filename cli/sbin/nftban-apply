@@ -141,7 +141,7 @@ if [[ "$SSH_TEST" == "true" ]]; then
         echo "  ✗ SSH connectivity test FAILED!"
         echo ""
         echo "WARNING: SSH probe failed. Rolling back immediately..."
-        /usr/sbin/nftban-rollback --force
+        /usr/lib/nftban/sbin/nftban-rollback --force
         exit 3
     fi
 else

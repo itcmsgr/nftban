@@ -19,6 +19,7 @@ IFS=$'\n\t'
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # ====================================================================
 # LIBRARY LOADING
@@ -43,8 +44,8 @@ fi
 # Textfile collector output
 OUTPUT_FILE="${OUTPUT_FILE:-/var/lib/node_exporter/textfile_collector/nftban_geoban.prom}"
 
-# Temporary file for atomic writes
-TMP_FILE="${OUTPUT_FILE}.$$"
+# Temporary file for atomic writes (mktemp for collision safety)
+TMP_FILE=$(mktemp "${OUTPUT_FILE}.XXXXXX")
 
 # Cleanup on exit
 trap 'rm -f "$TMP_FILE"' EXIT
@@ -168,10 +169,8 @@ main() {
         "Unix timestamp of last successful collection" " $(date +%s)"
 
     # Atomic move
-    mv "$TMP_FILE" "$OUTPUT_FILE"
-
-    # Set permissions
-    chmod 644 "$OUTPUT_FILE"
+    chmod 644 "$TMP_FILE"
+    mv -f "$TMP_FILE" "$OUTPUT_FILE"
 }
 
 # ====================================================================

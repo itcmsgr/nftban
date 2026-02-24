@@ -43,7 +43,7 @@ _create_backup() {
 
     mkdir -p "$UPDATE_BACKUP_DIR" 2>/dev/null || {
         _update_log WARN "Backup failed: Cannot create backup directory $UPDATE_BACKUP_DIR"
-        return 0
+        return 1
     }
 
     _update_log INFO "Creating backup..."
@@ -56,7 +56,7 @@ _create_backup() {
 
     if [[ ${#backup_dirs[@]} -eq 0 ]]; then
         _update_log WARN "Backup failed: No NFTBan directories found to backup"
-        return 0
+        return 1
     fi
 
     local tar_output
@@ -75,7 +75,7 @@ _create_backup() {
         return 0
     else
         _update_log WARN "Backup failed: ${tar_output:-tar command failed}"
-        return 0
+        return 1
     fi
 }
 

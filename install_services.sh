@@ -132,6 +132,19 @@ install_polkit() {
     : "${NFTBAN_BIN:=/usr/sbin/nftban}"
     : "${NFTBAN_AUTH_BIN:=/usr/libexec/nftban-ui-auth}"
 
+    # Determine distro-aware polkit rules directory (Bug #18 fix)
+    # Debian/Ubuntu use /usr/share/polkit-1/rules.d/, RHEL/Fedora use /etc/polkit-1/rules.d/
+    local polkit_dir
+    if declare -f nftban_distro_get_polkit_dir >/dev/null 2>&1; then
+        polkit_dir=$(nftban_distro_get_polkit_dir)
+    elif [[ -d /usr/share/polkit-1/rules.d ]]; then
+        polkit_dir="/usr/share/polkit-1/rules.d"
+    else
+        polkit_dir="/etc/polkit-1/rules.d"
+    fi
+    mkdir -p "$polkit_dir"
+    log "Polkit rules directory: $polkit_dir"
+
     # Install consolidated polkit rules (v1.0.19)
     local rules=(
         "10-nftban-systemd.rules"
@@ -141,9 +154,9 @@ install_polkit() {
 
     for rule in "${rules[@]}"; do
         if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/$rule" ]]; then
-            cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/$rule" "$POLKIT_RULES_DIR_ETC/"
-            chmod 644 "$POLKIT_RULES_DIR_ETC/$rule"
-            ok "Installed: $rule"
+            cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/$rule" "$polkit_dir/"
+            chmod 644 "$polkit_dir/$rule"
+            ok "Installed: $rule -> $polkit_dir"
         else
             warn "Polkit rule not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/$rule"
         fi

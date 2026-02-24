@@ -211,11 +211,11 @@ _nftban_ddos_stats_json() {
     # Get rate limit from classic config (if exists)
     if [[ -f "$config_classic" ]]; then
         local rate_val
-        rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_classic" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        rate_val=$(grep "^DDOS_CLASSIC_SYN_RATE=" "$config_classic" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
         [[ -n "$rate_val" ]] && rate_limit="$rate_val"
     elif [[ -f "$config_main" ]]; then
         local rate_val2
-        rate_val2=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        rate_val2=$(grep "^DDOS_CLASSIC_SYN_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
         [[ -n "$rate_val2" ]] && rate_limit="$rate_val2"
     fi
 
