@@ -407,7 +407,7 @@ jobs:
           sed -i 's/^          //' VERIFY.txt
 
       - name: Generate SBOM (Software Bill of Materials)
-        uses: anchore/sbom-action@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a # v0.9.0
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
         with:
           path: .
           format: spdx-json
