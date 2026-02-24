@@ -482,11 +482,14 @@ nftban_port_render_json() {
         bind="$(cut -d'|' -f4 <<<"$svcinfo")"
         scope="$(cut -d'|' -f5 <<<"$svcinfo")"
 
-        # Check if in firewall
+        # Check if in firewall (input OR output chains)
         local in_firewall=false
         if [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_input"]+x}" ]] || \
            [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv4"]+x}" ]] || \
-           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]]; then
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_output"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_output_ipv4"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_output_ipv6"]+x}" ]]; then
             in_firewall=true
         fi
 
@@ -652,10 +655,14 @@ nftban_port_render_table() {
 
         # Show port if EITHER: (1) service is listening, OR (2) port is in firewall rules
         # This ensures user-added ports show up even if nothing is listening yet
+        # Check both input AND output chains — outbound-only ports (e.g. Zabbix 10051) must be visible
         local in_firewall=false
         if [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_input"]+x}" ]] || \
            [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv4"]+x}" ]] || \
-           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]]; then
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_output"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_output_ipv4"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_output_ipv6"]+x}" ]]; then
             in_firewall=true
         fi
 
