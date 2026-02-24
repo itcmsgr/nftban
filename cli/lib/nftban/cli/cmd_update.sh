@@ -56,6 +56,7 @@ readonly UPDATE_LOCK_FILE="/run/nftban/update.lock"
 
 # Internal flags (exported for submodules)
 export _NFTBAN_UPDATE_FORCE=0
+export _NFTBAN_UPDATE_SKIP_CHECKSUM=0
 
 # =============================================================================
 # MODULE LOADER
@@ -267,8 +268,15 @@ _cmd_update_main() {
     echo "  Source:        $source"
     echo ""
 
-    # Create backup
-    _create_backup
+    # Create backup (H14 fix: abort if backup fails unless --force)
+    if ! _create_backup; then
+        if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
+            _update_log WARN "Backup failed but continuing (--force mode)"
+        else
+            _update_log ERROR "Backup failed - aborting update (use --force to override)"
+            return 1
+        fi
+    fi
 
     # Execute update based on source
     local result=0
@@ -1280,6 +1288,7 @@ nftban_cmd_update() {
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --skip-checksum) _NFTBAN_UPDATE_SKIP_CHECKSUM=1; shift ;;
                     -*) shift ;;  # Skip unknown flags
                     *) version_arg="$1"; shift ;;
                 esac

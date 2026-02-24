@@ -259,9 +259,14 @@ smoke_test_cmd() {
     # Evaluate result
     local output_len=${#output}
 
-    if [[ -z "$output" ]]; then
-        log_fail "$name - NO OUTPUT (${duration}s)"
+    # H26 fix: Empty output with exit code 0 is a PASS, not a failure
+    # Some commands succeed silently (e.g., optional modules that are disabled)
+    if [[ -z "$output" ]] && [[ "$exit_code" != "0" ]]; then
+        log_fail "$name - NO OUTPUT (exit=$exit_code, ${duration}s)"
         TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif [[ -z "$output" ]] && [[ "$exit_code" == "0" ]]; then
+        log_pass "$name - OK, no output (exit=0, ${duration}s)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "0" ]]; then
         log_pass "$name - OK (exit=0, ${output_len} chars, ${duration}s)"
         TESTS_PASSED=$((TESTS_PASSED + 1))

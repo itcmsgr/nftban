@@ -566,6 +566,16 @@ nftban_login_send_alert() {
     local geoip
     geoip=$(nftban_login_get_geoip "$ip")
 
+    # H8 fix: Sanitize user input for HTML injection prevention
+    # Strip HTML-unsafe characters from user-supplied fields
+    user="${user//</\&lt;}"
+    user="${user//>/\&gt;}"
+    user="${user//\"/\&quot;}"
+    ip="${ip//</\&lt;}"
+    ip="${ip//>/\&gt;}"
+    details="${details//</\&lt;}"
+    details="${details//>/\&gt;}"
+
     # Build subject
     local subject="[NFTBan] $status Login: $user @ $hostname"
 

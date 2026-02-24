@@ -579,6 +579,16 @@ nftban_mail_send() {
     local subject
     subject="${subject_prefix} Report from $(hostname -f)"
 
+    # C5 fix: Sanitize email headers to prevent CRLF injection
+    sender="${sender//$'\r'/}"
+    sender="${sender//$'\n'/}"
+    from_name="${from_name//$'\r'/}"
+    from_name="${from_name//$'\n'/}"
+    subject="${subject//$'\r'/}"
+    subject="${subject//$'\n'/}"
+    recipient="${recipient//$'\r'/}"
+    recipient="${recipient//$'\n'/}"
+
     # Detect mail command
     local mta
     mta="$(nftban_mail_detect_mta)"
@@ -1173,6 +1183,11 @@ nftban_mail_spool_status() {
             [[ ! -d "$mail_dir" ]] && continue
 
             if [[ -f "${mail_dir}/meta.sh" ]]; then
+                # H10 fix: Validate meta.sh contains only safe variable assignments before sourcing
+                if grep -qE '^[^#]*[;|&`$\(]' "${mail_dir}/meta.sh" 2>/dev/null; then
+                    echo "  WARNING: Skipping suspicious meta.sh in $(basename "$mail_dir")" >&2
+                    continue
+                fi
                 # shellcheck source=/dev/null
                 source "${mail_dir}/meta.sh"
                 local created_date

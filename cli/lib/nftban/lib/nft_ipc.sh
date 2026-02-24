@@ -394,7 +394,9 @@ nft_emergency_ban() {
         element="{ $ip }"
     fi
 
-    nft add element "$table" "$set" "$element"
+    # C7 fix: $table contains space (e.g. "ip nftban"), must not be quoted as single arg
+    # shellcheck disable=SC2086
+    nft add element $table "$set" "$element"
 }
 
 # Emergency unban - direct nft call

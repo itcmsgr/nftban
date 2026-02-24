@@ -10,9 +10,6 @@
 # meta:inventory.privileges="none"
 
 set -Eeuo pipefail
-# =============================================================================
-
-set -Eeuo pipefail
 
 # =============================================================================
 # GUARD: Prevent double-loading
@@ -68,7 +65,7 @@ readonly NFTBAN_VERSION_PATCH
 
 # Version details
 readonly NFTBAN_VERSION_NAME="Unified Security Platform"
-readonly NFTBAN_VERSION_DATE="2025-12-01"
+readonly NFTBAN_VERSION_DATE="2026-02-24"
 NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 readonly NFTBAN_BUILD_DATE
 
