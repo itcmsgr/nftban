@@ -1977,7 +1977,7 @@ func (d *Daemon) handleSignals(pidFile string) {
 func (d *Daemon) gracefulShutdown() {
 	// Close socket listener first to stop accepting new IPC connections
 	if d.socketLn != nil {
-		d.socketLn.Close()
+		_ = d.socketLn.Close()
 	}
 
 	// Publish shutdown event
