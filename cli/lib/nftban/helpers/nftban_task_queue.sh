@@ -267,15 +267,21 @@ nftban_queue_add() {
     task_file="${QUEUE_PENDING_DIR}/${task_id}.task"
     now=$(date +%s)
 
+    # C1 fix: Sanitize inputs before writing to task file (shell injection prevention)
+    # Strip all characters except alphanumeric, space, dash, underscore, dot, colon, slash
+    local safe_description safe_payload
+    safe_description="${description//[^a-zA-Z0-9 _.\-:\/]/_}"
+    safe_payload="${payload_file//[^a-zA-Z0-9 _.\-:\/]/_}"
+
     cat > "$task_file" <<EOF
 TASK_ID="$task_id"
 TASK_TYPE="$task_type"
-TASK_DESCRIPTION="$description"
+TASK_DESCRIPTION="$safe_description"
 TASK_CREATED_EPOCH="$now"
 TASK_RETRIES="0"
 TASK_NEXT_ATTEMPT_EPOCH="0"
 TASK_LAST_ERROR=""
-TASK_PAYLOAD_FILE="$payload_file"
+TASK_PAYLOAD_FILE="$safe_payload"
 EOF
 
     chown nftban:nftban "$task_file" 2>/dev/null || true
@@ -591,6 +597,36 @@ nftban_queue_process_next() {
 }
 
 # =============================================================================
+# BATCH PROCESSING (M31 fix: drain multiple tasks per cycle)
+# =============================================================================
+
+# Process up to N eligible tasks per cycle instead of just one
+# Args: $1 = max tasks to process (default: 10)
+nftban_queue_process_batch() {
+    local max_tasks="${1:-10}"
+    local processed=0
+    local failed=0
+
+    while (( processed + failed < max_tasks )); do
+        nftban_queue_process_next
+        local rc=$?
+        case $rc in
+            0) ((processed++)) ;;    # task processed
+            1) break ;;              # no more eligible tasks
+            2) break ;;              # lock held by another process
+            3) ((failed++)) ;;       # processing error, try next
+            *) break ;;
+        esac
+    done
+
+    if (( processed > 0 )); then
+        _queue_log "INFO" "Batch complete: processed=$processed failed=$failed"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # DLQ MANAGEMENT
 # =============================================================================
 
@@ -718,6 +754,7 @@ export -f nftban_queue_has_pending
 export -f nftban_queue_count
 export -f nftban_queue_count_dlq
 export -f nftban_queue_process_next
+export -f nftban_queue_process_batch
 export -f nftban_queue_dlq_list
 export -f nftban_queue_dlq_retry
 export -f nftban_queue_dlq_purge

@@ -112,7 +112,7 @@ main() {
     # ==========================================================================
     # 1. SSH Port Monitoring (CRITICAL - Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[1/7] Checking SSH port configuration..."
+    log "INFO" "[1/9] Checking SSH port configuration..."
 
     # Auto-detect current SSH port from sshd_config
     SSH_PORT=22
@@ -145,8 +145,9 @@ main() {
                 LAST_ALERT_PORT=$(cat "$SSH_PORT_STATE" 2>/dev/null || echo "")
                 if [[ "$LAST_ALERT_PORT" == "$SSH_PORT" ]]; then
                     # Already alerted about this port, skip alert (no spam)
+                    # C10 fix: use 'true' instead of 'return 0' to continue remaining maintenance tasks
                     log "INFO" "SSH port $SSH_PORT already updated (waiting for firewall reload)"
-                    return 0
+                    true
                 fi
             fi
 
@@ -263,7 +264,7 @@ EOF
     # ==========================================================================
     # 2. System IP Monitoring (Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[2/7] Checking system IP addresses..."
+    log "INFO" "[2/9] Checking system IP addresses..."
 
     IP_ALERT_STATE="${NFTBAN_DATA_DIR}/state/ip_change_alert.state"
 
@@ -271,7 +272,7 @@ EOF
     if [[ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]]; then
         log "WARN" "System whitelist missing - creating now (lockout prevention)..."
         mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d"
-        cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" <<'EOF'
+        cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" <<EOF
 # NFTBan System IP Whitelist (Auto-Generated)
 # This file contains server IPs and SSH client IPs for lockout prevention
 # DO NOT EDIT - Automatically managed by maintenance script
@@ -378,7 +379,7 @@ EOF
     # ==========================================================================
     # 3. Active SSH Session Protection (Auto-Whitelist Logged-In Users)
     # ==========================================================================
-    log "INFO" "[3/7] Protecting active SSH sessions..."
+    log "INFO" "[3/9] Protecting active SSH sessions..."
 
     # File to track active SSH IPs with timestamps
     ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
@@ -450,7 +451,7 @@ EOF
     # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
-    log "INFO" "[4/7] Running auto-heal..."
+    log "INFO" "[4/9] Running auto-heal..."
 
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" ]]; then
         if "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" >> "$LOGFILE" 2>&1; then
@@ -469,7 +470,7 @@ EOF
     local current_minute
     current_minute=$(date +%M)
     if [[ $current_minute -lt 15 ]]; then
-        log "INFO" "[5/7] Collecting trend data (hourly)..."
+        log "INFO" "[5/9] Collecting trend data (hourly)..."
 
         # Collect stats trend data
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
@@ -493,13 +494,13 @@ EOF
             fi
         fi
     else
-        log "INFO" "[5/7] Trend collection: Skipped (not hourly run)"
+        log "INFO" "[5/9] Trend collection: Skipped (not hourly run)"
     fi
 
     # ==========================================================================
     # 6. Configuration Validation (Critical Files)
     # ==========================================================================
-    log "INFO" "[6/7] Validating critical configuration..."
+    log "INFO" "[6/9] Validating critical configuration..."
 
     local config_ok=true
 

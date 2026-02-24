@@ -95,6 +95,12 @@ _connector_load() {
         return 1
     fi
 
+    # H23 fix: Validate config file contains only safe variable assignments before sourcing
+    if grep -qE '^[^#]*[;|&`\(]' "$config_file" 2>/dev/null; then
+        _connector_print_error "Connector config contains unsafe content: $config_file"
+        return 1
+    fi
+
     # shellcheck source=/dev/null
     source "$config_file"
 }
@@ -243,8 +249,22 @@ _cmd_connector_add() {
             --index=*) options+=("CONNECTOR_ES_INDEX=\"${1#*=}\""); shift ;;
             --user)    options+=("CONNECTOR_ES_USER=\"$2\""); shift 2 ;;
             --user=*)  options+=("CONNECTOR_ES_USER=\"${1#*=}\""); shift ;;
-            --pass)    options+=("CONNECTOR_ES_PASS=\"$2\""); shift 2 ;;
-            --pass=*)  options+=("CONNECTOR_ES_PASS=\"${1#*=}\""); shift ;;
+            --pass)
+                # H6 fix: Warn about password visibility in process list
+                if [[ "$2" == "-" ]]; then
+                    # Read password from stdin (safe)
+                    local _pass
+                    read -rs -p "Connector password: " _pass
+                    echo "" >&2
+                    options+=("CONNECTOR_ES_PASS=\"${_pass}\"")
+                else
+                    echo "WARNING: --pass on command line is visible in 'ps'. Use --pass - (stdin) or config file instead." >&2
+                    options+=("CONNECTOR_ES_PASS=\"$2\"")
+                fi
+                shift 2 ;;
+            --pass=*)
+                echo "WARNING: --pass on command line is visible in 'ps'. Use --pass - (stdin) or config file instead." >&2
+                options+=("CONNECTOR_ES_PASS=\"${1#*=}\""); shift ;;
             # Kafka options
             --brokers)   options+=("CONNECTOR_KAFKA_BROKERS=\"$2\""); shift 2 ;;
             --brokers=*) options+=("CONNECTOR_KAFKA_BROKERS=\"${1#*=}\""); shift ;;

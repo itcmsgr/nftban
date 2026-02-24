@@ -20,7 +20,8 @@ _nftban() {
     # MONITORING: gui metrics stats report fhs module services timers mail
     # DEBUG: debug smoke emulate setup menu
 
-    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
+    # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
+    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -202,6 +203,10 @@ _nftban() {
                     ;;
                 country)
                     COMPREPLY=($(compgen -W "${country_cmds}" -- "${cur}"))
+                    ;;
+                cloudflare)
+                    # H28 fix: cloudflare is alias for trust
+                    COMPREPLY=($(compgen -W "${trust_cmds}" -- "${cur}"))
                     ;;
                 geoban)
                     COMPREPLY=($(compgen -W "${geoban_cmds}" -- "${cur}"))

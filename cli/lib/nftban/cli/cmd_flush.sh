@@ -202,9 +202,16 @@ _restore_system_whitelist() {
     # Add IPv4 system IPs back via IPC (v1.18.0: IPC-only writes)
     if [[ -n "$ips_v4" ]]; then
         if declare -f nft_ipc_add_element &>/dev/null; then
+            # H25 fix: IPs are comma-separated, split on comma for iteration
+            local IFS_OLD="$IFS"
+            IFS=','
             for ip in $ips_v4; do
+                IFS="$IFS_OLD"
+                ip="${ip// /}"  # trim whitespace
+                [[ -z "$ip" ]] && continue
                 nft_ipc_add_element "$NFTBAN_TABLE_IPV4" "whitelist_ipv4" "$ip" 2>/dev/null || true
             done
+            IFS="$IFS_OLD"
         else
             # Fallback for emergency - direct nft (should rarely be used)
             nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
@@ -215,9 +222,16 @@ _restore_system_whitelist() {
     # Add IPv6 system IPs back via IPC (v1.18.0: IPC-only writes)
     if [[ -n "$ips_v6" ]]; then
         if declare -f nft_ipc_add_element &>/dev/null; then
+            # H25 fix: IPs are comma-separated, split on comma for iteration
+            local IFS_OLD="$IFS"
+            IFS=','
             for ip in $ips_v6; do
+                IFS="$IFS_OLD"
+                ip="${ip// /}"  # trim whitespace
+                [[ -z "$ip" ]] && continue
                 nft_ipc_add_element "$NFTBAN_TABLE_IPV6" "whitelist_ipv6" "$ip" 2>/dev/null || true
             done
+            IFS="$IFS_OLD"
         else
             # Fallback for emergency - direct nft (should rarely be used)
             nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true

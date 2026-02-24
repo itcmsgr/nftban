@@ -47,10 +47,11 @@
     create 0640 nftban nftban
 }
 
-# Mail and queue logs - bash scripts appending via >>
+# Mail, queue, and maintenance logs - bash scripts appending via >>
 # Use copytruncate: safer for transient appenders, no reload needed
 /var/log/nftban/mail.log
-/var/log/nftban/queue.log {
+/var/log/nftban/queue.log
+/var/log/nftban/maintenance.log {
     weekly
     rotate 4
     compress

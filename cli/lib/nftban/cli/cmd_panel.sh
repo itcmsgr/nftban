@@ -165,24 +165,16 @@ nftban_cmd_panel() {
     fi
 
     # Route to panel-specific handler
+    # C8 fix: validate function exists before dynamic dispatch to prevent crash
+    local handler_func="nftban_panel_${panel}_${action}"
     case "$action" in
-        enable)
-            nftban_panel_${panel}_enable
-            ;;
-        disable)
-            nftban_panel_${panel}_disable
-            ;;
-        status)
-            nftban_panel_${panel}_status
-            ;;
-        report)
-            nftban_panel_${panel}_report
-            ;;
-        repair)
-            nftban_panel_${panel}_repair
-            ;;
-        test)
-            nftban_panel_${panel}_test
+        enable|disable|status|report|repair|test)
+            if ! declare -F "$handler_func" >/dev/null 2>&1; then
+                echo "ERROR: Panel '$panel' does not support action '$action'" >&2
+                echo "Function '$handler_func' not found" >&2
+                return 1
+            fi
+            "$handler_func"
             ;;
         help|-h|--help)
             nftban_panel_help "$panel"

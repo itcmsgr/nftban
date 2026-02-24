@@ -17,7 +17,7 @@ set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_LOGGING_LOADED:-}" ]] && return 0
-_NFTBAN_LOGGING_LOADED=1
+readonly _NFTBAN_LOGGING_LOADED=1
 
 # Source the canonical logging module (nftban_logger.sh)
 # This provides all the log_* compatibility aliases
