@@ -44,6 +44,10 @@ set -Eeuo pipefail
 # Load zabbix user overrides
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
+# Load metrics config (needed to detect NFTBAN_METRICS_ENABLED correctly)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+
 # Load global user overrides LAST (highest priority - written by nftban config set)
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
@@ -236,9 +240,11 @@ _cmd_zabbix_setup() {
     # Check: Metrics exporter — auto-enable during setup (BEFORE wizard starts)
     local metrics_enabled="${NFTBAN_METRICS_ENABLED:-false}"
     local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
+    local global_local="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
     if [[ "$metrics_enabled" != "true" ]]; then
         echo ""
         echo "  [ACTION] Metrics collection is disabled - enabling it now..."
+        # Update conf.d/metrics.conf.local (used by unified exporter)
         mkdir -p "$(dirname "$metrics_local")" 2>/dev/null || true
         if [[ -f "$metrics_local" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$metrics_local" 2>/dev/null; then
             sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="true"/' "$metrics_local"
@@ -247,6 +253,10 @@ _cmd_zabbix_setup() {
         fi
         chmod 640 "$metrics_local" 2>/dev/null || true
         chown root:nftban "$metrics_local" 2>/dev/null || true
+        # Also update nftban.conf.local (highest priority — keeps consistent with 'nftban metrics disable')
+        if [[ -f "$global_local" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$global_local" 2>/dev/null; then
+            sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="true"/' "$global_local"
+        fi
         # Reload the variable so rest of setup sees it
         NFTBAN_METRICS_ENABLED="true"
         echo "  [OK] Metrics config enabled"
