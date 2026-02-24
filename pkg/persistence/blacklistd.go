@@ -145,7 +145,7 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 
 	// Write to temp file in same directory (required for atomic rename)
 	tempPath := targetFile + ".tmp"
-	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- path validated via configMappings
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -153,16 +153,16 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 	// Write header if file was empty (no existing lines)
 	if len(lines) == 0 {
 		if _, err := tmpFile.WriteString(mapping.header); err != nil {
-			tmpFile.Close()
-			os.Remove(tempPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tempPath)
 			return "", "", fmt.Errorf("failed to write header: %w", err)
 		}
 	} else {
 		// Write existing lines
 		for _, line := range lines {
 			if _, err := tmpFile.WriteString(line + "\n"); err != nil {
-				tmpFile.Close()
-				os.Remove(tempPath)
+				_ = tmpFile.Close()
+				_ = os.Remove(tempPath)
 				return "", "", fmt.Errorf("failed to write existing content: %w", err)
 			}
 		}
@@ -170,18 +170,18 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 
 	// Append new entry
 	if _, err := tmpFile.WriteString(entry + "\n"); err != nil {
-		tmpFile.Close()
-		os.Remove(tempPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
 		return "", "", fmt.Errorf("failed to write entry: %w", err)
 	}
 
 	// Sync temp file to ensure data is on disk before rename
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		os.Remove(tempPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
 		return "", "", fmt.Errorf("failed to sync temp file: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Atomic rename (POSIX guarantees atomicity on same filesystem)
 	if err := os.Rename(tempPath, targetFile); err != nil {
@@ -284,30 +284,30 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 
 	// Write to temp file in same directory (required for atomic rename)
 	tempPath := filePath + ".tmp"
-	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- path validated
 	if err != nil {
 		return false, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	for _, line := range lines {
 		if _, err := tmpFile.WriteString(line + "\n"); err != nil {
-			tmpFile.Close()
-			os.Remove(tempPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tempPath)
 			return false, err
 		}
 	}
 
 	// Sync temp file to ensure data is on disk before rename
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		os.Remove(tempPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tempPath)
 		return false, err
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Atomic rename (POSIX guarantees atomicity on same filesystem)
 	if err := os.Rename(tempPath, filePath); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return false, fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
