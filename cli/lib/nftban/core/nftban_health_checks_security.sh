@@ -451,7 +451,7 @@ nftban_health_check_polkit() {
     # Root-only deployments can operate without polkit
     if ! command -v pkaction >/dev/null 2>&1; then
         polkit_issues+=("Polkit not installed - privilege separation unavailable")
-        polkit_issues+=("FIX (Debian/Ubuntu): apt install policykit-1")
+        polkit_issues+=("FIX (Debian/Ubuntu): apt install polkitd  (or policykit-1 on older releases)")
         polkit_issues+=("FIX (RHEL/Rocky/Fedora): dnf install polkit")
         # Downgrade to WARNING if running as root (polkit optional for root)
         if [[ $EUID -eq 0 ]]; then

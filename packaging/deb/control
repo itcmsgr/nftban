@@ -32,7 +32,7 @@ Depends: ${shlibs:Depends},
          findutils,
          util-linux,
          iproute2,
-         policykit-1,
+         polkitd | policykit-1,
          adduser,
          socat
 Recommends: logrotate,

@@ -55,6 +55,59 @@ var configAllowedModules = map[string]bool{
 	"portscan": true,
 	"ddos":     true,
 	"geoip":    true,
+	"suricata": true,
+	"login":    true,
+}
+
+// configAllowedKeys defines valid configuration keys per module.
+// SECURITY: Defense-in-depth - only these keys can be set via the REST API.
+// Mirrors the allowlist in cmd/nftban-ui/handlers/settings_handlers.go.
+var configAllowedKeys = map[string]map[string]bool{
+	"main": {
+		"NFTBAN_LOG_LEVEL":       true,
+		"NFTBAN_COLOR_OUTPUT":    true,
+		"NFTBAN_DEBUG_TRACE":     true,
+		"NFTBAN_DEBUG_TRACE_LOG": true,
+		"NFTBAN_GUI_ENABLED":     true,
+		"NFTBAN_GUI_ADDR":        true,
+		"NFTBAN_API_ADDR":        true,
+	},
+	"firewall": {
+		"NFTBAN_METRICS_ENABLED":            true,
+		"NFTBAN_METRICS_BACKEND":            true,
+		"NFTBAN_METRICS_SAMPLING_INTERVAL":  true,
+		"NFTBAN_METRICS_MAX_SAMPLES":        true,
+		"NFTBAN_PROMETHEUS_DIR":             true,
+		"NFTBAN_METRICS_PROMETHEUS_ADDR":    true,
+		"NFTBAN_METRICS_NODE_EXPORTER_ADDR": true,
+		"NFTBAN_METRICS_VICTORIA_ADDR":      true,
+		"NFTBAN_GRAFANA_ENABLED":            true,
+	},
+	"feeds": {
+		"NFTBAN_FEEDS_ENABLED":     true,
+		"NFTBAN_FEEDS_AUTO_UPDATE": true,
+	},
+	"portscan": {
+		"NFTBAN_PORTSCAN_ENABLED": true,
+	},
+	"ddos": {
+		"NFTBAN_DDOS_ENABLED": true,
+	},
+	"geoip": {
+		"NFTBAN_GEOIP_ENABLED":     true,
+		"NFTBAN_GEOIP_LICENSE_KEY": true,
+	},
+	"suricata": {
+		"NFTBAN_SURICATA_ENABLED":               true,
+		"NFTBAN_SURICATA_EVE_LOG":               true,
+		"NFTBAN_SURICATA_LOG_DIR":               true,
+		"NFTBAN_SURICATA_BAN_THRESHOLD":         true,
+		"NFTBAN_SURICATA_SCORE_DECAY":           true,
+		"NFTBAN_SURICATA_CLOUDFLARE_WHITELIST":  true,
+	},
+	"login": {
+		"NFTBAN_LOGIN_MONITOR_ENABLED": true,
+	},
 }
 
 // ConfigFileHandler serves configuration files from /etc/nftban/
@@ -251,6 +304,18 @@ func ConfigSetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate all keys against per-module allowlist before applying any updates.
+	// SECURITY: Defense-in-depth - reject invalid keys before delegating to CLI.
+	moduleKeys := configAllowedKeys[module]
+	for key := range updates {
+		if moduleKeys == nil || !moduleKeys[key] {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("Invalid config key %q for module %q", key, module),
+			})
+			return
+		}
+	}
+
 	// Apply each update
 	var errors []string
 	for key, value := range updates {
@@ -326,6 +391,18 @@ func ConfigResetHandler(w http.ResponseWriter, r *http.Request) {
 			"message": fmt.Sprintf("All %s configuration reset to defaults", module),
 		})
 		return
+	}
+
+	// Validate all keys against per-module allowlist before resetting.
+	// SECURITY: Defense-in-depth - reject invalid keys before delegating to CLI.
+	moduleKeys := configAllowedKeys[module]
+	for _, key := range req.Keys {
+		if moduleKeys == nil || !moduleKeys[key] {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("Invalid config key %q for module %q", key, module),
+			})
+			return
+		}
 	}
 
 	// Reset specific keys

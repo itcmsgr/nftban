@@ -29,6 +29,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"os"
 	"runtime"
 	"sort"
 )
@@ -47,8 +48,18 @@ func SetMemoryBudget(bytes uint64) {
 	memoryBudget = bytes
 }
 
-// checkMemoryBudget returns true if current heap allocation exceeds budget
+// debugMemStats controls whether ReadMemStats is called during CIDR merging.
+// ReadMemStats triggers a stop-the-world pause and hurts performance under load.
+// Enable only for debugging by setting NFTBAN_DEBUG_MEMSTATS=1.
+var debugMemStats = os.Getenv("NFTBAN_DEBUG_MEMSTATS") == "1"
+
+// checkMemoryBudget returns true if current heap allocation exceeds budget.
+// When debugMemStats is false (default), this is a no-op to avoid the
+// stop-the-world pause caused by runtime.ReadMemStats on the hot path.
 func checkMemoryBudget() bool {
+	if !debugMemStats {
+		return false
+	}
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m.HeapAlloc > memoryBudget

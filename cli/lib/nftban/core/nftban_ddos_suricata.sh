@@ -445,6 +445,14 @@ _nftban_ddos_suricata_process_alerts() {
             continue
         fi
 
+        # Skip whitelisted IPs (CDNs, partners, etc.)
+        if type -t nftban_is_whitelisted &>/dev/null; then
+            if nftban_is_whitelisted "$ip"; then
+                _nftban_ddos_suricata_log "INFO" "Skipping whitelisted IP: $ip"
+                continue
+            fi
+        fi
+
         # Calculate score
         local score
         score=$(_nftban_ddos_suricata_calculate_score "$ip" "$severity" "$signature")

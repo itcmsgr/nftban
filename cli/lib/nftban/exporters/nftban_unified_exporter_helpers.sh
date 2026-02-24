@@ -29,7 +29,7 @@ cleanup_temp_files() {
     local json_cache="${NFTBAN_CACHE_DIR}/metrics/combined.json"
     local gui_cache_dir="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}"
 
-    rm -f "${prom_file}.tmp" 2>/dev/null || true
+    rm -f "${prom_file}".tmp "${prom_file}".?????? 2>/dev/null || true
     rm -f "${json_cache}.tmp" 2>/dev/null || true
     rm -f "${BANDWIDTH_STATE}.tmp" 2>/dev/null || true
     rm -f "${METRICS_CACHE}.tmp" 2>/dev/null || true

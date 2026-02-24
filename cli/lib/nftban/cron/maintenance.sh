@@ -55,6 +55,8 @@ umask 027
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+# v1.19.0: Source .local override (user customizations survive package updates)
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # NFTables table names (must match nft_schema.sh)
 : "${NFTBAN_TABLE_IPV4:=ip nftban}"
