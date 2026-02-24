@@ -764,6 +764,20 @@ main() {
     fi
 
     case "$cmd" in
+        cloudflare)
+            # H28 fix: 'cloudflare' is an alias for 'trust' (Cloudflare IPs managed via trust module)
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_trust.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_trust.sh"
+                shift
+                nftban_cmd_trust "$@"
+                return $?
+            else
+                echo "ERROR: cmd_trust.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
         enable|disable|restart)
             # Route to system enable/disable/restart command
             if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_system.sh" ]]; then

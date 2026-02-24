@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.9.3 - Complete Package Builder
+# NFTBan - Complete Package Builder
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="build_nftban"

@@ -99,9 +99,15 @@ _download_package() {
 
             if curl -fsSL "${release_url}/SHA256SUMS" -o "${tmp_dir}/SHA256SUMS" 2>/dev/null; then
                 local expected_hash actual_hash
-                expected_hash=$(grep "${pkg_filename}" "${tmp_dir}/SHA256SUMS" | awk '{print $1}')
+                # C11 fix: anchor grep to exact filename to prevent substring matches (M38)
+                expected_hash=$(grep -E "^[0-9a-f]+[[:space:]]+\*?${pkg_filename}$" "${tmp_dir}/SHA256SUMS" | awk '{print $1}')
                 actual_hash=$(sha256sum "${output}" | awk '{print $1}')
-                if [[ -n "$expected_hash" && "$expected_hash" != "$actual_hash" ]]; then
+                if [[ -z "$expected_hash" ]]; then
+                    _update_log ERROR "Package not found in SHA256SUMS file - aborting (C11 fix)"
+                    rm -f "$output" "${tmp_dir}/SHA256SUMS"
+                    return 1
+                fi
+                if [[ "$expected_hash" != "$actual_hash" ]]; then
                     _update_log ERROR "Package checksum verification FAILED!"
                     rm -f "$output" "${tmp_dir}/SHA256SUMS"
                     return 1
@@ -109,7 +115,15 @@ _download_package() {
                 _update_log INFO "Package checksum verified: OK"
                 rm -f "${tmp_dir}/SHA256SUMS"
             else
-                _update_log WARN "SHA256SUMS not available - skipping verification"
+                # C11 fix: FAIL instead of silently skipping when SHA256SUMS unavailable
+                if [[ "${_NFTBAN_UPDATE_SKIP_CHECKSUM:-0}" -eq 1 ]]; then
+                    _update_log WARN "SHA256SUMS not available - skipping (--skip-checksum)"
+                else
+                    _update_log ERROR "SHA256SUMS not available - refusing to install unverified package"
+                    _update_log INFO "To force install without checksum: nftban update --force --skip-checksum"
+                    rm -f "$output"
+                    return 1
+                fi
             fi
 
             return 0
@@ -154,25 +168,28 @@ _update_via_rpm() {
         return 1
     fi
 
-    local pkg_name
+    local pkg_name tmp_dir tmp_file
     pkg_name=$(_get_distro_package_name)
-    local tmp_file="/tmp/${pkg_name}"
+    # H13 fix: Use mktemp directory instead of predictable /tmp path (symlink attack prevention)
+    tmp_dir=$(mktemp -d /tmp/nftban-update.XXXXXX)
+    tmp_file="${tmp_dir}/${pkg_name}"
 
     # Download
     if ! _download_package "$url" "$tmp_file"; then
+        rm -rf "$tmp_dir"
         return 1
     fi
 
     # Verify it's a valid RPM
     if ! rpm -qp "$tmp_file" &>/dev/null; then
         _update_log ERROR "Invalid RPM package (corrupted download?)"
-        rm -f "$tmp_file"
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
         return 1
     fi
 
     # VALIDATION: Check package compatibility with system
     if ! _validate_package_for_system "$tmp_file"; then
-        rm -f "$tmp_file"
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
         return 1
     fi
 
@@ -199,11 +216,11 @@ _update_via_rpm() {
         local pkg_exit="${PIPESTATUS[0]}"
         if [[ "$pkg_exit" -eq 0 ]]; then
             _update_log OK "RPM installed successfully"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 0
         else
             _update_log ERROR "RPM installation failed (exit code: $pkg_exit)"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 1
         fi
     else
@@ -213,11 +230,11 @@ _update_via_rpm() {
         local rpm_exit="${PIPESTATUS[0]}"
         if [[ "$rpm_exit" -eq 0 ]]; then
             _update_log OK "RPM installed successfully"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 0
         else
             _update_log ERROR "RPM installation failed (exit code: $rpm_exit)"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 1
         fi
     fi
@@ -253,25 +270,28 @@ _update_via_deb() {
         return 1
     fi
 
-    local pkg_name
+    local pkg_name tmp_dir tmp_file
     pkg_name=$(_get_distro_package_name)
-    local tmp_file="/tmp/${pkg_name}"
+    # H13 fix: Use mktemp directory instead of predictable /tmp path (symlink attack prevention)
+    tmp_dir=$(mktemp -d /tmp/nftban-update.XXXXXX)
+    tmp_file="${tmp_dir}/${pkg_name}"
 
     # Download
     if ! _download_package "$url" "$tmp_file"; then
+        rm -rf "$tmp_dir"
         return 1
     fi
 
     # Verify it's a valid DEB
     if ! dpkg-deb --info "$tmp_file" &>/dev/null; then
         _update_log ERROR "Invalid DEB package (corrupted download?)"
-        rm -f "$tmp_file"
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
         return 1
     fi
 
     # VALIDATION: Check package compatibility with system
     if ! _validate_package_for_system "$tmp_file"; then
-        rm -f "$tmp_file"
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
         return 1
     fi
 
@@ -306,14 +326,14 @@ _update_via_deb() {
         apt_result=$(apt-get install -y --allow-downgrades -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1) && {
             echo "$apt_result" | while IFS= read -r line; do echo "    $line"; done
             _update_log OK "DEB installed successfully"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 0
         }
     else
         apt_result=$(apt-get install -y -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1) && {
             echo "$apt_result" | while IFS= read -r line; do echo "    $line"; done
             _update_log OK "DEB installed successfully"
-            rm -f "$tmp_file"
+            rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
             return 0
         }
     fi
@@ -326,12 +346,12 @@ _update_via_deb() {
     # Retry after fixing
     if apt-get install -y -o Dpkg::Options::="--force-confnew" "$tmp_file" 2>&1; then
         _update_log OK "DEB installed successfully (after dependency fix)"
-        rm -f "$tmp_file"
+        rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
         return 0
     fi
 
     _update_log ERROR "DEB installation failed"
-    rm -f "$tmp_file"
+    rm -rf "${tmp_dir:-/tmp/nftban-update-cleanup}"
     return 1
 }
 

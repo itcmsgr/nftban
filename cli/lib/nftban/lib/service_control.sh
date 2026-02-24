@@ -11,9 +11,9 @@
 
 set -Eeuo pipefail
 
-# Guard against multiple sourcing
-[[ -n "${_NFTBAN_SERVICE_CONTROL_LOADED:-}" ]] && return 0
-readonly _NFTBAN_SERVICE_CONTROL_LOADED=1
+# Guard against multiple sourcing (C4 fix: unique guard name to avoid collision with nftban_service_control.sh)
+[[ -n "${_NFTBAN_SVC_CONTROL_LOADED:-}" ]] && return 0
+readonly _NFTBAN_SVC_CONTROL_LOADED=1
 
 # =============================================================================
 # CONFIGURATION
