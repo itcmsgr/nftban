@@ -342,6 +342,7 @@ cp etc/nftban/patterns.d/botscan/*.patterns %{buildroot}/etc/nftban/patterns.d/b
 
 # Logrotate configuration
 install -D -m 0644 install/config/nftban.logrotate %{buildroot}/etc/logrotate.d/nftban
+install -D -m 0644 install/config/nftban.logrotate %{buildroot}/etc/nftban/templates/nftban.logrotate
 install -D -m 0644 install/config/nftban-suricata.logrotate %{buildroot}/etc/nftban/templates/nftban-suricata.logrotate
 
 # Suricata profile templates and config directories
@@ -783,39 +784,75 @@ else
 fi
 
 # =============================================================================
-# STEP 0: Cleanup obsolete files from previous versions
+# STEP 0: Cleanup obsolete/stale files from ALL previous versions
 # =============================================================================
+# UNIFIED STALE CLEANUP — must match DEB postinst cleanup section
+# Add new entries here when files are moved/renamed/removed between versions.
 echo "[NFTBan] Cleaning up obsolete files from previous versions..."
 
-# Remove obsolete Polkit rules (v1.0.18 and earlier)
-rm -f /etc/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules.in 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
-
-# Remove obsolete Polkit actions
-rm -f /usr/share/polkit-1/actions/com.nftban.suricata.policy 2>/dev/null || true
-
-# Remove obsolete port-status rules (v1.0.15 and earlier - security risk)
-rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
-
-# Remove stale nested directories from previous versions (v1.13.9 and earlier)
-if [ -d "/usr/lib/nftban/lib/nftban" ]; then
-    rm -rf "/usr/lib/nftban/lib/nftban"
-    echo "[NFTBan] Removed stale: /usr/lib/nftban/lib/nftban/"
+# --- Binary paths (pre-1.8.13) ---
+if [ -f "/usr/bin/nftban" ] && [ ! -L "/usr/bin/nftban" ]; then
+    rm -f "/usr/bin/nftban"
+    echo "[NFTBan] Removed stale: /usr/bin/nftban (migrated to /usr/sbin)"
 fi
-if [ -d "/usr/lib/nftban/etc" ]; then
-    rm -rf "/usr/lib/nftban/etc"
-    echo "[NFTBan] Removed stale: /usr/lib/nftban/etc/"
+
+# --- Nested directories (pre-1.13.9) ---
+for stale_dir in "/usr/lib/nftban/lib/nftban" "/usr/lib/nftban/etc"; do
+    if [ -d "\$stale_dir" ]; then
+        rm -rf "\$stale_dir"
+        echo "[NFTBan] Removed stale dir: \$stale_dir"
+    fi
+done
+
+# --- Relocated shell scripts (pre-1.15) ---
+for stale_file in \
+    "/usr/lib/nftban/core/cmd_health.sh" \
+    "/usr/lib/nftban/json_output.sh" \
+    "/usr/lib/nftban/cmd_ui.sh"; do
+    if [ -f "\$stale_file" ]; then
+        rm -f "\$stale_file"
+        echo "[NFTBan] Removed stale: \$stale_file"
+    fi
+done
+
+# --- Obsolete Polkit rules (pre-1.0.18) ---
+for stale_polkit in \
+    /etc/polkit-1/rules.d/10-nftban-core.rules \
+    /etc/polkit-1/rules.d/20-nftban-suricata.rules \
+    /etc/polkit-1/rules.d/50-nftban-auth.rules \
+    /etc/polkit-1/rules.d/50-nftban-auth.rules.in \
+    /etc/polkit-1/rules.d/50-nftban-v030.rules \
+    /etc/polkit-1/rules.d/60-nftban-services.rules \
+    /etc/polkit-1/rules.d/50-nftban-port-status.rules \
+    /etc/polkit-1/rules.d/50-nftban-port-status.rules.in \
+    /usr/share/polkit-1/rules.d/10-nftban-core.rules \
+    /usr/share/polkit-1/rules.d/20-nftban-suricata.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-auth.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-v030.rules \
+    /usr/share/polkit-1/rules.d/60-nftban-services.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-port-status.rules \
+    /usr/share/polkit-1/actions/com.nftban.suricata.policy; do
+    if [ -f "\$stale_polkit" ]; then
+        rm -f "\$stale_polkit"
+        echo "[NFTBan] Removed stale polkit: \$stale_polkit"
+    fi
+done
+
+# --- Old systemd overrides (various versions) ---
+rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
+rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
+rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
+
+# --- Suricata blocks in main logrotate (pre-1.19.6) ---
+# Old versions had Suricata log blocks inline in /etc/logrotate.d/nftban
+# which breaks logrotate when Suricata user doesn't exist.
+# Now split to /etc/logrotate.d/nftban-suricata (conditionally installed).
+if [ -f /etc/logrotate.d/nftban ]; then
+    if grep -q "su suricata" /etc/logrotate.d/nftban 2>/dev/null; then
+        echo "[NFTBan] Detected old Suricata blocks in /etc/logrotate.d/nftban — replacing with clean version"
+        install -m 0644 /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
+    fi
 fi
 
 echo "[NFTBan] Obsolete file cleanup complete"
@@ -983,12 +1020,7 @@ else
 fi
 echo "[NFTBan] Configuring NFTBan v%{version}..."
 
-# STEP 1: Remove old systemd overrides (prevent conflicts with new package files)
-echo "[NFTBan] Removing old systemd overrides..."
-rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
-rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
-rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
-systemctl daemon-reload 2>/dev/null || true
+# STEP 1: (systemd overrides cleanup now in STEP 0 unified cleanup above)
 
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
@@ -1620,6 +1652,9 @@ fi
 %config(noreplace) %attr(640,root,nftban) /etc/nftban/blacklist.d/99-manual.conf
 %dir %attr(750,root,nftban) /etc/nftban/ports.d
 %dir %attr(750,root,nftban) /etc/nftban/rules.d
+%dir %attr(750,root,nftban) /etc/nftban/templates
+/etc/nftban/templates/nftban.logrotate
+/etc/nftban/templates/nftban-suricata.logrotate
 %dir %attr(750,nftban,nftban) /var/lib/nftban
 %dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
 %dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
@@ -2051,36 +2086,71 @@ set -e
 
 echo "[NFTBan] Configuring NFTBan v1.0.19..."
 
-# STEP 0: Cleanup obsolete files from previous versions
+# STEP 0: Cleanup obsolete/stale files from ALL previous versions
+# UNIFIED STALE CLEANUP — must match RPM %post and DEB postinst cleanup
 echo "[NFTBan] Cleaning up obsolete files from previous versions..."
 
-# Remove obsolete Polkit rules (v1.0.18 and earlier)
-rm -f /etc/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules.in 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
+# --- Binary paths (pre-1.8.13) ---
+if [ -f "/usr/bin/nftban" ] && [ ! -L "/usr/bin/nftban" ]; then
+    rm -f "/usr/bin/nftban"
+    echo "[NFTBan] Removed stale: /usr/bin/nftban (migrated to /usr/sbin)"
+fi
 
-# Remove obsolete Polkit actions
-rm -f /usr/share/polkit-1/actions/com.nftban.suricata.policy 2>/dev/null || true
+# --- Nested directories (pre-1.13.9) ---
+for stale_dir in "/usr/lib/nftban/lib/nftban" "/usr/lib/nftban/etc"; do
+    if [ -d "$stale_dir" ]; then
+        rm -rf "$stale_dir"
+        echo "[NFTBan] Removed stale dir: $stale_dir"
+    fi
+done
 
-# Remove obsolete port-status rules (v1.0.15 and earlier - security risk)
-rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
-rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null || true
-rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
+# --- Relocated shell scripts (pre-1.15) ---
+for stale_file in \
+    "/usr/lib/nftban/core/cmd_health.sh" \
+    "/usr/lib/nftban/json_output.sh" \
+    "/usr/lib/nftban/cmd_ui.sh"; do
+    if [ -f "$stale_file" ]; then
+        rm -f "$stale_file"
+        echo "[NFTBan] Removed stale: $stale_file"
+    fi
+done
 
-# Remove old systemd overrides (prevent conflicts with new package files)
-echo "[NFTBan] Removing old systemd overrides..."
+# --- Obsolete Polkit rules (pre-1.0.18) ---
+for stale_polkit in \
+    /etc/polkit-1/rules.d/10-nftban-core.rules \
+    /etc/polkit-1/rules.d/20-nftban-suricata.rules \
+    /etc/polkit-1/rules.d/50-nftban-auth.rules \
+    /etc/polkit-1/rules.d/50-nftban-auth.rules.in \
+    /etc/polkit-1/rules.d/50-nftban-v030.rules \
+    /etc/polkit-1/rules.d/60-nftban-services.rules \
+    /etc/polkit-1/rules.d/50-nftban-port-status.rules \
+    /etc/polkit-1/rules.d/50-nftban-port-status.rules.in \
+    /usr/share/polkit-1/rules.d/10-nftban-core.rules \
+    /usr/share/polkit-1/rules.d/20-nftban-suricata.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-auth.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-v030.rules \
+    /usr/share/polkit-1/rules.d/60-nftban-services.rules \
+    /usr/share/polkit-1/rules.d/50-nftban-port-status.rules \
+    /usr/share/polkit-1/actions/com.nftban.suricata.policy; do
+    if [ -f "$stale_polkit" ]; then
+        rm -f "$stale_polkit"
+        echo "[NFTBan] Removed stale polkit: $stale_polkit"
+    fi
+done
+
+# --- Old systemd overrides (various versions) ---
 rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
 rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
 rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true
+
+# --- Suricata blocks in main logrotate (pre-1.19.6) ---
+if [ -f /etc/logrotate.d/nftban ]; then
+    if grep -q "su suricata" /etc/logrotate.d/nftban 2>/dev/null; then
+        echo "[NFTBan] Detected old Suricata blocks in /etc/logrotate.d/nftban — replacing with clean version"
+        install -m 0644 /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
+    fi
+fi
 
 echo "[NFTBan] Obsolete file cleanup complete"
 
@@ -2671,6 +2741,7 @@ build_deb() {
     mkdir -p "${deb_root}/etc/logrotate.d"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/logrotate.d/nftban"
     mkdir -p "${deb_root}/etc/nftban/templates"
+    install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/nftban/templates/nftban.logrotate"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban-suricata.logrotate" "${deb_root}/etc/nftban/templates/nftban-suricata.logrotate"
 
     # Copy Suricata profile templates and create config directories

@@ -94,56 +94,93 @@ case "$1" in
         done
 
         # =====================================================================
-        # STEP 0.2: Cleanup old paths from pre-1.8.13 DEB packages
+        # STEP 0.2: Cleanup obsolete/stale files from ALL previous versions
         # =====================================================================
-        # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
-        if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
-            rm -f "/usr/bin/nftban"
-            log_info "Removed old CLI from /usr/bin/nftban (migrated to /usr/sbin)"
-        fi
-
-        # =====================================================================
-        # STEP 0.3: Cleanup obsolete/stale files from previous versions
-        # =====================================================================
+        # UNIFIED STALE CLEANUP — must match RPM %post cleanup section
+        # Add new entries here when files are moved/renamed/removed between versions.
+        # Each entry: version where it became stale, what replaced it.
         log_info "Cleaning up obsolete files from previous versions..."
         OBSOLETE_CLEANED=0
 
-        # Remove nested nftban directory (stale from old installs)
-        if [[ -d "/usr/lib/nftban/lib/nftban" ]]; then
-            rm -rf "/usr/lib/nftban/lib/nftban"
-            log_info "Removed stale: /usr/lib/nftban/lib/nftban/"
+        # --- Binary paths (pre-1.8.13) ---
+        # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
+        if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
+            rm -f "/usr/bin/nftban"
+            log_info "Removed stale: /usr/bin/nftban (migrated to /usr/sbin)"
             ((OBSOLETE_CLEANED++)) || true
         fi
 
-        # Remove nested etc directory (stale from old installs)
-        if [[ -d "/usr/lib/nftban/etc" ]]; then
-            rm -rf "/usr/lib/nftban/etc"
-            log_info "Removed stale: /usr/lib/nftban/etc/"
+        # --- Nested directories (pre-1.13.9) ---
+        for stale_dir in "/usr/lib/nftban/lib/nftban" "/usr/lib/nftban/etc"; do
+            if [[ -d "$stale_dir" ]]; then
+                rm -rf "$stale_dir"
+                log_info "Removed stale dir: $stale_dir"
+                ((OBSOLETE_CLEANED++)) || true
+            fi
+        done
+
+        # --- Relocated shell scripts (pre-1.15) ---
+        # These were moved to cli/ or helpers/ subdirectories
+        for stale_file in \
+            "/usr/lib/nftban/core/cmd_health.sh" \
+            "/usr/lib/nftban/json_output.sh" \
+            "/usr/lib/nftban/cmd_ui.sh"; do
+            if [[ -f "$stale_file" ]]; then
+                rm -f "$stale_file"
+                log_info "Removed stale: $stale_file"
+                ((OBSOLETE_CLEANED++)) || true
+            fi
+        done
+
+        # --- Obsolete Polkit rules (pre-1.0.18) ---
+        for stale_polkit in \
+            /etc/polkit-1/rules.d/10-nftban-core.rules \
+            /etc/polkit-1/rules.d/20-nftban-suricata.rules \
+            /etc/polkit-1/rules.d/50-nftban-auth.rules \
+            /etc/polkit-1/rules.d/50-nftban-auth.rules.in \
+            /etc/polkit-1/rules.d/50-nftban-v030.rules \
+            /etc/polkit-1/rules.d/60-nftban-services.rules \
+            /etc/polkit-1/rules.d/50-nftban-port-status.rules \
+            /etc/polkit-1/rules.d/50-nftban-port-status.rules.in \
+            /usr/share/polkit-1/rules.d/10-nftban-core.rules \
+            /usr/share/polkit-1/rules.d/20-nftban-suricata.rules \
+            /usr/share/polkit-1/rules.d/50-nftban-auth.rules \
+            /usr/share/polkit-1/rules.d/50-nftban-v030.rules \
+            /usr/share/polkit-1/rules.d/60-nftban-services.rules \
+            /usr/share/polkit-1/rules.d/50-nftban-port-status.rules \
+            /usr/share/polkit-1/actions/com.nftban.suricata.policy; do
+            if [[ -f "$stale_polkit" ]]; then
+                rm -f "$stale_polkit"
+                log_info "Removed stale polkit: $stale_polkit"
+                ((OBSOLETE_CLEANED++)) || true
+            fi
+        done
+
+        # --- Old systemd overrides (various versions) ---
+        # Remove user-space overrides that conflict with package-managed unit files
+        if ls /etc/systemd/system/nftban-*.service /etc/systemd/system/nftban-*.timer 2>/dev/null | grep -q .; then
+            rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
+            rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
+            rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
+            systemctl daemon-reload 2>/dev/null || true
+            log_info "Removed stale systemd overrides"
             ((OBSOLETE_CLEANED++)) || true
         fi
 
-        # Remove old cmd_health.sh at wrong location (moved to cli/)
-        if [[ -f "/usr/lib/nftban/core/cmd_health.sh" ]]; then
-            rm -f "/usr/lib/nftban/core/cmd_health.sh"
-            log_info "Removed stale: /usr/lib/nftban/core/cmd_health.sh"
-            ((OBSOLETE_CLEANED++)) || true
+        # --- Suricata blocks in main logrotate (pre-1.19.6) ---
+        # Old versions had Suricata log blocks inline in /etc/logrotate.d/nftban
+        # which breaks logrotate when Suricata user doesn't exist.
+        # Now split to /etc/logrotate.d/nftban-suricata (conditionally installed).
+        if [[ -f /etc/logrotate.d/nftban ]]; then
+            if grep -q "su suricata" /etc/logrotate.d/nftban 2>/dev/null; then
+                log_info "Detected old Suricata blocks in /etc/logrotate.d/nftban — replacing with clean version"
+                install -m 0644 /usr/lib/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || \
+                    install -m 0644 /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
+                ((OBSOLETE_CLEANED++)) || true
+            fi
         fi
 
-        # Remove json_output.sh at wrong location (moved to helpers/)
-        if [[ -f "/usr/lib/nftban/json_output.sh" ]]; then
-            rm -f "/usr/lib/nftban/json_output.sh"
-            log_info "Removed stale: /usr/lib/nftban/json_output.sh"
-            ((OBSOLETE_CLEANED++)) || true
-        fi
-
-        # Remove old cmd_ui.sh at root level (moved to cli/)
-        if [[ -f "/usr/lib/nftban/cmd_ui.sh" ]]; then
-            rm -f "/usr/lib/nftban/cmd_ui.sh"
-            log_info "Removed stale: /usr/lib/nftban/cmd_ui.sh"
-            ((OBSOLETE_CLEANED++)) || true
-        fi
-
-        [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Obsolete file cleanup complete"
+        [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Cleaned $OBSOLETE_CLEANED obsolete items"
 
         # =====================================================================
         # STEP 0.4: NFTBan is THE ONLY firewall - no coexistence
