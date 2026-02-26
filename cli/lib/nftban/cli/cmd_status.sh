@@ -1287,7 +1287,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-unified-exporter.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"

@@ -657,7 +657,7 @@ case "$1" in
             fi
 
             # Core timers (maintenance tasks) - with fallback
-            for timer in nftban-maintenance.timer nftban-health.timer nftban-queue.timer nftban-unified-exporter.timer; do
+            for timer in nftban-maintenance.timer nftban-health.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-unified-exporter.timer; do
                 if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then
                     systemctl enable "$timer" >/dev/null 2>&1 || true
                 fi
@@ -677,6 +677,8 @@ case "$1" in
             # Start timers
             systemctl start nftban-maintenance.timer >/dev/null 2>&1 || true
             systemctl start nftban-health.timer >/dev/null 2>&1 || true
+            systemctl start nftban-core-geoip.timer >/dev/null 2>&1 || true
+            systemctl start nftban-core-feeds.timer >/dev/null 2>&1 || true
 
             # Start queue timer only if unit file exists (BUG-005 fix)
             if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
