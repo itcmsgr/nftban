@@ -656,6 +656,14 @@ case "$1" in
                 timeout 10s nftban sync >/dev/null 2>&1 || log_warn "NFTBand sync failed (non-critical)"
             fi
 
+            # Install Suricata logrotate only if suricata user exists
+            if id suricata >/dev/null 2>&1; then
+                install -m 0644 /etc/nftban/templates/nftban-suricata.logrotate /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+                log_info "Suricata logrotate installed"
+            else
+                rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+            fi
+
             # Core timers (maintenance tasks) - with fallback
             for timer in nftban-maintenance.timer nftban-health.timer nftban-watchdog.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-unified-exporter.timer; do
                 if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then

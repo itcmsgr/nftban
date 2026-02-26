@@ -342,6 +342,7 @@ cp etc/nftban/patterns.d/botscan/*.patterns %{buildroot}/etc/nftban/patterns.d/b
 
 # Logrotate configuration
 install -D -m 0644 install/config/nftban.logrotate %{buildroot}/etc/logrotate.d/nftban
+install -D -m 0644 install/config/nftban-suricata.logrotate %{buildroot}/etc/nftban/templates/nftban-suricata.logrotate
 
 # Suricata profile templates and config directories
 mkdir -p %{buildroot}/etc/nftban/suricata/profiles
@@ -1180,6 +1181,14 @@ else
     timeout 10s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
 fi
 
+# Install Suricata logrotate only if suricata user exists
+if id suricata &>/dev/null; then
+    install -m 0644 /etc/nftban/templates/nftban-suricata.logrotate /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+    echo "[NFTBan] Suricata logrotate installed"
+else
+    rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+fi
+
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
@@ -1506,6 +1515,7 @@ if [ \$1 -eq 0 ]; then
 
     # Remove logrotate configuration
     rm -f /etc/logrotate.d/nftban 2>/dev/null || true
+    rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 
     # Remove polkit rules (policies handled by RPM)
     rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
@@ -2268,6 +2278,14 @@ else
     timeout 10s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
 fi
 
+# Install Suricata logrotate only if suricata user exists
+if id suricata &>/dev/null; then
+    install -m 0644 /etc/nftban/templates/nftban-suricata.logrotate /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+    echo "[NFTBan] Suricata logrotate installed"
+else
+    rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+fi
+
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
@@ -2652,6 +2670,8 @@ build_deb() {
     # Install logrotate configuration
     mkdir -p "${deb_root}/etc/logrotate.d"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/logrotate.d/nftban"
+    mkdir -p "${deb_root}/etc/nftban/templates"
+    install -m 0644 "${PROJECT_ROOT}/install/config/nftban-suricata.logrotate" "${deb_root}/etc/nftban/templates/nftban-suricata.logrotate"
 
     # Copy Suricata profile templates and create config directories
     mkdir -p "${deb_root}/etc/nftban/suricata/profiles"
