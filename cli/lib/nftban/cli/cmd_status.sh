@@ -1001,7 +1001,14 @@ output_terminal() {
     echo "  nftban help              Show all commands"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    return 0
+    # v1.19.5: Exit code reflects health status (L53 fix)
+    # 0 = OK, 1 = WARNING/UNKNOWN, 2 = ERROR/CRITICAL
+    case "$health_status" in
+        OK)       return 0 ;;
+        WARNING*) return 1 ;;
+        ERROR*|CRITICAL*) return 2 ;;
+        *)        return 1 ;;  # UNKNOWN or unrecognized
+    esac
 }
 
 output_json() {
@@ -1298,7 +1305,9 @@ output_json() {
 
     # Exit marker for testing validation
     command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "status"
-    return 0
+
+    # v1.19.5: Exit code reflects health status (L53 fix)
+    return "$health_exit"
 }
 
 check_service_clean() {

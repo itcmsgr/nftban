@@ -49,7 +49,7 @@ ExecStart=/usr/lib/nftban/exporters/nftban_unified_exporter.sh
 CPUQuota=15%
 MemoryMax=128M
 TasksMax=32
-TimeoutStartSec=60s
+TimeoutStartSec=120s
 TimeoutStopSec=30s
 
 # =============================================================================

@@ -336,7 +336,10 @@ func (c *Collector) checkThresholds(snapshot *Snapshot) {
 func (c *Collector) logAlert(alert Alert) {
 	// Ensure log directory exists
 	logDir := filepath.Dir(c.config.AlertsLog)
-	os.MkdirAll(logDir, 0750)
+	if err := os.MkdirAll(logDir, 0750); err != nil {
+		log.Printf("stats: failed to create log directory %s: %v", logDir, err)
+		return
+	}
 
 	f, err := os.OpenFile(c.config.AlertsLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 	if err != nil {

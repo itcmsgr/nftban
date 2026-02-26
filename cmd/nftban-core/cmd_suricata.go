@@ -290,7 +290,7 @@ func cmdSuricataFilters(cfg *nftbanconf.Config) error {
 		)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 	fmt.Println("Legend:")
 	fmt.Println("  Action modes:")
@@ -1063,7 +1063,7 @@ func cmdSuricataSIDTop() error {
 			signature,
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 
 	return nil
@@ -1124,7 +1124,7 @@ func cmdSuricataSIDRecent() error {
 			signature,
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 
 	return nil
@@ -1364,7 +1364,7 @@ func cmdSuricataCustomList() error {
 
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", rule.SID, status, rule.Action, message)
 	}
-	w.Flush()
+	_ = w.Flush()
 
 	fmt.Println()
 	fmt.Printf("Total: %d custom rules\n", len(rules))

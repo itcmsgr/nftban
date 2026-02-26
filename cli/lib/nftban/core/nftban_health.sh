@@ -497,10 +497,14 @@ nftban_health_check_all() {
     nftban_health_check_config || ((warnings++))
     nftban_health_check_nftban_bin || ((errors++))
     nftban_health_check_queue_processor "$auto_heal" || ((errors++))
+    nftban_health_check_resources || ((warnings++))
 
     # Run security checks
     nftban_health_check_nftables_security || ((warnings++))
     nftban_health_check_conflicting_firewalls || ((warnings++))
+    nftban_health_check_ssh_port || ((warnings++))
+    nftban_health_check_systemd_hardening || ((warnings++))
+    nftban_health_check_memory_protection || ((warnings++))
 
     # Run service checks
     nftban_health_check_services || ((warnings++))
@@ -509,22 +513,31 @@ nftban_health_check_all() {
     nftban_health_check_protection || ((warnings++))
     nftban_health_check_maintenance_lock "$auto_heal" || ((warnings++))
     nftban_health_check_login_monitor_ipc || ((errors++))
+    nftban_health_check_suricata 2>/dev/null || ((warnings++))
+    nftban_health_check_suricata_capture 2>/dev/null || ((warnings++))
 
     # Run structure validation checks
     nftban_health_check_fhs || ((warnings++))
     nftban_health_check_nft_schema || ((errors++))
     nftban_health_check_polkit "$auto_heal" || ((warnings++))
+    nftban_health_check_registry || ((warnings++))
+    nftban_health_check_cli_errors || ((warnings++))
 
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
     nftban_health_check_geoip 2>/dev/null || true
     nftban_health_check_geoban 2>/dev/null || true
     nftban_health_check_rbl 2>/dev/null || true
+    nftban_health_check_databases 2>/dev/null || true
     nftban_health_check_metrics 2>/dev/null || true
     nftban_health_check_zabbix 2>/dev/null || true
     nftban_health_check_connectors 2>/dev/null || true
     nftban_health_check_watchdog 2>/dev/null || true
     nftban_health_check_portscan_prefix 2>/dev/null || ((warnings++))
+    nftban_health_check_v030_helpers 2>/dev/null || true
+    nftban_health_check_bash_completion 2>/dev/null || true
+    nftban_health_check_gui 2>/dev/null || true
+    nftban_health_check_pro 2>/dev/null || true
 
     # Auto-heal if requested
     if [[ "$auto_heal" == "1" ]] && [[ $errors -gt 0 || $warnings -gt 0 ]]; then
