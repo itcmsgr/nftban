@@ -357,7 +357,7 @@ EOF
     # Submit to Pro endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_response
-    _pro_tmp_response=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX)
+    _pro_tmp_response=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
     trap 'rm -f "$_pro_tmp_response"' RETURN
 
     local response
@@ -438,7 +438,7 @@ nftban_pro_check_license() {
     # Query status endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_license
-    _pro_tmp_license=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX)
+    _pro_tmp_license=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
     trap 'rm -f "$_pro_tmp_license"' RETURN
 
     local http_code
