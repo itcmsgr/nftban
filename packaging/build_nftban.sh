@@ -1184,6 +1184,7 @@ fi
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
+systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
 
@@ -2271,6 +2272,7 @@ fi
 echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
+systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
 

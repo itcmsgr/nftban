@@ -846,6 +846,7 @@ output_terminal() {
         ["nftban-unified-exporter.timer"]="Unified metrics export"
         ["nftban-core-feeds.timer"]="Threat feeds update"
         ["nftban-core-geoip.timer"]="GeoIP database update"
+        ["nftban-watchdog.timer"]="System watchdog"
         ["nftban-queue.timer"]="Queue processing"
         ["nftban-suricata-update.timer"]="Suricata rules update"
         ["nftban-snapshot.timer"]="Snapshot creation"
