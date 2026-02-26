@@ -25,6 +25,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 )
@@ -81,27 +82,35 @@ func NewDataResponse(data interface{}) APIResponse {
 func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(NewDataResponse(data))
+	if err := json.NewEncoder(w).Encode(NewDataResponse(data)); err != nil {
+		log.Printf("[WARN] failed to encode JSON response: %v", err)
+	}
 }
 
 // JSONSuccess sends a success message with optional data
 func JSONSuccess(w http.ResponseWriter, message string, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(NewSuccessResponse(message, data))
+	if err := json.NewEncoder(w).Encode(NewSuccessResponse(message, data)); err != nil {
+		log.Printf("[WARN] failed to encode JSON response: %v", err)
+	}
 }
 
 // JSONError sends an error response with specified status code
 func JSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(NewErrorResponse(msg))
+	if err := json.NewEncoder(w).Encode(NewErrorResponse(msg)); err != nil {
+		log.Printf("[WARN] failed to encode JSON error response: %v", err)
+	}
 }
 
 // JSONRaw sends a raw response object (for backward compatibility)
 func JSONRaw(w http.ResponseWriter, status int, response interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("[WARN] failed to encode JSON response: %v", err)
+	}
 }
 

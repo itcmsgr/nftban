@@ -242,16 +242,19 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 
 	// Step 6: Cleanup backup
 	if _, err := os.Stat(dbBackup); err == nil {
-		os.Remove(dbBackup)
+		if err := os.Remove(dbBackup); err != nil {
+			fmt.Printf("Warning: failed to remove backup: %v\n", err)
+		}
 	}
 
 	// Success!
-	fileInfo, _ := os.Stat(dbFile)
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println("✅ GeoIP database updated successfully!")
 	fmt.Println()
 	fmt.Printf("Database: %s\n", dbFile)
-	fmt.Printf("Size: %.1f MB\n", float64(fileInfo.Size())/1024/1024)
+	if fileInfo, err := os.Stat(dbFile); err == nil {
+		fmt.Printf("Size: %.1f MB\n", float64(fileInfo.Size())/1024/1024)
+	}
 	fmt.Println()
 	fmt.Println("The database is now ready for IP lookups.")
 	fmt.Println("Use: nftban-geoip lookup <IP>")

@@ -285,21 +285,8 @@ func WithAuth(handler http.HandlerFunc, username, password string) http.HandlerF
 	}
 }
 
-// WithCORS wraps a handler with CORS headers
-func WithCORS(handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		handler(w, r)
-	}
-}
+// BUG-H6 FIX: Removed unused WithCORS function that had Access-Control-Allow-Origin: *
+// If CORS support is needed in the future, use a configurable origin whitelist.
 
 // =============================================================================
 // Response Types

@@ -1066,13 +1066,22 @@ nftban_login_track_failed() {
                         if [[ ! -S "$ipc_socket" ]]; then
                             nftban_login_alert_log "ERROR: Cannot ban $ip - daemon not running (socket missing: $ipc_socket)"
                         else
-                            # Execute ban with captured error for debugging
+                            # Execute ban with retry on failure (BUG-L61 FIX)
                             # Capture exit code properly before || true prevents set -e crash
-                            local ban_output ban_exit
-                            ban_output=$("$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>&1) && ban_exit=0 || ban_exit=$?
-                            if [[ $ban_exit -ne 0 ]]; then
-                                nftban_login_alert_log "ERROR: Ban failed (exit=$ban_exit): $ban_output"
-                            fi
+                            local ban_output ban_exit ban_retries=0 ban_max_retries=3
+                            while [[ $ban_retries -lt $ban_max_retries ]]; do
+                                ban_output=$("$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>&1) && ban_exit=0 || ban_exit=$?
+                                if [[ $ban_exit -eq 0 ]]; then
+                                    break
+                                fi
+                                ((ban_retries++))
+                                if [[ $ban_retries -lt $ban_max_retries ]]; then
+                                    nftban_login_alert_log "WARN: Ban attempt $ban_retries/$ban_max_retries failed for $ip, retrying in ${ban_retries}s..."
+                                    sleep "$ban_retries"
+                                else
+                                    nftban_login_alert_log "ERROR: Ban failed after $ban_max_retries attempts (exit=$ban_exit): $ban_output"
+                                fi
+                            done
                         fi
                     fi
 

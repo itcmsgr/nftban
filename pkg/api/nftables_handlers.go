@@ -186,7 +186,11 @@ func NFTablesSaveHandler(w http.ResponseWriter, r *http.Request) {
 	backupPathWithTime := configDir + "/backups/nftables_" + timestamp + ".conf"
 
 	// Create backups directory if it doesn't exist
-	os.MkdirAll(configDir+"/backups", 0750)
+	if err := os.MkdirAll(configDir+"/backups", 0750); err != nil {
+		log.Printf("[ERROR] Failed to create backups directory: %v", err)
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to create backup directory"})
+		return
+	}
 
 	// Save with timestamp — v1.19.0: permissions 0640 (R36)
 	if err := os.WriteFile(backupPathWithTime, []byte(req.Ruleset), 0640); err != nil {
