@@ -30,6 +30,10 @@
 # =============================================================================
 set -Eeuo pipefail
 
+# shellcheck disable=SC2034,SC2154
+# SC2034: WATCHDOG_RESULTS/WATCHDOG_ALERTS appear unused - they are exported associative arrays used by parent
+# SC2154: Associative array keys appear as unassigned variables - they are hash keys, not variables
+
 # Prevent double-loading
 [[ -n "${NFTBAN_WATCHDOG_CHECKS_LOADED:-}" ]] && return 0
 readonly NFTBAN_WATCHDOG_CHECKS_LOADED=1
