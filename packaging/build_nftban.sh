@@ -1524,22 +1524,33 @@ find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || tr
 find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
 %preun
-# Remove immutable flag before uninstall/upgrade to allow RPM to replace/remove files
-if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
-    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-fi
-%systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer
+# Remove immutable flags before uninstall/upgrade
+for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+    if [ -f "\$immutable_file" ]; then
+        chattr -i "\$immutable_file" 2>/dev/null || true
+    fi
+done
+# FULL list of all systemd units — must match DEB prerm
+%systemd_preun nftband.socket nftband.service nftban-core.service nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-watchdog.service nftban-watchdog.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer nftban-queue.service nftban-queue.timer nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service
 
 %postun
-%systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service nftban-unified-exporter.service
+%systemd_postun_with_restart nftband.service nftban-core.service nftban-maintenance.service nftban-health.service nftban-watchdog.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service nftban-unified-exporter.service nftban-queue.service
 
-# Inform user about leftover files on complete removal
+# =============================================================================
+# Complete removal ($1 -eq 0) — FULL CLEANUP
+# Must match DEB postrm purge section
+# =============================================================================
 if [ \$1 -eq 0 ]; then
-    # Remove nftables tables (CRITICAL)
+    echo "[NFTBan] Complete removal — cleaning up all artifacts..."
+
+    # Remove nftables tables (CRITICAL — firewall rules persist otherwise)
     if command -v nft >/dev/null 2>&1; then
         nft delete table ip nftban 2>/dev/null || true
         nft delete table ip6 nftban 2>/dev/null || true
     fi
+
+    # Remove runtime directories
+    rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
     # Remove tmpfiles.d configuration
     rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
@@ -1549,15 +1560,32 @@ if [ \$1 -eq 0 ]; then
     rm -f /etc/logrotate.d/nftban 2>/dev/null || true
     rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 
-    # Remove polkit rules (policies handled by RPM)
+    # Remove polkit rules and actions
     rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
+    rm -f /usr/share/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
+    rm -f /usr/share/polkit-1/actions/com.nftban.* 2>/dev/null || true
 
-    # Note: /etc/nftban is preserved by RPM %config(noreplace)
-    # User can remove manually: rm -rf /etc/nftban /var/lib/nftban /var/log/nftban
+    # Remove yq symlink (only if it points to our bundled binary)
+    if [ -L /usr/bin/yq ] && readlink /usr/bin/yq | grep -q nftban; then
+        rm -f /usr/bin/yq 2>/dev/null || true
+    fi
 
-    echo "nftban: Configuration files in /etc/nftban/ have been preserved."
-    echo "nftban: Log files in /var/log/nftban/ have been preserved."
-    echo "nftban: User accounts and groups have NOT been removed."
+    # Remove NFTBan include from system nftables config (distro-aware paths)
+    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+        if [ -f "\$nft_conf" ]; then
+            sed -i '/nftban/d' "\$nft_conf" 2>/dev/null || true
+        fi
+    done
+
+    # Remove ALL configuration, data, logs, cache directories
+    rm -rf /etc/nftban 2>/dev/null || true
+    rm -rf /var/lib/nftban 2>/dev/null || true
+    rm -rf /var/log/nftban 2>/dev/null || true
+    rm -rf /var/cache/nftban 2>/dev/null || true
+    rm -rf /usr/share/nftban 2>/dev/null || true
+
+    echo "[NFTBan] Complete removal finished."
+    echo "[NFTBan] User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
 fi
 
 %files

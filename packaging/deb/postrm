@@ -3,65 +3,35 @@ set -e
 
 case "$1" in
     purge)
-        # Remove UI-specific configuration files (only if they exist)
-        [ -f /etc/nftban/ui.conf ] && rm -f /etc/nftban/ui.conf
-        [ -f /etc/nftban/ui-whitelist.conf ] && rm -f /etc/nftban/ui-whitelist.conf
-        [ -f /etc/nftban/ui-jwt-secret ] && rm -f /etc/nftban/ui-jwt-secret
+        # =============================================================================
+        # FULL CLEANUP — must match RPM %postun ($1 -eq 0) section
+        # =============================================================================
 
-        # Remove UI SSL certificates (only if directory exists and is not empty)
-        if [ -d /etc/nftban/ssl ]; then
-            [ -f /etc/nftban/ssl/cert.pem ] && rm -f /etc/nftban/ssl/cert.pem
-            [ -f /etc/nftban/ssl/key.pem ] && rm -f /etc/nftban/ssl/key.pem
-            rmdir /etc/nftban/ssl 2>/dev/null || true  # Only if empty
-        fi
+        # Remove runtime directories
+        rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
-        # Remove UI log files
-        rm -f /var/log/nftban/ui-*.log 2>/dev/null || true
+        # Purge ALL systemd units (FULL list — must match RPM %preun)
+        for unit in \
+            nftband.socket nftband.service \
+            nftban-core.service \
+            nftban-maintenance.timer nftban-maintenance.service \
+            nftban-health.timer nftban-health.service \
+            nftban-watchdog.timer nftban-watchdog.service \
+            nftban-login-monitor.service \
+            nftban-core-geoip.timer nftban-core-geoip.service \
+            nftban-core-feeds.timer nftban-core-feeds.service \
+            nftban-unified-exporter.timer nftban-unified-exporter.service \
+            nftban-queue.timer nftban-queue.service \
+            nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
+            deb-systemd-helper purge "$unit" >/dev/null 2>&1 || true
+            deb-systemd-helper unmask "$unit" >/dev/null 2>&1 || true
+        done
 
-        # Runtime directories will be removed automatically by systemd on service stop
-        # But clean them manually if still exist
-        [ -d /run/nftban-ui ] && rm -rf /run/nftban-ui
-        [ -S /run/nftban/nftband.sock ] && rm -f /run/nftban/nftband.sock
-        [ -d /run/nftban ] && rmdir /run/nftban 2>/dev/null || true
-
-        # Disable NFTBand daemon units
-        deb-systemd-helper purge nftband.socket >/dev/null 2>&1 || true
-        deb-systemd-helper purge nftband.service >/dev/null 2>&1 || true
-        deb-systemd-helper unmask nftband.socket >/dev/null 2>&1 || true
-        deb-systemd-helper unmask nftband.service >/dev/null 2>&1 || true
-
-        # Disable unified exporter units
-        deb-systemd-helper purge nftban-unified-exporter.timer >/dev/null 2>&1 || true
-        deb-systemd-helper purge nftban-unified-exporter.service >/dev/null 2>&1 || true
-        deb-systemd-helper unmask nftban-unified-exporter.timer >/dev/null 2>&1 || true
-        deb-systemd-helper unmask nftban-unified-exporter.service >/dev/null 2>&1 || true
-
-        # Disable core timer units
-        deb-systemd-helper purge nftban-maintenance.timer >/dev/null 2>&1 || true
-        deb-systemd-helper purge nftban-maintenance.service >/dev/null 2>&1 || true
-        deb-systemd-helper purge nftban-health.timer >/dev/null 2>&1 || true
-        deb-systemd-helper purge nftban-health.service >/dev/null 2>&1 || true
-
-        # Disable Web UI systemd units
-        deb-systemd-helper purge nftban-ui.service >/dev/null || true
-        deb-systemd-helper purge nftban-ui-auth.socket >/dev/null || true
-        deb-systemd-helper purge nftban-ui-auth.service >/dev/null || true
-        deb-systemd-helper unmask nftban-ui.service >/dev/null || true
-        deb-systemd-helper unmask nftban-ui-auth.socket >/dev/null || true
-        deb-systemd-helper unmask nftban-ui-auth.service >/dev/null || true
-
-        # Remove nftables tables (CRITICAL - firewall rules persist otherwise)
+        # Remove nftables tables (CRITICAL — firewall rules persist otherwise)
         if command -v nft >/dev/null 2>&1; then
             nft delete table ip nftban 2>/dev/null || true
             nft delete table ip6 nftban 2>/dev/null || true
         fi
-
-        # Remove ALL configuration and data directories
-        rm -rf /etc/nftban 2>/dev/null || true
-        rm -rf /var/lib/nftban 2>/dev/null || true
-        rm -rf /var/log/nftban 2>/dev/null || true
-        rm -rf /var/cache/nftban 2>/dev/null || true
-        rm -rf /usr/share/nftban 2>/dev/null || true
 
         # Remove tmpfiles.d configuration
         rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
@@ -69,15 +39,35 @@ case "$1" in
 
         # Remove logrotate configuration
         rm -f /etc/logrotate.d/nftban 2>/dev/null || true
+        rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 
         # Remove polkit policies and rules
         rm -f /usr/share/polkit-1/actions/com.nftban.* 2>/dev/null || true
         rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
+        rm -f /usr/share/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
 
-        # Informational message
+        # Remove yq symlink (only if it points to our bundled binary)
+        if [ -L /usr/bin/yq ] && readlink /usr/bin/yq | grep -q nftban; then
+            rm -f /usr/bin/yq 2>/dev/null || true
+        fi
+
+        # Remove NFTBan include from system nftables config (distro-aware paths)
+        for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+            if [ -f "$nft_conf" ]; then
+                sed -i '/nftban/d' "$nft_conf" 2>/dev/null || true
+            fi
+        done
+
+        # Remove ALL configuration, data, logs, cache directories
+        rm -rf /etc/nftban 2>/dev/null || true
+        rm -rf /var/lib/nftban 2>/dev/null || true
+        rm -rf /var/log/nftban 2>/dev/null || true
+        rm -rf /var/cache/nftban 2>/dev/null || true
+        rm -rf /usr/share/nftban 2>/dev/null || true
+
         echo "nftban: Complete purge finished."
-        echo "nftban: All configuration, data, logs, cache, and firewall rules have been removed."
-        echo "nftban: User accounts and groups have NOT been removed (manual cleanup required if needed)."
+        echo "nftban: All configuration, data, logs, cache, and firewall rules removed."
+        echo "nftban: User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
         ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
