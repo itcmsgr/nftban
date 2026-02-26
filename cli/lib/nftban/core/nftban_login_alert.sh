@@ -1076,24 +1076,10 @@ nftban_login_track_failed() {
                         fi
                     fi
 
-                    # Write to bans.log for stats integration (keeps both logs for compatibility)
-                    # Get country code for bans.log entry
-                    local country_code="UNK"
-                    if [[ "$NFTBAN_LOGIN_ALERT_GEOIP" == "true" ]]; then
-                        # Extract just the country code from geoip output (e.g., "US" from "US, United States")
-                        local geoip_data
-                        geoip_data=$(nftban_login_get_geoip "$ip" 2>/dev/null)
-                        if [[ -n "$geoip_data" && "$geoip_data" != "GeoIP"* && "$geoip_data" != "Unknown" ]]; then
-                            # Extract first field (country code) if comma-separated
-                            country_code="${geoip_data%%,*}"
-                            country_code="${country_code%% *}"  # Remove trailing spaces
-                            # Ensure it's a valid 2-letter code
-                            if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
-                                country_code="UNK"
-                            fi
-                        fi
-                    fi
-                    nftban_login_write_bans_log "$ip" "$ban_reason" "$country_code"
+                    # BUG-L60 FIX: Removed bash-side bans.log write to eliminate duplicate entries.
+                    # The Go daemon (banlog.LogBan()) is the SINGLE WRITER to bans.log.
+                    # The ban command at line 1072 triggers the daemon which writes to bans.log.
+                    # Previous code here called nftban_login_write_bans_log() creating a second entry.
                 fi
 
                 # Reset counter

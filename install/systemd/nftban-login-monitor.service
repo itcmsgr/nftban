@@ -22,7 +22,7 @@
 [Unit]
 Description=NFTBan Login Monitor
 Documentation=https://nftban.com
-After=network.target sshd.service
+After=network.target sshd.service systemd-journald.service
 Wants=sshd.service
 
 [Service]
