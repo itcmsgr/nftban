@@ -92,19 +92,23 @@ func ParseFeedLine(line string) (*ParsedEntry, error) {
 	}
 
 	// Parse IP range (e.g., "1.2.3.4-1.2.3.10")
-	// For single entry return, just return the start IP
-	// Use ParseFeedLineMulti for full range expansion
+	// BUG-L18 FIX: Return multiple entries via ParseFeedLineMulti instead.
+	// For backward compatibility, ParseFeedLine returns the start IP as /32.
 	if strings.Contains(ipStr, "-") {
 		parts := strings.SplitN(ipStr, "-", 2)
 		if len(parts) == 2 {
 			startIP := net.ParseIP(strings.TrimSpace(parts[0]))
 			endIP := net.ParseIP(strings.TrimSpace(parts[1]))
 			if startIP != nil && endIP != nil {
-				// Return the start IP; use ParseFeedLineMulti for full range
+				isV4 := startIP.To4() != nil
+				suffix := "/32"
+				if !isV4 {
+					suffix = "/128"
+				}
 				return &ParsedEntry{
-					IPv4:   startIP.To4() != nil,
-					IsCIDR: false,
-					Value:  startIP.String(),
+					IPv4:   isV4,
+					IsCIDR: true,
+					Value:  startIP.String() + suffix,
 				}, nil
 			}
 			return nil, fmt.Errorf("invalid IP range: %s", ipStr)
@@ -125,6 +129,109 @@ func ParseFeedLine(line string) (*ParsedEntry, error) {
 		IsCIDR: false,
 		Value:  normalized,
 	}, nil
+}
+
+// ParseFeedLineMulti parses a line and returns multiple entries for IP ranges.
+// For single IPs and CIDRs, returns a single-element slice.
+// For IP ranges "x.x.x.x-y.y.y.y", expands to individual /32 or /128 entries.
+// BUG-L18 FIX: This is the proper handler for IP range feed entries.
+func ParseFeedLineMulti(line string) ([]*ParsedEntry, error) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+		return nil, nil
+	}
+
+	// Handle inline comments
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if idx := strings.Index(line, ";"); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	ipStr := fields[0]
+
+	// Check for IP range
+	if strings.Contains(ipStr, "-") && !strings.Contains(ipStr, "/") {
+		parts := strings.SplitN(ipStr, "-", 2)
+		if len(parts) == 2 {
+			startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+			endIP := net.ParseIP(strings.TrimSpace(parts[1]))
+			if startIP == nil || endIP == nil {
+				return nil, fmt.Errorf("invalid IP range: %s", ipStr)
+			}
+
+			isV4 := startIP.To4() != nil
+			var entries []*ParsedEntry
+
+			// Expand range to individual IPs (cap at 65536 to prevent OOM)
+			const maxExpand = 65536
+			current := make(net.IP, len(startIP))
+			copy(current, startIP)
+			for i := 0; i < maxExpand; i++ {
+				if bytesCompare(current, endIP) > 0 {
+					break
+				}
+				suffix := "/32"
+				if !isV4 {
+					suffix = "/128"
+				}
+				entries = append(entries, &ParsedEntry{
+					IPv4:   isV4,
+					IsCIDR: true,
+					Value:  current.String() + suffix,
+				})
+				current = incrementIP(current)
+			}
+			if len(entries) == 0 {
+				return nil, fmt.Errorf("empty IP range: %s", ipStr)
+			}
+			if bytesCompare(current, endIP) <= 0 {
+				return nil, fmt.Errorf("IP range too large (>%d): %s", maxExpand, ipStr)
+			}
+			return entries, nil
+		}
+	}
+
+	// Non-range: delegate to ParseFeedLine
+	entry, err := ParseFeedLine(line)
+	if entry == nil {
+		return nil, err
+	}
+	return []*ParsedEntry{entry}, err
+}
+
+// incrementIP returns the next IP address
+func incrementIP(ip net.IP) net.IP {
+	next := make(net.IP, len(ip))
+	copy(next, ip)
+	for i := len(next) - 1; i >= 0; i-- {
+		next[i]++
+		if next[i] != 0 {
+			break
+		}
+	}
+	return next
+}
+
+// bytesCompare compares two IPs as byte slices
+func bytesCompare(a, b net.IP) int {
+	// Normalize to same length
+	a16 := a.To16()
+	b16 := b.To16()
+	for i := range a16 {
+		if a16[i] < b16[i] {
+			return -1
+		}
+		if a16[i] > b16[i] {
+			return 1
+		}
+	}
+	return 0
 }
 
 // ParseFeedLineSilent parses a line and returns nil for both skip and error cases

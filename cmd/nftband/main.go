@@ -42,7 +42,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // pprof handlers - only active when startPprof() is called
+	nethttpprof "net/http/pprof" // BUG-H4 FIX: explicit import instead of blank import to avoid polluting DefaultServeMux
 	"os"
 	"os/signal"
 	"os/user"
@@ -1869,19 +1869,29 @@ func (d *Daemon) startHTTP() error {
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":  "ok",
 			"version": version.Version,
 		})
 	})
 
 	// Prometheus metrics endpoint
-	mux.Handle("/metrics", promhttp.Handler())
+	// BUG-H5 FIX: Restrict /metrics to localhost only (prevents information disclosure)
+	mux.Handle("/metrics", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host != "127.0.0.1" && host != "::1" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		promhttp.Handler().ServeHTTP(w, r)
+	}))
 
 	// Status endpoint
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		stats := d.bus.Stats()
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data": map[string]any{
 				"version":      version.Version,
@@ -1893,8 +1903,9 @@ func (d *Daemon) startHTTP() error {
 
 	// Modules endpoint
 	mux.HandleFunc("/api/v1/modules", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		statuses := d.registry.StatusAll()
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data":    statuses,
 		})
@@ -1920,13 +1931,18 @@ func (d *Daemon) startHTTP() error {
 // startPprof starts a pprof HTTP server for profiling
 // The server listens on localhost only (127.0.0.1:6060) for security
 // SECURITY: pprof exposes sensitive runtime information - only enable for debugging
+// BUG-H4 FIX: Uses a dedicated ServeMux instead of DefaultServeMux
 func (d *Daemon) startPprof() {
-	// pprof handlers are already registered by the blank import
-	// We just need to start a server on the pprof port
+	pprofMux := http.NewServeMux()
+	pprofMux.HandleFunc("/debug/pprof/", nethttpprof.Index)
+	pprofMux.HandleFunc("/debug/pprof/cmdline", nethttpprof.Cmdline)
+	pprofMux.HandleFunc("/debug/pprof/profile", nethttpprof.Profile)
+	pprofMux.HandleFunc("/debug/pprof/symbol", nethttpprof.Symbol)
+	pprofMux.HandleFunc("/debug/pprof/trace", nethttpprof.Trace)
 	go func() {
 		log.Println("WARNING: pprof profiling enabled - disable in production (unset NFTBAN_ENABLE_PPROF or remove --profile)")
 		log.Printf("pprof server listening on http://%s/debug/pprof/", PprofAddr)
-		if err := http.ListenAndServe(PprofAddr, nil); err != nil {
+		if err := http.ListenAndServe(PprofAddr, pprofMux); err != nil {
 			log.Printf("pprof server error: %v", err)
 		}
 	}()
@@ -3365,7 +3381,10 @@ func (d *Daemon) captureCPUProfile(path string, seconds int) error {
 // logProfileCapture logs profile capture to profiles.log
 func (d *Daemon) logProfileCapture(logPath, profileType, filename string) {
 	// Ensure directory exists
-	os.MkdirAll(filepath.Dir(logPath), 0750)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0750); err != nil {
+		log.Printf("stats: failed to create profile log directory: %v", err)
+		return
+	}
 
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 	if err != nil {

@@ -138,7 +138,9 @@ func (w *Watchdog) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			logx.Watchdog("stopping")
-			w.recorder.Flush()
+			if err := w.recorder.Flush(); err != nil {
+				logx.Watchdog("flush error: %v", err)
+			}
 			return ctx.Err()
 
 		case <-ticker.C:

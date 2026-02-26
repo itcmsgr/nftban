@@ -200,7 +200,7 @@ func cmdAnalyticsCountries() error {
 		fmt.Fprintf(w, "%s\t%d\t%s\n", r.country, r.count, r.updated)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 
 	return nil
@@ -259,7 +259,7 @@ func cmdAnalyticsTop() error {
 		fmt.Fprintf(w, "%d\t%s\t%d\n", i+1, cs.Country, cs.IPCount)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 
 	return nil

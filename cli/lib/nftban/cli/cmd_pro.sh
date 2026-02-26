@@ -246,7 +246,7 @@ nftban_pro_cmd_enroll() {
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local http_code
     local response_file
-    response_file=$(mktemp /tmp/nftban_pro_XXXXXX)
+    response_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
     trap 'rm -f "$response_file"' RETURN
 
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \

@@ -487,6 +487,43 @@ func SystemLogsHandler(w http.ResponseWriter, r *http.Request) {
 		lines = "100"
 	}
 
+	// SECURITY (BUG-H3): Validate all parameters before passing to journalctl.
+	// Prevent command injection via service name, lines count, or priority.
+
+	// Validate lines is a number between 1-10000
+	linesNum, err := strconv.Atoi(lines)
+	if err != nil || linesNum < 1 || linesNum > 10000 {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid lines parameter (must be 1-10000)"})
+		return
+	}
+	lines = strconv.Itoa(linesNum)
+
+	// Validate service name: only alphanumeric, dash, underscore, dot, @
+	if service != "" {
+		for _, c := range service {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '@') {
+				respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid service name"})
+				return
+			}
+		}
+		if len(service) > 256 {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Service name too long"})
+			return
+		}
+	}
+
+	// Validate priority against known journald levels
+	validPriorities := map[string]bool{
+		"emerg": true, "alert": true, "crit": true, "err": true,
+		"warning": true, "notice": true, "info": true, "debug": true,
+		"0": true, "1": true, "2": true, "3": true,
+		"4": true, "5": true, "6": true, "7": true,
+	}
+	if priority != "" && !validPriorities[priority] {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid priority (use: emerg, alert, crit, err, warning, notice, info, debug)"})
+		return
+	}
+
 	// Build journalctl command
 	args := []string{
 		"-n", lines,

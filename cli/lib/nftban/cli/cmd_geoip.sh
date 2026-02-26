@@ -612,7 +612,7 @@ nftban_geoip_cmd_config() {
 
             local _curl_cfg=""
             if [[ "$test_url" == *"license_key="* ]]; then
-                _curl_cfg=$(mktemp /tmp/nftban-geoip-test.XXXXXX)
+                _curl_cfg=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-geoip-test.XXXXXX")
                 chmod 600 "$_curl_cfg"
                 echo "url = \"${test_url}\"" > "$_curl_cfg"
             fi

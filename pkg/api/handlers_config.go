@@ -316,6 +316,23 @@ func ConfigSetHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// SECURITY (BUG-H2): Validate config values before passing to CLI.
+	// Reject shell metacharacters that could lead to command injection.
+	for key, value := range updates {
+		if strings.ContainsAny(value, ";|&$`\\\"'(){}[]<>!~\n\r") {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("Invalid characters in value for key %q", key),
+			})
+			return
+		}
+		if len(value) > 1024 {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("Value too long for key %q (max 1024 chars)", key),
+			})
+			return
+		}
+	}
+
 	// Apply each update
 	var errors []string
 	for key, value := range updates {

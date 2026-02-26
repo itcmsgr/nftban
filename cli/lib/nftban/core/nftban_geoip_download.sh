@@ -108,14 +108,14 @@ _download_geoip() {
     local db_dir="${GEOIP_DATABASE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip}"
     # v1.19.0: Use mktemp instead of PID-based temp files (R16)
     local tmp_file
-    tmp_file=$(mktemp /tmp/geoip-${edition}.XXXXXX.tar.gz)
+    tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/geoip-${edition}.XXXXXX.tar.gz")
 
     echo "[INFO] Downloading ${edition} database..."
     echo "[DEBUG] URL: ${db_url} (key masked)"
 
     # v1.19.0: Use config file to pass license key, avoiding exposure in process args (R23)
     local curl_config
-    curl_config=$(mktemp /tmp/nftban-geoip-curl.XXXXXX.conf)
+    curl_config=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-geoip-curl.XXXXXX.conf")
     chmod 600 "$curl_config"
     echo "url = \"${db_url}?edition_id=${edition}&license_key=${license_key}&suffix=tar.gz\"" > "$curl_config"
 
