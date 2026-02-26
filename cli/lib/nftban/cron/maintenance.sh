@@ -74,7 +74,8 @@ log() {
     shift
     # BUG-L65 FIX: Strip ANSI escape codes before writing to log file
     # Terminal output keeps colors, file output is clean
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*"
+    local msg
+    msg="[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*"
     echo "$msg"
     echo "$msg" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' >> "$LOGFILE"
 }
