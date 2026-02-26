@@ -143,7 +143,7 @@ nftban_gui_cleanup_disable() {
     fi
 
     # Clean temp compilation files
-    rm -f /tmp/nftban_*.tmp 2>/dev/null || true
+    rm -f "${NFTBAN_RUN_DIR:-/run/nftban}"/nftban_gui_*.tmp 2>/dev/null || true
 
     # Keep Go binaries for fast re-enable
     echo "  ℹ️  Keeping compiled Go binaries for fast re-enable"

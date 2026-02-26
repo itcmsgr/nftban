@@ -48,6 +48,10 @@ readonly NFTBAN_TIMERS=(
     "nftban-snapshot.timer"
     "nftban-rollback.timer"
     "nftban-update.timer"
+    "nftban-watchdog.timer"
+    "nftban-rbl-check.timer"
+    "nftban-pro-license.timer"
+    "nftban-pro-inventory.timer"
 )
 
 # Timer descriptions
@@ -57,11 +61,15 @@ declare -A TIMER_DESC=(
     ["nftban-unified-exporter.timer"]="Unified metrics collection and export"
     ["nftban-core-geoip.timer"]="GeoIP database updates"
     ["nftban-core-feeds.timer"]="Threat feed synchronization"
-    ["nftban-queue.timer"]="Ban queue processing"
+    ["nftban-queue.timer"]="Ban queue processing (every 5m)"
     ["nftban-suricata-update.timer"]="Suricata IDS rules update"
     ["nftban-snapshot.timer"]="Config/state snapshot creation"
     ["nftban-rollback.timer"]="Rollback availability check"
     ["nftban-update.timer"]="Weekly auto-update (Sunday 4:00 AM)"
+    ["nftban-watchdog.timer"]="System watchdog (every 120s)"
+    ["nftban-rbl-check.timer"]="RBL check (every 12h)"
+    ["nftban-pro-license.timer"]="Pro license validation (every 6h)"
+    ["nftban-pro-inventory.timer"]="Pro daily inventory (04:00)"
 )
 
 # =============================================================================

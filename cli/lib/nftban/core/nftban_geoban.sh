@@ -279,8 +279,8 @@ nftban_geoban_apply_to_nftables() {
     if declare -f nftban_cidr_merge &>/dev/null; then
         if [[ $cidr_count_v4 -gt 0 ]]; then
             local _geoban_tmp_v4 _geoban_merged_v4
-            _geoban_tmp_v4=$(mktemp /tmp/nftban_geoban_v4_XXXXXX)
-            _geoban_merged_v4=$(mktemp /tmp/nftban_geoban_v4m_XXXXXX)
+            _geoban_tmp_v4=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v4_XXXXXX")
+            _geoban_merged_v4=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v4m_XXXXXX")
             printf '%s\n' "${cidrs_v4[@]}" > "$_geoban_tmp_v4"
             nftban_cidr_merge "$_geoban_tmp_v4" "$_geoban_merged_v4" 4
             # Reload merged CIDRs
@@ -298,8 +298,8 @@ nftban_geoban_apply_to_nftables() {
 
         if [[ $cidr_count_v6 -gt 0 ]]; then
             local _geoban_tmp_v6 _geoban_merged_v6
-            _geoban_tmp_v6=$(mktemp /tmp/nftban_geoban_v6_XXXXXX)
-            _geoban_merged_v6=$(mktemp /tmp/nftban_geoban_v6m_XXXXXX)
+            _geoban_tmp_v6=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v6_XXXXXX")
+            _geoban_merged_v6=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_v6m_XXXXXX")
             printf '%s\n' "${cidrs_v6[@]}" > "$_geoban_tmp_v6"
             nftban_cidr_merge "$_geoban_tmp_v6" "$_geoban_merged_v6" 6
             cidrs_v6=()
@@ -332,7 +332,7 @@ nftban_geoban_apply_to_nftables() {
 
         # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
         local element_fragment
-        element_fragment=$(mktemp /tmp/nftban_geoban_frag_XXXXXX.nft)
+        element_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_frag_XXXXXX.nft")
         echo "add element $table_v4 $set_v4 { $cidr_list_v4 }" > "$element_fragment"
 
         if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
@@ -361,7 +361,7 @@ nftban_geoban_apply_to_nftables() {
 
         # v1.19.0: Use mktemp (R17)
         local element_fragment
-        element_fragment=$(mktemp /tmp/nftban_geoban_frag_XXXXXX.nft)
+        element_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_frag_XXXXXX.nft")
         echo "add element $table_v6 $set_v6 { $cidr_list_v6 }" > "$element_fragment"
 
         if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then

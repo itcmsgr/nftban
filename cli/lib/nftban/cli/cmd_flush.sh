@@ -511,7 +511,7 @@ _flush_feeds() {
 
         # v1.19.0: Use mktemp instead of PID-based temp files (R16)
         local tmp_file
-        tmp_file=$(mktemp /tmp/nftban_flush_feeds_v4.XXXXXX.nft)
+        tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_flush_feeds_v4.XXXXXX.nft")
         echo "delete element $NFTBAN_TABLE_IPV4 blacklist_ipv4 { $cidr_list }" > "$tmp_file"
 
         if _apply_file_via_ipc "$tmp_file"; then
@@ -529,7 +529,7 @@ _flush_feeds() {
 
         # v1.19.0: Use mktemp instead of PID-based temp files (R16)
         local tmp_file
-        tmp_file=$(mktemp /tmp/nftban_flush_feeds_v6.XXXXXX.nft)
+        tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_flush_feeds_v6.XXXXXX.nft")
         echo "delete element $NFTBAN_TABLE_IPV6 blacklist_ipv6 { $cidr_list }" > "$tmp_file"
 
         if _apply_file_via_ipc "$tmp_file"; then
@@ -625,7 +625,7 @@ _flush_geoban() {
     if [[ ${#cidrs_v4[@]} -gt 0 ]]; then
         # v1.19.0: Use mktemp instead of PID-based temp files (R16)
         local tmp_file
-        tmp_file=$(mktemp /tmp/nftban_flush_geoban_v4.XXXXXX.nft)
+        tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_flush_geoban_v4.XXXXXX.nft")
         echo -n "delete element $NFTBAN_TABLE_IPV4 blacklist_ipv4 { " > "$tmp_file"
         local first=true
         for cidr in "${cidrs_v4[@]}"; do
@@ -646,7 +646,7 @@ _flush_geoban() {
     if [[ ${#cidrs_v6[@]} -gt 0 ]]; then
         # v1.19.0: Use mktemp instead of PID-based temp files (R16)
         local tmp_file
-        tmp_file=$(mktemp /tmp/nftban_flush_geoban_v6.XXXXXX.nft)
+        tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_flush_geoban_v6.XXXXXX.nft")
         echo -n "delete element $NFTBAN_TABLE_IPV6 blacklist_ipv6 { " > "$tmp_file"
         local first=true
         for cidr in "${cidrs_v6[@]}"; do

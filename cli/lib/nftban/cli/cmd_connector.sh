@@ -610,7 +610,7 @@ EOF
             # v1.19.0: Use .netrc file to avoid credential exposure in process args (R23)
             local netrc_file=""
             if [[ -n "${CONNECTOR_ES_USER:-}" ]]; then
-                netrc_file=$(mktemp /tmp/nftban-es-netrc.XXXXXX)
+                netrc_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-es-netrc.XXXXXX")
                 chmod 600 "$netrc_file"
                 # Extract hostname from URL for netrc format
                 local es_host

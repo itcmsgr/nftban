@@ -2554,7 +2554,10 @@ exit 0
 PRERM
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
 
-    # Create conffiles to mark user configuration files (preserved on upgrade)
+    # BUG-L52 FIX: Reduced conffiles to only base config files that ship with
+    # defaults. User-managed files (whitelist/blacklist) removed to avoid
+    # interactive prompts during non-interactive upgrades.
+    # Users should customize via .local override files (e.g., main.conf.local).
     cat > "${BUILD_DIR}/deb/DEBIAN/conffiles" <<'CONFFILES_EOF'
 /etc/nftban/nftban.conf
 /etc/nftban/conf.d/feeds.conf
@@ -2568,8 +2571,6 @@ PRERM
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
-/etc/nftban/whitelist.d/99-manual.conf
-/etc/nftban/blacklist.d/99-manual.conf
 CONFFILES_EOF
 }
 

@@ -2,13 +2,13 @@
 # NFTBan v1.0.0 - Queue Processor Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Systemd timer unit that triggers queue processing every 2 minutes
+# Purpose: Systemd timer unit that triggers queue processing every 5 minutes
 #
 # meta:name="nftban_queue_timer"
 # meta:type="config"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-11-05"
-# meta:description="Timer that triggers NFTBan queue processor every 2 minutes"
+# meta:description="Timer that triggers NFTBan queue processor every 5 minutes"
 # meta:input="None"
 # meta:output="Triggers nftban-queue.service"
 # meta:depends="nftban-queue.service"
@@ -27,7 +27,7 @@ Description=NFTBan Task Queue Processor Timer
 Documentation=man:nftban(8)
 
 [Timer]
-# OPTIMIZED: 5 minutes instead of 2 (reduces 60% of timer overhead)
+# OPTIMIZED: 5 minutes (reduces 60% of timer overhead vs original 2min)
 # Queue processing is not latency-critical - 5min is acceptable
 OnBootSec=3min
 OnUnitActiveSec=5min

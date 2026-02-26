@@ -712,7 +712,7 @@ EOF
             # v1.19.0: Add SMTP auth via netrc file to avoid credential exposure in process args (R23)
             local _smtp_netrc=""
             if [[ -n "${NFTBAN_SMTP_USER:-}" ]]; then
-                _smtp_netrc=$(mktemp /tmp/nftban-smtp-netrc.XXXXXX)
+                _smtp_netrc=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-smtp-netrc.XXXXXX")
                 chmod 600 "$_smtp_netrc"
                 local _smtp_host
                 _smtp_host=$(echo "${NFTBAN_SMTP_SERVER:-localhost}" | cut -d: -f1)
