@@ -72,9 +72,14 @@ nftban_sync_full() {
     # 10. Cleanup old snapshots
 
     local dry_run=""
-    if [[ "${1:-}" == "--dry-run" ]]; then
-        dry_run="--dry-run"
-    fi
+    local quick=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry_run="--dry-run" ;;
+            --quick|-q) quick="--quick" ;;
+        esac
+        shift
+    done
 
     # Check if Go binary exists
     if [[ ! -x "$NFTBAN_CORE_BIN" ]]; then
@@ -96,13 +101,19 @@ nftban_sync_full() {
     echo ""
 
     # Execute Go binary - sync is a subcommand of nftban-core
+    # BUG-L56 FIX: Pass --quick flag through to Go binary
+    local sync_args=()
+    [[ -n "$dry_run" ]] && sync_args+=("--dry-run")
+    [[ -n "$quick" ]] && sync_args+=("--quick")
+
     if [[ -n "$dry_run" ]]; then
         nftban_output "info" "Mode: DRY RUN (validate only)"
-        "$NFTBAN_CORE_BIN" sync --dry-run
+    elif [[ -n "$quick" ]]; then
+        nftban_output "info" "Mode: QUICK SYNC (skip unchanged sets)"
     else
         nftban_output "info" "Mode: FULL SYNC (apply changes)"
-        "$NFTBAN_CORE_BIN" sync
     fi
+    "$NFTBAN_CORE_BIN" sync "${sync_args[@]}"
 
     local exit_code=$?
 
