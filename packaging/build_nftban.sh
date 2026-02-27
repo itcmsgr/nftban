@@ -1538,7 +1538,7 @@ done
 %systemd_postun_with_restart nftband.service nftban-maintenance.service nftban-health.service nftban-health-fix.service nftban-watchdog.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service nftban-unified-exporter.service nftban-queue.service nftban-rbl-check.service nftban-rollback.service nftban-snapshot.service nftban-suricata-update.service nftban-suricata.service nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-license.service nftban-update.service nftban-api.service nftban-firewall-init.service nftban-ui.service nftban-ui-auth.service
 
 # =============================================================================
-# Complete removal ($1 -eq 0) — FULL CLEANUP
+# Complete removal (\$1 -eq 0) — FULL CLEANUP
 # Must match DEB postrm purge section
 # =============================================================================
 if [ \$1 -eq 0 ]; then
