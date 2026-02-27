@@ -695,6 +695,15 @@ nftban_cmd_rbl_enable() {
         return 1
     fi
 
+    # Persist to config
+    local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^NFTBAN_RBL_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^NFTBAN_RBL_ENABLED=.*/NFTBAN_RBL_ENABLED="YES"/' "$local_conf"
+    else
+        echo 'NFTBAN_RBL_ENABLED="YES"' >> "$local_conf"
+    fi
+
     # Enable and start timer
     systemctl daemon-reload
     systemctl enable nftban-rbl-check.timer
@@ -713,6 +722,15 @@ nftban_cmd_rbl_disable() {
     if [[ $EUID -ne 0 ]]; then
         echo "Error: Must run as root to disable timer" >&2
         return 1
+    fi
+
+    # Persist to config
+    local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^NFTBAN_RBL_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^NFTBAN_RBL_ENABLED=.*/NFTBAN_RBL_ENABLED="NO"/' "$local_conf"
+    else
+        echo 'NFTBAN_RBL_ENABLED="NO"' >> "$local_conf"
     fi
 
     # Stop and disable timer

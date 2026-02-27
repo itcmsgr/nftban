@@ -152,7 +152,7 @@ build_core() {
     cd "$SCRIPT_DIR/cmd/nftban-core"
 
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
-        go build -o "$BIN_DIR/nftban-core" \
+        go build -trimpath -o "$BIN_DIR/nftban-core" \
         -ldflags="$LDFLAGS" \
         . || {
         error "Failed to build nftban-core"
@@ -197,7 +197,7 @@ build_gui() {
     cd "$SCRIPT_DIR/cmd/nftban-ui"
 
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
-        go build -o "$BIN_DIR/nftban-ui" \
+        go build -trimpath -o "$BIN_DIR/nftban-ui" \
         -ldflags="$LDFLAGS" \
         . || {
         error "Failed to build nftban-ui"
@@ -218,7 +218,7 @@ build_ui_auth() {
     cd "$SCRIPT_DIR/cmd/nftban-ui-auth"
 
     CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH \
-        go build -o "$BIN_DIR/nftban-ui-auth" \
+        go build -trimpath -o "$BIN_DIR/nftban-ui-auth" \
         -ldflags="$LDFLAGS" \
         . || {
         error "Failed to build nftban-ui-auth"
@@ -238,7 +238,7 @@ build_daemon() {
     cd "$SCRIPT_DIR/cmd/nftband"
 
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
-        go build -o "$BIN_DIR/nftband" \
+        go build -trimpath -o "$BIN_DIR/nftband" \
         -ldflags="$LDFLAGS" \
         . || {
         error "Failed to build nftband"

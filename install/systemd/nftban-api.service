@@ -42,9 +42,13 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+ProtectKernelLogs=true
+PrivateDevices=true
 RestrictNamespaces=true
 LockPersonality=true
 RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/run/nftban
 
 # Limits

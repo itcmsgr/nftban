@@ -337,11 +337,11 @@ _nftban_botscan_cmd_enable() {
         chown root:nftban "$config_local" 2>/dev/null || true
     fi
 
-    # Set enabled
+    # Persist BOTSCAN_ENABLED=true to local config override
     if grep -q "^BOTSCAN_ENABLED=" "$config_local" 2>/dev/null; then
-        sed -i "s|^BOTSCAN_ENABLED=.*|BOTSCAN_ENABLED=true|" "$config_local"
+        sed -i 's/^BOTSCAN_ENABLED=.*/BOTSCAN_ENABLED="true"/' "$config_local"
     else
-        echo "BOTSCAN_ENABLED=true" >> "$config_local"
+        echo 'BOTSCAN_ENABLED="true"' >> "$config_local"
     fi
 
     echo "Bot scanner enabled"
@@ -371,11 +371,11 @@ _nftban_botscan_cmd_disable() {
         chown root:nftban "$config_local" 2>/dev/null || true
     fi
 
-    # Set disabled
+    # Persist BOTSCAN_ENABLED=false to local config override
     if grep -q "^BOTSCAN_ENABLED=" "$config_local" 2>/dev/null; then
-        sed -i "s|^BOTSCAN_ENABLED=.*|BOTSCAN_ENABLED=false|" "$config_local"
+        sed -i 's/^BOTSCAN_ENABLED=.*/BOTSCAN_ENABLED="false"/' "$config_local"
     else
-        echo "BOTSCAN_ENABLED=false" >> "$config_local"
+        echo 'BOTSCAN_ENABLED="false"' >> "$config_local"
     fi
 
     echo "Bot scanner disabled"

@@ -13,11 +13,11 @@ export GOFLAGS = -buildmode=pie -mod=readonly -modcacherw
 override_dh_auto_build:
 	# Build GUI server
 	cd cmd/nftban-ui && \
-	go build -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
+	go build -trimpath -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
 	    -o ../../bin/nftban-ui .
 
 	# Build authentication service
-	go build -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
+	go build -trimpath -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
 	    -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
 
 override_dh_auto_install:
