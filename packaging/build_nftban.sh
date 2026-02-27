@@ -191,6 +191,7 @@ build_binaries() {
     log_success "Binaries built successfully"
 }
 
+# shellcheck disable=SC2120  # $1 in heredoc is RPM scriptlet argument, not bash
 create_rpm_spec_nftban_core() {
     # Validate required variables
     if [[ -z "${BUILD_DIR:-}" ]]; then
