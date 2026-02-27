@@ -10,18 +10,26 @@ case "$1" in
         # Remove runtime directories
         rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
-        # Purge ALL systemd units (FULL list — must match RPM %preun)
+        # Purge ALL systemd units (FULL list — must match DEB prerm + RPM %preun)
         for unit in \
             nftband.socket nftband.service \
-            nftban-core.service \
             nftban-maintenance.timer nftban-maintenance.service \
-            nftban-health.timer nftban-health.service \
+            nftban-health.timer nftban-health.service nftban-health-fix.service \
             nftban-watchdog.timer nftban-watchdog.service \
             nftban-login-monitor.service \
             nftban-core-geoip.timer nftban-core-geoip.service \
             nftban-core-feeds.timer nftban-core-feeds.service \
             nftban-unified-exporter.timer nftban-unified-exporter.service \
             nftban-queue.timer nftban-queue.service \
+            nftban-rbl-check.timer nftban-rbl-check.service \
+            nftban-rollback.timer nftban-rollback.service \
+            nftban-snapshot.timer nftban-snapshot.service \
+            nftban-suricata-update.timer nftban-suricata-update.service \
+            nftban-suricata.service nftban-suricata-stats.service \
+            nftban-pro-inventory.timer nftban-pro-inventory.service \
+            nftban-pro-license.timer nftban-pro-license.service \
+            nftban-update.timer nftban-update.service \
+            nftban-api.service nftban-firewall-init.service \
             nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
             deb-systemd-helper purge "$unit" >/dev/null 2>&1 || true
             deb-systemd-helper unmask "$unit" >/dev/null 2>&1 || true
