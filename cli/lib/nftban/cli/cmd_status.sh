@@ -846,11 +846,15 @@ output_terminal() {
         ["nftban-unified-exporter.timer"]="Unified metrics export"
         ["nftban-core-feeds.timer"]="Threat feeds update"
         ["nftban-core-geoip.timer"]="GeoIP database update"
+        ["nftban-watchdog.timer"]="System watchdog"
         ["nftban-queue.timer"]="Queue processing"
         ["nftban-suricata-update.timer"]="Suricata rules update"
         ["nftban-snapshot.timer"]="Snapshot creation"
         ["nftban-rollback.timer"]="Rollback check"
         ["nftban-rbl-check.timer"]="RBL Check"
+        ["nftban-pro-inventory.timer"]="Pro inventory collection"
+        ["nftban-pro-license.timer"]="Pro license check"
+        ["nftban-update.timer"]="Self-update check"
     )
 
     local timer_count=0
@@ -1287,7 +1291,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-unified-exporter.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"

@@ -55,9 +55,12 @@ nftban_health_render_terminal() {
     # Labels for each check type
     local -A check_labels=(
         [binaries]="Binaries"
+        [binary_integrity]="Bin Integrity"
         [paths]="Paths"
         [permissions]="Permissions"
+        [auditor_acls]="Auditor ACLs"
         [services]="Services"
+        [daemon]="Daemon"
         [modules]="Modules"
         [geoip]="GeoIP"
         [geoban]="GeoBan"
@@ -68,16 +71,26 @@ nftban_health_render_terminal() {
         [metrics]="Metrics"
         [gui]="Web GUI"
         [nftables_security]="NFT Security"
+        [nft_schema]="NFT Schema"
         [conflicting_firewalls]="Firewall Conf"
         [suricata]="Suricata"
+        [suricata_capture]="Suricata Cap"
         [resources]="Resources"
         [registry]="Registry"
         [systemd_hardening]="Systemd Hard"
+        [memory_protection]="Memory Prot"
         [ssh_port]="SSH Port"
         [cli_errors]="CLI Errors"
         [rbl]="RBL"
         [timers]="Timers"
         [fhs]="FHS Layout"
+        [nftban_bin]="NFTBan Binary"
+        [queue_processor]="Queue Proc"
+        [protection]="Protection"
+        [maintenance_lock]="Maint Lock"
+        [login_monitor_ipc]="Login IPC"
+        [portscan_prefix]="Portscan Pfx"
+        [v030_helpers]="v030 Helpers"
         [pro]="Pro Features"
         [zabbix]="Zabbix"
         [connectors]="Connectors"
@@ -105,7 +118,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries paths permissions services timers modules config geoip geoban rbl databases nftables_security conflicting_firewalls resources; do
+    for check in binaries binary_integrity paths permissions auditor_acls services daemon timers modules config geoip geoban rbl databases nftables_security nft_schema conflicting_firewalls resources fhs nftban_bin queue_processor protection maintenance_lock login_monitor_ipc suricata suricata_capture registry cli_errors; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
@@ -134,7 +147,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in ssh_port systemd_hardening metrics zabbix connectors watchdog gui polkit bash_completion; do
+    for check in ssh_port systemd_hardening memory_protection metrics zabbix connectors watchdog gui polkit bash_completion portscan_prefix v030_helpers pro; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text

@@ -376,6 +376,31 @@ EOF
             fi
         fi
 
+        # v1.19.5: Ensure ALL IPs in 00-system.conf are loaded into nftables sets
+        # After reboot, nftables sets are recreated empty — re-sync from file
+        while IFS= read -r line; do
+            # Strip comments and whitespace
+            local entry="${line%%#*}"
+            entry="${entry%% *}"
+            entry="${entry%%	*}"
+            [[ -z "$entry" ]] && continue
+            if [[ "$entry" == *:* ]]; then
+                # IPv6
+                if ! nft get element ip6 nftban whitelist_ipv6 "{ $entry }" &>/dev/null; then
+                    if nft add element ip6 nftban whitelist_ipv6 "{ $entry }" 2>/dev/null; then
+                        log "INFO" "Re-synced IPv6 to nftables whitelist: $entry"
+                    fi
+                fi
+            elif [[ "$entry" =~ ^[0-9]+\.[0-9]+ ]]; then
+                # IPv4
+                if ! nft get element ip nftban whitelist_ipv4 "{ $entry }" &>/dev/null; then
+                    if nft add element ip nftban whitelist_ipv4 "{ $entry }" 2>/dev/null; then
+                        log "INFO" "Re-synced IPv4 to nftables whitelist: $entry"
+                    fi
+                fi
+            fi
+        done < "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+
         log "INFO" "System IP check: OK"
     else
         log "WARN" "System whitelist not found: ${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"

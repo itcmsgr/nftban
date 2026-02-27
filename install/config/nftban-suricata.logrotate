@@ -1,0 +1,84 @@
+# NFTBan Suricata Log Rotation Configuration
+# Install to: /etc/logrotate.d/nftban-suricata
+#
+# IMPORTANT: This file is only installed when Suricata is configured.
+# It requires the 'suricata' user to exist.
+# Installed by: nftban suricata setup / packaging %post
+#
+# If Suricata is not installed, this file should NOT be present.
+# Remove with: rm /etc/logrotate.d/nftban-suricata
+
+# Suricata eve-alerts.json (daemon path) - low volume, alert-only
+# Ownership: suricata:nftban (Suricata writes, nftban reads)
+/var/log/nftban/suricata/eve-alerts.json {
+    su suricata nftban
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+    size 50M
+    postrotate
+        # Signal Suricata to reopen log file
+        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
+    endscript
+}
+
+# Suricata eve-audit.json (optional, higher volume when enabled)
+/var/log/nftban/suricata/eve-audit.json {
+    su suricata nftban
+    daily
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+    size 100M
+    postrotate
+        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
+    endscript
+}
+
+# Suricata eve-stats.json (optional, for capacity planning)
+/var/log/nftban/suricata/eve-stats.json {
+    su suricata nftban
+    weekly
+    rotate 2
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+}
+
+# Fast.log for Suricata
+/var/log/nftban/suricata/fast.log {
+    su suricata nftban
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+}
+
+# Stats.log for Suricata
+/var/log/nftban/suricata/stats.log {
+    su suricata nftban
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+}

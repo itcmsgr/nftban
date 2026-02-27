@@ -103,85 +103,12 @@
     create 0640 nftban nftban
 }
 
-# Suricata eve-alerts.json (daemon path) - low volume, alert-only
-# Bug fix v1.12.8: Ownership must be suricata:nftban (Suricata writes, nftban reads)
-# Bug fix v1.13.x: su directive required - /var/log/nftban/suricata/ is non-root writable
-/var/log/nftban/suricata/eve-alerts.json {
-    su suricata nftban
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 suricata nftban
-    copytruncate
-    size 50M
-    postrotate
-        # Signal Suricata to reopen log file
-        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
-    endscript
-}
-
-# Suricata eve-audit.json (optional, higher volume when enabled)
-# Ownership: suricata:nftban (Suricata writes, nftban reads)
-/var/log/nftban/suricata/eve-audit.json {
-    su suricata nftban
-    daily
-    rotate 3
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 suricata nftban
-    copytruncate
-    size 100M
-    postrotate
-        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
-    endscript
-}
-
-# Suricata eve-stats.json (optional, for capacity planning)
-# Ownership: suricata:nftban (Suricata writes, nftban reads)
-/var/log/nftban/suricata/eve-stats.json {
-    su suricata nftban
-    weekly
-    rotate 2
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 suricata nftban
-    copytruncate
-}
-
-# Fast.log for Suricata
-# Ownership: suricata:nftban (Suricata writes, nftban reads)
-/var/log/nftban/suricata/fast.log {
-    su suricata nftban
-    weekly
-    rotate 4
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 suricata nftban
-    copytruncate
-}
-
-# Stats.log for Suricata
-# Ownership: suricata:nftban (Suricata writes, nftban reads)
-/var/log/nftban/suricata/stats.log {
-    su suricata nftban
-    weekly
-    rotate 4
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 suricata nftban
-    copytruncate
-}
+# =============================================================================
+# Suricata logs — MOVED to /etc/logrotate.d/nftban-suricata
+# =============================================================================
+# Suricata log rotation is in a separate file to avoid breaking logrotate
+# when Suricata is not installed (user 'suricata' doesn't exist).
+# File: /etc/logrotate.d/nftban-suricata (installed by nftban suricata setup)
 
 # =============================================================================
 # Watchdog subdirectory logs (alerts, stats, profiles)

@@ -241,7 +241,7 @@ nftban_health_verify_installation() {
 
     local -a required_services=(
         "nftables.service"
-        "nftban-core.service"
+        "nftband.service"
     )
 
     local -a optional_services=(
