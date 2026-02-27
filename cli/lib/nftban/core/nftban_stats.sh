@@ -57,11 +57,13 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null
 readonly NFTBAN_STATS_DB="${STATS_DB_DIR:-${NFTBAN_DATA_DIR}/metrics}/metrics.db"
 readonly NFTBAN_STATS_CACHE_DIR="${STATS_CACHE_DIR:-${NFTBAN_CACHE_DIR}/stats}"
 readonly NFTBAN_STATS_SNAPSHOTS_DIR="${STATS_SNAPSHOTS_DIR:-${NFTBAN_DATA_DIR}/snapshots}"
+# shellcheck disable=SC2034  # Used by sub-modules: nftban_stats_collect.sh, nftban_stats_format.sh
 readonly NFTBAN_BAN_LOG="${STATS_BAN_LOG:-${NFTBAN_LOG_DIR}/bans.log}"
 # shellcheck disable=SC2034  # Reserved for stats logging
 readonly NFTBAN_STATS_LOG="${STATS_LOG_FILE:-${NFTBAN_LOG_DIR}/stats.log}"
 
 # Configuration defaults (overridden by conf.d/stats.conf)
+# shellcheck disable=SC2034  # Used by sub-modules: nftban_stats_collect.sh, nftban_stats_format.sh
 STATS_ENABLED="${STATS_ENABLED:-true}"
 STATS_CACHE_ENABLED="${STATS_CACHE_ENABLED:-true}"
 STATS_CACHE_TTL="${STATS_CACHE_TTL:-300}"
