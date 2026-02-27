@@ -56,6 +56,16 @@ PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+PrivateDevices=yes
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadOnlyPaths=/etc /usr /proc
 ReadWritePaths=/var/log/nftban /var/lib/nftban /run/nftban
 

@@ -368,10 +368,15 @@ nftban_portscan_init() {
 nftban_portscan_enable() {
     nftban_portscan_init
 
-    if [[ "${PORTSCAN_ENABLED:-true}" != "true" ]]; then
-        _nftban_portscan_log "WARN" "Portscan is disabled in configuration"
-        return 1
+    # Persist PORTSCAN_ENABLED=true to local config override
+    local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="true"/' "$local_conf"
+    else
+        echo 'PORTSCAN_ENABLED="true"' >> "$local_conf"
     fi
+    PORTSCAN_ENABLED="true"
 
     local mode="${_PORTSCAN_ACTIVE_MODE}"
 
@@ -415,6 +420,16 @@ nftban_portscan_enable() {
 
 # Disable portscan detection
 nftban_portscan_disable() {
+    # Persist PORTSCAN_ENABLED=false to local config override
+    local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="false"/' "$local_conf"
+    else
+        echo 'PORTSCAN_ENABLED="false"' >> "$local_conf"
+    fi
+    PORTSCAN_ENABLED="false"
+
     local mode="${_PORTSCAN_ACTIVE_MODE}"
 
     _nftban_portscan_log "INFO" "Disabling portscan detection"

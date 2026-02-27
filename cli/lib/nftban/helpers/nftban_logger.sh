@@ -78,6 +78,9 @@ nftban_log() {
     # Skip if message is empty
     [[ -z "$message" ]] && return 0
 
+    # Strip ANSI escape codes before writing to log file
+    message=$(printf '%s' "$message" | sed 's/\x1B\[[0-9;]*[A-Za-z]//g')
+
     # Build timestamp
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
@@ -163,6 +166,9 @@ nftban_log_to_module_file() {
 
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # Strip ANSI escape codes before writing to log file
+    message=$(printf '%s' "$message" | sed 's/\x1B\[[0-9;]*[A-Za-z]//g')
 
     local log_line="[$timestamp] [$level] $message"
 

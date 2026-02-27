@@ -671,11 +671,20 @@ _nftban_timers_control() {
     local action="$1"
 
     local timers=(
-        "nftban.timer"
-        "nftban-feeds.timer"
-        "nftban-geoip-update.timer"
         "nftban-maintenance.timer"
-        "nftban-stats.timer"
+        "nftban-health.timer"
+        "nftban-core-feeds.timer"
+        "nftban-core-geoip.timer"
+        "nftban-unified-exporter.timer"
+        "nftban-watchdog.timer"
+        "nftban-queue.timer"
+        "nftban-rbl-check.timer"
+        "nftban-suricata-update.timer"
+        "nftban-snapshot.timer"
+        "nftban-rollback.timer"
+        "nftban-pro-inventory.timer"
+        "nftban-pro-license.timer"
+        "nftban-update.timer"
     )
 
     for timer in "${timers[@]}"; do
@@ -697,10 +706,20 @@ _nftban_timers_control() {
 
 _nftban_timers_status() {
     local timers=(
-        "nftban.timer"
-        "nftban-feeds.timer"
-        "nftban-geoip-update.timer"
         "nftban-maintenance.timer"
+        "nftban-health.timer"
+        "nftban-core-feeds.timer"
+        "nftban-core-geoip.timer"
+        "nftban-unified-exporter.timer"
+        "nftban-watchdog.timer"
+        "nftban-queue.timer"
+        "nftban-rbl-check.timer"
+        "nftban-suricata-update.timer"
+        "nftban-snapshot.timer"
+        "nftban-rollback.timer"
+        "nftban-pro-inventory.timer"
+        "nftban-pro-license.timer"
+        "nftban-update.timer"
     )
 
     for timer in "${timers[@]}"; do

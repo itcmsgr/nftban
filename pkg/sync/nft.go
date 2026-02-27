@@ -57,6 +57,79 @@ func uint32ToIPv4(v uint32) net.IP {
 	return net.IP(b)
 }
 
+// =============================================================================
+// IPv6 Helper Functions for Range-Aware Operations
+// =============================================================================
+
+// ipv6ToBytes16 converts an IPv6 address to a [16]byte for comparison/arithmetic
+func ipv6ToBytes16(ip net.IP) ([16]byte, error) {
+	v6 := ip.To16()
+	if v6 == nil {
+		return [16]byte{}, fmt.Errorf("not a valid IP address: %v", ip)
+	}
+	var b [16]byte
+	copy(b[:], v6)
+	return b, nil
+}
+
+// bytes16ToIPv6 converts a [16]byte back to a net.IP
+func bytes16ToIPv6(b [16]byte) net.IP {
+	ip := make(net.IP, 16)
+	copy(ip, b[:])
+	return ip
+}
+
+// ipv6Compare returns -1 if a < b, 0 if a == b, 1 if a > b
+func ipv6Compare(a, b [16]byte) int {
+	for i := 0; i < 16; i++ {
+		if a[i] < b[i] {
+			return -1
+		}
+		if a[i] > b[i] {
+			return 1
+		}
+	}
+	return 0
+}
+
+// ipv6Inc increments an IPv6 address by 1 (returns new value)
+func ipv6Inc(a [16]byte) [16]byte {
+	var result [16]byte
+	copy(result[:], a[:])
+	for i := 15; i >= 0; i-- {
+		result[i]++
+		if result[i] != 0 {
+			break // no carry
+		}
+	}
+	return result
+}
+
+// ipv6Dec decrements an IPv6 address by 1 (returns new value)
+func ipv6Dec(a [16]byte) [16]byte {
+	var result [16]byte
+	copy(result[:], a[:])
+	for i := 15; i >= 0; i-- {
+		if result[i] > 0 {
+			result[i]--
+			break // no borrow
+		}
+		result[i] = 0xff // borrow
+	}
+	return result
+}
+
+// IPRange6 represents a range of IPv6 addresses in an interval set
+type IPRange6 struct {
+	Start [16]byte
+	End   [16]byte
+}
+
+// isIPv6 returns true if the IP is IPv6 (and not IPv4-mapped)
+func isIPv6(ip net.IP) bool {
+	return ip.To4() == nil && ip.To16() != nil
+}
+
 // NFTManager handles nftables operations via netlink
 type NFTManager struct {
 	conn *nftables.Conn
@@ -309,11 +382,6 @@ func (m *NFTManager) DeleteFromIntervalSetCLI(set *nftables.Set, ipStr string) e
 		return fmt.Errorf("invalid IP: %s", ipStr)
 	}
 
-	ipVal, err := ipv4ToUint32(ip)
-	if err != nil {
-		return fmt.Errorf("IP conversion failed: %w", err)
-	}
-
 	// Determine table family
 	var family string
 	if set.Table.Family == nftables.TableFamilyIPv4 {
@@ -323,10 +391,20 @@ func (m *NFTManager) DeleteFromIntervalSetCLI(set *nftables.Set, ipStr string) e
 	}
 
 	// Step 1: Get current set elements using nft list
-	// Parse output to find if IP is exact element or inside a range
 	output, err := nftListSetWithHandles(family, set.Table.Name, set.Name)
 	if err != nil {
 		return fmt.Errorf("failed to list set: %w", err)
+	}
+
+	// Branch: IPv6 path vs IPv4 path
+	if isIPv6(ip) {
+		return m.deleteFromIntervalSetIPv6(set, family, output, ipStr, ip)
+	}
+
+	// IPv4 path
+	ipVal, err := ipv4ToUint32(ip)
+	if err != nil {
+		return fmt.Errorf("IP conversion failed: %w", err)
 	}
 
 	// Step 2: Parse elements to find the containing range
@@ -351,6 +429,188 @@ func (m *NFTManager) DeleteFromIntervalSetCLI(set *nftables.Set, ipStr string) e
 
 	// IP not found in set
 	return fmt.Errorf("IP %s not found in set %s", ipStr, set.Name)
+}
+
+// deleteFromIntervalSetIPv6 handles IPv6 range-aware deletion
+func (m *NFTManager) deleteFromIntervalSetIPv6(set *nftables.Set, family, output, ipStr string, ip net.IP) error {
+	ipVal, err := ipv6ToBytes16(ip)
+	if err != nil {
+		return fmt.Errorf("IPv6 conversion failed: %w", err)
+	}
+
+	// Check for exact match first
+	if strings.Contains(output, ipStr+",") || strings.Contains(output, ipStr+"}") ||
+		strings.Contains(output, ", "+ipStr+",") || strings.Contains(output, "{ "+ipStr+",") {
+		err := nftDeleteElement(family, set.Table.Name, set.Name, "{ "+ipStr+" }")
+		if err == nil {
+			return nil
+		}
+		// If it fails, element might be merged - continue to range splitting
+	}
+
+	// Parse IPv6 ranges — pattern: addr6-addr6
+	// IPv6 addresses contain colons, ranges use dash separator
+	// nft output example: 2001:db8::1-2001:db8::ff
+	ipv6RangePattern := regexp.MustCompile(`([0-9a-fA-F:]+)-([0-9a-fA-F:]+)`)
+	matches := ipv6RangePattern.FindAllStringSubmatch(output, -1)
+
+	for _, match := range matches {
+		if len(match) != 3 {
+			continue
+		}
+		startIP := net.ParseIP(match[1])
+		endIP := net.ParseIP(match[2])
+		if startIP == nil || endIP == nil || !isIPv6(startIP) || !isIPv6(endIP) {
+			continue
+		}
+
+		startVal, err1 := ipv6ToBytes16(startIP)
+		endVal, err2 := ipv6ToBytes16(endIP)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+
+		// Check if ipVal is within this range
+		if ipv6Compare(startVal, ipVal) <= 0 && ipv6Compare(ipVal, endVal) <= 0 {
+			containingRange := &IPRange6{Start: startVal, End: endVal}
+			return m.splitRangeAndRemoveIPv6(set, family, containingRange, ipVal)
+		}
+	}
+
+	// Try direct delete (may work if element is not inside a merged range)
+	err = nftDeleteElement(family, set.Table.Name, set.Name, "{ "+ipStr+" }")
+	if err == nil {
+		return nil
+	}
+
+	// Fallback: full set refresh
+	return m.fullSetRefreshExcludingIP6(set, family, ipStr, ipVal)
+}
+
+// splitRangeAndRemoveIPv6 splits an IPv6 range around the IP being removed
+func (m *NFTManager) splitRangeAndRemoveIPv6(set *nftables.Set, family string, r *IPRange6, ipVal [16]byte) error {
+	startIP := bytes16ToIPv6(r.Start).String()
+	endIP := bytes16ToIPv6(r.End).String()
+	rangeStr := startIP + "-" + endIP
+
+	err := nftDeleteElement(family, set.Table.Name, set.Name, "{ "+rangeStr+" }")
+	if err != nil {
+		// Range delete failed — use full-set-refresh approach
+		return m.fullSetRefreshExcludingIP6(set, family, bytes16ToIPv6(ipVal).String(), ipVal)
+	}
+
+	// Re-add left sub-range (if IP is not at start)
+	if ipv6Compare(r.Start, ipVal) < 0 {
+		leftEnd := ipv6Dec(ipVal)
+		var leftStr string
+		if ipv6Compare(r.Start, leftEnd) == 0 {
+			leftStr = bytes16ToIPv6(r.Start).String()
+		} else {
+			leftStr = bytes16ToIPv6(r.Start).String() + "-" + bytes16ToIPv6(leftEnd).String()
+		}
+		_ = nftAddElement(family, set.Table.Name, set.Name, "{ "+leftStr+" }")
+	}
+
+	// Re-add right sub-range (if IP is not at end)
+	if ipv6Compare(ipVal, r.End) < 0 {
+		rightStart := ipv6Inc(ipVal)
+		var rightStr string
+		if ipv6Compare(rightStart, r.End) == 0 {
+			rightStr = bytes16ToIPv6(r.End).String()
+		} else {
+			rightStr = bytes16ToIPv6(rightStart).String() + "-" + bytes16ToIPv6(r.End).String()
+		}
+		_ = nftAddElement(family, set.Table.Name, set.Name, "{ "+rightStr+" }")
+	}
+
+	return nil
+}
+
+// fullSetRefreshExcludingIP6 flushes the set and re-adds all elements except the specified IPv6 address
+func (m *NFTManager) fullSetRefreshExcludingIP6(set *nftables.Set, family, excludeIP string, excludeVal [16]byte) error {
+	output, err := NftListSet(family, set.Table.Name, set.Name)
+	if err != nil {
+		return fmt.Errorf("failed to list set: %w", err)
+	}
+
+	elements := m.parseSetElements(output)
+	if len(elements) == 0 {
+		return nil
+	}
+
+	filteredElements := make([]string, 0, len(elements))
+	for _, elem := range elements {
+		if strings.Contains(elem, "-") {
+			parts := strings.Split(elem, "-")
+			if len(parts) != 2 {
+				filteredElements = append(filteredElements, elem)
+				continue
+			}
+
+			startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+			endIP := net.ParseIP(strings.TrimSpace(parts[1]))
+			if startIP == nil || endIP == nil {
+				filteredElements = append(filteredElements, elem)
+				continue
+			}
+
+			startVal, err1 := ipv6ToBytes16(startIP)
+			endVal, err2 := ipv6ToBytes16(endIP)
+			if err1 != nil || err2 != nil {
+				filteredElements = append(filteredElements, elem)
+				continue
+			}
+
+			if ipv6Compare(excludeVal, startVal) < 0 || ipv6Compare(excludeVal, endVal) > 0 {
+				// IP not in this range, keep it
+				filteredElements = append(filteredElements, elem)
+			} else {
+				// IP is inside range — split it
+				if ipv6Compare(startVal, excludeVal) < 0 {
+					leftEnd := ipv6Dec(excludeVal)
+					if ipv6Compare(startVal, leftEnd) == 0 {
+						filteredElements = append(filteredElements, bytes16ToIPv6(startVal).String())
+					} else {
+						filteredElements = append(filteredElements, bytes16ToIPv6(startVal).String()+"-"+bytes16ToIPv6(leftEnd).String())
+					}
+				}
+				if ipv6Compare(excludeVal, endVal) < 0 {
+					rightStart := ipv6Inc(excludeVal)
+					if ipv6Compare(rightStart, endVal) == 0 {
+						filteredElements = append(filteredElements, bytes16ToIPv6(endVal).String())
+					} else {
+						filteredElements = append(filteredElements, bytes16ToIPv6(rightStart).String()+"-"+bytes16ToIPv6(endVal).String())
+					}
+				}
+			}
+		} else {
+			if strings.TrimSpace(elem) != excludeIP {
+				filteredElements = append(filteredElements, elem)
+			}
+		}
+	}
+
+	if err := nftFlushSet(family, set.Table.Name, set.Name); err != nil {
+		return fmt.Errorf("failed to flush set: %w", err)
+	}
+
+	cleanElements := make([]string, 0, len(filteredElements))
+	for _, elem := range filteredElements {
+		elem = strings.TrimSpace(elem)
+		if elem != "" {
+			cleanElements = append(cleanElements, elem)
+		}
+	}
+
+	if len(cleanElements) == 0 {
+		return nil
+	}
+
+	if err := nftAddElementsBatch(family, set.Table.Name, set.Name, cleanElements, 500); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: batch add partial failure: %v\n", err)
+	}
+
+	return nil
 }
 
 // findContainingRange parses nft list output and finds the range containing the IP

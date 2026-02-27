@@ -238,10 +238,10 @@ jobs:
       - name: Build Go binaries
         run: |
           mkdir -p bin
-          go build -o bin/nftban-core ./cmd/nftban-core
-          go build -o bin/nftban-ui ./cmd/nftban-ui
-          go build -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
-          go build -o bin/nftband ./cmd/nftband
+          go build -trimpath -o bin/nftban-core ./cmd/nftban-core
+          go build -trimpath -o bin/nftban-ui ./cmd/nftban-ui
+          go build -trimpath -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
+          go build -trimpath -o bin/nftband ./cmd/nftband
 
       - name: Verify binaries
         run: |

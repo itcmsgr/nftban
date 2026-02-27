@@ -47,19 +47,19 @@ Features:
 %build
 # Build main GUI server
 cd cmd/nftban-ui
-CGO_ENABLED=1 go build -buildmode=pie -mod=readonly -modcacherw \
+CGO_ENABLED=1 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \
     -ldflags="-linkmode=external -s -w -X main.version=%{version}" \
     -o ../../bin/nftban-ui .
 
 cd ../..
 
 # Build authentication service
-CGO_ENABLED=1 go build -buildmode=pie -mod=readonly -modcacherw \
+CGO_ENABLED=1 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \
     -ldflags="-linkmode=external -s -w -X main.version=%{version}" \
     -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
 
 # Build nftband daemon (single nftables writer)
-CGO_ENABLED=0 go build -buildmode=pie -mod=readonly -modcacherw \
+CGO_ENABLED=0 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \
     -ldflags="-s -w -X main.version=%{version}" \
     -o bin/nftband ./cmd/nftband
 

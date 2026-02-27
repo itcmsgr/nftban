@@ -235,14 +235,15 @@ nftban_ddos_enable() {
         chown nftban:nftban "$NFTBAN_DDOS_LOG_FILE" 2>/dev/null || true
     fi
 
-    # Check if module is enabled
-    if [[ "$DDOS_ENABLED" != "true" ]]; then
-        echo ""
-        echo "  DDoS module is DISABLED in configuration"
-        echo "  Set DDOS_ENABLED=\"true\" in ${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf"
-        echo ""
-        return 1
+    # Persist DDOS_ENABLED=true to local config override
+    local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="true"/' "$local_conf"
+    else
+        echo 'DDOS_ENABLED="true"' >> "$local_conf"
     fi
+    DDOS_ENABLED="true"
 
     # Detect mode
     local mode
@@ -326,6 +327,16 @@ nftban_ddos_enable() {
 nftban_ddos_disable() {
     _nftban_ddos_load_config
     _nftban_ddos_banner
+
+    # Persist DDOS_ENABLED=false to local config override
+    local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")"
+    if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="false"/' "$local_conf"
+    else
+        echo 'DDOS_ENABLED="false"' >> "$local_conf"
+    fi
+    DDOS_ENABLED="false"
 
     local mode
     mode=$(_nftban_ddos_detect_mode)
