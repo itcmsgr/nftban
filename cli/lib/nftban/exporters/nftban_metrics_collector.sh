@@ -296,11 +296,12 @@ collect_module_status_metrics() {
         feeds=1
     fi
 
-    # geoban: Check /etc/nftban/modules/geoban.conf exists and enabled
-    if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
+    # geoban: Check /etc/nftban/conf.d/geoban/main.conf exists and enabled
+    # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
         # Check if enabled in config (NFTBAN_GEOBAN_ENABLED or similar)
         local geoban_enabled
-        geoban_enabled=$(grep -E "^(NFTBAN_GEOBAN_ENABLED|ENABLED)=" "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' || echo "")
+        geoban_enabled=$(grep -E "^(NFTBAN_GEOBAN_ENABLED|ENABLED)=" "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' || echo "")
         if [[ "$geoban_enabled" == "true" ]] || [[ "$geoban_enabled" == "1" ]] || [[ "$geoban_enabled" == "yes" ]]; then
             geoban=1
         fi
@@ -1194,8 +1195,9 @@ collect_geoip_metrics() {
         now=$(date +%s)
         database_age=$(( (now - db_mtime) / 86400 ))
 
-        if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
-            source "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" 2>/dev/null || true
+        # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
+        if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
+            source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" 2>/dev/null || true
             countries_blocked=$(echo "${NFTBAN_GEOBAN_COUNTRIES:-}" | wc -w 2>/dev/null || echo "0")
         fi
     fi

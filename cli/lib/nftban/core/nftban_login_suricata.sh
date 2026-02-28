@@ -413,11 +413,15 @@ _nftban_login_suricata_is_whitelisted() {
         [[ "$ip" == "::1" ]] && return 0
     fi
 
-    # Private networks
+    # Private networks — BUG-005 FIX: IPv4 + IPv6 parity (RFC 1918 + RFC 4193)
     if [[ "${LOGIN_WHITELIST_PRIVATE:-true}" == "true" ]]; then
+        # IPv4 private (RFC 1918)
         [[ "$ip" =~ ^10\. ]] && return 0
         [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] && return 0
         [[ "$ip" =~ ^192\.168\. ]] && return 0
+        # IPv6 private (RFC 4193 ULA + link-local) - matches classic.sh:687-689
+        [[ "$ip" =~ ^[Ff][CcDd] ]] && return 0
+        [[ "$ip" =~ ^[Ff][Ee]80: ]] && return 0
     fi
 
     # Central whitelist check (SINGLE SOURCE OF TRUTH)

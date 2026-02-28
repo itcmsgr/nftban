@@ -124,11 +124,15 @@ write_reconciliation_metrics() {
 # =============================================================================
 # EXPORT: Prometheus (node_exporter textfile)
 # =============================================================================
+# BUG-002 FIX: Use flock to prevent concurrent writers to nftban.prom
+# Multiple writers (unified exporter, standalone prometheus exporter, Go collector)
+# could race and corrupt the file. flock ensures mutual exclusion.
 export_prometheus() {
     record_export_start "prometheus"
 
     local textfile_dir="${NFTBAN_PROMETHEUS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
     local output_file="${textfile_dir}/${NFTBAN_PROMETHEUS_OUTPUT_FILE:-nftban.prom}"
+    local lock_file="${output_file}.lock"
 
     if [[ ! -d "$textfile_dir" ]]; then
         log_warn "Prometheus textfile directory not found: $textfile_dir"
@@ -136,14 +140,52 @@ export_prometheus() {
         return 1
     fi
 
+    # Acquire exclusive lock (BUG-002 fix: prevent concurrent writers)
+    exec 200>"$lock_file"
+    if ! flock -w 5 200; then
+        log_warn "Prometheus: could not acquire lock (another writer active)"
+        record_export_result "prometheus" "false" "lock_failed"
+        return 1
+    fi
+
     # Convert to Prometheus format (remove timestamp for textfile collector)
     # Skip string metrics (|STRING|) as they are Zabbix-only
     # Use mktemp in same directory for atomic rename on same filesystem
+    # BUG-015 FIX: Add HELP/TYPE annotations for OpenMetrics compliance
     local tmp_prom
     tmp_prom=$(mktemp "${output_file}.XXXXXX") || {
+        exec 200>&-  # Release lock
         record_export_result "prometheus" "false" "mktemp_failed"
         return 1
     }
+
+    # Write HELP/TYPE header annotations (OpenMetrics compliance)
+    cat >> "$tmp_prom" << 'PROM_HEADER'
+# HELP nftban_daemon_up NFTBan daemon status (1=running, 0=stopped)
+# TYPE nftban_daemon_up gauge
+# HELP nftban_uptime_seconds NFTBan daemon uptime in seconds
+# TYPE nftban_uptime_seconds gauge
+# HELP nftban_active_count Total number of active bans (IPv4+IPv6)
+# TYPE nftban_active_count gauge
+# HELP nftban_active_bans Number of active bans by address family
+# TYPE nftban_active_bans gauge
+# HELP nftban_blocks_total Total blocked IPs (Zabbix compatibility)
+# TYPE nftban_blocks_total gauge
+# HELP nftban_whitelist_total Total whitelisted entries
+# TYPE nftban_whitelist_total gauge
+# HELP nftban_feeds_enabled Number of enabled threat feeds
+# TYPE nftban_feeds_enabled gauge
+# HELP nftban_feeds_loaded Number of successfully loaded feeds
+# TYPE nftban_feeds_loaded gauge
+# HELP nftban_memory_rss_bytes Daemon RSS memory in bytes
+# TYPE nftban_memory_rss_bytes gauge
+# HELP nftban_export_attempts_total Number of export attempts by target
+# TYPE nftban_export_attempts_total counter
+# HELP nftban_export_success_total Number of successful exports by target
+# TYPE nftban_export_success_total counter
+# HELP nftban_export_failures_total Number of failed exports by target
+# TYPE nftban_export_failures_total counter
+PROM_HEADER
 
     if ! awk '{
         # Format: metric_name value timestamp -> metric_name value
@@ -158,14 +200,18 @@ export_prometheus() {
                 printf "%s %s\n", $1, $2
             }
         }
-    }' "$METRICS_CACHE" > "$tmp_prom"; then
+    }' "$METRICS_CACHE" >> "$tmp_prom"; then
         rm -f "$tmp_prom" 2>/dev/null
+        exec 200>&-  # Release lock
         record_export_result "prometheus" "false" "awk_failed"
         return 1
     fi
 
     chmod 644 "$tmp_prom"
     mv -f "$tmp_prom" "$output_file"
+
+    # Release lock (fd 200)
+    exec 200>&-
 
     record_export_result "prometheus" "true"
     log_info "Prometheus: exported to $output_file"
