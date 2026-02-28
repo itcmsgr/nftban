@@ -650,6 +650,14 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
+      # Checkout required for gh CLI to know the repository context
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: |
+            VERSION
+          sparse-checkout-cone-mode: false
+
       - name: Wait for release to be available
         run: sleep 30  # GitHub needs time to make assets available
 
