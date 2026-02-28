@@ -1025,8 +1025,8 @@ nftban_watchdog_collect_module_resources() {
         src_ddos=$(echo "$bans_json" | jq -r '.ddos // 0')
         # geoban is not a direct source, estimate from feeds or manual for now
         # For geoban, we check if the module is active
-        if systemctl is-active nftban-geoban.service &>/dev/null 2>&1 || \
-           [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban/enabled" ]]; then
+        # Geoban is an embedded module, check if enabled via data file
+        if [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban/enabled" ]]; then
             # Geoban doesn't generate bans the same way, check its status
             local geoban_countries
             geoban_countries=$(jq -r '.geoban.countries_blocked // 0' "$stats_cache" 2>/dev/null || echo "0")
@@ -1043,14 +1043,14 @@ nftban_watchdog_collect_module_resources() {
     local active_count=0
 
     # Check which embedded modules are active
-    if systemctl is-active nftban-portscan.service &>/dev/null 2>&1 || \
-       [[ "$(jq -r '.module_status.portscan // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
+    # Portscan is an embedded module, check via stats cache
+    if [[ "$(jq -r '.module_status.portscan // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
         embedded_modules+=("portscan:$src_portscan")
         ((active_count++)) || true
     fi
 
-    if systemctl is-active nftban-ddos.service &>/dev/null 2>&1 || \
-       [[ "$(jq -r '.module_status.ddos // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
+    # DDoS is an embedded module, check via stats cache
+    if [[ "$(jq -r '.module_status.ddos // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
         embedded_modules+=("ddos:$src_ddos")
         ((active_count++)) || true
     fi

@@ -21,7 +21,7 @@
 # meta:inventory.binaries="systemctl,nft"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
 # meta:inventory.config_files="nftban.conf"
-# meta:inventory.systemd_units="nftban.service,nftables.service,suricata.service"
+# meta:inventory.systemd_units="nftband.service,nftables.service,suricata.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
@@ -244,10 +244,10 @@ _nftban_system_enable_legacy() {
 
     # Feeds timer
     if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-feeds.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-feeds.timer" 2>/dev/null && \
-            systemctl start "nftban-feeds.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-feeds.timer"
+        if systemctl list-unit-files "nftban-core-feeds.timer" &>/dev/null 2>&1; then
+            systemctl enable "nftban-core-feeds.timer" 2>/dev/null && \
+            systemctl start "nftban-core-feeds.timer" 2>/dev/null && \
+            echo "  ✅ Enabled: nftban-core-feeds.timer"
         fi
     fi
 
@@ -543,9 +543,9 @@ nftban_system_restart() {
             echo "Restarting all NFTBan services..."
             echo ""
 
-            # Core NFTBan service
-            echo "  Restarting nftban.service..."
-            systemctl restart nftban.service 2>/dev/null || echo "    (not running)"
+            # Core NFTBan daemon
+            echo "  Restarting nftband.service..."
+            systemctl restart nftband.service 2>/dev/null || echo "    (not running)"
 
             # nftables
             echo "  Restarting nftables.service..."
@@ -637,10 +637,10 @@ nftban_system_status() {
     nft_status=$(systemctl is-active nftables.service 2>/dev/null || echo "inactive")
     echo "  nftables:         $nft_status"
 
-    # NFTBan main
+    # NFTBan main daemon
     local nftban_status
-    nftban_status=$(systemctl is-active nftban.service 2>/dev/null || echo "inactive")
-    echo "  nftban:           $nftban_status"
+    nftban_status=$(systemctl is-active nftband.service 2>/dev/null || echo "inactive")
+    echo "  nftband:          $nftban_status"
 
     # Suricata
     if command -v suricata &>/dev/null; then

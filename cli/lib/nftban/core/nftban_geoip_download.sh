@@ -346,10 +346,10 @@ EXAMPLES:
 
 AUTO-UPDATE:
     Enable weekly updates:
-      sudo systemctl enable --now nftban-geoip-update.timer
+      sudo systemctl enable --now nftban-core-geoip.timer
 
     Check timer status:
-      systemctl status nftban-geoip-update.timer
+      systemctl status nftban-core-geoip.timer
 
 NOTES:
     - GeoLite2 database is free but requires license key
