@@ -112,7 +112,7 @@ nftban_cmd_sync() {
 
         --quick|-q|quick)
             # BUG-LOW-001 FIX: Quick sync for postinst (skip feeds/geoban)
-            # Called by geoban.sh as fallback when queue unavailable
+            # Use for fast restarts when feeds/geoban don't need reloading
             nftban_sync_full --quick
             ;;
 
