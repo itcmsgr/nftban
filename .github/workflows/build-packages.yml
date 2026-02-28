@@ -472,11 +472,159 @@ jobs:
           done
 
   # ==========================================================================
+  # VALIDATE BINARY CONSISTENCY ACROSS ALL PACKAGES
+  # ==========================================================================
+  validate-binary-consistency:
+    name: Validate binary consistency (RPM vs DEB)
+    needs: [consolidate-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: all-packages/
+
+      - name: Download source binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: go-binaries
+          path: source-binaries/
+
+      - name: Validate all packages contain identical binaries
+        run: |
+          set -euo pipefail
+          echo "============================================================"
+          echo "BINARY CONSISTENCY CHECK"
+          echo "============================================================"
+          echo ""
+
+          # Get source binary hashes (the canonical reference)
+          echo "=== Source Binary Hashes (Reference) ==="
+          declare -A SOURCE_HASHES
+          for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+            if [[ -f "source-binaries/$binary" ]]; then
+              hash=$(sha256sum "source-binaries/$binary" | cut -d' ' -f1)
+              SOURCE_HASHES[$binary]="$hash"
+              size=$(stat -c%s "source-binaries/$binary")
+              echo "  $binary: $hash ($size bytes)"
+            fi
+          done
+          echo ""
+
+          ERRORS=0
+          PACKAGES_CHECKED=0
+
+          # Extract and check all RPM packages
+          echo "=== Checking RPM Packages ==="
+          for rpm in $(find all-packages -name "*.rpm" | sort); do
+            pkg_name=$(basename "$rpm")
+            echo "  Checking: $pkg_name"
+
+            mkdir -p /tmp/rpm-extract
+            cd /tmp/rpm-extract
+            rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idmv 2>/dev/null
+
+            for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+              pkg_binary="usr/lib/nftban/bin/$binary"
+              if [[ -f "$pkg_binary" ]]; then
+                pkg_hash=$(sha256sum "$pkg_binary" | cut -d' ' -f1)
+                pkg_size=$(stat -c%s "$pkg_binary")
+
+                if [[ "${SOURCE_HASHES[$binary]:-}" != "$pkg_hash" ]]; then
+                  echo "    ❌ MISMATCH: $binary"
+                  echo "       Source:  ${SOURCE_HASHES[$binary]:-NOT_FOUND}"
+                  echo "       Package: $pkg_hash ($pkg_size bytes)"
+                  ERRORS=$((ERRORS + 1))
+                else
+                  echo "    ✓ $binary: matches source"
+                fi
+              fi
+            done
+
+            cd "$GITHUB_WORKSPACE"
+            rm -rf /tmp/rpm-extract
+            PACKAGES_CHECKED=$((PACKAGES_CHECKED + 1))
+          done
+          echo ""
+
+          # Extract and check all DEB packages
+          echo "=== Checking DEB Packages ==="
+          for deb in $(find all-packages -name "*.deb" | sort); do
+            pkg_name=$(basename "$deb")
+            echo "  Checking: $pkg_name"
+
+            mkdir -p /tmp/deb-extract
+            cd /tmp/deb-extract
+            ar x "$GITHUB_WORKSPACE/$deb"
+            tar -xf data.tar.* 2>/dev/null || tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null || true
+
+            for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+              pkg_binary="usr/lib/nftban/bin/$binary"
+              if [[ -f "$pkg_binary" ]]; then
+                pkg_hash=$(sha256sum "$pkg_binary" | cut -d' ' -f1)
+                pkg_size=$(stat -c%s "$pkg_binary")
+
+                if [[ "${SOURCE_HASHES[$binary]:-}" != "$pkg_hash" ]]; then
+                  echo "    ❌ MISMATCH: $binary"
+                  echo "       Source:  ${SOURCE_HASHES[$binary]:-NOT_FOUND}"
+                  echo "       Package: $pkg_hash ($pkg_size bytes)"
+                  ERRORS=$((ERRORS + 1))
+                else
+                  echo "    ✓ $binary: matches source"
+                fi
+              fi
+            done
+
+            cd "$GITHUB_WORKSPACE"
+            rm -rf /tmp/deb-extract
+            PACKAGES_CHECKED=$((PACKAGES_CHECKED + 1))
+          done
+          echo ""
+
+          # Summary
+          echo "============================================================"
+          echo "SUMMARY"
+          echo "============================================================"
+          echo "Packages checked: $PACKAGES_CHECKED"
+          echo "Errors found: $ERRORS"
+          echo ""
+
+          if [[ $ERRORS -gt 0 ]]; then
+            echo "❌ FATAL: Binary consistency check FAILED!"
+            echo ""
+            echo "Some packages contain binaries that don't match the source."
+            echo "This indicates a serious build/packaging issue."
+            echo ""
+            echo "Root causes to check:"
+            echo "  1. Go build cache contamination"
+            echo "  2. Package build using wrong bin/ directory"
+            echo "  3. Artifact download/upload race conditions"
+            exit 1
+          fi
+
+          echo "✅ All packages contain identical binaries matching source"
+
+      - name: Generate consistency report
+        run: |
+          echo "## Binary Consistency Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All RPM and DEB packages contain identical Go binaries" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validated Binaries" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary | SHA256 (first 16 chars) |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------------------------|" >> $GITHUB_STEP_SUMMARY
+          for binary in source-binaries/*; do
+            name=$(basename "$binary")
+            hash=$(sha256sum "$binary" | cut -c1-16)
+            echo "| $name | \`$hash...\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+  # ==========================================================================
   # UPLOAD TO GITHUB RELEASE
   # ==========================================================================
   upload-release:
     name: Upload packages to GitHub Release
-    needs: [build-deb, build-rpm]
+    needs: [build-deb, build-rpm, validate-binary-consistency]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
