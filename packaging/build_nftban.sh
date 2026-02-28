@@ -901,9 +901,63 @@ if [[ -n "\$CONFLICTS" ]]; then
     echo "[NFTBan WARN] Found: \$CONFLICTS"
     echo ""
 
-    # Check for --takeover flag (env variable set by user)
+    # If NFTBAN_TAKEOVER not already set, prompt user or fail for non-interactive
+    if [[ "\${NFTBAN_TAKEOVER:-0}" != "1" ]]; then
+        echo "[NFTBan] NFTBan requires exclusive firewall control."
+        echo "[NFTBan] You cannot run two firewalls simultaneously."
+        echo ""
+
+        # Check if we have a terminal for interactive prompt
+        if [[ -t 0 ]]; then
+            # Interactive mode - ask user
+            echo "[NFTBan] How would you like to proceed?"
+            echo ""
+            echo "  [1] AUTO   - NFTBan will disable conflicting firewalls automatically"
+            echo "  [2] MANUAL - You will remove them yourself (installation aborts)"
+            echo ""
+            read -p "[NFTBan] Enter choice [1/2]: " CONFLICT_CHOICE </dev/tty
+
+            case "\$CONFLICT_CHOICE" in
+                1|auto|AUTO|a|A)
+                    echo ""
+                    echo "[NFTBan] Auto-takeover selected."
+                    export NFTBAN_TAKEOVER=1
+                    ;;
+                2|manual|MANUAL|m|M|*)
+                    echo ""
+                    echo "[NFTBan] Manual removal selected."
+                    echo ""
+                    echo "[NFTBan] Please remove the conflicting firewalls:"
+                    echo "[NFTBan]   - CSF: csf -x && yum remove csf lfd"
+                    echo "[NFTBan]   - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+                    echo "[NFTBan]   - UFW: ufw disable && apt remove ufw"
+                    echo "[NFTBan]   - firewalld: systemctl disable --now firewalld"
+                    echo "[NFTBan]   - iptables: systemctl disable --now iptables"
+                    echo ""
+                    echo "[NFTBan] Then reinstall NFTBan."
+                    exit 1
+                    ;;
+            esac
+        else
+            # Non-interactive mode - show instructions and exit
+            echo "[NFTBan ERROR] Non-interactive install detected."
+            echo "[NFTBan ERROR] Options:"
+            echo "[NFTBan ERROR]   1. Auto-takeover: NFTBAN_TAKEOVER=1 dnf install -y ./nftban-*.rpm"
+            echo "[NFTBan ERROR]   2. Manual removal:"
+            echo "[NFTBan ERROR]      - CSF: csf -x && yum remove csf lfd"
+            echo "[NFTBan ERROR]      - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+            echo "[NFTBan ERROR]      - UFW: ufw disable && apt remove ufw"
+            echo "[NFTBan ERROR]      - firewalld: systemctl disable --now firewalld"
+            echo "[NFTBan ERROR]      - iptables: systemctl disable --now iptables"
+            echo ""
+            echo "[NFTBan ERROR] Then reinstall NFTBan."
+            exit 1
+        fi
+    fi
+
+    # Run takeover if flag is set (either from env or user choice)
     if [[ "\${NFTBAN_TAKEOVER:-0}" == "1" ]]; then
-        echo "[NFTBan] --takeover mode: Disabling conflicting firewalls..."
+        echo "[NFTBan] Disabling conflicting firewalls..."
         echo ""
 
         # Disable CSF
@@ -999,22 +1053,6 @@ if [[ -n "\$CONFLICTS" ]]; then
         echo ""
         echo "[NFTBan] ✓ All conflicts removed. NFTBan is now THE firewall."
         echo ""
-    else
-        # No takeover - abort with instructions
-        echo "[NFTBan ERROR] NFTBan requires exclusive firewall control."
-        echo "[NFTBan ERROR] You cannot run two firewalls simultaneously."
-        echo ""
-        echo "[NFTBan ERROR] Options:"
-        echo "[NFTBan ERROR]   1. Auto-takeover: chattr -R -i /etc/nftban/ 2>/dev/null; dnf remove -y nftban-core; NFTBAN_TAKEOVER=1 dnf install -y ./nftban-*.rpm"
-        echo "[NFTBan ERROR]   2. Manual removal:"
-        echo "[NFTBan ERROR]      - CSF: csf -x && yum remove csf lfd"
-        echo "[NFTBan ERROR]      - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
-        echo "[NFTBan ERROR]      - UFW: ufw disable && apt remove ufw"
-        echo "[NFTBan ERROR]      - firewalld: systemctl disable --now firewalld"
-        echo "[NFTBan ERROR]      - iptables: systemctl disable --now iptables"
-        echo ""
-        echo "[NFTBan ERROR] Then reinstall NFTBan."
-        exit 1
     fi
 else
     echo "[NFTBan] No conflicting firewalls found"
@@ -1175,6 +1213,16 @@ fi
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
 %systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer nftban-unified-exporter.timer
+
+# BUG-R48 FIX: %systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
+# Timers that were disabled (manually or never enabled) stay disabled on upgrades.
+# Explicit enable ensures timers work after ANY install/upgrade.
+echo "[NFTBan] Ensuring critical timers are enabled..."
+systemctl enable nftban-maintenance.timer 2>/dev/null || true
+systemctl enable nftban-health.timer 2>/dev/null || true
+systemctl enable nftban-unified-exporter.timer 2>/dev/null || true
+systemctl enable nftban-core-geoip.timer 2>/dev/null || true
+systemctl enable nftban-core-feeds.timer 2>/dev/null || true
 
 # Enable nftables service
 systemctl enable nftables 2>/dev/null || true
@@ -2820,6 +2868,9 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.socket" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
 

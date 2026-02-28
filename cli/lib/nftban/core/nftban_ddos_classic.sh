@@ -60,10 +60,18 @@ source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
 # Load classic mode config
 _nftban_ddos_classic_load_config() {
     local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/classic.conf"
+    local local_config="${config_file%.conf}.conf.local"
 
+    # Load base config
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file"
+    fi
+
+    # Load local overrides (BUG-003 fix: was missing .local support)
+    if [[ -f "$local_config" ]]; then
+        # shellcheck source=/dev/null
+        source "$local_config"
     fi
 
     # Set defaults if not configured

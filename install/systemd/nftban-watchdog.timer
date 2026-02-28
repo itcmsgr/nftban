@@ -8,7 +8,7 @@
 # meta:type="config"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
-# meta:description="Timer that triggers NFTBan watchdog every 90 seconds"
+# meta:description="Timer that triggers NFTBan watchdog every 120 seconds (2 minutes)"
 # meta:input="None"
 # meta:output="Triggers nftban-watchdog.service"
 # meta:depends="nftban-watchdog.service"
@@ -31,14 +31,14 @@ Documentation=man:nftban(8)
 # Start 2 minutes after boot
 OnBootSec=2min
 
-# Run every 90 seconds for responsive alerting
-# CSF uses 60s, we use 90s for slightly less overhead
+# Run every 120 seconds (2 minutes) for responsive alerting
+# CSF uses 60s, we use 120s for less overhead while maintaining responsiveness
 OnUnitActiveSec=120s
 
 # Allow some variance to prevent load spikes
 AccuracySec=10s
 
-# JITTER: ~17% variance (15s on 90s interval)
+# JITTER: ~12.5% variance (15s on 120s interval)
 RandomizedDelaySec=15s
 
 # DETERMINISTIC: Same offset per host for predictable behavior

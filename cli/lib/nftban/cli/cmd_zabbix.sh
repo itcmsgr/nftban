@@ -879,8 +879,9 @@ _cmd_zabbix_discover() {
         countries)
             echo '{"data":['
             # Get blocked countries from geoban config
-            if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
-                source "${NFTBAN_CONFIG_DIR}/modules/geoban.conf"
+            # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
+            if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
+                source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
                 local first=true
                 for country in ${NFTBAN_GEOBAN_COUNTRIES:-}; do
                     [[ "$first" != "true" ]] && echo ","

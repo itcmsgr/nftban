@@ -550,6 +550,11 @@ func (d *Daemon) Run() error {
 	// Initialize config hash for reload tracking (v1.13.12)
 	d.initConfigHash()
 
+	// BUG-008 FIX: Set CIDR limit metric based on server tier at startup
+	cidrLimit, cidrTier := safety.GetMaxCIDRsHardWithTier()
+	metrics.SetCIDRLimitHard(cidrLimit)
+	log.Printf("Server tier: %s (max CIDRs: %d)", cidrTier, cidrLimit)
+
 	// Register modules
 	d.registerModules()
 
@@ -1395,6 +1400,11 @@ func (d *Daemon) handlePermanentBanStatsRequest() SocketResponse {
 			Error:   err.Error(),
 		}
 	}
+
+	// BUG-008 FIX: Update Prometheus metrics for permanent ban tracking
+	metrics.SetPermanentBansTotal(total)
+	metrics.SetPermanentBansProtected(protected)
+	metrics.SetPermanentBansEvictable(evictable)
 
 	return SocketResponse{
 		Success: true,
@@ -3158,12 +3168,16 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 	}
 
 	// Build response data
+	totalInput := len(ipv4CIDRs) + len(ipv6CIDRs)
 	data := map[string]any{
 		"set_type":    setType,
 		"ipv4_input":  len(ipv4CIDRs),
 		"ipv6_input":  len(ipv6CIDRs),
-		"total_input": len(ipv4CIDRs) + len(ipv6CIDRs),
+		"total_input": totalInput,
 	}
+
+	// BUG-008 FIX: Update CIDR metrics for Prometheus
+	metrics.SetCIDRCurrentTotal(totalInput)
 
 	if ipv4Stats != nil {
 		data["ipv4_output_ranges"] = ipv4Stats.OutputRanges
