@@ -63,7 +63,8 @@ check_dependencies() {
 
     # Check Go - required ONLY if pre-built binaries don't exist
     # CI downloads pre-built binaries, so Go is not needed in container
-    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -x "${PROJECT_ROOT}/bin/nftband" ]]; then
+    # Use -f (file exists) not -x (executable) - Docker volume mounts may lose +x
+    if [[ -f "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -f "${PROJECT_ROOT}/bin/nftband" ]]; then
         log_success "Pre-built binaries found in bin/ - Go not required"
     elif ! command -v go >/dev/null 2>&1; then
         log_error "╔══════════════════════════════════════════════════════════════════╗"
@@ -164,19 +165,48 @@ validate_binary() {
 }
 
 build_binaries() {
-    # Check if pre-built binaries exist (from CI)
-    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -x "${PROJECT_ROOT}/bin/nftband" ]]; then
-        log_info "Using pre-built binaries from bin/"
-        ls -la "${PROJECT_ROOT}/bin/"
+    local bin_dir="${PROJECT_ROOT}/bin"
+    local nftban_core="${bin_dir}/nftban-core"
+    local nftband="${bin_dir}/nftband"
 
-        # Validate pre-built binaries
-        validate_binary "${PROJECT_ROOT}/bin/nftban-core" || return 1
-        validate_binary "${PROJECT_ROOT}/bin/nftband" || return 1
-
-        return 0
+    # Debug: Show what we're looking for
+    log_info "Checking for pre-built binaries in: ${bin_dir}"
+    if [[ -d "$bin_dir" ]]; then
+        log_info "bin/ directory exists, contents:"
+        ls -la "$bin_dir" || true
+    else
+        log_info "bin/ directory does not exist"
     fi
 
-    log_info "Building binaries..."
+    # Check if pre-built binaries exist (from CI)
+    # Use -f (file exists) not -x (executable) - Docker volume mounts may lose +x
+    if [[ -f "$nftban_core" ]] && [[ -f "$nftband" ]]; then
+        log_info "Found pre-built binaries, validating..."
+
+        # Ensure binaries are executable (might be lost in Docker volume mount)
+        chmod +x "$nftban_core" "$nftband" 2>/dev/null || true
+
+        # Validate pre-built binaries are valid ELF files
+        if validate_binary "$nftban_core" && validate_binary "$nftband"; then
+            log_success "Using pre-built binaries from bin/ - skipping rebuild"
+            # Record SHA256 hashes for debugging
+            log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
+            log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
+            return 0
+        else
+            log_warn "Pre-built binaries failed validation, will rebuild"
+        fi
+    fi
+
+    # No valid pre-built binaries - need to build
+    log_info "Building binaries from source..."
+
+    # Check Go is available
+    if ! command -v go >/dev/null 2>&1; then
+        log_error "Go is not installed and no pre-built binaries found"
+        log_error "Either install Go or provide pre-built binaries in bin/"
+        return 1
+    fi
 
     cd "${PROJECT_ROOT}"
     ./build.sh || {
@@ -185,10 +215,12 @@ build_binaries() {
     }
 
     # Validate built binaries
-    validate_binary "${PROJECT_ROOT}/bin/nftban-core" || return 1
-    validate_binary "${PROJECT_ROOT}/bin/nftband" || return 1
+    validate_binary "$nftban_core" || return 1
+    validate_binary "$nftband" || return 1
 
     log_success "Binaries built successfully"
+    log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
+    log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
 }
 
 # shellcheck disable=SC2120  # $1 in heredoc is RPM scriptlet argument, not bash
@@ -214,6 +246,15 @@ create_rpm_spec_nftban_core() {
 # Disable debuginfo for Go binary (no debug symbols)
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
+
+# CRITICAL: Disable ALL post-build processing that modifies binaries
+# Pre-built Go binaries must remain UNCHANGED for hash verification
+# Without this, rpmbuild adds .note.gnu.build-id sections (+~300 bytes)
+%define _build_id_links none
+%define __brp_strip %{nil}
+%define __brp_strip_static_archive %{nil}
+%define __brp_strip_comment_note %{nil}
+%define __os_install_post %{nil}
 
 Name:           nftban-core
 Version:        ${PKG_VERSION}
@@ -1212,11 +1253,11 @@ fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
-# NOTE: %systemd_post macros removed due to el10 compatibility issues
+# NOTE: %%systemd_post macros removed due to el10 compatibility issues
 # (systemd-rpm-macros 256+ causes "invalid option -- 'e'" errors)
 # Using explicit systemctl commands instead - achieves same result
 
-# BUG-R48 FIX: %systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
+# BUG-R48 FIX: %%systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
 # Timers that were disabled (manually or never enabled) stay disabled on upgrades.
 # Explicit enable ensures timers work after ANY install/upgrade.
 echo "[NFTBan] Ensuring critical timers are enabled..."
@@ -1582,7 +1623,7 @@ for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh;
     fi
 done
 # FULL list of all systemd units — must match DEB prerm
-# NOTE: %systemd_preun macros removed due to el10 compatibility issues
+# NOTE: %%systemd_preun macros removed due to el10 compatibility issues
 # Using explicit systemctl commands instead (same functionality)
 if [ \$1 -eq 0 ]; then
     # Complete uninstall: stop and disable all services
@@ -1604,7 +1645,7 @@ if [ \$1 -eq 0 ]; then
 fi
 
 %postun
-# NOTE: %systemd_postun_with_restart macros removed due to el10 compatibility issues
+# NOTE: %%systemd_postun_with_restart macros removed due to el10 compatibility issues
 # Using explicit systemctl commands instead (same functionality)
 if [ \$1 -ge 1 ]; then
     # Upgrade: restart services that were running
