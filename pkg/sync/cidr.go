@@ -291,7 +291,10 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		next := intervals[i]
 
 		// Check if ranges overlap or are adjacent
-		if next.Start <= current.End+1 {
+		// R11 FIX: Handle uint32 overflow when current.End == MaxUint32
+		// Adding 1 to MaxUint32 would overflow to 0, causing incorrect merges
+		shouldMerge := current.End == math.MaxUint32 || next.Start <= current.End+1
+		if shouldMerge {
 			// Merge: extend current range if needed
 			if next.End > current.End {
 				current.End = next.End

@@ -226,9 +226,63 @@ case "$1" in
             log_warn "Found: $CONFLICTS"
             log_warn ""
 
-            # Check for --takeover flag (env variable set by user)
+            # If NFTBAN_TAKEOVER not already set, prompt user or fail for non-interactive
+            if [[ "${NFTBAN_TAKEOVER:-0}" != "1" ]]; then
+                log_info "NFTBan requires exclusive firewall control."
+                log_info "You cannot run two firewalls simultaneously."
+                log_info ""
+
+                # Check if we have a terminal for interactive prompt
+                if [[ -t 0 ]]; then
+                    # Interactive mode - ask user
+                    log_info "How would you like to proceed?"
+                    log_info ""
+                    log_info "  [1] AUTO   - NFTBan will disable conflicting firewalls automatically"
+                    log_info "  [2] MANUAL - You will remove them yourself (installation aborts)"
+                    log_info ""
+                    read -p "[NFTBan] Enter choice [1/2]: " CONFLICT_CHOICE </dev/tty
+
+                    case "$CONFLICT_CHOICE" in
+                        1|auto|AUTO|a|A)
+                            log_info ""
+                            log_info "Auto-takeover selected."
+                            export NFTBAN_TAKEOVER=1
+                            ;;
+                        2|manual|MANUAL|m|M|*)
+                            log_info ""
+                            log_info "Manual removal selected."
+                            log_info ""
+                            log_info "Please remove the conflicting firewalls:"
+                            log_info "  - CSF: csf -x && apt remove csf lfd"
+                            log_info "  - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+                            log_info "  - UFW: ufw disable && apt remove ufw"
+                            log_info "  - firewalld: systemctl disable --now firewalld"
+                            log_info "  - iptables: systemctl disable --now iptables"
+                            log_info ""
+                            log_info "Then reinstall NFTBan."
+                            exit 1
+                            ;;
+                    esac
+                else
+                    # Non-interactive mode - show instructions and exit
+                    log_error "Non-interactive install detected."
+                    log_error "Options:"
+                    log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
+                    log_error "  2. Manual removal:"
+                    log_error "     - CSF: csf -x && apt remove csf lfd"
+                    log_error "     - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
+                    log_error "     - UFW: ufw disable && apt remove ufw"
+                    log_error "     - firewalld: systemctl disable --now firewalld"
+                    log_error "     - iptables: systemctl disable --now iptables"
+                    log_error ""
+                    log_error "Then reinstall NFTBan."
+                    exit 1
+                fi
+            fi
+
+            # Run takeover if flag is set (either from env or user choice)
             if [[ "${NFTBAN_TAKEOVER:-0}" == "1" ]]; then
-                log_info "--takeover mode: Disabling conflicting firewalls..."
+                log_info "Disabling conflicting firewalls..."
                 log_info ""
 
                 # Disable CSF
@@ -323,22 +377,6 @@ case "$1" in
                 log_info ""
                 log_info "✓ All conflicts removed. NFTBan is now THE firewall."
                 log_info ""
-            else
-                # No takeover - abort with instructions
-                log_error "NFTBan requires exclusive firewall control."
-                log_error "You cannot run two firewalls simultaneously."
-                log_error ""
-                log_error "Options:"
-                log_error "  1. Auto-takeover: chattr -R -i /etc/nftban/ 2>/dev/null; apt remove --purge -y nftban-core; NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
-                log_error "  2. Manual removal:"
-                log_error "     - CSF: csf -x && apt remove csf lfd"
-                log_error "     - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
-                log_error "     - UFW: ufw disable && apt remove ufw"
-                log_error "     - firewalld: systemctl disable --now firewalld"
-                log_error "     - iptables: systemctl disable --now iptables"
-                log_error ""
-                log_error "Then reinstall NFTBan."
-                exit 1
             fi
         else
             log_info "No conflicting firewalls found"
@@ -756,11 +794,21 @@ case "$1" in
                 log_warn "nftband.service not enabled (run: systemctl enable nftband.service)"
             fi
 
+            # BUG-R48 FIX: Ensure critical timers are enabled on upgrades
+            # Older installs may not have enabled these timers, or they were manually disabled.
+            # This ensures metrics/maintenance/health checks work after upgrade.
+            log_info "  Ensuring critical timers are enabled..."
+            for timer in nftban-maintenance.timer nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer; do
+                if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then
+                    systemctl enable "$timer" >/dev/null 2>&1 || true
+                fi
+            done
+
             deb-systemd-invoke try-restart nftband.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui.service >/dev/null 2>&1 || true
-            log_info "  Upgrade - services enabled and restarted"
+            log_info "  Upgrade - services and timers enabled, services restarted"
         fi
 
         fi  # End of PREFLIGHT_PASSED check for service enablement
@@ -826,6 +874,28 @@ case "$1" in
                 log_info "Enabling and starting nftables..."
                 systemctl enable nftables 2>/dev/null || true
                 systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
+            fi
+            # BUG-004 FIX: Schema migration - auto rebuild ONLY if schema changed
+            # This ensures firewall is rebuilt when upgrading from older schema versions
+            CURRENT_SCHEMA="2.1"
+            SCHEMA_FILE="/etc/nftban/.schema_version"
+            INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
+
+            sleep 1
+            if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
+                log_info "Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
+                log_info "Rebuilding firewall (temp bans will be cleared)..."
+                if nftban firewall rebuild >/dev/null 2>&1; then
+                    echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
+                    # Sync configs to load all values (ports, whitelist, blacklist)
+                    nftban sync >/dev/null 2>&1 || true
+                    log_info "Schema migration complete."
+                else
+                    log_warn "Firewall rebuild failed - run manually: nftban firewall rebuild"
+                fi
+            else
+                # Schema unchanged - just sync (preserves temp bans)
+                nftban sync >/dev/null 2>&1 || log_warn "Sync failed (non-critical)"
             fi
         else
             log_warn ""

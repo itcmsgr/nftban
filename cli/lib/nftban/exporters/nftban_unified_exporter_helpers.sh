@@ -225,7 +225,8 @@ should_collect_component() {
             ;;
         geoip)
             # GeoIP: module enabled AND database exists (DBIP or GeoLite2)
-            if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
+            # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
+            if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
                 [[ -f "${NFTBAN_CACHE_DIR}/geoip/dbip-country-lite.mmdb" ]] && return 0
                 [[ -f "${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb" ]] && return 0
             fi

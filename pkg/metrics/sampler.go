@@ -150,10 +150,12 @@ func (s *Sampler) initPrometheus() {
 		Help:      "Total number of firewall rules",
 	})
 
+	// BUG-001 FIX: Aligned semantics with collector.go (0=OK, higher=worse)
+	// This matches standard Prometheus conventions where 0 = healthy
 	s.healthGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "health_status",
-		Help:      "Health status (1=ok, 0=error)",
+		Help:      "Health status (0=OK, 1=WARN, 2=ERROR, 3=CRITICAL)",
 	})
 
 	s.feedsActiveGauge = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -524,10 +526,11 @@ func (s *Sampler) takeSample() {
 	// Update BASIC Prometheus metrics
 	s.blockedIPsGauge.Set(float64(sample.BlockedIPs))
 	s.ruleCountGauge.Set(float64(sample.RuleCount))
+	// BUG-001 FIX: Use 0=OK, 2=ERROR to match collector.go semantics
 	if sample.HealthOK {
-		s.healthGauge.Set(1)
+		s.healthGauge.Set(0) // 0 = OK (was: 1)
 	} else {
-		s.healthGauge.Set(0)
+		s.healthGauge.Set(2) // 2 = ERROR (was: 0)
 	}
 	s.feedsActiveGauge.Set(float64(sample.FeedsActive))
 	s.feedsTotalIPsGauge.Set(float64(snap.FeedsIPs))

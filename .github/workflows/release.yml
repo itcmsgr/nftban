@@ -119,6 +119,39 @@ jobs:
           done
           ls -la dist/packages/
 
+      # CRITICAL: Validate packaged binaries match source binaries
+      # This prevents stale/cached binaries from being packaged
+      - name: Validate RPM contains correct binaries
+        run: |
+          echo "=== Validating RPM binary integrity ==="
+          RPM_FILE="dist/packages/nftban-${{ matrix.name_suffix }}-x86_64.rpm"
+
+          # Extract binaries from RPM
+          mkdir -p /tmp/rpm-check
+          cd /tmp/rpm-check
+          rpm2cpio "$GITHUB_WORKSPACE/$RPM_FILE" | cpio -idm 2>/dev/null
+
+          # Compare hashes with source binaries
+          for binary in nftband nftban-core; do
+            SOURCE_HASH=$(sha256sum "$GITHUB_WORKSPACE/bin/$binary" | cut -d' ' -f1)
+            PKG_HASH=$(sha256sum "./usr/lib/nftban/bin/$binary" | cut -d' ' -f1)
+
+            echo "Checking $binary:"
+            echo "  Source: $SOURCE_HASH"
+            echo "  Package: $PKG_HASH"
+
+            if [[ "$SOURCE_HASH" != "$PKG_HASH" ]]; then
+              echo "❌ FATAL: $binary hash mismatch in ${{ matrix.name_suffix }} RPM!"
+              echo "The packaged binary does not match the freshly built binary."
+              echo "This indicates stale binaries were packaged."
+              exit 1
+            fi
+            echo "  ✓ Hash matches"
+          done
+
+          echo "✅ All RPM binaries validated successfully"
+          rm -rf /tmp/rpm-check
+
       - name: Upload RPM packages (${{ matrix.distro }})
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -191,6 +224,36 @@ jobs:
           done
           ls -la dist/packages/
 
+      # CRITICAL: Validate packaged binaries match source binaries
+      - name: Validate DEB contains correct binaries
+        run: |
+          echo "=== Validating DEB binary integrity ==="
+          DEB_FILE="dist/packages/nftban-${{ matrix.name_suffix }}-amd64.deb"
+
+          # Extract binaries from DEB
+          mkdir -p /tmp/deb-check
+          dpkg-deb -x "$DEB_FILE" /tmp/deb-check
+
+          # Compare hashes with source binaries
+          for binary in nftband nftban-core; do
+            SOURCE_HASH=$(sha256sum "bin/$binary" | cut -d' ' -f1)
+            PKG_HASH=$(sha256sum "/tmp/deb-check/usr/lib/nftban/bin/$binary" | cut -d' ' -f1)
+
+            echo "Checking $binary:"
+            echo "  Source: $SOURCE_HASH"
+            echo "  Package: $PKG_HASH"
+
+            if [[ "$SOURCE_HASH" != "$PKG_HASH" ]]; then
+              echo "❌ FATAL: $binary hash mismatch in ${{ matrix.name_suffix }} DEB!"
+              echo "The packaged binary does not match the freshly built binary."
+              exit 1
+            fi
+            echo "  ✓ Hash matches"
+          done
+
+          echo "✅ All DEB binaries validated successfully"
+          rm -rf /tmp/deb-check
+
       - name: Upload DEB packages (${{ matrix.distro }})
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -259,9 +322,10 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
 
-          # Define expected packages (must match matrix)
-          # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
-          EXPECTED_PACKAGES=(
+          # CRITICAL FIX: Delete ALL existing assets that we're about to upload
+          # This ensures re-runs of the workflow always upload fresh binaries
+          # Without this, softprops/action-gh-release silently skips existing files
+          ASSETS_TO_REPLACE=(
             "nftban-el9-x86_64.rpm"
             "nftban-el10-x86_64.rpm"
             "nftban-ubuntu22.04-amd64.deb"
@@ -270,23 +334,31 @@ jobs:
             "nftban-debian13-amd64.deb"
             "nftband-linux-amd64"
             "nftban-ui-auth-linux-amd64"
-            "nftban-core-linux-amd64"
-            "nftban-ui-linux-amd64"
-            "nftban-core-linux-amd64.intoto.jsonl"
-            "nftban-ui-linux-amd64.intoto.jsonl"
             "SHA256SUMS"
             "MANIFEST.txt"
             "VERIFY.txt"
             "sbom.spdx.json"
           )
 
-          # Get current release assets
-          CURRENT_ASSETS=$(gh release view "$VERSION" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+          echo "Deleting existing assets to ensure fresh upload..."
+          for asset in "${ASSETS_TO_REPLACE[@]}"; do
+            echo "  Deleting: $asset"
+            gh release delete-asset "$VERSION" "$asset" --yes 2>/dev/null || true
+          done
 
-          # Remove assets not in expected list
+          # Also clean up unexpected assets
+          EXPECTED_PACKAGES=(
+            "${ASSETS_TO_REPLACE[@]}"
+            "nftban-core-linux-amd64"
+            "nftban-ui-linux-amd64"
+            "nftban-core-linux-amd64.intoto.jsonl"
+            "nftban-ui-linux-amd64.intoto.jsonl"
+          )
+
+          CURRENT_ASSETS=$(gh release view "$VERSION" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
           for asset in $CURRENT_ASSETS; do
             if [[ ! " ${EXPECTED_PACKAGES[*]} " =~ " ${asset} " ]]; then
-              echo "Removing old asset: $asset"
+              echo "Removing unexpected asset: $asset"
               gh release delete-asset "$VERSION" "$asset" --yes || true
             fi
           done
@@ -514,3 +586,88 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================================
+  # POST-RELEASE VERIFICATION
+  # ==========================================================================
+  # Downloads packages from GitHub and validates binary integrity
+  # This is the FINAL safety check - catches upload failures and stale caches
+  verify-release:
+    name: Verify Release Integrity
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for release to be available
+        run: sleep 30  # GitHub needs time to make assets available
+
+      - name: Download and verify all packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "=== Verifying release $VERSION ==="
+
+          # Download standalone binary (this is the reference)
+          echo "Downloading reference binary..."
+          gh release download "$VERSION" -p "nftband-linux-amd64" -O /tmp/nftband-reference
+          REFERENCE_HASH=$(sha256sum /tmp/nftband-reference | cut -d' ' -f1)
+          REFERENCE_SIZE=$(stat -c%s /tmp/nftband-reference)
+          echo "Reference nftband: $REFERENCE_SIZE bytes, hash: $REFERENCE_HASH"
+
+          # Function to check package
+          check_package() {
+            local pkg_name="$1"
+            local pkg_type="$2"
+            local extract_cmd="$3"
+
+            echo ""
+            echo "--- Checking $pkg_name ---"
+            gh release download "$VERSION" -p "$pkg_name" -O "/tmp/$pkg_name" || {
+              echo "❌ FAILED to download $pkg_name"
+              return 1
+            }
+
+            mkdir -p /tmp/extract
+            cd /tmp/extract
+            eval "$extract_cmd"
+
+            if [[ -f "./usr/lib/nftban/bin/nftband" ]]; then
+              PKG_HASH=$(sha256sum ./usr/lib/nftban/bin/nftband | cut -d' ' -f1)
+              PKG_SIZE=$(stat -c%s ./usr/lib/nftban/bin/nftband)
+              echo "Package nftband: $PKG_SIZE bytes, hash: $PKG_HASH"
+
+              if [[ "$PKG_HASH" != "$REFERENCE_HASH" ]]; then
+                echo "❌ FATAL: Hash mismatch in $pkg_name!"
+                echo "Expected: $REFERENCE_HASH"
+                echo "Got:      $PKG_HASH"
+                exit 1
+              fi
+              echo "✅ $pkg_name verified"
+            else
+              echo "❌ nftband not found in $pkg_name"
+              exit 1
+            fi
+
+            rm -rf /tmp/extract/*
+            cd /tmp
+          }
+
+          # Install extraction tools
+          sudo apt-get update && sudo apt-get install -y rpm2cpio cpio
+
+          # Check all RPMs
+          check_package "nftban-el9-x86_64.rpm" "rpm" "rpm2cpio /tmp/nftban-el9-x86_64.rpm | cpio -idm 2>/dev/null"
+          check_package "nftban-el10-x86_64.rpm" "rpm" "rpm2cpio /tmp/nftban-el10-x86_64.rpm | cpio -idm 2>/dev/null"
+
+          # Check all DEBs
+          check_package "nftban-debian12-amd64.deb" "deb" "dpkg-deb -x /tmp/nftban-debian12-amd64.deb ."
+          check_package "nftban-debian13-amd64.deb" "deb" "dpkg-deb -x /tmp/nftban-debian13-amd64.deb ."
+          check_package "nftban-ubuntu22.04-amd64.deb" "deb" "dpkg-deb -x /tmp/nftban-ubuntu22.04-amd64.deb ."
+          check_package "nftban-ubuntu24.04-amd64.deb" "deb" "dpkg-deb -x /tmp/nftban-ubuntu24.04-amd64.deb ."
+
+          echo ""
+          echo "============================================="
+          echo "✅ ALL PACKAGES VERIFIED SUCCESSFULLY"
+          echo "All 6 packages contain identical nftband binary"
+          echo "Reference hash: $REFERENCE_HASH"
+          echo "============================================="
