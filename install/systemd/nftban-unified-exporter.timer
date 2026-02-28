@@ -35,7 +35,7 @@
 [Unit]
 Description=NFTBan Unified Metrics Exporter Timer
 Documentation=https://nftban.com/docs/metrics
-After=nftban.service
+After=nftband.service
 # NOTE: Do NOT use Requires= for the triggered service. Timers implicitly
 # trigger their matching .service via naming convention. Using Requires=
 # on a oneshot service causes the timer to stop when the service completes.

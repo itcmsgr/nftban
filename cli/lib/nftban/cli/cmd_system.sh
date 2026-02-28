@@ -21,7 +21,7 @@
 # meta:inventory.binaries="systemctl,nft"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
 # meta:inventory.config_files="nftban.conf"
-# meta:inventory.systemd_units="nftban.service,nftables.service,suricata.service"
+# meta:inventory.systemd_units="nftband.service,nftables.service,suricata.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
@@ -543,9 +543,9 @@ nftban_system_restart() {
             echo "Restarting all NFTBan services..."
             echo ""
 
-            # Core NFTBan service
-            echo "  Restarting nftban.service..."
-            systemctl restart nftban.service 2>/dev/null || echo "    (not running)"
+            # Core NFTBan daemon
+            echo "  Restarting nftband.service..."
+            systemctl restart nftband.service 2>/dev/null || echo "    (not running)"
 
             # nftables
             echo "  Restarting nftables.service..."
@@ -637,10 +637,10 @@ nftban_system_status() {
     nft_status=$(systemctl is-active nftables.service 2>/dev/null || echo "inactive")
     echo "  nftables:         $nft_status"
 
-    # NFTBan main
+    # NFTBan main daemon
     local nftban_status
-    nftban_status=$(systemctl is-active nftban.service 2>/dev/null || echo "inactive")
-    echo "  nftban:           $nftban_status"
+    nftban_status=$(systemctl is-active nftband.service 2>/dev/null || echo "inactive")
+    echo "  nftband:          $nftban_status"
 
     # Suricata
     if command -v suricata &>/dev/null; then
