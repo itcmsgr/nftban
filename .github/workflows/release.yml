@@ -96,13 +96,22 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            set -e  # Exit on any error
+
             # Install build dependencies (curl required for yq download)
             dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
 
             # Build RPM
             chmod +x packaging/build_nftban.sh
             cd packaging
-            ./build_nftban.sh rpm
+            ./build_nftban.sh rpm || { echo '❌ RPM build failed!'; exit 1; }
+
+            # Verify RPM was created
+            if ! ls /workspace/build/packages/RPMS/*/*.rpm 2>/dev/null; then
+              echo '❌ No RPM files created!'
+              ls -laR /workspace/build/ || true
+              exit 1
+            fi
 
             # Fix permissions
             chmod -R a+rX /workspace/build/
@@ -111,13 +120,31 @@ jobs:
       - name: Rename RPM with distro suffix
         run: |
           mkdir -p dist/packages
+          echo "=== Looking for RPM files ==="
+          find build -name "*.rpm" -type f 2>/dev/null || echo "No RPM files found"
+
+          RPM_FOUND=0
           for rpm in build/packages/RPMS/*/*.rpm; do
             if [[ -f "$rpm" ]]; then
-              # Create distro-specific name: nftban-el9-x86_64.rpm
+              echo "Found RPM: $rpm"
               cp "$rpm" "dist/packages/nftban-${{ matrix.name_suffix }}-x86_64.rpm"
+              RPM_FOUND=1
             fi
           done
+
+          if [[ $RPM_FOUND -eq 0 ]]; then
+            echo "❌ FATAL: No RPM files found in build/packages/RPMS/"
+            echo "Build directory contents:"
+            ls -laR build/ 2>/dev/null || echo "build/ directory does not exist"
+            exit 1
+          fi
+
+          echo "=== dist/packages contents ==="
           ls -la dist/packages/
+
+      # Install rpm2cpio for validation (not available on Ubuntu by default)
+      - name: Install rpm2cpio
+        run: sudo apt-get update && sudo apt-get install -y rpm2cpio cpio
 
       # CRITICAL: Validate packaged binaries match source binaries
       # This prevents stale/cached binaries from being packaged
@@ -126,10 +153,18 @@ jobs:
           echo "=== Validating RPM binary integrity ==="
           RPM_FILE="dist/packages/nftban-${{ matrix.name_suffix }}-x86_64.rpm"
 
+          if [[ ! -f "$RPM_FILE" ]]; then
+            echo "❌ FATAL: RPM file not found: $RPM_FILE"
+            exit 1
+          fi
+
           # Extract binaries from RPM
           mkdir -p /tmp/rpm-check
           cd /tmp/rpm-check
-          rpm2cpio "$GITHUB_WORKSPACE/$RPM_FILE" | cpio -idm 2>/dev/null
+          rpm2cpio "$GITHUB_WORKSPACE/$RPM_FILE" | cpio -idm 2>/dev/null || {
+            echo "❌ FATAL: Failed to extract RPM"
+            exit 1
+          }
 
           # Compare hashes with source binaries
           for binary in nftband nftban-core; do
@@ -197,6 +232,8 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            set -e  # Exit on any error
+
             # Install build dependencies (with retry for transient mirror issues)
             for i in 1 2 3; do
               apt-get update && apt-get install -y dpkg-dev build-essential file curl && break
@@ -207,7 +244,14 @@ jobs:
             # Build DEB
             chmod +x packaging/build_nftban.sh
             cd packaging
-            ./build_nftban.sh deb
+            ./build_nftban.sh deb || { echo '❌ DEB build failed!'; exit 1; }
+
+            # Verify DEB was created
+            if ! ls /workspace/build/packages/*.deb 2>/dev/null; then
+              echo '❌ No DEB files created!'
+              ls -laR /workspace/build/ || true
+              exit 1
+            fi
 
             # Fix permissions
             chmod -R a+rX /workspace/build/
@@ -216,12 +260,21 @@ jobs:
       - name: Rename DEB with distro suffix
         run: |
           mkdir -p dist/packages
+          DEB_FOUND=0
           for deb in build/packages/*.deb; do
             if [[ -f "$deb" ]]; then
-              # Create distro-specific name: nftban-ubuntu22.04-amd64.deb
+              echo "Found DEB: $deb"
               cp "$deb" "dist/packages/nftban-${{ matrix.name_suffix }}-amd64.deb"
+              DEB_FOUND=1
             fi
           done
+
+          if [[ $DEB_FOUND -eq 0 ]]; then
+            echo "❌ FATAL: No DEB files found in build/packages/"
+            ls -laR build/ 2>/dev/null || echo "build/ directory does not exist"
+            exit 1
+          fi
+
           ls -la dist/packages/
 
       # CRITICAL: Validate packaged binaries match source binaries
