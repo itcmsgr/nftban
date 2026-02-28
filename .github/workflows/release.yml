@@ -666,6 +666,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
+          REPO_DIR="$GITHUB_WORKSPACE"
           echo "=== Verifying release $VERSION ==="
 
           # Download standalone binary (this is the reference)
@@ -683,6 +684,9 @@ jobs:
 
             echo ""
             echo "--- Checking $pkg_name ---"
+
+            # Must be in repo dir for gh to work
+            cd "$REPO_DIR"
             gh release download "$VERSION" -p "$pkg_name" -O "/tmp/$pkg_name" || {
               echo "❌ FAILED to download $pkg_name"
               return 1
@@ -710,7 +714,6 @@ jobs:
             fi
 
             rm -rf /tmp/extract/*
-            cd /tmp
           }
 
           # Install extraction tools
