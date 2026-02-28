@@ -269,30 +269,29 @@ collect_module_status_metrics() {
     # suricata: Check if suricata.service is active OR if nftban has suricata module enabled
     if systemctl is-active "suricata.service" &>/dev/null || \
        [[ -f "${NFTBAN_CONFIG_DIR}/modules/suricata.conf" ]] && \
-       systemctl is-active "nftban-suricata.timer" &>/dev/null; then
+       systemctl is-active "nftban-suricata-update.timer" &>/dev/null; then
         suricata=1
     fi
 
-    # loginmon: Check /run/nftban/loginmon.pid OR nftban-login.timer active
-    if systemctl is-active "nftban-login.timer" &>/dev/null || \
+    # loginmon: Check login-monitor service OR PID file
+    # NOTE: nftban-login-monitor.service is the correct unit (no timer exists)
+    if systemctl is-active "nftban-login-monitor.service" &>/dev/null || \
        [[ -f "${NFTBAN_RUN_DIR}/loginmon.pid" ]]; then
         loginmon=1
     fi
 
-    # portscan: Check /run/nftban/portscan.pid OR nftban-portscan.timer active
-    if systemctl is-active "nftban-portscan.timer" &>/dev/null || \
-       [[ -f "${NFTBAN_RUN_DIR}/portscan.pid" ]]; then
+    # portscan: Check PID file (portscan runs via login-monitor, no separate timer)
+    if [[ -f "${NFTBAN_RUN_DIR}/portscan.pid" ]]; then
         portscan=1
     fi
 
-    # ddos: Check /run/nftban/ddos.pid OR nftban-ddos.timer active
-    if systemctl is-active "nftban-ddos.timer" &>/dev/null || \
-       [[ -f "${NFTBAN_RUN_DIR}/ddos.pid" ]]; then
+    # ddos: Check PID file (ddos runs via login-monitor, no separate timer)
+    if [[ -f "${NFTBAN_RUN_DIR}/ddos.pid" ]]; then
         ddos=1
     fi
 
-    # feeds: Check nftban-feeds.timer active
-    if systemctl is-active "nftban-feeds.timer" &>/dev/null; then
+    # feeds: Check nftban-core-feeds.timer active
+    if systemctl is-active "nftban-core-feeds.timer" &>/dev/null; then
         feeds=1
     fi
 

@@ -244,10 +244,10 @@ _nftban_system_enable_legacy() {
 
     # Feeds timer
     if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-feeds.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-feeds.timer" 2>/dev/null && \
-            systemctl start "nftban-feeds.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-feeds.timer"
+        if systemctl list-unit-files "nftban-core-feeds.timer" &>/dev/null 2>&1; then
+            systemctl enable "nftban-core-feeds.timer" 2>/dev/null && \
+            systemctl start "nftban-core-feeds.timer" 2>/dev/null && \
+            echo "  ✅ Enabled: nftban-core-feeds.timer"
         fi
     fi
 

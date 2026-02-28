@@ -83,17 +83,16 @@ polkit.addRule(function (action, subject) {
 
         // WHITELIST: ONLY these units can be managed
         // CRITICAL: NO wildcards, NO prefix matching - explicit names only
+        // See docs/systemd/UNITS.md for canonical list
         var allowedUnits = [
+            // NFTBan Main Daemon
+            "nftband.service",
+
             // NFTBan Core Services
-            "nftban-core.service",
             "nftban-core-feeds.service",
             "nftban-core-feeds.timer",
             "nftban-core-geoip.service",
             "nftban-core-geoip.timer",
-            "nftban.timer",
-
-            // NFTBan Main Daemon
-            "nftband.service",
 
             // NFTBan Health & Maintenance (managed by auto-heal)
             "nftban-health.service",
@@ -181,7 +180,7 @@ polkit.addRule(function (action, subject) {
 //
 // To test authorization (as nftban group member):
 //   systemctl restart nftban-suricata.service  # Should work without sudo
-//   systemctl status nftban-core.service       # Should work
+//   systemctl status nftband.service       # Should work
 //   systemctl start nftban-backdoor.service    # Should FAIL (not in whitelist)
 //
 // To add user to group:
