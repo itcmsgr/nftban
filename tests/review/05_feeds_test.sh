@@ -129,7 +129,9 @@ fi
 
 # 1b. Core module: explicit TLS enforcement guard exists
 if [[ -f "$FEEDS_CORE" ]]; then
-    tls_guard=$(grep -c 'http://' "$FEEDS_CORE" | head -1)
+    # Count http:// references - these SHOULD only appear in rejection guards
+    # shellcheck disable=SC2034 # Computed for context, used in manual review
+    http_refs=$(grep -c 'http://' "$FEEDS_CORE" | head -1)
     # The file SHOULD reference http:// only inside a rejection guard (regex match)
     has_reject=$(grep -cE 'Rejecting.*insecure.*HTTP|TLS required' "$FEEDS_CORE" || true)
     check "Core module has TLS rejection guard" "$(( has_reject > 0 ? 0 : 1 ))"

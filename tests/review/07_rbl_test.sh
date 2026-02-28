@@ -45,6 +45,7 @@ fi
 RBL_CORE="${REPO_ROOT}/cli/lib/nftban/core/nftban_rbl.sh"
 RBL_CLI="${REPO_ROOT}/cli/lib/nftban/cli/cmd_rbl.sh"
 RBL_PREREQ="${REPO_ROOT}/cli/lib/nftban/lib/nftban_prereq.sh"
+# shellcheck disable=SC2034 # Reserved for future config tests
 RBL_MAIN_CONF="${REPO_ROOT}/etc/nftban/conf.d/rbl/main.conf"
 RBL_TIMER="${REPO_ROOT}/install/systemd/nftban-rbl-check.timer"
 RBL_SERVICE="${REPO_ROOT}/install/systemd/nftban-rbl-check.service"

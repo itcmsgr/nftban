@@ -46,6 +46,7 @@ NFT_GO="pkg/sync/nft.go"
 DOC_GO="pkg/sync/doc.go"
 NETUTIL_IP="pkg/netutil/ip.go"
 FEEDS_PARSER="pkg/feeds/parser.go"
+# shellcheck disable=SC2034 # Reserved for future tests
 FEEDS_GO="pkg/feeds/feeds.go"
 GEOBAN_GO="pkg/geoban/geoban.go"
 
