@@ -1212,11 +1212,11 @@ fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
-# NOTE: %systemd_post macros removed due to el10 compatibility issues
+# NOTE: %%systemd_post macros removed due to el10 compatibility issues
 # (systemd-rpm-macros 256+ causes "invalid option -- 'e'" errors)
 # Using explicit systemctl commands instead - achieves same result
 
-# BUG-R48 FIX: %systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
+# BUG-R48 FIX: %%systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
 # Timers that were disabled (manually or never enabled) stay disabled on upgrades.
 # Explicit enable ensures timers work after ANY install/upgrade.
 echo "[NFTBan] Ensuring critical timers are enabled..."
@@ -1582,7 +1582,7 @@ for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh;
     fi
 done
 # FULL list of all systemd units — must match DEB prerm
-# NOTE: %systemd_preun macros removed due to el10 compatibility issues
+# NOTE: %%systemd_preun macros removed due to el10 compatibility issues
 # Using explicit systemctl commands instead (same functionality)
 if [ \$1 -eq 0 ]; then
     # Complete uninstall: stop and disable all services
@@ -1604,7 +1604,7 @@ if [ \$1 -eq 0 ]; then
 fi
 
 %postun
-# NOTE: %systemd_postun_with_restart macros removed due to el10 compatibility issues
+# NOTE: %%systemd_postun_with_restart macros removed due to el10 compatibility issues
 # Using explicit systemctl commands instead (same functionality)
 if [ \$1 -ge 1 ]; then
     # Upgrade: restart services that were running
