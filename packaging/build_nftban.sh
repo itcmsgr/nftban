@@ -1212,7 +1212,15 @@ fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
-%systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer nftban-unified-exporter.timer
+# Note: Split into individual calls for el10 compatibility (systemd-rpm-macros 256+)
+%systemd_post nftban-maintenance.service
+%systemd_post nftban-maintenance.timer
+%systemd_post nftban-health.service
+%systemd_post nftban-health.timer
+%systemd_post nftban-login-monitor.service
+%systemd_post nftban-core-geoip.timer
+%systemd_post nftban-core-feeds.timer
+%systemd_post nftban-unified-exporter.timer
 
 # BUG-R48 FIX: %systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
 # Timers that were disabled (manually or never enabled) stay disabled on upgrades.
@@ -1580,10 +1588,72 @@ for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh;
     fi
 done
 # FULL list of all systemd units — must match DEB prerm
-%systemd_preun nftband.socket nftband.service nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-health-fix.service nftban-watchdog.service nftban-watchdog.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer nftban-queue.service nftban-queue.timer nftban-rbl-check.service nftban-rbl-check.timer nftban-rollback.service nftban-rollback.timer nftban-snapshot.service nftban-snapshot.timer nftban-suricata-update.service nftban-suricata-update.timer nftban-suricata.service nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-inventory.timer nftban-pro-license.service nftban-pro-license.timer nftban-update.service nftban-update.timer nftban-api.service nftban-firewall-init.service nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service
+# Note: Split into individual calls for el10 compatibility (systemd-rpm-macros 256+)
+%systemd_preun nftband.socket
+%systemd_preun nftband.service
+%systemd_preun nftban-maintenance.service
+%systemd_preun nftban-maintenance.timer
+%systemd_preun nftban-health.service
+%systemd_preun nftban-health.timer
+%systemd_preun nftban-health-fix.service
+%systemd_preun nftban-watchdog.service
+%systemd_preun nftban-watchdog.timer
+%systemd_preun nftban-login-monitor.service
+%systemd_preun nftban-core-geoip.service
+%systemd_preun nftban-core-geoip.timer
+%systemd_preun nftban-core-feeds.service
+%systemd_preun nftban-core-feeds.timer
+%systemd_preun nftban-unified-exporter.service
+%systemd_preun nftban-unified-exporter.timer
+%systemd_preun nftban-queue.service
+%systemd_preun nftban-queue.timer
+%systemd_preun nftban-rbl-check.service
+%systemd_preun nftban-rbl-check.timer
+%systemd_preun nftban-rollback.service
+%systemd_preun nftban-rollback.timer
+%systemd_preun nftban-snapshot.service
+%systemd_preun nftban-snapshot.timer
+%systemd_preun nftban-suricata-update.service
+%systemd_preun nftban-suricata-update.timer
+%systemd_preun nftban-suricata.service
+%systemd_preun nftban-suricata-stats.service
+%systemd_preun nftban-pro-inventory.service
+%systemd_preun nftban-pro-inventory.timer
+%systemd_preun nftban-pro-license.service
+%systemd_preun nftban-pro-license.timer
+%systemd_preun nftban-update.service
+%systemd_preun nftban-update.timer
+%systemd_preun nftban-api.service
+%systemd_preun nftban-firewall-init.service
+%systemd_preun nftban-ui.service
+%systemd_preun nftban-ui-auth.socket
+%systemd_preun nftban-ui-auth.service
 
 %postun
-%systemd_postun_with_restart nftband.service nftban-maintenance.service nftban-health.service nftban-health-fix.service nftban-watchdog.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service nftban-unified-exporter.service nftban-queue.service nftban-rbl-check.service nftban-rollback.service nftban-snapshot.service nftban-suricata-update.service nftban-suricata.service nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-license.service nftban-update.service nftban-api.service nftban-firewall-init.service nftban-ui.service nftban-ui-auth.service
+# Note: Split into individual calls for el10 compatibility (systemd-rpm-macros 256+)
+%systemd_postun_with_restart nftband.service
+%systemd_postun_with_restart nftban-maintenance.service
+%systemd_postun_with_restart nftban-health.service
+%systemd_postun_with_restart nftban-health-fix.service
+%systemd_postun_with_restart nftban-watchdog.service
+%systemd_postun_with_restart nftban-login-monitor.service
+%systemd_postun_with_restart nftban-core-geoip.service
+%systemd_postun_with_restart nftban-core-feeds.service
+%systemd_postun_with_restart nftban-unified-exporter.service
+%systemd_postun_with_restart nftban-queue.service
+%systemd_postun_with_restart nftban-rbl-check.service
+%systemd_postun_with_restart nftban-rollback.service
+%systemd_postun_with_restart nftban-snapshot.service
+%systemd_postun_with_restart nftban-suricata-update.service
+%systemd_postun_with_restart nftban-suricata.service
+%systemd_postun_with_restart nftban-suricata-stats.service
+%systemd_postun_with_restart nftban-pro-inventory.service
+%systemd_postun_with_restart nftban-pro-license.service
+%systemd_postun_with_restart nftban-update.service
+%systemd_postun_with_restart nftban-api.service
+%systemd_postun_with_restart nftban-firewall-init.service
+%systemd_postun_with_restart nftban-ui.service
+%systemd_postun_with_restart nftban-ui-auth.service
 
 # =============================================================================
 # Complete removal (\$1 -eq 0) — FULL CLEANUP
