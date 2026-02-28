@@ -64,14 +64,13 @@ readonly GROUP_OPERATOR="nftban"
 readonly GROUP_AUDITOR="nftban-auditor"
 readonly GROUP_PANEL="nftban-panel"
 
-# Operator: Allowed units (exact whitelist - 12 units)
+# Operator: Allowed units (exact whitelist - matches 10-nftban-systemd.rules)
 readonly OPERATOR_UNITS=(
-    "nftban-core.service"
+    "nftband.service"
     "nftban-core-feeds.service"
     "nftban-core-feeds.timer"
     "nftban-core-geoip.service"
     "nftban-core-geoip.timer"
-    "nftban.timer"
     "nftban-suricata.service"
     "nftban-suricata-update.service"
     "nftban-suricata-update.timer"
@@ -94,9 +93,9 @@ readonly OPERATOR_VERBS=(
     "try-reload-or-restart"
 )
 
-# Panel: Allowed units (exact whitelist - 3 units)
+# Panel: Allowed units (exact whitelist - matches 30-nftban-panel.rules)
 readonly PANEL_UNITS=(
-    "nftban-core.service"
+    "nftband.service"
     "nftban-core-feeds.service"
     "nftban-core-geoip.service"
 )
@@ -106,7 +105,6 @@ readonly PANEL_UNITS=(
 readonly PANEL_READONLY_UNITS=(
     "nftban-core-feeds.timer"
     "nftban-core-geoip.timer"
-    "nftban.timer"
 )
 
 # Panel: Allowed verbs (reload + read-only)
@@ -839,7 +837,8 @@ runtime_test_operator() {
     log_subheader "Expected ALLOW: Managing whitelisted units"
 
     # Test allowed operations (just status for non-destructive test)
-    for unit in "nftban-core.service" "nftban.timer"; do
+    # Use canonical unit names from docs/systemd/UNITS.md
+    for unit in "nftband.service" "nftban-core-feeds.timer"; do
         if systemctl list-unit-files "$unit" &>/dev/null; then
             if sudo -u "$TEST_USER_OPERATOR" systemctl status "$unit" &>/dev/null 2>&1; then
                 log_pass "Operator CAN query: $unit"
@@ -890,7 +889,7 @@ runtime_test_auditor() {
         log_warn "Auditor cannot list-units"
     fi
 
-    if sudo -u "$TEST_USER_AUDITOR" systemctl is-active nftban-core.service &>/dev/null 2>&1; then
+    if sudo -u "$TEST_USER_AUDITOR" systemctl is-active nftband.service &>/dev/null 2>&1; then
         log_pass "Auditor CAN query is-active"
     else
         log_info "Auditor is-active test inconclusive (unit may not be running)"
@@ -900,7 +899,7 @@ runtime_test_auditor() {
 
     # Test that restart is denied (using a unit that exists)
     local test_output
-    test_output=$(sudo -u "$TEST_USER_AUDITOR" systemctl restart nftban-core.service 2>&1) || true
+    test_output=$(sudo -u "$TEST_USER_AUDITOR" systemctl restart nftband.service 2>&1) || true
     if [[ "$test_output" =~ "denied" ]] || [[ "$test_output" =~ "not authorized" ]] || [[ "$test_output" =~ "Permission" ]]; then
         log_pass "Auditor DENIED restart (correct)"
     else
@@ -950,7 +949,7 @@ runtime_test_panel() {
     log_subheader "Expected DENY: Restart/start/stop operations"
 
     local test_output
-    test_output=$(sudo -u "$TEST_USER_PANEL" systemctl restart nftban-core.service 2>&1) || true
+    test_output=$(sudo -u "$TEST_USER_PANEL" systemctl restart nftband.service 2>&1) || true
     if [[ "$test_output" =~ "denied" ]] || [[ "$test_output" =~ "not authorized" ]] || [[ "$test_output" =~ "Permission" ]]; then
         log_pass "Panel DENIED restart (correct)"
     else

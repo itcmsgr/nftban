@@ -367,8 +367,8 @@ nftban_service_start() {
         login|login_monitor)
             systemctl start "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
             ;;
-        nftban)
-            systemctl start nftban.service
+        nftban|nftband)
+            systemctl start nftband.service
             ;;
         *)
             echo "Unknown service: $service" >&2
@@ -397,8 +397,8 @@ nftban_service_stop() {
         login|login_monitor)
             systemctl stop "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
             ;;
-        nftban)
-            systemctl stop nftban.service
+        nftban|nftband)
+            systemctl stop nftband.service
             ;;
         *)
             echo "Unknown service: $service" >&2

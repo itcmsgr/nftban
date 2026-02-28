@@ -2,6 +2,18 @@
 // NFTBan v1.0.19 - Auditor Group Read-Only Authorization
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="20-nftban-auditor.rules"
+// meta:type="polkit"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Polkit rules granting nftban-auditor group read-only systemd access"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/polkit-1/rules.d/20-nftban-auditor.rules"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="polkit"
 // Purpose: Grant nftban-auditor group read-only systemd access
 // Location: /etc/polkit-1/rules.d/20-nftban-auditor.rules
 //
@@ -143,10 +155,10 @@ polkit.addRule(function (action, subject) {
 //
 // Testing:
 //   # As auditor group member
-//   systemctl status nftban-core.service       # ✅ Should work
-//   systemctl show nftban-core.service         # ✅ Should work
+//   systemctl status nftband.service       # ✅ Should work
+//   systemctl show nftband.service         # ✅ Should work
 //   systemctl list-units 'nftban-*'           # ✅ Should work
-//   systemctl restart nftban-core.service      # ❌ Should FAIL
+//   systemctl restart nftband.service      # ❌ Should FAIL
 //   systemctl daemon-reload                     # ❌ Should FAIL
 //
 // Adding Users to Group:

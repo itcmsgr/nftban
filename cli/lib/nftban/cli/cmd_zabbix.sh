@@ -232,9 +232,9 @@ _cmd_zabbix_setup() {
         return 1
     fi
 
-    # Check: NFTBan service exists
-    if ! systemctl list-unit-files nftban.service &>/dev/null 2>&1; then
-        prereq_warnings+="  [WARN] NFTBan service not found - metrics may be limited\n"
+    # Check: NFTBan daemon service exists
+    if ! systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
+        prereq_warnings+="  [WARN] NFTBan daemon (nftband.service) not found - metrics may be limited\n"
     fi
 
     # Check: Metrics exporter — auto-enable during setup (BEFORE wizard starts)

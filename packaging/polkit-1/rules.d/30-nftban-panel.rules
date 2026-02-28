@@ -2,6 +2,18 @@
 // NFTBan v1.0.19 - Panel Group Limited Authorization
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="30-nftban-panel.rules"
+// meta:type="polkit"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Polkit rules granting nftban-panel group limited systemd access"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/polkit-1/rules.d/30-nftban-panel.rules"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="polkit"
 // Purpose: Grant nftban-panel group LIMITED systemd access for panel integration
 // Location: /etc/polkit-1/rules.d/30-nftban-panel.rules
 //
@@ -85,16 +97,16 @@ polkit.addRule(function (action, subject) {
         // ALLOWED UNITS: Core services only (NOT login-monitor, NOT suricata)
         // Panels can reload NFTBan core services but not attack detection modules
         var allowedUnits = [
-            "nftban-core.service",
+            "nftband.service",
             "nftban-core-feeds.service",
             "nftban-core-geoip.service"
         ];
 
         // Read-only for timers (status only - no reload)
+        // See docs/systemd/UNITS.md for canonical list
         var readOnlyUnits = [
             "nftban-core-feeds.timer",
-            "nftban-core-geoip.timer",
-            "nftban.timer"
+            "nftban-core-geoip.timer"
         ];
 
         // Check verb + unit combination
@@ -198,10 +210,10 @@ polkit.addRule(function (action, subject) {
 //
 // Testing:
 //   # As panel service account (nftban-da)
-//   sudo -u nftban-da systemctl status nftban-core.service    # ✅ Should work
-//   sudo -u nftban-da systemctl reload nftban-core.service    # ✅ Should work
-//   sudo -u nftban-da systemctl restart nftban-core.service   # ❌ Should FAIL
-//   sudo -u nftban-da systemctl stop nftban-core.service      # ❌ Should FAIL
+//   sudo -u nftban-da systemctl status nftband.service    # ✅ Should work
+//   sudo -u nftban-da systemctl reload nftband.service    # ✅ Should work
+//   sudo -u nftban-da systemctl restart nftband.service   # ❌ Should FAIL
+//   sudo -u nftban-da systemctl stop nftband.service      # ❌ Should FAIL
 //   sudo -u nftban-da systemctl status suricata.service       # ❌ Should FAIL (not allowlisted)
 //
 // Creating Service Accounts:

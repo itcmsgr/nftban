@@ -308,21 +308,18 @@ nftban_health_check_metrics() {
     fi
 
     # Check Bandwidth Exporter (v0.6 GUI redesign)
+    # NOTE: Bandwidth exporter runs via unified-exporter, no separate timer exists
     if [[ -f "${NFTBAN_LIB_DIR}/exporters/nftban_bandwidth_exporter.sh" ]]; then
-        if nftban_service_exists "nftban-bandwidth-exporter.timer"; then
-            if nftban_service_is_enabled "nftban-bandwidth-exporter.timer"; then
-                if nftban_timer_is_active "nftban-bandwidth-exporter.timer"; then
-                    metrics_issues+=("✓ Bandwidth exporter timer: Active")
-                else
-                    metrics_issues+=("Bandwidth exporter timer not running")
-                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-                fi
+        # Check if unified exporter timer is running (it handles bandwidth metrics)
+        if nftban_service_exists "nftban-unified-exporter.timer"; then
+            if nftban_timer_is_active "nftban-unified-exporter.timer"; then
+                metrics_issues+=("✓ Bandwidth exporter: via unified-exporter")
             else
-                metrics_issues+=("Bandwidth exporter timer not enabled")
+                metrics_issues+=("Unified exporter timer not running (affects bandwidth)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         else
-            metrics_issues+=("Bandwidth exporter timer not installed")
+            metrics_issues+=("Unified exporter timer not installed")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
 
