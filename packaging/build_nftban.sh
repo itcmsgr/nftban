@@ -247,6 +247,15 @@ create_rpm_spec_nftban_core() {
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
 
+# CRITICAL: Disable ALL post-build processing that modifies binaries
+# Pre-built Go binaries must remain UNCHANGED for hash verification
+# Without this, rpmbuild adds .note.gnu.build-id sections (+~300 bytes)
+%define _build_id_links none
+%define __brp_strip %{nil}
+%define __brp_strip_static_archive %{nil}
+%define __brp_strip_comment_note %{nil}
+%define __os_install_post %{nil}
+
 Name:           nftban-core
 Version:        ${PKG_VERSION}
 Release:        ${PKG_RELEASE}%{?dist}
