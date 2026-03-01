@@ -10,12 +10,12 @@ NFTBan is an enterprise-grade Linux Intrusion Prevention System (IPS) and firewa
 
 | Version | Support Status |
 |---------|----------------|
-| 1.18.x  | **Current** - Full support (security fixes, bug fixes, features) |
+| 1.19.x  | **Current** - Full support (security fixes, bug fixes, features) |
+| 1.18.x  | Security fixes only |
 | 1.17.x  | Security fixes only |
-| 1.16.x  | Security fixes only |
-| < 1.16  | **Not supported** - upgrade immediately |
+| < 1.17  | **Not supported** - upgrade immediately |
 
-**Recommendation:** Always run the latest stable release (currently v1.18.x) for optimal security and performance.
+**Recommendation:** Always run the latest stable release (currently v1.19.10) for optimal security and performance.
 
 ### Supported Platforms by Tier
 
@@ -394,6 +394,16 @@ NFTBan employs **16 GitHub Actions workflows** with **12 dedicated security tool
 | **SLSA Provenance** | `slsa-go-releaser.yml` | Cryptographic build attestation |
 | **OpenSSF Scorecard** | `scorecard.yml` | Security health assessment |
 | **Syft SBOM** | `release.yml` | Software Bill of Materials generation |
+| **Socket.dev** | GitHub App | Typosquatting and malware detection |
+
+#### 2026 OSSRA Compliance
+
+| Tool | Workflow | Purpose |
+|------|----------|---------|
+| **go-licenses** | `ossra-remediation.yml` | License compliance (blocks copyleft) |
+| **SPDX Validation** | `ossra-remediation.yml` | License header enforcement |
+| **Libyear** | `ossra-remediation.yml` | Dependency freshness metrics |
+| **Lychee** | `ossra-remediation.yml` | URL validation (anti-hallucination) |
 
 #### Quality & Fuzzing
 
