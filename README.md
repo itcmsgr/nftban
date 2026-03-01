@@ -34,6 +34,26 @@
 [![License Compliance](https://img.shields.io/badge/Licenses-Compliant-success)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml)
 [![Dependency Health](https://img.shields.io/badge/Libyear-Tracked-blue)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml)
 
+---
+
+## Security Hardening (2026 OSSRA Compliant)
+
+This project implements a **Zero-Trust CI/CD pipeline** designed for the modern threat landscape:
+
+| Control | Protection |
+|---------|------------|
+| **SLSA Level 3** | Cryptographic provenance - every binary proves its source |
+| **License Enforcement** | Blocks GPL/copyleft via `go-licenses` - prevents AI hallucinations |
+| **Dependency Freshness** | Libyear metrics flag "zombie" components >2 years old |
+| **URL Validation** | Lychee catches hallucinated/hijacked documentation links |
+| **Secret Scanning** | Gitleaks + GitGuardian prevent credential leaks |
+| **Supply Chain** | All GitHub Actions SHA-pinned to prevent hijacking |
+| **Behavioral Analysis** | Socket.dev detects typosquatting and malicious packages |
+
+> See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported versions.
+
+---
+
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
 
 It provides automated threat detection and response using native nftables for kernel-level enforcement, with Polkit-based privilege separation for secure operation without full root access.
