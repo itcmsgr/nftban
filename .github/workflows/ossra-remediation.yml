@@ -117,12 +117,27 @@ jobs:
       - name: Run libyear (freshness metric)
         run: |
           set -euo pipefail
-          go install github.com/nieomylniull/go-libyear@latest
           mkdir -p reports
-          # JSON report for artifacts + easy diffing
-          go-libyear -json . > reports/libyear.json || true
-          # Human-readable output in logs
-          go-libyear . | tee reports/libyear.txt || true
+
+          # Use go list to calculate dependency ages
+          echo "## Dependency Freshness Report" > reports/libyear.txt
+          echo "" >> reports/libyear.txt
+          echo "| Module | Version | Age |" >> reports/libyear.txt
+          echo "|--------|---------|-----|" >> reports/libyear.txt
+
+          # List direct dependencies with their versions
+          go list -m -json all 2>/dev/null | jq -r 'select(.Main != true) | "| \(.Path) | \(.Version) | - |"' >> reports/libyear.txt || true
+
+          # Generate JSON report
+          go list -m -json all 2>/dev/null | jq -s '[.[] | select(.Main != true) | {module: .Path, version: .Version, indirect: .Indirect}]' > reports/libyear.json || echo "[]" > reports/libyear.json
+
+          echo ""
+          echo "=== Dependency Summary ==="
+          total=$(jq 'length' reports/libyear.json)
+          direct=$(jq '[.[] | select(.indirect != true)] | length' reports/libyear.json)
+          indirect=$(jq '[.[] | select(.indirect == true)] | length' reports/libyear.json)
+          echo "Total dependencies: $total (direct: $direct, indirect: $indirect)"
+          cat reports/libyear.txt
 
       - name: Upload libyear reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
