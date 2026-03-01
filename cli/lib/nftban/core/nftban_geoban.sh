@@ -684,7 +684,8 @@ nftban_geoban_ban_countries() {
             nftban_info "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
         else
             # Fallback: trigger immediate sync since queue not available
-            nftban sync --quick 2>/dev/null || true
+            # NOTE: Must use full sync (not --quick) because --quick skips geoban loading
+            nftban sync 2>/dev/null || true
             nftban_info "✅ GeoBan configured and applied successfully"
         fi
         echo ""
@@ -781,7 +782,8 @@ nftban_geoban_unban_countries() {
             nftban_info "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
         else
             # Fallback: trigger immediate sync since queue not available
-            nftban sync --quick 2>/dev/null || true
+            # NOTE: Must use full sync (not --quick) because --quick skips geoban loading
+            nftban sync 2>/dev/null || true
             nftban_info "✅ GeoBan configured and applied successfully"
         fi
         echo ""

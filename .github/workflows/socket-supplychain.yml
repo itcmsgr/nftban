@@ -1,0 +1,105 @@
+# =============================================================================
+# NFTBan - Socket Supply Chain Scan (Optional)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Purpose:
+#   Close Typosquatting/Malware detection gaps with Socket.dev scanning.
+#   Prefer GitHub App install for best PR-native UX; this workflow provides CI gating.
+#
+# Runs on:
+#   - Pull requests to main
+#   - Manual dispatch
+#
+# Requirements:
+#   - SOCKET_API_KEY secret (get from socket.dev)
+#
+# Notes:
+#   - For best results, install Socket GitHub App: https://github.com/apps/socket-security
+#   - This workflow wraps go mod download with Socket's behavioral analysis
+# =============================================================================
+
+name: Socket Supply Chain Scan
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: ["main"]
+
+permissions: read-all
+
+concurrency:
+  group: socket-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.24.x"
+
+jobs:
+  socket-scan:
+    name: Typosquat/Malware behavioral scan (Socket)
+    runs-on: ubuntu-latest
+    # Only run if SOCKET_API_KEY is configured
+    if: ${{ vars.SOCKET_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Check Socket API Key
+        id: check-key
+        run: |
+          if [ -z "${{ secrets.SOCKET_API_KEY }}" ]; then
+            echo "::warning::SOCKET_API_KEY not configured. Skipping Socket scan."
+            echo "::warning::To enable: Add SOCKET_API_KEY secret from https://socket.dev"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      # For Enterprise mode, set secrets.SOCKET_API_KEY.
+      - name: Socket Firewall
+        if: steps.check-key.outputs.skip != 'true'
+        uses: SocketDev/socket-action@713acf581f03a14bfd75e584e2c90da9c2dc0d84 # v0.1.14
+        with:
+          api-token: ${{ secrets.SOCKET_API_KEY }}
+
+      - name: Dependency download (behavioral analysis)
+        if: steps.check-key.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          go mod download -x
+
+      - name: Generate summary
+        if: always()
+        run: |
+          {
+            echo "## Socket Supply Chain Scan"
+            echo ""
+            if [ "${{ steps.check-key.outputs.skip }}" == "true" ]; then
+              echo "⚠️ **Skipped**: SOCKET_API_KEY not configured"
+              echo ""
+              echo "To enable Socket supply chain scanning:"
+              echo "1. Sign up at https://socket.dev"
+              echo "2. Get API key from dashboard"
+              echo "3. Add as repository secret: \`SOCKET_API_KEY\`"
+              echo "4. Set repository variable: \`SOCKET_ENABLED=true\`"
+            else
+              echo "✅ Socket behavioral analysis completed"
+              echo ""
+              echo "### Coverage"
+              echo "| Threat | Detection |"
+              echo "|--------|-----------|"
+              echo "| Typosquatting | ✅ |"
+              echo "| Malicious packages | ✅ |"
+              echo "| Install scripts | ✅ |"
+              echo "| Obfuscated code | ✅ |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

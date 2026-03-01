@@ -1,0 +1,36 @@
+# =============================================================================
+# NFTBan - Lychee Link Checker Ignore List
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# URLs listed here are excluded from link validation.
+# Use for known flaky URLs or intentionally unreachable endpoints.
+# =============================================================================
+
+# Localhost / development URLs
+localhost
+127\.0\.0\.1
+0\.0\.0\.0
+\.local$
+
+# Example domains (RFC 2606)
+example\.com
+example\.org
+example\.net
+
+# Private/internal networks
+192\.168\.
+10\.0\.
+172\.16\.
+172\.17\.
+172\.18\.
+
+# Known rate-limited APIs
+api\.github\.com
+
+# Schema URLs (not actual endpoints)
+schemas\.microsoft\.com
+json-schema\.org
+
+# NFTBan internal references
+pro\.nftban\.com
