@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.19.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.19.9-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -27,6 +27,32 @@
 [![Trivy](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/secure-go.yml)
 [![gitleaks](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/gitleaks.yml)
 [![Fuzz Testing](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/fuzz.yml)
+
+### 2026 OSSRA Compliance
+
+[![OSSRA Remediation](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml)
+[![License Compliance](https://img.shields.io/badge/Licenses-Compliant-success)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml)
+[![Dependency Health](https://img.shields.io/badge/Libyear-Tracked-blue)](https://github.com/itcmsgr/nftban/actions/workflows/ossra-remediation.yml)
+
+---
+
+## Security Hardening (2026 OSSRA Compliant)
+
+This project implements a **Zero-Trust CI/CD pipeline** designed for the modern threat landscape:
+
+| Control | Protection |
+|---------|------------|
+| **SLSA Level 3** | Cryptographic provenance - every binary proves its source |
+| **License Enforcement** | Blocks GPL/copyleft via `go-licenses` - prevents AI hallucinations |
+| **Dependency Freshness** | Libyear metrics flag "zombie" components >2 years old |
+| **URL Validation** | Lychee catches hallucinated/hijacked documentation links |
+| **Secret Scanning** | Gitleaks + GitGuardian prevent credential leaks |
+| **Supply Chain** | All GitHub Actions SHA-pinned to prevent hijacking |
+| **Behavioral Analysis** | Socket.dev detects typosquatting and malicious packages |
+
+> See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported versions.
+
+---
 
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
 
