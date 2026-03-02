@@ -594,14 +594,6 @@ screen_tools() {
 # COMMAND HANDLER
 # =============================================================================
 
-cmd_menu_help() {
-    echo "Usage: nftban menu"
-    echo ""
-    echo "Launch interactive TUI menu for NFTBan management."
-    echo ""
-    echo "Requires: whiptail or dialog (fallback to text menu)"
-}
-
 nftban_cmd_menu() {
     # Main command entry point
     # Args: none

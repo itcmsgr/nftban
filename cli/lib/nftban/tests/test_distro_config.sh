@@ -90,21 +90,6 @@ assert_not_empty() {
     fi
 }
 
-assert_command_succeeds() {
-    local description="$1"
-    shift
-    local cmd=("$@")
-
-    if "${cmd[@]}" >/dev/null 2>&1; then
-        echo -e "  ${GREEN}✓${NC} $description"
-        return 0
-    else
-        echo -e "  ${RED}✗${NC} $description"
-        echo "    Command failed: ${cmd[*]}"
-        return 1
-    fi
-}
-
 # =============================================================================
 # SETUP
 # =============================================================================

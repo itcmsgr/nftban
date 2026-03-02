@@ -83,18 +83,6 @@ fi
 # FHS COMMAND HANDLER
 # =============================================================================
 
-cmd_fhs_help() {
-    echo "Usage: nftban fhs [subcommand]"
-    echo ""
-    echo "Subcommands:"
-    echo "  status        Show FHS compliance (default)"
-    echo "  summary       One-line summary"
-    echo "  json          JSON output"
-    echo "  html-report   Generate HTML report"
-    echo "  mail-report   Mail report"
-    echo "  help          Show this help"
-}
-
 nftban_cmd_fhs() {
     # Handle FHS subcommands
     # Args: $@ = fhs subcommand and arguments
