@@ -1044,7 +1044,9 @@ nftban_health_fix_geoip() {
             current_month=$(date +%Y-%m)
             local db_url="https://download.db-ip.com/free/dbip-country-lite-${current_month}.mmdb.gz"
             local db_file="${geoip_dir}/dbip-country-lite.mmdb"
-            local tmp_file="/tmp/dbip-geoip-$$.mmdb.gz"
+            # R17: Use mktemp for secure temp files (v1.19.12)
+            local tmp_file
+            tmp_file=$(mktemp "${TMPDIR:-/tmp}/dbip-geoip.XXXXXXXXXX.mmdb.gz")
 
             echo "  → Downloading DB-IP Lite database..."
             if curl -fsSL -o "$tmp_file" "$db_url" --max-time 120 2>/dev/null; then

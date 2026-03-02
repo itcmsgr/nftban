@@ -265,8 +265,9 @@ nftban_botscan_parse_line() {
     local ip url method status ua
 
     # Combined Log Format: IP - - [date] "METHOD URL PROTO" STATUS SIZE "REFERER" "UA"
-    # IPv4 and IPv6 compatible (v1.19.0)
-    if [[ "$line" =~ ^([0-9a-fA-F.:]+).*\"([A-Z]+)\ ([^\"\ ]+).*\"\ ([0-9]+) ]]; then
+    # IPv4 and IPv6 compatible (v1.19.0, v1.19.12 bracket fix R22)
+    # Handles: 192.168.1.1, 2001:db8::1, [2001:db8::1]:8080
+    if [[ "$line" =~ ^\[?([0-9a-fA-F.:]+)\]?.*\"([A-Z]+)\ ([^\"\ ]+).*\"\ ([0-9]+) ]]; then
         ip="${BASH_REMATCH[1]}"
         method="${BASH_REMATCH[2]}"
         url="${BASH_REMATCH[3]}"

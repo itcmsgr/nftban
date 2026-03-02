@@ -184,6 +184,35 @@ func (s *Scheduler) fastWorker(ctx context.Context) {
 	}
 }
 
+// retryWithBackoff executes an operation with exponential backoff (R75 v1.19.12)
+// Returns true if operation succeeded, false if all retries exhausted
+func (s *Scheduler) retryWithBackoff(opName string, operation func() error) bool {
+	maxRetries := 3
+	initialDelay := 10 * time.Millisecond
+	maxDelay := 500 * time.Millisecond
+
+	delay := initialDelay
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err := operation()
+		if err == nil {
+			return true
+		}
+
+		if attempt < maxRetries {
+			log.Printf("[scheduler] %s failed (attempt %d/%d): %v, retrying in %v",
+				opName, attempt+1, maxRetries+1, err, delay)
+			time.Sleep(delay)
+			delay = delay * 2
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+		} else {
+			log.Printf("[scheduler] %s failed after %d attempts: %v", opName, maxRetries+1, err)
+		}
+	}
+	return false
+}
+
 // applyFastBatch applies a batch of fast operations
 func (s *Scheduler) applyFastBatch(batch []FastOp) {
 	if len(batch) == 0 {
@@ -208,9 +237,10 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 					TTL:    op.TTL,
 					IsIPv6: isIPv6Set(setName),
 				}
-				if err := s.backend.AddElements(table, setName, []SetElement{elem}); err != nil {
-					log.Printf("[scheduler] fast add %s failed: %v", setName, err)
-				} else {
+				// R75: Use retry with exponential backoff (v1.19.12)
+				if s.retryWithBackoff("fast add "+setName, func() error {
+					return s.backend.AddElements(table, setName, []SetElement{elem})
+				}) {
 					applied++
 				}
 			case OpDelete:
@@ -218,15 +248,17 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 					Value:  op.Element,
 					IsIPv6: isIPv6Set(setName),
 				}
-				if err := s.backend.DeleteElements(table, setName, []SetElement{elem}); err != nil {
-					log.Printf("[scheduler] fast delete %s failed: %v", setName, err)
-				} else {
+				// R75: Use retry with exponential backoff (v1.19.12)
+				if s.retryWithBackoff("fast delete "+setName, func() error {
+					return s.backend.DeleteElements(table, setName, []SetElement{elem})
+				}) {
 					applied++
 				}
 			case OpFlushSet:
-				if err := s.backend.FlushSet(table, setName); err != nil {
-					log.Printf("[scheduler] fast flush %s failed: %v", setName, err)
-				} else {
+				// R75: Use retry with exponential backoff (v1.19.12)
+				if s.retryWithBackoff("fast flush "+setName, func() error {
+					return s.backend.FlushSet(table, setName)
+				}) {
 					applied++
 				}
 			}

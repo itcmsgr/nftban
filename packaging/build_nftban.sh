@@ -2805,6 +2805,9 @@ PRERM
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
+/etc/nftban/conf.d/metrics.conf
+/etc/nftban/conf.d/persistent.conf
+/etc/nftban/conf.d/watchdog.conf
 CONFFILES_EOF
 }
 
@@ -2876,6 +2879,9 @@ build_deb() {
     find "${deb_root}/etc/nftban/conf.d" -name 'whitelist.txt' -delete 2>/dev/null || true
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
+    # R26-R28: Add missing config files for DEB/RPM parity (v1.19.12)
+    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/metrics.conf" "${deb_root}/etc/nftban/conf.d/metrics.conf"
+    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/persistent.conf" "${deb_root}/etc/nftban/conf.d/persistent.conf"
 
     # Copy patterns.d directory (botscan patterns)
     mkdir -p "${deb_root}/etc/nftban/patterns.d/botscan"
