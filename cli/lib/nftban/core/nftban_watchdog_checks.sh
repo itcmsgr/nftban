@@ -372,6 +372,61 @@ nftban_watchdog_check_fd() {
     return $WATCHDOG_OK
 }
 
+# R25: Conntrack overflow detection (v1.19.12)
+nftban_watchdog_check_conntrack() {
+    # Check nf_conntrack table utilization
+    if [[ "${NFTBAN_WATCHDOG_CONNTRACK_ENABLED:-true}" != "true" ]]; then
+        return $WATCHDOG_OK
+    fi
+
+    local entries=0 max=0 percent=0
+    local status=$WATCHDOG_OK
+
+    # Read current conntrack entries
+    if [[ -f /proc/sys/net/netfilter/nf_conntrack_count ]]; then
+        entries=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo "0")
+    else
+        WATCHDOG_RESULTS[conntrack_status]="NOT_AVAILABLE"
+        return $WATCHDOG_OK
+    fi
+
+    # Read max conntrack limit
+    if [[ -f /proc/sys/net/netfilter/nf_conntrack_max ]]; then
+        max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo "0")
+    fi
+
+    WATCHDOG_RESULTS[conntrack_entries]="$entries"
+    WATCHDOG_RESULTS[conntrack_max]="$max"
+
+    # Calculate utilization percentage
+    if [[ $max -gt 0 ]]; then
+        percent=$((entries * 100 / max))
+    fi
+    WATCHDOG_RESULTS[conntrack_percent]="$percent"
+
+    # Thresholds (configurable)
+    local warning_threshold="${NFTBAN_WATCHDOG_CONNTRACK_WARNING:-80}"
+    local critical_threshold="${NFTBAN_WATCHDOG_CONNTRACK_CRITICAL:-95}"
+
+    if [[ $percent -ge $critical_threshold ]]; then
+        WATCHDOG_RESULTS[conntrack_status]="CRITICAL"
+        if watchdog_should_alert "conntrack"; then
+            watchdog_alert "CRITICAL" "Conntrack table at ${percent}% (${entries}/${max}) - near overflow!"
+        fi
+        status=$WATCHDOG_CRITICAL
+    elif [[ $percent -ge $warning_threshold ]]; then
+        WATCHDOG_RESULTS[conntrack_status]="WARNING"
+        if watchdog_should_alert "conntrack"; then
+            watchdog_alert "WARNING" "Conntrack table at ${percent}% (${entries}/${max})"
+        fi
+        status=$WATCHDOG_WARNING
+    else
+        WATCHDOG_RESULTS[conntrack_status]="OK"
+    fi
+
+    return $status
+}
+
 nftban_watchdog_check_suricata_drift() {
     # Check Suricata resource usage against profile budgets
     if [[ "${NFTBAN_WATCHDOG_SURICATA_ENABLED:-true}" != "true" ]]; then

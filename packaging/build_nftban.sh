@@ -451,6 +451,12 @@ install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-systemd.rules %{buildroo
 install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-auditor.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-auditor.rules
 install -D -m 0644 packaging/polkit-1/rules.d/30-nftban-panel.rules %{buildroot}/etc/polkit-1/rules.d/30-nftban-panel.rules
 
+# SELinux policy files (R39 v1.19.12) - RPM only, DEB uses AppArmor
+mkdir -p %{buildroot}/usr/share/nftban/selinux
+install -D -m 0644 install/selinux/nftban.te %{buildroot}/usr/share/nftban/selinux/nftban.te
+install -D -m 0644 install/selinux/nftban.fc %{buildroot}/usr/share/nftban/selinux/nftban.fc
+install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinux/Makefile
+
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
 
@@ -1735,6 +1741,7 @@ fi
 /etc/polkit-1/rules.d/30-nftban-panel.rules
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
+/usr/share/nftban/selinux
 /usr/share/man/man8/nftban.8*
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
@@ -2805,6 +2812,9 @@ PRERM
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
+/etc/nftban/conf.d/metrics.conf
+/etc/nftban/conf.d/persistent.conf
+/etc/nftban/conf.d/watchdog.conf
 CONFFILES_EOF
 }
 
@@ -2876,6 +2886,9 @@ build_deb() {
     find "${deb_root}/etc/nftban/conf.d" -name 'whitelist.txt' -delete 2>/dev/null || true
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
+    # R26-R28: Add missing config files for DEB/RPM parity (v1.19.12)
+    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/metrics.conf" "${deb_root}/etc/nftban/conf.d/metrics.conf"
+    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/persistent.conf" "${deb_root}/etc/nftban/conf.d/persistent.conf"
 
     # Copy patterns.d directory (botscan patterns)
     mkdir -p "${deb_root}/etc/nftban/patterns.d/botscan"

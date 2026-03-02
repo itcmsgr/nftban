@@ -457,7 +457,10 @@ install_dependencies() {
     echo ""
 
     log "Updating package cache..."
-    if eval "$update_cmd" >/dev/null 2>&1; then
+    # R16: Use array expansion instead of eval for security (v1.19.12)
+    local -a update_arr
+    read -ra update_arr <<< "$update_cmd"
+    if "${update_arr[@]}" >/dev/null 2>&1; then
         ok "Package cache updated"
     else
         warn "Package cache update failed (non-critical)"
@@ -483,7 +486,10 @@ install_dependencies() {
         fi
 
         echo "  Installing $pkg_name..."
-        if eval "$install_cmd $pkg_name" >/dev/null 2>&1; then
+        # R16: Use array expansion instead of eval for security (v1.19.12)
+        local -a install_arr
+        read -ra install_arr <<< "$install_cmd"
+        if "${install_arr[@]}" "$pkg_name" >/dev/null 2>&1; then
             ok "  $pkg_name"
             installed=$((installed + 1))
         else

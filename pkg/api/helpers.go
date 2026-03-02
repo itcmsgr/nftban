@@ -25,7 +25,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
+	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/netutil"
 )
@@ -60,6 +62,55 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
+// sanitizeError escapes error messages for safe JSON/HTML output (R35-R37 v1.19.12)
+// Prevents XSS when error messages are rendered in HTML contexts
+//
+//lint:ignore U1000 Exported for use by handlers - will be wired in upcoming PR
+func sanitizeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	// Escape HTML special chars and truncate to prevent DoS
+	msg := html.EscapeString(err.Error())
+	if len(msg) > 512 {
+		msg = msg[:512] + "..."
+	}
+	return msg
+}
+
+// sanitizeErrorMsg escapes a string error message for safe JSON/HTML output
+//
+//lint:ignore U1000 Exported for use by handlers - will be wired in upcoming PR
+func sanitizeErrorMsg(msg string) string {
+	// Strip filesystem paths that might leak system info
+	msg = stripSensitivePaths(msg)
+	// Escape HTML special chars
+	msg = html.EscapeString(msg)
+	if len(msg) > 512 {
+		msg = msg[:512] + "..."
+	}
+	return msg
+}
+
+// stripSensitivePaths removes full filesystem paths from error messages
+//
+//lint:ignore U1000 Helper for sanitizeErrorMsg
+func stripSensitivePaths(msg string) string {
+	// Replace common sensitive path prefixes with generic placeholders
+	sensitivePatterns := []string{
+		"/etc/nftban/",
+		"/var/lib/nftban/",
+		"/var/log/nftban/",
+		"/usr/lib/nftban/",
+	}
+	for _, p := range sensitivePatterns {
+		if strings.Contains(msg, p) {
+			msg = strings.ReplaceAll(msg, p, "[nftban]/")
+		}
+	}
+	return msg
+}
+
 // validateIP validates a single IP address using the shared netutil.IsValidIP function
 func validateIP(ipStr string) error {
 	if !netutil.IsValidIP(ipStr) {
@@ -77,5 +128,3 @@ func validateIPs(ips []string) error {
 	}
 	return nil
 }
-
-//nolint:U1000 // Prepared for future validation enhancement

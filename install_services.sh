@@ -29,6 +29,16 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_INSTALL_SERVICES_LOADED:-}" ]] && return 0
 _NFTBAN_INSTALL_SERVICES_LOADED=1
 
+# R31: Load distro config for nftban_distro_get_polkit_dir() (v1.19.12)
+if [[ -z "${_NFTBAN_DISTRO_CONFIG_LOADED:-}" ]]; then
+    if [[ -f "${SCRIPT_DIR:-}/cli/lib/nftban/lib/nftban_distro_config.sh" ]]; then
+        export NFTBAN_DISTRO_CONF_DIR="${SCRIPT_DIR}/etc/nftban/distros"
+        # shellcheck source=/dev/null
+        source "${SCRIPT_DIR}/cli/lib/nftban/lib/nftban_distro_config.sh"
+        nftban_distro_init 2>/dev/null || true
+    fi
+fi
+
 # =============================================================================
 # SERVICE INSTALLATION FUNCTIONS
 # =============================================================================
@@ -116,9 +126,21 @@ install_tmpfiles() {
 install_polkit() {
     log "Installing Polkit Policies..."
 
+    # R31: Use nftban_distro_get_polkit_dir() for distro-aware path (v1.19.12)
+    # Debian/Ubuntu use /usr/share/polkit-1/rules.d/, RHEL/Fedora use /etc/polkit-1/rules.d/
+    local polkit_dir
+    if declare -f nftban_distro_get_polkit_dir >/dev/null 2>&1; then
+        polkit_dir=$(nftban_distro_get_polkit_dir)
+    elif [[ -d /usr/share/polkit-1/rules.d ]]; then
+        polkit_dir="/usr/share/polkit-1/rules.d"
+    else
+        polkit_dir="/etc/polkit-1/rules.d"
+    fi
+
+    # Create directories - actions dir is always the same, rules dir is distro-specific
     mkdir -p "$POLKIT_ACTIONS_DIR"
-    mkdir -p "$POLKIT_RULES_DIR_SHARE"
-    mkdir -p "$POLKIT_RULES_DIR_ETC"
+    mkdir -p "$polkit_dir"
+    log "Polkit rules directory: $polkit_dir"
 
     # Load central config for path values
     local NFTBAN_CONF="/etc/nftban/nftban.conf"
@@ -131,19 +153,6 @@ install_polkit() {
 
     : "${NFTBAN_BIN:=/usr/sbin/nftban}"
     : "${NFTBAN_AUTH_BIN:=/usr/libexec/nftban-ui-auth}"
-
-    # Determine distro-aware polkit rules directory (Bug #18 fix)
-    # Debian/Ubuntu use /usr/share/polkit-1/rules.d/, RHEL/Fedora use /etc/polkit-1/rules.d/
-    local polkit_dir
-    if declare -f nftban_distro_get_polkit_dir >/dev/null 2>&1; then
-        polkit_dir=$(nftban_distro_get_polkit_dir)
-    elif [[ -d /usr/share/polkit-1/rules.d ]]; then
-        polkit_dir="/usr/share/polkit-1/rules.d"
-    else
-        polkit_dir="/etc/polkit-1/rules.d"
-    fi
-    mkdir -p "$polkit_dir"
-    log "Polkit rules directory: $polkit_dir"
 
     # Install consolidated polkit rules (v1.0.19)
     local rules=(
