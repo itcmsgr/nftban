@@ -81,6 +81,7 @@ nftban_cmd_unban() {
 
     # Validate required arguments
     cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_unban_usage || return 1
+    cmd_validate_ip "$ip" "$json_mode" nftban_cmd_unban_usage || return 1
 
     # Check if nftban-core exists (required for unban command)
     local NFTBAN_CORE
