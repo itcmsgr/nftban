@@ -704,7 +704,7 @@ nftban_feeds_stats() {
 
     # Count enabled feeds and total IPs
     local total_feeds=0
-    local enabled_feeds=0
+    local enabled_count=0
     local total_ips=0
 
     local all_feeds
@@ -715,7 +715,7 @@ nftban_feeds_stats() {
         local enabled
         enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
         if [[ "$enabled" == "true" ]]; then
-            ((enabled_feeds++)) || true
+            ((enabled_count++)) || true
             local feed_lower="${feed,,}"
             local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
             if [[ -f "$feed_file" ]]; then
@@ -731,17 +731,17 @@ nftban_feeds_stats() {
         if command -v jq &>/dev/null; then
             data=$(jq -n \
                 --argjson total_feeds "$total_feeds" \
-                --argjson enabled_feeds "$enabled_feeds" \
+                --argjson enabled_count "$enabled_count" \
                 --argjson total_ips "$total_ips" \
                 '{
                     stats: {
                         total_feeds: $total_feeds,
-                        enabled_feeds: $enabled_feeds,
+                        enabled_feeds: $enabled_count,
                         total_ips: $total_ips
                     }
                 }')
         else
-            data="{\"stats\":{\"total_feeds\":$total_feeds,\"enabled_feeds\":$enabled_feeds,\"total_ips\":$total_ips}}"
+            data="{\"stats\":{\"total_feeds\":$total_feeds,\"enabled_feeds\":$enabled_count,\"total_ips\":$total_ips}}"
         fi
         json_output "true" "$data"
         return 0
@@ -751,7 +751,7 @@ nftban_feeds_stats() {
     echo "================"
     echo ""
     echo "  Total Feeds:    $total_feeds"
-    echo "  Enabled Feeds:  $enabled_feeds"
+    echo "  Enabled Feeds:  $enabled_count"
     echo "  Total IPs:      $total_ips"
     echo ""
 }
@@ -759,6 +759,7 @@ nftban_feeds_stats() {
 # Test command - test feed connectivity and configuration
 nftban_feeds_test() {
     local json_mode="${1:-false}"
+    # shellcheck disable=SC2034  # Reserved for future single-feed test filtering
     local test_feed="${2:-}"
 
     echo "Feeds Module Test"
