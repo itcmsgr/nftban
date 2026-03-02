@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.13] - 2026-03-02
+
+### Added
+
+- **CLI JSON output for `trust` command** (Sprint 1 - CLI improvements)
+  - `nftban trust list --json` - List all providers with IP counts
+  - `nftban trust status --json` - Summary with all providers
+  - `nftban trust status CLOUDFLARE --json` - Single provider details
+  - JSON fields: provider, name, enabled, ipv4_count, ipv6_count, last_refresh
+
+### Changed
+
+- **Registry metadata updated** - Fixed command counts (was 78, now 66)
+  - Schema version bumped to 1.2
+  - task_groups counts corrected
+  - `trust` removed from missing_json list
+
+---
+
+## [1.19.12] - 2026-03-02
+
+### Added
+
+- **SELinux policy** for RPM packages (R39)
+  - `nftban.te` - Type Enforcement policy
+  - `nftban.fc` - File contexts
+  - Installed to `/usr/share/nftban/selinux/`
+- **Conntrack overflow detection** in watchdog (R25)
+  - Warning at 80%, critical at 95%
+  - Config: `NFTBAN_WATCHDOG_CONNTRACK_ENABLED`
+- **OpQueue exponential backoff** retry (R75)
+  - Netlink operations retry with 10ms→500ms delay
+- **HTML/XSS sanitization** helpers (R35-R37)
+  - `sanitizeError()`, `sanitizeErrorMsg()` in pkg/api/helpers.go
+- **yq checksum verification** in installer (R44)
+
+### Fixed
+
+- Removed duplicate `calculate_mbps` in Prometheus exporter
+- Fixed geoban→geoip metric naming
+- Polkit path compatibility (policykit-1 + polkitd)
+- Removed eval from config loaders
+
+---
+
+## [1.19.11] - 2026-03-02
+
+### Fixed
+
+- **MustLoad() panic** - Replaced with Get() in all HTTP handlers (13 files)
+- **R74: Rebuild blacklist restore** - Added Step 6 in firewall_rebuild()
+- **Duplicate functions** - Renamed to nftban_systemd_* in service control
+
+### Removed
+
+- 6 dead code functions from various modules
+
+---
+
 ## [1.18.2] - 2026-02-20
 
 ### Fixed

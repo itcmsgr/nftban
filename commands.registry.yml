@@ -2983,9 +2983,9 @@ support:
 # =============================================================================
 
 _metadata:
-  version: "1.4"
-  schema_version: "1.1"
-  generated_date: "2026-02-20"
+  version: "1.5"
+  schema_version: "1.2"
+  generated_date: "2026-03-02"
   description: "CLI registry for Zabbix and help generation"
   features:
     - "Full CLI options with types, defaults, and descriptions"
@@ -2993,8 +2993,8 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 78
-  commands_with_json: 45
+  total_commands: 66
+  commands_with_json: 46
   commands_without_json: 11
   commands_with_full_options: 27
   missing_json:
@@ -3009,14 +3009,14 @@ _metadata:
     - timers
     - update
     - wizard
-    - trust
+    # trust: now has JSON support (v1.19.13)
   task_groups:
-    setup_discovery: 9
-    immediate_action: 8
-    active_protection: 10
-    infrastructure: 9
-    intelligence_reporting: 11
-    developer_sysadmin: 11
+    setup_discovery: 10
+    immediate_action: 11
+    active_protection: 9
+    infrastructure: 11
+    intelligence_reporting: 12
+    developer_sysadmin: 13
   risk_levels:
     core: 26
     setup: 7
