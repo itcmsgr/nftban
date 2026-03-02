@@ -1002,3 +1002,6 @@ HELP
 command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "feeds"
 
 export -f nftban_cmd_feeds
+export -f nftban_feeds_config
+export -f nftban_feeds_stats
+export -f nftban_feeds_test
