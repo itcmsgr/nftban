@@ -41,10 +41,17 @@ print_error() {
     echo -e "${SETUP_RED}[✗]${SETUP_NC} $1" >&2
 }
 
-# Print informational message with yellow indicator
+# Print warning message with yellow indicator
+# Usage: print_warn "Warning message"
+print_warn() {
+    echo -e "${SETUP_YELLOW}[!]${SETUP_NC} $1" >&2
+}
+
+# Print informational message with blue indicator
 # Usage: print_info "Info message"
 print_info() {
-    echo -e "${SETUP_YELLOW}[i]${SETUP_NC} $1" >&2
+    local SETUP_BLUE="${BLUE:-\033[0;34m}"
+    echo -e "${SETUP_BLUE}[i]${SETUP_NC} $1" >&2
 }
 
 # =============================================================================
