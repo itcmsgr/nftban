@@ -146,6 +146,128 @@ done
 unset _cmd_suricata_modules _module _module_path _cmd_suricata_dir
 
 # =============================================================================
+# STATS AND TEST COMMANDS
+# =============================================================================
+
+cmd_suricata_stats() {
+    # Show Suricata statistics for monitoring/API
+    local json_mode="false"
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    local installed="false"
+    local running="false"
+    local enabled="false"
+    local version=""
+    local alert_count=0
+    local eve_size=0
+
+    # Check installation
+    if _suricata_is_installed; then
+        installed="true"
+        version=$(suricata --build-info 2>/dev/null | grep -oP 'Suricata version \K[0-9.]+' | head -1) || version=""
+    fi
+
+    # Check service status
+    _suricata_is_running && running="true"
+    _suricata_is_enabled && enabled="true"
+
+    # Get EVE log stats
+    local eve_path
+    eve_path=$(_eve_get_path 2>/dev/null) || eve_path=""
+    if [[ -n "$eve_path" ]] && [[ -f "$eve_path" ]]; then
+        eve_size=$(stat -c%s "$eve_path" 2>/dev/null || stat -f%z "$eve_path" 2>/dev/null || echo "0")
+        # Count alerts in last 24h (approximate from last 100 lines)
+        alert_count=$(tail -1000 "$eve_path" 2>/dev/null | grep -c '"event_type":"alert"' || echo "0")
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        cat <<EOF
+{"installed":$installed,"running":$running,"enabled":$enabled,"version":"$version","alerts_recent":$alert_count,"eve_size_bytes":$eve_size}
+EOF
+        return 0
+    fi
+
+    echo "Suricata Statistics"
+    echo "==================="
+    echo ""
+    echo "  Installed:      $installed"
+    echo "  Version:        ${version:-(unknown)}"
+    echo "  Running:        $running"
+    echo "  Enabled:        $enabled"
+    echo "  Recent Alerts:  $alert_count (from last 1000 EVE entries)"
+    echo "  EVE Log Size:   $(_eve_format_bytes "$eve_size")"
+    echo ""
+}
+
+cmd_suricata_test() {
+    # Test Suricata module configuration
+    echo "Suricata Module Test"
+    echo "===================="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Check Suricata installation
+    if _suricata_is_installed; then
+        local version
+        version=$(suricata --build-info 2>/dev/null | grep -oP 'Suricata version \K[0-9.]+' | head -1) || version="unknown"
+        echo "  [PASS] Suricata installed (version: $version)"
+    else
+        echo "  [FAIL] Suricata not installed"
+        ((errors++)) || true
+    fi
+
+    # Test 2: Check service file
+    if systemctl list-unit-files "$SURICATA_SERVICE" &>/dev/null 2>&1; then
+        echo "  [PASS] Systemd service exists"
+    else
+        echo "  [FAIL] Systemd service not found: $SURICATA_SERVICE"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Check EVE log path
+    local eve_path
+    eve_path=$(_eve_get_path 2>/dev/null) || eve_path=""
+    if [[ -n "$eve_path" ]]; then
+        if [[ -f "$eve_path" ]]; then
+            echo "  [PASS] EVE log exists: $eve_path"
+        else
+            echo "  [INFO] EVE log path configured but file not yet created"
+        fi
+    else
+        echo "  [WARN] EVE log path not configured"
+    fi
+
+    # Test 4: Check rules directory
+    local rules_dir="/var/lib/suricata/rules"
+    if [[ -d "$rules_dir" ]]; then
+        local rule_count
+        rule_count=$(find "$rules_dir" -name "*.rules" 2>/dev/null | wc -l)
+        echo "  [PASS] Rules directory exists ($rule_count rule files)"
+    else
+        echo "  [WARN] Rules directory not found: $rules_dir"
+    fi
+
+    # Test 5: Check suricata-update
+    if command -v suricata-update &>/dev/null; then
+        echo "  [PASS] suricata-update available"
+    else
+        echo "  [WARN] suricata-update not found (rule updates may fail)"
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
+}
+
+# =============================================================================
 # HELP
 # =============================================================================
 
@@ -250,6 +372,12 @@ nftban_cmd_suricata() {
         status)
             cmd_suricata_status "$@"
             ;;
+        stats)
+            cmd_suricata_stats "$@"
+            ;;
+        test)
+            cmd_suricata_test "$@"
+            ;;
         eve)
             cmd_suricata_eve "$@"
             ;;
@@ -306,6 +434,8 @@ export -f cmd_suricata_install
 export -f cmd_suricata_enable
 export -f cmd_suricata_disable
 export -f cmd_suricata_status
+export -f cmd_suricata_stats
+export -f cmd_suricata_test
 export -f cmd_suricata_eve
 export -f cmd_suricata_eve_check
 export -f cmd_suricata_rules

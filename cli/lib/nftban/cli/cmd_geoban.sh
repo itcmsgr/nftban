@@ -129,6 +129,10 @@ nftban_cmd_geoban() {
             # Stats command for GUI/API - provides JSON output
             nftban_geoban_stats "$@"
             ;;
+        test)
+            # Test geoban configuration and connectivity
+            nftban_geoban_test "$@"
+            ;;
         enable)
             # Enable GeoBan module (persists to .local file)
             nftban_geoban_enable
@@ -351,6 +355,73 @@ nftban_geoban_stats() {
 }
 
 # =============================================================================
+# TEST FUNCTION
+# =============================================================================
+
+nftban_geoban_test() {
+    # Test GeoBan module configuration and connectivity
+    local json_mode="false"
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    echo "GeoBan Module Test"
+    echo "=================="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Check config directory
+    local config_dir="${NFTBAN_CONFIG_DIR}/conf.d/geoban"
+    if [[ -d "$config_dir" ]] || [[ -f "${config_dir}/main.conf" ]]; then
+        echo "  [PASS] Config directory exists"
+    else
+        echo "  [WARN] Config directory not found: $config_dir"
+    fi
+
+    # Test 2: Check nftban-core binary (Go implementation)
+    local core_bin="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    if [[ -x "$core_bin" ]]; then
+        echo "  [PASS] nftban-core binary found"
+    else
+        echo "  [FAIL] nftban-core binary not found: $core_bin"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Check cache directory
+    local cache_dir="${NFTBAN_CACHE_DIR}/geoban"
+    if [[ -d "$cache_dir" ]]; then
+        echo "  [PASS] Cache directory exists"
+    else
+        echo "  [INFO] Cache directory will be created on first use"
+    fi
+
+    # Test 4: Check network connectivity to RIR
+    if curl -s --max-time 5 --head "https://ftp.ripe.net" &>/dev/null; then
+        echo "  [PASS] Network connectivity to RIRs OK"
+    else
+        echo "  [WARN] Cannot reach RIPE NCC (network issue?)"
+    fi
+
+    # Test 5: Check nftables
+    if command -v nft &>/dev/null; then
+        echo "  [PASS] nftables available"
+    else
+        echo "  [FAIL] nftables not found"
+        ((errors++)) || true
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
+}
+
+# =============================================================================
 # HELP
 # =============================================================================
 
@@ -408,3 +479,4 @@ export -f nftban_cmd_geoban
 export -f nftban_geoban_enable
 export -f nftban_geoban_disable
 export -f nftban_geoban_stats
+export -f nftban_geoban_test

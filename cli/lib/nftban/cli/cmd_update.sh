@@ -101,9 +101,6 @@ unset _UPDATE_CLI_DIR _update_modules _module _module_path
 
 _cmd_update_status() {
     # Show current installation status
-    _update_banner
-    echo ""
-
     local install_type current_version
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
@@ -116,15 +113,34 @@ _cmd_update_status() {
     local family distro version
     IFS=':' read -r family distro version <<< "$distro_info"
 
+    local expected_pkg
+    expected_pkg=$(_get_distro_package_name)
+
+    # JSON output mode (v1.19.13)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        local pkg_info=""
+        case "$install_type" in
+            rpm) pkg_info=$(rpm -q nftban 2>/dev/null || echo 'not installed') ;;
+            deb) pkg_info=$(dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed') ;;
+            git) pkg_info="$NFTBAN_GIT_REPO@$NFTBAN_GIT_BRANCH" ;;
+            *) pkg_info="unknown" ;;
+        esac
+        cat <<EOF
+{"install_type":"$install_type","current_version":"$current_version","package_manager":"$sys_pkg","distribution":"$distro","distribution_version":"$version","package_family":"$family","expected_package":"$expected_pkg","package_info":"$pkg_info"}
+EOF
+        return 0
+    fi
+
+    # Human-readable output
+    _update_banner
+    echo ""
+
     echo "  ┌─────────────────────────────────────────────────────────┐"
     echo "  │ SYSTEM INFORMATION                                      │"
     echo "  ├─────────────────────────────────────────────────────────┤"
     printf "  │ Package Manager:  %-38s │\n" "$sys_pkg"
     printf "  │ Distribution:     %-38s │\n" "${distro} ${version}"
     printf "  │ Package Family:   %-38s │\n" "$family"
-
-    local expected_pkg
-    expected_pkg=$(_get_distro_package_name)
     printf "  │ Expected Package: %-38s │\n" "$expected_pkg"
     echo "  └─────────────────────────────────────────────────────────┘"
     echo ""
@@ -181,19 +197,32 @@ _cmd_update_status() {
 
 _cmd_update_check() {
     # Check for available updates
-    _update_banner
-    echo ""
-
     local install_type current_version latest_version
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
+    latest_version=$(_get_latest_release)
+
+    local update_available="false"
+    if [[ "$latest_version" != "unknown" && "$current_version" != "$latest_version" ]]; then
+        update_available="true"
+    fi
+
+    # JSON output mode (v1.19.13)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        cat <<EOF
+{"install_type":"$install_type","current_version":"$current_version","latest_version":"$latest_version","update_available":$update_available}
+EOF
+        return 0
+    fi
+
+    # Human-readable output
+    _update_banner
+    echo ""
 
     echo "  Install type:  $install_type"
     echo "  Current:       v$current_version"
     echo ""
     echo "  Checking GitHub for updates..."
-
-    latest_version=$(_get_latest_release)
 
     if [[ "$latest_version" == "unknown" ]]; then
         _update_log ERROR "Failed to check GitHub releases"
@@ -1274,6 +1303,13 @@ To rollback:
 nftban_cmd_update() {
     local cmd="${1:-}"
     shift || true
+
+    # Check for --json flag in remaining args (v1.19.13)
+    for arg in "$@"; do
+        if [[ "$arg" == "--json" || "$arg" == "-j" ]]; then
+            export NFTBAN_JSON="true"
+        fi
+    done
 
     case "$cmd" in
         check|--check|-c)
