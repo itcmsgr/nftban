@@ -1450,6 +1450,17 @@ nftban_cmd_rbl_watchlist() {
 
 # Export main function and subcommands
 export -f nftban_cmd_rbl
+export -f nftban_cmd_rbl_alert
+export -f nftban_cmd_rbl_cache
+export -f nftban_cmd_rbl_check
 export -f nftban_cmd_rbl_config
+export -f nftban_cmd_rbl_critical
+export -f nftban_cmd_rbl_disable
+export -f nftban_cmd_rbl_enable
+export -f nftban_cmd_rbl_help
+export -f nftban_cmd_rbl_list
+export -f nftban_cmd_rbl_server
 export -f nftban_cmd_rbl_stats
+export -f nftban_cmd_rbl_status
 export -f nftban_cmd_rbl_test
+export -f nftban_cmd_rbl_watchlist

@@ -1005,3 +1005,11 @@ export -f nftban_cmd_feeds
 export -f nftban_feeds_config
 export -f nftban_feeds_stats
 export -f nftban_feeds_test
+export -f nftban_feeds_disable_json
+export -f nftban_feeds_enable_json
+export -f _nftban_feeds_help
+export -f nftban_feeds_list
+export -f nftban_feeds_select
+export -f nftban_feeds_status
+export -f nftban_feeds_status_json
+export -f nftban_feeds_update_json

@@ -760,6 +760,15 @@ nftban_cmd_botscan() {
 # =============================================================================
 
 export -f nftban_cmd_botscan
+export -f _nftban_botscan_banner
+export -f _nftban_botscan_cmd_config
+export -f _nftban_botscan_cmd_disable
+export -f _nftban_botscan_cmd_enable
+export -f _nftban_botscan_cmd_history
+export -f _nftban_botscan_cmd_patterns
+export -f _nftban_botscan_cmd_test
+export -f _nftban_botscan_help
+export -f _nftban_botscan_stats_json
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
