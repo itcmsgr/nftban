@@ -54,7 +54,8 @@ func StatsTrafficHandler(w http.ResponseWriter, r *http.Request) {
 	packetsOut := uint64(0)
 
 	// Try to get network stats from Node Exporter metrics
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	nodeExporterAddr := cfg.MetricsNodeExporterAddr
 	if nodeExporterAddr == "" {
 		nodeExporterAddr = "localhost:9100"

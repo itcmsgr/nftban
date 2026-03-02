@@ -2430,7 +2430,8 @@ func (h *GOTHHandlers) getJournalEvents(filter string, limit int) []ui.EventEntr
 
 func execNFTBanCommand(args ...string) (string, error) {
 	// Use central config for CLI path - same as pkg/api/handlers.go
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	cmd := exec.Command(cfg.Bin, args...)
 	output, err := cmd.CombinedOutput()
 
@@ -2677,7 +2678,8 @@ func (h *GOTHHandlers) getFHSList() []ui.FHSItem {
 	fhs := []ui.FHSItem{}
 
 	// Load config to get actual paths (supports custom installations)
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 
 	// Key FHS directories - use configured paths, not hardcoded
 	dirs := []string{
@@ -3059,7 +3061,8 @@ func (h *GOTHHandlers) getFeedsPageData() ui.FeedsPageData {
 func (h *GOTHHandlers) getRecentFeedActivity() []ui.FeedSyncActivity {
 	activity := []ui.FeedSyncActivity{}
 
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	logFile := cfg.LogDir + "/feeds.log"
 
 	// Read last 30 lines of feeds.log

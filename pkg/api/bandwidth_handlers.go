@@ -36,7 +36,8 @@ import (
 // getBandwidthMetricsFile returns the bandwidth metrics file path from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getBandwidthMetricsFile() string {
-	paths := nftbanconf.MustLoadPaths()
+	// Use GetPaths() instead of MustLoadPaths() - config already loaded at startup
+	paths := nftbanconf.GetPaths()
 	return paths.PrometheusBandwidthFile
 }
 

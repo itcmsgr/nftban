@@ -723,17 +723,6 @@ nftban_gui_restart() {
 # Main command router
 # ==============================================================================
 
-cmd_gui_help() {
-    echo "Usage: nftban gui {enable|disable|status|restart|recompile}"
-    echo ""
-    echo "Commands:"
-    echo "  enable      Enable Web GUI with metrics"
-    echo "  disable     Disable Web GUI"
-    echo "  status      Show current status"
-    echo "  restart     Restart all services"
-    echo "  recompile   Rebuild Go binaries"
-}
-
 nftban_cmd_gui() {
     local subcommand="${1:-status}"
 

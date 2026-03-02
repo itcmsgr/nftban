@@ -297,7 +297,8 @@ func (h *GOTHHandlers) HandleFragSettingsSection(w http.ResponseWriter, r *http.
 
 // getExtendedSettingsData loads current settings from /etc/nftban/nftban.conf
 func (h *GOTHHandlers) getExtendedSettingsData() ui.ExtendedSettingsData {
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	configPath := nftbanconf.DefaultConfigFile
 
 	data := ui.ExtendedSettingsData{

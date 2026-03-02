@@ -64,42 +64,6 @@ _is_victoriametrics_running() {
     systemctl is-active victoriametrics &>/dev/null
 }
 
-# Detect conflict: both backends installed
-_check_backend_conflict() {
-    local prometheus_installed=false
-    local victoriametrics_installed=false
-    local prometheus_running=false
-    local victoriametrics_running=false
-
-    if _is_prometheus_installed; then
-        prometheus_installed=true
-        if _is_prometheus_running; then
-            prometheus_running=true
-        fi
-    fi
-
-    if _is_victoriametrics_installed; then
-        victoriametrics_installed=true
-        if _is_victoriametrics_running; then
-            victoriametrics_running=true
-        fi
-    fi
-
-    # Return status via global variables (exported for callers)
-    # shellcheck disable=SC2034  # Variables used by callers
-    export CONFLICT_PROMETHEUS_INSTALLED="$prometheus_installed"
-    export CONFLICT_VICTORIAMETRICS_INSTALLED="$victoriametrics_installed"
-    export CONFLICT_PROMETHEUS_RUNNING="$prometheus_running"
-    export CONFLICT_VICTORIAMETRICS_RUNNING="$victoriametrics_running"
-
-    # Check for actual conflict (both running)
-    if [[ "$prometheus_running" == "true" ]] && [[ "$victoriametrics_running" == "true" ]]; then
-        return 1  # Conflict: both running
-    fi
-
-    return 0
-}
-
 # Display conflict warning and instructions
 _show_conflict_warning() {
     local requested_backend="$1"
