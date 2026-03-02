@@ -621,6 +621,15 @@ nftban_cmd_feeds() {
         status)
             nftban_feeds_status_json "$json_mode"
             ;;
+        config)
+            nftban_feeds_config "$json_mode"
+            ;;
+        stats)
+            nftban_feeds_stats "$json_mode"
+            ;;
+        test)
+            nftban_feeds_test "$json_mode" "$@"
+            ;;
         help|-h|--help)
             _nftban_feeds_help
             ;;
@@ -630,6 +639,175 @@ nftban_cmd_feeds() {
             exit 1
             ;;
     esac
+}
+
+# =============================================================================
+# CONFIG, STATS, TEST COMMANDS
+# =============================================================================
+
+# Config command - show feeds configuration
+nftban_feeds_config() {
+    local json_mode="${1:-false}"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
+    local config_local="${config_file}.local"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg auto_update "${FEEDS_AUTO_UPDATE:-true}" \
+                --arg storage_dir "${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds}" \
+                --arg cache_dir "${NFTBAN_FEEDS_CACHE_DIR:-/var/cache/nftban/feeds}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        auto_update: ($auto_update == "true"),
+                        storage_dir: $storage_dir,
+                        cache_dir: $cache_dir
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\"}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    echo "Feeds Configuration"
+    echo "==================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Settings:"
+    echo "  Auto-Update:    ${FEEDS_AUTO_UPDATE:-true}"
+    echo "  Storage Dir:    ${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds}"
+    echo "  Cache Dir:      ${NFTBAN_FEEDS_CACHE_DIR:-/var/cache/nftban/feeds}"
+    echo "  Log File:       ${NFTBAN_FEEDS_LOG:-/var/log/nftban/feeds.log}"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+# Stats command - show feeds statistics
+nftban_feeds_stats() {
+    local json_mode="${1:-false}"
+
+    # Count enabled feeds and total IPs
+    local total_feeds=0
+    local enabled_feeds=0
+    local total_ips=0
+
+    local all_feeds
+    all_feeds=$(nftban_feeds_discover_all 2>/dev/null || echo "")
+
+    for feed in $all_feeds; do
+        ((total_feeds++)) || true
+        local enabled
+        enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+        if [[ "$enabled" == "true" ]]; then
+            ((enabled_feeds++)) || true
+            local feed_lower="${feed,,}"
+            local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
+            if [[ -f "$feed_file" ]]; then
+                local count
+                count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
+                total_ips=$((total_ips + count))
+            fi
+        fi
+    done
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --argjson total_feeds "$total_feeds" \
+                --argjson enabled_feeds "$enabled_feeds" \
+                --argjson total_ips "$total_ips" \
+                '{
+                    stats: {
+                        total_feeds: $total_feeds,
+                        enabled_feeds: $enabled_feeds,
+                        total_ips: $total_ips
+                    }
+                }')
+        else
+            data="{\"stats\":{\"total_feeds\":$total_feeds,\"enabled_feeds\":$enabled_feeds,\"total_ips\":$total_ips}}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    echo "Feeds Statistics"
+    echo "================"
+    echo ""
+    echo "  Total Feeds:    $total_feeds"
+    echo "  Enabled Feeds:  $enabled_feeds"
+    echo "  Total IPs:      $total_ips"
+    echo ""
+}
+
+# Test command - test feed connectivity and configuration
+nftban_feeds_test() {
+    local json_mode="${1:-false}"
+    local test_feed="${2:-}"
+
+    echo "Feeds Module Test"
+    echo "================="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Check config file
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
+    if [[ -f "$config_file" ]]; then
+        echo "  [PASS] Config file exists: $config_file"
+    else
+        echo "  [FAIL] Config file missing: $config_file"
+        ((errors++)) || true
+    fi
+
+    # Test 2: Check storage directory
+    local storage_dir="${NFTBAN_FEEDS_STORAGE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds}"
+    if [[ -d "$storage_dir" ]]; then
+        echo "  [PASS] Storage directory exists: $storage_dir"
+    else
+        echo "  [FAIL] Storage directory missing: $storage_dir"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Check curl availability
+    if command -v curl &>/dev/null; then
+        echo "  [PASS] curl is available"
+    else
+        echo "  [FAIL] curl not found (required for feed downloads)"
+        ((errors++)) || true
+    fi
+
+    # Test 4: Check network connectivity (test common feed URL)
+    if curl -s --max-time 5 --head "https://www.spamhaus.org" &>/dev/null; then
+        echo "  [PASS] Network connectivity OK"
+    else
+        echo "  [WARN] Cannot reach spamhaus.org (network issue?)"
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
 }
 
 # =============================================================================

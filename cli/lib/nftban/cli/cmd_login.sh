@@ -997,6 +997,80 @@ nftban_login_cmd_digest() {
     esac
 }
 
+nftban_login_cmd_config() {
+    # Show login module configuration
+    local json_mode="${1:-false}"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
+    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local active_file="$config_file"
+        [[ -f "$config_local" ]] && active_file="$config_local"
+
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${NFTBAN_LOGIN_ALERT_ENABLED:-false}" \
+                --arg email "${NFTBAN_MAIL_RECIPIENT:-}" \
+                --arg format "${NFTBAN_LOGIN_ALERT_FORMAT:-text}" \
+                --arg mode "${NFTBAN_LOGIN_ALERT_MODE:-realtime}" \
+                --arg geoip "${NFTBAN_LOGIN_ALERT_GEOIP:-false}" \
+                --arg ssh "${NFTBAN_LOGIN_ALERT_SSH:-false}" \
+                --arg threshold "${NFTBAN_LOGIN_FAILED_THRESHOLD:-5}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "true"),
+                        email: $email,
+                        format: $format,
+                        mode: $mode,
+                        geoip: ($geoip == "true"),
+                        ssh: ($ssh == "true"),
+                        threshold: ($threshold | tonumber)
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\",\"enabled\":${NFTBAN_LOGIN_ALERT_ENABLED:-false}}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    # Human-readable output
+    echo "Login Alert Configuration"
+    echo "========================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Current Settings:"
+    echo "  Enabled:        ${NFTBAN_LOGIN_ALERT_ENABLED:-false}"
+    echo "  Email:          ${NFTBAN_MAIL_RECIPIENT:-(not set)}"
+    echo "  Format:         ${NFTBAN_LOGIN_ALERT_FORMAT:-text}"
+    echo "  Mode:           ${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
+    echo "  GeoIP:          ${NFTBAN_LOGIN_ALERT_GEOIP:-false}"
+    echo ""
+    echo "Monitoring:"
+    echo "  SSH:            ${NFTBAN_LOGIN_ALERT_SSH:-false}"
+    echo "  SU:             ${NFTBAN_LOGIN_ALERT_SU:-false}"
+    echo "  SUDO:           ${NFTBAN_LOGIN_ALERT_SUDO:-false}"
+    echo "  Console:        ${NFTBAN_LOGIN_ALERT_CONSOLE:-false}"
+    echo ""
+    echo "Failed Login Threshold: ${NFTBAN_LOGIN_FAILED_THRESHOLD:-5} attempts in ${NFTBAN_LOGIN_FAILED_WINDOW:-300}s"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
 nftban_login_cmd_help() {
     # Show help
     nftban_banner "login"
@@ -1136,6 +1210,9 @@ nftban_cmd_login() {
         stats)
             _nftban_login_cmd_stats_json "$json_mode"
             ;;
+        config)
+            nftban_login_cmd_config "$json_mode"
+            ;;
         install)
             nftban_login_cmd_install "$@"
             ;;
@@ -1192,6 +1269,7 @@ export -f nftban_login_cmd_status
 export -f _nftban_login_cmd_status_json
 export -f nftban_login_cmd_stats
 export -f _nftban_login_cmd_stats_json
+export -f nftban_login_cmd_config
 export -f nftban_login_cmd_install
 export -f nftban_login_cmd_enable
 export -f nftban_login_cmd_disable

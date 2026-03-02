@@ -611,49 +611,99 @@ nftban_system_restart() {
 nftban_system_status() {
     local json_mode="${1:-}"
 
+    # Check for NFTBAN_JSON env var (set by cmd entry point)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        json_mode="--json"
+    fi
+
     # Use centralized status if available
     if declare -f nftban_services_status &>/dev/null; then
         nftban_services_status "$json_mode"
         return $?
     fi
 
-    # Fallback status display
+    # Check kernel kill-switch
+    local kernel_disabled="false"
+    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
+        kernel_disabled="true"
+    fi
+
+    # Collect service statuses
+    local nft_status
+    nft_status=$(systemctl is-active nftables.service 2>/dev/null || echo "inactive")
+
+    local nftban_status
+    nftban_status=$(systemctl is-active nftband.service 2>/dev/null || echo "inactive")
+
+    local suri_status="not_installed"
+    local suri_installed="false"
+    if command -v suricata &>/dev/null; then
+        suri_installed="true"
+        suri_status=$(systemctl is-active suricata.service 2>/dev/null || echo "inactive")
+    fi
+
+    local login_status
+    login_status=$(systemctl is-active "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || echo "inactive")
+
+    # JSON output mode
+    if [[ "$json_mode" == "--json" || "$json_mode" == "-j" ]]; then
+        # Collect timer statuses for JSON
+        local timers_json="["
+        local first_timer="true"
+        local timers=(
+            "nftban-maintenance.timer"
+            "nftban-health.timer"
+            "nftban-core-feeds.timer"
+            "nftban-core-geoip.timer"
+            "nftban-unified-exporter.timer"
+            "nftban-watchdog.timer"
+            "nftban-queue.timer"
+            "nftban-rbl-check.timer"
+            "nftban-suricata-update.timer"
+            "nftban-snapshot.timer"
+            "nftban-rollback.timer"
+            "nftban-pro-inventory.timer"
+            "nftban-pro-license.timer"
+            "nftban-update.timer"
+        )
+        for timer in "${timers[@]}"; do
+            if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then
+                local t_status t_enabled
+                t_status=$(systemctl is-active "$timer" 2>/dev/null || echo "inactive")
+                t_enabled=$(systemctl is-enabled "$timer" 2>/dev/null || echo "disabled")
+                [[ "$first_timer" == "true" ]] || timers_json+=","
+                first_timer="false"
+                timers_json+="{\"name\":\"$timer\",\"status\":\"$t_status\",\"enabled\":\"$t_enabled\"}"
+            fi
+        done
+        timers_json+="]"
+
+        cat <<EOF
+{"kernel_disabled":$kernel_disabled,"services":{"nftables":"$nft_status","nftband":"$nftban_status","suricata":"$suri_status","suricata_installed":$suri_installed,"login_monitor":"$login_status"},"timers":$timers_json}
+EOF
+        return 0
+    fi
+
+    # Human-readable output
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "NFTBan Service Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # Check kernel kill-switch
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
+    if [[ "$kernel_disabled" == "true" ]]; then
         echo "KERNEL: nftban=disabled (emergency kill-switch active)"
         echo ""
     fi
 
     echo "Services:"
-
-    # nftables
-    local nft_status
-    nft_status=$(systemctl is-active nftables.service 2>/dev/null || echo "inactive")
     echo "  nftables:         $nft_status"
-
-    # NFTBan main daemon
-    local nftban_status
-    nftban_status=$(systemctl is-active nftband.service 2>/dev/null || echo "inactive")
     echo "  nftband:          $nftban_status"
-
-    # Suricata
-    if command -v suricata &>/dev/null; then
-        local suri_status
-        suri_status=$(systemctl is-active suricata.service 2>/dev/null || echo "inactive")
+    if [[ "$suri_installed" == "true" ]]; then
         echo "  suricata:         $suri_status"
     else
         echo "  suricata:         not installed"
     fi
-
-    # Login monitor
-    local login_status
-    login_status=$(systemctl is-active "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || echo "inactive")
     echo "  login-monitor:    $login_status"
 
     echo ""
@@ -740,8 +790,15 @@ _nftban_timers_status() {
 nftban_cmd_system() {
     local action="${1:-}"
 
-    # Show banner if available
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+    # Check for --json flag and export for submodules
+    for arg in "$@"; do
+        if [[ "$arg" == "--json" || "$arg" == "-j" ]]; then
+            export NFTBAN_JSON="true"
+        fi
+    done
+
+    # Show banner if available (skip in JSON mode)
+    if [[ "${NFTBAN_JSON:-}" != "true" ]] && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
         if declare -f nftban_banner &>/dev/null; then
@@ -781,10 +838,13 @@ _nftban_system_help() {
 NFTBan Service Control
 
 USAGE:
-    nftban enable [TARGET]     Enable NFTBan services
-    nftban disable [TARGET]    Disable NFTBan services
-    nftban restart [TARGET]    Restart NFTBan services
-    nftban services status     Show service status
+    nftban enable [TARGET]         Enable NFTBan services
+    nftban disable [TARGET]        Disable NFTBan services
+    nftban restart [TARGET]        Restart NFTBan services
+    nftban services status [--json] Show service status
+
+OPTIONS:
+    --json, -j    Output in JSON format (machine-readable)
 
 TARGETS:
     all       - All NFTBan services (default for enable/restart)
@@ -805,6 +865,9 @@ EXAMPLES:
 
     # Check status
     nftban services status
+
+    # Check status (JSON for scripts/automation)
+    nftban services status --json
 
     # EMERGENCY: Disable all NFTBan
     sudo nftban disable all
