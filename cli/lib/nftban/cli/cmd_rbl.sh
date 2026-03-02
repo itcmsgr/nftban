@@ -1448,5 +1448,8 @@ nftban_cmd_rbl_watchlist() {
     esac
 }
 
-# Export main function
+# Export main function and subcommands
 export -f nftban_cmd_rbl
+export -f nftban_cmd_rbl_config
+export -f nftban_cmd_rbl_stats
+export -f nftban_cmd_rbl_test

@@ -11,8 +11,8 @@
 #   - RBAC enforcement
 #   - Man page generation
 #
-# Schema Version: 1.1
-# Last Updated: 2026-02-09
+# Schema Version: 1.2
+# Last Updated: 2026-03-02
 # =============================================================================
 
 # =============================================================================
@@ -789,12 +789,18 @@ portscan:
       description: "Show portscan statistics"
       options:
         --json: {type: bool, description: "Output in JSON format"}
+    config:
+      mutates: false
+      description: "Show portscan detection configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban portscan status"
     - "nftban portscan enable"
     - "nftban portscan disable"
     - "nftban portscan history"
     - "nftban portscan test --json"
+    - "nftban portscan config"
 
 login:
   category: active_protection
@@ -872,6 +878,11 @@ login:
           required: false
           values: [status, send, clear]
           default: status
+    config:
+      mutates: false
+      description: "Show login monitoring configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 botscan:
   category: active_protection
@@ -903,6 +914,11 @@ botscan:
       description: "Pattern management"
     history: {description: "Show detection history"}
     test: {description: "Test pattern matching against URLs or User-Agents"}
+    config:
+      mutates: false
+      description: "Show botscan configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 feeds:
   category: active_protection
@@ -967,6 +983,21 @@ feeds:
     status:
       mutates: false
       description: "Show feeds status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    config:
+      mutates: false
+      description: "Show feeds configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show feeds statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test feeds connectivity and parsing"
       options:
         --json: {type: bool, description: "Output in JSON format"}
   examples:
@@ -1085,6 +1116,21 @@ rbl:
         check:
           mutates: false
           description: "Check watched IPs against RBLs"
+    config:
+      mutates: false
+      description: "Show RBL configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show RBL monitoring statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test RBL connectivity and resolution"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 trust:
   category: active_protection
@@ -1195,12 +1241,18 @@ geoban:
       description: "Show GeoBan statistics"
       options:
         --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test GeoBan connectivity and database integrity"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban geoban status"
     - "nftban geoban ban CN"
     - "nftban geoban unban RU"
     - "nftban geoban whitelist US"
     - "nftban geoban list --json"
+    - "nftban geoban test"
 
 # NOTE: cloudflare command removed in v1.10.0 - use "nftban trust" instead
 
@@ -2520,6 +2572,22 @@ suricata:
     tools:
       mutates: false
       description: "Suricata diagnostic and utility tools"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    # v1.19.13: Standard module consistency subcommands
+    config:
+      mutates: false
+      description: "Show Suricata configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show Suricata statistics (EVE, alerts)"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test Suricata connectivity and EVE log availability"
       options:
         --json: {type: bool, description: "Output in JSON format"}
 
