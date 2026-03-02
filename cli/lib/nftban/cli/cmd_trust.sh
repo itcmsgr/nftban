@@ -64,12 +64,12 @@ IFS=$'\n\t'
 nftban_cmd_trust() {
     local action="${1:-status}"
     local provider="${2:-}"
-    local json_mode=false
 
-    # Check for --json flag
+    # Check for --json flag and export for submodules
     for arg in "$@"; do
-        # shellcheck disable=SC2034  # Reserved for JSON output
-        [[ "$arg" == "--json" ]] && json_mode=true
+        if [[ "$arg" == "--json" || "$arg" == "-j" ]]; then
+            export NFTBAN_JSON="true"
+        fi
     done
 
     # Load core trust module
@@ -94,7 +94,7 @@ nftban_cmd_trust() {
 
     case "$action" in
         list)
-            nftban_trust_list "$json_mode"
+            nftban_trust_list
             ;;
         enable)
             if [[ -z "$provider" ]]; then
@@ -158,7 +158,10 @@ _nftban_trust_help() {
     cat <<'HELP'
 
 USAGE:
-    nftban trust <command> [provider]
+    nftban trust <command> [provider] [--json]
+
+OPTIONS:
+    --json, -j      Output in JSON format (machine-readable)
 
 COMMANDS:
     list                List all available trusted providers

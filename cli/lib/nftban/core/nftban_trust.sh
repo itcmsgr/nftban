@@ -443,9 +443,31 @@ nftban_trust_list_providers() {
 }
 
 nftban_trust_list() {
-    # shellcheck disable=SC2034  # Reserved for future JSON output support
-    local json_mode="${1:-false}"
+    # JSON output mode (v1.19.13)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        local json_array="["
+        local first=true
+        for provider in "${TRUST_PROVIDER_LIST[@]}"; do
+            local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
+            local enabled="false"
+            _trust_is_enabled "$provider" && enabled="true"
 
+            local ipv4_count=0 ipv6_count=0
+            local ipv4_cache ipv6_cache
+            ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
+            ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
+            [[ -f "$ipv4_cache" ]] && ipv4_count=$(wc -l < "$ipv4_cache")
+            [[ -f "$ipv6_cache" ]] && ipv6_count=$(wc -l < "$ipv6_cache")
+
+            [[ "$first" == "true" ]] && first=false || json_array+=","
+            json_array+="{\"provider\":\"$provider\",\"name\":\"$name\",\"enabled\":$enabled,\"ipv4_count\":$ipv4_count,\"ipv6_count\":$ipv6_count}"
+        done
+        json_array+="]"
+        echo "{\"providers\":$json_array}"
+        return 0
+    fi
+
+    # Human-readable output
     nftban_trust_banner
     echo ""
     echo "Available Trusted Providers:"
@@ -686,18 +708,45 @@ nftban_trust_status() {
     ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
     whitelist_file=$(_trust_get_whitelist_file "$provider")
 
+    local enabled="false"
+    _trust_is_enabled "$provider" && enabled="true"
+
+    local ipv4_count=0 ipv6_count=0 ipv4_age_hours=0 ipv6_age_hours=0
+    local whitelist_entries=0 last_refresh=""
+
+    if [[ -f "$ipv4_cache" ]]; then
+        ipv4_count=$(wc -l < "$ipv4_cache")
+        ipv4_age_hours=$(( ($(date +%s) - $(stat -c %Y "$ipv4_cache")) / 3600 ))
+        last_refresh=$(date -d "@$(stat -c %Y "$ipv4_cache")" -Iseconds 2>/dev/null || stat -c %Y "$ipv4_cache")
+    fi
+
+    if [[ -f "$ipv6_cache" ]]; then
+        ipv6_count=$(wc -l < "$ipv6_cache")
+        ipv6_age_hours=$(( ($(date +%s) - $(stat -c %Y "$ipv6_cache")) / 3600 ))
+    fi
+
+    if [[ -f "$whitelist_file" ]]; then
+        whitelist_entries=$({ grep -v "^#" "$whitelist_file" | grep -v "^$" || true; } | wc -l)
+    fi
+
+    # JSON output mode (v1.19.13)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        cat <<EOF
+{"provider":"$provider","name":"$name","enabled":$enabled,"ipv4_count":$ipv4_count,"ipv6_count":$ipv6_count,"ipv4_age_hours":$ipv4_age_hours,"ipv6_age_hours":$ipv6_age_hours,"whitelist_entries":$whitelist_entries,"last_refresh":"$last_refresh"}
+EOF
+        return 0
+    fi
+
+    # Human-readable output
     echo ""
     echo "Provider: $name ($provider)"
-    echo "Status: $(_trust_is_enabled "$provider" && echo "ENABLED" || echo "disabled")"
+    echo "Status: $([[ "$enabled" == "true" ]] && echo "ENABLED" || echo "disabled")"
     echo ""
 
     if [[ -f "$ipv4_cache" ]]; then
-        local count age
-        count=$(wc -l < "$ipv4_cache")
-        age=$(( ($(date +%s) - $(stat -c %Y "$ipv4_cache")) / 3600 ))
         echo "IPv4 Cache:"
-        echo "   Ranges: $count"
-        echo "   Age: ${age} hours"
+        echo "   Ranges: $ipv4_count"
+        echo "   Age: ${ipv4_age_hours} hours"
     else
         echo "IPv4 Cache: Not downloaded"
     fi
@@ -724,15 +773,14 @@ nftban_trust_status() {
 }
 
 nftban_trust_status_all() {
-    nftban_trust_banner
-    echo ""
-
-    local enabled=0
+    local enabled_count=0
     local total_ranges=0
+    local total_providers=${#TRUST_PROVIDER_LIST[@]}
 
+    # Collect data for all providers
     for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
-            ((enabled++))
+            ((enabled_count++))
             local ipv4_cache ipv6_cache
             ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
             ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
@@ -741,8 +789,36 @@ nftban_trust_status_all() {
         fi
     done
 
+    # JSON output mode (v1.19.13)
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        local json_array="["
+        local first=true
+        for provider in "${TRUST_PROVIDER_LIST[@]}"; do
+            local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
+            local enabled="false"
+            local ipv4_count=0 ipv6_count=0
+            if _trust_is_enabled "$provider"; then
+                enabled="true"
+                local ipv4_cache ipv6_cache
+                ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
+                ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
+                [[ -f "$ipv4_cache" ]] && ipv4_count=$(wc -l < "$ipv4_cache")
+                [[ -f "$ipv6_cache" ]] && ipv6_count=$(wc -l < "$ipv6_cache")
+            fi
+            [[ "$first" == "true" ]] && first=false || json_array+=","
+            json_array+="{\"provider\":\"$provider\",\"name\":\"$name\",\"enabled\":$enabled,\"ipv4_count\":$ipv4_count,\"ipv6_count\":$ipv6_count}"
+        done
+        json_array+="]"
+        echo "{\"enabled_count\":$enabled_count,\"total_providers\":$total_providers,\"total_ranges\":$total_ranges,\"providers\":$json_array}"
+        return 0
+    fi
+
+    # Human-readable output
+    nftban_trust_banner
+    echo ""
+
     echo "Summary:"
-    echo "   Enabled providers: $enabled / ${#TRUST_PROVIDER_LIST[@]}"
+    echo "   Enabled providers: $enabled_count / $total_providers"
     echo "   Total IP ranges: $total_ranges"
     echo ""
 
