@@ -205,7 +205,8 @@ func RecentActivityHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read from nftban-actions.log (JSONL format) - use central config
 	// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-	paths := nftbanconf.MustLoadPaths()
+	// Use GetPaths() instead of MustLoadPaths() - config already loaded at startup
+	paths := nftbanconf.GetPaths()
 	logPath := paths.AuditLog
 	if logPath == "" {
 		logPath = getLogDir() + "/nftban-actions.log"

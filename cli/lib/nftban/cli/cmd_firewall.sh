@@ -665,8 +665,34 @@ firewall_rebuild() {
     fi
 
     # Step 5: Re-sync system whitelist
-    [[ "$quiet" == "false" ]] && echo "  [5/5] Re-syncing system whitelist..."
+    [[ "$quiet" == "false" ]] && echo "  [5/6] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
+
+    # Step 6: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
+    [[ "$quiet" == "false" ]] && echo "  [6/6] Restoring blacklist from backup..."
+    local restored_count=0
+    for backup_file in "$backup_dir/blacklist_ipv4_$timestamp.txt" "$backup_dir/blacklist_ipv6_$timestamp.txt"; do
+        [[ -f "$backup_file" ]] || continue
+        # Extract elements from backup (format: elements = { ip1, ip2, ... })
+        local elements
+        elements=$(grep -oP 'elements = \{ \K[^}]+' "$backup_file" 2>/dev/null | tr -d '\n\t' | sed 's/  */ /g')
+        [[ -z "$elements" ]] && continue
+        # Determine table and set from filename
+        local table_family set_name
+        if [[ "$backup_file" == *ipv4* ]]; then
+            table_family="ip nftban"
+            set_name="blacklist_ipv4"
+        else
+            table_family="ip6 nftban"
+            set_name="blacklist_ipv6"
+        fi
+        # Add elements back to set
+        if nft add element $table_family $set_name "{ $elements }" 2>/dev/null; then
+            ((restored_count++))
+            [[ "$quiet" == "false" ]] && echo "    Restored: $set_name"
+        fi
+    done
+    [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
 
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Schema rebuilt successfully!"

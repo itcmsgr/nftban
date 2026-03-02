@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_service_control" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Low-level systemd service and timer control primitives for NFTBan"
+# meta:name="nftban_service_control" meta:type="lib" meta:version="1.1.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Low-level systemd primitives (nftban_systemd_*) - distinct from config-aware service_control.sh"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl"
 # meta:inventory.env_vars=""
@@ -31,25 +31,25 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" 2>/dev/n
 # =============================================================================
 
 # Check if a systemd service is active (running)
-# Usage: nftban_service_is_active "nftables.service"
+# Usage: nftban_systemd_is_active "nftables.service"
 # Returns: 0 if active, 1 if inactive/failed/not-found
-nftban_service_is_active() {
+nftban_systemd_is_active() {
     local service="$1"
     systemctl is-active --quiet "$service" 2>/dev/null
 }
 
 # Check if a systemd service is enabled (starts at boot)
-# Usage: nftban_service_is_enabled "nftables.service"
+# Usage: nftban_systemd_is_enabled "nftables.service"
 # Returns: 0 if enabled, 1 if disabled/static/not-found
-nftban_service_is_enabled() {
+nftban_systemd_is_enabled() {
     local service="$1"
     systemctl is-enabled --quiet "$service" 2>/dev/null
 }
 
 # Check if a systemd service unit file exists
-# Usage: nftban_service_exists "nftables.service"
+# Usage: nftban_systemd_exists "nftables.service"
 # Returns: 0 if exists, 1 if not found
-nftban_service_exists() {
+nftban_systemd_exists() {
     local service="$1"
 
     # Ensure .service suffix for consistent matching
@@ -69,14 +69,14 @@ nftban_service_exists() {
 }
 
 # Get the status of a systemd service as a string
-# Usage: status=$(nftban_service_status "nftables.service")
+# Usage: status=$(nftban_systemd_status "nftables.service")
 # Returns: "active" | "inactive" | "failed" | "activating" | "deactivating" | "not-found"
-nftban_service_status() {
+nftban_systemd_status() {
     local service="$1"
     local status
 
     # First check if service exists
-    if ! nftban_service_exists "$service"; then
+    if ! nftban_systemd_exists "$service"; then
         echo "not-found"
         return 0
     fi
@@ -92,9 +92,9 @@ nftban_service_status() {
 # =============================================================================
 
 # Start a systemd service
-# Usage: nftban_service_start "nftables.service"
+# Usage: nftban_systemd_start "nftables.service"
 # Returns: 0 on success, 1 on failure
-nftban_service_start() {
+nftban_systemd_start() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
@@ -102,7 +102,7 @@ nftban_service_start() {
         return 1
     fi
 
-    if ! nftban_service_exists "$service"; then
+    if ! nftban_systemd_exists "$service"; then
         echo "ERROR: Service '$service' not found" >&2
         return 1
     fi
@@ -111,9 +111,9 @@ nftban_service_start() {
 }
 
 # Stop a systemd service
-# Usage: nftban_service_stop "nftables.service"
+# Usage: nftban_systemd_stop "nftables.service"
 # Returns: 0 on success, 1 on failure
-nftban_service_stop() {
+nftban_systemd_stop() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
@@ -121,7 +121,7 @@ nftban_service_stop() {
         return 1
     fi
 
-    if ! nftban_service_exists "$service"; then
+    if ! nftban_systemd_exists "$service"; then
         echo "ERROR: Service '$service' not found" >&2
         return 1
     fi
@@ -130,9 +130,9 @@ nftban_service_stop() {
 }
 
 # Restart a systemd service
-# Usage: nftban_service_restart "nftables.service"
+# Usage: nftban_systemd_restart "nftables.service"
 # Returns: 0 on success, 1 on failure
-nftban_service_restart() {
+nftban_systemd_restart() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
@@ -140,7 +140,7 @@ nftban_service_restart() {
         return 1
     fi
 
-    if ! nftban_service_exists "$service"; then
+    if ! nftban_systemd_exists "$service"; then
         echo "ERROR: Service '$service' not found" >&2
         return 1
     fi
@@ -195,13 +195,13 @@ nftban_timer_next_run() {
 # EXPORTS
 # =============================================================================
 
-export -f nftban_service_is_active
-export -f nftban_service_is_enabled
-export -f nftban_service_exists
-export -f nftban_service_status
-export -f nftban_service_start
-export -f nftban_service_stop
-export -f nftban_service_restart
+export -f nftban_systemd_is_active
+export -f nftban_systemd_is_enabled
+export -f nftban_systemd_exists
+export -f nftban_systemd_status
+export -f nftban_systemd_start
+export -f nftban_systemd_stop
+export -f nftban_systemd_restart
 export -f nftban_timer_is_active
 export -f nftban_timer_next_run
 
