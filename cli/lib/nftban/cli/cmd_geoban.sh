@@ -133,6 +133,10 @@ nftban_cmd_geoban() {
             # Test geoban configuration and connectivity
             nftban_geoban_test "$@"
             ;;
+        config)
+            # Show GeoBan configuration
+            nftban_geoban_config "$@"
+            ;;
         enable)
             # Enable GeoBan module (persists to .local file)
             nftban_geoban_enable
@@ -141,7 +145,7 @@ nftban_cmd_geoban() {
             # Disable GeoBan module (persists to .local file)
             nftban_geoban_disable
             ;;
-        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh)
+        ban|unban|whitelist|unwhitelist|list|update|status|refresh)
             # Pass directly to geoip handler
             nftban_cmd_geoip "$@"
             ;;
@@ -355,6 +359,131 @@ nftban_geoban_stats() {
 }
 
 # =============================================================================
+# CONFIG FUNCTION
+# =============================================================================
+
+nftban_geoban_config() {
+    # Display GeoBan configuration settings
+    # Args: json_mode (optional) - if "true", output JSON format
+    local json_mode="${1:-false}"
+
+    # Check for --json flag in arguments
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
+    local config_local="${config_file}.local"
+    local geoban_dir="${NFTBAN_CONFIG_DIR}/geoban.d"
+    local cache_dir="${NFTBAN_CACHE_DIR}/geoban"
+
+    # Source config file if it exists to get current values
+    # shellcheck source=/dev/null
+    [[ -f "$config_file" ]] && source "$config_file"
+    # shellcheck source=/dev/null
+    [[ -f "$config_local" ]] && source "$config_local"
+
+    # Count configured countries
+    local banned_count=0
+    local whitelisted_count=0
+    if [[ -d "$geoban_dir" ]]; then
+        shopt -s nullglob 2>/dev/null || true
+        for file in "$geoban_dir"/*.conf; do
+            [[ -f "$file" ]] || continue
+            if grep -q "^MODE=.*ban" "$file" 2>/dev/null; then
+                ((banned_count++)) || true
+            elif grep -q "^MODE=.*whitelist" "$file" 2>/dev/null; then
+                ((whitelisted_count++)) || true
+            fi
+        done
+        shopt -u nullglob 2>/dev/null || true
+    fi
+
+    # Calculate cache size
+    local cache_size="0"
+    if [[ -d "$cache_dir" ]]; then
+        cache_size=$(du -sh "$cache_dir" 2>/dev/null | cut -f1) || cache_size="0"
+    fi
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${GEOBAN_ENABLED:-true}" \
+                --arg atomic "${GEOBAN_ATOMIC:-true}" \
+                --arg default_policy "${GEOBAN_DEFAULT_POLICY:-allow}" \
+                --arg logging "${GEOBAN_LOGGING:-true}" \
+                --arg log_blocks "${GEOBAN_LOG_BLOCKS:-false}" \
+                --arg geoban_dir "$geoban_dir" \
+                --arg cache_dir "$cache_dir" \
+                --arg cache_size "$cache_size" \
+                --argjson banned_count "$banned_count" \
+                --argjson whitelisted_count "$whitelisted_count" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "true"),
+                        atomic: ($atomic == "true"),
+                        default_policy: $default_policy,
+                        logging: ($logging == "true"),
+                        log_blocks: ($log_blocks == "true")
+                    },
+                    paths: {
+                        geoban_dir: $geoban_dir,
+                        cache_dir: $cache_dir,
+                        cache_size: $cache_size
+                    },
+                    countries: {
+                        banned: $banned_count,
+                        whitelisted: $whitelisted_count
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\",\"enabled\":${GEOBAN_ENABLED:-true}}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    # Human-readable output
+    echo "GeoBan Configuration"
+    echo "===================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Module Settings:"
+    echo "  Enabled:        ${GEOBAN_ENABLED:-true}"
+    echo "  Atomic Mode:    ${GEOBAN_ATOMIC:-true}"
+    echo "  Default Policy: ${GEOBAN_DEFAULT_POLICY:-allow}"
+    echo ""
+    echo "Logging Settings:"
+    echo "  Logging:        ${GEOBAN_LOGGING:-true}"
+    echo "  Log Blocks:     ${GEOBAN_LOG_BLOCKS:-false}"
+    echo ""
+    echo "Paths:"
+    echo "  Country Files:  $geoban_dir"
+    echo "  Cache Dir:      $cache_dir"
+    echo "  Cache Size:     $cache_size"
+    echo ""
+    echo "Countries:"
+    echo "  Banned:         $banned_count"
+    echo "  Whitelisted:    $whitelisted_count"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+# =============================================================================
 # TEST FUNCTION
 # =============================================================================
 
@@ -479,4 +608,6 @@ export -f nftban_cmd_geoban
 export -f nftban_geoban_enable
 export -f nftban_geoban_disable
 export -f nftban_geoban_stats
+export -f nftban_geoban_config
 export -f nftban_geoban_test
+export -f nftban_geoban_help

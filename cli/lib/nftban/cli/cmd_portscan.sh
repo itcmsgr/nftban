@@ -607,6 +607,8 @@ nftban_cmd_portscan() {
 # =============================================================================
 
 export -f nftban_cmd_portscan
+export -f _nftban_portscan_help
+export -f _nftban_portscan_stats_json
 export -f _nftban_portscan_mode
 export -f _nftban_portscan_config
 
