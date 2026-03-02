@@ -108,10 +108,12 @@ check_yq() {
 }
 
 # Install mikefarah/yq v4 from GitHub releases
+# R44: Added SHA256 checksum verification (v1.19.12)
 install_yq_v4() {
     local YQ_VERSION="v4.44.1"
     local YQ_BINARY="yq_linux_amd64"
     local YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+    local YQ_CHECKSUMS_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
 
     log "Installing mikefarah/yq ${YQ_VERSION}..."
 
@@ -125,25 +127,62 @@ install_yq_v4() {
         fi
     fi
 
-    # Download and install
-    if curl -sL "$YQ_URL" -o /usr/local/bin/yq; then
-        chmod +x /usr/local/bin/yq
+    # Download to temp file first for checksum verification
+    local temp_yq temp_checksums
+    temp_yq=$(mktemp)
+    temp_checksums=$(mktemp)
 
-        # Create symlink in /usr/bin if not exists
-        if [[ ! -e /usr/bin/yq ]]; then
-            ln -sf /usr/local/bin/yq /usr/bin/yq
-        fi
-
-        # Verify installation
-        if /usr/local/bin/yq --version 2>/dev/null | grep -q "mikefarah"; then
-            ok "yq v4 installed successfully: $(/usr/local/bin/yq --version)"
-        else
-            error "yq v4 installation verification failed"
-            exit 1
-        fi
-    else
+    # Download binary and checksums
+    if ! curl -sL "$YQ_URL" -o "$temp_yq"; then
+        rm -f "$temp_yq" "$temp_checksums"
         error "Failed to download yq v4 from $YQ_URL"
         error "Please install manually: https://github.com/mikefarah/yq/releases"
+        exit 1
+    fi
+
+    if ! curl -sL "$YQ_CHECKSUMS_URL" -o "$temp_checksums"; then
+        rm -f "$temp_yq" "$temp_checksums"
+        error "Failed to download yq checksums from $YQ_CHECKSUMS_URL"
+        exit 1
+    fi
+
+    # Extract expected checksum for our binary
+    local expected_checksum
+    expected_checksum=$(grep "${YQ_BINARY}\$" "$temp_checksums" | awk '{print $1}')
+    if [[ -z "$expected_checksum" ]]; then
+        rm -f "$temp_yq" "$temp_checksums"
+        error "Could not find checksum for ${YQ_BINARY} in checksums file"
+        exit 1
+    fi
+
+    # Verify SHA256 checksum
+    local actual_checksum
+    actual_checksum=$(sha256sum "$temp_yq" | awk '{print $1}')
+    if [[ "$actual_checksum" != "$expected_checksum" ]]; then
+        rm -f "$temp_yq" "$temp_checksums"
+        error "SHA256 checksum mismatch for yq!"
+        error "Expected: $expected_checksum"
+        error "Got:      $actual_checksum"
+        exit 1
+    fi
+
+    log "SHA256 checksum verified: ${actual_checksum:0:16}..."
+    rm -f "$temp_checksums"
+
+    # Install verified binary
+    mv "$temp_yq" /usr/local/bin/yq
+    chmod +x /usr/local/bin/yq
+
+    # Create symlink in /usr/bin if not exists
+    if [[ ! -e /usr/bin/yq ]]; then
+        ln -sf /usr/local/bin/yq /usr/bin/yq
+    fi
+
+    # Verify installation
+    if /usr/local/bin/yq --version 2>/dev/null | grep -q "mikefarah"; then
+        ok "yq v4 installed successfully: $(/usr/local/bin/yq --version)"
+    else
+        error "yq v4 installation verification failed"
         exit 1
     fi
 }
@@ -256,30 +295,26 @@ check_prerequisites() {
         log "Installing missing packages: ${missing_pkgs[*]}"
         case "$ID" in
             ubuntu|debian)
-                # yq not in apt, install from GitHub
+                # yq not in apt, install from GitHub with checksum verification (R44)
                 if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
                     missing_pkgs=("${missing_pkgs[@]/yq/}")
-                    log "Installing yq from GitHub..."
-                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
-                    ok "Installed: yq"
+                    install_yq_v4
                 fi
                 [[ ${#missing_pkgs[@]} -gt 0 ]] && apt-get update -qq && apt-get install -y "${missing_pkgs[@]}"
                 ;;
             rhel|centos|rocky|almalinux)
-                # yq not in dnf, install from GitHub
+                # yq not in dnf, install from GitHub with checksum verification (R44)
                 if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
                     missing_pkgs=("${missing_pkgs[@]/yq/}")
-                    log "Installing yq from GitHub..."
-                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
-                    ok "Installed: yq"
+                    install_yq_v4
                 fi
                 [[ ${#missing_pkgs[@]} -gt 0 ]] && dnf install -y "${missing_pkgs[@]}"
                 ;;
             fedora)
+                # yq install from GitHub with checksum verification (R44)
                 if [[ " ${missing_pkgs[*]} " =~ " yq " ]]; then
                     missing_pkgs=("${missing_pkgs[@]/yq/}")
-                    curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq && chmod +x /usr/bin/yq
-                    ok "Installed: yq"
+                    install_yq_v4
                 fi
                 [[ ${#missing_pkgs[@]} -gt 0 ]] && dnf install -y "${missing_pkgs[@]}"
                 ;;
@@ -822,7 +857,9 @@ download_geoip_database() {
     current_month=$(date +%Y-%m)
     local db_url="https://download.db-ip.com/free/dbip-country-lite-${current_month}.mmdb.gz"
     local db_file="${geoip_dir}/dbip-country-lite.mmdb"
-    local tmp_file="/tmp/dbip-country-lite-$$.mmdb.gz"
+    # R17: Use mktemp for secure temp files (v1.19.12)
+    local tmp_file
+    tmp_file=$(mktemp "${TMPDIR:-/tmp}/dbip-country-lite.XXXXXXXXXX.mmdb.gz")
 
     log "Downloading free DB-IP Lite database..."
 

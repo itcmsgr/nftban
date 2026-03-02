@@ -1,0 +1,76 @@
+# NFTBan SELinux Type Enforcement Policy (R39 v1.19.12)
+# SPDX-License-Identifier: MPL-2.0
+#
+# Install: checkmodule -M -m -o nftban.mod nftban.te
+#          semodule_package -o nftban.pp -m nftban.mod
+#          semodule -i nftban.pp
+
+policy_module(nftban, 1.0.0)
+
+########################################
+# Type Declarations
+########################################
+
+# Main daemon type
+type nftband_t;
+type nftband_exec_t;
+init_daemon_domain(nftband_t, nftband_exec_t)
+
+# Config files
+type nftban_conf_t;
+files_config_file(nftban_conf_t)
+
+# Runtime state (var/lib)
+type nftban_var_lib_t;
+files_type(nftban_var_lib_t)
+
+# Log files
+type nftban_log_t;
+logging_log_file(nftban_log_t)
+
+# Runtime socket/PID
+type nftban_var_run_t;
+files_pid_file(nftban_var_run_t)
+
+########################################
+# Daemon Permissions
+########################################
+
+# Config access (read-only)
+allow nftband_t nftban_conf_t:file read_file_perms;
+allow nftband_t nftban_conf_t:dir list_dir_perms;
+
+# State access (read-write)
+allow nftband_t nftban_var_lib_t:file manage_file_perms;
+allow nftband_t nftban_var_lib_t:dir manage_dir_perms;
+
+# Log access (append-only)
+allow nftband_t nftban_log_t:file { append_file_perms create_file_perms };
+allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
+
+# Runtime files (socket, PID)
+allow nftband_t nftban_var_run_t:file manage_file_perms;
+allow nftband_t nftban_var_run_t:sock_file manage_sock_file_perms;
+allow nftband_t nftban_var_run_t:dir manage_dir_perms;
+
+# Network access
+allow nftband_t self:tcp_socket create_stream_socket_perms;
+allow nftband_t self:udp_socket create_socket_perms;
+allow nftband_t self:netlink_netfilter_socket create_socket_perms;
+allow nftband_t self:netlink_route_socket create_socket_perms;
+
+# nftables management (critical for firewall control)
+allow nftband_t self:capability { net_admin net_raw };
+allow nftband_t self:netlink_nflog_socket create_socket_perms;
+
+# Systemd integration
+init_use_fds(nftband_t)
+init_read_state(nftband_t)
+
+# Process capabilities
+allow nftband_t self:process { signal_perms setcap };
+
+########################################
+# File Context Specifications
+########################################
+# See nftban.fc for file context definitions

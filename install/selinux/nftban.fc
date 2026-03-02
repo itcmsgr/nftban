@@ -1,0 +1,36 @@
+# NFTBan SELinux File Context (R39 v1.19.12)
+# SPDX-License-Identifier: MPL-2.0
+#
+# Apply: semanage fcontext -a -t <type> '<pattern>'
+#        restorecon -R /path
+
+# Executables
+/usr/sbin/nftban                                        --  gen_context(system_u:object_r:nftband_exec_t,s0)
+/usr/lib/nftban/bin/nftband                             --  gen_context(system_u:object_r:nftband_exec_t,s0)
+/usr/lib/nftban/bin/nftban-core                         --  gen_context(system_u:object_r:nftband_exec_t,s0)
+/usr/lib/nftban/bin/nftban-ui                           --  gen_context(system_u:object_r:nftband_exec_t,s0)
+/usr/libexec/nftban-ui-auth                             --  gen_context(system_u:object_r:nftband_exec_t,s0)
+
+# Configuration files
+/etc/nftban(/.*)?                                           gen_context(system_u:object_r:nftban_conf_t,s0)
+/etc/nftban/nftban\.conf                                --  gen_context(system_u:object_r:nftban_conf_t,s0)
+/etc/nftban/conf\.d(/.*)?                                   gen_context(system_u:object_r:nftban_conf_t,s0)
+
+# State files (var/lib)
+/var/lib/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_var_lib_t,s0)
+/var/lib/nftban/feeds(/.*)?                                 gen_context(system_u:object_r:nftban_var_lib_t,s0)
+/var/lib/nftban/geoip(/.*)?                                 gen_context(system_u:object_r:nftban_var_lib_t,s0)
+/var/lib/nftban/staging(/.*)?                               gen_context(system_u:object_r:nftban_var_lib_t,s0)
+
+# Log files
+/var/log/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_log_t,s0)
+/var/log/nftban/nftban\.log.*                           --  gen_context(system_u:object_r:nftban_log_t,s0)
+/var/log/nftban/audit\.log.*                            --  gen_context(system_u:object_r:nftban_log_t,s0)
+
+# Runtime files
+/run/nftban(/.*)?                                           gen_context(system_u:object_r:nftban_var_run_t,s0)
+/run/nftban/nftband\.sock                               -s  gen_context(system_u:object_r:nftban_var_run_t,s0)
+/run/nftban/nftband\.pid                                --  gen_context(system_u:object_r:nftban_var_run_t,s0)
+
+# Cache files (same as state)
+/var/cache/nftban(/.*)?                                     gen_context(system_u:object_r:nftban_var_lib_t,s0)

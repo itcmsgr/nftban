@@ -328,21 +328,8 @@ get_interface_stats() {
     echo "${rx_bytes} ${rx_packets} ${tx_bytes} ${tx_packets}"
 }
 
-# Calculate bandwidth in Mbps from byte deltas
-calculate_mbps() {
-    local bytes_delta=$1
-    local time_delta=$2
-
-    if [[ $time_delta -eq 0 ]]; then
-        echo "0"
-        return
-    fi
-
-    # bytes/second -> bits/second -> megabits/second
-    local mbps
-    mbps=$(awk -v bd="$bytes_delta" -v td="$time_delta" 'BEGIN {printf "%.2f", (bd / td) * 8 / 1000000}')
-    echo "$mbps"
-}
+# v1.19.12: calculate_mbps moved to nftban_unified_exporter_helpers.sh (consolidation)
+# This function is now provided by the helpers module sourced above
 
 # Get protocol statistics from /proc/net/snmp
 get_protocol_stats() {
@@ -1449,9 +1436,10 @@ collect_metrics() {
             echo "nftban_alerts_active{level=\"critical\"} ${an_crit:-0}" >> "$TEMP_FILE"
             echo "" >> "$TEMP_FILE"
 
-            echo "# HELP nftban_geoban_database_age_seconds Age of GeoIP database in seconds" >> "$TEMP_FILE"
-            echo "# TYPE nftban_geoban_database_age_seconds gauge" >> "$TEMP_FILE"
-            echo "nftban_geoban_database_age_seconds ${an_geoage:-0}" >> "$TEMP_FILE"
+            # v1.19.12: Fixed naming - geoip is the database, geoban is the module
+            echo "# HELP nftban_geoip_database_age_seconds Age of GeoIP database in seconds" >> "$TEMP_FILE"
+            echo "# TYPE nftban_geoip_database_age_seconds gauge" >> "$TEMP_FILE"
+            echo "nftban_geoip_database_age_seconds ${an_geoage:-0}" >> "$TEMP_FILE"
             echo "" >> "$TEMP_FILE"
         fi
     fi

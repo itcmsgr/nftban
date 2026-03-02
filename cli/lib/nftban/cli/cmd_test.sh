@@ -67,7 +67,9 @@ test_cmd() {
     # Run command with timeout
     local output
     local exit_code=0
-    local tmp_out="/tmp/nftban_quick_test_$$.txt"
+    # R17: Use mktemp for secure temp files (v1.19.12)
+    local tmp_out
+    tmp_out=$(mktemp "${TMPDIR:-/tmp}/nftban_quick_test.XXXXXXXXXX")
 
     # Use timeout and redirect to file to avoid pipe issues
     # 20 second timeout to handle commands with network checks (like status)

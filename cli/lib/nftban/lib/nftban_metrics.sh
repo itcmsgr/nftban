@@ -284,7 +284,9 @@ nftban_metrics_install_from_binaries() {
     # Latest stable versions (update periodically)
     local prom_ver="2.54.1"
     local node_ver="1.8.2"
-    local tmp_dir="/tmp/nftban-metrics-install-$$"
+    # R17: Use mktemp for secure temp dirs (v1.19.12)
+    local tmp_dir
+    tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nftban-metrics-install.XXXXXXXXXX")
 
     [[ "$verbose" == "true" ]] && echo ""
     [[ "$verbose" == "true" ]] && echo "  📦 Binary Installation Details:"
