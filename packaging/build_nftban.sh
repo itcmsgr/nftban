@@ -451,6 +451,12 @@ install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-systemd.rules %{buildroo
 install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-auditor.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-auditor.rules
 install -D -m 0644 packaging/polkit-1/rules.d/30-nftban-panel.rules %{buildroot}/etc/polkit-1/rules.d/30-nftban-panel.rules
 
+# SELinux policy files (R39 v1.19.12) - RPM only, DEB uses AppArmor
+mkdir -p %{buildroot}/usr/share/nftban/selinux
+install -D -m 0644 install/selinux/nftban.te %{buildroot}/usr/share/nftban/selinux/nftban.te
+install -D -m 0644 install/selinux/nftban.fc %{buildroot}/usr/share/nftban/selinux/nftban.fc
+install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinux/Makefile
+
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
 
@@ -1735,6 +1741,7 @@ fi
 /etc/polkit-1/rules.d/30-nftban-panel.rules
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
+/usr/share/nftban/selinux
 /usr/share/man/man8/nftban.8*
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
