@@ -58,7 +58,8 @@ func (h *GOTHHandlers) HandleFragMetricsSummary(w http.ResponseWriter, r *http.R
 
 // getMetricsData fetches all metrics data
 func (h *GOTHHandlers) getMetricsData() ui.MetricsData {
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	cachePath := cfg.CacheDir + "/metrics/stats.json"
 
 	data := ui.MetricsData{
@@ -386,7 +387,8 @@ func (h *GOTHHandlers) HandleFragGeoIPRecent(w http.ResponseWriter, r *http.Requ
 
 // getGeoIPPageData fetches all GeoIP page data
 func (h *GOTHHandlers) getGeoIPPageData() ui.GeoIPPageData {
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	data := ui.GeoIPPageData{
 		DatabasePath: cfg.DataDir + "/geoip/GeoLite2-Country.mmdb",
 		BlockingMode: "blacklist",
@@ -449,7 +451,8 @@ func (h *GOTHHandlers) getGeoIPPageData() ui.GeoIPPageData {
 // getRecentGeoBlocks fetches recent geo-block events
 func (h *GOTHHandlers) getRecentGeoBlocks() []ui.GeoBlockEntry {
 	blocks := []ui.GeoBlockEntry{}
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	logFile := cfg.LogDir + "/bans.log"
 
 	// Read last 50 lines of bans.log and filter for geoban
@@ -989,7 +992,8 @@ func (h *GOTHHandlers) getActiveConnections() []ui.ConnectionInfo {
 // Reads from metrics cache or generates from current bandwidth snapshots
 func (h *GOTHHandlers) getTrafficHistory() []ui.TrafficSample {
 	samples := []ui.TrafficSample{}
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 	historyPath := cfg.CacheDir + "/metrics/traffic_history.json"
 
 	// Try to read from traffic history cache
@@ -1030,7 +1034,8 @@ func (h *GOTHHandlers) getTrafficHistory() []ui.TrafficSample {
 // Reads from geoban logs and aggregates by country code
 func (h *GOTHHandlers) getDroppedByCountry() []ui.CountryTraffic {
 	traffic := []ui.CountryTraffic{}
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 
 	// Try to read from analytics cache first
 	cachePath := cfg.CacheDir + "/metrics/dropped_by_country.json"
@@ -1114,7 +1119,8 @@ func (h *GOTHHandlers) getDroppedByCountry() []ui.CountryTraffic {
 // Reads from portscan logs and aggregates by port number
 func (h *GOTHHandlers) getDroppedByPort() []ui.PortTraffic {
 	traffic := []ui.PortTraffic{}
-	cfg := nftbanconf.MustLoad()
+	// Use Get() instead of MustLoad() - config already loaded at startup
+	cfg := nftbanconf.Get()
 
 	// Try to read from analytics cache first
 	cachePath := cfg.CacheDir + "/metrics/dropped_by_port.json"

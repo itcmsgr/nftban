@@ -40,25 +40,25 @@ import (
 
 // getNFTBanCLI returns the path to nftban CLI from central config
 func getNFTBanCLI() string {
-	cfg := nftbanconf.MustLoad()
+	cfg := nftbanconf.Get()
 	return cfg.Bin
 }
 
 // getLogDir returns the log directory from central config
 func getLogDir() string {
-	cfg := nftbanconf.MustLoad()
+	cfg := nftbanconf.Get()
 	return cfg.LogDir
 }
 
 // getConfigDir returns the config directory from central config
 func getConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+	cfg := nftbanconf.Get()
 	return cfg.ConfigDir
 }
 
 // getCoreBin returns the nftban-core binary path from central config
 func getCoreBin() string {
-	cfg := nftbanconf.MustLoad()
+	cfg := nftbanconf.Get()
 	return cfg.CoreBin
 }
 
@@ -66,7 +66,7 @@ func getCoreBin() string {
 // NO FALLBACK - paths must come from /etc/nftban/nftban.conf
 func getLogFiles() map[string]string {
 	logDir := getLogDir()
-	paths := nftbanconf.MustLoadPaths()
+	paths := nftbanconf.GetPaths()
 
 	// Build paths dynamically from central config
 	logFiles := map[string]string{
@@ -108,14 +108,14 @@ func getLogFiles() map[string]string {
 // getFeedsDir returns the feeds directory from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getFeedsDir() string {
-	paths := nftbanconf.MustLoadPaths()
+	paths := nftbanconf.GetPaths()
 	return paths.FeedsDir
 }
 
 // getSuricataLogPath returns a Suricata log file path from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getSuricataLogPath(filename string) string {
-	cfg := nftbanconf.MustLoad()
+	cfg := nftbanconf.Get()
 	return cfg.SuricataLogDir + "/" + filename
 }
 
@@ -124,7 +124,7 @@ func getSuricataLogPath(filename string) string {
 // getPrometheusFile returns the Prometheus metrics file path from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getPrometheusFile() string {
-	paths := nftbanconf.MustLoadPaths()
+	paths := nftbanconf.GetPaths()
 	return paths.PrometheusFile
 }
 
