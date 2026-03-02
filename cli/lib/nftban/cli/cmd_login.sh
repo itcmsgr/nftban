@@ -1012,6 +1012,7 @@ nftban_login_cmd_config() {
             data=$(jq -n \
                 --arg config_file "$config_file" \
                 --arg config_local "$config_local" \
+                --arg active_file "$active_file" \
                 --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
                 --arg enabled "${NFTBAN_LOGIN_ALERT_ENABLED:-false}" \
                 --arg email "${NFTBAN_MAIL_RECIPIENT:-}" \
@@ -1023,6 +1024,7 @@ nftban_login_cmd_config() {
                 '{
                     config_file: $config_file,
                     config_local: $config_local,
+                    active_file: $active_file,
                     local_exists: ($local_exists == "true"),
                     settings: {
                         enabled: ($enabled == "true"),
