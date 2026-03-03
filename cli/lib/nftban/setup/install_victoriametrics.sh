@@ -17,11 +17,9 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# Colors
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly NC='\033[0m'
+# Source shared utilities (provides print_status, print_error, print_warn, print_info, check_root)
+# shellcheck source=../lib/setup_utils.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
 
 # VictoriaMetrics configuration
 readonly VM_VERSION="${VM_VERSION:-v1.99.0}"
@@ -30,18 +28,6 @@ readonly VM_GROUP="victoriametrics"
 readonly VM_DIR="/etc/victoriametrics"
 readonly VM_DATA_DIR="/var/lib/victoriametrics"
 readonly VM_BIN="/usr/local/bin/victoria-metrics-prod"
-
-print_status() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗]${NC} $1" >&2
-}
-
-print_info() {
-    echo -e "${YELLOW}[i]${NC} $1"
-}
 
 detect_arch() {
     local arch
@@ -77,7 +63,7 @@ install_via_binary() {
     # Download and extract
     local tmp_dir="/tmp/victoriametrics-install"
     mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
+    cd "$tmp_dir" || return 1
 
     local url="https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/${version}/victoria-metrics-linux-${arch}-${version}.tar.gz"
 
@@ -98,7 +84,7 @@ install_via_binary() {
     install -d -o "$VM_USER" -g "$VM_GROUP" -m 0755 "$VM_DATA_DIR"
 
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmp_dir"
 
     print_status "VictoriaMetrics binary installed"

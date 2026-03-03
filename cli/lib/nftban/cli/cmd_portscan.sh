@@ -299,6 +299,77 @@ _nftban_portscan_stats_json() {
 }
 
 # =============================================================================
+# CONFIG COMMAND: Show portscan configuration
+# =============================================================================
+
+_nftban_portscan_config() {
+    local json_mode="${1:-false}"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf"
+    local config_local="${config_file}.local"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${PORTSCAN_ENABLED:-true}" \
+                --arg mode "${PORTSCAN_MODE:-auto}" \
+                --arg threshold "${PORTSCAN_THRESHOLD:-10}" \
+                --arg time_window "${PORTSCAN_TIME_WINDOW:-300}" \
+                --arg auto_ban "${PORTSCAN_AUTO_BAN:-true}" \
+                --arg ban_type "${PORTSCAN_BAN_TYPE:-temporary}" \
+                --arg ban_time "${PORTSCAN_BAN_TIME:-3600}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "true"),
+                        mode: $mode,
+                        threshold: ($threshold | tonumber),
+                        time_window: ($time_window | tonumber),
+                        auto_ban: ($auto_ban == "true"),
+                        ban_type: $ban_type,
+                        ban_time: ($ban_time | tonumber)
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\",\"enabled\":${PORTSCAN_ENABLED:-true}}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    # Human-readable output
+    echo "Port Scan Detection Configuration"
+    echo "=================================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Detection Settings:"
+    echo "  Enabled:        ${PORTSCAN_ENABLED:-true}"
+    echo "  Mode:           ${PORTSCAN_MODE:-auto}"
+    echo "  Threshold:      ${PORTSCAN_THRESHOLD:-10} ports"
+    echo "  Time Window:    ${PORTSCAN_TIME_WINDOW:-300} seconds"
+    echo "  Diversity:      ${PORTSCAN_DIVERSITY:-true}"
+    echo ""
+    echo "Ban Settings:"
+    echo "  Auto-Ban:       ${PORTSCAN_AUTO_BAN:-true}"
+    echo "  Ban Type:       ${PORTSCAN_BAN_TYPE:-temporary}"
+    echo "  Ban Duration:   ${PORTSCAN_BAN_TIME:-3600} seconds"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+# =============================================================================
 # MODE COMMAND: Thin wrapper using shared helper
 # =============================================================================
 
@@ -372,6 +443,11 @@ nftban_cmd_portscan() {
         stats)
             # JSON stats for API/GUI - output portscan statistics
             _nftban_portscan_stats_json "$json_mode"
+            ;;
+
+        config)
+            # Show portscan configuration
+            _nftban_portscan_config "$json_mode"
             ;;
 
         check)
@@ -531,7 +607,10 @@ nftban_cmd_portscan() {
 # =============================================================================
 
 export -f nftban_cmd_portscan
+export -f _nftban_portscan_help
+export -f _nftban_portscan_stats_json
 export -f _nftban_portscan_mode
+export -f _nftban_portscan_config
 
 # Execute if called directly (shouldn't happen, but handle gracefully)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

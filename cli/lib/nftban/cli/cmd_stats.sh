@@ -501,7 +501,7 @@ nftban_stats_cmd_dashboard() {
         if [[ "$ddos_enabled" == "true" ]]; then
             # Try to get counters from ddos chain
             local ddos_counter_output
-            ddos_counter_output=$(nft list chain ${NFTBAN_TABLE_IPV4} ddos_protection 2>/dev/null || nft list chain ${NFTBAN_TABLE_IPV6} ddos_protection 2>/dev/null || true)
+            ddos_counter_output=$(nft list chain "${NFTBAN_TABLE_IPV4}" ddos_protection 2>/dev/null || nft list chain "${NFTBAN_TABLE_IPV6}" ddos_protection 2>/dev/null || true)
             if [[ -n "$ddos_counter_output" ]]; then
                 # Extract packets and bytes from counter output
                 ddos_packets_dropped=$(echo "$ddos_counter_output" | grep -oP 'packets \K[0-9]+' | head -1) || ddos_packets_dropped=0

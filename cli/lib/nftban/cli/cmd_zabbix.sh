@@ -189,10 +189,10 @@ _zabbix_firewall_remove() {
 
     # Find and delete rule with zabbix-export comment
     local handle
-    handle=$(nft -a list chain ${NFTBAN_TABLE_IPV4} output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
+    handle=$(nft -a list chain "${NFTBAN_TABLE_IPV4}" output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
 
     if [[ -n "$handle" ]]; then
-        nft delete rule ${NFTBAN_TABLE_IPV4} output handle "$handle" 2>/dev/null && return 0
+        nft delete rule "${NFTBAN_TABLE_IPV4}" output handle "$handle" 2>/dev/null && return 0
     fi
 
     # Try ip family
@@ -757,7 +757,7 @@ _cmd_zabbix_push() {
             # Collect basic metrics
             local version bans_total
             version=$(cat /etc/nftban/VERSION 2>/dev/null || echo "unknown")
-            bans_total=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
+            bans_total=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
 
             echo "Sending basic metrics..."
             zabbix_sender -z "$server" -p "$port" -s "$hostname" \

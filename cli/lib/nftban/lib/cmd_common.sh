@@ -124,6 +124,45 @@ cmd_require_arg() {
     return 0
 }
 
+# Validate IP address format (IPv4 or IPv6)
+# Usage: cmd_validate_ip "$ip" "$json_mode" [usage_func]
+# Returns: 0 if valid, 1 if invalid (prints error)
+cmd_validate_ip() {
+    local ip="$1"
+    local json_mode="${2:-false}"
+    local usage_func="${3:-}"
+
+    # Empty check
+    if [[ -z "$ip" ]]; then
+        cmd_error "IP address cannot be empty" "$json_mode" "$usage_func"
+        return 1
+    fi
+
+    # IPv4 validation (x.x.x.x or x.x.x.x/prefix)
+    if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]]; then
+        # Validate each octet is 0-255
+        local ip_part="${ip%/*}"
+        local IFS='.'
+        # shellcheck disable=SC2206
+        local octets=($ip_part)
+        for octet in "${octets[@]}"; do
+            if [[ "$octet" -gt 255 ]]; then
+                cmd_error "Invalid IPv4 address: octet $octet > 255" "$json_mode" "$usage_func"
+                return 1
+            fi
+        done
+        return 0
+    fi
+
+    # IPv6 validation (simplified: contains colons, alphanumeric/colons only)
+    if [[ "$ip" =~ ^[0-9a-fA-F:]+(/[0-9]{1,3})?$ ]] && [[ "$ip" == *:* ]]; then
+        return 0
+    fi
+
+    cmd_error "Invalid IP address format: $ip" "$json_mode" "$usage_func"
+    return 1
+}
+
 # =============================================================================
 # ERROR HANDLING
 # =============================================================================

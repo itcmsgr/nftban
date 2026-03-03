@@ -151,10 +151,9 @@ install_binary() {
 
     # Download
     local download_url="https://github.com/prometheus/node_exporter/releases/download/v${version}/node_exporter-${version}.linux-amd64.tar.gz"
-    local tmpdir="/tmp/node_exporter_install_$$"
-
-    mkdir -p "$tmpdir"
-    cd "$tmpdir"
+    local tmpdir
+    tmpdir="$(mktemp -d -t node-exporter-XXXXXX)"
+    cd "$tmpdir" || return 1
 
     info "Downloading Node Exporter..."
     if command -v wget &>/dev/null; then
@@ -222,7 +221,7 @@ WantedBy=multi-user.target
 EOF
 
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmpdir"
 
     success "Node Exporter binary installed"

@@ -639,7 +639,7 @@ firewall_rebuild() {
         [[ -z "$table_line" ]] && continue
         if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
             local TABLE_SPEC="${table_line#table }"
-            if nft delete table $TABLE_SPEC 2>/dev/null; then
+            if nft delete table "$TABLE_SPEC" 2>/dev/null; then
                 [[ "$quiet" == "false" ]] && echo "    Deleted rogue table: $TABLE_SPEC"
             fi
         fi

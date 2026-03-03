@@ -102,6 +102,7 @@ nftban_cmd_ban() {
 
     # Validate required arguments
     cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_ban_usage || return 1
+    cmd_validate_ip "$ip" "$json_mode" nftban_cmd_ban_usage || return 1
 
     # v1.18.8: Check if IP is whitelisted - warn user before banning
     local whitelist_set

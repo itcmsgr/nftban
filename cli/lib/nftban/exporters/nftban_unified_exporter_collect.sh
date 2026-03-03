@@ -162,9 +162,9 @@ collect_all_metrics() {
         whitelist_v4=0
         whitelist_v6=0
         if command -v nft &>/dev/null; then
-            whitelist_v4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v4=0
+            whitelist_v4=$(nft -j list set "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v4=0
             [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
-            whitelist_v6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v6=0
+            whitelist_v6=$(nft -j list set "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v6=0
             [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
         fi
         metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"

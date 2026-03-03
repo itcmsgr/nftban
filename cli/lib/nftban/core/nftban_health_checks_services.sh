@@ -650,12 +650,12 @@ nftban_health_check_maintenance_lock() {
                         status=$HEALTH_WARNING  # Fixed, but note it happened
                     else
                         lock_issues+=("FAILED to remove stale lock (need root)")
-                        lock_issues+=("FIX: sudo rm -f $lockfile")
+                        lock_issues+=("FIX: sudo rm -f \"$lockfile\"")
                         status=$HEALTH_WARNING
                         NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
                     fi
                 else
-                    lock_issues+=("FIX: sudo rm -f $lockfile")
+                    lock_issues+=("FIX: sudo rm -f \"$lockfile\"")
                     status=$HEALTH_WARNING
                     NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
                 fi

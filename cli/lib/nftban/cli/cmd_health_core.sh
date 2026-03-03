@@ -361,9 +361,9 @@ nftban_health_cmd_fix() {
             echo ""
             echo "[5/9] Cleaning rogue nftables tables..."
             for rogue_table in "ip filter" "ip6 filter" "inet filter" "inet nftban_install_emergency"; do
-                if nft list table $rogue_table &>/dev/null; then
+                if nft list table "$rogue_table" &>/dev/null; then
                     echo "  Removing: $rogue_table"
-                    nft delete table $rogue_table 2>/dev/null || true
+                    nft delete table "$rogue_table" 2>/dev/null || true
                 fi
             done
 

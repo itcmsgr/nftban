@@ -77,8 +77,8 @@ install_vmagent_binary() {
 
     [[ "$verbose" == "true" ]] && log_info "Installing vmagent v${VMAGENT_VERSION}..."
 
-    local tmp_dir="/tmp/vmagent-install-$$"
-    mkdir -p "$tmp_dir"
+    local tmp_dir
+    tmp_dir="$(mktemp -d -t vmagent-XXXXXX)"
     cd "$tmp_dir" || return 1
 
     # Detect architecture
@@ -111,7 +111,7 @@ install_vmagent_binary() {
     fi
 
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmp_dir"
 
     [[ "$verbose" == "true" ]] && log_success "vmagent installed to $VMAGENT_BIN"
