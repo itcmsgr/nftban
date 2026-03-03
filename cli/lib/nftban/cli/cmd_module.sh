@@ -148,7 +148,7 @@ nftban_cmd_module() {
             
             # Email if requested
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_report_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-report-XXXXXX.txt)}"
                 if [[ -z "$save_to_file" ]]; then
                     nftban_module_report_status > "$report_file"
                 fi
@@ -172,11 +172,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_summary_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-summary-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && echo "$output" > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ Summary emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 
@@ -193,11 +193,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_report_$(date +%Y%m%d_%H%M%S).json}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-report-XXXXXX.json)}"
                 [[ -z "$save_to_file" ]] && nftban_module_report_json > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ JSON emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 
@@ -218,11 +218,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_validation_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-validation-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_validate_metadata > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ Validation emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 
@@ -243,11 +243,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_license_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-license-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_license > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ License report emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 
@@ -268,7 +268,7 @@ nftban_cmd_module() {
             fi
 
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_duplicates_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-duplicates-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_duplicates > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ Duplicate check report emailed to: $email_to"
             fi
@@ -293,11 +293,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_author_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-author-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_check_author > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ Author report emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 
@@ -317,11 +317,11 @@ nftban_cmd_module() {
             fi
             
             if [[ -n "$email_to" && $result -eq 0 ]]; then
-                local report_file="${save_to_file:-/tmp/nftban_module_depends_$(date +%Y%m%d_%H%M%S).txt}"
+                local report_file="${save_to_file:-$(mktemp -t nftban-module-depends-XXXXXX.txt)}"
                 [[ -z "$save_to_file" ]] && nftban_module_analyze_dependencies > "$report_file"
                 nftban_mail_send "$report_file" "$email_to" && echo "✓ Dependency analysis emailed to: $email_to"
             fi
-            
+
             return $result
             ;;
 

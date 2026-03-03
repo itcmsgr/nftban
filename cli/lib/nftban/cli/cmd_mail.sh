@@ -279,13 +279,10 @@ NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
                 return 0
             fi
 
-            # Check if we can write
+            # Ensure config directory exists
             local conf_dir
             conf_dir=$(dirname "$conf_local")
-            if [[ ! -d "$conf_dir" ]]; then
-                echo "Error: Config directory does not exist: $conf_dir" >&2
-                return 1
-            fi
+            mkdir -p "$conf_dir"
 
             # Write config
             echo "$config_content" > "$conf_local"

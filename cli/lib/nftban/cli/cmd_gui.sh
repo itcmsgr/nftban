@@ -278,7 +278,7 @@ nftban_gui_enable() {
     echo "  [1/2] nftban-core..."
     if [[ -d "$src_dir/cmd/nftban-core" ]]; then
         (
-            cd "$src_dir"
+            cd "$src_dir" || exit 1
             go mod tidy &>/dev/null || true
             CGO_ENABLED=1 go build -o "$bin_dir/nftban-core" ./cmd/nftban-core 2>&1 | head -10
         )
@@ -299,7 +299,7 @@ nftban_gui_enable() {
     echo "  [2/2] nftban-ui..."
     if [[ -d "$src_dir/cmd/nftban-ui" ]]; then
         (
-            cd "$src_dir/cmd/nftban-ui"
+            cd "$src_dir/cmd/nftban-ui" || exit 1
             go mod tidy &>/dev/null || true
             CGO_ENABLED=1 go build -o /usr/sbin/nftban-ui . 2>&1 | head -10
         )
@@ -580,7 +580,7 @@ nftban_gui_recompile() {
     echo "  [1/2] Compiling nftban-core..."
     if [[ -d "$src_dir/cmd/nftban-core" ]]; then
         (
-            cd "$src_dir"
+            cd "$src_dir" || exit 1
             go mod tidy &>/dev/null || true
             CGO_ENABLED=1 go build -o "$bin_dir/nftban-core" ./cmd/nftban-core 2>&1 | head -10
         )
@@ -601,7 +601,7 @@ nftban_gui_recompile() {
     echo "  [2/2] Compiling nftban-ui..."
     if [[ -d "$src_dir/cmd/nftban-ui" ]]; then
         (
-            cd "$src_dir/cmd/nftban-ui"
+            cd "$src_dir/cmd/nftban-ui" || exit 1
             go mod tidy &>/dev/null || true
             CGO_ENABLED=1 go build -o /usr/sbin/nftban-ui . 2>&1 | head -10
         )
