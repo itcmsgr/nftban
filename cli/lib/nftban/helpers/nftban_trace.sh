@@ -79,8 +79,12 @@ nftban_trace_start() {
     local entry="[${_NFTBAN_TRACE_START_TIME}] [START] [${_NFTBAN_TRACE_ID}] ${module}::${function_name} PID=$$ PPID=$PPID"
     echo "$entry" >> "$NFTBAN_DEBUG_TRACE_LOG" 2>/dev/null || true
 
-    # Also store in temp file for crash detection
-    echo "$_NFTBAN_TRACE_ID" > "/tmp/nftban_trace_$$" 2>/dev/null || true
+    # Also store in temp file for crash detection (use mktemp for security)
+    local trace_file
+    trace_file="$(mktemp -t nftban-trace-XXXXXX)" 2>/dev/null || trace_file="/tmp/nftban_trace_$$"
+    echo "$_NFTBAN_TRACE_ID" > "$trace_file" 2>/dev/null || true
+    # Store path for cleanup
+    export _NFTBAN_TRACE_FILE="$trace_file"
 }
 
 # End trace - call at end of script/function
@@ -115,13 +119,14 @@ nftban_trace_end() {
     local entry="[${end_time}] [END]   [${_NFTBAN_TRACE_ID}] ${_NFTBAN_TRACE_MODULE} status=${status} duration=${duration}"
     echo "$entry" >> "$NFTBAN_DEBUG_TRACE_LOG" 2>/dev/null || true
 
-    # Remove temp file
-    rm -f "/tmp/nftban_trace_$$" 2>/dev/null || true
+    # Remove temp file (use stored path from mktemp)
+    [[ -n "${_NFTBAN_TRACE_FILE:-}" ]] && rm -f "$_NFTBAN_TRACE_FILE" 2>/dev/null || true
 
     # Clear state
     _NFTBAN_TRACE_ID=""
     _NFTBAN_TRACE_MODULE=""
     _NFTBAN_TRACE_START_TIME=""
+    unset _NFTBAN_TRACE_FILE
 }
 
 # Mark trace as error (before exit)

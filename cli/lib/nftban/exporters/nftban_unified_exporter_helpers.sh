@@ -136,7 +136,7 @@ acquire_lock() {
     if [[ -f "$METRICS_LOCK" ]] && [[ ! -w "$METRICS_LOCK" ]]; then
         rm -f "$METRICS_LOCK" 2>/dev/null || {
             log_error "Cannot remove stale lock file: $METRICS_LOCK (permission denied)"
-            log_error "Fix: sudo rm -f $METRICS_LOCK && sudo chown nftban:nftban $(dirname $METRICS_LOCK)"
+            log_error "Fix: sudo rm -f \"$METRICS_LOCK\" && sudo chown nftban:nftban \"$(dirname "$METRICS_LOCK")\""
             exit 1
         }
     fi

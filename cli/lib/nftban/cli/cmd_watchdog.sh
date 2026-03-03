@@ -280,11 +280,9 @@ nftban_watchdog_cmd_run() {
 
     # Ensure trends directory exists before running
     local trends_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/watchdog"
-    if [[ ! -d "$trends_dir" ]]; then
-        mkdir -p "$trends_dir" 2>/dev/null || true
-        chown nftban:nftban "$trends_dir" 2>/dev/null || true
-        chmod 750 "$trends_dir" 2>/dev/null || true
-    fi
+    mkdir -p "$trends_dir" 2>/dev/null || true
+    chown nftban:nftban "$trends_dir" 2>/dev/null || true
+    chmod 750 "$trends_dir" 2>/dev/null || true
 
     # Call the core run function which handles:
     # - Running all checks

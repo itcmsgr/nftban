@@ -326,12 +326,12 @@ _flush_blacklist() {
 
     # Count current elements
     local count_v4 count_v6
-    count_v4=$(timeout 10s nft list set $NFTBAN_TABLE_IPV4 blacklist_ipv4 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
-    count_v6=$(timeout 10s nft list set $NFTBAN_TABLE_IPV6 blacklist_ipv6 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
+    count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
+    count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
 
     # Fallback count method
-    [[ "$count_v4" == "0" ]] && count_v4=$(timeout 10s nft list set $NFTBAN_TABLE_IPV4 blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-    [[ "$count_v6" == "0" ]] && count_v6=$(timeout 10s nft list set $NFTBAN_TABLE_IPV6 blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    [[ "$count_v4" == "0" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+    [[ "$count_v6" == "0" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
 
     echo "Current blacklist:"
     echo "  IPv4: ~$count_v4 entries"
@@ -386,8 +386,8 @@ _flush_whitelist() {
 
     # Count current elements
     local count_v4 count_v6
-    count_v4=$(timeout 10s nft list set $NFTBAN_TABLE_IPV4 whitelist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-    count_v6=$(timeout 10s nft list set $NFTBAN_TABLE_IPV6 whitelist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" whitelist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+    count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" whitelist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
 
     echo "Current whitelist:"
     echo "  IPv4: ~$count_v4 entries"
@@ -681,14 +681,14 @@ _flush_ddos() {
     echo ""
 
     # Check if DDoS set exists
-    if ! timeout 10s nft list set $NFTBAN_TABLE_IPV4 ddos_blocked &>/dev/null; then
+    if ! timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked &>/dev/null; then
         echo "DDoS set (ddos_blocked) not found - DDoS protection may not be active"
         return 0
     fi
 
     # Count entries
     local count
-    count=$(timeout 10s nft list set $NFTBAN_TABLE_IPV4 ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+    count=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
 
     echo "DDoS blocked IPs: ~$count entries"
     echo ""

@@ -370,7 +370,7 @@ PROMCONFIG
     nftban_metrics_create_systemd_services "$verbose"
 
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmp_dir"
 
     [[ "$verbose" == "true" ]] && echo "  ✅ Binary installation complete"

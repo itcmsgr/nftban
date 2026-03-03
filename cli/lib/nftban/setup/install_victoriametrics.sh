@@ -63,7 +63,7 @@ install_via_binary() {
     # Download and extract
     local tmp_dir="/tmp/victoriametrics-install"
     mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
+    cd "$tmp_dir" || return 1
 
     local url="https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/${version}/victoria-metrics-linux-${arch}-${version}.tar.gz"
 
@@ -84,7 +84,7 @@ install_via_binary() {
     install -d -o "$VM_USER" -g "$VM_GROUP" -m 0755 "$VM_DATA_DIR"
 
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmp_dir"
 
     print_status "VictoriaMetrics binary installed"
