@@ -262,10 +262,8 @@ cmd_suricata_enable() {
 
     # Create EVE directory with correct permissions
     # Suricata needs write access; nftban needs read access for log parsing
-    if [[ ! -d "$eve_dir" ]]; then
-        echo "  → Creating EVE log directory..."
-        mkdir -p "$eve_dir"
-    fi
+    echo "  → Creating EVE log directory..."
+    mkdir -p "$eve_dir"
 
     # Fix permissions for Suricata write access (RHEL-based distros)
     # Suricata runs as 'suricata' user, needs write access to EVE directory

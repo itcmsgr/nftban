@@ -216,8 +216,10 @@ smoke_test_cmd() {
     log "Command: $cmd"
 
     # Temp files for output
-    local output_file="/tmp/smoke_output_$$.txt"
-    local exit_file="/tmp/smoke_exit_$$.txt"
+    local output_file
+    output_file=$(mktemp -t smoke-output-XXXXXX.txt)
+    local exit_file
+    exit_file=$(mktemp -t smoke-exit-XXXXXX.txt)
 
     # Run with timeout
     local start_time

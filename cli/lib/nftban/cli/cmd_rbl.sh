@@ -223,6 +223,15 @@ nftban_cmd_rbl() {
         status)
             nftban_cmd_rbl_status "$@"
             ;;
+        config)
+            nftban_cmd_rbl_config "$@"
+            ;;
+        stats)
+            nftban_cmd_rbl_stats "$@"
+            ;;
+        test)
+            nftban_cmd_rbl_test "$@"
+            ;;
         list)
             nftban_cmd_rbl_list "$@"
             ;;
@@ -254,6 +263,191 @@ nftban_cmd_rbl() {
 
 # =============================================================================
 # SUBCOMMAND IMPLEMENTATIONS
+# =============================================================================
+
+# =============================================================================
+# CONFIG AND STATS COMMANDS
+# =============================================================================
+
+nftban_cmd_rbl_config() {
+    # Show RBL configuration
+    local format="text"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) format="json"; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    local config_local="${config_file}.local"
+
+    if [[ "$format" == "json" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${NFTBAN_RBL_ENABLED:-YES}" \
+                --arg auto_discover "${NFTBAN_RBL_AUTO_DISCOVER_IPS:-YES}" \
+                --arg check_ipv6 "${NFTBAN_RBL_CHECK_IPV6:-YES}" \
+                --arg cache_ttl "${NFTBAN_RBL_CACHE_TTL:-24}" \
+                --arg alert_email "${NFTBAN_RBL_ALERT_EMAIL:-}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "YES"),
+                        auto_discover: ($auto_discover == "YES"),
+                        check_ipv6: ($check_ipv6 == "YES"),
+                        cache_ttl_hours: ($cache_ttl | tonumber),
+                        alert_email: $alert_email
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\"}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    echo "RBL Configuration"
+    echo "================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Settings:"
+    echo "  Enabled:        ${NFTBAN_RBL_ENABLED:-YES}"
+    echo "  Auto-Discover:  ${NFTBAN_RBL_AUTO_DISCOVER_IPS:-YES}"
+    echo "  Check IPv6:     ${NFTBAN_RBL_CHECK_IPV6:-YES}"
+    echo "  Cache TTL:      ${NFTBAN_RBL_CACHE_TTL:-24} hours"
+    echo "  Alert Email:    ${NFTBAN_RBL_ALERT_EMAIL:-(not set)}"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+nftban_cmd_rbl_stats() {
+    # Show RBL statistics
+    local format="text"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) format="json"; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    # Count cache entries
+    local cache_count=0
+    if [[ -d "${NFTBAN_RBL_CACHE_DIR:-/var/log/nftban/rbl}" ]]; then
+        cache_count=$(find "${NFTBAN_RBL_CACHE_DIR:-/var/log/nftban/rbl}" -name "*.cache" 2>/dev/null | wc -l)
+    fi
+
+    # Get last check time
+    local last_check=""
+    local last_check_file="${NFTBAN_RBL_CACHE_DIR:-/var/log/nftban/rbl}/last_check"
+    if [[ -f "$last_check_file" ]]; then
+        last_check=$(cat "$last_check_file" 2>/dev/null || echo "")
+    fi
+
+    # Count providers
+    local provider_count=0
+    provider_count=$(nftban_rbl_load_providers 2>/dev/null | wc -l) || provider_count=0
+
+    if [[ "$format" == "json" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --argjson cache_count "$cache_count" \
+                --argjson provider_count "$provider_count" \
+                --arg last_check "$last_check" \
+                '{
+                    stats: {
+                        cached_ips: $cache_count,
+                        rbl_providers: $provider_count,
+                        last_check: (if $last_check == "" then null else $last_check end)
+                    }
+                }')
+        else
+            data="{\"stats\":{\"cached_ips\":$cache_count,\"rbl_providers\":$provider_count}}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    echo "RBL Statistics"
+    echo "=============="
+    echo ""
+    echo "  Cached IPs:     $cache_count"
+    echo "  RBL Providers:  $provider_count"
+    echo "  Last Check:     ${last_check:-(never)}"
+    echo ""
+}
+
+nftban_cmd_rbl_test() {
+    # Test RBL module configuration and connectivity
+    echo "RBL Module Test"
+    echo "==============="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Check config file
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    if [[ -f "$config_file" ]]; then
+        echo "  [PASS] Config file exists"
+    else
+        echo "  [FAIL] Config file missing: $config_file"
+        ((errors++)) || true
+    fi
+
+    # Test 2: Check DNS resolution capability
+    if command -v dig &>/dev/null || command -v host &>/dev/null || command -v nslookup &>/dev/null; then
+        echo "  [PASS] DNS lookup tool available"
+    else
+        echo "  [FAIL] No DNS lookup tool (dig, host, or nslookup)"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Test DNS resolution
+    if host -W 3 google.com &>/dev/null 2>&1 || dig +short +time=3 google.com &>/dev/null 2>&1; then
+        echo "  [PASS] DNS resolution working"
+    else
+        echo "  [WARN] DNS resolution may have issues"
+    fi
+
+    # Test 4: Check RBL providers loaded
+    local provider_count
+    provider_count=$(nftban_rbl_load_providers 2>/dev/null | wc -l) || provider_count=0
+    if [[ $provider_count -gt 0 ]]; then
+        echo "  [PASS] $provider_count RBL providers loaded"
+    else
+        echo "  [FAIL] No RBL providers loaded"
+        ((errors++)) || true
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
+}
+
+# =============================================================================
+# IP CHECK COMMANDS
 # =============================================================================
 
 nftban_cmd_rbl_check() {
@@ -1254,5 +1448,19 @@ nftban_cmd_rbl_watchlist() {
     esac
 }
 
-# Export main function
+# Export main function and subcommands
 export -f nftban_cmd_rbl
+export -f nftban_cmd_rbl_alert
+export -f nftban_cmd_rbl_cache
+export -f nftban_cmd_rbl_check
+export -f nftban_cmd_rbl_config
+export -f nftban_cmd_rbl_critical
+export -f nftban_cmd_rbl_disable
+export -f nftban_cmd_rbl_enable
+export -f nftban_cmd_rbl_help
+export -f nftban_cmd_rbl_list
+export -f nftban_cmd_rbl_server
+export -f nftban_cmd_rbl_stats
+export -f nftban_cmd_rbl_status
+export -f nftban_cmd_rbl_test
+export -f nftban_cmd_rbl_watchlist

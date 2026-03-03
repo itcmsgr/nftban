@@ -16,12 +16,9 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# Colors
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m'
+# Source shared utilities (provides print_status, print_error, print_warn, print_info, check_root)
+# shellcheck source=../lib/setup_utils.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
 
 # Configuration
 readonly GRAFANA_PROVISIONING_DIR="/etc/grafana/provisioning/dashboards"
@@ -29,29 +26,6 @@ readonly GRAFANA_DASHBOARDS_DIR="/var/lib/grafana/dashboards/nftban"
 readonly NFTBAN_DASHBOARDS_SOURCE="/usr/share/nftban/grafana/dashboards"
 readonly GRAFANA_USER="${GRAFANA_USER:-grafana}"
 readonly GRAFANA_GROUP="${GRAFANA_GROUP:-grafana}"
-
-print_status() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗]${NC} $1" >&2
-}
-
-print_warn() {
-    echo -e "${YELLOW}[!]${NC} $1"
-}
-
-print_info() {
-    echo -e "${BLUE}[i]${NC} $1"
-}
-
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        print_error "This script must be run as root"
-        exit 1
-    fi
-}
 
 check_grafana_installed() {
     if ! command -v grafana-server >/dev/null 2>&1 && ! systemctl list-unit-files | grep -q "grafana-server"; then

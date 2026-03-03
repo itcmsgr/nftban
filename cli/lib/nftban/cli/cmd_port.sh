@@ -373,7 +373,7 @@ nftban_cmd_port() {
             echo ""
 
             # Atomically add to nftables via IPC (if firewall is active)
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+            if nft list table "${NFTBAN_TABLE_IPV4}" >/dev/null 2>&1; then
                 echo "⚡ Applying to firewall via IPC..."
 
                 local add_success=false
@@ -523,7 +523,7 @@ nftban_cmd_port() {
 
             # Apply removal to nftables via IPC (if firewall is active)
             # Delete from ALL protocol/direction combinations since config removal is global
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+            if nft list table "${NFTBAN_TABLE_IPV4}" >/dev/null 2>&1; then
                 echo "⚡ Applying removal to firewall via IPC..."
 
                 if nft_ipc_is_daemon_running 2>/dev/null; then

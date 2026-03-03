@@ -146,6 +146,237 @@ done
 unset _cmd_suricata_modules _module _module_path _cmd_suricata_dir
 
 # =============================================================================
+# STATS AND TEST COMMANDS
+# =============================================================================
+
+cmd_suricata_stats() {
+    # Show Suricata statistics for monitoring/API
+    local json_mode="false"
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    local installed="false"
+    local running="false"
+    local enabled="false"
+    local version=""
+    local alert_count=0
+    local eve_size=0
+
+    # Check installation
+    if _suricata_is_installed; then
+        installed="true"
+        version=$(suricata --build-info 2>/dev/null | grep -oP 'Suricata version \K[0-9.]+' | head -1) || version=""
+    fi
+
+    # Check service status
+    _suricata_is_running && running="true"
+    _suricata_is_enabled && enabled="true"
+
+    # Get EVE log stats
+    local eve_path
+    eve_path=$(_eve_get_path 2>/dev/null) || eve_path=""
+    if [[ -n "$eve_path" ]] && [[ -f "$eve_path" ]]; then
+        eve_size=$(stat -c%s "$eve_path" 2>/dev/null || stat -f%z "$eve_path" 2>/dev/null || echo "0")
+        # Count alerts in last 24h (approximate from last 100 lines)
+        alert_count=$(tail -1000 "$eve_path" 2>/dev/null | grep -c '"event_type":"alert"' || echo "0")
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        cat <<EOF
+{"installed":$installed,"running":$running,"enabled":$enabled,"version":"$version","alerts_recent":$alert_count,"eve_size_bytes":$eve_size}
+EOF
+        return 0
+    fi
+
+    echo "Suricata Statistics"
+    echo "==================="
+    echo ""
+    echo "  Installed:      $installed"
+    echo "  Version:        ${version:-(unknown)}"
+    echo "  Running:        $running"
+    echo "  Enabled:        $enabled"
+    echo "  Recent Alerts:  $alert_count (from last 1000 EVE entries)"
+    echo "  EVE Log Size:   $(_eve_format_bytes "$eve_size")"
+    echo ""
+}
+
+cmd_suricata_config() {
+    # Show Suricata configuration settings
+    local json_mode="false"
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    # Configuration values
+    local suricata_yaml=""
+    local eve_path=""
+    local interface=""
+    local rules_dir=""
+    local log_dir=""
+    local run_mode=""
+    local home_net=""
+    local external_net=""
+
+    # Find Suricata config file
+    local suricata_config_dirs=("/etc/suricata" "/usr/local/etc/suricata" "/opt/suricata/etc")
+    for dir in "${suricata_config_dirs[@]}"; do
+        if [[ -f "$dir/suricata.yaml" ]]; then
+            suricata_yaml="$dir/suricata.yaml"
+            break
+        fi
+    done
+
+    # Get EVE log path from nftban config or suricata
+    eve_path=$(_eve_get_path 2>/dev/null) || eve_path=""
+
+    # Parse suricata.yaml if found
+    if [[ -n "$suricata_yaml" ]] && [[ -f "$suricata_yaml" ]]; then
+        # Get interface (af-packet interface)
+        interface=$(grep -A10 "^af-packet:" "$suricata_yaml" 2>/dev/null | grep -E "^\s+-\s+interface:" | head -1 | sed 's/.*interface:\s*//' | tr -d ' "' || true)
+
+        # Get default log directory
+        log_dir=$(grep -E "^\s*default-log-dir:" "$suricata_yaml" 2>/dev/null | head -1 | sed 's/.*default-log-dir:\s*//' | tr -d ' "' || true)
+
+        # Get rules directory (rule-files or default-rule-path)
+        rules_dir=$(grep -E "^\s*default-rule-path:" "$suricata_yaml" 2>/dev/null | head -1 | sed 's/.*default-rule-path:\s*//' | tr -d ' "' || true)
+        [[ -z "$rules_dir" ]] && rules_dir="/var/lib/suricata/rules"
+
+        # Get run mode
+        run_mode=$(grep -E "^runmode:" "$suricata_yaml" 2>/dev/null | head -1 | sed 's/runmode:\s*//' | tr -d ' "' || true)
+
+        # Get HOME_NET
+        home_net=$(grep -E "^\s*HOME_NET:" "$suricata_yaml" 2>/dev/null | head -1 | sed 's/.*HOME_NET:\s*//' | tr -d '"' | xargs || true)
+
+        # Get EXTERNAL_NET
+        external_net=$(grep -E "^\s*EXTERNAL_NET:" "$suricata_yaml" 2>/dev/null | head -1 | sed 's/.*EXTERNAL_NET:\s*//' | tr -d '"' | xargs || true)
+    fi
+
+    # Fallbacks for missing values
+    [[ -z "$log_dir" ]] && log_dir="/var/log/suricata"
+    [[ -z "$run_mode" ]] && run_mode="autofp"
+    [[ -z "$home_net" ]] && home_net="(not configured)"
+    [[ -z "$external_net" ]] && external_net="(not configured)"
+    [[ -z "$interface" ]] && interface="(not configured)"
+    [[ -z "$eve_path" ]] && eve_path="(not configured)"
+    [[ -z "$suricata_yaml" ]] && suricata_yaml="(not found)"
+
+    # Get nftban-specific config
+    local nftban_suricata_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/suricata.conf"
+    local nftban_iface_conf
+    nftban_iface_conf=$(_suricata_iface_get_config_path 2>/dev/null) || nftban_iface_conf=""
+
+    # Count rule files
+    local rule_count=0
+    if [[ -d "$rules_dir" ]]; then
+        rule_count=$(find "$rules_dir" -name "*.rules" 2>/dev/null | wc -l)
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        # Escape strings for JSON (handle backslashes, quotes, tabs)
+        _json_escape() {
+            printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g'
+        }
+        cat <<EOF
+{"suricata_yaml":"$(_json_escape "$suricata_yaml")","eve_path":"$(_json_escape "$eve_path")","interface":"$(_json_escape "$interface")","rules_dir":"$(_json_escape "$rules_dir")","rule_count":$rule_count,"log_dir":"$(_json_escape "$log_dir")","run_mode":"$(_json_escape "$run_mode")","home_net":"$(_json_escape "$home_net")","external_net":"$(_json_escape "$external_net")","nftban_suricata_conf":"$(_json_escape "$nftban_suricata_conf")","nftban_iface_conf":"$(_json_escape "${nftban_iface_conf:-}")"}
+EOF
+        return 0
+    fi
+
+    echo "Suricata Configuration"
+    echo "======================"
+    echo ""
+    echo "  Main Config:    $suricata_yaml"
+    echo "  Run Mode:       $run_mode"
+    echo "  Interface:      $interface"
+    echo ""
+    echo "  Logging:"
+    echo "    Log Dir:      $log_dir"
+    echo "    EVE Path:     $eve_path"
+    echo ""
+    echo "  Rules:"
+    echo "    Rules Dir:    $rules_dir"
+    echo "    Rule Files:   $rule_count"
+    echo ""
+    echo "  Network Variables:"
+    echo "    HOME_NET:     $home_net"
+    echo "    EXTERNAL_NET: $external_net"
+    echo ""
+    echo "  NFTBan Config:"
+    echo "    Suricata:     $nftban_suricata_conf"
+    if [[ -n "$nftban_iface_conf" ]]; then
+        echo "    Interface:    $nftban_iface_conf"
+    fi
+    echo ""
+}
+
+cmd_suricata_test() {
+    # Test Suricata module configuration
+    echo "Suricata Module Test"
+    echo "===================="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Check Suricata installation
+    if _suricata_is_installed; then
+        local version
+        version=$(suricata --build-info 2>/dev/null | grep -oP 'Suricata version \K[0-9.]+' | head -1) || version="unknown"
+        echo "  [PASS] Suricata installed (version: $version)"
+    else
+        echo "  [FAIL] Suricata not installed"
+        ((errors++)) || true
+    fi
+
+    # Test 2: Check service file
+    if systemctl list-unit-files "$SURICATA_SERVICE" &>/dev/null 2>&1; then
+        echo "  [PASS] Systemd service exists"
+    else
+        echo "  [FAIL] Systemd service not found: $SURICATA_SERVICE"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Check EVE log path
+    local eve_path
+    eve_path=$(_eve_get_path 2>/dev/null) || eve_path=""
+    if [[ -n "$eve_path" ]]; then
+        if [[ -f "$eve_path" ]]; then
+            echo "  [PASS] EVE log exists: $eve_path"
+        else
+            echo "  [INFO] EVE log path configured but file not yet created"
+        fi
+    else
+        echo "  [WARN] EVE log path not configured"
+    fi
+
+    # Test 4: Check rules directory
+    local rules_dir="/var/lib/suricata/rules"
+    if [[ -d "$rules_dir" ]]; then
+        local rule_count
+        rule_count=$(find "$rules_dir" -name "*.rules" 2>/dev/null | wc -l)
+        echo "  [PASS] Rules directory exists ($rule_count rule files)"
+    else
+        echo "  [WARN] Rules directory not found: $rules_dir"
+    fi
+
+    # Test 5: Check suricata-update
+    if command -v suricata-update &>/dev/null; then
+        echo "  [PASS] suricata-update available"
+    else
+        echo "  [WARN] suricata-update not found (rule updates may fail)"
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
+}
+
+# =============================================================================
 # HELP
 # =============================================================================
 
@@ -163,6 +394,7 @@ COMMANDS:
     enable      Enable and start Suricata service
     disable     Stop and disable Suricata service
     status      Show Suricata status and recent alerts
+    config      Show Suricata configuration settings (--json for JSON output)
     iface       Interface detection & configuration (see: nftban suricata iface help)
     eve         EVE JSON log health check (see: nftban suricata eve help)
     profile     Manage performance profiles (see: nftban suricata profile help)
@@ -250,6 +482,15 @@ nftban_cmd_suricata() {
         status)
             cmd_suricata_status "$@"
             ;;
+        stats)
+            cmd_suricata_stats "$@"
+            ;;
+        config)
+            cmd_suricata_config "$@"
+            ;;
+        test)
+            cmd_suricata_test "$@"
+            ;;
         eve)
             cmd_suricata_eve "$@"
             ;;
@@ -306,6 +547,9 @@ export -f cmd_suricata_install
 export -f cmd_suricata_enable
 export -f cmd_suricata_disable
 export -f cmd_suricata_status
+export -f cmd_suricata_stats
+export -f cmd_suricata_config
+export -f cmd_suricata_test
 export -f cmd_suricata_eve
 export -f cmd_suricata_eve_check
 export -f cmd_suricata_rules

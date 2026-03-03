@@ -649,11 +649,9 @@ _suricata_iface_save_config() {
     config_dir=$(dirname "$config_path")
 
     # Ensure directory exists
-    if [[ ! -d "$config_dir" ]]; then
-        mkdir -p "$config_dir"
-        chmod 750 "$config_dir"
-        chown root:nftban "$config_dir" 2>/dev/null || true
-    fi
+    mkdir -p "$config_dir"
+    chmod 750 "$config_dir"
+    chown root:nftban "$config_dir" 2>/dev/null || true
 
     # Write config
     cat > "$config_path" << EOF

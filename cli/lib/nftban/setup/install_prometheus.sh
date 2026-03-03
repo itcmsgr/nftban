@@ -99,8 +99,8 @@ install_via_binary() {
     # Download and extract
     local tmp_dir="/tmp/prometheus-install"
     mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
-    
+    cd "$tmp_dir" || return 1
+
     local arch="amd64"
     local url="https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-${arch}.tar.gz"
     
@@ -111,8 +111,8 @@ install_via_binary() {
     }
     
     tar xzf prometheus.tar.gz
-    cd "prometheus-${version}.linux-${arch}"
-    
+    cd "prometheus-${version}.linux-${arch}" || return 1
+
     # Install binaries
     install -m 0755 prometheus "${PROM_BIN}"
     install -m 0755 promtool "${PROMTOOL_BIN}"
@@ -132,9 +132,9 @@ install_via_binary() {
     find "$PROM_DIR/consoles" "$PROM_DIR/console_libraries" -maxdepth 1 -exec chown "$PROM_USER:$PROM_GROUP" {} \; 2>/dev/null || true
     
     # Cleanup
-    cd /
+    cd / || return 1
     rm -rf "$tmp_dir"
-    
+
     print_status "Prometheus binary installed"
 }
 

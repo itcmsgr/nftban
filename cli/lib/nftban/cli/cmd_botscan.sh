@@ -317,6 +317,66 @@ _nftban_botscan_stats_json() {
 }
 
 # =============================================================================
+# COMMAND: config
+# =============================================================================
+
+_nftban_botscan_cmd_config() {
+    local json_mode="${1:-false}"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botscan/main.conf"
+    local config_local="${config_file}.local"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${BOTSCAN_ENABLED:-false}" \
+                --arg action_mode "${BOTSCAN_ACTION_MODE:-both}" \
+                --arg default_threshold "${BOTSCAN_DEFAULT_THRESHOLD:-5}" \
+                --arg default_window "${BOTSCAN_DEFAULT_WINDOW:-60}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "true"),
+                        action_mode: $action_mode,
+                        default_threshold: ($default_threshold | tonumber),
+                        default_window: ($default_window | tonumber)
+                    }
+                }')
+        else
+            data="{\"config_file\":\"$config_file\"}"
+        fi
+        json_output "true" "$data"
+        return 0
+    fi
+
+    echo "Bot Scanner Configuration"
+    echo "========================="
+    echo ""
+    echo "  Config File:    $config_file"
+    echo "  Override File:  $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:         [Override Active]"
+    else
+        echo "  Status:         [Using defaults]"
+    fi
+    echo ""
+    echo "Settings:"
+    echo "  Enabled:        ${BOTSCAN_ENABLED:-false}"
+    echo "  Action Mode:    ${BOTSCAN_ACTION_MODE:-both}"
+    echo "  Threshold:      ${BOTSCAN_DEFAULT_THRESHOLD:-5} hits"
+    echo "  Time Window:    ${BOTSCAN_DEFAULT_WINDOW:-60} seconds"
+    echo "  404 Tracking:   ${BOTSCAN_404_TRACKING:-true}"
+    echo "  404 Threshold:  ${BOTSCAN_404_THRESHOLD:-50}"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+# =============================================================================
 # COMMAND: enable
 # =============================================================================
 
@@ -647,6 +707,10 @@ nftban_cmd_botscan() {
             _nftban_botscan_stats_json "$json_mode"
             ;;
 
+        config)
+            _nftban_botscan_cmd_config "$json_mode"
+            ;;
+
         check)
             # Load core module for check
             if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
@@ -696,6 +760,15 @@ nftban_cmd_botscan() {
 # =============================================================================
 
 export -f nftban_cmd_botscan
+export -f _nftban_botscan_banner
+export -f _nftban_botscan_cmd_config
+export -f _nftban_botscan_cmd_disable
+export -f _nftban_botscan_cmd_enable
+export -f _nftban_botscan_cmd_history
+export -f _nftban_botscan_cmd_patterns
+export -f _nftban_botscan_cmd_test
+export -f _nftban_botscan_help
+export -f _nftban_botscan_stats_json
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

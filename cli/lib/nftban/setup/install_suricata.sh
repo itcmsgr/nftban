@@ -120,12 +120,11 @@ install_build_deps() {
 
 download_suricata() {
     local version="$1"
-    local tmp_dir="/tmp/suricata-install-$$"
+    local tmp_dir
+    tmp_dir="$(mktemp -d -t suricata-XXXXXX)"
 
     print_info "Downloading Suricata ${version}..."
-
-    mkdir -p "$tmp_dir"
-    cd "$tmp_dir"
+    cd "$tmp_dir" || return 1
 
     curl -L "$SURICATA_URL" -o suricata.tar.gz || {
         print_error "Download failed from $SURICATA_URL"
@@ -137,7 +136,7 @@ download_suricata() {
         return 1
     }
 
-    cd "suricata-${version}"
+    cd "suricata-${version}" || return 1
 
     print_status "Suricata source downloaded and extracted"
     pwd
@@ -147,7 +146,7 @@ compile_suricata() {
     local source_dir="$1"
 
     print_info "Configuring Suricata..."
-    cd "$source_dir"
+    cd "$source_dir" || return 1
 
     ./configure \
         --prefix=/usr \
@@ -174,7 +173,7 @@ install_suricata() {
     local source_dir="$1"
 
     print_info "Installing Suricata binaries..."
-    cd "$source_dir"
+    cd "$source_dir" || return 1
 
     make install || {
         print_error "Installation failed"
@@ -474,7 +473,7 @@ configure_suricata() {
     # 5. Update Suricata rules
     print_info "Updating Suricata rules with enable/disable configs..."
     if command -v suricata-update &>/dev/null; then
-        cd "$SURICATA_CONF_DIR"
+        cd "$SURICATA_CONF_DIR" || return 1
         suricata-update \
             --suricata "$SURICATA_BIN" \
             --suricata-conf "$SURICATA_CONF_DIR/suricata.yaml" || {
@@ -517,7 +516,7 @@ cleanup() {
 
     if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
         print_info "Cleaning up temporary files..."
-        cd /
+        cd / || return 1
         rm -rf "$tmp_dir"
         print_status "Cleanup complete"
     fi

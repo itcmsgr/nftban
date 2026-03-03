@@ -109,8 +109,10 @@ test_command() {
     log "Command: $cmd"
 
     # Create temp file for output
-    local output_file="/tmp/nftban_test_output_$$.txt"
-    local exit_code_file="/tmp/nftban_test_exit_$$.txt"
+    local output_file
+    output_file=$(mktemp -t nftban-test-output-XXXXXX.txt)
+    local exit_code_file
+    exit_code_file=$(mktemp -t nftban-test-exit-XXXXXX.txt)
 
     # Run command with timeout
     local start_time end_time duration
