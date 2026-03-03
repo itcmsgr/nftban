@@ -30,7 +30,7 @@ NFTBAN_CMD_TIMERS_LOADED="true"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+source "${NFTBAN_LIB_DIR}/lib/service_control.sh"
 
 # =============================================================================
 # CONFIGURATION

@@ -436,7 +436,9 @@ func getTimerSchedule(timerName string) string {
 		"nftban-health.timer":           "Daily at 03:00",
 		"nftban-unified-exporter.timer": "Every 1 minute",
 		"nftban-daily-report.timer":     "Daily",
-		"nftban-bandwidth-exporter.timer": "Every 1 minute",
+		"nftban-core-feeds.timer":       "Every 4 hours",
+		"nftban-core-geoip.timer":       "Daily",
+		"nftban-maintenance.timer":      "Every 10 minutes",
 		"nftban-snapshot.timer":         "Hourly",
 		"nftban-rollback.timer":         "On boot",
 	}
