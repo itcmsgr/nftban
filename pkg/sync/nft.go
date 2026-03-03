@@ -959,9 +959,19 @@ func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error 
 // The netlink library doesn't properly handle interval markers for single IPs,
 // which can cause corrupted ranges like "1.2.3.4-255.255.255.255".
 func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout time.Duration) error {
+	// Try parsing as single IP first
 	ip := net.ParseIP(ipStr)
+
+	// If single IP parsing fails, try CIDR notation
+	var isCIDR bool
 	if ip == nil {
-		return fmt.Errorf("invalid IP: %s", ipStr)
+		_, cidrNet, err := net.ParseCIDR(ipStr)
+		if err != nil {
+			return fmt.Errorf("invalid IP or CIDR: %s", ipStr)
+		}
+		// CIDR parsed successfully - extract base IP for validation
+		ip = cidrNet.IP
+		isCIDR = true
 	}
 
 	// Validate IP type matches set type
@@ -975,9 +985,10 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 		}
 	}
 
-	// For interval sets, use nft CLI to avoid corrupted interval ranges
+	// For interval sets OR CIDR ranges, use nft CLI
 	// The netlink library doesn't properly handle interval markers for single IPs
-	if set.Interval {
+	// CIDR ranges require interval sets and must use CLI
+	if set.Interval || isCIDR {
 		return m.addIPWithTimeoutCLI(set, ipStr, timeout)
 	}
 
@@ -1038,8 +1049,17 @@ func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
 		return nil
 	}
 
-	// For interval sets, use nft CLI
-	if set.Interval {
+	// Check if any IPs are CIDRs - if so, use CLI method
+	hasCIDR := false
+	for _, ipStr := range ips {
+		if strings.Contains(ipStr, "/") {
+			hasCIDR = true
+			break
+		}
+	}
+
+	// For interval sets or CIDR ranges, use nft CLI
+	if set.Interval || hasCIDR {
 		return m.deleteSetElementsCLI(set, ips)
 	}
 

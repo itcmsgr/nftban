@@ -61,19 +61,19 @@ type ServiceNames struct {
 }
 
 var defaultServices = &ServiceNames{
-	// Main services
-	MainService:      "nftban.service",
-	CoreService:      "nftban-core.service",
+	// Main services - nftband.service is the unified daemon
+	MainService:      "nftband.service",
+	CoreService:      "nftband.service",
 	UIService:        "nftban-ui.service",
 	UIAuthService:    "nftban-ui-auth.service",
 	DaemonService:    "nftband.service",
 
-	// Timers
-	SyncTimer:        "nftban-sync.timer",
+	// Timers - use canonical names from UNITS.md
+	SyncTimer:        "nftban-maintenance.timer",
 	MaintenanceTimer: "nftban-maintenance.timer",
-	FeedsTimer:       "nftban-feeds.timer",
-	GeoIPTimer:       "nftban-geoip.timer",
-	MetricsTimer:     "nftban-metrics.timer",
+	FeedsTimer:       "nftban-core-feeds.timer",
+	GeoIPTimer:       "nftban-core-geoip.timer",
+	MetricsTimer:     "nftban-unified-exporter.timer",
 	HealthTimer:      "nftban-health.timer",
 
 	// Detection services
