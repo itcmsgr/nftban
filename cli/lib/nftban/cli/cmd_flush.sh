@@ -214,7 +214,7 @@ _restore_system_whitelist() {
             IFS="$IFS_OLD"
         else
             # Fallback for emergency - direct nft (should rarely be used)
-            nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+            nft add element "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
         fi
         echo "  Restored $count_v4 IPv4 system IPs"
     fi
@@ -234,7 +234,7 @@ _restore_system_whitelist() {
             IFS="$IFS_OLD"
         else
             # Fallback for emergency - direct nft (should rarely be used)
-            nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+            nft add element "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
         fi
         echo "  Restored $count_v6 IPv6 system IPs"
     fi

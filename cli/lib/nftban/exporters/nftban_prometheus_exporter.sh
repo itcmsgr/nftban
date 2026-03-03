@@ -19,8 +19,9 @@ umask 027
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+# shellcheck disable=SC1091
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
