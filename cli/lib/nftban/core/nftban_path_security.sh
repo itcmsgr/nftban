@@ -301,9 +301,10 @@ nftban_path_create_file_safe() {
     local dir
     dir="$(dirname "$path")"
 
-    # Create directory if needed
-    if [[ ! -d "$dir" ]]; then
-        if ! mkdir -p "$dir" 2>/dev/null; then
+    # Create directory if needed (atomic, avoids TOCTOU race)
+    if ! mkdir -p "$dir" 2>/dev/null; then
+        # Only fail if directory still doesn't exist (concurrent creation is OK)
+        if [[ ! -d "$dir" ]]; then
             echo "ERROR: Cannot create directory: $dir" >&2
             nftban_path_audit_log "DENIED" "mkdir_failed path=$dir"
             return 1

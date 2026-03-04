@@ -763,20 +763,19 @@ CONF
         echo "✅ Configuration file exists"
     fi
 
-    # 2. Check log directory
+    # 2. Check log directory (atomic creation avoids TOCTOU race)
     local log_dir
     log_dir=$(dirname "$NFTBAN_LOGIN_ALERT_LOG")
-    if [[ ! -d "$log_dir" ]]; then
-        echo "❌ Log directory missing: $log_dir"
-        ((issues_found++))
-
-        if [[ $EUID -eq 0 ]]; then
-            mkdir -p "$log_dir"
+    if [[ $EUID -eq 0 ]]; then
+        # Try atomic creation - if it already exists, mkdir -p succeeds silently
+        if mkdir -p "$log_dir" 2>/dev/null; then
             chown nftban:nftban "$log_dir" 2>/dev/null || true
-            chmod 750 "$log_dir"
-            echo "   ✅ Created log directory"
-            ((issues_fixed++))
+            chmod 750 "$log_dir" 2>/dev/null || true
         fi
+    fi
+    if [[ ! -d "$log_dir" ]]; then
+        echo "X Log directory missing: $log_dir"
+        ((issues_found++))
     else
         echo "✅ Log directory exists"
     fi

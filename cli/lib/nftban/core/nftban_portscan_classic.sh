@@ -204,7 +204,7 @@ nftban_portscan_classic_save_state() {
     local state_dir
     state_dir=$(dirname "$state_file")
 
-    [[ -d "$state_dir" ]] || mkdir -p "$state_dir"
+    mkdir -p "$state_dir" 2>/dev/null || true
 
     {
         # Use timestamp library if available, fallback to date
@@ -946,41 +946,6 @@ nftban_portscan_classic_disable() {
     nftban_portscan_classic_remove_rules
 
     _nftban_portscan_classic_log "INFO" "Classic portscan detection disabled"
-    return 0
-}
-
-# Get status
-nftban_portscan_classic_status() {
-    local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-
-    echo "=== NFTBan Portscan Classic Mode Status ==="
-    echo ""
-
-    # Check if chain exists
-    if nft list chain ${table_ipv4} ${chain} &>/dev/null; then
-        echo "Status: ACTIVE"
-    else
-        echo "Status: INACTIVE"
-    fi
-
-    echo ""
-    echo "Tracking:"
-    echo "  IPs tracked: ${#_PORTSCAN_CLASSIC_IP_PORTS[@]}"
-    echo "  IPs blocked: ${#_PORTSCAN_CLASSIC_IP_BLOCKED[@]}"
-
-    echo ""
-    echo "Configuration:"
-    echo "  Min ports for detection: ${PORTSCAN_CLASSIC_MIN_PORTS:-5}"
-    echo "  Time window: ${PORTSCAN_CLASSIC_TIME_WINDOW:-60}s"
-    local log_source
-    log_source=$(nftban_portscan_classic_find_log 2>/dev/null) || log_source="not found"
-    if [[ "$log_source" == "journalctl" ]]; then
-        echo "  Log source: journalctl -k (systemd kernel journal)"
-    else
-        echo "  Log source: $log_source"
-    fi
-
     return 0
 }
 

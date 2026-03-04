@@ -56,17 +56,6 @@ fi
 # MAIN COMMAND HANDLER
 # =============================================================================
 
-cmd_sync_help() {
-    echo "Usage: nftban sync [subcommand]"
-    echo ""
-    echo "Subcommands:"
-    echo "  full      Full atomic sync (default)"
-    echo "  validate  Validate only"
-    echo "  status    Show sync status"
-    echo "  --dry-run Dry run mode"
-    echo "  help      Show full help"
-}
-
 nftban_cmd_sync() {
     # Main sync command handler
     # Routes subcommands to appropriate functions
