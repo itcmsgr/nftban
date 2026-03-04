@@ -42,7 +42,7 @@ umask 027
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
 # Load main configuration (sets readonly paths, service names)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
 # Load service control library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/service_control.sh" ]]; then

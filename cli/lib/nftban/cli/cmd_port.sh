@@ -4,7 +4,7 @@
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
 # Load JSON helper for --json support
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
@@ -97,43 +97,6 @@ fi
 
 # PORT COMMAND HANDLER
 # =============================================================================
-
-cmd_port_help() {
-    echo "Usage: nftban port <subcommand> [options]"
-    echo ""
-    echo "Subcommands:"
-    echo "  status                            Show port status"
-    echo "  detailed                          Show detailed status"
-    echo "  add <port> <protocol> <direction> Add port to whitelist (REQUIRED args)"
-    echo "  remove <port>                     Remove port from whitelist"
-    echo "  block <port>                      Block port (remove from whitelist)"
-    echo "  unblock <port>                    Unblock port (add with both/inout)"
-    echo "  help                              Show full help"
-    echo ""
-    echo "Quick Start:"
-    echo "  nftban port add 80 tcp in         # Allow web server"
-    echo "  nftban port add 443 both inout    # Allow HTTPS + HTTP/3"
-    echo "  nftban port status                # Check current ports"
-    echo ""
-    echo "Arguments for 'add':"
-    echo "  port:      1-65535"
-    echo "  protocol:  tcp | udp | both"
-    echo "  direction: in (INPUT) | out (OUTPUT) | inout (INPUT+OUTPUT)"
-    echo ""
-    echo "NOTE: All port operations apply to both IPv4 and IPv6 tables automatically."
-    echo ""
-    echo "How It Works:"
-    echo "  Port rules are stored in /etc/nftban/ports.d/*.conf"
-    echo "  The daemon (nftband) loads ports into nftables via IPC."
-    echo ""
-    echo "Troubleshooting:"
-    echo "  If ports are not applied, check:"
-    echo "  1. Is the daemon running?  systemctl status nftband"
-    echo "  2. Check the config:       cat /etc/nftban/ports.d/90-custom.conf"
-    echo "  3. Force reload:           nftban reload"
-    echo ""
-    echo "For full help: nftban port help"
-}
 
 nftban_cmd_port() {
     # Handle port subcommands
