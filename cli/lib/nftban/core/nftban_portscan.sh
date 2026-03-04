@@ -879,7 +879,7 @@ nftban_portscan_sync_logs() {
     # Ensure log directory exists
     local log_dir
     log_dir=$(dirname "$portscan_log")
-    [[ -d "$log_dir" ]] || mkdir -p "$log_dir"
+    mkdir -p "$log_dir" 2>/dev/null || true
 
     echo "Syncing portscan logs from journalctl (last $time_range)..."
 

@@ -239,7 +239,7 @@ nftban_portscan_suricata_save_state() {
     local state_dir
     state_dir=$(dirname "$state_file")
 
-    [[ -d "$state_dir" ]] || mkdir -p "$state_dir"
+    mkdir -p "$state_dir" 2>/dev/null || true
 
     # Use library timestamp if available
     local state_timestamp
@@ -856,38 +856,6 @@ nftban_portscan_suricata_disable() {
     nftban_portscan_suricata_save_state
 
     _nftban_portscan_suricata_log "INFO" "Suricata portscan detection disabled"
-    return 0
-}
-
-# Get status
-nftban_portscan_suricata_status() {
-    echo "=== NFTBan Portscan Suricata Mode Status ==="
-    echo ""
-
-    if nftban_portscan_suricata_is_available; then
-        echo "Suricata Status: AVAILABLE"
-    else
-        echo "Suricata Status: NOT AVAILABLE"
-    fi
-
-    echo ""
-    echo "Checks:"
-    echo "  Binary exists: $(nftban_portscan_suricata_binary_exists && echo 'yes' || echo 'no')"
-    echo "  Service running: $(nftban_portscan_suricata_service_running && echo 'yes' || echo 'no')"
-    echo "  EVE file active: $(nftban_portscan_suricata_eve_active && echo 'yes' || echo 'no')"
-
-    echo ""
-    echo "Tracking:"
-    echo "  IPs tracked: ${#_PORTSCAN_SURICATA_IP_SCORES[@]}"
-    echo "  IPs blocked: ${#_PORTSCAN_SURICATA_IP_BLOCKED[@]}"
-    echo "  EVE offset: ${_PORTSCAN_SURICATA_EVE_OFFSET}"
-
-    echo ""
-    echo "Configuration:"
-    echo "  EVE file: ${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
-    echo "  Alert window: ${PORTSCAN_SURICATA_ALERT_WINDOW:-300}s"
-    echo "  Score decay: ${PORTSCAN_SURICATA_SCORE_DECAY:-1800}s"
-
     return 0
 }
 

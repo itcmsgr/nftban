@@ -339,16 +339,6 @@ nftban_metrics_status() {
 # Main Command Handler
 # ==============================================================================
 
-cmd_metrics_help() {
-    echo "Usage: nftban metrics {enable|disable|status|pipeline}"
-    echo ""
-    echo "Commands:"
-    echo "  enable    Enable Prometheus metrics"
-    echo "  disable   Disable metrics collection"
-    echo "  status    Show metrics services status"
-    echo "  pipeline  Show pipeline validation"
-}
-
 nftban_cmd_metrics() {
     local subcommand="${1:-status}"
     shift || true

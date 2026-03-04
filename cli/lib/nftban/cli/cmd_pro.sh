@@ -109,13 +109,11 @@ _pro_write_token_secure() {
         return 1
     fi
 
-    # Create directory if missing
+    # Create directory if missing (atomic, avoids TOCTOU race)
     local token_dir
     token_dir=$(dirname "$token_file")
-    if [[ ! -d "$token_dir" ]]; then
-        mkdir -p "$token_dir"
-        chmod 755 "$token_dir"
-    fi
+    mkdir -p "$token_dir" 2>/dev/null || true
+    chmod 755 "$token_dir" 2>/dev/null || true
 
     # Write token atomically with secure permissions
     local tmp_file="${token_file}.tmp.$$"
@@ -877,18 +875,6 @@ nftban_pro_cmd_license_check() {
 # =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
-
-cmd_pro_help() {
-    echo "Usage: nftban pro <command> [options]"
-    echo ""
-    echo "Commands:"
-    echo "  enroll     Enroll with NFTBan Pro"
-    echo "  status     Show subscription status"
-    echo "  disable    Disable Pro features"
-    echo "  token      Token management"
-    echo "  inventory  Inventory management"
-    echo "  help       Show full help"
-}
 
 nftban_cmd_pro() {
     local subcommand="${1:-status}"
