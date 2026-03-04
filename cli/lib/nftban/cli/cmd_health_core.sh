@@ -86,7 +86,7 @@ nftban_health_cmd_check() {
 
     # Run all checks (capture result immediately to avoid strict mode issues)
     local result=0
-    nftban_health_check_all $auto_heal || result=$?
+    nftban_health_check_all "$auto_heal" || result=$?
 
     # BUG-N2 FIX: Derive canonical exit code from ERRORS/WARNINGS arrays
     # so that 'check', 'summary', and cache all agree on severity.

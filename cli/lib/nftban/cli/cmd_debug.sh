@@ -88,9 +88,15 @@ nftban_cmd_debug() {
 # =============================================================================
 
 nftban_debug_status() {
-    echo "NFTBan Debug Status"
-    echo "==================="
-    echo ""
+    local json_mode=0
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json_mode=1; shift ;;
+            *) shift ;;
+        esac
+    done
 
     # Check current trace status from config
     local trace_enabled="false"
@@ -102,6 +108,28 @@ nftban_debug_status() {
         trace_log=$(grep -E '^NFTBAN_DEBUG_TRACE_LOG=' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null | cut -d'"' -f2 || echo "${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log")
         log_level=$(grep -E '^NFTBAN_LOG_LEVEL=' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null | cut -d'"' -f2 || echo "INFO")
     fi
+
+    # JSON output mode
+    if [[ $json_mode -eq 1 ]]; then
+        local trace_size="0"
+        local trace_lines=0
+        local start_count=0
+        local end_count=0
+        if [[ -f "$trace_log" ]]; then
+            trace_size=$(du -b "$trace_log" 2>/dev/null | cut -f1 || echo "0")
+            trace_lines=$(wc -l < "$trace_log" 2>/dev/null || echo 0)
+            start_count=$(grep -c '\[START\]' "$trace_log" 2>/dev/null || echo 0)
+            end_count=$(grep -c '\[END\]' "$trace_log" 2>/dev/null || echo 0)
+        fi
+        local orphans=$((start_count - end_count))
+        [[ $orphans -lt 0 ]] && orphans=0
+        echo "{\"trace_enabled\":$([ "$trace_enabled" == "true" ] && echo true || echo false),\"trace_log\":\"$trace_log\",\"trace_size_bytes\":$trace_size,\"trace_entries\":$trace_lines,\"log_level\":\"$log_level\",\"start_count\":$start_count,\"end_count\":$end_count,\"potential_orphans\":$orphans,\"timestamp\":\"$(date -Iseconds)\"}"
+        return 0
+    fi
+
+    echo "NFTBan Debug Status"
+    echo "==================="
+    echo ""
 
     # Display status
     echo "Debug Trace:"
@@ -459,7 +487,7 @@ Usage: nftban debug <command> [OPTIONS]
 Debug and troubleshooting tools.
 
 Commands:
-  status                 Show debug status
+  status [--json]        Show debug status
   enable [trace|verbose] Enable debug trace or verbose logging
   disable [trace|verbose] Disable debug trace or verbose logging
   trace recent [N]       Show last N trace entries (default: 30)

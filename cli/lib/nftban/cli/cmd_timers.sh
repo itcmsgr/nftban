@@ -97,7 +97,50 @@ timer_last_trigger() {
 # COMMAND: STATUS
 # =============================================================================
 
+# JSON output for timer status
+cmd_timers_status_json() {
+    local timers_json="["
+    local first=true
+
+    for timer in "${NFTBAN_TIMERS[@]}"; do
+        local exists="false"
+        local enabled="false"
+        local active="false"
+        local next_run=""
+        local description="${TIMER_DESC[$timer]:-}"
+
+        if timer_exists "$timer"; then
+            exists="true"
+            nftban_service_is_enabled "$timer" && enabled="true"
+            nftban_timer_is_active "$timer" && active="true"
+            next_run=$(nftban_timer_next_run "$timer" 2>/dev/null || echo "")
+        fi
+
+        [[ "$first" == "true" ]] && first=false || timers_json+=","
+        timers_json+="{\"name\":\"$timer\",\"description\":\"$description\",\"exists\":$exists,\"enabled\":$enabled,\"active\":$active,\"next_run\":\"$next_run\"}"
+    done
+
+    timers_json+="]"
+    echo "{\"timers\":$timers_json,\"timestamp\":\"$(date -Iseconds)\"}"
+}
+
 cmd_timers_status() {
+    local json_mode=0
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json|-j) json_mode=1; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    # JSON output mode
+    if [[ $json_mode -eq 1 ]]; then
+        cmd_timers_status_json
+        return $?
+    fi
+
     nftban_banner
 
     echo "🕐 SYSTEMD TIMERS STATUS"
@@ -349,16 +392,6 @@ cmd_timers_disable() {
 # COMMAND: MAIN ROUTER
 # =============================================================================
 
-cmd_timers_help() {
-    echo "Usage: nftban timers <subcommand> [options]"
-    echo ""
-    echo "Subcommands:"
-    echo "  status           Show timer status (default)"
-    echo "  enable [TIMER]   Enable timer(s)"
-    echo "  disable [TIMER]  Disable timer(s)"
-    echo "  help             Show full help"
-}
-
 nftban_cmd_timers() {
     local subcommand="${1:-status}"
     shift || true
@@ -380,10 +413,13 @@ Usage: nftban timers <subcommand> [options]
 Manage systemd timers for automated NFTBan tasks.
 
 SUBCOMMANDS:
-  status              Show status of all timers (default)
+  status [--json]     Show status of all timers (default)
   enable [TIMER]      Enable timer(s) - all if no timer specified
   disable [TIMER]     Disable timer(s) - all if no timer specified
   help                Show this help message
+
+OPTIONS:
+  --json, -j          Output in JSON format (for status command)
 
 TIMERS:
   nftban-health.timer              System health checks and auto-heal
