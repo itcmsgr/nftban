@@ -559,8 +559,8 @@ run_lifecycle_tests() {
     fi
 
     # Source config for table names
-    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
-    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
@@ -669,8 +669,8 @@ run_port_lifecycle_tests() {
     fi
 
     # Source config for table names
-    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
-    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
@@ -1072,8 +1072,8 @@ run_feeds_nft_validation() {
     log_info "Found ${feed_count} feed file(s) in ${feeds_dir}"
 
     # Source config for table names
-    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
-    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
@@ -1109,8 +1109,8 @@ run_geoban_nft_validation() {
     log_info "Geoban countries configured: ${countries}"
 
     # Source config for table names
-    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
-    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
@@ -1134,8 +1134,8 @@ _whitelist_contains() {
     local ip="$1"
 
     # Source config for table names
-    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf 2>/dev/null
-    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local 2>/dev/null
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 

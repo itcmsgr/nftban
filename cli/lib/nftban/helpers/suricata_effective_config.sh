@@ -211,16 +211,16 @@ _suricata_generate_module_overlap_disables() {
     local ddos_mode="auto"
 
     # Source main config
-    [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 
     # Source module configs
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local" 2>/dev/null || true
 
     # Map to variables
     login_enabled="${NFTBAN_LOGIN_ENABLED:-$login_enabled}"

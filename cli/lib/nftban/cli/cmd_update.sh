@@ -757,12 +757,12 @@ _update_auto_enable() {
     fi
 
     # Load update config
-    [[ -f "$config_file" ]] && source "$config_file"
-    [[ -f "$config_local" ]] && source "$config_local"
+    source "$config_file" 2>/dev/null || true
+    source "$config_local" 2>/dev/null || true
 
     # Load mail config for global recipient
-    [[ -f "$mail_config" ]] && source "$mail_config"
-    [[ -f "$mail_config_local" ]] && source "$mail_config_local"
+    source "$mail_config" 2>/dev/null || true
+    source "$mail_config_local" 2>/dev/null || true
 
     # Email resolution: override -> update config -> global mail recipient
     local notify_email="${email_override:-${NFTBAN_UPDATE_NOTIFY_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}}"
@@ -1058,12 +1058,12 @@ _cmd_update_auto_run() {
     local log_file="/var/log/nftban/update.log"
 
     # Load update config
-    [[ -f "$config_file" ]] && source "$config_file"
-    [[ -f "$config_local" ]] && source "$config_local"
+    source "$config_file" 2>/dev/null || true
+    source "$config_local" 2>/dev/null || true
 
     # Load mail config for global email fallback
-    [[ -f "$mail_config" ]] && source "$mail_config"
-    [[ -f "$mail_config_local" ]] && source "$mail_config_local"
+    source "$mail_config" 2>/dev/null || true
+    source "$mail_config_local" 2>/dev/null || true
 
     log_file="${NFTBAN_UPDATE_LOG_FILE:-$log_file}"
 
