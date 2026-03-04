@@ -32,7 +32,7 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
 
 # Source NFT schema for canonical table/set names
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" ]] && source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || true
 
 # Load logging modules if available (uses central config paths)
 if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_logger.sh" ]]; then
@@ -93,11 +93,11 @@ nftban_warn() {
 }
 
 # Load configuration (new standard paths)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local"
+source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local" 2>/dev/null || true
 # Legacy path support (deprecated - will be removed in v2.0)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
+source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION DEFAULTS (uses central config paths)

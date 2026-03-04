@@ -39,12 +39,12 @@ set -Eeuo pipefail
 : "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
 
 # Load config
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 
 # Source distro config for distribution-specific paths
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION

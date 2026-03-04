@@ -78,9 +78,9 @@ nftban_botscan_load_config() {
 
     # Source config files
     # shellcheck source=/dev/null
-    [[ -f "$config_file" ]] && source "$config_file"
+    source "$config_file" 2>/dev/null || true
     # shellcheck source=/dev/null
-    [[ -f "$config_local" ]] && source "$config_local"
+    source "$config_local" 2>/dev/null || true
     return 0
 }
 

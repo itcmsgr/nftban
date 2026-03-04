@@ -62,7 +62,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
 # =============================================================================
 # FHS COMPLIANT PATHS (uses central config from nftban.conf)
@@ -143,15 +143,15 @@ nftban_login_load_mode_config() {
             local classic_config="${config_dir}/classic.conf"
             local classic_local="${config_dir}/classic.conf.local"
 
-            [[ -f "$classic_config" ]] && source "$classic_config"
-            [[ -f "$classic_local" ]] && source "$classic_local"
+            source "$classic_config" 2>/dev/null || true
+            source "$classic_local" 2>/dev/null || true
             ;;
         suricata)
             local suricata_config="${config_dir}/suricata.conf"
             local suricata_local="${config_dir}/suricata.conf.local"
 
-            [[ -f "$suricata_config" ]] && source "$suricata_config"
-            [[ -f "$suricata_local" ]] && source "$suricata_local"
+            source "$suricata_config" 2>/dev/null || true
+            source "$suricata_local" 2>/dev/null || true
             ;;
         hybrid)
             # Load both
@@ -164,8 +164,8 @@ nftban_login_load_mode_config() {
     local services_config="${config_dir}/services.conf"
     local services_local="${config_dir}/services.conf.local"
 
-    [[ -f "$services_config" ]] && source "$services_config"
-    [[ -f "$services_local" ]] && source "$services_local"
+    source "$services_config" 2>/dev/null || true
+    source "$services_local" 2>/dev/null || true
 
     return 0
 }

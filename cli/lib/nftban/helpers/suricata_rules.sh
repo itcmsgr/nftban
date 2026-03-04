@@ -22,11 +22,11 @@ _NFTBAN_SURICATA_RULES_LOADED=1
 # Source core file operations module for atomic writes
 _NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/share/nftban/lib/nftban}"
 # shellcheck source=../core/nftban_file_ops.sh
-[[ -f "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]] && source "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
+source "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" 2>/dev/null || true
 
 # Source distro config for distribution-specific paths
 # shellcheck source=../lib/nftban_distro_config.sh
-[[ -f "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+source "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION

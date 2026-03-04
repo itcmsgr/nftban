@@ -42,7 +42,7 @@ print_warning() {
 # Source distro config for distribution-specific paths
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
 
 # Suricata paths (from distro config - NO HARDCODED FALLBACKS)
 : "${SURICATA_RULES_DIR:=${DISTRO_PATHS[suricata_rules_dir]}}"

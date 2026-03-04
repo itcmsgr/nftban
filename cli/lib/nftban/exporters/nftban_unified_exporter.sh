@@ -45,7 +45,7 @@ readonly SCRIPT_VERSION="1.0.0"
 : "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
 
 # Load config (sets readonly paths)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
 # Load NFT schema (SINGLE SOURCE OF TRUTH for table/set names and counting functions)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
@@ -54,20 +54,20 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
 fi
 
 # Load metrics configuration (unified collector settings)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
 
 # Load Zabbix configuration (for export_zabbix)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
 
 # Load Connectors configuration (for export_connectors)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" 2>/dev/null || true
 
 # Load Portal configuration (for export_portal to pro.nftban.com)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)

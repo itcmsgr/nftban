@@ -40,7 +40,7 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
     source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 fi
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
