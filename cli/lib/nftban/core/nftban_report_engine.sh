@@ -737,15 +737,13 @@ nftban_report_save_file() {
         return 1
     fi
 
-    # Create directory if needed
+    # Create directory if needed (atomic, avoids TOCTOU race)
     local dir
     dir=$(dirname "$file_path")
-    if [[ ! -d "$dir" ]]; then
-        mkdir -p "$dir" || {
-            echo "Error: Cannot create directory '$dir'" >&2
-            return 1
-        }
-    fi
+    mkdir -p "$dir" 2>/dev/null || {
+        echo "Error: Cannot create directory '$dir'" >&2
+        return 1
+    }
 
     # Write file with secure permissions
     echo "$content" > "$file_path" || {

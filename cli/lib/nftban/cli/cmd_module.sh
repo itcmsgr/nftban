@@ -83,20 +83,6 @@ fi
 # MODULE COMMAND HANDLER
 # =============================================================================
 
-cmd_module_help() {
-    echo "Usage: nftban module [subcommand]"
-    echo ""
-    echo "Subcommands:"
-    echo "  status    Show module inventory (default)"
-    echo "  summary   One-line summary"
-    echo "  json      JSON output"
-    echo "  validate  Metadata validation"
-    echo "  license   License compliance"
-    echo "  author    Author attribution"
-    echo "  depends   Dependency analysis"
-    echo "  help      Show full help"
-}
-
 nftban_cmd_module() {
     # Handle module subcommands
     # Args: $@ = module subcommand and arguments

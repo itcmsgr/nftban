@@ -3,7 +3,7 @@
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
 # Load JSON helper for --json support
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
@@ -379,9 +379,9 @@ nftban_geoban_config() {
 
     # Source config file if it exists to get current values
     # shellcheck source=/dev/null
-    [[ -f "$config_file" ]] && source "$config_file"
+    source "$config_file" 2>/dev/null || true
     # shellcheck source=/dev/null
-    [[ -f "$config_local" ]] && source "$config_local"
+    source "$config_local" 2>/dev/null || true
 
     # Count configured countries
     local banned_count=0
