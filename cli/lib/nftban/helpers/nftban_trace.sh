@@ -73,7 +73,7 @@ nftban_trace_start() {
     # Ensure log directory exists
     local log_dir
     log_dir="$(dirname "$NFTBAN_DEBUG_TRACE_LOG")"
-    [[ ! -d "$log_dir" ]] && mkdir -p "$log_dir" 2>/dev/null
+    mkdir -p "$log_dir" 2>/dev/null || true
 
     # Write START entry
     local entry="[${_NFTBAN_TRACE_START_TIME}] [START] [${_NFTBAN_TRACE_ID}] ${module}::${function_name} PID=$$ PPID=$PPID"

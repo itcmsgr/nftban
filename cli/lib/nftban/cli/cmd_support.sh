@@ -45,7 +45,7 @@ readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 : "${NFTBAN_GIT_REPO:=/opt/nftban}"
 
 # Load main config (sets readonly paths)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
 # Patterns for secret redaction
 readonly -a SECRET_PATTERNS=(
