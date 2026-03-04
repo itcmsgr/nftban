@@ -355,11 +355,11 @@ nftban_gui_enable() {
 
     # Security: Ensure port 3940 is NOT in public tcp_ports_in
     # Port 3940 should only be accessible from whitelisted IPs
-    if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -q "3940"; then
+    if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" tcp_ports_in 2>/dev/null | grep -q "3940"; then
         echo "  Removing port 3940 from public access (security fix)"
         nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports_in" "3940" 2>/dev/null || true
     fi
-    if timeout 10s nft list set ${NFTBAN_TABLE_IPV6} tcp_ports_in 2>/dev/null | grep -q "3940"; then
+    if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" tcp_ports_in 2>/dev/null | grep -q "3940"; then
         nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" "tcp_ports_in" "3940" 2>/dev/null || true
     fi
 
