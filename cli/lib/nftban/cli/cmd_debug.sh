@@ -87,6 +87,7 @@ nftban_cmd_debug() {
 # STATUS
 # =============================================================================
 
+# shellcheck disable=SC2120  # Function accepts optional arguments
 nftban_debug_status() {
     local json_mode=0
 

@@ -23,7 +23,7 @@ readonly _NFTBAN_SVC_CONTROL_LOADED=1
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
 # Load main configuration (sets readonly paths, service names)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 NFTBAN_SERVICES_CONF="${NFTBAN_CONFIG_DIR}/conf.d/services.conf"
 NFTBAN_SERVICES_LOCAL="${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
 
