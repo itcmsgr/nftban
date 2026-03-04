@@ -586,8 +586,8 @@ nftban_geoip_cmd_config() {
             echo ""
 
             # Load config
-            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
-            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
+            source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" 2>/dev/null || true
+            source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" 2>/dev/null || true
 
             local test_url=""
             local current_month

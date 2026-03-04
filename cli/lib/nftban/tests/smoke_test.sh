@@ -147,7 +147,7 @@ enable_trace() {
     # Ensure log directory exists
     local log_dir
     log_dir=$(dirname "$TRACE_LOG")
-    [[ ! -d "$log_dir" ]] && mkdir -p "$log_dir" 2>/dev/null
+    mkdir -p "$log_dir" 2>/dev/null || true
 
     # Mark test start in trace log
     echo "[$(date '+%Y-%m-%d %H:%M:%S.%N')] [SMOKE] [START] Smoke test run started PID=$$" >> "$TRACE_LOG"

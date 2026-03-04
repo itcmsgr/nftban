@@ -907,8 +907,8 @@ nftban_report_cmd_run() {
         # Load login alert config
         local login_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
         local login_config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
-        [[ -f "$login_config" ]] && source "$login_config"
-        [[ -f "$login_config_local" ]] && source "$login_config_local"
+        source "$login_config" 2>/dev/null || true
+        source "$login_config_local" 2>/dev/null || true
 
         local alert_mode="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
         if [[ "$alert_mode" == "digest" ]] || [[ "$alert_mode" == "both" ]]; then
