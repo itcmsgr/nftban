@@ -29,7 +29,7 @@
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
@@ -210,7 +210,7 @@ output_terminal() {
     local rule_count=0
     if command -v nft >/dev/null 2>&1; then
         # nft -a shows "# handle N" for each rule - count those
-        rule_count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+        rule_count=$(nft -a list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
         rule_count="${rule_count:-0}"
     fi
     printf "  %-20s %s\n" "Rules..............." "$rule_count"

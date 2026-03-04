@@ -524,19 +524,19 @@ nftban_cmd_portscan() {
             echo ""
 
             # Check for portscan chain
-            if nft list chain ${NFTBAN_TABLE_IPV4} portscan_detection &>/dev/null; then
+            if nft list chain "${NFTBAN_TABLE_IPV4}" portscan_detection &>/dev/null; then
                 echo "  ✅ Port scan detection chain exists (IPv4)"
 
                 # Count rules
                 local rule_count
-                rule_count=$(nft list chain ${NFTBAN_TABLE_IPV4} portscan_detection 2>/dev/null | grep -c "log prefix" || echo "0")
+                rule_count=$(nft list chain "${NFTBAN_TABLE_IPV4}" portscan_detection 2>/dev/null | grep -c "log prefix" || echo "0")
                 echo "     Rules: $rule_count logging rules"
             else
                 echo "  ❌ Port scan detection chain not found (IPv4)"
                 echo "     Run 'sudo nftban portscan enable' to create"
             fi
 
-            if nft list chain ${NFTBAN_TABLE_IPV6} portscan_detection &>/dev/null; then
+            if nft list chain "${NFTBAN_TABLE_IPV6}" portscan_detection &>/dev/null; then
                 echo "  ✅ Port scan detection chain exists (IPv6)"
             else
                 echo "  ❌ Port scan detection chain not found (IPv6)"

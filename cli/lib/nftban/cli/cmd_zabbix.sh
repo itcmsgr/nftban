@@ -36,20 +36,20 @@ set -Eeuo pipefail
 : "${NFTBAN_SHARE_DIR:=/usr/share/nftban}"
 
 # Load main config (sets readonly paths)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
 # Load zabbix defaults FIRST (before user overrides)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
 
 # Load zabbix user overrides
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
 
 # Load metrics config (needed to detect NFTBAN_METRICS_ENABLED correctly)
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
-[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
 
 # Load global user overrides LAST (highest priority - written by nftban config set)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 
 # Set bash defaults for any unset variables
 : "${NFTBAN_ZABBIX_ENABLED:=false}"
@@ -1121,8 +1121,8 @@ _cmd_zabbix_reload() {
     _zabbix_print_info "Reloading Zabbix configuration..."
 
     # Re-source config files to pick up changes
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
-    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" 2>/dev/null || true
+    source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
 
     local enabled server
     enabled=$(_zabbix_config_get "NFTBAN_ZABBIX_ENABLED" "false")

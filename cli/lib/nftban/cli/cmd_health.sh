@@ -35,7 +35,7 @@
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
 # Load JSON helper for --json support
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
