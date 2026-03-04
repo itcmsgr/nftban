@@ -46,7 +46,7 @@ readonly NFTBAN_TASK_QUEUE_LOADED=1
 
 # Source central config
 # shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION (with safe defaults)

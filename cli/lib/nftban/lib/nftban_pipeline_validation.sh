@@ -29,9 +29,9 @@ fi
 
 # Load metrics configuration
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf"
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || true
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
 
 # Pipeline defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROM_FILE:=/var/lib/node_exporter/textfile_collector/nftban.prom}"

@@ -25,7 +25,7 @@ _NFTBAN_EMULATE_LOADED=1
 
 # Bootstrap path (may be readonly from nftban.conf)
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
-[[ -f "${NFTBAN_LIB_DIR}/lib/common.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/common.sh"
+source "${NFTBAN_LIB_DIR}/lib/common.sh" 2>/dev/null || true
 
 # =============================================================================
 # CIDR MATCHING FUNCTIONS
