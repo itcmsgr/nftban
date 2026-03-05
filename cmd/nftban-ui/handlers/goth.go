@@ -601,13 +601,13 @@ func (h *GOTHHandlers) HandleSyncFeed(w http.ResponseWriter, r *http.Request) {
 
 	// SECURITY FIX (R-feed): Validate feed name to prevent shell metacharacter injection
 	if err := validateFeedName(feedName); err != nil {
-		log.Printf("[GOTH] Invalid feed name rejected: %s - %v", feedName, err)
+		log.Printf("[GOTH] Invalid feed name rejected: %q - %v", feedName, err) // %q quotes to prevent log injection
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid feed name", "error"))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[GOTH] Sync feed requested: %s", feedName)
+	log.Printf("[GOTH] Sync feed requested: %q", feedName) // %q quotes to prevent log injection
 
 	// Execute feed sync command
 	if _, err := execNFTBanCommand("feeds", "sync", feedName); err != nil {
@@ -634,13 +634,13 @@ func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) 
 
 	// SECURITY FIX (R-feed): Validate feed name to prevent shell metacharacter injection
 	if err := validateFeedName(feedName); err != nil {
-		log.Printf("[GOTH] Invalid feed name rejected: %s - %v", feedName, err)
+		log.Printf("[GOTH] Invalid feed name rejected: %q - %v", feedName, err) // %q quotes to prevent log injection
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid feed name", "error"))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[GOTH] Feed toggle requested: %s", feedName)
+	log.Printf("[GOTH] Feed toggle requested: %q", feedName) // %q quotes to prevent log injection
 
 	// Check current status and toggle
 	// First try to get current status
@@ -659,13 +659,13 @@ func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, err := execNFTBanCommand("feeds", action, feedName); err != nil {
-		log.Printf("[GOTH] Feed %s %s failed: %v", action, feedName, err)
+		log.Printf("[GOTH] Feed %s %q failed: %v", action, feedName, err) // %q quotes to prevent log injection
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to %s %s", action, feedName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[GOTH] Feed %s %sd successfully", feedName, action)
+	log.Printf("[GOTH] Feed %q %sd successfully", feedName, action) // %q quotes to prevent log injection
 	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s %sd", feedName, action), "success"))
 	w.WriteHeader(http.StatusOK)
 }

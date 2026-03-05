@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"log"
 	"net/http"
 	"strings"
 
@@ -56,10 +57,13 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 func respondError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": false,
 		"error":   message,
-	})
+	}); err != nil {
+		// Log encoding failure but can't do much else - headers already sent
+		log.Printf("Failed to encode error response: %v", err)
+	}
 }
 
 // sanitizeError escapes error messages for safe JSON/HTML output (R35-R37 v1.19.12)

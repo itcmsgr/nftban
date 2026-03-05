@@ -55,7 +55,9 @@ jobs:
       - name: License scan (fail on restricted/copyleft)
         run: |
           set -euo pipefail
-          go install github.com/google/go-licenses@latest
+          # Pin to v2.0.0 for reproducible builds (CodeQL: Pinned-Dependencies)
+          # Note: go-licenses v2 uses /v2 module path per Go module versioning
+          go install github.com/google/go-licenses/v2@v2.0.0
           # "restricted" includes copyleft-style licenses (e.g., GPL-family) per go-licenses classification.
           go-licenses check ./... --disallowed_types=restricted
 

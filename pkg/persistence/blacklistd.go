@@ -185,7 +185,7 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 
 	// Atomic rename (POSIX guarantees atomicity on same filesystem)
 	if err := os.Rename(tempPath, targetFile); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath) // Best effort cleanup; ignore error
 		return "", "", fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
