@@ -167,8 +167,12 @@ nftban_resolve_firewall_conflicts() {
             firewall-cmd --list-all-zones > "$backup_dir/firewalld-zones.txt" 2>/dev/null || true
             cp -r /etc/firewalld "$backup_dir/" 2>/dev/null || true
             echo "    Stopping and disabling firewalld..."
-            systemctl stop firewalld
-            systemctl disable firewalld
+            if ! systemctl stop firewalld 2>/dev/null; then
+                echo "    [!] Warning: Failed to stop firewalld (may already be stopped)"
+            fi
+            if ! systemctl disable firewalld 2>/dev/null; then
+                echo "    [!] Warning: Failed to disable firewalld"
+            fi
             echo "    [✓] firewalld disabled"
         else
             echo "    [!] Skipped - firewalld still active (may cause issues)"
