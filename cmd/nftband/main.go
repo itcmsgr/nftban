@@ -1949,10 +1949,20 @@ func (d *Daemon) startPprof() {
 	pprofMux.HandleFunc("/debug/pprof/profile", nethttpprof.Profile)
 	pprofMux.HandleFunc("/debug/pprof/symbol", nethttpprof.Symbol)
 	pprofMux.HandleFunc("/debug/pprof/trace", nethttpprof.Trace)
+
+	// Create server with timeouts to prevent resource exhaustion (CodeQL fix)
+	pprofServer := &http.Server{
+		Addr:         PprofAddr,
+		Handler:      pprofMux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second, // Profile endpoint may take longer
+		IdleTimeout:  120 * time.Second,
+	}
+
 	go func() {
 		log.Println("WARNING: pprof profiling enabled - disable in production (unset NFTBAN_ENABLE_PPROF or remove --profile)")
 		log.Printf("pprof server listening on http://%s/debug/pprof/", PprofAddr)
-		if err := http.ListenAndServe(PprofAddr, pprofMux); err != nil {
+		if err := pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("pprof server error: %v", err)
 		}
 	}()
