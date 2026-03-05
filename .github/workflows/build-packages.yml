@@ -132,7 +132,7 @@ jobs:
           echo "All binaries validated successfully"
 
       - name: Upload binaries
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: go-binaries
           path: bin/
@@ -231,7 +231,7 @@ jobs:
           echo "All RPM packages validated successfully"
 
       - name: Upload RPM packages (${{ matrix.distro }})
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: rpm-${{ matrix.distro }}
           path: dist/packages/*.rpm
@@ -339,7 +339,7 @@ jobs:
           echo "All DEB packages validated successfully"
 
       - name: Upload DEB packages (${{ matrix.distro }})
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: deb-${{ matrix.distro }}
           path: dist/packages/*.deb
