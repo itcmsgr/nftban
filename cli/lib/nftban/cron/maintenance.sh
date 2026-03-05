@@ -138,12 +138,12 @@ main() {
         # Check if current SSH port is in whitelist (format: PORT/PROTOCOL)
         if grep -qE "^${SSH_PORT}/(T|tcp)" "$SSH_WHITELIST" 2>/dev/null; then
             log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
-            # Clear alert state if port is now correct
-            [[ -f "$SSH_PORT_STATE" ]] && rm -f "$SSH_PORT_STATE"
+            # Clear alert state if port is now correct (atomic delete - no TOCTOU)
+            rm -f "$SSH_PORT_STATE" 2>/dev/null || true
 
-            # Ensure active port state is current (for future cleanup)
+            # Ensure active port state is current (atomic write)
             mkdir -p "${NFTBAN_DATA_DIR}/state"
-            echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
+            echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
         else
             # Check if we already alerted about this port change
             if [[ -f "$SSH_PORT_STATE" ]]; then
@@ -236,10 +236,11 @@ EOF
             fi
 
             # Save alert state to prevent spam (only alert once per port change)
+            # Use atomic writes to prevent TOCTOU race conditions
             mkdir -p "${NFTBAN_DATA_DIR}/state"
-            echo "$SSH_PORT" > "$SSH_PORT_STATE"
-            # Update active port state for future cleanup
-            echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
+            echo "$SSH_PORT" > "${SSH_PORT_STATE}.tmp" && mv -f "${SSH_PORT_STATE}.tmp" "$SSH_PORT_STATE"
+            # Update active port state for future cleanup (atomic)
+            echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
 
             # Send alert via NFTBan unified mail mechanism (ONLY ONCE)
             if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
@@ -260,9 +261,9 @@ EOF
 ${SSH_PORT}/T
 EOF
         chmod 644 "$SSH_WHITELIST"
-        # Track this as the active SSH port
+        # Track this as the active SSH port (atomic write)
         mkdir -p "${NFTBAN_DATA_DIR}/state"
-        echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
+        echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
         log "INFO" "Created SSH whitelist with port $SSH_PORT"
     fi
 

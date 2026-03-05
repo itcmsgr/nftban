@@ -19,6 +19,11 @@ set -Eeuo pipefail
 [[ -n "${_UNIFIED_EXPORTER_HELPERS_LOADED:-}" ]] && return 0
 _UNIFIED_EXPORTER_HELPERS_LOADED="true"
 
+# Source canonical logging module (eliminates duplicate log_* functions)
+_NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${_NFTBAN_LIB_DIR}/helpers/nftban_logger.sh" 2>/dev/null || true
+
 # =============================================================================
 # CLEANUP TRAP - Prevent orphaned temp files on interruption
 # =============================================================================
@@ -180,11 +185,10 @@ acquire_lock() {
 }
 
 # =============================================================================
-# LOGGING
+# LOGGING - Provided by nftban_logger.sh (sourced above)
 # =============================================================================
-log_info()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*"; }
-log_warn()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $*" >&2; }
-log_error() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*" >&2; }
+# log_info, log_warn, log_error are now provided by central logging module
+# Only log_debug needs local definition (not in central module)
 log_debug() { [[ "${NFTBAN_DEBUG:-false}" == "true" ]] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEBUG] $*" || true; }
 
 # =============================================================================

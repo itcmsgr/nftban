@@ -59,24 +59,8 @@ readonly SURICATA_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"  # NFTBa
 readonly SURICATA_RUN_DIR="/run/suricata"
 readonly NFTBAN_TEMPLATES="${NFTBAN_SHARE_DIR:-/usr/share/nftban}/templates"
 
-# Note: print_status, print_error, print_info, detect_distro are now
-# loaded from setup_utils.sh library
-
-detect_pkg_manager() {
-    local distro="$1"
-
-    case "$distro" in
-        centos|rhel|fedora|rocky|alma*)
-            echo "dnf"
-            ;;
-        debian|ubuntu)
-            echo "apt"
-            ;;
-        *)
-            echo "unknown"
-            ;;
-    esac
-}
+# Note: print_status, print_error, print_info, detect_distro, detect_pkg_manager
+# are now loaded from setup_utils.sh library
 
 install_build_deps() {
     local pkg_mgr="$1"
