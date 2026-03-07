@@ -37,6 +37,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -918,10 +919,14 @@ func (d *Daemon) acceptSocketConnections() {
 		conn, err := d.socketLn.Accept()
 		acceptTime := time.Now()
 		if err != nil {
-			// Check if we're shutting down
+			// v1.19.21 FIX: Suppress shutdown errors
+			// Check for closed listener (graceful shutdown) or context cancellation
+			if errors.Is(err, net.ErrClosed) {
+				return // graceful shutdown - listener closed
+			}
 			select {
 			case <-d.ctx.Done():
-				return
+				return // graceful shutdown - context cancelled
 			default:
 				log.Printf("Socket accept error: %v", err)
 				continue

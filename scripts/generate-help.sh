@@ -235,6 +235,7 @@ generate_group_section() {
     done
 }
 
+# v1.19.21 FIX: Document exit codes (E2)
 generate_help_footer() {
     local profile="$1"
 
@@ -245,6 +246,11 @@ Risk Levels:
   ⚡ Core      - Essential, safe operations
   🛠️  Setup     - One-time configuration
   ⚠️  Advanced  - Use with caution, may affect system state
+
+Exit Codes:
+  0  Success   - Command completed without errors
+  1  Error     - Command failed (check stderr for details)
+  2  Warning   - Command completed with warnings (e.g., missing deps)
 
 For detailed command help:
   nftban <command> help

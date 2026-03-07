@@ -16,7 +16,7 @@
 # meta:output="Port status reports (terminal, HTML, mail)"
 # meta:depends="bash,ss,nft"
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-14"
+# meta:updated_date="2026-03-07"
 # meta:inventory.files=""
 # meta:inventory.binaries="ss,nft"
 # meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6"
@@ -313,8 +313,13 @@ nftban_port_gather_nft_rules() {
 
         # Get set contents (v0.7.3: check IPv4 table, could also check IPv6)
         # Note: elements may span multiple lines, so we use tr to join lines first
+        # BUG B10 FIX (v1.19.20): Use sed instead of grep -P for:
+        #   1. Whitespace tolerance: nft outputs "elements = { 22, 80 }" with space after brace
+        #   2. Portability: grep -P not available on Alpine, older RHEL, BusyBox
         local set_contents
-        set_contents=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | tr '\n' ' ' | grep -oP 'elements = \{\K[^}]+' || true)
+        set_contents=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | \
+            tr '\n' ' ' | \
+            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{[[:space:]]*\([^}]*\).*/\1/p')
         if [[ -n "$set_contents" ]]; then
             # Parse ports from set (handles: 22, 80, 443, etc.)
             local port
@@ -440,6 +445,85 @@ nftban_port_detect_service() {
 # =============================================================================
 # REPORT RENDERING FUNCTIONS
 # =============================================================================
+
+# v1.19.21 FIX: Active exports (E1)
+nftban_port_render_active_exports() {
+    # Render active export status section
+    # Checks config files for Prometheus, Zabbix, and Portal exports
+
+    local prometheus_status="❌ Disabled"
+    local zabbix_status="❌ Disabled"
+    local portal_status="❌ Disabled"
+
+    # --- Prometheus Export ---
+    # Check metrics.conf and metrics.conf.local
+    local prom_enabled="false"
+    local prom_dir=""
+    if [[ -f "/etc/nftban/conf.d/metrics.conf.local" ]]; then
+        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' /etc/nftban/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' /etc/nftban/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$prom_enabled" ]] && [[ -f "/etc/nftban/conf.d/metrics.conf" ]]; then
+        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' /etc/nftban/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$prom_dir" ]] && [[ -f "/etc/nftban/conf.d/metrics.conf" ]]; then
+        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' /etc/nftban/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ "$prom_enabled" == "true" ]]; then
+        prometheus_status="✅ Enabled (${prom_dir:-/var/lib/node_exporter/textfile_collector})"
+    fi
+
+    # --- Zabbix Export ---
+    # Check zabbix.conf and zabbix.conf.local
+    local zabbix_enabled="false"
+    local zabbix_server=""
+    if [[ -f "/etc/nftban/conf.d/zabbix.conf.local" ]]; then
+        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' /etc/nftban/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' /etc/nftban/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$zabbix_enabled" ]] && [[ -f "/etc/nftban/conf.d/zabbix.conf" ]]; then
+        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' /etc/nftban/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$zabbix_server" ]] && [[ -f "/etc/nftban/conf.d/zabbix.conf" ]]; then
+        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' /etc/nftban/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ "$zabbix_enabled" == "true" ]]; then
+        if [[ -n "$zabbix_server" ]]; then
+            zabbix_status="✅ Enabled (${zabbix_server})"
+        else
+            zabbix_status="⚠️  Enabled (no server configured)"
+        fi
+    fi
+
+    # --- Portal Export ---
+    # Check portal.conf and portal.conf.local
+    local portal_enabled="false"
+    local portal_url=""
+    if [[ -f "/etc/nftban/conf.d/portal.conf.local" ]]; then
+        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' /etc/nftban/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' /etc/nftban/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$portal_enabled" ]] && [[ -f "/etc/nftban/conf.d/portal.conf" ]]; then
+        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' /etc/nftban/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ -z "$portal_url" ]] && [[ -f "/etc/nftban/conf.d/portal.conf" ]]; then
+        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' /etc/nftban/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    fi
+    if [[ "$portal_enabled" == "true" ]]; then
+        # Extract hostname from URL for display
+        local portal_host
+        portal_host="$(echo "$portal_url" | sed -E 's|https?://([^/]+).*|\1|' || echo "pro.nftban.com")"
+        portal_status="✅ Enabled (${portal_host})"
+    fi
+
+    # Render the section
+    echo "ACTIVE EXPORTS"
+    echo "───────────────────────────────────────────────────────────────────────────────────"
+    printf "  Prometheus:  %s\n" "$prometheus_status"
+    printf "  Zabbix:      %s\n" "$zabbix_status"
+    printf "  Portal:      %s\n" "$portal_status"
+    echo
+}
 
 nftban_port_render_json() {
     # Render port report as JSON
@@ -794,6 +878,9 @@ nftban_port_render_table() {
         echo "  🔒 Local    - Localhost only"
         echo "  ❌ Blocked  - Firewall blocked"
         echo
+
+        # v1.19.21 FIX: Active exports (E1)
+        nftban_port_render_active_exports
     fi
 }
 

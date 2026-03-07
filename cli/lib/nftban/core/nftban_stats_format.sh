@@ -399,7 +399,10 @@ nftban_stats_generate_dashboard() {
 
         if [[ -n "$counts_result" ]]; then
             local counts_array
+            # v1.19.21 FIX: IFS-tampering - save and restore IFS
+            local OLD_IFS="$IFS"
             IFS=' ' read -ra counts_array <<< "$counts_result"
+            IFS="$OLD_IFS"
             login_count="${counts_array[0]:-0}"
             portscan_count="${counts_array[1]:-0}"
             ddos_count="${counts_array[2]:-0}"
