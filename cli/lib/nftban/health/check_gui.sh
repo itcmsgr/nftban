@@ -44,22 +44,23 @@ PASSED=0
 # Output format
 JSON_OUTPUT="${1:-}"
 
+# v1.19.20 FIX: Added || true to prevent set -e failures when counters start at 0
 log_pass() {
-    ((PASSED++))
+    ((PASSED++)) || true
     if [[ "$JSON_OUTPUT" != "--json" ]]; then
         echo -e "${GREEN}[PASS]${NC} $1"
     fi
 }
 
 log_warn() {
-    ((WARNINGS++))
+    ((WARNINGS++)) || true
     if [[ "$JSON_OUTPUT" != "--json" ]]; then
         echo -e "${YELLOW}[WARN]${NC} $1"
     fi
 }
 
 log_fail() {
-    ((ERRORS++))
+    ((ERRORS++)) || true
     if [[ "$JSON_OUTPUT" != "--json" ]]; then
         echo -e "${RED}[FAIL]${NC} $1"
     fi

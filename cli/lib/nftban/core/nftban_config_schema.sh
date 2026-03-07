@@ -698,7 +698,8 @@ nftban_configtest() {
         while IFS= read -r line; do
             messages+=("$line")
             if [[ "$line" == "MISSING:"* ]]; then
-                ((errors++))
+                # v1.19.20 FIX
+                ((errors++)) || true
             fi
         done <<< "$cond_result"
     fi

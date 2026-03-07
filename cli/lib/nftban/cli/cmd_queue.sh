@@ -191,7 +191,8 @@ _queue_list_pending() {
 
         # shellcheck disable=SC1090
         source "$task_file"
-        ((count++))
+        # v1.19.20 FIX
+        ((count++)) || true
 
         local created_date next_date
         created_date=$(date -d "@$TASK_CREATED_EPOCH" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
@@ -298,7 +299,8 @@ _queue_dlq_retry_all() {
         local task_id
         task_id=$(basename "$task_file" .task)
 
-        nftban_queue_dlq_retry "$task_id" >/dev/null 2>&1 && ((count++))
+        # v1.19.20 FIX
+        nftban_queue_dlq_retry "$task_id" >/dev/null 2>&1 && { ((count++)) || true; }
     done
 
     if [[ $count -eq 0 ]]; then

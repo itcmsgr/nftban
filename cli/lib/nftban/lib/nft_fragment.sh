@@ -141,10 +141,12 @@ EOF
 
 # Render portscan classic jump rules fragment
 # These are kept separate because they need idempotent handling
+# v1.19.20 FIX: Implements PORTSCAN_NFT_JUMP_POSITION for correct rule ordering
 nft_fragment_render_portscan_classic_jump() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
+    local position="${PORTSCAN_NFT_JUMP_POSITION:-established}"
 
     nft_fragment_init || return 1
 
@@ -152,18 +154,78 @@ nft_fragment_render_portscan_classic_jump() {
     local timestamp
     timestamp=$(date -Iseconds)
 
+    # v1.19.20 FIX: Find the handle to insert AFTER based on position config
+    # This ensures portscan detection sees traffic BEFORE service accepts
+    local ipv4_cmd="add rule ${table_ipv4} input jump ${chain}"
+    local ipv6_cmd="add rule ${table_ipv6} input jump ${chain}"
+    local position_comment="(appended to end - fallback)"
+    local handle_ipv4=""
+    local handle_ipv6=""
+
+    case "$position" in
+        first)
+            # Insert at beginning of chain (before everything)
+            ipv4_cmd="insert rule ${table_ipv4} input jump ${chain}"
+            ipv6_cmd="insert rule ${table_ipv6} input jump ${chain}"
+            position_comment="(at beginning)"
+            ;;
+        established)
+            # Find handle of "ct state established" rule
+            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
+                grep -E "ct state.*(established|related)" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv4" ]]; then
+                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
+                position_comment="(after established, handle ${handle_ipv4})"
+            fi
+            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
+                grep -E "ct state.*(established|related)" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv6" ]]; then
+                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
+            fi
+            ;;
+        whitelist)
+            # Find handle of whitelist rule
+            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
+                grep -E "@whitelist" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv4" ]]; then
+                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
+                position_comment="(after whitelist, handle ${handle_ipv4})"
+            fi
+            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
+                grep -E "@whitelist" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv6" ]]; then
+                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
+            fi
+            ;;
+        ddos)
+            # Find handle of ddos jump rule
+            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
+                grep -E "jump ddos" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv4" ]]; then
+                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
+                position_comment="(after ddos, handle ${handle_ipv4})"
+            fi
+            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
+                grep -E "jump ddos" | grep -oP 'handle \K\d+' | head -1) || true
+            if [[ -n "$handle_ipv6" ]]; then
+                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
+            fi
+            ;;
+    esac
+
     local content
     content=$(cat <<EOF
 #!/usr/sbin/nft -f
 # NFTBan Portscan Classic - Jump Rules
 # Generated: ${timestamp}
+# Position: ${position} ${position_comment}
 # Managed by nftband - DO NOT EDIT MANUALLY
 #
 # NOTE: Jump rules are added idempotently. If the jump already exists,
 # nftables will add a duplicate. The bash script checks before rendering.
 
-add rule ${table_ipv4} input jump ${chain}
-add rule ${table_ipv6} input jump ${chain}
+${ipv4_cmd}
+${ipv6_cmd}
 EOF
     )
 

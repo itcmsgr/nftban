@@ -237,7 +237,8 @@ nftban_health_fix_permissions() {
                     fi
                 else
                     need_root_fixes+=("$dir: chmod $expected_perms (currently $current_perms, owned by $current_owner)")
-                    ((need_root_count++))
+                    # v1.19.20 FIX
+                    ((need_root_count++)) || true
                 fi
             fi
 
@@ -259,7 +260,8 @@ nftban_health_fix_permissions() {
                 else
                     # Not root, can't change ownership
                     need_root_fixes+=("$dir: chown ${expected_owner}:${expected_group} (currently $current_owner:$current_group)")
-                    ((need_root_count++))
+                    # v1.19.20 FIX
+                    ((need_root_count++)) || true
                 fi
             fi
 
@@ -494,12 +496,14 @@ nftban_health_fix_directories() {
                 else
                     # mkdir failed
                     need_root_dirs+=("$dir: mkdir failed (check parent directory permissions)")
-                    ((need_root_count++))
+                    # v1.19.20 FIX
+                    ((need_root_count++)) || true
                 fi
             else
                 # Need root to create this
                 need_root_dirs+=("$dir → ${perms} ${owner}:${group} (parent: $parent_dir not writable)")
-                ((need_root_count++))
+                # v1.19.20 FIX
+                ((need_root_count++)) || true
             fi
         fi
     done

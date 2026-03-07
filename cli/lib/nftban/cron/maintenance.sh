@@ -137,7 +137,19 @@ main() {
     if [[ -f "$SSH_WHITELIST" ]]; then
         # Check if current SSH port is in whitelist (format: PORT/PROTOCOL)
         if grep -qE "^${SSH_PORT}/(T|tcp)" "$SSH_WHITELIST" 2>/dev/null; then
-            log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
+            log "INFO" "SSH port check: config OK (port $SSH_PORT whitelisted)"
+
+            # v1.19.20 FIX: Also verify port is in nftables tcp_ports_in set
+            # After firewall rebuild, config may be OK but nftables set is empty
+            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+                if ! nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT"; then
+                    log "WARN" "SSH port $SSH_PORT in config but NOT in nftables - auto-fixing..."
+                    nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
+                    nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
+                    log "INFO" "SSH port $SSH_PORT added to nftables tcp_ports_in set"
+                fi
+            fi
+
             # Clear alert state if port is now correct (atomic delete - no TOCTOU)
             rm -f "$SSH_PORT_STATE" 2>/dev/null || true
 

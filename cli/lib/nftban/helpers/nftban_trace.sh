@@ -197,7 +197,8 @@ nftban_trace_find_orphans() {
             if [[ "$trace_epoch" != "0" ]]; then
                 local age=$((current_time - trace_epoch))
                 if [[ $age -gt $threshold ]]; then
-                    ((orphan_count++))
+                    # v1.19.20 FIX
+                    ((orphan_count++)) || true
                     echo "ORPHAN #${orphan_count}:"
                     echo "  Trace ID: $trace_id"
                     echo "  Age: $((age / 60))m $((age % 60))s"

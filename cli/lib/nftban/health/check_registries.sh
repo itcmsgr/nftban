@@ -48,7 +48,8 @@ check_json_valid() {
         else
             echo "  ⚠ $name: Not found"
         fi
-        ((WARNINGS++))
+        # v1.19.20 FIX
+        ((WARNINGS++)) || true
         return 1
     fi
 
@@ -65,7 +66,8 @@ check_json_valid() {
         else
             echo "  ✗ $name: Invalid JSON"
         fi
-        ((ERRORS++))
+        # v1.19.20 FIX
+        ((ERRORS++)) || true
         return 1
     fi
 }
@@ -80,7 +82,8 @@ check_yaml_valid() {
         else
             echo "  ⚠ $name: Not found"
         fi
-        ((WARNINGS++))
+        # v1.19.20 FIX
+        ((WARNINGS++)) || true
         return 1
     fi
 
@@ -97,7 +100,8 @@ check_yaml_valid() {
         else
             echo "  ✗ $name: Invalid YAML"
         fi
-        ((ERRORS++))
+        # v1.19.20 FIX
+        ((ERRORS++)) || true
         return 1
     fi
 }

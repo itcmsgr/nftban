@@ -201,7 +201,8 @@ _cmd_connector_list() {
             [[ "$enabled" == "true" ]] && status="enabled"
 
             printf "%-20s %-15s %-10s %-30s\n" "$name" "$type" "$status" "$target"
-            ((count++))
+            # v1.19.20 FIX
+            ((count++)) || true
         done
     fi
 

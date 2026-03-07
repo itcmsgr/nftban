@@ -674,7 +674,8 @@ nftban_module_render_table() {
         local enabled=0
         for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
             if [[ "$(nftban_module_check_enabled "$file")" == "ENABLED" ]]; then
-                (( enabled++ ))
+                # v1.19.20 FIX
+                (( enabled++ )) || true
             fi
         done
         echo "Total modules: $total | Enabled: $enabled | Disabled: $((total - enabled))"

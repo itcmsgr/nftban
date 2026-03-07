@@ -469,17 +469,20 @@ _nftban_ddos_suricata_process_alerts() {
         case "$action" in
             block_permanent)
                 if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_PERMANENT" "permanent_threat"; then
-                    ((blocked++))
+                    # v1.19.20 FIX
+                    ((blocked++)) || true
                 fi
                 ;;
             block_long)
                 if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_LONG" "high_threat"; then
-                    ((blocked++))
+                    # v1.19.20 FIX
+                    ((blocked++)) || true
                 fi
                 ;;
             block_short)
                 if _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_SHORT" "medium_threat"; then
-                    ((blocked++))
+                    # v1.19.20 FIX
+                    ((blocked++)) || true
                 fi
                 ;;
             observe)
@@ -487,7 +490,8 @@ _nftban_ddos_suricata_process_alerts() {
                 ;;
         esac
 
-        ((processed++))
+        # v1.19.20 FIX
+        ((processed++)) || true
 
     done < <(_nftban_ddos_suricata_parse_eve)
 

@@ -1074,7 +1074,8 @@ nftban_login_track_failed() {
                                 if [[ $ban_exit -eq 0 ]]; then
                                     break
                                 fi
-                                ((ban_retries++))
+                                # v1.19.20 FIX
+                                ((ban_retries++)) || true
                                 if [[ $ban_retries -lt $ban_max_retries ]]; then
                                     nftban_login_alert_log "WARN: Ban attempt $ban_retries/$ban_max_retries failed for $ip, retrying in ${ban_retries}s..."
                                     sleep "$ban_retries"

@@ -593,7 +593,8 @@ get_feeds_metrics() {
             local enabled
             enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
             if [[ "$enabled" == "true" ]]; then
-                ((enabled_count++))
+                # v1.19.20 FIX
+                ((enabled_count++)) || true
                 local feed_lower="${feed,,}"
                 local feed_file="${feeds_dir}/${feed_lower}.txt"
                 if [[ -f "$feed_file" ]]; then

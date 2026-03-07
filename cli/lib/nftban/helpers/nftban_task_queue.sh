@@ -610,11 +610,12 @@ nftban_queue_process_batch() {
     while (( processed + failed < max_tasks )); do
         nftban_queue_process_next
         local rc=$?
+        # v1.19.20 FIX: Added || true to prevent set -e failures
         case $rc in
-            0) ((processed++)) ;;    # task processed
+            0) ((processed++)) || true ;;    # task processed
             1) break ;;              # no more eligible tasks
             2) break ;;              # lock held by another process
-            3) ((failed++)) ;;       # processing error, try next
+            3) ((failed++)) || true ;;       # processing error, try next
             *) break ;;
         esac
     done
@@ -705,7 +706,8 @@ nftban_queue_dlq_purge() {
         if [[ ${TASK_DLQ_EPOCH:-0} -lt $cutoff ]]; then
             rm -f "$task_file"
             [[ -n "$TASK_PAYLOAD_FILE" ]] && [[ -f "$TASK_PAYLOAD_FILE" ]] && rm -f "$TASK_PAYLOAD_FILE"
-            ((count++))
+            # v1.19.20 FIX
+            ((count++)) || true
         fi
     done
 
@@ -736,7 +738,8 @@ _queue_auto_purge_dlq() {
         if [[ ${TASK_DLQ_EPOCH:-0} -lt $cutoff ]]; then
             rm -f "$task_file"
             [[ -n "$TASK_PAYLOAD_FILE" ]] && [[ -f "$TASK_PAYLOAD_FILE" ]] && rm -f "$TASK_PAYLOAD_FILE"
-            ((count++))
+            # v1.19.20 FIX
+            ((count++)) || true
         fi
     done
 

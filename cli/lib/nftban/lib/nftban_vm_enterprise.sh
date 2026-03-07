@@ -317,7 +317,8 @@ nftban_vm_enterprise_validate_permissions() {
 
     if [[ "$actual_perms" != "640" ]] && [[ "$actual_perms" != "600" ]]; then
         _vm_enterprise_log_warn "Key file has insecure permissions: $actual_perms (expected 640)"
-        ((issues++))
+        # v1.19.20 FIX
+        ((issues++)) || true
     fi
 
     # Check file ownership
@@ -326,7 +327,8 @@ nftban_vm_enterprise_validate_permissions() {
 
     if [[ "$actual_owner" != "root" ]]; then
         _vm_enterprise_log_warn "Key file has unexpected owner: $actual_owner (expected root)"
-        ((issues++))
+        # v1.19.20 FIX
+        ((issues++)) || true
     fi
 
     # Check group
@@ -335,7 +337,8 @@ nftban_vm_enterprise_validate_permissions() {
 
     if [[ "$actual_group" != "nftban" ]] && [[ "$actual_group" != "root" ]]; then
         _vm_enterprise_log_warn "Key file has unexpected group: $actual_group (expected nftban)"
-        ((issues++))
+        # v1.19.20 FIX
+        ((issues++)) || true
     fi
 
     if [[ $issues -gt 0 ]]; then

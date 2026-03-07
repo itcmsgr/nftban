@@ -203,7 +203,8 @@ nftban_stats_generate_dashboard() {
             local blocked_countries=0
             shopt -s nullglob 2>/dev/null || true
             for file in "$geoban_dir"/*.conf; do
-                [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && ((blocked_countries++))
+                # v1.19.20 FIX
+                [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && { ((blocked_countries++)) || true; }
             done
             shopt -u nullglob 2>/dev/null || true
             geoban_total=$blocked_countries

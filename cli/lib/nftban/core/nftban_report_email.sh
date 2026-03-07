@@ -96,7 +96,8 @@ nftban_report_email_generate() {
             local last_update
             last_update=$(date -r "$feed_file" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
 
-            ((feed_count++))
+            # v1.19.20 FIX
+            ((feed_count++)) || true
             local border="border-bottom:1px solid #475569;"
 
             feeds_status+="<tr>
@@ -271,7 +272,8 @@ nftban_report_email_generate() {
                 ip=$(echo "$ip_json" | jq -r '.ip')
                 country=$(echo "$ip_json" | jq -r '.country')
 
-                ((ip_count++))
+                # v1.19.20 FIX
+                ((ip_count++)) || true
                 local border="border-bottom:1px solid #475569;"
                 [[ $ip_count -eq 5 ]] && border=""
 
@@ -338,7 +340,8 @@ nftban_report_email_generate() {
             [[ -z "$ip" ]] && continue
             is_public_ip "$ip" || continue
 
-            ((ip_count++))
+            # v1.19.20 FIX
+            ((ip_count++)) || true
             [[ $ip_count -gt 5 ]] && break
 
             local country

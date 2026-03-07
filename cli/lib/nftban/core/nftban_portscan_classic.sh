@@ -1065,7 +1065,8 @@ nftban_portscan_aggregate() {
         local sensitive_hits=0
         for port in $(echo "$ports" | tr ' ' '\n' | sort -u); do
             if [[ ",$PORTSCAN_SENSITIVE_PORTS," == *",$port,"* ]]; then
-                ((sensitive_hits++))
+                # v1.19.20 FIX
+                ((sensitive_hits++)) || true
             fi
         done
         score=$((score + sensitive_hits * 2))
@@ -1090,7 +1091,8 @@ nftban_portscan_aggregate() {
            [[ $event_count -ge $min_events ]] && \
            [[ $unique_ports -ge $min_unique_ports ]]; then
 
-            ((detected++))
+            # v1.19.20 FIX
+            ((detected++)) || true
 
             local reason="stealth_scan: events=$event_count unique=$unique_ports sensitive=$sensitive_hits span=${span_hours}h score=$score"
             _nftban_portscan_classic_log "WARN" "Stealth scan detected: $src - $reason"
@@ -1100,14 +1102,16 @@ nftban_portscan_aggregate() {
                 local duration="${PORTSCAN_AGG_BAN_DURATION:-3600}"
 
                 if type -t nftban_ban &>/dev/null; then
+                    # v1.19.20 FIX
                     nftban_ban "$src" \
                         --timeout "$duration" \
                         --reason "portscan:stealth:$reason" \
-                        --source "portscan-aggregate" 2>/dev/null && ((banned++))
+                        --source "portscan-aggregate" 2>/dev/null && { ((banned++)) || true; }
                 elif type -t nft_ipc_ban &>/dev/null; then
                     local ipc_result
                     if ipc_result=$(nft_ipc_ban "$src" "$duration" "portscan:stealth" "portscan-aggregate" 2>&1); then
-                        ((banned++))
+                        # v1.19.20 FIX
+                        ((banned++)) || true
                     else
                         _nftban_portscan_classic_log "ERROR" "IPC ban failed for $src: $ipc_result"
                     fi

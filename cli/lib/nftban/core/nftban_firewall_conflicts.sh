@@ -1178,14 +1178,15 @@ nftban_remove_conflicts() {
     echo "Removing conflicts..."
     echo ""
 
+    # v1.19.20 FIX: Added || true to prevent set -e failures
     # Remove each conflict
     for fw in "${to_remove[@]}"; do
         case "$fw" in
-            fail2ban) nftban_remove_fail2ban && ((removed_count++)) ;;
-            ufw) nftban_remove_ufw && ((removed_count++)) ;;
-            firewalld) nftban_remove_firewalld && ((removed_count++)) ;;
-            iptables) nftban_remove_iptables && ((removed_count++)) ;;
-            csf) nftban_remove_csf && ((removed_count++)) ;;
+            fail2ban) nftban_remove_fail2ban && { ((removed_count++)) || true; } ;;
+            ufw) nftban_remove_ufw && { ((removed_count++)) || true; } ;;
+            firewalld) nftban_remove_firewalld && { ((removed_count++)) || true; } ;;
+            iptables) nftban_remove_iptables && { ((removed_count++)) || true; } ;;
+            csf) nftban_remove_csf && { ((removed_count++)) || true; } ;;
         esac
     done
 
