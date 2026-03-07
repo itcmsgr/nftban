@@ -370,9 +370,11 @@ perms_enforce_from_fhs_spec() {
             perms_say "Creating missing directory: $path"
             if ! perms_run install -d -o "$exp_owner" -g "$exp_group" -m "$exp_mode" "$path"; then
                 perms_err "Failed to create: $path"
-                ((errors++))
+                # v1.19.20 FIX
+                ((errors++)) || true
             else
-                ((fixed++))
+                # v1.19.20 FIX
+                ((fixed++)) || true
             fi
             continue
         fi
@@ -391,9 +393,11 @@ perms_enforce_from_fhs_spec() {
             perms_say "Fixing ownership: $path ($act_owner:$act_group → $exp_owner:$exp_group)"
             if ! perms_run chown "$exp_owner:$exp_group" "$path"; then
                 perms_err "Failed to fix ownership: $path"
-                ((errors++))
+                # v1.19.20 FIX
+                ((errors++)) || true
             else
-                ((fixed++))
+                # v1.19.20 FIX
+                ((fixed++)) || true
             fi
         fi
 
@@ -402,9 +406,11 @@ perms_enforce_from_fhs_spec() {
             perms_say "Fixing permissions: $path ($act_mode → $exp_mode_norm)"
             if ! perms_run chmod "$exp_mode" "$path"; then
                 perms_err "Failed to fix permissions: $path"
-                ((errors++))
+                # v1.19.20 FIX
+                ((errors++)) || true
             else
-                ((fixed++))
+                # v1.19.20 FIX
+                ((fixed++)) || true
             fi
         fi
     done
@@ -504,13 +510,15 @@ nftban_permissions_check() {
         # Check ownership
         if [[ "$act_owner" != "$exp_owner" || "$act_group" != "$exp_group" ]]; then
             perms_warn "$path has wrong ownership: $act_owner:$act_group (expected: $exp_owner:$exp_group)"
-            ((issues++))
+            # v1.19.20 FIX
+            ((issues++)) || true
         fi
 
         # Check permissions
         if [[ "$act_mode" != "$exp_mode_norm" ]]; then
             perms_warn "$path has wrong permissions: $act_mode (expected: $exp_mode_norm)"
-            ((issues++))
+            # v1.19.20 FIX
+            ((issues++)) || true
         fi
     done
 

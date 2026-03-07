@@ -475,11 +475,13 @@ nftban_cmd_config_reload() {
         if _config_daemon_supports_reload "$svc"; then
             if _config_ipc_reload "$svc"; then
                 echo "[RELOADED via IPC]"
-                ((reloaded++))
+                # v1.19.20 FIX
+                ((reloaded++)) || true
                 return 0
             else
                 echo "[IPC FAILED]"
-                ((failed++))
+                # v1.19.20 FIX
+                ((failed++)) || true
                 return 1
             fi
         fi
@@ -487,12 +489,14 @@ nftban_cmd_config_reload() {
         # Fall back to SIGHUP (signal sent, but daemon may not reload)
         if _config_send_sighup "$svc"; then
             echo "[SIGHUP sent - restart required]"
-            ((signaled++))
-            ((needs_restart++))
+            # v1.19.20 FIX
+            ((signaled++)) || true
+            ((needs_restart++)) || true
             return 0
         else
             echo "[FAILED]"
-            ((failed++))
+            # v1.19.20 FIX
+            ((failed++)) || true
             return 1
         fi
     }

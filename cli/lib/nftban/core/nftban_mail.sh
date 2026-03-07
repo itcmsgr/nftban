@@ -1056,7 +1056,8 @@ nftban_mail_send_with_retry() {
     local last_error=""
 
     while [[ $attempt -lt $max_retries ]]; do
-        ((attempt++))
+        # v1.19.20 FIX
+        ((attempt++)) || true
 
         _mail_counter_inc "attempts" "$mta"
         _mail_log "INFO" "MAIL_SEND_ATTEMPT task_id=inline attempt=$attempt transport=$mta to=${recipient%%@*}@..."

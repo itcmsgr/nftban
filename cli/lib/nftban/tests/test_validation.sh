@@ -42,10 +42,12 @@ test_validation() {
 
     if [[ "$actual" == "$expected_result" ]]; then
         echo "✅ $test_name"
-        ((pass_count++))
+        # v1.19.20 FIX
+        ((pass_count++)) || true
     else
         echo "❌ $test_name (expected: $expected_result, got: $actual)"
-        ((fail_count++))
+        # v1.19.20 FIX
+        ((fail_count++)) || true
     fi
 }
 
@@ -151,10 +153,12 @@ dangerous_input='$(rm -rf /)'
 safe_output=$(nftban_sanitize_shell "$dangerous_input")
 if [[ "$safe_output" == '\$(rm -rf /)' ]]; then
     echo "✅ Shell sanitization prevents command injection"
-    ((pass_count++))
+    # v1.19.20 FIX
+    ((pass_count++)) || true
 else
     echo "❌ Shell sanitization failed (got: $safe_output)"
-    ((fail_count++))
+    # v1.19.20 FIX
+    ((fail_count++)) || true
 fi
 
 # Test HTML sanitization
@@ -162,10 +166,12 @@ xss_input='<script>alert("XSS")</script>'
 safe_html=$(nftban_sanitize_html "$xss_input")
 if [[ "$safe_html" != *'<script>'* ]]; then
     echo "✅ HTML sanitization prevents XSS"
-    ((pass_count++))
+    # v1.19.20 FIX
+    ((pass_count++)) || true
 else
     echo "❌ HTML sanitization failed"
-    ((fail_count++))
+    # v1.19.20 FIX
+    ((fail_count++)) || true
 fi
 
 echo ""

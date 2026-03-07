@@ -675,7 +675,8 @@ firewall_rebuild() {
         [[ -f "$backup_file" ]] || continue
         # Extract elements from backup (format: elements = { ip1, ip2, ... })
         local elements
-        elements=$(grep -oP 'elements = \{ \K[^}]+' "$backup_file" 2>/dev/null | tr -d '\n\t' | sed 's/  */ /g')
+        # v1.19.20 FIX: Prevent pipefail exit 1 when grep finds no match
+        elements=$(grep -oP 'elements = \{ \K[^}]+' "$backup_file" 2>/dev/null | tr -d '\n\t' | sed 's/  */ /g' || true)
         [[ -z "$elements" ]] && continue
         # Determine table and set from filename
         local table_family set_name
@@ -688,7 +689,8 @@ firewall_rebuild() {
         fi
         # Add elements back to set
         if nft add element $table_family $set_name "{ $elements }" 2>/dev/null; then
-            ((restored_count++))
+            # v1.19.20 FIX
+            ((restored_count++)) || true
             [[ "$quiet" == "false" ]] && echo "    Restored: $set_name"
         fi
     done

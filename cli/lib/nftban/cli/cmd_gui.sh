@@ -641,14 +641,17 @@ nftban_gui_restart() {
         if systemctl restart node_exporter &>/dev/null; then
             if systemctl is-active node_exporter &>/dev/null; then
                 echo "        ✓ Node Exporter running"
-                ((services_restarted++))
+                # v1.19.20 FIX
+                ((services_restarted++)) || true
             else
                 echo "        ❌ Failed to start"
-                ((services_failed++))
+                # v1.19.20 FIX
+                ((services_failed++)) || true
             fi
         else
             echo "        ❌ Restart failed"
-            ((services_failed++))
+            # v1.19.20 FIX
+            ((services_failed++)) || true
         fi
     else
         echo "  [1/4] Node Exporter: Not installed"
@@ -660,14 +663,17 @@ nftban_gui_restart() {
         if systemctl restart prometheus &>/dev/null; then
             if systemctl is-active prometheus &>/dev/null; then
                 echo "        ✓ Prometheus running"
-                ((services_restarted++))
+                # v1.19.20 FIX
+                ((services_restarted++)) || true
             else
                 echo "        ❌ Failed to start"
-                ((services_failed++))
+                # v1.19.20 FIX
+                ((services_failed++)) || true
             fi
         else
             echo "        ❌ Restart failed"
-            ((services_failed++))
+            # v1.19.20 FIX
+            ((services_failed++)) || true
         fi
     else
         echo "  [2/4] Prometheus: Not installed"
@@ -679,7 +685,8 @@ nftban_gui_restart() {
         systemctl restart nftban-unified-exporter.timer &>/dev/null
         systemctl start "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}" &>/dev/null
         echo "        ✓ Metrics collection restarted"
-        ((services_restarted++))
+        # v1.19.20 FIX
+        ((services_restarted++)) || true
     else
         echo "  [3/4] Metrics Exporter: Not installed"
     fi
@@ -691,14 +698,17 @@ nftban_gui_restart() {
             sleep 2
             if systemctl is-active nftban-ui &>/dev/null; then
                 echo "        ✓ Web GUI running"
-                ((services_restarted++))
+                # v1.19.20 FIX
+                ((services_restarted++)) || true
             else
                 echo "        ❌ Failed to start"
-                ((services_failed++))
+                # v1.19.20 FIX
+                ((services_failed++)) || true
             fi
         else
             echo "        ❌ Restart failed"
-            ((services_failed++))
+            # v1.19.20 FIX
+            ((services_failed++)) || true
         fi
     else
         echo "  [4/4] Web GUI: Not installed"

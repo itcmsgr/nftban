@@ -40,19 +40,22 @@ TESTS_FAILED=0
 
 test_start() {
     local test_name="$1"
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     echo -e "${BLUE}[TEST $TESTS_RUN]${NC} $test_name"
 }
 
 test_pass() {
-    ((TESTS_PASSED++))
+    # v1.19.20 FIX
+    ((TESTS_PASSED++)) || true
     echo -e "${GREEN}  ✓ PASS${NC}"
     echo ""
 }
 
 test_fail() {
     local reason="$1"
-    ((TESTS_FAILED++))
+    # v1.19.20 FIX
+    ((TESTS_FAILED++)) || true
     echo -e "${RED}  ✗ FAIL${NC}: $reason"
     echo ""
 }

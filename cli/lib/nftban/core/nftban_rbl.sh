@@ -299,7 +299,8 @@ nftban_rbl_watchlist_list() {
             echo "    \"notify_email\": \"${notify_email:-}\""
             echo -n "  }"
             first=0
-            ((count++))
+            # v1.19.20 FIX
+            ((count++)) || true
         done < <(nftban_rbl_watchlist_get)
         echo ""
         echo "]"
@@ -309,7 +310,8 @@ nftban_rbl_watchlist_list() {
 
         while IFS='|' read -r ip description tags notify_email; do
             [[ -z "$ip" ]] && continue
-            ((count++))
+            # v1.19.20 FIX
+            ((count++)) || true
             printf "%d. %-18s" "$count" "$ip"
             [[ -n "$description" ]] && printf "  %s" "$description"
             echo ""
@@ -412,7 +414,8 @@ nftban_rbl_check_ip_parallel() {
         IFS='|' read -r result rbl_domain rbl_url txt_record < "$result_file"
 
         if [[ "$result" == "LISTED" ]]; then
-            ((listed_count++))
+            # v1.19.20 FIX
+            ((listed_count++)) || true
 
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
@@ -429,7 +432,8 @@ nftban_rbl_check_ip_parallel() {
                 echo "   Info: $rbl_url"
             fi
         elif [[ "$result" == "TIMEOUT" ]]; then
-            ((timeout_count++))
+            # v1.19.20 FIX
+            ((timeout_count++)) || true
 
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
@@ -443,7 +447,8 @@ nftban_rbl_check_ip_parallel() {
                 echo "⏱️  TIMEOUT: $rbl_domain"
             fi
         else
-            ((clean_count++))
+            # v1.19.20 FIX
+            ((clean_count++)) || true
 
             if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
                 echo "✅ CLEAN: $rbl_domain"
@@ -577,7 +582,8 @@ nftban_rbl_check_ip() {
 
         if [[ "$result" == "LISTED" ]]; then
             txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
-            ((listed_count++))
+            # v1.19.20 FIX
+            ((listed_count++)) || true
 
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
@@ -594,7 +600,8 @@ nftban_rbl_check_ip() {
                 echo "   Info: $rbl_url"
             fi
         elif [[ "$result" == "TIMEOUT" ]]; then
-            ((timeout_count++))
+            # v1.19.20 FIX
+            ((timeout_count++)) || true
 
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
@@ -608,7 +615,8 @@ nftban_rbl_check_ip() {
                 echo "⏱️  TIMEOUT: $rbl_domain"
             fi
         else
-            ((clean_count++))
+            # v1.19.20 FIX
+            ((clean_count++)) || true
 
             if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
                 echo "✅ CLEAN: $rbl_domain"

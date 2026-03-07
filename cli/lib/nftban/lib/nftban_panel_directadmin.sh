@@ -561,7 +561,8 @@ nftban_panel_directadmin_repair() {
     if [[ ! -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Configuration file exists"
     fi
@@ -574,7 +575,8 @@ nftban_panel_directadmin_repair() {
             echo "  ✓ CloudFlare whitelist enabled"
         else
             echo "  ✗ Failed to enable CloudFlare"
-            ((repairs++))
+            # v1.19.20 FIX
+        ((repairs++)) || true
         fi
     else
         echo "✓ CloudFlare whitelist enabled"
@@ -584,7 +586,8 @@ nftban_panel_directadmin_repair() {
     if ! _nftban_panel_check_port 2222; then
         echo "✗ Panel port (2222) not open in firewall"
         echo "  Run: nftban panel directadmin enable"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Panel port (2222) open in firewall"
     fi
@@ -618,11 +621,13 @@ nftban_panel_directadmin_test() {
     echo "Test 1: Panel Port (2222/TCP)"
     if ss -tlnp 2>/dev/null | grep -q ':2222 '; then
         echo "  ✓ PASS: Port 2222 is listening"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2222 not listening"
         echo "    Ensure DirectAdmin is running: systemctl status directadmin"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -630,11 +635,13 @@ nftban_panel_directadmin_test() {
     echo "Test 2: Firewall Rules (2222/TCP)"
     if _nftban_panel_check_port 2222; then
         echo "  ✓ PASS: Port 2222 allowed in firewall"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2222 blocked by firewall"
         echo "    Run: nftban panel directadmin enable"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -642,12 +649,14 @@ nftban_panel_directadmin_test() {
     echo "Test 3: CloudFlare Whitelist"
     if _nftban_panel_check_cloudflare; then
         echo "  ✓ PASS: CloudFlare whitelist enabled"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: CloudFlare whitelist disabled"
         echo "    ⚠️  DirectAdmin licensing requires CloudFlare!"
         echo "    Run: nftban trust enable CLOUDFLARE"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -663,9 +672,11 @@ nftban_panel_directadmin_test() {
         fi
     done
     if $web_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel directadmin enable"
     fi
     echo ""
@@ -682,9 +693,11 @@ nftban_panel_directadmin_test() {
         fi
     done
     if $mail_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel directadmin enable"
     fi
     echo ""

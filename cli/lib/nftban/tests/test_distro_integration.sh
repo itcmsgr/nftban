@@ -92,13 +92,15 @@ test_assert_equal() {
 
     if [[ "$expected" == "$actual" ]]; then
         echo -e "${GREEN}  ✓ $test_name${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
         return 0
     else
         echo -e "${RED}  ✗ $test_name${NC}"
         echo -e "${RED}    Expected: '$expected'${NC}"
         echo -e "${RED}    Got:      '$actual'${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 }
@@ -109,11 +111,13 @@ test_assert_not_empty() {
 
     if [[ -n "$value" ]]; then
         echo -e "${GREEN}  ✓ $test_name${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
         return 0
     else
         echo -e "${RED}  ✗ $test_name (value is empty)${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 }
@@ -123,11 +127,13 @@ test_assert_function_exists() {
 
     if declare -F "$func_name" &>/dev/null; then
         echo -e "${GREEN}  ✓ Function $func_name exists${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
         return 0
     else
         echo -e "${RED}  ✗ Function $func_name not found${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 }
@@ -144,10 +150,12 @@ test_parser_loading() {
     # Test 1: Parser file exists
     if [[ -f "$PARSER_PATH" ]]; then
         echo -e "${GREEN}  ✓ Parser file exists${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ Parser file not found: $PARSER_PATH${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 
@@ -155,10 +163,12 @@ test_parser_loading() {
     # shellcheck source=/dev/null
     if source "$PARSER_PATH" 2>/dev/null; then
         echo -e "${GREEN}  ✓ Parser loads without errors${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ Parser failed to load${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 
@@ -191,10 +201,12 @@ test_config_detection() {
 
     if [[ -n "$config_file" ]]; then
         echo -e "${GREEN}  ✓ Config file detected: $(basename "$config_file")${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${YELLOW}  ⊘ No config file found (expected if not on test system)${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
     fi
 }
 
@@ -209,7 +221,8 @@ test_config_parsing() {
 
     if [[ -z "$test_config" ]]; then
         echo -e "${YELLOW}  ⊘ No config files found for testing${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
         return 0
     fi
 
@@ -218,36 +231,44 @@ test_config_parsing() {
     # Parse the config
     if nftban_distro_parse_config "$test_config" 2>/dev/null; then
         echo -e "${GREEN}  ✓ Config parsed successfully${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ Config parsing failed${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
         return 1
     fi
 
     # Verify data was loaded
     if [[ ${#DISTRO_INFO[@]} -gt 0 ]]; then
         echo -e "${GREEN}  ✓ DISTRO_INFO populated (${#DISTRO_INFO[@]} entries)${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ DISTRO_INFO is empty${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
     fi
 
     if [[ ${#DISTRO_PACKAGES[@]} -gt 0 ]]; then
         echo -e "${GREEN}  ✓ DISTRO_PACKAGES populated (${#DISTRO_PACKAGES[@]} entries)${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ DISTRO_PACKAGES is empty${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
     fi
 
     if [[ ${#DISTRO_SERVICES[@]} -gt 0 ]]; then
         echo -e "${GREEN}  ✓ DISTRO_SERVICES populated (${#DISTRO_SERVICES[@]} entries)${NC}"
-        ((TESTS_PASSED++))
+        # v1.19.20 FIX
+        ((TESTS_PASSED++)) || true
     else
         echo -e "${RED}  ✗ DISTRO_SERVICES is empty${NC}"
-        ((TESTS_FAILED++))
+        # v1.19.20 FIX
+        ((TESTS_FAILED++)) || true
     fi
 }
 
@@ -262,7 +283,8 @@ test_package_lookups() {
 
     if [[ -z "$test_config" ]]; then
         echo -e "${YELLOW}  ⊘ No config files found${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
         return 0
     fi
 
@@ -289,7 +311,8 @@ test_service_lookups() {
 
     if [[ -z "$test_config" ]]; then
         echo -e "${YELLOW}  ⊘ No config files found${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
         return 0
     fi
 
@@ -316,7 +339,8 @@ test_path_lookups() {
 
     if [[ -z "$test_config" ]]; then
         echo -e "${YELLOW}  ⊘ No config files found${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
         return 0
     fi
 
@@ -343,7 +367,8 @@ test_all_configs() {
 
     if [[ ${#config_files[@]} -eq 0 ]]; then
         echo -e "${YELLOW}  ⊘ No config files found${NC}"
-        ((TESTS_SKIPPED++))
+        # v1.19.20 FIX
+        ((TESTS_SKIPPED++)) || true
         return 0
     fi
 
@@ -355,10 +380,12 @@ test_all_configs() {
         filename=$(basename "$config")
         if nftban_distro_parse_config "$config" 2>/dev/null; then
             echo -e "${GREEN}  ✓ $filename parses successfully${NC}"
-            ((TESTS_PASSED++))
+            # v1.19.20 FIX
+            ((TESTS_PASSED++)) || true
         else
             echo -e "${RED}  ✗ $filename failed to parse${NC}"
-            ((TESTS_FAILED++))
+            # v1.19.20 FIX
+            ((TESTS_FAILED++)) || true
         fi
     done
 }

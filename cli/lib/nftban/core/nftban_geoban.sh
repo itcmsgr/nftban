@@ -256,11 +256,13 @@ nftban_geoban_apply_to_nftables() {
             if [[ "$line" =~ : ]]; then
                 # IPv6 (contains colons)
                 cidrs_v6+=("$line")
-                ((cidr_count_v6++))
+                # v1.19.20 FIX
+                ((cidr_count_v6++)) || true
             else
                 # IPv4 (no colons)
                 cidrs_v4+=("$line")
-                ((cidr_count_v4++))
+                # v1.19.20 FIX
+                ((cidr_count_v4++)) || true
             fi
         done < "$file"
     done

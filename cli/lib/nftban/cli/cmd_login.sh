@@ -709,7 +709,8 @@ nftban_login_cmd_health_fix() {
     local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
     if [[ ! -f "$config_file" ]]; then
         echo "❌ Configuration file missing: $config_file"
-        ((issues_found++))
+        # v1.19.20 FIX
+        ((issues_found++)) || true
 
         if [[ $EUID -eq 0 ]]; then
             echo "   Creating default configuration..."
@@ -757,7 +758,8 @@ CONF
             chmod 640 "$config_file"
             chown root:nftban "$config_file" 2>/dev/null || true
             echo "   ✅ Created default configuration"
-            ((issues_fixed++))
+            # v1.19.20 FIX
+            ((issues_fixed++)) || true
         fi
     else
         echo "✅ Configuration file exists"
@@ -775,7 +777,8 @@ CONF
     fi
     if [[ ! -d "$log_dir" ]]; then
         echo "X Log directory missing: $log_dir"
-        ((issues_found++))
+        # v1.19.20 FIX
+        ((issues_found++)) || true
     else
         echo "✅ Log directory exists"
     fi
@@ -787,7 +790,8 @@ CONF
        [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
        [[ ! -f "${systemd_system_dir}/${service_name}" ]]; then
         echo "⚠️  Service not installed (run 'nftban login install')"
-        ((issues_found++))
+        # v1.19.20 FIX
+        ((issues_found++)) || true
     else
         echo "✅ Service file exists"
 
@@ -795,13 +799,15 @@ CONF
         if systemctl is-enabled --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
             if ! systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
                 echo "❌ Service enabled but not running"
-                ((issues_found++))
+                # v1.19.20 FIX
+                ((issues_found++)) || true
 
                 if [[ $EUID -eq 0 ]]; then
                     echo "   Attempting to start service..."
                     if systemctl start ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
                         echo "   ✅ Service started"
-                        ((issues_fixed++))
+                        # v1.19.20 FIX
+                        ((issues_fixed++)) || true
                     else
                         echo "   ❌ Failed to start service"
                     fi
@@ -815,7 +821,8 @@ CONF
     # 5. Check core module
     if [[ ! -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]]; then
         echo "❌ Core module not installed"
-        ((issues_found++))
+        # v1.19.20 FIX
+        ((issues_found++)) || true
     else
         echo "✅ Core module installed"
     fi

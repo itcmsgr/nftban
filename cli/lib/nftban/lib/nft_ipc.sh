@@ -122,19 +122,14 @@ nft_ipc_ban() {
         timeout=0
     fi
 
+    # v1.19.20 FIX: Remove insecure manual JSON escaping fallback - jq is required
     local params
     params=$(jq -nc --arg ip "$ip" --argjson timeout "$timeout" \
         --arg reason "$reason" --arg source "$source" \
-        '{ip: $ip, timeout: $timeout, reason: $reason, source: $source}' 2>/dev/null) || params=""
-
-    # Fallback if jq failed
-    if [[ -z "$params" ]]; then
-        local escaped_ip escaped_reason escaped_source
-        escaped_ip=$(printf '%s' "$ip" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        escaped_reason=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        escaped_source=$(printf '%s' "$source" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        params="{\"ip\":\"${escaped_ip}\",\"timeout\":${timeout},\"reason\":\"${escaped_reason}\",\"source\":\"${escaped_source}\"}"
-    fi
+        '{ip: $ip, timeout: $timeout, reason: $reason, source: $source}' 2>/dev/null) || {
+        echo "ERROR: jq failed to build JSON params" >&2
+        return 1
+    }
 
     local response
     response=$(nft_ipc_request "ban" "$params")
@@ -183,19 +178,14 @@ nft_ipc_add_element() {
         timeout=0
     fi
 
+    # v1.19.20 FIX: Remove insecure manual JSON escaping fallback - jq is required
     local params
     params=$(jq -nc --arg table "$table" --arg set "$set" \
         --arg element "$element" --argjson timeout "$timeout" \
-        '{table: $table, set: $set, element: $element, timeout: $timeout}' 2>/dev/null) || params=""
-
-    # Fallback if jq failed
-    if [[ -z "$params" ]]; then
-        local escaped_table escaped_set escaped_element
-        escaped_table=$(printf '%s' "$table" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        escaped_set=$(printf '%s' "$set" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        escaped_element=$(printf '%s' "$element" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        params="{\"table\":\"${escaped_table}\",\"set\":\"${escaped_set}\",\"element\":\"${escaped_element}\",\"timeout\":${timeout}}"
-    fi
+        '{table: $table, set: $set, element: $element, timeout: $timeout}' 2>/dev/null) || {
+        echo "ERROR: jq failed to build JSON params" >&2
+        return 1
+    }
 
     local response
     response=$(nft_ipc_request "add_element" "$params")
@@ -274,17 +264,13 @@ nft_ipc_apply_ruleset() {
     local check_bool="false"
     [[ "$check_only" == "1" ]] && check_bool="true"
 
+    # v1.19.20 FIX: Remove insecure manual JSON escaping fallback - jq is required
     local params
     params=$(jq -nc --arg file "$file_path" --argjson check "$check_bool" \
-        '{file: $file, check: $check}' 2>/dev/null) || params=""
-
-    # Fallback if jq failed - construct JSON manually
-    if [[ -z "$params" ]]; then
-        # Escape file_path for JSON (handle backslashes and quotes)
-        local escaped_path
-        escaped_path=$(printf '%s' "$file_path" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        params="{\"file\":\"${escaped_path}\",\"check\":${check_bool}}"
-    fi
+        '{file: $file, check: $check}' 2>/dev/null) || {
+        echo "ERROR: jq failed to build JSON params" >&2
+        return 1
+    }
 
     local response
     response=$(nft_ipc_request "apply_ruleset" "$params")
