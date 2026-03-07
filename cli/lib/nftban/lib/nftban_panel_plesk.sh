@@ -524,7 +524,8 @@ nftban_panel_plesk_repair() {
     if [[ ! -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Configuration file exists"
     fi
@@ -533,7 +534,8 @@ nftban_panel_plesk_repair() {
     if ! _nftban_panel_check_port 8443; then
         echo "✗ Plesk port (8443) not open in firewall"
         echo "  Run: nftban panel plesk enable"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Plesk port (8443) open in firewall"
     fi
@@ -542,7 +544,8 @@ nftban_panel_plesk_repair() {
     if ! _nftban_panel_check_port 8447; then
         echo "✗ Plesk Updater port (8447) not open in firewall"
         echo "  Run: nftban panel plesk enable"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Plesk Updater port (8447) open in firewall"
     fi
@@ -576,11 +579,13 @@ nftban_panel_plesk_test() {
     echo "Test 1: Plesk Panel Port (8443/TCP)"
     if ss -tlnp 2>/dev/null | grep -q ':8443 '; then
         echo "  ✓ PASS: Port 8443 is listening"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 8443 not listening"
         echo "    Ensure Plesk is running: systemctl status sw-cp-server"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -588,11 +593,13 @@ nftban_panel_plesk_test() {
     echo "Test 2: Plesk Panel Firewall Rules (8443/TCP)"
     if _nftban_panel_check_port 8443; then
         echo "  ✓ PASS: Port 8443 allowed in firewall"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 8443 blocked by firewall"
         echo "    Run: nftban panel plesk enable"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -600,11 +607,13 @@ nftban_panel_plesk_test() {
     echo "Test 3: Plesk Updater Port (8447/TCP)"
     if ss -tlnp 2>/dev/null | grep -q ':8447 '; then
         echo "  ✓ PASS: Port 8447 is listening"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 8447 not listening"
         echo "    Plesk Updater may not be running"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -612,11 +621,13 @@ nftban_panel_plesk_test() {
     echo "Test 4: Plesk Updater Firewall Rules (8447/TCP)"
     if _nftban_panel_check_port 8447; then
         echo "  ✓ PASS: Port 8447 allowed in firewall"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 8447 blocked by firewall"
         echo "    Run: nftban panel plesk enable"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -632,9 +643,11 @@ nftban_panel_plesk_test() {
         fi
     done
     if $web_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel plesk enable"
     fi
     echo ""
@@ -651,9 +664,11 @@ nftban_panel_plesk_test() {
         fi
     done
     if $mail_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel plesk enable"
     fi
     echo ""

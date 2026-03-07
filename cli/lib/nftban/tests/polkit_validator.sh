@@ -172,10 +172,14 @@ SKIP_COUNT=0
 
 log_header() { echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 log_subheader() { echo -e "${CYAN}--- $* ---${NC}"; }
-log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; ((PASS_COUNT++)); }
-log_fail() { echo -e "${RED}[FAIL]${NC} $*"; ((FAIL_COUNT++)); }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; ((WARN_COUNT++)); }
-log_skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; ((SKIP_COUNT++)); }
+log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; # v1.19.20 FIX
+ ((PASS_COUNT++)) || true; }
+log_fail() { echo -e "${RED}[FAIL]${NC} $*"; # v1.19.20 FIX
+ ((FAIL_COUNT++)) || true; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; # v1.19.20 FIX
+ ((WARN_COUNT++)) || true; }
+log_skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; # v1.19.20 FIX
+ ((SKIP_COUNT++)) || true; }
 log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_risk() {
     local level="$1"; shift

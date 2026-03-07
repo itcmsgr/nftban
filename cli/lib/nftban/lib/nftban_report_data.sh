@@ -598,7 +598,8 @@ _collect_posture_info() {
         local pass_auth
         pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
         if [[ "$pass_auth" == "yes" ]]; then
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
             posture_details+="SSH: PasswordAuth=yes; "
         fi
 
@@ -606,7 +607,8 @@ _collect_posture_info() {
         local root_login
         root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
         if [[ "$root_login" == "yes" ]]; then
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
             posture_details+="SSH: RootLogin=yes; "
         fi
     fi
@@ -620,11 +622,13 @@ _collect_posture_info() {
             [[ -f "$sfile" ]] || continue
             [[ "$(basename "$sfile")" == "nftban" ]] && continue  # Skip NFTBan's own
             if grep -qE "NOPASSWD:\s*ALL" "$sfile" 2>/dev/null; then
-                ((risky_nopasswd++))
+                # v1.19.20 FIX
+                ((risky_nopasswd++)) || true
             fi
         done
         if [[ $risky_nopasswd -gt 0 ]]; then
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
             posture_details+="Sudo: ${risky_nopasswd} ALL NOPASSWD file(s); "
         fi
     fi
@@ -636,15 +640,18 @@ _collect_posture_info() {
         [[ -d "$unit_dir" ]] || continue
         for svc in "$unit_dir"/nftban*.service; do
             [[ -f "$svc" ]] || continue
-            ((systemd_total++))
+            # v1.19.20 FIX
+            ((systemd_total++)) || true
             if grep -q "^NoNewPrivileges=true" "$svc" 2>/dev/null; then
-                ((systemd_hardened++))
+                # v1.19.20 FIX
+                ((systemd_hardened++)) || true
             fi
         done
         [[ $systemd_total -gt 0 ]] && break  # Found services, stop searching
     done
     if [[ $systemd_total -gt 0 && $systemd_hardened -lt $systemd_total ]]; then
-        ((warnings++))
+        # v1.19.20 FIX
+        ((warnings++)) || true
         posture_details+="Systemd: ${systemd_hardened}/${systemd_total} hardened; "
     fi
 
@@ -660,11 +667,13 @@ _collect_posture_info() {
             local current_hash
             current_hash=$(sha256sum "$fpath" 2>/dev/null | cut -d' ' -f1 || echo "")
             if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
-                ((drift_count++))
+                # v1.19.20 FIX
+                ((drift_count++)) || true
             fi
         done < "$integrity_file"
         if [[ $drift_count -gt 0 ]]; then
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
             posture_details+="Config: ${drift_count} file(s) modified; "
         fi
     fi

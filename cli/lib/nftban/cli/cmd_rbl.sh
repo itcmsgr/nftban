@@ -663,7 +663,8 @@ nftban_cmd_rbl_server() {
     local ipv4_count=0
     while IFS= read -r ip; do
         all_ips+=("$ip:ipv4")
-        ((ipv4_count++))
+        # v1.19.20 FIX
+        ((ipv4_count++)) || true
         [[ $quiet -eq 0 ]] && echo "  ✓ $ip"
     done < <(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | sort -u)
     [[ $quiet -eq 0 ]] && [[ $ipv4_count -eq 0 ]] && echo "  (none found)"
@@ -675,7 +676,8 @@ nftban_cmd_rbl_server() {
         local ipv6_count=0
         while IFS= read -r ip; do
             all_ips+=("$ip:ipv6")
-            ((ipv6_count++))
+            # v1.19.20 FIX
+            ((ipv6_count++)) || true
             [[ $quiet -eq 0 ]] && echo "  ✓ $ip"
         done < <(ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u)
         [[ $quiet -eq 0 ]] && [[ $ipv6_count -eq 0 ]] && echo "  (none found)"
@@ -741,7 +743,8 @@ nftban_cmd_rbl_server() {
             # Track statistics
             if echo "$results" | grep -q "LISTED"; then
                 any_listed=1
-                ((total_listed++))
+                # v1.19.20 FIX
+                ((total_listed++)) || true
 
                 # Send alert if requested
                 if [[ $alert -eq 1 ]] && [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
@@ -755,7 +758,8 @@ nftban_cmd_rbl_server() {
                 fi
                 nftban_rbl_update_state "$check_ip" "listed"
             else
-                ((total_clean++))
+                # v1.19.20 FIX
+                ((total_clean++)) || true
                 nftban_rbl_update_state "$check_ip" "clean"
             fi
         fi
@@ -851,7 +855,8 @@ nftban_cmd_rbl_list() {
 
     local count=0
     while IFS=: read -r rbl_domain rbl_url; do
-        ((count++))
+        # v1.19.20 FIX
+        ((count++)) || true
         if [[ $verbose -eq 1 ]]; then
             echo "$count. $rbl_domain"
             echo "   URL: $rbl_url"
@@ -1124,7 +1129,8 @@ EOF
                 local ip="${entry%%:*}"
                 local tag="${entry#*:}"
                 [[ "$tag" == "$ip" ]] && tag="default"
-                ((count++))
+                # v1.19.20 FIX
+                ((count++)) || true
 
                 local severity
                 severity=$(nftban_rbl_get_severity "$tag" 2>/dev/null || echo "medium")
@@ -1362,7 +1368,8 @@ nftban_cmd_rbl_watchlist() {
             # Check each watchlist entry
             while IFS='|' read -r ip description tags notify_email; do
                 [[ -z "$ip" ]] && continue
-                ((total_checked++))
+                # v1.19.20 FIX
+                ((total_checked++)) || true
 
                 echo "─────────────────────────────────────────────────────────────"
                 echo "Checking: $ip"
@@ -1386,7 +1393,8 @@ nftban_cmd_rbl_watchlist() {
 
                 # Check if listed
                 if echo "$results" | grep -q "LISTED"; then
-                    ((total_listed++))
+                    # v1.19.20 FIX
+                    ((total_listed++)) || true
                     nftban_rbl_update_state "$ip" "listed"
 
                     # Send alert if requested
@@ -1406,7 +1414,8 @@ nftban_cmd_rbl_watchlist() {
                         fi
                     fi
                 else
-                    ((total_clean++))
+                    # v1.19.20 FIX
+                    ((total_clean++)) || true
                     nftban_rbl_update_state "$ip" "clean"
                 fi
 

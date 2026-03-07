@@ -488,40 +488,41 @@ nftban_health_check_all() {
     # Initialize health state
     nftban_health_init
 
+    # v1.19.20 FIX: Added || true to all ((var++)) to prevent set -e failures
     # Run core checks
-    nftban_health_check_binaries || ((errors++))
-    nftban_health_check_binary_integrity || ((errors++))
-    nftban_health_check_paths || ((errors++))
-    nftban_health_check_permissions || ((warnings++))
-    nftban_health_check_auditor_acls "$auto_heal" || ((warnings++))
-    nftban_health_check_config || ((warnings++))
-    nftban_health_check_nftban_bin || ((errors++))
-    nftban_health_check_queue_processor "$auto_heal" || ((errors++))
-    nftban_health_check_resources || ((warnings++))
+    nftban_health_check_binaries || { ((errors++)) || true; }
+    nftban_health_check_binary_integrity || { ((errors++)) || true; }
+    nftban_health_check_paths || { ((errors++)) || true; }
+    nftban_health_check_permissions || { ((warnings++)) || true; }
+    nftban_health_check_auditor_acls "$auto_heal" || { ((warnings++)) || true; }
+    nftban_health_check_config || { ((warnings++)) || true; }
+    nftban_health_check_nftban_bin || { ((errors++)) || true; }
+    nftban_health_check_queue_processor "$auto_heal" || { ((errors++)) || true; }
+    nftban_health_check_resources || { ((warnings++)) || true; }
 
     # Run security checks
-    nftban_health_check_nftables_security || ((warnings++))
-    nftban_health_check_conflicting_firewalls || ((warnings++))
-    nftban_health_check_ssh_port || ((warnings++))
-    nftban_health_check_systemd_hardening || ((warnings++))
-    nftban_health_check_memory_protection || ((warnings++))
+    nftban_health_check_nftables_security || { ((warnings++)) || true; }
+    nftban_health_check_conflicting_firewalls || { ((warnings++)) || true; }
+    nftban_health_check_ssh_port || { ((warnings++)) || true; }
+    nftban_health_check_systemd_hardening || { ((warnings++)) || true; }
+    nftban_health_check_memory_protection || { ((warnings++)) || true; }
 
     # Run service checks
-    nftban_health_check_services || ((warnings++))
-    nftban_health_check_daemon "$auto_heal" || ((errors++))
-    nftban_health_check_timers "$auto_heal" || ((warnings++))
-    nftban_health_check_protection || ((warnings++))
-    nftban_health_check_maintenance_lock "$auto_heal" || ((warnings++))
-    nftban_health_check_login_monitor_ipc || ((errors++))
-    nftban_health_check_suricata 2>/dev/null || ((warnings++))
-    nftban_health_check_suricata_capture 2>/dev/null || ((warnings++))
+    nftban_health_check_services || { ((warnings++)) || true; }
+    nftban_health_check_daemon "$auto_heal" || { ((errors++)) || true; }
+    nftban_health_check_timers "$auto_heal" || { ((warnings++)) || true; }
+    nftban_health_check_protection || { ((warnings++)) || true; }
+    nftban_health_check_maintenance_lock "$auto_heal" || { ((warnings++)) || true; }
+    nftban_health_check_login_monitor_ipc || { ((errors++)) || true; }
+    nftban_health_check_suricata 2>/dev/null || { ((warnings++)) || true; }
+    nftban_health_check_suricata_capture 2>/dev/null || { ((warnings++)) || true; }
 
     # Run structure validation checks
-    nftban_health_check_fhs || ((warnings++))
-    nftban_health_check_nft_schema || ((errors++))
-    nftban_health_check_polkit "$auto_heal" || ((warnings++))
-    nftban_health_check_registry || ((warnings++))
-    nftban_health_check_cli_errors || ((warnings++))
+    nftban_health_check_fhs || { ((warnings++)) || true; }
+    nftban_health_check_nft_schema || { ((errors++)) || true; }
+    nftban_health_check_polkit "$auto_heal" || { ((warnings++)) || true; }
+    nftban_health_check_registry || { ((warnings++)) || true; }
+    nftban_health_check_cli_errors || { ((warnings++)) || true; }
 
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
@@ -533,7 +534,8 @@ nftban_health_check_all() {
     nftban_health_check_zabbix 2>/dev/null || true
     nftban_health_check_connectors 2>/dev/null || true
     nftban_health_check_watchdog 2>/dev/null || true
-    nftban_health_check_portscan_prefix 2>/dev/null || ((warnings++))
+    # v1.19.20 FIX
+    nftban_health_check_portscan_prefix 2>/dev/null || { ((warnings++)) || true; }
     nftban_health_check_v030_helpers 2>/dev/null || true
     nftban_health_check_bash_completion 2>/dev/null || true
     nftban_health_check_gui 2>/dev/null || true

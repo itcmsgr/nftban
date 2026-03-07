@@ -849,7 +849,8 @@ nftban_nft_validate_full() {
     else
         echo "   ❌ Table validation failed"
         echo "$output" | sed 's/^/      /'
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     # 2. Validate sets (IPv4)
@@ -860,7 +861,8 @@ nftban_nft_validate_full() {
     else
         echo "   ❌ Set validation failed"
         echo "$output" | sed 's/^/      /'
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     # 3. Validate set flags/types (IPv4 + IPv6)
@@ -871,7 +873,8 @@ nftban_nft_validate_full() {
     else
         echo "   ⚠️  Set validation issues"
         echo "$output" | sed 's/^/      /'
-        ((warnings++))
+        # v1.19.20 FIX
+        ((warnings++)) || true
     fi
 
     # 4. Validate chains (IPv4 + IPv6)
@@ -882,7 +885,8 @@ nftban_nft_validate_full() {
     else
         echo "   ❌ Chain validation failed"
         echo "$output" | sed 's/^/      /'
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     # 5. Validate rule order (security-critical) - IPv4 + IPv6
@@ -893,7 +897,8 @@ nftban_nft_validate_full() {
     else
         echo "   ❌ SECURITY ISSUE: Rule order incorrect!"
         echo "$output" | sed 's/^/      /'
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     # 6. Check for deprecated tables
@@ -905,7 +910,8 @@ nftban_nft_validate_full() {
     for deprecated_table in "${!NFTBAN_DEPRECATED_TABLES[@]}"; do
         if echo "$existing_tables" | grep -q "^table ${deprecated_table}$"; then
             echo "   ⚠️  Legacy table: ${deprecated_table}"
-            ((deprecated_found++))
+            # v1.19.20 FIX
+            ((deprecated_found++)) || true
         fi
     done
     if [[ $deprecated_found -eq 0 ]]; then

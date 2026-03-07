@@ -173,7 +173,8 @@ load_env_file() {
     local errors=0
 
     while IFS= read -r line || [[ -n "$line" ]]; do
-        ((n++))
+        # v1.19.20 FIX
+        ((n++)) || true
 
         # Trim leading/trailing spaces
         line="${line##+([[:space:]])}"
@@ -185,14 +186,16 @@ load_env_file() {
 
         # Validate line for dangerous patterns
         if ! __envsafe_validate_line "$n" "$line" "$file"; then
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
             continue
         fi
 
         # Parse assignment
         if ! __envsafe_parse_assignment "$line"; then
             __envsafe_err "$file:$n: Invalid assignment syntax (expected: NAME=VALUE)"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
             continue
         fi
 
@@ -255,9 +258,11 @@ load_env_dir() {
 
         # Load file
         if load_env_file "$conf_file" "$prefix"; then
-            ((loaded++))
+            # v1.19.20 FIX
+            ((loaded++)) || true
         else
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     done
 
@@ -333,7 +338,8 @@ test_config_safety() {
     local warnings=0
 
     while IFS= read -r line || [[ -n "$line" ]]; do
-        ((n++))
+        # v1.19.20 FIX
+        ((n++)) || true
 
         # Trim
         line="${line##+([[:space:]])}"
@@ -345,7 +351,8 @@ test_config_safety() {
 
         # Validate
         if ! __envsafe_validate_line "$n" "$line" "$file"; then
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     done < "$file"
 

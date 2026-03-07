@@ -102,7 +102,8 @@ copy_dashboards() {
             local dashboard_name
             dashboard_name=$(basename "$dashboard")
             print_status "Copied: $dashboard_name"
-            ((copied++))
+            # v1.19.20 FIX
+            ((copied++)) || true
         fi
     done
 
@@ -176,7 +177,8 @@ verify_provisioning() {
             print_status "Grafana is responding"
             break
         fi
-        ((count++))
+        # v1.19.20 FIX
+        ((count++)) || true
         sleep 1
     done
 

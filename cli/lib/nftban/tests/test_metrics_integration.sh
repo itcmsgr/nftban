@@ -52,18 +52,21 @@ print_section() {
 }
 
 test_pass() {
-    ((TESTS_PASSED++))
+    # v1.19.20 FIX
+    ((TESTS_PASSED++)) || true
     echo -e "${GREEN}[✓ PASS]${NC} $1"
 }
 
 test_fail() {
-    ((TESTS_FAILED++))
+    # v1.19.20 FIX
+    ((TESTS_FAILED++)) || true
     FAILED_TESTS+=("$1")
     echo -e "${RED}[✗ FAIL]${NC} $1"
 }
 
 test_skip() {
-    ((TESTS_SKIPPED++))
+    # v1.19.20 FIX
+    ((TESTS_SKIPPED++)) || true
     echo -e "${YELLOW}[⊘ SKIP]${NC} $1"
 }
 
@@ -72,7 +75,8 @@ test_skip() {
 # =============================================================================
 
 test_exporter_exists() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if [[ -f "/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh" ]]; then
         test_pass "Exporter script exists"
         return 0
@@ -83,7 +87,8 @@ test_exporter_exists() {
 }
 
 test_exporter_executable() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if [[ -x "/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh" ]]; then
         test_pass "Exporter script is executable"
         return 0
@@ -94,7 +99,8 @@ test_exporter_executable() {
 }
 
 test_exporter_runs() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if timeout 10 /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh >/dev/null 2>&1; then
         test_pass "Exporter script runs without errors"
         return 0
@@ -105,7 +111,8 @@ test_exporter_runs() {
 }
 
 test_metrics_file_created() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
 
     # Run exporter
@@ -121,7 +128,8 @@ test_metrics_file_created() {
 }
 
 test_metrics_format() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
 
     if [[ ! -f "$metrics_file" ]]; then
@@ -140,7 +148,8 @@ test_metrics_format() {
 }
 
 test_required_metrics() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
 
     if [[ ! -f "$metrics_file" ]]; then
@@ -161,7 +170,8 @@ test_required_metrics() {
     for metric in "${required_metrics[@]}"; do
         if ! grep -q "^${metric}" "$metrics_file"; then
             echo -e "  ${RED}Missing metric: $metric${NC}"
-            ((missing++))
+            # v1.19.20 FIX
+            ((missing++)) || true
         fi
     done
 
@@ -179,7 +189,8 @@ test_required_metrics() {
 # =============================================================================
 
 test_systemd_timer_exists() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl list-unit-files | grep -q "nftban-unified-exporter.timer"; then
         test_pass "Systemd timer unit exists"
         return 0
@@ -190,7 +201,8 @@ test_systemd_timer_exists() {
 }
 
 test_systemd_service_exists() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl list-unit-files | grep -q "nftban-unified-exporter.service"; then
         test_pass "Systemd service unit exists"
         return 0
@@ -201,7 +213,8 @@ test_systemd_service_exists() {
 }
 
 test_systemd_timer_enabled() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl is-enabled --quiet nftban-unified-exporter.timer 2>/dev/null; then
         test_pass "Systemd timer is enabled"
         return 0
@@ -212,7 +225,8 @@ test_systemd_timer_enabled() {
 }
 
 test_systemd_timer_active() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
         test_pass "Systemd timer is active"
         return 0
@@ -227,7 +241,8 @@ test_systemd_timer_active() {
 # =============================================================================
 
 test_node_exporter_installed() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if command -v node_exporter >/dev/null 2>&1 || systemctl list-unit-files | grep -q "node_exporter"; then
         test_pass "Node Exporter is installed"
         return 0
@@ -238,7 +253,8 @@ test_node_exporter_installed() {
 }
 
 test_node_exporter_running() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl is-active --quiet node_exporter 2>/dev/null; then
         test_pass "Node Exporter service is running"
         return 0
@@ -249,7 +265,8 @@ test_node_exporter_running() {
 }
 
 test_node_exporter_metrics() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if ! command -v curl >/dev/null 2>&1; then
         test_skip "curl not available"
         return 0
@@ -265,7 +282,8 @@ test_node_exporter_metrics() {
 }
 
 test_nftban_metrics_in_node_exporter() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if ! command -v curl >/dev/null 2>&1; then
         test_skip "curl not available"
         return 0
@@ -285,7 +303,8 @@ test_nftban_metrics_in_node_exporter() {
 # =============================================================================
 
 test_prometheus_installed() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if command -v prometheus >/dev/null 2>&1 || systemctl list-unit-files | grep -q "^prometheus.service"; then
         test_pass "Prometheus is installed"
         return 0
@@ -296,7 +315,8 @@ test_prometheus_installed() {
 }
 
 test_prometheus_running() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl is-active --quiet prometheus 2>/dev/null; then
         test_pass "Prometheus service is running"
         return 0
@@ -307,7 +327,8 @@ test_prometheus_running() {
 }
 
 test_prometheus_scraping() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if ! command -v curl >/dev/null 2>&1; then
         test_skip "curl not available"
         return 0
@@ -323,7 +344,8 @@ test_prometheus_scraping() {
 }
 
 test_prometheus_has_nftban_metrics() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if ! command -v curl >/dev/null 2>&1; then
         test_skip "curl not available"
         return 0
@@ -343,7 +365,8 @@ test_prometheus_has_nftban_metrics() {
 # =============================================================================
 
 test_grafana_installed() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if command -v grafana-server >/dev/null 2>&1 || systemctl list-unit-files | grep -q "grafana-server"; then
         test_pass "Grafana is installed"
         return 0
@@ -354,7 +377,8 @@ test_grafana_installed() {
 }
 
 test_grafana_running() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if systemctl is-active --quiet grafana-server 2>/dev/null; then
         test_pass "Grafana service is running"
         return 0
@@ -365,7 +389,8 @@ test_grafana_running() {
 }
 
 test_grafana_dashboards_provisioned() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if [[ -d "/var/lib/grafana/dashboards/nftban" ]]; then
         local dashboard_count
         dashboard_count=$(find /var/lib/grafana/dashboards/nftban -name "nftban_*.json" 2>/dev/null | wc -l)
@@ -387,7 +412,8 @@ test_grafana_dashboards_provisioned() {
 # =============================================================================
 
 test_health_check_function_exists() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if grep -q "nftban_health_check_metrics" /usr/lib/nftban/core/nftban_health.sh 2>/dev/null; then
         test_pass "Health check function exists in nftban_health.sh"
         return 0
@@ -398,7 +424,8 @@ test_health_check_function_exists() {
 }
 
 test_health_check_runs() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     if command -v nftban >/dev/null 2>&1; then
         if timeout 30 nftban health >/dev/null 2>&1; then
             test_pass "nftban health command runs successfully"
@@ -418,7 +445,8 @@ test_health_check_runs() {
 # =============================================================================
 
 test_setup_scripts_exist() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     local scripts=(
         "/usr/lib/nftban/setup/install_node_exporter.sh"
         "/usr/lib/nftban/setup/validate_node_exporter.sh"
@@ -431,7 +459,8 @@ test_setup_scripts_exist() {
     local missing=0
     for script in "${scripts[@]}"; do
         if [[ ! -f "$script" ]]; then
-            ((missing++))
+            # v1.19.20 FIX
+            ((missing++)) || true
         fi
     done
 
@@ -445,7 +474,8 @@ test_setup_scripts_exist() {
 }
 
 test_setup_scripts_executable() {
-    ((TESTS_RUN++))
+    # v1.19.20 FIX
+    ((TESTS_RUN++)) || true
     local scripts=(
         "/usr/lib/nftban/setup/install_node_exporter.sh"
         "/usr/lib/nftban/setup/validate_node_exporter.sh"
@@ -458,7 +488,8 @@ test_setup_scripts_executable() {
     local not_executable=0
     for script in "${scripts[@]}"; do
         if [[ -f "$script" ]] && [[ ! -x "$script" ]]; then
-            ((not_executable++))
+            # v1.19.20 FIX
+            ((not_executable++)) || true
         fi
     done
 

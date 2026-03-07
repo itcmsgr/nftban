@@ -107,7 +107,8 @@ verify_datasource() {
             return 0
         fi
         rm -f "$_grafana_netrc"
-        ((count++))
+        # v1.19.20 FIX
+        ((count++)) || true
         sleep 1
     done
 

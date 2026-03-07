@@ -241,12 +241,15 @@ collect_module_metrics() {
 
     for module in login portscan ddos feeds geoban suricata rbl botscan; do
         if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${module}.conf" ]]; then
-            ((enabled++))
+            # v1.19.20 FIX
+            ((enabled++)) || true
             if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1 || \
                systemctl is-active "nftban-${module}.service" &>/dev/null 2>&1; then
-                ((active++))
+                # v1.19.20 FIX
+                ((active++)) || true
             elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
-                ((failed++))
+                # v1.19.20 FIX
+                ((failed++)) || true
             fi
         fi
     done
@@ -346,7 +349,8 @@ collect_feed_health_metrics() {
         feed_name=$(basename "$conf" .conf)
         feed_names+=("$feed_name")
         state_files+=("/var/lib/nftban/feeds/${feed_name}.state")
-        ((total++))
+        # v1.19.20 FIX
+        ((total++)) || true
     done
 
     # Batch read all state files - extract both values in single jq call per file
@@ -373,9 +377,11 @@ collect_feed_health_metrics() {
 
         local feed_age=$((now - feed_sync))
         if [[ "$feed_sync" -gt 0 ]] && [[ "$feed_age" -lt "$stale_threshold" ]]; then
-            ((active++))
+            # v1.19.20 FIX
+            ((active++)) || true
         elif [[ "$feed_sync" -gt 0 ]]; then
-            ((stale++))
+            # v1.19.20 FIX
+            ((stale++)) || true
         fi
     done
 
@@ -724,7 +730,8 @@ collect_eventbus_metrics() {
         if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1 || \
            systemctl is-active "nftban-${module}.service" &>/dev/null 2>&1 || \
            [[ -f "${NFTBAN_RUN_DIR}/${module}.pid" ]]; then
-            ((handlers++))
+            # v1.19.20 FIX
+            ((handlers++)) || true
         fi
     done
 
@@ -973,18 +980,21 @@ collect_feeds_metrics() {
     if [[ -d "${NFTBAN_CONFIG_DIR}/feeds" ]]; then
         for feed_file in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
             [[ -f "$feed_file" ]] || continue
-            ((enabled++))
+            # v1.19.20 FIX
+            ((enabled++)) || true
 
             local feed_name feed_data count
             feed_name=$(basename "$feed_file" .conf)
             feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
 
             if [[ -f "$feed_data" ]]; then
-                ((loaded++))
+                # v1.19.20 FIX
+                ((loaded++)) || true
                 count=$(wc -l < "$feed_data" 2>/dev/null || echo "0")
                 ips_total=$((ips_total + count))
             else
-                ((failed++))
+                # v1.19.20 FIX
+                ((failed++)) || true
             fi
         done
     fi

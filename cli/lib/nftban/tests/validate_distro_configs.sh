@@ -125,7 +125,8 @@ validate_syntax() {
         if [[ "$line" =~ ^\[ ]]; then
             if [[ ! "$line" =~ ^\[[a-z_]+\]$ ]]; then
                 echo -e "${RED}  ✗ Invalid section header: $line${NC}"
-                ((syntax_errors++))
+                # v1.19.20 FIX
+                ((syntax_errors++)) || true
             fi
             continue
         fi
@@ -133,13 +134,15 @@ validate_syntax() {
         # Check for key=value pairs
         if [[ ! "$line" =~ ^[a-z_]+=.+ ]]; then
             echo -e "${RED}  ✗ Invalid line format: $line${NC}"
-            ((syntax_errors++))
+            # v1.19.20 FIX
+            ((syntax_errors++)) || true
         fi
     done < "$file"
 
     if [[ $syntax_errors -eq 0 ]]; then
         echo -e "${GREEN}  ✓ Syntax valid${NC}"
-        ((PASSED++))
+        # v1.19.20 FIX
+        ((PASSED++)) || true
         return 0
     else
         echo -e "${RED}  ✗ Syntax errors: $syntax_errors${NC}"
@@ -156,11 +159,14 @@ validate_sections() {
     for section in "${REQUIRED_SECTIONS[@]}"; do
         if has_section "$file" "$section"; then
             echo -e "${GREEN}  ✓ Section [$section] present${NC}"
-            ((PASSED++))
+            # v1.19.20 FIX
+            ((PASSED++)) || true
         else
             echo -e "${RED}  ✗ Section [$section] missing${NC}"
-            ((ERRORS++))
-            ((missing++))
+            # v1.19.20 FIX
+            ((ERRORS++)) || true
+            # v1.19.20 FIX
+            ((missing++)) || true
         fi
     done
 
@@ -179,11 +185,14 @@ validate_fields() {
         value=$(get_value "$file" "$section" "$field")
         if [[ -n "$value" ]]; then
             echo -e "${GREEN}    ✓ $field = $value${NC}"
-            ((PASSED++))
+            # v1.19.20 FIX
+            ((PASSED++)) || true
         else
             echo -e "${RED}    ✗ $field is missing or empty${NC}"
-            ((ERRORS++))
-            ((missing++))
+            # v1.19.20 FIX
+            ((ERRORS++)) || true
+            # v1.19.20 FIX
+            ((missing++)) || true
         fi
     done
 
@@ -199,12 +208,14 @@ validate_family() {
     case "$family" in
         rhel|debian)
             echo -e "${GREEN}    ✓ Valid family: $family${NC}"
-            ((PASSED++))
+            # v1.19.20 FIX
+            ((PASSED++)) || true
             return 0
             ;;
         *)
             echo -e "${RED}    ✗ Invalid family: $family (expected: rhel or debian)${NC}"
-            ((ERRORS++))
+            # v1.19.20 FIX
+            ((ERRORS++)) || true
             return 1
             ;;
     esac
@@ -219,12 +230,14 @@ validate_pkgmgr() {
     case "$type" in
         dnf|yum|apt-get)
             echo -e "${GREEN}    ✓ Valid package manager: $type${NC}"
-            ((PASSED++))
+            # v1.19.20 FIX
+            ((PASSED++)) || true
             return 0
             ;;
         *)
             echo -e "${YELLOW}    ⚠ Unusual package manager: $type${NC}"
-            ((WARNINGS++))
+            # v1.19.20 FIX
+            ((WARNINGS++)) || true
             return 0
             ;;
     esac
@@ -242,19 +255,23 @@ validate_query_cmd() {
         rhel)
             if [[ "$query_cmd" == "rpm -qa" ]]; then
                 echo -e "${GREEN}    ✓ Correct query_cmd for RHEL family${NC}"
-                ((PASSED++))
+                # v1.19.20 FIX
+                ((PASSED++)) || true
             else
                 echo -e "${RED}    ✗ Wrong query_cmd for RHEL: $query_cmd (expected: rpm -qa)${NC}"
-                ((ERRORS++))
+                # v1.19.20 FIX
+                ((ERRORS++)) || true
             fi
             ;;
         debian)
             if [[ "$query_cmd" == "dpkg -l" ]]; then
                 echo -e "${GREEN}    ✓ Correct query_cmd for Debian family${NC}"
-                ((PASSED++))
+                # v1.19.20 FIX
+                ((PASSED++)) || true
             else
                 echo -e "${RED}    ✗ Wrong query_cmd for Debian: $query_cmd (expected: dpkg -l)${NC}"
-                ((ERRORS++))
+                # v1.19.20 FIX
+                ((ERRORS++)) || true
             fi
             ;;
     esac

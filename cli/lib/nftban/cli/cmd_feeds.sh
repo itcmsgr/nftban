@@ -586,10 +586,12 @@ nftban_cmd_feeds() {
                 echo "  • Enabling $feed..."
                 if nftban_feeds_enable "$feed" "true"; then  # Use quiet mode for batch
                     echo "    ✅ $feed enabled"
-                    ((enabled_count++))
+                    # v1.19.20 FIX
+                    ((enabled_count++)) || true
                 else
                     echo "    ❌ $feed failed"
-                    ((failed_count++))
+                    # v1.19.20 FIX
+                    ((failed_count++)) || true
                 fi
             done
 

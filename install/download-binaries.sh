@@ -32,7 +32,27 @@ set -Eeuo pipefail
 GITHUB_REPO="itcmsgr/nftban"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/download"
+
+# v1.19.20 FIX: Validate version tag format to prevent injection
+# Valid formats: "latest", "v1.19.20", "1.19.20"
+validate_version_tag() {
+    local tag="$1"
+    if [[ "$tag" == "latest" ]]; then
+        return 0
+    fi
+    # Match v1.2.3 or 1.2.3 (optional v prefix, x.y.z format)
+    if [[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?$ ]]; then
+        return 0
+    fi
+    return 1
+}
+
 VERSION="${1:-latest}"
+if ! validate_version_tag "$VERSION"; then
+    echo -e "${RED}[ ERROR  ]${NC} Invalid version tag format: $VERSION" >&2
+    echo -e "${RED}[ ERROR  ]${NC} Expected format: v1.19.20 or 1.19.20" >&2
+    exit 1
+fi
 
 # Directories
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-/tmp/nftban-binaries}"
@@ -181,6 +201,10 @@ get_latest_version() {
     if [[ -z "$latest" || "$latest" == "null" ]]; then
         error "Failed to get latest version from GitHub API"
     fi
+    # v1.19.20 FIX: Validate version tag from API response
+    if ! validate_version_tag "$latest"; then
+        error "Invalid version tag from API: $latest"
+    fi
     echo "$latest"
 }
 
@@ -203,7 +227,11 @@ install_slsa_verifier() {
     local verifier_url="https://github.com/slsa-framework/slsa-verifier/releases/download/${verifier_version}/slsa-verifier-linux-${arch}"
 
     log "Downloading slsa-verifier ${verifier_version}..."
-    curl -fsSL -o "$DOWNLOAD_DIR/slsa-verifier" "$verifier_url"
+    # v1.19.20 FIX: Check curl exit code and log error on failure
+    if ! curl -fsSL -o "$DOWNLOAD_DIR/slsa-verifier" "$verifier_url"; then
+        warn "Failed to download slsa-verifier from: $verifier_url"
+        return 1
+    fi
     chmod +x "$DOWNLOAD_DIR/slsa-verifier"
     export PATH="$PATH:$DOWNLOAD_DIR"
 

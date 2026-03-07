@@ -583,11 +583,14 @@ collect_all_metrics() {
         # --- Module Status Metrics ---
         for module in login portscan ddos feeds geoban suricata rbl botscan; do
             if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${module}.conf" ]]; then
-                ((mod_enabled++))
+                # v1.19.20 FIX
+                ((mod_enabled++)) || true
                 if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1; then
-                    ((mod_active++))
+                    # v1.19.20 FIX
+                    ((mod_active++)) || true
                 elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
-                    ((mod_failed++))
+                    # v1.19.20 FIX
+                    ((mod_failed++)) || true
                 fi
             fi
         done
@@ -663,7 +666,8 @@ collect_all_metrics() {
                 local last_sync
                 last_sync=$(jq -r '.last_sync // 0' "$state_file" 2>/dev/null || echo "0")
                 if [[ "$last_sync" =~ ^[0-9]+$ ]] && [[ $last_sync -gt 0 ]] && [[ $last_sync -lt $cutoff_time ]]; then
-                    ((feeds_stale_count++))
+                    # v1.19.20 FIX
+                    ((feeds_stale_count++)) || true
                 fi
             done
         fi

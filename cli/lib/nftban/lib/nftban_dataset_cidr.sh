@@ -237,9 +237,11 @@ _nftban_expand_ipv6() {
         local left_groups=0 right_groups=0
 
         [[ -n "$left" ]] && left_groups=$(echo "$left" | tr -cd ':' | wc -c)
-        [[ -n "$left" ]] && ((left_groups++))
+        # v1.19.20 FIX
+        [[ -n "$left" ]] && { ((left_groups++)) || true; }
         [[ -n "$right" ]] && right_groups=$(echo "$right" | tr -cd ':' | wc -c)
-        [[ -n "$right" ]] && ((right_groups++))
+        # v1.19.20 FIX
+        [[ -n "$right" ]] && { ((right_groups++)) || true; }
 
         local missing=$((8 - left_groups - right_groups))
         local zeros=""

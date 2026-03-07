@@ -75,7 +75,8 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
             continue
         }
         log_info "Created missing directory: $path"
-        ((fixed_dirs++))
+        # v1.19.20 FIX
+        ((fixed_dirs++)) || true
     fi
 done
 
@@ -108,7 +109,8 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
     if [ "$act_owner" != "$exp_owner" ] || [ "$act_group" != "$exp_group" ]; then
         chown "$exp_owner:$exp_group" "$path" 2>/dev/null && {
             log_info "Fixed ownership: $path → $exp_owner:$exp_group"
-            ((fixed_perms++))
+            # v1.19.20 FIX
+            ((fixed_perms++)) || true
         }
     fi
 
@@ -116,7 +118,8 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
     if [ "$act_mode" != "$exp_mode_norm" ]; then
         chmod "$exp_mode" "$path" 2>/dev/null && {
             log_info "Fixed permissions: $path → $exp_mode_norm"
-            ((fixed_perms++))
+            # v1.19.20 FIX
+            ((fixed_perms++)) || true
         }
     fi
 done
@@ -410,7 +413,8 @@ while IFS= read -r table_line; do
         TABLE_SPEC="${table_line#table }"
 
         # Delete the rogue table
-        if nft delete table $TABLE_SPEC 2>/dev/null; then
+        # v1.19.20 FIX
+        if nft delete table "$TABLE_SPEC" 2>/dev/null; then
             log_info "✅ Deleted rogue table: $TABLE_SPEC"
         else
             log_error "Failed to delete rogue table: $TABLE_SPEC"
@@ -671,13 +675,15 @@ if [ -f "$LOGIN_CONFIG" ] || [ -f "$LOGIN_CONFIG_LOCAL" ]; then
         chown nftban:nftban "$LOGIN_LOG_DIR" 2>/dev/null || true
         chmod 750 "$LOGIN_LOG_DIR"
         log_info "Created login log directory: $LOGIN_LOG_DIR"
-        ((LOGIN_ISSUES_FIXED++))
+        # v1.19.20 FIX
+        ((LOGIN_ISSUES_FIXED++)) || true
     fi
 
     # 2. Check core module exists
     if [ ! -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]; then
         log_warn "Login alert core module not found"
-        ((LOGIN_ISSUES_FOUND++))
+        # v1.19.20 FIX
+        ((LOGIN_ISSUES_FOUND++)) || true
     fi
 
     # 3. Check if service should be running but isn't
@@ -688,10 +694,12 @@ if [ -f "$LOGIN_CONFIG" ] || [ -f "$LOGIN_CONFIG_LOCAL" ]; then
                 log_warn "Login monitor service enabled but not running - attempting restart"
                 if systemctl start "$login_monitor_svc" 2>/dev/null; then
                     log_info "✅ Started login monitor service"
-                    ((LOGIN_ISSUES_FIXED++))
+                    # v1.19.20 FIX
+                    ((LOGIN_ISSUES_FIXED++)) || true
                 else
                     log_warn "Failed to start login monitor service"
-                    ((LOGIN_ISSUES_FOUND++))
+                    # v1.19.20 FIX
+                    ((LOGIN_ISSUES_FOUND++)) || true
                 fi
             else
                 log_info "✅ Login monitor service is running"
