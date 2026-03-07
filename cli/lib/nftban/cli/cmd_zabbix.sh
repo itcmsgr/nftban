@@ -973,7 +973,8 @@ _cmd_zabbix_targets() {
                 local status="disabled"
                 [[ "$target_enabled" == "true" ]] && status="enabled"
                 printf "%-15s %-30s %-10s %-15s\n" "$name" "${target_server}:${target_port}" "$status" "$target_filter"
-                ((i++))
+                # v1.19.20 FIX
+                ((i++)) || true
             done
 
             if [[ -z "$server" ]] && [[ $i -eq 1 ]]; then
@@ -991,7 +992,8 @@ _cmd_zabbix_targets() {
             # Find next available slot
             local i=1
             while [[ -n "$(_zabbix_config_get "NFTBAN_ZABBIX_TARGET_${i}_NAME" "")" ]]; do
-                ((i++))
+                # v1.19.20 FIX
+                ((i++)) || true
             done
 
             # Parse options
@@ -1045,7 +1047,8 @@ _cmd_zabbix_targets() {
                     _zabbix_print_success "Target $name ${action}d"
                     return 0
                 fi
-                ((i++))
+                # v1.19.20 FIX
+                ((i++)) || true
             done
             ;;
         remove)

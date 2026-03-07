@@ -202,7 +202,8 @@ nftban_health_check_geoban() {
         shopt -s nullglob 2>/dev/null || true
         for file in "$geoban_dir"/*.conf; do
             if [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null; then
-                ((blocked_count++))
+                # v1.19.20 FIX
+                ((blocked_count++)) || true
             fi
         done
         shopt -u nullglob 2>/dev/null || true

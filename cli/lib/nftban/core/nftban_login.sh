@@ -223,16 +223,17 @@ _nftban_login_eve_file_fresh() {
 nftban_login_suricata_available() {
     local score=0
 
+    # v1.19.20 FIX: Added || true to prevent set -e failures
     if [[ "${LOGIN_AUTO_CHECK_BINARY:-true}" == "true" ]]; then
-        _nftban_login_suricata_binary_exists && ((score++))
+        _nftban_login_suricata_binary_exists && { ((score++)) || true; }
     fi
 
     if [[ "${LOGIN_AUTO_CHECK_SERVICE:-true}" == "true" ]]; then
-        _nftban_login_suricata_service_running && ((score++))
+        _nftban_login_suricata_service_running && { ((score++)) || true; }
     fi
 
     if [[ "${LOGIN_AUTO_CHECK_EVE_FILE:-true}" == "true" ]]; then
-        _nftban_login_eve_file_fresh && ((score++))
+        _nftban_login_eve_file_fresh && { ((score++)) || true; }
     fi
 
     # Need at least 2 checks to pass

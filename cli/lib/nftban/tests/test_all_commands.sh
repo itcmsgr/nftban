@@ -64,12 +64,14 @@ test_end() {
 
 pass() {
     echo -e "${GREEN}✓ PASS${NC}: $*" | tee -a "$TEST_LOG"
-    ((TESTS_PASSED++))
+    # v1.19.20 FIX
+    ((TESTS_PASSED++)) || true
 }
 
 fail() {
     echo -e "${RED}✗ FAIL${NC}: $*" | tee -a "$TEST_LOG"
-    ((TESTS_FAILED++))
+    # v1.19.20 FIX
+    ((TESTS_FAILED++)) || true
 }
 
 warn() {
@@ -78,12 +80,14 @@ warn() {
 
 timeout_fail() {
     echo -e "${RED}⏱ TIMEOUT${NC}: $*" | tee -a "$TEST_LOG"
-    ((TESTS_TIMEOUT++))
+    # v1.19.20 FIX
+    ((TESTS_TIMEOUT++)) || true
 }
 
 no_output() {
     echo -e "${YELLOW}∅ NO OUTPUT${NC}: $*" | tee -a "$TEST_LOG"
-    ((TESTS_NO_OUTPUT++))
+    # v1.19.20 FIX
+    ((TESTS_NO_OUTPUT++)) || true
 }
 
 # =============================================================================
@@ -102,7 +106,8 @@ test_command() {
     shift
     local cmd="$*"
 
-    ((TESTS_TOTAL++))
+    # v1.19.20 FIX
+    ((TESTS_TOTAL++)) || true
 
     test_start
     log "TEST #$TESTS_TOTAL: $name"
@@ -173,18 +178,21 @@ test_command() {
             pass "$name - output OK, exit 0, ${duration}s $marker_details"
         else
             warn "$name - works but NO formatting markers (${duration}s)"
-            ((TESTS_PASSED++))
+            # v1.19.20 FIX
+            ((TESTS_PASSED++)) || true
         fi
     elif [[ $exit_code -ne 0 ]]; then
         # Some commands exit non-zero on purpose (e.g., search when not found, health check with errors)
         if [[ -n "$output" ]]; then
             if [[ "$has_markers" == "true" ]]; then
                 warn "$name - exit $exit_code but has output and markers (${duration}s)"
-                ((TESTS_PASSED++))
+                # v1.19.20 FIX
+                ((TESTS_PASSED++)) || true
             else
                 # Has output but no markers - could be intentional (like health summary)
                 warn "$name - exit $exit_code with output but no markers (${duration}s)"
-                ((TESTS_PASSED++))
+                # v1.19.20 FIX
+                ((TESTS_PASSED++)) || true
             fi
         else
             fail "$name - exit code $exit_code (${duration}s)"

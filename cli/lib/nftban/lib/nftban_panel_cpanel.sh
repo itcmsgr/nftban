@@ -577,7 +577,8 @@ nftban_panel_cpanel_repair() {
     if [[ ! -f "/etc/nftban/conf.d/panels/cpanel/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ Configuration file exists"
     fi
@@ -586,7 +587,8 @@ nftban_panel_cpanel_repair() {
     if ! _nftban_panel_check_port 2083; then
         echo "✗ cPanel port (2083) not open in firewall"
         echo "  Run: nftban panel cpanel enable"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ cPanel port (2083) open in firewall"
     fi
@@ -595,7 +597,8 @@ nftban_panel_cpanel_repair() {
     if ! _nftban_panel_check_port 2087; then
         echo "✗ WHM port (2087) not open in firewall"
         echo "  Run: nftban panel cpanel enable"
-        ((repairs++))
+        # v1.19.20 FIX
+        ((repairs++)) || true
     else
         echo "✓ WHM port (2087) open in firewall"
     fi
@@ -629,11 +632,13 @@ nftban_panel_cpanel_test() {
     echo "Test 1: cPanel Port (2083/TCP)"
     if ss -tlnp 2>/dev/null | grep -q ':2083 '; then
         echo "  ✓ PASS: Port 2083 is listening"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2083 not listening"
         echo "    Ensure cPanel is running"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -641,11 +646,13 @@ nftban_panel_cpanel_test() {
     echo "Test 2: cPanel Firewall Rules (2083/TCP)"
     if _nftban_panel_check_port 2083; then
         echo "  ✓ PASS: Port 2083 allowed in firewall"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2083 blocked by firewall"
         echo "    Run: nftban panel cpanel enable"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -653,11 +660,13 @@ nftban_panel_cpanel_test() {
     echo "Test 3: WHM Port (2087/TCP)"
     if ss -tlnp 2>/dev/null | grep -q ':2087 '; then
         echo "  ✓ PASS: Port 2087 is listening"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2087 not listening"
         echo "    Ensure WHM is running"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -665,11 +674,13 @@ nftban_panel_cpanel_test() {
     echo "Test 4: WHM Firewall Rules (2087/TCP)"
     if _nftban_panel_check_port 2087; then
         echo "  ✓ PASS: Port 2087 allowed in firewall"
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
         echo "  ✗ FAIL: Port 2087 blocked by firewall"
         echo "    Run: nftban panel cpanel enable"
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
     fi
     echo ""
 
@@ -685,9 +696,11 @@ nftban_panel_cpanel_test() {
         fi
     done
     if $web_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel cpanel enable"
     fi
     echo ""
@@ -704,9 +717,11 @@ nftban_panel_cpanel_test() {
         fi
     done
     if $mail_ok; then
-        ((tests_passed++))
+        # v1.19.20 FIX
+        ((tests_passed++)) || true
     else
-        ((tests_failed++))
+        # v1.19.20 FIX
+        ((tests_failed++)) || true
         echo "    Run: nftban panel cpanel enable"
     fi
     echo ""

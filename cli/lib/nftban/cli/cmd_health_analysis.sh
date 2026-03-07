@@ -521,7 +521,8 @@ nftban_health_cmd_posture() {
 
     local ssh_config="/etc/ssh/sshd_config"
     if [[ -f "$ssh_config" ]]; then
-        ((total_checks++))
+        # v1.19.20 FIX
+        ((total_checks++)) || true
         # PasswordAuthentication
         local pass_auth
         pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
@@ -529,10 +530,12 @@ nftban_health_cmd_posture() {
             printf "  %-28s ✅ Disabled (key-only)\n" "PasswordAuthentication"
         else
             printf "  %-28s ⚠️  Enabled (consider disabling)\n" "PasswordAuthentication"
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
         fi
 
-        ((total_checks++))
+        # v1.19.20 FIX
+        ((total_checks++)) || true
         # PermitRootLogin
         local root_login
         root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
@@ -540,10 +543,12 @@ nftban_health_cmd_posture() {
             printf "  %-28s ✅ %s\n" "PermitRootLogin" "$root_login"
         else
             printf "  %-28s ⚠️  %s (consider 'no' or 'prohibit-password')\n" "PermitRootLogin" "$root_login"
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
         fi
 
-        ((total_checks++))
+        # v1.19.20 FIX
+        ((total_checks++)) || true
         # X11Forwarding
         local x11_fwd
         x11_fwd=$(grep -E "^X11Forwarding" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
@@ -554,7 +559,8 @@ nftban_health_cmd_posture() {
         fi
     else
         printf "  %-28s ⚠️  Config not found\n" "sshd_config"
-        ((warnings++))
+        # v1.19.20 FIX
+        ((warnings++)) || true
     fi
     echo ""
 
@@ -566,7 +572,8 @@ nftban_health_cmd_posture() {
 
     local sudoers_dir="/etc/sudoers.d"
     if [[ -d "$sudoers_dir" ]]; then
-        ((total_checks++))
+        # v1.19.20 FIX
+        ((total_checks++)) || true
         local risky_count=0
         local nftban_sudoers_ok=false
 
@@ -588,7 +595,8 @@ nftban_health_cmd_posture() {
             # Flag ALL NOPASSWD (risky)
             if grep -qE "NOPASSWD:\s*ALL" "$sfile" 2>/dev/null; then
                 printf "  %-28s ⚠️  %s has ALL NOPASSWD\n" "Sudoers" "$sname"
-                ((risky_count++))
+                # v1.19.20 FIX
+                ((risky_count++)) || true
             fi
         done
 
@@ -627,18 +635,21 @@ nftban_health_cmd_posture() {
 
             for check in "${hardening_checks[@]}"; do
                 if grep -qE "^${check}=(true|yes|strict|full)" "$svc" 2>/dev/null; then
-                    ((hardened++))
+                    # v1.19.20 FIX
+                    ((hardened++)) || true
                 fi
             done
 
-            ((total_checks++))
+            # v1.19.20 FIX
+            ((total_checks++)) || true
             if [[ $hardened -eq $total ]]; then
                 printf "  %-28s ✅ %d/%d hardening options\n" "$svc_name" "$hardened" "$total"
             elif [[ $hardened -gt 0 ]]; then
                 printf "  %-28s ℹ️  %d/%d hardening options\n" "$svc_name" "$hardened" "$total"
             else
                 printf "  %-28s ⚠️  No hardening options\n" "$svc_name"
-                ((warnings++))
+                # v1.19.20 FIX
+                ((warnings++)) || true
             fi
         done
         [[ "$systemd_found" == true ]] && break
@@ -656,7 +667,8 @@ nftban_health_cmd_posture() {
     local conf_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     local integrity_file="${conf_dir}/.config_checksums"
 
-    ((total_checks++))
+    # v1.19.20 FIX
+    ((total_checks++)) || true
     if [[ -f "$integrity_file" ]]; then
         local drift_count=0
         local checked_count=0
@@ -665,11 +677,13 @@ nftban_health_cmd_posture() {
             [[ -z "$fpath" ]] && continue
             [[ "$fpath" == "#"* ]] && continue
             [[ -f "$fpath" ]] || continue
-            ((checked_count++))
+            # v1.19.20 FIX
+            ((checked_count++)) || true
             local current_hash
             current_hash=$(sha256sum "$fpath" 2>/dev/null | cut -d' ' -f1 || echo "")
             if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
-                ((drift_count++))
+                # v1.19.20 FIX
+                ((drift_count++)) || true
             fi
         done < "$integrity_file"
 
@@ -677,7 +691,8 @@ nftban_health_cmd_posture() {
             printf "  %-28s ✅ %d files verified\n" "Config integrity" "$checked_count"
         else
             printf "  %-28s ⚠️  %d file(s) modified since install\n" "Config integrity" "$drift_count"
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
         fi
     else
         printf "  %-28s ℹ️  Checksums not available\n" "Config integrity"

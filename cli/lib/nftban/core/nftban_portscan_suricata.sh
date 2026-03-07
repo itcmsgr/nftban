@@ -316,7 +316,8 @@ nftban_portscan_suricata_read_eve() {
     local count=0
     while IFS= read -r line; do
         nftban_portscan_suricata_process_alert "$line"
-        ((count++))
+        # v1.19.20 FIX
+        ((count++)) || true
         [[ $count -ge $batch_size ]] && break
     done < <(tail -c +$((_PORTSCAN_SURICATA_EVE_OFFSET + 1)) "$eve_file" 2>/dev/null | \
              grep -E '"event_type"\s*:\s*"alert"' | \
@@ -817,7 +818,8 @@ nftban_portscan_suricata_cleanup() {
             unset "_PORTSCAN_SURICATA_IP_LAST_SEEN[$ip]"
             unset "_PORTSCAN_SURICATA_IP_SCAN_TYPES[$ip]"
 
-            ((removed++))
+            # v1.19.20 FIX
+            ((removed++)) || true
         done
     fi
 

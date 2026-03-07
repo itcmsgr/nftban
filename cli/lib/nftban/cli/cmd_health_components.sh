@@ -431,11 +431,13 @@ nftban_health_cmd_registries() {
             echo "  ✓ commands.registry.yml: Valid"
         else
             echo "  ✗ commands.registry.yml: Invalid YAML"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     else
         echo "  ⚠ commands.registry.yml: Not found"
-        ((warnings++))
+        # v1.19.20 FIX
+        ((warnings++)) || true
     fi
 
     # Check JSON registries
@@ -447,11 +449,13 @@ nftban_health_cmd_registries() {
                 echo "  ✓ $reg_name: Valid"
             else
                 echo "  ✗ $reg_name: Invalid JSON"
-                ((errors++))
+                # v1.19.20 FIX
+                ((errors++)) || true
             fi
         else
             echo "  ⚠ $reg_name: Not found"
-            ((warnings++))
+            # v1.19.20 FIX
+            ((warnings++)) || true
         fi
     done
 

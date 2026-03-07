@@ -466,6 +466,9 @@ nftban_portscan_disable() {
 
 # Get portscan detection status
 nftban_portscan_status() {
+    # v1.19.20 FIX (B6): Ensure config is loaded before using variables
+    nftban_portscan_load_config
+
     # Show unified banner
     if type -t nftban_banner >/dev/null 2>&1; then
         nftban_banner "portscan"
@@ -479,7 +482,8 @@ nftban_portscan_status() {
     # ==========================================================================
     # MAIN STATUS - Is it enabled and protecting?
     # ==========================================================================
-    local is_enabled="${PORTSCAN_ENABLED:-true}"
+    # v1.19.20 FIX (B5): Correct default to false (matches config loader)
+    local is_enabled="${PORTSCAN_ENABLED:-false}"
     local auto_ban="${PORTSCAN_AUTO_BAN:-true}"
 
     if [[ "$is_enabled" == "true" ]]; then
@@ -687,6 +691,111 @@ nftban_portscan_status() {
     echo "    PORTSCAN_BAN_TIME=3600         - Ban duration (seconds)"
     echo ""
     echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
+    echo ""
+
+    # ==========================================================================
+    # v1.19.20 (B8): OPEN PORTS VISIBILITY
+    # ==========================================================================
+    echo "OPEN PORTS (Allowed Inbound - Bypass Detection)"
+    echo "───────────────────────────────────────────────────────────"
+
+    local tcp_ports_ipv4="" udp_ports_ipv4="" tcp_ports_ipv6="" udp_ports_ipv6=""
+
+    # IPv4 ports
+    if nft list set ip nftban tcp_ports_in &>/dev/null; then
+        tcp_ports_ipv4=$(nft list set ip nftban tcp_ports_in 2>/dev/null | \
+            grep "elements" | sed 's/.*elements = { //;s/ }$//' | tr -d '\n\t') || true
+    fi
+    if nft list set ip nftban udp_ports_in &>/dev/null; then
+        udp_ports_ipv4=$(nft list set ip nftban udp_ports_in 2>/dev/null | \
+            grep "elements" | sed 's/.*elements = { //;s/ }$//' | tr -d '\n\t') || true
+    fi
+
+    # IPv6 ports
+    if nft list set ip6 nftban tcp_ports_in &>/dev/null; then
+        tcp_ports_ipv6=$(nft list set ip6 nftban tcp_ports_in 2>/dev/null | \
+            grep "elements" | sed 's/.*elements = { //;s/ }$//' | tr -d '\n\t') || true
+    fi
+    if nft list set ip6 nftban udp_ports_in &>/dev/null; then
+        udp_ports_ipv6=$(nft list set ip6 nftban udp_ports_in 2>/dev/null | \
+            grep "elements" | sed 's/.*elements = { //;s/ }$//' | tr -d '\n\t') || true
+    fi
+
+    echo "  IPv4:"
+    echo "    TCP:  ${tcp_ports_ipv4:-none}"
+    echo "    UDP:  ${udp_ports_ipv4:-none}"
+    echo ""
+    echo "  IPv6:"
+    echo "    TCP:  ${tcp_ports_ipv6:-none}"
+    echo "    UDP:  ${udp_ports_ipv6:-none}"
+    echo ""
+
+    # ==========================================================================
+    # v1.19.20 (B9): JUMP RULE VERIFICATION
+    # ==========================================================================
+    echo "NFTABLES RULE VERIFICATION"
+    echo "───────────────────────────────────────────────────────────"
+
+    local expected_position="${PORTSCAN_NFT_JUMP_POSITION:-established}"
+    local ipv4_jump_exists=false ipv6_jump_exists=false
+    local ipv4_jump_index=0 ipv6_jump_index=0
+    local ipv4_accept_index=0 ipv6_accept_index=0
+    local chain_rules=""
+
+    # Check IPv4 jump rule
+    if nft list chain ip nftban input &>/dev/null; then
+        chain_rules=$(nft -a list chain ip nftban input 2>/dev/null) || true
+        if echo "$chain_rules" | grep -q "jump portscan_detection"; then
+            ipv4_jump_exists=true
+            ipv4_jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
+        fi
+        # Find first service accept rule (tcp dport ... accept)
+        ipv4_accept_index=$(echo "$chain_rules" | grep -n "tcp dport.*accept" | head -1 | cut -d: -f1) || true
+    fi
+
+    # Check IPv6 jump rule
+    if nft list chain ip6 nftban input &>/dev/null; then
+        chain_rules=$(nft -a list chain ip6 nftban input 2>/dev/null) || true
+        if echo "$chain_rules" | grep -q "jump portscan_detection"; then
+            ipv6_jump_exists=true
+            ipv6_jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
+        fi
+        ipv6_accept_index=$(echo "$chain_rules" | grep -n "tcp dport.*accept" | head -1 | cut -d: -f1) || true
+    fi
+
+    # Display IPv4 results
+    echo "  IPv4 Jump Rule:"
+    if [[ "$ipv4_jump_exists" == "true" ]]; then
+        echo "    Exists:    ✅ YES (rule #${ipv4_jump_index})"
+        if [[ -n "$ipv4_accept_index" ]] && [[ "$ipv4_accept_index" =~ ^[0-9]+$ ]] && \
+           [[ "$ipv4_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv4_jump_index" -gt "$ipv4_accept_index" ]]; then
+            echo "    Position:  ❌ WRONG - After service accepts (rule #${ipv4_accept_index})"
+            echo "    ⚠️  WARNING: Scans to open ports will NOT be detected!"
+        else
+            echo "    Position:  ✅ CORRECT - Before service accepts"
+        fi
+    else
+        echo "    Exists:    ❌ NO - Jump rule not found!"
+        echo "    ⚠️  WARNING: Portscan detection is NOT active in nftables!"
+    fi
+    echo ""
+
+    # Display IPv6 results
+    echo "  IPv6 Jump Rule:"
+    if [[ "$ipv6_jump_exists" == "true" ]]; then
+        echo "    Exists:    ✅ YES (rule #${ipv6_jump_index})"
+        if [[ -n "$ipv6_accept_index" ]] && [[ "$ipv6_accept_index" =~ ^[0-9]+$ ]] && \
+           [[ "$ipv6_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv6_jump_index" -gt "$ipv6_accept_index" ]]; then
+            echo "    Position:  ❌ WRONG - After service accepts"
+            echo "    ⚠️  WARNING: IPv6 scans to open ports will NOT be detected!"
+        else
+            echo "    Position:  ✅ CORRECT - Before service accepts"
+        fi
+    else
+        echo "    Exists:    ❌ NO - IPv6 jump rule not found!"
+    fi
+    echo ""
+    echo "  Expected Position: after '${expected_position}' rule"
     echo ""
 
     # ==========================================================================

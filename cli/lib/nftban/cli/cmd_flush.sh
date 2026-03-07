@@ -176,11 +176,13 @@ _restore_system_whitelist() {
             if [[ "$line" =~ : ]]; then
                 [[ -n "$ips_v6" ]] && ips_v6+=","
                 ips_v6+="$line"
-                ((count_v6++))
+                # v1.19.20 FIX
+                ((count_v6++)) || true
             else
                 [[ -n "$ips_v4" ]] && ips_v4+=","
                 ips_v4+="$line"
-                ((count_v4++))
+                # v1.19.20 FIX
+                ((count_v4++)) || true
             fi
         done < "$NFTBAN_SYSTEM_WHITELIST"
     fi
@@ -190,7 +192,8 @@ _restore_system_whitelist() {
     if [[ -n "$ssh_ip" ]] && [[ ! "$ips_v4" =~ $ssh_ip ]]; then
         [[ -n "$ips_v4" ]] && ips_v4+=","
         ips_v4+="$ssh_ip"
-        ((count_v4++))
+        # v1.19.20 FIX
+        ((count_v4++)) || true
     fi
 
     if [[ "$dry_run" == "true" ]]; then
@@ -469,10 +472,12 @@ _flush_feeds() {
 
             if [[ "$line" =~ : ]]; then
                 cidrs_v6+=("$line")
-                ((count_v6++))
+                # v1.19.20 FIX
+                ((count_v6++)) || true
             else
                 cidrs_v4+=("$line")
-                ((count_v4++))
+                # v1.19.20 FIX
+                ((count_v4++)) || true
             fi
         done < "$file"
     done
@@ -578,10 +583,12 @@ _flush_geoban() {
 
             if [[ "$line" =~ : ]]; then
                 cidrs_v6+=("$line")
-                ((count_v6++))
+                # v1.19.20 FIX
+                ((count_v6++)) || true
             else
                 cidrs_v4+=("$line")
-                ((count_v4++))
+                # v1.19.20 FIX
+                ((count_v4++)) || true
             fi
         done < "$file"
     done

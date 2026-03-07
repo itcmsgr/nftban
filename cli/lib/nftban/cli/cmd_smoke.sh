@@ -217,24 +217,25 @@ nftban_smoke_verify() {
     local passed=0
     local failed=0
 
+    # v1.19.20 FIX: Added || true to prevent set -e failures when var is 0
     case "$subcommand" in
         all)
-            _verify_ban_counts && ((passed++)) || ((failed++))
-            _verify_whitelist_counts && ((passed++)) || ((failed++))
-            _verify_feeds && ((passed++)) || ((failed++))
-            _verify_geoban && ((passed++)) || ((failed++))
+            _verify_ban_counts && { ((passed++)) || true; } || { ((failed++)) || true; }
+            _verify_whitelist_counts && { ((passed++)) || true; } || { ((failed++)) || true; }
+            _verify_feeds && { ((passed++)) || true; } || { ((failed++)) || true; }
+            _verify_geoban && { ((passed++)) || true; } || { ((failed++)) || true; }
             ;;
         bans)
-            _verify_ban_counts && ((passed++)) || ((failed++))
+            _verify_ban_counts && { ((passed++)) || true; } || { ((failed++)) || true; }
             ;;
         whitelist)
-            _verify_whitelist_counts && ((passed++)) || ((failed++))
+            _verify_whitelist_counts && { ((passed++)) || true; } || { ((failed++)) || true; }
             ;;
         feeds)
-            _verify_feeds && ((passed++)) || ((failed++))
+            _verify_feeds && { ((passed++)) || true; } || { ((failed++)) || true; }
             ;;
         geoban)
-            _verify_geoban && ((passed++)) || ((failed++))
+            _verify_geoban && { ((passed++)) || true; } || { ((failed++)) || true; }
             ;;
         *)
             echo "ERROR: Unknown verify target: $subcommand" >&2
@@ -282,7 +283,8 @@ _verify_ban_counts() {
             printf "     ✅ PASS: Count increased %d → %d (expected +1)\n" "$before" "$after"
         else
             printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     else
         echo "     ⚠️  SKIP: Ban command failed (may need root)"
@@ -303,11 +305,13 @@ _verify_ban_counts() {
             printf "     ✅ PASS: Count decreased %d → %d (expected -1)\n" "$before_unban" "$after"
         else
             printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     else
         echo "     ⚠️  WARN: Unban command failed"
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     # Verify we're back to baseline
@@ -352,7 +356,8 @@ _verify_whitelist_counts() {
             printf "     ✅ PASS: Count increased %d → %d (expected +1)\n" "$before" "$after"
         else
             printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     else
         echo "     ⚠️  SKIP: Whitelist add failed (may need root)"
@@ -372,11 +377,13 @@ _verify_whitelist_counts() {
             printf "     ✅ PASS: Count decreased %d → %d (expected -1)\n" "$before_remove" "$after"
         else
             printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     else
         echo "     ⚠️  WARN: Whitelist remove failed"
-        ((errors++))
+        # v1.19.20 FIX
+        ((errors++)) || true
     fi
 
     echo ""
@@ -409,7 +416,8 @@ _verify_feeds() {
         local file_count
         file_count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null || echo "0")
         total_file_ips=$((total_file_ips + file_count))
-        ((feeds_checked++))
+        # v1.19.20 FIX
+        ((feeds_checked++)) || true
 
         printf "  %-20s %'d IPs in file\n" "$feed_name" "$file_count"
     done
@@ -600,12 +608,14 @@ _verify_runtime_configs() {
 
     echo "  Checking critical config files..."
     for config in "${critical_configs[@]}"; do
-        ((checked++))
+        # v1.19.20 FIX
+        ((checked++)) || true
         if [[ -f "$config" ]]; then
             printf "     ✅ %s\n" "$config"
         else
             printf "     ❌ MISSING: %s\n" "$config"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     done
 
@@ -617,12 +627,14 @@ _verify_runtime_configs() {
     fi
 
     for config in "${suricata_configs[@]}"; do
-        ((checked++))
+        # v1.19.20 FIX
+        ((checked++)) || true
         if [[ -f "$config" ]]; then
             printf "     ✅ %s\n" "$config"
         elif [[ "$suricata_installed" == "true" ]]; then
             printf "     ❌ MISSING: %s (Suricata installed but config missing!)\n" "$config"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         else
             printf "     ⚠️  SKIP: %s (Suricata not installed)\n" "$config"
         fi
@@ -681,12 +693,14 @@ _verify_conffiles_sources() {
             source_path="${project_root}/packaging/polkit-1/${relative}"
         fi
 
-        ((checked++))
+        # v1.19.20 FIX
+        ((checked++)) || true
         if [[ -n "$source_path" && -f "$source_path" ]]; then
             printf "     ✅ %s\n" "$installed_path"
         else
             printf "     ❌ MISSING SOURCE: %s\n" "$installed_path"
-            ((errors++))
+            # v1.19.20 FIX
+            ((errors++)) || true
         fi
     done < "$conffiles"
 

@@ -286,12 +286,13 @@ _suricata_rules_rollback() {
     local pre_rollback_backup
     pre_rollback_backup=$(_suricata_backup_rules)
 
+    # v1.19.20 FIX: Added || true to prevent set -e failures
     # Restore files
     local restored=0
-    [[ -f "$backup_dir/disable.conf" ]] && { cp "$backup_dir/disable.conf" "$NFTBAN_DISABLE_CONF"; ((restored++)); }
-    [[ -f "$backup_dir/enable.conf" ]] && { cp "$backup_dir/enable.conf" "$NFTBAN_ENABLE_CONF"; ((restored++)); }
-    [[ -f "$backup_dir/categories.enabled" ]] && { cp "$backup_dir/categories.enabled" "$NFTBAN_CATEGORIES_CONF"; ((restored++)); }
-    [[ -f "$backup_dir/local.rules" ]] && { cp "$backup_dir/local.rules" "$NFTBAN_LOCAL_RULES"; ((restored++)); }
+    [[ -f "$backup_dir/disable.conf" ]] && { cp "$backup_dir/disable.conf" "$NFTBAN_DISABLE_CONF"; ((restored++)) || true; }
+    [[ -f "$backup_dir/enable.conf" ]] && { cp "$backup_dir/enable.conf" "$NFTBAN_ENABLE_CONF"; ((restored++)) || true; }
+    [[ -f "$backup_dir/categories.enabled" ]] && { cp "$backup_dir/categories.enabled" "$NFTBAN_CATEGORIES_CONF"; ((restored++)) || true; }
+    [[ -f "$backup_dir/local.rules" ]] && { cp "$backup_dir/local.rules" "$NFTBAN_LOCAL_RULES"; ((restored++)) || true; }
 
     if [[ "$json_mode" == "true" ]]; then
         echo "{\"success\": true, \"backup_restored\": \"$backup_name\", \"files_restored\": $restored, \"pre_rollback_backup\": \"$(basename "$pre_rollback_backup")\"}"

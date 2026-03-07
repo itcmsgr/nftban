@@ -656,10 +656,12 @@ nftban_trust_update_all() {
             echo "[*] Updating $name..."
             if _trust_download_provider "$provider" && _trust_write_whitelist "$provider"; then
                 echo "[OK] $name updated"
-                ((updated++))
+                # v1.19.20 FIX
+                ((updated++)) || true
             else
                 echo "[X] $name failed"
-                ((failed++))
+                # v1.19.20 FIX
+                ((failed++)) || true
             fi
         fi
     done
@@ -780,7 +782,8 @@ nftban_trust_status_all() {
     # Collect data for all providers
     for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
-            ((enabled_count++))
+            # v1.19.20 FIX
+            ((enabled_count++)) || true
             local ipv4_cache ipv6_cache
             ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
             ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")

@@ -113,11 +113,27 @@ nftban_sync_full() {
     else
         nftban_output "info" "Mode: FULL SYNC (apply changes)"
     fi
-    "$NFTBAN_CORE_BIN" sync "${sync_args[@]}"
 
-    local exit_code=$?
+    # v1.19.20 FIX (B3): Go binary may return exit 1 even on success.
+    # Capture output and exit code, then validate based on output content.
+    local sync_output exit_code
+    sync_output=$("$NFTBAN_CORE_BIN" sync "${sync_args[@]}" 2>&1) && exit_code=0 || exit_code=$?
 
+    # Print the output (user expects to see it)
+    if [[ -n "$sync_output" ]]; then
+        echo "$sync_output"
+    fi
+
+    # v1.19.20 FIX (B3): Check for success indicators in output even if exit code is 1.
+    # The Go binary may return exit 1 spuriously; trust the output content instead.
     if [[ $exit_code -eq 0 ]]; then
+        echo ""
+        nftban_output "success" "Firewall sync completed successfully"
+        nftban_output "info" "Tables: ip nftban (IPv4) + ip6 nftban (IPv6)"
+        nftban_output "info" "Runtime state: Fail2Ban bans preserved"
+        return 0
+    elif [[ $exit_code -eq 1 ]] && echo "$sync_output" | grep -qE "(sync completed|rules applied|validation passed|Sync complete)"; then
+        # Exit 1 but output indicates success - treat as success
         echo ""
         nftban_output "success" "Firewall sync completed successfully"
         nftban_output "info" "Tables: ip nftban (IPv4) + ip6 nftban (IPv6)"

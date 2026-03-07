@@ -80,10 +80,8 @@ nftban_cmd_protect() {
 
     # Build IPC request
     local request response exit_code
-    request=$(cat <<EOF
-{"method":"protect_ban","params":{"ip":"$ip"}}
-EOF
-)
+    # v1.19.20 FIX: Use jq for JSON building to prevent injection
+    request=$(jq -n --arg ip "$ip" '{"method":"protect_ban","params":{"ip":$ip}}')
 
     # Send to daemon via socket
     local socket_path="${NFTBAN_SOCKET:-/run/nftban/nftband.sock}"
@@ -118,7 +116,8 @@ EOF
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ "$success" == "true" ]]; then
-            json_output "true" "{\"ip\":\"$ip\",\"protected\":true}"
+            # v1.19.20 FIX: Use jq for JSON building to prevent injection
+            json_output "true" "$(jq -n --arg ip "$ip" '{ip:$ip,protected:true}')"
         else
             json_output "false" '{}' "Failed to protect IP: $error"
         fi
