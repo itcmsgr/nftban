@@ -460,11 +460,13 @@ _suricata_sid_enable() {
 # Managed by: nftban suricata sid enable/disable
 EOF
 
+    # v1.19.21 FIX: Sorted rules (GH#46)
     # Remove from disable.conf if present (atomic write with sorting)
     if [[ -f "$NFTBAN_DISABLE_CONF" ]]; then
         grep -v "^${sid}$" "$NFTBAN_DISABLE_CONF" 2>/dev/null | sort -n | nftban_atomic_write "$NFTBAN_DISABLE_CONF"
     fi
 
+    # v1.19.21 FIX: Sorted rules (GH#46)
     # Add to enable.conf if not already there (atomic write with sorting)
     if ! grep -qE "^${sid}$" "$NFTBAN_ENABLE_CONF" 2>/dev/null; then
         { cat "$NFTBAN_ENABLE_CONF" 2>/dev/null; echo "$sid"; } | sort -u -n | nftban_atomic_write "$NFTBAN_ENABLE_CONF"
@@ -508,11 +510,13 @@ _suricata_sid_disable() {
 # Managed by: nftban suricata sid enable/disable
 EOF
 
+    # v1.19.21 FIX: Sorted rules (GH#46)
     # Remove from enable.conf if present (atomic write with sorting)
     if [[ -f "$NFTBAN_ENABLE_CONF" ]]; then
         grep -v "^${sid}$" "$NFTBAN_ENABLE_CONF" 2>/dev/null | sort -n | nftban_atomic_write "$NFTBAN_ENABLE_CONF"
     fi
 
+    # v1.19.21 FIX: Sorted rules (GH#46)
     # Add to disable.conf if not already there (atomic write with sorting)
     if ! grep -qE "^${sid}$" "$NFTBAN_DISABLE_CONF" 2>/dev/null; then
         { cat "$NFTBAN_DISABLE_CONF" 2>/dev/null; echo "$sid"; } | sort -u -n | nftban_atomic_write "$NFTBAN_DISABLE_CONF"
