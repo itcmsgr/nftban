@@ -70,6 +70,7 @@ nftban_print_help() {
 # MINIMAL FALLBACK (when generate-help.sh unavailable)
 # =============================================================================
 
+# v1.19.21 FIX: Document exit codes (E2)
 _nftban_help_minimal() {
     cat <<'EOF'
 USAGE:
@@ -85,6 +86,11 @@ CORE COMMANDS:
   firewall    Firewall management
   feeds       Threat intelligence feeds
   help        Show full help
+
+EXIT CODES:
+  0  Success   - Command completed without errors
+  1  Error     - Command failed (check stderr for details)
+  2  Warning   - Command completed with warnings (e.g., missing deps)
 
 Run 'nftban <command> help' for command-specific help.
 

@@ -32,6 +32,7 @@ import (
 
 	nftbanConfig "github.com/itcmsgr/nftban/pkg/config"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/safety"
 	suricataConfig "github.com/itcmsgr/nftban/pkg/suricata/config"
 	"github.com/itcmsgr/nftban/pkg/util"
 )
@@ -68,6 +69,7 @@ func GetRulesPaths() (*RulesDir, error) {
 }
 
 // GenerateEnabledList creates enabled.list from effective config
+// v1.19.21 FIX: Atomic write (GH#45) - write_temp -> validate -> mv temp final
 func GenerateEnabledList() error {
 	paths, err := GetRulesPaths()
 	if err != nil {
@@ -96,6 +98,17 @@ func GenerateEnabledList() error {
 	// Filter rules based on enabled categories
 	enabledRules := filterRulesByCategories(allRules, effectiveConfig.EnabledCategories)
 
+	// v1.19.21 FIX: Atomic write (GH#45) - Validate rule files exist before enabling
+	validatedRules := make([]string, 0, len(enabledRules))
+	for _, rulePath := range enabledRules {
+		if _, err := os.Stat(rulePath); err == nil {
+			validatedRules = append(validatedRules, rulePath)
+		} else {
+			fmt.Printf("  Warning: Skipping missing rule file: %s\n", rulePath)
+		}
+	}
+	enabledRules = validatedRules
+
 	// Build enabled.list content
 	var content strings.Builder
 	content.WriteString("# NFTBan Suricata Enabled Rules List\n")
@@ -106,7 +119,8 @@ func GenerateEnabledList() error {
 	content.WriteString(fmt.Sprintf("# Enabled rule files: %d\n", len(enabledRules)))
 	content.WriteString("#\n\n")
 
-	// Sort for consistent output
+	// v1.19.21 FIX: Sorted rules (GH#46)
+	// Sort for consistent, deterministic output - ensures stable diffs
 	sort.Strings(enabledRules)
 
 	for _, rule := range enabledRules {
@@ -119,8 +133,9 @@ func GenerateEnabledList() error {
 		content.WriteString(paths.CustomRules + "\n")
 	}
 
-	// Write file
-	if err := os.WriteFile(paths.EnabledList, []byte(content.String()), 0644); err != nil {
+	// v1.19.21 FIX: Atomic write (GH#45) - Use safety.SafeWriteFile for atomic write
+	// Pattern: write_temp -> validate -> mv temp final (TOCTOU safe)
+	if err := safety.SafeWriteFile(paths.EnabledList, []byte(content.String()), 0644); err != nil {
 		return fmt.Errorf("failed to write enabled.list: %w", err)
 	}
 
@@ -184,6 +199,7 @@ func filterRulesByCategories(allRules map[string]string, enabledCategories []str
 }
 
 // InitializeCustomRules creates empty custom.rules if it doesn't exist
+// v1.19.21 FIX: Atomic write (GH#45)
 func InitializeCustomRules() error {
 	paths, err := GetRulesPaths()
 	if err != nil {
@@ -217,7 +233,8 @@ func InitializeCustomRules() error {
 
 `
 
-	if err := os.WriteFile(paths.CustomRules, []byte(content), 0644); err != nil {
+	// v1.19.21 FIX: Atomic write (GH#45) - Use safety.SafeWriteFile
+	if err := safety.SafeWriteFile(paths.CustomRules, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create custom.rules: %w", err)
 	}
 
