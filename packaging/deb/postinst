@@ -85,6 +85,8 @@ case "$1" in
         # =====================================================================
         # STEP 0.1: Remove immutable flags before upgrade (security files)
         # =====================================================================
+        # NOTE: SSH client IP protection moved to nftban_whitelist_system_sync()
+        # which is called in STEP 6. This ensures single source of truth.
         # Critical security files are marked immutable to prevent tampering
         # Remove flags before upgrade to allow package manager to update them
         for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
@@ -600,10 +602,18 @@ case "$1" in
         # to prevent self-lockout during installation
         log_info "Auto-whitelisting system IPs (lockout prevention)..."
 
+        WHITELIST_SYNC_OK=0
         if command -v nftban >/dev/null 2>&1; then
-            # Run whitelist-system sync with --quick to skip slow operations
-            # Detects: SSH client IP, interface IPs, public IP, gateway, DNS
-            nftban whitelist-system sync --quick 2>/dev/null || log_warn "Auto-whitelist sync failed (non-critical)"
+            # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
+            # Rule: Any live nft reload/apply step needs session protection
+            # - Fresh install: nft reload happens in STEP 11, can lock out admin
+            # - Upgrade: nft reload happens in STEP 11, can lock out admin
+            # Protection must happen BEFORE reload, supports IPv4 and IPv6
+            if nftban whitelist-system sync --quick --protect-session 2>&1; then
+                WHITELIST_SYNC_OK=1
+            else
+                log_warn "Auto-whitelist sync failed - CHECK YOUR ACCESS!"
+            fi
         else
             log_warn "nftban command not found, skipping auto-whitelist"
         fi
@@ -1090,7 +1100,13 @@ NFTCONF
             log_info "  nftban health              # Health check"
             log_info "  nftban whitelist-system show  # View safety whitelist"
             log_info ""
-            log_info "Your IP has been auto-whitelisted to prevent lockout."
+            # BUG FIX (v1.19.22): Only claim success if sync actually worked
+            if [[ "${WHITELIST_SYNC_OK:-0}" -eq 1 ]]; then
+                log_info "Your IP has been auto-whitelisted to prevent lockout."
+            else
+                log_warn "⚠️  WHITELIST SYNC FAILED - Run: nftban whitelist-system sync"
+                log_warn "   Your IP may NOT be protected from being banned!"
+            fi
             log_info ""
         else
             log_warn ""

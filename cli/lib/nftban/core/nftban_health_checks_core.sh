@@ -195,7 +195,13 @@ nftban_health_check_binaries() {
     done
 
     [[ ${#missing_required[@]} -gt 0 ]] && NFTBAN_HEALTH_ERRORS+=("Missing required binaries: ${missing_required[*]}")
-    [[ ${#missing_mail[@]} -gt 0 && $is_panel -eq 0 ]] && { NFTBAN_HEALTH_WARNINGS+=("Mail notifications disabled"); [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING; }
+
+    # v1.19.22: Mail is OPTIONAL - does NOT affect status (no WARNING for mail)
+    # Only show as INFO note, status stays OK if only mail is missing
+    if [[ ${#missing_mail[@]} -gt 0 && ${#missing_mail[@]} -eq 2 && $is_panel -eq 0 ]]; then
+        # Both mail binaries missing - just add info note, don't change status
+        NFTBAN_HEALTH_ISSUES["binaries_mail"]="Email alerts: disabled (optional - install mailutils to enable)"
+    fi
 
     NFTBAN_HEALTH_RESULTS["binaries"]=$status
     return $status
@@ -410,8 +416,19 @@ nftban_health_check_fhs() {
     done
 
     local total=${#NFTBAN_FHS_DIRECTORIES[@]}
-    [[ $error_count -gt 0 ]] && { fhs_issues+=("FHS: $ok_count/$total OK, $error_count errors, $missing_count missing"); status=$HEALTH_ERROR; }
-    [[ $missing_count -gt 0 && $error_count -eq 0 ]] && { fhs_issues+=("FHS: $ok_count/$total OK, $missing_count missing"); status=$HEALTH_WARNING; }
+    # v1.19.22: Add helpful context to FHS errors
+    if [[ $error_count -gt 0 ]]; then
+        fhs_issues+=("FHS: $ok_count/$total OK, $error_count permission errors")
+        fhs_issues+=("  └─ Usually caused by ownership/permission drift after updates")
+        fhs_issues+=("  └─ FIX: nftban permissions enforce")
+        fhs_issues+=("  └─ Details: nftban health fhs")
+        status=$HEALTH_ERROR
+    fi
+    if [[ $missing_count -gt 0 && $error_count -eq 0 ]]; then
+        fhs_issues+=("FHS: $ok_count/$total OK, $missing_count directories missing")
+        fhs_issues+=("  └─ FIX: nftban permissions enforce")
+        status=$HEALTH_WARNING
+    fi
 
     [[ ${#fhs_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["fhs"]="${fhs_issues[*]}"
     NFTBAN_HEALTH_RESULTS["fhs"]=$status
