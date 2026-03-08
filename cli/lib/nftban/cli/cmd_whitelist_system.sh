@@ -76,12 +76,13 @@ show_usage() {
 Usage: nftban whitelist-system <command> [options]
 
 COMMANDS:
-  sync [--quick]    Auto-detect and whitelist all system IPs
+  sync [options]    Auto-detect and whitelist all system IPs
   show              Show current system whitelist
   whitelistme       Whitelist your current IP (interactive)
 
 OPTIONS:
-  --quick           Skip public IP detection (faster, for package install)
+  --quick             Skip public IP detection (faster, for package install)
+  --protect-session   Also protect current SSH session IP (for upgrades/rebuilds)
 
 EXAMPLES:
   # Auto-detect and protect all system IPs
@@ -89,6 +90,9 @@ EXAMPLES:
 
   # Quick sync (skip public IP HTTP lookups)
   sudo nftban whitelist-system sync --quick
+
+  # Package upgrade: protect admin SSH session + quick sync
+  sudo nftban whitelist-system sync --quick --protect-session
 
   # Show protected system IPs
   nftban whitelist-system show
@@ -101,6 +105,12 @@ WHAT IS AUTO-DETECTED:
   • All server interface IPs (IPv4 + IPv6)
   • Server public IPv4 (skipped with --quick)
   • Server public IPv6 (skipped with --quick)
+  • Current SSH session IP (only with --protect-session)
+
+SESSION PROTECTION (--protect-session):
+  When specified, detects your current SSH connection IP and adds it
+  to the whitelist BEFORE any firewall changes. Supports both IPv4
+  and IPv6. Used by package upgrades to prevent admin lockout.
 
 SAFE TO RUN:
   This command only ADDS IPs to whitelist, never removes them.
@@ -144,11 +154,9 @@ nftban_cmd_whitelist_system() {
         sync)
             # Auto-detect and whitelist all system IPs
             # --quick: Skip public IP detection (faster, for postinst)
-            local quick_mode=false
-            for arg in "$@"; do
-                [[ "$arg" == "--quick" ]] && quick_mode=true
-            done
-            nftban_whitelist_system_sync "$quick_mode"
+            # --protect-session: Protect current SSH session IP (for upgrades)
+            # v1.19.22: Pass all args to sync function for proper flag parsing
+            nftban_whitelist_system_sync "$@"
             ;;
 
         show|list)

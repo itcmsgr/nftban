@@ -345,7 +345,10 @@ nftban_health_check_rbl() {
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
     else
-        rbl_issues+=("RBL check never run")
+        # v1.19.22: Clearer message - RBL is optional feature
+        rbl_issues+=("RBL monitoring not configured (optional feature)")
+        rbl_issues+=("  └─ RBL checks if your server IP is blacklisted on spam lists")
+        rbl_issues+=("  └─ To enable: nftban rbl enable")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
@@ -366,7 +369,9 @@ nftban_health_check_rbl() {
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
     else
-        rbl_issues+=("RBL timer not enabled (run: nftban rbl enable)")
+        # v1.19.22: Clearer message - explain what RBL timer does
+        rbl_issues+=("RBL auto-check disabled (optional)")
+        rbl_issues+=("  └─ Enable daily blacklist monitoring: nftban rbl enable")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 

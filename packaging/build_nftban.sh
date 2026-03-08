@@ -799,6 +799,10 @@ if command -v nft >/dev/null 2>&1; then
     fi
 fi
 
+# NOTE: SSH client IP protection moved to nftban_whitelist_system_sync()
+# Called via: nftban whitelist-system sync --quick --protect-session
+# This ensures single source of truth for session protection logic.
+
 # =============================================================================
 # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED (BUG-001 fix)
 # =============================================================================
@@ -1234,7 +1238,9 @@ fi
 # CRITICAL: This MUST happen BEFORE enabling any firewall services
 echo "[NFTBan] Auto-whitelisting system IPs (lockout prevention)..."
 if command -v nftban >/dev/null 2>&1; then
-    nftban whitelist-system sync 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
+    # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
+    # Rule: Any live nft reload/apply needs session protection (IPv4 + IPv6)
+    nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
 fi
 
 # STEP 6: Download GeoIP database (free DB-IP version, with timeout)
@@ -2386,7 +2392,9 @@ systemctl restart polkit 2>/dev/null || true
 # STEP 6: **SAFETY** Auto-whitelist system IPs
 echo "[NFTBan] Auto-whitelisting system IPs (lockout prevention)..."
 if command -v nftban >/dev/null 2>&1; then
-    nftban whitelist-system sync 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
+    # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
+    # Rule: Any live nft reload/apply needs session protection (IPv4 + IPv6)
+    nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
 fi
 
 # STEP 7: Download GeoIP database (free DB-IP version)
