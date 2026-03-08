@@ -331,21 +331,40 @@ nftban_port_gather_nft_rules() {
     done
 
     # Then, gather direct port rules (tcp dport 22 accept)
+    # BUG FIX (v1.19.23): Skip conditional rules (rate-limits, ct count, limit) that
+    # would overwrite base allow/block status with their conditional drop.
+    # Also skip rules that would overwrite existing "accept" with "drop" (set rules take priority).
     cur_chain=""
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([[:alnum:]_-]+) ]]; then
             cur_chain="${BASH_REMATCH[1]}"; continue
         fi
         if [[ "$line" =~ (tcp|udp)[[:space:]]+dport[[:space:]]+([0-9]+) ]]; then
+            # Skip conditional rules - these are rate-limits/abuse prevention, not base policy:
+            # - "ct count over N" = connection count limit
+            # - "limit rate" = rate limiting
+            # Example: "ct state new tcp dport 22 ct count over 15 drop"
+            [[ "$line" =~ ct[[:space:]]+count[[:space:]]+over ]] && continue
+            [[ "$line" =~ limit[[:space:]]+rate ]] && continue
+
             local proto port family="generic" action="unknown"
             proto="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
             [[ "$line" =~ nfproto[[:space:]]+ipv6 ]] && family="ipv6"
             [[ "$line" =~ nfproto[[:space:]]+ipv4 ]] && family="ipv4"
             if [[ "$line" =~ (accept|drop|reject) ]]; then action="${BASH_REMATCH[1]}"; fi
+
+            # Don't overwrite "accept" with "drop" - set-based rules (parsed first) take priority
+            local key
             if [[ "$family" == "generic" ]]; then
-                NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${cur_chain}"]="$action"
+                key="${port}_${proto}_${cur_chain}"
+                if [[ "${NFTBAN_PORT_NFT_GENERIC[$key]:-}" != "accept" ]]; then
+                    NFTBAN_PORT_NFT_GENERIC["$key"]="$action"
+                fi
             else
-                NFTBAN_PORT_NFT_RULES["${port}_${proto}_${cur_chain}_${family}"]="$action"
+                key="${port}_${proto}_${cur_chain}_${family}"
+                if [[ "${NFTBAN_PORT_NFT_RULES[$key]:-}" != "accept" ]]; then
+                    NFTBAN_PORT_NFT_RULES["$key"]="$action"
+                fi
             fi
             NFTBAN_PORT_SEEN["${port}_${proto}"]=1
         fi
