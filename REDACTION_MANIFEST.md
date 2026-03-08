@@ -1,6 +1,6 @@
 # Redaction Manifest
 
-**Date:** 2026-03-02T19:30:18+02:00
+**Date:** 2026-03-07T20:54:19+02:00
 
 ## Removed File Patterns
 - `*.pem`

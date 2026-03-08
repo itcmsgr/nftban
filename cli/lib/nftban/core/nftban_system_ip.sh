@@ -158,11 +158,21 @@ nftban_get_interface_ips() {
 nftban_is_ip_whitelisted() {
     local ip="$1"
 
-    # Check if IP exists in system whitelist
+    # Check if IP exists in system whitelist FILE
     [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]] || return 1
+    grep -qE "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || return 1
 
-    # Match IP at start of line (with optional CIDR)
-    grep -qE "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null
+    # BUG FIX (v1.19.22): Also verify IP is in nft set (not just file)
+    # After reboot or nft flush, file may have IP but nft set is empty
+    if [[ "$ip" =~ : ]]; then
+        # IPv6 - check nft set
+        nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || return 1
+    else
+        # IPv4 - check nft set
+        nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || return 1
+    fi
+
+    return 0
 }
 
 # =============================================================================
