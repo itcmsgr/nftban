@@ -158,11 +158,21 @@ nftban_get_interface_ips() {
 nftban_is_ip_whitelisted() {
     local ip="$1"
 
-    # Check if IP exists in system whitelist
+    # Check if IP exists in system whitelist FILE
     [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]] || return 1
+    grep -qE "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || return 1
 
-    # Match IP at start of line (with optional CIDR)
-    grep -qE "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null
+    # BUG FIX (v1.19.22): Also verify IP is in nft set (not just file)
+    # After reboot or nft flush, file may have IP but nft set is empty
+    if [[ "$ip" =~ : ]]; then
+        # IPv6 - check nft set
+        nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || return 1
+    else
+        # IPv4 - check nft set
+        nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || return 1
+    fi
+
+    return 0
 }
 
 # =============================================================================
@@ -261,12 +271,29 @@ nftban_remove_from_blacklists() {
 # =============================================================================
 
 nftban_whitelist_system_sync() {
-    # Args: $1 = quick_mode (true/false) - skip public IP detection for faster install
-    local quick_mode="${1:-false}"
+    # Args: Parsed from command line flags
+    #   --quick           Skip public IP detection (faster install)
+    #   --protect-session Protect current SSH session IP (for upgrades/rebuilds)
+    #
+    # v1.19.22: Session protection is EXPLICIT via flag, not auto-detected
+
+    local quick_mode="false"
+    local protect_session="false"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quick) quick_mode="true"; shift ;;
+            --protect-session) protect_session="true"; shift ;;
+            true|false) quick_mode="$1"; shift ;;  # Legacy positional arg
+            *) shift ;;
+        esac
+    done
 
     echo "═══════════════════════════════════════════════════════"
     echo "NFTBan System IP Auto-Detection"
     [[ "$quick_mode" == "true" ]] && echo "(Quick mode - skipping public IP detection)"
+    [[ "$protect_session" == "true" ]] && echo "(Session protection enabled)"
     echo "═══════════════════════════════════════════════════════"
     echo ""
 
@@ -274,6 +301,42 @@ nftban_whitelist_system_sync() {
     local removed_from_blacklist=0
     local steps=5
     [[ "$quick_mode" == "true" ]] && steps=3
+
+    # 0. Session Protection (ONLY when --protect-session flag is passed)
+    # v1.19.22: Explicit flag-based protection, not auto-detected from nft state
+    # Supports both IPv4 and IPv6
+    if [[ "${protect_session:-false}" == "true" ]]; then
+        echo "[0/${steps}] Session protection enabled..."
+        local session_ip
+        session_ip=$(nftban_get_current_user_ip 2>/dev/null || true)
+
+        if [[ -n "$session_ip" && "$session_ip" != "127.0.0.1" && "$session_ip" != "::1" ]]; then
+            # Detect IP family
+            local ip_family="unknown"
+            if [[ "$session_ip" =~ : ]]; then
+                ip_family="ipv6"
+            elif [[ "$session_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                ip_family="ipv4"
+            fi
+
+            echo "  Detected session IP: $session_ip ($ip_family)"
+
+            if [[ "$ip_family" == "ipv4" || "$ip_family" == "ipv6" ]]; then
+                if nftban_add_system_ip "$session_ip" "Admin session (--protect-session)"; then
+                    protected=$((protected + 1)) || true
+                    echo "  Added to whitelist_${ip_family}: $session_ip"
+                fi
+                if nftban_remove_from_blacklists "$session_ip"; then
+                    removed_from_blacklist=$((removed_from_blacklist + 1)) || true
+                fi
+            else
+                echo "  [WARN] Invalid IP format: $session_ip - skipping"
+            fi
+        else
+            echo "  No SSH session IP detected; session protection skipped"
+        fi
+        echo ""
+    fi
 
     # 1. Localhost IPs
     echo "[1/${steps}] Protecting localhost..."

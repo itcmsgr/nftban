@@ -117,8 +117,11 @@ nftban_health_check_nftables_security() {
             status=$HEALTH_CRITICAL
         else
             # Table exists but not at priority 0 or doesn't have accept policy
-            security_issues+=("WARNING: inet filter table exists but may not conflict")
-            security_issues+=("  └─ Verify with: nft list table inet filter")
+            # v1.19.22: Clearer message - explain what creates this and impact
+            security_issues+=("INFO: 'inet filter' table detected (usually from iptables-nft or Docker)")
+            security_issues+=("  └─ This is typically harmless - NFTBan uses separate 'ip nftban' table")
+            security_issues+=("  └─ Check: nft list table inet filter")
+            security_issues+=("  └─ Remove if unused: nft delete table inet filter")
             status=$HEALTH_WARNING
         fi
     fi

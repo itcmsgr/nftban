@@ -21,7 +21,7 @@
 # meta:inventory.privileges="user"
 #
 # meta:created_date="2026-01-10"
-# meta:updated_date="2026-01-10"
+# meta:updated_date="2026-03-08"
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
@@ -107,7 +107,13 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/watchdog"]="0750|nftban|nftban|Watchdog logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/reports"]="0750|nftban|nftban|Report logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/rbl"]="0750|nftban|nftban|RBL check cache"
-    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
+    # Suricata directory: Use "*" owner to allow either suricata or root
+    # (suricata user only exists if Suricata is installed)
+    if id suricata >/dev/null 2>&1; then
+        NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
+    else
+        NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|root|nftban|Suricata EVE logs (no suricata user - owned by root)"
+    fi
 
     # Runtime Directories
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"
