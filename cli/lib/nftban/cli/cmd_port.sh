@@ -117,9 +117,9 @@ nftban_cmd_port() {
             # Show port status (terminal output)
             # Optional: port filter as argument
             # NOTE: 'list' is deprecated, use 'status' instead
-            # Flags: --json, --active (hide ports without services)
+            # Flags: --json, --active, --listening, --inbound, --outbound
 
-            local filter_ports="" show_active_only=0
+            local filter_ports="" show_active_only=0 section="all"
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --json)
@@ -128,6 +128,18 @@ nftban_cmd_port() {
                         ;;
                     --active)
                         show_active_only=1
+                        shift
+                        ;;
+                    --listening)
+                        section="listening"
+                        shift
+                        ;;
+                    --inbound)
+                        section="inbound"
+                        shift
+                        ;;
+                    --outbound)
+                        section="outbound"
                         shift
                         ;;
                     *)
@@ -140,6 +152,7 @@ nftban_cmd_port() {
             export NFTBAN_PORT_FILTER_PORTS="$filter_ports"
             export NFTBAN_PORT_DETAILED=0
             export NFTBAN_PORT_ACTIVE_ONLY="$show_active_only"
+            export NFTBAN_PORT_SECTION="$section"
 
             if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" != "json" ]]; then
                 nftban_banner
@@ -628,12 +641,19 @@ nftban_cmd_port() {
             echo "  nftban port <subcommand> [options]"
             echo ""
             echo "SUBCOMMANDS:"
-            echo "  status [--active] [ports]         Show port status (--active hides inactive ports)"
+            echo "  status [options] [ports]          Show port status (3-section view)"
+            echo "    Options:"
+            echo "      --listening                   Show only listening services"
+            echo "      --inbound                     Show only inbound firewall policy"
+            echo "      --outbound                    Show only outbound firewall policy"
+            echo "      --active                      Hide ports without active services"
+            echo "      --json                        Output as JSON"
             echo "  detailed [ports]                  Show detailed status with BIND and PROCESS"
             echo "  add <port> <protocol> <direction> Add port to whitelist (ALL args required)"
             echo "  remove <port>                     Remove port from whitelist"
             echo "  block <port>                      Block port (remove from whitelist)"
             echo "  unblock <port>                    Unblock port (TCP+UDP, INPUT+OUTPUT)"
+            echo "  egress <cmd>                      Outbound port policy (stats/audit/recommend/enforce)"
             echo "  html-report                       Generate HTML report"
             echo "  mail-report [path] [recipient]    Mail report"
             echo "  allow-panel <panel>               Allow control panel ports"
@@ -653,8 +673,11 @@ nftban_cmd_port() {
             echo "    - udp_ports_out  UDP ports allowed for OUTPUT (outgoing packets)"
             echo ""
             echo "EXAMPLES:"
-            echo "  nftban port status               # Show all listening ports"
-            echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
+            echo "  nftban port status               # Show all 3 sections (listeners, inbound, outbound)"
+            echo "  nftban port status --listening   # Show only listening services"
+            echo "  nftban port status --inbound     # Show only inbound firewall policy"
+            echo "  nftban port status --outbound    # Show only outbound firewall policy"
+            echo "  nftban port status 22,80,443     # Filter to specific ports"
             echo "  nftban port detailed             # Show detailed info with bind addresses"
             echo ""
             echo "  # Web server (inbound only)"
@@ -680,28 +703,47 @@ nftban_cmd_port() {
             echo "  nftban port mail-report ${NFTBAN_DATA_DIR}/reports/port_report.html admin@example.com"
             echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
             echo ""
+            echo "  # Egress (outbound) policy management"
+            echo "  nftban port egress stats             # View outbound counters"
+            echo "  nftban port egress audit 24          # Find unknown outbound ports (last 24h)"
+            echo "  nftban port egress recommend         # Suggest ports to add"
+            echo "  nftban port egress enforce           # Enable restrictive outbound policy"
+            echo ""
+            echo "  # Test outbound before enforcing"
+            echo "  nftban emulate --out 8.8.8.8:443    # Test if HTTPS outbound allowed"
+            echo ""
             echo "Note: For full panel management, use: nftban panel directadmin <action>"
             echo "      Actions: enable, disable, status, report, repair, test"
             echo ""
-            echo "OUTPUT COLUMNS:"
-            echo "  SERVICE  - Service name (from /etc/services or process name)"
-            echo "  PORT     - Port number"
-            echo "  PROTO    - Protocol (tcp/udp)"
-            echo "  RUNNING  - Is service listening?"
-            echo "  IPv4 IN  - IPv4 inbound firewall status"
-            echo "  IPv4 OUT - IPv4 outbound firewall status"
-            echo "  IPv6 IN  - IPv6 inbound firewall status"
-            echo "  IPv6 OUT - IPv6 outbound firewall status"
-            echo "  NOTES    - Additional info (bind scope, generic rules, etc.)"
+            echo "THREE-SECTION OUTPUT (v1.19.24):"
             echo ""
-            echo "DETAILED MODE ADDS:"
-            echo "  BIND     - Bind address (0.0.0.0, ::, 127.0.0.1, etc.)"
-            echo "  PROCESS  - Process name and PID"
+            echo "  Section 1: LISTENING SERVICES"
+            echo "    Shows what processes are actually listening on this host"
+            echo "    Columns: PORT, PROTO, SERVICE, PROCESS, BIND, SCOPE"
             echo ""
-            echo "FIREWALL STATUS:"
-            echo "  Allowed  - Port explicitly allowed in nftables"
-            echo "  Blocked  - Port explicitly blocked (drop/reject)"
-            echo "  No-rule  - No explicit rule (default policy applies)"
+            echo "  Section 2: INBOUND FIREWALL POLICY"
+            echo "    Shows what inbound ports are allowed, regardless of listeners"
+            echo "    Columns: PORT, PROTO, SERVICE, IPv4, IPv6, LISTENING?, ACCESS"
+            echo "    Access labels: Public, Local-only, Open (no listener)"
+            echo ""
+            echo "  Section 3: OUTBOUND FIREWALL POLICY"
+            echo "    Shows what egress ports are allowed (dependencies like Zabbix, DNS)"
+            echo "    Columns: PORT, PROTO, SERVICE, IPv4, IPv6, ACCESS"
+            echo "    Access labels: Egress allowed, Egress (IPv4/IPv6 only)"
+            echo ""
+            echo "SERVICE LABEL RESOLUTION:"
+            echo "  1. Built-in mapping (SSH, HTTP, DNS, etc.)"
+            echo "  2. Runtime process correlation (if listening)"
+            echo "  3. Config-defined alias (custom labels)"
+            echo "  4. Fallback: 'Unknown' (port still shown!)"
+            echo ""
+            echo "IMPORTANT: Unknown service name != hidden port"
+            echo "  If nft allows it, it appears. If something listens, it appears."
+            echo ""
+            echo "FIREWALL SYMBOLS:"
+            echo "  ✔ Allowed  - Port explicitly allowed in nftables"
+            echo "  ✖ Blocked  - Port explicitly blocked (drop/reject)"
+            echo "  − No-rule  - No explicit rule (default policy applies)"
             echo ""
             echo "NOTES:"
             echo "  - Requires root privileges (sudo)"
@@ -760,6 +802,21 @@ nftban_cmd_port() {
             echo "     journalctl -u nftband -n 50"
             echo ""
             return 0
+            ;;
+
+        egress)
+            # Egress subcommand - outbound port policy management
+            # Load egress functions from cmd_egress.sh
+            local egress_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli/cmd_egress.sh"
+            if [[ -f "$egress_file" ]]; then
+                # shellcheck source=/dev/null
+                source "$egress_file"
+                # Call the egress handler with remaining args
+                nftban_cmd_egress "$@"
+            else
+                echo "ERROR: Egress module not found: $egress_file" >&2
+                return 1
+            fi
             ;;
 
         *)

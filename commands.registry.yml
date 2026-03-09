@@ -1627,6 +1627,45 @@ port:
       notes:
         - "Automatically whitelists all ports required by the control panel"
         - "See 'nftban panel' command for more panel options"
+    egress:
+      mutates: conditional
+      description: "Outbound port policy audit and enforcement"
+      syntax: "nftban port egress <command>"
+      notes:
+        - "Phase 1: Learning mode (policy accept) with audit logging"
+        - "Phase 2: Audit unknown outbound ports from kernel logs"
+        - "Phase 3: Enforce restrictive outbound policy (policy drop)"
+        - "Use 'nftban emulate --out <ip:port>' to test specific outbound connections"
+      subcommands:
+        stats:
+          mutates: false
+          description: "Show outbound traffic counters and allowed ports"
+          syntax: "nftban port egress stats"
+        audit:
+          mutates: false
+          description: "Parse kernel logs to find unknown outbound ports"
+          syntax: "nftban port egress audit [hours]"
+          arguments:
+            hours:
+              type: int
+              required: false
+              default: 24
+              description: "Hours of logs to analyze (default: 24)"
+        recommend:
+          mutates: false
+          description: "Suggest policy additions based on audit observations"
+          syntax: "nftban port egress recommend"
+          notes:
+            - "Requires prior 'nftban port egress audit' to collect data"
+            - "Shows commands to add missing ports"
+        enforce:
+          mutates: true
+          description: "Enable restrictive outbound policy (policy drop)"
+          syntax: "nftban port egress enforce"
+          notes:
+            - "Requires confirmation - type 'ENFORCE' to proceed"
+            - "Only allowed ports will work after enforcement"
+            - "Use 'nftban emulate --out' to test before enforcing"
 
 profile:
   category: infrastructure
@@ -2736,7 +2775,7 @@ test:
 
 emulate:
   category: developer_sysadmin
-  description: "Simulate firewall rule evaluation (test packets)"
+  description: "Simulate firewall rule evaluation (test inbound and outbound packets)"
   risk: advanced
   audience: [cli]
   capability: debug_internal
@@ -2746,10 +2785,35 @@ emulate:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  options:
+    --out:
+      type: string
+      description: "Test outbound connection to IP:PORT (egress testing)"
+      examples: ["--out 8.8.8.8:443", "--out :3306"]
+    --proto:
+      type: enum
+      values: [tcp, udp]
+      description: "Protocol to test (default: tcp)"
+    --port:
+      type: int
+      description: "Destination port (for inbound tests)"
+    --direction:
+      type: enum
+      values: [in, out]
+      description: "Direction to test (default: in)"
+    --json:
+      type: bool
+      description: "Output in JSON format"
   examples:
-    - "nftban emulate 1.2.3.4"
-    - "nftban emulate 1.2.3.4 --proto tcp --port 22"
-    - "nftban emulate 1.2.3.4 --direction in --json"
+    - "nftban emulate 1.2.3.4                    # Test inbound from IP"
+    - "nftban emulate 1.2.3.4 --proto tcp --port 22  # Test SSH from IP"
+    - "nftban emulate --out 8.8.8.8:443         # Test outbound HTTPS"
+    - "nftban emulate --out :3306               # Test outbound MySQL (any dest)"
+    - "nftban emulate --out 10.0.0.1:25         # Test outbound SMTP to IP"
+  notes:
+    - "Inbound (default): Tests if IP can connect TO this server"
+    - "Outbound (--out): Tests if this server can connect OUT to IP:port"
+    - "Use --out before 'nftban port egress enforce' to verify ports"
 
 module:
   category: developer_sysadmin
