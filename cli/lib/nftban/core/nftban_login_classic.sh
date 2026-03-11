@@ -180,6 +180,7 @@ _nftban_login_classic_monitor_journal() {
     # Use JSON output if jq is available
     if command -v jq &>/dev/null && [[ "${LOGIN_CLASSIC_JOURNALCTL_JSON:-true}" == "true" ]]; then
         journal_cmd+=(--output=json --show-cursor)
+        # v1.19.26: Add || true to prevent errexit on pipe close (journalctl -f exits 1 when pipe closes)
         "${journal_cmd[@]}" 2>/dev/null | while read -r line; do
             # Save cursor for persistence (v1.18.9)
             local cursor
@@ -192,12 +193,13 @@ _nftban_login_classic_monitor_journal() {
             message=$(echo "$line" | jq -r '.MESSAGE // empty' 2>/dev/null) || continue
             [[ -z "$message" ]] && continue
             _nftban_login_classic_process_message "$service" "$message" "$pattern_failed" "$pattern_invalid"
-        done
+        done || true
     else
         # Fallback to text parsing
+        # v1.19.26: Add || true to prevent errexit on pipe close
         "${journal_cmd[@]}" 2>/dev/null | while read -r line; do
             _nftban_login_classic_process_message "$service" "$line" "$pattern_failed" "$pattern_invalid"
-        done
+        done || true
     fi
 }
 
