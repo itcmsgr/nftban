@@ -106,19 +106,32 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
     exp_mode_norm="${exp_mode#0}"
 
     # Fix ownership if wrong
+    # v1.19.26: Check if user/group exist before chown to avoid silent failures
     if [ "$act_owner" != "$exp_owner" ] || [ "$act_group" != "$exp_group" ]; then
-        chown "$exp_owner:$exp_group" "$path" 2>/dev/null && {
-            log_info "Fixed ownership: $path → $exp_owner:$exp_group"
-            # v1.19.20 FIX
-            ((fixed_perms++)) || true
-        }
+        # Verify user exists (skip if not - e.g., suricata user on non-Suricata systems)
+        if id "$exp_owner" &>/dev/null || [ "$exp_owner" = "root" ]; then
+            if getent group "$exp_group" &>/dev/null; then
+                chown "$exp_owner:$exp_group" "$path" 2>/dev/null && {
+                    log_info "Fixed ownership: $path → $exp_owner:$exp_group"
+                    ((fixed_perms++)) || true
+                }
+            else
+                log_warn "Group '$exp_group' does not exist, skipping ownership fix for $path"
+            fi
+        else
+            log_warn "User '$exp_owner' does not exist, skipping ownership fix for $path"
+        fi
     fi
 
     # Fix permissions if wrong
     if [ "$act_mode" != "$exp_mode_norm" ]; then
+        # v1.19.26: Remove ACLs first - ACL mask can override chmod and prevent fixes
+        if getfacl "$path" 2>/dev/null | grep -q "^mask::"; then
+            setfacl -b "$path" 2>/dev/null || true
+            log_info "Removed ACL from $path (was blocking chmod)"
+        fi
         chmod "$exp_mode" "$path" 2>/dev/null && {
             log_info "Fixed permissions: $path → $exp_mode_norm"
-            # v1.19.20 FIX
             ((fixed_perms++)) || true
         }
     fi
