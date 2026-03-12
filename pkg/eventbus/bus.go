@@ -21,8 +21,11 @@ package eventbus
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/metrics"
 )
 
 // EventType categorizes events for routing
@@ -339,7 +342,12 @@ func (b *Bus) Publish(e Event) {
 				// Queue full - drop this dispatch (backpressure)
 				b.metricsMu.Lock()
 				b.dropped++
+				droppedCount := b.dropped
 				b.metricsMu.Unlock()
+				// v1.19.28: Log + Prometheus metric for visibility
+				metrics.RecordEventBusDrop()
+				log.Printf("[WARN] EventBus drop: jobQueue full (dropped=%d) event=%s",
+					droppedCount, e.Type)
 			}
 		}
 	}
