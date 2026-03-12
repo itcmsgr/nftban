@@ -28,7 +28,7 @@ set -Eeuo pipefail
 # SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # readonly SCRIPT_DIR
 readonly TEST_TIMEOUT=20  # seconds (increased for commands with network checks)
-TEST_LOG="/tmp/nftban_test_$(date +%Y%m%d_%H%M%S).log"
+TEST_LOG="$(mktemp /tmp/nftban_test_XXXXXX.log)"
 readonly TEST_LOG
 readonly TEST_IP="8.8.8.8"  # Safe test IP (Google DNS)
 readonly TEST_PORT="8080"
@@ -321,7 +321,8 @@ generate_report() {
     echo ""
 
     # Generate JSON report
-    local json_report="/tmp/nftban_test_report.json"
+    local json_report
+    json_report="$(mktemp /tmp/nftban_test_report_XXXXXX.json)"
     cat > "$json_report" <<EOF
 {
   "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",

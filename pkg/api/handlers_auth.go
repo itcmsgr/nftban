@@ -100,7 +100,9 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 	var feedsData map[string]interface{}
 	feedsOutput, err := execNFTBanCommandWithTimeout(5*time.Second, "feeds", "status", "--json")
 	if err == nil {
-		json.Unmarshal([]byte(feedsOutput), &feedsData)
+		if err := json.Unmarshal([]byte(feedsOutput), &feedsData); err != nil {
+			log.Printf("[WARN] Failed to parse feeds status JSON: %v", err)
+		}
 	} else {
 		log.Printf("[WARN] Feeds status timed out or failed: %v", err)
 	}

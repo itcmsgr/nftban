@@ -97,8 +97,8 @@ install_via_binary() {
     fi
     
     # Download and extract
-    local tmp_dir="/tmp/prometheus-install"
-    mkdir -p "$tmp_dir"
+    local tmp_dir
+    tmp_dir=$(mktemp -d /tmp/prometheus-install.XXXXXX)
     cd "$tmp_dir" || return 1
 
     local arch="amd64"
