@@ -45,6 +45,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh"
 fi
 
+# v1.19.27: Load validation library for defense-in-depth IP validation
+# shellcheck source=/usr/lib/nftban/lib/validation.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/validation.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/validation.sh"
+fi
+
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
@@ -118,8 +124,15 @@ nftban_cmd_whitelist() {
 # Add IP to whitelist via IPC (v1.18.0: IPC-only writes)
 # v1.18.7: Also removes from blacklist to prevent conflict
 # v1.19.0: Enforced IPC-only path with daemon-running check (R20)
+# v1.19.27: Added defense-in-depth IP validation
 nftban_whitelist_add_ip() {
     local ip="$1"
+
+    # v1.19.27 SECURITY: Validate IP/CIDR before any nft operations (defense-in-depth)
+    if ! nftban_validate_ip "$ip" && ! nftban_validate_cidr "$ip"; then
+        echo "ERROR: Invalid IP/CIDR format: $ip" >&2
+        return 1
+    fi
 
     # Validate IP format and determine family
     local table set_name blacklist_set family
@@ -186,8 +199,15 @@ nftban_whitelist_add_ip() {
 
 # Remove IP from whitelist via IPC (v1.18.0: IPC-only writes)
 # v1.19.0: Enforced IPC-only path with daemon-running check (R20)
+# v1.19.27: Added defense-in-depth IP validation
 nftban_whitelist_remove_ip() {
     local ip="$1"
+
+    # v1.19.27 SECURITY: Validate IP/CIDR before any nft operations (defense-in-depth)
+    if ! nftban_validate_ip "$ip" && ! nftban_validate_cidr "$ip"; then
+        echo "ERROR: Invalid IP/CIDR format: $ip" >&2
+        return 1
+    fi
 
     # Validate IP format and determine family
     local table set_name family

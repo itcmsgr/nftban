@@ -26,6 +26,68 @@ NFTBAN_IPC_TIMEOUT="${NFTBAN_IPC_TIMEOUT:-30}"
 NFTBAN_EMERGENCY_MODE="${NFTBAN_EMERGENCY_MODE:-0}"
 
 # =============================================================================
+# SECURITY: IP VALIDATION (Defense-in-Depth)
+# =============================================================================
+# v1.19.27: Local validation function to prevent command injection
+# Even if caller validated, we validate again before constructing nft commands
+
+# Validate IPv4 address (strict: only digits and dots, 4 octets 0-255)
+_nft_ipc_validate_ipv4() {
+    local ip="$1"
+    # Must match exactly: 4 groups of 1-3 digits separated by dots
+    [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+    # Check each octet is 0-255
+    local IFS='.'
+    # shellcheck disable=SC2206
+    local -a octets=($ip)
+    for octet in "${octets[@]}"; do
+        ((10#$octet >= 0 && 10#$octet <= 255)) || return 1
+    done
+    return 0
+}
+
+# Validate IPv6 address (allows standard formats including ::)
+_nft_ipc_validate_ipv6() {
+    local ip="$1"
+    # Only allow hex digits and colons (prevents injection chars like $`;\)
+    [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || return 1
+    # Must have at least one colon
+    [[ "$ip" == *:* ]] || return 1
+    # Cannot have more than 7 colons (8 groups max)
+    local colon_count="${ip//[^:]}"
+    [[ ${#colon_count} -le 7 ]] || return 1
+    return 0
+}
+
+# Validate CIDR notation
+_nft_ipc_validate_cidr() {
+    local cidr="$1"
+    [[ "$cidr" =~ ^(.+)/([0-9]+)$ ]] || return 1
+    local ip="${BASH_REMATCH[1]}"
+    local prefix="${BASH_REMATCH[2]}"
+    # Validate IP part
+    if [[ "$ip" == *:* ]]; then
+        _nft_ipc_validate_ipv6 "$ip" || return 1
+        ((prefix >= 0 && prefix <= 128)) || return 1
+    else
+        _nft_ipc_validate_ipv4 "$ip" || return 1
+        ((prefix >= 0 && prefix <= 32)) || return 1
+    fi
+    return 0
+}
+
+# Main validation entry point - validates IP or CIDR
+_nft_ipc_validate_ip() {
+    local ip="$1"
+    [[ -z "$ip" ]] && return 1
+    # Try IP first, then CIDR
+    _nft_ipc_validate_ipv4 "$ip" && return 0
+    _nft_ipc_validate_ipv6 "$ip" && return 0
+    _nft_ipc_validate_cidr "$ip" && return 0
+    return 1
+}
+
+# =============================================================================
 # CORE IPC FUNCTIONS
 # =============================================================================
 
@@ -359,10 +421,18 @@ nft_emergency_ban() {
         echo "ERROR: Emergency mode not enabled. Set NFTBAN_EMERGENCY_MODE=1" >&2
         return 1
     }
-    _nft_emergency_warning
 
     local ip="$1"
     local timeout="${2:-0}"
+
+    # v1.19.27 SECURITY: Validate IP before constructing nft command (defense-in-depth)
+    # Prevents command injection even if caller failed to validate
+    if ! _nft_ipc_validate_ip "$ip"; then
+        echo "ERROR: Invalid IP address format: $ip" >&2
+        return 1
+    fi
+
+    _nft_emergency_warning
 
     # Determine IP version
     if [[ "$ip" == *:* ]]; then
@@ -392,9 +462,17 @@ nft_emergency_unban() {
         echo "ERROR: Emergency mode not enabled. Set NFTBAN_EMERGENCY_MODE=1" >&2
         return 1
     }
-    _nft_emergency_warning
 
     local ip="$1"
+
+    # v1.19.27 SECURITY: Validate IP before constructing nft command (defense-in-depth)
+    if ! _nft_ipc_validate_ip "$ip"; then
+        echo "ERROR: Invalid IP address format: $ip" >&2
+        return 1
+    fi
+
+    _nft_emergency_warning
+
     local removed=0
 
     # v2.1: All bans are in unified blacklist set (no separate auto/manual sets)

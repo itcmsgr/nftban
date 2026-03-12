@@ -397,20 +397,29 @@ EOF
             entry="${entry%% *}"
             entry="${entry%%	*}"
             [[ -z "$entry" ]] && continue
+
+            # v1.19.27 SECURITY: Strict IP validation before nft command (defense-in-depth)
+            # Prevents command injection if whitelist file is compromised
             if [[ "$entry" == *:* ]]; then
-                # IPv6
+                # IPv6: Only allow hex digits and colons
+                if [[ ! "$entry" =~ ^[0-9a-fA-F:]+(/[0-9]+)?$ ]]; then
+                    log "WARN" "Skipping invalid IPv6 entry in whitelist: $entry"
+                    continue
+                fi
                 if ! nft get element ip6 nftban whitelist_ipv6 "{ $entry }" &>/dev/null; then
                     if nft add element ip6 nftban whitelist_ipv6 "{ $entry }" 2>/dev/null; then
                         log "INFO" "Re-synced IPv6 to nftables whitelist: $entry"
                     fi
                 fi
-            elif [[ "$entry" =~ ^[0-9]+\.[0-9]+ ]]; then
-                # IPv4
+            elif [[ "$entry" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]+)?$ ]]; then
+                # IPv4: Strict format check (4 octets, optional CIDR)
                 if ! nft get element ip nftban whitelist_ipv4 "{ $entry }" &>/dev/null; then
                     if nft add element ip nftban whitelist_ipv4 "{ $entry }" 2>/dev/null; then
                         log "INFO" "Re-synced IPv4 to nftables whitelist: $entry"
                     fi
                 fi
+            else
+                log "WARN" "Skipping invalid entry in whitelist: $entry"
             fi
         done < "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
 

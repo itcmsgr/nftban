@@ -678,6 +678,14 @@ firewall_rebuild() {
         # v1.19.20 FIX: Prevent pipefail exit 1 when grep finds no match
         elements=$(grep -oP 'elements = \{ \K[^}]+' "$backup_file" 2>/dev/null | tr -d '\n\t' | sed 's/  */ /g' || true)
         [[ -z "$elements" ]] && continue
+
+        # v1.19.27 SECURITY: Validate elements contain only safe characters (defense-in-depth)
+        # Allow: digits, dots, colons (IPv6), slashes (CIDR), commas, spaces, 'timeout', 's/m/h/d'
+        if [[ ! "$elements" =~ ^[0-9a-fA-F.:,/[:space:]timeouts]+$ ]]; then
+            [[ "$quiet" == "false" ]] && echo "    WARNING: Skipping backup with invalid characters: $backup_file"
+            continue
+        fi
+
         # Determine table and set from filename
         local table_family set_name
         if [[ "$backup_file" == *ipv4* ]]; then
