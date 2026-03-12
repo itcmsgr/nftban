@@ -1319,12 +1319,23 @@ nftban_cmd_update() {
             _cmd_update_status
             ;;
         github)
-            # Parse --force flag and version argument
+            # Parse flags and version argument
+            # v1.19.28 fix: intercept subcommand words so they are not used as version
             local version_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
                     --skip-checksum) _NFTBAN_UPDATE_SKIP_CHECKSUM=1; shift ;;
+                    force|reinstall)
+                        _NFTBAN_UPDATE_FORCE=1
+                        _NFTBAN_UPDATE_SKIP_CHECKSUM=1
+                        shift ;;
+                    repair|--repair|fix)
+                        _cmd_update_repair; return $? ;;
+                    rollback|--rollback)
+                        _update_banner; echo ""; _do_rollback; return $? ;;
+                    list|--list)
+                        _update_banner; _list_backups; return $? ;;
                     -*) shift ;;  # Skip unknown flags
                     *) version_arg="$1"; shift ;;
                 esac
@@ -1332,11 +1343,20 @@ nftban_cmd_update() {
             _cmd_update_main "github" "$version_arg"
             ;;
         git)
-            # Parse --force flag and branch argument
+            # Parse flags and branch argument
+            # v1.19.28 fix: intercept subcommand words so they are not used as branch
             local branch_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    force|reinstall)
+                        _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    repair|--repair|fix)
+                        _cmd_update_repair; return $? ;;
+                    rollback|--rollback)
+                        _update_banner; echo ""; _do_rollback; return $? ;;
+                    list|--list)
+                        _update_banner; _list_backups; return $? ;;
                     -*) shift ;;
                     *) branch_arg="$1"; shift ;;
                 esac
@@ -1344,11 +1364,20 @@ nftban_cmd_update() {
             _cmd_update_main "git" "$branch_arg"
             ;;
         local)
-            # Parse --force flag and path argument
+            # Parse flags and path argument
+            # v1.19.28 fix: intercept subcommand words so they are not used as path
             local path_arg=""
             while [[ $# -gt 0 ]]; do
                 case "$1" in
-                    --force|-f|force) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    --force|-f) _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    force|reinstall)
+                        _NFTBAN_UPDATE_FORCE=1; shift ;;
+                    repair|--repair|fix)
+                        _cmd_update_repair; return $? ;;
+                    rollback|--rollback)
+                        _update_banner; echo ""; _do_rollback; return $? ;;
+                    list|--list)
+                        _update_banner; _list_backups; return $? ;;
                     -*) shift ;;
                     *) path_arg="$1"; shift ;;
                 esac
