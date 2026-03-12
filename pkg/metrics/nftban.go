@@ -112,6 +112,27 @@ var (
 		Help:      "Total number of IPs removed during sync operations",
 	})
 
+	// v1.19.28: Queue drop metrics for observability
+	// These track event loss in internal queues - critical for reliability monitoring
+	opqueueDropsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "opqueue_drops_total",
+		Help:      "Total operations dropped due to queue backpressure",
+	}, []string{"lane"}) // lane: fast, bulk
+
+	eventbusDropsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "eventbus_drops_total",
+		Help:      "Total events dropped from EventBus due to backpressure",
+	})
+
+	// Queue utilization gauges - for alerting before saturation
+	opqueueUtilization = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "opqueue_utilization_percent",
+		Help:      "Queue utilization percentage (100 = full, drops occurring)",
+	}, []string{"lane"}) // lane: fast, bulk
+
 	// Authentication metrics
 	authAttemptsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "nftban",
@@ -724,6 +745,31 @@ func RecordDetectionByCountry(country, module string) {
 // RecordError records an error for a module
 func RecordError(module, errorType string) {
 	errorsTotal.WithLabelValues(module, errorType).Inc()
+}
+
+// =============================================================================
+// Queue Observability Recording Functions (v1.19.28)
+// =============================================================================
+// These functions track event loss and queue pressure - critical for reliability
+
+// RecordOpQueueDrop records a dropped operation due to queue backpressure
+// lane should be "fast" (ban/unban) or "bulk" (feeds/geoban)
+func RecordOpQueueDrop(lane string) {
+	opqueueDropsTotal.WithLabelValues(lane).Inc()
+}
+
+// RecordEventBusDrop records a dropped event from the EventBus
+func RecordEventBusDrop() {
+	eventbusDropsTotal.Inc()
+}
+
+// SetOpQueueUtilization sets the current queue utilization percentage
+// pending = current pending operations, capacity = max queue size
+func SetOpQueueUtilization(lane string, pending, capacity int64) {
+	if capacity > 0 {
+		utilization := float64(pending) / float64(capacity) * 100
+		opqueueUtilization.WithLabelValues(lane).Set(utilization)
+	}
 }
 
 // =============================================================================

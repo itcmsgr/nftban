@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
@@ -44,10 +45,13 @@ type Scheduler struct {
 	config  QueueConfig
 
 	// Atomic counters
-	fastPending atomic.Int64
-	bulkPending atomic.Int64
+	fastPending  atomic.Int64
+	bulkPending  atomic.Int64
 	totalApplied atomic.Uint64
 	totalDropped atomic.Uint64
+	// v1.19.28: Separate drop counters for observability
+	fastDropped atomic.Uint64
+	bulkDropped atomic.Uint64
 
 	// Last flush times
 	lastFastFlush atomic.Value // time.Time
@@ -60,10 +64,11 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new priority scheduler
+// v1.19.28: Increased bulkCh from 100 to 1000 to prevent saturation during feed sync
 func NewScheduler(backend NetlinkBackend, config QueueConfig) *Scheduler {
 	s := &Scheduler{
-		fastCh:  make(chan FastOp, 10000),      // High-priority buffer
-		bulkCh:  make(chan BulkJob, 100),       // Low-priority buffer for bulk jobs
+		fastCh:  make(chan FastOp, 10000),      // High-priority buffer (bans, unbans)
+		bulkCh:  make(chan BulkJob, 1000),      // Low-priority buffer for bulk jobs (feeds, geoban)
 		backend: backend,
 		config:  config,
 		stopCh:  make(chan struct{}),
@@ -108,6 +113,11 @@ func (s *Scheduler) EnqueueFast(setName string, op *SetOp) error {
 		return nil
 	default:
 		s.totalDropped.Add(1)
+		s.fastDropped.Add(1)
+		// v1.19.28: Log drops + Prometheus metric for visibility
+		metrics.RecordOpQueueDrop("fast")
+		log.Printf("[WARN] OpQueue drop: fastCh full (pending=%d, dropped=%d) op=%s set=%s",
+			s.fastPending.Load(), s.fastDropped.Load(), op.Type.String(), setName)
 		return ErrQueueFull
 	}
 }
@@ -124,6 +134,11 @@ func (s *Scheduler) EnqueueBulk(setName string, elements []string, source string
 		return nil
 	default:
 		s.totalDropped.Add(1)
+		s.bulkDropped.Add(1)
+		// v1.19.28: Log drops + Prometheus metric for visibility
+		metrics.RecordOpQueueDrop("bulk")
+		log.Printf("[WARN] OpQueue drop: bulkCh full (pending=%d, dropped=%d) source=%s set=%s elements=%d",
+			s.bulkPending.Load(), s.bulkDropped.Load(), source, setName, len(elements))
 		return ErrQueueFull
 	}
 }
@@ -137,6 +152,8 @@ func (s *Scheduler) SchedulerStats() SchedulerStats {
 		BulkPending:   s.bulkPending.Load(),
 		TotalApplied:  s.totalApplied.Load(),
 		TotalDropped:  s.totalDropped.Load(),
+		FastDropped:   s.fastDropped.Load(),
+		BulkDropped:   s.bulkDropped.Load(),
 		LastFastFlush: lastFast,
 		LastBulkFlush: lastBulk,
 	}
@@ -148,6 +165,9 @@ type SchedulerStats struct {
 	BulkPending   int64
 	TotalApplied  uint64
 	TotalDropped  uint64
+	// v1.19.28: Per-lane drop counters for granular observability
+	FastDropped   uint64
+	BulkDropped   uint64
 	LastFastFlush time.Time
 	LastBulkFlush time.Time
 }
