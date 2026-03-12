@@ -274,11 +274,12 @@ func (c *ElasticsearchConnector) ping(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
 			return nil
 		}
+		resp.Body.Close()
 	}
 
 	return fmt.Errorf("no healthy Elasticsearch nodes")
@@ -318,7 +319,7 @@ func (c *ElasticsearchConnector) doBulkRequest(ctx context.Context, body []byte)
 			defer resp.Body.Close()
 
 			if resp.StatusCode >= 400 {
-				bodyBytes, _ := io.ReadAll(resp.Body)
+				bodyBytes, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort error body
 				lastErr = fmt.Errorf("bulk request failed: %s - %s", resp.Status, string(bodyBytes))
 				continue
 			}
@@ -449,11 +450,12 @@ func (c *ElasticsearchConnector) CreateIndexTemplate(ctx context.Context) error 
 		if err != nil {
 			continue
 		}
-		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+			resp.Body.Close()
 			return nil
 		}
+		resp.Body.Close()
 	}
 
 	return fmt.Errorf("failed to create index template")

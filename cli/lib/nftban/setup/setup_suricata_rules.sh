@@ -100,8 +100,11 @@ main() {
 
     # Step 4: Download and install rules
     print_info "Downloading Suricata rules (this may take a few minutes)..."
-    if suricata-update 2>&1 | tee /tmp/suricata-update.log | grep -q "Writing rules"; then
+    local _suricata_log
+    _suricata_log=$(mktemp /tmp/suricata-update.XXXXXX)
+    if suricata-update 2>&1 | tee "$_suricata_log" | grep -q "Writing rules"; then
         print_status "Rules downloaded and installed"
+        rm -f "$_suricata_log"
 
         # Show rule count
         local rule_count
@@ -109,7 +112,8 @@ main() {
         print_info "Total alert rules: $rule_count"
     else
         print_error "Rule download failed"
-        cat /tmp/suricata-update.log >&2
+        cat "$_suricata_log" >&2
+        rm -f "$_suricata_log"
         exit 1
     fi
     echo ""
