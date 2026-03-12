@@ -505,7 +505,7 @@ nftban_stats_export_json() {
     # Export statistics to JSON
     # Usage: nftban_stats_export_json [output_file] [since] [until]
 
-    local output_file="${1:-/tmp/nftban-stats-$(date +%Y%m%d-%H%M%S).json}"
+    local output_file="${1:-$(mktemp /tmp/nftban-stats-XXXXXX.json)}"
     local since="${2:-$(date -d '30 days ago' +%Y-%m-%d)}"
     local until="${3:-$(date +%Y-%m-%d)}"
 
@@ -555,7 +555,7 @@ nftban_stats_export_csv() {
     # Export ban log to CSV
     # Usage: nftban_stats_export_csv [output_file] [since] [until]
 
-    local output_file="${1:-/tmp/nftban-stats-$(date +%Y%m%d-%H%M%S).csv}"
+    local output_file="${1:-$(mktemp /tmp/nftban-stats-XXXXXX.csv)}"
     local since="${2:-$(date -d '30 days ago' +%Y-%m-%d)}"
     local until="${3:-$(date +%Y-%m-%d)}"
 
