@@ -56,10 +56,16 @@ _get_latest_release() {
 
 _get_package_url() {
     # Get download URL for current distro
-    # Args: $1 = version
+    # Args: $1 = version (must be semver: N.N.N or N.N.N-suffix)
     # Returns: URL
 
     local version="$1"
+
+    # v1.19.28 fix: validate version format to prevent arbitrary strings in URL
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?$ ]]; then
+        _update_log ERROR "Invalid version format: '$version' (expected: N.N.N)"
+        return 1
+    fi
 
     # Use the validated package name function
     local pkg_name
