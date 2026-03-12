@@ -270,6 +270,13 @@ func (si *SourceIndex) SaveToDisk() error {
 	if err != nil {
 		return err
 	}
+	closed := false
+	defer func() {
+		if !closed {
+			file.Close()
+			os.Remove(tmpPath)
+		}
+	}()
 
 	writer := bufio.NewWriter(file)
 
@@ -283,11 +290,12 @@ func (si *SourceIndex) SaveToDisk() error {
 	}
 
 	if err := writer.Flush(); err != nil {
-		file.Close()
-		os.Remove(tmpPath)
 		return err
 	}
-	file.Close()
+	if err := file.Close(); err != nil {
+		return err
+	}
+	closed = true
 
 	if err := os.Rename(tmpPath, si.indexPath); err != nil {
 		return err

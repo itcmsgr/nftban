@@ -45,7 +45,7 @@ DEFAULT_TIMEOUT=30            # seconds per command (default)
 QUICK_TIMEOUT=15              # seconds for quick tests
 CURRENT_TIMEOUT=$DEFAULT_TIMEOUT  # actual timeout to use
 readonly TRACE_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log"
-SMOKE_LOG="/tmp/nftban_smoke_$(date +%Y%m%d_%H%M%S).log"
+SMOKE_LOG="$(mktemp /tmp/nftban_smoke_XXXXXX.log)"
 readonly SMOKE_LOG
 # shellcheck disable=SC2034  # Reserved for future trace tracking
 readonly SMOKE_TRACE_PREFIX="smoke_test"
@@ -122,7 +122,7 @@ _smoke_cleanup() {
     # Actionable failure hint
     if [[ "$smoke_status" == "FAILED" ]]; then
         echo ""
-        echo "To find failures: grep -E '\\[FAIL\\]|\\[TIMEOUT\\]' ${SMOKE_LOG:-/tmp/nftban_smoke_*.log}"
+        echo "To find failures: grep -E '\\[FAIL\\]|\\[TIMEOUT\\]' ${SMOKE_LOG}"
     fi
 }
 

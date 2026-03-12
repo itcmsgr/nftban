@@ -420,7 +420,7 @@ func (h *GOTHHandlers) HandleActionLogout(w http.ResponseWriter, r *http.Request
 func (h *GOTHHandlers) HandleIPCheck(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
-		w.Write([]byte(""))
+		_, _ = w.Write([]byte(""))
 		return
 	}
 
