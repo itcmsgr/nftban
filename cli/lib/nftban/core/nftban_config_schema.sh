@@ -39,12 +39,12 @@ _NFTBAN_LIB_PATH="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
 
 # shellcheck source=/dev/null
 if [[ -f "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" ]]; then
-    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh"
+    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" || return 1
 fi
 
 # shellcheck source=/dev/null
 if [[ -f "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" ]]; then
-    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh"
+    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" || return 1
 fi
 
 # =============================================================================
@@ -805,7 +805,7 @@ nftban_config_save_state() {
 
     local state_dir
     state_dir=$(dirname "$state_file")
-    mkdir -p "$state_dir" 2>/dev/null
+    mkdir -p "$state_dir" 2>/dev/null || return 1
 
     local schema_version
     schema_version=$(jq -r '.metadata.schema_version // 1' "$schema_file" 2>/dev/null)

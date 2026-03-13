@@ -34,6 +34,7 @@ package nftbanconf
 
 import (
 	"bufio"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -207,11 +208,12 @@ func Load() (*Config, error) {
 	return globalConfig, loadErr
 }
 
-// MustLoad loads config or panics - use in init()
+// MustLoad loads config or exits - use in init() and startup code.
+// Prefer Load() in code that can handle errors gracefully.
 func MustLoad() *Config {
 	cfg, err := Load()
 	if err != nil {
-		panic("nftbanconf: failed to load config: " + err.Error())
+		log.Fatalf("nftbanconf: failed to load config: %v", err)
 	}
 	return cfg
 }
@@ -232,15 +234,16 @@ func GetPaths() *Paths {
 	return globalPaths
 }
 
-// MustLoadPaths loads config and returns paths or panics
+// MustLoadPaths loads config and returns paths or exits.
 // NO FALLBACK - paths must come from /etc/nftban/nftban.conf
+// Prefer GetPaths() in code that can handle errors gracefully.
 func MustLoadPaths() *Paths {
 	_, err := Load()
 	if err != nil {
-		panic("nftbanconf: failed to load paths: " + err.Error())
+		log.Fatalf("nftbanconf: failed to load paths: %v", err)
 	}
 	if globalPaths == nil {
-		panic("nftbanconf: paths not initialized after load")
+		log.Fatalf("nftbanconf: paths not initialized after load (config may be invalid)")
 	}
 	return globalPaths
 }

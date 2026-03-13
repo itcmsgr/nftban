@@ -39,7 +39,7 @@ set -Eeuo pipefail
 
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
 
 # Initialize CLI environment (loads config, sets paths, enables strict mode)
 cmd_init
@@ -71,7 +71,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 
 _nftban_flush_help() {
     # Load output module for standard banner
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 
     # Show standard banner
     nftban_banner

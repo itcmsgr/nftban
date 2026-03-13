@@ -184,7 +184,7 @@ cmd_suricata_install() {
     echo "Next steps:"
     echo "  1. Enable and start: nftban suricata enable"
     echo "  2. Check status:     nftban suricata status"
-    echo "  3. View alerts:      tail -f /var/log/nftban/suricata/eve-alerts.json"
+    echo "  3. View alerts:      tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json"
     echo ""
 }
 
@@ -263,12 +263,12 @@ cmd_suricata_enable() {
     # Create EVE directory with correct permissions
     # Suricata needs write access; nftban needs read access for log parsing
     echo "  → Creating EVE log directory..."
-    mkdir -p "$eve_dir"
+    mkdir -p "$eve_dir" || return 1
 
     # Fix permissions for Suricata write access (RHEL-based distros)
     # Suricata runs as 'suricata' user, needs write access to EVE directory
     if getent passwd suricata >/dev/null 2>&1; then
-        # Add suricata user to nftban group (traverse /var/log/nftban/)
+        # Add suricata user to nftban group (traverse ${NFTBAN_LOG_DIR}/)
         if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
             echo "  → Adding suricata user to nftban group..."
             usermod -aG nftban suricata 2>/dev/null || true
@@ -446,7 +446,7 @@ cmd_suricata_enable() {
     echo "  Manual update: nftban suricata rules update"
     echo ""
     echo "Monitor alerts:"
-    echo "  tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
+    echo "  tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
     echo ""
     echo "Check status:"
     echo "  nftban suricata status"
@@ -543,8 +543,8 @@ cmd_suricata_status() {
     # Check rules_loaded from EVE JSON stats (most accurate)
     if [[ -f /var/log/suricata/eve.json ]]; then
         rules_loaded=$(grep -o '"rules_loaded":[0-9]*' /var/log/suricata/eve.json 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
-    elif [[ -f /var/log/nftban/suricata/eve-alerts.json ]]; then
-        rules_loaded=$(grep -o '"rules_loaded":[0-9]*' /var/log/nftban/suricata/eve-alerts.json 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+    elif [[ -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json ]]; then
+        rules_loaded=$(grep -o '"rules_loaded":[0-9]*' ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
     fi
 
     # Count rule files
@@ -565,8 +565,8 @@ cmd_suricata_status() {
     # Recent alerts
     echo ""
     echo "  Recent Alerts (last 5):"
-    if [[ -f /var/log/nftban/suricata/eve-alerts.json ]]; then
-        tail -100 /var/log/nftban/suricata/eve-alerts.json 2>/dev/null | \
+    if [[ -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json ]]; then
+        tail -100 ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json 2>/dev/null | \
             jq -r 'select(.event_type=="alert") | "    [\(.timestamp)] \(.alert.signature) - \(.src_ip):\(.src_port) -> \(.dest_ip):\(.dest_port)"' 2>/dev/null | \
             tail -5 || echo "    (no recent alerts or jq not installed)"
     else

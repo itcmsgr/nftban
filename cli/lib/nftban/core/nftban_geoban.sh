@@ -28,7 +28,7 @@ set -Eeuo pipefail
 
 # Source central environment loader (single source of truth for paths)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" || return 1
 
 # Source NFT schema for canonical table/set names
 # shellcheck source=/dev/null
@@ -36,8 +36,8 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || tru
 
 # Load logging modules if available (uses central config paths)
 if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_logger.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/helpers/nftban_logger.sh"
-    source "${NFTBAN_LIB_DIR}/helpers/nftban_audit.sh"
+    source "${NFTBAN_LIB_DIR}/helpers/nftban_logger.sh" || return 1
+    source "${NFTBAN_LIB_DIR}/helpers/nftban_audit.sh" || return 1
     LOGGING_ENABLED=true
 else
     LOGGING_ENABLED=false
@@ -147,9 +147,9 @@ nftban_geoban_check_binary() {
 
 # Ensure directories exist
 nftban_geoban_ensure_directories() {
-    mkdir -p "${GEOBAN_FILES_DIR}" 2>/dev/null
-    mkdir -p "${GEOBAN_CACHE_DIR}" 2>/dev/null
-    mkdir -p "${GEOBAN_TRACKING_DIR}" 2>/dev/null
+    mkdir -p "${GEOBAN_FILES_DIR}" 2>/dev/null || return 1
+    mkdir -p "${GEOBAN_CACHE_DIR}" 2>/dev/null || return 1
+    mkdir -p "${GEOBAN_TRACKING_DIR}" 2>/dev/null || return 1
 
     # Set permissions
     chmod 750 "${GEOBAN_FILES_DIR}" 2>/dev/null
@@ -495,7 +495,7 @@ nftban_geoban_fetch_bash() {
     nftban_info "Downloading $cc IP ranges from IPDENY (bash mode)"
 
     # Ensure directories exist
-    mkdir -p "$GEOBAN_CACHE_DIR" "$GEOBAN_FILES_DIR" "$GEOBAN_TRACKING_DIR"
+    mkdir -p "$GEOBAN_CACHE_DIR" "$GEOBAN_FILES_DIR" "$GEOBAN_TRACKING_DIR" || return 1
 
     # Determine file prefix based on action
     local prefix

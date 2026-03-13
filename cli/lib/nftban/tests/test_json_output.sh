@@ -21,7 +21,7 @@ set -Eeuo pipefail
 
 # Source the JSON helper
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/json_output.sh"
+source "${SCRIPT_DIR}/json_output.sh" || return 1
 
 echo "════════════════════════════════════════════════════════"
 echo "Testing NFTBan JSON Output Helper v1.0.0"

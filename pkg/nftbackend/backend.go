@@ -31,9 +31,11 @@ package nftbackend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -302,10 +304,7 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 	// Delete IP from set
 	if err := b.nft.DeleteSetElements(set, []string{req.IP}); err != nil {
 		// Check if it's a "not found" error (not a real error)
-		errStr := err.Error()
-		if strings.Contains(errStr, "No such file or directory") ||
-			strings.Contains(errStr, "does not exist") ||
-			strings.Contains(errStr, "element does not exist") {
+		if errors.Is(err, os.ErrNotExist) {
 			setName := "blacklist_ipv4"
 			if isIPv6 {
 				setName = "blacklist_ipv6"
@@ -444,10 +443,7 @@ func (b *Backend) DeleteElement(ctx context.Context, req DeleteElementRequest) e
 	// Delete element
 	if err := b.nft.DeleteSetElements(set, []string{req.Element}); err != nil {
 		// Ignore "not found" errors
-		errStr := err.Error()
-		if !strings.Contains(errStr, "No such file or directory") &&
-			!strings.Contains(errStr, "does not exist") &&
-			!strings.Contains(errStr, "element does not exist") {
+		if !errors.Is(err, os.ErrNotExist) {
 			b.stats.Errors++
 			b.stats.LastError = fmt.Sprintf("delete element: %v", err)
 			return fmt.Errorf("nft delete element failed: %w", err)

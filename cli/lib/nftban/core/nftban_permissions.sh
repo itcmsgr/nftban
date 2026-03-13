@@ -12,7 +12,7 @@
 # meta:input="System paths and current permission states"
 # meta:output="Enforced secure permissions and ownership"
 # meta:depends="bash,chmod,chown,find"
-# meta:inventory.files="/etc/nftban/,/var/lib/nftban/,/var/log/nftban/"
+# meta:inventory.files="/etc/nftban/,/var/lib/nftban/,${NFTBAN_LOG_DIR}/"
 # meta:inventory.binaries="chmod,chown,find,mkdir"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -37,7 +37,7 @@ readonly NFTBAN_PERMISSIONS_LOADED=1
 
 # CRITICAL: Load FHS spec - this is the SINGLE SOURCE OF TRUTH for permissions!
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" || return 1
 else
     echo "ERROR: FHS spec not found - cannot enforce permissions" >&2
     return 1
@@ -86,7 +86,7 @@ perms_log_audit() {
 
     # Create audit log if it doesn't exist (with correct ownership)
     if [[ ! -f "$PERMS_AUDIT_LOG" ]]; then
-        mkdir -p "$(dirname "$PERMS_AUDIT_LOG")"
+        mkdir -p "$(dirname "$PERMS_AUDIT_LOG")" || return 1
         touch "$PERMS_AUDIT_LOG"
         chown nftban:nftban "$PERMS_AUDIT_LOG" 2>/dev/null || true
         chmod 640 "$PERMS_AUDIT_LOG"
@@ -301,7 +301,7 @@ perms_enforce_cache_files() {
 }
 
 perms_enforce_log_files() {
-    # Enforce file permissions in /var/log/nftban (directories handled by FHS spec)
+    # Enforce file permissions in ${NFTBAN_LOG_DIR} (directories handled by FHS spec)
     # Security: files 0640
     # EXCEPTION: suricata/ subdirectory owned by suricata:nftban (Suricata writes, nftban reads)
 

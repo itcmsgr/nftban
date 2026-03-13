@@ -7,7 +7,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -16,12 +16,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - Permissions CLI Handler
 # =============================================================================
@@ -92,7 +92,7 @@ nftban_cmd_permissions() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi
@@ -154,7 +154,7 @@ SECURITY MODEL:
   /etc/nftban/*        → root:root, 0750/0640 (configs are code-sensitive!)
   /usr/lib/nftban/*    → root:root, 0755/0644 (immutable system code)
   /var/lib/nftban/*    → nftban:nftban, 0750 (mutable state data)
-  /var/log/nftban/*    → nftban:nftban, 0750 (log files)
+  ${NFTBAN_LOG_DIR}/*    → nftban:nftban, 0750 (log files)
 
 NOTES:
   - This command requires root privileges

@@ -79,19 +79,19 @@ readonly NFTBAN_DDOS_LOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos.log"
 # Source timestamp utilities (with graceful fallback)
 if [[ -f "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_timestamp.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_timestamp.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_timestamp.sh" || return 1
 fi
 
 # Source file utilities (with graceful fallback)
 if [[ -f "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_file_utils.sh"
+    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_file_utils.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_file_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_file_utils.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_file_utils.sh" || return 1
 fi
 
 # =============================================================================
@@ -100,16 +100,16 @@ fi
 
 # Source classic module
 if [[ -f "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_classic.sh" ]]; then
-    source "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_classic.sh"
+    source "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_classic.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_classic.sh" ]]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_classic.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_classic.sh" || return 1
 fi
 
 # Source suricata module
 if [[ -f "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_suricata.sh" ]]; then
-    source "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_suricata.sh"
+    source "${NFTBAN_DDOS_LIB_DIR}/core/nftban_ddos_suricata.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_suricata.sh" ]]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_suricata.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/nftban_ddos_suricata.sh" || return 1
 fi
 
 # =============================================================================
@@ -123,13 +123,13 @@ _nftban_ddos_load_config() {
     # Load defaults first
     if [[ -f "$main_config" ]]; then
         # shellcheck source=/dev/null
-        source "$main_config"
+        source "$main_config" || true
     fi
 
     # Load user overrides (takes precedence)
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local"
+        source "$main_local" || true
     fi
 
     # Set defaults
@@ -155,7 +155,7 @@ _nftban_ddos_log() {
     local level="$1"
     local message="$2"
 
-    mkdir -p "$(dirname "$NFTBAN_DDOS_LOG_FILE")" 2>/dev/null
+    mkdir -p "$(dirname "$NFTBAN_DDOS_LOG_FILE")" 2>/dev/null || return 1
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DDOS] [$level] $message" >> "$NFTBAN_DDOS_LOG_FILE"
 }
@@ -237,7 +237,7 @@ nftban_ddos_enable() {
 
     # Persist DDOS_ENABLED=true to local config override
     local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="true"/' "$local_conf"
     else
@@ -330,7 +330,7 @@ nftban_ddos_disable() {
 
     # Persist DDOS_ENABLED=false to local config override
     local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="false"/' "$local_conf"
     else

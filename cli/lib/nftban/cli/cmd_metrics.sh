@@ -34,7 +34,7 @@ set -Eeuo pipefail
 # Load main config (sets readonly paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Metrics endpoint defaults (use config or fallback)
@@ -43,27 +43,27 @@ fi
 
 # Load helper functions
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh" || return 1
 fi
 
 # Load shared metrics library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh" || return 1
 fi
 
 # Load pipeline validation library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" || return 1
 fi
 
 # Load Pro library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh" || return 1
 fi
 
 # Load metrics helpers (config helpers, validation)
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics_helpers.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics_helpers.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics_helpers.sh" || return 1
 fi
 
 # ==============================================================================
@@ -346,7 +346,7 @@ nftban_cmd_metrics() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

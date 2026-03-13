@@ -73,7 +73,7 @@ _nftban_ddos_suricata_load_config() {
 
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
     fi
 
     # Set defaults if not configured
@@ -130,7 +130,7 @@ _nftban_ddos_suricata_log() {
     local message="$2"
     local log_file="${DDOS_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-suricata.log}"
 
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 1
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SURICATA] [$level] $message" >> "$log_file"
 }

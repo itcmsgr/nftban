@@ -158,7 +158,7 @@ main() {
     echo "  suricata-update && systemctl restart suricata"
     echo ""
     print_info "Check eve.json for alerts:"
-    echo "  tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
+    echo "  tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
     echo ""
 }
 

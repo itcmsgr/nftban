@@ -30,7 +30,7 @@ set -Eeuo pipefail
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -39,7 +39,7 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" || return 1
 fi
 
 # Bootstrap NFTBAN_SHARE_DIR (may be readonly from nftban.conf)

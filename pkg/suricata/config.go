@@ -200,13 +200,13 @@ func (c *Config) parseFilterLine(name, value string, lineNum int) error {
 	// Parse threshold
 	threshold, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return fmt.Errorf("filter '%s' invalid threshold: %v", name, err)
+		return fmt.Errorf("filter '%s' invalid threshold: %w", name, err)
 	}
 
 	// Parse ban_time
 	banTime, err := timeutil.ParseDuration(parts[3])
 	if err != nil {
-		return fmt.Errorf("filter '%s' invalid ban_time: %v", name, err)
+		return fmt.Errorf("filter '%s' invalid ban_time: %w", name, err)
 	}
 
 	// Parse action
@@ -231,12 +231,12 @@ func (c *Config) parseFilterLine(name, value string, lineNum int) error {
 		if val, err := strconv.Atoi(escalateParts[1]); err == nil {
 			maxBans = val
 		} else {
-			return fmt.Errorf("filter '%s' invalid escalate count: %v", name, err)
+			return fmt.Errorf("filter '%s' invalid escalate count: %w", name, err)
 		}
 		if dur, err := timeutil.ParseDuration(escalateParts[2]); err == nil {
 			period = dur
 		} else {
-			return fmt.Errorf("filter '%s' invalid escalate period: %v", name, err)
+			return fmt.Errorf("filter '%s' invalid escalate period: %w", name, err)
 		}
 	} else {
 		// Simple: temporary or permanent

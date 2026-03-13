@@ -124,7 +124,7 @@ _trust_log() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    mkdir -p "$(dirname "$TRUST_LOG")"
+    mkdir -p "$(dirname "$TRUST_LOG")" || return 1
 
     if [[ ! -f "$TRUST_LOG" ]]; then
         touch "$TRUST_LOG"
@@ -161,8 +161,8 @@ BANNER
 # INITIALIZATION
 # =============================================================================
 nftban_trust_init() {
-    mkdir -p "$TRUST_CACHE_DIR" "$TRUST_DATA_DIR" "$TRUST_WHITELIST_DIR"
-    mkdir -p "$(dirname "$TRUST_LOG")"
+    mkdir -p "$TRUST_CACHE_DIR" "$TRUST_DATA_DIR" "$TRUST_WHITELIST_DIR" || return 1
+    mkdir -p "$(dirname "$TRUST_LOG")" || return 1
     _trust_log "INFO" "Trust module initialized"
 }
 

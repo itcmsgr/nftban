@@ -32,12 +32,12 @@ set -Eeuo pipefail
 
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_require_binary, etc.)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
 
 # Load timestamp utilities (nftban_timestamp_unix, nftban_timestamp, etc.)
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Initialize CLI environment (loads config, sets paths, enables strict mode)

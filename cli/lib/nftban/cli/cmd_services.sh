@@ -8,7 +8,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -17,12 +17,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - Services CLI Handler
 # =============================================================================
@@ -63,7 +63,7 @@ LIB_DIR="$(dirname "$SCRIPT_DIR")"
 if [[ ! $(type -t nftban_report_services) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_report_services.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_report_services.sh"
+        source "${LIB_DIR}/core/nftban_report_services.sh" || return 1
     else
         echo "ERROR: nftban_report_services.sh not found at ${LIB_DIR}/core" >&2
         exit 1
@@ -74,7 +74,7 @@ fi
 if [[ ! $(type -t nftban_render_banner) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_output.sh"
+        source "${LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 fi
 

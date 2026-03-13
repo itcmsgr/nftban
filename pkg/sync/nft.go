@@ -24,6 +24,7 @@ package sync
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -1014,8 +1015,8 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 	}
 
 	if err := m.conn.Flush(); err != nil {
-		// Ignore "file exists" errors - element already in set
-		if !strings.Contains(err.Error(), "file exists") && !strings.Contains(err.Error(), "exists") {
+		// Ignore EEXIST errors - element already in set
+		if !errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("failed to flush: %w", err)
 		}
 		// Element already exists - not an error
@@ -1311,11 +1312,8 @@ func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
 	}
 
 	if err := m.conn.Flush(); err != nil {
-		// Tolerate "no such file" errors - element already doesn't exist (idempotent)
-		errStr := err.Error()
-		if strings.Contains(errStr, "no such file") ||
-			strings.Contains(errStr, "does not exist") ||
-			strings.Contains(errStr, "ENOENT") {
+		// Tolerate ENOENT errors - element already doesn't exist (idempotent)
+		if errors.Is(err, os.ErrNotExist) {
 			return nil // Idempotent: element already gone
 		}
 		return fmt.Errorf("failed to flush port delete: %w", err)

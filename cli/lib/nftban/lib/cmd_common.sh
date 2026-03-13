@@ -26,7 +26,7 @@ cmd_init() {
     # Source central config for canonical paths
     # shellcheck source=/etc/nftban/nftban.conf
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
     fi
 
     # Set default paths if not defined
@@ -37,7 +37,7 @@ cmd_init() {
     # Load strict mode (or set manually as fallback)
     if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+        source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
     else
         set -Eeuo pipefail
     fi
@@ -58,23 +58,23 @@ cmd_load_helpers() {
         case "$helper" in
             json)
                 [[ -f "${NFTBAN_LIB_DIR}/helpers/json_output.sh" ]] && \
-                    source "${NFTBAN_LIB_DIR}/helpers/json_output.sh"
+                    source "${NFTBAN_LIB_DIR}/helpers/json_output.sh" || return 1
                 ;;
             schema)
                 [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]] && \
-                    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+                    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
                 ;;
             version)
                 [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]] && \
-                    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+                    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
                 ;;
             output)
                 [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]] && \
-                    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+                    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
                 ;;
             ipc)
                 [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]] && \
-                    source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh"
+                    source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" || return 1
                 ;;
         esac
     done
@@ -295,7 +295,7 @@ cmd_show_banner() {
 
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if declare -f nftban_banner &>/dev/null; then
             if [[ -n "$banner_arg" ]]; then
                 nftban_banner "$banner_arg"
@@ -407,13 +407,13 @@ cmd_load_module_config() {
 
     if [[ -f "${config_base}/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${config_base}/main.conf"
+        source "${config_base}/main.conf" || true
     fi
 
     # Load local overrides if they exist
     if [[ -f "${config_base}/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${config_base}/main.conf.local"
+        source "${config_base}/main.conf.local" || true
     fi
 }
 

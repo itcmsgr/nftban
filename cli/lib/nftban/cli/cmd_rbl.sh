@@ -34,7 +34,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -43,18 +43,18 @@ fi
 # Load prerequisite checker
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" || return 1
 fi
 
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # =============================================================================
 
@@ -74,7 +74,7 @@ readonly NFTBAN_CLI_RBL_LOADED=1
 if [[ ! $(type -t nftban_rbl_check_ip) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_rbl.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_rbl.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_rbl.sh" || return 1
     else
         echo "ERROR: nftban_rbl.sh not found" >&2
         exit 1
@@ -84,7 +84,7 @@ fi
 # Load output module for banner
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 fi
 
 # =============================================================================
@@ -185,7 +185,7 @@ CONFIGURATION:
   /etc/nftban/conf.d/rbl/watchlist.conf  Watched IPs
 
 CACHE LOCATION:
-  /var/log/nftban/rbl/{IP}.cache       Cached results per IP
+  ${NFTBAN_LOG_DIR}/rbl/{IP}.cache       Cached results per IP
 
 PERFORMANCE:
   Parallel DNS queries (default): ~10-15 seconds for 41 RBLs
@@ -581,7 +581,7 @@ nftban_cmd_rbl_check() {
     done
 
     # Update last check timestamp
-    mkdir -p "${NFTBAN_RBL_CACHE_DIR}"
+    mkdir -p "${NFTBAN_RBL_CACHE_DIR}" || return 1
     date -Iseconds > "${NFTBAN_RBL_CACHE_DIR}/last_check"
 
     # Return exit code based on listings
@@ -784,7 +784,7 @@ nftban_cmd_rbl_server() {
     fi
 
     # Update last check timestamp
-    mkdir -p "${NFTBAN_RBL_CACHE_DIR}"
+    mkdir -p "${NFTBAN_RBL_CACHE_DIR}" || return 1
     date -Iseconds > "${NFTBAN_RBL_CACHE_DIR}/last_check"
 
     # Return exit code based on listings
@@ -896,7 +896,7 @@ nftban_cmd_rbl_enable() {
 
     # Persist to config
     local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^NFTBAN_RBL_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^NFTBAN_RBL_ENABLED=.*/NFTBAN_RBL_ENABLED="YES"/' "$local_conf"
     else
@@ -925,7 +925,7 @@ nftban_cmd_rbl_disable() {
 
     # Persist to config
     local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^NFTBAN_RBL_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^NFTBAN_RBL_ENABLED=.*/NFTBAN_RBL_ENABLED="NO"/' "$local_conf"
     else

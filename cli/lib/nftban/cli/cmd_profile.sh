@@ -30,7 +30,7 @@
 
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     set -Eeuo pipefail
 fi
@@ -38,7 +38,7 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # =============================================================================
@@ -55,7 +55,7 @@ readonly NFTBAN_CONFIG_MAIN="${NFTBAN_CONFIG_MAIN:-/etc/nftban/nftban.conf}"
 _nftban_profile_banner() {
     # Load output module for standard banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     else
         echo "╔════════════════════════════════════════════════════════════╗"
@@ -251,7 +251,7 @@ _nftban_profile_redirect_to_wizard() {
 
         # Source and run wizard
         # shellcheck source=/dev/null
-        source "$wizard_module"
+        source "$wizard_module" || return 1
         cmd_wizard_install
     else
         echo "❌ ERROR: Wizard module not found"

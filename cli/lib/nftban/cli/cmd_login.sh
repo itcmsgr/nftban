@@ -7,13 +7,13 @@
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -22,24 +22,24 @@ fi
 # Load prerequisite checker
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" || return 1
 fi
 
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load distro config for dynamic paths (DISTRO_PATHS[systemd_system])
 # shellcheck source=/dev/null
 if [[ -z "${NFTBAN_DISTRO_CONFIG_LOADED:-}" ]] && [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - Login Alert CLI Handler
 # =============================================================================
@@ -87,7 +87,7 @@ readonly NFTBAN_LOGIN_CLI_LOADED=1
 
 # Load login alert module (for alert functions)
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" || return 1
 else
     echo "ERROR: Login alert module not found at ${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" >&2
     exit 1
@@ -95,7 +95,7 @@ fi
 
 # Load main login module (for multi-service detection: SSH, Dovecot, Postfix, Exim)
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_login.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_login.sh" || return 1
 fi
 
 # =============================================================================
@@ -356,7 +356,7 @@ nftban_login_cmd_enable() {
 
     # Ensure local config exists
     if [[ ! -f "$config_local" ]]; then
-        mkdir -p "$(dirname "$config_local")"
+        mkdir -p "$(dirname "$config_local")" || return 1
         echo "# NFTBan Login Alert - User Overrides" > "$config_local"
         echo "# This file overrides defaults from login_alert.conf" >> "$config_local"
         chmod 640 "$config_local"
@@ -444,7 +444,7 @@ nftban_login_cmd_disable() {
 
     # Ensure local config exists
     if [[ ! -f "$config_local" ]]; then
-        mkdir -p "$(dirname "$config_local")"
+        mkdir -p "$(dirname "$config_local")" || return 1
         echo "# NFTBan Login Alert - User Overrides" > "$config_local"
         chmod 640 "$config_local"
         chown root:nftban "$config_local" 2>/dev/null || true
@@ -502,7 +502,7 @@ _nftban_login_set_config() {
 
     # Ensure file exists and has correct permissions
     if [[ ! -f "$file" ]]; then
-        mkdir -p "$(dirname "$file")"
+        mkdir -p "$(dirname "$file")" || return 1
         touch "$file"
         chmod 640 "$file"
         chown root:nftban "$file" 2>/dev/null || true
@@ -714,7 +714,7 @@ nftban_login_cmd_health_fix() {
 
         if [[ $EUID -eq 0 ]]; then
             echo "   Creating default configuration..."
-            mkdir -p "$(dirname "$config_file")"
+            mkdir -p "$(dirname "$config_file")" || return 1
             cat > "$config_file" <<'CONF'
 # NFTBan Login Alert Configuration
 # =============================================================================
@@ -1208,7 +1208,7 @@ nftban_cmd_login() {
     # Load output module (for help banner)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 
     case "$subcommand" in

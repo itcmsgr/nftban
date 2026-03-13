@@ -222,7 +222,7 @@ _remove_immutable_flags() {
 _load_config() {
     if [[ -f "$UPDATE_CONFIG_FILE" ]]; then
         # shellcheck source=/dev/null
-        source "$UPDATE_CONFIG_FILE"
+        source "$UPDATE_CONFIG_FILE" || true
     fi
 }
 

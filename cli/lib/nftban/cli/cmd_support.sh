@@ -41,7 +41,7 @@ readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 
 # Bootstrap paths (nftban.conf will make them readonly)
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
-: "${NFTBAN_LOG_DIR:=/var/log/nftban}"
+: "${NFTBAN_LOG_DIR:=${NFTBAN_LOG_DIR}}"
 : "${NFTBAN_GIT_REPO:=/opt/nftban}"
 
 # Load main config (sets readonly paths)
@@ -168,7 +168,7 @@ _collect_version() {
 _collect_system() {
     local bundle_dir="$1"
     local sys_dir="$bundle_dir/system"
-    mkdir -p "$sys_dir"
+    mkdir -p "$sys_dir" || return 1
 
     _safe_cmd "$sys_dir/uname.txt" "Kernel info (uname)" uname -a
     _safe_cmd "$sys_dir/os-release.txt" "OS release" cat /etc/os-release
@@ -209,7 +209,7 @@ _collect_system() {
 _collect_nftables() {
     local bundle_dir="$1"
     local nft_dir="$bundle_dir/nftables"
-    mkdir -p "$nft_dir"
+    mkdir -p "$nft_dir" || return 1
 
     if ! command -v nft &>/dev/null; then
         _support_log SKIP "nftables (nft not found)"
@@ -232,7 +232,7 @@ _collect_nftables() {
 _collect_configs() {
     local bundle_dir="$1"
     local conf_dir="$bundle_dir/config"
-    mkdir -p "$conf_dir"
+    mkdir -p "$conf_dir" || return 1
 
     if [[ ! -d "$NFTBAN_CONFIG_DIR" ]]; then
         _support_log SKIP "Config directory ($NFTBAN_CONFIG_DIR not found)"
@@ -263,7 +263,7 @@ _collect_configs() {
 _collect_logs() {
     local bundle_dir="$1"
     local log_dir="$bundle_dir/logs"
-    mkdir -p "$log_dir"
+    mkdir -p "$log_dir" || return 1
 
     local since_time
     since_time=$(date -d "$SUPPORT_LOG_HOURS hours ago" '+%Y-%m-%d %H:%M' 2>/dev/null || date '+%Y-%m-%d %H:%M')
@@ -323,7 +323,7 @@ _collect_status() {
 _collect_update_info() {
     local bundle_dir="$1"
     local update_dir="$bundle_dir/update"
-    mkdir -p "$update_dir"
+    mkdir -p "$update_dir" || return 1
 
     if ! command -v nftban &>/dev/null; then
         _support_log SKIP "Update info (nftban not in PATH)"
@@ -346,7 +346,7 @@ _collect_update_info() {
 _collect_network() {
     local bundle_dir="$1"
     local net_dir="$bundle_dir/network"
-    mkdir -p "$net_dir"
+    mkdir -p "$net_dir" || return 1
 
     _safe_cmd "$net_dir/ip-addr.txt" "IP addresses" ip addr
     _safe_cmd "$net_dir/ip-route.txt" "Routing table" ip route
@@ -369,7 +369,7 @@ _collect_network() {
 _collect_services() {
     local bundle_dir="$1"
     local svc_dir="$bundle_dir/services"
-    mkdir -p "$svc_dir"
+    mkdir -p "$svc_dir" || return 1
 
     if ! command -v systemctl &>/dev/null; then
         _support_log SKIP "Systemd services (systemctl not found)"
@@ -391,7 +391,7 @@ _collect_services() {
 _collect_install_info() {
     local bundle_dir="$1"
     local install_dir="$bundle_dir/install"
-    mkdir -p "$install_dir"
+    mkdir -p "$install_dir" || return 1
 
     # Detect install type
     {
@@ -438,7 +438,7 @@ _collect_install_info() {
 _collect_binaries() {
     local bundle_dir="$1"
     local bin_dir="$bundle_dir/binaries"
-    mkdir -p "$bin_dir"
+    mkdir -p "$bin_dir" || return 1
 
     {
         echo "# NFTBan Binary Info"
@@ -504,7 +504,7 @@ _collect_binaries() {
 _collect_distro_config() {
     local bundle_dir="$1"
     local distro_dir="$bundle_dir/distro"
-    mkdir -p "$distro_dir"
+    mkdir -p "$distro_dir" || return 1
 
     {
         echo "# Distro Configuration"
@@ -514,7 +514,7 @@ _collect_distro_config() {
         # OS detection
         echo "=== OS Detection ==="
         if [[ -f /etc/os-release ]]; then
-            source /etc/os-release
+            source /etc/os-release || true
             echo "ID: ${ID:-unknown}"
             echo "VERSION_ID: ${VERSION_ID:-unknown}"
             echo "PRETTY_NAME: ${PRETTY_NAME:-unknown}"
@@ -548,7 +548,7 @@ _collect_distro_config() {
 _collect_fhs_structure() {
     local bundle_dir="$1"
     local fhs_dir="$bundle_dir/fhs"
-    mkdir -p "$fhs_dir"
+    mkdir -p "$fhs_dir" || return 1
 
     {
         echo "# FHS Directory Structure"
@@ -557,7 +557,7 @@ _collect_fhs_structure() {
 
         # Key directories
         echo "=== Key Directories ==="
-        for dir in /etc/nftban /usr/lib/nftban /var/lib/nftban /var/log/nftban \
+        for dir in /etc/nftban /usr/lib/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} \
                    "${NFTBAN_RUN_DIR:-/run/nftban}" /usr/share/nftban; do
             if [[ -d "$dir" ]]; then
                 echo "$dir: $(ls -ld "$dir" 2>&1)"
@@ -578,7 +578,7 @@ _collect_fhs_structure() {
 
         # Disk space
         echo "=== Disk Space ==="
-        df -h /etc/nftban /var/lib/nftban /var/log/nftban 2>/dev/null || df -h / 2>/dev/null
+        df -h /etc/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} 2>/dev/null || df -h / 2>/dev/null
         echo ""
 
         # Immutable flags
@@ -596,7 +596,7 @@ _collect_fhs_structure() {
 _collect_whitelist_blacklist() {
     local bundle_dir="$1"
     local lists_dir="$bundle_dir/lists"
-    mkdir -p "$lists_dir"
+    mkdir -p "$lists_dir" || return 1
 
     # Whitelist files
     if [[ -d /etc/nftban/whitelist.d ]]; then
@@ -642,7 +642,7 @@ _collect_whitelist_blacklist() {
 _collect_geoip() {
     local bundle_dir="$1"
     local geoip_dir="$bundle_dir/geoip"
-    mkdir -p "$geoip_dir"
+    mkdir -p "$geoip_dir" || return 1
 
     {
         echo "# GeoIP Database Info"
@@ -685,7 +685,7 @@ _collect_geoip() {
 _collect_daemon_status() {
     local bundle_dir="$1"
     local daemon_dir="$bundle_dir/daemon"
-    mkdir -p "$daemon_dir"
+    mkdir -p "$daemon_dir" || return 1
 
     {
         echo "# NFTBan Daemon Status"
@@ -726,7 +726,7 @@ _collect_daemon_status() {
 _collect_recent_activity() {
     local bundle_dir="$1"
     local activity_dir="$bundle_dir/activity"
-    mkdir -p "$activity_dir"
+    mkdir -p "$activity_dir" || return 1
 
     # Recent bans from journal
     {
@@ -777,7 +777,7 @@ _collect_recent_activity() {
 _collect_mail_status() {
     local bundle_dir="$1"
     local mail_dir="$bundle_dir/mail"
-    mkdir -p "$mail_dir"
+    mkdir -p "$mail_dir" || return 1
 
     {
         echo "# Mail System Status"
@@ -819,7 +819,7 @@ _collect_mail_status() {
 _collect_module_status() {
     local bundle_dir="$1"
     local mod_dir="$bundle_dir/modules"
-    mkdir -p "$mod_dir"
+    mkdir -p "$mod_dir" || return 1
 
     # Collect individual module status
     if command -v nftban &>/dev/null; then
@@ -914,7 +914,7 @@ _collect_disk_usage() {
         echo ""
 
         echo "=== Directory Sizes ==="
-        for dir in /etc/nftban /var/lib/nftban /var/log/nftban /var/cache/nftban /usr/lib/nftban; do
+        for dir in /etc/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} /var/cache/nftban /usr/lib/nftban; do
             if [[ -d "$dir" ]]; then
                 echo "$dir: $(du -sh "$dir" 2>/dev/null | cut -f1)"
             fi
@@ -922,7 +922,7 @@ _collect_disk_usage() {
         echo ""
 
         echo "=== Large Files (>10MB) ==="
-        find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -size +10M 2>/dev/null | \
+        find /var/lib/nftban ${NFTBAN_LOG_DIR} /var/cache/nftban -type f -size +10M 2>/dev/null | \
             while read -r f; do
                 echo "$f: $(du -h "$f" 2>/dev/null | cut -f1)"
             done || echo "None found"
@@ -978,8 +978,8 @@ _collect_recent_errors() {
         echo ""
 
         echo "=== Log File Errors ==="
-        if [[ -d /var/log/nftban ]]; then
-            grep -h -i -E '(error|fail|critical|warn)' /var/log/nftban/*.log 2>/dev/null | tail -50 || echo "No errors in log files"
+        if [[ -d ${NFTBAN_LOG_DIR} ]]; then
+            grep -h -i -E '(error|fail|critical|warn)' ${NFTBAN_LOG_DIR}/*.log 2>/dev/null | tail -50 || echo "No errors in log files"
         fi
 
     } > "$bundle_dir/recent-errors.txt"

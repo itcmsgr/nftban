@@ -35,7 +35,7 @@ readonly NFTBAN_SYSTEM_IP_LOADED=1
 
 # Load dependencies
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" || return 1
 fi
 # v1.18.0: IPC library for daemon communication
 # shellcheck source=/dev/null
@@ -191,7 +191,7 @@ nftban_add_system_ip() {
 
     # Ensure whitelist file exists
     if [[ ! -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
-        mkdir -p "$(dirname "$NFTBAN_WHITELIST_SYSTEM")"
+        mkdir -p "$(dirname "$NFTBAN_WHITELIST_SYSTEM")" || return 1
         cat > "$NFTBAN_WHITELIST_SYSTEM" <<'HEADER'
 # NFTBan System Whitelist - Auto-Generated
 # DO NOT EDIT MANUALLY - Use: nftban whitelist-system sync

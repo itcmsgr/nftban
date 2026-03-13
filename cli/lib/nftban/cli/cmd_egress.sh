@@ -260,7 +260,7 @@ nftban_egress_audit() {
     echo ""
     echo "Saving observations to: $NFTBAN_EGRESS_LEARN_FILE"
 
-    mkdir -p "$(dirname "$NFTBAN_EGRESS_LEARN_FILE")"
+    mkdir -p "$(dirname "$NFTBAN_EGRESS_LEARN_FILE")" || return 1
 
     local json="{"
     json+="\"timestamp\":\"$(date --iso-8601=seconds)\","

@@ -31,20 +31,20 @@ set -Eeuo pipefail
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 fi
 
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # =============================================================================
@@ -54,7 +54,7 @@ fi
 _nftban_botscan_help() {
     # Load output module for standard banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner "botscan"
     fi
 
@@ -181,7 +181,7 @@ EXAMPLES:
     nftban botscan history
 
 LOG FILES:
-    Detection logs: /var/log/nftban/botscan.log
+    Detection logs: ${NFTBAN_LOG_DIR}/botscan.log
     State tracking: /var/lib/nftban/botscan-state.db
 
 SEE ALSO:
@@ -198,7 +198,7 @@ HELP
 
 _nftban_botscan_banner() {
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner "botscan"
     else
         echo "NFTBan Bot Scanner"
@@ -391,7 +391,7 @@ _nftban_botscan_cmd_enable() {
 
     # Ensure local config exists
     if [[ ! -f "$config_local" ]]; then
-        mkdir -p "$(dirname "$config_local")"
+        mkdir -p "$(dirname "$config_local")" || return 1
         echo "# NFTBan Bot Scanner - User Overrides" > "$config_local"
         chmod 640 "$config_local"
         chown root:nftban "$config_local" 2>/dev/null || true
@@ -425,7 +425,7 @@ _nftban_botscan_cmd_disable() {
 
     # Ensure local config exists
     if [[ ! -f "$config_local" ]]; then
-        mkdir -p "$(dirname "$config_local")"
+        mkdir -p "$(dirname "$config_local")" || return 1
         echo "# NFTBan Bot Scanner - User Overrides" > "$config_local"
         chmod 640 "$config_local"
         chown root:nftban "$config_local" 2>/dev/null || true
@@ -452,7 +452,7 @@ _nftban_botscan_cmd_patterns() {
     # Load core module for pattern functions
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
     else
         echo "ERROR: Bot scanner core module not found" >&2
         return 1
@@ -574,7 +574,7 @@ _nftban_botscan_cmd_test() {
     # Load core module
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
     else
         echo "ERROR: Bot scanner core module not found" >&2
         return 1
@@ -693,7 +693,7 @@ nftban_cmd_botscan() {
             # Load core module for status
             if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
                 # shellcheck source=/dev/null
-                source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
+                source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
             else
                 echo "ERROR: Bot scanner core module not found" >&2
                 return 1
@@ -715,7 +715,7 @@ nftban_cmd_botscan() {
             # Load core module for check
             if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
                 # shellcheck source=/dev/null
-                source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
+                source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" || return 1
             else
                 echo "ERROR: Bot scanner core module not found" >&2
                 return 1

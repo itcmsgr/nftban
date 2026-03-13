@@ -60,7 +60,7 @@ readonly LOGIN_MODULE_DESCRIPTION="Login Monitor Module (Dual-Mode)"
 # This MUST be sourced before using these variables
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
@@ -108,12 +108,12 @@ nftban_login_load_config() {
 
     if [[ -f "$main_config" ]]; then
         # shellcheck source=/dev/null
-        source "$main_config"
+        source "$main_config" || true
     fi
 
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local"
+        source "$main_local" || true
     fi
 
     # Set defaults
@@ -404,7 +404,7 @@ nftban_login_log() {
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     # Ensure log directory exists
-    mkdir -p "$(dirname "$NFTBAN_LOGIN_LOG_FILE")"
+    mkdir -p "$(dirname "$NFTBAN_LOGIN_LOG_FILE")" || return 1
 
     # Log to file
     echo "[$timestamp] [$level] $message" >> "$NFTBAN_LOGIN_LOG_FILE"
@@ -448,7 +448,7 @@ nftban_login_init() {
     fi
 
     # Ensure directories exist
-    mkdir -p "$NFTBAN_LOGIN_DATA_DIR" "$NFTBAN_LOGIN_CACHE_DIR"
+    mkdir -p "$NFTBAN_LOGIN_DATA_DIR" "$NFTBAN_LOGIN_CACHE_DIR" || return 1
 
     # Load the appropriate module
     local lib_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
@@ -456,7 +456,7 @@ nftban_login_init() {
     case "$_LOGIN_ACTIVE_MODE" in
         classic)
             if [[ -f "${lib_dir}/core/nftban_login_classic.sh" ]]; then
-                source "${lib_dir}/core/nftban_login_classic.sh"
+                source "${lib_dir}/core/nftban_login_classic.sh" || return 1
                 nftban_login_classic_init
             else
                 nftban_login_log "ERROR" "Classic module not found"
@@ -465,7 +465,7 @@ nftban_login_init() {
             ;;
         suricata)
             if [[ -f "${lib_dir}/core/nftban_login_suricata.sh" ]]; then
-                source "${lib_dir}/core/nftban_login_suricata.sh"
+                source "${lib_dir}/core/nftban_login_suricata.sh" || return 1
                 nftban_login_suricata_init
             else
                 nftban_login_log "ERROR" "Suricata module not found"
@@ -475,11 +475,11 @@ nftban_login_init() {
         hybrid)
             # Load both modules
             if [[ -f "${lib_dir}/core/nftban_login_classic.sh" ]]; then
-                source "${lib_dir}/core/nftban_login_classic.sh"
+                source "${lib_dir}/core/nftban_login_classic.sh" || return 1
                 nftban_login_classic_init
             fi
             if [[ -f "${lib_dir}/core/nftban_login_suricata.sh" ]]; then
-                source "${lib_dir}/core/nftban_login_suricata.sh"
+                source "${lib_dir}/core/nftban_login_suricata.sh" || return 1
                 nftban_login_suricata_init
             fi
             ;;

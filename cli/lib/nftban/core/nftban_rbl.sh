@@ -46,35 +46,35 @@ _NFTBAN_RBL_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 # Load timestamp library (for nftban_timestamp, nftban_timestamp_unix)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh"
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load file utilities library (for nftban_file_age, nftban_file_mtime, nftban_file_is_stale)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_file_utils.sh"
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_file_utils.sh" || return 1
 fi
 
 # Load alert throttle library (for nftban_should_alert)
 if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_alert_throttle.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_alert_throttle.sh"
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_alert_throttle.sh" || return 1
 fi
 
 # Load configuration
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
-[[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="/var/log/nftban"
+[[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR}"
 
 # Load RBL configuration (package defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf" || true
 fi
 
 # Load user overrides (takes precedence over defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local" || true
 fi
 
 # Set defaults if not configured
@@ -743,7 +743,7 @@ nftban_rbl_cache_set() {
     local cache_file="${NFTBAN_RBL_CACHE_DIR}/${ip}.cache"
 
     # Create cache directory if needed
-    mkdir -p "$NFTBAN_RBL_CACHE_DIR"
+    mkdir -p "$NFTBAN_RBL_CACHE_DIR" || return 1
 
     # Write cache file
     cat > "$cache_file"
@@ -867,7 +867,7 @@ nftban_rbl_update_state() {
     timestamp=$(date -Iseconds)
 
     # Create directory if needed
-    mkdir -p "$NFTBAN_RBL_CACHE_DIR"
+    mkdir -p "$NFTBAN_RBL_CACHE_DIR" || return 1
 
     # Initialize state file if missing
     [[ ! -f "$state_file" ]] && touch "$state_file"

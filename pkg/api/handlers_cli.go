@@ -35,7 +35,7 @@ func execCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("command failed: %v (output: %s)", err, string(output))
+		return "", fmt.Errorf("command failed: %w (output: %s)", err, string(output))
 	}
 	return string(output), nil
 }
@@ -55,7 +55,7 @@ func execNFTBanCommand(args ...string) (string, error) {
 			return outputStr, nil
 		}
 		// Return output even on error so caller can check for success messages
-		return outputStr, fmt.Errorf("command failed: %v (output: %s)", err, outputStr)
+		return outputStr, fmt.Errorf("command failed: %w (output: %s)", err, outputStr)
 	}
 	return outputStr, nil
 }
@@ -78,7 +78,7 @@ func execNFTBanCommandWithTimeout(timeout time.Duration, args ...string) (string
 		if strings.Contains(outputStr, "Unable to initialize Netlink socket") {
 			return outputStr, nil
 		}
-		return outputStr, fmt.Errorf("command failed: %v (output: %s)", err, outputStr)
+		return outputStr, fmt.Errorf("command failed: %w (output: %s)", err, outputStr)
 	}
 	return outputStr, nil
 }
@@ -98,7 +98,7 @@ func execNFTBanCommandPrivileged(args ...string) (string, error) {
 		if strings.Contains(outputStr, "Unable to initialize Netlink socket") {
 			return outputStr, nil
 		}
-		return outputStr, fmt.Errorf("privileged command failed: %v (output: %s)", err, outputStr)
+		return outputStr, fmt.Errorf("privileged command failed: %w (output: %s)", err, outputStr)
 	}
 	return outputStr, nil
 }
@@ -111,7 +111,7 @@ func execNFTBanCoreCommand(args ...string) (string, error) {
 
 	outputStr := string(output)
 	if err != nil {
-		return "", fmt.Errorf("command failed: %v (output: %s)", err, outputStr)
+		return "", fmt.Errorf("command failed: %w (output: %s)", err, outputStr)
 	}
 	return outputStr, nil
 }

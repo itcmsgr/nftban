@@ -28,7 +28,7 @@ generate_gui_cache_files() {
     local collection_groups="${2:-live}"
     local cache_dir="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}"
 
-    mkdir -p "$cache_dir"
+    mkdir -p "$cache_dir" || return 1
 
     # -------------------------------------------------------------------------
     # 1. Traffic History (updated every run in LIVE group)

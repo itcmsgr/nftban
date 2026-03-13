@@ -42,7 +42,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -51,33 +51,33 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 fi
 
 # Load timestamp library (unified timestamp generation)
 # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load service control library (systemd service/timer primitives)
 # shellcheck source=/usr/lib/nftban/lib/nftban_service_control.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # =============================================================================
@@ -100,7 +100,7 @@ nftban_cmd_firewall() {
     if [[ "$json_mode" == "false" ]]; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
             # shellcheck source=/dev/null
-            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
             if [[ $(type -t nftban_banner) == "function" ]]; then
                 nftban_banner
             fi
@@ -130,7 +130,7 @@ nftban_cmd_firewall() {
             # Load logs command on-demand
             if [[ -f "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh" ]]; then
                 # shellcheck source=/dev/null
-                source "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh"
+                source "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh" || return 1
                 nftban_cmd_firewall_logs "$@"
             else
                 echo "Error: Firewall logs module not found" >&2
@@ -154,7 +154,7 @@ nftban_cmd_firewall() {
             shift
             if [[ -f "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh" ]]; then
                 # shellcheck source=/dev/null
-                source "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh"
+                source "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh" || return 1
                 nftban_health_cmd_conflicts "$@"
             else
                 echo "Error: Health analysis module not found" >&2
@@ -228,7 +228,7 @@ firewall_validate() {
     # Load core validator
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
         [[ "$quiet_mode" != "true" ]] && echo "Error: Cannot find nftban_validator.sh" >&2
         return $VALIDATE_ENV_ERROR
@@ -307,7 +307,7 @@ _check_policykit() {
     local distro_like=""
     if [[ -r /etc/os-release ]]; then
         # shellcheck source=/dev/null
-        source /etc/os-release
+        source /etc/os-release || true
         distro_id="${ID:-}"
         distro_like="${ID_LIKE:-}"
     fi
@@ -349,7 +349,7 @@ _check_firewall_conflicts() {
     # Load firewall conflicts library
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" || return 1
     else
         [[ "$json_mode" == "false" ]] && echo "[WARN] Cannot load conflict detection library"
         return 0  # Don't fail if library missing
@@ -492,7 +492,7 @@ firewall_check() {
     # Load core validator
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
         echo "Error: Cannot find nftban_validator.sh" >&2
         return 1
@@ -538,7 +538,7 @@ firewall_stats() {
     # Load core validator
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
         echo "Error: Cannot find nftban_validator.sh" >&2
         return 1
@@ -618,7 +618,7 @@ firewall_rebuild() {
 
     # Step 1: Backup current IPs from sets (preserve bans/whitelist)
     local backup_dir="/var/lib/nftban/backup"
-    mkdir -p "$backup_dir"
+    mkdir -p "$backup_dir" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
 
@@ -768,7 +768,7 @@ firewall_reset() {
 
     # Step 2: Backup current ruleset
     local backup_dir="/var/lib/nftban/backup"
-    mkdir -p "$backup_dir"
+    mkdir -p "$backup_dir" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
     [[ "$quiet" == "false" ]] && echo "  [2/6] Backing up current ruleset..."
@@ -895,7 +895,7 @@ _restore_create_backup() {
     local backup_dir="/var/lib/nftban/backup"
     local label="${1:-manual}"
 
-    mkdir -p "$backup_dir"
+    mkdir -p "$backup_dir" || return 1
 
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)

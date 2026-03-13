@@ -637,7 +637,7 @@ _suricata_iface_load_config() {
 
     if [[ -f "$config_path" ]]; then
         # shellcheck source=/dev/null
-        source "$config_path"
+        source "$config_path" || true
     fi
 }
 
@@ -649,7 +649,7 @@ _suricata_iface_save_config() {
     config_dir=$(dirname "$config_path")
 
     # Ensure directory exists
-    mkdir -p "$config_dir"
+    mkdir -p "$config_dir" || return 1
     chmod 750 "$config_dir"
     chown root:nftban "$config_dir" 2>/dev/null || true
 

@@ -46,7 +46,7 @@ nftban_cmd_smoke() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
     echo ""
@@ -121,7 +121,7 @@ nftban_smoke_check_orphans() {
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
+        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" || return 1
     else
         echo "ERROR: Trace library not found" >&2
         return 1
@@ -138,7 +138,7 @@ nftban_smoke_stats() {
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
+        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" || return 1
     else
         echo "ERROR: Trace library not found" >&2
         return 1
@@ -154,7 +154,7 @@ nftban_smoke_trace() {
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
+        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" || return 1
     else
         echo "ERROR: Trace library not found" >&2
         return 1
@@ -203,7 +203,7 @@ nftban_smoke_verify() {
     # Source nft_schema for centralized counting (SINGLE SOURCE OF TRUTH)
     if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+        source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
     else
         echo "ERROR: nft_schema.sh not found - cannot verify counts" >&2
         return 1
@@ -889,7 +889,7 @@ Debug Trace Configuration:
   script execution tracing. Each script logs START/END with unique ID.
   If START exists without END = script crashed/stuck.
 
-  Trace log: /var/log/nftban/debug_trace.log
+  Trace log: ${NFTBAN_LOG_DIR}/debug_trace.log
 
 EOF
 }

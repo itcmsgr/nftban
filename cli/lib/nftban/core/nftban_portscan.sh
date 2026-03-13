@@ -70,7 +70,7 @@ _nftban_portscan_log() {
     local level="$1"
     local message="$2"
 
-    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null
+    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null || return 1
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PORTSCAN] [$level] $message" >> "$NFTBAN_PORTSCAN_LOG_FILE"
 }
@@ -118,12 +118,12 @@ nftban_portscan_load_config() {
 
     if [[ -f "$main_config" ]]; then
         # shellcheck source=/dev/null
-        source "$main_config"
+        source "$main_config" || true
     fi
 
     if [[ -f "$main_local" ]]; then
         # shellcheck source=/dev/null
-        source "$main_local"
+        source "$main_local" || true
     fi
 
     # Set defaults
@@ -267,7 +267,7 @@ _nftban_portscan_load_modules() {
 
     if [[ -n "$classic_module" ]]; then
         # shellcheck source=/dev/null
-        source "$classic_module"
+        source "$classic_module" || return 1
         # Initialize classic module config and state
         if type -t nftban_portscan_classic_load_config &>/dev/null; then
             nftban_portscan_classic_load_config
@@ -288,7 +288,7 @@ _nftban_portscan_load_modules() {
 
     if [[ -n "$suricata_module" ]]; then
         # shellcheck source=/dev/null
-        source "$suricata_module"
+        source "$suricata_module" || return 1
         # Initialize suricata module config and state
         if type -t nftban_portscan_suricata_load_config &>/dev/null; then
             nftban_portscan_suricata_load_config
@@ -370,7 +370,7 @@ nftban_portscan_enable() {
 
     # Persist PORTSCAN_ENABLED=true to local config override
     local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="true"/' "$local_conf"
     else
@@ -422,7 +422,7 @@ nftban_portscan_enable() {
 nftban_portscan_disable() {
     # Persist PORTSCAN_ENABLED=false to local config override
     local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")"
+    mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
         sed -i 's/^PORTSCAN_ENABLED=.*/PORTSCAN_ENABLED="false"/' "$local_conf"
     else
@@ -932,7 +932,7 @@ nftban_portscan_check() {
         local classic_module="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_portscan_classic.sh"
         if [[ -f "$classic_module" ]]; then
             # shellcheck source=/dev/null
-            source "$classic_module"
+            source "$classic_module" || return 1
             nftban_portscan_classic_load_config
             nftban_portscan_classic_init_state
         fi

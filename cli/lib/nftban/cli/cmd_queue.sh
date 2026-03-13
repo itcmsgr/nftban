@@ -34,24 +34,24 @@ umask 027
 
 # Load strict mode library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 fi
 
 # Load version library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=../helpers/json_output.sh
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # Load task queue module
 if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh"
+    source "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" || return 1
 else
     echo "ERROR: nftban_task_queue.sh not found" >&2
     exit 1
@@ -64,7 +64,7 @@ fi
 _nftban_queue_help() {
     # Load output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 
     if type -t nftban_banner >/dev/null 2>&1; then
@@ -111,7 +111,7 @@ ARCHITECTURE:
   Timer: nftban-queue.timer runs every 2 minutes
 
 LOG FILES:
-  Queue log:    /var/log/nftban/queue.log
+  Queue log:    ${NFTBAN_LOG_DIR}/queue.log
   Metrics:      /var/lib/nftban/metrics/queue.prom
 
 EOF
@@ -190,7 +190,7 @@ _queue_list_pending() {
         [[ ! -f "$task_file" ]] && continue
 
         # shellcheck disable=SC1090
-        source "$task_file"
+        source "$task_file" || true
         # v1.19.20 FIX
         ((count++)) || true
 
@@ -257,7 +257,7 @@ _queue_dlq_show() {
     fi
 
     # shellcheck disable=SC1090
-    source "$task_file"
+    source "$task_file" || true
 
     local created_date dlq_date
     created_date=$(date -d "@$TASK_CREATED_EPOCH" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
