@@ -37,7 +37,7 @@ set -Eeuo pipefail
 # Source timestamp library (with graceful fallback)
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # =============================================================================
@@ -73,7 +73,7 @@ nftban_report_init() {
     # Load base library if not already loaded
     if ! declare -f nftban_log >/dev/null 2>&1; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_base.sh" ]]; then
-            source "${NFTBAN_LIB_DIR}/core/nftban_base.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_base.sh" || return 1
         fi
     fi
 
@@ -226,7 +226,7 @@ nftban_report_collect_health() {
 
     # Load health module
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || return 1
     else
         NFTBAN_REPORT_DATA["health_error"]="Health module not found"
         return 2
@@ -301,7 +301,7 @@ nftban_report_collect_module() {
 
     # Load module report
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_report_module.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_report_module.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_report_module.sh" || return 1
     else
         NFTBAN_REPORT_DATA["module_error"]="Module report not found"
         return 2
@@ -334,7 +334,7 @@ nftban_report_collect_fhs() {
 
     # Load FHS report
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_report_fhs.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_report_fhs.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_report_fhs.sh" || return 1
     else
         NFTBAN_REPORT_DATA["fhs_error"]="FHS report not found"
         return 2
@@ -367,7 +367,7 @@ nftban_report_collect_services() {
 
     # Load services report
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_report_services.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_report_services.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_report_services.sh" || return 1
     else
         NFTBAN_REPORT_DATA["services_error"]="Services report not found"
         return 2
@@ -399,7 +399,7 @@ nftban_report_collect_stats() {
 
     # Load stats module
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" || return 1
     else
         NFTBAN_REPORT_DATA["stats_error"]="Stats module not found"
         return 2

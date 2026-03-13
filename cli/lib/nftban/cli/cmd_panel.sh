@@ -33,7 +33,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -42,26 +42,26 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 fi
 
 # Load cmd_port.sh for DirectAdmin port configuration functions
 if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_port.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/cli/cmd_port.sh"
+    source "${NFTBAN_LIB_DIR}/cli/cmd_port.sh" || return 1
 fi
 
 # =============================================================================
@@ -71,25 +71,25 @@ fi
 # Load common panel library (shared helpers and simple panel functions)
 # shellcheck source=/usr/lib/nftban/lib/nftban_panel_common.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_panel_common.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_common.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_common.sh" || return 1
 fi
 
 # Load DirectAdmin panel library
 # shellcheck source=/usr/lib/nftban/lib/nftban_panel_directadmin.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_panel_directadmin.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_directadmin.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_directadmin.sh" || return 1
 fi
 
 # Load cPanel panel library
 # shellcheck source=/usr/lib/nftban/lib/nftban_panel_cpanel.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_panel_cpanel.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_cpanel.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_cpanel.sh" || return 1
 fi
 
 # Load Plesk panel library
 # shellcheck source=/usr/lib/nftban/lib/nftban_panel_plesk.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_panel_plesk.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_plesk.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_plesk.sh" || return 1
 fi
 
 # =============================================================================
@@ -110,7 +110,7 @@ nftban_cmd_panel() {
     if [[ "$json_mode" != "true" ]]; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
             # shellcheck source=/dev/null
-            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
             if [[ $(type -t nftban_banner) == "function" ]]; then
                 nftban_banner
             fi

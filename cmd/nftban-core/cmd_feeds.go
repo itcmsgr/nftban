@@ -772,6 +772,7 @@ func cmdFeedsUpdate(feedsDir, configPath string, cfg *nftbanconf.Config) error {
 	if successCount > 0 {
 		fmt.Println("Step 4: Loading feeds into nftables...")
 		if err := cmdFeedsLoad(feedsDir, cfg); err != nil {
+			// Note: nftables kernel returns this as a string - no typed error available
 			if strings.Contains(err.Error(), "conflicting intervals") {
 				fmt.Printf("  ⚠️  Some feed IPs overlap with existing blocks (already protected)\n")
 			} else {

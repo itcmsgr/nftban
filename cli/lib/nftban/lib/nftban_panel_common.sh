@@ -389,7 +389,7 @@ _nftban_panel_simple_enable() {
     # Load configuration
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
         echo "Loaded configuration from: $config_file"
         echo ""
 
@@ -600,7 +600,7 @@ _nftban_panel_simple_status() {
 
         # Show configured ports
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
         local tcp_in_var="NFTBAN_${var}_TCP_IN"
         local udp_in_var="NFTBAN_${var}_UDP_IN"
         echo "  TCP IN: ${!tcp_in_var:-Not configured}"

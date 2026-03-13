@@ -30,7 +30,7 @@ set -Eeuo pipefail
 # Load main config (sets readonly paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Connector-specific path
@@ -39,7 +39,7 @@ readonly NFTBAN_CONNECTORS_DIR="${NFTBAN_CONFIG_DIR}/connectors"
 # Load output module for banner and styling
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 fi
 
 # =============================================================================
@@ -102,7 +102,7 @@ _connector_load() {
     fi
 
     # shellcheck source=/dev/null
-    source "$config_file"
+    source "$config_file" || true
 }
 
 _connector_save() {
@@ -111,7 +111,7 @@ _connector_save() {
     shift 2
 
     # Ensure directory exists
-    mkdir -p "${NFTBAN_CONNECTORS_DIR}"
+    mkdir -p "${NFTBAN_CONNECTORS_DIR}" || return 1
 
     local config_file
     config_file=$(_connector_config_path "$name")
@@ -158,7 +158,7 @@ _cmd_connector_list() {
                 local name type enabled
                 name=$(basename "$conf" .conf)
                 # shellcheck source=/dev/null
-                source "$conf"
+                source "$conf" || true
                 type="${CONNECTOR_TYPE:-unknown}"
                 enabled="${CONNECTOR_ENABLED:-false}"
 
@@ -183,7 +183,7 @@ _cmd_connector_list() {
             local name type enabled target
             name=$(basename "$conf" .conf)
             # shellcheck source=/dev/null
-            source "$conf"
+            source "$conf" || true
             type="${CONNECTOR_TYPE:-unknown}"
             enabled="${CONNECTOR_ENABLED:-false}"
 
@@ -685,7 +685,7 @@ EOF
             local dir
             dir=$(dirname "$path")
 
-            mkdir -p "$dir"
+            mkdir -p "$dir" || return 1
 
             if [[ "$format" == "json" ]]; then
                 echo "$event_json" >> "$path"
@@ -774,7 +774,7 @@ EXAMPLES:
 
     # Add file connector
     nftban connector add backup --type file \
-        --path /var/log/nftban/events.json --format json
+        --path ${NFTBAN_LOG_DIR}/events.json --format json
 
     # Test a connector
     nftban connector test es-prod --verbose

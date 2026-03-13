@@ -300,7 +300,7 @@ alias get_safe_path='nftban_get_output_path'
 : <<'USAGE_EXAMPLES'
 
 # Example 1: Basic secure write
-source /usr/lib/nftban/core/nftban_secure_mode.sh
+source /usr/lib/nftban/core/nftban_secure_mode.sh || return 1
 nftban_secure_write "Hello World" "/var/lib/nftban/reports/test.txt"
 
 # Example 2: User-provided path
@@ -317,7 +317,7 @@ safe_path=$(nftban_get_output_path "myreport.html")
 # → /var/lib/nftban/reports/myreport.html
 
 # Example 5: Append to log
-nftban_secure_append "Log entry" "/var/log/nftban/custom.log"
+nftban_secure_append "Log entry" "${NFTBAN_LOG_DIR}/custom.log"
 
 # Example 6: Copy with validation
 nftban_secure_copy "/tmp/source.txt" "/var/lib/nftban/reports/dest.txt"
@@ -337,7 +337,7 @@ nftban_secure_write "Test" "/tmp/test.txt"  # Warns but proceeds
 
 # Example 10: Integration in existing scripts
 #!/usr/bin/env bash
-source /usr/lib/nftban/core/nftban_secure_mode.sh
+source /usr/lib/nftban/core/nftban_secure_mode.sh || return 1
 
 generate_report() {
     local output_path="$1"

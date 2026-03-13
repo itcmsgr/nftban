@@ -234,7 +234,7 @@ configure_textfile_collector() {
     # Create directory
     if [[ ! -d "$TEXTFILE_COLLECTOR_DIR" ]]; then
         info "Creating textfile collector directory..."
-        mkdir -p "$TEXTFILE_COLLECTOR_DIR"
+        mkdir -p "$TEXTFILE_COLLECTOR_DIR" || return 1
     fi
 
     # Set ownership to nftban user
@@ -264,13 +264,13 @@ configure_service() {
     info "Configuring Node Exporter service..."
 
     # Create systemd override directory
-    mkdir -p /etc/systemd/system/node_exporter.service.d
+    mkdir -p /etc/systemd/system/node_exporter.service.d || return 1
 
     # Detect service name
     local service_name="node_exporter.service"
     if systemctl list-unit-files | grep -q prometheus-node-exporter.service; then
         service_name="prometheus-node-exporter.service"
-        mkdir -p /etc/systemd/system/prometheus-node-exporter.service.d
+        mkdir -p /etc/systemd/system/prometheus-node-exporter.service.d || return 1
     fi
 
     # Create override configuration

@@ -157,7 +157,7 @@ if [[ ! -f "$LIB_PATH" ]]; then
 fi
 
 # shellcheck source=/dev/null
-source "$LIB_PATH"
+source "$LIB_PATH" || return 1
 
 if [[ -z "${_NFTBAN_CHECKS_LOADED:-}" ]]; then
     echo "ERROR: Library failed to load (guard variable not set)"

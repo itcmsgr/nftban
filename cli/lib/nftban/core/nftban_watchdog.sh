@@ -17,7 +17,7 @@
 # meta:depends="bash,df"
 # meta:created_date="2025-12-17"
 # meta:updated_date="2026-02-07"
-# meta:inventory.files="/var/log/nftban/watchdog.log,/var/lib/nftban/reports/watchdog"
+# meta:inventory.files="${NFTBAN_LOG_DIR}/watchdog.log,/var/lib/nftban/reports/watchdog"
 # meta:inventory.binaries="df"
 # meta:inventory.env_vars="NFTBAN_WATCHDOG_ENABLED,NFTBAN_WATCHDOG_INTERVAL"
 # meta:inventory.config_files="/etc/nftban/conf.d/watchdog.conf"
@@ -56,22 +56,22 @@ readonly NFTBAN_WATCHDOG_LOADED=1
 # Load main configuration
 # shellcheck source=/etc/nftban/nftban.conf
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 # v1.19.0: Source .local override (user customizations survive package updates)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" || true
 fi
 
 # Load watchdog-specific config (+ .local override)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf" || true
 fi
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog/main.conf.local" || true
 fi
 
 # Watchdog defaults (can be overridden in conf.d/watchdog/main.conf.local)
@@ -148,25 +148,25 @@ fi
 # Load pipeline validation library for capability metric
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh" || return 1
 fi
 
 # Load unified alert throttling library
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" || return 1
 fi
 
 # Load timestamp utilities library
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load Suricata effective config helper (for distro detection, profile functions)
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/suricata_effective_config.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/suricata_effective_config.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/suricata_effective_config.sh" || return 1
 fi
 
 # Throttle state file (kept for backward compatibility, no longer used directly)
@@ -188,7 +188,7 @@ declare -a WATCHDOG_ALERTS=()
 # BUG-L24 FIX: Split large file (2198 lines) into checks + orchestration
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_watchdog_checks.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_watchdog_checks.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_watchdog_checks.sh" || return 1
 fi
 
 
@@ -407,7 +407,7 @@ nftban_watchdog_report_save() {
     # Save report to file for auditing
     # Returns: path to saved report
 
-    mkdir -p "$NFTBAN_WATCHDOG_REPORT_DIR" 2>/dev/null
+    mkdir -p "$NFTBAN_WATCHDOG_REPORT_DIR" 2>/dev/null || return 1
 
     local timestamp
     timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
@@ -430,7 +430,7 @@ nftban_watchdog_metrics_export() {
         return 0
     fi
 
-    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_METRICS_FILE")" 2>/dev/null
+    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_METRICS_FILE")" 2>/dev/null || return 1
 
     local tmp_file="${NFTBAN_WATCHDOG_METRICS_FILE}.tmp"
 

@@ -32,13 +32,13 @@ set -Eeuo pipefail
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Load distro configuration
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" || return 1
 fi
 
 # Load IPC library for single-writer architecture
@@ -48,7 +48,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # Load shared metrics library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh" || return 1
 fi
 
 # GUI-specific config helpers (local to this module to avoid conflicts with nftban_config.sh)
@@ -68,7 +68,7 @@ _gui_config_set() {
     local value="$2"
     local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
 
-    mkdir -p "${NFTBAN_CONFIG_DIR}"
+    mkdir -p "${NFTBAN_CONFIG_DIR}" || return 1
 
     if [[ ! -f "$conf_file" ]]; then
         cat > "$conf_file" << 'EOF'
@@ -272,7 +272,7 @@ nftban_gui_enable() {
     echo "  Using source: $src_dir"
 
     local bin_dir="${NFTBAN_LIB_DIR}/bin"
-    mkdir -p "$bin_dir"
+    mkdir -p "$bin_dir" || return 1
 
     # Compile nftban-core (consolidated binary)
     echo "  [1/2] nftban-core..."
@@ -574,7 +574,7 @@ nftban_gui_recompile() {
     echo ""
 
     local bin_dir="${NFTBAN_LIB_DIR}/bin"
-    mkdir -p "$bin_dir"
+    mkdir -p "$bin_dir" || return 1
 
     # Compile nftban-core (consolidated binary)
     echo "  [1/2] Compiling nftban-core..."
@@ -739,7 +739,7 @@ nftban_cmd_gui() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

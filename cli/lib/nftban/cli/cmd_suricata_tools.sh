@@ -474,7 +474,7 @@ cmd_suricata_eve_check() {
         echo "  1. Ensure Suricata is installed: nftban suricata status"
         echo "  2. Check if Suricata is running: systemctl status suricata"
         echo "  3. Verify EVE output in Suricata config"
-        echo "  4. Check log directory exists: ls -la /var/log/nftban/suricata/"
+        echo "  4. Check log directory exists: ls -la ${NFTBAN_LOG_DIR}/suricata/"
         echo ""
         return 1
     fi

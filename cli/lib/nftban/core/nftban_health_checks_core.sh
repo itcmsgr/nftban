@@ -248,7 +248,7 @@ nftban_health_check_permissions() {
         [[ "$owner" != "nftban" && "$owner" != "root" ]] && { permission_issues+=("${NFTBAN_DATA_DIR} has incorrect owner: $owner"); status=$HEALTH_WARNING; }
     fi
 
-    local fhs_dirs=("/run/nftban:nftban:nftban:755" "/var/log/nftban:nftban:nftban:750" "/var/cache/nftban:nftban:nftban:755")
+    local fhs_dirs=("/run/nftban:nftban:nftban:755" "${NFTBAN_LOG_DIR}:nftban:nftban:750" "/var/cache/nftban:nftban:nftban:755")
     for entry in "${fhs_dirs[@]}"; do
         IFS=':' read -r dir expected_owner expected_group expected_perms <<< "$entry"
         [[ -d "$dir" ]] || continue
@@ -270,7 +270,7 @@ nftban_health_check_permissions() {
 # AUDITOR ACL CHECKS
 # =============================================================================
 # Verifies nftban-auditor group has correct ACL access for read-only audit.
-# ACLs should be set on: /etc/nftban, /var/log/nftban, /var/lib/nftban
+# ACLs should be set on: /etc/nftban, ${NFTBAN_LOG_DIR}, /var/lib/nftban
 # This enables auto-heal to trigger ACL setup if missing.
 # =============================================================================
 
@@ -292,7 +292,7 @@ nftban_health_check_auditor_acls() {
     fi
 
     # Critical directories that should have auditor ACLs
-    local acl_dirs=("/etc/nftban" "/var/log/nftban" "/var/lib/nftban")
+    local acl_dirs=("/etc/nftban" "${NFTBAN_LOG_DIR}" "/var/lib/nftban")
 
     for dir in "${acl_dirs[@]}"; do
         [[ -d "$dir" ]] || continue
@@ -312,7 +312,7 @@ nftban_health_check_auditor_acls() {
                 local lib_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
                 if [[ -f "${lib_dir}/setup/fhs-permissions.sh" ]]; then
                     # shellcheck source=/dev/null
-                    source "${lib_dir}/setup/fhs-permissions.sh" 2>/dev/null
+                    source "${lib_dir}/setup/fhs-permissions.sh" 2>/dev/null || true
                     if declare -f nftban_install_set_auditor_acls &>/dev/null; then
                         nftban_install_set_auditor_acls 2>/dev/null && {
                             acl_issues+=("AUTO-FIXED: Auditor ACLs configured")

@@ -25,7 +25,7 @@
 
 # Load common CLI helpers
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
 
 # Initialize CLI environment (loads strict mode)
 cmd_init

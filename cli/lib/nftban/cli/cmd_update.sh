@@ -657,7 +657,7 @@ AUTO-UPDATE:
       4. Panel admin email (if --email panel)
 
     Configuration: /etc/nftban/conf.d/update.conf
-    Logs: /var/log/nftban/update.log, journalctl -u nftban-update.service
+    Logs: ${NFTBAN_LOG_DIR}/update.log, journalctl -u nftban-update.service
 
 CONFIGURATION:
     File: /etc/nftban/update.conf
@@ -785,7 +785,7 @@ _update_auto_enable() {
         local panel_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_panel_common.sh"
         if [[ -f "$panel_lib" ]]; then
             # shellcheck source=/dev/null
-            source "$panel_lib"
+            source "$panel_lib" || return 1
         fi
 
         # Use panel admin email detection
@@ -927,25 +927,25 @@ _update_auto_status() {
     local notify_email=""
     local notify_success="true"
     local notify_failure="true"
-    local log_file="/var/log/nftban/update.log"
+    local log_file="${NFTBAN_LOG_DIR}/update.log"
     local email_source=""
 
     # Load update config
     if [[ -f "$config_file" ]]; then
-        source "$config_file"
+        source "$config_file" || true
     fi
     if [[ -f "$config_local" ]]; then
-        source "$config_local"
+        source "$config_local" || true
     fi
 
     # Load mail config for global recipient fallback
     local global_mail_recipient=""
     if [[ -f "$mail_config" ]]; then
-        source "$mail_config"
+        source "$mail_config" || true
         global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
     fi
     if [[ -f "$mail_config_local" ]]; then
-        source "$mail_config_local"
+        source "$mail_config_local" || true
         global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
     fi
 
@@ -1055,7 +1055,7 @@ _cmd_update_auto_run() {
     local config_local="${config_file}.local"
     local mail_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
     local mail_config_local="${mail_config}.local"
-    local log_file="/var/log/nftban/update.log"
+    local log_file="${NFTBAN_LOG_DIR}/update.log"
 
     # Load update config
     source "$config_file" 2>/dev/null || true
@@ -1225,7 +1225,7 @@ Time:     $(date '+%Y-%m-%d %H:%M:%S %Z')
 
 The update was applied automatically and all health checks passed.
 
-View update log: /var/log/nftban/update.log
+View update log: ${NFTBAN_LOG_DIR}/update.log
 View service log: journalctl -u nftban-update.service"
     else
         subject="[NFTBan] Update FAILED on $hostname_val"
@@ -1238,7 +1238,7 @@ ${extra_msg:+
 Details: $extra_msg}
 
 Please check the server and review the logs:
-  /var/log/nftban/update.log
+  ${NFTBAN_LOG_DIR}/update.log
   journalctl -u nftban-update.service
 
 To manually update:

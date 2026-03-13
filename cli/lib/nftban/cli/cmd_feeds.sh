@@ -11,7 +11,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -20,30 +20,30 @@ fi
 # Load prerequisite checker
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" || return 1
 fi
 
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load timestamp library for date formatting
 # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load file utilities library for file age/freshness checks
 # shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.7.0 - Feeds CLI Handler
 # =============================================================================
@@ -86,7 +86,7 @@ fi
 if [[  ! $(type -t nftban_has_net_admin) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_security.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_security.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_security.sh" || return 1
     fi
 fi
 
@@ -94,7 +94,7 @@ fi
 if [[ ! $(type -t nftban_feeds_discover_all) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" || return 1
     else
         echo "ERROR: nftban_feeds.sh not found" >&2
         exit 1
@@ -111,7 +111,7 @@ fi
 nftban_feeds_select() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
 
@@ -269,7 +269,7 @@ nftban_feeds_select() {
 nftban_feeds_list() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
 
@@ -432,7 +432,7 @@ nftban_feeds_status_json() {
 nftban_feeds_status() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
 
@@ -934,7 +934,7 @@ nftban_feeds_update_json() {
 _nftban_feeds_help() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
 
@@ -989,7 +989,7 @@ FILE LOCATIONS:
     │ Parsed feeds │ /var/lib/nftban/feeds/        │ NFTBAN_FEEDS_STORAGE_DIR │
     │ Cache/temp   │ /var/cache/nftban/feeds/      │ NFTBAN_FEEDS_CACHE_DIR   │
     │ Config       │ /etc/nftban/conf.d/feeds.conf │ NFTBAN_FEEDS_CONFIG      │
-    │ Log          │ /var/log/nftban/feeds.log     │ NFTBAN_FEEDS_LOG         │
+    │ Log          │ ${NFTBAN_LOG_DIR}/feeds.log     │ NFTBAN_FEEDS_LOG         │
     └──────────────┴───────────────────────────────┴──────────────────────────┘
 
 NOTES:

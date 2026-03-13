@@ -43,7 +43,7 @@ NFTBAN_OUTPUT_LOADED="true"
 # LOAD CENTRAL ENVIRONMENT (ensures vars are set for strict mode)
 # =============================================================================
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" || return 1
 
 # =============================================================================
 # GLOBAL VARIABLES
@@ -186,7 +186,7 @@ nftban_get_version() {
     elif [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
         # Load version.sh (single source of truth)
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" 2>/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" 2>/dev/null || true
         echo "${NFTBAN_VERSION:-unknown}"
     elif command -v nftban >/dev/null 2>&1; then
         nftban --version 2>/dev/null | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' || echo "unknown"
@@ -916,7 +916,7 @@ nftban_check_updates_banner() {
 
         # Cache the result (create dir if needed)
         if [[ -n "$latest_version" ]]; then
-            mkdir -p "$(dirname "$cache_file")" 2>/dev/null
+            mkdir -p "$(dirname "$cache_file")" 2>/dev/null || return 1
             echo "$latest_version" > "$cache_file" 2>/dev/null || true
         else
             # Failed to fetch, don't show anything

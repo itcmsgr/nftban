@@ -315,13 +315,19 @@ func (e *Exporter) Status() ExporterStatusFull {
 	}
 
 	if v := e.stats.LastCollect.Load(); v != nil {
-		status.Stats.LastCollect = v.(time.Time)
+		if t, ok := v.(time.Time); ok {
+			status.Stats.LastCollect = t
+		}
 	}
 	if v := e.stats.LastSend.Load(); v != nil {
-		status.Stats.LastSend = v.(time.Time)
+		if t, ok := v.(time.Time); ok {
+			status.Stats.LastSend = t
+		}
 	}
 	if v := e.stats.LastError.Load(); v != nil {
-		status.Stats.LastError = v.(string)
+		if s, ok := v.(string); ok {
+			status.Stats.LastError = s
+		}
 	}
 
 	if e.sender != nil {

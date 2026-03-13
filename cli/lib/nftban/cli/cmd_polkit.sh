@@ -36,7 +36,7 @@ readonly CMD_POLKIT_LOADED=1
 # Source distro config for polkit path detection
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" || return 1
 fi
 
 # =============================================================================
@@ -50,7 +50,7 @@ nftban_cmd_polkit() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
     echo ""

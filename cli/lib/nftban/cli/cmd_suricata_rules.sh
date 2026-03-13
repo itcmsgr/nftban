@@ -65,7 +65,7 @@ cmd_suricata_rules() {
             local helper_file="${_NFTBAN_LIB_DIR:-/usr/share/nftban/lib/nftban}/helpers/suricata_effective_config.sh"
             if [[ -f "$helper_file" ]]; then
                 # shellcheck source=/dev/null
-                source "$helper_file"
+                source "$helper_file" || return 1
             else
                 echo "⚠️  Effective config generator not found, using legacy mode"
                 echo "  (Missing: $helper_file)"

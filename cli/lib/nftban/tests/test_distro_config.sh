@@ -114,7 +114,7 @@ echo "Script directory: $SCRIPT_DIR"
 echo ""
 
 # Create test config directory
-mkdir -p "$TEST_DIR/distros"
+mkdir -p "$TEST_DIR/distros" || return 1
 
 # =============================================================================
 # CREATE TEST CONFIGURATION FILES

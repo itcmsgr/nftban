@@ -314,7 +314,7 @@ _nftban_mode_set() {
     local old_mode="$MODE_CONFIGURED"
 
     # Ensure local config directory exists
-    mkdir -p "$(dirname "$config_local")"
+    mkdir -p "$(dirname "$config_local")" || return 1
 
     # Ensure local config file exists with header
     if [[ ! -f "$config_local" ]]; then

@@ -40,17 +40,17 @@ _NFTBAN_LIB_PATH="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
 
 # Load timestamp utilities (for nftban_timestamp_unix)
 if [[ -f "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" ]]; then
-    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh"
+    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" || return 1
 fi
 
 # Load file utilities (for nftban_file_age, nftban_file_mtime)
 if [[ -f "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" ]]; then
-    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh"
+    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" || return 1
 fi
 
 # Load service control (for nftban_service_is_active, nftban_service_exists, etc.)
 if [[ -f "${_NFTBAN_LIB_PATH}/nftban_service_control.sh" ]]; then
-    source "${_NFTBAN_LIB_PATH}/nftban_service_control.sh"
+    source "${_NFTBAN_LIB_PATH}/nftban_service_control.sh" || return 1
 fi
 
 # =============================================================================
@@ -938,9 +938,9 @@ nftban_health_check_gui() {
     fi
 
     # Check GUI log file for recent errors
-    if [[ -f "/var/log/nftban-ui.log" ]]; then
+    if [[ -f "${NFTBAN_LOG_DIR}-ui.log" ]]; then
         local error_count
-        error_count=$(tail -n 50 /var/log/nftban-ui.log 2>/dev/null | grep -c "ERROR\|FATAL\|panic" || echo 0)
+        error_count=$(tail -n 50 ${NFTBAN_LOG_DIR}-ui.log 2>/dev/null | grep -c "ERROR\|FATAL\|panic" || echo 0)
 
         if [[ $error_count -gt 0 ]]; then
             gui_issues+=("Found $error_count errors in recent GUI logs")

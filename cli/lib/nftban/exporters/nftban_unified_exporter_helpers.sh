@@ -66,7 +66,7 @@ get_run_count() {
         count=$(cat "$RUN_COUNT_FILE" 2>/dev/null || echo "0")
         echo "${count:-0}"
     else
-        mkdir -p "$(dirname "$RUN_COUNT_FILE")"
+        mkdir -p "$(dirname "$RUN_COUNT_FILE")" || return 1
         echo "0" > "$RUN_COUNT_FILE"
         echo "0"
     fi
@@ -134,7 +134,7 @@ acquire_lock() {
     local lock_timeout="${NFTBAN_COLLECT_LOCK_TIMEOUT:-10}"
 
     # Create lock file directory
-    mkdir -p "$(dirname "$METRICS_LOCK")"
+    mkdir -p "$(dirname "$METRICS_LOCK")" || return 1
 
     # FIX v1.17.0: Ensure lock file is writable by current user
     # If lock file exists but we can't write to it, remove and recreate

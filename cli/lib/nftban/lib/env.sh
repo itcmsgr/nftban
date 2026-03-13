@@ -40,13 +40,13 @@ NFTBAN_ENV_LOADED="true"
 if [[ -z "${NFTBAN_CONFIG_LOADED:-}" ]]; then
     if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+        source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
     fi
     # v1.19.0: Source .local override (user customizations survive package updates)
     # v1.19.26: Also check -r (readable) to prevent crash when running as nftban user
     if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && [[ -r "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+        source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" || true
     fi
     export NFTBAN_CONFIG_LOADED="true"
 fi

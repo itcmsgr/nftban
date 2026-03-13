@@ -47,7 +47,7 @@ _metrics_enable_remote_user() {
     echo "Step 1/4: Installing vmagent..."
     if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
+        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" || return 1
         if ! install_vmagent_binary true; then
             echo "Failed to install vmagent"
             return 1
@@ -184,7 +184,7 @@ _metrics_enable_pro() {
     echo "Step 4/6: Installing vmagent..."
     if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
+        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" || return 1
         if ! install_vmagent_binary true; then
             echo "Failed to install vmagent"
             return 1
@@ -495,7 +495,7 @@ _metrics_enable_mode_c2() {
     echo "Step 2/5: Installing vmagent..."
     if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
+        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" || return 1
         if ! install_vmagent_binary true; then
             echo "  Failed to install vmagent"
             return 1

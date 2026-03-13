@@ -47,7 +47,7 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 # Load service control library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/service_control.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/service_control.sh"
+    source "${NFTBAN_LIB_DIR}/lib/service_control.sh" || return 1
 fi
 
 # =============================================================================
@@ -317,7 +317,7 @@ _nftban_auto_whitelist_system_ip() {
     fi
 
     if [[ -n "$system_ip" ]]; then
-        mkdir -p "$whitelist_dir"
+        mkdir -p "$whitelist_dir" || return 1
         if [[ ! -f "$whitelist_file" ]] || ! grep -q "$system_ip" "$whitelist_file" 2>/dev/null; then
             cat > "$whitelist_file" << EOF
 # Auto-generated system IP whitelist
@@ -351,7 +351,7 @@ _nftban_auto_whitelist_ssh_port() {
         fi
     fi
 
-    mkdir -p "$ports_dir"
+    mkdir -p "$ports_dir" || return 1
 
     # Create or update SSH port config
     if [[ ! -f "$ssh_conf" ]] || ! grep -q "port=$ssh_port" "$ssh_conf" 2>/dev/null; then
@@ -800,7 +800,7 @@ nftban_cmd_system() {
     # Show banner if available (skip in JSON mode)
     if [[ "${NFTBAN_JSON:-}" != "true" ]] && [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if declare -f nftban_banner &>/dev/null; then
             nftban_banner 2>/dev/null || true
         fi

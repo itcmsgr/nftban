@@ -357,7 +357,7 @@ _wizard_show_summary() {
 # =============================================================================
 
 _wizard_write_config() {
-    mkdir -p /etc/nftban /var/lib/nftban
+    mkdir -p /etc/nftban /var/lib/nftban || return 1
 
     cat > "$NFTBAN_CONFIG_LOCAL" << EOF
 # =============================================================================

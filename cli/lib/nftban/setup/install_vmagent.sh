@@ -35,7 +35,7 @@ VMAGENT_LISTEN_ADDR="${NFTBAN_METRICS_VMAGENT_ADDR:-localhost:8429}"
 # Load nftban config if available
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 # v1.19.0: Source .local override (user customizations survive package updates)
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
@@ -182,7 +182,7 @@ create_vmagent_config_user_backend() {
     local token_file="${2:-}"
     local external_labels="${3:-}"
 
-    mkdir -p "$VMAGENT_CONFIG_DIR"
+    mkdir -p "$VMAGENT_CONFIG_DIR" || return 1
     # Create data directory with correct ownership (no -R needed)
     install -d -o "$VMAGENT_USER" -g "$VMAGENT_GROUP" -m 0755 "$VMAGENT_DATA_DIR"
 
@@ -270,7 +270,7 @@ create_vmagent_config_pro() {
     local pro_url="${NFTBAN_PRO_REMOTE_WRITE_URL:-https://pro.nftban.com/api/v1/write}"
     local token_file="${NFTBAN_PRO_TOKEN_FILE:-/etc/nftban/pro.token}"
 
-    mkdir -p "$VMAGENT_CONFIG_DIR"
+    mkdir -p "$VMAGENT_CONFIG_DIR" || return 1
     # Create data directory with correct ownership (no -R needed)
     install -d -o "$VMAGENT_USER" -g "$VMAGENT_GROUP" -m 0755 "$VMAGENT_DATA_DIR"
 
@@ -352,7 +352,7 @@ create_vmagent_config_local_vm() {
 
     local vm_url="${1:-http://localhost:8428/api/v1/write}"
 
-    mkdir -p "$VMAGENT_CONFIG_DIR"
+    mkdir -p "$VMAGENT_CONFIG_DIR" || return 1
     # Create data directory with correct ownership (no -R needed)
     install -d -o "$VMAGENT_USER" -g "$VMAGENT_GROUP" -m 0755 "$VMAGENT_DATA_DIR"
 

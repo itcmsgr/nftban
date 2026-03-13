@@ -8,7 +8,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -17,12 +17,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - Report Generation & Scheduling CLI Handler
 # =============================================================================
@@ -98,7 +98,7 @@ fi
 # Load distro config for distribution-specific paths
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" || return 1
 fi
 
 # =============================================================================
@@ -125,7 +125,7 @@ nftban_cmd_report() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi
@@ -456,7 +456,7 @@ nftban_report_cmd_email_setup() {
             echo "Setup cancelled."
             return 1
         fi
-        mkdir -p "$(dirname "$mail_conf")"
+        mkdir -p "$(dirname "$mail_conf")" || return 1
         touch "$mail_conf"
         chmod 640 "$mail_conf"
         chown root:nftban "$mail_conf"
@@ -687,7 +687,7 @@ nftban_report_schedule_add() {
     fi
 
     # Create cron file
-    mkdir -p "$(dirname "$NFTBAN_CRON_FILE")"
+    mkdir -p "$(dirname "$NFTBAN_CRON_FILE")" || return 1
 
     # Parse time (HH:MM)
     local hour="${time%:*}"
@@ -891,7 +891,7 @@ nftban_report_cmd_run() {
 
     # Generate report
     local output_dir="${NFTBAN_REPORTS_DIR}/${frequency}"
-    mkdir -p "$output_dir"
+    mkdir -p "$output_dir" || return 1
 
     local output_file
     output_file="${output_dir}/report-$(date +%Y%m%d).html"
@@ -915,7 +915,7 @@ nftban_report_cmd_run() {
             # Load and call digest send function
             local login_alert_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_login_alert.sh"
             if [[ -f "$login_alert_lib" ]]; then
-                source "$login_alert_lib"
+                source "$login_alert_lib" || return 1
                 if type -t nftban_login_digest_send >/dev/null 2>&1; then
                     echo "[INFO] Sending login digest..."
                     nftban_login_digest_send

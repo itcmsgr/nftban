@@ -43,7 +43,7 @@ _init_export_tracking() {
 # Save export tracking state
 _save_export_tracking() {
     local state_dir="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/stats"
-    mkdir -p "$state_dir"
+    mkdir -p "$state_dir" || return 1
     local state_file="$state_dir/export_tracking.dat"
     {
         for target in "${!EXPORT_ATTEMPTS[@]}"; do
@@ -380,7 +380,7 @@ export_connectors() {
         [[ -f "$conf" ]] || continue
 
         # shellcheck source=/dev/null
-        source "$conf"
+        source "$conf" || true
 
         [[ "${CONNECTOR_ENABLED:-false}" != "true" ]] && continue
 
@@ -403,7 +403,7 @@ export_connectors() {
 
             file)
                 local path="${CONNECTOR_FILE_PATH:-${NFTBAN_LOG_DIR:-/var/log/nftban}/metrics.json}"
-                mkdir -p "$(dirname "$path")"
+                mkdir -p "$(dirname "$path")" || return 1
                 echo "$json_payload" >> "$path"
                 record_export_result "file" "true"
                 log_info "Connector: written to $path (${CONNECTOR_NAME})"

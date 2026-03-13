@@ -65,7 +65,7 @@ nftban_health_cmd_conflicts() {
     # Load firewall conflicts module
     if ! declare -f nftban_detect_all_conflicts >/dev/null 2>&1; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
-            source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" || return 1
         else
             echo "ERROR: Firewall conflicts module not found" >&2
             return 1

@@ -18,7 +18,7 @@ IFS=$'\n\t'
 
 # Source shared utilities (provides print_status, print_error, print_warn, print_info, check_root)
 # shellcheck source=../lib/setup_utils.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" || return 1
 
 # Configuration
 readonly GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
@@ -48,7 +48,7 @@ check_prometheus_running() {
 create_provisioning_config() {
     print_info "Creating Prometheus datasource provisioning config..."
 
-    mkdir -p "$GRAFANA_PROVISIONING_DIR"
+    mkdir -p "$GRAFANA_PROVISIONING_DIR" || return 1
 
     cat > "$GRAFANA_PROVISIONING_DIR/prometheus.yaml" <<EOF
 apiVersion: 1
