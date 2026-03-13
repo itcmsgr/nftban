@@ -50,7 +50,7 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 # Load NFT schema (SINGLE SOURCE OF TRUTH for table/set names and counting functions)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 fi
 
 # Load metrics configuration (unified collector settings)

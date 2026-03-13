@@ -8,7 +8,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -17,12 +17,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - FHS CLI Handler
 # =============================================================================
@@ -63,7 +63,7 @@ LIB_DIR="$(dirname "$SCRIPT_DIR")"
 if [[ ! $(type -t nftban_fhs_report_status) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_report_fhs.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_report_fhs.sh"
+        source "${LIB_DIR}/core/nftban_report_fhs.sh" || return 1
     else
         echo "ERROR: nftban_report_fhs.sh not found at ${LIB_DIR}/core" >&2
         exit 1
@@ -74,7 +74,7 @@ fi
 if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_mail.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_mail.sh"
+        source "${LIB_DIR}/core/nftban_mail.sh" || return 1
     fi
 fi
 
@@ -195,7 +195,7 @@ nftban_cmd_fhs() {
         help|--help|-h)
             # Show help
             # Load output module for standard banner
-            source "${LIB_DIR}/core/nftban_output.sh"
+            source "${LIB_DIR}/core/nftban_output.sh" || return 1
             nftban_banner
             echo ""
             echo "Usage:"
@@ -229,7 +229,7 @@ nftban_cmd_fhs() {
             echo "  /usr/lib/nftban          - Application libraries (755 root:root)"
             echo "  /etc/nftban              - Configuration files (755 root:root)"
             echo "  /var/lib/nftban          - Application state (750 nftban:nftban)"
-            echo "  /var/log/nftban          - Log files (750 nftban:nftban)"
+            echo "  ${NFTBAN_LOG_DIR}          - Log files (750 nftban:nftban)"
             echo "  /var/cache/nftban        - Cache files (750 nftban:nftban)"
             echo "  /run/nftban              - Runtime data (755 nftban:nftban)"
             echo "  /usr/share/nftban        - Shared data (755 root:root)"

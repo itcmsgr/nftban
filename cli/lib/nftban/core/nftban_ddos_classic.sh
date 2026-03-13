@@ -15,7 +15,7 @@
 # meta:input="IPC commands, nftables metrics"
 # meta:output="nftables rules, log entries"
 # meta:depends="bash>=4.0,nftables>=0.9.0"
-# meta:inventory.files="/var/log/nftban/ddos-classic.log"
+# meta:inventory.files="${NFTBAN_LOG_DIR}/ddos-classic.log"
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/conf.d/ddos/classic.conf"
@@ -65,13 +65,13 @@ _nftban_ddos_classic_load_config() {
     # Load base config
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
     fi
 
     # Load local overrides (BUG-003 fix: was missing .local support)
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config"
+        source "$local_config" || true
     fi
 
     # Set defaults if not configured
@@ -141,7 +141,7 @@ _nftban_ddos_classic_log() {
     local log_file="${DDOS_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-classic.log}"
 
     # Create log directory if needed
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 1
 
     # Use timestamp library with graceful fallback
     local timestamp

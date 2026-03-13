@@ -32,10 +32,10 @@ NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR}"
 # Source common exporter utilities
 if [[ -f "${NFTBAN_LIB_DIR}/lib/exporter_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/exporter_utils.sh"
+    source "${NFTBAN_LIB_DIR}/lib/exporter_utils.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/exporter_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/exporter_utils.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/exporter_utils.sh" || return 1
 fi
 
 # ====================================================================

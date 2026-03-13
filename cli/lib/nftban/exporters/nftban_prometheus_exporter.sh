@@ -33,7 +33,7 @@ NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR}"
 # Load NFT schema for table names
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 else
     echo "ERROR: nft_schema.sh not found at ${NFTBAN_LIB_DIR}/lib/nft_schema.sh" >&2
     exit 1
@@ -296,7 +296,7 @@ get_nftables_rules_count() {
 # Initialize temp directory for bandwidth state
 init_bandwidth_temp_dir() {
     if [[ ! -d "$TEMP_DIR" ]]; then
-        mkdir -p "$TEMP_DIR"
+        mkdir -p "$TEMP_DIR" || return 1
         chmod 750 "$TEMP_DIR"
     fi
 }
@@ -1678,7 +1678,7 @@ main() {
     output_dir=$(dirname "$OUTPUT_FILE")
 
     if [[ ! -d "$output_dir" ]]; then
-        mkdir -p "$output_dir"
+        mkdir -p "$output_dir" || return 1
         # Set ownership if running as root (non-recursive - just the directory)
         if [[ $EUID -eq 0 ]]; then
             chown nftban:nftban "$output_dir" 2>/dev/null || true

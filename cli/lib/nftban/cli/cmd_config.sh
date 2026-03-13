@@ -40,7 +40,7 @@ umask 027
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # =============================================================================
@@ -49,7 +49,7 @@ fi
 
 # Load config module
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_config.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_config.sh" || return 1
 else
     echo "ERROR: Configuration module not found"
     exit 1
@@ -57,13 +57,13 @@ fi
 
 # Load schema validation module
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" || return 1
 fi
 
 # Load IPC library for reload verification
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" || return 1
 fi
 
 # =============================================================================
@@ -378,7 +378,7 @@ _config_get_checksum() {
 
 _config_save_loaded() {
     # Save checksums of currently loaded config (called after reload)
-    mkdir -p "$_CONFIG_TRACK_DIR"
+    mkdir -p "$_CONFIG_TRACK_DIR" || return 1
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
     # Main config
@@ -709,7 +709,7 @@ nftban_cmd_config() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

@@ -84,12 +84,12 @@ _fwlog_load_config() {
     # Load config if exists
     if [[ -f "$FWLOG_CONFIG" ]]; then
         # shellcheck source=/dev/null
-        source "$FWLOG_CONFIG"
+        source "$FWLOG_CONFIG" || true
     fi
 }
 
 _fwlog_save_config() {
-    mkdir -p "$(dirname "$FWLOG_CONFIG")"
+    mkdir -p "$(dirname "$FWLOG_CONFIG")" || return 1
     cat > "$FWLOG_CONFIG" <<EOF
 # NFTBan Firewall Logging Configuration
 # Generated: $(date -Iseconds)
@@ -112,7 +112,7 @@ _fwlog_generate_rules() {
     local rate="$3"
     local burst="$4"
 
-    mkdir -p "$(dirname "$FWLOG_INCLUDE")"
+    mkdir -p "$(dirname "$FWLOG_INCLUDE")" || return 1
 
     cat > "$FWLOG_INCLUDE" <<EOF
 # =============================================================================

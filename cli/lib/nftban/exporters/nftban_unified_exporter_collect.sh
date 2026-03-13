@@ -1096,7 +1096,7 @@ collect_all_metrics() {
 
         # --- Bandwidth Metrics ---
         # Variables declared at function level for JSON cache access
-        mkdir -p "$(dirname "$BANDWIDTH_STATE")"
+        mkdir -p "$(dirname "$BANDWIDTH_STATE")" || return 1
 
         # Get all physical interfaces (exclude lo, docker, veth, etc.)
         for iface_path in /sys/class/net/*; do
@@ -1240,8 +1240,8 @@ collect_all_metrics() {
     # =========================================================================
     # CACHE METRICS (Single Source of Truth)
     # =========================================================================
-    mkdir -p "$(dirname "$METRICS_CACHE")"
-    mkdir -p "${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}"
+    mkdir -p "$(dirname "$METRICS_CACHE")" || return 1
+    mkdir -p "${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}" || return 1
 
     # 1. Raw metrics cache (for Prometheus/Zabbix export)
     echo -e "$metrics" > "$METRICS_CACHE"
@@ -1440,7 +1440,7 @@ EOF
     # Split from this file (BUG-L24: large file refactoring)
     # =========================================================================
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/exporters/nftban_exporter_gui_cache.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/exporters/nftban_exporter_gui_cache.sh" || return 1
     generate_gui_cache_files "$timestamp" "$collection_groups"
 }
 

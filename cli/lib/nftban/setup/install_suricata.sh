@@ -26,10 +26,10 @@ NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 # Source common setup utilities
 if [[ -f "${NFTBAN_LIB_DIR}/lib/setup_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/setup_utils.sh"
+    source "${NFTBAN_LIB_DIR}/lib/setup_utils.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" || return 1
 else
     # Fallback: define functions inline if library not found
     echo "[WARN] setup_utils.sh not found, using inline definitions" >&2
@@ -200,11 +200,11 @@ create_directories() {
     print_info "Creating Suricata directories (NFTBan HFS)..."
 
     # NFTBan-controlled directories
-    mkdir -p "$SURICATA_CONF_DIR"
-    mkdir -p "$SURICATA_DATA_DIR/rules"
+    mkdir -p "$SURICATA_CONF_DIR" || return 1
+    mkdir -p "$SURICATA_DATA_DIR/rules" || return 1
     # Create directories with correct ownership/permissions (no -R needed for fresh dirs)
     # Parent log directory (nftban-owned per FHS spec)
-    install -d -o nftban -g nftban -m 0750 /var/log/nftban
+    install -d -o nftban -g nftban -m 0750 ${NFTBAN_LOG_DIR}
     # Suricata-specific directories
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_DATA_DIR"
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0755 "$SURICATA_RUN_DIR"
@@ -213,7 +213,7 @@ create_directories() {
     # Suricata writes logs, nftban reads them for IDS integration
     install -d -o "$SURICATA_USER" -g nftban -m 0770 "$SURICATA_LOG_DIR"
 
-    # Add suricata user to nftban group (traverse /var/log/nftban/)
+    # Add suricata user to nftban group (traverse ${NFTBAN_LOG_DIR}/)
     if ! id -nG "$SURICATA_USER" 2>/dev/null | grep -qw nftban; then
         print_info "Adding suricata user to nftban group..."
         usermod -aG nftban "$SURICATA_USER" 2>/dev/null || true
@@ -263,7 +263,7 @@ MemoryAccounting=yes
 # Security hardening
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/var/log/nftban/suricata /var/lib/suricata /run/suricata
+ReadWritePaths=${NFTBAN_LOG_DIR}/suricata /var/lib/suricata /run/suricata
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_IPC_LOCK
 

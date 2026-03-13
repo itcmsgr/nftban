@@ -47,7 +47,7 @@ readonly NFTBAN_STATS_LOADED=1
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # Source central environment loader (single source of truth for paths)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" || return 1
 
 # Source file utilities for age/freshness checking
 # shellcheck source=/dev/null
@@ -80,13 +80,13 @@ mkdir -p "$NFTBAN_STATS_SNAPSHOTS_DIR" 2>/dev/null || true
 # NFTBAN_LIB_DIR is set by the calling script - just use it with fallback
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" || return 1
 else
     # Development fallback: Try to locate from script location
     _STATS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     _NFT_SCHEMA_PATH="$(dirname "$_STATS_DIR")/lib/nft_schema.sh"
     if [[ -f "$_NFT_SCHEMA_PATH" ]]; then
-        source "$_NFT_SCHEMA_PATH"
+        source "$_NFT_SCHEMA_PATH" || true
     else
         echo "ERROR: Cannot load nft_schema.sh - NFTables schema undefined" >&2
         echo "  Tried: ${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" >&2
@@ -242,10 +242,10 @@ nftban_stats_unified_available() {
 # =============================================================================
 
 # shellcheck source=/usr/lib/nftban/core/nftban_stats_collect.sh
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_collect.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_collect.sh" || return 1
 
 # shellcheck source=/usr/lib/nftban/core/nftban_stats_format.sh
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_stats_format.sh" || return 1
 
 # =============================================================================
 # MODULE INITIALIZATION

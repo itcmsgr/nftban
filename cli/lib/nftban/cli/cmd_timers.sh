@@ -28,12 +28,12 @@ NFTBAN_CMD_TIMERS_LOADED="true"
 
 # Load required modules
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR}/lib/service_control.sh"
+source "${NFTBAN_LIB_DIR}/lib/service_control.sh" || return 1
 # v1.19.20 FIX (B2, B4): Load nftban_service_control.sh for nftban_timer_is_active()
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" || return 1
 
 # =============================================================================
 # CONFIGURATION

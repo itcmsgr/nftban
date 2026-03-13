@@ -31,26 +31,26 @@ set -Eeuo pipefail
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 fi
 
 # Load prerequisite checker
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" || return 1
 fi
 
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # =============================================================================
 
@@ -69,7 +69,7 @@ fi
 
 _nftban_portscan_help() {
     # Load output module for standard banner
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 
     # Show standard banner
     nftban_banner
@@ -189,7 +189,7 @@ WHITELIST:
       203.0.113.0/24    # Security scanner
 
 LOG FILES:
-    Detection logs: /var/log/nftban/portscan.log
+    Detection logs: ${NFTBAN_LOG_DIR}/portscan.log
     Statistics: /var/lib/nftban/portscan/stats.json
     Tracking database: /var/lib/nftban/portscan/tracker.db
 
@@ -383,7 +383,7 @@ _nftban_portscan_mode() {
     local mode_helper="${NFTBAN_LIB_DIR}/helpers/nftban_mode.sh"
     if [[ -f "$mode_helper" ]]; then
         # shellcheck source=/dev/null
-        source "$mode_helper"
+        source "$mode_helper" || return 1
     else
         echo "ERROR: Mode helper not found: $mode_helper" >&2
         return 1
@@ -415,7 +415,7 @@ nftban_cmd_portscan() {
     # Load core port scan module (lazy loading for performance)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_portscan.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_portscan.sh" || return 1
     else
         echo "ERROR: Port scan detection module not found"
         echo "Expected: ${NFTBAN_LIB_DIR}/core/nftban_portscan.sh"

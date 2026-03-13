@@ -39,7 +39,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -48,7 +48,7 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 readonly NFTBAN_FEEDS_DIR="${NFTBAN_FEEDS_DIR:-/var/lib/nftban/feeds}"
 
@@ -56,20 +56,20 @@ readonly NFTBAN_FEEDS_DIR="${NFTBAN_FEEDS_DIR:-/var/lib/nftban/feeds}"
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 fi
 
 # Load required core modules
 if [[ ! $(type -t nftban_render_banner) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 fi
 

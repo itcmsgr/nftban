@@ -229,7 +229,7 @@ smoke_test_cmd() {
     timeout "$timeout_val" bash -c "
         # Source trace library for this command
         if [[ -f /usr/lib/nftban/helpers/nftban_trace.sh ]]; then
-            source /usr/lib/nftban/helpers/nftban_trace.sh
+            source /usr/lib/nftban/helpers/nftban_trace.sh || return 1
         fi
         export NFTBAN_DEBUG_TRACE=true
         export NFTBAN_DEBUG_TRACE_LOG='$TRACE_LOG'

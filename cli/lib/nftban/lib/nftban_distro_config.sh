@@ -41,7 +41,7 @@ nftban_distro_detect() {
 
     # Primary: /etc/os-release (systemd standard)
     if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
+        source /etc/os-release || true
         os_id="${ID:-unknown}"
         os_version="${VERSION_ID:-unknown}"
         os_version_id="${VERSION_ID:-unknown}"

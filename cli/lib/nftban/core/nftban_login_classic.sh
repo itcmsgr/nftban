@@ -980,7 +980,7 @@ nftban_login_classic_stop() {
 # Save state to disk
 _nftban_login_classic_save_state() {
     local state_file="${LOGIN_CLASSIC_STATE_FILE:-/var/lib/nftban/login-classic-state.db}"
-    mkdir -p "$(dirname "$state_file")"
+    mkdir -p "$(dirname "$state_file")" || return 1
 
     {
         echo "# Login Classic State - $(date)"

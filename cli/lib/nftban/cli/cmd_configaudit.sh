@@ -41,7 +41,7 @@ readonly CMD_CONFIGAUDIT_LOADED=1
 CONFIG_HANDLER="${NFTBAN_LIB_DIR}/cli/cmd_config.sh"
 if [[ -f "$CONFIG_HANDLER" ]]; then
     # shellcheck source=/dev/null
-    source "$CONFIG_HANDLER"
+    source "$CONFIG_HANDLER" || return 1
 else
     echo "ERROR: Config handler not found: $CONFIG_HANDLER" >&2
     exit 1

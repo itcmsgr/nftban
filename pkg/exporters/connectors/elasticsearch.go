@@ -208,7 +208,9 @@ func (c *ElasticsearchConnector) Send(ctx context.Context, records []Record) err
 			},
 		}
 		if c.config.Pipeline != "" {
-			action["index"].(map[string]interface{})["pipeline"] = c.config.Pipeline
+			if idx, ok := action["index"].(map[string]interface{}); ok {
+				idx["pipeline"] = c.config.Pipeline
+			}
 		}
 
 		actionLine, err := json.Marshal(action)

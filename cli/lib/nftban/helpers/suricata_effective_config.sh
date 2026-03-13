@@ -36,7 +36,7 @@ _NFTBAN_SURICATA_EFFECTIVE_CONFIG_LOADED=1
 _suricata_get_distro_family() {
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
-        source /etc/os-release
+        source /etc/os-release || true
         case "${ID:-}" in
             rhel|centos|almalinux|rocky|fedora|ol)
                 echo "rhel"
@@ -75,7 +75,7 @@ _suricata_ensure_profile_selected() {
     # If profile exists and is not "auto", use it
     if [[ -f "$profile_conf" ]]; then
         # shellcheck source=/dev/null
-        source "$profile_conf"
+        source "$profile_conf" || true
         if [[ "${NFTBAN_SURICATA_PROFILE_MODE:-auto}" == "pinned" ]]; then
             echo "${NFTBAN_SURICATA_PROFILE:-standard}"
             return 0
@@ -91,7 +91,7 @@ _suricata_ensure_profile_selected() {
     profile=$(_suricata_detect_optimal_profile)
 
     # Save it
-    mkdir -p "$(dirname "$profile_conf")"
+    mkdir -p "$(dirname "$profile_conf")" || return 1
     cat > "$profile_conf" << EOF
 # NFTBan Suricata Profile Configuration
 # Auto-detected: $(date -Iseconds)
@@ -141,7 +141,7 @@ _suricata_get_server_role() {
     local cache_file="${NFTBAN_SURICATA_STATE_DIR}/role.cache"
     local cache_age=86400  # 24 hours
 
-    mkdir -p "${NFTBAN_SURICATA_STATE_DIR}"
+    mkdir -p "${NFTBAN_SURICATA_STATE_DIR}" || return 1
 
     # Use cache if fresh
     if [[ -f "$cache_file" ]]; then
@@ -199,7 +199,7 @@ _suricata_get_server_role() {
 _suricata_generate_module_overlap_disables() {
     local output="${SURICATA_CONFIG_DIR}/disable.conf.d/nftban-modules.conf"
 
-    mkdir -p "$(dirname "$output")"
+    mkdir -p "$(dirname "$output")" || return 1
 
     # Load nftban module states
     local login_enabled="false"
@@ -315,7 +315,7 @@ _suricata_generate_profile_disables() {
     local profile="$1"
     local output="${SURICATA_CONFIG_DIR}/disable.conf.d/nftban-profile.conf"
 
-    mkdir -p "$(dirname "$output")"
+    mkdir -p "$(dirname "$output")" || return 1
 
     cat > "$output" << EOF
 # =============================================================================
@@ -489,7 +489,7 @@ _suricata_record_effective_state() {
     local state_file="${NFTBAN_SURICATA_STATE_DIR}/effective.json"
     local rules_file="${SURICATA_RULES_DIR}/suricata.rules"
 
-    mkdir -p "${NFTBAN_SURICATA_STATE_DIR}"
+    mkdir -p "${NFTBAN_SURICATA_STATE_DIR}" || return 1
 
     local rules_hash="" enable_hash="" disable_hash="" rule_count=0
 

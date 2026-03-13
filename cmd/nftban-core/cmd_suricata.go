@@ -83,7 +83,7 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		filterName := os.Args[3]
 		var threshold int
 		if _, err := fmt.Sscanf(os.Args[4], "%d", &threshold); err != nil {
-			return fmt.Errorf("invalid threshold: %v", err)
+			return fmt.Errorf("invalid threshold: %w", err)
 		}
 		return cmdSuricataSetThreshold(cfg, filterName, threshold)
 	case "set-action":
@@ -149,7 +149,7 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		}
 		var sid int
 		if _, err := fmt.Sscanf(os.Args[3], "%d", &sid); err != nil {
-			return fmt.Errorf("invalid SID: %v", err)
+			return fmt.Errorf("invalid SID: %w", err)
 		}
 		return cmdSuricataCustomRemove(sid)
 	case "custom-edit":
@@ -158,7 +158,7 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		}
 		var sid int
 		if _, err := fmt.Sscanf(os.Args[3], "%d", &sid); err != nil {
-			return fmt.Errorf("invalid SID: %v", err)
+			return fmt.Errorf("invalid SID: %w", err)
 		}
 		return cmdSuricataCustomEdit(sid, os.Args[4])
 	case "custom-list":
@@ -171,7 +171,7 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		}
 		var sid int
 		if _, err := fmt.Sscanf(os.Args[3], "%d", &sid); err != nil {
-			return fmt.Errorf("invalid SID: %v", err)
+			return fmt.Errorf("invalid SID: %w", err)
 		}
 		return cmdSuricataCustomEnable(sid)
 	case "custom-disable":
@@ -180,7 +180,7 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		}
 		var sid int
 		if _, err := fmt.Sscanf(os.Args[3], "%d", &sid); err != nil {
-			return fmt.Errorf("invalid SID: %v", err)
+			return fmt.Errorf("invalid SID: %w", err)
 		}
 		return cmdSuricataCustomDisable(sid)
 	case "custom-backup":

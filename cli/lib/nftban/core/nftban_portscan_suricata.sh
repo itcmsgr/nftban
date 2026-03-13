@@ -54,7 +54,7 @@ nftban_portscan_suricata_load_config() {
     # Load base config
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
     else
         _nftban_portscan_suricata_log "WARN" "Config not found: $config_file"
     fi
@@ -62,7 +62,7 @@ nftban_portscan_suricata_load_config() {
     # Load local overrides
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config"
+        source "$local_config" || true
     fi
 
     # Set defaults
@@ -97,7 +97,7 @@ _nftban_portscan_suricata_log() {
     local message="$2"
     local log_file="${PORTSCAN_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-suricata.log}"
 
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 1
 
     # Use library timestamp if available, fallback to date
     local timestamp

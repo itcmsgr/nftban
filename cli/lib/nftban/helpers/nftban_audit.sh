@@ -36,7 +36,7 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null 
 # =============================================================================
 
 # Audit log file
-readonly NFTBAN_AUDIT_LOG="${NFTBAN_AUDIT_LOG:-${NFTBAN_LOG_DIR}/nftban-actions.log}"
+readonly NFTBAN_AUDIT_LOG="${NFTBAN_AUDIT_LOG:-/var/log/nftban/nftban-actions.log}"
 
 # Enable/disable audit logging
 : "${NFTBAN_AUDIT_ENABLED:=true}"

@@ -31,7 +31,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -48,13 +48,13 @@ readonly NFTBAN_CLI_WATCHDOG_LOADED=1
 # Load the core watchdog module
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" || return 1
 fi
 
 # Load pipeline validation library
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" || return 1
 fi
 
 # =============================================================================
@@ -1088,7 +1088,7 @@ nftban_cmd_watchdog() {
     # Load output module (for banner)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 
     # Show banner for detailed commands (not for quick status)

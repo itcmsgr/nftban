@@ -51,19 +51,19 @@ NFTBAN_CMD_SURICATA_LOADED="true"
 # Load distro config FIRST (provides DISTRO_PATHS for all paths)
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" || return 1
 fi
 
 # Load output library
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 fi
 
 # Load Suricata rules helper
 if [[ -f "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh"
+    source "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh" || return 1
 fi
 
 # Suricata paths (exported for submodules)
@@ -446,7 +446,7 @@ EXAMPLES:
     nftban suricata rules rollback 20260202-120000
 
     # View live alerts
-    tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
+    tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 REQUIREMENTS:
     - Root privileges (sudo)

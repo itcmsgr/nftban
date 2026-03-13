@@ -142,21 +142,27 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(outputLower, "whitelist") || strings.Contains(outputLower, "✅ allowed") {
 			searchData["whitelisted"] = true
 			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "whitelist")
+			if locs, ok := searchData["locations"].([]string); ok {
+				searchData["locations"] = append(locs, "whitelist")
+			}
 		}
 
 		// Check if blacklisted (matches "MATCHED: blacklist_ipv4" or "blacklist" in output)
 		if strings.Contains(outputLower, "blacklist") || strings.Contains(outputLower, "❌ blocked") {
 			searchData["blacklisted"] = true
 			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "blacklist")
+			if locs, ok := searchData["locations"].([]string); ok {
+				searchData["locations"] = append(locs, "blacklist")
+			}
 		}
 
 		// Check if in feeds
 		if strings.Contains(outputLower, "found in feeds") || strings.Contains(outputLower, "⚠️  potentially blocked") {
 			searchData["in_feeds"] = true
 			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "threat_feeds")
+			if locs, ok := searchData["locations"].([]string); ok {
+				searchData["locations"] = append(locs, "threat_feeds")
+			}
 		}
 	}
 

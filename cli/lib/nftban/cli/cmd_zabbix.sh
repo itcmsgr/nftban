@@ -63,12 +63,12 @@ source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 
 # Load central config library for writing config
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_config.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_config.sh" || return 1
 fi
 
 # Load output module for banner and styling
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 fi
 
 # =============================================================================
@@ -91,7 +91,7 @@ _zabbix_config_set() {
     local value="$2"
     local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
-    mkdir -p "$(dirname "$conf_local")"
+    mkdir -p "$(dirname "$conf_local")" || return 1
     if [[ ! -f "$conf_local" ]]; then
         cat > "$conf_local" <<'EOF'
 # NFTBan - Zabbix User Overrides
@@ -411,7 +411,7 @@ _cmd_zabbix_setup() {
             else
                 # Fallback: create config directly using correct format
                 local port_conf="${NFTBAN_CONFIG_DIR}/ports.d/99-zabbix.conf"
-                mkdir -p "$(dirname "$port_conf")"
+                mkdir -p "$(dirname "$port_conf")" || return 1
 
                 cat > "$port_conf" << EOF
 # =============================================================================
@@ -881,7 +881,7 @@ _cmd_zabbix_discover() {
             # Get blocked countries from geoban config
             # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
             if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
-                source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
+                source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" || true
                 local first=true
                 for country in ${NFTBAN_GEOBAN_COUNTRIES:-}; do
                     [[ "$first" != "true" ]] && echo ","

@@ -123,7 +123,7 @@ nftban_health_check_config() {
         else
             # Verify UID/GID values match actual system
             # shellcheck disable=SC1090  # Dynamic source for config validation
-            source "$system_conf" 2>/dev/null
+            source "$system_conf" 2>/dev/null || true
             # NFTBan v1.0 simplified 2-group model: nftban + nftban-auditor
             local actual_uid actual_gid actual_auditors_gid
             actual_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
@@ -360,7 +360,7 @@ nftban_health_check_bash_completion() {
                 done
 
                 if [[ -n "$completion_src" && -f "$completion_src" ]]; then
-                    mkdir -p "$(dirname "$nftban_completion")"
+                    mkdir -p "$(dirname "$nftban_completion")" || return 1
                     if cp "$completion_src" "$nftban_completion"; then
                         chmod 644 "$nftban_completion"
                         completion_issues+=("Bash completion was missing - AUTO-HEALED: installed")

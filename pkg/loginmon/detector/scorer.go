@@ -416,28 +416,40 @@ func (s *Scorer) Reset() {
 
 func (s *Scorer) incrementServiceDetection(service string) {
 	val, _ := s.stats.DetectionsByService.LoadOrStore(service, &atomic.Int64{})
-	val.(*atomic.Int64).Add(1)
+	if v, ok := val.(*atomic.Int64); ok {
+		v.Add(1)
+	}
 }
 
 func (s *Scorer) incrementServiceBan(service string) {
 	val, _ := s.stats.BansByService.LoadOrStore(service, &atomic.Int64{})
-	val.(*atomic.Int64).Add(1)
+	if v, ok := val.(*atomic.Int64); ok {
+		v.Add(1)
+	}
 }
 
 func (s *Scorer) incrementReasonDetection(reason uint16) {
 	val, _ := s.stats.DetectionsByReason.LoadOrStore(reason, &atomic.Int64{})
-	val.(*atomic.Int64).Add(1)
+	if v, ok := val.(*atomic.Int64); ok {
+		v.Add(1)
+	}
 }
 
 func (s *Scorer) incrementReasonBan(reason uint16) {
 	val, _ := s.stats.BansByReason.LoadOrStore(reason, &atomic.Int64{})
-	val.(*atomic.Int64).Add(1)
+	if v, ok := val.(*atomic.Int64); ok {
+		v.Add(1)
+	}
 }
 
 func (s *Scorer) getServiceDetectionCounts() map[string]int64 {
 	result := make(map[string]int64)
 	s.stats.DetectionsByService.Range(func(key, value interface{}) bool {
-		result[key.(string)] = value.(*atomic.Int64).Load()
+		if k, ok := key.(string); ok {
+			if v, ok := value.(*atomic.Int64); ok {
+				result[k] = v.Load()
+			}
+		}
 		return true
 	})
 	return result
@@ -446,7 +458,11 @@ func (s *Scorer) getServiceDetectionCounts() map[string]int64 {
 func (s *Scorer) getServiceBanCounts() map[string]int64 {
 	result := make(map[string]int64)
 	s.stats.BansByService.Range(func(key, value interface{}) bool {
-		result[key.(string)] = value.(*atomic.Int64).Load()
+		if k, ok := key.(string); ok {
+			if v, ok := value.(*atomic.Int64); ok {
+				result[k] = v.Load()
+			}
+		}
 		return true
 	})
 	return result
@@ -455,12 +471,15 @@ func (s *Scorer) getServiceBanCounts() map[string]int64 {
 func (s *Scorer) getReasonDetectionCounts() map[string]int64 {
 	result := make(map[string]int64)
 	s.stats.DetectionsByReason.Range(func(key, value interface{}) bool {
-		reasonCode := key.(uint16)
-		reasonName := ReasonName[reasonCode]
-		if reasonName == "" {
-			reasonName = "unknown"
+		if reasonCode, ok := key.(uint16); ok {
+			reasonName := ReasonName[reasonCode]
+			if reasonName == "" {
+				reasonName = "unknown"
+			}
+			if v, ok := value.(*atomic.Int64); ok {
+				result[reasonName] = v.Load()
+			}
 		}
-		result[reasonName] = value.(*atomic.Int64).Load()
 		return true
 	})
 	return result
@@ -469,12 +488,15 @@ func (s *Scorer) getReasonDetectionCounts() map[string]int64 {
 func (s *Scorer) getReasonBanCounts() map[string]int64 {
 	result := make(map[string]int64)
 	s.stats.BansByReason.Range(func(key, value interface{}) bool {
-		reasonCode := key.(uint16)
-		reasonName := ReasonName[reasonCode]
-		if reasonName == "" {
-			reasonName = "unknown"
+		if reasonCode, ok := key.(uint16); ok {
+			reasonName := ReasonName[reasonCode]
+			if reasonName == "" {
+				reasonName = "unknown"
+			}
+			if v, ok := value.(*atomic.Int64); ok {
+				result[reasonName] = v.Load()
+			}
 		}
-		result[reasonName] = value.(*atomic.Int64).Load()
 		return true
 	})
 	return result

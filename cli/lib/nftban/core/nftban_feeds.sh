@@ -11,7 +11,7 @@
 # meta:homepage="https://nftban.com"
 # meta:description="Dynamic threat intelligence feeds with beautiful selection UI"
 # meta:input="Feed URLs from config (dynamic discovery)"
-# meta:output="Parsed IPs/CIDRs to nftables, logs to /var/log/nftban/feeds.log"
+# meta:output="Parsed IPs/CIDRs to nftables, logs to ${NFTBAN_LOG_DIR}/feeds.log"
 # meta:depends="bash,curl,flock,nftban-feeds"
 # meta:inventory.files=""
 # meta:inventory.binaries="nftban-feeds"
@@ -63,7 +63,7 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_dataset_cidr.sh" 2>/dev/nu
 
 # Source central environment loader (single source of truth for paths)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" || return 1
 
 readonly NFTBAN_FEEDS_CONFIG="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
 readonly NFTBAN_FEEDS_STORAGE_DIR="${NFTBAN_FEEDS_STORAGE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds}"
@@ -139,7 +139,7 @@ nftban_feeds_log() {
     fi
 
     # Ensure log directory exists
-    mkdir -p "$(dirname "$NFTBAN_FEEDS_LOG")"
+    mkdir -p "$(dirname "$NFTBAN_FEEDS_LOG")" || return 1
 
     # Log to dedicated feeds.log (timestamp already has brackets from library)
     echo "${timestamp} [$level] $msg" | tee -a "$NFTBAN_FEEDS_LOG"
@@ -355,7 +355,7 @@ nftban_feeds_enable() {
             nftban_queue_add "feeds_sync" "Feed enabled: $feed_name" >/dev/null 2>&1
             if [[ "$quiet" != "true" ]]; then
                 echo "   NFTables update queued (processed every 2 minutes)"
-                echo "   Check queue: tail -f /var/log/nftban/queue.log"
+                echo "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
                 echo ""
             fi
         else
@@ -370,7 +370,7 @@ nftban_feeds_enable() {
         return 0
     else
         if [[ "$quiet" != "true" ]]; then
-            echo "❌ Feed download failed (check /var/log/nftban/feeds.log)"
+            echo "❌ Feed download failed (check ${NFTBAN_LOG_DIR}/feeds.log)"
             echo ""
         fi
         return 1
@@ -454,7 +454,7 @@ nftban_feeds_update_single() {
     fi
 
     # Ensure directories exist
-    mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" "$NFTBAN_FEEDS_CACHE_DIR"
+    mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" "$NFTBAN_FEEDS_CACHE_DIR" || return 1
 
     # TLS enforcement (v1.19.0): reject plaintext HTTP feed URLs
     if [[ "$feed_url" =~ ^http:// ]]; then

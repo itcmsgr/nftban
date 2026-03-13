@@ -140,7 +140,7 @@ nftban_config_load() {
     else
         # Bash format - source it
         # shellcheck disable=SC1090
-        source "$file"
+        source "$file" || true
     fi
 }
 
@@ -536,7 +536,7 @@ nftban_config_set_global() {
     local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
     # Create config directory if needed
-    mkdir -p "${NFTBAN_CONFIG_DIR}"
+    mkdir -p "${NFTBAN_CONFIG_DIR}" || return 1
 
     # Create local override file if it doesn't exist
     if [[ ! -f "$conf_file" ]]; then

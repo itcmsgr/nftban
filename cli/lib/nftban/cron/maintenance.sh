@@ -28,7 +28,7 @@ set -Eeuo pipefail
 # Source IPC client library
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" ]]; then
     # shellcheck source=/usr/lib/nftban/lib/nft_ipc.sh
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" || return 1
 else
     echo "FATAL: nft_ipc.sh not found - cannot perform firewall operations" >&2
     exit 1
@@ -37,13 +37,13 @@ fi
 # Source timestamp library (graceful fallback)
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
     # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Source file utilities library (graceful fallback)
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
     # shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" || return 1
 fi
 IFS=$'\n\t'
 umask 027
@@ -154,7 +154,7 @@ main() {
             rm -f "$SSH_PORT_STATE" 2>/dev/null || true
 
             # Ensure active port state is current (atomic write)
-            mkdir -p "${NFTBAN_DATA_DIR}/state"
+            mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
             echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
         else
             # Check if we already alerted about this port change
@@ -249,7 +249,7 @@ EOF
 
             # Save alert state to prevent spam (only alert once per port change)
             # Use atomic writes to prevent TOCTOU race conditions
-            mkdir -p "${NFTBAN_DATA_DIR}/state"
+            mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
             echo "$SSH_PORT" > "${SSH_PORT_STATE}.tmp" && mv -f "${SSH_PORT_STATE}.tmp" "$SSH_PORT_STATE"
             # Update active port state for future cleanup (atomic)
             echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
@@ -265,7 +265,7 @@ EOF
     else
         # SSH whitelist missing - create it
         log "WARN" "SSH whitelist missing - creating..."
-        mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d"
+        mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" || return 1
         cat > "$SSH_WHITELIST" <<EOF
 # SSH port auto-added during maintenance: $(date '+%Y-%m-%d %H:%M:%S')
 # DO NOT DELETE - LOCKOUT RISK!
@@ -274,7 +274,7 @@ ${SSH_PORT}/T
 EOF
         chmod 644 "$SSH_WHITELIST"
         # Track this as the active SSH port (atomic write)
-        mkdir -p "${NFTBAN_DATA_DIR}/state"
+        mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
         echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
         log "INFO" "Created SSH whitelist with port $SSH_PORT"
     fi
@@ -289,7 +289,7 @@ EOF
     # Create system whitelist if missing (CRITICAL FOR LOCKOUT PREVENTION)
     if [[ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]]; then
         log "WARN" "System whitelist missing - creating now (lockout prevention)..."
-        mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d"
+        mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d" || return 1
         cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" <<EOF
 # NFTBan System IP Whitelist (Auto-Generated)
 # This file contains server IPs and SSH client IPs for lockout prevention
@@ -378,7 +378,7 @@ EOF
                 fi
 
                 # Save alert state to prevent spam (only alert once per IP)
-                mkdir -p "${NFTBAN_DATA_DIR}/state"
+                mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
                 echo "$current_ipv4 $(date)" >> "$IP_ALERT_STATE"
 
                 # Send email alert if configured (ONLY ONCE)
@@ -435,7 +435,7 @@ EOF
 
     # File to track active SSH IPs with timestamps
     ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
-    mkdir -p "${NFTBAN_DATA_DIR}/state"
+    mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
 
     # Get all current SSH connections (excluding localhost)
     CURRENT_SSH_IPS=$(ss -tn state established '( dport = :22 or sport = :22 )' 2>/dev/null | \

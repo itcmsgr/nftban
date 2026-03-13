@@ -51,7 +51,7 @@ watchdog_log() {
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     # Ensure log directory exists
-    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_LOG")" 2>/dev/null
+    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_LOG")" 2>/dev/null || return 1
 
     echo "[$timestamp] [$level] $msg" >> "$NFTBAN_WATCHDOG_LOG"
 }
@@ -450,7 +450,7 @@ nftban_watchdog_check_suricata_drift() {
     else
         if [[ -f /etc/os-release ]]; then
             # shellcheck source=/dev/null
-            source /etc/os-release
+            source /etc/os-release || true
             case "${ID:-}" in
                 rhel|centos|almalinux|rocky|fedora|ol) distro_family="rhel" ;;
             esac
@@ -463,7 +463,7 @@ nftban_watchdog_check_suricata_drift() {
     local profile_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/config/profile.conf"
     if [[ -f "$profile_conf" ]]; then
         # shellcheck source=/dev/null
-        source "$profile_conf"
+        source "$profile_conf" || true
         profile="${NFTBAN_SURICATA_PROFILE:-standard}"
     else
         if declare -f _suricata_detect_optimal_profile &>/dev/null; then
@@ -587,7 +587,7 @@ nftban_watchdog_check_suricata_drift() {
             if declare -f suricata_generate_effective_config &>/dev/null; then
                 local profile_conf_dir
                 profile_conf_dir="$(dirname "$profile_conf")"
-                mkdir -p "$profile_conf_dir"
+                mkdir -p "$profile_conf_dir" || return 1
                 cat > "$profile_conf" << EOF
 # NFTBan Suricata Profile Configuration
 # Watchdog fallback: $(date -Iseconds)

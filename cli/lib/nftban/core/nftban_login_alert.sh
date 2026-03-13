@@ -38,14 +38,14 @@ readonly NFTBAN_LOGIN_ALERT_LOADED=1
 # This MUST be sourced before using NFTBAN_BIN variable
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/etc/nftban/nftban.conf
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -54,40 +54,40 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" || return 1
 fi
 
 # Load timestamp library for unified timestamp generation
 # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load alert throttle library for unified alert throttling
 # shellcheck source=/usr/lib/nftban/lib/nftban_alert_throttle.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" || return 1
 fi
 
 # Load distro configuration for cross-distro service name compatibility
 # shellcheck source=/usr/lib/nftban/lib/nftban_distro_config.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" || return 1
 fi
 
 # Load base config first (defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf" || true
 fi
 
 # Load local overrides (user customizations)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local" || true
 fi
 
 # Load global mail module for centralized email
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" || return 1
 fi
 
 # Defaults if not set (NO module-specific email - use global NFTBAN_MAIL_RECIPIENT)
@@ -196,7 +196,7 @@ nftban_login_alert_log() {
     fi
 
     # Ensure log directory exists
-    mkdir -p "$(dirname "$NFTBAN_LOGIN_ALERT_LOG")"
+    mkdir -p "$(dirname "$NFTBAN_LOGIN_ALERT_LOG")" || return 1
 
     # Log to file
     echo "[$timestamp] $message" >> "$NFTBAN_LOGIN_ALERT_LOG"
@@ -217,7 +217,7 @@ nftban_login_write_bans_log() {
     log_dir=$(dirname "$NFTBAN_BAN_LOG")
 
     # Ensure log directory exists
-    mkdir -p "$log_dir"
+    mkdir -p "$log_dir" || return 1
 
     # Get current date and time using timestamp library with graceful fallback
     local date_str time_str
@@ -282,7 +282,7 @@ nftban_login_get_geoip() {
 
     # Load GeoIP module if available
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_geoip_go.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_geoip_go.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_geoip_go.sh" || return 1
 
         if nftban_geoip_check_available 2>/dev/null; then
             nftban_geoip_get_compact_full "$ip" 2>/dev/null || echo "Unknown"
@@ -316,7 +316,7 @@ nftban_login_digest_add() {
     digest_dir=$(dirname "$digest_file")
 
     # Ensure directory exists
-    mkdir -p "$digest_dir"
+    mkdir -p "$digest_dir" || return 1
 
     # Create empty JSON array if file doesn't exist or is empty
     if [[ ! -s "$digest_file" ]]; then
