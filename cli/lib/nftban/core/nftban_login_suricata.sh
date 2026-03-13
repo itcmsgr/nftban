@@ -480,7 +480,7 @@ nftban_login_suricata_stop() {
 # Save state to disk
 _nftban_login_suricata_save_state() {
     local state_file="${LOGIN_SURICATA_STATE_FILE:-/var/lib/nftban/login-suricata-state.db}"
-    mkdir -p "$(dirname "$state_file")"
+    mkdir -p "$(dirname "$state_file")" || return 1
 
     # Use library timestamp if available
     local state_timestamp

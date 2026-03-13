@@ -22,7 +22,7 @@ readonly NFTBAN_PRO_LOADED=1
 # Load main configuration
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 
 # Pro endpoints
@@ -73,7 +73,7 @@ nftban_pro_ensure_server_id() {
         server_id="${machine_id}-${random_suffix}"
 
         # Ensure directory exists
-        mkdir -p "$(dirname "$NFTBAN_PRO_SERVER_ID_FILE")"
+        mkdir -p "$(dirname "$NFTBAN_PRO_SERVER_ID_FILE")" || return 1
 
         # Write with secure permissions
         echo "$server_id" > "$NFTBAN_PRO_SERVER_ID_FILE"
@@ -247,7 +247,7 @@ nftban_pro_save_inventory() {
     #   - /var/lib/nftban/pro/inventory.json
     #   - /var/lib/nftban/pro/inventory.sha256
 
-    mkdir -p "$NFTBAN_PRO_DATA_DIR"
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
     chown nftban:nftban "$NFTBAN_PRO_DATA_DIR" 2>/dev/null || true
 
     # Collect inventory
@@ -528,7 +528,7 @@ nftban_pro_disable_remote() {
     fi
 
     # Mark Pro as disabled
-    mkdir -p "$NFTBAN_PRO_DATA_DIR"
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
     printf '{"enabled": false, "reason": "subscription_invalid", "disabled_at": "%s"}\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }
@@ -546,7 +546,7 @@ nftban_pro_enable_remote() {
     fi
 
     # Mark Pro as enabled
-    mkdir -p "$NFTBAN_PRO_DATA_DIR"
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
     printf '{"enabled": true, "enabled_at": "%s"}\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }

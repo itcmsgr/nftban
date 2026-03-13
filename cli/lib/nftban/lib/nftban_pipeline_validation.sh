@@ -24,7 +24,7 @@ readonly NFTBAN_PIPELINE_VALIDATION_LOADED=1
 # Load main configuration
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 
 # Load metrics configuration
@@ -537,7 +537,7 @@ nftban_print_pipeline_report() {
     local pro_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pro.sh"
     if [[ -f "$pro_lib" ]] && ! declare -f nftban_pro_is_enabled &>/dev/null; then
         # shellcheck source=/dev/null
-        source "$pro_lib"
+        source "$pro_lib" || return 1
     fi
 
     # Run all validations

@@ -33,7 +33,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -42,14 +42,14 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # Strict mode settings
@@ -64,7 +64,7 @@ LIB_DIR="$(dirname "$SCRIPT_DIR")"
 if [[ ! $(type -t nftban_mail_check_status) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_mail.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_mail.sh"
+        source "${LIB_DIR}/core/nftban_mail.sh" || return 1
     else
         echo "ERROR: nftban_mail.sh not found at ${LIB_DIR}/core" >&2
         exit 1
@@ -164,7 +164,7 @@ nftban_cmd_mail() {
     # Load output module for banner (used in help)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 
     case "$subcmd" in
@@ -282,7 +282,7 @@ NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
             # Ensure config directory exists
             local conf_dir
             conf_dir=$(dirname "$conf_local")
-            mkdir -p "$conf_dir"
+            mkdir -p "$conf_dir" || return 1
 
             # Write config
             echo "$config_content" > "$conf_local"

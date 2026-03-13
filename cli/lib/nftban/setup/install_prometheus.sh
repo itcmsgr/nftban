@@ -26,10 +26,10 @@ NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 # Source common setup utilities
 if [[ -f "${NFTBAN_LIB_DIR}/lib/setup_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/setup_utils.sh"
+    source "${NFTBAN_LIB_DIR}/lib/setup_utils.sh" || return 1
 elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" || return 1
 else
     # Fallback: define functions inline if library not found
     echo "[WARN] setup_utils.sh not found, using inline definitions" >&2
@@ -118,7 +118,7 @@ install_via_binary() {
     install -m 0755 promtool "${PROMTOOL_BIN}"
     
     # Create directories
-    mkdir -p "$PROM_DIR" "$PROM_DIR/rules" "$PROM_DIR/rules.d"
+    mkdir -p "$PROM_DIR" "$PROM_DIR/rules" "$PROM_DIR/rules.d" || return 1
     # Create data directory with correct ownership (no -R, fresh directory)
     install -d -o "$PROM_USER" -g "$PROM_GROUP" -m 0755 "$PROM_DATA_DIR"
 

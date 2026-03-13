@@ -418,12 +418,16 @@ func (s *Sender) Status() SenderStatus {
 
 	// Last send time
 	if v := s.stats.LastSend.Load(); v != nil {
-		status.LastSend = v.(time.Time)
+		if t, ok := v.(time.Time); ok {
+			status.LastSend = t
+		}
 	}
 
 	// Last error
 	if v := s.stats.LastError.Load(); v != nil {
-		status.LastError = v.(string)
+		if s, ok := v.(string); ok {
+			status.LastError = s
+		}
 	}
 
 	// Calculate average latency

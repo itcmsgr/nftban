@@ -12,7 +12,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -21,18 +21,18 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 fi
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # Load IPC library for single-writer architecture
@@ -78,7 +78,7 @@ LIB_DIR="$(dirname "$SCRIPT_DIR")"
 if [[ ! $(type -t nftban_port_report_status) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_report_port.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_report_port.sh"
+        source "${LIB_DIR}/core/nftban_report_port.sh" || return 1
     else
         echo "ERROR: nftban_report_port.sh not found at ${LIB_DIR}/core" >&2
         exit 1
@@ -89,7 +89,7 @@ fi
 if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
     if [[ -f "${LIB_DIR}/core/nftban_mail.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${LIB_DIR}/core/nftban_mail.sh"
+        source "${LIB_DIR}/core/nftban_mail.sh" || return 1
     fi
 fi
 
@@ -321,7 +321,7 @@ nftban_cmd_port() {
             esac
 
             # Create ports.d directory if missing
-            mkdir -p ${NFTBAN_CONFIG_DIR}/ports.d
+            mkdir -p ${NFTBAN_CONFIG_DIR}/ports.d || return 1
             chmod 750 ${NFTBAN_CONFIG_DIR}/ports.d
             chown root:nftban ${NFTBAN_CONFIG_DIR}/ports.d 2>/dev/null || true
 
@@ -634,7 +634,7 @@ nftban_cmd_port() {
         help|--help|-h)
             # Show help
             # Load output module for standard banner
-            source "${LIB_DIR}/core/nftban_output.sh"
+            source "${LIB_DIR}/core/nftban_output.sh" || return 1
             nftban_banner
             echo ""
             echo "USAGE:"
@@ -810,7 +810,7 @@ nftban_cmd_port() {
             local egress_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli/cmd_egress.sh"
             if [[ -f "$egress_file" ]]; then
                 # shellcheck source=/dev/null
-                source "$egress_file"
+                source "$egress_file" || return 1
                 # Call the egress handler with remaining args
                 nftban_cmd_egress "$@"
             else
@@ -846,7 +846,7 @@ nftban_port_allow_directadmin() {
     local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/directadmin/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
         echo "✓ Loaded configuration from: $config_file"
     else
         echo "⚠ Config file not found: $config_file"

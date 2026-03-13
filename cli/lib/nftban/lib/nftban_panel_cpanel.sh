@@ -173,7 +173,7 @@ EOF
     local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
         echo "✓ Loaded configuration from: $config_file"
         echo ""
         echo "Port Configuration (applies to both IPv4 and IPv6):"
@@ -487,12 +487,12 @@ nftban_panel_cpanel_report() {
     # Load config
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" || true
     fi
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf.local"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf.local" || true
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" ]]; then
 

@@ -18,7 +18,7 @@ IFS=$'\n\t'
 
 # Source shared utilities (provides print_status, print_error, print_warn, print_info, check_root)
 # shellcheck source=../lib/setup_utils.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" || return 1
 
 # Configuration
 readonly GRAFANA_PROVISIONING_DIR="/etc/grafana/provisioning/dashboards"
@@ -62,7 +62,7 @@ create_provisioning_config() {
     print_info "Creating Grafana provisioning configuration..."
 
     # Create provisioning directory if it doesn't exist
-    mkdir -p "$GRAFANA_PROVISIONING_DIR"
+    mkdir -p "$GRAFANA_PROVISIONING_DIR" || return 1
 
     # Create NFTBan dashboard provider configuration
     cat > "$GRAFANA_PROVISIONING_DIR/nftban.yaml" <<'EOF'
@@ -92,7 +92,7 @@ copy_dashboards() {
     print_info "Copying NFTBan dashboards to Grafana..."
 
     # Create dashboard directory
-    mkdir -p "$GRAFANA_DASHBOARDS_DIR"
+    mkdir -p "$GRAFANA_DASHBOARDS_DIR" || return 1
 
     # Copy all NFTBan dashboard JSON files
     local copied=0

@@ -22,6 +22,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -112,7 +113,7 @@ func main() {
 		_ = ln.(*net.UnixListener).SetDeadline(time.Now().Add(5 * time.Minute))
 		conn, err := ln.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
+			if errors.Is(err, net.ErrClosed) {
 				break
 			}
 			// Timeout or transient error, continue

@@ -374,7 +374,7 @@ nftban_health_cmd_install() {
     # Ensure function is loaded
     if ! declare -f nftban_health_verify_installation >/dev/null 2>&1; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
-            source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || return 1
         fi
     fi
 

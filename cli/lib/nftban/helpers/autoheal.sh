@@ -23,7 +23,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # CRITICAL: Load FHS spec - single source of truth for directory structure
 # shellcheck source=/usr/lib/nftban/core/nftban_fhs_spec.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" || return 1
 else
     echo "[AUTOHEAL] ERROR: FHS spec not found - cannot proceed" >&2
     exit 1
@@ -527,7 +527,7 @@ if systemctl list-unit-files suricata.service &>/dev/null 2>&1; then
     # Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates file on first event
     # nftban-suricata daemon requires file to exist on startup
     if [ ! -d "$EVE_DIR" ]; then
-        mkdir -p "$EVE_DIR" 2>/dev/null
+        mkdir -p "$EVE_DIR" 2>/dev/null || return 1
         chown "${SURI_USER}:nftban" "$EVE_DIR" 2>/dev/null
         chmod 770 "$EVE_DIR" 2>/dev/null
         log_info "Created Suricata log directory: $EVE_DIR (owner: $SURI_USER)"
@@ -684,7 +684,7 @@ if [ -f "$LOGIN_CONFIG" ] || [ -f "$LOGIN_CONFIG_LOCAL" ]; then
     # 1. Check log directory exists
     LOGIN_LOG_DIR="${NFTBAN_LOG_DIR}"
     if [ ! -d "$LOGIN_LOG_DIR" ]; then
-        mkdir -p "$LOGIN_LOG_DIR"
+        mkdir -p "$LOGIN_LOG_DIR" || return 1
         chown nftban:nftban "$LOGIN_LOG_DIR" 2>/dev/null || true
         chmod 750 "$LOGIN_LOG_DIR"
         log_info "Created login log directory: $LOGIN_LOG_DIR"

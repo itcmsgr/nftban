@@ -32,7 +32,7 @@ set -Eeuo pipefail
 
 # Load common CLI helpers
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
 
 # Initialize CLI environment
 cmd_init
@@ -79,7 +79,7 @@ nftban_snapshot_create() {
     local snapshot_file="${snapshot_dir}/snapshot-${timestamp}.json"
 
     # Ensure directory exists
-    mkdir -p "$snapshot_dir"
+    mkdir -p "$snapshot_dir" || return 1
 
     # Collect snapshot data
     {

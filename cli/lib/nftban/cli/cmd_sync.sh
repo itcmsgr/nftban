@@ -32,7 +32,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -41,12 +41,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_sync.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/core/nftban_sync.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_sync.sh" || return 1
 else
     echo "ERROR: Sync module not found: ${NFTBAN_LIB_DIR}/core/nftban_sync.sh" >&2
     exit 1
@@ -65,7 +65,7 @@ nftban_cmd_sync() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

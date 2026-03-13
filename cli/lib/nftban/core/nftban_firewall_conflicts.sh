@@ -660,7 +660,7 @@ nftban_detect_distro() {
 
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
-        source /etc/os-release
+        source /etc/os-release || true
         case "${ID:-}" in
             rhel|centos|rocky|alma|fedora|ol)
                 echo "rhel"

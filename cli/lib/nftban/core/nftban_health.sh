@@ -69,7 +69,7 @@ readonly HEALTH_DISABLED=5
 # Load main configuration (service names, paths)
 # shellcheck source=/etc/nftban/nftban.conf
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 
 # Load metrics configuration (defaults then user overrides)
@@ -88,7 +88,7 @@ fi
 # NFTBAN_LIB_DIR is set by the calling script (cmd_health.sh, etc.)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" || return 1
 fi
 
 # =============================================================================
@@ -148,17 +148,17 @@ nftban_health_init() {
 
 # Load health check functions
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_checks.sh" || return 1
 fi
 
 # Load health fix functions
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_fixes.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_fixes.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_fixes.sh" || return 1
 fi
 
 # Load health render functions
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_render.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_render.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_health_render.sh" || return 1
 fi
 
 # =============================================================================

@@ -37,7 +37,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -46,13 +46,13 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 IFS=$'\n\t'
@@ -75,7 +75,7 @@ nftban_cmd_trust() {
     # Load core trust module
     if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_trust.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_trust.sh"
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_trust.sh" || return 1
     else
         echo "ERROR: Trust module not found" >&2
         exit 1
@@ -151,7 +151,7 @@ nftban_cmd_trust() {
 _nftban_trust_help() {
     # Load output module for standard banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
 
@@ -239,7 +239,7 @@ WHY USE TRUSTED PROVIDERS?
 FILES:
     Cache: /var/cache/nftban/trust/
     Whitelist: /etc/nftban/whitelist.d/30-trust-*.conf
-    Logs: /var/log/nftban/trust.log
+    Logs: ${NFTBAN_LOG_DIR}/trust.log
 
 NOTES:
     - Auto-update checks for new ranges daily (configurable)

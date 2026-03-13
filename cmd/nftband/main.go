@@ -3156,6 +3156,7 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		stats, err := nft.AddCIDRElementsWithStats(setIPv4, ipv4CIDRs)
 		if err != nil {
 			// Check for overlap errors (not fatal)
+			// Note: nftables kernel returns this as a string - no typed error available
 			if !strings.Contains(err.Error(), "conflicting intervals") {
 				return SocketResponse{Success: false, Error: "failed to load IPv4 CIDRs: " + err.Error()}
 			}

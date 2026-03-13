@@ -32,13 +32,13 @@ _nftban_load_services_config() {
     # Load base config
     if [[ -f "$NFTBAN_SERVICES_CONF" ]]; then
         # shellcheck source=/dev/null
-        source "$NFTBAN_SERVICES_CONF"
+        source "$NFTBAN_SERVICES_CONF" || true
     fi
 
     # Load local overrides
     if [[ -f "$NFTBAN_SERVICES_LOCAL" ]]; then
         # shellcheck source=/dev/null
-        source "$NFTBAN_SERVICES_LOCAL"
+        source "$NFTBAN_SERVICES_LOCAL" || true
     fi
 }
 
@@ -102,12 +102,12 @@ nftban_service_is_enabled() {
             local enabled="true"
             if [[ -f "$login_conf" ]]; then
                 # shellcheck source=/dev/null
-                source "$login_conf"
+                source "$login_conf" || true
                 enabled="${NFTBAN_LOGIN_ALERT_ENABLED:-true}"
             fi
             if [[ -f "$login_local" ]]; then
                 # shellcheck source=/dev/null
-                source "$login_local"
+                source "$login_local" || true
                 enabled="${NFTBAN_LOGIN_ALERT_ENABLED:-$enabled}"
             fi
             [[ "$enabled" == "true" ]]
@@ -162,7 +162,7 @@ nftban_resolve_firewall_conflicts() {
         read -r -p "    Backup firewalld rules and disable it? [Y/n] " response
         response=${response:-Y}
         if [[ "$response" =~ ^[Yy]$ ]]; then
-            mkdir -p "$backup_dir"
+            mkdir -p "$backup_dir" || return 1
             echo "    Backing up firewalld config to $backup_dir/..."
             firewall-cmd --list-all-zones > "$backup_dir/firewalld-zones.txt" 2>/dev/null || true
             cp -r /etc/firewalld "$backup_dir/" 2>/dev/null || true
@@ -189,7 +189,7 @@ nftban_resolve_firewall_conflicts() {
         read -r -p "    Backup ufw rules and disable it? [Y/n] " response
         response=${response:-Y}
         if [[ "$response" =~ ^[Yy]$ ]]; then
-            mkdir -p "$backup_dir"
+            mkdir -p "$backup_dir" || return 1
             echo "    Backing up ufw config to $backup_dir/..."
             ufw status verbose > "$backup_dir/ufw-status.txt" 2>/dev/null || true
             cp -r /etc/ufw "$backup_dir/" 2>/dev/null || true
@@ -212,7 +212,7 @@ nftban_resolve_firewall_conflicts() {
         read -r -p "    Backup iptables rules and disable service? [Y/n] " response
         response=${response:-Y}
         if [[ "$response" =~ ^[Yy]$ ]]; then
-            mkdir -p "$backup_dir"
+            mkdir -p "$backup_dir" || return 1
             echo "    Backing up iptables rules to $backup_dir/..."
             iptables-save > "$backup_dir/iptables-v4.rules" 2>/dev/null || true
             ip6tables-save > "$backup_dir/iptables-v6.rules" 2>/dev/null || true
@@ -517,7 +517,7 @@ _nftban_set_config() {
 
     # Create local file if doesn't exist
     if [[ ! -f "$file" ]]; then
-        mkdir -p "$(dirname "$file")"
+        mkdir -p "$(dirname "$file")" || return 1
         cat > "$file" <<'EOF'
 # NFTBan Services - Local Overrides
 # This file overrides settings from services.conf

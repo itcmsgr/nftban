@@ -37,7 +37,7 @@ readonly NFTBAN_MAIL_LOADED=1
 # Source timestamp library for unified date/time formatting
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # =============================================================================
@@ -841,7 +841,7 @@ nftban_mail_show_help() {
 
     # Load output module for standard banner
     if [[ $(type -t nftban_banner) != "function" ]]; then
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" || return 1
     fi
     nftban_banner
 
@@ -1124,7 +1124,7 @@ _mail_spool_enqueue() {
 
     # Save mail content to spool
     local payload_dir="${spool_dir}/${mail_id}"
-    mkdir -p "$payload_dir"
+    mkdir -p "$payload_dir" || return 1
 
     # Determine if content is file or text
     if [[ -f "$content_arg" ]]; then
@@ -1190,7 +1190,7 @@ nftban_mail_spool_status() {
                     continue
                 fi
                 # shellcheck source=/dev/null
-                source "${mail_dir}/meta.sh"
+                source "${mail_dir}/meta.sh" || true
                 local created_date
                 created_date=$(date -d "@${MAIL_CREATED_EPOCH:-0}" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
                 printf "  %s | To: %s | Created: %s\n" "$(basename "$mail_dir")" "${MAIL_TO%%@*}@..." "$created_date"

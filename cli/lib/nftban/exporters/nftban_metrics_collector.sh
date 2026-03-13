@@ -386,7 +386,7 @@ collect_feed_health_metrics() {
     done
 
     # Count per-feed errors efficiently using single awk pass
-    local feeds_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log"
+    local feeds_log="${NFTBAN_LOG_DIR}/feeds.log"
     local cutoff=$((now - 86400))
     declare -A feed_errors_map
 
@@ -1278,7 +1278,7 @@ collect_server_inventory() {
 
     # OS info
     if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
+        source /etc/os-release || true
         os="${ID:-unknown}"
         os_release="${PRETTY_NAME:-unknown}"
     fi

@@ -33,12 +33,12 @@ set -Eeuo pipefail
 
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
 
 # Load prerequisite checker
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_prereq.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_prereq.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_prereq.sh" || return 1
 fi
 
 # Initialize CLI environment (loads config, sets paths, enables strict mode)
@@ -51,7 +51,7 @@ cmd_init
 
 _nftban_ddos_help() {
     # Load output module for standard banner
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
 
     # Show standard banner
     nftban_banner
@@ -153,7 +153,7 @@ EXAMPLES:
     sudo nftban ddos mode set classic
 
 LOG FILES:
-    DDoS protection logs: /var/log/nftban/ddos.log
+    DDoS protection logs: ${NFTBAN_LOG_DIR}/ddos.log
     Statistics: /var/lib/nftban/ddos/stats.json
 
 REQUIREMENTS:
@@ -319,7 +319,7 @@ _nftban_ddos_mode() {
     local mode_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_mode.sh"
     if [[ -f "$mode_helper" ]]; then
         # shellcheck source=/dev/null
-        source "$mode_helper"
+        source "$mode_helper" || return 1
     else
         echo "ERROR: Mode helper not found: $mode_helper" >&2
         return 1
@@ -354,7 +354,7 @@ nftban_cmd_ddos() {
     local ddos_module="${NFTBAN_LIB_DIR}/core/nftban_ddos.sh"
     if [[ -f "$ddos_module" ]]; then
         # shellcheck source=/dev/null
-        source "$ddos_module"
+        source "$ddos_module" || return 1
     else
         cmd_error "DDoS protection module not found at $ddos_module" "$json_mode"
         return 1

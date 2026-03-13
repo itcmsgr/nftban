@@ -601,7 +601,7 @@ nftban_cmd_menu() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

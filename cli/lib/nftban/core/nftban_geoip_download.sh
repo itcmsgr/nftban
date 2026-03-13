@@ -37,7 +37,7 @@ set -Eeuo pipefail
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -46,37 +46,37 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" || return 1
 fi
 
 # Load timestamp library (with graceful fallback)
 # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load file utils library (with graceful fallback)
 # shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" || return 1
 fi
 readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # Load GeoIP configuration (base + local override)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" || true
 fi
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" || true
 fi
 
 # Load output module
 if [[ ! $(type -t nftban_render_banner) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" || return 1
     fi
 fi
 
@@ -136,7 +136,7 @@ _download_geoip() {
 
     # Create directory if it doesn't exist
     if [[ ! -d "${db_dir}" ]]; then
-        mkdir -p "${db_dir}"
+        mkdir -p "${db_dir}" || return 1
         chown nftban:nftban "${db_dir}"
         chmod 750 "${db_dir}"
     fi

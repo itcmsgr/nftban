@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load validation library
-source "$PROJECT_ROOT/cli/lib/nftban/lib/validation.sh"
+source "$PROJECT_ROOT/cli/lib/nftban/lib/validation.sh" || return 1
 
 pass_count=0
 fail_count=0

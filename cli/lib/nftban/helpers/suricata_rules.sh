@@ -85,9 +85,9 @@ _suricata_check_root() {
 
 # Ensure NFTBan suricata directories exist
 _suricata_ensure_dirs() {
-    mkdir -p "$NFTBAN_SURICATA_DIR/rules"
-    mkdir -p "$NFTBAN_STATE_DIR"
-    mkdir -p "$NFTBAN_LASTGOOD_DIR"
+    mkdir -p "$NFTBAN_SURICATA_DIR/rules" || return 1
+    mkdir -p "$NFTBAN_STATE_DIR" || return 1
+    mkdir -p "$NFTBAN_LASTGOOD_DIR" || return 1
 }
 
 # Validate Suricata configuration
@@ -114,7 +114,7 @@ _suricata_backup_rules() {
     timestamp=$(date +%Y%m%d-%H%M%S)
     local backup_dir="${NFTBAN_LASTGOOD_DIR}/${timestamp}"
 
-    mkdir -p "$backup_dir"
+    mkdir -p "$backup_dir" || return 1
 
     # Backup all rule config files
     [[ -f "$NFTBAN_DISABLE_CONF" ]] && cp "$NFTBAN_DISABLE_CONF" "$backup_dir/"

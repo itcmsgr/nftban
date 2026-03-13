@@ -58,7 +58,7 @@ nftban_portscan_classic_load_config() {
     # Load base config
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
-        source "$config_file"
+        source "$config_file" || true
     else
         _nftban_portscan_classic_log "WARN" "Config not found: $config_file"
     fi
@@ -66,7 +66,7 @@ nftban_portscan_classic_load_config() {
     # Load local overrides
     if [[ -f "$local_config" ]]; then
         # shellcheck source=/dev/null
-        source "$local_config"
+        source "$local_config" || true
     fi
 
     # Set defaults
@@ -100,7 +100,7 @@ _nftban_portscan_classic_log() {
     local log_file="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
     # Create log directory if needed
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 1
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CLASSIC] [$level] $message" >> "$log_file"
 }
@@ -140,7 +140,7 @@ _nftban_portscan_emit_event() {
 
     # Also write to file for systems without journald queryable by tag
     local event_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log"
-    mkdir -p "$(dirname "$event_log")" 2>/dev/null
+    mkdir -p "$(dirname "$event_log")" 2>/dev/null || return 1
     echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"
 }
 

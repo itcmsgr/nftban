@@ -45,7 +45,7 @@ umask 027
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 
 # =============================================================================
@@ -54,7 +54,7 @@ fi
 
 # Load system IP module
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_system_ip.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_system_ip.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_system_ip.sh" || return 1
 else
     echo "ERROR: System IP module not found"
     exit 1
@@ -62,7 +62,7 @@ fi
 
 # Load atomic file ops if available
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" || return 1
 fi
 
 # =============================================================================
@@ -142,7 +142,7 @@ nftban_cmd_whitelist_system() {
     if [[ "$json_mode" == "false" ]]; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
             # shellcheck source=/dev/null
-            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
             if [[ $(type -t nftban_banner) == "function" ]]; then
                 nftban_banner
             fi

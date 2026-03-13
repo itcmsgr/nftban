@@ -10,7 +10,7 @@
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -19,12 +19,12 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
-    source "$JSON_HELPER"
+    source "$JSON_HELPER" || return 1
 fi
 # NFTBan v1.0.0 - GeoIP CLI Handler
 # =============================================================================
@@ -86,7 +86,7 @@ nftban_cmd_geoip() {
     # Load output module for help function
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
     fi
 
     case "$subcommand" in
@@ -468,7 +468,7 @@ nftban_geoip_cmd_config() {
             # Load config
             local config_file="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
             if [[ -f "$config_file" ]]; then
-                source "$config_file"
+                source "$config_file" || true
             fi
 
             echo "Database Source:"
@@ -531,7 +531,7 @@ nftban_geoip_cmd_config() {
             local config_local="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 
             # Ensure directory exists
-            mkdir -p "$(dirname "$config_local")"
+            mkdir -p "$(dirname "$config_local")" || return 1
 
             # Update or add setting
             if [[ -f "$config_local" ]] && grep -q "^GEOIP_DB_SOURCE=" "$config_local"; then
@@ -563,7 +563,7 @@ nftban_geoip_cmd_config() {
             local config_local="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 
             # Ensure directory exists
-            mkdir -p "$(dirname "$config_local")"
+            mkdir -p "$(dirname "$config_local")" || return 1
 
             # Update or add setting
             if [[ -f "$config_local" ]] && grep -q "^GEOIP_MAXMIND_LICENSE_KEY=" "$config_local"; then
@@ -787,7 +787,7 @@ FILES AND LOCATIONS:
     GeoBan files:    /etc/nftban/geoban.d/
     Country IPs:     /var/cache/nftban/geoban/
     Tracking:        /var/lib/nftban/geoban/tracking/
-    Logs:            /var/log/nftban/geoip.log
+    Logs:            ${NFTBAN_LOG_DIR}/geoip.log
 
 ATTRIBUTION:
     IP Geolocation by DB-IP (https://db-ip.com)

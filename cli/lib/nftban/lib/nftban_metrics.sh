@@ -13,13 +13,13 @@ set -Eeuo pipefail
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
 fi
 
 # Load distro helpers if not already loaded
 if ! command -v nftban_distro_get_service &>/dev/null; then
     if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh"
+        source "${NFTBAN_LIB_DIR}/lib/nftban_distro.sh" || return 1
     fi
 fi
 
@@ -34,7 +34,7 @@ nftban_metrics_start_stack() {
 
     # Create textfile collector directory with correct ownership (no -R needed)
     install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
-        mkdir -p /var/lib/node_exporter/textfile_collector
+        mkdir -p /var/lib/node_exporter/textfile_collector || return 1
     chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
     # Start Node Exporter (get service name from distro config, fallback to common names)
@@ -295,7 +295,7 @@ nftban_metrics_install_from_binaries() {
     [[ "$verbose" == "true" ]] && echo ""
 
     # Create temp directory
-    mkdir -p "$tmp_dir"
+    mkdir -p "$tmp_dir" || return 1
     cd "$tmp_dir" || return 1
 
     # Download Prometheus
@@ -334,7 +334,7 @@ nftban_metrics_install_from_binaries() {
     install -d -o prometheus -g prometheus -m 0755 /etc/prometheus 2>/dev/null || mkdir -p /etc/prometheus
     install -d -o prometheus -g prometheus -m 0755 /var/lib/prometheus 2>/dev/null || mkdir -p /var/lib/prometheus
     install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
-        mkdir -p /var/lib/node_exporter/textfile_collector
+        mkdir -p /var/lib/node_exporter/textfile_collector || return 1
 
     chown prometheus:prometheus /etc/prometheus /var/lib/prometheus 2>/dev/null || true
     chown nftban:nftban /var/lib/node_exporter /var/lib/node_exporter/textfile_collector 2>/dev/null || true
@@ -462,7 +462,7 @@ nftban_metrics_start_stack_victoriametrics() {
 
     # Create textfile collector directory with correct ownership (no -R needed)
     install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
-        mkdir -p /var/lib/node_exporter/textfile_collector
+        mkdir -p /var/lib/node_exporter/textfile_collector || return 1
     chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
     # Start Node Exporter (get service name from distro config, fallback to common names)

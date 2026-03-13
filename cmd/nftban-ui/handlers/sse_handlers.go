@@ -217,7 +217,9 @@ func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request
 // getSessionSSECount returns the current SSE connection count for a session
 func getSessionSSECount(sessionID string) int64 {
 	if val, ok := sseSessionConnections.Load(sessionID); ok {
-		return atomic.LoadInt64(val.(*int64))
+		if p, ok := val.(*int64); ok {
+			return atomic.LoadInt64(p)
+		}
 	}
 	return 0
 }
@@ -226,17 +228,21 @@ func getSessionSSECount(sessionID string) int64 {
 func incrementSessionSSECount(sessionID string) {
 	// Load or create counter for this session
 	actual, _ := sseSessionConnections.LoadOrStore(sessionID, new(int64))
-	atomic.AddInt64(actual.(*int64), 1)
+	if p, ok := actual.(*int64); ok {
+		atomic.AddInt64(p, 1)
+	}
 }
 
 // decrementSessionSSECount decrements the SSE connection count for a session
 // and cleans up the entry if count reaches zero
 func decrementSessionSSECount(sessionID string) {
 	if val, ok := sseSessionConnections.Load(sessionID); ok {
-		newCount := atomic.AddInt64(val.(*int64), -1)
-		// Clean up if no more connections for this session
-		if newCount <= 0 {
-			sseSessionConnections.Delete(sessionID)
+		if p, ok := val.(*int64); ok {
+			newCount := atomic.AddInt64(p, -1)
+			// Clean up if no more connections for this session
+			if newCount <= 0 {
+				sseSessionConnections.Delete(sessionID)
+			}
 		}
 	}
 }

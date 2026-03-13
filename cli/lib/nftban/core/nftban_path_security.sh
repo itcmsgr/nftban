@@ -359,7 +359,7 @@ nftban_path_create_file_safe() {
 #   $1 - Event type (ALLOWED, DENIED, WARNING)
 #   $2 - Message
 # Output:
-#   Appends to /var/log/nftban/security-audit.log
+#   Appends to ${NFTBAN_LOG_DIR}/security-audit.log
 # Security:
 #   - Logs all path validation decisions
 #   - Includes timestamp, user, PID, action

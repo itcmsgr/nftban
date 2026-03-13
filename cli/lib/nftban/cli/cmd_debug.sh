@@ -48,7 +48,7 @@ nftban_cmd_debug() {
 
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         nftban_banner
     fi
     echo ""
@@ -290,7 +290,7 @@ nftban_debug_trace() {
 
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
+        source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" || return 1
     fi
 
     case "$subcommand" in

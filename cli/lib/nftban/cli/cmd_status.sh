@@ -34,7 +34,7 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh" || return 1
 else
     # Fallback to manual strict mode
     set -Eeuo pipefail
@@ -43,17 +43,17 @@ fi
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+    source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
 
 
 # Load NFT schema (single source of truth for table/set names)
 # shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || return 1
 elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nft_schema.sh" ]]; then
     # Development fallback: Load from relative path
-    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nft_schema.sh"
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nft_schema.sh" || return 1
 else
     # Last resort: Set defaults
     NFTBAN_TABLE_IPV4="${NFTBAN_TABLE_IPV4:-ip nftban}"
@@ -62,26 +62,26 @@ fi
 # Load statistics library (for centralized counting)
 # shellcheck source=/usr/lib/nftban/core/nftban_stats.sh
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh"
+    source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" || return 1
 elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/core/nftban_stats.sh" ]]; then
     # Development fallback: Load from relative path
-    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/core/nftban_stats.sh"
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/core/nftban_stats.sh" || return 1
 fi
 
 # Load timestamp library (for unified timestamp formatting)
 # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" || return 1
 elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_timestamp.sh" ]]; then
-    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_timestamp.sh"
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_timestamp.sh" || return 1
 fi
 
 # Load service control library (for systemd service checks)
 # shellcheck source=/usr/lib/nftban/lib/nftban_service_control.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" || return 1
 elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh" ]]; then
-    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh"
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh" || return 1
 fi
 
 # =============================================================================
@@ -149,7 +149,7 @@ nftban_cmd_status() {
     if [[ $json_mode -eq 0 ]] && [[ $quiet_mode -eq 0 ]]; then
         if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
             # shellcheck source=/dev/null
-            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
             # Use unified banner with health indicator
             if [[ $(type -t nftban_banner_unified) == "function" ]]; then
                 nftban_banner_unified "status"
@@ -542,12 +542,12 @@ output_terminal() {
 
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf" || true
     fi
     # v1.19.0: Source .local override (user customizations survive package updates)
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local" || true
     fi
     if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
         rbl_status="ENABLED"
@@ -1147,7 +1147,7 @@ output_json() {
     # Health
     local health_exit=0
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || return 1
         nftban_health_check_all 0 >/dev/null 2>&1 || health_exit=$?
     fi
 

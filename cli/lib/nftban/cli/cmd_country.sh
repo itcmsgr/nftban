@@ -41,7 +41,7 @@ readonly CMD_COUNTRY_LOADED=1
 GEOBAN_HANDLER="${NFTBAN_LIB_DIR}/cli/cmd_geoban.sh"
 if [[ -f "$GEOBAN_HANDLER" ]]; then
     # shellcheck source=/dev/null
-    source "$GEOBAN_HANDLER"
+    source "$GEOBAN_HANDLER" || return 1
 else
     echo "ERROR: GeoBan handler not found: $GEOBAN_HANDLER" >&2
     exit 1

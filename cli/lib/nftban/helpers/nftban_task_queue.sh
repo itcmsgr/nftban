@@ -422,7 +422,7 @@ _queue_execute_task() {
             if [[ -n "$task_payload_file" ]] && [[ -f "$task_payload_file" ]]; then
                 # Load mail payload (expects: MAIL_BODY_FILE, MAIL_TO, MAIL_SUBJECT)
                 # shellcheck source=/dev/null
-                source "$task_payload_file"
+                source "$task_payload_file" || true
                 # Validate required payload vars
                 if [[ -z "${MAIL_BODY_FILE:-}" ]]; then
                     error_output="Mail payload missing MAIL_BODY_FILE"
@@ -462,7 +462,7 @@ _queue_handle_failure() {
 
     # Read current values
     # shellcheck source=/dev/null
-    source "$task_file"
+    source "$task_file" || true
 
     retries=$((TASK_RETRIES + 1))
     now=$(date +%s)
@@ -561,7 +561,7 @@ nftban_queue_process_next() {
 
     # Load task
     # shellcheck source=/dev/null
-    source "$work_file"
+    source "$work_file" || true
 
     _queue_log "INFO" "Processing task: $TASK_ID ($TASK_TYPE: $TASK_DESCRIPTION)"
 
@@ -640,7 +640,7 @@ nftban_queue_dlq_list() {
         [[ ! -f "$task_file" ]] && continue
 
         # shellcheck source=/dev/null
-        source "$task_file"
+        source "$task_file" || true
 
         local created_date dlq_date
         created_date=$(date -d "@$TASK_CREATED_EPOCH" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
@@ -670,7 +670,7 @@ nftban_queue_dlq_retry() {
 
     # Reset retry counter and move to pending
     # shellcheck source=/dev/null
-    source "$dlq_file"
+    source "$dlq_file" || true
 
     cat > "$dlq_file" <<EOF
 TASK_ID="$TASK_ID"
@@ -701,7 +701,7 @@ nftban_queue_dlq_purge() {
         [[ ! -f "$task_file" ]] && continue
 
         # shellcheck source=/dev/null
-        source "$task_file"
+        source "$task_file" || true
 
         if [[ ${TASK_DLQ_EPOCH:-0} -lt $cutoff ]]; then
             rm -f "$task_file"
@@ -733,7 +733,7 @@ _queue_auto_purge_dlq() {
         [[ ! -f "$task_file" ]] && continue
 
         # shellcheck source=/dev/null
-        source "$task_file"
+        source "$task_file" || true
 
         if [[ ${TASK_DLQ_EPOCH:-0} -lt $cutoff ]]; then
             rm -f "$task_file"

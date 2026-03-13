@@ -34,19 +34,19 @@ set -Eeuo pipefail
 # Load main config (sets readonly paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Load Pro library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pro.sh" || return 1
 fi
 
 # Load pipeline validation
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh"
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" || return 1
 fi
 
 # =============================================================================
@@ -267,7 +267,7 @@ nftban_pro_cmd_enroll() {
             expires_at=$(echo "$response" | jq -r '.expires_at // "unknown"' 2>/dev/null || echo "unknown")
 
             # Save license info
-            mkdir -p "$NFTBAN_PRO_DATA_DIR"
+            mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
             echo "$response" > "$NFTBAN_PRO_DATA_DIR/license.json"
             chmod 640 "$NFTBAN_PRO_DATA_DIR/license.json"
 
@@ -547,7 +547,7 @@ nftban_pro_cmd_disable() {
     echo "    Done"
 
     # Update status
-    mkdir -p "$NFTBAN_PRO_DATA_DIR"
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
     cat > "$NFTBAN_PRO_DATA_DIR/status.json" << EOF
 {
   "enabled": false,
@@ -785,7 +785,7 @@ nftban_pro_cmd_inventory_run() {
 
     # Step 2: Collect inventory to temp file
     local tmp_file="${NFTBAN_PRO_DATA_DIR}/inventory.json.tmp"
-    mkdir -p "$NFTBAN_PRO_DATA_DIR"
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
 
     nftban_pro_collect_inventory > "$tmp_file"
 
@@ -883,7 +883,7 @@ nftban_cmd_pro() {
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
         if [[ $(type -t nftban_banner) == "function" ]]; then
             nftban_banner
         fi

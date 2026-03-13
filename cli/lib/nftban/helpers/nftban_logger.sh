@@ -189,7 +189,7 @@ nftban_log_to_module_file() {
 # Usage: nftban_logger_init <module_name> [log_file]
 nftban_logger_init() {
     local module_name="$1"
-    local module_log="${2:-${NFTBAN_LOG_DIR}/${module_name}.log}"
+    local module_log="${2:-/var/log/nftban/${module_name}.log}"
 
     # Set module name for convenience functions
     export NFTBAN_MODULE_NAME="$module_name"
