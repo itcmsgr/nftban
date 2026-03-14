@@ -578,6 +578,31 @@ output_terminal() {
     fi
     echo ""
 
+    # HTTP Bot Guard (v1.20.0)
+    local botguard_status="DISABLED"
+    local botguard_enabled="false"
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" || true
+    fi
+    # Source .local override (user customizations survive package updates)
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local" || true
+    fi
+    botguard_enabled="${HTTP_BOTGUARD_ENABLED:-false}"
+    if [[ "$botguard_enabled" == "true" ]]; then
+        if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
+            local v4_suspects=0 v6_suspects=0
+            v4_suspects=$(nft list set ip nftban http_bot_suspect 2>/dev/null | grep -c "timeout" || echo "0")
+            v6_suspects=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null | grep -c "timeout" || echo "0")
+            botguard_status="ACTIVE (${v4_suspects}v4+${v6_suspects}v6 suspects)"
+        else
+            botguard_status="ENABLED (sets not loaded)"
+        fi
+    fi
+    printf "  %-20s %s\n" "Bot Guard..........." "$botguard_status"
+
     # Metrics Database
     local metrics_db_status="NOT INSTALLED"
     local prom_running=false vm_running=false
@@ -1279,6 +1304,21 @@ output_json() {
     geoban_countries="${geoban_countries:-0}"
     [[ "$geoban_countries" =~ ^[0-9]+$ ]] && [[ "$geoban_countries" -gt 0 ]] && geoban_enabled=true
     echo "    \"geoban\": {\"enabled\": $geoban_enabled, \"blocked_countries\": $geoban_countries},"
+
+    # Bot Guard
+    local json_botguard_enabled=false
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf" ]]; then
+        local bg_val=""
+        bg_val=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+        [[ -z "$bg_val" ]] && bg_val=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+        [[ "$bg_val" == "true" ]] && json_botguard_enabled=true
+    fi
+    local json_bg_v4=0 json_bg_v6=0
+    if [[ "$json_botguard_enabled" == "true" ]]; then
+        json_bg_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null | grep -c "timeout" || echo "0")
+        json_bg_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null | grep -c "timeout" || echo "0")
+    fi
+    echo "    \"botguard\": {\"enabled\": $json_botguard_enabled, \"ipv4_suspects\": $json_bg_v4, \"ipv6_suspects\": $json_bg_v6},"
 
     # Feeds
     local feeds_count=0

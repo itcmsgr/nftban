@@ -529,6 +529,7 @@ nftban_health_check_all() {
     nftban_health_check_geoip 2>/dev/null || true
     nftban_health_check_geoban 2>/dev/null || true
     nftban_health_check_rbl 2>/dev/null || true
+    nftban_health_check_botguard 2>/dev/null || true
     nftban_health_check_databases 2>/dev/null || true
     nftban_health_check_metrics 2>/dev/null || true
     nftban_health_check_zabbix 2>/dev/null || true
@@ -599,6 +600,7 @@ export -f nftban_health_check_zabbix
 export -f nftban_health_check_connectors
 export -f nftban_health_check_pro
 export -f nftban_health_check_rbl
+export -f nftban_health_check_botguard
 export -f nftban_health_check_timers
 export -f nftban_health_check_gui
 export -f nftban_health_check_fhs

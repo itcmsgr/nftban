@@ -273,8 +273,8 @@ func (si *SourceIndex) SaveToDisk() error {
 	closed := false
 	defer func() {
 		if !closed {
-			file.Close()
-			os.Remove(tmpPath)
+			_ = file.Close()
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
@@ -285,8 +285,12 @@ func (si *SourceIndex) SaveToDisk() error {
 		if err != nil {
 			continue
 		}
-		writer.Write(data)
-		writer.WriteByte('\n')
+		if _, err := writer.Write(data); err != nil {
+			return err
+		}
+		if err := writer.WriteByte('\n'); err != nil {
+			return err
+		}
 	}
 
 	if err := writer.Flush(); err != nil {
@@ -313,10 +317,14 @@ func (si *SourceIndex) StartBackgroundSaver(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			si.SaveToDisk() // Final save on shutdown
+			if err := si.SaveToDisk(); err != nil {
+				log.Printf("[SourceIndex] Final save on shutdown failed: %v", err)
+			}
 			return
 		case <-si.stopCh:
-			si.SaveToDisk()
+			if err := si.SaveToDisk(); err != nil {
+				log.Printf("[SourceIndex] Final save on stop failed: %v", err)
+			}
 			return
 		case <-si.saveCh:
 			if err := si.SaveToDisk(); err != nil {

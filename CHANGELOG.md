@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-03-14
+
+### Added — HTTP Bot Guard: Intelligent Crawler Detection & Protection
+
+NFTBan v1.20.0 introduces **HTTP Bot Guard** — a kernel-native HTTP/HTTPS bot
+detection and classification system that identifies, verifies, and controls
+automated web traffic using a three-clock hybrid architecture:
+
+- **Clock 1 (Kernel, per-packet):** nftables meter rules automatically mark
+  IPs exceeding connection rate thresholds into a suspect set — zero-latency,
+  zero userspace overhead detection
+- **Clock 2 (Go daemon, 60s/40s):** Classification loop reads the kernel
+  suspect set, runs FCrDNS verification, and writes policy decisions (allow,
+  ban, grey, emergency) to enforcement sets via OpQueue
+- **Clock 3 (Shell batch, 10min):** Existing botscan pattern matching feeds
+  behavioral signals for correction and escalation
+
+Key capabilities (Phase 1 — Foundation):
+- Kernel-native suspect marking via nft meter (IPv4 + IPv6 dual-stack)
+- 12 new nftables sets (6 per address family) with automatic timeout expiry
+- Go classification loop with hysteresis thresholds (trip/clear/emergency)
+- Penalty ladder integration for graduated response (throttle before ban)
+- Full Suricata IDS coexistence (AF_PACKET — zero visibility loss)
+- CLI: `nftban botguard status`, `nftban botguard test <ip>`
+- Configuration: `/etc/nftban/conf.d/botguard/main.conf`
+
+---
+
 ## [1.19.13] - 2026-03-02
 
 ### Added

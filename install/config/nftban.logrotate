@@ -111,6 +111,23 @@
 # File: /etc/logrotate.d/nftban-suricata (installed by nftban suricata setup)
 
 # =============================================================================
+# Bot Guard logs (v1.20.0 — HTTP crawler detection)
+# =============================================================================
+# Bot Guard Go daemon writes classification decisions and suspect tracking
+/var/log/nftban/botguard/botguard.log
+/var/log/nftban/botguard/decisions.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 100M
+    create 0640 nftban nftban
+}
+
+# =============================================================================
 # Watchdog subdirectory logs (alerts, stats, profiles)
 # =============================================================================
 # These are in a subdirectory of /var/log/nftban/ and need separate rotation

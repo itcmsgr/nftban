@@ -1,0 +1,52 @@
+# =============================================================================
+# NFTBan Debian package directories
+# =============================================================================
+# Generated from build/fhs-spec.yaml - DO NOT EDIT
+#
+# This file lists directories to create during package installation.
+# Consumer: dh_installdirs
+#
+# Note: Directories marked created_by=package are listed here.
+#       Directories marked created_by=tmpfiles are NOT listed here
+#       (they are created by systemd-tmpfiles at runtime).
+# =============================================================================
+
+/usr/lib/nftban
+/usr/lib/nftban/core
+/usr/lib/nftban/cli
+/usr/lib/nftban/lib
+/usr/lib/nftban/bin
+/usr/lib/nftban/exporters
+/usr/lib/nftban/setup
+/usr/lib/nftban/tests
+/usr/lib/nftban/helpers
+/usr/lib/nftban/cron
+/usr/lib/nftban/modules
+/usr/lib/nftban/sbin
+/usr/lib/nftban/health
+/usr/lib/nftban/data
+/usr/lib/nftban/tools
+/etc/nftban
+/etc/nftban/conf.d
+/etc/nftban/conf.d/ddos
+/etc/nftban/conf.d/portscan
+/etc/nftban/conf.d/login
+/etc/nftban/conf.d/panels
+/etc/nftban/conf.d/botscan
+/etc/nftban/conf.d/botguard
+/etc/nftban/patterns.d
+/etc/nftban/patterns.d/botscan
+/etc/nftban/whitelist.d
+/etc/nftban/blacklist.d
+/etc/nftban/ports.d
+/etc/nftban/rules.d
+/etc/nftban/connectors
+/etc/nftban/distros
+/usr/share/nftban
+/usr/share/nftban/templates
+/usr/share/nftban/templates/mail
+/usr/share/nftban/templates/reports
+/usr/share/nftban/templates/zabbix
+/usr/share/nftban/dashboards
+/usr/share/nftban/dashboards/grafana
+/usr/share/nftban/specs

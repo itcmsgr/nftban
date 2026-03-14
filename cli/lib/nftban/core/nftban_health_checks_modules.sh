@@ -430,6 +430,89 @@ nftban_health_check_portscan_prefix() {
 }
 
 # =============================================================================
+# BOTGUARD MODULE CHECK (v1.20.0)
+# =============================================================================
+
+nftban_health_check_botguard() {
+    # Check HTTP Bot Guard module health
+    # Validates: config exists, directories exist, daemon integration
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local botguard_issues=()
+
+    local botguard_conf="/etc/nftban/conf.d/botguard/main.conf"
+    local botguard_data="/var/lib/nftban/botguard"
+    local botguard_log="/var/log/nftban/botguard"
+
+    # Check config file
+    if [[ ! -f "$botguard_conf" ]]; then
+        botguard_issues+=("Config missing: $botguard_conf")
+        status=$HEALTH_WARNING
+    fi
+
+    # Check data directory
+    if [[ ! -d "$botguard_data" ]]; then
+        botguard_issues+=("Data directory missing: $botguard_data")
+        botguard_issues+=("FIX: mkdir -p $botguard_data && chown nftban:nftban $botguard_data")
+        status=$HEALTH_WARNING
+    fi
+
+    # Check log directory
+    if [[ ! -d "$botguard_log" ]]; then
+        botguard_issues+=("Log directory missing: $botguard_log")
+        botguard_issues+=("FIX: mkdir -p $botguard_log && chown nftban:nftban $botguard_log")
+        status=$HEALTH_WARNING
+    fi
+
+    # Check if enabled - verify sets exist when enabled
+    local enabled="false"
+    if [[ -f "$botguard_conf" ]]; then
+        # Check local override first, then main config
+        local local_conf="/etc/nftban/conf.d/botguard/main.conf.local"
+        if [[ -f "$local_conf" ]]; then
+            enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$local_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
+        fi
+        if [[ -z "$enabled" ]]; then
+            enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$botguard_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "false")
+        fi
+    fi
+
+    if [[ "$enabled" == "true" ]]; then
+        # Verify nft sets exist when module is enabled
+        if ! nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
+            botguard_issues+=("Bot Guard enabled but http_bot_suspect set not found in nftables")
+            botguard_issues+=("FIX: Restart nftband to create sets: systemctl restart nftband")
+            status=$HEALTH_WARNING
+        fi
+        if ! nft list set ip6 nftban http_bot_suspect6 &>/dev/null 2>&1; then
+            botguard_issues+=("Bot Guard enabled but http_bot_suspect6 (IPv6) set not found in nftables")
+            botguard_issues+=("FIX: Restart nftband to create sets: systemctl restart nftband")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Store results
+    if [[ ${#botguard_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["botguard"]="${botguard_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("botguard: ${botguard_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("botguard: ${botguard_issues[*]}")
+        fi
+    else
+        if [[ "$enabled" == "true" ]]; then
+            NFTBAN_HEALTH_ISSUES["botguard"]="HTTP Bot Guard enabled and healthy"
+        else
+            NFTBAN_HEALTH_ISSUES["botguard"]="HTTP Bot Guard installed (disabled)"
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["botguard"]=$status
+    return "$status"
+}
+
+# =============================================================================
 # BINARY INTEGRITY CHECK
 # =============================================================================
 
@@ -475,4 +558,5 @@ nftban_health_check_binary_integrity() {
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
+export -f nftban_health_check_botguard
 export -f nftban_health_check_binary_integrity

@@ -278,10 +278,10 @@ func (c *ElasticsearchConnector) ping(ctx context.Context) error {
 		}
 
 		if resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	return fmt.Errorf("no healthy Elasticsearch nodes")
@@ -454,10 +454,10 @@ func (c *ElasticsearchConnector) CreateIndexTemplate(ctx context.Context) error 
 		}
 
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	return fmt.Errorf("failed to create index template")
