@@ -884,6 +884,38 @@ login:
       options:
         --json: {type: bool, description: "Output in JSON format"}
 
+botguard:
+  category: active_protection
+  description: "HTTP Bot Guard — intelligent crawler detection & protection"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban botguard enable"
+    - "nftban botguard disable"
+    - "nftban botguard status"
+    - "nftban botguard test 1.2.3.4"
+    - "nftban botguard status --json"
+  subcommands:
+    enable:
+      description: "Enable HTTP Bot Guard protection"
+    disable:
+      description: "Disable HTTP Bot Guard protection"
+    status:
+      description: "Show bot guard status, set sizes, config"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      description: "Test classification for a specific IP"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+
 botscan:
   category: active_protection
   description: "Bot scanner detection (webshell probes, bad bots)"

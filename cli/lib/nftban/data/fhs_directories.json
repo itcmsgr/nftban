@@ -182,6 +182,14 @@
         "created_by": "package"
       },
       {
+        "path": "/etc/nftban/conf.d/botguard",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "HTTP Bot Guard configuration",
+        "created_by": "package"
+      },
+      {
         "path": "/etc/nftban/patterns.d",
         "mode": "0750",
         "owner": "root",
@@ -408,6 +416,14 @@
         "created_by": "tmpfiles"
       },
       {
+        "path": "/var/lib/nftban/botguard",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "HTTP Bot Guard state (batch signals, decisions)",
+        "created_by": "tmpfiles"
+      },
+      {
         "path": "/var/lib/nftban/pro",
         "mode": "0750",
         "owner": "root",
@@ -448,6 +464,22 @@
         "group": "nftban",
         "description": "RBL check cache",
         "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/botguard",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "HTTP Bot Guard logs",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/suricata",
+        "mode": "0770",
+        "owner": "suricata",
+        "group": "nftban",
+        "description": "Suricata EVE logs (suricata writes, nftban reads)",
+        "created_by": "feature_enable"
       }
     ],
     "runtime": [

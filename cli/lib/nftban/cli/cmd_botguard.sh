@@ -30,9 +30,11 @@
 
 set -Eeuo pipefail
 
-# Load common CLI helpers
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
+
+# Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
+source "${NFTBAN_LIB_DIR}/lib/cmd_common.sh" || return 1
 
 # Initialize CLI environment
 cmd_init
@@ -293,3 +295,21 @@ nftban_cmd_botguard() {
             ;;
     esac
 }
+
+# =============================================================================
+# EXPORT FOR MAIN CLI
+# =============================================================================
+
+export -f nftban_cmd_botguard
+export -f _nftban_botguard_help
+export -f _nftban_botguard_enable
+export -f _nftban_botguard_disable
+export -f _nftban_botguard_status
+export -f _nftban_botguard_test
+export -f _botguard_config_get
+export -f _botguard_config_set
+
+# Execute if called directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    nftban_cmd_botguard "$@"
+fi

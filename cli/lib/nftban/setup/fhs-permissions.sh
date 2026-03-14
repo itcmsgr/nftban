@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0.0 - FHS File Permissions (GENERATED)
+# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+#
 # meta:name="fhs-permissions"
 # meta:type="setup"
+# meta:header="FHS File Permissions"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
 # meta:description="Sets file permissions during package installation (GENERATED)"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
@@ -11,10 +18,14 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2026-02-08"
+# meta:updated_date="2026-02-08"
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
+# =============================================================================
 
 set -Eeuo pipefail
 
@@ -59,69 +70,12 @@ nftban_install_set_file_permissions() {
     # /var/log/nftban - *
     find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chown nftban:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chmod 0640 {} \; 2>/dev/null || true
-    # /var/log/nftban/suricata - * (only if suricata user exists)
-    if id suricata &>/dev/null; then
-        find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
-    else
-        find "/var/log/nftban/suricata" -type f -name "*" -exec chown root:nftban {} \; 2>/dev/null || true
-    fi
+    # /var/log/nftban/suricata - *
+    find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban/suricata" -type f -name "*" -exec chmod 0640 {} \; 2>/dev/null || true
 
-    # Set up auditor ACLs
-    nftban_install_set_auditor_acls
-
-    return 0
-}
-
-# =============================================================================
-# AUDITOR ACL SETUP (not generated - manually maintained)
-# =============================================================================
-# Sets ACLs for nftban-auditor group read access to logs and reports.
-# ACLs are required because:
-#   - Base ownership (nftban:nftban) is needed for daemon writes
-#   - Auditors need read-only access without write permissions
-#   - ACLs layer on top of base permissions without changing ownership
-
-nftban_install_set_auditor_acls() {
-    # Check if setfacl is available
-    if ! command -v setfacl &>/dev/null; then
-        echo "[NFTBan] setfacl not available - auditor ACLs skipped (install acl package)" >&2
-        return 0
-    fi
-
-    # Check if nftban-auditor group exists
-    if ! getent group nftban-auditor &>/dev/null; then
-        return 0  # Silent - group created later or not needed
-    fi
-
-    echo "[NFTBan] Setting up auditor ACLs..."
-
-    # Log directory - traverse and read access
-    if [[ -d /var/log/nftban ]]; then
-        setfacl -m g:nftban-auditor:x /var/log/nftban 2>/dev/null || true
-        # Read access on audit-relevant logs
-        for logfile in bans.log login_monitor.log feeds.log nftban-actions.log ddos.log portscan.log; do
-            [[ -f "/var/log/nftban/$logfile" ]] && setfacl -m g:nftban-auditor:r "/var/log/nftban/$logfile" 2>/dev/null || true
-        done
-    fi
-
-    # Reports directory - traverse access to reach auditors/ subdir
-    if [[ -d /var/lib/nftban ]]; then
-        setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || true
-        [[ -d /var/lib/nftban/reports ]] && setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || true
-        [[ -d /var/lib/nftban/reports/auditors ]] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || true
-    fi
-
-    # Config directory - auditor read access for compliance review
-    if [[ -d /etc/nftban ]]; then
-        setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || true
-        [[ -f /etc/nftban/nftban.conf ]] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
-    fi
-
-    echo "[NFTBan] Auditor ACLs configured"
     return 0
 }
 
 # Export for sourcing
 export -f nftban_install_set_file_permissions
-export -f nftban_install_set_auditor_acls
