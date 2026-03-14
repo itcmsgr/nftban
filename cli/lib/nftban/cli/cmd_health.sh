@@ -187,6 +187,9 @@ nftban_cmd_health() {
         rbl)
             nftban_health_cmd_rbl "$@"
             ;;
+        botguard)
+            nftban_health_cmd_botguard "$@"
+            ;;
         posture|security)
             nftban_health_cmd_posture "$@"
             ;;
@@ -299,6 +302,7 @@ EXAMPLES:
     # Check specific component
     nftban health geoip
     nftban health binaries
+    nftban health botguard     # HTTP Bot Guard health
     nftban health pro          # Pro subscription status
 
     # Auto-heal during check (combines check + fix)
@@ -371,6 +375,7 @@ export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_registries
 export -f nftban_health_cmd_rbl
+export -f nftban_health_cmd_botguard
 export -f nftban_health_cmd_posture
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_config

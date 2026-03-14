@@ -349,6 +349,7 @@ install -m 0755 cli/sbin/nftban-panelctl %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-queue-processor %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-rollback %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-service-alert %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-botscan-processor %{buildroot}/usr/lib/nftban/sbin/
 
 # Version file
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
@@ -433,6 +434,8 @@ install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/system
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
 install -D -m 0644 install/systemd/nftban-queue.timer %{buildroot}/usr/lib/systemd/system/nftban-queue.timer
+install -D -m 0644 install/systemd/nftban-botscan.service %{buildroot}/usr/lib/systemd/system/nftban-botscan.service
+install -D -m 0644 install/systemd/nftban-botscan.timer %{buildroot}/usr/lib/systemd/system/nftban-botscan.timer
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
 install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
 install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
@@ -1341,6 +1344,11 @@ else
     echo "[NFTBan WARN] nftban-queue.timer not installed (optional)"
 fi
 
+# Start botscan timer (Clock 3 — access log pattern matching every 10min)
+if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep -q '^nftban-botscan.timer'; then
+    systemctl enable --now nftban-botscan.timer 2>/dev/null || true
+fi
+
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
@@ -1645,7 +1653,8 @@ if [ \$1 -eq 0 ]; then
                 nftban-watchdog.service nftban-watchdog.timer nftban-login-monitor.service \
                 nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service \
                 nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer \
-                nftban-queue.service nftban-queue.timer nftban-rbl-check.service nftban-rbl-check.timer \
+                nftban-queue.service nftban-queue.timer nftban-botscan.service nftban-botscan.timer \
+                nftban-rbl-check.service nftban-rbl-check.timer \
                 nftban-rollback.service nftban-rollback.timer nftban-snapshot.service nftban-snapshot.timer \
                 nftban-suricata-update.service nftban-suricata-update.timer nftban-suricata.service \
                 nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-inventory.timer \
@@ -1790,6 +1799,8 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botscan/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/botguard
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/main.conf
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/allowed_crawlers.conf
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/denied_crawlers.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
@@ -2533,6 +2544,11 @@ if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -
     systemctl enable --now nftban-queue.timer 2>/dev/null || true
 fi
 
+# Start botscan timer (Clock 3 — access log pattern matching every 10min)
+if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep -q '^nftban-botscan.timer'; then
+    systemctl enable --now nftban-botscan.timer 2>/dev/null || true
+fi
+
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
@@ -2799,7 +2815,7 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
         systemctl stop "$unit" 2>/dev/null || true
     done
     # Stop timers
-    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer; do
+    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer nftban-botscan.timer; do
         systemctl stop "$timer" 2>/dev/null || true
     done
 fi
@@ -2824,6 +2840,8 @@ PRERM
 /etc/nftban/conf.d/suricata/interfaces.conf
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/botguard/main.conf
+/etc/nftban/conf.d/botguard/allowed_crawlers.conf
+/etc/nftban/conf.d/botguard/denied_crawlers.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
 /etc/nftban/conf.d/metrics.conf
@@ -2840,7 +2858,7 @@ build_deb() {
 
     # Create directory structure
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{blacklist.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{blacklist.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,botguard},log/nftban/botguard,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -2865,7 +2883,7 @@ build_deb() {
     mkdir -p "${deb_root}/usr/lib/nftban/sbin"
     local sbin_count=0
     for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
-                  nftban-rollback nftban-service-alert; do
+                  nftban-botscan-processor nftban-rollback nftban-service-alert; do
         if [[ -f "${PROJECT_ROOT}/cli/sbin/${script}" ]]; then
             install -m 0755 "${PROJECT_ROOT}/cli/sbin/${script}" "${deb_root}/usr/lib/nftban/sbin/"
             ((sbin_count++))
@@ -2961,6 +2979,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-botscan.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-botscan.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.timer" "${deb_root}/usr/lib/systemd/system/"

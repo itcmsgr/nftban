@@ -435,15 +435,20 @@ nftban_health_check_portscan_prefix() {
 
 nftban_health_check_botguard() {
     # Check HTTP Bot Guard module health
-    # Validates: config exists, directories exist, daemon integration
+    # Validates: config exists, directories exist, permissions, crawler configs, daemon integration
     # Returns: 0=OK, 1=Warning, 2=Error
+    # Auto-fix: Creates missing dirs with correct ownership
 
     local status=$HEALTH_OK
     local botguard_issues=()
+    local auto_fixed=0
 
-    local botguard_conf="/etc/nftban/conf.d/botguard/main.conf"
-    local botguard_data="/var/lib/nftban/botguard"
-    local botguard_log="/var/log/nftban/botguard"
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local botguard_conf="$config_dir/conf.d/botguard/main.conf"
+    local allowed_conf="$config_dir/conf.d/botguard/allowed_crawlers.conf"
+    local denied_conf="$config_dir/conf.d/botguard/denied_crawlers.conf"
+    local botguard_data="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard"
+    local botguard_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/botguard"
 
     # Check config file
     if [[ ! -f "$botguard_conf" ]]; then
@@ -451,25 +456,75 @@ nftban_health_check_botguard() {
         status=$HEALTH_WARNING
     fi
 
-    # Check data directory
-    if [[ ! -d "$botguard_data" ]]; then
-        botguard_issues+=("Data directory missing: $botguard_data")
-        botguard_issues+=("FIX: mkdir -p $botguard_data && chown nftban:nftban $botguard_data")
+    # Check crawler config files
+    if [[ ! -f "$allowed_conf" ]]; then
+        botguard_issues+=("Allowed crawlers config missing: $allowed_conf")
+        status=$HEALTH_WARNING
+    fi
+    if [[ ! -f "$denied_conf" ]]; then
+        botguard_issues+=("Denied crawlers config missing: $denied_conf")
         status=$HEALTH_WARNING
     fi
 
-    # Check log directory
+    # Check data directory (auto-fix if root)
+    if [[ ! -d "$botguard_data" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            mkdir -p "$botguard_data" && chown nftban:nftban "$botguard_data" && chmod 750 "$botguard_data"
+            botguard_issues+=("Data directory created (auto-fix): $botguard_data")
+            ((auto_fixed++))
+        else
+            botguard_issues+=("Data directory missing: $botguard_data")
+            botguard_issues+=("FIX: mkdir -p $botguard_data && chown nftban:nftban $botguard_data && chmod 750 $botguard_data")
+            status=$HEALTH_WARNING
+        fi
+    else
+        # Verify ownership
+        local owner
+        owner=$(stat -c '%U:%G' "$botguard_data" 2>/dev/null || echo "unknown")
+        if [[ "$owner" != "nftban:nftban" ]]; then
+            if [[ $EUID -eq 0 ]]; then
+                chown nftban:nftban "$botguard_data" && chmod 750 "$botguard_data"
+                botguard_issues+=("Data directory ownership fixed (auto-fix): $botguard_data")
+                ((auto_fixed++))
+            else
+                botguard_issues+=("Data directory wrong ownership: $botguard_data (is $owner, expected nftban:nftban)")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # Check log directory (auto-fix if root)
     if [[ ! -d "$botguard_log" ]]; then
-        botguard_issues+=("Log directory missing: $botguard_log")
-        botguard_issues+=("FIX: mkdir -p $botguard_log && chown nftban:nftban $botguard_log")
-        status=$HEALTH_WARNING
+        if [[ $EUID -eq 0 ]]; then
+            mkdir -p "$botguard_log" && chown nftban:nftban "$botguard_log" && chmod 750 "$botguard_log"
+            botguard_issues+=("Log directory created (auto-fix): $botguard_log")
+            ((auto_fixed++))
+        else
+            botguard_issues+=("Log directory missing: $botguard_log")
+            botguard_issues+=("FIX: mkdir -p $botguard_log && chown nftban:nftban $botguard_log && chmod 750 $botguard_log")
+            status=$HEALTH_WARNING
+        fi
+    else
+        # Verify ownership
+        local owner
+        owner=$(stat -c '%U:%G' "$botguard_log" 2>/dev/null || echo "unknown")
+        if [[ "$owner" != "nftban:nftban" ]]; then
+            if [[ $EUID -eq 0 ]]; then
+                chown nftban:nftban "$botguard_log" && chmod 750 "$botguard_log"
+                botguard_issues+=("Log directory ownership fixed (auto-fix): $botguard_log")
+                ((auto_fixed++))
+            else
+                botguard_issues+=("Log directory wrong ownership: $botguard_log (is $owner, expected nftban:nftban)")
+                status=$HEALTH_WARNING
+            fi
+        fi
     fi
 
     # Check if enabled - verify sets exist when enabled
     local enabled="false"
     if [[ -f "$botguard_conf" ]]; then
         # Check local override first, then main config
-        local local_conf="/etc/nftban/conf.d/botguard/main.conf.local"
+        local local_conf="$config_dir/conf.d/botguard/main.conf.local"
         if [[ -f "$local_conf" ]]; then
             enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$local_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
         fi

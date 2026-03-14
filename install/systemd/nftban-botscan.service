@@ -1,0 +1,68 @@
+# =============================================================================
+# NFTBan v1.21.0 - Bot Scanner Service (Clock 3)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Systemd oneshot service for NFTBan botscan batch processing
+#
+# meta:name="nftban_botscan_service"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-03-14"
+# meta:description="Oneshot service that scans access logs and writes batch_signals.jsonl"
+# meta:input="None"
+# meta:output="batch_signals.jsonl for Go daemon (Clock 2) consumption"
+# meta:depends="nftban-botscan-processor"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-botscan.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Bot Scanner Processor (Clock 3)
+Documentation=man:nftban(8)
+After=network.target nftables.service
+# Alert on failure (uses template unit)
+OnFailure=nftban-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/nftban/sbin/nftban-botscan-processor
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-botscan
+
+# Run as unprivileged nftban user
+User=nftban
+Group=nftban
+
+# Resource limits
+MemoryMax=256M
+TasksMax=50
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+PrivateDevices=yes
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+
+# Timeout after 5 minutes (log parsing should not take long)
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

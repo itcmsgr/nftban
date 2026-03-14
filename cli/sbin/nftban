@@ -370,6 +370,10 @@ nftban_complete() {
                 echo "services"
                 echo "modules"
                 echo "conflicts"
+                echo "botguard"
+                echo "permissions"
+                echo "summary"
+                echo "install"
                 ;;
             whitelist)
                 echo "sync"
@@ -481,6 +485,8 @@ nftban_complete() {
                 echo "disable"
                 echo "status"
                 echo "test"
+                echo "list"
+                echo "verify"
                 echo "help"
                 ;;
             modes)
