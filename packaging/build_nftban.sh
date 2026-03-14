@@ -490,8 +490,9 @@ find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildr
 
 # Config directories (must match %files section)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
-mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
-mkdir -p %{buildroot}/var/log/nftban
+mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
+mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports,botguard}
+mkdir -p %{buildroot}/var/log/nftban/botguard
 mkdir -p %{buildroot}/var/cache/nftban
 mkdir -p %{buildroot}/run/nftban
 
