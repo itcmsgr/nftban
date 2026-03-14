@@ -764,11 +764,165 @@ nftban_health_cmd_gui() {
 }
 
 # =============================================================================
+# HTTP BOT GUARD HEALTH CHECK (v1.21.0)
+# =============================================================================
+
+nftban_health_cmd_botguard() {
+    # Standalone botguard health check (nftban health botguard)
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local botguard_conf="$config_dir/conf.d/botguard/main.conf"
+    local allowed_conf="$config_dir/conf.d/botguard/allowed_crawlers.conf"
+    local denied_conf="$config_dir/conf.d/botguard/denied_crawlers.conf"
+    local botguard_data="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard"
+    local botguard_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/botguard"
+
+    local issues=0
+    local warnings=0
+
+    echo "=== HTTP Bot Guard Health Check ==="
+    echo ""
+
+    # Config file
+    if [[ -f "$botguard_conf" ]]; then
+        echo "  Config:              ✅ $botguard_conf"
+    else
+        echo "  Config:              ❌ Missing: $botguard_conf"
+        ((issues++))
+    fi
+
+    # Allowed crawlers
+    if [[ -f "$allowed_conf" ]]; then
+        local count
+        count=$(grep -c -v '^#\|^$' "$allowed_conf" 2>/dev/null || echo "0")
+        echo "  Allowed crawlers:    ✅ $allowed_conf ($count entries)"
+    else
+        echo "  Allowed crawlers:    ⚠️  Missing: $allowed_conf"
+        ((warnings++))
+    fi
+
+    # Denied crawlers
+    if [[ -f "$denied_conf" ]]; then
+        local count
+        count=$(grep -c -v '^#\|^$' "$denied_conf" 2>/dev/null || echo "0")
+        echo "  Denied crawlers:     ✅ $denied_conf ($count entries)"
+    else
+        echo "  Denied crawlers:     ⚠️  Missing: $denied_conf"
+        ((warnings++))
+    fi
+
+    # Data directory
+    if [[ -d "$botguard_data" ]]; then
+        local owner
+        owner=$(stat -c '%U:%G' "$botguard_data" 2>/dev/null || echo "unknown")
+        local mode
+        mode=$(stat -c '%a' "$botguard_data" 2>/dev/null || echo "unknown")
+        if [[ "$owner" == "nftban:nftban" && "$mode" == "750" ]]; then
+            echo "  Data dir:            ✅ $botguard_data ($owner $mode)"
+        else
+            echo "  Data dir:            ⚠️  $botguard_data (owner=$owner mode=$mode, expected nftban:nftban 750)"
+            echo "                       FIX: chown nftban:nftban $botguard_data && chmod 750 $botguard_data"
+            ((warnings++))
+        fi
+    else
+        echo "  Data dir:            ❌ Missing: $botguard_data"
+        echo "                       FIX: mkdir -p $botguard_data && chown nftban:nftban $botguard_data && chmod 750 $botguard_data"
+        ((issues++))
+    fi
+
+    # Log directory
+    if [[ -d "$botguard_log" ]]; then
+        local owner
+        owner=$(stat -c '%U:%G' "$botguard_log" 2>/dev/null || echo "unknown")
+        local mode
+        mode=$(stat -c '%a' "$botguard_log" 2>/dev/null || echo "unknown")
+        if [[ "$owner" == "nftban:nftban" && "$mode" == "750" ]]; then
+            echo "  Log dir:             ✅ $botguard_log ($owner $mode)"
+        else
+            echo "  Log dir:             ⚠️  $botguard_log (owner=$owner mode=$mode, expected nftban:nftban 750)"
+            echo "                       FIX: chown nftban:nftban $botguard_log && chmod 750 $botguard_log"
+            ((warnings++))
+        fi
+    else
+        echo "  Log dir:             ❌ Missing: $botguard_log"
+        echo "                       FIX: mkdir -p $botguard_log && chown nftban:nftban $botguard_log && chmod 750 $botguard_log"
+        ((issues++))
+    fi
+
+    # Log files
+    if [[ -f "$botguard_log/botguard.log" ]]; then
+        echo "  Log file:            ✅ $botguard_log/botguard.log"
+    else
+        echo "  Log file:            ⚠️  Not yet created (starts on first daemon run)"
+        ((warnings++))
+    fi
+
+    echo ""
+
+    # Enabled status
+    local enabled="false"
+    local local_conf="$config_dir/conf.d/botguard/main.conf.local"
+    if [[ -f "$local_conf" ]]; then
+        enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$local_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
+    fi
+    if [[ -z "$enabled" && -f "$botguard_conf" ]]; then
+        enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$botguard_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "false")
+    fi
+
+    if [[ "$enabled" == "true" ]]; then
+        echo "  Module status:       ✅ ENABLED"
+
+        # Check nft sets when enabled
+        if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
+            echo "  IPv4 suspect set:    ✅ Present"
+        else
+            echo "  IPv4 suspect set:    ❌ Not found in nftables"
+            echo "                       FIX: systemctl restart nftband"
+            ((issues++))
+        fi
+
+        if nft list set ip6 nftban http_bot_suspect6 &>/dev/null 2>&1; then
+            echo "  IPv6 suspect set:    ✅ Present"
+        else
+            echo "  IPv6 suspect set:    ❌ Not found in nftables"
+            echo "                       FIX: systemctl restart nftband"
+            ((issues++))
+        fi
+
+        # Check daemon running
+        if systemctl is-active nftband &>/dev/null; then
+            echo "  Daemon:              ✅ Running"
+        else
+            echo "  Daemon:              ❌ Not running"
+            echo "                       FIX: systemctl start nftband"
+            ((issues++))
+        fi
+    else
+        echo "  Module status:       ⚠️  DISABLED"
+        echo "                       Enable: nftban botguard enable"
+    fi
+
+    echo ""
+
+    # Summary
+    if [[ $issues -gt 0 ]]; then
+        echo "  Result: ❌ $issues error(s), $warnings warning(s)"
+        return 2
+    elif [[ $warnings -gt 0 ]]; then
+        echo "  Result: ⚠️  $warnings warning(s)"
+        return 1
+    else
+        echo "  Result: ✅ Healthy"
+        return 0
+    fi
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_config
 export -f nftban_health_cmd_rbl
+export -f nftban_health_cmd_botguard
 export -f nftban_health_cmd_posture
 export -f nftban_health_cmd_gui

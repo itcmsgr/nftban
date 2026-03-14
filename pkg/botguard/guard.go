@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.20.0 - HTTP Bot Guard: Main Controller
+// NFTBan v1.21.0 - HTTP Bot Guard: Main Controller
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Package: botguard
@@ -32,10 +32,13 @@
 package botguard
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -70,8 +73,11 @@ type Module struct {
 	config *Config
 
 	// Components
-	reader   *SuspectReader
-	enforcer *Enforcer
+	reader     *SuspectReader
+	enforcer   *Enforcer
+	verifier   *FCrDNSVerifier
+	classifier *Classifier
+	logger     *Logger
 
 	// State map: tracked IPs and their classification
 	ips   map[netip.Addr]*IPRecord
@@ -121,6 +127,32 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	m.config = cfg
 	m.status.Enabled = cfg.Enabled
 
+	// Load allowed crawlers for verifier initialization
+	allowedBots, err := loadAllowedCrawlers(cfg.AllowedCrawlersFile)
+	if err != nil {
+		log.Printf("[botguard] warning: could not load allowed crawlers: %v", err)
+	}
+
+	// Create FCrDNS verifier
+	m.verifier = NewFCrDNSVerifier(cfg, allowedBots)
+
+	// Create classifier (loads allowed + denied configs)
+	classifier, err := NewClassifier(cfg, m.verifier)
+	if err != nil {
+		return fmt.Errorf("init classifier: %w", err)
+	}
+	m.classifier = classifier
+
+	// Create file logger
+	_, _, logFile := getBotguardPaths()
+	logDir := filepath.Dir(logFile)
+	logger, err := NewLogger(logDir)
+	if err != nil {
+		log.Printf("[botguard] warning: could not init file logger: %v (continuing with stdout only)", err)
+	} else {
+		m.logger = logger
+	}
+
 	return nil
 }
 
@@ -152,6 +184,14 @@ func (m *Module) Start(ctx context.Context) error {
 		WithData("loop_interval", m.config.LoopInterval.String()).
 		WithData("pressure_interval", m.config.LoopPressureInterval.String()))
 
+	if m.logger != nil {
+		m.logger.LogEvent("INFO", fmt.Sprintf("HTTP Bot Guard started — loop=%s pressure=%s",
+			m.config.LoopInterval, m.config.LoopPressureInterval))
+	}
+
+	// Start the FCrDNS verifier worker pool
+	go m.verifier.Start(ctx)
+
 	// Start the classification loop
 	go m.runClassificationLoop(ctx)
 
@@ -165,6 +205,14 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Stop() error {
 	if m.cancel != nil {
 		m.cancel()
+	}
+
+	// Close file logger
+	if m.logger != nil {
+		m.logger.LogEvent("INFO", "HTTP Bot Guard stopping")
+		if err := m.logger.Close(); err != nil {
+			log.Printf("[botguard] logger close error: %v", err)
+		}
 	}
 
 	m.mu.Lock()
@@ -197,6 +245,11 @@ func (m *Module) Status() module.Status {
 	m.status.Extra["ban_count"] = m.stats.BanCount
 	m.status.Extra["emergency_count"] = m.stats.EmergencyCount
 	m.status.Extra["last_tick_duration"] = m.stats.LastTickDuration.String()
+	m.status.Extra["verify_enqueued"] = m.stats.VerifyEnqueued
+	m.status.Extra["verify_completed"] = m.stats.VerifyCompleted
+	m.status.Extra["verify_verified"] = m.stats.VerifyVerified
+	m.status.Extra["verify_failed"] = m.stats.VerifyFailed
+	m.status.Extra["batch_signals_processed"] = m.stats.BatchSignalsProcessed
 
 	return m.status
 }
@@ -228,12 +281,19 @@ func (m *Module) runClassificationLoop(ctx context.Context) {
 }
 
 // tick performs one classification cycle:
-// 1. Read kernel suspect set (20-100 IPs, microseconds)
-// 2. For each new suspect, create pending record
-// 3. Classify pending IPs (Phase 1: basic threshold, Phase 2+: FCrDNS)
-// 4. Write decisions to enforcement sets via OpQueue
+// 1. Drain FCrDNS verification results
+// 2. Read kernel suspect set (20-100 IPs, microseconds)
+// 3. For each new suspect, create pending record
+// 4. Classify pending/unknown IPs via classifier (FCrDNS + config)
+// 5. Write decisions to enforcement sets via OpQueue
 func (m *Module) tick(ctx context.Context) {
-	// Step 1: Read kernel suspect set
+	// Step 1: Drain FCrDNS verification results
+	m.drainVerifications()
+
+	// Step 1b: Process batch signals from Clock 3 (shell botscan)
+	m.processBatchSignals()
+
+	// Step 2: Read kernel suspect set
 	suspects, err := m.reader.ReadSuspects(ctx)
 	if err != nil {
 		log.Printf("[botguard] suspect read error: %v", err)
@@ -247,7 +307,7 @@ func (m *Module) tick(ctx context.Context) {
 	m.stats.SuspectsFound += int64(len(suspects))
 	m.mu.Unlock()
 
-	// Step 2: Process each suspect
+	// Step 3: Process each suspect
 	for _, ip := range suspects {
 		record := m.getOrCreate(ip)
 
@@ -255,7 +315,7 @@ func (m *Module) tick(ctx context.Context) {
 		record.LastSeen = time.Now()
 		record.HitCount++
 
-		// Step 3: Classify if not already classified
+		// Step 4: Classify if not already in a terminal state
 		if record.State == StateUnknown || record.State == StatePending {
 			m.classify(record)
 		}
@@ -269,46 +329,56 @@ func (m *Module) tick(ctx context.Context) {
 	m.ipsMu.RUnlock()
 }
 
-// classify determines the classification for an IP.
-// Phase 1: Basic threshold-based classification.
-// Phase 2+ will add FCrDNS verification and bot config lookup.
+// classify determines the classification for an IP using the classifier.
+// Delegates to Classifier.Classify() which uses FCrDNS verification and
+// crawler config lookup instead of simple threshold logic.
 func (m *Module) classify(r *IPRecord) {
 	oldState := r.State
 
-	// Phase 1 classification: threshold-based
-	// IPs in the suspect set already exceeded kernel rate threshold.
-	// For Phase 1, we classify based on hit count pattern:
-	//   - First time seen → pending (light throttle while we gather data)
-	//   - Seen multiple ticks → grey (sustained abuse → penalty ladder)
-	//   - Seen many ticks or high hit count → ban
-	switch {
-	case r.HitCount >= 10:
-		// Persistent offender across many ticks → ban
-		r.State = StateBan
-		r.Reasons = append(r.Reasons, "persistent_suspect")
-		r.ExpiresAt = time.Now().Add(m.config.BanTTL)
-	case r.HitCount >= 3:
-		// Repeated suspect → grey (penalty ladder throttle)
-		r.State = StateGrey
-		r.Reasons = append(r.Reasons, "repeated_suspect")
+	// Delegate to classifier
+	result := m.classifier.Classify(r, m.config)
+
+	// Apply result to record
+	r.State = result.State
+	if result.BotName != "" {
+		r.BotName = result.BotName
+	}
+	r.Reasons = append(r.Reasons, result.Reason)
+
+	// Set expiry based on new state
+	switch r.State {
+	case StatePending:
+		r.ExpiresAt = time.Now().Add(m.config.PendingTTL)
+	case StateAllow:
+		r.ExpiresAt = time.Now().Add(m.config.AllowTTL)
+	case StateGrey:
 		r.ExpiresAt = time.Now().Add(m.config.GreyTTL)
-	default:
-		// First detection → pending (gather more data)
-		if r.State == StateUnknown {
-			r.State = StatePending
-			r.Reasons = append(r.Reasons, "new_suspect")
-			r.ExpiresAt = time.Now().Add(m.config.PendingTTL)
-		}
+	case StateBan:
+		r.ExpiresAt = time.Now().Add(m.config.BanTTL)
+	case StateEmergency:
+		r.ExpiresAt = time.Now().Add(m.config.EmergencyTTL)
+	}
+
+	// Track enqueue stats
+	if result.Reason == "new_suspect_verify_enqueued" {
+		m.mu.Lock()
+		m.stats.VerifyEnqueued++
+		m.mu.Unlock()
 	}
 
 	// Write to enforcement set if state changed
 	if r.State != oldState {
-		reason := "threshold"
-		if len(r.Reasons) > 0 {
-			reason = r.Reasons[len(r.Reasons)-1]
-		}
+		reason := result.Reason
 		if err := m.enforcer.Apply(r.IP, oldState, r.State, reason); err != nil {
 			log.Printf("[botguard] enforce error for %s: %v", r.IP, err)
+			if m.logger != nil {
+				m.logger.LogError("enforce", err)
+			}
+		}
+
+		// Log classification to file
+		if m.logger != nil {
+			m.logger.LogClassification(r.IP.String(), oldState, r.State, reason, result.BotName, r.HitCount)
 		}
 
 		// Update stats
@@ -335,7 +405,96 @@ func (m *Module) classify(r *IPRecord) {
 			WithData("old_state", oldState.String()).
 			WithData("new_state", r.State.String()).
 			WithData("hit_count", r.HitCount).
-			WithData("reason", reason))
+			WithData("reason", reason).
+			WithData("bot_name", result.BotName))
+	}
+}
+
+// drainVerifications processes all pending FCrDNS verification results.
+// Called at the start of each tick to apply verification decisions.
+func (m *Module) drainVerifications() {
+	for {
+		select {
+		case result := <-m.verifier.Results():
+			m.applyVerification(result)
+		default:
+			return
+		}
+	}
+}
+
+// applyVerification applies a single FCrDNS result to the IP record.
+func (m *Module) applyVerification(vr VerifyResult) {
+	record := m.getOrCreate(vr.IP)
+	oldState := record.State
+
+	// Update verification fields on the record
+	record.VerifyStatus = vr.Status
+	record.VerifiedAt = time.Now()
+	if vr.BotName != "" {
+		record.BotName = vr.BotName
+	}
+
+	// Get classification decision from the classifier
+	result := m.classifier.ProcessVerification(vr)
+
+	// Update stats
+	m.mu.Lock()
+	m.stats.VerifyCompleted++
+	if vr.Status == VerifyVerified {
+		m.stats.VerifyVerified++
+	} else {
+		m.stats.VerifyFailed++
+	}
+	m.mu.Unlock()
+
+	// Apply new state
+	record.State = result.State
+	record.Reasons = append(record.Reasons, result.Reason)
+
+	switch record.State {
+	case StateAllow:
+		record.ExpiresAt = time.Now().Add(m.config.AllowTTL)
+	case StateGrey:
+		record.ExpiresAt = time.Now().Add(m.config.GreyTTL)
+	case StateBan:
+		record.ExpiresAt = time.Now().Add(m.config.BanTTL)
+	case StatePending:
+		record.ExpiresAt = time.Now().Add(m.config.PendingTTL)
+	}
+
+	// Enforce state change
+	if record.State != oldState {
+		if err := m.enforcer.Apply(record.IP, oldState, record.State, result.Reason); err != nil {
+			log.Printf("[botguard] enforce error for %s: %v", record.IP, err)
+		}
+
+		// Log verification decision to file
+		if m.logger != nil {
+			m.logger.LogDecision(record.IP.String(), record.State, result.Reason, result.BotName, vr.Status, vr.Hostname)
+		}
+
+		m.mu.Lock()
+		m.stats.Classified++
+		switch record.State {
+		case StateAllow:
+			m.stats.AllowCount++
+		case StateGrey:
+			m.stats.GreyCount++
+		case StateBan:
+			m.stats.BanCount++
+		}
+		m.mu.Unlock()
+
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+			WithIP(record.IP.String()).
+			WithMessage(fmt.Sprintf("Bot guard verify: %s → %s", oldState, record.State)).
+			WithData("old_state", oldState.String()).
+			WithData("new_state", record.State.String()).
+			WithData("verify_status", vr.Status.String()).
+			WithData("bot_name", result.BotName).
+			WithData("hostname", vr.Hostname).
+			WithData("reason", result.Reason))
 	}
 }
 
@@ -383,6 +542,167 @@ func (m *Module) pruneExpired() {
 		if r.Expired() || now.Sub(r.LastSeen) > 30*time.Minute {
 			delete(m.ips, ip)
 		}
+	}
+}
+
+// processBatchSignals reads and processes batch_signals.jsonl from Clock 3 (shell botscan).
+// Reads all lines, applies each signal as a classification input, then truncates the file.
+// Thread-safe: only called from the classification loop goroutine.
+func (m *Module) processBatchSignals() {
+	signalFile := m.config.BatchSignalFile
+	if signalFile == "" {
+		return
+	}
+
+	// Open the file for reading
+	f, err := os.Open(filepath.Clean(signalFile)) // #nosec G304 -- path from nftbanconf (trusted)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return // No signals yet — normal
+		}
+		log.Printf("[botguard] batch signal read error: %v", err)
+		return
+	}
+
+	var signals []BatchSignal
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var sig BatchSignal
+		if err := json.Unmarshal(line, &sig); err != nil {
+			log.Printf("[botguard] batch signal parse error: %v", err)
+			continue
+		}
+		signals = append(signals, sig)
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[botguard] batch signal scanner error: %v", err)
+	}
+	f.Close()
+
+	if len(signals) == 0 {
+		return
+	}
+
+	// Truncate the file after reading (atomic: write empty file)
+	if err := os.WriteFile(signalFile, nil, 0640); err != nil { // #nosec G306 -- nftban group needs read
+		log.Printf("[botguard] batch signal truncate error: %v", err)
+	}
+
+	// Process each signal
+	for i := range signals {
+		m.applyBatchSignal(&signals[i])
+	}
+
+	m.mu.Lock()
+	m.stats.BatchSignalsProcessed += int64(len(signals))
+	m.mu.Unlock()
+
+	if m.logger != nil {
+		m.logger.LogEvent("INFO", fmt.Sprintf("Processed %d batch signals from Clock 3", len(signals)))
+	}
+}
+
+// applyBatchSignal applies a single batch signal from the shell botscan.
+func (m *Module) applyBatchSignal(sig *BatchSignal) {
+	ip, err := netip.ParseAddr(sig.IP)
+	if err != nil {
+		log.Printf("[botguard] batch signal invalid IP %q: %v", sig.IP, err)
+		return
+	}
+
+	record := m.getOrCreate(ip)
+	oldState := record.State
+
+	// Map action to state
+	var newState IPState
+	switch sig.Action {
+	case "ban":
+		newState = StateBan
+	case "grey":
+		newState = StateGrey
+	case "allow_demote":
+		// Demote from allow to grey (suspicious behavior from previously allowed IP)
+		if record.State == StateAllow {
+			newState = StateGrey
+		} else {
+			return // No-op if not currently allowed
+		}
+	case "allow_extend":
+		// Extend allow TTL (confirmed good behavior)
+		if record.State == StateAllow {
+			record.ExpiresAt = time.Now().Add(m.config.AllowTTL)
+			return
+		}
+		return
+	default:
+		log.Printf("[botguard] batch signal unknown action %q for %s", sig.Action, sig.IP)
+		return
+	}
+
+	// Don't downgrade: if already banned, don't move to grey
+	if record.State == StateBan && newState == StateGrey {
+		return
+	}
+	// Don't override emergency
+	if record.State == StateEmergency {
+		return
+	}
+
+	// Apply new state
+	record.State = newState
+	record.Score = int32(sig.Score)
+	record.LastSeen = time.Now()
+	for _, reason := range sig.Reasons {
+		record.Reasons = append(record.Reasons, "batch:"+reason)
+	}
+
+	// Set expiry
+	switch newState {
+	case StateBan:
+		record.ExpiresAt = time.Now().Add(m.config.BanTTL)
+	case StateGrey:
+		record.ExpiresAt = time.Now().Add(m.config.GreyTTL)
+	}
+
+	// Enforce state change
+	if newState != oldState {
+		reason := fmt.Sprintf("batch_signal:%s", sig.Action)
+		if err := m.enforcer.Apply(record.IP, oldState, newState, reason); err != nil {
+			log.Printf("[botguard] enforce error for batch %s: %v", record.IP, err)
+			if m.logger != nil {
+				m.logger.LogError("batch_enforce", err)
+			}
+		}
+
+		// Log classification
+		if m.logger != nil {
+			m.logger.LogClassification(record.IP.String(), oldState, newState, reason, record.BotName, record.HitCount)
+		}
+
+		// Update stats
+		m.mu.Lock()
+		m.stats.Classified++
+		switch newState {
+		case StateBan:
+			m.stats.BanCount++
+		case StateGrey:
+			m.stats.GreyCount++
+		}
+		m.mu.Unlock()
+
+		// Publish event
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+			WithIP(record.IP.String()).
+			WithMessage(fmt.Sprintf("Bot guard batch: %s → %s", oldState, newState)).
+			WithData("old_state", oldState.String()).
+			WithData("new_state", newState.String()).
+			WithData("score", sig.Score).
+			WithData("reason", reason).
+			WithData("source", "clock3_batch"))
 	}
 }
 
