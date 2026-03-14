@@ -489,6 +489,39 @@ nftban_botscan_analyze() {
     return $banned
 }
 
+# Write a batch signal to JSONL for Go daemon (Clock 2) consumption
+# Args: ip, score, action, reasons...
+nftban_botscan_write_signal() {
+    local ip="$1"
+    local score="$2"
+    local action="$3"
+    shift 3
+    local reasons=("$@")
+
+    local signal_file="${BOTSCAN_BATCH_SIGNAL_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botguard/batch_signals.jsonl}"
+
+    # Build JSON reasons array
+    local reasons_json="["
+    local first=true
+    for r in "${reasons[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            reasons_json+="\"${r//\"/\\\"}\""
+            first=false
+        else
+            reasons_json+=",\"${r//\"/\\\"}\""
+        fi
+    done
+    reasons_json+="]"
+
+    local ts
+    ts=$(date +%s)
+
+    # Atomic append (single write, no partial lines)
+    printf '{"ip":"%s","score":%d,"reasons":%s,"action":"%s","ts":%d}\n' \
+        "${ip//\"/\\\"}" "$score" "$reasons_json" "${action//\"/\\\"}" "$ts" \
+        >> "$signal_file"
+}
+
 # Ban IP
 nftban_botscan_ban_ip() {
     local ip="$1"
@@ -501,7 +534,21 @@ nftban_botscan_ban_ip() {
         return 0
     }
 
-    # Use nftban ban command
+    # Clock 3 batch signal mode: write JSONL for Go daemon instead of direct ban
+    if [[ "${BOTSCAN_BATCH_SIGNAL_MODE:-false}" == "true" ]]; then
+        local score=80
+        local action="ban"
+        # Shorter bans → grey instead of ban
+        if [[ "$duration" -le 1800 ]]; then
+            score=50
+            action="grey"
+        fi
+        nftban_botscan_write_signal "$ip" "$score" "$action" "$source" "$reason"
+        echo "$(date -Iseconds)|$source|$ip|${duration}|SIGNAL|$reason" >> "$BOTSCAN_LOG_FILE"
+        return 0
+    fi
+
+    # Direct ban mode (legacy/standalone)
     if type -t nftban_ban &>/dev/null; then
         nftban_ban "$ip" "$duration" "$source" "$reason"
     elif [[ -x "${NFTBAN_BIN:-/usr/sbin/nftban}" ]]; then

@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.20.0 - HTTP Bot Guard: Configuration Loader
+// NFTBan v1.21.0 - HTTP Bot Guard: Configuration Loader
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Package: botguard
@@ -66,6 +66,17 @@ type Config struct {
 	BatchSignalFile string
 	BatchInterval   time.Duration
 
+	// FCrDNS verification
+	VerifyWorkers    int           // Max concurrent DNS workers (default 8)
+	VerifyRateLimit  int           // Max new lookups per second (default 10)
+	VerifyTimeout    time.Duration // Timeout per DNS lookup (default 3s)
+	VerifyCacheTTL   time.Duration // Positive cache TTL (default 24h)
+	VerifyNegTTL     time.Duration // Negative cache TTL (default 1h)
+
+	// Crawler config files
+	AllowedCrawlersFile string
+	DeniedCrawlersFile  string
+
 	// Logging
 	LogLevel     string
 	LogDecisions bool
@@ -91,6 +102,13 @@ func DefaultConfig() *Config {
 		AutoTune:             true,
 		BatchSignalFile:      "/var/lib/nftban/botguard/batch_signals.jsonl",
 		BatchInterval:        10 * time.Minute,
+		VerifyWorkers:        8,
+		VerifyRateLimit:      10,
+		VerifyTimeout:        3 * time.Second,
+		VerifyCacheTTL:       24 * time.Hour,
+		VerifyNegTTL:         1 * time.Hour,
+		AllowedCrawlersFile:  "/etc/nftban/conf.d/botguard/allowed_crawlers.conf",
+		DeniedCrawlersFile:   "/etc/nftban/conf.d/botguard/denied_crawlers.conf",
 		LogLevel:             "INFO",
 		LogDecisions:         true,
 	}
@@ -187,6 +205,34 @@ func LoadConfig(path string) (*Config, error) {
 		case "HTTP_BOT_BATCH_INTERVAL":
 			if v, err := strconv.Atoi(value); err == nil && v > 0 {
 				cfg.BatchInterval = time.Duration(v) * time.Second
+			}
+		case "HTTP_BOT_VERIFY_WORKERS":
+			if v, err := strconv.Atoi(value); err == nil && v > 0 && v <= 32 {
+				cfg.VerifyWorkers = v
+			}
+		case "HTTP_BOT_VERIFY_RATE_LIMIT":
+			if v, err := strconv.Atoi(value); err == nil && v > 0 {
+				cfg.VerifyRateLimit = v
+			}
+		case "HTTP_BOT_VERIFY_TIMEOUT":
+			if d, err := parseDuration(value); err == nil {
+				cfg.VerifyTimeout = d
+			}
+		case "HTTP_BOT_VERIFY_CACHE_TTL":
+			if v, err := strconv.Atoi(value); err == nil && v > 0 {
+				cfg.VerifyCacheTTL = time.Duration(v) * time.Second
+			}
+		case "HTTP_BOT_VERIFY_NEG_TTL":
+			if v, err := strconv.Atoi(value); err == nil && v > 0 {
+				cfg.VerifyNegTTL = time.Duration(v) * time.Second
+			}
+		case "HTTP_BOT_ALLOWED_CRAWLERS_FILE":
+			if value != "" {
+				cfg.AllowedCrawlersFile = value
+			}
+		case "HTTP_BOT_DENIED_CRAWLERS_FILE":
+			if value != "" {
+				cfg.DeniedCrawlersFile = value
 			}
 		case "HTTP_BOT_LOG_LEVEL":
 			if value != "" {

@@ -1,0 +1,45 @@
+# =============================================================================
+# NFTBan v1.21.0 - Bot Scanner Timer (Clock 3)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Systemd timer that triggers botscan batch processing every 10 minutes
+#
+# meta:name="nftban_botscan_timer"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-03-14"
+# meta:description="Timer that triggers NFTBan botscan processor every 10 minutes"
+# meta:input="None"
+# meta:output="Triggers nftban-botscan.service"
+# meta:depends="nftban-botscan.service"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-botscan.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Bot Scanner Timer (Clock 3)
+Documentation=man:nftban(8)
+
+[Timer]
+# Clock 3: 10-minute batch interval for access log pattern matching
+OnBootSec=5min
+OnUnitActiveSec=10min
+
+# Allow systemd to batch with other timers
+AccuracySec=30s
+
+# SMART JITTER: 20% variance (2min on 10min interval)
+RandomizedDelaySec=2min
+FixedRandomDelay=true
+
+# Catch up if missed (ensures log analysis doesn't fall behind)
+Persistent=true
+
+[Install]
+WantedBy=timers.target

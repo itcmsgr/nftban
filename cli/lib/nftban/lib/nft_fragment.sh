@@ -1523,6 +1523,186 @@ EOF
 }
 
 # =============================================================================
+# HTTP BOT GUARD FRAGMENTS (v1.21.0)
+# =============================================================================
+
+# Render HTTP Bot Guard enforcement chain fragment
+# Order: allow(bypass) → ban(drop) → emergency(drop) → grey(throttle) → pending(light throttle) → suspect meter → return
+# Writes to: /etc/nftban/rules.d/15-http-botguard.nft
+nft_fragment_render_http_botguard() {
+    local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
+    local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+
+    # Suspect marking meter config
+    local suspect_rate="${HTTP_BOT_SUSPECT_RATE:-30/second}"
+    local suspect_burst="${HTTP_BOT_SUSPECT_BURST:-60}"
+    local suspect_timeout="${HTTP_BOT_SUSPECT_TIMEOUT:-5m}"
+
+    # Grey throttle config
+    local grey_rate="${HTTP_BOT_GREY_RATE:-5/second}"
+    local grey_burst="${HTTP_BOT_GREY_BURST:-10}"
+
+    # Pending throttle config
+    local pending_rate="${HTTP_BOT_PENDING_RATE:-15/second}"
+    local pending_burst="${HTTP_BOT_PENDING_BURST:-30}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/15-http-botguard.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan HTTP Bot Guard - Enforcement Chain
+# Generated: ${timestamp}
+# Managed by nftband - DO NOT EDIT MANUALLY
+#
+# Architecture: Kernel DETECTS, Go DECIDES, Kernel ENFORCES
+# Set ownership: suspect=kernel, allow/ban/grey/emergency/pending=Go
+#
+# Chain order (most permissive → most restrictive):
+#   1. Allow set: bypass throttle (verified crawlers)
+#   2. Ban set: full drop (denied/malicious bots)
+#   3. Emergency set: immediate drop (pressure mode)
+#   4. Grey set: heavy throttle (suspicious bots)
+#   5. Pending set: light throttle (awaiting classification)
+#   6. Suspect meter: mark new suspects for Go classification
+#   7. Return: back to input chain
+
+# --- IPv4 HTTP Bot Guard ---
+add chain ${table_ipv4} ${chain}
+flush chain ${table_ipv4} ${chain}
+
+# 1. Allow set: verified crawlers bypass throttle
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_allow accept comment "BotGuard: verified crawler allow"
+
+# 2. Ban set: denied/malicious bots get dropped
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter drop comment "BotGuard: denied bot ban"
+
+# 3. Emergency set: pressure mode immediate drop
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_emergency counter drop comment "BotGuard: emergency drop"
+
+# 4. Grey set: suspicious bots get heavy throttle
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new meter http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} counter drop comment "BotGuard: grey throttle exceeded"
+
+# 5. Pending set: awaiting classification, light throttle
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new meter http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} counter drop comment "BotGuard: pending throttle exceeded"
+
+# 6. Suspect meter: mark IPs exceeding rate for Go classification
+add rule ${table_ipv4} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter { ip saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect { ip saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
+
+# 7. Return to input chain
+add rule ${table_ipv4} ${chain} return
+
+# --- IPv6 HTTP Bot Guard ---
+add chain ${table_ipv6} ${chain}
+flush chain ${table_ipv6} ${chain}
+
+# 1. Allow set
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_allow6 accept comment "BotGuard: verified crawler allow"
+
+# 2. Ban set
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter drop comment "BotGuard: denied bot ban"
+
+# 3. Emergency set
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_emergency6 counter drop comment "BotGuard: emergency drop"
+
+# 4. Grey set
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new meter http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} counter drop comment "BotGuard: grey throttle exceeded"
+
+# 5. Pending set
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new meter http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} counter drop comment "BotGuard: pending throttle exceeded"
+
+# 6. Suspect meter
+add rule ${table_ipv6} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter6 { ip6 saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect6 { ip6 saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
+
+# 7. Return
+add rule ${table_ipv6} ${chain} return
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
+
+# Render HTTP Bot Guard jump rules fragment
+# Jump is placed BEFORE ddos_protection so bot classification runs first
+nft_fragment_render_http_botguard_jump() {
+    local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
+    local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/16-http-botguard-jump.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan HTTP Bot Guard - Jump Rules
+# Generated: ${timestamp}
+# Managed by nftband - DO NOT EDIT MANUALLY
+
+add rule ${table_ipv4} input tcp dport {80, 443} jump ${chain} comment "HTTP Bot Guard"
+add rule ${table_ipv6} input tcp dport {80, 443} jump ${chain} comment "HTTP Bot Guard"
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
+
+# Render HTTP Bot Guard cleanup fragment (for disable)
+nft_fragment_render_http_botguard_cleanup() {
+    local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
+    local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/99-http-botguard-cleanup.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan HTTP Bot Guard - CLEANUP
+# Generated: ${timestamp}
+# Managed by nftband
+
+# Flush chains (removes all rules but keeps chain for reference safety)
+flush chain ${table_ipv4} ${chain}
+flush chain ${table_ipv6} ${chain}
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -1641,6 +1821,19 @@ nft_fragment_enable_module() {
                 nft_fragment_apply "$jump_path" || return 1
             fi
             ;;
+        http-botguard|http_botguard|botguard)
+            fragment_path=$(nft_fragment_render_http_botguard) || return 1
+            nft_fragment_apply "$fragment_path" || return 1
+
+            # Add jump if not present
+            local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+            local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+            if ! nft_fragment_has_jump "$table_ipv4" "$chain"; then
+                local jump_path
+                jump_path=$(nft_fragment_render_http_botguard_jump) || return 1
+                nft_fragment_apply "$jump_path" || return 1
+            fi
+            ;;
         *)
             echo "ERROR: Unknown module: $module" >&2
             return 1
@@ -1687,6 +1880,10 @@ nft_fragment_disable_module() {
             ;;
         ddos-penalty|ddos_penalty)
             fragment_path=$(nft_fragment_render_ddos_penalty_cleanup) || return 1
+            nft_fragment_apply "$fragment_path" || return 1
+            ;;
+        http-botguard|http_botguard|botguard)
+            fragment_path=$(nft_fragment_render_http_botguard_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         *)
@@ -1739,6 +1936,9 @@ export -f nft_fragment_render_ddos_penalty_sets
 export -f nft_fragment_render_ddos_penalty_enforce
 export -f nft_fragment_render_ddos_penalty_jump
 export -f nft_fragment_render_ddos_penalty_cleanup
+export -f nft_fragment_render_http_botguard
+export -f nft_fragment_render_http_botguard_jump
+export -f nft_fragment_render_http_botguard_cleanup
 export -f nft_fragment_render_ports
 export -f nft_fragment_has_jump
 export -f nft_fragment_enable_module
@@ -1775,6 +1975,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             nft_fragment_render_ddos_penalty_sets
             nft_fragment_render_ddos_penalty_enforce
             ;;
+        render-botguard)
+            nft_fragment_render_http_botguard
+            ;;
         enable)
             nft_fragment_enable_module "${2:-}"
             ;;
@@ -1785,7 +1988,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             nft_fragment_list
             ;;
         *)
-            echo "Usage: $0 {render-portscan|render-sanity|render-synproxy|render-prefix|render-ddos|render-ban|render-penalty|enable <module>|disable <module>|list}"
+            echo "Usage: $0 {render-portscan|render-sanity|render-synproxy|render-prefix|render-ddos|render-ban|render-penalty|render-botguard|enable <module>|disable <module>|list}"
             exit 1
             ;;
     esac

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.21.0 - Bot Scanner Processor (Clock 3)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Process access logs via botscan and write batch_signals.jsonl
+#
+# meta:name="nftban_botscan_processor"
+# meta:type="worker"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-03-14"
+#
+# meta:description="Systemd worker that runs botscan and writes batch signals for Go daemon"
+# meta:input="Apache/Nginx access logs"
+# meta:output="batch_signals.jsonl for Go daemon (Clock 2)"
+# meta:depends="bash,nftban_botscan.sh"
+#
+# meta:trigger="systemd-timer"
+# meta:systemd_timer="nftban-botscan.timer"
+# meta:systemd_service="nftban-botscan.service"
+# meta:interval_seconds="600"
+#
+# meta:inventory.files="nftban_botscan.sh"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-botscan.timer,nftban-botscan.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+#
+# Exit codes:
+#   0 - Processing completed successfully
+#   1 - Processing failed
+#   2 - Lock held by another instance (normal, skip)
+# =============================================================================
+
+set -Eeuo pipefail
+
+# Set NFTBan library directory (only if not already set - avoids readonly conflict)
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
+
+# Lock file to prevent concurrent runs
+LOCK_FILE="/run/nftban/botscan-processor.lock"
+
+# Acquire lock (non-blocking)
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "[botscan-processor] Another instance running, skipping" >&2
+    exit 0
+fi
+
+# Cleanup on exit
+cleanup() {
+    flock -u 9 2>/dev/null || true
+    rm -f "$LOCK_FILE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Source botscan module
+# shellcheck source=/dev/null
+if [[ ! -f "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" ]]; then
+    echo "ERROR: Cannot find nftban_botscan.sh at ${NFTBAN_LIB_DIR}/core/nftban_botscan.sh" >&2
+    exit 1
+fi
+source "${NFTBAN_LIB_DIR}/core/nftban_botscan.sh"
+
+# Enable batch signal mode (tells botscan to write JSONL instead of direct ban)
+export BOTSCAN_BATCH_SIGNAL_MODE="true"
+
+# Log startup
+echo "[botscan-processor] Clock 3 batch scan started"
+
+# Run botscan check (processes access logs, writes batch_signals.jsonl)
+result=0
+nftban_botscan_check 2>&1 || result=$?
+
+case $result in
+    0)
+        echo "[botscan-processor] Batch scan completed successfully"
+        exit 0
+        ;;
+    *)
+        echo "[botscan-processor] Batch scan returned rc=$result" >&2
+        # Exit 0 to avoid triggering OnFailure for transient errors
+        exit 0
+        ;;
+esac
