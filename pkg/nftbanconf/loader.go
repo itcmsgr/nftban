@@ -221,7 +221,9 @@ func MustLoad() *Config {
 // Get returns the cached config (Load must be called first)
 func Get() *Config {
 	if globalConfig == nil {
-		Load() // Auto-load if not loaded
+		if _, err := Load(); err != nil {
+			log.Printf("nftbanconf: auto-load failed: %v", err)
+		}
 	}
 	return globalConfig
 }
@@ -229,7 +231,9 @@ func Get() *Config {
 // GetPaths returns derived paths
 func GetPaths() *Paths {
 	if globalPaths == nil {
-		Load()
+		if _, err := Load(); err != nil {
+			log.Printf("nftbanconf: auto-load failed: %v", err)
+		}
 	}
 	return globalPaths
 }
@@ -251,7 +255,9 @@ func MustLoadPaths() *Paths {
 // GetTimeouts returns command timeouts
 func GetTimeouts() *Timeouts {
 	if globalTimeouts == nil {
-		Load()
+		if _, err := Load(); err != nil {
+			log.Printf("nftbanconf: auto-load failed: %v", err)
+		}
 	}
 	return globalTimeouts
 }
@@ -259,7 +265,9 @@ func GetTimeouts() *Timeouts {
 // GetNFT returns NFTables references
 func GetNFT() *NFTables {
 	if globalNFT == nil {
-		Load()
+		if _, err := Load(); err != nil {
+			log.Printf("nftbanconf: auto-load failed: %v", err)
+		}
 	}
 	return globalNFT
 }
