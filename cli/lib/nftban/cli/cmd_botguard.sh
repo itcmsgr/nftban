@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.20.0 - HTTP Bot Guard CLI Handler
+# NFTBan v1.21.0 - HTTP Bot Guard CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI for HTTP Bot Guard — enable, disable, status, test
@@ -57,6 +57,8 @@ COMMANDS:
     disable             Disable HTTP Bot Guard protection
     status              Show bot guard status and statistics
     test <ip>           Test classification for a specific IP
+    list [--set=NAME]   List IPs in bot guard sets
+    verify <ip>         Manual FCrDNS verification for an IP
     help                Show this help message
 
 DESCRIPTION:
@@ -64,7 +66,7 @@ DESCRIPTION:
     using a three-clock hybrid architecture:
 
       Clock 1 (Kernel):  nft meter marks suspect IPs per-packet
-      Clock 2 (Go 60s):  Classification loop reads suspects, classifies
+      Clock 2 (Go 60s):  Classification + FCrDNS verification loop
       Clock 3 (Shell):   Botscan batch pattern matching (10 min)
 
     Bot Guard is a SEPARATE module from DDoS protection. Both can run
@@ -73,13 +75,17 @@ DESCRIPTION:
 
 CONFIGURATION:
     /etc/nftban/conf.d/botguard/main.conf
-    /etc/nftban/conf.d/botguard/main.conf.local  (user overrides)
+    /etc/nftban/conf.d/botguard/main.conf.local       (user overrides)
+    /etc/nftban/conf.d/botguard/allowed_crawlers.conf  (verified bots)
+    /etc/nftban/conf.d/botguard/denied_crawlers.conf   (blocked bots)
 
 EXAMPLES:
-    nftban botguard enable         # Enable bot guard
-    nftban botguard status         # Show current status
-    nftban botguard test 1.2.3.4   # Test IP classification
-    nftban botguard status --json  # JSON output for scripting
+    nftban botguard enable                # Enable bot guard
+    nftban botguard status                # Show current status
+    nftban botguard test 1.2.3.4          # Test IP classification
+    nftban botguard list --set=allow      # Show verified crawlers
+    nftban botguard verify 66.249.79.1    # FCrDNS check (Googlebot)
+    nftban botguard status --json         # JSON output for scripting
 
 HELP
 }
@@ -142,11 +148,23 @@ _nftban_botguard_enable() {
 
     _botguard_config_set "HTTP_BOTGUARD_ENABLED" "true"
 
+    # Auto-restart nftband to activate immediately
+    local restart_ok="false"
+    if systemctl is-active nftband &>/dev/null; then
+        if systemctl restart nftband 2>/dev/null; then
+            restart_ok="true"
+        fi
+    fi
+
     if [[ "$json_mode" == "true" ]]; then
-        printf '{"status":"ok","message":"HTTP Bot Guard enabled","action":"restart_daemon"}\n'
+        printf '{"status":"ok","message":"HTTP Bot Guard enabled","daemon_restarted":%s}\n' "$restart_ok"
     else
         echo "HTTP Bot Guard enabled."
-        echo "Restart nftband to activate: systemctl restart nftband"
+        if [[ "$restart_ok" == "true" ]]; then
+            echo "Daemon restarted — Bot Guard is now active."
+        else
+            echo "Note: nftband not running. Start with: systemctl start nftband"
+        fi
     fi
 }
 
@@ -155,11 +173,23 @@ _nftban_botguard_disable() {
 
     _botguard_config_set "HTTP_BOTGUARD_ENABLED" "false"
 
+    # Auto-restart nftband to deactivate immediately
+    local restart_ok="false"
+    if systemctl is-active nftband &>/dev/null; then
+        if systemctl restart nftband 2>/dev/null; then
+            restart_ok="true"
+        fi
+    fi
+
     if [[ "$json_mode" == "true" ]]; then
-        printf '{"status":"ok","message":"HTTP Bot Guard disabled","action":"restart_daemon"}\n'
+        printf '{"status":"ok","message":"HTTP Bot Guard disabled","daemon_restarted":%s}\n' "$restart_ok"
     else
         echo "HTTP Bot Guard disabled."
-        echo "Restart nftband to deactivate: systemctl restart nftband"
+        if [[ "$restart_ok" == "true" ]]; then
+            echo "Daemon restarted — Bot Guard is now inactive."
+        else
+            echo "Note: nftband not running. No action needed."
+        fi
     fi
 }
 
@@ -254,6 +284,150 @@ _nftban_botguard_test() {
     fi
 }
 
+_nftban_botguard_list() {
+    local set_filter="${1:-all}"
+    local json_mode="${2:-false}"
+
+    # Parse --set= argument
+    case "$set_filter" in
+        --set=*) set_filter="${set_filter#--set=}" ;;
+    esac
+
+    local sets
+    case "$set_filter" in
+        allow)     sets="http_bot_allow" ;;
+        ban)       sets="http_bot_ban" ;;
+        grey)      sets="http_bot_grey" ;;
+        pending)   sets="http_bot_pending" ;;
+        suspect)   sets="http_bot_suspect" ;;
+        emergency) sets="http_bot_emergency" ;;
+        all)       sets="http_bot_suspect http_bot_pending http_bot_allow http_bot_grey http_bot_ban http_bot_emergency" ;;
+        *)
+            cmd_error "Unknown set: $set_filter. Use: allow, ban, grey, pending, suspect, emergency, all" "$json_mode"
+            return 1
+            ;;
+    esac
+
+    if [[ "$json_mode" == "true" ]]; then
+        printf '{"sets":['
+        local first="true"
+        for set_name in $sets; do
+            local ipv4_output ipv6_output
+            ipv4_output=$(nft list set ip nftban "$set_name" 2>/dev/null || true)
+            ipv6_output=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null || true)
+            if [[ "$first" == "true" ]]; then first="false"; else printf ','; fi
+            printf '{"name":"%s","ipv4":"%s","ipv6":"%s"}' \
+                "$set_name" \
+                "$(echo "$ipv4_output" | grep -c "timeout" 2>/dev/null || echo 0)" \
+                "$(echo "$ipv6_output" | grep -c "timeout" 2>/dev/null || echo 0)"
+        done
+        printf ']}\n'
+    else
+        for set_name in $sets; do
+            echo "=== $set_name (IPv4) ==="
+            if nft list set ip nftban "$set_name" 2>/dev/null; then
+                true
+            else
+                echo "  (set not found or empty)"
+            fi
+            echo ""
+            echo "=== ${set_name}6 (IPv6) ==="
+            if nft list set ip6 nftban "${set_name}6" 2>/dev/null; then
+                true
+            else
+                echo "  (set not found or empty)"
+            fi
+            echo ""
+        done
+    fi
+}
+
+_nftban_botguard_verify() {
+    local ip="${1:-}"
+    local json_mode="${2:-false}"
+
+    if [[ -z "$ip" ]]; then
+        cmd_error "Usage: nftban botguard verify <ip>" "$json_mode"
+        return 1
+    fi
+
+    # Step 1: Reverse DNS lookup
+    local ptr_result hostname
+    ptr_result=$(dig +short -x "$ip" 2>/dev/null || true)
+    hostname=$(echo "$ptr_result" | head -1 | sed 's/\.$//')
+
+    if [[ -z "$hostname" ]]; then
+        if [[ "$json_mode" == "true" ]]; then
+            printf '{"ip":"%s","status":"no_rdns","hostname":null,"forward_match":false}\n' "$ip"
+        else
+            echo "IP: $ip"
+            echo "Status: NO REVERSE DNS"
+            echo "No PTR record found"
+        fi
+        return 0
+    fi
+
+    # Step 2: Forward DNS confirmation
+    local fwd_result fwd_match="false"
+    if [[ "$ip" == *":"* ]]; then
+        fwd_result=$(dig +short AAAA "$hostname" 2>/dev/null || true)
+    else
+        fwd_result=$(dig +short A "$hostname" 2>/dev/null || true)
+    fi
+
+    if echo "$fwd_result" | grep -qF "$ip"; then
+        fwd_match="true"
+    fi
+
+    # Step 3: Check against allowed crawlers config
+    local bot_name="unknown"
+    local allowed_conf="/etc/nftban/conf.d/botguard/allowed_crawlers.conf"
+    if [[ -f "$allowed_conf" ]]; then
+        local host_lower
+        host_lower=$(echo "$hostname" | tr '[:upper:]' '[:lower:]')
+        while IFS='|' read -r name domains _rest; do
+            [[ "$name" =~ ^# ]] && continue
+            [[ -z "$name" ]] && continue
+            IFS=',' read -ra domain_list <<< "$domains"
+            for domain in "${domain_list[@]}"; do
+                domain=$(echo "$domain" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+                if [[ "$host_lower" == *".${domain}" || "$host_lower" == "$domain" ]]; then
+                    bot_name="$name"
+                    break 2
+                fi
+            done
+        done < "$allowed_conf"
+    fi
+
+    local status="failed"
+    if [[ "$fwd_match" == "true" && "$bot_name" != "unknown" ]]; then
+        status="verified"
+    elif [[ "$fwd_match" == "true" ]]; then
+        status="forward_confirmed"
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        printf '{"ip":"%s","status":"%s","hostname":"%s","forward_match":%s,"bot_name":"%s"}\n' \
+            "$ip" "$status" "$hostname" "$fwd_match" "$bot_name"
+    else
+        echo "=== FCrDNS Verification ==="
+        echo ""
+        echo "  IP:               $ip"
+        echo "  Reverse DNS:      $hostname"
+        echo "  Forward match:    $fwd_match"
+        echo "  Bot identity:     $bot_name"
+        echo "  Status:           $status"
+        echo ""
+        if [[ "$status" == "verified" ]]; then
+            echo "  Result: VERIFIED — $bot_name crawler confirmed via FCrDNS"
+        elif [[ "$status" == "forward_confirmed" ]]; then
+            echo "  Result: Forward DNS confirmed but hostname not in allowed list"
+        else
+            echo "  Result: FAILED — FCrDNS verification did not pass"
+        fi
+    fi
+}
+
 # =============================================================================
 # MAIN DISPATCH
 # =============================================================================
@@ -286,11 +460,21 @@ nftban_cmd_botguard() {
             shift || true
             _nftban_botguard_test "$ip" "$json_mode"
             ;;
+        list)
+            local set_arg="${1:---set=all}"
+            shift || true
+            _nftban_botguard_list "$set_arg" "$json_mode"
+            ;;
+        verify)
+            local ip="${1:-}"
+            shift || true
+            _nftban_botguard_verify "$ip" "$json_mode"
+            ;;
         help|--help|-h)
             _nftban_botguard_help
             ;;
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, test, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, status, test, list, verify, help" "$json_mode"
             return 1
             ;;
     esac
@@ -306,6 +490,8 @@ export -f _nftban_botguard_enable
 export -f _nftban_botguard_disable
 export -f _nftban_botguard_status
 export -f _nftban_botguard_test
+export -f _nftban_botguard_list
+export -f _nftban_botguard_verify
 export -f _botguard_config_get
 export -f _botguard_config_set
 

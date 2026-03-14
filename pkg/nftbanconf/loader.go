@@ -138,6 +138,10 @@ type Paths struct {
 	MaintenanceLog string
 	CLIErrorsLog string
 
+	// Botguard log files
+	BotguardLog          string
+	BotguardDecisionsLog string
+
 	// Suricata log files
 	SuricataEveLog   string
 	SuricataFastLog  string
@@ -633,6 +637,10 @@ func derivePaths(cfg *Config) *Paths {
 		CronLog:        cfg.LogDir + "/cron.log",
 		MaintenanceLog: cfg.LogDir + "/maintenance.log",
 		CLIErrorsLog:   cfg.LogDir + "/cli_errors.log",
+
+		// Botguard log files
+		BotguardLog:          cfg.LogDir + "/botguard/botguard.log",
+		BotguardDecisionsLog: cfg.LogDir + "/botguard/decisions.log",
 
 		// Suricata log files (use SuricataLogDir if set, else default)
 		SuricataEveLog:   cfg.SuricataLogDir + "/eve-alerts.json",

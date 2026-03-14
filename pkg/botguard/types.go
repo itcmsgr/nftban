@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.20.0 - HTTP Bot Guard: Intelligent Crawler Detection & Protection
+// NFTBan v1.21.0 - HTTP Bot Guard: Intelligent Crawler Detection & Protection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Package: botguard
@@ -94,16 +94,67 @@ func (s IPState) SetName6() string {
 	return name + "6"
 }
 
+// VerifyStatus represents the result of an FCrDNS verification.
+type VerifyStatus int
+
+const (
+	VerifyNone     VerifyStatus = iota // Not yet verified
+	VerifyVerified                     // FCrDNS confirmed: rDNS matches allowed domain + fwd confirms
+	VerifyFailed                       // FCrDNS failed: rDNS does not match or fwd mismatch
+	VerifyTimeout                      // DNS lookup timed out
+	VerifyNoRDNS                       // No reverse DNS record found
+)
+
+// String returns the human-readable verify status name.
+func (v VerifyStatus) String() string {
+	switch v {
+	case VerifyNone:
+		return "none"
+	case VerifyVerified:
+		return "verified"
+	case VerifyFailed:
+		return "failed"
+	case VerifyTimeout:
+		return "timeout"
+	case VerifyNoRDNS:
+		return "no_rdns"
+	default:
+		return "invalid"
+	}
+}
+
+// BotConfig describes an allowed or known crawler identity.
+// Loaded from allowed_crawlers.conf (pipe-delimited).
+type BotConfig struct {
+	Name       string   // e.g. "GOOGLEBOT"
+	Domains    []string // Suffix match domains (e.g. ["googlebot.com", "google.com"])
+	VerifyMode string   // Verification method: "fcrdns"
+	MaxConn    int      // Max concurrent connections allowed
+	MaxRate    string   // nft rate string (e.g. "80/second")
+	Burst      int      // nft burst value
+}
+
+// ClassifyResult is the decision returned by the Classifier.
+type ClassifyResult struct {
+	State   IPState      // Target state (allow, ban, grey, pending)
+	Reason  string       // Why this decision was made
+	BotName string       // Identified bot name (if any)
+	Verify  VerifyStatus // FCrDNS verification result
+}
+
 // IPRecord tracks the classification state and history for one IP.
 type IPRecord struct {
-	IP        netip.Addr // Parsed IP address (IPv4 or IPv6)
-	State     IPState    // Current classification
-	Score     int32      // Accumulated threat score
-	FirstSeen time.Time  // When first detected as suspect
-	LastSeen  time.Time  // Last time seen in suspect set
-	ExpiresAt time.Time  // When current state expires
-	HitCount  int64      // Number of times seen in suspect set
-	Reasons   []string   // Why this IP was flagged (for logging)
+	IP         netip.Addr   // Parsed IP address (IPv4 or IPv6)
+	State      IPState      // Current classification
+	Score      int32        // Accumulated threat score
+	FirstSeen  time.Time    // When first detected as suspect
+	LastSeen   time.Time    // Last time seen in suspect set
+	ExpiresAt  time.Time    // When current state expires
+	HitCount   int64        // Number of times seen in suspect set
+	Reasons    []string     // Why this IP was flagged (for logging)
+	BotName    string       // Identified bot name (empty if unknown)
+	VerifiedAt time.Time    // When FCrDNS verification completed (zero if not verified)
+	VerifyStatus VerifyStatus // Result of FCrDNS verification
 }
 
 // IsIPv6 returns true if this record tracks an IPv6 address.
@@ -133,6 +184,11 @@ type GuardStats struct {
 	LastTickDuration time.Duration // Duration of last tick
 	LastTickTime     time.Time     // When last tick completed
 	PressureMode     bool          // Whether currently in pressure mode
+	VerifyEnqueued        int64         // IPs enqueued for FCrDNS verification
+	VerifyCompleted       int64         // FCrDNS verifications completed
+	VerifyVerified        int64         // IPs that passed FCrDNS
+	VerifyFailed          int64         // IPs that failed FCrDNS
+	BatchSignalsProcessed int64         // Batch signals consumed from Clock 3
 }
 
 // BatchSignal represents a signal from the shell botscan (Clock 3).

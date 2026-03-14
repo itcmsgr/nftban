@@ -49,6 +49,7 @@ const (
 	LogCategoryMaintenance LogCategory = "maintenance"
 	LogCategoryCLIErrors   LogCategory = "cli_errors"
 	LogCategorySuricata    LogCategory = "suricata"
+	LogCategoryBotguard    LogCategory = "botguard"
 	LogCategoryDebug       LogCategory = "debug"
 )
 
@@ -93,6 +94,8 @@ func GetLogFile(category LogCategory) string {
 		return paths.CLIErrorsLog
 	case LogCategorySuricata:
 		return paths.SuricataMainLog
+	case LogCategoryBotguard:
+		return paths.BotguardLog
 	case LogCategoryDebug:
 		cfg := Get()
 		if cfg != nil {
@@ -189,6 +192,20 @@ func AllLogFiles() []LogFileInfo {
 			Description: "CLI command errors and exceptions",
 			Rotation:    "daily",
 			Retain:      7,
+		},
+		{
+			Category:    LogCategoryBotguard,
+			Path:        paths.BotguardLog,
+			Description: "HTTP Bot Guard classification log",
+			Rotation:    "daily",
+			Retain:      14,
+		},
+		{
+			Category:    LogCategoryBotguard,
+			Path:        paths.BotguardDecisionsLog,
+			Description: "HTTP Bot Guard decision audit log",
+			Rotation:    "daily",
+			Retain:      30,
 		},
 		{
 			Category:    LogCategoryDebug,
