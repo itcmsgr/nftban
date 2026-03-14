@@ -1115,9 +1115,9 @@ echo "[NFTBan] Configuring NFTBan v%{version}..."
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,rbl}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
 mkdir -p /var/cache/nftban/health
@@ -1787,6 +1787,8 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botscan/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/botguard
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
@@ -2340,9 +2342,9 @@ usermod -a -G nftban root 2>/dev/null || true
 
 # STEP 3: Create FHS directories
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,rbl}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,botguard}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
 mkdir -p /var/cache/nftban/health
@@ -2818,6 +2820,7 @@ PRERM
 /etc/nftban/conf.d/login/main.conf
 /etc/nftban/conf.d/suricata/interfaces.conf
 /etc/nftban/conf.d/botscan/main.conf
+/etc/nftban/conf.d/botguard/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
 /etc/nftban/conf.d/metrics.conf
