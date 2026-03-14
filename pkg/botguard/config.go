@@ -27,6 +27,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -100,7 +101,7 @@ func DefaultConfig() *Config {
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path)) // #nosec G304 -- path from /etc/nftban/conf.d/ (trusted config dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No config file = use defaults (module disabled)
