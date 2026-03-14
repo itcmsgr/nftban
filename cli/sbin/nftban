@@ -196,6 +196,7 @@ nftban_complete() {
         echo "portscan"
         echo "login"
         echo "botscan"
+        echo "botguard"
         echo "modes"
         echo "feeds"
         echo "rbl"
@@ -472,6 +473,13 @@ nftban_complete() {
                 echo "check"
                 echo "patterns"
                 echo "history"
+                echo "test"
+                echo "help"
+                ;;
+            botguard)
+                echo "enable"
+                echo "disable"
+                echo "status"
                 echo "test"
                 echo "help"
                 ;;
@@ -1017,6 +1025,9 @@ main() {
                     ;;
                 ddso|dods)
                     suggestion="ddos"
+                    ;;
+                botgaurd|botgurd|bodguard|bot-guard)
+                    suggestion="botguard"
                     ;;
                 portscna|portsacn|posrtscan)
                     suggestion="portscan"

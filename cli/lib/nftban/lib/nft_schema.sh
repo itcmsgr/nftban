@@ -126,6 +126,7 @@ declare -g -A NFTBAN_IPV4_HELPER_CHAINS=(
     ["connlimit_protection"]="optional|Connection limit protection (deprecated - use ddos_protection)"
     ["portflood_protection"]="optional|Port flood protection (deprecated - use ddos_protection)"
     ["icmp_protection"]="optional|ICMP flood protection (deprecated - use ddos_protection)"
+    ["http_bot_guard"]="optional|HTTP Bot Guard classification (v1.20.0)"
 )
 
 # =============================================================================
@@ -175,6 +176,38 @@ declare -g -A NFTBAN_IPV6_HELPER_CHAINS=(
     ["connlimit_protection"]="optional|Connection limit protection (deprecated - use ddos_protection)"
     ["portflood_protection"]="optional|Port flood protection (deprecated - use ddos_protection)"
     ["icmp_protection"]="optional|ICMP flood protection (deprecated - use ddos_protection)"
+    ["http_bot_guard"]="optional|HTTP Bot Guard classification (v1.20.0)"
+)
+
+# =============================================================================
+# OPTIONAL MODULE SETS (created by Go daemon when modules are enabled)
+# =============================================================================
+# These sets are NOT mandatory — they exist only when the corresponding
+# protection module is enabled. The Go daemon creates them at runtime.
+# Schema validation treats these as OPTIONAL (warning, not error).
+# =============================================================================
+
+# HTTP Bot Guard sets (v1.20.0) — created by nftband when botguard is enabled
+# Set ownership: http_bot_suspect is kernel-written (nft meter rule),
+# all others are Go-written via OpQueue (netlink)
+# shellcheck disable=SC2034
+declare -g -A NFTBAN_IPV4_MODULE_SETS=(
+    ["http_bot_suspect"]="ipv4_addr|timeout|Kernel-populated HTTP bot suspects (meter rule)"
+    ["http_bot_pending"]="ipv4_addr|timeout|Awaiting Go classification (light throttle)"
+    ["http_bot_allow"]="ipv4_addr|timeout|Verified allowed crawlers (bypass throttle)"
+    ["http_bot_grey"]="ipv4_addr|timeout|Suspicious bots, throttled via penalty ladder"
+    ["http_bot_ban"]="ipv4_addr|timeout|Denied/malicious bots (full drop)"
+    ["http_bot_emergency"]="ipv4_addr|timeout|Emergency pressure blocks (immediate drop)"
+)
+
+# shellcheck disable=SC2034
+declare -g -A NFTBAN_IPV6_MODULE_SETS=(
+    ["http_bot_suspect6"]="ipv6_addr|timeout|Kernel-populated HTTP bot suspects (meter rule)"
+    ["http_bot_pending6"]="ipv6_addr|timeout|Awaiting Go classification (light throttle)"
+    ["http_bot_allow6"]="ipv6_addr|timeout|Verified allowed crawlers (bypass throttle)"
+    ["http_bot_grey6"]="ipv6_addr|timeout|Suspicious bots, throttled via penalty ladder"
+    ["http_bot_ban6"]="ipv6_addr|timeout|Denied/malicious bots (full drop)"
+    ["http_bot_emergency6"]="ipv6_addr|timeout|Emergency pressure blocks (immediate drop)"
 )
 
 # =============================================================================
@@ -423,6 +456,18 @@ nftban_nft_validate_sets() {
         fi
     done
 
+    # Validate optional module sets (warning only — these sets exist only when module is enabled)
+    for set_name in "${!NFTBAN_IPV4_MODULE_SETS[@]}"; do
+        if ! nft list set "${NFTBAN_TABLE_IPV4}" "$set_name" &>/dev/null; then
+            echo "INFO: Optional module set not present in ${NFTBAN_TABLE_IPV4}: $set_name" >&2
+        fi
+    done
+    for set_name in "${!NFTBAN_IPV6_MODULE_SETS[@]}"; do
+        if ! nft list set "${NFTBAN_TABLE_IPV6}" "$set_name" &>/dev/null; then
+            echo "INFO: Optional module set not present in ${NFTBAN_TABLE_IPV6}: $set_name" >&2
+        fi
+    done
+
     return $status
 }
 
@@ -574,6 +619,15 @@ nftban_nft_count_all_sets() {
     udp_in=$(nftban_nft_count_set ip nftban udp_ports_in 2>/dev/null || echo 0)
     udp_out=$(nftban_nft_count_set ip nftban udp_ports_out 2>/dev/null || echo 0)
 
+    # HTTP Bot Guard module sets (optional — zero if module not enabled)
+    local bg_suspect bg_allow bg_ban bg_grey bg_emergency bg_pending
+    bg_suspect=$(nftban_nft_count_set ip nftban http_bot_suspect 2>/dev/null || echo 0)
+    bg_allow=$(nftban_nft_count_set ip nftban http_bot_allow 2>/dev/null || echo 0)
+    bg_ban=$(nftban_nft_count_set ip nftban http_bot_ban 2>/dev/null || echo 0)
+    bg_grey=$(nftban_nft_count_set ip nftban http_bot_grey 2>/dev/null || echo 0)
+    bg_emergency=$(nftban_nft_count_set ip nftban http_bot_emergency 2>/dev/null || echo 0)
+    bg_pending=$(nftban_nft_count_set ip nftban http_bot_pending 2>/dev/null || echo 0)
+
     cat <<EOF
 {
   "schema_version": "2.1",
@@ -583,6 +637,12 @@ nftban_nft_count_all_sets() {
     "tcp_in": $tcp_in, "tcp_out": $tcp_out,
     "udp_in": $udp_in, "udp_out": $udp_out,
     "total_open": $((tcp_in + udp_in))
+  },
+  "botguard": {
+    "suspect": $bg_suspect, "pending": $bg_pending,
+    "allow": $bg_allow, "grey": $bg_grey,
+    "ban": $bg_ban, "emergency": $bg_emergency,
+    "total_tracked": $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency))
   },
   "totals": {
     "blocked_ipv4": $bl_v4,
