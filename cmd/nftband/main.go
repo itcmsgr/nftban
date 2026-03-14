@@ -69,6 +69,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/itcmsgr/nftban/pkg/feeds"
 	"github.com/itcmsgr/nftban/pkg/geoban"
+	"github.com/itcmsgr/nftban/pkg/botguard"
 	"github.com/itcmsgr/nftban/pkg/loginmon"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbackend"
@@ -113,6 +114,13 @@ var knownNFTBanSets = map[string]bool{
 	"geoban_ipv4": true, "geoban_ipv6": true,
 	"tcp_ports_in": true, "tcp_ports_out": true,
 	"udp_ports_in": true, "udp_ports_out": true,
+	// HTTP Bot Guard sets (v1.20.0)
+	"http_bot_suspect": true, "http_bot_suspect6": true,
+	"http_bot_allow": true, "http_bot_allow6": true,
+	"http_bot_ban": true, "http_bot_ban6": true,
+	"http_bot_grey": true, "http_bot_grey6": true,
+	"http_bot_emergency": true, "http_bot_emergency6": true,
+	"http_bot_pending": true, "http_bot_pending6": true,
 }
 
 func validNFTBanSet(set string) bool {
@@ -565,6 +573,13 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("failed to initialize modules: %w", err)
 	}
 
+	// Wire OpQueue to bot guard module (needs OpQueue for set enforcement)
+	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
+		if bg, ok := bgMod.(*botguard.Module); ok && d.opQueue != nil {
+			bg.InitEnforcer(d.opQueue)
+		}
+	}
+
 	// Subscribe event bus logger
 	d.bus.SubscribeAll(func(e eventbus.Event) {
 		log.Printf("[EVENT] %s: %s ip=%s user=%s msg=%s",
@@ -629,6 +644,8 @@ func (d *Daemon) Run() error {
 				banSource = banlog.SourceFeeds
 			case strings.Contains(e.Source, "suricata"):
 				banSource = banlog.SourceSuricata
+			case strings.Contains(e.Source, "botguard"):
+				banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
 			}
 			country := lookupCountry(e.IP)
 			_ = banlog.LogBanWithReason(e.IP, banSource, country, reason)
@@ -774,6 +791,9 @@ func (d *Daemon) registerModules() {
 
 	// Register Login Monitor module (pure Go - replaces fail2ban)
 	d.registry.Register(loginmon.New(), loginmon.Descriptor())
+
+	// Register HTTP Bot Guard module (v1.20.0)
+	d.registry.Register(botguard.New(), botguard.Descriptor())
 
 	// TODO: Register more modules as they are implemented
 	// d.registry.Register(suricata.NewWatcher(), suricata.Descriptor())
