@@ -581,14 +581,16 @@ func (m *Module) processBatchSignals() {
 	if err := scanner.Err(); err != nil {
 		log.Printf("[botguard] batch signal scanner error: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		log.Printf("[botguard] batch signal file close error: %v", err)
+	}
 
 	if len(signals) == 0 {
 		return
 	}
 
 	// Truncate the file after reading (atomic: write empty file)
-	if err := os.WriteFile(signalFile, nil, 0640); err != nil { // #nosec G306 -- nftban group needs read
+	if err := os.WriteFile(signalFile, nil, 0600); err != nil { // #nosec G306 -- truncate to empty
 		log.Printf("[botguard] batch signal truncate error: %v", err)
 	}
 
@@ -654,7 +656,11 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 
 	// Apply new state
 	record.State = newState
-	record.Score = int32(sig.Score)
+	score := sig.Score
+	if score > 100 {
+		score = 100
+	}
+	record.Score = int32(score) // #nosec G115 -- clamped to [0,100]
 	record.LastSeen = time.Now()
 	for _, reason := range sig.Reasons {
 		record.Reasons = append(record.Reasons, "batch:"+reason)
