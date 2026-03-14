@@ -57,15 +57,17 @@ func NewLogger(logDir string) (*Logger, error) {
 	}
 
 	mainPath := filepath.Join(logDir, "botguard.log")
-	mainFile, err := os.OpenFile(filepath.Clean(mainPath), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640) // #nosec G304 -- path from nftbanconf (trusted)
+	mainFile, err := os.OpenFile(filepath.Clean(mainPath), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G304 -- path from nftbanconf (trusted)
 	if err != nil {
 		return nil, fmt.Errorf("open botguard.log: %w", err)
 	}
 
 	decisionsPath := filepath.Join(logDir, "decisions.log")
-	decisionsFile, err := os.OpenFile(filepath.Clean(decisionsPath), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640) // #nosec G304 -- path from nftbanconf (trusted)
+	decisionsFile, err := os.OpenFile(filepath.Clean(decisionsPath), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G304 -- path from nftbanconf (trusted)
 	if err != nil {
-		mainFile.Close()
+		if closeErr := mainFile.Close(); closeErr != nil {
+			return nil, fmt.Errorf("open decisions.log: %w (also failed to close main: %v)", err, closeErr)
+		}
 		return nil, fmt.Errorf("open decisions.log: %w", err)
 	}
 
