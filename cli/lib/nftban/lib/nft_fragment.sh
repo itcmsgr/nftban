@@ -885,10 +885,18 @@ nft_fragment_render_ddos_classic() {
     local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-100}"
     local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-20}"
 
+    # HTTP new connection rate limits (per source IP)
+    local http_new_rate="${DDOS_CLASSIC_HTTP_NEW_RATE:-50/second}"
+    local http_new_burst="${DDOS_CLASSIC_HTTP_NEW_BURST:-100}"
+    local https_new_rate="${DDOS_CLASSIC_HTTPS_NEW_RATE:-50/second}"
+    local https_new_burst="${DDOS_CLASSIC_HTTPS_NEW_BURST:-100}"
+
     # Meter names
     local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
     local icmp_meter="${DDOS_CLASSIC_ICMP_METER:-ddos_icmp_flood}"
     local udp_meter="${DDOS_CLASSIC_UDP_METER:-ddos_udp_flood}"
+    local http_meter="${DDOS_CLASSIC_HTTP_METER:-ddos_http_rate}"
+    local https_meter="${DDOS_CLASSIC_HTTPS_METER:-ddos_https_rate}"
 
     nft_fragment_init || return 1
 
@@ -906,7 +914,8 @@ nft_fragment_render_ddos_classic() {
 # Thresholds:
 #   SYN Rate: ${syn_rate} burst ${syn_burst}
 #   SSH Conn: max ${ssh_limit}/IP
-#   HTTP Conn: max ${http_limit}/IP
+#   HTTP Conn: max ${http_limit}/IP, New rate: ${http_new_rate} burst ${http_new_burst}
+#   HTTPS Conn: max ${https_limit}/IP, New rate: ${https_new_rate} burst ${https_new_burst}
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
 
@@ -923,6 +932,12 @@ add rule ${table_ipv4} ${chain} tcp dport 22 ct state new ct count over ${ssh_li
 add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter drop comment "HTTP: max ${http_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter drop comment "HTTPS: max ${https_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+
+# HTTP/HTTPS New Connection Rate Limiting (per source IP)
+add rule ${table_ipv4} ${chain} tcp dport 80 ct state new meter ${http_meter} { ip saddr limit rate ${http_new_rate} burst ${http_new_burst} packets } return comment "HTTP: new rate OK"
+add rule ${table_ipv4} ${chain} tcp dport 80 ct state new counter drop comment "HTTP: new rate exceeded"
+add rule ${table_ipv4} ${chain} tcp dport 443 ct state new meter ${https_meter} { ip saddr limit rate ${https_new_rate} burst ${https_new_burst} packets } return comment "HTTPS: new rate OK"
+add rule ${table_ipv4} ${chain} tcp dport 443 ct state new counter drop comment "HTTPS: new rate exceeded"
 
 # ICMP Rate Limiting
 add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
@@ -943,9 +958,16 @@ flush chain ${table_ipv6} ${chain}
 add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
 add rule ${table_ipv6} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
 
-# Connection Limits
+# Connection Limits per Service
 add rule ${table_ipv6} ${chain} tcp dport 22 ct state new ct count over ${ssh_limit} counter drop comment "SSH: max ${ssh_limit} conn/IP"
-add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter drop comment "HTTP(S): max ${http_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter drop comment "HTTP: max ${http_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter drop comment "HTTPS: max ${https_limit} conn/IP"
+
+# HTTP/HTTPS New Connection Rate Limiting (per source IP)
+add rule ${table_ipv6} ${chain} tcp dport 80 ct state new meter ${http_meter}6 { ip6 saddr limit rate ${http_new_rate} burst ${http_new_burst} packets } return comment "HTTP: new rate OK"
+add rule ${table_ipv6} ${chain} tcp dport 80 ct state new counter drop comment "HTTP: new rate exceeded"
+add rule ${table_ipv6} ${chain} tcp dport 443 ct state new meter ${https_meter}6 { ip6 saddr limit rate ${https_new_rate} burst ${https_new_burst} packets } return comment "HTTPS: new rate OK"
+add rule ${table_ipv6} ${chain} tcp dport 443 ct state new counter drop comment "HTTPS: new rate exceeded"
 
 # ICMPv6 Rate Limiting
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"

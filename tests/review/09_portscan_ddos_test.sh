@@ -261,7 +261,7 @@ else
 fi
 
 # Verify thresholds also exist in config
-for var in SYN_RATE SYN_BURST SSH_CONN_LIMIT HTTP_CONN_LIMIT ICMP_RATE UDP_RATE; do
+for var in SYN_RATE SYN_BURST SSH_CONN_LIMIT HTTP_CONN_LIMIT HTTPS_CONN_LIMIT HTTP_NEW_RATE HTTP_NEW_BURST HTTPS_NEW_RATE HTTPS_NEW_BURST ICMP_RATE UDP_RATE; do
     if _has "^DDOS_CLASSIC_${var}=" "$CONF_DDOS_CLASSIC"; then
         check "DDOS_CLASSIC_${var} declared in ddos classic.conf" 0
     else
