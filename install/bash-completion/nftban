@@ -21,7 +21,7 @@ _nftban() {
     # DEBUG: debug smoke emulate setup menu
 
     # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
-    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
+    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -95,6 +95,7 @@ _nftban() {
 
     # New commands (added for completion)
     local botscan_cmds="status enable disable --json help"
+    local botguard_cmds="status enable disable test --json help"
     local configtest_cmds="--verbose --json help"
     local configaudit_cmds="--json help"
     local polkit_cmds="validate static runtime status groups rules test help"
@@ -292,6 +293,9 @@ _nftban() {
                 # New commands
                 botscan)
                     COMPREPLY=($(compgen -W "${botscan_cmds}" -- "${cur}"))
+                    ;;
+                botguard)
+                    COMPREPLY=($(compgen -W "${botguard_cmds}" -- "${cur}"))
                     ;;
                 configtest)
                     COMPREPLY=($(compgen -W "${configtest_cmds}" -- "${cur}"))

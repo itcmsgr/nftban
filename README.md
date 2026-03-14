@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.19.13-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.20.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -147,6 +147,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **Login Monitoring** | Detects SSH brute-force and suspicious authentication patterns |
 | **Port Scan Detection** | Automatic detection and blocking of reconnaissance |
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
+| **HTTP Bot Guard** | Intelligent crawler detection with kernel-native suspect marking |
 | **Suricata IDS Integration** | Optional deep packet inspection |
 | **Prometheus Metrics** | Observability for monitoring stacks |
 | **Zabbix Integration** | Native trapper protocol export to Zabbix server |
@@ -210,6 +211,7 @@ nftban feeds list      # Threat feed status
 nftban geoban list     # Geographic blocking
 nftban portscan status # Port scan detection
 nftban ddos status     # DDoS protection
+nftban botguard status # HTTP bot guard (v1.20.0)
 ```
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.

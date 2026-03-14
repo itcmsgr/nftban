@@ -21,7 +21,7 @@
 # meta:inventory.privileges="user"
 #
 # meta:created_date="2026-01-10"
-# meta:updated_date="2026-03-08"
+# meta:updated_date="2026-01-10"
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
@@ -70,6 +70,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/login"]="0750|root|nftban|Login monitoring configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels"]="0750|root|nftban|Control panel configurations"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/botscan"]="0750|root|nftban|Bot scanner configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/botguard"]="0750|root|nftban|HTTP Bot Guard configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/patterns.d"]="0750|root|nftban|Detection pattern files"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/patterns.d/botscan"]="0750|root|nftban|Bot scanner patterns"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/whitelist.d"]="0750|root|nftban|Whitelist entries"
@@ -100,6 +101,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/queue/work"]="0750|nftban|nftban|In-progress tasks"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/queue/dlq"]="0750|nftban|nftban|Dead letter queue"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/mailspool"]="0750|nftban|nftban|Failed mail retry queue"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/botguard"]="0750|nftban|nftban|HTTP Bot Guard state (batch signals, decisions)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
 
     # Log Directories
@@ -107,13 +109,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/watchdog"]="0750|nftban|nftban|Watchdog logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/reports"]="0750|nftban|nftban|Report logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/rbl"]="0750|nftban|nftban|RBL check cache"
-    # Suricata directory: Use "*" owner to allow either suricata or root
-    # (suricata user only exists if Suricata is installed)
-    if id suricata >/dev/null 2>&1; then
-        NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
-    else
-        NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|root|nftban|Suricata EVE logs (no suricata user - owned by root)"
-    fi
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/botguard"]="0750|nftban|nftban|HTTP Bot Guard logs"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0770|suricata|nftban|Suricata EVE logs (suricata writes, nftban reads)"
 
     # Runtime Directories
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"

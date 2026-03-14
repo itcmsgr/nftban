@@ -1119,7 +1119,7 @@ mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
-mkdir -p /var/log/nftban/reports
+mkdir -p /var/log/nftban/{reports,botguard}
 mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
@@ -1819,7 +1819,9 @@ fi
 %dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
 %dir %attr(750,nftban,nftban) /var/lib/nftban/staging
 %dir %attr(750,nftban,nftban) /var/lib/nftban/reports
+%dir %attr(750,nftban,nftban) /var/lib/nftban/botguard
 %dir %attr(750,nftban,nftban) /var/log/nftban
+%dir %attr(750,nftban,nftban) /var/log/nftban/botguard
 %dir %attr(755,root,root) /var/cache/nftban
 %dir %attr(755,nftban,nftban) /run/nftban
 
@@ -2344,9 +2346,9 @@ usermod -a -G nftban root 2>/dev/null || true
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,botguard}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
-mkdir -p /var/log/nftban/reports
+mkdir -p /var/log/nftban/{reports,botguard}
 mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
