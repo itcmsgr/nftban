@@ -466,7 +466,7 @@ nftban_health_check_polkit() {
         fi
     else
         # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)
-        local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"
+        local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-$(nftban_distro_get_polkit_dir)}"
 
         local polkit_systemd_rules="${polkit_rules_dir}/10-nftban-systemd.rules"
         if [[ ! -f "$polkit_systemd_rules" ]]; then
