@@ -189,7 +189,13 @@ _fwlog_reload_nftables() {
     if command -v nftban &>/dev/null; then
         nftban firewall reload 2>/dev/null || true
     elif command -v nft &>/dev/null; then
-        nft -f "${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}" 2>/dev/null || true
+        # Resolve nftables config from distro config
+        local nft_conf
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
+        nft_conf=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
+        [[ -z "$nft_conf" ]] && nft_conf="/etc/nftables.conf"
+        nft -f "$nft_conf" 2>/dev/null || true
     fi
 }
 
