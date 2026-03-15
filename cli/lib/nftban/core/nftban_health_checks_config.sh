@@ -72,36 +72,61 @@ nftban_health_check_config() {
             fi
         done
 
-        # Check subdirectory config files (ddos/, portscan/, login/, panels/)
-        # Skip data files that aren't meant to be sourced as bash
-        local skip_files=("rbls.conf" "feeds.conf")  # Data files, not bash configs
+        # Check ALL subdirectory config files — no exclusions
+        # Each file is validated by its detected format:
+        #   pipe-delimited  (|) : allowed_crawlers.conf, denied_crawlers.conf
+        #   colon-delimited (:) : rbls.conf
+        #   INI sections    ([) : detected by leading [section] lines
+        #   bash KEY=VALUE      : everything else (source validation)
         for subdir in "$config_dir"/*; do
             if [[ -d "$subdir" ]]; then
                 for conf_file in "$subdir"/*.conf; do
                     if [[ -f "$conf_file" ]]; then
                         local filename; filename=$(basename "$conf_file")
-                        # Skip known data files that aren't bash configs
-                        local skip=false
-                        for skip_file in "${skip_files[@]}"; do
-                            [[ "$filename" == "$skip_file" ]] && { skip=true; break; }
-                        done
-                        [[ "$skip" == "true" ]] && continue
+                        local relative_path; relative_path="$(basename "$subdir")/$filename"
 
-                        # Use auto-detect loader if available
-                        if declare -f nftban_config_load &>/dev/null; then
-                            if ! (nftban_config_load "$conf_file") 2>/dev/null; then
-                                local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
+                        # All files must be readable
+                        if [[ ! -r "$conf_file" ]]; then
+                            config_issues+=("Config not readable: $relative_path")
+                            status=$HEALTH_ERROR
+                            continue
+                        fi
+
+                        # Detect format from first non-comment data line
+                        local first_data_line
+                        first_data_line=$(grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$conf_file" 2>/dev/null | head -1)
+
+                        if [[ -z "$first_data_line" ]]; then
+                            # File has no data lines — warn (empty config)
+                            config_issues+=("Config has no data entries: $relative_path")
+                            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                        elif [[ "$first_data_line" == *"|"* ]]; then
+                            # Pipe-delimited format — validate all data lines have pipes
+                            if grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$conf_file" 2>/dev/null | grep -qv '|'; then
+                                config_issues+=("Config has invalid pipe-delimited lines: $relative_path")
+                                status=$HEALTH_ERROR
+                            fi
+                        elif [[ "$first_data_line" =~ ^[a-zA-Z0-9._-]+: ]]; then
+                            # Colon-delimited format (e.g. rbls.conf: domain:url)
+                            if grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$conf_file" 2>/dev/null | grep -qv ':'; then
+                                config_issues+=("Config has invalid colon-delimited lines: $relative_path")
+                                status=$HEALTH_ERROR
+                            fi
+                        elif [[ "$first_data_line" == "["* ]]; then
+                            # INI format — structure only, no bash sourcing needed
+                            :
+                        else
+                            # Bash KEY=VALUE format — validate with source
+                            if declare -f nftban_config_load &>/dev/null; then
+                                if ! (nftban_config_load "$conf_file") 2>/dev/null; then
+                                    config_issues+=("Config has syntax errors: $relative_path")
+                                    status=$HEALTH_ERROR
+                                fi
+                            elif ! (source "$conf_file") 2>/dev/null; then
+                                # shellcheck disable=SC1090  # Dynamic source for config validation
                                 config_issues+=("Config has syntax errors: $relative_path")
                                 status=$HEALTH_ERROR
                             fi
-                        elif grep -q '^\[' "$conf_file" 2>/dev/null; then
-                            # INI format - skip bash sourcing
-                            continue
-                        elif ! (source "$conf_file") 2>/dev/null; then
-                            # shellcheck disable=SC1090  # Dynamic source for config validation
-                            local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
-                            config_issues+=("Config has syntax errors: $relative_path")
-                            status=$HEALTH_ERROR
                         fi
                     fi
                 done
