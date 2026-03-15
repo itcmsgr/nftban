@@ -573,7 +573,20 @@ firewall_reload() {
         esac
     done
 
-    if ! nft -f "${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}" 2>&1; then
+    # Resolve nftables config from distro config (RHEL: /etc/sysconfig/nftables.conf, Debian: /etc/nftables.conf)
+    local nft_conf
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
+    nft_conf=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
+    [[ -z "$nft_conf" ]] && nft_conf="/etc/nftables.conf"
+
+    if [[ ! -f "$nft_conf" ]]; then
+        echo "Error: nftables config not found: $nft_conf" >&2
+        echo "Check distro config in /etc/nftban/distros/" >&2
+        return 1
+    fi
+
+    if ! nft -f "$nft_conf" 2>&1; then
         echo "Error: Failed to reload nftables" >&2
         return 1
     fi
