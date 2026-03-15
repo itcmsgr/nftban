@@ -148,6 +148,17 @@ _nftban_botguard_enable() {
 
     _botguard_config_set "HTTP_BOTGUARD_ENABLED" "true"
 
+    # Apply nft fragment: create sets + rules + jump chains
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" || true
+    if declare -f nft_fragment_enable_module &>/dev/null; then
+        nft_fragment_enable_module "botguard" || {
+            if [[ "$json_mode" != "true" ]]; then
+                echo "WARNING: Failed to apply nft rules. Run: nftban rebuild"
+            fi
+        }
+    fi
+
     # Auto-restart nftband to activate immediately
     local restart_ok="false"
     if systemctl is-active nftband &>/dev/null; then
@@ -172,6 +183,13 @@ _nftban_botguard_disable() {
     local json_mode="${1:-false}"
 
     _botguard_config_set "HTTP_BOTGUARD_ENABLED" "false"
+
+    # Remove nft fragment: cleanup sets + rules
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" || true
+    if declare -f nft_fragment_disable_module &>/dev/null; then
+        nft_fragment_disable_module "botguard" || true
+    fi
 
     # Auto-restart nftband to deactivate immediately
     local restart_ok="false"
