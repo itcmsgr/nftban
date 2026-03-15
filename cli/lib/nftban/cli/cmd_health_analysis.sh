@@ -787,7 +787,7 @@ nftban_health_cmd_botguard() {
         echo "  Config:              ✅ $botguard_conf"
     else
         echo "  Config:              ❌ Missing: $botguard_conf"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # Allowed crawlers
@@ -797,7 +797,7 @@ nftban_health_cmd_botguard() {
         echo "  Allowed crawlers:    ✅ $allowed_conf ($count entries)"
     else
         echo "  Allowed crawlers:    ⚠️  Missing: $allowed_conf"
-        ((warnings++))
+        ((warnings++)) || true
     fi
 
     # Denied crawlers
@@ -807,7 +807,7 @@ nftban_health_cmd_botguard() {
         echo "  Denied crawlers:     ✅ $denied_conf ($count entries)"
     else
         echo "  Denied crawlers:     ⚠️  Missing: $denied_conf"
-        ((warnings++))
+        ((warnings++)) || true
     fi
 
     # Data directory
@@ -821,12 +821,12 @@ nftban_health_cmd_botguard() {
         else
             echo "  Data dir:            ⚠️  $botguard_data (owner=$owner mode=$mode, expected nftban:nftban 750)"
             echo "                       FIX: chown nftban:nftban $botguard_data && chmod 750 $botguard_data"
-            ((warnings++))
+            ((warnings++)) || true
         fi
     else
         echo "  Data dir:            ❌ Missing: $botguard_data"
         echo "                       FIX: mkdir -p $botguard_data && chown nftban:nftban $botguard_data && chmod 750 $botguard_data"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # Log directory
@@ -840,12 +840,12 @@ nftban_health_cmd_botguard() {
         else
             echo "  Log dir:             ⚠️  $botguard_log (owner=$owner mode=$mode, expected nftban:nftban 750)"
             echo "                       FIX: chown nftban:nftban $botguard_log && chmod 750 $botguard_log"
-            ((warnings++))
+            ((warnings++)) || true
         fi
     else
         echo "  Log dir:             ❌ Missing: $botguard_log"
         echo "                       FIX: mkdir -p $botguard_log && chown nftban:nftban $botguard_log && chmod 750 $botguard_log"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # Log files
@@ -853,7 +853,7 @@ nftban_health_cmd_botguard() {
         echo "  Log file:            ✅ $botguard_log/botguard.log"
     else
         echo "  Log file:            ⚠️  Not yet created (starts on first daemon run)"
-        ((warnings++))
+        ((warnings++)) || true
     fi
 
     echo ""
@@ -877,7 +877,7 @@ nftban_health_cmd_botguard() {
         else
             echo "  IPv4 suspect set:    ❌ Not found in nftables"
             echo "                       FIX: systemctl restart nftband"
-            ((issues++))
+            ((issues++)) || true
         fi
 
         if nft list set ip6 nftban http_bot_suspect6 &>/dev/null 2>&1; then
@@ -885,7 +885,7 @@ nftban_health_cmd_botguard() {
         else
             echo "  IPv6 suspect set:    ❌ Not found in nftables"
             echo "                       FIX: systemctl restart nftband"
-            ((issues++))
+            ((issues++)) || true
         fi
 
         # Check daemon running
@@ -894,7 +894,7 @@ nftban_health_cmd_botguard() {
         else
             echo "  Daemon:              ❌ Not running"
             echo "                       FIX: systemctl start nftband"
-            ((issues++))
+            ((issues++)) || true
         fi
     else
         echo "  Module status:       ⚠️  DISABLED"
