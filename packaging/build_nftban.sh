@@ -1276,12 +1276,33 @@ echo "[NFTBan] Enabling systemd services..."
 # BUG-R48 FIX: %%systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
 # Timers that were disabled (manually or never enabled) stay disabled on upgrades.
 # Explicit enable ensures timers work after ANY install/upgrade.
-echo "[NFTBan] Ensuring critical timers are enabled..."
-systemctl enable nftban-maintenance.timer 2>/dev/null || true
-systemctl enable nftban-health.timer 2>/dev/null || true
-systemctl enable nftban-unified-exporter.timer 2>/dev/null || true
-systemctl enable nftban-core-geoip.timer 2>/dev/null || true
-systemctl enable nftban-core-feeds.timer 2>/dev/null || true
+#
+# Timer reconciliation (v1.21.3+):
+# Respects NFTBAN_RECONCILE_CORE_TIMERS config option (default: true).
+# Core timers are always enabled unless admin explicitly opts out.
+NFTBAN_RECONCILE="true"
+if [ -f /etc/nftban/nftban.conf ]; then
+    _reconcile_val=\$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf 2>/dev/null | cut -d'"' -f2)
+    [ -n "\$_reconcile_val" ] && NFTBAN_RECONCILE="\$_reconcile_val"
+    # Check .local override
+    if [ -f /etc/nftban/nftban.conf.local ]; then
+        _reconcile_local=\$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf.local 2>/dev/null | cut -d'"' -f2)
+        [ -n "\$_reconcile_local" ] && NFTBAN_RECONCILE="\$_reconcile_local"
+    fi
+fi
+
+if [ "\$NFTBAN_RECONCILE" = "true" ]; then
+    echo "[NFTBan] Ensuring core timers are enabled (RECONCILE_CORE_TIMERS=true)..."
+    systemctl enable nftban-maintenance.timer 2>/dev/null || true
+    systemctl enable nftban-health.timer 2>/dev/null || true
+    systemctl enable nftban-unified-exporter.timer 2>/dev/null || true
+    systemctl enable nftban-core-geoip.timer 2>/dev/null || true
+    systemctl enable nftban-core-feeds.timer 2>/dev/null || true
+    systemctl enable nftban-watchdog.timer 2>/dev/null || true
+    systemctl enable nftban-queue.timer 2>/dev/null || true
+else
+    echo "[NFTBan] Timer reconciliation disabled (RECONCILE_CORE_TIMERS=false)"
+fi
 
 # Enable nftables service
 systemctl enable nftables 2>/dev/null || true
@@ -1329,28 +1350,46 @@ else
     rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 fi
 
-# Enable and start essential timers
-echo "[NFTBan] Starting essential timers..."
-systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
-systemctl enable --now nftban-health.timer 2>/dev/null || true
-systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
-systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
-systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+# Enable and start core timers (reconciliation already read NFTBAN_RECONCILE above)
+if [ "\$NFTBAN_RECONCILE" = "true" ]; then
+    echo "[NFTBan] Starting core timers..."
+    systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
+    systemctl enable --now nftban-health.timer 2>/dev/null || true
+    systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
+    systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
+    systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer 2>/dev/null || true
 
-# Start queue timer only if unit file exists (BUG-005 fix)
-if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
-    systemctl enable --now nftban-queue.timer 2>/dev/null || true
-else
-    echo "[NFTBan WARN] nftban-queue.timer not installed (optional)"
+    # Start queue timer only if unit file exists (BUG-005 fix)
+    if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+        systemctl enable --now nftban-queue.timer 2>/dev/null || true
+    else
+        echo "[NFTBan WARN] nftban-queue.timer not installed (optional)"
+    fi
 fi
 
-# Start botscan timer (Clock 3 — access log pattern matching every 10min)
+# Start botscan timer (Clock 3 — module-specific, not subject to reconciliation)
 if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep -q '^nftban-botscan.timer'; then
     systemctl enable --now nftban-botscan.timer 2>/dev/null || true
 fi
 
-# Enable and start login monitor
-systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
+# Login monitor: detect daemon loginmon vs legacy shell service (v1.21.3)
+# The Go daemon's built-in loginmon module (pkg/loginmon) replaces this service.
+# If daemon is active, disable legacy shell service to prevent duplicate bans.
+if systemctl is-active nftband.service >/dev/null 2>&1; then
+    # Daemon is active — its loginmon handles login monitoring
+    if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
+        echo "[NFTBan DEPRECATION] nftban-login-monitor.service is deprecated (v1.21.3)"
+        echo "[NFTBan DEPRECATION] Daemon loginmon replaces it. Disabling legacy service..."
+        systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
+    else
+        echo "[NFTBan] Login monitoring: daemon loginmon active (legacy service already disabled)"
+    fi
+else
+    # Daemon not active yet (fresh install boot sequence) — enable legacy as fallback
+    systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
+    echo "[NFTBan] Login monitoring: legacy service enabled (daemon not yet active)"
+fi
 
 # STEP 9: Configure nftables to load NFTBan config (distro-aware)
 echo "[NFTBan] Configuring nftables service..."
@@ -2531,26 +2570,54 @@ else
     rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 fi
 
-# Enable and start essential timers
-echo "[NFTBan] Starting essential timers..."
-systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
-systemctl enable --now nftban-health.timer 2>/dev/null || true
-systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
-systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
-systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
-
-# Start queue timer only if unit file exists
-if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
-    systemctl enable --now nftban-queue.timer 2>/dev/null || true
+# Enable and start essential timers (respects RECONCILE_CORE_TIMERS)
+NFTBAN_DEB_RECONCILE="true"
+if [ -f /etc/nftban/nftban.conf ]; then
+    _deb_reconcile=$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf 2>/dev/null | cut -d'"' -f2)
+    [ -n "$_deb_reconcile" ] && NFTBAN_DEB_RECONCILE="$_deb_reconcile"
+    if [ -f /etc/nftban/nftban.conf.local ]; then
+        _deb_reconcile_local=$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf.local 2>/dev/null | cut -d'"' -f2)
+        [ -n "$_deb_reconcile_local" ] && NFTBAN_DEB_RECONCILE="$_deb_reconcile_local"
+    fi
 fi
 
-# Start botscan timer (Clock 3 — access log pattern matching every 10min)
+if [ "$NFTBAN_DEB_RECONCILE" = "true" ]; then
+    echo "[NFTBan] Starting core timers (RECONCILE_CORE_TIMERS=true)..."
+    systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
+    systemctl enable --now nftban-health.timer 2>/dev/null || true
+    systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
+    systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
+    systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer 2>/dev/null || true
+
+    # Start queue timer only if unit file exists
+    if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
+        systemctl enable --now nftban-queue.timer 2>/dev/null || true
+    fi
+else
+    echo "[NFTBan] Timer reconciliation disabled (RECONCILE_CORE_TIMERS=false)"
+fi
+
+# Start botscan timer (Clock 3 — module-specific, not subject to reconciliation)
 if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep -q '^nftban-botscan.timer'; then
     systemctl enable --now nftban-botscan.timer 2>/dev/null || true
 fi
 
-# Enable and start login monitor
-systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
+# Login monitor: detect daemon loginmon vs legacy shell service (v1.21.3)
+# The Go daemon's built-in loginmon module (pkg/loginmon) replaces this service.
+# If daemon is active, disable legacy shell service to prevent duplicate bans.
+if systemctl is-active nftband.service >/dev/null 2>&1; then
+    if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
+        echo "[NFTBan DEPRECATION] nftban-login-monitor.service is deprecated (v1.21.3)"
+        echo "[NFTBan DEPRECATION] Daemon loginmon replaces it. Disabling legacy service..."
+        systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
+    else
+        echo "[NFTBan] Login monitoring: daemon loginmon active (legacy service already disabled)"
+    fi
+else
+    systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
+    echo "[NFTBan] Login monitoring: legacy service enabled (daemon not yet active)"
+fi
 
 # PREFLIGHT: Detect and AUTO-FIX incompatible xt target rules (v1.17.5)
 # cPanel/WHM creates iptables-nft rules with "xt target REDIRECT" that modern nftables cannot load

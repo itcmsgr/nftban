@@ -367,6 +367,7 @@ nftban_complete() {
                 echo "check"
                 echo "report"
                 echo "fix"
+                echo "fhs"
                 echo "services"
                 echo "modules"
                 echo "conflicts"
@@ -806,8 +807,33 @@ main() {
             fi
             ;;
 
-        # BUG-L9 FIX: Removed dead case blocks for services, configtest, configaudit,
-        # and list -- all handled by auto-loader at line 736 (cmd_*.sh + nftban_cmd_*())
+        service)
+            # Alias: 'service' (singular) → 'services' (plural)
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_services.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_services.sh"
+                shift
+                nftban_cmd_services "$@"
+                return $?
+            else
+                echo "ERROR: cmd_services.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
+        export)
+            # Alias: 'nftban export' → 'nftban stats export'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_stats.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_stats.sh"
+                shift
+                nftban_cmd_stats "export" "$@"
+                return $?
+            else
+                echo "ERROR: cmd_stats.sh not found" >&2
+                exit 1
+            fi
+            ;;
 
         hello|"")
             # Show banner (already dynamic - shows hostname, kernel, nftables stats)
