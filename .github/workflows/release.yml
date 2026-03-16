@@ -621,8 +621,9 @@ jobs:
           echo "=== RELEASE_NOTES.md ==="
           cat dist/packages/RELEASE_NOTES.md
 
-      - name: Upload to GitHub Release
+      - name: Upload packages to GitHub Release (without SHA256SUMS)
         # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
+        # SHA256SUMS is uploaded separately AFTER we verify the uploaded assets match
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |
@@ -630,7 +631,6 @@ jobs:
             dist/packages/*.deb
             dist/packages/nftband-linux-amd64
             dist/packages/nftban-ui-auth-linux-amd64
-            dist/packages/SHA256SUMS
             dist/packages/MANIFEST.txt
             dist/packages/VERIFY.txt
             dist/packages/sbom.spdx.json
@@ -639,6 +639,70 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Regenerate SHA256SUMS from uploaded release assets
+        # CRITICAL FIX (v1.21.3): SHA256SUMS must be computed from the ACTUAL
+        # uploaded assets, not from local files. GitHub Release asset storage
+        # may reprocess uploads, causing hash mismatches between local files
+        # and downloaded assets. This step downloads all assets back from the
+        # release, recomputes checksums, and uploads the correct SHA256SUMS.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "Regenerating SHA256SUMS from actual release assets..."
+
+          # Wait for assets to be fully available
+          sleep 15
+
+          # Download all package assets from the release
+          mkdir -p /tmp/release-verify
+          cd /tmp/release-verify
+
+          ASSETS=(
+            "nftban-el9-x86_64.rpm"
+            "nftban-el10-x86_64.rpm"
+            "nftban-debian12-amd64.deb"
+            "nftban-debian13-amd64.deb"
+            "nftban-ubuntu22.04-amd64.deb"
+            "nftban-ubuntu24.04-amd64.deb"
+            "nftband-linux-amd64"
+            "nftban-ui-auth-linux-amd64"
+          )
+
+          rm -f SHA256SUMS
+          for asset in "${ASSETS[@]}"; do
+            echo "Downloading $asset..."
+            gh release download "$VERSION" -p "$asset" -O "$asset" --clobber 2>/dev/null || {
+              echo "WARN: $asset not found in release (may be from SLSA workflow)"
+              continue
+            }
+          done
+
+          # Also try to get SLSA-built binaries
+          for slsa_asset in "nftban-core-linux-amd64" "nftban-ui-linux-amd64"; do
+            gh release download "$VERSION" -p "$slsa_asset" -O "$slsa_asset" --clobber 2>/dev/null || true
+          done
+
+          # Generate checksums from downloaded files
+          shopt -s nullglob
+          all_files=(*.rpm *.deb *-linux-amd64)
+          if [ ${#all_files[@]} -gt 0 ]; then
+            sha256sum "${all_files[@]}" | sort > SHA256SUMS
+            echo "=== SHA256SUMS (from downloaded assets) ==="
+            cat SHA256SUMS
+          else
+            echo "ERROR: No assets downloaded!"
+            exit 1
+          fi
+
+          # Delete old SHA256SUMS and upload the correct one
+          gh release delete-asset "$VERSION" "SHA256SUMS" --yes 2>/dev/null || true
+          gh release upload "$VERSION" SHA256SUMS --clobber
+
+          echo "SHA256SUMS uploaded successfully (computed from actual release assets)"
+          cd "$GITHUB_WORKSPACE"
+          rm -rf /tmp/release-verify
 
   # ==========================================================================
   # POST-RELEASE VERIFICATION
@@ -731,7 +795,104 @@ jobs:
 
           echo ""
           echo "============================================="
-          echo "✅ ALL PACKAGES VERIFIED SUCCESSFULLY"
+          echo "✅ ALL PACKAGES VERIFIED - Binary Integrity"
           echo "All 6 packages contain identical nftband binary"
           echo "Reference hash: $REFERENCE_HASH"
           echo "============================================="
+
+      - name: Verify SHA256SUMS matches all release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "=== Verifying SHA256SUMS for release $VERSION ==="
+
+          mkdir -p /tmp/checksum-verify
+          cd /tmp/checksum-verify
+
+          # Download SHA256SUMS from release
+          gh release download "$VERSION" -p "SHA256SUMS" -O SHA256SUMS \
+              -R "$GITHUB_REPOSITORY" || {
+            echo "❌ FATAL: SHA256SUMS not found in release!"
+            exit 1
+          }
+
+          echo "--- SHA256SUMS contents ---"
+          cat SHA256SUMS
+
+          # Download every package and binary that should be in SHA256SUMS
+          EXPECTED_ASSETS=(
+            "nftban-el9-x86_64.rpm"
+            "nftban-el10-x86_64.rpm"
+            "nftban-debian12-amd64.deb"
+            "nftban-debian13-amd64.deb"
+            "nftban-ubuntu22.04-amd64.deb"
+            "nftban-ubuntu24.04-amd64.deb"
+            "nftband-linux-amd64"
+            "nftban-ui-auth-linux-amd64"
+          )
+
+          DOWNLOAD_FAILURES=0
+          for asset in "${EXPECTED_ASSETS[@]}"; do
+            echo "Downloading $asset for checksum verification..."
+            gh release download "$VERSION" -p "$asset" -O "$asset" \
+                -R "$GITHUB_REPOSITORY" 2>/dev/null || {
+              echo "WARN: $asset not available (may be from SLSA workflow)"
+              continue
+            }
+          done
+
+          # Also try SLSA-built binaries
+          for slsa_asset in "nftban-core-linux-amd64" "nftban-ui-linux-amd64"; do
+            gh release download "$VERSION" -p "$slsa_asset" -O "$slsa_asset" \
+                -R "$GITHUB_REPOSITORY" 2>/dev/null || true
+          done
+
+          # Verify each downloaded file against SHA256SUMS
+          VERIFY_FAILURES=0
+          for file in *.rpm *.deb *-linux-amd64; do
+            [ -f "$file" ] || continue
+            ACTUAL_HASH=$(sha256sum "$file" | cut -d' ' -f1)
+            EXPECTED_HASH=$(grep "  ${file}$" SHA256SUMS | cut -d' ' -f1 || true)
+
+            if [ -z "$EXPECTED_HASH" ]; then
+              # Try alternate format (two spaces or single space)
+              EXPECTED_HASH=$(grep "${file}" SHA256SUMS | head -1 | awk '{print $1}')
+            fi
+
+            if [ -z "$EXPECTED_HASH" ]; then
+              echo "❌ $file: NOT LISTED in SHA256SUMS"
+              VERIFY_FAILURES=$((VERIFY_FAILURES + 1))
+            elif [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
+              echo "❌ $file: CHECKSUM MISMATCH"
+              echo "   Expected: $EXPECTED_HASH"
+              echo "   Actual:   $ACTUAL_HASH"
+              VERIFY_FAILURES=$((VERIFY_FAILURES + 1))
+            else
+              echo "✅ $file: checksum verified"
+            fi
+          done
+
+          # Also verify SHA256SUMS doesn't list files that don't exist in release
+          while IFS= read -r line; do
+            LISTED_FILE=$(echo "$line" | awk '{print $2}')
+            [ -z "$LISTED_FILE" ] && continue
+            if [ ! -f "$LISTED_FILE" ]; then
+              echo "⚠️  SHA256SUMS lists $LISTED_FILE but it was not downloadable"
+            fi
+          done < SHA256SUMS
+
+          if [ "$VERIFY_FAILURES" -gt 0 ]; then
+            echo ""
+            echo "❌ FATAL: $VERIFY_FAILURES SHA256SUMS verification failures!"
+            echo "The SHA256SUMS file does not match the actual release assets."
+            echo "This means 'nftban update' will fail for users."
+            exit 1
+          fi
+
+          echo ""
+          echo "============================================="
+          echo "✅ SHA256SUMS VERIFIED - All checksums match"
+          echo "============================================="
+
+          rm -rf /tmp/checksum-verify

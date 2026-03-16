@@ -1523,8 +1523,59 @@ EOF
 }
 
 # =============================================================================
-# HTTP BOT GUARD FRAGMENTS (v1.21.0)
+# HTTP BOT GUARD FRAGMENTS (v1.21.0, sets v1.21.4)
 # =============================================================================
+
+# Ensure HTTP Bot Guard nft sets exist (idempotent)
+# Since v1.21.4 these sets are in the base schema (nftables.conf).
+# This function is for systems that haven't rebuilt their schema yet.
+# Writes to: /etc/nftban/rules.d/14-http-botguard-sets.nft
+nft_fragment_render_http_botguard_sets() {
+    local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/14-http-botguard-sets.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan HTTP Bot Guard - Set Definitions
+# Generated: ${timestamp}
+# Managed by nftband - DO NOT EDIT MANUALLY
+#
+# These sets are always present (cost nothing when empty).
+# Since v1.21.4 they are also in the base nftables.conf schema.
+# This fragment ensures they exist on systems not yet rebuilt.
+
+# --- IPv4 Bot Guard Sets ---
+add set ${table_ipv4} http_bot_suspect { type ipv4_addr; flags timeout; comment "Kernel-populated HTTP bot suspects"; }
+add set ${table_ipv4} http_bot_pending { type ipv4_addr; flags timeout; comment "Awaiting bot classification"; }
+add set ${table_ipv4} http_bot_allow { type ipv4_addr; flags timeout; comment "Verified allowed crawlers"; }
+add set ${table_ipv4} http_bot_grey { type ipv4_addr; flags timeout; comment "Suspicious bots, throttled"; }
+add set ${table_ipv4} http_bot_ban { type ipv4_addr; flags timeout; comment "Denied/malicious bots"; }
+add set ${table_ipv4} http_bot_emergency { type ipv4_addr; flags timeout; comment "Emergency pressure blocks"; }
+
+# --- IPv6 Bot Guard Sets ---
+add set ${table_ipv6} http_bot_suspect6 { type ipv6_addr; flags timeout; comment "Kernel-populated HTTP bot suspects"; }
+add set ${table_ipv6} http_bot_pending6 { type ipv6_addr; flags timeout; comment "Awaiting bot classification"; }
+add set ${table_ipv6} http_bot_allow6 { type ipv6_addr; flags timeout; comment "Verified allowed crawlers"; }
+add set ${table_ipv6} http_bot_grey6 { type ipv6_addr; flags timeout; comment "Suspicious bots, throttled"; }
+add set ${table_ipv6} http_bot_ban6 { type ipv6_addr; flags timeout; comment "Denied/malicious bots"; }
+add set ${table_ipv6} http_bot_emergency6 { type ipv6_addr; flags timeout; comment "Emergency pressure blocks"; }
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
 
 # Render HTTP Bot Guard enforcement chain fragment
 # Order: allow(bypass) → ban(drop) → emergency(drop) → grey(throttle) → pending(light throttle) → suspect meter → return
@@ -1822,6 +1873,12 @@ nft_fragment_enable_module() {
             fi
             ;;
         http-botguard|http_botguard|botguard)
+            # Create sets first (idempotent — no-op if sets already in schema)
+            local set_path
+            set_path=$(nft_fragment_render_http_botguard_sets) || return 1
+            nft_fragment_apply "$set_path" || return 1
+
+            # Then create enforcement chain + rules
             fragment_path=$(nft_fragment_render_http_botguard) || return 1
             nft_fragment_apply "$fragment_path" || return 1
 
@@ -1936,6 +1993,7 @@ export -f nft_fragment_render_ddos_penalty_sets
 export -f nft_fragment_render_ddos_penalty_enforce
 export -f nft_fragment_render_ddos_penalty_jump
 export -f nft_fragment_render_ddos_penalty_cleanup
+export -f nft_fragment_render_http_botguard_sets
 export -f nft_fragment_render_http_botguard
 export -f nft_fragment_render_http_botguard_jump
 export -f nft_fragment_render_http_botguard_cleanup
