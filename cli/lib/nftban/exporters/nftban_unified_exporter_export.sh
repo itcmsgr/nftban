@@ -185,6 +185,12 @@ export_prometheus() {
 # TYPE nftban_export_success_total counter
 # HELP nftban_export_failures_total Number of failed exports by target
 # TYPE nftban_export_failures_total counter
+# HELP nftban_botguard_set_count Number of IPs in each botguard category
+# TYPE nftban_botguard_set_count gauge
+# HELP nftban_botguard_total_tracked Total IPs tracked by botguard
+# TYPE nftban_botguard_total_tracked gauge
+# HELP nftban_module_botguard_status Botguard module status (1=active, 0=disabled, -1=failed)
+# TYPE nftban_module_botguard_status gauge
 PROM_HEADER
 
     if ! awk '{

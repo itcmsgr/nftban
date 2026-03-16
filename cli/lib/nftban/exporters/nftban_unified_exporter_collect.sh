@@ -171,6 +171,24 @@ collect_all_metrics() {
         metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6 $timestamp\n"
         metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
 
+        # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
+        local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
+        if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
+            bg_suspect=$(echo "$counts_json" | jq -r '.botguard.suspect // 0')
+            bg_pending=$(echo "$counts_json" | jq -r '.botguard.pending // 0')
+            bg_allow=$(echo "$counts_json" | jq -r '.botguard.allow // 0')
+            bg_grey=$(echo "$counts_json" | jq -r '.botguard.grey // 0')
+            bg_ban=$(echo "$counts_json" | jq -r '.botguard.ban // 0')
+            bg_emergency=$(echo "$counts_json" | jq -r '.botguard.emergency // 0')
+        fi
+        metrics+="nftban_botguard_set_count{category=\"suspect\"} $bg_suspect $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"pending\"} $bg_pending $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"allow\"} $bg_allow $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"grey\"} $bg_grey $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"ban\"} $bg_ban $timestamp\n"
+        metrics+="nftban_botguard_set_count{category=\"emergency\"} $bg_emergency $timestamp\n"
+        metrics+="nftban_botguard_total_tracked $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency)) $timestamp\n"
+
         # --- Feeds Metrics (moved to LIVE for real-time consistency with nftban stats) ---
         # Check for feed data files in /var/lib/nftban/feeds/ (primary) or /var/cache/nftban/feeds/
         # Per-feed details: name, IP count, IPv4/IPv6 breakdown
@@ -567,7 +585,7 @@ collect_all_metrics() {
     local mod_enabled=0 mod_active=0 mod_failed=0
     local module_login_status=0 module_portscan_status=0 module_ddos_status=0
     local module_suricata_status=0 module_feeds_status=0 module_geoban_status=0
-    local module_watchdog_status=0
+    local module_watchdog_status=0 module_botguard_status=0
     # Feed health variables
     local feeds_sync_errors=0 feeds_stale_count=0
     # GeoBan variables
@@ -631,6 +649,30 @@ collect_all_metrics() {
 
             metrics+="nftban_module_${module}_status $status_val $timestamp\n"
         done
+
+        # Botguard module status (uses conf.d config, not modules/ config)
+        local botguard_status_val=0
+        local botguard_conf="${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf"
+        if [[ -f "$botguard_conf" ]]; then
+            local bg_enabled
+            bg_enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$botguard_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+            # Check .local override
+            if [[ -f "${botguard_conf}.local" ]]; then
+                local bg_local
+                bg_local=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${botguard_conf}.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+                [[ -n "$bg_local" ]] && bg_enabled="$bg_local"
+            fi
+            if [[ "$bg_enabled" == "true" ]]; then
+                # Check if daemon is running (botguard runs inside nftband)
+                if systemctl is-active nftband &>/dev/null 2>&1; then
+                    botguard_status_val=1  # active
+                else
+                    botguard_status_val=-1  # enabled but daemon not running
+                fi
+            fi
+        fi
+        module_botguard_status=$botguard_status_val
+        metrics+="nftban_module_botguard_status $botguard_status_val $timestamp\n"
 
 
         # --- nftables Extended Metrics (EXTENDED only - sets total, elements total) ---
@@ -1349,7 +1391,17 @@ collect_all_metrics() {
     "suricata": ${module_suricata_status:-0},
     "feeds": ${module_feeds_status:-0},
     "geoban": ${module_geoban_status:-0},
-    "watchdog": ${module_watchdog_status:-0}
+    "watchdog": ${module_watchdog_status:-0},
+    "botguard": ${module_botguard_status:-0}
+  },
+  "botguard": {
+    "suspect": ${bg_suspect:-0},
+    "pending": ${bg_pending:-0},
+    "allow": ${bg_allow:-0},
+    "grey": ${bg_grey:-0},
+    "ban": ${bg_ban:-0},
+    "emergency": ${bg_emergency:-0},
+    "total_tracked": $((${bg_suspect:-0} + ${bg_pending:-0} + ${bg_allow:-0} + ${bg_grey:-0} + ${bg_ban:-0} + ${bg_emergency:-0}))
   },
   "memory": {
     "rss_bytes": ${rss:-0},

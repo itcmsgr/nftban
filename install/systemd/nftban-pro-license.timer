@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-pro-license.timer"
 # meta:type="systemd"
+# meta:tier="PRO"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-01-08"
 # meta:description="Timer for periodic Pro license validation"
