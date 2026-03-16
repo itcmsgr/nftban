@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-firewall-init.service"
 # meta:type="systemd"
+# meta:tier="EXPERIMENTAL"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
 # meta:description="Firewall initialization with startup delay"

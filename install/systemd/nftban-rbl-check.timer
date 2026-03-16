@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-rbl-check.timer"
 # meta:type="systemd"
+# meta:tier="OPTIONAL"
 # meta:version="1.3.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Timer for twice-daily RBL checking schedule (every 12 hours)"

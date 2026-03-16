@@ -6,6 +6,7 @@
 #
 # meta:name="nftban_alert_service"
 # meta:type="config"
+# meta:tier="OPTIONAL"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-01-07"
 # meta:description="Template service unit for NFTBan service failure alerts"

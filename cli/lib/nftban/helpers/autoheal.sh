@@ -354,10 +354,21 @@ fi
 log_info "Checking for incompatible xt target rules..."
 
 NFT_CONFIG=""
-if [ -f "/etc/sysconfig/nftables.conf" ]; then
-    NFT_CONFIG="/etc/sysconfig/nftables.conf"
-elif [ -f "/etc/nftables.conf" ]; then
-    NFT_CONFIG="/etc/nftables.conf"
+# Use distro config if available, fallback to filesystem detection
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/nftban_distro_config.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" 2>/dev/null || true
+    if declare -f nftban_distro_get_path &>/dev/null; then
+        NFT_CONFIG=$(nftban_distro_get_path "nftables_conf")
+    fi
+fi
+# Fallback: filesystem detection if distro config unavailable or returned empty
+if [[ -z "$NFT_CONFIG" ]]; then
+    if [ -f "/etc/sysconfig/nftables.conf" ]; then
+        NFT_CONFIG="/etc/sysconfig/nftables.conf"
+    elif [ -f "/etc/nftables.conf" ]; then
+        NFT_CONFIG="/etc/nftables.conf"
+    fi
 fi
 
 if [ -n "$NFT_CONFIG" ]; then

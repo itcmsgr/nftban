@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-snapshot.timer"
 # meta:type="systemd"
+# meta:tier="OPTIONAL"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
 # meta:description="Timer for hourly configuration snapshots"
