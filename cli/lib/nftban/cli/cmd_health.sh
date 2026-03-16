@@ -190,6 +190,17 @@ nftban_cmd_health() {
         botguard)
             nftban_health_cmd_botguard "$@"
             ;;
+        fhs)
+            # Redirect to top-level nftban fhs command
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh"
+                nftban_cmd_fhs "$@"
+            else
+                echo "ERROR: cmd_fhs.sh not found" >&2
+                return 1
+            fi
+            ;;
         posture|security)
             nftban_health_cmd_posture "$@"
             ;;

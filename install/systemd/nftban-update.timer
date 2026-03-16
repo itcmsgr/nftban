@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-update.timer"
 # meta:type="systemd"
+# meta:tier="OPTIONAL"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Timer for weekly automated updates"

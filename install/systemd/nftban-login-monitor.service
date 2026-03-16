@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-login-monitor.service"
 # meta:type="systemd"
+# meta:tier="DEPRECATED"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
 # meta:description="SSH and authentication login monitoring"
@@ -17,6 +18,24 @@
 # meta:inventory.systemd_units="sshd.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="nftban"
+#
+# DEPRECATED since v1.21.3 (2026-03-16)
+# ======================================
+# This shell-based login monitor is superseded by the Go daemon's built-in
+# loginmon module (pkg/loginmon). The daemon module provides:
+#   - Integrated scoring system with configurable thresholds
+#   - Multi-protocol detection (SSH, FTP, mail, web panels)
+#   - Suricata EVE hybrid mode
+#   - No double-ban failures (single nftables writer)
+#
+# Both running simultaneously causes "Failed to ban" errors in the shell
+# service because the daemon already banned the IP.
+#
+# Deprecation plan:
+#   v1.21.3: Marked deprecated, postinst warns if both active
+#   v1.22.0: Postinst disables this service when daemon loginmon is active
+#   v1.23.0: Unit file removed from package
+#
 # =============================================================================
 
 [Unit]
