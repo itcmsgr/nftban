@@ -643,71 +643,8 @@ jobs:
           done
 
   # ==========================================================================
-  # UPLOAD TO GITHUB RELEASE
+  # NOTE: Release upload is handled by release.yml workflow (triggered by tags)
+  # This workflow only builds and validates packages, no release upload.
+  # Removed upload-release job in v1.21.4 to prevent SHA256SUMS race conditions
+  # where this job would overwrite release assets without updating checksums.
   # ==========================================================================
-  upload-release:
-    name: Upload packages to GitHub Release
-    needs: [build-deb, build-rpm, validate-binary-consistency]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - name: Get version from VERSION file
-        id: version
-        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-
-      - name: Download all package artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: release-packages/
-
-      - name: Organize packages for release
-        run: |
-          mkdir -p release/
-          # Copy RPM packages
-          find release-packages -name "*.rpm" -exec cp {} release/ \;
-          # Copy DEB packages
-          find release-packages -name "*.deb" -exec cp {} release/ \;
-          echo "=== Packages for release ==="
-          ls -lh release/
-
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: NFTBan v${{ steps.version.outputs.version }}
-          body: |
-            ## NFTBan v${{ steps.version.outputs.version }}
-
-            **Installation packages for multiple distributions**
-
-            ### 📦 RPM Packages (RHEL/Rocky/Alma)
-            - `nftban-el9-x86_64.rpm` - RHEL/Rocky/Alma 9 (Tier 0)
-            - `nftban-el10-x86_64.rpm` - RHEL/Rocky/Alma 10 (Tier 1)
-
-            ### 📦 DEB Packages (Ubuntu/Debian)
-            - `nftban-ubuntu24.04-amd64.deb` - Ubuntu 24.04 LTS (Tier 0)
-            - `nftban-debian12-amd64.deb` - Debian 12 (Tier 0)
-            - `nftban-debian13-amd64.deb` - Debian 13 (Tier 1)
-            - `nftban-ubuntu22.04-amd64.deb` - Ubuntu 22.04 LTS (Tier 2)
-
-            ### ✨ Features
-            - **Prerequisite checks** - Validates system before installation
-            - **GeoIP database** - Automatically downloads MaxMind GeoLite2-City (FREE)
-            - **Auto-updates** - Weekly GeoIP and threat feed updates via systemd timers
-            - **No manual config** - Works out of the box
-
-            ### 📖 Documentation
-            - [Installation Guide](https://github.com/itcmsgr/nftban/wiki)
-            - [GeoIP Database Guide](https://github.com/itcmsgr/nftban/wiki/GeoIP-Database-Guide)
-            - [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)
-
-            Built from commit: ${{ github.sha }}
-          files: release/*
-          fail_on_unmatched_files: true
-          draft: false
-          prerelease: false
