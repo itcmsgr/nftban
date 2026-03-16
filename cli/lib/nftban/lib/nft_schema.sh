@@ -103,6 +103,14 @@ declare -g -A NFTBAN_IPV4_SETS=(
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
+
+    # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
+    ["http_bot_suspect"]="ipv4_addr|timeout|Kernel-populated HTTP bot suspects"
+    ["http_bot_pending"]="ipv4_addr|timeout|Awaiting bot classification"
+    ["http_bot_allow"]="ipv4_addr|timeout|Verified allowed crawlers"
+    ["http_bot_grey"]="ipv4_addr|timeout|Suspicious bots, throttled"
+    ["http_bot_ban"]="ipv4_addr|timeout|Denied/malicious bots"
+    ["http_bot_emergency"]="ipv4_addr|timeout|Emergency pressure blocks"
 )
 
 # Chains in ip nftban (IPv4)
@@ -154,6 +162,14 @@ declare -g -A NFTBAN_IPV6_SETS=(
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
+
+    # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
+    ["http_bot_suspect6"]="ipv6_addr|timeout|Kernel-populated HTTP bot suspects"
+    ["http_bot_pending6"]="ipv6_addr|timeout|Awaiting bot classification"
+    ["http_bot_allow6"]="ipv6_addr|timeout|Verified allowed crawlers"
+    ["http_bot_grey6"]="ipv6_addr|timeout|Suspicious bots, throttled"
+    ["http_bot_ban6"]="ipv6_addr|timeout|Denied/malicious bots"
+    ["http_bot_emergency6"]="ipv6_addr|timeout|Emergency pressure blocks"
 )
 
 # Chains in ip6 nftban (IPv6)
@@ -182,32 +198,25 @@ declare -g -A NFTBAN_IPV6_HELPER_CHAINS=(
 # =============================================================================
 # OPTIONAL MODULE SETS (created by Go daemon when modules are enabled)
 # =============================================================================
-# These sets are NOT mandatory — they exist only when the corresponding
-# protection module is enabled. The Go daemon creates them at runtime.
+# These sets exist only when the corresponding protection module is enabled.
 # Schema validation treats these as OPTIONAL (warning, not error).
+#
+# NOTE (v1.21.4): HTTP Bot Guard sets moved to required sets (NFTBAN_IPV4_SETS
+# / NFTBAN_IPV6_SETS) — they are now part of the base nftables.conf schema.
+# Empty sets cost nothing and prevent "No such file or directory" errors
+# when botguard enable applies rules before sets exist.
 # =============================================================================
 
-# HTTP Bot Guard sets (v1.20.0) — created by nftband when botguard is enabled
-# Set ownership: http_bot_suspect is kernel-written (nft meter rule),
-# all others are Go-written via OpQueue (netlink)
 # shellcheck disable=SC2034
 declare -g -A NFTBAN_IPV4_MODULE_SETS=(
-    ["http_bot_suspect"]="ipv4_addr|timeout|Kernel-populated HTTP bot suspects (meter rule)"
-    ["http_bot_pending"]="ipv4_addr|timeout|Awaiting Go classification (light throttle)"
-    ["http_bot_allow"]="ipv4_addr|timeout|Verified allowed crawlers (bypass throttle)"
-    ["http_bot_grey"]="ipv4_addr|timeout|Suspicious bots, throttled via penalty ladder"
-    ["http_bot_ban"]="ipv4_addr|timeout|Denied/malicious bots (full drop)"
-    ["http_bot_emergency"]="ipv4_addr|timeout|Emergency pressure blocks (immediate drop)"
+    # Currently empty — botguard sets moved to required sets in v1.21.4
+    ["_placeholder"]="none|none|Placeholder for future module sets"
 )
 
 # shellcheck disable=SC2034
 declare -g -A NFTBAN_IPV6_MODULE_SETS=(
-    ["http_bot_suspect6"]="ipv6_addr|timeout|Kernel-populated HTTP bot suspects (meter rule)"
-    ["http_bot_pending6"]="ipv6_addr|timeout|Awaiting Go classification (light throttle)"
-    ["http_bot_allow6"]="ipv6_addr|timeout|Verified allowed crawlers (bypass throttle)"
-    ["http_bot_grey6"]="ipv6_addr|timeout|Suspicious bots, throttled via penalty ladder"
-    ["http_bot_ban6"]="ipv6_addr|timeout|Denied/malicious bots (full drop)"
-    ["http_bot_emergency6"]="ipv6_addr|timeout|Emergency pressure blocks (immediate drop)"
+    # Currently empty — botguard sets moved to required sets in v1.21.4
+    ["_placeholder"]="none|none|Placeholder for future module sets"
 )
 
 # =============================================================================
