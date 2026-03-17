@@ -563,8 +563,8 @@ nftban_cmd_rbl_check() {
                 # Extract first RBL and reason for alert
                 local first_rbl
                 local first_reason
-                first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}')
-                first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //')
+                first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
+                first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
 
                 if [[ "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:-YES}" == "YES" ]]; then
                     if nftban_rbl_check_new_listing "$check_ip" "listed"; then
@@ -751,8 +751,8 @@ nftban_cmd_rbl_server() {
                     if nftban_rbl_check_new_listing "$check_ip" "listed"; then
                         local first_rbl
                         local first_reason
-                        first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}')
-                        first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //')
+                        first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}' || true)
+                        first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //' || true)
                         nftban_rbl_send_alert "$check_ip" "$first_rbl" "$first_reason" "$ip_source"
                     fi
                 fi

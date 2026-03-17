@@ -408,7 +408,7 @@ nftban_check_all_binaries() {
 
         # Extract just the data portion for the array
         local data
-        data=$(echo "$result" | grep -o '"data":{[^}]*}' | sed 's/"data"://')
+        data=$(echo "$result" | grep -o '"data":{[^}]*}' | sed 's/"data"://' || echo '{}')
         [[ -n "$results" ]] && results+=","
         results+="$data"
     done

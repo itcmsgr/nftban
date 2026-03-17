@@ -147,6 +147,8 @@ func loadPortFile(filePath string, config *PortConfig) error {
 		// Skip lines that don't start with a digit (port numbers always start with digits)
 		// This handles [description] section fields like "name = ...", "priority = ..."
 		if len(line) == 0 || (line[0] < '0' || line[0] > '9') {
+			// Warn about non-port lines that aren't obvious metadata (helps catch INI-format mistakes)
+			fmt.Fprintf(os.Stderr, "Warning: Skipping non-port line at %s:%d: %s\n", filePath, lineNum, line)
 			continue
 		}
 
