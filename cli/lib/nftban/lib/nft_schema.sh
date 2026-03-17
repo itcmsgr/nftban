@@ -628,7 +628,7 @@ nftban_nft_count_all_sets() {
     udp_in=$(nftban_nft_count_set ip nftban udp_ports_in 2>/dev/null || echo 0)
     udp_out=$(nftban_nft_count_set ip nftban udp_ports_out 2>/dev/null || echo 0)
 
-    # HTTP Bot Guard module sets (optional — zero if module not enabled)
+    # HTTP Bot Guard module sets — IPv4 (optional — zero if module not enabled)
     local bg_suspect bg_allow bg_ban bg_grey bg_emergency bg_pending
     bg_suspect=$(nftban_nft_count_set ip nftban http_bot_suspect 2>/dev/null || echo 0)
     bg_allow=$(nftban_nft_count_set ip nftban http_bot_allow 2>/dev/null || echo 0)
@@ -636,6 +636,15 @@ nftban_nft_count_all_sets() {
     bg_grey=$(nftban_nft_count_set ip nftban http_bot_grey 2>/dev/null || echo 0)
     bg_emergency=$(nftban_nft_count_set ip nftban http_bot_emergency 2>/dev/null || echo 0)
     bg_pending=$(nftban_nft_count_set ip nftban http_bot_pending 2>/dev/null || echo 0)
+
+    # HTTP Bot Guard module sets — IPv6
+    local bg6_suspect bg6_allow bg6_ban bg6_grey bg6_emergency bg6_pending
+    bg6_suspect=$(nftban_nft_count_set ip6 nftban http_bot_suspect6 2>/dev/null || echo 0)
+    bg6_allow=$(nftban_nft_count_set ip6 nftban http_bot_allow6 2>/dev/null || echo 0)
+    bg6_ban=$(nftban_nft_count_set ip6 nftban http_bot_ban6 2>/dev/null || echo 0)
+    bg6_grey=$(nftban_nft_count_set ip6 nftban http_bot_grey6 2>/dev/null || echo 0)
+    bg6_emergency=$(nftban_nft_count_set ip6 nftban http_bot_emergency6 2>/dev/null || echo 0)
+    bg6_pending=$(nftban_nft_count_set ip6 nftban http_bot_pending6 2>/dev/null || echo 0)
 
     cat <<EOF
 {
@@ -648,10 +657,10 @@ nftban_nft_count_all_sets() {
     "total_open": $((tcp_in + udp_in))
   },
   "botguard": {
-    "suspect": $bg_suspect, "pending": $bg_pending,
-    "allow": $bg_allow, "grey": $bg_grey,
-    "ban": $bg_ban, "emergency": $bg_emergency,
-    "total_tracked": $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency))
+    "suspect": {"ipv4": $bg_suspect, "ipv6": $bg6_suspect}, "pending": {"ipv4": $bg_pending, "ipv6": $bg6_pending},
+    "allow": {"ipv4": $bg_allow, "ipv6": $bg6_allow}, "grey": {"ipv4": $bg_grey, "ipv6": $bg6_grey},
+    "ban": {"ipv4": $bg_ban, "ipv6": $bg6_ban}, "emergency": {"ipv4": $bg_emergency, "ipv6": $bg6_emergency},
+    "total_tracked": $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency + bg6_suspect + bg6_pending + bg6_allow + bg6_grey + bg6_ban + bg6_emergency))
   },
   "totals": {
     "blocked_ipv4": $bl_v4,

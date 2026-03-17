@@ -319,11 +319,11 @@ nftban_port_gather_nft_rules() {
         local set_contents
         set_contents=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | \
             tr '\n' ' ' | \
-            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{[[:space:]]*\([^}]*\).*/\1/p')
+            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{[[:space:]]*\([^}]*\).*/\1/p' || true)
         if [[ -n "$set_contents" ]]; then
             # Parse ports from set (handles: 22, 80, 443, etc.)
             local port
-            for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+'); do
+            for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+' || true); do
                 NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${norm_chain}"]="$action"
                 NFTBAN_PORT_SEEN["${port}_${proto}"]=1
             done
@@ -345,11 +345,11 @@ nftban_port_gather_nft_rules() {
         local set_contents
         set_contents=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | \
             tr '\n' ' ' | \
-            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{[[:space:]]*\([^}]*\).*/\1/p')
+            sed -n 's/.*elements[[:space:]]*=[[:space:]]*{[[:space:]]*\([^}]*\).*/\1/p' || true)
 
         if [[ -n "$set_contents" ]]; then
             local port
-            for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+'); do
+            for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+' || true); do
                 # Only add if not already set (rule-based takes priority)
                 if [[ -z "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${norm_chain}"]:-}" ]]; then
                     NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${norm_chain}"]="accept"
