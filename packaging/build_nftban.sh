@@ -927,9 +927,11 @@ if systemctl is-active csf.service &>/dev/null 2>&1 || \
     CONFLICTS="\${CONFLICTS}CSF "
 fi
 
-# Check cPHulk (cPanel brute force)
+# Check cPHulk (cPanel brute force) - INFO only, designed to coexist
+# cPHulk is handled during panel detection (step 10.5a), not a blocking conflict
 if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
-    CONFLICTS="\${CONFLICTS}cPHulk "
+    echo "[NFTBan] INFO: cPHulk detected (cPanel brute force protection)"
+    echo "[NFTBan]   cPHulk will be disabled during panel setup (step 10.5a)"
 fi
 
 # Check UFW
@@ -984,7 +986,6 @@ if [[ -n "\$CONFLICTS" ]]; then
                     echo ""
                     echo "[NFTBan] Please remove the conflicting firewalls:"
                     echo "[NFTBan]   - CSF: csf -x && yum remove csf lfd"
-                    echo "[NFTBan]   - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
                     echo "[NFTBan]   - UFW: ufw disable && apt remove ufw"
                     echo "[NFTBan]   - firewalld: systemctl disable --now firewalld"
                     echo "[NFTBan]   - iptables: systemctl disable --now iptables"
@@ -1000,7 +1001,6 @@ if [[ -n "\$CONFLICTS" ]]; then
             echo "[NFTBan ERROR]   1. Auto-takeover: NFTBAN_TAKEOVER=1 dnf install -y ./nftban-*.rpm"
             echo "[NFTBan ERROR]   2. Manual removal:"
             echo "[NFTBan ERROR]      - CSF: csf -x && yum remove csf lfd"
-            echo "[NFTBan ERROR]      - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
             echo "[NFTBan ERROR]      - UFW: ufw disable && apt remove ufw"
             echo "[NFTBan ERROR]      - firewalld: systemctl disable --now firewalld"
             echo "[NFTBan ERROR]      - iptables: systemctl disable --now iptables"
@@ -1024,16 +1024,7 @@ if [[ -n "\$CONFLICTS" ]]; then
             echo "[NFTBan]   ✓ CSF disabled"
         fi
 
-        # Disable cPHulk
-        if [[ "\$CONFLICTS" == *"cPHulk"* ]]; then
-            echo "[NFTBan]   Disabling cPHulk..."
-            if command -v whmapi1 &>/dev/null; then
-                whmapi1 configureservice service=cphulkd enabled=0 2>/dev/null || true
-            fi
-            systemctl disable cphulkd 2>/dev/null || true
-            systemctl stop cphulkd 2>/dev/null || true
-            echo "[NFTBan]   ✓ cPHulk disabled"
-        fi
+        # NOTE: cPHulk is NOT a conflict — handled in panel detection (step 10.5a)
 
         # Disable UFW
         if [[ "\$CONFLICTS" == *"UFW"* ]]; then

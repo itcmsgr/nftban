@@ -199,9 +199,10 @@ case "$1" in
             CONFLICTS="${CONFLICTS}CSF "
         fi
 
-        # Check cPHulk (cPanel brute force)
+        # Check cPHulk (cPanel brute force) - INFO only, designed to coexist
+        # cPHulk is handled during panel detection (step 10.5a), not a blocking conflict
         if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
-            CONFLICTS="${CONFLICTS}cPHulk "
+            log_info "cPHulk detected (cPanel brute force) — will be disabled during panel setup"
         fi
 
         # Check UFW
@@ -256,7 +257,6 @@ case "$1" in
                             log_info ""
                             log_info "Please remove the conflicting firewalls:"
                             log_info "  - CSF: csf -x && apt remove csf lfd"
-                            log_info "  - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
                             log_info "  - UFW: ufw disable && apt remove ufw"
                             log_info "  - firewalld: systemctl disable --now firewalld"
                             log_info "  - iptables: systemctl disable --now iptables"
@@ -272,7 +272,6 @@ case "$1" in
                     log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
                     log_error "  2. Manual removal:"
                     log_error "     - CSF: csf -x && apt remove csf lfd"
-                    log_error "     - cPHulk: whmapi1 configureservice service=cphulkd enabled=0"
                     log_error "     - UFW: ufw disable && apt remove ufw"
                     log_error "     - firewalld: systemctl disable --now firewalld"
                     log_error "     - iptables: systemctl disable --now iptables"
@@ -296,16 +295,7 @@ case "$1" in
                     log_info "  ✓ CSF disabled"
                 fi
 
-                # Disable cPHulk
-                if [[ "$CONFLICTS" == *"cPHulk"* ]]; then
-                    log_info "  Disabling cPHulk..."
-                    if command -v whmapi1 &>/dev/null; then
-                        whmapi1 configureservice service=cphulkd enabled=0 2>/dev/null || true
-                    fi
-                    systemctl disable cphulkd 2>/dev/null || true
-                    systemctl stop cphulkd 2>/dev/null || true
-                    log_info "  ✓ cPHulk disabled"
-                fi
+                # NOTE: cPHulk is NOT a conflict — handled in panel detection (step 10.5a)
 
                 # Disable UFW
                 if [[ "$CONFLICTS" == *"UFW"* ]]; then
