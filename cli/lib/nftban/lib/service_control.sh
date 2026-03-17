@@ -348,7 +348,6 @@ nftban_enable_all() {
     local essential_port_file="${NFTBAN_CONFIG_DIR}/ports.d/02-essential.conf"
     if [[ ! -f "$essential_port_file" ]]; then
         mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" 2>/dev/null || true
-        local essential_ports=""
         # Detect listening TCP ports for well-known services
         local listening_ports
         listening_ports=$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -oP ':\K\d+$' | sort -un || true)
