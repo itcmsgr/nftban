@@ -188,7 +188,7 @@ _nftban_auto_whitelist_ssh_port() {
     # Try to detect SSH port from sshd_config
     if [[ -f "$sshd_config" ]]; then
         local detected_port
-        detected_port=$(grep -E "^Port\s+" "$sshd_config" 2>/dev/null | awk '{print $2}' | head -1)
+        detected_port=$(grep -E "^Port\s+" "$sshd_config" 2>/dev/null | awk '{print $2}' | head -1 || true)
         if [[ -n "$detected_port" && "$detected_port" =~ ^[0-9]+$ ]]; then
             ssh_port="$detected_port"
         fi

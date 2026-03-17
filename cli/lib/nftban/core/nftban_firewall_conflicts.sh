@@ -417,16 +417,17 @@ nftban_detect_ufw() {
     local ufw_status
     ufw_status=$(ufw status 2>/dev/null | head -1 || echo "")
 
-    if [[ "$ufw_status" == *"active"* ]]; then
+    if [[ "$ufw_status" == *"inactive"* ]]; then
+        status=1
+        # Just info, inactive ufw is fine
+        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
+    elif [[ -n "$ufw_status" ]]; then
+        # Not inactive and ufw returned status → treat as active
         status=2
         NFTBAN_FIREWALL_CONFLICTS+=("UFW: ACTIVE - Critical conflict with nftban")
         NFTBAN_FIREWALL_FIXES+=("Disable ufw:")
         NFTBAN_FIREWALL_FIXES+=("  ufw disable")
         [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
-    elif [[ "$ufw_status" == *"inactive"* ]]; then
-        status=1
-        # Just info, inactive ufw is fine
-        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
     fi
 
     return $status
@@ -1133,7 +1134,7 @@ nftban_remove_conflicts() {
                 if command -v ufw &>/dev/null; then
                     local status
                     status=$(ufw status 2>/dev/null | head -1 || echo "")
-                    if [[ "$status" == *"active"* ]]; then
+                    if [[ -n "$status" && "$status" != *"inactive"* ]]; then
                         to_remove+=("ufw")
                     fi
                 fi
