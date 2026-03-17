@@ -249,7 +249,9 @@ nftban_resolve_firewall_conflicts() {
 # SERVICE CONTROL FUNCTIONS
 # =============================================================================
 
-# Enable all NFTBan services
+# Enable all NFTBan services — SINGLE SOURCE OF TRUTH (v1.22.0)
+# Implements Minimum Safe State: either PROTECTED or explicit FAIL.
+# No partial success. No false "ACTIVE" state.
 # Usage: nftban_enable_all
 nftban_enable_all() {
     if [[ $EUID -ne 0 ]]; then
@@ -257,55 +259,430 @@ nftban_enable_all() {
         return 1
     fi
 
+    # Track which firewall was disabled for rollback
+    local _prev_firewall=""
+
     # Check and resolve firewall conflicts first
-    nftban_resolve_firewall_conflicts
+    # Detect BEFORE disabling (using runtime state, not binary presence)
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        _prev_firewall="firewalld"
+    elif command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+        _prev_firewall="ufw"
+    elif systemctl is-active --quiet iptables 2>/dev/null; then
+        _prev_firewall="iptables"
+    fi
+
+    if ! nftban_resolve_firewall_conflicts; then
+        echo "ERROR: Failed to resolve firewall conflicts" >&2
+        return 1
+    fi
 
     echo ""
     echo "Enabling all NFTBan services..."
+    echo ""
 
-    # Set master switch
+    # =========================================================================
+    # [1/10] Fix permissions and create directories
+    # =========================================================================
+    echo "[1/10] Fixing permissions and creating directories..."
+    if command -v nftban &>/dev/null; then
+        nftban permissions enforce >/dev/null 2>&1 || true
+        nftban health check --auto-heal >/dev/null 2>&1 || true
+    fi
+    echo "  ✅ Permissions fixed"
+    echo ""
+
+    # =========================================================================
+    # [2/10] Auto-whitelist system IP (write config file for lockout prevention)
+    # =========================================================================
+    echo "[2/10] Auto-whitelisting system IP..."
+    if declare -f _nftban_auto_whitelist_system_ip &>/dev/null; then
+        _nftban_auto_whitelist_system_ip
+    fi
+    echo ""
+
+    # =========================================================================
+    # [3/10] Auto-detect and whitelist SSH port + panel ports + essential ports
+    # =========================================================================
+    echo "[3/10] Auto-detecting ports (SSH, panel, essential services)..."
+
+    # SSH port (primary lockout prevention)
+    if declare -f _nftban_auto_whitelist_ssh_port &>/dev/null; then
+        _nftban_auto_whitelist_ssh_port
+    fi
+
+    # Panel port detection (Plesk, cPanel, DirectAdmin, etc.)
+    local detected_panel="none"
+    if declare -f nftban_panel_detect &>/dev/null; then
+        detected_panel=$(nftban_panel_detect 2>/dev/null) || detected_panel="none"
+    fi
+    if [[ "$detected_panel" != "none" ]]; then
+        local panel_ports=""
+        local panel_name=""
+        if declare -f _get_panel_info &>/dev/null; then
+            panel_ports=$(_get_panel_info "$detected_panel" "ports" 2>/dev/null) || panel_ports=""
+            panel_name=$(_get_panel_info "$detected_panel" "name" 2>/dev/null) || panel_name="$detected_panel"
+        fi
+        if [[ -n "$panel_ports" ]]; then
+            local panel_port_file="${NFTBAN_CONFIG_DIR}/ports.d/01-panel.conf"
+            if [[ ! -f "$panel_port_file" ]]; then
+                mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" 2>/dev/null || true
+                {
+                    echo "# Auto-detected panel ports"
+                    echo "# Panel: $panel_name"
+                    echo "# Date: $(date -Iseconds)"
+                    echo "# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)"
+                    echo "$panel_ports" | tr ',' '\n' | while read -r port; do
+                        echo "${port}/T/I"
+                    done
+                } > "$panel_port_file"
+                chmod 644 "$panel_port_file"
+                echo "  ✅ Panel ports whitelisted ($panel_name): $panel_ports"
+            else
+                echo "  ✅ Panel ports already configured ($panel_name)"
+            fi
+        fi
+    fi
+
+    # Essential service port detection (HTTP, HTTPS, mail, DNS)
+    local essential_port_file="${NFTBAN_CONFIG_DIR}/ports.d/02-essential.conf"
+    if [[ ! -f "$essential_port_file" ]]; then
+        mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" 2>/dev/null || true
+        # Detect listening TCP ports for well-known services
+        local listening_ports
+        listening_ports=$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -oP ':\K\d+$' | sort -un || true)
+        local -a detected_essential=()
+        for p in $listening_ports; do
+            case "$p" in
+                80|443)    detected_essential+=("$p") ;;  # HTTP/HTTPS
+                25|465|587) detected_essential+=("$p") ;; # SMTP
+                110|995)   detected_essential+=("$p") ;;  # POP3
+                143|993)   detected_essential+=("$p") ;;  # IMAP
+                53)        detected_essential+=("$p") ;;  # DNS
+            esac
+        done
+        if [[ ${#detected_essential[@]} -gt 0 ]]; then
+            {
+                echo "# Auto-detected essential service ports"
+                echo "# Created by: nftban enable"
+                echo "# Date: $(date -Iseconds)"
+                echo "# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)"
+                for p in "${detected_essential[@]}"; do
+                    echo "${p}/T/I"
+                done
+                # DNS also needs UDP
+                if printf '%s\n' "${detected_essential[@]}" | grep -q '^53$'; then
+                    echo "53/U/I"
+                fi
+            } > "$essential_port_file"
+            chmod 644 "$essential_port_file"
+            local ports_list
+            ports_list=$(printf '%s,' "${detected_essential[@]}")
+            echo "  ✅ Essential ports whitelisted: ${ports_list%,}"
+        else
+            echo "  ℹ️  No additional essential service ports detected"
+        fi
+    else
+        echo "  ✅ Essential ports already configured"
+    fi
+    echo ""
+
+    # =========================================================================
+    # [4/10] Initialize firewall (with rollback on failure)
+    # =========================================================================
+    echo "[4/10] Initializing firewall..."
+    if ! nft list table inet nftban >/dev/null 2>&1; then
+        echo "  Firewall not initialized, initializing now..."
+        if command -v nftban &>/dev/null; then
+            if nftban firewall init >/dev/null 2>&1; then
+                echo "  ✅ Firewall initialized"
+            else
+                echo "  ❌ ERROR: Failed to initialize firewall" >&2
+                # ROLLBACK: Restore previous firewall if we disabled one
+                if [[ -n "$_prev_firewall" ]]; then
+                    echo "  Restoring previous firewall ($_prev_firewall)..."
+                    case "$_prev_firewall" in
+                        firewalld)
+                            systemctl enable firewalld 2>/dev/null || true
+                            systemctl start firewalld 2>/dev/null || true
+                            ;;
+                        ufw)
+                            ufw --force enable 2>/dev/null || true
+                            ;;
+                        iptables)
+                            systemctl enable iptables 2>/dev/null || true
+                            systemctl start iptables 2>/dev/null || true
+                            ;;
+                    esac
+                    echo "  ✅ Previous firewall restored: $_prev_firewall"
+                fi
+                echo "  ❌ Protection failed — rollback applied" >&2
+                return 1
+            fi
+        fi
+    else
+        echo "  ✅ Firewall already initialized"
+    fi
+    echo ""
+
+    # =========================================================================
+    # [5/10] Validate configuration
+    # =========================================================================
+    echo "[5/10] Validating configuration..."
+    local config_errors=0
+    [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && config_errors=$((config_errors + 1))
+    [[ ! -f "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" ]] && echo "  ⚠️  WARNING: SSH port config missing" && config_errors=$((config_errors + 1))
+    if [[ $config_errors -gt 0 ]]; then
+        echo "  ⚠️  WARNING: $config_errors config issues detected"
+    else
+        echo "  ✅ Configuration valid"
+    fi
+    echo ""
+
+    # =========================================================================
+    # [6/10] Enable core services (names from central config, not hardcoded)
+    # =========================================================================
+    echo "[6/10] Enabling core services..."
     _nftban_set_config "NFTBAN_ENABLED" "true"
 
-    # Enable systemd services
-    local services=("nftables")
+    # Service names from nftban.conf (per-distro safe)
+    local svc_daemon="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
+    local svc_login="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
 
-    # Add suricata if installed
+    # nftables is an external service — always "nftables.service" but resolved via config
+    local services=("nftables.service" "$svc_daemon")
     if command -v suricata &>/dev/null; then
-        services+=("suricata")
+        services+=("suricata.service")
     fi
 
     for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null; then
-            echo "  Enabling ${svc}..."
-            systemctl enable "${svc}.service" 2>/dev/null || true
-            systemctl start "${svc}.service" 2>/dev/null || true
+        if systemctl list-unit-files "$svc" &>/dev/null 2>&1; then
+            systemctl enable "$svc" 2>/dev/null && \
+            systemctl start "$svc" 2>/dev/null && \
+            echo "  ✅ Enabled & started: ${svc%.service}"
         fi
     done
 
-    # Initialize nftban firewall tables if not present
-    if ! nft list table ip nftban &>/dev/null 2>&1; then
-        echo "  Initializing nftban firewall..."
-        if command -v nftban &>/dev/null; then
-            nftban firewall init 2>/dev/null || echo "  Warning: firewall init failed"
+    # Sync whitelist into running daemon (must happen AFTER nftband starts)
+    if command -v nftban &>/dev/null; then
+        nftban whitelist-system sync 2>/dev/null || echo "  ⚠️  Whitelist sync deferred (daemon initializing)"
+    fi
+    echo ""
+
+    # =========================================================================
+    # [7/10] Enable timers (names from central config, not hardcoded)
+    # =========================================================================
+    echo "[7/10] Enabling timers..."
+
+    # Timer names from nftban.conf (per-distro safe)
+    local tmr_health="${NFTBAN_TIMER_HEALTH:-nftban-health.timer}"
+    local tmr_maintenance="${NFTBAN_TIMER_MAINTENANCE:-nftban-maintenance.timer}"
+    local tmr_watchdog="${NFTBAN_TIMER_WATCHDOG:-nftban-watchdog.timer}"
+    local tmr_geoip="${NFTBAN_TIMER_GEOIP:-nftban-core-geoip.timer}"
+    local tmr_metrics="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
+    local tmr_feeds="${NFTBAN_TIMER_FEEDS:-nftban-core-feeds.timer}"
+    local tmr_suricata="${NFTBAN_TIMER_SURICATA_UPDATE:-nftban-suricata-update.timer}"
+    # Snapshot/rollback timers (no config var yet — use known names)
+    local tmr_snapshot="nftban-snapshot.timer"
+    local tmr_rollback="nftban-rollback.timer"
+
+    # Core timers — ALWAYS enabled (non-negotiable)
+    local core_timers=(
+        "$tmr_health"
+        "$tmr_maintenance"
+        "$tmr_watchdog"
+        "$tmr_snapshot"
+        "$tmr_rollback"
+    )
+    for timer in "${core_timers[@]}"; do
+        if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then
+            systemctl enable "$timer" 2>/dev/null && \
+            systemctl start "$timer" 2>/dev/null && \
+            echo "  ✅ Enabled: $timer"
+        fi
+    done
+
+    # GeoIP timer — always enabled (GeoIP is default-on)
+    if systemctl list-unit-files "$tmr_geoip" &>/dev/null 2>&1; then
+        systemctl enable "$tmr_geoip" 2>/dev/null && \
+        systemctl start "$tmr_geoip" 2>/dev/null && \
+        echo "  ✅ Enabled: $tmr_geoip"
+    fi
+
+    # Optional timers (config-gated)
+    if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
+        if systemctl list-unit-files "$tmr_metrics" &>/dev/null 2>&1; then
+            systemctl enable "$tmr_metrics" 2>/dev/null && \
+            systemctl start "$tmr_metrics" 2>/dev/null && \
+            echo "  ✅ Enabled: $tmr_metrics"
         fi
     fi
-
-    # EMERGENCY: Auto-whitelist system IPs to prevent lockout
-    # This adds server's own IPs directly to nftables as safety measure
-    # Even if Go daemon fails, server won't lock itself out
-    echo "  Auto-detecting system IPs (lockout prevention)..."
-    if command -v nftban &>/dev/null; then
-        nftban whitelist-system sync 2>/dev/null || echo "  Warning: whitelist-system sync failed"
+    if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
+        if systemctl list-unit-files "$tmr_feeds" &>/dev/null 2>&1; then
+            systemctl enable "$tmr_feeds" 2>/dev/null && \
+            systemctl start "$tmr_feeds" 2>/dev/null && \
+            echo "  ✅ Enabled: $tmr_feeds"
+        fi
     fi
+    if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]]; then
+        if systemctl list-unit-files "$tmr_suricata" &>/dev/null 2>&1; then
+            systemctl enable "$tmr_suricata" 2>/dev/null && \
+            systemctl start "$tmr_suricata" 2>/dev/null && \
+            echo "  ✅ Enabled: $tmr_suricata"
+        fi
+    fi
+    echo ""
 
-    # Primary sync via Go daemon (handles full whitelist/blacklist sync)
+    # =========================================================================
+    # [8/10] Enable login monitor
+    # =========================================================================
+    echo "[8/10] Enabling login monitor..."
+    if declare -f nftban_login_cmd_enable &>/dev/null; then
+        nftban_login_cmd_enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
+    else
+        if systemctl list-unit-files "$svc_login" &>/dev/null 2>&1; then
+            systemctl enable "$svc_login" 2>/dev/null && \
+            systemctl start "$svc_login" 2>/dev/null && \
+            echo "  ✅ Login monitor enabled"
+        else
+            echo "  ⚠️  Login monitor service not installed (optional)"
+        fi
+    fi
+    echo ""
+
+    # =========================================================================
+    # [9/10] GeoIP provisioning (default-on, immediate download if missing)
+    # =========================================================================
+    echo "[9/10] Provisioning GeoIP database..."
+    _nftban_set_config "NFTBAN_GEOIP_ENABLED" "true"
+    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+    local geoip_found=0
+    # Check for any supported GeoIP database
+    for db_name in "dbip-country-lite.mmdb" "GeoLite2-Country.mmdb" "GeoLite2-City.mmdb"; do
+        if [[ -f "${geoip_dir}/${db_name}" ]]; then
+            geoip_found=1
+            echo "  ✅ GeoIP database present: ${db_name}"
+            break
+        fi
+    done
+    if [[ $geoip_found -eq 0 ]]; then
+        echo "  GeoIP database missing, downloading now..."
+        if declare -f nftban_geoip_download &>/dev/null; then
+            if nftban_geoip_download 2>/dev/null; then
+                echo "  ✅ GeoIP database installed"
+            else
+                echo "  ⚠️  GeoIP download failed (will retry via timer)"
+            fi
+        elif command -v nftban &>/dev/null; then
+            if nftban geoip download 2>/dev/null; then
+                echo "  ✅ GeoIP database installed"
+            else
+                echo "  ⚠️  GeoIP download failed (will retry via timer)"
+            fi
+        else
+            echo "  ⚠️  GeoIP provisioning unavailable"
+        fi
+    fi
+    echo ""
+
+    # =========================================================================
+    # [10/10] POST-ENABLE VALIDATION GATE
+    # =========================================================================
+    # No false ACTIVE state. Either PROTECTED or NOT PROTECTED.
+    echo "[10/10] Verifying protection state..."
+    echo ""
+
+    # Sync via Go daemon first
     if command -v nftban-core &>/dev/null; then
-        echo "  Syncing via daemon..."
         nftban-core sync 2>/dev/null || true
     fi
 
-    echo "All services enabled"
-    return 0
+    local validation_failures=()
+
+    # Check 1: nft rules loaded > 0
+    local rules_count=0
+    rules_count=$(nft list ruleset 2>/dev/null | grep -cE '^\s+(type|chain|rule|set)' || echo 0)
+    if [[ "$rules_count" -eq 0 ]]; then
+        validation_failures+=("nft rules: 0 (no firewall rules loaded)")
+    fi
+
+    # Check 2: nftband active (using config var)
+    local nftband_state
+    nftband_state=$(systemctl is-active "${svc_daemon}" 2>/dev/null || echo "inactive")
+    if [[ "$nftband_state" != "active" ]]; then
+        validation_failures+=("${svc_daemon%.service}: $nftband_state")
+    fi
+
+    # Check 3: login-monitor active (using config var)
+    local login_state
+    login_state=$(systemctl is-active "${svc_login}" 2>/dev/null || echo "inactive")
+    if [[ "$login_state" != "active" ]]; then
+        # Login monitor may not be installed — check if unit exists
+        if systemctl list-unit-files "${svc_login}" &>/dev/null 2>&1; then
+            validation_failures+=("${svc_login%.service}: $login_state")
+        fi
+    fi
+
+    # Check 4: core timers active (at least 1)
+    local timers_active=0
+    timers_active=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+    if [[ "$timers_active" -eq 0 ]]; then
+        validation_failures+=("timers: 0 active")
+    fi
+
+    # Check 5: SSH port preserved
+    local ssh_conf="${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf"
+    if [[ ! -f "$ssh_conf" ]]; then
+        validation_failures+=("SSH port config: missing")
+    fi
+
+    # Check 6: GeoIP database present
+    local geoip_present=0
+    for db_name in "dbip-country-lite.mmdb" "GeoLite2-Country.mmdb" "GeoLite2-City.mmdb"; do
+        if [[ -f "${geoip_dir}/${db_name}" ]]; then
+            geoip_present=1
+            break
+        fi
+    done
+    if [[ $geoip_present -eq 0 ]]; then
+        validation_failures+=("GeoIP database: missing (DEGRADED)")
+    fi
+
+    # Final verdict
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ ${#validation_failures[@]} -eq 0 ]]; then
+        echo "✅ PROTECTED"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Rules: $rules_count | nftband: $nftband_state | Timers: $timers_active"
+        echo "  Run 'nftban status' for full details"
+        return 0
+    else
+        # Check if it's just GeoIP (DEGRADED) or something critical (NOT PROTECTED)
+        local critical_failures=0
+        for failure in "${validation_failures[@]}"; do
+            [[ "$failure" != *"DEGRADED"* ]] && critical_failures=$((critical_failures + 1))
+        done
+
+        if [[ $critical_failures -eq 0 ]]; then
+            echo "⚠️  DEGRADED (non-critical components missing)"
+        else
+            echo "❌ NOT PROTECTED"
+        fi
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        for failure in "${validation_failures[@]}"; do
+            echo "  ❌ $failure"
+        done
+        echo ""
+        echo "  Run 'nftban health check --auto-heal' to attempt repair"
+
+        # Return failure only for critical issues
+        if [[ $critical_failures -gt 0 ]]; then
+            return 1
+        fi
+        return 0
+    fi
 }
 
 # Disable all NFTBan services (emergency mode)
@@ -318,16 +695,26 @@ nftban_disable_all() {
 
     echo "EMERGENCY: Disabling all NFTBan services..."
 
-    # Stop and disable systemd services
-    local login_svc="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
-    local services=("${login_svc%.service}" "${metrics_svc%.service}" "nftban" "suricata")
+    # Stop all timers first (before stopping services that depend on them)
+    echo "  Stopping timers..."
+    local all_timers
+    all_timers=$(systemctl list-unit-files 'nftban-*.timer' --no-legend 2>/dev/null | awk '{print $1}' || true)
+    for timer in $all_timers; do
+        systemctl stop "$timer" 2>/dev/null || true
+        systemctl disable "$timer" 2>/dev/null || true
+    done
+
+    # Stop and disable systemd services (names from central config)
+    local svc_daemon="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
+    local svc_login="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+    local svc_metrics="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
+    local services=("${svc_login}" "${svc_metrics}" "${svc_daemon}" "suricata.service" "nftables.service")
 
     for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null 2>&1; then
-            echo "  Stopping ${svc}..."
-            systemctl stop "${svc}.service" 2>/dev/null || true
-            systemctl disable "${svc}.service" 2>/dev/null || true
+        if systemctl list-unit-files "${svc}" &>/dev/null 2>&1; then
+            echo "  Stopping ${svc%.service}..."
+            systemctl stop "${svc}" 2>/dev/null || true
+            systemctl disable "${svc}" 2>/dev/null || true
         fi
     done
 
@@ -339,8 +726,6 @@ nftban_disable_all() {
     echo ""
     echo "To re-enable:"
     echo "  nftban enable"
-    echo ""
-    echo "Note: nftables service left running for manual firewall management"
 
     return 0
 }

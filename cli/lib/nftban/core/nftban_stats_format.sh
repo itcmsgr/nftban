@@ -363,39 +363,42 @@ nftban_stats_generate_dashboard() {
         local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
         # PERFORMANCE FIX: Use awk for O(n+m) instead of O(n*m) loop
-        local counts_result
-        counts_result=$(awk -F'|' '
-            # First pass: Build IP->source map from bans.log (most recent entry wins)
-            # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON ($1|$2|$3|$4|$5|$6|$7)
-            NR==FNR && NF>=4 {
-                ip=$4; src=$3
-                # Normalize source names
-                if (src ~ /login|loginmon/) sources[ip]="login"
-                else if (src ~ /portscan/) sources[ip]="portscan"
-                else if (src ~ /ddos/) sources[ip]="ddos"
-                else if (src ~ /manual|cli/) sources[ip]="manual"
-                else if (src ~ /feed/) sources[ip]="feeds"
-                else if (src ~ /suricata|ids/) sources[ip]="suricata"
-                next
-            }
-            # Second pass: Count IPs from nftables by their source
-            {
-                while (match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/)) {
-                    ip = substr($0, RSTART, RLENGTH)
-                    $0 = substr($0, RSTART + RLENGTH)
-                    src = sources[ip]
-                    if (src == "login") login++
-                    else if (src == "portscan") portscan++
-                    else if (src == "ddos") ddos++
-                    else if (src == "manual") manual++
-                    else if (src == "feeds") feeds++
-                    else if (src == "suricata") suricata++
+        # Guard: only query nftables if table exists (prevents pipefail crash on uninitialized system)
+        local counts_result=""
+        if nft list table ip nftban &>/dev/null 2>&1; then
+            counts_result=$(awk -F'|' '
+                # First pass: Build IP->source map from bans.log (most recent entry wins)
+                # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON ($1|$2|$3|$4|$5|$6|$7)
+                NR==FNR && NF>=4 {
+                    ip=$4; src=$3
+                    # Normalize source names
+                    if (src ~ /login|loginmon/) sources[ip]="login"
+                    else if (src ~ /portscan/) sources[ip]="portscan"
+                    else if (src ~ /ddos/) sources[ip]="ddos"
+                    else if (src ~ /manual|cli/) sources[ip]="manual"
+                    else if (src ~ /feed/) sources[ip]="feeds"
+                    else if (src ~ /suricata|ids/) sources[ip]="suricata"
+                    next
                 }
-            }
-            END {
-                printf "%d %d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0, suricata+0
-            }
-        ' "$bans_log" <(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
+                # Second pass: Count IPs from nftables by their source
+                {
+                    while (match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/)) {
+                        ip = substr($0, RSTART, RLENGTH)
+                        $0 = substr($0, RSTART + RLENGTH)
+                        src = sources[ip]
+                        if (src == "login") login++
+                        else if (src == "portscan") portscan++
+                        else if (src == "ddos") ddos++
+                        else if (src == "manual") manual++
+                        else if (src == "feeds") feeds++
+                        else if (src == "suricata") suricata++
+                    }
+                }
+                END {
+                    printf "%d %d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0, suricata+0
+                }
+            ' "$bans_log" <(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null) || true
+        fi
 
         if [[ -n "$counts_result" ]]; then
             local counts_array
