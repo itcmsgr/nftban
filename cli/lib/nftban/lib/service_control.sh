@@ -299,6 +299,26 @@ nftban_enable_all() {
     if declare -f _nftban_auto_whitelist_system_ip &>/dev/null; then
         _nftban_auto_whitelist_system_ip
     fi
+
+    # Whitelist the admin's SSH session IP (lockout prevention)
+    # Uses --protect-session to detect SSH_CLIENT/SSH_CONNECTION
+    if [[ -n "${SSH_CLIENT:-}" || -n "${SSH_CONNECTION:-}" ]]; then
+        local admin_ip=""
+        admin_ip=$(echo "${SSH_CLIENT:-${SSH_CONNECTION:-}}" | awk '{print $1}')
+        if [[ -n "$admin_ip" && "$admin_ip" != "127.0.0.1" && "$admin_ip" != "::1" ]]; then
+            # Append to system whitelist if not already present
+            local sys_wl="${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+            if [[ -f "$sys_wl" ]] && ! grep -q "^${admin_ip}" "$sys_wl" 2>/dev/null; then
+                echo "${admin_ip}  # Admin session (enable lockout prevention) (added: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))" >> "$sys_wl"
+                echo "  ✅ Admin session IP whitelisted: $admin_ip"
+            elif ! grep -rq "^${admin_ip}" "${NFTBAN_CONFIG_DIR}/whitelist.d/" 2>/dev/null; then
+                echo "${admin_ip}  # Admin session (enable lockout prevention) (added: $(date -u '+%Y-%m-%d %H:%M:%S UTC'))" >> "$sys_wl"
+                echo "  ✅ Admin session IP whitelisted: $admin_ip"
+            else
+                echo "  ✅ Admin session IP already whitelisted: $admin_ip"
+            fi
+        fi
+    fi
     echo ""
 
     # =========================================================================
@@ -307,11 +327,21 @@ nftban_enable_all() {
     echo "[3/10] Auto-detecting ports (SSH, panel, essential services)..."
 
     # SSH port (primary lockout prevention)
+    # Source cmd_system.sh if SSH port function not already available
+    if ! declare -f _nftban_auto_whitelist_ssh_port &>/dev/null; then
+        local _sys_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli/cmd_system.sh"
+        [[ -f "$_sys_lib" ]] && source "$_sys_lib" 2>/dev/null || true
+    fi
     if declare -f _nftban_auto_whitelist_ssh_port &>/dev/null; then
         _nftban_auto_whitelist_ssh_port
     fi
 
     # Panel port detection (Plesk, cPanel, DirectAdmin, etc.)
+    # Source panel library if not already loaded
+    local _panel_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_panel_common.sh"
+    if ! declare -f nftban_panel_detect &>/dev/null && [[ -f "$_panel_lib" ]]; then
+        source "$_panel_lib" 2>/dev/null || true
+    fi
     local detected_panel="none"
     if declare -f nftban_panel_detect &>/dev/null; then
         detected_panel=$(nftban_panel_detect 2>/dev/null) || detected_panel="none"
@@ -391,10 +421,10 @@ nftban_enable_all() {
     # [4/10] Initialize firewall (with rollback on failure)
     # =========================================================================
     echo "[4/10] Initializing firewall..."
-    if ! nft list table inet nftban >/dev/null 2>&1; then
+    if ! nft list table ip nftban >/dev/null 2>&1; then
         echo "  Firewall not initialized, initializing now..."
         if command -v nftban &>/dev/null; then
-            if nftban firewall init >/dev/null 2>&1; then
+            if nftban firewall rebuild >/dev/null 2>&1; then
                 echo "  ✅ Firewall initialized"
             else
                 echo "  ❌ ERROR: Failed to initialize firewall" >&2
