@@ -240,7 +240,7 @@ nftban_report_collect_health() {
 
         # Extract auto-heal info from output
         if echo "$health_output" | grep -q "Auto-heal complete"; then
-            auto_heal_applied=$(echo "$health_output" | grep "Auto-heal complete" | sed 's/.*(\([0-9]*\).*/\1/')
+            auto_heal_applied=$(echo "$health_output" | grep "Auto-heal complete" | sed 's/.*(\([0-9]*\).*/\1/' || echo 0)
             NFTBAN_REPORT_DATA["health_auto_heal_fixes"]="$auto_heal_applied"
             NFTBAN_REPORT_DATA["health_auto_heal_enabled"]="true"
         fi

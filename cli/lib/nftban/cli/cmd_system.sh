@@ -65,12 +65,8 @@ nftban_system_enable() {
 
     case "$target" in
         all)
-            # Use centralized service control if available
-            if declare -f nftban_enable_all &>/dev/null; then
-                nftban_enable_all
-            else
-                _nftban_system_enable_legacy
-            fi
+            # Single source of truth: nftban_enable_all (v1.22.0)
+            nftban_enable_all
             ;;
         nftables)
             echo "Enabling nftables management..."
@@ -145,159 +141,6 @@ nftban_system_enable() {
     return 0
 }
 
-# Legacy enable function (fallback if service_control.sh not loaded)
-_nftban_system_enable_legacy() {
-    echo "[1/8] Fixing permissions and creating directories..."
-    nftban permissions enforce >/dev/null 2>&1 || true
-    nftban health check --auto-heal >/dev/null 2>&1 || true
-    echo "  ✅ Permissions fixed"
-    echo ""
-
-    echo "[2/8] Auto-whitelisting system IP..."
-    _nftban_auto_whitelist_system_ip
-    echo ""
-
-    echo "[3/8] Auto-detecting SSH port from sshd_config..."
-    _nftban_auto_whitelist_ssh_port
-    echo ""
-
-    echo "[4/8] Initializing firewall..."
-    if ! nft list table inet nftban >/dev/null 2>&1; then
-        echo "  Firewall not initialized, initializing now..."
-        if nftban firewall init >/dev/null 2>&1; then
-            echo "  ✅ Firewall initialized"
-        else
-            echo "  ❌ ERROR: Failed to initialize firewall" >&2
-            return 1
-        fi
-    else
-        echo "  ✅ Firewall already initialized"
-    fi
-    echo ""
-
-    echo "[5/8] Validating configuration..."
-    local config_errors=0
-    [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && config_errors=$((config_errors + 1))
-    [[ ! -f "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" ]] && echo "  ⚠️  WARNING: SSH port config missing" && config_errors=$((config_errors + 1))
-
-    if [[ $config_errors -gt 0 ]]; then
-        echo "  ⚠️  WARNING: $config_errors config issues detected"
-    else
-        echo "  ✅ Configuration valid"
-    fi
-    echo ""
-
-    echo "[6/8] Enabling core services..."
-    local services=("nftban" "nftables")
-
-    # Add suricata if installed
-    if command -v suricata &>/dev/null; then
-        services+=("suricata")
-    fi
-
-    for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null 2>&1; then
-            systemctl enable "${svc}.service" 2>/dev/null && \
-            systemctl start "${svc}.service" 2>/dev/null && \
-            echo "  ✅ Enabled & started: ${svc}"
-        fi
-    done
-    echo ""
-
-    echo "[7/8] Enabling timers (core + optional based on config)..."
-    # Core timers (always enabled)
-    local core_timers=(
-        "nftban-health.timer"
-        "nftban-maintenance.timer"
-        "nftban-watchdog.timer"
-        "nftban-snapshot.timer"
-        "nftban-rollback.timer"
-    )
-    for timer in "${core_timers[@]}"; do
-        if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then
-            systemctl enable "$timer" 2>/dev/null && \
-            systemctl start "$timer" 2>/dev/null && \
-            echo "  ✅ Enabled: $timer"
-        fi
-    done
-
-    # Optional timers (based on config)
-    # Metrics timer
-    if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-unified-exporter.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-unified-exporter.timer" 2>/dev/null && \
-            systemctl start "nftban-unified-exporter.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-unified-exporter.timer"
-        fi
-    else
-        echo "  ℹ️  Metrics disabled (enable with: nftban config set NFTBAN_METRICS_ENABLED=true)"
-    fi
-
-    # GeoIP timer
-    if [[ "${NFTBAN_GEOIP_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-core-geoip.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-core-geoip.timer" 2>/dev/null && \
-            systemctl start "nftban-core-geoip.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-core-geoip.timer"
-        fi
-    fi
-
-    # Feeds timer
-    if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-core-feeds.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-core-feeds.timer" 2>/dev/null && \
-            systemctl start "nftban-core-feeds.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-core-feeds.timer"
-        fi
-    fi
-
-    # Suricata update timer
-    if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-suricata-update.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-suricata-update.timer" 2>/dev/null && \
-            systemctl start "nftban-suricata-update.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-suricata-update.timer"
-        fi
-    fi
-    echo ""
-
-    echo "[8/8] Enabling login monitor..."
-    if declare -f nftban_login_cmd_enable &>/dev/null; then
-        nftban_login_cmd_enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
-    else
-        local login_svc="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-        if systemctl list-unit-files "$login_svc" &>/dev/null 2>&1; then
-            systemctl enable "$login_svc" 2>/dev/null && \
-            systemctl start "$login_svc" 2>/dev/null && \
-            echo "  ✅ Login monitor enabled"
-        else
-            echo "  ⚠️  Login monitor service not installed (optional)"
-        fi
-    fi
-    echo ""
-
-    # Verify polkit
-    if [[ -f "/usr/share/polkit-1/actions/com.nftban.policy" ]]; then
-        echo "  ✅ Polkit policy installed"
-    else
-        echo "  ⚠️  Polkit policy not found (GUI may require root)"
-    fi
-
-    # Set master switch
-    if declare -f _nftban_set_config &>/dev/null; then
-        _nftban_set_config "NFTBAN_ENABLED" "true"
-    fi
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan ENABLED - Your Server is Now Protected!"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "Services: nftables, nftban, timers, login monitor"
-    echo "Run 'nftban status' to verify"
-    return 0
-}
-
 # =============================================================================
 # AUTO-WHITELIST HELPERS
 # =============================================================================
@@ -351,19 +194,27 @@ _nftban_auto_whitelist_ssh_port() {
         fi
     fi
 
+    # Fallback: detect from running sshd (handles Ubuntu 24.04 socket activation
+    # where sshd_config Port may not reflect the actual listening port)
+    if [[ "$ssh_port" == "22" ]]; then
+        local ss_port
+        ss_port=$(ss -tlnp 2>/dev/null | grep -E 'sshd|"ssh"' | grep -oP ':(\d+)\s' | head -1 | tr -d ':[:space:]' || true)
+        if [[ -n "$ss_port" && "$ss_port" =~ ^[0-9]+$ && "$ss_port" != "22" ]]; then
+            ssh_port="$ss_port"
+        fi
+    fi
+
     mkdir -p "$ports_dir" || return 1
 
-    # Create or update SSH port config
-    if [[ ! -f "$ssh_conf" ]] || ! grep -q "port=$ssh_port" "$ssh_conf" 2>/dev/null; then
+    # Create or update SSH port config (Go-compatible PORT/PROTOCOL/DIRECTION format)
+    if [[ ! -f "$ssh_conf" ]] || ! grep -q "^${ssh_port}/" "$ssh_conf" 2>/dev/null; then
         cat > "$ssh_conf" << EOF
 # Auto-generated SSH port whitelist
 # Created by: nftban system enable
 # Date: $(date -Iseconds)
 # Detected from: $sshd_config
-[ssh]
-port=$ssh_port
-protocol=tcp
-direction=input
+# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)
+${ssh_port}/T/I
 EOF
         chmod 644 "$ssh_conf"
         echo "  ✅ SSH port whitelisted: $ssh_port/tcp"
@@ -418,12 +269,8 @@ nftban_system_disable() {
                 return 1
             fi
 
-            # Use centralized service control if available
-            if declare -f nftban_disable_all &>/dev/null; then
-                nftban_disable_all
-            else
-                _nftban_system_disable_legacy
-            fi
+            # Single source of truth: nftban_disable_all (v1.22.0)
+            nftban_disable_all
             ;;
         nftables)
             echo "Disabling nftables management..."
@@ -474,49 +321,6 @@ nftban_system_disable() {
     esac
 
     echo ""
-    return 0
-}
-
-# Legacy disable function (fallback)
-_nftban_system_disable_legacy() {
-    echo ""
-    echo "EMERGENCY: Disabling all NFTBan services..."
-    echo ""
-
-    echo "[1/3] Stopping services..."
-    local services=("nftban-login-monitor" "nftban-unified-exporter" "nftban" "suricata")
-    for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null 2>&1; then
-            systemctl stop "${svc}.service" 2>/dev/null && echo "  Stopped: ${svc}"
-        fi
-    done
-    echo ""
-
-    echo "[2/3] Disabling auto-start..."
-    for svc in "${services[@]}"; do
-        if systemctl list-unit-files "${svc}.service" &>/dev/null 2>&1; then
-            systemctl disable "${svc}.service" 2>/dev/null && echo "  Disabled: ${svc}"
-        fi
-    done
-    echo ""
-
-    echo "[3/3] Disabling timers..."
-    _nftban_timers_control "disable"
-    echo ""
-
-    # Set master switch
-    if declare -f _nftban_set_config &>/dev/null; then
-        _nftban_set_config "NFTBAN_ENABLED" "false"
-    fi
-
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "NFTBan DISABLED - Protection Stopped"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "To re-enable: nftban enable"
-    echo ""
-    echo "Note: nftables firewall still has rules loaded."
-    echo "      To clear firewall completely: nft flush ruleset"
     return 0
 }
 
