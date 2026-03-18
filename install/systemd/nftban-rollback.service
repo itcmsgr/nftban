@@ -42,9 +42,10 @@ TasksMax=10
 TimeoutStartSec=2min
 TimeoutStopSec=30s
 
-# Restart on failure for safety-critical operation
-Restart=on-failure
-RestartSec=10s
+# v1.23.0 FIX (EVAL-2): Changed from on-failure to no
+# Rollback is oneshot — retrying on failure risks infinite loop
+# The rollback script now exits 0 when no backup exists
+Restart=no
 
 # =============================================================================
 # SECURITY HARDENING

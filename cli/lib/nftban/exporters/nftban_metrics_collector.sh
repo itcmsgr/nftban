@@ -276,19 +276,17 @@ collect_module_status_metrics() {
         suricata=1
     fi
 
-    # loginmon: Check login-monitor service OR PID file
-    # NOTE: nftban-login-monitor.service is the correct unit (no timer exists)
-    if systemctl is-active "nftban-login-monitor.service" &>/dev/null || \
-       [[ -f "${NFTBAN_RUN_DIR}/loginmon.pid" ]]; then
+    # loginmon: Check PID file (v1.23.0: login-monitor.service removed, loginmon runs via nftband)
+    if [[ -f "${NFTBAN_RUN_DIR}/loginmon.pid" ]]; then
         loginmon=1
     fi
 
-    # portscan: Check PID file (portscan runs via login-monitor, no separate timer)
+    # portscan: Check PID file (portscan runs via nftband daemon)
     if [[ -f "${NFTBAN_RUN_DIR}/portscan.pid" ]]; then
         portscan=1
     fi
 
-    # ddos: Check PID file (ddos runs via login-monitor, no separate timer)
+    # ddos: Check PID file (ddos runs via nftband daemon)
     if [[ -f "${NFTBAN_RUN_DIR}/ddos.pid" ]]; then
         ddos=1
     fi
