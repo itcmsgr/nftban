@@ -185,6 +185,7 @@ nftban_complete() {
         echo "ban"
         echo "unban"
         echo "search"
+        echo "blacklist"
         echo "whitelist"
         echo "whitelist-system"
         echo "profile"
@@ -375,6 +376,16 @@ nftban_complete() {
                 echo "permissions"
                 echo "summary"
                 echo "install"
+                ;;
+            blacklist)
+                echo "add"
+                echo "remove"
+                echo "list"
+                echo "files"
+                echo "count"
+                echo "flush"
+                echo "--json"
+                echo "help"
                 ;;
             whitelist)
                 echo "sync"
@@ -1081,6 +1092,9 @@ main() {
                     ;;
                 whtielist|whitelsit|whiltelist)
                     suggestion="whitelist"
+                    ;;
+                blacklsit|blcklist|balcklist|blocklist)
+                    suggestion="blacklist"
                     ;;
             esac
 
