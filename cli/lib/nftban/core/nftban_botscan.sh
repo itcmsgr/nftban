@@ -311,8 +311,10 @@ nftban_botscan_is_whitelisted() {
 
     # Check bot whitelist (user agent)
     if [[ -n "$ua" ]]; then
-        local bot
-        for bot in ${BOTSCAN_WHITELIST_BOTS//,/ }; do
+        # IFS-safe split: strict.sh sets IFS=$'\n\t', so space-separated vars need explicit splitting
+        local bot _whitelist_bots
+        IFS=' ' read -ra _whitelist_bots <<< "${BOTSCAN_WHITELIST_BOTS//,/ }"
+        for bot in "${_whitelist_bots[@]}"; do
             if [[ "${ua,,}" =~ ${bot,,} ]]; then
                 return 0
             fi
