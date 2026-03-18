@@ -330,6 +330,7 @@ nftban_enable_all() {
     # Source cmd_system.sh if SSH port function not already available
     if ! declare -f _nftban_auto_whitelist_ssh_port &>/dev/null; then
         local _sys_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli/cmd_system.sh"
+        # shellcheck source=/dev/null
         [[ -f "$_sys_lib" ]] && source "$_sys_lib" 2>/dev/null || true
     fi
     if declare -f _nftban_auto_whitelist_ssh_port &>/dev/null; then
@@ -340,6 +341,7 @@ nftban_enable_all() {
     # Source panel library if not already loaded
     local _panel_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_panel_common.sh"
     if ! declare -f nftban_panel_detect &>/dev/null && [[ -f "$_panel_lib" ]]; then
+        # shellcheck source=/dev/null
         source "$_panel_lib" 2>/dev/null || true
     fi
     local detected_panel="none"

@@ -242,7 +242,7 @@ jobs:
       - name: Build DEB in ${{ matrix.distro }} container
         run: |
           chmod +x bin/*
-          docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+          docker run --rm -e BUILD_DISTRO=${{ matrix.name_suffix }} -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             set -e  # Exit on any error
 
             # Install build dependencies (with retry for transient mirror issues)
@@ -252,7 +252,7 @@ jobs:
               sleep 5
             done
 
-            # Build DEB
+            # Build DEB (BUILD_DISTRO passed from CI for distro validation in preinst)
             chmod +x packaging/build_nftban.sh
             cd packaging
             ./build_nftban.sh deb || { echo '❌ DEB build failed!'; exit 1; }
