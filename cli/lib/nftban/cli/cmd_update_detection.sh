@@ -258,14 +258,25 @@ _validate_package_for_system() {
             local pkg_version="${pkg_target#el}"
             local sys_version="$version"
 
-            # el10 package on el9 system - may have glibc incompatibility
-            if [[ "$pkg_version" -gt "$sys_version" ]]; then
-                _update_log ERROR "Package incompatibility detected"
-                _update_log ERROR "Package built for: EL${pkg_version}"
-                _update_log ERROR "System version: EL${sys_version}"
-                _update_log INFO "Packages built for newer OS may have library incompatibilities"
-                _update_log INFO "Use: nftban update github  (auto-selects correct package)"
-                return 1
+            # Version mismatch detection (both directions)
+            if [[ "$pkg_version" != "$sys_version" ]]; then
+                local expected_pkg
+                expected_pkg=$(_get_distro_package_name)
+                if [[ "$pkg_version" -gt "$sys_version" ]]; then
+                    _update_log ERROR "Package incompatibility detected"
+                    _update_log ERROR "Package built for: EL${pkg_version}"
+                    _update_log ERROR "System version: EL${sys_version}"
+                    _update_log INFO "Packages built for newer OS may have library incompatibilities"
+                    _update_log INFO "Use: nftban update github  (auto-selects correct package)"
+                    _update_log INFO "Expected package: $expected_pkg"
+                    return 1
+                else
+                    _update_log WARN "Package version mismatch detected"
+                    _update_log WARN "Package built for: EL${pkg_version}"
+                    _update_log WARN "System version: EL${sys_version}"
+                    _update_log INFO "Expected package: $expected_pkg"
+                    _update_log INFO "Use: nftban update github  (auto-selects correct package)"
+                fi
             fi
         fi
     fi
@@ -287,10 +298,20 @@ _validate_package_for_system() {
             pkg_deb_ver=$(echo "$pkg_name" | grep -oP 'debian\K\d+' || echo "")
 
             if [[ -n "$pkg_deb_ver" ]] && [[ "$distro" == "debian" ]]; then
-                if [[ "$pkg_deb_ver" -gt "$version" ]]; then
-                    _update_log ERROR "Package incompatibility detected"
-                    _update_log ERROR "Package built for: Debian ${pkg_deb_ver}"
-                    _update_log ERROR "System version: Debian ${version}"
+                if [[ "$pkg_deb_ver" != "$version" ]]; then
+                    local expected_pkg
+                    expected_pkg=$(_get_distro_package_name)
+                    if [[ "$pkg_deb_ver" -gt "$version" ]]; then
+                        _update_log ERROR "Package incompatibility detected"
+                        _update_log ERROR "Package built for: Debian ${pkg_deb_ver}"
+                        _update_log ERROR "System version: Debian ${version}"
+                    else
+                        _update_log ERROR "Wrong distro package detected"
+                        _update_log ERROR "Package built for: Debian ${pkg_deb_ver}"
+                        _update_log ERROR "System version: Debian ${version}"
+                    fi
+                    _update_log INFO "Expected package: $expected_pkg"
+                    _update_log INFO "Use: nftban update github  (auto-selects correct package)"
                     return 1
                 fi
             fi
@@ -312,11 +333,23 @@ _validate_package_for_system() {
                 local pkg_major="${pkg_ubuntu_ver%%.*}"
                 local sys_major="${version%%.*}"
 
-                if [[ "$pkg_major" -gt "$sys_major" ]]; then
-                    _update_log ERROR "Package incompatibility detected"
-                    _update_log ERROR "Package built for: Ubuntu ${pkg_ubuntu_ver}"
-                    _update_log ERROR "System version: Ubuntu ${version}"
-                    return 1
+                if [[ "$pkg_major" != "$sys_major" ]]; then
+                    local expected_pkg
+                    expected_pkg=$(_get_distro_package_name)
+                    if [[ "$pkg_major" -gt "$sys_major" ]]; then
+                        _update_log ERROR "Package incompatibility detected"
+                        _update_log ERROR "Package built for: Ubuntu ${pkg_ubuntu_ver}"
+                        _update_log ERROR "System version: Ubuntu ${version}"
+                        _update_log INFO "Expected package: $expected_pkg"
+                        return 1
+                    else
+                        _update_log ERROR "Wrong distro package detected"
+                        _update_log ERROR "Package built for: Ubuntu ${pkg_ubuntu_ver}"
+                        _update_log ERROR "System version: Ubuntu ${version}"
+                        _update_log INFO "Expected package: $expected_pkg"
+                        _update_log INFO "Use: nftban update github  (auto-selects correct package)"
+                        return 1
+                    fi
                 fi
             fi
 
