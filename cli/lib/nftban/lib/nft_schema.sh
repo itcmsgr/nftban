@@ -804,7 +804,9 @@ nftban_nft_validate_set_flags() {
         set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)
 
         # Check type
-        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || echo "")
+        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' || true)
+        actual_type=$(echo "$actual_type" | head -1)
+        [[ -z "$actual_type" ]] && actual_type=""
         if [[ "$actual_type" != "$expected_type" ]]; then
             echo "ERROR: Wrong type on ip nftban $set_name: expected '$expected_type', got '$actual_type'" >&2
             status=1
@@ -812,7 +814,9 @@ nftban_nft_validate_set_flags() {
 
         # Check flags (if expected)
         if [[ -n "$expected_flags" ]]; then
-            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || echo "")
+            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' || true)
+            actual_flags=$(echo "$actual_flags" | head -1)
+            [[ -z "$actual_flags" ]] && actual_flags=""
             # Sort flags for comparison
             local sorted_expected sorted_actual
             sorted_expected=$(echo "$expected_flags" | tr ',' '\n' | sort | tr '\n' ',' | sed 's/,$//')
@@ -839,7 +843,9 @@ nftban_nft_validate_set_flags() {
         set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)
 
         # Check type
-        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || echo "")
+        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' || true)
+        actual_type=$(echo "$actual_type" | head -1)
+        [[ -z "$actual_type" ]] && actual_type=""
         if [[ "$actual_type" != "$expected_type" ]]; then
             echo "WARNING: Wrong type on ip6 nftban $set_name: expected '$expected_type', got '$actual_type'" >&2
         fi
@@ -882,9 +888,15 @@ nftban_nft_validate_rule_order() {
         local established_handle=0
 
         # Find handles for key rules
-        whitelist_handle=$(echo "$rules" | grep -E "@${whitelist_set}.*accept" | grep -oP 'handle \K[0-9]+' | head -1 || echo 0)
-        blacklist_handle=$(echo "$rules" | grep -E "@${blacklist_set}.*drop" | grep -oP 'handle \K[0-9]+' | head -1 || echo 0)
-        established_handle=$(echo "$rules" | grep -E 'ct state.*established' | grep -oP 'handle \K[0-9]+' | head -1 || echo 0)
+        whitelist_handle=$(echo "$rules" | grep -E "@${whitelist_set}.*accept" | grep -oP 'handle \K[0-9]+' || true)
+        whitelist_handle=$(echo "$whitelist_handle" | head -1)
+        [[ -z "$whitelist_handle" ]] && whitelist_handle=0
+        blacklist_handle=$(echo "$rules" | grep -E "@${blacklist_set}.*drop" | grep -oP 'handle \K[0-9]+' || true)
+        blacklist_handle=$(echo "$blacklist_handle" | head -1)
+        [[ -z "$blacklist_handle" ]] && blacklist_handle=0
+        established_handle=$(echo "$rules" | grep -E 'ct state.*established' | grep -oP 'handle \K[0-9]+' || true)
+        established_handle=$(echo "$established_handle" | head -1)
+        [[ -z "$established_handle" ]] && established_handle=0
 
         # Validate order: whitelist < blacklist < established
         if [[ $whitelist_handle -gt 0 && $blacklist_handle -gt 0 ]]; then
@@ -1005,8 +1017,8 @@ nftban_nft_validate_full() {
     [[ -z "$ipv4_bl" ]] && ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -c "," || echo 0)
     # shellcheck disable=SC2034  # Reserved for IPv6 stats
     ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
-    ipv4_tcp=$(nft list set ip nftban tcp_ports_in 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
-    ipv4_udp=$(nft list set ip nftban udp_ports_in 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
+    ipv4_tcp=$(nft list set ip nftban tcp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
+    ipv4_udp=$(nft list set ip nftban udp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
     ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
 
     echo "   IPv4: whitelist=${ipv4_wl:-0}, blacklist=active, tcp_ports_in=${ipv4_tcp:-0}, udp_ports_in=${ipv4_udp:-0}"

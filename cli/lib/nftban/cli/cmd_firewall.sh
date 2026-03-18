@@ -557,7 +557,8 @@ firewall_stats() {
 # =============================================================================
 
 firewall_reload() {
-    # Reload nftables ruleset
+    # Reload nftables ruleset AND re-apply NFTBan rules
+    # v1.23.0 FIX (P1-17): reload now re-applies NFTBan schema + syncs whitelist
     local quiet=false
 
     while [[ $# -gt 0 ]]; do
@@ -573,7 +574,7 @@ firewall_reload() {
         esac
     done
 
-    # Resolve nftables config from distro config (RHEL: /etc/sysconfig/nftables.conf, Debian: /etc/nftables.conf)
+    # Step 1: Reload system nftables config
     local nft_conf
     # shellcheck source=/dev/null
     source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
@@ -586,10 +587,25 @@ firewall_reload() {
         return 1
     fi
 
+    [[ "$quiet" == "false" ]] && echo "Reloading nftables configuration..."
     if ! nft -f "$nft_conf" 2>&1; then
         echo "Error: Failed to reload nftables" >&2
         return 1
     fi
+
+    # Step 2: Re-apply NFTBan schema
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    if [[ -f "$nftban_conf" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema..."
+        if ! nft -f "$nftban_conf" 2>&1; then
+            echo "Warning: Failed to re-apply NFTBan schema" >&2
+            echo "Try: nftban firewall rebuild" >&2
+        fi
+    fi
+
+    # Step 3: Re-sync system whitelist (ensures admin IPs are protected)
+    [[ "$quiet" == "false" ]] && echo "Syncing whitelist..."
+    nftban whitelist sync --quick 2>/dev/null || true
 
     if [[ "$quiet" == "false" ]]; then
         echo "Firewall rules reloaded successfully"

@@ -54,14 +54,14 @@ if [[ -f "$ROLLBACK_FLAG" ]]; then
 
         # Check if we have a backup
         if [[ ! -s "$BACKUP" ]]; then
-            echo "ERROR: No backup ruleset found at $BACKUP"
-            echo "Cannot rollback without backup!"
-            echo ""
-            echo "Emergency options:"
-            echo "  1. Flush all rules: nft flush ruleset"
-            echo "  2. Load baseline: nft -f ${NFTBAN_CONFIG_DIR:-/etc/nftban}/baseline.nft"
-            echo "  3. Console/IPMI access to fix manually"
-            exit 1
+            # v1.23.0 FIX (EVAL-2): Exit 0 when no backup exists
+            # Nothing to rollback is not an error — prevents crash loop
+            # when systemd Restart=on-failure is set
+            echo "INFO: No backup ruleset found at $BACKUP"
+            echo "Nothing to rollback (this is normal on first install)."
+            # Remove stale rollback flag if present
+            rm -f "$ROLLBACK_FLAG"
+            exit 0
         fi
 
         echo "Rolling back to last-known-good ruleset..."
@@ -120,9 +120,10 @@ else
 
         # Check if we have a backup
         if [[ ! -s "$BACKUP" ]]; then
-            echo "ERROR: No backup ruleset found at $BACKUP"
-            echo "Cannot rollback without backup!"
-            exit 1
+            # v1.23.0 FIX (EVAL-2): Exit 0 — nothing to rollback is not an error
+            echo "INFO: No backup ruleset found at $BACKUP"
+            echo "Nothing to rollback."
+            exit 0
         fi
 
         echo "Rolling back to last-known-good ruleset..."
