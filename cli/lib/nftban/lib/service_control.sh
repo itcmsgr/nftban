@@ -645,13 +645,13 @@ nftban_enable_all() {
         validation_failures+=("${svc_daemon%.service}: $nftband_state")
     fi
 
-    # Check 3: login-monitor active (using config var)
-    local login_state
-    login_state=$(systemctl is-active "${svc_login}" 2>/dev/null || echo "inactive")
-    if [[ "$login_state" != "active" ]]; then
-        # Login monitor may not be installed — check if unit exists
-        if systemctl list-unit-files "${svc_login}" &>/dev/null 2>&1; then
-            validation_failures+=("${svc_login%.service}: $login_state")
+    # Check 3: login monitoring active
+    # v1.23.0: login-monitor.service removed; loginmon now runs via nftband daemon
+    # Check PID file instead of systemd service
+    if [[ ! -f "${NFTBAN_RUN_DIR:-/run/nftban}/loginmon.pid" ]]; then
+        # Not critical if daemon is active (loginmon starts with daemon)
+        if [[ "$nftband_state" != "active" ]]; then
+            validation_failures+=("loginmon: not running (no PID file)")
         fi
     fi
 
