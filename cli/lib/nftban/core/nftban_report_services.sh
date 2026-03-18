@@ -193,24 +193,49 @@ nftban_services_scan() {
 
     NFTBAN_SERVICE_STATUS["geoip-database"]="${geoip_status}|${geoip_version}|required|${geoip_notes}"
 
-    # mailx/mail
+    # Email capability detection (check all supported mail methods)
+    # Priority: postfix → sendmail → exim → msmtp → mailx/mail
     local mail_status="NOT_FOUND"
     local mail_version="n/a"
     local mail_notes=""
+    local mail_label="email"
 
-    if command -v mailx &>/dev/null; then
+    if command -v postfix &>/dev/null || systemctl is-active postfix &>/dev/null 2>&1; then
+        mail_status="INSTALLED"
+        mail_version=$(postconf mail_version 2>/dev/null | awk -F= '{print $2}' | tr -d ' ' || echo "unknown")
+        mail_notes="Postfix MTA"
+        mail_label="email (postfix)"
+    elif command -v exim &>/dev/null || command -v exim4 &>/dev/null || systemctl is-active exim &>/dev/null 2>&1; then
+        mail_status="INSTALLED"
+        mail_version=$(exim -bV 2>/dev/null | head -1 | awk '{print $3}' || exim4 -bV 2>/dev/null | head -1 | awk '{print $3}' || echo "unknown")
+        mail_notes="Exim MTA"
+        mail_label="email (exim)"
+    elif [[ -x /usr/sbin/sendmail ]] && ! command -v postfix &>/dev/null; then
+        mail_status="INSTALLED"
+        mail_version=$(/usr/sbin/sendmail -d0.1 < /dev/null 2>&1 | head -1 | awk '{print $2}' || echo "unknown")
+        mail_notes="Sendmail MTA"
+        mail_label="email (sendmail)"
+    elif command -v msmtp &>/dev/null; then
+        mail_status="INSTALLED"
+        mail_version=$(msmtp --version 2>&1 | head -1 | awk '{print $3}' || echo "unknown")
+        mail_notes="msmtp relay"
+        mail_label="email (msmtp)"
+    elif command -v mailx &>/dev/null; then
         mail_status="INSTALLED"
         mail_version=$(mailx -V 2>&1 | head -1 | awk '{print $2}' || echo "unknown")
-        mail_notes="Email notifications"
+        mail_notes="mailx CLI"
+        mail_label="email (mailx)"
     elif command -v mail &>/dev/null; then
         mail_status="INSTALLED"
         mail_version=$(mail -V 2>&1 | head -1 | awk '{print $2}' || echo "unknown")
-        mail_notes="Email notifications (mail)"
+        mail_notes="mail CLI"
+        mail_label="email (mail)"
     else
-        mail_notes="Not installed (email features disabled)"
+        mail_notes="No MTA found (email alerts disabled)"
+        mail_label="email"
     fi
 
-    NFTBAN_SERVICE_STATUS["mailx"]="${mail_status}|${mail_version}|optional|${mail_notes}"
+    NFTBAN_SERVICE_STATUS["${mail_label}"]="${mail_status}|${mail_version}|optional|${mail_notes}"
 
     # curl
     local curl_status="NOT_FOUND"

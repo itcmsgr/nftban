@@ -81,6 +81,7 @@ CORE COMMANDS:
   health      Diagnostics and auto-repair
   ban         Ban an IP address
   unban       Remove IP ban
+  blacklist   Blacklist management (add/remove/list/files/flush)
   list        List banned/whitelisted IPs
   search      Search IP across all sets
   firewall    Firewall management
