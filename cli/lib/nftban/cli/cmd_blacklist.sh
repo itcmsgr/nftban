@@ -189,7 +189,7 @@ nftban_blacklist_list() {
     # Count from config files
     local config_count=0
     if [[ -d "$NFTBAN_BLACKLIST_DIR" ]]; then
-        config_count=$(grep -cvhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | awk '{s+=$1} END {print s+0}' || echo "0")
+        config_count=$(grep -vhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | grep -cE '.' || true)
     fi
     echo "Config files: ${config_count} persistent entries in ${NFTBAN_BLACKLIST_DIR}/"
     echo ""
@@ -273,22 +273,25 @@ nftban_blacklist_count() {
     local ipv4_raw
     ipv4_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || true
     if [[ -n "$ipv4_raw" ]]; then
-        nft_ipv4_count=$(echo "$ipv4_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cvE '^\s*$' || echo "0")
+        nft_ipv4_count=$(echo "$ipv4_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]' || true)
     fi
 
     # shellcheck disable=SC2086
     local ipv6_raw
     ipv6_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || true
     if [[ -n "$ipv6_raw" ]]; then
-        nft_ipv6_count=$(echo "$ipv6_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cvE '^\s*$' || echo "0")
+        nft_ipv6_count=$(echo "$ipv6_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]' || true)
     fi
 
+    # Ensure counts are valid integers
+    [[ -z "$nft_ipv4_count" ]] && nft_ipv4_count=0
+    [[ -z "$nft_ipv6_count" ]] && nft_ipv6_count=0
     local nft_total=$((nft_ipv4_count + nft_ipv6_count))
 
     # Count from config files
     local config_count=0
     if [[ -d "$NFTBAN_BLACKLIST_DIR" ]]; then
-        config_count=$(grep -cvhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | awk '{s+=$1} END {print s+0}' || echo "0")
+        config_count=$(grep -vhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | grep -cE '.' || true)
     fi
 
     if [[ "$json_mode" == "true" ]]; then
