@@ -380,9 +380,11 @@ cmd_get_geoip_database() {
     fi
 
     # Auto-detect from supported databases (priority order from config)
-    local databases="${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}"
+    # IFS-safe split: strict.sh sets IFS=$'\n\t', so space-separated vars need explicit splitting
+    local _geoip_dbs
+    IFS=' ' read -ra _geoip_dbs <<< "${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}"
     local db_file
-    for db_file in $databases; do
+    for db_file in "${_geoip_dbs[@]}"; do
         if [[ -f "${geoip_dir}/${db_file}" ]]; then
             echo "${geoip_dir}/${db_file}"
             return 0

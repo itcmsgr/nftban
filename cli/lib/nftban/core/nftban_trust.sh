@@ -112,8 +112,17 @@ TRUST_PROVIDERS[FASTLY_PARSER]="fastly_json"
 TRUST_PROVIDERS[FASTLY_MIN]=10
 TRUST_PROVIDERS[FASTLY_MAX]=200
 
+# QUIC.cloud (LiteSpeed CDN)
+TRUST_PROVIDERS[QUICCLOUD_NAME]="QUIC.cloud"
+TRUST_PROVIDERS[QUICCLOUD_DESC]="LiteSpeed CDN"
+TRUST_PROVIDERS[QUICCLOUD_IPV4_URL]="https://quic.cloud/ips"
+TRUST_PROVIDERS[QUICCLOUD_IPV6_URL]=""
+TRUST_PROVIDERS[QUICCLOUD_PARSER]="quiccloud_html"
+TRUST_PROVIDERS[QUICCLOUD_MIN]=50
+TRUST_PROVIDERS[QUICCLOUD_MAX]=500
+
 # Provider list (uppercase keys) - use array to avoid IFS issues
-readonly -a TRUST_PROVIDER_LIST=(CLOUDFLARE AWS GOOGLE AZURE DIGITALOCEAN FASTLY)
+readonly -a TRUST_PROVIDER_LIST=(CLOUDFLARE QUICCLOUD AWS GOOGLE AZURE DIGITALOCEAN FASTLY)
 
 # =============================================================================
 # LOGGING
@@ -241,6 +250,16 @@ _trust_parse_fastly_json() {
     fi
 }
 
+_trust_parse_quiccloud_html() {
+    # QUIC.cloud returns IPs separated by <br /> in HTML
+    # Bare IPs (no CIDR) — whitelist parser handles both formats
+    # Loaded via whitelist.d/30-trust-quiccloud.conf (same pipeline as all feeds)
+    sed 's/<br \/>/\n/g; s/<br>/\n/g; s/<[^>]*>//g' | \
+        grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
+        sed 's/[[:space:]]*$//' | \
+        sort -u
+}
+
 # =============================================================================
 # DOWNLOAD IP RANGES
 # =============================================================================
@@ -272,6 +291,7 @@ _trust_download_provider() {
                 azure_json) _trust_parse_azure_json "ipv4" < "$ipv4_tmp" > "$parsed_file" ;;
                 do_csv)     _trust_parse_do_csv < "$ipv4_tmp" > "$parsed_file" ;;
                 fastly_json) _trust_parse_fastly_json "ipv4" < "$ipv4_tmp" > "$parsed_file" ;;
+                quiccloud_html) _trust_parse_quiccloud_html < "$ipv4_tmp" > "$parsed_file" ;;
                 *)          _trust_parse_plain < "$ipv4_tmp" > "$parsed_file" ;;
             esac
 

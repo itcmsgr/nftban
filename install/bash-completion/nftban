@@ -54,7 +54,7 @@ _nftban() {
     local login_targets="ssh su sudo console service all"
     local feeds_cmds="status list select enable disable update download --json help"
     local trust_cmds="list enable disable update load status --json help"
-    local trust_providers="CLOUDFLARE AWS GOOGLE AZURE FASTLY DIGITALOCEAN LINODE VULTR OVH HETZNER ALL"
+    local trust_providers="CLOUDFLARE QUICCLOUD AWS GOOGLE AZURE FASTLY DIGITALOCEAN LINODE VULTR OVH HETZNER ALL"
     local country_cmds="list enable disable mode status apply --json help"
     local country_codes="CN RU KP IR SY BY CU VE MM AF IQ LY SD YE US GB DE FR NL"
     local geoban_cmds="status ban unban whitelist unwhitelist list --json help"

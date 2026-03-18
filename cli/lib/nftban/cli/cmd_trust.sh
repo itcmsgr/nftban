@@ -191,12 +191,12 @@ COMMANDS:
 
 SUPPORTED PROVIDERS:
     CLOUDFLARE          Cloudflare CDN/Proxy IP ranges
+    QUICCLOUD           QUIC.cloud / LiteSpeed CDN IP ranges
     AWS                 Amazon Web Services IP ranges
     GOOGLE              Google Cloud Platform IP ranges
     AZURE               Microsoft Azure IP ranges
     DIGITALOCEAN        DigitalOcean IP ranges
     FASTLY              Fastly CDN IP ranges
-    AKAMAI              Akamai CDN IP ranges
 
 EXAMPLES:
     # List all providers
