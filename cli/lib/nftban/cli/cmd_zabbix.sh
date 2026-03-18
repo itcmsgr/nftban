@@ -883,7 +883,10 @@ _cmd_zabbix_discover() {
             if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
                 source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" || true
                 local first=true
-                for country in ${NFTBAN_GEOBAN_COUNTRIES:-}; do
+                # IFS-safe split: strict.sh sets IFS=$'\n\t', so space-separated vars need explicit splitting
+                local _geoban_countries
+                IFS=' ' read -ra _geoban_countries <<< "${NFTBAN_GEOBAN_COUNTRIES:-}"
+                for country in "${_geoban_countries[@]}"; do
                     [[ "$first" != "true" ]] && echo ","
                     echo "{\"{\#COUNTRY}\":\"$country\",\"{\#BLOCKED}\":\"1\"}"
                     first=false

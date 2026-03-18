@@ -9816,6 +9816,16 @@
       "config_file": "conf.d/trust.conf",
       "active_when": "always"
     },
+    "TRUST_QUICCLOUD_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable QUIC.cloud / LiteSpeed CDN IP whitelist",
+      "introduced_in": "1.22.3",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
     "TRUST_MIN_RANGES": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",

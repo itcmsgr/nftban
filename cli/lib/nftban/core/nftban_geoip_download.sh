@@ -203,7 +203,10 @@ _check_database() {
     if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
         db_file="${NFTBAN_GEOIP_DATABASE}"
     else
-        for db_name in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+        # IFS-safe split: strict.sh sets IFS=$'\n\t', so space-separated vars need explicit splitting
+        local _geoip_dbs
+        IFS=' ' read -ra _geoip_dbs <<< "${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}"
+        for db_name in "${_geoip_dbs[@]}"; do
             [[ -f "${geoip_dir}/${db_name}" ]] && db_file="${geoip_dir}/${db_name}" && break
         done
     fi
