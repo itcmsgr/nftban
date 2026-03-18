@@ -533,6 +533,7 @@ echo "════════════════════════�
 echo ""
 
 PREREQ_FAILED=0
+PREREQ_ERRORS=""
 
 # -----------------------------------------------------------------------------
 # CHECK 1: Operating System Version
@@ -565,6 +566,7 @@ if [ -f /etc/os-release ]; then
                     echo "    System version:    EL\${SYS_EL_VER}"
                     echo "    Use the correct package: nftban-el\${SYS_EL_VER}-x86_64.rpm"
                     PREREQ_FAILED=1
+                    PREREQ_ERRORS="WRONG PACKAGE: This is an EL\${PKG_EL_VER} package but you are running EL\${SYS_EL_VER}. Download: nftban-el\${SYS_EL_VER}-x86_64.rpm"
                 fi
             fi
             ;;
@@ -572,6 +574,7 @@ if [ -f /etc/os-release ]; then
 else
     echo "[✗] ERROR: Cannot detect OS version (/etc/os-release missing)"
     PREREQ_FAILED=1
+    PREREQ_ERRORS="Cannot detect OS version (/etc/os-release missing)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -754,9 +757,15 @@ echo "════════════════════════�
 if [ \$PREREQ_FAILED -eq 1 ]; then
     echo "[✗] PREREQUISITE CHECK FAILED"
     echo ""
-    echo "Critical requirements are missing. Please fix the errors above and try again."
+    if [ -n "\$PREREQ_ERRORS" ]; then
+        echo "ROOT CAUSE: \$PREREQ_ERRORS"
+        echo ""
+    fi
+    echo "Please fix the errors above and try again."
     echo "════════════════════════════════════════════════════════════════════════════════"
     echo ""
+    # Print root cause to stderr as well (survives RPM/DNF noise)
+    [ -n "\$PREREQ_ERRORS" ] && echo "NFTBan: \$PREREQ_ERRORS" >&2
     exit 1
 fi
 
@@ -2102,6 +2111,7 @@ echo "════════════════════════�
 echo ""
 
 PREREQ_FAILED=0
+PREREQ_ERRORS=""
 
 # -----------------------------------------------------------------------------
 # CHECK 1: Operating System Version
@@ -2135,6 +2145,7 @@ if [ -f /etc/os-release ]; then
                     echo "    System version:    ${SYS_DISTRO_TAG}"
                     echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
                     PREREQ_FAILED=1
+                    PREREQ_ERRORS="WRONG PACKAGE: This is a ${PKG_BUILD_DISTRO} package but you are running ${SYS_DISTRO_TAG}. Download: nftban-${SYS_DISTRO_TAG}-amd64.deb"
                 fi
                 ;;
             debian)
@@ -2151,6 +2162,7 @@ if [ -f /etc/os-release ]; then
                             echo "    System version:    Debian ${SYS_DEB_MAJOR}"
                             echo "    Use the correct package: nftban-debian${SYS_DEB_MAJOR}-amd64.deb"
                             PREREQ_FAILED=1
+                            PREREQ_ERRORS="WRONG PACKAGE: This is a Debian ${PKG_DEB_MAJOR} package but you are running Debian ${SYS_DEB_MAJOR}. Download: nftban-debian${SYS_DEB_MAJOR}-amd64.deb"
                         fi
                     else
                         echo "[✗] ERROR: Wrong package for this system!"
@@ -2158,6 +2170,7 @@ if [ -f /etc/os-release ]; then
                         echo "    System version:    ${SYS_DISTRO_TAG}"
                         echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
                         PREREQ_FAILED=1
+                        PREREQ_ERRORS="WRONG PACKAGE: This is a ${PKG_BUILD_DISTRO} package but you are running ${SYS_DISTRO_TAG}. Download: nftban-${SYS_DISTRO_TAG}-amd64.deb"
                     fi
                 fi
                 ;;
@@ -2332,7 +2345,11 @@ echo "════════════════════════�
 if [ $PREREQ_FAILED -eq 1 ]; then
     echo "[✗] PREREQUISITE CHECK FAILED"
     echo ""
-    echo "Critical requirements are missing. Please install using apt (not dpkg):"
+    if [ -n "$PREREQ_ERRORS" ]; then
+        echo "ROOT CAUSE: $PREREQ_ERRORS"
+        echo ""
+    fi
+    echo "If missing dependencies, install using apt (not dpkg):"
     echo ""
     echo "  sudo apt update"
     echo "  sudo apt install -y ./nftban-*.deb"
@@ -2340,6 +2357,8 @@ if [ $PREREQ_FAILED -eq 1 ]; then
     echo "apt will automatically install missing dependencies (nftables, curl, jq)."
     echo "════════════════════════════════════════════════════════════════════════════════"
     echo ""
+    # Print root cause to stderr as well (survives dpkg/apt noise)
+    [ -n "$PREREQ_ERRORS" ] && echo "NFTBan: $PREREQ_ERRORS" >&2
     exit 1
 fi
 

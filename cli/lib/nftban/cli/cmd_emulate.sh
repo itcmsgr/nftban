@@ -21,6 +21,8 @@
 # =============================================================================
 # Usage:
 #   nftban emulate <ip>
+#   nftban emulate <ip> tcp 22
+#   nftban emulate <ip> tcp 111 in
 #   nftban emulate <ip> --proto tcp --port 22 --direction in
 #   nftban emulate <ip> --json
 # =============================================================================
@@ -76,9 +78,19 @@ nftban_cmd_emulate() {
             *)
                 if [[ -z "$ip" ]]; then
                     ip="$1"
+                elif [[ -z "$proto" && "$1" =~ ^(tcp|udp|icmp|icmpv6)$ ]]; then
+                    # Positional protocol (e.g., nftban emulate 8.8.8.8 tcp 111 in)
+                    proto="$1"
+                elif [[ -z "$port" && -n "$proto" && "$1" =~ ^[0-9]+$ ]]; then
+                    # Positional port (must follow protocol)
+                    port="$1"
+                elif [[ "$1" =~ ^(in|input|out|output|fwd|forward)$ ]]; then
+                    # Positional direction
+                    direction="$1"
                 else
                     nftban_banner 2>/dev/null || true
                     echo "Error: Unexpected argument: $1" >&2
+                    echo "Use 'nftban emulate --help' for usage" >&2
                     exit 1
                 fi
                 shift
@@ -183,6 +195,7 @@ _emulate_help() {
 NFTBan Emulate - Simulate packet decision
 
 USAGE:
+    nftban emulate <ip> [proto] [port] [direction]
     nftban emulate <ip> [options]
 
 DESCRIPTION:
@@ -190,8 +203,15 @@ DESCRIPTION:
     Shows whether the packet would be ALLOWED or BLOCKED, and explains
     which rule/set/module would make the decision.
 
+    Without --proto/--port, only checks whitelist/blacklist membership.
+    With --proto and --port, also checks port-level filtering (allowed
+    ports sets: tcp_ports_in, udp_ports_in, etc.).
+
 ARGUMENTS:
     <ip>                IP address to test (IPv4 or IPv6)
+    [proto]             Protocol: tcp, udp (positional, optional)
+    [port]              Port number: 1-65535 (positional, optional)
+    [direction]         Direction: in, out, fwd (positional, default: in)
 
 OPTIONS:
     -p, --proto <proto> Protocol: tcp, udp, icmp (optional)
@@ -201,10 +221,14 @@ OPTIONS:
     -h, --help          Show this help
 
 EXAMPLES:
-    # Basic IP check
+    # Basic IP check (whitelist/blacklist only)
     nftban emulate 8.8.8.8
 
-    # Check with protocol and port
+    # Check if port is allowed (positional args)
+    nftban emulate 8.8.8.8 tcp 22
+    nftban emulate 8.8.8.8 tcp 111
+
+    # Check with flags
     nftban emulate 8.8.8.8 --proto tcp --port 22
 
     # Check outbound traffic
