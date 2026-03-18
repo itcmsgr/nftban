@@ -55,9 +55,8 @@ nftban_health_check_services() {
     local service_issues=()
 
     # Optional services (only check if they exist)
-    # NOTE: nftban-login-monitor is a SERVICE, not a timer
+    # v1.23.0 (EVAL-5): Removed nftban-login-monitor.service (deprecated since v1.21.3)
     local optional_services=(
-        "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
         "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
         "suricata.service"
     )

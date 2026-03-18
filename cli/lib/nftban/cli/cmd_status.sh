@@ -174,9 +174,36 @@ output_terminal() {
     # Output formatted terminal status - Clean professional layout v1.0
     local quiet_mode="$1"
 
-    # Header with version
+    # v1.23.0 (§10): Determine protection state
+    local protection_state="DISABLED"
+    local _state_nft_active=false
+    local _state_daemon_active=false
+    local _state_rules=0
+    local _state_timers=0
+
+    systemctl is-active nftables.service >/dev/null 2>&1 && _state_nft_active=true
+    systemctl is-active nftband.service >/dev/null 2>&1 && _state_daemon_active=true
+    if command -v nft >/dev/null 2>&1; then
+        _state_rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+        _state_rules="${_state_rules:-0}"
+    fi
+    _state_timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+
+    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
+        protection_state="DISABLED"
+    elif [[ "$_state_nft_active" == "true" ]] && [[ "$_state_daemon_active" == "true" ]] && [[ "$_state_rules" -gt 0 ]]; then
+        if [[ "$_state_timers" -gt 0 ]]; then
+            protection_state="PROTECTED"
+        else
+            protection_state="DEGRADED"
+        fi
+    elif [[ "$_state_nft_active" == "true" ]] && [[ "$_state_rules" -gt 0 ]]; then
+        protection_state="DEGRADED"
+    fi
+
+    # Header with version and state
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan v${NFTBAN_VERSION:-unknown} — System Status"
+    echo "  NFTBan v${NFTBAN_VERSION:-unknown} — System Status — ${protection_state}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -189,6 +216,7 @@ output_terminal() {
     printf "  %-20s %s\n" "Kernel.............." "$(uname -r)"
     printf "  %-20s %s\n" "Uptime.............." "$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk '{print $3, $4}' | sed 's/,$//')"
     printf "  %-20s %s\n" "NFTBan.............." "v${NFTBAN_VERSION:-unknown}"
+    printf "  %-20s %s\n" "State..............." "$protection_state"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -265,12 +293,12 @@ output_terminal() {
     echo "───────────────────────────────────────────────────────────────"
 
     check_service_clean "nftables" "nftables.service"
+    check_service_clean "nftband" "nftband.service"
     check_service_clean "suricata" "suricata.service"
     check_service_clean "nftban-ui" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
-    check_service_clean "login-monitor" "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+    # v1.23.0: login-monitor removed (replaced by nftband loginmon module)
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
-    check_service_clean "unified-exporter" "nftban-unified-exporter.service"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -1042,8 +1070,28 @@ output_terminal() {
 
 output_json() {
     # Output JSON format
+
+    # v1.23.0 (§10): Determine protection state for JSON
+    local json_state="DISABLED"
+    local _js_nft=false _js_daemon=false _js_rules=0 _js_timers=0
+    systemctl is-active nftables.service >/dev/null 2>&1 && _js_nft=true
+    systemctl is-active nftband.service >/dev/null 2>&1 && _js_daemon=true
+    if command -v nft >/dev/null 2>&1; then
+        _js_rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+        _js_rules="${_js_rules:-0}"
+    fi
+    _js_timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
+        json_state="DISABLED"
+    elif [[ "$_js_nft" == "true" ]] && [[ "$_js_daemon" == "true" ]] && [[ "$_js_rules" -gt 0 ]]; then
+        [[ "$_js_timers" -gt 0 ]] && json_state="PROTECTED" || json_state="DEGRADED"
+    elif [[ "$_js_nft" == "true" ]] && [[ "$_js_rules" -gt 0 ]]; then
+        json_state="DEGRADED"
+    fi
+
     echo "{"
     echo "  \"version\": \"${NFTBAN_VERSION:-unknown}\","
+    echo "  \"state\": \"$json_state\","
     echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"hostname\": \"$(hostname)\","
 
@@ -1165,7 +1213,7 @@ output_json() {
     echo "    \"nftban_core\": $(_json_service_info "${NFTBAN_SERVICE_CORE:-nftban-core.service}"),"
     echo "    \"nftban_api\": $(_json_service_info "${NFTBAN_SERVICE_UI:-nftban-ui.service}"),"
     echo "    \"nftban_suricata\": $(_json_service_info "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"),"
-    echo "    \"login_monitor\": $(_json_service_info "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"),"
+    # v1.23.0: login_monitor removed (replaced by nftband loginmon module)
     echo "    \"metrics_exporter\": $(_json_service_info "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}")"
     echo "  },"
 
@@ -1284,9 +1332,10 @@ output_json() {
     systemctl is-active nftban-suricata.service >/dev/null 2>&1 && suricata_banning=true
     echo "    \"suricata\": {\"enabled\": $suricata_enabled, \"banning\": $suricata_banning},"
 
-    # Login Monitor
+    # Login Monitor (v1.23.0: now handled by nftband daemon loginmon module)
     local login_enabled=false
-    systemctl is-active nftban-login-monitor.service >/dev/null 2>&1 && login_enabled=true
+    # Check PID file (loginmon runs as nftband module, not standalone service)
+    [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/loginmon.pid" ]] && login_enabled=true
     echo "    \"login_monitor\": {\"enabled\": $login_enabled},"
 
     # GeoIP (database) - use nftban-core for accurate detection
