@@ -104,6 +104,12 @@ var builtInTrustFeeds = []TrustConfig{
 		Category:    "cdn",
 		Description: "Fastly CDN IP ranges",
 	},
+	{
+		Name:        "QUICCLOUD",
+		URL:         "https://quic.cloud/ips",
+		Category:    "cdn",
+		Description: "QUIC.cloud / LiteSpeed CDN IP ranges",
+	},
 }
 
 func cmdTrust(action string, cfg *nftbanconf.Config) error {
@@ -664,6 +670,19 @@ func parseJSONIPRanges(content, feedName string) ([]string, error) {
 		}
 		ips = append(ips, fastlyData.Addresses...)
 		ips = append(ips, fastlyData.IPv6Addresses...)
+
+	case strings.Contains(feedName, "QUICCLOUD"):
+		// QUIC.cloud format: IPs separated by <br /> in HTML
+		// Bare IPs (no CIDR) — whitelist parser handles both formats
+		cleaned := strings.ReplaceAll(content, "<br />", "\n")
+		cleaned = strings.ReplaceAll(cleaned, "<br>", "\n")
+		ipv4Pattern := regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
+		for _, line := range strings.Split(cleaned, "\n") {
+			line = strings.TrimSpace(line)
+			if ipv4Pattern.MatchString(line) {
+				ips = append(ips, line)
+			}
+		}
 
 	default:
 		// Try generic extraction using regex

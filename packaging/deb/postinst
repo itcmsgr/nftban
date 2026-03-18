@@ -936,8 +936,9 @@ case "$1" in
         # =====================================================================
         log_info "Downloading GeoIP database..."
         if [[ -x /usr/lib/nftban/bin/nftban-core ]]; then
-            # Use timeout to prevent blocking on slow/no network (15s max)
-            if timeout 15s /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+            # Use timeout to prevent blocking on slow/no network (120s max)
+            # DB-IP Lite is ~3.5MB compressed — 15s was too short on slow networks
+            if timeout 120s /usr/lib/nftban/bin/nftban-core geoip update 2>&1; then
                 log_info "  GeoIP database downloaded successfully"
             else
                 log_info "  GeoIP download skipped (timeout or no network)"

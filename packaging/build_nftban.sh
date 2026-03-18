@@ -1290,8 +1290,9 @@ fi
 # STEP 6: Download GeoIP database (free DB-IP version, with timeout)
 echo "[NFTBan] Downloading GeoIP database..."
 if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    # Use timeout to prevent blocking on slow/no network (15s max)
-    if timeout 15s /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+    # Use timeout to prevent blocking on slow/no network (120s max)
+    # DB-IP Lite is ~3.5MB compressed — 15s was too short on slow networks
+    if timeout 120s /usr/lib/nftban/bin/nftban-core geoip update 2>&1; then
         echo "[NFTBan]   GeoIP database downloaded successfully"
     else
         echo "[NFTBan]   GeoIP download skipped (timeout or no network)"
@@ -2550,7 +2551,7 @@ fi
 # STEP 7: Download GeoIP database (free DB-IP version)
 echo "[NFTBan] Downloading GeoIP database..."
 if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
+    timeout 120s /usr/lib/nftban/bin/nftban-core geoip update 2>&1 || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
 fi
 
 # STEP 8: Enforce permissions and health check
@@ -2985,6 +2986,12 @@ fi
 exit 0
 PRERM
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
+
+    # P1-13 FIX: Include postrm for proper cleanup on apt-get purge
+    if [[ -f "${PROJECT_ROOT}/packaging/deb/postrm" ]]; then
+        cp "${PROJECT_ROOT}/packaging/deb/postrm" "${BUILD_DIR}/deb/DEBIAN/postrm"
+        chmod 755 "${BUILD_DIR}/deb/DEBIAN/postrm"
+    fi
 
     # BUG-L52 FIX: Reduced conffiles to only base config files that ship with
     # defaults. User-managed files (whitelist/blacklist) removed to avoid
