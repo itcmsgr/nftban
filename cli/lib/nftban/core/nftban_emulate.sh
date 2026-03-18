@@ -367,20 +367,34 @@ _detect_module_source() {
 
 # Check if port is in allowed ports set
 _check_port_allowed() {
-    local proto="$1"  # tcp or udp
+    local proto="$1"      # tcp or udp
     local port="$2"
+    local direction="$3"  # in or out
 
-    local set_name="${proto}_ports"
+    # Directional set names: tcp_ports_in, tcp_ports_out, udp_ports_in, udp_ports_out
+    local set_name="${proto}_ports_${direction}"
     local set_content
     set_content=$(nft list set ip nftban "$set_name" 2>/dev/null)
 
     if [[ -z "$set_content" ]]; then
-        # No port restrictions
-        return 0
+        # Try non-directional fallback (legacy)
+        set_content=$(nft list set ip nftban "${proto}_ports" 2>/dev/null)
+        [[ -z "$set_content" ]] && return 1  # No set found = not allowed
     fi
 
-    # Check if port is in set
-    if echo "$set_content" | grep -qE "elements.*[{,][[:space:]]*${port}[[:space:]]*[,}]"; then
+    # Extract all port numbers from set elements and check for match
+    # nft output format: "elements = { 20, 21, 22, 80, 443, 55000 }" (may span multiple lines)
+    local ports_list
+    ports_list=$(echo "$set_content" | \
+        sed -n '/elements = {/,/}/p' | \
+        sed 's/elements = {//' | \
+        tr ',' '\n' | \
+        tr -d '{}' | \
+        sed 's/^[[:space:]]*//' | \
+        sed 's/[[:space:]]*$//' | \
+        grep -E '^[0-9]+$')
+
+    if echo "$ports_list" | grep -qxF "$port"; then
         return 0
     fi
 
@@ -501,26 +515,40 @@ nftban_emulate_packet() {
         else
             eval_order="${eval_order},{\"set\":\"$blacklist_set\",\"matched\":false}"
 
-            # 3. Check port if specified (only for input chain)
-            if [[ -n "$port" && -n "$proto" && "$chain" == "input" ]]; then
-                if ! _check_port_allowed "$proto" "$port"; then
+            # 3. Check port if specified (only for input/output chains)
+            if [[ -n "$port" && -n "$proto" ]]; then
+                local port_dir="in"
+                [[ "$chain" == "output" ]] && port_dir="out"
+                local port_set_name="${proto}_ports_${port_dir}"
+
+                if ! _check_port_allowed "$proto" "$port" "$port_dir"; then
                     decision="block"
-                    matched_set="${proto}_ports"
+                    matched_set="$port_set_name"
                     module="port_filter"
                     source="not_in_allowed_ports"
-                    list_type="${proto}_ports"
-                    explanation="Port $port/$proto is not in the allowed ports list."
-                    eval_order="${eval_order},{\"set\":\"${proto}_ports\",\"matched\":false,\"reason\":\"port_not_allowed\"}"
+                    list_type="$port_set_name"
+                    explanation="Port $port/$proto is not in the allowed ${port_dir}bound ports set (${port_set_name}). Chain policy is drop."
+                    eval_order="${eval_order},{\"set\":\"${port_set_name}\",\"matched\":false,\"reason\":\"port_not_allowed\"}"
                 else
-                    eval_order="${eval_order},{\"set\":\"${proto}_ports\",\"matched\":true}"
+                    module="port_filter"
+                    source="in_allowed_ports"
+                    explanation="Port $port/$proto is in the allowed ${port_dir}bound ports set (${port_set_name})."
+                    eval_order="${eval_order},{\"set\":\"${port_set_name}\",\"matched\":true}"
                 fi
             fi
 
-            # 4. Default: allow (for established connections / allowed ports)
+            # 4. Default policy
             if [[ "$decision" == "allow" && -z "$module" ]]; then
-                module="default_policy"
-                source="no_match"
-                explanation="No blocking rules matched. Traffic allowed by default chain policy or established connection tracking."
+                if [[ -z "$port" || -z "$proto" ]]; then
+                    # IP-only check: not in whitelist or blacklist
+                    module="default_policy"
+                    source="ip_only_check"
+                    explanation="IP $ip is not in whitelist or blacklist. Note: chain policy is DROP for new connections — use --proto and --port to check port-level filtering."
+                else
+                    module="default_policy"
+                    source="allowed"
+                    explanation="Traffic allowed: IP not blocked, port is in allowed set."
+                fi
             fi
         fi
     fi

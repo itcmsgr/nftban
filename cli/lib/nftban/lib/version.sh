@@ -24,10 +24,10 @@ set -Eeuo pipefail
 # Read version from VERSION file (single source of truth)
 _nftban_read_version() {
     local version_file
-    # Try multiple possible locations
+    # Try multiple possible locations (package path first, then source tree)
     for path in \
-        "${BASH_SOURCE[0]%/*}/../../../../../VERSION" \
         "/usr/lib/nftban/VERSION" \
+        "${BASH_SOURCE[0]%/*}/../../../../../VERSION" \
         "${NFTBAN_ROOT:-}/VERSION" \
         "$PWD/VERSION"; do
         if [[ -f "$path" ]]; then
@@ -65,7 +65,7 @@ readonly NFTBAN_VERSION_PATCH
 
 # Version details
 readonly NFTBAN_VERSION_NAME="Unified Security Platform"
-readonly NFTBAN_VERSION_DATE="2026-02-24"
+readonly NFTBAN_VERSION_DATE="2026-03-18"
 NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 readonly NFTBAN_BUILD_DATE
 
