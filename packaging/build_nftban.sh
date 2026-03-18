@@ -354,6 +354,14 @@ install -m 0755 cli/sbin/nftban-botscan-processor %{buildroot}/usr/lib/nftban/sb
 # Version file
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
 
+# Build target file (distro detection at install time)
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "\${ID:-unknown}:\${VERSION_ID:-0}" > %{buildroot}/usr/lib/nftban/BUILD_TARGET
+else
+    echo "unknown:0" > %{buildroot}/usr/lib/nftban/BUILD_TARGET
+fi
+
 # Main configuration file
 install -D -m 0640 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.conf
 
@@ -539,6 +547,25 @@ if [ -f /etc/os-release ]; then
             ;;
         *)
             echo "[!] Warning: Untested OS: \$ID (may work, but not officially supported)"
+            ;;
+    esac
+
+    # Check EL version matches package (prevent wrong RPM install)
+    # %{release} expands at RPM build time to e.g. "1.el9" or "1.el10"
+    PKG_RELEASE_TAG="%{release}"
+    SYS_EL_VER="\${VERSION_ID%%%%.*}"
+    case "\$ID" in
+        rhel|rocky|almalinux|centos|ol)
+            PKG_EL_VER=\$(echo "\$PKG_RELEASE_TAG" | sed -n 's/.*el\([0-9]*\).*/\1/p')
+            if [ -n "\$PKG_EL_VER" ] && [ -n "\$SYS_EL_VER" ]; then
+                if [ "\$PKG_EL_VER" != "\$SYS_EL_VER" ]; then
+                    echo "[✗] ERROR: Wrong package for this system!"
+                    echo "    Package built for: EL\${PKG_EL_VER}"
+                    echo "    System version:    EL\${SYS_EL_VER}"
+                    echo "    Use the correct package: nftban-el\${SYS_EL_VER}-x86_64.rpm"
+                    PREREQ_FAILED=1
+                fi
+            fi
             ;;
     esac
 else
@@ -806,6 +833,28 @@ fi
 # NOTE: SSH client IP protection moved to nftban_whitelist_system_sync()
 # Called via: nftban whitelist-system sync --quick --protect-session
 # This ensures single source of truth for session protection logic.
+
+# =============================================================================
+# STEP 0.1: Distro compatibility check (v1.22.3)
+# =============================================================================
+# Warn if the package was built for a different distro version than the running OS
+if [ -f /usr/lib/nftban/BUILD_TARGET ] && [ -f /etc/os-release ]; then
+    . /etc/os-release
+    BUILD_TARGET=\$(cat /usr/lib/nftban/BUILD_TARGET 2>/dev/null || echo "unknown:0")
+    BUILD_ID=\$(echo "\$BUILD_TARGET" | cut -d: -f1)
+    BUILD_VER=\$(echo "\$BUILD_TARGET" | cut -d: -f2)
+    RUNNING_ID="\${ID:-unknown}"
+    RUNNING_VER="\${VERSION_ID:-0}"
+
+    if [ "\$BUILD_ID" != "unknown" ] && [ "\$BUILD_ID" != "\$RUNNING_ID" ]; then
+        echo "[NFTBan] WARNING: Package built for \$BUILD_ID but running on \$RUNNING_ID"
+        echo "[NFTBan]   This may cause library incompatibilities"
+        echo "[NFTBan]   Recommended: use the correct package for your OS"
+    elif [ "\$BUILD_VER" != "0" ] && [ "\$BUILD_VER" != "\$RUNNING_VER" ]; then
+        echo "[NFTBan] WARNING: Package built for \$BUILD_ID \$BUILD_VER but running on \$RUNNING_ID \$RUNNING_VER"
+        echo "[NFTBan]   Use: nftban update  (auto-selects correct package for your OS)"
+    fi
+fi
 
 # =============================================================================
 # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED (BUG-001 fix)
@@ -1763,6 +1812,7 @@ fi
 /usr/lib/nftban/bin
 /usr/lib/nftban/sbin
 /usr/lib/nftban/VERSION
+/usr/lib/nftban/BUILD_TARGET
 /usr/lib/nftban/cli
 /usr/lib/nftban/core
 /usr/lib/nftban/lib
@@ -2073,6 +2123,48 @@ if [ -f /etc/os-release ]; then
             IS_DEBIAN_FAMILY=0
             ;;
     esac
+
+    # Check distro version matches package (prevent wrong package install)
+    # BUILD_DISTRO is injected at build time by CI (e.g., "ubuntu22.04", "debian12")
+    PKG_BUILD_DISTRO="__BUILD_DISTRO__"
+    if [ "$PKG_BUILD_DISTRO" != "__BUILD_DISTRO__" ] && [ -n "$PKG_BUILD_DISTRO" ]; then
+        case "$ID" in
+            ubuntu)
+                SYS_DISTRO_TAG="ubuntu${VERSION_ID}"
+                if [ "$PKG_BUILD_DISTRO" != "$SYS_DISTRO_TAG" ]; then
+                    echo "[✗] ERROR: Wrong package for this system!"
+                    echo "    Package built for: ${PKG_BUILD_DISTRO}"
+                    echo "    System version:    ${SYS_DISTRO_TAG}"
+                    echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
+                    PREREQ_FAILED=1
+                fi
+                ;;
+            debian)
+                SYS_DISTRO_TAG="debian${VERSION_ID%%.*}"
+                if [ "$PKG_BUILD_DISTRO" != "$SYS_DISTRO_TAG" ]; then
+                    # Allow debian package on debian (different minor is OK)
+                    PKG_IS_DEBIAN=$(echo "$PKG_BUILD_DISTRO" | grep -c '^debian' || echo "0")
+                    if [ "$PKG_IS_DEBIAN" = "1" ]; then
+                        PKG_DEB_MAJOR=$(echo "$PKG_BUILD_DISTRO" | sed -n 's/^debian\([0-9]*\).*/\1/p')
+                        SYS_DEB_MAJOR="${VERSION_ID%%.*}"
+                        if [ "$PKG_DEB_MAJOR" != "$SYS_DEB_MAJOR" ]; then
+                            echo "[✗] ERROR: Wrong package for this system!"
+                            echo "    Package built for: Debian ${PKG_DEB_MAJOR}"
+                            echo "    System version:    Debian ${SYS_DEB_MAJOR}"
+                            echo "    Use the correct package: nftban-debian${SYS_DEB_MAJOR}-amd64.deb"
+                            PREREQ_FAILED=1
+                        fi
+                    else
+                        echo "[✗] ERROR: Wrong package for this system!"
+                        echo "    Package built for: ${PKG_BUILD_DISTRO}"
+                        echo "    System version:    ${SYS_DISTRO_TAG}"
+                        echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
+                        PREREQ_FAILED=1
+                    fi
+                fi
+                ;;
+        esac
+    fi
 else
     echo "[✗] ERROR: Cannot detect OS version (/etc/os-release missing)"
     PREREQ_FAILED=1
@@ -2273,8 +2365,20 @@ echo ""
 exit 0
 PREINST_EOF
 
-    # Inject actual version into preinst (replace placeholder and any remaining v1.0.0)
+    # Inject actual version and build distro into preinst
     sed -i "s/__PKG_VERSION__/${PKG_VERSION}/g; s/v1\.0\.0/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
+    # BUILD_DISTRO is set by CI (e.g., "ubuntu22.04", "debian12") or auto-detected
+    local build_distro="${BUILD_DISTRO:-}"
+    if [[ -z "$build_distro" ]] && [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        case "${ID:-}" in
+            ubuntu) build_distro="ubuntu${VERSION_ID}" ;;
+            debian) build_distro="debian${VERSION_ID%%.*}" ;;
+        esac
+    fi
+    if [[ -n "$build_distro" ]]; then
+        sed -i "s/__BUILD_DISTRO__/${build_distro}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
+    fi
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/preinst"
 
     # Use the comprehensive postinst from packaging/deb/postinst
@@ -2953,6 +3057,16 @@ build_deb() {
 
     # Copy VERSION file
     install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
+
+    # Write BUILD_TARGET from the build container's OS (distro detection at install time)
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release 2>/dev/null || true
+        echo "${ID:-unknown}:${VERSION_ID:-0}" > "${deb_root}/usr/lib/nftban/BUILD_TARGET"
+    else
+        echo "unknown:0" > "${deb_root}/usr/lib/nftban/BUILD_TARGET"
+    fi
+    chmod 0644 "${deb_root}/usr/lib/nftban/BUILD_TARGET"
 
     # Copy libraries
     cp -r "${PROJECT_ROOT}/cli/lib/nftban"/* "${deb_root}/usr/lib/nftban/"

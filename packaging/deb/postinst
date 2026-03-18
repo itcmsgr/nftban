@@ -96,6 +96,29 @@ case "$1" in
         done
 
         # =====================================================================
+        # STEP 0.15: Distro compatibility check (v1.22.3)
+        # =====================================================================
+        # Warn if the package was built for a different distro version
+        if [[ -f /usr/lib/nftban/BUILD_TARGET ]] && [[ -f /etc/os-release ]]; then
+            source /etc/os-release 2>/dev/null || true
+            _build_target=$(cat /usr/lib/nftban/BUILD_TARGET 2>/dev/null || echo "unknown:0")
+            _build_id="${_build_target%%:*}"
+            _build_ver="${_build_target#*:}"
+            _running_id="${ID:-unknown}"
+            _running_ver="${VERSION_ID:-0}"
+
+            if [[ "$_build_id" != "unknown" && "$_build_id" != "$_running_id" ]]; then
+                log_warn "Package built for $_build_id but running on $_running_id"
+                log_warn "  This may cause library incompatibilities"
+                log_warn "  Recommended: use the correct package for your OS"
+            elif [[ "$_build_ver" != "0" && "$_build_ver" != "$_running_ver" ]]; then
+                log_warn "Package built for $_build_id $_build_ver but running on $_running_id $_running_ver"
+                log_warn "  Use: nftban update  (auto-selects correct package for your OS)"
+            fi
+            unset _build_target _build_id _build_ver _running_id _running_ver
+        fi
+
+        # =====================================================================
         # STEP 0.2: Cleanup obsolete/stale files from ALL previous versions
         # =====================================================================
         # UNIFIED STALE CLEANUP — must match RPM %post cleanup section
