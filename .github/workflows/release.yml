@@ -550,7 +550,7 @@ jobs:
           sed -i 's/^          //' VERIFY.txt
 
       - name: Generate SBOM (Software Bill of Materials)
-        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        uses: anchore/sbom-action@57aae528053a48a3f6235f2d9461b05fbcb7366d # v0.23.1
         with:
           path: .
           format: spdx-json
@@ -646,7 +646,7 @@ jobs:
         # - verify-release job will: download with retry, verify checksums,
         #   generate final SHA256SUMS, then publish the release
         # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
           files: |
             dist/packages/*.rpm
