@@ -1107,8 +1107,14 @@ if [[ -n "\$CONFLICTS" ]]; then
         # =====================================================================
         echo "[NFTBan]   Creating emergency access protection..."
 
-        # Detect current SSH port
+        # Detect current SSH port (v1.23.0 P1-5: multi-source detection)
+        # 1. Check active listening port first (most reliable)
         EMERGENCY_SSH_PORT=\$(ss -tlnp 2>/dev/null | grep sshd | awk '{print \$4}' | sed 's/.*://' | head -1)
+        # 2. Fallback: check sshd_config if ss didn't find it
+        if [[ -z "\$EMERGENCY_SSH_PORT" ]]; then
+            EMERGENCY_SSH_PORT=\$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print \$2}' | head -1 || true)
+        fi
+        # 3. Final fallback: default to 22
         EMERGENCY_SSH_PORT=\${EMERGENCY_SSH_PORT:-22}
         echo "[NFTBan]   Detected SSH on port: \$EMERGENCY_SSH_PORT"
 

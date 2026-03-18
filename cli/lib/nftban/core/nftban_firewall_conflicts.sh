@@ -407,27 +407,25 @@ nftban_detect_firewalld() {
 nftban_detect_ufw() {
     # Detect ufw status
     # Returns: 0=not found, 1=installed inactive, 2=active
+    # v1.23.0 FIX (P0-4): Use systemctl is-active as primary check (matches postinst behavior)
+    # `command -v ufw` finds the binary even when UFW is completely disabled/inactive
 
     local status=0
 
-    if ! command -v ufw &>/dev/null; then
-        return 0
-    fi
-
-    local ufw_status
-    ufw_status=$(ufw status 2>/dev/null | head -1 || echo "")
-
-    if [[ "$ufw_status" == *"inactive"* ]]; then
-        status=1
-        # Just info, inactive ufw is fine
-        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
-    elif [[ -n "$ufw_status" ]]; then
-        # Not inactive and ufw returned status → treat as active
+    # Primary check: is the service actually running?
+    if systemctl is-active ufw.service &>/dev/null; then
         status=2
         NFTBAN_FIREWALL_CONFLICTS+=("UFW: ACTIVE - Critical conflict with nftban")
         NFTBAN_FIREWALL_FIXES+=("Disable ufw:")
         NFTBAN_FIREWALL_FIXES+=("  ufw disable")
         [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        return $status
+    fi
+
+    # Secondary check: binary installed but not active (INFO only)
+    if command -v ufw &>/dev/null; then
+        status=1
+        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
     fi
 
     return $status
