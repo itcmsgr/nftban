@@ -175,7 +175,9 @@ _suricata_rules_status() {
 
     # Check enabled sources
     if command -v suricata-update &>/dev/null; then
-        sources=$(suricata-update list-enabled-sources 2>/dev/null | grep -E "^  - " | sed 's/^  - //' | tr '\n' ',' | sed 's/,$//' || echo "et/open")
+        # v1.23.0 FIX (P2-10): Wrap grep in { } with || true to prevent pipefail crash
+        # when suricata-update has no enabled sources (grep exits 1 = no match)
+        sources=$(suricata-update list-enabled-sources 2>/dev/null | { grep -E "^  - " || true; } | sed 's/^  - //' | tr '\n' ',' | sed 's/,$//')
         [[ -z "$sources" ]] && sources="et/open"
     fi
 

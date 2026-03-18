@@ -421,7 +421,8 @@ install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/l
 install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib/systemd/system/nftban-maintenance.timer
 install -D -m 0644 install/systemd/nftban-health.service %{buildroot}/usr/lib/systemd/system/nftban-health.service
 install -D -m 0644 install/systemd/nftban-health.timer %{buildroot}/usr/lib/systemd/system/nftban-health.timer
-install -D -m 0644 install/systemd/nftban-login-monitor.service %{buildroot}/usr/lib/systemd/system/nftban-login-monitor.service
+# v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
+# Deprecated since v1.21.3, replaced by Go daemon loginmon module (pkg/loginmon)
 install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.service
 install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
 install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
@@ -1161,7 +1162,7 @@ echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/{reports,botguard}
 mkdir -p /var/cache/nftban/health
@@ -1414,22 +1415,13 @@ if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep
     systemctl enable --now nftban-botscan.timer 2>/dev/null || true
 fi
 
-# Login monitor: detect daemon loginmon vs legacy shell service (v1.21.3)
-# The Go daemon's built-in loginmon module (pkg/loginmon) replaces this service.
-# If daemon is active, disable legacy shell service to prevent duplicate bans.
-if systemctl is-active nftband.service >/dev/null 2>&1; then
-    # Daemon is active — its loginmon handles login monitoring
-    if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
-        echo "[NFTBan DEPRECATION] nftban-login-monitor.service is deprecated (v1.21.3)"
-        echo "[NFTBan DEPRECATION] Daemon loginmon replaces it. Disabling legacy service..."
-        systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
-    else
-        echo "[NFTBan] Login monitoring: daemon loginmon active (legacy service already disabled)"
-    fi
-else
-    # Daemon not active yet (fresh install boot sequence) — enable legacy as fallback
-    systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
-    echo "[NFTBan] Login monitoring: legacy service enabled (daemon not yet active)"
+# v1.23.0 (EVAL-3): Login monitor service REMOVED from package
+# Stop and disable if still present from previous versions (upgrade cleanup)
+if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1 || \
+   systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
+    echo "[NFTBan] Cleaning up deprecated nftban-login-monitor.service..."
+    systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
+    echo "[NFTBan] Login monitoring now handled by daemon loginmon module (pkg/loginmon)"
 fi
 
 # STEP 9: Configure nftables to load NFTBan config (distro-aware)
@@ -1570,9 +1562,8 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
         nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
     fi
 
-    # Enable login monitor (auto-detects services: ssh, dovecot, exim, etc.)
+    # v1.23.0: Login monitoring handled by daemon loginmon module
     nftban login enable >/dev/null 2>&1 || true
-    systemctl restart nftban-login-monitor.service 2>/dev/null || true
 
     # Show detected services
     DETECTED_SERVICES=\$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
@@ -2493,7 +2484,7 @@ usermod -a -G nftban root 2>/dev/null || true
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/{reports,botguard}
 mkdir -p /var/cache/nftban/health
@@ -2699,20 +2690,13 @@ if systemctl list-unit-files nftban-botscan.timer --no-legend 2>/dev/null | grep
     systemctl enable --now nftban-botscan.timer 2>/dev/null || true
 fi
 
-# Login monitor: detect daemon loginmon vs legacy shell service (v1.21.3)
-# The Go daemon's built-in loginmon module (pkg/loginmon) replaces this service.
-# If daemon is active, disable legacy shell service to prevent duplicate bans.
-if systemctl is-active nftband.service >/dev/null 2>&1; then
-    if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
-        echo "[NFTBan DEPRECATION] nftban-login-monitor.service is deprecated (v1.21.3)"
-        echo "[NFTBan DEPRECATION] Daemon loginmon replaces it. Disabling legacy service..."
-        systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
-    else
-        echo "[NFTBan] Login monitoring: daemon loginmon active (legacy service already disabled)"
-    fi
-else
-    systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
-    echo "[NFTBan] Login monitoring: legacy service enabled (daemon not yet active)"
+# v1.23.0 (EVAL-3): Login monitor service REMOVED from package
+# Stop and disable if still present from previous versions (upgrade cleanup)
+if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1 || \
+   systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
+    echo "[NFTBan] Cleaning up deprecated nftban-login-monitor.service..."
+    systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
+    echo "[NFTBan] Login monitoring now handled by daemon loginmon module (pkg/loginmon)"
 fi
 
 # PREFLIGHT: Detect and AUTO-FIX incompatible xt target rules (v1.17.5)
@@ -2776,9 +2760,8 @@ if [ "$NFTABLES_SAFE" -eq 1 ]; then
         nftban panel "$DETECTED_PANEL" enable >/dev/null 2>&1 || true
     fi
 
-    # Enable login monitor (auto-detects services: ssh, dovecot, exim, etc.)
+    # v1.23.0: Login monitoring handled by daemon loginmon module
     nftban login enable >/dev/null 2>&1 || true
-    systemctl restart nftban-login-monitor.service 2>/dev/null || true
 
     # Show detected services
     DETECTED_SERVICES=$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
@@ -3137,7 +3120,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-login-monitor.service" "${deb_root}/usr/lib/systemd/system/"
+    # v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
+    # Deprecated since v1.21.3, replaced by Go daemon loginmon module (pkg/loginmon)
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"

@@ -162,7 +162,8 @@ nftban_feeds_discover_all() {
     fi
 
     # Find all FEED_*_URL variables (dynamic discovery!)
-    grep -oP 'FEED_\K[A-Z0-9_]+(?=_URL=)' "$NFTBAN_FEEDS_CONFIG" | sort -u
+    # v1.23.0 FIX (EVAL-1): Add || true to prevent pipefail crash when no feeds configured
+    grep -oP 'FEED_\K[A-Z0-9_]+(?=_URL=)' "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | sort -u || true
 }
 
 # Get feed property dynamically
