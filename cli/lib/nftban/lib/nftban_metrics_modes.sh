@@ -15,6 +15,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_METRICS_MODES_LOADED:-}" ]] && return 0
 _NFTBAN_METRICS_MODES_LOADED=1
 
+# Bootstrap paths
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
+
 # =============================================================================
 # CASE A: Remote submission to user's own backend
 # =============================================================================
@@ -144,7 +148,7 @@ _metrics_enable_pro() {
     # Step 2: Check token exists
     echo ""
     echo "Step 2/6: Checking Pro token..."
-    local token_file="${NFTBAN_PRO_TOKEN_FILE:-/etc/nftban/pro.token}"
+    local token_file="${NFTBAN_PRO_TOKEN_FILE:-${NFTBAN_CONFIG_DIR}/pro.token}"
 
     if [[ ! -f "$token_file" ]]; then
         echo ""

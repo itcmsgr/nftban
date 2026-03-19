@@ -11,6 +11,10 @@
 
 set -Eeuo pipefail
 
+# Variable defaults (safe for re-sourcing)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
+
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_PANEL_PLESK_LOADED:-}" ]] && return 0
 readonly _NFTBAN_PANEL_PLESK_LOADED=1
@@ -128,7 +132,7 @@ EOF
     echo ""
 
     # Load Plesk configuration to show port summary
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file" || true
@@ -195,7 +199,7 @@ EOF
 
     # Mark Plesk panel as enabled in state file
     echo "Enabling Plesk panel in NFTBan..."
-    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/panels"
+    local state_dir="${NFTBAN_DATA_DIR}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -279,7 +283,7 @@ nftban_panel_plesk_disable() {
     echo "Disabling Plesk panel in NFTBan..."
 
     # Mark Plesk panel as disabled in state file
-    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/panels"
+    local state_dir="${NFTBAN_DATA_DIR}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -393,8 +397,8 @@ nftban_panel_plesk_status() {
 
     # Configuration file
     echo "Configuration:"
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
-        echo "  Config: ✓ ${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
+        echo "  Config: ✓ ${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf"
     else
         echo "  Config: ✗ NOT FOUND"
     fi
@@ -433,16 +437,16 @@ nftban_panel_plesk_report() {
     echo "   ───────────────────────────────────────────────────"
 
     # Load config
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" || true
+        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" || true
     fi
     # v1.19.0: Source .local override (user customizations survive package updates)
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf.local" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf.local" || true
+        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local" || true
     fi
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_PLESK_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_PLESK_TCP_OUT:-Not configured}"
         echo "   UDP INPUT:  ${NFTBAN_PLESK_UDP_IN:-Not configured}"
@@ -502,9 +506,9 @@ nftban_panel_plesk_report() {
     # Configuration files
     echo "5. CONFIGURATION FILES"
     echo "   ───────────────────────────────────────────────────"
-    echo "   /etc/nftban/conf.d/panels/plesk/main.conf"
-    echo "   /etc/nftban/nftban.conf.local (customizations)"
-    echo "   /etc/nftban/conf.d/login/main.conf (brute-force protection)"
+    echo "   ${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf"
+    echo "   ${NFTBAN_CONFIG_DIR}/nftban.conf.local (customizations)"
+    echo "   ${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf (brute-force protection)"
     echo ""
 }
 
@@ -521,7 +525,7 @@ nftban_panel_plesk_repair() {
     local repairs=0
 
     # Check configuration file
-    if [[ ! -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/plesk/main.conf" ]]; then
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
         # v1.19.20 FIX
