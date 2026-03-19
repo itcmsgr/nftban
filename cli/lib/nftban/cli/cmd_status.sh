@@ -555,54 +555,12 @@ output_terminal() {
     fi
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
 
-    # Login Monitor
-    local login_status="UNKNOWN"
-    local login_details=""
-    local mail_services=""
-    if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1; then
-        login_status="ACTIVE"
-        # Get monitoring targets from config
-        local login_conf="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
-        local login_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
-        [[ -f "$login_conf" ]] && source "$login_conf" 2>/dev/null || true
-        [[ -f "$login_local" ]] && source "$login_local" 2>/dev/null || true
-
-        local monitors=""
-        local _ssh="${NFTBAN_LOGIN_ALERT_SSH:-true}"
-        local _su="${NFTBAN_LOGIN_ALERT_SU:-true}"
-        local _sudo="${NFTBAN_LOGIN_ALERT_SUDO:-true}"
-        [[ "${_ssh,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SSH, "
-        [[ "${_su,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SU, "
-        [[ "${_sudo,,}" =~ ^(yes|true|1|on)$ ]] && monitors="${monitors}SUDO, "
-
-        # Detect mail services (Dovecot, Postfix, Exim)
-        if systemctl list-unit-files dovecot.service 2>/dev/null | grep -q dovecot; then
-            monitors="${monitors}Dovecot, "
-            mail_services="${mail_services}dovecot "
-        fi
-        if systemctl list-unit-files postfix.service 2>/dev/null | grep -q postfix; then
-            monitors="${monitors}Postfix, "
-            mail_services="${mail_services}postfix "
-        fi
-        if systemctl list-unit-files exim.service exim4.service 2>/dev/null | grep -q exim; then
-            monitors="${monitors}Exim, "
-            mail_services="${mail_services}exim "
-        fi
-
-        monitors="${monitors%, }"
-        [[ -n "$monitors" ]] && login_details="$monitors"
-    elif systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
-        # Service is enabled but not running
-        login_status="ENABLED (stopped)"
-    elif [[ -f /lib/systemd/system/nftban-login-monitor.service ]] || \
-         [[ -f /etc/systemd/system/nftban-login-monitor.service ]]; then
-        # Service exists but not enabled
-        login_status="DISABLED"
-    else
-        login_status="NOT INSTALLED"
+    # Login Monitor (deprecated v1.23.0 — replaced by nftband loginmon module)
+    # Only show if the legacy service still exists on this system
+    if [[ -f /lib/systemd/system/nftban-login-monitor.service ]] || \
+       [[ -f /etc/systemd/system/nftban-login-monitor.service ]]; then
+        printf "  %-20s %s\n" "Login Monitor......." "DEPRECATED (use: nftband loginmon)"
     fi
-    printf "  %-20s %s\n" "Login Monitor......." "$login_status"
-    [[ -n "$login_details" ]] && printf "      %-16s %s\n" "Watching........" "$login_details"
 
     # GeoIP (database module) - use nftban-core directly for accurate detection
     local geoip_status="NOT INSTALLED"
@@ -1387,11 +1345,10 @@ output_json() {
     systemctl is-active nftban-suricata.service >/dev/null 2>&1 && suricata_banning=true
     echo "    \"suricata\": {\"enabled\": $suricata_enabled, \"banning\": $suricata_banning},"
 
-    # Login Monitor (v1.23.0: now handled by nftband daemon loginmon module)
-    local login_enabled=false
-    # Check PID file (loginmon runs as nftband module, not standalone service)
-    [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/loginmon.pid" ]] && login_enabled=true
-    echo "    \"login_monitor\": {\"enabled\": $login_enabled},"
+    # Login monitoring (nftband loginmon module, replaces deprecated login-monitor service)
+    local loginmon_enabled=false
+    [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/loginmon.pid" ]] && loginmon_enabled=true
+    echo "    \"login_monitor\": {\"enabled\": $loginmon_enabled},"
 
     # GeoIP (database) - use nftban-core for accurate detection
     local geoip_installed=false
@@ -1476,7 +1433,7 @@ check_service_clean() {
 
     # Check if unit exists
     if ! systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q "$unit"; then
-        printf "  %s NOT INSTALLED\n" "$padded_name"
+        printf "  %s NOT INSTALLED (optional)\n" "$padded_name"
         return 0
     fi
 
@@ -1532,20 +1489,6 @@ check_service_clean() {
         printf "  %s ACTIVE\n" "$padded_name"
     fi
     return 0
-}
-
-check_service() {
-    # Check and display service status (simple version)
-    # Args: service_name systemd_unit
-    local name="$1"
-    local unit="$2"
-
-    local status="❌ Inactive"
-    if systemctl is-active "$unit" >/dev/null 2>&1; then
-        status="✅ Active"
-    fi
-
-    printf "  %-20s %s\n" "$name:" "$status"
 }
 
 show_usage() {

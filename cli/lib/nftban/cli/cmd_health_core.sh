@@ -274,14 +274,15 @@ nftban_health_cmd_report() {
             nftban_health_render_terminal
             ;;
         html)
-            echo "HTML report generation not yet implemented" >&2
-            echo "Use 'nftban health check' for terminal output" >&2
+            echo "HTML report format not available." >&2
+            echo "Use: nftban health check    (terminal)" >&2
+            echo "Use: nftban health --json   (JSON output)" >&2
             return 1
             ;;
         json)
-            echo "JSON report generation not yet implemented" >&2
-            echo "Use 'nftban health check' for terminal output" >&2
-            return 1
+            # Redirect to the working --json command
+            nftban_health_cmd_json
+            return $?
             ;;
         *)
             echo "ERROR: Invalid format: $format" >&2
