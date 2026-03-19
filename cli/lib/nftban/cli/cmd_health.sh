@@ -156,15 +156,21 @@ nftban_cmd_health() {
             nftban_health_cmd_fix "$@"
             ;;
         services)
+            echo "DEPRECATED: 'nftban health services' will be removed in v1.26" >&2
+            echo "Use: nftban services" >&2
             nftban_health_cmd_services "$@"
             ;;
         modules)
+            echo "DEPRECATED: 'nftban health modules' will be removed in v1.26" >&2
+            echo "Use: nftban module list" >&2
             nftban_health_cmd_modules "$@"
             ;;
         binaries)
             nftban_health_cmd_binaries "$@"
             ;;
         permissions)
+            echo "DEPRECATED: 'nftban health permissions' will be removed in v1.26" >&2
+            echo "Use: nftban fhs" >&2
             nftban_health_cmd_permissions "$@"
             ;;
         geoip)

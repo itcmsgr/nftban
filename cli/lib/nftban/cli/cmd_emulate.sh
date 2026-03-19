@@ -77,6 +77,15 @@ nftban_cmd_emulate() {
                 ;;
             *)
                 if [[ -z "$ip" ]]; then
+                    # Detect old syntax: nftban emulate ban <ip> (removed in v1.24.0)
+                    if [[ "$1" =~ ^(ban|unban|test|check)$ ]]; then
+                        echo "NOTICE: 'nftban emulate $1 <ip>' syntax was removed in v1.24.0" >&2
+                        echo "Use: nftban emulate <ip> [proto] [port]" >&2
+                        echo "" >&2
+                        # Skip the old subcommand and continue parsing
+                        shift
+                        continue
+                    fi
                     ip="$1"
                 elif [[ -z "$proto" && "$1" =~ ^(tcp|udp|icmp|icmpv6)$ ]]; then
                     # Positional protocol (e.g., nftban emulate 8.8.8.8 tcp 111 in)
