@@ -88,6 +88,14 @@ CORE COMMANDS:
   feeds       Threat intelligence feeds
   help        Show full help
 
+PROTECTION MODULES:
+  ddos        DDoS protection management
+  botguard    HTTP bot guard management
+  suricata    Suricata IDS integration
+  portscan    Port scan detection
+  geoban      Geographic IP blocking
+  geoip       GeoIP database management
+
 EXIT CODES:
   0  Success   - Command completed without errors
   1  Error     - Command failed (check stderr for details)
