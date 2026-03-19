@@ -97,14 +97,18 @@ nftban_health_render_terminal() {
         [watchdog]="Watchdog"
     )
 
-    # Count errors and warnings
+    # v1.24.0: Derive error/warning counts from NFTBAN_HEALTH_RESULTS[] array
+    # (the single source of truth), not from NFTBAN_HEALTH_ERRORS[] which may
+    # miss checks that set status but don't append to the array.
     local error_count=0
     local warning_count=0
-    if [[ -n "${NFTBAN_HEALTH_ERRORS+x}" ]]; then
-        error_count="${#NFTBAN_HEALTH_ERRORS[@]}"
-    fi
-    if [[ -n "${NFTBAN_HEALTH_WARNINGS+x}" ]]; then
-        warning_count="${#NFTBAN_HEALTH_WARNINGS[@]}"
+    if [[ -n "${NFTBAN_HEALTH_RESULTS+x}" ]]; then
+        for _chk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+            case "${NFTBAN_HEALTH_RESULTS[$_chk]}" in
+                2|3) error_count=$((error_count + 1)) ;;
+                1)   warning_count=$((warning_count + 1)) ;;
+            esac
+        done
     fi
 
     # Header
@@ -238,15 +242,17 @@ nftban_health_render_summary() {
     # Output: "Health: WARNING (2 warnings, 0 errors)"
     # Returns: Overall health status code
 
-    # Count errors and warnings safely
+    # v1.24.0: Derive counts from NFTBAN_HEALTH_RESULTS[] (single source of truth)
     local error_count=0
     local warning_count=0
 
-    if [[ -n "${NFTBAN_HEALTH_ERRORS+x}" ]]; then
-        error_count="${#NFTBAN_HEALTH_ERRORS[@]}"
-    fi
-    if [[ -n "${NFTBAN_HEALTH_WARNINGS+x}" ]]; then
-        warning_count="${#NFTBAN_HEALTH_WARNINGS[@]}"
+    if [[ -n "${NFTBAN_HEALTH_RESULTS+x}" ]]; then
+        for _chk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+            case "${NFTBAN_HEALTH_RESULTS[$_chk]}" in
+                2|3) error_count=$((error_count + 1)) ;;
+                1)   warning_count=$((warning_count + 1)) ;;
+            esac
+        done
     fi
 
     # Output summary based on status
@@ -278,15 +284,17 @@ nftban_health_render_json() {
         echo -n "$str"
     }
 
-    # Count errors and warnings safely
+    # v1.24.0: Derive counts from NFTBAN_HEALTH_RESULTS[] (single source of truth)
     local error_count=0
     local warning_count=0
 
-    if [[ -n "${NFTBAN_HEALTH_ERRORS+x}" ]]; then
-        error_count="${#NFTBAN_HEALTH_ERRORS[@]}"
-    fi
-    if [[ -n "${NFTBAN_HEALTH_WARNINGS+x}" ]]; then
-        warning_count="${#NFTBAN_HEALTH_WARNINGS[@]}"
+    if [[ -n "${NFTBAN_HEALTH_RESULTS+x}" ]]; then
+        for _chk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+            case "${NFTBAN_HEALTH_RESULTS[$_chk]}" in
+                2|3) error_count=$((error_count + 1)) ;;
+                1)   warning_count=$((warning_count + 1)) ;;
+            esac
+        done
     fi
 
     # Determine overall status
