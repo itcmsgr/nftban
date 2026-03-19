@@ -246,10 +246,15 @@ output_brief() {
         _hs=$(cat "$health_cache" 2>/dev/null) || _hs="UNKNOWN"
         case "$_hs" in
             OK) health_word="healthy" ;;
-            WARNING*) health_word="warnings" ;;
+            WARNING*) health_word="advisories" ;;
             ERROR*|CRITICAL*) health_word="errors" ;;
             *) health_word="unknown" ;;
         esac
+    fi
+
+    # v1.24.1: When PROTECTED, health issues are advisories not errors
+    if [[ "$protection_state" == "PROTECTED" && "$health_word" == "errors" ]]; then
+        health_word="advisories"
     fi
 
     echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"

@@ -166,7 +166,14 @@ nftban_fhs_check_directory() {
     local exp_perms_normalized="${exp_perms#0}"
     local act_perms_normalized="${act_perms#0}"
     [[ "$exp_perms" != "*" && "$act_perms_normalized" != "$exp_perms_normalized" ]] && issues+=("perms")
-    [[ "$act_owner" != "$exp_owner" ]] && issues+=("owner")
+    # v1.24.1: Accept nftban/root as owner when expected user doesn't exist on system
+    if [[ "$act_owner" != "$exp_owner" ]]; then
+        if ! id "$exp_owner" &>/dev/null && [[ "$act_owner" == "nftban" || "$act_owner" == "root" ]]; then
+            : # acceptable fallback owner
+        else
+            issues+=("owner")
+        fi
+    fi
     [[ "$act_group" != "$exp_group" ]] && issues+=("group")
 
     if [[ ${#issues[@]} -eq 0 ]]; then
