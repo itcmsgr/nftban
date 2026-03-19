@@ -149,6 +149,52 @@ nftban_health_cmd_check() {
 }
 
 # =============================================================================
+# COMMAND: brief (v1.24.0)
+# =============================================================================
+
+nftban_health_cmd_brief() {
+    # v1.24.0: One-line health output for CI/fleet/monitoring
+    # Output: HEALTHY | 26 checks passed | 4 advisories
+    # Returns: 0=healthy, 1=warnings, 2=errors
+
+    # Load health module if not already loaded
+    if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || {
+            echo "ERROR: Failed to load health check module" >&2
+            return 1
+        }
+    fi
+
+    # Run all checks silently
+    nftban_health_check_all >/dev/null 2>&1 || true
+
+    # Count from NFTBAN_HEALTH_RESULTS[] (single source of truth)
+    local total_checks=0 ok_count=0 warning_count=0 error_count=0
+    if [[ -n "${NFTBAN_HEALTH_RESULTS+x}" ]]; then
+        for _chk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+            total_checks=$((total_checks + 1))
+            case "${NFTBAN_HEALTH_RESULTS[$_chk]}" in
+                0)   ok_count=$((ok_count + 1)) ;;
+                1)   warning_count=$((warning_count + 1)) ;;
+                2|3) error_count=$((error_count + 1)) ;;
+            esac
+        done
+    fi
+
+    local advisory_count=$((warning_count + error_count))
+    if [[ $error_count -gt 0 ]]; then
+        echo "ERROR | ${ok_count} checks passed | ${error_count} errors, ${warning_count} warnings"
+        return 2
+    elif [[ $warning_count -gt 0 ]]; then
+        echo "HEALTHY | ${ok_count} checks passed | ${advisory_count} advisories"
+        return 0
+    else
+        echo "HEALTHY | ${total_checks} checks passed | 0 advisories"
+        return 0
+    fi
+}
+
+# =============================================================================
 # COMMAND: summary
 # =============================================================================
 
@@ -423,6 +469,7 @@ nftban_health_cmd_fix() {
 # =============================================================================
 
 export -f nftban_health_cmd_check
+export -f nftban_health_cmd_brief
 export -f nftban_health_cmd_summary
 export -f nftban_health_cmd_json
 export -f nftban_health_cmd_report

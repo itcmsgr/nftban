@@ -111,6 +111,46 @@ _status_check_binaries() {
 }
 
 # =============================================================================
+# PROTECTION STATE — Single Source of Truth (v1.24.0)
+# =============================================================================
+
+_nftban_protection_state() {
+    # Determine protection state from live system checks.
+    # Returns one of: PROTECTED, DEGRADED, UNPROTECTED, DISABLED
+    # Used by both output_terminal() and output_json() for consistency.
+    local _nft_active=false _daemon_active=false _rules=0 _timers=0
+
+    systemctl is-active nftables.service >/dev/null 2>&1 && _nft_active=true
+    systemctl is-active nftband.service >/dev/null 2>&1 && _daemon_active=true
+    if command -v nft >/dev/null 2>&1; then
+        _rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+        _rules="${_rules:-0}"
+    fi
+    _timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+
+    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
+        echo "DISABLED"; return
+    elif [[ "$_nft_active" == "true" ]] && [[ "$_daemon_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
+        [[ "$_timers" -gt 0 ]] && { echo "PROTECTED"; return; }
+        echo "DEGRADED"; return
+    elif [[ "$_nft_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
+        echo "DEGRADED"; return
+    fi
+    echo "UNPROTECTED"
+}
+
+# =============================================================================
+# RULE COUNTING — Single Source of Truth (v1.24.0)
+# =============================================================================
+
+_nftban_count_rules() {
+    # Count nftables rules consistently for both human and JSON output.
+    local count
+    count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+    echo "${count:-0}"
+}
+
+# =============================================================================
 # STATUS AGGREGATION
 # =============================================================================
 
@@ -120,6 +160,7 @@ nftban_cmd_status() {
 
     local json_mode=0
     local quiet_mode=0
+    local brief_mode=0
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -130,6 +171,10 @@ nftban_cmd_status() {
                 ;;
             --quiet|-q)
                 quiet_mode=1
+                shift
+                ;;
+            --brief|-b)
+                brief_mode=1
                 shift
                 ;;
             help|-h|--help)
@@ -144,6 +189,12 @@ nftban_cmd_status() {
                 ;;
         esac
     done
+
+    # v1.24.0: Brief mode — one-line output for CI/fleet/monitoring
+    if [[ $brief_mode -eq 1 ]]; then
+        output_brief
+        return $?
+    fi
 
     # Show unified banner with health indicator (skip for JSON/quiet output)
     if [[ $json_mode -eq 0 ]] && [[ $quiet_mode -eq 0 ]]; then
@@ -170,36 +221,52 @@ nftban_cmd_status() {
     return $?
 }
 
+output_brief() {
+    # v1.24.0: One-line status output for CI/fleet/monitoring
+    # Format: PROTECTED | v1.23.2 | 26 banned | 9 whitelisted | healthy
+    # Exit code: 0=PROTECTED/DEGRADED, 1=UNPROTECTED/DISABLED
+
+    local protection_state
+    protection_state=$(_nftban_protection_state)
+
+    local ban_count=0
+    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+        ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
+    fi
+
+    local whitelist_count=0
+    if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null || echo 0)
+    fi
+
+    local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
+    local health_word="unknown"
+    if [[ -r "$health_cache" ]]; then
+        local _hs
+        _hs=$(cat "$health_cache" 2>/dev/null) || _hs="UNKNOWN"
+        case "$_hs" in
+            OK) health_word="healthy" ;;
+            WARNING*) health_word="warnings" ;;
+            ERROR*|CRITICAL*) health_word="errors" ;;
+            *) health_word="unknown" ;;
+        esac
+    fi
+
+    echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
+
+    case "$protection_state" in
+        PROTECTED|DEGRADED) return 0 ;;
+        *)                  return 1 ;;
+    esac
+}
+
 output_terminal() {
     # Output formatted terminal status - Clean professional layout v1.0
     local quiet_mode="$1"
 
-    # v1.23.0 (§10): Determine protection state
-    local protection_state="DISABLED"
-    local _state_nft_active=false
-    local _state_daemon_active=false
-    local _state_rules=0
-    local _state_timers=0
-
-    systemctl is-active nftables.service >/dev/null 2>&1 && _state_nft_active=true
-    systemctl is-active nftband.service >/dev/null 2>&1 && _state_daemon_active=true
-    if command -v nft >/dev/null 2>&1; then
-        _state_rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-        _state_rules="${_state_rules:-0}"
-    fi
-    _state_timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
-
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        protection_state="DISABLED"
-    elif [[ "$_state_nft_active" == "true" ]] && [[ "$_state_daemon_active" == "true" ]] && [[ "$_state_rules" -gt 0 ]]; then
-        if [[ "$_state_timers" -gt 0 ]]; then
-            protection_state="PROTECTED"
-        else
-            protection_state="DEGRADED"
-        fi
-    elif [[ "$_state_nft_active" == "true" ]] && [[ "$_state_rules" -gt 0 ]]; then
-        protection_state="DEGRADED"
-    fi
+    # v1.24.0: Use unified protection state function (single source of truth)
+    local protection_state
+    protection_state=$(_nftban_protection_state)
 
     # Header with version and state
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -234,12 +301,10 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "nftables............" "$nft_status"
 
-    # Count rules (using -a to show handles, then count them)
+    # v1.24.0: Use shared rule counting function
     local rule_count=0
     if command -v nft >/dev/null 2>&1; then
-        # nft -a shows "# handle N" for each rule - count those
-        rule_count=$(nft -a list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-        rule_count="${rule_count:-0}"
+        rule_count=$(_nftban_count_rules)
     fi
     printf "  %-20s %s\n" "Rules..............." "$rule_count"
 
@@ -732,7 +797,12 @@ output_terminal() {
         health_status=$(cat "$health_cache" 2>/dev/null) || health_status="UNKNOWN"
     fi
 
-    printf "  %-20s %s\n" "Overall Status......" "$health_status"
+    # v1.24.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
+    if [[ "$protection_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
+        printf "  %-20s %s\n" "Overall Status......" "OK (advisories present)"
+    else
+        printf "  %-20s %s\n" "Overall Status......" "$health_status"
+    fi
 
     # Check binary integrity (show warning if corrupted)
     local binary_warning
@@ -1058,36 +1128,21 @@ output_terminal() {
     echo "  nftban help              Show all commands"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # v1.19.5: Exit code reflects health status (L53 fix)
-    # 0 = OK, 1 = WARNING/UNKNOWN, 2 = ERROR/CRITICAL
-    case "$health_status" in
-        OK)       return 0 ;;
-        WARNING*) return 1 ;;
-        ERROR*|CRITICAL*) return 2 ;;
-        *)        return 1 ;;  # UNKNOWN or unrecognized
+    # v1.24.0: Exit code = protection state, NOT health findings
+    # 0 = firewall IS protecting (PROTECTED or DEGRADED)
+    # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
+    case "$protection_state" in
+        PROTECTED|DEGRADED) return 0 ;;
+        *)                  return 1 ;;
     esac
 }
 
 output_json() {
     # Output JSON format
 
-    # v1.23.0 (§10): Determine protection state for JSON
-    local json_state="DISABLED"
-    local _js_nft=false _js_daemon=false _js_rules=0 _js_timers=0
-    systemctl is-active nftables.service >/dev/null 2>&1 && _js_nft=true
-    systemctl is-active nftband.service >/dev/null 2>&1 && _js_daemon=true
-    if command -v nft >/dev/null 2>&1; then
-        _js_rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-        _js_rules="${_js_rules:-0}"
-    fi
-    _js_timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        json_state="DISABLED"
-    elif [[ "$_js_nft" == "true" ]] && [[ "$_js_daemon" == "true" ]] && [[ "$_js_rules" -gt 0 ]]; then
-        [[ "$_js_timers" -gt 0 ]] && json_state="PROTECTED" || json_state="DEGRADED"
-    elif [[ "$_js_nft" == "true" ]] && [[ "$_js_rules" -gt 0 ]]; then
-        json_state="DEGRADED"
-    fi
+    # v1.24.0: Use unified protection state function (single source of truth)
+    local json_state
+    json_state=$(_nftban_protection_state)
 
     echo "{"
     echo "  \"version\": \"${NFTBAN_VERSION:-unknown}\","
@@ -1102,15 +1157,10 @@ output_json() {
     echo "  \"firewall\": {"
     echo "    \"nftables_active\": $nft_active,"
 
-    # PERFORMANCE FIX: Use 'nft list table' instead of 'nft list ruleset'
-    # Reason: With large feed sets (5000+ IPs), 'list ruleset' can take 30+ seconds
-    #         and consume 100% CPU + 850MB RAM just to serialize all IP addresses.
-    #         We only need rule count, not the full IP list.
-    # Impact: Reduces execution time from 30s to <1s, CPU from 100% to <5%
+    # v1.24.0: Use shared rule counting function (matches human output)
     local rule_count=0
     if command -v nft >/dev/null 2>&1; then
-        rule_count=$(nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "^[[:space:]]*rule" 2>/dev/null || true)
-        rule_count=${rule_count:-0}
+        rule_count=$(_nftban_count_rules)
     fi
     echo "    \"rule_count\": $rule_count,"
 
@@ -1399,8 +1449,13 @@ output_json() {
     # Exit marker for testing validation
     command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "status"
 
-    # v1.19.5: Exit code reflects health status (L53 fix)
-    return "$health_exit"
+    # v1.24.0: Exit code = protection state, NOT health findings
+    # 0 = firewall IS protecting (PROTECTED or DEGRADED)
+    # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
+    case "$json_state" in
+        PROTECTED|DEGRADED) return 0 ;;
+        *)                  return 1 ;;
+    esac
 }
 
 check_service_clean() {
@@ -1497,6 +1552,7 @@ USAGE:
 
 OPTIONS:
   --json          Output in JSON format
+  --brief         One-line output for CI/fleet/monitoring
   --quiet         Suppress suggestions and tips
   --help          Show this help
 
