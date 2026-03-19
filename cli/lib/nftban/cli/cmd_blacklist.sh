@@ -268,25 +268,26 @@ nftban_blacklist_count() {
     done
 
     # Count from nftables sets
+    # v1.24.0: Capture output first, then count — prevents pipefail empty variable crash
     # shellcheck disable=SC2086
     local nft_ipv4_count=0 nft_ipv6_count=0
-    local ipv4_raw
-    ipv4_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || true
+    local ipv4_raw=""
+    ipv4_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || ipv4_raw=""
     if [[ -n "$ipv4_raw" ]]; then
-        nft_ipv4_count=$(echo "$ipv4_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]' || true)
+        nft_ipv4_count=$(echo "$ipv4_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]') || nft_ipv4_count=0
     fi
 
     # shellcheck disable=SC2086
-    local ipv6_raw
-    ipv6_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || true
+    local ipv6_raw=""
+    ipv6_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || ipv6_raw=""
     if [[ -n "$ipv6_raw" ]]; then
-        nft_ipv6_count=$(echo "$ipv6_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]' || true)
+        nft_ipv6_count=$(echo "$ipv6_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]') || nft_ipv6_count=0
     fi
 
-    # Ensure counts are valid integers
-    [[ -z "$nft_ipv4_count" ]] && nft_ipv4_count=0
-    [[ -z "$nft_ipv6_count" ]] && nft_ipv6_count=0
-    local nft_total=$((nft_ipv4_count + nft_ipv6_count))
+    # Ensure counts are valid integers (defense-in-depth)
+    [[ -z "$nft_ipv4_count" || ! "$nft_ipv4_count" =~ ^[0-9]+$ ]] && nft_ipv4_count=0
+    [[ -z "$nft_ipv6_count" || ! "$nft_ipv6_count" =~ ^[0-9]+$ ]] && nft_ipv6_count=0
+    local nft_total=$(( ${nft_ipv4_count:-0} + ${nft_ipv6_count:-0} ))
 
     # Count from config files
     local config_count=0
