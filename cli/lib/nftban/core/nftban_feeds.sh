@@ -504,7 +504,8 @@ nftban_feeds_update_single() {
                   grep -oE '^[0-9a-fA-F:]+:+[0-9a-fA-F:]*((/[0-9]{1,3})?)' || true)
 
     # Combine IPv4 and IPv6 results
-    parse_result=$(printf '%s\n%s' "$ipv4_result" "$ipv6_result" | grep -v '^\s*$' | sort -u)
+    # v1.24.0: Add || true to prevent pipefail when all lines are empty
+    parse_result=$(printf '%s\n%s' "$ipv4_result" "$ipv6_result" | grep -v '^\s*$' | sort -u || true)
 
     # v1.19.0: Write to staging file first, validate, then atomically rename (R05)
     # This preserves last-known-good data on validation failure
@@ -630,7 +631,13 @@ nftban_feeds_update_all() {
     echo ""
     echo "⏳ Loading feeds into nftables..."
     if [[ -x "${NFTBAN_FEEDS_BINARY}" ]]; then
-        if "${NFTBAN_FEEDS_BINARY}" feeds load 2>&1 | grep -E "^(✅|⚠️|Feed entries:|Total)" ; then
+        # v1.24.0: Capture output first to avoid pipefail when grep matches nothing
+        local _feeds_output=""
+        _feeds_output=$("${NFTBAN_FEEDS_BINARY}" feeds load 2>&1) || true
+        local _feeds_summary=""
+        _feeds_summary=$(echo "$_feeds_output" | grep -E "^(✅|⚠️|Feed entries:|Total)" || true)
+        if [[ -n "$_feeds_summary" ]]; then
+            echo "$_feeds_summary"
             nftban_feeds_log INFO "Feeds loaded into nftables successfully"
             echo ""
         else

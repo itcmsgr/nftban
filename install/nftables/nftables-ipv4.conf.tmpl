@@ -84,7 +84,7 @@ table ip nftban {
         ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded } counter accept comment "ICMPv4"
 
         # 8. CT LIMITS (DDoS protection - SSH)
-        ct state new tcp dport 22 ct count over 15 counter drop comment "SSH: max 15 concurrent per IP"
+        ct state new tcp dport __SSH_PORT__ ct count over 15 counter drop comment "SSH: max 15 concurrent per IP"
 
         # 9. CT LIMITS (DDoS protection - HTTP/HTTPS/MAIL)
         ct state new tcp dport { 80, 443 } ct count over 150 counter drop comment "HTTP(S): max 150 concurrent per IP"
