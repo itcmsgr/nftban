@@ -771,22 +771,13 @@ nftban_health_check_gui() {
     local build_binary="$gui_source_dir/nftban-ui"
 
     if [[ ! -f "$gui_binary" ]]; then
-        gui_issues+=("GUI binary not found at $gui_binary")
-        status=$HEALTH_CRITICAL
-
-        if [[ $auto_heal -eq 1 ]]; then
-            echo "  🔧 Auto-heal: Building and installing GUI binary..."
-            if [[ -d "$gui_source_dir" ]]; then
-                (
-                    cd "$gui_source_dir" || exit 1
-                    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o "$build_binary" . 2>&1
-                    cp -f "$build_binary" "$gui_binary" 2>&1
-                    chmod +x "$gui_binary" 2>&1
-                ) && gui_issues+=("✓ GUI binary built and installed") || gui_issues+=("Failed to build GUI binary")
-            else
-                gui_issues+=("GUI source directory not found: $gui_source_dir")
-            fi
-        fi
+        # v1.25.0: GUI is optional — NOT_INSTALLED, not CRITICAL
+        gui_issues+=("Web GUI not installed (optional)")
+        gui_issues+=("ℹ️  To install: See nftban documentation for GUI setup")
+        status=$HEALTH_NOT_INSTALLED
+        NFTBAN_HEALTH_RESULTS["gui"]=$status
+        NFTBAN_HEALTH_ISSUES["gui"]="${gui_issues[*]}"
+        return 0
     else
         if [[ ! -x "$gui_binary" ]]; then
             gui_issues+=("GUI binary not executable")
