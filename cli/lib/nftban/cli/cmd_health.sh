@@ -148,7 +148,7 @@ nftban_cmd_health() {
         report)
             nftban_health_cmd_report "$@"
             ;;
-        fix|enforce)
+        fix|enforce|--fix)
             nftban_health_cmd_fix "$@"
             ;;
         services)
