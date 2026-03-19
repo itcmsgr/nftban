@@ -756,14 +756,24 @@ EOF
 
             ssh_issues+=("AUTO-FIXED: Updated SSH port to $current_ssh_port in ${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf")
 
-            # Track if old port needs cleanup
-            if [[ -n "$old_ssh_port" ]]; then
-                ssh_issues+=("Old SSH port $old_ssh_port will be removed from firewall on reload")
+            # v1.25.0: Atomically update nft set — don't wait for manual reload (lockout prevention)
+            if type -t nft_ipc_add_element >/dev/null 2>&1 && nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+                # FIRST: Add new port (safety — ensure SSH access before removing old)
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$current_ssh_port" 2>/dev/null || true
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$current_ssh_port" 2>/dev/null || true
+                ssh_issues+=("AUTO-FIXED: Port $current_ssh_port added to nftables tcp_ports_in set")
+
+                # THEN: Remove old port
+                if [[ -n "$old_ssh_port" ]] && type -t nft_ipc_delete_element >/dev/null 2>&1; then
+                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$old_ssh_port" 2>/dev/null || true
+                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$old_ssh_port" 2>/dev/null || true
+                    ssh_issues+=("AUTO-FIXED: Old port $old_ssh_port removed from nftables")
+                fi
+            else
+                ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")
             fi
 
-            ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")
-
-            status=$HEALTH_WARNING  # Warning because reload needed
+            status=$HEALTH_WARNING  # Warning — port was changed
         else
             ssh_issues+=("FAILED to auto-fix: Cannot write to ${NFTBAN_CONFIG_DIR}/ports.d/")
             status=$HEALTH_ERROR
