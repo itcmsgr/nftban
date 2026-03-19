@@ -88,17 +88,13 @@ nftban_health_cmd_check() {
     local result=0
     nftban_health_check_all "$auto_heal" || result=$?
 
-    # BUG-N2 FIX: Derive canonical exit code from ERRORS/WARNINGS arrays
-    # so that 'check', 'summary', and cache all agree on severity.
-    # The arrays are the single source of truth populated by individual checks.
-    local error_count=0
-    local warning_count=0
-    if [[ -n "${NFTBAN_HEALTH_ERRORS+x}" ]]; then
-        error_count="${#NFTBAN_HEALTH_ERRORS[@]}"
-    fi
-    if [[ -n "${NFTBAN_HEALTH_WARNINGS+x}" ]]; then
-        warning_count="${#NFTBAN_HEALTH_WARNINGS[@]}"
-    fi
+    # v1.24.1: Use exported scalar counts from check_all() (ground truth)
+    # check_all() now derives counts from NFTBAN_HEALTH_RESULTS[] associative
+    # array and exports them as scalars. This avoids the bash +x test bug with
+    # associative arrays and the divergence between ERRORS[]/WARNINGS[] arrays
+    # and RESULTS[] values.
+    local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
+    local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
     # Standardized exit codes: 0=OK, 1=WARNING, 2=ERROR
     if [[ $error_count -gt 0 ]]; then
@@ -168,18 +164,14 @@ nftban_health_cmd_brief() {
     # Run all checks silently
     nftban_health_check_all >/dev/null 2>&1 || true
 
-    # Count from NFTBAN_HEALTH_RESULTS[] (single source of truth)
-    local total_checks=0 ok_count=0 warning_count=0 error_count=0
-    if [[ -n "${NFTBAN_HEALTH_RESULTS+x}" ]]; then
-        for _chk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
-            total_checks=$((total_checks + 1))
-            case "${NFTBAN_HEALTH_RESULTS[$_chk]}" in
-                0)   ok_count=$((ok_count + 1)) ;;
-                1)   warning_count=$((warning_count + 1)) ;;
-                2|3) error_count=$((error_count + 1)) ;;
-            esac
-        done
-    fi
+    # v1.24.1: Use exported scalar counts (reliable across all bash scoping)
+    # NFTBAN_HEALTH_RESULTS+x test is broken for associative arrays declared
+    # via dynamic sourcing (bash quirk). Use exported scalars from check_all().
+    local total_checks="${NFTBAN_HEALTH_TOTAL_CHECKS:-0}"
+    local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
+    local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
+    local ok_count=$((total_checks - error_count - warning_count))
+    [[ $ok_count -lt 0 ]] && ok_count=0
 
     local advisory_count=$((warning_count + error_count))
     if [[ $error_count -gt 0 ]]; then
@@ -240,10 +232,18 @@ nftban_health_cmd_json() {
     local result=0
     nftban_health_check_all >/dev/null 2>&1 || result=$?
 
-    # Render JSON
+    # Render JSON (uses exported scalar counts for summary)
     nftban_health_render_json
 
-    return $result
+    # v1.24.1: Use exported counts for consistent exit code
+    local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
+    local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
+    if [[ $error_count -gt 0 ]]; then
+        return 2
+    elif [[ $warning_count -gt 0 ]]; then
+        return 1
+    fi
+    return 0
 }
 
 # =============================================================================

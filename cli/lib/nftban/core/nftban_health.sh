@@ -563,9 +563,33 @@ nftban_health_check_all() {
         result=1
     fi
 
+    # v1.24.1: Derive accurate counts from NFTBAN_HEALTH_RESULTS[] (ground truth)
+    # The local errors/warnings counters only count function return codes, but many
+    # check functions return 0 while setting NFTBAN_HEALTH_RESULTS[x]=2 internally.
+    local derived_errors=0
+    local derived_warnings=0
+    local derived_total=0
+    for _rk in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+        derived_total=$((derived_total + 1))
+        case "${NFTBAN_HEALTH_RESULTS[$_rk]}" in
+            2|3) derived_errors=$((derived_errors + 1)) ;;
+            1)   derived_warnings=$((derived_warnings + 1)) ;;
+        esac
+    done
+
+    # Re-derive result from RESULTS[] array (not from local counters)
+    if [[ $derived_errors -gt 0 ]]; then
+        result=2
+    elif [[ $derived_warnings -gt 0 ]]; then
+        result=1
+    else
+        result=0
+    fi
+
     # Store results for render functions (as scalar values, not arrays)
-    export NFTBAN_HEALTH_ERROR_COUNT=$errors
-    export NFTBAN_HEALTH_WARNING_COUNT=$warnings
+    export NFTBAN_HEALTH_ERROR_COUNT=$derived_errors
+    export NFTBAN_HEALTH_WARNING_COUNT=$derived_warnings
+    export NFTBAN_HEALTH_TOTAL_CHECKS=$derived_total
 
     return $result
 }

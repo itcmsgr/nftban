@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.1] - 2026-03-19
+
+### Bug Fixes
+
+- **Fix health summary "0 checks passed"** — `${NFTBAN_HEALTH_RESULTS+x}` test is unreliable
+  for associative arrays declared via dynamic sourcing (bash scoping quirk). All render
+  and brief functions now use exported scalar counts from `check_all()` as ground truth.
+- **Fix health error/warning counts always showing 0** — `check_all()` now derives
+  `NFTBAN_HEALTH_ERROR_COUNT` and `NFTBAN_HEALTH_WARNING_COUNT` from `NFTBAN_HEALTH_RESULTS[]`
+  array (not from function return codes, which miss checks that return 0 but set status=2).
+- **Fix health check exit code mismatch** — `nftban health check` exit code, JSON `exit_code`,
+  and cache file all now derive from the same exported scalar counts.
+- **Fix `status --brief` showing "errors" when PROTECTED** — When protection state is PROTECTED,
+  health issues are displayed as "advisories" not "errors" (consistent with terminal output).
+- **Fix services summary counting NOT_INSTALLED services** — `nftban services` no longer
+  counts services that aren't installed in the denominator (e.g., "2/4 running" → "2/2 running").
+- **Fix FHS suricata dir false positive** — Accept `nftban` or `root` as owner for directories
+  whose expected owner (e.g., `suricata`) doesn't exist on the system.
+- **Fix health cache writing wrong status** — Cache file now reflects the corrected result
+  derived from RESULTS[] array counts.
+
 ## [1.24.0] - 2026-03-19
 
 ### BREAKING CHANGES
