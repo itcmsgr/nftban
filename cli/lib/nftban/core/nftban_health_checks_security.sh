@@ -117,12 +117,26 @@ nftban_health_check_nftables_security() {
             status=$HEALTH_CRITICAL
         else
             # Table exists but not at priority 0 or doesn't have accept policy
-            # v1.19.22: Clearer message - explain what creates this and impact
-            security_issues+=("INFO: 'inet filter' table detected (usually from iptables-nft or Docker)")
-            security_issues+=("  └─ This is typically harmless - NFTBan uses separate 'ip nftban' table")
-            security_issues+=("  └─ Check: nft list table inet filter")
-            security_issues+=("  └─ Remove if unused: nft delete table inet filter")
-            status=$HEALTH_WARNING
+            # v1.24.0: Check if ALL chains have 'policy accept' — if so, zero impact → INFO only
+            local all_accept=true
+            local chain_policies
+            chain_policies=$(nft list table inet filter 2>/dev/null | grep -E 'policy (accept|drop)' || true)
+            if [[ -n "$chain_policies" ]] && echo "$chain_policies" | grep -q 'policy drop'; then
+                all_accept=false
+            fi
+
+            if [[ "$all_accept" == "true" ]]; then
+                # v1.24.0: All chains accept → harmless (common on DEB from iptables-nft)
+                security_issues+=("INFO: 'inet filter' table detected with all-accept policy (iptables-nft or Docker)")
+                security_issues+=("  └─ Zero impact on NFTBan — uses separate 'ip nftban' table")
+                # Don't change status — leave as OK (informational only)
+            else
+                # Some chains have drop policy — this could interfere
+                security_issues+=("WARNING: 'inet filter' table detected with drop policy chains")
+                security_issues+=("  └─ May interfere with NFTBan — check: nft list table inet filter")
+                security_issues+=("  └─ Remove if unused: nft delete table inet filter")
+                status=$HEALTH_WARNING
+            fi
         fi
     fi
 
@@ -466,7 +480,17 @@ nftban_health_check_polkit() {
         fi
     else
         # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)
-        local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-$(nftban_distro_get_polkit_dir)}"
+        local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-$(nftban_distro_get_polkit_dir 2>/dev/null || echo "")}"
+
+        # v1.24.0: If primary path misses, try alternate DEB/RPM paths
+        if [[ -n "$polkit_rules_dir" ]] && [[ ! -f "${polkit_rules_dir}/10-nftban-systemd.rules" ]]; then
+            for _alt_dir in /usr/share/polkit-1/rules.d /etc/polkit-1/rules.d; do
+                if [[ -f "${_alt_dir}/10-nftban-systemd.rules" ]]; then
+                    polkit_rules_dir="$_alt_dir"
+                    break
+                fi
+            done
+        fi
 
         local polkit_systemd_rules="${polkit_rules_dir}/10-nftban-systemd.rules"
         if [[ ! -f "$polkit_systemd_rules" ]]; then
@@ -753,7 +777,10 @@ EOF
 
     # Verify SSH port is actually in nftables (v0.7.3: check IPv4 table)
     if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-        if ! timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$current_ssh_port"; then
+        # v1.24.0: Break pipeline to avoid pipefail false positive
+        local nft_tcp_ports
+        nft_tcp_ports=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null) || nft_tcp_ports=""
+        if [[ -n "$nft_tcp_ports" ]] && ! echo "$nft_tcp_ports" | grep -qw "$current_ssh_port"; then
             ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports_in set")
             ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
             status=$HEALTH_ERROR
@@ -761,7 +788,7 @@ EOF
 
         # Check for stale old SSH port in firewall (cleanup detection)
         if [[ -n "$old_ssh_port" ]]; then
-            if timeout 10s nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$old_ssh_port"; then
+            if [[ -n "$nft_tcp_ports" ]] && echo "$nft_tcp_ports" | grep -qw "$old_ssh_port"; then
                 ssh_issues+=("CLEANUP: Old SSH port $old_ssh_port still in firewall tcp_ports_in set")
                 ssh_issues+=("Run 'nftban firewall reload' to remove old port")
                 [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
