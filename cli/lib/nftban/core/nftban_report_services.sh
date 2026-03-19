@@ -127,7 +127,8 @@ nftban_services_scan() {
         suricata_notes="Service not found"
     fi
 
-    NFTBAN_SERVICE_STATUS["suricata"]="${suricata_status}|${suricata_version}|required|${suricata_notes}"
+    # v1.25.0: Suricata is optional — not all deployments use IDS
+    NFTBAN_SERVICE_STATUS["suricata"]="${suricata_status}|${suricata_version}|optional|${suricata_notes}"
 
     # nftban-suricata (NFTBan Suricata integration daemon)
     local nft_suricata_status="NOT_FOUND"
@@ -148,7 +149,8 @@ nftban_services_scan() {
         nft_suricata_notes="Service not found"
     fi
 
-    NFTBAN_SERVICE_STATUS["nftban-suricata"]="${nft_suricata_status}|${nft_suricata_version}|required|${nft_suricata_notes}"
+    # v1.25.0: NFTBan-suricata integration is optional (depends on suricata)
+    NFTBAN_SERVICE_STATUS["nftban-suricata"]="${nft_suricata_status}|${nft_suricata_version}|optional|${nft_suricata_notes}"
 
     # ==========================================================================
     # BINARY DEPENDENCIES
@@ -348,8 +350,13 @@ nftban_services_report_table() {
                 installed_bins=$((installed_bins + 1))
                 ;;
             NOT_FOUND)
-                printf "%-20s ${C_RED}%-15s${C_RESET} %-12s\n" "$service_name" "✖ Missing" "$version"
-                if [[ "$service_name" == "nftables" || "$service_name" == "suricata" ]]; then
+                # v1.25.0: Use required field, not hardcoded service names
+                if [[ "$required" == "optional" ]]; then
+                    printf "%-20s ${C_YELLOW}%-15s${C_RESET} %-12s\n" "$service_name" "− Not installed" "$version"
+                else
+                    printf "%-20s ${C_RED}%-15s${C_RESET} %-12s\n" "$service_name" "✖ Missing" "$version"
+                fi
+                if [[ "$service_name" == "nftables" || "$service_name" == "suricata" || "$service_name" == "nftban-suricata" ]]; then
                     missing_services=$((missing_services + 1))
                 else
                     missing_bins=$((missing_bins + 1))
@@ -373,12 +380,32 @@ nftban_services_report_table() {
     echo "Binary Tools: ${total_bins} total | ${installed_bins} installed | ${missing_bins} missing"
     echo ""
 
+    # v1.25.0: Separate advisory for optional vs required missing services
+    local required_missing=0
+    local optional_missing=0
+    for service_name in "${sorted_keys[@]}"; do
+        local info="${NFTBAN_SERVICE_STATUS[$service_name]}"
+        IFS='|' read -r _s_status _s_version _s_required _s_notes <<< "$info"
+        if [[ "$_s_status" == "NOT_FOUND" ]]; then
+            if [[ "$_s_required" == "required" ]]; then
+                required_missing=$((required_missing + 1))
+            else
+                optional_missing=$((optional_missing + 1))
+            fi
+        fi
+    done
+
     # Status message
-    if [[ $missing_services -gt 0 ]] || [[ $stopped_services -gt 0 ]]; then
+    if [[ $required_missing -gt 0 ]] || [[ $stopped_services -gt 0 ]]; then
         echo "⚠ Some required services are not running. Run 'nftban services fix' to auto-start."
-    elif [[ $missing_bins -gt 0 ]]; then
+    fi
+    if [[ $optional_missing -gt 0 ]]; then
+        echo "ℹ Some optional services are not installed. This is normal."
+    fi
+    if [[ $missing_bins -gt 0 ]]; then
         echo "⚠ Some optional tools are missing. Some features may be disabled."
-    else
+    fi
+    if [[ $required_missing -eq 0 && $stopped_services -eq 0 && $optional_missing -eq 0 && $missing_bins -eq 0 ]]; then
         echo "✅ All services operational!"
     fi
     echo ""

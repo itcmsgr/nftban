@@ -178,8 +178,10 @@ nftban_health_cmd_brief() {
         echo "ERROR | ${ok_count} checks passed | ${error_count} errors, ${warning_count} warnings"
         return 2
     elif [[ $warning_count -gt 0 ]]; then
-        echo "HEALTHY | ${ok_count} checks passed | ${advisory_count} advisories"
-        return 0
+        # v1.25.0: Return 1 for warnings per exit code contract
+        # Contract: 0=healthy, 1=warnings, 2=errors
+        echo "WARNING | ${ok_count} checks passed | ${advisory_count} advisories"
+        return 1
     else
         echo "HEALTHY | ${total_checks} checks passed | 0 advisories"
         return 0
