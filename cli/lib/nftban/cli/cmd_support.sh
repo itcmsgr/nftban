@@ -41,6 +41,7 @@ readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 
 # Bootstrap paths (nftban.conf will make them readonly)
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
 : "${NFTBAN_LOG_DIR:=${NFTBAN_LOG_DIR}}"
 : "${NFTBAN_GIT_REPO:=/opt/nftban}"
 
@@ -401,8 +402,8 @@ _collect_install_info() {
 
         # Install type detection
         echo "=== Install Type ==="
-        if [[ -f /etc/nftban/.install_type ]]; then
-            echo "Install type file: $(cat /etc/nftban/.install_type)"
+        if [[ -f ${NFTBAN_CONFIG_DIR}/.install_type ]]; then
+            echo "Install type file: $(cat ${NFTBAN_CONFIG_DIR}/.install_type)"
         elif rpm -q nftban-core &>/dev/null 2>&1; then
             echo "Install type: rpm"
             echo ""
@@ -488,8 +489,8 @@ _collect_binaries() {
 
         # File permissions on critical files
         echo "=== Critical File Permissions ==="
-        for path in /usr/sbin/nftban /etc/nftban/nftban.conf \
-                    /usr/lib/nftban/lib/nft_schema.sh /var/lib/nftban; do
+        for path in /usr/sbin/nftban ${NFTBAN_CONFIG_DIR}/nftban.conf \
+                    /usr/lib/nftban/lib/nft_schema.sh ${NFTBAN_DATA_DIR}; do
             if [[ -e "$path" ]]; then
                 ls -la "$path" 2>&1
             else
@@ -523,13 +524,13 @@ _collect_distro_config() {
 
         # Distro config file
         echo "=== Distro Config Files ==="
-        ls -la "${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/" 2>&1 || echo "${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/ not found"
+        ls -la "${NFTBAN_CONFIG_DIR}/distros/" 2>&1 || echo "${NFTBAN_CONFIG_DIR}/distros/ not found"
         echo ""
 
         # Active distro config
         local distro_id="${ID:-unknown}"
         local distro_version="${VERSION_ID:-unknown}"
-        local expected_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/distros/${distro_id}-${distro_version}.conf"
+        local expected_config="${NFTBAN_CONFIG_DIR}/distros/${distro_id}-${distro_version}.conf"
         echo "=== Expected Config: $expected_config ==="
         if [[ -f "$expected_config" ]]; then
             echo "EXISTS: yes"
@@ -538,7 +539,7 @@ _collect_distro_config() {
         else
             echo "EXISTS: no"
             echo "Available configs:"
-            ls /etc/nftban/distros/*.conf 2>/dev/null || echo "none"
+            ls ${NFTBAN_CONFIG_DIR}/distros/*.conf 2>/dev/null || echo "none"
         fi
 
     } > "$distro_dir/distro-config.txt"
@@ -557,7 +558,7 @@ _collect_fhs_structure() {
 
         # Key directories
         echo "=== Key Directories ==="
-        for dir in /etc/nftban /usr/lib/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} \
+        for dir in ${NFTBAN_CONFIG_DIR} /usr/lib/nftban ${NFTBAN_DATA_DIR} ${NFTBAN_LOG_DIR} \
                    "${NFTBAN_RUN_DIR:-/run/nftban}" /usr/share/nftban; do
             if [[ -d "$dir" ]]; then
                 echo "$dir: $(ls -ld "$dir" 2>&1)"
@@ -569,16 +570,16 @@ _collect_fhs_structure() {
 
         # Detailed listing
         echo "=== /etc/nftban structure ==="
-        find /etc/nftban -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
+        find ${NFTBAN_CONFIG_DIR} -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
         echo ""
 
         echo "=== /var/lib/nftban structure ==="
-        find /var/lib/nftban -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
+        find ${NFTBAN_DATA_DIR} -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
         echo ""
 
         # Disk space
         echo "=== Disk Space ==="
-        df -h /etc/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} 2>/dev/null || df -h / 2>/dev/null
+        df -h ${NFTBAN_CONFIG_DIR} ${NFTBAN_DATA_DIR} ${NFTBAN_LOG_DIR} 2>/dev/null || df -h / 2>/dev/null
         echo ""
 
         # Immutable flags
@@ -599,12 +600,12 @@ _collect_whitelist_blacklist() {
     mkdir -p "$lists_dir" || return 1
 
     # Whitelist files
-    if [[ -d /etc/nftban/whitelist.d ]]; then
+    if [[ -d ${NFTBAN_CONFIG_DIR}/whitelist.d ]]; then
         {
             echo "# Whitelist Files"
             echo "# Collected: $(date -Iseconds)"
             echo ""
-            for wl in /etc/nftban/whitelist.d/*.conf; do
+            for wl in ${NFTBAN_CONFIG_DIR}/whitelist.d/*.conf; do
                 if [[ -f "$wl" ]]; then
                     echo "=== $(basename "$wl") ==="
                     cat "$wl"
@@ -622,12 +623,12 @@ _collect_whitelist_blacklist() {
         echo "# Blacklist Summary"
         echo "# Collected: $(date -Iseconds)"
         echo ""
-        if [[ -d /var/lib/nftban/blacklists ]]; then
+        if [[ -d ${NFTBAN_DATA_DIR}/blacklists ]]; then
             echo "=== Blacklist Files ==="
-            ls -la /var/lib/nftban/blacklists/ 2>&1
+            ls -la ${NFTBAN_DATA_DIR}/blacklists/ 2>&1
             echo ""
             echo "=== Entry Counts ==="
-            for bl in /var/lib/nftban/blacklists/*.txt; do
+            for bl in ${NFTBAN_DATA_DIR}/blacklists/*.txt; do
                 if [[ -f "$bl" ]]; then
                     echo "$(basename "$bl"): $(wc -l < "$bl") entries"
                 fi
@@ -649,7 +650,7 @@ _collect_geoip() {
         echo "# Collected: $(date -Iseconds)"
         echo ""
 
-        local db_path="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip/dbip-country-lite.mmdb"
+        local db_path="${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb"
         echo "=== Database File ==="
         if [[ -f "$db_path" ]]; then
             echo "Path: $db_path"
@@ -672,8 +673,8 @@ _collect_geoip() {
 
         # GeoIP config
         echo "=== GeoIP Configuration ==="
-        if [[ -f /etc/nftban/conf.d/geoip/main.conf ]]; then
-            grep -v '^#' /etc/nftban/conf.d/geoip/main.conf | grep -v '^$' || echo "empty config"
+        if [[ -f ${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf ]]; then
+            grep -v '^#' ${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf | grep -v '^$' || echo "empty config"
         else
             echo "Config not found"
         fi
@@ -756,16 +757,16 @@ _collect_recent_activity() {
         echo ""
 
         echo "=== Feed Configuration ==="
-        if [[ -f /etc/nftban/conf.d/feeds.conf ]]; then
-            grep -E '^FEED_.*_ENABLED=' /etc/nftban/conf.d/feeds.conf 2>/dev/null || echo "No feeds configured"
+        if [[ -f ${NFTBAN_CONFIG_DIR}/conf.d/feeds.conf ]]; then
+            grep -E '^FEED_.*_ENABLED=' ${NFTBAN_CONFIG_DIR}/conf.d/feeds.conf 2>/dev/null || echo "No feeds configured"
         else
             echo "feeds.conf not found"
         fi
         echo ""
 
         echo "=== Feed Files ==="
-        if [[ -d /var/lib/nftban/feeds ]]; then
-            ls -la /var/lib/nftban/feeds/ 2>&1
+        if [[ -d ${NFTBAN_DATA_DIR}/feeds ]]; then
+            ls -la ${NFTBAN_DATA_DIR}/feeds/ 2>&1
         else
             echo "Feed directory not found"
         fi
@@ -785,9 +786,9 @@ _collect_mail_status() {
         echo ""
 
         echo "=== Mail Configuration ==="
-        if [[ -f /etc/nftban/conf.d/mail.conf ]]; then
+        if [[ -f ${NFTBAN_CONFIG_DIR}/conf.d/mail.conf ]]; then
             # Redact passwords but show config structure
-            grep -v -E '(PASS|SECRET|TOKEN)' /etc/nftban/conf.d/mail.conf 2>/dev/null || echo "Could not read"
+            grep -v -E '(PASS|SECRET|TOKEN)' ${NFTBAN_CONFIG_DIR}/conf.d/mail.conf 2>/dev/null || echo "Could not read"
         else
             echo "mail.conf not found"
         fi
@@ -914,7 +915,7 @@ _collect_disk_usage() {
         echo ""
 
         echo "=== Directory Sizes ==="
-        for dir in /etc/nftban /var/lib/nftban ${NFTBAN_LOG_DIR} /var/cache/nftban /usr/lib/nftban; do
+        for dir in ${NFTBAN_CONFIG_DIR} ${NFTBAN_DATA_DIR} ${NFTBAN_LOG_DIR} /var/cache/nftban /usr/lib/nftban; do
             if [[ -d "$dir" ]]; then
                 echo "$dir: $(du -sh "$dir" 2>/dev/null | cut -f1)"
             fi
@@ -922,7 +923,7 @@ _collect_disk_usage() {
         echo ""
 
         echo "=== Large Files (>10MB) ==="
-        find /var/lib/nftban ${NFTBAN_LOG_DIR} /var/cache/nftban -type f -size +10M 2>/dev/null | \
+        find ${NFTBAN_DATA_DIR} ${NFTBAN_LOG_DIR} /var/cache/nftban -type f -size +10M 2>/dev/null | \
             while read -r f; do
                 echo "$f: $(du -h "$f" 2>/dev/null | cut -f1)"
             done || echo "None found"

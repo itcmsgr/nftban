@@ -255,17 +255,11 @@ nftban_health_render_json() {
     # Render health check results as JSON
     # Output: Complete JSON object with all health data
 
-    # JSON escape function - escapes special chars for valid JSON strings
-    _json_escape() {
-        local str="$1"
-        # Escape backslashes first, then other special chars
-        str="${str//\\/\\\\}"      # backslash
-        str="${str//\"/\\\"}"      # double quote
-        str="${str//$'\n'/\\n}"    # newline
-        str="${str//$'\r'/\\r}"    # carriage return
-        str="${str//$'\t'/\\t}"    # tab
-        echo -n "$str"
-    }
+    # v1.25: Use shared json_escape() from json_output.sh (dedup)
+    # Loaded by cmd_health.sh or main dispatcher; guard for safety
+    if ! declare -f json_escape &>/dev/null; then
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/json_output.sh" 2>/dev/null || true
+    fi
 
     # v1.24.1: Use exported scalar counts from check_all() (ground truth)
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
@@ -309,7 +303,7 @@ nftban_health_render_json() {
             # shellcheck disable=SC2128  # First element extraction
             local escaped_issues
             # shellcheck disable=SC2128  # First element extraction (issues is string not array here)
-            escaped_issues="$(_json_escape "$issues")"
+            escaped_issues="$(json_escape "$issues")"
 
             echo -n "    \"$check\": {\"status\": \"$status_name\", \"exit_code\": $status, \"message\": \"$escaped_issues\"}"
         fi
@@ -326,7 +320,7 @@ nftban_health_render_json() {
             [[ "$first_error" == "false" ]] && echo ","
             first_error=false
             local escaped_error
-            escaped_error="$(_json_escape "$error")"
+            escaped_error="$(json_escape "$error")"
             echo -n "    \"$escaped_error\""
         done
         echo ""
@@ -342,7 +336,7 @@ nftban_health_render_json() {
             [[ "$first_warn" == "false" ]] && echo ","
             first_warn=false
             local escaped_warning
-            escaped_warning="$(_json_escape "$warning")"
+            escaped_warning="$(json_escape "$warning")"
             echo -n "    \"$escaped_warning\""
         done
         echo ""
