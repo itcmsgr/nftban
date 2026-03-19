@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0] - 2026-03-19
+
+### Security Fixes
+
+- **P1: SSH rate limit now uses detected port** — DDoS classic fragment no longer hardcodes
+  `tcp dport 22`. Detects SSH port from state file, then sshd_config, fallback 22.
+  Servers with custom SSH ports (e.g., lab4 port 55000) were unprotected by connection limiting.
+- **P1: SSH health check false positive fixed** — Health check now only greps within the
+  `elements` section of nft set output. Empty sets caused false LOCKOUT RISK warnings.
+
+### Added
+
+- **Go test foundation** — 200+ tests: safeconv (80 tests), API helpers (120+ tests),
+  testutil package with fixtures and helpers (PR #194)
+- **Protection modules in help** — `nftban help` fallback now shows ddos, botguard,
+  suricata, portscan, geoban, geoip (PR #197)
+- **Health cache invalidation** — `nftban update` clears stale health cache before
+  post-update health check (PR #196)
+- **Enablement hints** — Status shows `(enable: nftban geoban add <CC>)` for disabled
+  modules (PR #196)
+- **Trust feed timestamps** — Status shows last-updated time for trust feeds (PR #196)
+
+### Changed
+
+- **Go file splitting** — 3 monolith files split into 28 focused modules:
+  cmd_suricata.go (1721→11 files), main.go (3561→12 files), nft.go (1449→5 files) (PR #192)
+- **Shell consolidation** — JSON escape function deduplication, path variablization
+  across 14 files (PR #193)
+- **Health terminology** — "advisories" → "info" in --brief output (PR #196)
+- **Deprecation warnings** — `nftban health services/modules/permissions` show
+  deprecation notices directing to canonical commands (PR #195)
+- **Old emulate syntax detection** — `nftban emulate ban <ip>` shows migration notice (PR #195)
+
+### Fixed
+
+- **GUI health check** — Reports NOT_INSTALLED instead of false error (PR #191)
+- **Health --brief exit codes** — Consistent with protection state contract (PR #191)
+- **Optional suricata in health** — No false errors when suricata not installed (PR #191)
+- **RBL checks** — Correctly reports info-level status (PR #191)
+- **Legacy socket paths** — `/var/run/nftban/` → `/run/nftban/` in feeds IPC (PR #197)
+- **Dead code removed** — `check_service()`, login monitor display, stale report
+  stubs (PR #195)
+
 ## [1.24.1] - 2026-03-19
 
 ### Bug Fixes
