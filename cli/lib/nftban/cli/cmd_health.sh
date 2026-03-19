@@ -137,6 +137,10 @@ nftban_cmd_health() {
                 nftban_health_cmd_check "$@"
             fi
             ;;
+        --brief|brief)
+            # v1.24.0: One-line health output for CI/fleet/monitoring
+            nftban_health_cmd_brief "$@"
+            ;;
         summary)
             # One-line summary
             nftban_health_cmd_summary "$@"
@@ -374,6 +378,7 @@ export -f nftban_cmd_health
 
 # Export subcommand functions (loaded from modules)
 export -f nftban_health_cmd_check
+export -f nftban_health_cmd_brief
 export -f nftban_health_cmd_summary
 export -f nftban_health_cmd_json
 export -f nftban_health_cmd_report
