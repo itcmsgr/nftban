@@ -120,6 +120,7 @@ nftban_cmd_status() {
 
     local json_mode=0
     local quiet_mode=0
+    local brief_mode=0
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -130,6 +131,10 @@ nftban_cmd_status() {
                 ;;
             --quiet|-q)
                 quiet_mode=1
+                shift
+                ;;
+            --brief|-b)
+                brief_mode=1
                 shift
                 ;;
             help|-h|--help)
@@ -144,6 +149,12 @@ nftban_cmd_status() {
                 ;;
         esac
     done
+
+    # v1.24.0: Brief mode — one-line output for CI/fleet/monitoring
+    if [[ $brief_mode -eq 1 ]]; then
+        output_brief
+        return $?
+    fi
 
     # Show unified banner with health indicator (skip for JSON/quiet output)
     if [[ $json_mode -eq 0 ]] && [[ $quiet_mode -eq 0 ]]; then
@@ -168,6 +179,45 @@ nftban_cmd_status() {
     # Terminal mode (default)
     output_terminal "$quiet_mode"
     return $?
+}
+
+output_brief() {
+    # v1.24.0: One-line status output for CI/fleet/monitoring
+    # Format: PROTECTED | v1.23.2 | 26 banned | 9 whitelisted | healthy
+    # Exit code: 0=PROTECTED/DEGRADED, 1=UNPROTECTED/DISABLED
+
+    local protection_state
+    protection_state=$(_nftban_protection_state)
+
+    local ban_count=0
+    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+        ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
+    fi
+
+    local whitelist_count=0
+    if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
+        whitelist_count=$(nftban_stats_count_whitelist 2>/dev/null || echo 0)
+    fi
+
+    local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
+    local health_word="unknown"
+    if [[ -r "$health_cache" ]]; then
+        local _hs
+        _hs=$(cat "$health_cache" 2>/dev/null) || _hs="UNKNOWN"
+        case "$_hs" in
+            OK) health_word="healthy" ;;
+            WARNING*) health_word="warnings" ;;
+            ERROR*|CRITICAL*) health_word="errors" ;;
+            *) health_word="unknown" ;;
+        esac
+    fi
+
+    echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
+
+    case "$protection_state" in
+        PROTECTED|DEGRADED) return 0 ;;
+        *)                  return 1 ;;
+    esac
 }
 
 output_terminal() {
@@ -1497,6 +1547,7 @@ USAGE:
 
 OPTIONS:
   --json          Output in JSON format
+  --brief         One-line output for CI/fleet/monitoring
   --quiet         Suppress suggestions and tips
   --help          Show this help
 
