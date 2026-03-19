@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0] - 2026-03-19
+
+### BREAKING CHANGES
+
+- **Exit code contract changed**: `nftban status` now returns:
+  - `0` = PROTECTED or DEGRADED (firewall is active and blocking)
+  - `1` = UNPROTECTED or DISABLED (firewall is NOT blocking)
+  - Previously: `0`=OK, `1`=WARNING, `2`=ERROR (health-based)
+  - **Migration**: Scripts checking `exit 2` should check `exit 1` instead
+
+### Added
+
+- **`nftban status --brief`** — One-line output for CI/fleet/monitoring
+  - Format: `PROTECTED | v1.24.0 | 26 banned | 9 whitelisted | healthy`
+  - Exit code follows new protection-based contract
+- **`nftban health --brief`** — One-line health output for monitoring
+  - Format: `HEALTHY | 26 checks passed | 4 advisories`
+  - Uses `NFTBAN_HEALTH_RESULTS[]` as single source of truth
+- **`nftban health --fix`** — Alias for `nftban health fix`
+- **Unified protection state function** — `_nftban_protection_state()` replaces 3 duplicate implementations
+- **Unified rule count function** — `_nftban_count_rules()` ensures human and JSON output agree
+- **SSH rate limit template** — `__SSH_PORT__` placeholder substituted at runtime with detected SSH port
+- **15+ new typo suggestions** — search, config, update, install, version, rebuild, timers, etc.
+- **`parse_nft_set_full()`** — Structured metadata extraction for nft set entries (ip|timeout|expires)
+
+### Bug Fixes
+
+- Fix SSH port health check false positive (grep-pipefail under `set -Eeuo pipefail`)
+- Fix polkit health check on DEB systems (was looking in `/etc/` instead of `/usr/share/`)
+- Fix FHS suricata dir ownership check (skip chown when suricata user absent)
+- Fix blacklist count arithmetic crash (empty variable under pipefail)
+- Fix inet filter table false positive (downgrade to INFO when all chains accept)
+- Fix SSH rate limit only protecting port 22 (now uses detected SSH port)
+- Fix blacklist.d/99-manual.conf ownership after ban write (root:nftban 640)
+- Fix feeds discovery pipefail when 0 feeds enabled
+- Fix `nftban list --json` IP field embedding timeout/expires metadata
+- Fix rule count mismatch between human and JSON status output
+- Fix `nftban services` crash — undefined `NFTBAN_SERVICE_SYSTEMD[]` array
+- Fix PROTECTED+ERROR contradiction — shows "OK (advisories present)" when PROTECTED
+- Fix health error counting (summary vs detail mismatch) — derived from `NFTBAN_HEALTH_RESULTS[]`
+- Fix "Quick Commands" referencing non-existent `nftban firewall status`
+
+### Improved
+
+- Health check `nftban.conf` template: POLKIT_RULES_DIR default is now empty (distro auto-detects)
+- RPM postinst: nftables config validation handles `__SSH_PORT__` template substitution
+
+---
+
 ## [1.20.0] - 2026-03-14
 
 ### Added — HTTP Bot Guard: Intelligent Crawler Detection & Protection
