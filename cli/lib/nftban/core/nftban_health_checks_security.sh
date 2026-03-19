@@ -55,6 +55,12 @@ if [[ -f "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" ]]; then
     source "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" 2>/dev/null || true
 fi
 
+# Load IPC client library (provides nft_ipc_add_element for atomic SSH port updates)
+if [[ -f "${_NFTBAN_LIBS_DIR}/nft_ipc.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_LIBS_DIR}/nft_ipc.sh" 2>/dev/null || true
+fi
+
 # =============================================================================
 # FALLBACK FUNCTIONS (if libraries are not available)
 # =============================================================================
