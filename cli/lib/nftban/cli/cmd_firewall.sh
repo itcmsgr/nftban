@@ -597,9 +597,25 @@ firewall_reload() {
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema..."
-        if ! nft -f "$nftban_conf" 2>&1; then
-            echo "Warning: Failed to re-apply NFTBan schema" >&2
-            echo "Try: nftban firewall rebuild" >&2
+        # v1.24.0: Substitute __SSH_PORT__ placeholder with detected port
+        local _ssh_port=22
+        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
+        [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+        if grep -q '__SSH_PORT__' "$nftban_conf" 2>/dev/null; then
+            local _tmp_conf
+            _tmp_conf=$(mktemp) || { echo "Error: mktemp failed" >&2; return 1; }
+            sed "s/__SSH_PORT__/${_ssh_port}/g" "$nftban_conf" > "$_tmp_conf"
+            if ! nft -f "$_tmp_conf" 2>&1; then
+                echo "Warning: Failed to re-apply NFTBan schema" >&2
+                echo "Try: nftban firewall rebuild" >&2
+            fi
+            rm -f "$_tmp_conf"
+        else
+            if ! nft -f "$nftban_conf" 2>&1; then
+                echo "Warning: Failed to re-apply NFTBan schema" >&2
+                echo "Try: nftban firewall rebuild" >&2
+            fi
         fi
     fi
 
@@ -960,7 +976,24 @@ _restore_from_file() {
     if ! nft -f "$backup_file" 2>&1; then
         echo "Error: Failed to restore backup" >&2
         echo "Attempting to reload NFTBan schema..." >&2
-        nft -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf" 2>/dev/null || true
+        # v1.24.0: Substitute __SSH_PORT__ if present
+        local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+        if grep -q '__SSH_PORT__' "$_nftban_conf" 2>/dev/null; then
+            local _ssh_port=22 _tmp_f
+            local _sp_f="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+            [[ -f "$_sp_f" ]] && _ssh_port=$(cat "$_sp_f" 2>/dev/null) || true
+            [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+            _tmp_f=$(mktemp 2>/dev/null) || _tmp_f=""
+            if [[ -n "$_tmp_f" ]]; then
+                sed "s/__SSH_PORT__/${_ssh_port}/g" "$_nftban_conf" > "$_tmp_f"
+                nft -f "$_tmp_f" 2>/dev/null || true
+                rm -f "$_tmp_f"
+            else
+                nft -f "$_nftban_conf" 2>/dev/null || true
+            fi
+        else
+            nft -f "$_nftban_conf" 2>/dev/null || true
+        fi
         return 1
     fi
 

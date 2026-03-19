@@ -1529,10 +1529,26 @@ if [ -f /etc/nftban/whitelist.d/00-system.conf ]; then
 fi
 
 # Check 3: Verify nftban config is valid
+# v1.24.0: Substitute __SSH_PORT__ placeholder before validation
 if [ -f /etc/nftban/nftables.conf ]; then
-    if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
-        echo "[NFTBan ERROR] NFTBan nftables config validation failed"
-        NFTABLES_SAFE=0
+    _SSH_PORT=22
+    [ -f /var/lib/nftban/state/ssh_port_active.state ] && _SSH_PORT=\$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
+    echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$' || _SSH_PORT=22
+    if grep -q '__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null; then
+        _TMP_CONF=\$(mktemp 2>/dev/null) || _TMP_CONF=""
+        if [ -n "\$_TMP_CONF" ]; then
+            sed "s/__SSH_PORT__/\${_SSH_PORT}/g" /etc/nftban/nftables.conf > "\$_TMP_CONF"
+            if ! nft -c -f "\$_TMP_CONF" 2>/dev/null; then
+                echo "[NFTBan ERROR] NFTBan nftables config validation failed"
+                NFTABLES_SAFE=0
+            fi
+            rm -f "\$_TMP_CONF"
+        fi
+    else
+        if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
+            echo "[NFTBan ERROR] NFTBan nftables config validation failed"
+            NFTABLES_SAFE=0
+        fi
     fi
 fi
 
