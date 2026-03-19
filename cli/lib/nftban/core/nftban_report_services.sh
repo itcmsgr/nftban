@@ -460,9 +460,11 @@ nftban_services_report_summary() {
 
     # Count systemd services
     for svc in "${NFTBAN_SERVICE_SYSTEMD[@]}"; do
-        total_systemd=$((total_systemd + 1))
         local status_line="${NFTBAN_SERVICE_STATUS[$svc]:-}"
         local status="${status_line%%|*}"
+        # v1.24.1: Skip services that aren't installed (don't count in denominator)
+        [[ "$status" == "NOT_FOUND" || "$status" == "NOT_INSTALLED" || -z "$status" ]] && continue
+        total_systemd=$((total_systemd + 1))
         if [[ "$status" == "RUNNING" ]]; then
             running_systemd=$((running_systemd + 1))
         elif [[ "$status" =~ ERROR|MISSING ]]; then
