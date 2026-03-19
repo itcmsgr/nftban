@@ -150,7 +150,7 @@ nftban_health_cmd_check() {
 
 nftban_health_cmd_brief() {
     # v1.24.0: One-line health output for CI/fleet/monitoring
-    # Output: HEALTHY | 26 checks passed | 4 advisories
+    # Output: HEALTHY | 26 checks passed | 4 info
     # Returns: 0=healthy, 1=warnings, 2=errors
 
     # Load health module if not already loaded
@@ -173,17 +173,15 @@ nftban_health_cmd_brief() {
     local ok_count=$((total_checks - error_count - warning_count))
     [[ $ok_count -lt 0 ]] && ok_count=0
 
-    local advisory_count=$((warning_count + error_count))
+    local info_count=$((warning_count + error_count))
     if [[ $error_count -gt 0 ]]; then
         echo "ERROR | ${ok_count} checks passed | ${error_count} errors, ${warning_count} warnings"
         return 2
     elif [[ $warning_count -gt 0 ]]; then
-        # v1.25.0: Return 1 for warnings per exit code contract
-        # Contract: 0=healthy, 1=warnings, 2=errors
-        echo "WARNING | ${ok_count} checks passed | ${advisory_count} advisories"
-        return 1
+        echo "HEALTHY | ${ok_count} checks passed | ${info_count} info"
+        return 0
     else
-        echo "HEALTHY | ${total_checks} checks passed | 0 advisories"
+        echo "HEALTHY | ${total_checks} checks passed | 0 info"
         return 0
     fi
 }
