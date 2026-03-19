@@ -142,6 +142,13 @@ nftban_cmd_ban() {
     output=$("$NFTBAN_CORE" ban "${cmd_args[@]}" 2>&1)
     exit_code=$?
 
+    # v1.24.0: Ensure blacklist.d/99-manual.conf has correct ownership after write
+    if [[ $exit_code -eq 0 ]]; then
+        local blacklist_file="${NFTBAN_CONFIG_DIR}/blacklist.d/99-manual.conf"
+        [[ -f "$blacklist_file" ]] && chown root:nftban "$blacklist_file" 2>/dev/null || true
+        [[ -f "$blacklist_file" ]] && chmod 640 "$blacklist_file" 2>/dev/null || true
+    fi
+
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ $exit_code -eq 0 ]]; then
             local data
