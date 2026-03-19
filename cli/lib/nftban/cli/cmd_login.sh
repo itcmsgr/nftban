@@ -4,6 +4,7 @@
 # Load JSON helper for --json support
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
+[[ -z "${NFTBAN_DATA_DIR:-}" ]] && readonly NFTBAN_DATA_DIR="/var/lib/nftban"
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
@@ -116,8 +117,8 @@ nftban_login_cmd_status() {
     echo ""
 
     # Check configuration
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
-    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
+    local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ -f "$config_file" ]] || [[ -f "$config_local" ]]; then
         if [[ -f "$config_local" ]]; then
@@ -209,8 +210,8 @@ _nftban_login_cmd_status_json() {
     local json_mode="${1:-false}"
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-        local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
-        local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+        local config_file="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
+        local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
         local config_exists="false"
         local module_exists="false"
         local service_status="not_installed"
@@ -336,7 +337,7 @@ nftban_login_cmd_enable() {
     # Usage: nftban login enable [ssh|su|sudo|console|service|all]
 
     local target="${1:-}"
-    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+    local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Requires root privileges" >&2
@@ -435,7 +436,7 @@ nftban_login_cmd_disable() {
     # Usage: nftban login disable [ssh|su|sudo|console|service|all]
 
     local target="${1:-}"
-    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+    local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Requires root privileges" >&2
@@ -706,7 +707,7 @@ nftban_login_cmd_health_fix() {
     local issues_fixed=0
 
     # 1. Check config file exists
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
     if [[ ! -f "$config_file" ]]; then
         echo "❌ Configuration file missing: $config_file"
         # v1.19.20 FIX
@@ -882,7 +883,7 @@ nftban_login_cmd_mode() {
         # Show current mode
         local current_mode="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
         local digest_time="${NFTBAN_LOGIN_DIGEST_TIME:-08:00}"
-        local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/login_digest.json}"
+        local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR}/login_digest.json}"
         local digest_count=0
 
         if [[ -f "$digest_file" ]] && command -v jq &>/dev/null; then
@@ -920,7 +921,7 @@ nftban_login_cmd_mode() {
     esac
 
     # Set the mode in local config file
-    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+    local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
     _nftban_login_set_config "NFTBAN_LOGIN_ALERT_MODE" "$mode" "$config_local"
 
     echo "✅ Login alert mode set to: $mode"
@@ -956,7 +957,7 @@ nftban_login_cmd_digest() {
 
     case "$action" in
         status)
-            local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/login_digest.json}"
+            local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR}/login_digest.json}"
             local count=0
 
             if [[ -f "$digest_file" ]] && command -v jq &>/dev/null; then
@@ -990,7 +991,7 @@ nftban_login_cmd_digest() {
                 nftban_login_digest_clear
                 echo "✅ Digest cleared"
             else
-                local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/login_digest.json}"
+                local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-${NFTBAN_DATA_DIR}/login_digest.json}"
                 echo "[]" > "$digest_file"
                 echo "✅ Digest cleared"
             fi
@@ -1006,8 +1007,8 @@ nftban_login_cmd_digest() {
 nftban_login_cmd_config() {
     # Show login module configuration
     local json_mode="${1:-false}"
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
-    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf.local"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
+    local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         local active_file="$config_file"

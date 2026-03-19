@@ -3,13 +3,17 @@
 # meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries="whmapi1"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
 # meta:inventory.config_files="/etc/nftban/conf.d/panels/cpanel/main.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 
 set -Eeuo pipefail
+
+# Variable defaults (safe for re-sourcing)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
 
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_PANEL_CPANEL_LOADED:-}" ]] && return 0
@@ -170,7 +174,7 @@ EOF
     echo ""
 
     # Load cPanel configuration to show port summary
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file" || true
@@ -237,7 +241,7 @@ EOF
 
     # Mark cPanel panel as enabled in state file
     echo "Enabling cPanel/WHM panel in NFTBan..."
-    local state_dir="/var/lib/nftban/panels"
+    local state_dir="${NFTBAN_DATA_DIR}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -326,7 +330,7 @@ nftban_panel_cpanel_disable() {
     echo "Disabling cPanel/WHM panel in NFTBan..."
 
     # Mark cPanel panel as disabled in state file
-    local state_dir="/var/lib/nftban/panels"
+    local state_dir="${NFTBAN_DATA_DIR}/panels"
     local state_file="$state_dir/enabled.conf"
 
     # Ensure state directory exists
@@ -445,8 +449,8 @@ nftban_panel_cpanel_status() {
 
     # Configuration file
     echo "Configuration:"
-    if [[ -f "/etc/nftban/conf.d/panels/cpanel/main.conf" ]]; then
-        echo "  Config: ✓ /etc/nftban/conf.d/panels/cpanel/main.conf"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" ]]; then
+        echo "  Config: ✓ ${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf"
     else
         echo "  Config: ✗ NOT FOUND"
     fi
@@ -485,16 +489,16 @@ nftban_panel_cpanel_report() {
     echo "   ───────────────────────────────────────────────────"
 
     # Load config
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" || true
+        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" || true
     fi
     # v1.19.0: Source .local override (user customizations survive package updates)
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf.local" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf.local" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf.local" || true
+        source "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf.local" || true
     fi
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf" ]]; then
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" ]]; then
 
         echo "   TCP INPUT:  ${NFTBAN_CPANEL_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_CPANEL_TCP_OUT:-Not configured}"
@@ -555,9 +559,9 @@ nftban_panel_cpanel_report() {
     # Configuration files
     echo "5. CONFIGURATION FILES"
     echo "   ───────────────────────────────────────────────────"
-    echo "   /etc/nftban/conf.d/panels/cpanel/main.conf"
-    echo "   /etc/nftban/nftban.conf.local (customizations)"
-    echo "   /etc/nftban/conf.d/login/main.conf (brute-force protection)"
+    echo "   ${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf"
+    echo "   ${NFTBAN_CONFIG_DIR}/nftban.conf.local (customizations)"
+    echo "   ${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf (brute-force protection)"
     echo ""
 }
 
@@ -574,7 +578,7 @@ nftban_panel_cpanel_repair() {
     local repairs=0
 
     # Check configuration file
-    if [[ ! -f "/etc/nftban/conf.d/panels/cpanel/main.conf" ]]; then
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
         # v1.19.20 FIX

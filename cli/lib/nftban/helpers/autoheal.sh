@@ -16,9 +16,13 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# Bootstrap paths
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
+
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
+source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
 # CRITICAL: Load FHS spec - single source of truth for directory structure
 # shellcheck source=/usr/lib/nftban/core/nftban_fhs_spec.sh
@@ -150,14 +154,14 @@ find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin" -type f -exec chmod 755 {} \; 2>/d
 # v1.13.12: Go binaries may create files with root:root - fix them for exporter access
 # =============================================================================
 log_info "Fixing /var/lib/nftban file permissions..."
-if [ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}" ]; then
+if [ -d "${NFTBAN_DATA_DIR}" ]; then
     # Fix all files EXCEPT auditors directory (which has different ownership)
-    find "${NFTBAN_DATA_DIR:-/var/lib/nftban}" -type f \
+    find "${NFTBAN_DATA_DIR}" -type f \
         -not -path "*/reports/auditors/*" \
         \( -not -user nftban -o -not -group nftban \) \
         -exec chown nftban:nftban {} \; 2>/dev/null || true
 
-    find "${NFTBAN_DATA_DIR:-/var/lib/nftban}" -type f \
+    find "${NFTBAN_DATA_DIR}" -type f \
         -not -path "*/reports/auditors/*" \
         -not -perm 640 \
         -exec chmod 640 {} \; 2>/dev/null || true

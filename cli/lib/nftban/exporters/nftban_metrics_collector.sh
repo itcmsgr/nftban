@@ -33,6 +33,7 @@ set -Eeuo pipefail
 
 # Bootstrap paths
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 : "${NFTBAN_RUN_DIR:=/run/nftban}"
 : "${NFTBAN_LOG_DIR:=/var/log/nftban}"
@@ -346,7 +347,7 @@ collect_feed_health_metrics() {
         local feed_name
         feed_name=$(basename "$conf" .conf)
         feed_names+=("$feed_name")
-        state_files+=("/var/lib/nftban/feeds/${feed_name}.state")
+        state_files+=("${NFTBAN_DATA_DIR}/feeds/${feed_name}.state")
         # v1.19.20 FIX
         ((total++)) || true
     done
@@ -915,8 +916,8 @@ collect_analytics_metrics() {
 
     # Find GeoIP database (DBIP or GeoLite2)
     local geoip_db=""
-    for path in "/var/lib/nftban/geoip/dbip-country-lite.mmdb" \
-                "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" \
+    for path in "${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb" \
+                "${NFTBAN_DATA_DIR}/geoip/GeoLite2-Country.mmdb" \
                 "/usr/share/GeoIP/dbip-country-lite.mmdb" \
                 "/usr/share/GeoIP/GeoLite2-Country.mmdb"; do
         [[ -f "$path" ]] && { geoip_db="$path"; break; }
@@ -1187,8 +1188,8 @@ collect_geoip_metrics() {
 
     # Find GeoIP database (DBIP or GeoLite2)
     local db_path=""
-    for path in "/var/lib/nftban/geoip/dbip-country-lite.mmdb" \
-                "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" \
+    for path in "${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb" \
+                "${NFTBAN_DATA_DIR}/geoip/GeoLite2-Country.mmdb" \
                 "/usr/share/GeoIP/dbip-country-lite.mmdb" \
                 "/usr/share/GeoIP/GeoLite2-Country.mmdb" \
                 "${NFTBAN_LIB_DIR}/data/dbip-country-lite.mmdb" \
