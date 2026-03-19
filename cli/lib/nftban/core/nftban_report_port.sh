@@ -33,6 +33,7 @@ umask 027
 # =============================================================================
 # TABLE DEFAULTS (must be set before any nft commands)
 # =============================================================================
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 : "${NFTBAN_TABLE_IPV4:=ip nftban}"
 : "${NFTBAN_TABLE_IPV6:=ip6 nftban}"
 
@@ -507,15 +508,15 @@ nftban_port_render_active_exports() {
     # Check metrics.conf and metrics.conf.local
     local prom_enabled="false"
     local prom_dir=""
-    if [[ -f "/etc/nftban/conf.d/metrics.conf.local" ]]; then
-        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' /etc/nftban/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
-        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' /etc/nftban/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]]; then
+        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' ${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' ${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$prom_enabled" ]] && [[ -f "/etc/nftban/conf.d/metrics.conf" ]]; then
-        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' /etc/nftban/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$prom_enabled" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]]; then
+        prom_enabled="$(grep -E '^NFTBAN_EXPORT_PROMETHEUS=' ${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$prom_dir" ]] && [[ -f "/etc/nftban/conf.d/metrics.conf" ]]; then
-        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' /etc/nftban/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$prom_dir" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]]; then
+        prom_dir="$(grep -E '^NFTBAN_PROMETHEUS_TEXTFILE_DIR=' ${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
     if [[ "$prom_enabled" == "true" ]]; then
         prometheus_status="✅ Enabled (${prom_dir:-/var/lib/node_exporter/textfile_collector})"
@@ -525,15 +526,15 @@ nftban_port_render_active_exports() {
     # Check zabbix.conf and zabbix.conf.local
     local zabbix_enabled="false"
     local zabbix_server=""
-    if [[ -f "/etc/nftban/conf.d/zabbix.conf.local" ]]; then
-        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' /etc/nftban/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
-        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' /etc/nftban/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]]; then
+        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$zabbix_enabled" ]] && [[ -f "/etc/nftban/conf.d/zabbix.conf" ]]; then
-        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' /etc/nftban/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$zabbix_enabled" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]]; then
+        zabbix_enabled="$(grep -E '^NFTBAN_ZABBIX_ENABLED=' ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$zabbix_server" ]] && [[ -f "/etc/nftban/conf.d/zabbix.conf" ]]; then
-        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' /etc/nftban/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$zabbix_server" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]]; then
+        zabbix_server="$(grep -E '^NFTBAN_ZABBIX_SERVER=' ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
     if [[ "$zabbix_enabled" == "true" ]]; then
         if [[ -n "$zabbix_server" ]]; then
@@ -547,15 +548,15 @@ nftban_port_render_active_exports() {
     # Check portal.conf and portal.conf.local
     local portal_enabled="false"
     local portal_url=""
-    if [[ -f "/etc/nftban/conf.d/portal.conf.local" ]]; then
-        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' /etc/nftban/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
-        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' /etc/nftban/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local" ]]; then
+        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' ${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' ${NFTBAN_CONFIG_DIR}/conf.d/portal.conf.local 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$portal_enabled" ]] && [[ -f "/etc/nftban/conf.d/portal.conf" ]]; then
-        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' /etc/nftban/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$portal_enabled" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" ]]; then
+        portal_enabled="$(grep -E '^NFTBAN_PORTAL_ENABLED=' ${NFTBAN_CONFIG_DIR}/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
-    if [[ -z "$portal_url" ]] && [[ -f "/etc/nftban/conf.d/portal.conf" ]]; then
-        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' /etc/nftban/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
+    if [[ -z "$portal_url" ]] && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/portal.conf" ]]; then
+        portal_url="$(grep -E '^NFTBAN_PORTAL_URL=' ${NFTBAN_CONFIG_DIR}/conf.d/portal.conf 2>/dev/null | tail -1 | cut -d'=' -f2 | tr -d '"' || echo "")"
     fi
     if [[ "$portal_enabled" == "true" ]]; then
         # Extract hostname from URL for display

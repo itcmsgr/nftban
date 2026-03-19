@@ -11,9 +11,13 @@
 
 set -Eeuo pipefail
 
+# Bootstrap paths
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
+
 # Load main configuration (service names, paths)
-if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" || true
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf" || true
 fi
 
 # Load distro helpers if not already loaded

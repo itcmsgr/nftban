@@ -41,6 +41,7 @@ _NFTBAN_HEALTH_FIXES_LOADED=1
 # Default paths (for direct sourcing compatibility)
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
 
 
 # AUTO-FIX FUNCTIONS
@@ -79,16 +80,16 @@ nftban_health_fix_auditor_acls() {
     fi
 
     # Reports directory - auditor needs traverse to reach auditors/ subdir
-    if [[ -d /var/lib/nftban ]]; then
-        setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || ((++acl_errors))
-        [[ -d /var/lib/nftban/reports ]] && setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || ((++acl_errors))
-        [[ -d /var/lib/nftban/reports/auditors ]] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || ((++acl_errors))
+    if [[ -d "${NFTBAN_DATA_DIR}" ]]; then
+        setfacl -m g:nftban-auditor:x "${NFTBAN_DATA_DIR}" 2>/dev/null || ((++acl_errors))
+        [[ -d "${NFTBAN_DATA_DIR}/reports" ]] && setfacl -m g:nftban-auditor:x "${NFTBAN_DATA_DIR}/reports" 2>/dev/null || ((++acl_errors))
+        [[ -d "${NFTBAN_DATA_DIR}/reports/auditors" ]] && setfacl -m g:nftban-auditor:rx "${NFTBAN_DATA_DIR}/reports/auditors" 2>/dev/null || ((++acl_errors))
     fi
 
     # Config directory - auditor needs read access to view (not modify) configuration
-    if [[ -d /etc/nftban ]]; then
-        setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || ((++acl_errors))
-        [[ -f /etc/nftban/nftban.conf ]] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
+    if [[ -d "${NFTBAN_CONFIG_DIR}" ]]; then
+        setfacl -m g:nftban-auditor:x "${NFTBAN_CONFIG_DIR}" 2>/dev/null || ((++acl_errors))
+        [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && setfacl -m g:nftban-auditor:r "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
     fi
 
     if [[ $acl_errors -eq 0 ]]; then
@@ -856,7 +857,7 @@ ${NFTBAN_LOG_DIR}/suricata/*.json ${NFTBAN_LOG_DIR}/suricata/*.log {
     size 50M
 }
 
-/var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.json {
+${NFTBAN_DATA_DIR}/reports/*.html ${NFTBAN_DATA_DIR}/reports/*.json {
     monthly
     rotate ${report_rotate}
     compress
@@ -885,7 +886,7 @@ nftban_health_fix_registry() {
     # Returns: 0=fixed, 1=partial fix, 2=failed
 
     local status=0
-    local registry="${NFTBAN_CONFIG_DIR:-/etc/nftban}/commands.registry.yml"
+    local registry="${NFTBAN_CONFIG_DIR}/commands.registry.yml"
 
     echo "Checking registry configuration..."
 
@@ -991,7 +992,7 @@ nftban_health_fix_geoip() {
 
     echo "Checking GeoIP database..."
 
-    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+    local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
     local nftban_core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
     local db_found=false
     local status=0

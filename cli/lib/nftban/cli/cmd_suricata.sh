@@ -273,12 +273,12 @@ cmd_suricata_config() {
     fi
 
     if [[ "$json_mode" == "true" ]]; then
-        # Escape strings for JSON (handle backslashes, quotes, tabs)
-        _json_escape() {
-            printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g'
-        }
+        # v1.25: Use shared json_escape() from json_output.sh (dedup)
+        if ! declare -f json_escape &>/dev/null; then
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/json_output.sh" 2>/dev/null || true
+        fi
         cat <<EOF
-{"suricata_yaml":"$(_json_escape "$suricata_yaml")","eve_path":"$(_json_escape "$eve_path")","interface":"$(_json_escape "$interface")","rules_dir":"$(_json_escape "$rules_dir")","rule_count":$rule_count,"log_dir":"$(_json_escape "$log_dir")","run_mode":"$(_json_escape "$run_mode")","home_net":"$(_json_escape "$home_net")","external_net":"$(_json_escape "$external_net")","nftban_suricata_conf":"$(_json_escape "$nftban_suricata_conf")","nftban_iface_conf":"$(_json_escape "${nftban_iface_conf:-}")"}
+{"suricata_yaml":"$(json_escape "$suricata_yaml")","eve_path":"$(json_escape "$eve_path")","interface":"$(json_escape "$interface")","rules_dir":"$(json_escape "$rules_dir")","rule_count":$rule_count,"log_dir":"$(json_escape "$log_dir")","run_mode":"$(json_escape "$run_mode")","home_net":"$(json_escape "$home_net")","external_net":"$(json_escape "$external_net")","nftban_suricata_conf":"$(json_escape "$nftban_suricata_conf")","nftban_iface_conf":"$(json_escape "${nftban_iface_conf:-}")"}
 EOF
         return 0
     fi
