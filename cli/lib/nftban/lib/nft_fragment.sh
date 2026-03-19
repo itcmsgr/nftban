@@ -885,6 +885,19 @@ nft_fragment_render_ddos_classic() {
     local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-100}"
     local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-20}"
 
+    # SSH port detection: state file → sshd_config → fallback 22
+    local ssh_port=22
+    local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+    if [[ -f "$_ssh_port_file" ]]; then
+        local _sp
+        _sp=$(cat "$_ssh_port_file" 2>/dev/null) || true
+        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
+    elif [[ -f /etc/ssh/sshd_config ]]; then
+        local _sp
+        _sp=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1) || true
+        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
+    fi
+
     # Meter names
     local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
     local icmp_meter="${DDOS_CLASSIC_ICMP_METER:-ddos_icmp_flood}"
@@ -905,7 +918,7 @@ nft_fragment_render_ddos_classic() {
 #
 # Thresholds:
 #   SYN Rate: ${syn_rate} burst ${syn_burst}
-#   SSH Conn: max ${ssh_limit}/IP
+#   SSH Conn: max ${ssh_limit}/IP (port ${ssh_port})
 #   HTTP Conn: max ${http_limit}/IP
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
@@ -919,7 +932,7 @@ add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr limi
 add rule ${table_ipv4} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
 
 # Connection Limits per Service
-add rule ${table_ipv4} ${chain} tcp dport 22 ct state new ct count over ${ssh_limit} counter drop comment "SSH: max ${ssh_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter drop comment "HTTP: max ${http_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter drop comment "HTTPS: max ${https_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter drop comment "SMTP: max ${smtp_limit} conn/IP"
@@ -944,7 +957,7 @@ add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr li
 add rule ${table_ipv6} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
 
 # Connection Limits
-add rule ${table_ipv6} ${chain} tcp dport 22 ct state new ct count over ${ssh_limit} counter drop comment "SSH: max ${ssh_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
 add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter drop comment "HTTP(S): max ${http_limit} conn/IP"
 
 # ICMPv6 Rate Limiting
