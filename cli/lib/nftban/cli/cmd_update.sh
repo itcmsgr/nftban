@@ -378,9 +378,11 @@ _cmd_update_main() {
 
     # Run health check
     echo ""
+    # Invalidate stale health cache from previous version
+    rm -f "${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache" 2>/dev/null || true
     _update_log INFO "Running health check..."
     local health_output health_status
-    health_output=$(nftban health check --auto-heal 2>&1) || health_status=$?
+    health_output=$(nftban health check --auto-heal --cache-status 2>&1) || health_status=$?
     health_status="${health_status:-0}"
 
     if [[ $health_status -eq 0 ]]; then
