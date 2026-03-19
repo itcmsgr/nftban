@@ -246,15 +246,15 @@ output_brief() {
         _hs=$(cat "$health_cache" 2>/dev/null) || _hs="UNKNOWN"
         case "$_hs" in
             OK) health_word="healthy" ;;
-            WARNING*) health_word="advisories" ;;
+            WARNING*) health_word="info" ;;
             ERROR*|CRITICAL*) health_word="errors" ;;
             *) health_word="unknown" ;;
         esac
     fi
 
-    # v1.24.1: When PROTECTED, health issues are advisories not errors
+    # v1.24.1: When PROTECTED, health issues are informational not errors
     if [[ "$protection_state" == "PROTECTED" && "$health_word" == "errors" ]]; then
-        health_word="advisories"
+        health_word="info"
     fi
 
     echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
@@ -547,6 +547,19 @@ output_terminal() {
         fi
     fi
     printf "  %-20s %s\n" "Trust Feeds........." "$trust_status"
+    # Show last-updated timestamp if trust data exists
+    local trust_data_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/trust"
+    if [[ -d "$trust_data_dir" ]]; then
+        local newest_file
+        newest_file=$(find "$trust_data_dir" -name "*.txt" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+        if [[ -n "$newest_file" ]]; then
+            local last_updated
+            last_updated=$(stat -c '%Y' "$newest_file" 2>/dev/null) || true
+            if [[ -n "$last_updated" ]]; then
+                printf "      %-16s %s\n" "Last updated...." "$(date -d "@$last_updated" '+%Y-%m-%d %H:%M' 2>/dev/null || echo 'unknown')"
+            fi
+        fi
+    fi
 
     # Feeds
     local feeds_enabled=0
@@ -554,6 +567,7 @@ output_terminal() {
         feeds_enabled=$(find "${NFTBAN_DATA_DIR}/feeds" -name "*.txt" -type f 2>/dev/null | wc -l)
     fi
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
+    [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(enable: nftban feeds enable)"
 
     # Login Monitor (deprecated v1.23.0 — replaced by nftband loginmon module)
     # Only show if the legacy service still exists on this system
@@ -591,6 +605,7 @@ output_terminal() {
         geoban_status="ACTIVE ($banned_countries countries blocked)"
     fi
     printf "  %-20s %s\n" "GeoBan.............." "$geoban_status"
+    [[ "$geoban_status" == "DISABLED" ]] && printf "      %-16s %s\n" "" "(enable: nftban geoban add <CC>)"
 
     # RBL Monitoring
     local rbl_status="DISABLED"
@@ -762,7 +777,7 @@ output_terminal() {
 
     # v1.24.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
     if [[ "$protection_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
-        printf "  %-20s %s\n" "Overall Status......" "OK (advisories present)"
+        printf "  %-20s %s\n" "Overall Status......" "OK (info notices)"
     else
         printf "  %-20s %s\n" "Overall Status......" "$health_status"
     fi
