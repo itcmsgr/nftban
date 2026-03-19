@@ -63,27 +63,54 @@ readonly CMD_LIST_LOADED=1
 # =============================================================================
 
 parse_nft_set() {
-    # Parse nft set output and extract IPs
+    # Parse nft set output and extract IPs (IP only, no metadata)
     # Args: $1 = nft output, $2 = set name
     local output="$1"
     local set_name="$2"
 
     # Extract elements from the set (multi-line format)
     # Format spans multiple lines:
-    #   elements = { 1.2.3.4, 5.6.7.8,
+    #   elements = { 1.2.3.4 timeout 1d expires 19h, 5.6.7.8,
     #                9.10.11.12 }
     #
     # Strategy:
     # 1. Join all lines into one
     # 2. Extract content between "elements = {" and "}"
     # 3. Split by comma and clean up
+    # 4. Extract just the IP (first word before any timeout/expires/comment)
     # Note: grep/sed may return exit 1 with no matches, so use || true
     echo "$output" | \
         tr '\n' ' ' | \
         sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | \
         tr ',' '\n' | \
         sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-        grep -v '^$' || true
+        grep -v '^$' | \
+        while IFS= read -r entry; do
+            # v1.24.0: Extract just the IP (first word)
+            echo "${entry%% *}"
+        done || true
+}
+
+parse_nft_set_full() {
+    # Parse nft set output and extract full entries (IP + timeout + expires)
+    # For JSON output that needs structured metadata fields
+    # Args: $1 = nft output
+    # Output: pipe-delimited "ip|timeout|expires" per line
+    local output="$1"
+
+    echo "$output" | \
+        tr '\n' ' ' | \
+        sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | \
+        tr ',' '\n' | \
+        sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+        grep -v '^$' | \
+        while IFS= read -r entry; do
+            local ip_only="${entry%% *}"
+            local timeout_val="" expires_val=""
+            [[ "$entry" =~ timeout[[:space:]]+([^[:space:]]+) ]] && timeout_val="${BASH_REMATCH[1]}"
+            [[ "$entry" =~ expires[[:space:]]+([^[:space:]]+) ]] && expires_val="${BASH_REMATCH[1]}"
+            echo "${ip_only}|${timeout_val:-permanent}|${expires_val:-never}"
+        done || true
 }
 
 # =============================================================================
@@ -199,6 +226,7 @@ nftban_cmd_list() {
                     echo ","
                 fi
 
+                # v1.24.0: Output structured IP field (ip only, no embedded metadata)
                 echo -n "    {\"ip\": \"$ip\", \"set\": \"$set_name\", \"version\": \"$ip_version\"}"
             done
         fi
