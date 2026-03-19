@@ -1124,7 +1124,7 @@ output_terminal() {
     echo "  nftban menu              Interactive TUI menu"
     echo "  nftban health check      Full diagnostics"
     echo "  nftban stats dashboard   Detailed statistics"
-    echo "  nftban firewall status   Firewall details"
+    echo "  nftban firewall validate Firewall details"
     echo "  nftban help              Show all commands"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -1572,7 +1572,7 @@ EXAMPLES:
 
 SEE ALSO:
   nftban health check         Full diagnostics
-  nftban firewall status      Detailed firewall info
+  nftban firewall validate    Detailed firewall info
   nftban stats dashboard      Detailed statistics
 EOF
 }

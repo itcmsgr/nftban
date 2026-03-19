@@ -1096,6 +1096,48 @@ main() {
                 blacklsit|blcklist|balcklist|blocklist)
                     suggestion="blacklist"
                     ;;
+                searh|serach|seach|sreach|searhc|fnd|find)
+                    suggestion="search"
+                    ;;
+                cofnig|confg|conifg|ocnfig)
+                    suggestion="config"
+                    ;;
+                updaet|updtae|upate|upadte)
+                    suggestion="update"
+                    ;;
+                instal|insatll|intall|intsal)
+                    suggestion="install"
+                    ;;
+                verison|vesion|verion|vsersion)
+                    suggestion="version"
+                    ;;
+                rebulid|rebuid|reubiild)
+                    suggestion="rebuild"
+                    ;;
+                tiemrs|tmiers|itmer)
+                    suggestion="timers"
+                    ;;
+                mterics|metrcs|metircs)
+                    suggestion="metrics"
+                    ;;
+                exprot|exort|exoprt)
+                    suggestion="export"
+                    ;;
+                geoban|geo-ban)
+                    suggestion="geoban"
+                    ;;
+                wathcdog|watchdgo|wacthdog)
+                    suggestion="watchdog"
+                    ;;
+                emualte|emualet|emluate)
+                    suggestion="emulate"
+                    ;;
+                suricat|surikata|sruicata)
+                    suggestion="suricata"
+                    ;;
+                unintsall|unisntall|uninstll)
+                    suggestion="uninstall"
+                    ;;
             esac
 
             if [[ -n "$suggestion" ]]; then

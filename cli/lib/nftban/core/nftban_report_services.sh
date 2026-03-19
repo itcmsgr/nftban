@@ -36,6 +36,11 @@ declare -g NFTBAN_SERVICE_TIMESTAMP
 NFTBAN_SERVICE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_SERVICE_OUTPUT_FORMAT="${NFTBAN_SERVICE_OUTPUT_FORMAT:-table}"
 
+# v1.24.0: Define service/binary arrays for summary and JSON report functions
+# These must match the keys populated by nftban_services_scan()
+declare -g -a NFTBAN_SERVICE_SYSTEMD=("nftables" "suricata" "nftban-suricata")
+declare -g -a NFTBAN_SERVICE_BINARIES=("geoip-database" "curl" "jq")
+
 # Color symbols
 # shellcheck disable=SC2034  # Symbols for UI rendering
 NFTBAN_SERVICE_SYM_OK="✔"
@@ -413,6 +418,15 @@ nftban_report_services() {
 
     # Scan all services
     nftban_services_scan
+
+    # v1.24.0: Add dynamic email key to NFTBAN_SERVICE_BINARIES
+    # The scan uses a dynamic key like "email (postfix)" based on detected MTA
+    for _key in "${!NFTBAN_SERVICE_STATUS[@]}"; do
+        if [[ "$_key" == email* ]]; then
+            NFTBAN_SERVICE_BINARIES+=("$_key")
+            break
+        fi
+    done
 
     # Generate report based on format
     case "$output_format" in
