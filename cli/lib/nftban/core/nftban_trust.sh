@@ -51,6 +51,10 @@ readonly TRUST_WHITELIST_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
 readonly TRUST_LOG="${TRUST_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/trust.log}"
 readonly TRUST_CONFIG_LOCAL="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
+# NFTables table names
+readonly _TRUST_TABLE_IPV4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+readonly _TRUST_TABLE_IPV6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
 # =============================================================================
 # PROVIDER DEFINITIONS
 # =============================================================================
@@ -451,6 +455,130 @@ _trust_clear_whitelist() {
 }
 
 # =============================================================================
+# ATOMIC NFT SET UPDATE VIA IPC
+# =============================================================================
+# Loads trust provider CIDRs into whitelist nft sets atomically via IPC.
+# Same pattern as feeds (nft_ipc_apply_ruleset) and geoban modules.
+# No firewall reload needed — elements are added directly to live sets.
+
+_trust_apply_to_nft() {
+    local provider="${1^^}"
+    local ipv4_cache ipv6_cache
+    ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
+    ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
+
+    # Source IPC library if not already loaded
+    if ! type -t nft_ipc_apply_ruleset >/dev/null 2>&1; then
+        local ipc_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh"
+        if [[ -f "$ipc_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$ipc_lib" 2>/dev/null || true
+        fi
+    fi
+
+    # Guard: IPC must be available
+    if ! type -t nft_ipc_apply_ruleset >/dev/null 2>&1; then
+        _trust_log "WARNING" "IPC unavailable — run 'nftban sync' to apply trust IPs"
+        echo "[!] IPC unavailable — run 'nftban sync' to apply trust IPs"
+        return 1
+    fi
+
+    # Build atomic nft fragment from cache files
+    local nft_fragment
+    nft_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_trust_frag_XXXXXX.nft") || return 1
+
+    local ipv4_count=0 ipv6_count=0
+
+    # IPv4 CIDRs
+    if [[ -f "$ipv4_cache" ]] && [[ -s "$ipv4_cache" ]]; then
+        local ipv4_elements
+        ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        if [[ -n "$ipv4_elements" ]]; then
+            echo "add element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
+            ipv4_count=$(grep -cv '^\s*$\|^#' "$ipv4_cache" 2>/dev/null || echo 0)
+        fi
+    fi
+
+    # IPv6 CIDRs
+    if [[ -f "$ipv6_cache" ]] && [[ -s "$ipv6_cache" ]]; then
+        local ipv6_elements
+        ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        if [[ -n "$ipv6_elements" ]]; then
+            echo "add element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
+            ipv6_count=$(grep -cv '^\s*$\|^#' "$ipv6_cache" 2>/dev/null || echo 0)
+        fi
+    fi
+
+    # Apply via IPC if we have elements
+    if [[ -s "$nft_fragment" ]]; then
+        if nft_ipc_apply_ruleset "$nft_fragment" 2>/dev/null; then
+            _trust_log "INFO" "Applied ${ipv4_count} IPv4 + ${ipv6_count} IPv6 CIDRs to whitelist sets"
+            rm -f "$nft_fragment"
+            return 0
+        else
+            _trust_log "ERROR" "Failed to apply trust CIDRs via IPC"
+            rm -f "$nft_fragment"
+            return 1
+        fi
+    fi
+
+    rm -f "$nft_fragment"
+    return 0
+}
+
+_trust_remove_from_nft() {
+    local provider="${1^^}"
+    local ipv4_cache ipv6_cache
+    ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4")
+    ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6")
+
+    # Source IPC library if not already loaded
+    if ! type -t nft_ipc_apply_ruleset >/dev/null 2>&1; then
+        local ipc_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh"
+        if [[ -f "$ipc_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$ipc_lib" 2>/dev/null || true
+        fi
+    fi
+
+    if ! type -t nft_ipc_apply_ruleset >/dev/null 2>&1; then
+        _trust_log "WARNING" "IPC unavailable — run 'nftban sync' to remove trust IPs"
+        echo "[!] IPC unavailable — run 'nftban sync' to remove trust IPs"
+        return 1
+    fi
+
+    # Build atomic nft fragment to delete elements
+    local nft_fragment
+    nft_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_trust_frag_XXXXXX.nft") || return 1
+
+    # IPv4 CIDRs
+    if [[ -f "$ipv4_cache" ]] && [[ -s "$ipv4_cache" ]]; then
+        local ipv4_elements
+        ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        if [[ -n "$ipv4_elements" ]]; then
+            echo "delete element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
+        fi
+    fi
+
+    # IPv6 CIDRs
+    if [[ -f "$ipv6_cache" ]] && [[ -s "$ipv6_cache" ]]; then
+        local ipv6_elements
+        ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+        if [[ -n "$ipv6_elements" ]]; then
+            echo "delete element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
+        fi
+    fi
+
+    if [[ -s "$nft_fragment" ]]; then
+        nft_ipc_apply_ruleset "$nft_fragment" 2>/dev/null || true
+        _trust_log "INFO" "Removed ${provider} CIDRs from whitelist sets"
+    fi
+
+    rm -f "$nft_fragment"
+    return 0
+}
+
+# =============================================================================
 # PUBLIC FUNCTIONS
 # =============================================================================
 
@@ -557,11 +685,12 @@ nftban_trust_enable() {
         sed -i "s/^${var_name}=.*/${var_name}=\"true\"/" "$TRUST_CONFIG_LOCAL"
     fi
 
-    # Trigger reload if available
-    if declare -f nftban_firewall_reload >/dev/null 2>&1; then
-        echo "[*] Reloading firewall..."
-        nftban_firewall_reload 2>/dev/null || true
-        echo "[OK] Firewall reloaded"
+    # v1.25.0: Atomically apply CIDRs to whitelist nft sets via IPC (no reload)
+    echo "[*] Applying to firewall..."
+    if _trust_apply_to_nft "$provider"; then
+        echo "[OK] Firewall updated"
+    else
+        echo "[!] IPC unavailable — run 'nftban sync' to apply"
     fi
 
     echo ""
@@ -604,7 +733,11 @@ nftban_trust_disable() {
     echo "Disabling $name..."
     echo ""
 
-    # Clear whitelist
+    # v1.25.0: Remove CIDRs from nft sets BEFORE clearing cache files
+    echo "[*] Removing from firewall..."
+    _trust_remove_from_nft "$provider" && echo "[OK] Firewall updated" || echo "[!] Manual sync may be needed"
+
+    # Clear whitelist and cache files
     echo "[*] Removing whitelist..."
     _trust_clear_whitelist "$provider"
     echo "[OK] Whitelist removed"
@@ -617,13 +750,6 @@ nftban_trust_disable() {
         else
             echo "${var_name}=\"false\"" >> "$TRUST_CONFIG_LOCAL"
         fi
-    fi
-
-    # Trigger reload if available
-    if declare -f nftban_firewall_reload >/dev/null 2>&1; then
-        echo "[*] Reloading firewall..."
-        nftban_firewall_reload 2>/dev/null || true
-        echo "[OK] Firewall reloaded"
     fi
 
     echo ""
@@ -689,11 +815,16 @@ nftban_trust_update_all() {
     echo ""
     echo "Summary: $updated updated, $failed failed"
 
-    # Trigger reload if available
-    if declare -f nftban_firewall_reload >/dev/null 2>&1 && (( updated > 0 )); then
-        echo "[*] Reloading firewall..."
-        nftban_firewall_reload 2>/dev/null || true
-        echo "[OK] Firewall reloaded"
+    # v1.25.0: Atomically apply all enabled provider CIDRs via IPC
+    if (( updated > 0 )); then
+        echo "[*] Applying to firewall..."
+        local apply_ok=true
+        for provider in "${TRUST_PROVIDER_LIST[@]}"; do
+            if _trust_is_enabled "$provider"; then
+                _trust_apply_to_nft "$provider" || apply_ok=false
+            fi
+        done
+        $apply_ok && echo "[OK] Firewall updated" || echo "[!] Some providers failed — run 'nftban sync'"
     fi
 
     _trust_log "INFO" "Trust update complete: $updated updated, $failed failed"
@@ -701,24 +832,30 @@ nftban_trust_update_all() {
 }
 
 nftban_trust_load() {
-    echo "[*] Reloading trust whitelists from disk..."
+    echo "[*] Loading trust whitelists into firewall..."
 
+    local loaded=0
     for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
             local whitelist_file
             whitelist_file=$(_trust_get_whitelist_file "$provider")
             if [[ -f "$whitelist_file" ]]; then
-                echo "   Loaded: $provider"
+                # v1.25.0: Atomically apply to nft sets via IPC
+                if _trust_apply_to_nft "$provider"; then
+                    echo "   Loaded: $provider"
+                    ((loaded++)) || true
+                else
+                    echo "   Failed: $provider"
+                fi
             fi
         fi
     done
 
-    # Trigger reload if available
-    if declare -f nftban_firewall_reload >/dev/null 2>&1; then
-        nftban_firewall_reload 2>/dev/null || true
+    if (( loaded > 0 )); then
+        echo "[OK] $loaded trust provider(s) loaded into firewall"
+    else
+        echo "[!] No providers loaded — check enabled status with 'nftban trust list'"
     fi
-
-    echo "[OK] Trust whitelists loaded"
     return 0
 }
 
