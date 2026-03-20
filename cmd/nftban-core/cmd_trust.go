@@ -23,9 +23,11 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -116,7 +118,7 @@ func cmdTrust(action string, cfg *nftbanconf.Config) error {
 	trustDir, trustConfig := getTrustPaths(cfg)
 
 	switch action {
-	case "list":
+	case "list", "status":
 		return cmdTrustList(trustConfig)
 	case "enable":
 		if len(os.Args) < 4 {
@@ -135,7 +137,7 @@ func cmdTrust(action string, cfg *nftbanconf.Config) error {
 	case "load":
 		return cmdTrustLoad(trustDir)
 	default:
-		return fmt.Errorf("unknown trust action: %s\nUsage: nftban-core trust [list|enable|disable|update|load] [NAME]", action)
+		return fmt.Errorf("unknown trust action: %s\nUsage: nftban-core trust [list|status|enable|disable|update|load] [NAME]", action)
 	}
 }
 
@@ -605,9 +607,15 @@ func downloadAndParseURL(client *http.Client, url, feedName string) ([]string, e
 	content := string(body)
 
 	// Detect format and parse accordingly
-	if strings.HasPrefix(strings.TrimSpace(content), "{") {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "{") {
 		// JSON format (AWS, Google, Azure, Fastly)
 		return parseJSONIPRanges(content, feedName)
+	}
+
+	// CSV format (DigitalOcean)
+	if strings.Contains(feedName, "DIGITALOCEAN") {
+		return parseCSVIPs(content), nil
 	}
 
 	// Plain text format (Cloudflare, simple lists)
@@ -671,6 +679,22 @@ func parseJSONIPRanges(content, feedName string) ([]string, error) {
 		ips = append(ips, fastlyData.Addresses...)
 		ips = append(ips, fastlyData.IPv6Addresses...)
 
+	case strings.Contains(feedName, "AZURE"):
+		// Azure format: {"values": [{"properties": {"addressPrefixes": ["..."]}}]}
+		var azureData struct {
+			Values []struct {
+				Properties struct {
+					AddressPrefixes []string `json:"addressPrefixes"`
+				} `json:"properties"`
+			} `json:"values"`
+		}
+		if err := json.Unmarshal([]byte(content), &azureData); err != nil {
+			return nil, fmt.Errorf("failed to parse Azure JSON: %w", err)
+		}
+		for _, v := range azureData.Values {
+			ips = append(ips, v.Properties.AddressPrefixes...)
+		}
+
 	case strings.Contains(feedName, "QUICCLOUD"):
 		// QUIC.cloud format: IPs separated by <br /> in HTML
 		// Bare IPs (no CIDR) — whitelist parser handles both formats
@@ -687,14 +711,20 @@ func parseJSONIPRanges(content, feedName string) ([]string, error) {
 	default:
 		// Try generic extraction using regex
 		ipv4Pattern := regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?`)
-		ipv6Pattern := regexp.MustCompile(`[0-9a-fA-F:]+(/\d{1,3})?`)
 
 		matches := ipv4Pattern.FindAllString(content, -1)
 		ips = append(ips, matches...)
 
-		matches = ipv6Pattern.FindAllString(content, -1)
+		// IPv6: use net.ParseIP for validation instead of loose regex
+		ipv6Candidate := regexp.MustCompile(`[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{0,4}){2,7}(/\d{1,3})?`)
+		matches = ipv6Candidate.FindAllString(content, -1)
 		for _, m := range matches {
-			if strings.Count(m, ":") >= 2 { // Basic IPv6 validation
+			// Strip CIDR suffix for validation
+			addr := m
+			if idx := strings.Index(m, "/"); idx != -1 {
+				addr = m[:idx]
+			}
+			if net.ParseIP(addr) != nil {
 				ips = append(ips, m)
 			}
 		}
@@ -703,12 +733,39 @@ func parseJSONIPRanges(content, feedName string) ([]string, error) {
 	return ips, nil
 }
 
+// parseCSVIPs parses CSV IP lists (DigitalOcean format: CIDR in first column)
+func parseCSVIPs(content string) []string {
+	var ips []string
+
+	ipv4Pattern := regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?$`)
+
+	reader := csv.NewReader(strings.NewReader(content))
+	reader.FieldsPerRecord = -1 // Variable field count
+	reader.LazyQuotes = true
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) == 0 {
+			continue
+		}
+		cidr := strings.TrimSpace(record[0])
+		if ipv4Pattern.MatchString(cidr) {
+			ips = append(ips, cidr)
+		} else if isValidIPv6CIDR(cidr) {
+			ips = append(ips, cidr)
+		}
+	}
+
+	return ips
+}
+
 // parsePlainTextIPs parses plain text IP lists (one per line)
 func parsePlainTextIPs(content string) []string {
 	var ips []string
 
 	ipv4Pattern := regexp.MustCompile(`^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{1,2})?$`)
-	ipv6Pattern := regexp.MustCompile(`^([0-9a-fA-F:]+)(/\d{1,3})?$`)
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
@@ -717,10 +774,23 @@ func parsePlainTextIPs(content string) []string {
 			continue
 		}
 
-		if ipv4Pattern.MatchString(line) || ipv6Pattern.MatchString(line) {
+		if ipv4Pattern.MatchString(line) || isValidIPv6CIDR(line) {
 			ips = append(ips, line)
 		}
 	}
 
 	return ips
+}
+
+// isValidIPv6CIDR validates an IPv6 address or CIDR using net.ParseIP
+func isValidIPv6CIDR(s string) bool {
+	if !strings.Contains(s, ":") {
+		return false
+	}
+	addr := s
+	if idx := strings.Index(s, "/"); idx != -1 {
+		_, _, err := net.ParseCIDR(s)
+		return err == nil
+	}
+	return net.ParseIP(addr) != nil
 }
