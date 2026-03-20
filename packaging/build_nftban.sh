@@ -1544,10 +1544,16 @@ fi
 
 # Check 3: Verify nftban config is valid
 # v1.24.0: Substitute __SSH_PORT__ placeholder before validation
+# v1.27.0: Dynamic SSH port detection (state file → sshd_config → fallback 22)
 if [ -f /etc/nftban/nftables.conf ]; then
-    _SSH_PORT=22
+    _SSH_PORT=""
     [ -f /var/lib/nftban/state/ssh_port_active.state ] && _SSH_PORT=\$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
-    echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$' || _SSH_PORT=22
+    if [ -z "\$_SSH_PORT" ] || ! echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$'; then
+        _SSH_PORT=\$(grep -m1 '^Port ' /etc/ssh/sshd_config 2>/dev/null | awk '{print \$2}') || true
+    fi
+    if [ -z "\$_SSH_PORT" ] || ! echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$'; then
+        _SSH_PORT=22
+    fi
     if grep -q '__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null; then
         _TMP_CONF=\$(mktemp 2>/dev/null) || _TMP_CONF=""
         if [ -n "\$_TMP_CONF" ]; then
