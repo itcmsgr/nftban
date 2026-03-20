@@ -1891,6 +1891,20 @@ nft_fragment_enable_module() {
             set_path=$(nft_fragment_render_http_botguard_sets) || return 1
             nft_fragment_apply "$set_path" || return 1
 
+            # Clean up stale meters from previous enable before re-applying rules
+            # Meters are stored as sets — must flush referencing rules first
+            local bg_table_v4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
+            local bg_table_v6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
+            local bg_chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
+            nft flush chain $bg_table_v4 "$bg_chain" 2>/dev/null || true
+            nft delete set $bg_table_v4 http_bot_grey_meter 2>/dev/null || true
+            nft delete set $bg_table_v4 http_bot_pending_meter 2>/dev/null || true
+            nft delete set $bg_table_v4 http_bot_meter 2>/dev/null || true
+            nft flush chain $bg_table_v6 "$bg_chain" 2>/dev/null || true
+            nft delete set $bg_table_v6 http_bot_grey_meter6 2>/dev/null || true
+            nft delete set $bg_table_v6 http_bot_pending_meter6 2>/dev/null || true
+            nft delete set $bg_table_v6 http_bot_meter6 2>/dev/null || true
+
             # Then create enforcement chain + rules
             fragment_path=$(nft_fragment_render_http_botguard) || return 1
             nft_fragment_apply "$fragment_path" || return 1

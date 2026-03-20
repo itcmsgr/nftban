@@ -609,6 +609,70 @@ whitelist-system:
     - "nftban whitelist-system --dry-run"
     - "nftban whitelist-system --json"
 
+blacklist:
+  category: immediate_action
+  description: "Manage IP blacklist (add, remove, list, flush)"
+  risk: core
+  audience: [cli]
+  capability: enforcement
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  subcommands:
+    add:
+      mutates: true
+      description: "Ban an IP address (permanent or with timeout)"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to ban"}
+      options:
+        --timeout: {type: int, description: "Ban duration in seconds"}
+        --reason: {type: string, description: "Ban reason"}
+        --json: {type: bool, description: "Output in JSON format"}
+    remove:
+      mutates: true
+      description: "Unban an IP address"
+      aliases: [rm, del, delete]
+      arguments:
+        ip: {type: string, required: true, description: "IP address to unban"}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    list:
+      mutates: false
+      description: "List all banned IPs"
+      aliases: [show]
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    count:
+      mutates: false
+      description: "Show ban count"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    files:
+      mutates: false
+      description: "Show persistent blacklist config files"
+      aliases: [config]
+    flush:
+      mutates: true
+      description: "Flush all bans (requires --yes, delegates to nftban flush blacklist)"
+      options:
+        --yes: {type: bool, description: "Confirm flush operation"}
+        --json: {type: bool, description: "Output in JSON format"}
+  notes:
+    - "'blacklist add' delegates to 'nftban ban'"
+    - "'blacklist remove' delegates to 'nftban unban'"
+    - "'blacklist flush' delegates to 'nftban flush blacklist'"
+  examples:
+    - "nftban blacklist list"
+    - "nftban blacklist add 192.168.1.100"
+    - "nftban blacklist add 10.0.0.1 --timeout 3600"
+    - "nftban blacklist remove 192.168.1.100"
+    - "nftban blacklist count"
+    - "nftban blacklist files"
+    - "nftban blacklist flush --yes"
+
 flush:
   category: immediate_action
   description: "Emergency flush/reset of nftables sets"
@@ -901,18 +965,39 @@ botguard:
     - "nftban botguard disable"
     - "nftban botguard status"
     - "nftban botguard test 1.2.3.4"
+    - "nftban botguard list --set=allow"
+    - "nftban botguard verify 66.249.79.1"
     - "nftban botguard status --json"
   subcommands:
     enable:
+      mutates: true
       description: "Enable HTTP Bot Guard protection"
     disable:
+      mutates: true
       description: "Disable HTTP Bot Guard protection"
     status:
+      mutates: false
       description: "Show bot guard status, set sizes, config"
       options:
         --json: {type: bool, description: "Output in JSON format"}
     test:
+      mutates: false
       description: "Test classification for a specific IP"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to test"}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    list:
+      mutates: false
+      description: "List IPs in bot guard nft sets"
+      options:
+        --set: {type: enum, values: [allow, ban, grey, pending, suspect, emergency, all], default: all, description: "Set to list"}
+        --json: {type: bool, description: "Output in JSON format"}
+    verify:
+      mutates: false
+      description: "Manual FCrDNS verification for an IP"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to verify"}
       options:
         --json: {type: bool, description: "Output in JSON format"}
 
@@ -1174,8 +1259,35 @@ trust:
   supports_dry_run: true
   requires_root: true
   panel_expose: false
-  output_modes: [text]
-  has_json: false
+  output_modes: [json, text]
+  has_json: true
+  subcommands:
+    list:
+      mutates: false
+      description: "List all available trusted providers with status"
+    enable:
+      mutates: true
+      description: "Enable a trusted provider"
+      arguments:
+        provider: {type: string, required: true, description: "Provider name (e.g., CLOUDFLARE, AWS)"}
+    disable:
+      mutates: true
+      description: "Disable a trusted provider"
+      arguments:
+        provider: {type: string, required: true, description: "Provider name"}
+    update:
+      mutates: true
+      description: "Update IP ranges for one or all providers"
+      arguments:
+        provider: {type: string, required: false, description: "Provider name (or all)"}
+    load:
+      mutates: true
+      description: "Reload all enabled providers from disk"
+    status:
+      mutates: false
+      description: "Show trust module status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban trust list"
     - "nftban trust enable CLOUDFLARE"
@@ -3147,9 +3259,9 @@ support:
 # =============================================================================
 
 _metadata:
-  version: "1.5"
+  version: "1.6"
   schema_version: "1.2"
-  generated_date: "2026-03-02"
+  generated_date: "2026-03-20"
   description: "CLI registry for Zabbix and help generation"
   features:
     - "Full CLI options with types, defaults, and descriptions"
@@ -3157,7 +3269,7 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 66
+  total_commands: 67
   commands_with_json: 46
   commands_without_json: 11
   commands_with_full_options: 27
@@ -3176,7 +3288,7 @@ _metadata:
     # trust: now has JSON support (v1.19.13)
   task_groups:
     setup_discovery: 10
-    immediate_action: 11
+    immediate_action: 12
     active_protection: 9
     infrastructure: 11
     intelligence_reporting: 12

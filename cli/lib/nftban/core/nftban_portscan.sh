@@ -366,9 +366,14 @@ nftban_portscan_init() {
 
 # Enable portscan detection
 nftban_portscan_enable() {
-    nftban_portscan_init
+    # Load config and modules even if currently disabled — enable needs to work
+    # when portscan is off (that's the whole point of enable)
+    nftban_portscan_load_config
+    nftban_portscan_init_dirs
+    _nftban_portscan_load_modules
 
-    local mode="${_PORTSCAN_ACTIVE_MODE}"
+    # Detect mode (init may have returned early if disabled, leaving mode unset)
+    local mode="${_PORTSCAN_ACTIVE_MODE:-$(_nftban_portscan_detect_mode)}"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

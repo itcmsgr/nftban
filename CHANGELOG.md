@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] - 2026-03-20
+
+### Added
+
+- **CLI registry completeness** — Registered `blacklist` as top-level command (was missing
+  despite having cmd_blacklist.sh handler). Added proper subcommand definitions for `trust`
+  (list, enable, disable, update, load, status) and `botguard` (added missing list, verify).
+- **FilterProblematicCIDRs test suite** — 7 test functions with 21+ subtests covering bogon
+  ranges, too-large CIDRs, edge cases (0.0.0.0/0, nil, empty, invalid), stats accuracy,
+  mixed valid/invalid input, and IPv6 passthrough behavior.
+- **Health config context** — `nftban health check` now shows "(using defaults)" next to
+  config OK status when no main.conf.local override file exists.
+
+### Fixed
+
+- **Port status/list BASH_REMATCH crash** — Fixed `BASH_REMATCH[1]: unbound variable` crash in
+  `nftban port status` and `port list`. Failed `[[ =~ ]]` matches clear BASH_REMATCH entirely;
+  now captures proto/port immediately after successful match before any subsequent regex operations.
+- **Smoke test health summary mismatch** — Fixed test name "health check" vs allowlist entry
+  "health summary" causing false FAIL on all servers.
+- **Unified exporter botguard crash** — Fixed jq queries returning JSON objects (`{"ipv4":0,
+  "ipv6":0}`) instead of numbers for botguard set counts, causing arithmetic evaluation crash.
+  Now sums `.ipv4 + .ipv6` per category with numeric validation fallback.
+- **Portscan enable "Unknown mode" crash** — Fixed `nftban portscan enable` failing with
+  "ERROR: Unknown mode:" when portscan was disabled. `init()` returned early when disabled,
+  leaving `_PORTSCAN_ACTIVE_MODE` empty. Enable now loads config and detects mode directly.
+- **DDoS/botguard enable meter overlap** — Fixed "File exists; meter overlaps an existing set"
+  error when re-enabling DDoS or botguard modules. Now flushes chains and deletes stale meters
+  (as sets) before applying nft fragments, making enable fully idempotent across all nft versions.
+
+### Changed
+
+- **Dynamic service list** — `nftban services` now builds service arrays dynamically based
+  on enabled modules. Suricata only shown when module enabled or binary exists. GeoIP database
+  only shown when geoban enabled or database files present.
+- **Trust registry** — Updated output_modes to [json, text] and has_json: true (code already
+  supports --json flag).
+- **Registry metadata** — Version 1.5→1.6, command count 66→67, updated date.
+
+## [1.27.0] - 2026-03-20
+
+### Fixed
+
+- **DEB postinst Safety Mode false alarm** — Added `__SSH_PORT__` template substitution
+  before `nft -c -f` validation in DEB postinst. Without substitution, the placeholder
+  caused nftables syntax check to fail, blocking installation.
+- **Dynamic SSH port detection** — Both DEB and RPM postinst scripts now detect SSH port
+  from state file → sshd_config → fallback 22, instead of hardcoding port 22.
+- **FHS permission fallback** — Permission enforcement falls back to root ownership when
+  the expected owner (e.g., suricata) doesn't exist on the system.
+
+## [1.26.2] - 2026-03-20
+
+### Fixed
+
+- **GUI health WARNING downgrade** — GUI auth socket group check downgraded from ERROR to
+  WARNING when service is not active (false positive on lab/lab2 where GUI is a 2.x feature).
+- **Timer next-run display** — Replaced fragile awk parsing with
+  `systemctl show --property=NextElapseUSecRealtime` for reliable next-run time display.
+
+## [1.26.1] - 2026-03-20
+
+### Fixed
+
+- **Trust --json crash** — Fixed crash when trust module output in JSON mode.
+- **Azure/DO parsers** — Fixed trust provider IP range parsers for Azure and DigitalOcean.
+- **IPv6 net.ParseIP** — Fixed IPv6 address parsing in trust module.
+- **Portscan/ddos enable silent failure** — Fixed enable pattern: apply nft rules first,
+  then persist config on success, then restart daemon (was config-first with no output).
+- **Search WHITELISTED status** — `nftban search` now correctly shows WHITELISTED status.
+- **FHS --json** — Added JSON output support to `nftban fhs`.
+- **Services exit code** — Fixed exit code to reflect actual service state.
+- **DEB GUI socket** — Fixed GUI socket path in DEB package.
+- **RPM logrotate rpmnew** — Fixed RPM logrotate config file handling.
+- **Ban total count + Step 4** — Fixed ban count display and step 4 processing.
+- **Health ERRORS rendering** — Fixed mismatch between error count and rendered errors
+  for optional checks (GUI, watchdog, pro).
+- **INACTIVE (optional)** — Optional checks show INACTIVE instead of ERROR.
+- **ANSI color terminal check** — Only use ANSI colors when output is a terminal.
+- **Feeds version header** — Added version header to feeds output.
+- **Health labels full words** — Health check labels use full words instead of abbreviations.
+- **Template file warnings** — Suppress warnings for expected-empty template config files.
+- **CLI Errors log path** — Fixed CLI errors log path resolution.
+
 ## [1.26.0] - 2026-03-20
 
 ### Added

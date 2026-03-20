@@ -429,9 +429,21 @@ _nftban_ddos_prefix_setup_via_ipc() {
     fi
 
     local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PREFIX_CHAIN:-ddos_prefix}"
+    local syn_meter="${DDOS_PREFIX_METER_SYN:-ddos_prefix_syn}"
+    local conn_meter="${DDOS_PREFIX_METER_CONN:-ddos_prefix_conn}"
 
     echo "  Setting up prefix aggregation protection (Stage 1.5)..."
+
+    # Clean up stale meters from previous enable (flush chain first, then delete meters)
+    # Meters are stored as sets internally — must flush referencing rules before deleting
+    nft flush chain $table_v4 "$chain" 2>/dev/null || true
+    nft delete set $table_v4 "$syn_meter" 2>/dev/null || true
+    nft delete set $table_v4 "$conn_meter" 2>/dev/null || true
+    nft flush chain $table_v6 "$chain" 2>/dev/null || true
+    nft delete set $table_v6 "${syn_meter}6" 2>/dev/null || true
+    nft delete set $table_v6 "${conn_meter}6" 2>/dev/null || true
 
     # Render and apply prefix aggregation fragment
     local fragment_path
@@ -494,9 +506,22 @@ _nftban_ddos_prefix_remove_via_ipc() {
 
 _nftban_ddos_classic_setup_via_ipc() {
     local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
+    local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
+    local icmp_meter="${DDOS_CLASSIC_ICMP_METER:-ddos_icmp_flood}"
+    local udp_meter="${DDOS_CLASSIC_UDP_METER:-ddos_udp_flood}"
 
     echo "  Setting up Classic DDoS protection via IPC..."
+
+    # Clean up stale meters from previous enable (flush chain first, then delete meters)
+    nft flush chain $table_v4 "$chain" 2>/dev/null || true
+    nft delete set $table_v4 "$syn_meter" 2>/dev/null || true
+    nft delete set $table_v4 "$icmp_meter" 2>/dev/null || true
+    nft delete set $table_v4 "$udp_meter" 2>/dev/null || true
+    nft flush chain $table_v6 "$chain" 2>/dev/null || true
+    nft delete set $table_v6 "${syn_meter}6" 2>/dev/null || true
+    nft delete set $table_v6 "${icmp_meter}6" 2>/dev/null || true
 
     # Render the fragment with all config values
     local fragment_path
