@@ -971,11 +971,27 @@ output_terminal() {
             if systemctl is-active "$timer" >/dev/null 2>&1; then
                 timer_active=$((timer_active + 1))
 
-                # Get next run time
-                next_run=$(systemctl list-timers "$timer" --no-legend 2>/dev/null | awk '{
-                    if (NF >= 6) { print $5, $6 }
-                    else if (NF >= 2) { print $1, $2 }
-                }' || true)
+                # Get time left until next trigger
+                # systemctl show gives seconds until next elapse (reliable, locale-independent)
+                local next_usec
+                next_usec=$(systemctl show "$timer" --property=NextElapseUSecRealtime --value 2>/dev/null || true)
+                if [[ -n "$next_usec" ]] && [[ "$next_usec" != "n/a" ]] && [[ "$next_usec" != "0" ]]; then
+                    local next_epoch now_epoch
+                    next_epoch=$(date -d "$next_usec" +%s 2>/dev/null || true)
+                    now_epoch=$(date +%s)
+                    if [[ -n "$next_epoch" ]] && [[ "$next_epoch" -gt "$now_epoch" ]]; then
+                        local secs_left=$((next_epoch - now_epoch))
+                        if [[ $secs_left -ge 86400 ]]; then
+                            next_run="$((secs_left / 86400))d $((secs_left % 86400 / 3600))h"
+                        elif [[ $secs_left -ge 3600 ]]; then
+                            next_run="$((secs_left / 3600))h $((secs_left % 3600 / 60))m"
+                        elif [[ $secs_left -ge 60 ]]; then
+                            next_run="$((secs_left / 60))m"
+                        else
+                            next_run="${secs_left}s"
+                        fi
+                    fi
+                fi
 
                 if [[ -n "$next_run" ]] && [[ "$next_run" != "n/a" ]]; then
                     status_text="OK — next in $next_run"
