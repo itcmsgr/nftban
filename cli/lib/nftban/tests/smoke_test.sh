@@ -229,10 +229,13 @@ smoke_test_cmd() {
     timeout "$timeout_val" bash -c "
         # Source trace library for this command
         if [[ -f /usr/lib/nftban/helpers/nftban_trace.sh ]]; then
-            source /usr/lib/nftban/helpers/nftban_trace.sh || return 1
+            source /usr/lib/nftban/helpers/nftban_trace.sh || true
         fi
         export NFTBAN_DEBUG_TRACE=true
         export NFTBAN_DEBUG_TRACE_LOG='$TRACE_LOG'
+        # Disable errexit so non-zero exit codes don't kill the subshell
+        # before we can capture the exit code
+        set +e
         $cmd
         echo \$? > '$exit_file'
     " > "$output_file" 2>&1 || timeout_exit=$?
@@ -1062,7 +1065,7 @@ run_feeds_nft_validation() {
     # Check if feeds are enabled
     local feeds_dir="${NFTBAN_FEEDS_DIR:-/etc/nftban/feeds}"
     local feed_count
-    feed_count=$(find "$feeds_dir" -name "*.txt" -type f 2>/dev/null | wc -l)
+    feed_count=$(find "$feeds_dir" -name "*.txt" -type f 2>/dev/null | wc -l || echo 0)
 
     if [[ "$feed_count" -eq 0 ]]; then
         log_warn "No feed files found in ${feeds_dir} — skipping feeds validation"
@@ -1079,7 +1082,8 @@ run_feeds_nft_validation() {
 
     # Validate feeds CIDRs in nft sets (expect at least 1 if feeds exist)
     smoke_validate_nft_set "Feeds IPv4 in nft" "${table_v4}" "blacklist_ipv4" 1
-    smoke_validate_nft_set "Feeds IPv6 in nft" "${table_v6}" "blacklist_ipv6" 1
+    # IPv6 feeds may have 0 entries (e.g., TOR_EXITS is IPv4-only) — just validate set exists
+    smoke_validate_nft_set "Feeds IPv6 in nft" "${table_v6}" "blacklist_ipv6" 0
 }
 
 # Run geoban nft validation tests
@@ -1249,12 +1253,12 @@ run_whitelist_safety_tests() {
     local ssh_port
     # Method 1: From sshd config
     if [[ -f /etc/ssh/sshd_config ]]; then
-        ssh_port=$(grep -E '^Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+        ssh_port=$(grep -E '^Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1 || true)
     fi
 
     # Method 2: From ss/netstat
     if [[ -z "$ssh_port" ]]; then
-        ssh_port=$(ss -tlnp 2>/dev/null | grep -E 'sshd|ssh' | grep -oP ':\K\d+' | head -1)
+        ssh_port=$(ss -tlnp 2>/dev/null | grep -E 'sshd|ssh' | grep -oP ':\K\d+' | head -1 || true)
     fi
 
     # Default to 22 if not detected
