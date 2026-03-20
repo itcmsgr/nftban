@@ -370,15 +370,16 @@ nftban_port_gather_nft_rules() {
             cur_chain="${BASH_REMATCH[1]}"; continue
         fi
         if [[ "$line" =~ (tcp|udp)[[:space:]]+dport[[:space:]]+([0-9]+) ]]; then
+            # Capture proto/port IMMEDIATELY — subsequent regex matches overwrite BASH_REMATCH
+            local proto port family="generic" action="unknown"
+            proto="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
+
             # Skip conditional rules - these are rate-limits/abuse prevention, not base policy:
             # - "ct count over N" = connection count limit
             # - "limit rate" = rate limiting
             # Example: "ct state new tcp dport 22 ct count over 15 drop"
             [[ "$line" =~ ct[[:space:]]+count[[:space:]]+over ]] && continue
             [[ "$line" =~ limit[[:space:]]+rate ]] && continue
-
-            local proto port family="generic" action="unknown"
-            proto="${BASH_REMATCH[1]}"; port="${BASH_REMATCH[2]}"
             [[ "$line" =~ nfproto[[:space:]]+ipv6 ]] && family="ipv6"
             [[ "$line" =~ nfproto[[:space:]]+ipv4 ]] && family="ipv4"
             if [[ "$line" =~ (accept|drop|reject) ]]; then action="${BASH_REMATCH[1]}"; fi
