@@ -48,14 +48,26 @@ NFTBAN_SERVICE_SYM_OK="✔"
 NFTBAN_SERVICE_SYM_KO="✖"
 # shellcheck disable=SC2034  # Symbols for UI rendering
 NFTBAN_SERVICE_SYM_WARN="⚠"
-C_RESET="\e[0m"
-C_RED="\e[31m"
-C_GREEN="\e[32m"
-C_YELLOW="\e[33m"
-# shellcheck disable=SC2034  # Color constants for future use
-C_CYAN="\e[36m"
-# shellcheck disable=SC2034  # Color constants for future use
-C_BOLD="\e[1m"
+# Only use ANSI colors when output is a terminal (avoid garbage in logs/pipes)
+if [[ -t 1 ]]; then
+    C_RESET="\e[0m"
+    C_RED="\e[31m"
+    C_GREEN="\e[32m"
+    C_YELLOW="\e[33m"
+    # shellcheck disable=SC2034  # Color constants for future use
+    C_CYAN="\e[36m"
+    # shellcheck disable=SC2034  # Color constants for future use
+    C_BOLD="\e[1m"
+else
+    C_RESET=""
+    C_RED=""
+    C_GREEN=""
+    C_YELLOW=""
+    # shellcheck disable=SC2034  # Color constants for future use
+    C_CYAN=""
+    # shellcheck disable=SC2034  # Color constants for future use
+    C_BOLD=""
+fi
 
 # =============================================================================
 # SERVICE SCANNING
