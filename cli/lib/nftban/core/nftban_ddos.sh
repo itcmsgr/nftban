@@ -235,16 +235,6 @@ nftban_ddos_enable() {
         chown nftban:nftban "$NFTBAN_DDOS_LOG_FILE" 2>/dev/null || true
     fi
 
-    # Persist DDOS_ENABLED=true to local config override
-    local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
-    mkdir -p "$(dirname "$local_conf")" || return 1
-    if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
-        sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="true"/' "$local_conf"
-    else
-        echo 'DDOS_ENABLED="true"' >> "$local_conf"
-    fi
-    DDOS_ENABLED="true"
-
     # Detect mode
     local mode
     mode=$(_nftban_ddos_detect_mode)
@@ -256,6 +246,8 @@ nftban_ddos_enable() {
 
     _nftban_ddos_log "INFO" "Enabling DDoS protection (mode=$mode)"
 
+    # Step 1: Apply nftables rules FIRST (before persisting config)
+    local enable_result=0
     case "$mode" in
         classic)
             echo ""
@@ -263,9 +255,9 @@ nftban_ddos_enable() {
             echo "  Suricata: NOT AVAILABLE"
             echo ""
             if type -t nftban_ddos_classic_enable &>/dev/null; then
-                nftban_ddos_classic_enable
+                nftban_ddos_classic_enable || enable_result=$?
             else
-                echo "  ERROR: Classic module not loaded!"
+                echo "  ERROR: Classic module not loaded!" >&2
                 return 1
             fi
             ;;
@@ -278,9 +270,9 @@ nftban_ddos_enable() {
             fi
             echo ""
             if type -t nftban_ddos_suricata_enable &>/dev/null; then
-                nftban_ddos_suricata_enable
+                nftban_ddos_suricata_enable || enable_result=$?
             else
-                echo "  ERROR: Suricata module not loaded!"
+                echo "  ERROR: Suricata module not loaded!" >&2
                 return 1
             fi
             ;;
@@ -293,7 +285,7 @@ nftban_ddos_enable() {
             # Enable Classic as Layer 0
             echo "  [Layer 0] Classic (hard limits)..."
             if type -t nftban_ddos_classic_enable &>/dev/null; then
-                nftban_ddos_classic_enable
+                nftban_ddos_classic_enable || enable_result=$?
             fi
 
             echo ""
@@ -302,18 +294,49 @@ nftban_ddos_enable() {
             echo "  [Layer 1] Suricata (intelligent detection)..."
                 # shellcheck disable=SC2034  # Reserved for dual-mode toggle
                 DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
-                nftban_ddos_suricata_enable
+                nftban_ddos_suricata_enable || enable_result=$?
             ;;
 
         *)
-            echo "  ERROR: Unknown mode: $mode"
+            echo "  ERROR: Unknown mode: $mode" >&2
             return 1
             ;;
     esac
 
+    # Step 2: Verify nft rules were actually applied
+    if [[ $enable_result -ne 0 ]]; then
+        echo ""
+        echo "  ❌ ERROR: Failed to apply nftables rules!" >&2
+        echo "  Check: is nftband daemon running? (systemctl status nftband)" >&2
+        _nftban_ddos_log "ERROR" "Failed to apply nftables rules (exit=$enable_result)"
+        return 1
+    fi
+
+    # Step 3: Persist DDOS_ENABLED=true ONLY after nft rules succeed
+    local local_conf="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
+    mkdir -p "$(dirname "$local_conf")" || return 1
+    if grep -q "^DDOS_ENABLED=" "$local_conf" 2>/dev/null; then
+        sed -i 's/^DDOS_ENABLED=.*/DDOS_ENABLED="true"/' "$local_conf"
+    else
+        echo 'DDOS_ENABLED="true"' >> "$local_conf"
+    fi
+    DDOS_ENABLED="true"
+
+    # Step 4: Auto-restart nftband to activate immediately
+    if systemctl is-active nftband &>/dev/null; then
+        echo "  Restarting nftband daemon..."
+        if systemctl restart nftband 2>/dev/null; then
+            echo "  ✅ Daemon restarted — DDoS protection is now active"
+        else
+            echo "  ⚠️  Daemon restart failed — run: systemctl restart nftband" >&2
+        fi
+    else
+        echo "  ⚠️  nftband not running — start with: systemctl start nftband"
+    fi
+
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  ✅ DDoS Protection ENABLED (${mode^^})                   "
+    echo "║  ✅ DDoS Protection ENABLED (${mode^^})"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 

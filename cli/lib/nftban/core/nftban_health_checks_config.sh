@@ -97,9 +97,15 @@ nftban_health_check_config() {
                         first_data_line=$(grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$conf_file" 2>/dev/null | head -1)
 
                         if [[ -z "$first_data_line" ]]; then
-                            # File has no data lines — warn (empty config)
-                            config_issues+=("Config has no data entries: $relative_path")
-                            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                            # File has no data lines — skip warning for user template files
+                            # (custom.conf, watchlist.conf, 99-manual.conf are empty by design)
+                            case "$filename" in
+                                custom.conf|watchlist.conf|99-manual.conf) ;;
+                                *)
+                                    config_issues+=("Config has no data entries: $relative_path")
+                                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                                    ;;
+                            esac
                         elif [[ "$first_data_line" == *"|"* ]]; then
                             # Pipe-delimited format — validate all data lines have pipes
                             if grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$conf_file" 2>/dev/null | grep -qv '|'; then
@@ -486,12 +492,19 @@ nftban_health_check_cli_errors() {
         cli_issues+=("✓ No recent CLI errors")
     elif [[ $recent_errors -lt 5 ]]; then
         cli_issues+=("Found $recent_errors CLI error(s) in last 24 hours")
+        # Show last error so user knows what happened
+        local last_error
+        last_error=$(tail -1 "$cli_error_log" 2>/dev/null || true)
+        [[ -n "$last_error" ]] && cli_issues+=("Last: $last_error")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_WARNING
     elif [[ $recent_errors -lt 20 ]]; then
         cli_issues+=("Found $recent_errors CLI errors in last 24 hours - investigate")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_ERROR
     else
         cli_issues+=("CRITICAL: $recent_errors CLI errors in last 24 hours")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_CRITICAL
     fi
 

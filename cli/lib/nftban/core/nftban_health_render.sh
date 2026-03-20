@@ -35,11 +35,11 @@ _NFTBAN_HEALTH_RENDER_LOADED=1
 nftban_health_render_terminal() {
     # Render health check results to terminal - Clean v1.0 layout
 
-    # Helper function to create dot-padded labels (16 char width)
-    # Usage: pad_with_dots "Label" -> "Label..........."
+    # Helper function to create dot-padded labels (20 char width)
+    # Usage: pad_with_dots "Label" -> "Label..............."
     pad_with_dots() {
         local label="$1"
-        local width=16
+        local width=20
         local len=${#label}
         local dots_needed
         dots_needed=$((width - len))
@@ -66,31 +66,31 @@ nftban_health_render_terminal() {
         [geoban]="GeoBan"
         [databases]="Databases"
         [polkit]="Polkit"
-        [bash_completion]="Bash Complet"
+        [bash_completion]="Bash Completion"
         [config]="Configuration"
         [metrics]="Metrics"
         [gui]="Web GUI"
         [nftables_security]="NFT Security"
         [nft_schema]="NFT Schema"
-        [conflicting_firewalls]="Firewall Conf"
+        [conflicting_firewalls]="Firewall Conflicts"
         [suricata]="Suricata"
-        [suricata_capture]="Suricata Cap"
+        [suricata_capture]="Suricata Capture"
         [resources]="Resources"
         [registry]="Registry"
-        [systemd_hardening]="Systemd Hard"
-        [memory_protection]="Memory Prot"
+        [systemd_hardening]="Systemd Hardening"
+        [memory_protection]="Memory Protection"
         [ssh_port]="SSH Port"
         [cli_errors]="CLI Errors"
         [rbl]="RBL"
         [timers]="Timers"
         [fhs]="FHS Layout"
         [nftban_bin]="NFTBan Binary"
-        [queue_processor]="Queue Proc"
+        [queue_processor]="Queue Processor"
         [protection]="Protection"
-        [maintenance_lock]="Maint Lock"
-        [login_monitor_ipc]="Login IPC"
-        [portscan_prefix]="Portscan Pfx"
-        [v030_helpers]="v030 Helpers"
+        [maintenance_lock]="Maintenance Lock"
+        [login_monitor_ipc]="Login Monitor IPC"
+        [portscan_prefix]="Portscan Prefix"
+        [v030_helpers]="CLI Helpers"
         [pro]="Pro Features"
         [zabbix]="Zabbix"
         [connectors]="Connectors"
@@ -187,8 +187,26 @@ nftban_health_render_terminal() {
     if [[ $error_count -gt 0 ]]; then
         echo "ERRORS"
         echo "───────────────────────────────────────────────────────────"
+        # Show explicit error messages first
         for error in "${NFTBAN_HEALTH_ERRORS[@]}"; do
             echo "  - $error"
+        done
+        # Also show issues from checks that have ERROR status but no explicit ERRORS entry
+        for _ek in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
+            if [[ "${NFTBAN_HEALTH_RESULTS[$_ek]}" -ge 2 ]] && [[ -n "${NFTBAN_HEALTH_ISSUES[$_ek]:-}" ]]; then
+                # Check if this issue is already covered in NFTBAN_HEALTH_ERRORS
+                local _already_shown=false
+                for _existing in "${NFTBAN_HEALTH_ERRORS[@]}"; do
+                    if [[ "$_existing" == *"${_ek}"* ]]; then
+                        _already_shown=true
+                        break
+                    fi
+                done
+                if [[ "$_already_shown" == "false" ]]; then
+                    local _label="${check_labels[$_ek]:-$_ek}"
+                    echo "  - ${_label}: ${NFTBAN_HEALTH_ISSUES[$_ek]}"
+                fi
+            fi
         done
         echo ""
     fi

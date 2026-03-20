@@ -489,14 +489,25 @@ _display_results() {
 
     # Parse nftables results
     if [[ "$nft_result" == "FOUND"* ]]; then
-        echo "✗ STATUS: BANNED"
+        # Skip first line (FOUND) to get set locations
+        local found_sets
+        found_sets=$(echo "$nft_result" | tail -n +2)
+
+        # Determine if IP is only in whitelist (not banned)
+        local is_whitelisted_only="true"
+        while IFS= read -r loc; do
+            local loc_set="${loc##*:}"
+            [[ "$loc_set" != "whitelist" ]] && is_whitelisted_only="false"
+        done <<< "$found_sets"
+
+        if [[ "$is_whitelisted_only" == "true" ]]; then
+            echo "✓ STATUS: WHITELISTED"
+        else
+            echo "✗ STATUS: BANNED"
+        fi
         echo ""
         echo "Found in nftables sets:"
         echo "───────────────────────────────────────────────────────────────"
-
-        # Skip first line (FOUND)
-        local found_sets
-        found_sets=$(echo "$nft_result" | tail -n +2)
 
         while IFS= read -r location; do
             local table="${location%%:*}"
@@ -913,7 +924,15 @@ nftban_cmd_search() {
     # Show suggested actions (unless --no-interactive flag used)
     if [[ "$interactive" == "true" ]]; then
         local is_banned="false"
-        [[ "$nft_result" == "FOUND"* ]] && is_banned="true"
+        if [[ "$nft_result" == "FOUND"* ]]; then
+            # Check if found in non-whitelist sets (actual ban)
+            local _found_sets_check
+            _found_sets_check=$(echo "$nft_result" | tail -n +2)
+            while IFS= read -r _loc; do
+                local _loc_set="${_loc##*:}"
+                [[ "$_loc_set" != "whitelist" ]] && is_banned="true"
+            done <<< "$_found_sets_check"
+        fi
 
         _suggest_actions "$ip" "$is_banned"
     fi

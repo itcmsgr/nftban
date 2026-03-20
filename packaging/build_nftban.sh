@@ -970,6 +970,20 @@ if [ -f /etc/logrotate.d/nftban ]; then
     fi
 fi
 
+# --- Handle .rpmnew/.rpmsave for logrotate configs ---
+# When RPM %config(noreplace) detects user modifications, it saves the new
+# version as .rpmnew. Replace the old file with the shipped version to ensure
+# consistent logrotate behavior.
+for rpmnew_file in /etc/logrotate.d/nftban.rpmnew /etc/logrotate.d/nftban-suricata.rpmnew; do
+    if [ -f "\$rpmnew_file" ]; then
+        local_base="\${rpmnew_file%.rpmnew}"
+        echo "[NFTBan] Found \$rpmnew_file — replacing \$local_base with shipped version"
+        mv -f "\$rpmnew_file" "\$local_base" 2>/dev/null || true
+    fi
+done
+# Clean up .rpmsave remnants
+rm -f /etc/logrotate.d/nftban.rpmsave /etc/logrotate.d/nftban-suricata.rpmsave 2>/dev/null || true
+
 echo "[NFTBan] Obsolete file cleanup complete"
 
 # =============================================================================

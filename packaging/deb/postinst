@@ -495,6 +495,9 @@ case "$1" in
         mkdir -p /var/cache/nftban/health
         mkdir -p /run/nftban
         mkdir -p /run/nftban-ui
+        # v1.26.1: Fix GUI auth socket group (match RPM postinst)
+        chown root:nftban /run/nftban-ui 2>/dev/null || true
+        chmod 0750 /run/nftban-ui 2>/dev/null || true
 
         # Shared data
         mkdir -p /usr/share/nftban/templates/{mail,reports}

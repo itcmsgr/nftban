@@ -117,7 +117,7 @@ nftban_feeds_select() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║         NFTBan v1.0.0 - Threat Feeds Selection                  ║"
+    echo "║         NFTBan v${NFTBAN_VERSION:-1.0.0} - Threat Feeds Selection                  ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -275,7 +275,7 @@ nftban_feeds_list() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║        NFTBan v1.0.0 - Available Threat Feeds                   ║"
+    echo "║        NFTBan v${NFTBAN_VERSION:-1.0.0} - Available Threat Feeds                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
 

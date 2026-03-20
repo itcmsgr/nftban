@@ -368,7 +368,70 @@ nftban_portscan_init() {
 nftban_portscan_enable() {
     nftban_portscan_init
 
-    # Persist PORTSCAN_ENABLED=true to local config override
+    local mode="${_PORTSCAN_ACTIVE_MODE}"
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Portscan Detection - Mode: ${mode^^}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    _nftban_portscan_log "INFO" "Enabling portscan detection (mode: ${mode})"
+
+    # Step 1: Apply nftables rules FIRST (before persisting config)
+    local enable_result=0
+    case "$mode" in
+        classic)
+            echo ""
+            echo "  Using CLASSIC mode (native nftables)"
+            echo ""
+            if type -t nftban_portscan_classic_enable &>/dev/null; then
+                nftban_portscan_classic_enable || enable_result=$?
+            else
+                echo "  ERROR: Classic mode module not loaded!" >&2
+                _nftban_portscan_log "ERROR" "Classic mode module not loaded"
+                return 1
+            fi
+            ;;
+        suricata)
+            echo ""
+            echo "  Using SURICATA mode (IDS-integrated)"
+            echo ""
+            if type -t nftban_portscan_suricata_enable &>/dev/null; then
+                nftban_portscan_suricata_enable || enable_result=$?
+            else
+                echo "  ERROR: Suricata mode module not loaded!" >&2
+                _nftban_portscan_log "ERROR" "Suricata mode module not loaded"
+                return 1
+            fi
+            ;;
+        hybrid)
+            echo ""
+            echo "  Using HYBRID mode (Classic + Suricata)"
+            echo ""
+            if type -t nftban_portscan_classic_enable &>/dev/null; then
+                nftban_portscan_classic_enable || enable_result=$?
+            fi
+            if type -t nftban_portscan_suricata_enable &>/dev/null; then
+                nftban_portscan_suricata_enable || enable_result=$?
+            fi
+            ;;
+        *)
+            echo "  ERROR: Unknown mode: ${mode}" >&2
+            _nftban_portscan_log "ERROR" "Unknown mode: ${mode}"
+            return 1
+            ;;
+    esac
+
+    # Step 2: Verify nft rules were actually applied
+    if [[ $enable_result -ne 0 ]]; then
+        echo ""
+        echo "  ❌ ERROR: Failed to apply nftables rules!" >&2
+        echo "  Check: is nftband daemon running? (systemctl status nftband)" >&2
+        _nftban_portscan_log "ERROR" "Failed to apply nftables rules (exit=$enable_result)"
+        return 1
+    fi
+
+    # Step 3: Persist PORTSCAN_ENABLED=true ONLY after nft rules succeed
     local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
     mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^PORTSCAN_ENABLED=" "$local_conf" 2>/dev/null; then
@@ -378,41 +441,23 @@ nftban_portscan_enable() {
     fi
     PORTSCAN_ENABLED="true"
 
-    local mode="${_PORTSCAN_ACTIVE_MODE}"
+    # Step 4: Auto-restart nftband to activate immediately
+    if systemctl is-active nftband &>/dev/null; then
+        echo "  Restarting nftband daemon..."
+        if systemctl restart nftband 2>/dev/null; then
+            echo "  ✅ Daemon restarted — portscan detection is now active"
+        else
+            echo "  ⚠️  Daemon restart failed — run: systemctl restart nftband" >&2
+        fi
+    else
+        echo "  ⚠️  nftband not running — start with: systemctl start nftband"
+    fi
 
-    _nftban_portscan_log "INFO" "Enabling portscan detection (mode: ${mode})"
-
-    case "$mode" in
-        classic)
-            if type -t nftban_portscan_classic_enable &>/dev/null; then
-                nftban_portscan_classic_enable
-            else
-                _nftban_portscan_log "ERROR" "Classic mode module not loaded"
-                return 1
-            fi
-            ;;
-        suricata)
-            if type -t nftban_portscan_suricata_enable &>/dev/null; then
-                nftban_portscan_suricata_enable
-            else
-                _nftban_portscan_log "ERROR" "Suricata mode module not loaded"
-                return 1
-            fi
-            ;;
-        hybrid)
-            # Enable both modes
-            if type -t nftban_portscan_classic_enable &>/dev/null; then
-                nftban_portscan_classic_enable
-            fi
-            if type -t nftban_portscan_suricata_enable &>/dev/null; then
-                nftban_portscan_suricata_enable
-            fi
-            ;;
-        *)
-            _nftban_portscan_log "ERROR" "Unknown mode: ${mode}"
-            return 1
-            ;;
-    esac
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║  ✅ Portscan Detection ENABLED (${mode^^})"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
 
     _nftban_portscan_log "INFO" "Portscan detection enabled successfully"
     return 0
@@ -420,6 +465,11 @@ nftban_portscan_enable() {
 
 # Disable portscan detection
 nftban_portscan_disable() {
+    local mode="${_PORTSCAN_ACTIVE_MODE:-classic}"
+
+    echo ""
+    echo "  Disabling portscan detection (${mode})..."
+
     # Persist PORTSCAN_ENABLED=false to local config override
     local local_conf="${NFTBAN_PORTSCAN_CONFIG_DIR}/main.conf.local"
     mkdir -p "$(dirname "$local_conf")" || return 1
@@ -429,8 +479,6 @@ nftban_portscan_disable() {
         echo 'PORTSCAN_ENABLED="false"' >> "$local_conf"
     fi
     PORTSCAN_ENABLED="false"
-
-    local mode="${_PORTSCAN_ACTIVE_MODE}"
 
     _nftban_portscan_log "INFO" "Disabling portscan detection"
 
@@ -456,6 +504,10 @@ nftban_portscan_disable() {
     esac
 
     _PORTSCAN_INITIALIZED=0
+
+    echo "  ✅ Portscan detection disabled"
+    echo ""
+
     _nftban_portscan_log "INFO" "Portscan detection disabled"
     return 0
 }
