@@ -389,9 +389,15 @@ perms_enforce_from_fhs_spec() {
         local exp_mode_norm="${exp_mode#0}"
 
         # Check and fix ownership
-        if [[ "$act_owner" != "$exp_owner" || "$act_group" != "$exp_group" ]]; then
-            perms_say "Fixing ownership: $path ($act_owner:$act_group → $exp_owner:$exp_group)"
-            if ! perms_run chown "$exp_owner:$exp_group" "$path"; then
+        # v1.27.0: If expected owner doesn't exist as system user, fall back to root
+        # (e.g., suricata user only exists when suricata is installed)
+        local _eff_owner="$exp_owner"
+        if [[ "$exp_owner" != "root" ]] && ! id "$exp_owner" &>/dev/null; then
+            _eff_owner="root"
+        fi
+        if [[ "$act_owner" != "$_eff_owner" || "$act_group" != "$exp_group" ]]; then
+            perms_say "Fixing ownership: $path ($act_owner:$act_group → $_eff_owner:$exp_group)"
+            if ! perms_run chown "$_eff_owner:$exp_group" "$path"; then
                 perms_err "Failed to fix ownership: $path"
                 # v1.19.20 FIX
                 ((errors++)) || true
