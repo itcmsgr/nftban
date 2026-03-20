@@ -36,10 +36,29 @@ declare -g NFTBAN_SERVICE_TIMESTAMP
 NFTBAN_SERVICE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_SERVICE_OUTPUT_FORMAT="${NFTBAN_SERVICE_OUTPUT_FORMAT:-table}"
 
-# v1.24.0: Define service/binary arrays for summary and JSON report functions
+# v1.28.0: Dynamic service/binary arrays based on enabled modules
+# Core services are always included; optional services only when their module is enabled
 # These must match the keys populated by nftban_services_scan()
-declare -g -a NFTBAN_SERVICE_SYSTEMD=("nftables" "suricata" "nftban-suricata")
-declare -g -a NFTBAN_SERVICE_BINARIES=("geoip-database" "curl" "jq")
+declare -g -a NFTBAN_SERVICE_SYSTEMD=("nftables")
+declare -g -a NFTBAN_SERVICE_BINARIES=("curl")
+
+# Add suricata services only if suricata module is enabled or installed
+if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]] || \
+   [[ "${SURICATA_ENABLED:-false}" == "true" ]] || \
+   command -v suricata &>/dev/null 2>&1; then
+    NFTBAN_SERVICE_SYSTEMD+=("suricata" "nftban-suricata")
+fi
+
+# Add geoip-database if geoip/geoban is in use or geoip database exists
+if [[ "${NFTBAN_GEOBAN_ENABLED:-false}" == "true" ]] || \
+   [[ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip" && -n "$(ls "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip/"*.mmdb 2>/dev/null)" ]]; then
+    NFTBAN_SERVICE_BINARIES+=("geoip-database")
+fi
+
+# Add jq if feeds/trust/connectors are in use or jq is installed
+if command -v jq &>/dev/null 2>&1; then
+    NFTBAN_SERVICE_BINARIES+=("jq")
+fi
 
 # Color symbols
 # shellcheck disable=SC2034  # Symbols for UI rendering

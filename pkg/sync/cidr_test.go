@@ -450,3 +450,212 @@ func TestMergeCIDRs_Supernet(t *testing.T) {
 
 	t.Logf("Supernet stats: %+v", stats)
 }
+
+// =============================================================================
+// FILTER PROBLEMATIC CIDRS TESTS
+// =============================================================================
+
+func TestFilterProblematicCIDRs_Basic(t *testing.T) {
+	// Valid public CIDRs should pass through unchanged
+	input := []string{
+		"1.2.3.0/24",
+		"8.8.8.0/24",
+		"44.0.0.0/9",
+		"203.0.114.0/24", // Just outside TEST-NET-3 (203.0.113.0/24)
+	}
+
+	result, stats := FilterProblematicCIDRs(input)
+
+	if len(result) != len(input) {
+		t.Errorf("Expected %d CIDRs to pass, got %d: %v", len(input), len(result), result)
+	}
+	if stats.Filtered != 0 {
+		t.Errorf("Expected 0 filtered, got %d", stats.Filtered)
+	}
+	if stats.Kept != len(input) {
+		t.Errorf("Expected %d kept, got %d", len(input), stats.Kept)
+	}
+}
+
+func TestFilterProblematicCIDRs_BogonRanges(t *testing.T) {
+	// Each bogon prefix should be filtered (either as bogon or too-large)
+	for _, bogon := range BogonPrefixes {
+		t.Run(bogon, func(t *testing.T) {
+			result, stats := FilterProblematicCIDRs([]string{bogon})
+			if len(result) != 0 {
+				t.Errorf("Bogon %s should be filtered, but got: %v", bogon, result)
+			}
+			if stats.Filtered != 1 {
+				t.Errorf("Expected Filtered=1, got %d", stats.Filtered)
+			}
+			// Note: /8 and /4 bogons hit TooLarge check first (prefix < MinAllowedPrefixLen)
+			// Only bogons with prefix >= MinAllowedPrefixLen are classified as Bogon
+			if stats.Bogon == 0 && stats.TooLarge == 0 {
+				t.Errorf("Expected either Bogon or TooLarge to be 1, both are 0")
+			}
+		})
+	}
+}
+
+func TestFilterProblematicCIDRs_TooLarge(t *testing.T) {
+	// CIDRs with prefix < MinAllowedPrefixLen should be filtered (IPv4 only)
+	tooLarge := []string{
+		"0.0.0.0/0",   // /0 — the entire internet
+		"0.0.0.0/1",   // /1
+		"128.0.0.0/1", // /1
+		"0.0.0.0/4",   // /4
+		"0.0.0.0/8",   // /8 — also bogon (0.0.0.0/8)
+		"1.0.0.0/8",   // /8 — public but too large
+	}
+
+	for _, cidr := range tooLarge {
+		t.Run(cidr, func(t *testing.T) {
+			result, stats := FilterProblematicCIDRs([]string{cidr})
+			if len(result) != 0 {
+				t.Errorf("Too-large CIDR %s should be filtered, but got: %v", cidr, result)
+			}
+			if stats.Filtered != 1 {
+				t.Errorf("Expected Filtered=1 for %s, got %d", cidr, stats.Filtered)
+			}
+		})
+	}
+
+	// /9 should be allowed (MinAllowedPrefixLen = 9)
+	result, stats := FilterProblematicCIDRs([]string{"44.0.0.0/9"})
+	if len(result) != 1 {
+		t.Errorf("Expected /9 to pass (MinAllowedPrefixLen=%d), got filtered", MinAllowedPrefixLen)
+	}
+	if stats.TooLarge != 0 {
+		t.Errorf("Expected TooLarge=0 for /9, got %d", stats.TooLarge)
+	}
+}
+
+func TestFilterProblematicCIDRs_EdgeCases(t *testing.T) {
+	// 0.0.0.0/0 — both too large AND bogon
+	result, stats := FilterProblematicCIDRs([]string{"0.0.0.0/0"})
+	if len(result) != 0 {
+		t.Errorf("0.0.0.0/0 should be filtered, got: %v", result)
+	}
+	// Should be caught by TooLarge check first (prefix < MinAllowedPrefixLen)
+	if stats.TooLarge != 1 {
+		t.Errorf("Expected TooLarge=1 for 0.0.0.0/0, got %d", stats.TooLarge)
+	}
+
+	// Empty input
+	result, stats = FilterProblematicCIDRs([]string{})
+	if len(result) != 0 {
+		t.Errorf("Expected 0 results for empty input, got %d", len(result))
+	}
+	if stats.Total != 0 {
+		t.Errorf("Expected Total=0 for empty input, got %d", stats.Total)
+	}
+
+	// Nil input
+	result, stats = FilterProblematicCIDRs(nil)
+	if len(result) != 0 {
+		t.Errorf("Expected 0 results for nil input, got %d", len(result))
+	}
+	if stats.Total != 0 {
+		t.Errorf("Expected Total=0 for nil input, got %d", stats.Total)
+	}
+
+	// Invalid CIDR string
+	result, stats = FilterProblematicCIDRs([]string{"not-a-cidr"})
+	if len(result) != 0 {
+		t.Errorf("Expected invalid CIDR to be filtered, got: %v", result)
+	}
+	if stats.Filtered != 1 {
+		t.Errorf("Expected Filtered=1 for invalid CIDR, got %d", stats.Filtered)
+	}
+}
+
+func TestFilterProblematicCIDRs_Stats(t *testing.T) {
+	input := []string{
+		"8.8.8.0/24",      // valid — kept
+		"1.1.1.0/24",      // valid — kept
+		"10.0.0.0/8",      // bogon — filtered
+		"192.168.1.0/24",  // bogon — filtered
+		"0.0.0.0/0",       // too large — filtered
+		"127.0.0.1/32",    // bogon (127.0.0.0/8) — filtered
+		"invalid",         // parse error — filtered
+	}
+
+	result, stats := FilterProblematicCIDRs(input)
+
+	if stats.Total != 7 {
+		t.Errorf("Expected Total=7, got %d", stats.Total)
+	}
+	if stats.Kept != 2 {
+		t.Errorf("Expected Kept=2, got %d", stats.Kept)
+	}
+	if stats.Filtered != 5 {
+		t.Errorf("Expected Filtered=5, got %d", stats.Filtered)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 results, got %d: %v", len(result), result)
+	}
+
+	// Verify the kept CIDRs are the expected ones
+	kept := map[string]bool{}
+	for _, cidr := range result {
+		kept[cidr] = true
+	}
+	if !kept["8.8.8.0/24"] {
+		t.Error("Expected 8.8.8.0/24 to be kept")
+	}
+	if !kept["1.1.1.0/24"] {
+		t.Error("Expected 1.1.1.0/24 to be kept")
+	}
+}
+
+func TestFilterProblematicCIDRs_MixedValid(t *testing.T) {
+	// Realistic feed-like input: mix of valid, bogon, and too-large
+	input := []string{
+		"45.33.32.0/24",   // valid (Linode)
+		"198.51.100.0/24", // bogon (TEST-NET-2)
+		"185.220.101.0/24", // valid (Tor exit)
+		"172.16.0.0/12",   // bogon (RFC 1918)
+		"1.0.0.0/8",       // too large
+		"91.121.0.0/16",   // valid (OVH)
+		"169.254.1.0/24",  // bogon (link-local)
+		"23.227.38.0/24",  // valid (Shopify)
+	}
+
+	result, stats := FilterProblematicCIDRs(input)
+
+	if stats.Kept != 4 {
+		t.Errorf("Expected Kept=4, got %d", stats.Kept)
+	}
+	if len(result) != 4 {
+		t.Errorf("Expected 4 results, got %d: %v", len(result), result)
+	}
+	if stats.Bogon < 3 {
+		t.Errorf("Expected at least 3 bogon, got %d", stats.Bogon)
+	}
+	if stats.TooLarge != 1 {
+		t.Errorf("Expected TooLarge=1, got %d", stats.TooLarge)
+	}
+}
+
+func TestFilterProblematicCIDRs_IPv6(t *testing.T) {
+	// IPv6 CIDRs — prefix length check is IPv4-only, so large IPv6 should pass
+	input := []string{
+		"2001:db8::/32",      // Documentation prefix — but code only checks IPv4 bogons
+		"2607:f8b0::/32",     // Google
+		"::1/128",            // Loopback — not in BogonPrefixes (IPv4 only)
+		"fe80::/10",          // Link-local — not in BogonPrefixes (IPv4 only)
+		"2001:4860::/32",     // Google
+	}
+
+	result, stats := FilterProblematicCIDRs(input)
+
+	// Current implementation only filters IPv4 bogons and IPv4 prefix lengths
+	// So all IPv6 CIDRs should pass through
+	if len(result) != len(input) {
+		t.Errorf("Expected all %d IPv6 CIDRs to pass (IPv4-only filters), got %d: %v",
+			len(input), len(result), result)
+	}
+	if stats.Filtered != 0 {
+		t.Errorf("Expected Filtered=0 for IPv6 input, got %d", stats.Filtered)
+	}
+}

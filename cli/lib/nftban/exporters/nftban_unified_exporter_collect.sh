@@ -172,14 +172,22 @@ collect_all_metrics() {
         metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
 
         # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
+        # Note: counts_json returns nested objects per category: {"ipv4": N, "ipv6": N}
         local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
         if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
-            bg_suspect=$(echo "$counts_json" | jq -r '.botguard.suspect // 0')
-            bg_pending=$(echo "$counts_json" | jq -r '.botguard.pending // 0')
-            bg_allow=$(echo "$counts_json" | jq -r '.botguard.allow // 0')
-            bg_grey=$(echo "$counts_json" | jq -r '.botguard.grey // 0')
-            bg_ban=$(echo "$counts_json" | jq -r '.botguard.ban // 0')
-            bg_emergency=$(echo "$counts_json" | jq -r '.botguard.emergency // 0')
+            bg_suspect=$(echo "$counts_json" | jq -r '((.botguard.suspect.ipv4 // 0) + (.botguard.suspect.ipv6 // 0))')
+            bg_pending=$(echo "$counts_json" | jq -r '((.botguard.pending.ipv4 // 0) + (.botguard.pending.ipv6 // 0))')
+            bg_allow=$(echo "$counts_json" | jq -r '((.botguard.allow.ipv4 // 0) + (.botguard.allow.ipv6 // 0))')
+            bg_grey=$(echo "$counts_json" | jq -r '((.botguard.grey.ipv4 // 0) + (.botguard.grey.ipv6 // 0))')
+            bg_ban=$(echo "$counts_json" | jq -r '((.botguard.ban.ipv4 // 0) + (.botguard.ban.ipv6 // 0))')
+            bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))')
+            # Validate numeric — fall back to 0 if jq returns non-numeric
+            [[ "$bg_suspect" =~ ^[0-9]+$ ]] || bg_suspect=0
+            [[ "$bg_pending" =~ ^[0-9]+$ ]] || bg_pending=0
+            [[ "$bg_allow" =~ ^[0-9]+$ ]] || bg_allow=0
+            [[ "$bg_grey" =~ ^[0-9]+$ ]] || bg_grey=0
+            [[ "$bg_ban" =~ ^[0-9]+$ ]] || bg_ban=0
+            [[ "$bg_emergency" =~ ^[0-9]+$ ]] || bg_emergency=0
         fi
         metrics+="nftban_botguard_set_count{category=\"suspect\"} $bg_suspect $timestamp\n"
         metrics+="nftban_botguard_set_count{category=\"pending\"} $bg_pending $timestamp\n"
