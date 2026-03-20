@@ -485,6 +485,8 @@ nftban_services_report_summary() {
     local installed_binaries=0
     local errors=0
 
+    local required_stopped=0
+
     # Count systemd services
     for svc in "${NFTBAN_SERVICE_SYSTEMD[@]}"; do
         local status_line="${NFTBAN_SERVICE_STATUS[$svc]:-}"
@@ -496,6 +498,13 @@ nftban_services_report_summary() {
             running_systemd=$((running_systemd + 1))
         elif [[ "$status" =~ ERROR|MISSING ]]; then
             errors=$((errors + 1))
+        else
+            # v1.26.1: Track if stopped service is required (affects exit code)
+            local svc_type
+            # Extract 3rd field: status|version|type|notes
+            IFS='|' read -ra _fields <<< "$status_line"
+            svc_type="${_fields[2]:-optional}"
+            [[ "$svc_type" == "required" ]] && required_stopped=$((required_stopped + 1))
         fi
     done
 
@@ -510,12 +519,16 @@ nftban_services_report_summary() {
     done
 
     # Output summary
+    local stopped=$(($total_systemd - $running_systemd))
     if [[ $errors -eq 0 && $running_systemd -eq $total_systemd ]]; then
         echo "Services: $running_systemd/$total_systemd running, $installed_binaries/$total_binaries tools"
         return 0
     elif [[ $errors -eq 0 ]]; then
-        echo "Services: $running_systemd/$total_systemd running ($(($total_systemd - $running_systemd)) stopped), $installed_binaries/$total_binaries tools"
-        return 1  # Warning - services stopped
+        echo "Services: $running_systemd/$total_systemd running ($stopped stopped), $installed_binaries/$total_binaries tools"
+        # v1.26.1: Only return warning if a REQUIRED service is stopped
+        # Optional services (suricata, nftban-suricata) being stopped is normal
+        [[ $required_stopped -gt 0 ]] && return 1
+        return 0
     else
         echo "Services: $errors errors, $running_systemd/$total_systemd running, $installed_binaries/$total_binaries tools"
         return 2  # Error - missing/broken services

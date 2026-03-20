@@ -87,8 +87,20 @@ nftban_cmd_fhs() {
     # Handle FHS subcommands
     # Args: $@ = fhs subcommand and arguments
 
-    local subcmd="${1:-status}"
-    shift || true
+    # Strip --json/-j flags before positional arg parsing
+    local -a positional=()
+    local json_flag="false"
+    for arg in "$@"; do
+        case "$arg" in
+            --json|-j) json_flag="true" ;;
+            *)         positional+=("$arg") ;;
+        esac
+    done
+
+    local subcmd="${positional[0]:-status}"
+
+    # If --json flag was passed, override subcmd to json output
+    [[ "$json_flag" == "true" ]] && subcmd="json"
 
     # Show banner for main commands (not help/json)
     if [[ "$subcmd" != "help" && "$subcmd" != "json" ]]; then

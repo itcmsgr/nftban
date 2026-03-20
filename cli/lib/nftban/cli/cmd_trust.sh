@@ -62,15 +62,17 @@ IFS=$'\n\t'
 # =============================================================================
 
 nftban_cmd_trust() {
-    local action="${1:-status}"
-    local provider="${2:-}"
-
-    # Check for --json flag and export for submodules
+    # Strip flags (--json, -j) from positional args before parsing
+    local -a positional=()
     for arg in "$@"; do
-        if [[ "$arg" == "--json" || "$arg" == "-j" ]]; then
-            export NFTBAN_JSON="true"
-        fi
+        case "$arg" in
+            --json|-j) export NFTBAN_JSON="true" ;;
+            *)         positional+=("$arg") ;;
+        esac
     done
+
+    local action="${positional[0]:-status}"
+    local provider="${positional[1]:-}"
 
     # Load core trust module
     if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_trust.sh" ]]; then
