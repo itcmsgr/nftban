@@ -35,6 +35,8 @@ package loginmon
 import (
 	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // LoginEvent represents a single login attempt (success or failure)
@@ -222,11 +224,11 @@ func DefaultConfig() *Config {
 		ThresholdTempBan:    45,
 		ThresholdEscalate:   65,
 		ThresholdPermanent:  100,
-		TempBanDuration:     15 * time.Minute,
+		TempBanDuration:     constants.LoginmonTempBanDuration,
 		EscalateDurations:   []time.Duration{2 * time.Hour, 4 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-		ScoreDecayInterval:  5 * time.Minute,
+		ScoreDecayInterval:  constants.LoginmonScoreDecayInterval,
 		ScoreDecayAmount:    5,
-		IPRetentionDuration: 24 * time.Hour,
+		IPRetentionDuration: constants.LoginmonIPRetention,
 
 		// Per-service score deltas (defaults)
 		SSHFailedPassword: 10,
@@ -248,15 +250,15 @@ func DefaultConfig() *Config {
 		BlockHighRisk:       0.8,
 		BlockMediumRisk:     0.6,
 		AlertRisk:           0.4,
-		HighRiskDuration:    24 * time.Hour,
-		MediumRiskDuration:  1 * time.Hour,
-		LowRiskDuration:     10 * time.Minute,
+		HighRiskDuration:    constants.LoginmonHighRiskDuration,
+		MediumRiskDuration:  constants.LoginmonMediumRiskDuration,
+		LowRiskDuration:     constants.LoginmonLowRiskDuration,
 		NewIPWeight:         0.3,
 		NewCountryWeight:    0.3,
 		BadReputationWeight: 0.4,
 		MultipleUsersWeight: 0.2,
-		FailureWindow:       10 * time.Minute,
-		ProfileRetention:    30 * 24 * time.Hour,
+		FailureWindow:       constants.LoginmonFailureWindow,
+		ProfileRetention:    constants.LoginmonProfileRetention,
 		MaxFailedAttempts:   5,
 		MaxUsersPerIP:       3,
 	}

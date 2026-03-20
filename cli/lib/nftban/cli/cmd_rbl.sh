@@ -793,7 +793,7 @@ nftban_cmd_rbl_server() {
 
 nftban_cmd_rbl_status() {
     # Show RBL monitoring status
-    # Options: --json
+    # Options: --json, --brief
 
     local format="text"
 
@@ -802,6 +802,10 @@ nftban_cmd_rbl_status() {
         case "$1" in
             --json)
                 format="json"
+                shift
+                ;;
+            --brief)
+                format="brief"
                 shift
                 ;;
             *)

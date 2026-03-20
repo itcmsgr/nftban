@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -38,7 +39,7 @@ const (
 	ModuleVersion = "1.0.0"
 
 	// Check interval
-	DefaultCheckInterval = 60 * time.Second
+	DefaultCheckInterval = constants.PortscanCheckInterval
 )
 
 // getPortscanScript returns the portscan script path from central config
@@ -100,8 +101,8 @@ func New() *Module {
 			Enabled:      true,
 			Mode:         "auto",
 			BanThreshold: 3,                    // Default: 3 detections
-			BanDuration:  30 * time.Minute,     // Default: 30 min ban
-			TrackWindow:  5 * time.Minute,      // Default: 5 min window
+			BanDuration:  constants.PortscanBanDuration,  // Default: 30 min ban
+			TrackWindow:  constants.PortscanTrackWindow,  // Default: 5 min window
 		},
 	}
 	// Load config from files (will override defaults)

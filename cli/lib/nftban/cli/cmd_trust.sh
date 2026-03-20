@@ -134,6 +134,15 @@ nftban_cmd_trust() {
                 nftban_trust_status_all
             fi
             ;;
+        config)
+            _nftban_trust_config
+            ;;
+        stats)
+            _nftban_trust_stats
+            ;;
+        test)
+            _nftban_trust_test
+            ;;
         help|--help|-h)
             _nftban_trust_help
             ;;
@@ -144,6 +153,197 @@ nftban_cmd_trust() {
             exit 1
             ;;
     esac
+}
+
+# =============================================================================
+# CONFIG / STATS / TEST SUBCOMMANDS (v1.29.0)
+# =============================================================================
+
+_nftban_trust_config() {
+    # Show trust module configuration
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/trust.conf"
+    local config_local="${config_file}.local"
+
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        if command -v jq &>/dev/null; then
+            jq -n \
+                --arg config_file "$config_file" \
+                --arg config_local "$config_local" \
+                --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+                --arg enabled "${TRUST_ENABLED:-true}" \
+                --arg auto_update "${TRUST_AUTO_UPDATE:-true}" \
+                --arg update_interval "${TRUST_AUTO_UPDATE_INTERVAL:-24}" \
+                --arg cache_dir "${TRUST_CACHE_DIR:-/var/cache/nftban/trust}" \
+                --arg log_file "${TRUST_LOG_FILE:-/var/log/nftban/trust.log}" \
+                '{
+                    config_file: $config_file,
+                    config_local: $config_local,
+                    local_exists: ($local_exists == "true"),
+                    settings: {
+                        enabled: ($enabled == "true"),
+                        auto_update: ($auto_update == "true"),
+                        update_interval_hours: ($update_interval | tonumber),
+                        cache_dir: $cache_dir,
+                        log_file: $log_file
+                    }
+                }'
+        else
+            printf '{"config_file":"%s","enabled":"%s"}\n' "$config_file" "${TRUST_ENABLED:-true}"
+        fi
+        return 0
+    fi
+
+    echo "Trust Module Configuration"
+    echo "=========================="
+    echo ""
+    echo "  Config File:      $config_file"
+    echo "  Override File:    $config_local"
+    if [[ -f "$config_local" ]]; then
+        echo "  Status:           [Override Active]"
+    else
+        echo "  Status:           [Using defaults]"
+    fi
+    echo ""
+    echo "Settings:"
+    echo "  Module Enabled:   ${TRUST_ENABLED:-true}"
+    echo "  Auto-Update:      ${TRUST_AUTO_UPDATE:-true}"
+    echo "  Update Interval:  ${TRUST_AUTO_UPDATE_INTERVAL:-24} hours"
+    echo "  Cache Directory:  ${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    echo "  Log File:         ${TRUST_LOG_FILE:-/var/log/nftban/trust.log}"
+    echo "  Min Ranges:       ${TRUST_MIN_RANGES:-5}"
+    echo "  Max Ranges:       ${TRUST_MAX_RANGES:-50000}"
+    echo "  Download Timeout: ${TRUST_DOWNLOAD_TIMEOUT:-60}s"
+    echo ""
+    echo "To override settings, create/edit: $config_local"
+}
+
+_nftban_trust_stats() {
+    # Show trust module statistics
+    local cache_dir="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    local total_ipv4=0
+    local total_ipv6=0
+    local enabled_count=0
+    local total_providers=0
+
+    # Count providers and ranges
+    if declare -f nftban_trust_list_providers &>/dev/null; then
+        for provider in "${TRUST_PROVIDER_LIST[@]:-}"; do
+            [[ -z "$provider" ]] && continue
+            ((total_providers++)) || true
+            if _trust_is_enabled "$provider" 2>/dev/null; then
+                ((enabled_count++)) || true
+                local ipv4_cache ipv6_cache
+                ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4" 2>/dev/null || echo "")
+                ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6" 2>/dev/null || echo "")
+                [[ -f "$ipv4_cache" ]] && total_ipv4=$((total_ipv4 + $(wc -l < "$ipv4_cache")))
+                [[ -f "$ipv6_cache" ]] && total_ipv6=$((total_ipv6 + $(wc -l < "$ipv6_cache")))
+            fi
+        done
+    fi
+
+    # Check whitelist files
+    local whitelist_count=0
+    local whitelist_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
+    if [[ -d "$whitelist_dir" ]]; then
+        whitelist_count=$(find "$whitelist_dir" -name "30-trust-*.conf" 2>/dev/null | wc -l)
+    fi
+
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        if command -v jq &>/dev/null; then
+            jq -n \
+                --argjson total_providers "$total_providers" \
+                --argjson enabled_count "$enabled_count" \
+                --argjson total_ipv4 "$total_ipv4" \
+                --argjson total_ipv6 "$total_ipv6" \
+                --argjson whitelist_files "$whitelist_count" \
+                '{
+                    stats: {
+                        total_providers: $total_providers,
+                        enabled_providers: $enabled_count,
+                        total_ipv4_ranges: $total_ipv4,
+                        total_ipv6_ranges: $total_ipv6,
+                        whitelist_files: $whitelist_files
+                    }
+                }'
+        else
+            printf '{"stats":{"enabled":%d,"ipv4":%d,"ipv6":%d}}\n' "$enabled_count" "$total_ipv4" "$total_ipv6"
+        fi
+        return 0
+    fi
+
+    echo "Trust Module Statistics"
+    echo "======================"
+    echo ""
+    echo "  Providers:        $enabled_count / $total_providers enabled"
+    echo "  IPv4 Ranges:      $total_ipv4"
+    echo "  IPv6 Ranges:      $total_ipv6"
+    echo "  Total Ranges:     $((total_ipv4 + total_ipv6))"
+    echo "  Whitelist Files:  $whitelist_count"
+    echo ""
+}
+
+_nftban_trust_test() {
+    # Test trust module prerequisites and connectivity
+    echo "Trust Module Test"
+    echo "================="
+    echo ""
+
+    local errors=0
+
+    # Test 1: Config file
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/trust.conf"
+    if [[ -f "$config_file" ]]; then
+        echo "  [PASS] Config file exists"
+    else
+        echo "  [FAIL] Config file missing: $config_file"
+        ((errors++)) || true
+    fi
+
+    # Test 2: curl available
+    if command -v curl &>/dev/null; then
+        echo "  [PASS] curl available"
+    else
+        echo "  [FAIL] curl not available (required for provider downloads)"
+        ((errors++)) || true
+    fi
+
+    # Test 3: Cache directory writable
+    local cache_dir="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    if [[ -d "$cache_dir" ]] && [[ -w "$cache_dir" ]]; then
+        echo "  [PASS] Cache directory writable: $cache_dir"
+    elif [[ -d "$cache_dir" ]]; then
+        echo "  [WARN] Cache directory not writable: $cache_dir"
+    else
+        echo "  [WARN] Cache directory missing: $cache_dir (will be created on first use)"
+    fi
+
+    # Test 4: Provider list loaded
+    local provider_count=0
+    if [[ -n "${TRUST_PROVIDER_LIST[*]:-}" ]]; then
+        provider_count=${#TRUST_PROVIDER_LIST[@]}
+    fi
+    if [[ $provider_count -gt 0 ]]; then
+        echo "  [PASS] $provider_count providers registered"
+    else
+        echo "  [FAIL] No providers registered"
+        ((errors++)) || true
+    fi
+
+    # Test 5: Connectivity (try Cloudflare as canary)
+    if curl -sf --max-time 5 "https://www.cloudflare.com/ips-v4" &>/dev/null; then
+        echo "  [PASS] Internet connectivity (Cloudflare reachable)"
+    else
+        echo "  [WARN] Cannot reach Cloudflare — downloads may fail"
+    fi
+
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed!"
+        return 0
+    else
+        echo "Tests completed with $errors error(s)"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -189,6 +389,9 @@ COMMANDS:
                         - If PROVIDER specified, shows detailed status
                         - If omitted, shows summary of all providers
 
+    config              Show trust module configuration
+    stats               Show trust module statistics
+    test                Test prerequisites and connectivity
     help                Show this help message
 
 SUPPORTED PROVIDERS:
@@ -261,6 +464,9 @@ HELP
 
 export -f nftban_cmd_trust
 export -f _nftban_trust_help
+export -f _nftban_trust_config
+export -f _nftban_trust_stats
+export -f _nftban_trust_test
 
 # =============================================================================
 # END OF CLI HANDLER

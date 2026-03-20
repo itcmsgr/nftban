@@ -25,6 +25,7 @@ package watchdog
 import (
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
@@ -131,15 +132,15 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Enabled:      true,
-		BaseInterval: 5 * time.Second,
+		BaseInterval: constants.WatchdogBaseInterval,
 
 		// Hysteresis
 		HysteresisWarnEnter:  60,
 		HysteresisWarnExit:   50,
 		HysteresisCritEnter:  80,
 		HysteresisCritExit:   70,
-		WarnExitDuration:     30 * time.Second,
-		CritExitDuration:     60 * time.Second,
+		WarnExitDuration:     constants.WatchdogHysteresisWarnExit,
+		CritExitDuration:     constants.WatchdogHysteresisCritExit,
 
 		// Budgets/Thresholds (dynamic based on available memory)
 		MemBudgetBytes:          memBudget, // Dynamic: 30% of available, capped at 1GB
@@ -154,27 +155,27 @@ func DefaultConfig() *Config {
 		GoroutinesCrit:          10000,
 
 		// Collector intervals
-		ProcessInterval:      5 * time.Second,
-		SystemInterval:       5 * time.Second,
-		KernelInterval:       5 * time.Second,
-		NFTSetInterval:       10 * time.Second,
-		NFTRulesetInterval:   30 * time.Second,
-		TopProcessesInterval: 30 * time.Second,
+		ProcessInterval:      constants.WatchdogProcessInterval,
+		SystemInterval:       constants.WatchdogSystemInterval,
+		KernelInterval:       constants.WatchdogKernelInterval,
+		NFTSetInterval:       constants.WatchdogNFTSetInterval,
+		NFTRulesetInterval:   constants.WatchdogNFTRulesetInterval,
+		TopProcessesInterval: constants.WatchdogTopProcessesInterval,
 
 		DegradedIntervalMultiplier: 2.0, // Double intervals in DEGRADED
 
 		// Profiling
 		ProfileAutoEnabled:       true,
 		ProfileDir:               "/var/lib/nftban/profiles",
-		ProfileCPUCooldown:       15 * time.Minute,
-		ProfileHeapCooldown:      30 * time.Minute,
-		ProfileGoroutineCooldown: 5 * time.Minute,
-		ProfileCPUDuration:       30 * time.Second,
+		ProfileCPUCooldown:       constants.WatchdogProfileCPUCooldown,
+		ProfileHeapCooldown:      constants.WatchdogProfileHeapCooldown,
+		ProfileGoroutineCooldown: constants.WatchdogProfileGoroutineCooldown,
+		ProfileCPUDuration:       constants.WatchdogProfileCPUDuration,
 		ProfileMaxCount:          10,
 
 		// Memory valve
 		FreeOSMemoryEnabled:        true,
-		FreeOSMemoryCooldown:       10 * time.Minute,
+		FreeOSMemoryCooldown:       constants.WatchdogFreeOSMemoryCooldown,
 		FreeOSMemoryOnlyIfCPUBelow: 40,
 
 		// Degradation
@@ -186,11 +187,11 @@ func DefaultConfig() *Config {
 		RecorderEnabled:          true,
 		RecorderDir:              "/var/lib/nftban/recorder",
 		RecorderMaxEvents:        1000,
-		RecorderSnapshotInterval: 60 * time.Second,
+		RecorderSnapshotInterval: constants.WatchdogRecorderSnapshotInterval,
 		RecorderRetentionDays:    7,
 
 		// Alerting
-		AlertThrottleDuration: 5 * time.Minute,
+		AlertThrottleDuration: constants.WatchdogAlertThrottle,
 	}
 }
 
@@ -212,8 +213,8 @@ func (c *Config) Validate() {
 	if c.NFTSetInterval < time.Second {
 		c.NFTSetInterval = time.Second
 	}
-	if c.NFTRulesetInterval < 5*time.Second {
-		c.NFTRulesetInterval = 5 * time.Second
+	if c.NFTRulesetInterval < constants.WatchdogMinNFTRulesetInterval {
+		c.NFTRulesetInterval = constants.WatchdogMinNFTRulesetInterval
 	}
 
 	// Ensure hysteresis makes sense
@@ -231,8 +232,8 @@ func (c *Config) Validate() {
 	if c.ProfileHeapCooldown < time.Minute {
 		c.ProfileHeapCooldown = time.Minute
 	}
-	if c.FreeOSMemoryCooldown < 5*time.Minute {
-		c.FreeOSMemoryCooldown = 5 * time.Minute
+	if c.FreeOSMemoryCooldown < constants.WatchdogMinFreeOSCooldown {
+		c.FreeOSMemoryCooldown = constants.WatchdogMinFreeOSCooldown
 	}
 
 	// Reasonable bounds

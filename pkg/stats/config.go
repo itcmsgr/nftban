@@ -22,7 +22,11 @@
 
 package stats
 
-import "time"
+import (
+	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
+)
 
 // Retention constants - hard limits per design agreement
 const (
@@ -81,8 +85,8 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Enabled:      true,
-		LiveInterval: 60 * time.Second,
-		IOInterval:   300 * time.Second,
+		LiveInterval: constants.StatsLiveInterval,
+		IOInterval:   constants.StatsIOInterval,
 
 		CurrentFile: "/var/lib/nftban/stats/current.json",
 		HistoryDir:  "/var/lib/nftban/stats/history",
@@ -116,11 +120,11 @@ func DefaultConfig() *Config {
 // Validate checks config values and applies safe bounds
 func (c *Config) Validate() {
 	// Ensure minimum intervals (prevent CPU thrashing)
-	if c.LiveInterval < 10*time.Second {
-		c.LiveInterval = 10 * time.Second
+	if c.LiveInterval < constants.StatsMinLiveInterval {
+		c.LiveInterval = constants.StatsMinLiveInterval
 	}
-	if c.IOInterval < 60*time.Second {
-		c.IOInterval = 60 * time.Second
+	if c.IOInterval < constants.StatsMinIOInterval {
+		c.IOInterval = constants.StatsMinIOInterval
 	}
 
 	// Enforce retention bounds

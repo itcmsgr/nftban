@@ -26,6 +26,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // =============================================================================
@@ -128,15 +130,15 @@ func DefaultConfig() *Config {
 
 		Targets: []TargetConfig{}, // no targets by default
 
-		Interval:     60 * time.Second,
+		Interval:     constants.ZabbixCollectInterval,
 		BatchSize:    100,
-		BatchTimeout: 5 * time.Second,
+		BatchTimeout: constants.ZabbixBatchTimeout,
 
-		ConnectTimeout: 10 * time.Second,
-		SendTimeout:    30 * time.Second,
+		ConnectTimeout: constants.ZabbixConnectTimeout,
+		SendTimeout:    constants.ZabbixSendTimeout,
 
 		RetryCount:    3,
-		RetryInterval: 5 * time.Second,
+		RetryInterval: constants.ZabbixRetryInterval,
 
 		BufferEnabled: true,
 		BufferPath:    "/var/lib/nftban/zabbix/buffer",
@@ -146,7 +148,7 @@ func DefaultConfig() *Config {
 		MetricsExclude: []string{},
 
 		DiscoveryEnabled:  true,
-		DiscoveryInterval: 3600 * time.Second, // 1 hour
+		DiscoveryInterval: constants.ZabbixDiscoveryInterval,
 
 		LogLevel: "info",
 	}

@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
@@ -64,7 +65,7 @@ func NewScorer(config *Config) *Scorer {
 	s := &Scorer{
 		scores:      make(map[string]*IPScore),
 		config:      config,
-		decayTicker: time.NewTicker(1 * time.Minute),
+		decayTicker: time.NewTicker(constants.SuricataDecayInterval),
 		stopChan:    make(chan struct{}),
 		lruList:     list.New(),
 		maxIPs:      limits.ScorerMaxIPs,

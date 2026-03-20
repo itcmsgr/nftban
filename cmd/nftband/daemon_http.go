@@ -25,8 +25,8 @@ import (
 	"net"
 	"net/http"
 	nethttpprof "net/http/pprof" // BUG-H4 FIX: explicit import instead of blank import to avoid polluting DefaultServeMux
-	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -112,9 +112,9 @@ func (d *Daemon) startPprof() {
 	pprofServer := &http.Server{
 		Addr:         PprofAddr,
 		Handler:      pprofMux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second, // Profile endpoint may take longer
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  constants.HTTPReadTimeout,
+		WriteTimeout: constants.HTTPWriteTimeout, // Profile endpoint may take longer
+		IdleTimeout:  constants.HTTPIdleTimeout,
 	}
 
 	go func() {

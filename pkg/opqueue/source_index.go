@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 const (
@@ -311,7 +313,7 @@ func (si *SourceIndex) SaveToDisk() error {
 
 // StartBackgroundSaver runs periodic persistence
 func (si *SourceIndex) StartBackgroundSaver(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(constants.OpQueueSourceIndexInterval)
 	defer ticker.Stop()
 
 	for {

@@ -13,6 +13,8 @@ package opqueue
 import (
 	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // OpType represents the type of operation
@@ -93,7 +95,7 @@ type QueueConfig struct {
 // DefaultQueueConfig returns sensible defaults
 func DefaultQueueConfig() QueueConfig {
 	return QueueConfig{
-		FlushInterval:  100 * time.Millisecond,
+		FlushInterval:  constants.OpQueueFlushInterval,
 		FlushThreshold: 1000,
 		MaxBatchSize:   5000,
 		MaxQueueDepth:  50000,
