@@ -1344,7 +1344,7 @@ run_extended_status_tests() {
 
     smoke_test_cmd "module status" "nftban module summary"
     smoke_test_cmd "services status" "nftban services status"
-    smoke_test_cmd "health check" "nftban health summary"
+    smoke_test_cmd "health summary" "nftban health summary"
     smoke_test_cmd "timers status" "nftban timers status 2>/dev/null || nftban timers list"
     smoke_test_cmd "fhs check" "nftban fhs check 2>/dev/null || nftban fhs status"
     smoke_test_cmd "geoip status" "nftban geoip status 2>/dev/null || echo 'GeoIP not configured'"
