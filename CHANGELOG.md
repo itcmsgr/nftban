@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Health config context** — `nftban health check` now shows "(using defaults)" next to
   config OK status when no main.conf.local override file exists.
 
+### Fixed
+
+- **Port status/list BASH_REMATCH crash** — Fixed `BASH_REMATCH[1]: unbound variable` crash in
+  `nftban port status` and `port list`. Failed `[[ =~ ]]` matches clear BASH_REMATCH entirely;
+  now captures proto/port immediately after successful match before any subsequent regex operations.
+- **Smoke test health summary mismatch** — Fixed test name "health check" vs allowlist entry
+  "health summary" causing false FAIL on all servers.
+- **Unified exporter botguard crash** — Fixed jq queries returning JSON objects (`{"ipv4":0,
+  "ipv6":0}`) instead of numbers for botguard set counts, causing arithmetic evaluation crash.
+  Now sums `.ipv4 + .ipv6` per category with numeric validation fallback.
+- **Portscan enable "Unknown mode" crash** — Fixed `nftban portscan enable` failing with
+  "ERROR: Unknown mode:" when portscan was disabled. `init()` returned early when disabled,
+  leaving `_PORTSCAN_ACTIVE_MODE` empty. Enable now loads config and detects mode directly.
+- **DDoS/botguard enable meter overlap** — Fixed "File exists; meter overlaps an existing set"
+  error when re-enabling DDoS or botguard modules. Now flushes chains and deletes stale meters
+  (as sets) before applying nft fragments, making enable fully idempotent across all nft versions.
+
 ### Changed
 
 - **Dynamic service list** — `nftban services` now builds service arrays dynamically based
