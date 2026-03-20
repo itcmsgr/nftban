@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0] - 2026-03-20
+
+### Added
+
+- **Go test coverage push** — 962 test functions across 51 test files (2,323 test runs
+  including subtests). Up from 180 tests at v1.25.0 — a 5.3x increase.
+  - PR #202: 547 tests across 19 files — watchdog (7 files), blacklist, whitelist,
+    feeds (2 files), nftbanconf, persistence, persistent, netutil, timeutil (2 files),
+    version, model
+  - PR #203: 415 tests across 20 files — daemon (2 files), exporters/zabbix,
+    exporters/connectors, metrics, suricata (6 sub-packages), eventbus, module,
+    network, ports, portscan, geoban, logx
+
+### Fixed
+
+- **Whitelist AddIP bare IP behavior documented** — `FilterProblematicCIDRs` uses
+  `net.ParseCIDR` which requires CIDR notation; bare IPs rejected with clear error.
+- **Suricata custom rules validator test** — Unbalanced parentheses test expectation
+  aligned with actual error message from `validateBasicStructure`.
+- **Daemon dispatch test CI compatibility** — Removed `nftbackend.New()` call that
+  requires nftables kernel support unavailable in CI containers.
+
 ## [1.25.0] - 2026-03-19
 
 ### Security Fixes
