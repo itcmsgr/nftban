@@ -882,10 +882,33 @@ case "$1" in
         # STEP 10.5: Additional config validation (secondary to STEP 0.4 preflight)
         # =====================================================================
         # Config file validation (complements live ruleset check from STEP 0.4)
+        # v1.27.0: Substitute __SSH_PORT__ placeholder before validation (was missing,
+        # causing false "Safety Mode" on all DEB installs)
         if [[ -f /etc/nftban/nftables.conf ]] && [[ $NFTABLES_SAFE -eq 1 ]]; then
-            if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
-                log_error "NFTBan nftables config validation failed"
-                NFTABLES_SAFE=0
+            # Detect SSH port dynamically: state file → sshd_config → fallback 22
+            _SSH_PORT=""
+            [[ -f /var/lib/nftban/state/ssh_port_active.state ]] && _SSH_PORT=$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
+            if [[ -z "$_SSH_PORT" ]] || ! echo "$_SSH_PORT" | grep -qE '^[0-9]+$'; then
+                _SSH_PORT=$(grep -m1 '^Port ' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}') || true
+            fi
+            if [[ -z "$_SSH_PORT" ]] || ! echo "$_SSH_PORT" | grep -qE '^[0-9]+$'; then
+                _SSH_PORT=22
+            fi
+            if grep -q '__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null; then
+                _TMP_CONF=$(mktemp 2>/dev/null) || _TMP_CONF=""
+                if [[ -n "$_TMP_CONF" ]]; then
+                    sed "s/__SSH_PORT__/${_SSH_PORT}/g" /etc/nftban/nftables.conf > "$_TMP_CONF"
+                    if ! nft -c -f "$_TMP_CONF" 2>/dev/null; then
+                        log_error "NFTBan nftables config validation failed"
+                        NFTABLES_SAFE=0
+                    fi
+                    rm -f "$_TMP_CONF"
+                fi
+            else
+                if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
+                    log_error "NFTBan nftables config validation failed"
+                    NFTABLES_SAFE=0
+                fi
             fi
         fi
 
