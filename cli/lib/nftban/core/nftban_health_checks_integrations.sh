@@ -893,7 +893,12 @@ nftban_health_check_gui() {
 
         if [[ "$dir_group" != "nftban" ]]; then
             gui_issues+=("GUI-AUTH: Auth socket directory has wrong group: ${dir_owner}:${dir_group} (should be root:nftban)")
-            [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            # v1.26.2: Only ERROR when GUI service is active; WARNING when optional and not running
+            if nftban_service_is_active "${NFTBAN_SERVICE_UI:-nftban-ui.service}"; then
+                [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            else
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
 
             if [[ $auto_heal -eq 1 ]]; then
                 echo "  🔧 Auto-heal: Fixing auth socket directory permissions..."
