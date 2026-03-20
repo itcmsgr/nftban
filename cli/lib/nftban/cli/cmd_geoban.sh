@@ -199,18 +199,7 @@ nftban_geoban_enable() {
     chmod 640 "$config_local" 2>/dev/null || true
     chown root:nftban "$config_local" 2>/dev/null || true
 
-    # Auto-restart nftband to activate immediately
-    if systemctl is-active nftband &>/dev/null; then
-        if systemctl restart nftband 2>/dev/null; then
-            echo "✅ GeoBan module ENABLED — daemon restarted"
-        else
-            echo "✓ GeoBan module ENABLED"
-            echo "  ⚠️  Daemon restart failed — run: systemctl restart nftband"
-        fi
-    else
-        echo "✓ GeoBan module ENABLED"
-        echo "  ⚠️  nftband not running — start with: systemctl start nftband"
-    fi
+    echo "✓ GeoBan module ENABLED"
     echo ""
     echo "Configuration saved to: $config_local"
     echo ""
