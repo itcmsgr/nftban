@@ -223,7 +223,12 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Printf("✅ IP %s has been BANNED!\n", normalizedIP)
 	fmt.Println()
-	fmt.Println("The IP is now blocked by the firewall.")
+	// Show total ban count
+	totalBans := len(blacklistIPv4) + len(blacklistIPv6)
+	if !alreadyBanned {
+		totalBans++ // Count the one we just added
+	}
+	fmt.Printf("The IP is now blocked by the firewall. (Total bans: %d)\n", totalBans)
 	if !alreadyBanned && timeoutSeconds == 0 {
 		// Show correct file based on source
 		savedFile := "99-manual.conf"
