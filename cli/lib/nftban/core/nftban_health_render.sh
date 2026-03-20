@@ -130,7 +130,15 @@ nftban_health_render_terminal() {
             local padded_label
             padded_label=$(pad_with_dots "$label")
 
-            printf "  %s %s\n" "$padded_label" "$status_text"
+            # v1.28.0: Add context note for config when using built-in defaults
+            local context_note=""
+            if [[ "$check" == "config" && $status -eq 0 ]]; then
+                if [[ ! -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]]; then
+                    context_note=" (using defaults)"
+                fi
+            fi
+
+            printf "  %s %s%s\n" "$padded_label" "$status_text" "$context_note"
 
             if [[ -n "${NFTBAN_HEALTH_ISSUES[$check]:-}" && $status -gt 0 ]]; then
                 echo "    Issue: ${NFTBAN_HEALTH_ISSUES[$check]}"
