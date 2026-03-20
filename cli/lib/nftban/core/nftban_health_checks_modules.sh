@@ -355,12 +355,32 @@ nftban_health_check_rbl() {
         # Not a warning — user choice to not configure RBL
     fi
 
-    # Check for blacklisted IPs in state file
+    # Check for blacklisted IPs in state file — show WHICH IP on WHICH RBL
     local state_file="${rbl_cache_dir}/state.json"
     if [[ -f "$state_file" ]]; then
         if grep -q '"listed"' "$state_file" 2>/dev/null; then
-            rbl_issues+=("Server IP(s) currently BLACKLISTED on RBLs!")
             status=$HEALTH_ERROR
+            # Extract listed IPs from state.json
+            local listed_ips=""
+            listed_ips=$(grep -B1 '"listed"' "$state_file" 2>/dev/null | grep -oP '^\s*"\K[0-9a-f.:]+' || true)
+            if [[ -n "$listed_ips" ]]; then
+                while IFS= read -r listed_ip; do
+                    [[ -z "$listed_ip" ]] && continue
+                    # Check cache file for which RBLs
+                    local cache_file="${rbl_cache_dir}/${listed_ip}.cache"
+                    local rbl_names=""
+                    if [[ -f "$cache_file" ]]; then
+                        rbl_names=$(grep "LISTED:" "$cache_file" 2>/dev/null | sed 's/.*LISTED: //' | head -3 | tr '\n' ', ' | sed 's/,$//')
+                    fi
+                    if [[ -n "$rbl_names" ]]; then
+                        rbl_issues+=("BLACKLISTED: $listed_ip on $rbl_names")
+                    else
+                        rbl_issues+=("BLACKLISTED: $listed_ip (run 'nftban rbl check' for details)")
+                    fi
+                done <<< "$listed_ips"
+            else
+                rbl_issues+=("Server IP(s) currently BLACKLISTED on RBLs!")
+            fi
             NFTBAN_HEALTH_ERRORS+=("RBL: Server IP blacklisted - run 'nftban rbl check' for details")
         fi
     fi

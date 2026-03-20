@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
@@ -63,9 +64,9 @@ func LoadConfig(configDir string) (*Config, error) {
 	cfg := &Config{
 		GlobalEnabled:    true,
 		DefaultThreshold: 100,
-		DefaultBanTime:   30 * time.Minute,
+		DefaultBanTime:   constants.SuricataDefaultBanTime,
 		DefaultAction:    "ban",
-		ScoreDecay:       1 * time.Hour,
+		ScoreDecay:       constants.SuricataScoreDecay,
 		Filters:          make(map[string]*FilterConfig),
 	}
 

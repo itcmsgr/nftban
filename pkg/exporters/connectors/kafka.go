@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/logx"
 	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
@@ -101,9 +102,9 @@ func DefaultKafkaConfig() KafkaConfig {
 		BatchSize:       16384,
 		LingerMs:        5,
 		CompressionType: "none",
-		DialTimeout:     10 * time.Second,
-		WriteTimeout:    30 * time.Second,
-		ReadTimeout:     30 * time.Second,
+		DialTimeout:     constants.KafkaDialTimeout,
+		WriteTimeout:    constants.KafkaWriteTimeout,
+		ReadTimeout:     constants.KafkaReadTimeout,
 		MaxRetries:      3,
 		RetryInterval:   time.Second,
 		Partition:       -1,

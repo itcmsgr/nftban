@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
@@ -89,7 +90,7 @@ func (d *Daemon) gracefulShutdown() {
 		WithSeverity(eventbus.SeverityInfo))
 
 	// Shutdown HTTP server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.DaemonStartupWait)
 	defer cancel()
 	if err := d.httpSrv.Shutdown(ctx); err != nil {
 		log.Printf("HTTP shutdown error: %v", err)

@@ -1000,6 +1000,16 @@ botguard:
         ip: {type: string, required: true, description: "IP address to verify"}
       options:
         --json: {type: bool, description: "Output in JSON format"}
+    config:
+      mutates: false
+      description: "Show bot guard configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show bot guard set statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
 
 botscan:
   category: active_protection
@@ -1288,12 +1298,28 @@ trust:
       description: "Show trust module status"
       options:
         --json: {type: bool, description: "Output in JSON format"}
+    config:
+      mutates: false
+      description: "Show trust module configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show trust module statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test prerequisites and connectivity"
   examples:
     - "nftban trust list"
     - "nftban trust enable CLOUDFLARE"
     - "nftban trust disable AWS"
     - "nftban trust update"
     - "nftban trust status"
+    - "nftban trust config"
+    - "nftban trust stats --json"
+    - "nftban trust test"
 
 country:
   category: active_protection
