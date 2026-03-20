@@ -1464,7 +1464,7 @@ check_service_clean() {
         if systemctl is-enabled "$unit" >/dev/null 2>&1; then
             printf "  %s ENABLED (stopped)\n" "$padded_name"
         else
-            printf "  %s INACTIVE\n" "$padded_name"
+            printf "  %s INACTIVE (optional)\n" "$padded_name"
         fi
         return 0
     fi

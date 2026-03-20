@@ -101,6 +101,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	}
 
 	// Step 4: Check for persistent offender escalation (all temp ban sources)
+	fmt.Println("Step 4: Checking persistent offender status...")
 	shouldEscalate := false
 	filterName := source
 	if filterName == "" {
@@ -122,8 +123,13 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 			fmt.Println()
 			// Override: make it permanent
 			timeoutSeconds = 0
+		} else {
+			fmt.Printf("  ✅ Not a repeat offender\n")
 		}
+	} else {
+		fmt.Printf("  ✅ Permanent ban requested\n")
 	}
+	fmt.Println()
 
 	// Step 5: Add to appropriate location
 	fmt.Println("Step 5: Adding ban...")
