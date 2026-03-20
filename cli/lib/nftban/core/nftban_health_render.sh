@@ -35,11 +35,11 @@ _NFTBAN_HEALTH_RENDER_LOADED=1
 nftban_health_render_terminal() {
     # Render health check results to terminal - Clean v1.0 layout
 
-    # Helper function to create dot-padded labels (16 char width)
-    # Usage: pad_with_dots "Label" -> "Label..........."
+    # Helper function to create dot-padded labels (20 char width)
+    # Usage: pad_with_dots "Label" -> "Label..............."
     pad_with_dots() {
         local label="$1"
-        local width=16
+        local width=20
         local len=${#label}
         local dots_needed
         dots_needed=$((width - len))
@@ -66,30 +66,30 @@ nftban_health_render_terminal() {
         [geoban]="GeoBan"
         [databases]="Databases"
         [polkit]="Polkit"
-        [bash_completion]="Bash Complet"
+        [bash_completion]="Bash Completion"
         [config]="Configuration"
         [metrics]="Metrics"
         [gui]="Web GUI"
         [nftables_security]="NFT Security"
         [nft_schema]="NFT Schema"
-        [conflicting_firewalls]="Firewall Conf"
+        [conflicting_firewalls]="Firewall Conflicts"
         [suricata]="Suricata"
-        [suricata_capture]="Suricata Cap"
+        [suricata_capture]="Suricata Capture"
         [resources]="Resources"
         [registry]="Registry"
-        [systemd_hardening]="Systemd Hard"
-        [memory_protection]="Memory Prot"
+        [systemd_hardening]="Systemd Hardening"
+        [memory_protection]="Memory Protection"
         [ssh_port]="SSH Port"
         [cli_errors]="CLI Errors"
         [rbl]="RBL"
         [timers]="Timers"
         [fhs]="FHS Layout"
         [nftban_bin]="NFTBan Binary"
-        [queue_processor]="Queue Proc"
+        [queue_processor]="Queue Processor"
         [protection]="Protection"
-        [maintenance_lock]="Maint Lock"
-        [login_monitor_ipc]="Login IPC"
-        [portscan_prefix]="Portscan Pfx"
+        [maintenance_lock]="Maintenance Lock"
+        [login_monitor_ipc]="Login Monitor IPC"
+        [portscan_prefix]="Portscan Prefix"
         [v030_helpers]="CLI Helpers"
         [pro]="Pro Features"
         [zabbix]="Zabbix"
