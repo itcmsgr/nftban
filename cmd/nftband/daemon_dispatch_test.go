@@ -27,17 +27,17 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/module"
-	"github.com/itcmsgr/nftban/pkg/nftbackend"
 	"github.com/itcmsgr/nftban/pkg/stats"
 )
 
 // newTestDaemon creates a minimal Daemon for dispatch testing.
-// Only the fields needed by handleSocketRequest and its simple handlers are populated.
+// Backend is nil — nftbackend.New() requires nftables kernel support
+// which is unavailable in CI containers. Methods that need backend
+// will panic, caught by recover() in TestHandleSocketRequest_AllMethodsDefined.
 func newTestDaemon() *Daemon {
 	return &Daemon{
 		bus:      eventbus.New(),
 		registry: module.NewRegistry(),
-		backend:  nftbackend.New(),
 		stats:    stats.NewCollector(stats.DefaultConfig()),
 		connSem:  make(chan struct{}, MaxConcurrentIPCConns),
 	}
