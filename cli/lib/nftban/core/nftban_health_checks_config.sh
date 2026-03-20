@@ -492,12 +492,19 @@ nftban_health_check_cli_errors() {
         cli_issues+=("✓ No recent CLI errors")
     elif [[ $recent_errors -lt 5 ]]; then
         cli_issues+=("Found $recent_errors CLI error(s) in last 24 hours")
+        # Show last error so user knows what happened
+        local last_error
+        last_error=$(tail -1 "$cli_error_log" 2>/dev/null || true)
+        [[ -n "$last_error" ]] && cli_issues+=("Last: $last_error")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_WARNING
     elif [[ $recent_errors -lt 20 ]]; then
         cli_issues+=("Found $recent_errors CLI errors in last 24 hours - investigate")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_ERROR
     else
         cli_issues+=("CRITICAL: $recent_errors CLI errors in last 24 hours")
+        cli_issues+=("Log: $cli_error_log")
         status=$HEALTH_CRITICAL
     fi
 
