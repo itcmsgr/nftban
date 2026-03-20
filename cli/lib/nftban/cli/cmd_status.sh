@@ -567,7 +567,7 @@ output_terminal() {
         feeds_enabled=$(find "${NFTBAN_DATA_DIR}/feeds" -name "*.txt" -type f 2>/dev/null | wc -l)
     fi
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
-    [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(enable: nftban feeds enable)"
+    [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(list: nftban feeds list | enable: nftban feeds enable <FEED>)"
 
     # Login Monitor (deprecated v1.23.0 — replaced by nftband loginmon module)
     # Only show if the legacy service still exists on this system
