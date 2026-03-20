@@ -90,7 +90,7 @@ nftban_health_render_terminal() {
         [maintenance_lock]="Maint Lock"
         [login_monitor_ipc]="Login IPC"
         [portscan_prefix]="Portscan Pfx"
-        [v030_helpers]="v030 Helpers"
+        [v030_helpers]="CLI Helpers"
         [pro]="Pro Features"
         [zabbix]="Zabbix"
         [connectors]="Connectors"
