@@ -235,24 +235,31 @@ See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands
 ## Architecture
 
 ```
-ip nftban {                  # IPv4 rules
-    set whitelist_ipv4 {...}   # Protected IPs (never blocked)
-    set blacklist_ipv4 {...}   # Unified blocklist (all sources)
-    set tcp_ports_in {...}     # Inbound TCP ports
-    set udp_ports_in {...}     # Inbound UDP ports
-    chain input {...}
+ip nftban {                      # IPv4 rules
+    set whitelist_ipv4 {...}       # Protected IPs (interval, auto-merge)
+    set blacklist_ipv4 {...}       # Unified blocklist (interval, timeout, auto-merge)
+    set tcp_ports_in {...}         # Inbound TCP ports
+    set udp_ports_in {...}         # Inbound UDP ports
+    set http_bot_* {...}           # Bot Guard sets (6 sets, timeout)
+    chain input {
+        whitelist → counter accept
+        blacklist → counter drop   # BEFORE ct state established
+        ct state established → accept
+        services → accept
+    }
     chain forward {...}
 }
 
-ip6 nftban {                 # IPv6 rules
-    set whitelist_ipv6 {...}   # Protected IPs (never blocked)
-    set blacklist_ipv6 {...}   # Unified blocklist (all sources)
+ip6 nftban {                     # IPv6 rules (mirrors IPv4)
+    set whitelist_ipv6 {...}       # Protected IPs (interval, auto-merge)
+    set blacklist_ipv6 {...}       # Unified blocklist (interval, timeout, auto-merge)
+    set http_bot_*6 {...}          # Bot Guard sets (6 sets, timeout)
     chain input {...}
     chain forward {...}
 }
 ```
 
-> **v1.18 Unified Blacklist**: All ban sources (feeds, geoban, login, ddos, portscan, manual) route to single `blacklist_ipv4/ipv6` set. Source tracking maintained in daemon database.
+> **v1.31 Schema**: All interval sets use `auto-merge` for kernel-level CIDR overlap absorption. Whitelist/blacklist rules have `counter` for visibility. All ban sources route to unified `blacklist_ipv4/ipv6` set. Source tracking in daemon database.
 
 ### Components
 
