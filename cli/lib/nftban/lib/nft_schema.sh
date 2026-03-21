@@ -575,6 +575,73 @@ nftban_nft_count_set() {
     fi
 }
 
+# =============================================================================
+# CACHED SET COUNTING (v1.32.0 — reads daemon cache, 0 kernel calls)
+# =============================================================================
+# The daemon maintains exact in-memory counters updated on every add/delete/flush.
+# Cache file: /run/nftban/set_counts.json (atomic writes, max once per 10s)
+#
+# Use nftban_nft_count_set_cached() for routine monitoring/display.
+# Use nftban_nft_count_set() only for --verify (direct kernel truth).
+# =============================================================================
+
+readonly _NFTBAN_SET_COUNTS_CACHE="/run/nftban/set_counts.json"
+
+# nftban_nft_count_set_cached — read count from daemon cache (0 kernel calls)
+# Usage: nftban_nft_count_set_cached <set_name>
+# Falls back to kernel count if cache is missing/stale (daemon not running)
+nftban_nft_count_set_cached() {
+    local set_name="${1:?set_name required}"
+
+    # Try cache first
+    if [[ -f "$_NFTBAN_SET_COUNTS_CACHE" ]]; then
+        # Validate cache freshness (max 120s stale)
+        local cache_age
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null || echo 0) ))
+        if [[ "$cache_age" -lt 120 ]]; then
+            local count
+            count=$(jq -r --arg s "$set_name" '.sets[$s].count // empty' "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null)
+            if [[ -n "$count" ]]; then
+                echo "$count"
+                return 0
+            fi
+        fi
+    fi
+
+    # Fallback: direct kernel count (daemon not running or set not tracked)
+    # Determine family from set name suffix
+    local family="ip"
+    if [[ "$set_name" == *"_ipv6" || "$set_name" == *"6" ]]; then
+        family="ip6"
+    fi
+    nftban_nft_count_set "$family" nftban "$set_name"
+}
+
+# nftban_nft_count_all_sets_cached — read all counts from daemon cache (0 kernel calls)
+# Returns: Daemon snapshot JSON (different format from nftban_nft_count_all_sets)
+#   { "timestamp": "...", "daemon_pid": N, "scale_mode": "...",
+#     "sets": { "set_name": { "count": N, "scale": "...", "display": "..." } } }
+# Falls back to kernel counting (old format) if cache unavailable
+nftban_nft_count_all_sets_cached() {
+    # Try cache first — single file read, no kernel calls
+    if [[ -f "$_NFTBAN_SET_COUNTS_CACHE" ]]; then
+        local cache_age
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null || echo 0) ))
+        if [[ "$cache_age" -lt 120 ]]; then
+            # Validate daemon PID is still alive
+            local dpid
+            dpid=$(jq -r '.daemon_pid // 0' "$_NFTBAN_SET_COUNTS_CACHE" 2>/dev/null)
+            if [[ "$dpid" -gt 0 ]] && kill -0 "$dpid" 2>/dev/null; then
+                cat "$_NFTBAN_SET_COUNTS_CACHE"
+                return 0
+            fi
+        fi
+    fi
+
+    # Fallback: kernel counting (expensive but necessary if daemon is down)
+    nftban_nft_count_all_sets
+}
+
 nftban_nft_count_set_with_timeout() {
     # Count elements with timeout attribute (temporary bans)
     # Usage: nftban_nft_count_set_with_timeout <family> <table> <set>
@@ -728,10 +795,12 @@ nftban_is_blacklisted() {
 
 # Export functions
 export -f nftban_nft_count_set
+export -f nftban_nft_count_set_cached
 export -f nftban_nft_count_set_with_timeout
 export -f nftban_nft_count_blacklist
 export -f nftban_nft_count_whitelist
 export -f nftban_nft_count_all_sets
+export -f nftban_nft_count_all_sets_cached
 export -f nftban_is_whitelisted
 export -f nftban_is_blacklisted
 
