@@ -352,9 +352,8 @@ jobs:
     name: Test RPM install (${{ matrix.distro }})
     needs: build-rpm
     runs-on: ubuntu-latest
-    # Advisory: test failures don't block PR merge (not in required checks)
-    # Artifacts may be unavailable on partial reruns (GitHub Actions limitation)
-    continue-on-error: true
+    # Tier 0 distros (EL9) are required; Tier 1 (EL10) are advisory
+    continue-on-error: ${{ matrix.tier != 0 }}
     strategy:
       fail-fast: false
       matrix:
@@ -362,15 +361,19 @@ jobs:
           - distro: centos-stream9
             container: quay.io/centos/centos:stream9
             rpm_artifact: rpm-el9
+            tier: 0
           - distro: centos-stream10
             container: quay.io/centos/centos:stream10
             rpm_artifact: rpm-el10
+            tier: 1
           - distro: rocky9
             container: rockylinux:9
             rpm_artifact: rpm-el9
+            tier: 0
           - distro: alma9
             container: almalinux:9
             rpm_artifact: rpm-el9
+            tier: 0
 
     steps:
       - name: Download RPM packages (with retry)
@@ -405,9 +408,8 @@ jobs:
     name: Test DEB install (${{ matrix.distro }})
     needs: build-deb
     runs-on: ubuntu-latest
-    # Advisory: test failures don't block PR merge (not in required checks)
-    # Artifacts may be unavailable on partial reruns (GitHub Actions limitation)
-    continue-on-error: true
+    # Tier 0 distros (Debian 12) are required; Tier 1 are advisory
+    continue-on-error: ${{ matrix.tier != 0 }}
     strategy:
       fail-fast: false
       matrix:
@@ -415,15 +417,19 @@ jobs:
           - distro: ubuntu22.04
             container: ubuntu:22.04
             deb_artifact: deb-ubuntu22.04
+            tier: 1
           - distro: ubuntu24.04
             container: ubuntu:24.04
             deb_artifact: deb-ubuntu24.04
+            tier: 0
           - distro: debian12
             container: debian:12
             deb_artifact: deb-debian12
+            tier: 0
           - distro: debian13
             container: debian:trixie
             deb_artifact: deb-debian13
+            tier: 1
 
     steps:
       - name: Download DEB packages (with retry)

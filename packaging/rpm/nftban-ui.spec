@@ -58,11 +58,6 @@ CGO_ENABLED=1 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \
     -ldflags="-linkmode=external -s -w -X main.version=%{version}" \
     -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
 
-# Build nftband daemon (single nftables writer)
-CGO_ENABLED=0 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \
-    -ldflags="-s -w -X main.version=%{version}" \
-    -o bin/nftband ./cmd/nftband
-
 %install
 # Create directory structure
 install -d %{buildroot}%{_sbindir}
@@ -71,19 +66,13 @@ install -d %{buildroot}%{_unitdir}
 install -d %{buildroot}%{_sysconfdir}/nftban
 install -d %{buildroot}%{_sysconfdir}/pam.d
 install -d %{buildroot}%{_localstatedir}/log/nftban
-install -d %{buildroot}%{_prefix}/lib/nftban/bin
-
-# Install binaries
+# Install binaries (nftband owned by nftban-core)
 install -m 0755 bin/nftban-ui %{buildroot}%{_sbindir}/nftban-ui
 install -m 0755 bin/nftban-ui-auth %{buildroot}%{_libexecdir}/nftban-ui-auth
-install -m 0755 bin/nftband %{buildroot}%{_prefix}/lib/nftban/bin/nftband
-
-# Install systemd units
+# Install systemd units (UI-only — nftband owned by nftban-core)
 install -m 0644 install/systemd/nftban-ui.service %{buildroot}%{_unitdir}/nftban-ui.service
 install -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}%{_unitdir}/nftban-ui-auth.service
 install -m 0644 install/systemd/nftban-ui-auth.socket %{buildroot}%{_unitdir}/nftban-ui-auth.socket
-install -m 0644 install/systemd/nftband.service %{buildroot}%{_unitdir}/nftband.service
-install -m 0644 install/systemd/nftband.socket %{buildroot}%{_unitdir}/nftband.socket
 
 # Install PAM configuration
 install -m 0644 install/pam/nftban-ui %{buildroot}%{_sysconfdir}/pam.d/nftban-ui
@@ -129,12 +118,7 @@ if command -v nft >/dev/null 2>&1; then
     fi
 fi
 
-# Enable NFTBand daemon (SINGLE nftables writer - CRITICAL)
-# Socket activation: nftband.socket creates socket, service receives FD
-%systemd_post nftband.socket
-%systemd_post nftband.service
-
-# Enable and start socket (will auto-start service on-demand)
+# Enable UI services (nftband owned by nftban-core package)
 %systemd_post nftban-ui-auth.socket
 %systemd_post nftban-ui.service
 
@@ -148,19 +132,12 @@ systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf >/dev/null 2>&1 || :
 
 # Only enable services if this is initial install
 if [ $1 -eq 1 ]; then
-    # NFTBand MUST start before any other nftban services
-    systemctl enable nftband.socket >/dev/null 2>&1 || :
-    systemctl enable nftband.service >/dev/null 2>&1 || :
-    systemctl start nftband.socket >/dev/null 2>&1 || :
-
     systemctl enable nftban-ui-auth.socket >/dev/null 2>&1 || :
     systemctl start nftban-ui-auth.socket >/dev/null 2>&1 || :
 fi
 
 # If upgrading and service is already running, restart it
 if [ $1 -eq 2 ]; then
-    # Restart nftband socket (will reload service on next connection)
-    systemctl try-restart nftband.socket >/dev/null 2>&1 || :
     # Restart auth socket (will reload service on next connection)
     systemctl try-restart nftban-ui-auth.socket >/dev/null 2>&1 || :
     # Restart GUI service if it's running
@@ -168,14 +145,11 @@ if [ $1 -eq 2 ]; then
 fi
 
 %preun
-%systemd_preun nftband.socket
-%systemd_preun nftband.service
 %systemd_preun nftban-ui.service
 %systemd_preun nftban-ui-auth.socket
 %systemd_preun nftban-ui-auth.service
 
 %postun
-%systemd_postun_with_restart nftband.socket
 %systemd_postun_with_restart nftban-ui.service
 %systemd_postun_with_restart nftban-ui-auth.socket
 
@@ -191,17 +165,14 @@ fi
 %license LICENSE
 %doc README.md
 
-# Binaries
+# Binaries (nftband owned by nftban-core)
 %{_sbindir}/nftban-ui
 %{_libexecdir}/nftban-ui-auth
-%{_prefix}/lib/nftban/bin/nftband
 
-# Systemd units
+# Systemd units (nftband.service/socket owned by nftban-core)
 %{_unitdir}/nftban-ui.service
 %{_unitdir}/nftban-ui-auth.service
 %{_unitdir}/nftban-ui-auth.socket
-%{_unitdir}/nftband.service
-%{_unitdir}/nftband.socket
 
 # Configuration
 %config(noreplace) %{_sysconfdir}/pam.d/nftban-ui
