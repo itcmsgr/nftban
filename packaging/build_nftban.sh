@@ -1561,6 +1561,9 @@ if [ -f /etc/nftban/nftables.conf ]; then
             if ! nft -c -f "\$_TMP_CONF" 2>/dev/null; then
                 echo "[NFTBan ERROR] NFTBan nftables config validation failed"
                 NFTABLES_SAFE=0
+            else
+                cp "\$_TMP_CONF" /etc/nftban/nftables.conf
+                echo "[NFTBan] SSH port substituted: __SSH_PORT__ → \${_SSH_PORT}"
             fi
             rm -f "\$_TMP_CONF"
         fi

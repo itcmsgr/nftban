@@ -901,6 +901,11 @@ case "$1" in
                     if ! nft -c -f "$_TMP_CONF" 2>/dev/null; then
                         log_error "NFTBan nftables config validation failed"
                         NFTABLES_SAFE=0
+                    else
+                        # Apply substitution to production file (P0 fix: without this,
+                        # nftables loads __SSH_PORT__ literally → kernel rejects → lockout)
+                        cp "$_TMP_CONF" /etc/nftban/nftables.conf
+                        log_info "  SSH port substituted: __SSH_PORT__ → ${_SSH_PORT}"
                     fi
                     rm -f "$_TMP_CONF"
                 fi
