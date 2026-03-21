@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -79,6 +80,9 @@ func (d *Daemon) handleSignals(pidFile string) {
 
 // gracefulShutdown performs orderly shutdown of all daemon components
 func (d *Daemon) gracefulShutdown() {
+	// Notify systemd we are stopping (v1.29.1)
+	_, _ = daemon.SdNotify(false, daemon.SdNotifyStopping)
+
 	// Close socket listener first to stop accepting new IPC connections
 	if d.socketLn != nil {
 		_ = d.socketLn.Close()
@@ -127,11 +131,37 @@ func (d *Daemon) waitForShutdown() {
 	d.startupComplete = true
 	d.sigMu.Unlock()
 
+	// Notify systemd that daemon is ready (v1.29.1)
+	sent, err := daemon.SdNotify(false, daemon.SdNotifyReady)
+	if err != nil {
+		log.Printf("sd_notify READY failed: %v", err)
+	} else if sent {
+		log.Println("sd_notify READY sent")
+	}
+
+	// Start watchdog heartbeat goroutine (WatchdogSec=30s, notify every 15s)
+	go d.watchdogHeartbeat()
+
 	log.Println("Startup complete, waiting for shutdown signal...")
 
 	// Block until gracefulShutdown() is called by handleSignals
 	// We wait on the context which is cancelled during gracefulShutdown
 	<-d.ctx.Done()
+}
+
+// watchdogHeartbeat sends sd_notify WATCHDOG=1 every 15s (half of WatchdogSec=30s).
+// Stops when daemon context is cancelled.
+func (d *Daemon) watchdogHeartbeat() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+		case <-ticker.C:
+			_, _ = daemon.SdNotify(false, daemon.SdNotifyWatchdog)
+		}
+	}
 }
 
 // =============================================================================
