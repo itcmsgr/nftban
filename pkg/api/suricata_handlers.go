@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/util"
 )
 
@@ -180,7 +181,7 @@ func SuricataControlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Printf("[SURICATA] Control action '%s' failed: %v - Output: %s", req.Action, err, output)
+		log.Printf("[SURICATA] Control action '%s' failed: %v - Output: %s", logutil.Sanitize(req.Action), err, output)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"success": false,
 			"error":   "Action failed: " + sanitizeError(err),

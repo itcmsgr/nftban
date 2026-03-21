@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/util"
 )
 
@@ -264,7 +265,7 @@ func ConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute nftban config get command
 	output, err := execNFTBanCommand("config", "get", module, "--json")
 	if err != nil {
-		log.Printf("[ERROR] Failed to get config for %s: %v", module, err)
+		log.Printf("[ERROR] Failed to get config for %s: %v", logutil.Sanitize(module), err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to get configuration"})
 		return
 	}
@@ -272,7 +273,7 @@ func ConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract JSON from CLI output (may contain non-JSON prefix/suffix)
 	jsonOutput := util.ExtractJSONRobust(output)
 	if jsonOutput == "" {
-		log.Printf("[ERROR] No valid JSON found in config output for %s: %s", module, output)
+		log.Printf("[ERROR] No valid JSON found in config output for %s: %s", logutil.Sanitize(module), output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Invalid configuration response format"})
 		return
 	}
@@ -280,7 +281,7 @@ func ConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse JSON response
 	var configData map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonOutput), &configData); err != nil {
-		log.Printf("[ERROR] Failed to parse config JSON for %s: %v - Output: %s", module, err, jsonOutput)
+		log.Printf("[ERROR] Failed to parse config JSON for %s: %v - Output: %s", logutil.Sanitize(module), err, jsonOutput)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to parse configuration"})
 		return
 	}
