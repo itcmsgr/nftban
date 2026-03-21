@@ -50,6 +50,10 @@ After=nftband.socket
 After=network.target nftables.service nftban-firewall-init.service
 Wants=nftables.service
 
+# Restart rate limiting (must be in [Unit], not [Service])
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
 [Service]
 Type=notify
 NotifyAccess=main
@@ -65,8 +69,6 @@ ExecStart=/usr/lib/nftban/bin/nftband
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
-StartLimitBurst=5
-StartLimitIntervalSec=300
 
 # =============================================================================
 # SECURITY HARDENING

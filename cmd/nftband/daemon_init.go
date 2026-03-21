@@ -425,7 +425,11 @@ func (d *Daemon) initOpQueue() error {
 	go d.sourceIndex.StartBackgroundSaver(d.ctx)
 
 	// Start set counter cache file writer (v1.32.0)
-	go d.setCounters.CacheWriterLoop(d.ctx)
+	d.bgWg.Add(1)
+	go func() {
+		defer d.bgWg.Done()
+		d.setCounters.CacheWriterLoop(d.ctx)
+	}()
 
 	// Reconcile source index with actual nft state
 	go func() {
@@ -454,14 +458,15 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 	}
 
 	for _, setName := range setNames {
-		elements, err := wrapper.GetSetElements("nftban", setName)
+		// Use GetSetCount instead of GetSetElements to avoid loading all elements
+		// into memory. On a 500K+ interval set, GetSetElements causes 1GB+ heap spike.
+		count, err := wrapper.GetSetCount("nftban", setName)
 		if err != nil {
 			// Set might not exist yet (e.g. IPv6 not configured)
 			log.Printf("[set_counters] %s: skipped (%v)", setName, err)
 			continue
 		}
-		count := int64(len(elements))
-		d.setCounters.SetReconciled(setName, count)
+		d.setCounters.SetReconciled(setName, int64(count))
 		if count > 0 {
 			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
 		}
@@ -473,13 +478,12 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency",
 	}
 	for _, setName := range botguardSets {
-		elements, err := wrapper.GetSetElements("nftban", setName)
+		count, err := wrapper.GetSetCount("nftban", setName)
 		if err != nil {
 			continue // Botguard sets may not exist
 		}
-		count := int64(len(elements))
 		if count > 0 {
-			d.setCounters.SetReconciled(setName, count)
+			d.setCounters.SetReconciled(setName, int64(count))
 		}
 	}
 
