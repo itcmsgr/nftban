@@ -21,6 +21,7 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/metrics"
+	"github.com/itcmsgr/nftban/pkg/nftlock"
 	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
 
@@ -845,8 +846,19 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 	// Get count before flush for counter adjustment
 	countBefore := buf.count()
 
+	// v1.32.0: Acquire exclusive nft lock before kernel operations
+	nftLock, lockErr := nftlock.AcquireExclusive(30 * time.Second)
+	if lockErr != nil {
+		log.Printf("[opqueue] nft lock failed for %s: %v (proceeding without lock)", setName, lockErr)
+	}
+
 	// Flush returns post-barrier ops to re-enqueue
 	result := buf.flush(q.backend, q.config.MaxBatchSize)
+
+	// Release lock after kernel operations
+	if nftLock != nil {
+		nftLock.Release()
+	}
 
 	// Update counters
 	q.pendingCount.Add(-int64(countBefore))
