@@ -26,6 +26,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=root
+Group=root
+
 # Log to both journal AND file for easy viewing
 ExecStart=/bin/bash -c '/usr/sbin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
 StandardOutput=journal
