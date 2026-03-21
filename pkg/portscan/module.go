@@ -294,9 +294,9 @@ func (m *Module) Status() module.Status {
 // detectMode detects the current portscan detection mode
 func (m *Module) detectMode() {
 	scriptPath := getPortscanScript()
-	// Source the script and get mode
+	// Source the script and get mode (VULN-20: quote path via $1)
 	out, err := exec.Command("bash", "-c",
-		"source "+scriptPath+" 2>/dev/null && nftban_portscan_load_config && _nftban_portscan_detect_mode").Output()
+		"source \"$1\" 2>/dev/null && nftban_portscan_load_config && _nftban_portscan_detect_mode", "_", scriptPath).Output()
 	if err != nil {
 		m.mode = "classic" // Default fallback
 		return
@@ -305,19 +305,19 @@ func (m *Module) detectMode() {
 
 	// Check Suricata availability
 	out, _ = exec.Command("bash", "-c",
-		"source "+scriptPath+" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no").Output()
+		"source \"$1\" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no", "_", scriptPath).Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
 // enable enables portscan detection
 func (m *Module) enable() error {
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_enable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_enable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
 // disable disables portscan detection
 func (m *Module) disable() error {
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_disable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_disable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
@@ -339,7 +339,7 @@ func (m *Module) runDetectionCycle(ctx context.Context) {
 // runCycle runs a single detection cycle
 func (m *Module) runCycle() {
 	// Run the bash detection script
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_run")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_run", "_", getPortscanScript())
 	err := cmd.Run()
 
 	m.mu.Lock()

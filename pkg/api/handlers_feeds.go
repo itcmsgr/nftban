@@ -157,7 +157,7 @@ func FeedsControlHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommand("feeds", req.Action, feedName)
 	if err != nil {
 		log.Printf("[ERROR] Feeds %s failed: %v - %s", req.Action, err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to " + req.Action + " feed: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to " + req.Action + " feed: " + sanitizeError(err)})
 		return
 	}
 

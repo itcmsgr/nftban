@@ -533,8 +533,8 @@ _nftban_botguard_stats() {
             v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || echo "0")
         fi
 
-        eval "$v4_var=$v4_count"
-        eval "$v6_var=$v6_count"
+        declare "$v4_var=$v4_count"
+        declare "$v6_var=$v6_count"
     done
 
     local daemon_running="false"

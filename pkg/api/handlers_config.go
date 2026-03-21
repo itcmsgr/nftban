@@ -398,7 +398,7 @@ func ConfigResetHandler(w http.ResponseWriter, r *http.Request) {
 		_, err := execNFTBanCommand("config", "reset-all", module)
 		if err != nil {
 			respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: fmt.Sprintf("Failed to reset configuration: %v", err),
+				Error: "Failed to reset configuration: " + sanitizeError(err),
 			})
 			return
 		}
