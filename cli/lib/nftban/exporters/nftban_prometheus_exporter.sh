@@ -100,33 +100,40 @@ write_metric() {
 get_block_count() {
     local block_type="$1"  # total, permanent, temporary
 
-    # Query nftables sets directly
+    # v1.32.0: Use daemon cache (0 kernel calls) with kernel fallback
     case "$block_type" in
         total)
-            # Total = permanent + temporary + feeds + geoban (IPv4 + IPv6) - v0.6.2 fixed
-            # v0.7.3 Unified Blacklist Architecture
-            # All ban sources (permanent + temp + feeds + geoban) consolidated into single sets
-            # NOTE: Cannot distinguish ban sources from nftables - all in blacklist_ipv4/ipv6
             local black_v4 black_v6
 
-            # Count total IPs in unified blacklist sets
-            black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' || true; } | wc -l)
-            black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' || true; } | wc -l)
+            # Prefer cached counting from daemon
+            if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+                black_v4=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || black_v4=0
+                black_v6=$(nftban_nft_count_set_cached blacklist_ipv6 2>/dev/null) || black_v6=0
+            elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
+                black_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || black_v4=0
+                black_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null) || black_v6=0
+            else
+                black_v4=0
+                black_v6=0
+            fi
 
-            # Set defaults
-            black_v4=${black_v4:-0}
-            black_v6=${black_v6:-0}
+            [[ "$black_v4" =~ ^[0-9]+$ ]] || black_v4=0
+            [[ "$black_v6" =~ ^[0-9]+$ ]] || black_v6=0
 
-            # Return total count (unified blacklist)
             echo $((black_v4 + black_v6))
             ;;
         permanent|temporary|geoban)
-            # v0.7.3: All ban types unified in blacklist_ipv4/ipv6
-            # Cannot distinguish permanent/temporary/geoban from nftables alone
-            # Return total blacklist count (metadata in config files/DB, not NFT)
+            # All ban types unified in blacklist_ipv4/ipv6 — cannot distinguish from nft
             local count
-            count=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -o '[0-9.]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' || true; } | wc -l)
-            echo "${count:-0}"
+            if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+                count=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || count=0
+            elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
+                count=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || count=0
+            else
+                count=0
+            fi
+            [[ "$count" =~ ^[0-9]+$ ]] || count=0
+            echo "$count"
             ;;
     esac
 }
@@ -188,10 +195,14 @@ _parse_country_metrics() {
 
 # Fallback: Get approximate metrics from geoban config
 _fallback_country_metrics() {
-    # Get total blacklist count
-    local total_ips
-    total_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true; } | wc -l)
-    total_ips=${total_ips:-0}
+    # v1.32.0: Use cached counting
+    local total_ips=0
+    if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+        total_ips=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || total_ips=0
+    elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
+        total_ips=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || total_ips=0
+    fi
+    [[ "$total_ips" =~ ^[0-9]+$ ]] || total_ips=0
 
     [[ $total_ips -eq 0 ]] && return 0
 
@@ -505,39 +516,33 @@ get_active_interfaces() {
 # =============================================================================
 
 # Get NFTables set sizes (number of elements in each set)
+# v1.32.0: Uses daemon cache for counting (0 kernel calls when cache available)
 get_nftables_set_sizes() {
-    if ! command -v nft &>/dev/null; then
-        return
+    # v1.32.0: Prefer daemon cache file — all set counts in single read
+    local cache_file="/run/nftban/set_counts.json"
+    if [[ -f "$cache_file" ]] && command -v jq &>/dev/null; then
+        local cache_age
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0) ))
+        if [[ "$cache_age" -lt 120 ]]; then
+            jq -r '.sets | to_entries[] | "\(.key) \(.value.count)"' "$cache_file" 2>/dev/null
+            return
+        fi
     fi
 
-    # List all sets in nftban tables (IPv4 + IPv6)
-    local sets
-    sets=$(nft -j list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | \
-        jq -r '.nftables[] | select(.set != null) | .set.name' 2>/dev/null || \
-        nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -oP 'set \K\w+' || echo "")
-
-    if [[ -z "$sets" ]]; then
-        # Fallback: try common set names (v0.7.3 schema uses ipv4/ipv6 suffix)
-        sets="whitelist_ipv4 whitelist_ipv6 blacklist_ipv4 blacklist_ipv6"
-    fi
-
-    # Count elements in each set
-    local set_name nft_table
+    # Fallback: use cached counting functions or direct nft
+    local sets="whitelist_ipv4 whitelist_ipv6 blacklist_ipv4 blacklist_ipv6"
+    local set_name
     for set_name in $sets; do
-        # Select correct table based on address family
-        if [[ "$set_name" == *_ipv6 ]]; then
-            nft_table="${NFTBAN_TABLE_IPV6}"
-        else
-            nft_table="${NFTBAN_TABLE_IPV4}"
+        local count=0
+        if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+            count=$(nftban_nft_count_set_cached "$set_name" 2>/dev/null) || count=0
+        elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
+            local _fam="ip"
+            [[ "$set_name" == *"_ipv6" || "$set_name" == *"6" ]] && _fam="ip6"
+            count=$(nftban_nft_count_set "$_fam" nftban "$set_name" 2>/dev/null) || count=0
         fi
-        # Check if set exists first
-        if nft list set ${nft_table} "$set_name" &>/dev/null; then
-            local count
-            count=$(nft list set ${nft_table} "$set_name" 2>/dev/null | \
-                grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}' | \
-                wc -l || echo "0")
-            echo "${set_name} ${count:-0}"
-        fi
+        [[ "$count" =~ ^[0-9]+$ ]] || count=0
+        echo "${set_name} ${count}"
     done
 }
 
@@ -547,31 +552,23 @@ get_ban_breakdown() {
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
     local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
 
-    # IPv4 blacklist
-    local v4_output v4_total=0 v4_temp=0 v4_perm=0
-    if nft list set ${table_v4} blacklist_ipv4 &>/dev/null 2>&1; then
-        v4_output=$(nft list set ${table_v4} blacklist_ipv4 2>/dev/null || true)
-        v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
-        v4_total=$(echo "$v4_output" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | wc -l 2>/dev/null || echo "0")
-        # Sanitize to ensure numeric-only values (strip newlines/whitespace)
-        v4_temp=${v4_temp//[^0-9]/}; v4_temp=${v4_temp:-0}
-        v4_total=${v4_total//[^0-9]/}; v4_total=${v4_total:-0}
-        v4_perm=$((v4_total - v4_temp))
-        [[ $v4_perm -lt 0 ]] && v4_perm=0
+    # v1.32.0: Use cached counting (0 kernel calls) — temp/perm split not
+    # available from cache, report all as permanent (consistent with unified arch)
+    local v4_total=0 v4_temp=0 v4_perm=0
+    local v6_total=0 v6_temp=0 v6_perm=0
+
+    if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+        v4_total=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || v4_total=0
+        v6_total=$(nftban_nft_count_set_cached blacklist_ipv6 2>/dev/null) || v6_total=0
+    elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
+        v4_total=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || v4_total=0
+        v6_total=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null) || v6_total=0
     fi
 
-    # IPv6 blacklist
-    local v6_output v6_total=0 v6_temp=0 v6_perm=0
-    if nft list set ${table_v6} blacklist_ipv6 &>/dev/null 2>&1; then
-        v6_output=$(nft list set ${table_v6} blacklist_ipv6 2>/dev/null || true)
-        v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
-        v6_total=$(echo "$v6_output" | grep -oE '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' | wc -l 2>/dev/null || echo "0")
-        # Sanitize to ensure numeric-only values (strip newlines/whitespace)
-        v6_temp=${v6_temp//[^0-9]/}; v6_temp=${v6_temp:-0}
-        v6_total=${v6_total//[^0-9]/}; v6_total=${v6_total:-0}
-        v6_perm=$((v6_total - v6_temp))
-        [[ $v6_perm -lt 0 ]] && v6_perm=0
-    fi
+    [[ "$v4_total" =~ ^[0-9]+$ ]] || v4_total=0
+    [[ "$v6_total" =~ ^[0-9]+$ ]] || v6_total=0
+    v4_perm=$v4_total
+    v6_perm=$v6_total
 
     echo "ipv4 permanent $v4_perm"
     echo "ipv4 temporary $v4_temp"
