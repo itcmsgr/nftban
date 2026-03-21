@@ -74,9 +74,9 @@ func (l *Lock) Release() {
 	if l == nil || l.file == nil {
 		return
 	}
-	// Unlock
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	// Unlock — errors are intentionally ignored during cleanup
+	_ = syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN) // #nosec G104
+	_ = l.file.Close()                                    // #nosec G104
 	l.file = nil
 }
 
@@ -89,11 +89,13 @@ var ErrLockBusy = fmt.Errorf("nft lock busy")
 // acquireLock acquires a lock with timeout using polling
 func acquireLock(lockType int, timeout time.Duration) (*Lock, error) {
 	// Ensure parent directory exists (may not if daemon hasn't started yet)
-	if err := os.MkdirAll(filepath.Dir(LockPath), 0755); err != nil {
+	// 0750: root:nftban — group-accessible, not world-accessible
+	if err := os.MkdirAll(filepath.Dir(LockPath), 0750); err != nil { // #nosec G301
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(LockPath), err)
 	}
 
-	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0644)
+	// 0640: root-rw, group-r — lock file only needs owner write + group read
+	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", LockPath, err)
 	}
@@ -108,7 +110,7 @@ func acquireLock(lockType int, timeout time.Duration) (*Lock, error) {
 		}
 
 		if time.Now().After(deadline) {
-			file.Close()
+			_ = file.Close()
 			lockName := "shared"
 			if lockType == syscall.LOCK_EX {
 				lockName = "exclusive"
@@ -131,18 +133,20 @@ func acquireLock(lockType int, timeout time.Duration) (*Lock, error) {
 // tryLock attempts a non-blocking lock
 func tryLock(lockType int) (*Lock, error) {
 	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(LockPath), 0755); err != nil {
+	// 0750: root:nftban — group-accessible, not world-accessible
+	if err := os.MkdirAll(filepath.Dir(LockPath), 0750); err != nil { // #nosec G301
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(LockPath), err)
 	}
 
-	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0644)
+	// 0640: root-rw, group-r — lock file only needs owner write + group read
+	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", LockPath, err)
 	}
 
 	err = syscall.Flock(int(file.Fd()), lockType|syscall.LOCK_NB)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, ErrLockBusy
 	}
 
