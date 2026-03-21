@@ -92,7 +92,8 @@
 /var/log/nftban/botscan.log
 /var/log/nftban/login_alert.log
 /var/log/nftban/update.log
-/var/log/nftban/cron.log {
+/var/log/nftban/cron.log
+/var/log/nftban/rbl.log {
     weekly
     rotate 12
     compress
@@ -141,6 +142,23 @@
     missingok
     notifempty
     copytruncate
+    create 0640 nftban nftban
+}
+
+# =============================================================================
+# Audit trail log (nftban-actions.log)
+# =============================================================================
+# JSON-structured audit entries — ban/unban/config/whitelist actions
+# Has in-code rotation at 50MB (nftban_audit_rotate) but needs logrotate as safety net
+/var/log/nftban/nftban-actions.log {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 50M
     create 0640 nftban nftban
 }
 

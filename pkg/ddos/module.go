@@ -304,7 +304,8 @@ func (m *Module) Status() module.Status {
 // detectMode detects the current DDoS protection mode
 func (m *Module) detectMode() {
 	scriptPath := getDDOSScript()
-	out, err := exec.Command("bash", "-c", "source "+scriptPath+" && nftban_ddos_get_mode").Output()
+	// VULN-20: quote path via $1
+	out, err := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_get_mode", "_", scriptPath).Output()
 	if err != nil {
 		m.mode = "classic" // Default fallback
 		return
@@ -312,19 +313,19 @@ func (m *Module) detectMode() {
 	m.mode = strings.TrimSpace(string(out))
 
 	// Check Suricata availability
-	out, _ = exec.Command("bash", "-c", "source "+scriptPath+" && nftban_ddos_suricata_available && echo yes || echo no").Output()
+	out, _ = exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_suricata_available && echo yes || echo no", "_", scriptPath).Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
 // enable enables DDoS protection
 func (m *Module) enable() error {
-	cmd := exec.Command("bash", "-c", "source "+getDDOSScript()+" && nftban_ddos_enable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_enable", "_", getDDOSScript())
 	return cmd.Run()
 }
 
 // disable disables DDoS protection
 func (m *Module) disable() error {
-	cmd := exec.Command("bash", "-c", "source "+getDDOSScript()+" && nftban_ddos_disable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_ddos_disable", "_", getDDOSScript())
 	return cmd.Run()
 }
 

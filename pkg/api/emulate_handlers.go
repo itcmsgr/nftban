@@ -151,7 +151,7 @@ func EmulateHandler(w http.ResponseWriter, r *http.Request) {
 			// Blocked - output is still valid JSON
 		} else {
 			respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: "Failed to execute emulation: " + err.Error(),
+				Error: "Failed to execute emulation: " + sanitizeError(err),
 			})
 			return
 		}
@@ -162,7 +162,7 @@ func EmulateHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(output, &response); err != nil {
 		// Try to return raw output for debugging
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: "Failed to parse emulation result: " + err.Error(),
+			Error: "Failed to parse emulation result: " + sanitizeError(err),
 		})
 		return
 	}

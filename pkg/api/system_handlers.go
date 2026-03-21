@@ -236,7 +236,7 @@ func SystemHealthFixHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommand("health", "fix", "all")
 	if err != nil {
 		log.Printf("[ERROR] Health fix failed: %v - %s", err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Health fix failed: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Health fix failed: " + sanitizeError(err)})
 		return
 	}
 
@@ -409,7 +409,7 @@ func SystemFHSFixHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommand("health", "fix", "all")
 	if err != nil {
 		log.Printf("[ERROR] FHS fix failed: %v - %s", err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "FHS fix failed: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "FHS fix failed: " + sanitizeError(err)})
 		return
 	}
 

@@ -94,7 +94,7 @@ func PortBanHandler(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to ban port: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to ban port: " + sanitizeError(err)})
 		return
 	}
 
@@ -130,7 +130,7 @@ func PortUnbanHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommand("port", "unblock", fmt.Sprintf("%d", req.Port))
 	if err != nil {
 		log.Printf("[ERROR] Port unban failed: %v - %s", err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to unban port: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to unban port: " + sanitizeError(err)})
 		return
 	}
 

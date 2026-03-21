@@ -43,11 +43,11 @@ func (api *API) handleIPListBatch(w http.ResponseWriter, r *http.Request, set *s
 	}
 
 	if err := validateIPs(req.Add); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid IP in add list: "+err.Error())
+		respondError(w, http.StatusBadRequest, "invalid IP in add list: "+sanitizeError(err))
 		return
 	}
 	if err := validateIPs(req.Remove); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid IP in remove list: "+err.Error())
+		respondError(w, http.StatusBadRequest, "invalid IP in remove list: "+sanitizeError(err))
 		return
 	}
 
@@ -57,7 +57,7 @@ func (api *API) handleIPListBatch(w http.ResponseWriter, r *http.Request, set *s
 	}
 
 	if err := sync.ApplyStringDiffToSet(api.NFT, set, diff); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to update "+listName+": "+err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to update "+listName+": "+sanitizeError(err))
 		return
 	}
 
@@ -84,7 +84,7 @@ func (api *API) handleIPListAdd(w http.ResponseWriter, r *http.Request, set *syn
 	}
 
 	if err := validateIP(req.IP); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid IP: "+err.Error())
+		respondError(w, http.StatusBadRequest, "invalid IP: "+sanitizeError(err))
 		return
 	}
 
@@ -93,7 +93,7 @@ func (api *API) handleIPListAdd(w http.ResponseWriter, r *http.Request, set *syn
 	}
 
 	if err := sync.ApplyStringDiffToSet(api.NFT, set, diff); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to add IP: "+err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to add IP: "+sanitizeError(err))
 		return
 	}
 
@@ -118,7 +118,7 @@ func (api *API) handleIPListRemove(w http.ResponseWriter, r *http.Request, set *
 	}
 
 	if err := validateIP(req.IP); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid IP: "+err.Error())
+		respondError(w, http.StatusBadRequest, "invalid IP: "+sanitizeError(err))
 		return
 	}
 
@@ -127,7 +127,7 @@ func (api *API) handleIPListRemove(w http.ResponseWriter, r *http.Request, set *
 	}
 
 	if err := sync.ApplyStringDiffToSet(api.NFT, set, diff); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to remove IP: "+err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to remove IP: "+sanitizeError(err))
 		return
 	}
 
@@ -153,7 +153,7 @@ func (api *API) handleIPListPreview(w http.ResponseWriter, r *http.Request, set 
 
 	current, err := api.NFT.GetSetElements(set)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to get current state: "+err.Error())
+		respondError(w, http.StatusInternalServerError, "failed to get current state: "+sanitizeError(err))
 		return
 	}
 

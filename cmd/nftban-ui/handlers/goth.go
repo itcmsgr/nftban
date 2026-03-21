@@ -502,11 +502,14 @@ func (h *GOTHHandlers) HandleFlushTemp(w http.ResponseWriter, r *http.Request) {
 // SECURITY FIX: Explicit allowlist of services that can be restarted
 // This prevents command injection via service name manipulation
 var allowedRestartServices = map[string]bool{
-	"nftban-core":      true,
-	"nftban-ui":        true,
-	"nftban-collector": true,
-	"nftban-watchdog":  true,
-	"nftband":          true,
+	"nftban-core":             true,
+	"nftban-ui":               true,
+	"nftban-collector":        true,
+	"nftban-watchdog":         true,
+	"nftband":                 true,
+	"nftban-login-monitor":    true,
+	"nftban-suricata-scanner": true,
+	"nftban-unified-exporter": true,
 }
 
 // HandleRestartService restarts a systemd service
@@ -1535,6 +1538,60 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 					}
 					modules = append(modules, mod)
 				}
+
+				// Botguard (HTTP bot detection)
+				if bg, ok := protection["botguard"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "botguard",
+						Description: "HTTP bot behavior detection",
+						ServiceName: "nftband",
+						LastSync:    now,
+						Status:      "inactive",
+					}
+					if enabled, ok := bg["enabled"].(bool); ok && enabled {
+						mod.Enabled = true
+						mod.Status = "active"
+						mod.Running = true
+					}
+					v4 := 0
+					v6 := 0
+					if v, ok := bg["ipv4_suspects"].(float64); ok {
+						v4 = int(v)
+					}
+					if v, ok := bg["ipv6_suspects"].(float64); ok {
+						v6 = int(v)
+					}
+					mod.BansProduced = v4 + v6
+					modules = append(modules, mod)
+				}
+
+				// GeoBan via protection.geoban (separate from geoip above)
+				if gb, ok := protection["geoban"].(map[string]interface{}); ok {
+					hasGeoban := false
+					for _, m := range modules {
+						if m.Name == "geoban" {
+							hasGeoban = true
+							break
+						}
+					}
+					if !hasGeoban {
+						mod := ui.ModuleStatus{
+							Name:        "geoban",
+							Description: "Country-based IP blocking",
+							LastSync:    now,
+							Status:      "inactive",
+						}
+						if enabled, ok := gb["enabled"].(bool); ok && enabled {
+							mod.Enabled = true
+							mod.Status = "active"
+							mod.Running = true
+						}
+						if countries, ok := gb["blocked_countries"].(float64); ok {
+							mod.BansProduced = int(countries)
+						}
+						modules = append(modules, mod)
+					}
+				}
 			}
 
 			// Check timers for portscan and ddos status
@@ -1575,8 +1632,92 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 				// Show timer status
 				_ = timers // Used above for reference
 			}
+
 		}
 	}
+
+	// Add modules that are NOT in nftban status --json output
+	// These need their own CLI calls
+
+	// Watchdog — check via nftban watchdog status
+	watchdogMod := ui.ModuleStatus{
+		Name:        "watchdog",
+		Description: "System pressure monitoring",
+		ServiceName: "nftban-watchdog",
+		LastSync:    now,
+		Status:      "inactive",
+	}
+	if err := exec.Command("systemctl", "is-active", "--quiet", "nftban-watchdog.timer").Run(); err == nil {
+		watchdogMod.Enabled = true
+		watchdogMod.Status = "active"
+		watchdogMod.Running = true
+	} else if err := exec.Command("systemctl", "is-active", "--quiet", "nftban-watchdog").Run(); err == nil {
+		watchdogMod.Enabled = true
+		watchdogMod.Status = "active"
+		watchdogMod.Running = true
+	}
+	modules = append(modules, watchdogMod)
+
+	// Trust feeds — check via config and data directory
+	trustMod := ui.ModuleStatus{
+		Name:        "trust",
+		Description: "CDN/provider trust feeds",
+		LastSync:    now,
+		Status:      "inactive",
+	}
+	if output, err := execNFTBanCommand("trust", "status"); err == nil {
+		outStr := string(output)
+		if strings.Contains(outStr, "ENABLED") || strings.Contains(outStr, "enabled") || strings.Contains(outStr, "active") {
+			trustMod.Enabled = true
+			trustMod.Status = "active"
+			trustMod.Running = true
+		}
+		// Count trust feed entries as bans produced
+		lines := strings.Split(outStr, "\n")
+		count := 0
+		for _, line := range lines {
+			if strings.Contains(line, "enabled") || strings.Contains(line, "ENABLED") {
+				count++
+			}
+		}
+		trustMod.BansProduced = count
+	}
+	modules = append(modules, trustMod)
+
+	// RBL checking — check via config
+	rblMod := ui.ModuleStatus{
+		Name:        "rbl",
+		Description: "Real-time blackhole list checking",
+		LastSync:    now,
+		Status:      "inactive",
+	}
+	if err := exec.Command("systemctl", "is-active", "--quiet", "nftban-rbl-check.timer").Run(); err == nil {
+		rblMod.Enabled = true
+		rblMod.Status = "active"
+		rblMod.Running = true
+	} else if output, err := execNFTBanCommand("config", "get", "rbl.enabled"); err == nil {
+		if strings.Contains(string(output), "true") || strings.Contains(string(output), "1") {
+			rblMod.Enabled = true
+			rblMod.Status = "active"
+		}
+	}
+	modules = append(modules, rblMod)
+
+	// Egress filtering — check via config
+	egressMod := ui.ModuleStatus{
+		Name:        "egress",
+		Description: "Outbound traffic filtering",
+		LastSync:    now,
+		Status:      "inactive",
+	}
+	if output, err := execNFTBanCommand("config", "get", "egress.enabled"); err == nil {
+		if strings.Contains(string(output), "true") || strings.Contains(string(output), "1") {
+			egressMod.Enabled = true
+			egressMod.Status = "active"
+			egressMod.Running = true
+		}
+	}
+	modules = append(modules, egressMod)
 
 	// If no modules found or nftables not in list, add direct nftables check
 	hasNftables := false

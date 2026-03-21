@@ -49,7 +49,7 @@ func ReloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := execNFTBanCommand("firewall", "reload")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to reload: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to reload: " + sanitizeError(err)})
 		return
 	}
 
@@ -63,7 +63,7 @@ func SyncFeedsHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := execNFTBanCommand("feeds", "update")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to update feeds: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to update feeds: " + sanitizeError(err)})
 		return
 	}
 
@@ -106,7 +106,7 @@ func FlushHandler(w http.ResponseWriter, r *http.Request) {
 	// Use nftban firewall flush command (architectural compliance)
 	_, err := execNFTBanCommand("firewall", "flush")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to flush runtime bans: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to flush runtime bans: " + sanitizeError(err)})
 		return
 	}
 
@@ -119,6 +119,10 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP parameter is required"})
+		return
+	}
+	if !validateIPOrCIDR(ip) {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid IP format"})
 		return
 	}
 
@@ -198,7 +202,7 @@ func PortscanControlHandler(w http.ResponseWriter, r *http.Request) {
 	output, err = execNFTBanCommand("portscan", req.Action)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("Failed to %s portscan: %v", req.Action, err),
+			Error: "Failed to " + req.Action + " portscan: " + sanitizeError(err),
 		})
 		return
 	}

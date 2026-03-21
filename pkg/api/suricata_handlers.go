@@ -183,7 +183,7 @@ func SuricataControlHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[SURICATA] Control action '%s' failed: %v - Output: %s", req.Action, err, output)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"success": false,
-			"error":   "Action failed: " + err.Error(),
+			"error":   "Action failed: " + sanitizeError(err),
 		})
 		return
 	}
@@ -258,7 +258,7 @@ func SuricataProfileApplyHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[SURICATA] Profile apply failed: %v - Output: %s", err, output)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"success": false,
-			"error":   "Failed to apply profile: " + err.Error(),
+			"error":   "Failed to apply profile: " + sanitizeError(err),
 		})
 		return
 	}
@@ -462,7 +462,7 @@ func SuricataRulesUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[SURICATA] Rules update failed: %v - Output: %s", err, output)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"success": false,
-			"error":   "Failed to update rules: " + err.Error(),
+			"error":   "Failed to update rules: " + sanitizeError(err),
 		})
 		return
 	}
