@@ -1193,7 +1193,7 @@ mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
-mkdir -p /var/log/nftban/{reports,botguard}
+mkdir -p /var/log/nftban/{reports,watchdog,rbl,botguard,suricata}
 mkdir -p /var/cache/nftban/health
 mkdir -p /run/nftban
 mkdir -p /usr/share/nftban/templates/{mail,reports}
@@ -1245,6 +1245,32 @@ else
     find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
     find /var/lib/nftban /var/log/nftban /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
     chmod 750 /var/lib/nftban /var/log/nftban 2>/dev/null || true
+fi
+
+# Directory ownership (fhs-permissions.sh only handles files, not dirs)
+chown nftban:nftban /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
+chmod 0750 /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
+# Suricata log dir: owner=suricata (if exists), group=nftban, mode=0770
+if id suricata &>/dev/null; then
+    chown suricata:nftban /var/log/nftban/suricata 2>/dev/null || true
+else
+    chown root:nftban /var/log/nftban/suricata 2>/dev/null || true
+fi
+chmod 0770 /var/log/nftban/suricata 2>/dev/null || true
+chown nftban:nftban /var/lib/nftban 2>/dev/null || true
+chmod 0750 /var/lib/nftban 2>/dev/null || true
+chown root:nftban-auditor /var/lib/nftban/reports/auditors 2>/dev/null || true
+chmod 0770 /var/lib/nftban/reports/auditors 2>/dev/null || true
+
+# Auditor ACLs (read-only traversal for nftban-auditor group)
+if command -v setfacl &>/dev/null && getent group nftban-auditor &>/dev/null; then
+    setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || true
+    setfacl -m g:nftban-auditor:x /var/log/nftban 2>/dev/null || true
+    setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || true
+    [ -d /var/lib/nftban/reports ] && setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || true
+    [ -d /var/lib/nftban/reports/auditors ] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || true
+    [ -f /etc/nftban/nftban.conf ] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
+    echo "[NFTBan] Auditor ACLs configured"
 fi
 
 # Set executable on shell scripts (always needed after cp -r)

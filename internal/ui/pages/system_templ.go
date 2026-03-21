@@ -67,7 +67,7 @@ func System(data ui.SystemPageData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- Page Header --> <div class=\"page-header\"><h1 class=\"page-title\">System Overview</h1><button class=\"btn btn-primary\" hx-get=\"/ui/frag/system-info\" hx-target=\"#system-content\" hx-swap=\"innerHTML\">Refresh</button></div><div id=\"system-content\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- Page Header --> <div class=\"page-header\"><h1 class=\"page-title\">System Overview</h1><button class=\"btn btn-primary\" hx-get=\"/ui/frag/system-info\" hx-target=\"#system-content\" hx-swap=\"innerHTML\">Refresh</button></div><div id=\"system-content\" hx-get=\"/ui/frag/system-info\" hx-trigger=\"every 10s\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

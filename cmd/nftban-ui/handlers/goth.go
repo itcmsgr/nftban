@@ -269,6 +269,11 @@ func (h *GOTHHandlers) HandleToolsIPCheck(w http.ResponseWriter, r *http.Request
 		http.Error(w, "IP required", http.StatusBadRequest)
 		return
 	}
+	ip = strings.TrimSpace(ip)
+	if !netutil.IsValidIP(ip) {
+		http.Error(w, "Invalid IP format", http.StatusBadRequest)
+		return
+	}
 
 	result := h.checkIP(ip)
 	pages.IPCheckResultFragment(result).Render(r.Context(), w)
@@ -281,6 +286,11 @@ func (h *GOTHHandlers) HandleToolsGeoIP(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "IP required", http.StatusBadRequest)
 		return
 	}
+	ip = strings.TrimSpace(ip)
+	if !netutil.IsValidIP(ip) {
+		http.Error(w, "Invalid IP format", http.StatusBadRequest)
+		return
+	}
 
 	result := h.geoLookup(ip)
 	pages.GeoLookupResultFragment(result).Render(r.Context(), w)
@@ -291,6 +301,11 @@ func (h *GOTHHandlers) HandleToolsSearch(w http.ResponseWriter, r *http.Request)
 	ip := r.FormValue("ip")
 	if ip == "" {
 		http.Error(w, "IP required", http.StatusBadRequest)
+		return
+	}
+	ip = strings.TrimSpace(ip)
+	if !netutil.IsValidIP(ip) {
+		http.Error(w, "Invalid IP format", http.StatusBadRequest)
 		return
 	}
 
@@ -357,6 +372,107 @@ func (h *GOTHHandlers) HandleFragHealthAll(w http.ResponseWriter, r *http.Reques
 
 func (h *GOTHHandlers) HandleFragModulesList(w http.ResponseWriter, r *http.Request) {
 	pages.ModulesListFragment(h.getModulesList()).Render(r.Context(), w)
+}
+
+// moduleServiceMap maps module names to their systemd journal units
+var moduleServiceMap = map[string]string{
+	"login":    "nftban-login-monitor",
+	"exporter": "nftban-unified-exporter",
+	"suricata": "nftban-suricata-scanner",
+	"feeds":    "nftban-core-feeds",
+	"botguard": "nftband",
+	"portscan": "nftban-core",
+	"ddos":     "nftban-core",
+	"watchdog": "nftban-watchdog",
+	"trust":    "nftban-core",
+	"rbl":      "nftban-rbl-check",
+	"geoban":   "nftban-core",
+	"egress":   "nftban-core",
+	"nftables": "nftban-core",
+	"geoip":    "nftban-core",
+}
+
+// moduleConfigMap maps module names to their nftban config module names
+var moduleConfigMap = map[string]string{
+	"login":    "login",
+	"exporter": "metrics",
+	"suricata": "suricata",
+	"feeds":    "feeds",
+	"botguard": "botguard",
+	"portscan": "portscan",
+	"ddos":     "ddos",
+	"watchdog": "watchdog",
+	"trust":    "trust",
+	"rbl":      "rbl",
+	"geoban":   "geoban",
+	"egress":   "egress",
+	"nftables": "main",
+	"geoip":    "geoip",
+}
+
+// HandleFragModuleLogs returns journal logs for a specific module
+func (h *GOTHHandlers) HandleFragModuleLogs(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	moduleName := vars["name"]
+
+	unit, ok := moduleServiceMap[moduleName]
+	if !ok {
+		http.Error(w, "Unknown module", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch last 30 lines from journalctl for this unit
+	cmd := exec.Command("journalctl", "-u", unit+".service", "-n", "30", "--no-pager", "--output=short-iso")
+	output, err := cmd.Output()
+	if err != nil {
+		// Try timer unit as fallback (e.g. nftban-rbl-check.timer)
+		cmd = exec.Command("journalctl", "-u", unit+".timer", "-n", "30", "--no-pager", "--output=short-iso")
+		output, _ = cmd.Output()
+	}
+
+	var lines []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "-- ") {
+			lines = append(lines, line)
+		}
+	}
+
+	pages.ModuleLogsFragment(moduleName, lines).Render(r.Context(), w)
+}
+
+// HandleFragModuleSettings returns config for a specific module
+func (h *GOTHHandlers) HandleFragModuleSettings(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	moduleName := vars["name"]
+
+	configMod, ok := moduleConfigMap[moduleName]
+	if !ok {
+		http.Error(w, "Unknown module", http.StatusBadRequest)
+		return
+	}
+
+	// Get config via nftban config show {module}
+	output, err := exec.Command("nftban", "config", "show", configMod).CombinedOutput()
+	if err != nil {
+		// Fallback: try reading the config file directly
+		confPath := fmt.Sprintf("/etc/nftban/conf.d/%s/main.conf", configMod)
+		if content, readErr := os.ReadFile(confPath); readErr == nil {
+			output = content
+		} else {
+			output = []byte(fmt.Sprintf("Could not load config for %s", configMod))
+		}
+	}
+
+	var configLines []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			configLines = append(configLines, line)
+		}
+	}
+
+	pages.ModuleSettingsFragment(moduleName, configLines).Render(r.Context(), w)
 }
 
 // =============================================================================
@@ -2955,6 +3071,10 @@ func parseBanLogLine(line string) ui.LogEntry {
 
 func (h *GOTHHandlers) checkIP(ip string) ui.IPCheckResult {
 	result := ui.IPCheckResult{IP: ip}
+	if !netutil.IsValidIP(ip) {
+		result.Status = "error"
+		return result
+	}
 
 	// Run nftban check command
 	out, err := exec.Command("nftban", "check", ip, "--json").Output()
@@ -3004,6 +3124,10 @@ func (h *GOTHHandlers) checkIP(ip string) ui.IPCheckResult {
 
 func (h *GOTHHandlers) geoLookup(ip string) ui.GeoLookupResult {
 	result := ui.GeoLookupResult{IP: ip}
+	if !netutil.IsValidIP(ip) {
+		result.Country = "Invalid IP"
+		return result
+	}
 
 	// Run nftban geoip command
 	out, err := exec.Command("nftban", "geoip", ip, "--json").Output()
@@ -3050,6 +3174,9 @@ func (h *GOTHHandlers) geoLookup(ip string) ui.GeoLookupResult {
 
 func (h *GOTHHandlers) searchIP(ip string) ui.SearchResult {
 	result := ui.SearchResult{IP: ip}
+	if !netutil.IsValidIP(ip) {
+		return result
+	}
 
 	// Run nftban search command
 	out, err := exec.Command("nftban", "search", ip, "--json").Output()
