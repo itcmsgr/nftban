@@ -39,7 +39,7 @@ func FirewallValidateHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute nftban firewall validate --json
 	output, err := execNFTBanCommand("firewall", "validate", "--json")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: sanitizeError(err)})
 		return
 	}
 
@@ -78,7 +78,7 @@ func FirewallCheckHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute nftban firewall check <value> --json
 	output, err := execNFTBanCommand("firewall", "check", req.Value, "--json")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: sanitizeError(err)})
 		return
 	}
 
@@ -97,7 +97,7 @@ func FirewallStatsHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute nftban firewall stats --json
 	output, err := execNFTBanCommand("firewall", "stats", "--json")
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: sanitizeError(err)})
 		return
 	}
 

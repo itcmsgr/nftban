@@ -63,7 +63,7 @@ fi
 
 # Load configuration
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
-[[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR}"
+[[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="/var/log/nftban"
 
 # Load RBL configuration (package defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf" ]]; then
@@ -89,6 +89,29 @@ fi
 : "${NFTBAN_RBL_WATCHLIST_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/watchlist.conf}"
 : "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:=YES}"
 : "${NFTBAN_RBL_PARALLEL_JOBS:=10}"
+
+# =============================================================================
+# LOGGING (P1.4 — dedicated RBL log file, v1.29.0)
+# =============================================================================
+
+: "${NFTBAN_RBL_LOG_FILE:=${NFTBAN_LOG_DIR}/rbl.log}"
+
+nftban_rbl_log() {
+    # Write structured entry to dedicated RBL log file
+    # Args: $1 = level (INFO|WARN|ERROR)
+    #       $2 = message
+    local level="${1:-INFO}"
+    local message="$2"
+    local timestamp
+    timestamp=$(date -Iseconds 2>/dev/null || date)
+
+    # Ensure log directory exists
+    local log_dir
+    log_dir=$(dirname "$NFTBAN_RBL_LOG_FILE")
+    [[ -d "$log_dir" ]] || mkdir -p "$log_dir" 2>/dev/null || true
+
+    printf '%s [%s] %s\n' "$timestamp" "$level" "$message" >> "$NFTBAN_RBL_LOG_FILE" 2>/dev/null || true
+}
 
 # =============================================================================
 # IP DISCOVERY FUNCTIONS
@@ -339,147 +362,149 @@ nftban_rbl_check_ip_parallel() {
     # Args: $1 = IP address
     #       $2 = output format (text|json)
     # Output: RBL check results (much faster than sequential)
+    # Note: Uses subshell to scope EXIT trap — prevents collision with caller's traps
 
     local ip="$1"
     local format="${2:-text}"
-    local reversed_ip
-    local temp_dir
-    local jobs="${NFTBAN_RBL_PARALLEL_JOBS:-10}"
 
-    reversed_ip=$(nftban_rbl_reverse_ip "$ip")
-    temp_dir=$(mktemp -d)
-    # v1.19.0: Ensure temp cleanup on unexpected exit (R07)
-    # shellcheck disable=SC2064  # Intentional: expand $temp_dir NOW at set time (local var)
-    trap "rm -rf '$temp_dir'" EXIT
+    # Run entire parallel block in subshell to scope the EXIT trap (P0.3 fix)
+    (
+        local reversed_ip
+        local temp_dir
+        local jobs="${NFTBAN_RBL_PARALLEL_JOBS:-10}"
+        # Cap parallel jobs to prevent resource exhaustion (VULN-19)
+        [[ "$jobs" -gt 20 ]] && jobs=20
 
-    # Create list of RBL checks to run
-    local rbl_list=()
-    while IFS=: read -r rbl_domain rbl_url; do
-        rbl_list+=("${rbl_domain}:${rbl_url}")
-    done < <(nftban_rbl_load_providers)
+        reversed_ip=$(nftban_rbl_reverse_ip "$ip")
+        temp_dir=$(mktemp -d)
+        # shellcheck disable=SC2064  # Intentional: expand $temp_dir NOW at set time (local var)
+        trap "rm -rf '$temp_dir'" EXIT
 
-    # Run DNS lookups in parallel using background jobs
-    local pids=()
-    local job_count=0
+        # Create list of RBL checks to run
+        local rbl_list=()
+        while IFS=: read -r rbl_domain rbl_url; do
+            rbl_list+=("${rbl_domain}:${rbl_url}")
+        done < <(nftban_rbl_load_providers)
 
-    for rbl_entry in "${rbl_list[@]}"; do
-        local rbl_domain="${rbl_entry%%:*}"
-        local rbl_url="${rbl_entry#*:}"
+        # Run DNS lookups in parallel using background jobs
+        local pids=()
+        local job_count=0
 
-        # Run lookup in background, write result to temp file
-        (
-            local result
-            local txt_record=""
-            result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+        for rbl_entry in "${rbl_list[@]}"; do
+            local rbl_domain="${rbl_entry%%:*}"
+            local rbl_url="${rbl_entry#*:}"
+
+            # Run lookup in background, write result to temp file
+            (
+                local result
+                local txt_record=""
+                result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+
+                if [[ "$result" == "LISTED" ]]; then
+                    txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
+                fi
+
+                echo "${result}|${rbl_domain}|${rbl_url}|${txt_record}" > "${temp_dir}/${rbl_domain}.result"
+            ) &
+
+            pids+=($!)
+            job_count=$((job_count + 1))
+
+            # Limit concurrent jobs
+            if [[ $job_count -ge $jobs ]]; then
+                wait "${pids[0]}"
+                pids=("${pids[@]:1}")
+                ((job_count--))
+            fi
+        done
+
+        # Wait for all remaining jobs
+        wait
+
+        # Collect results
+        local listed_count=0
+        local clean_count=0
+        local timeout_count=0
+
+        if [[ "$format" == "json" ]]; then
+            echo "{"
+            echo "  \"ip\": \"$ip\","
+            echo "  \"checks\": ["
+        else
+            echo "RBL Check Results for: $ip"
+            echo "─────────────────────────────────────────────────────────"
+        fi
+
+        local first=1
+        for result_file in "${temp_dir}"/*.result; do
+            [[ ! -f "$result_file" ]] && continue
+
+            IFS='|' read -r result rbl_domain rbl_url txt_record < "$result_file"
 
             if [[ "$result" == "LISTED" ]]; then
-                txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
-            fi
+                # v1.19.20 FIX
+                ((listed_count++)) || true
 
-            echo "${result}|${rbl_domain}|${rbl_url}|${txt_record}" > "${temp_dir}/${rbl_domain}.result"
-        ) &
+                if [[ "$format" == "json" ]]; then
+                    [[ $first -eq 0 ]] && echo ","
+                    echo "    {"
+                    echo "      \"rbl\": \"$rbl_domain\","
+                    echo "      \"status\": \"listed\","
+                    echo "      \"reason\": \"$txt_record\","
+                    echo "      \"url\": \"$rbl_url\""
+                    echo -n "    }"
+                    first=0
+                else
+                    echo "❌ LISTED: $rbl_domain"
+                    [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
+                    echo "   Info: $rbl_url"
+                fi
+            elif [[ "$result" == "TIMEOUT" ]]; then
+                # v1.19.20 FIX
+                ((timeout_count++)) || true
 
-        pids+=($!)
-        job_count=$((job_count + 1))
-
-        # Limit concurrent jobs
-        if [[ $job_count -ge $jobs ]]; then
-            wait "${pids[0]}"
-            pids=("${pids[@]:1}")
-            ((job_count--))
-        fi
-    done
-
-    # Wait for all remaining jobs
-    wait
-
-    # Collect results
-    local listed_count=0
-    local clean_count=0
-    local timeout_count=0
-
-    if [[ "$format" == "json" ]]; then
-        echo "{"
-        echo "  \"ip\": \"$ip\","
-        echo "  \"checks\": ["
-    else
-        echo "RBL Check Results for: $ip"
-        echo "─────────────────────────────────────────────────────────"
-    fi
-
-    local first=1
-    for result_file in "${temp_dir}"/*.result; do
-        [[ ! -f "$result_file" ]] && continue
-
-        IFS='|' read -r result rbl_domain rbl_url txt_record < "$result_file"
-
-        if [[ "$result" == "LISTED" ]]; then
-            # v1.19.20 FIX
-            ((listed_count++)) || true
-
-            if [[ "$format" == "json" ]]; then
-                [[ $first -eq 0 ]] && echo ","
-                echo "    {"
-                echo "      \"rbl\": \"$rbl_domain\","
-                echo "      \"status\": \"listed\","
-                echo "      \"reason\": \"$txt_record\","
-                echo "      \"url\": \"$rbl_url\""
-                echo -n "    }"
-                first=0
+                if [[ "$format" == "json" ]]; then
+                    [[ $first -eq 0 ]] && echo ","
+                    echo "    {"
+                    echo "      \"rbl\": \"$rbl_domain\","
+                    echo "      \"status\": \"timeout\","
+                    echo "      \"url\": \"$rbl_url\""
+                    echo -n "    }"
+                    first=0
+                else
+                    echo "⏱️  TIMEOUT: $rbl_domain"
+                fi
             else
-                echo "❌ LISTED: $rbl_domain"
-                [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
-                echo "   Info: $rbl_url"
-            fi
-        elif [[ "$result" == "TIMEOUT" ]]; then
-            # v1.19.20 FIX
-            ((timeout_count++)) || true
+                # v1.19.20 FIX
+                ((clean_count++)) || true
 
-            if [[ "$format" == "json" ]]; then
-                [[ $first -eq 0 ]] && echo ","
-                echo "    {"
-                echo "      \"rbl\": \"$rbl_domain\","
-                echo "      \"status\": \"timeout\","
-                echo "      \"url\": \"$rbl_url\""
-                echo -n "    }"
-                first=0
-            else
-                echo "⏱️  TIMEOUT: $rbl_domain"
+                if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
+                    echo "✅ CLEAN: $rbl_domain"
+                fi
             fi
+        done
+
+        if [[ "$format" == "json" ]]; then
+            echo ""
+            echo "  ],"
+            echo "  \"summary\": {"
+            echo "    \"listed\": $listed_count,"
+            echo "    \"clean\": $clean_count,"
+            echo "    \"timeout\": $timeout_count"
+            echo "  }"
+            echo "}"
         else
-            # v1.19.20 FIX
-            ((clean_count++)) || true
-
-            if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
-                echo "✅ CLEAN: $rbl_domain"
-            fi
+            echo "─────────────────────────────────────────────────────────"
+            echo "Summary:"
+            echo "  Listed: $listed_count"
+            echo "  Clean: $clean_count"
+            echo "  Timeout: $timeout_count"
         fi
-    done
 
-    # Cleanup temp dir and reset trap
-    rm -rf "$temp_dir"
-    trap - EXIT
-
-    if [[ "$format" == "json" ]]; then
-        echo ""
-        echo "  ],"
-        echo "  \"summary\": {"
-        echo "    \"listed\": $listed_count,"
-        echo "    \"clean\": $clean_count,"
-        echo "    \"timeout\": $timeout_count"
-        echo "  }"
-        echo "}"
-    else
-        echo "─────────────────────────────────────────────────────────"
-        echo "Summary:"
-        echo "  Listed: $listed_count"
-        echo "  Clean: $clean_count"
-        echo "  Timeout: $timeout_count"
-    fi
-
-    # Return 1 if any listings found
-    [[ $listed_count -gt 0 ]] && return 1
-    return 0
+        # Return 1 if any listings found (subshell exit code propagates)
+        [[ $listed_count -gt 0 ]] && exit 1
+        exit 0
+    )
 }
 
 # =============================================================================
@@ -893,6 +918,11 @@ nftban_rbl_update_state() {
     # Add updated entry (format: IP=status|timestamp|prev_status|prev_timestamp)
     echo "${ip}=${status}|${timestamp}|${prev_status}|${prev_timestamp}" >> "$state_file"
 
+    # Log state transitions
+    if [[ "$status" != "$prev_status" ]] && [[ -n "$prev_status" ]]; then
+        nftban_rbl_log "INFO" "STATE: IP=$ip transition ${prev_status}→${status}"
+    fi
+
     # Generate JSON view for API compatibility
     _nftban_rbl_state_to_json > "$state_json"
 }
@@ -987,6 +1017,8 @@ nftban_rbl_send_alert() {
     if [[ -z "$email" ]]; then
         return 0
     fi
+
+    nftban_rbl_log "WARN" "ALERT: IP=$ip listed on $rbl — reason: ${reason:-unknown} — sending to $email"
 
     # Get severity based on tag
     local severity
@@ -1128,16 +1160,25 @@ EOF
 # =============================================================================
 
 nftban_rbl_status() {
-    # Get overall RBL monitoring status
-    # Args: $1 = format (text|json)
+    # Get overall RBL monitoring status (enhanced v1.29.0)
+    # Args: $1 = format (text|json|brief)
 
     local format="${1:-text}"
-    local last_check
-    local cache_count
+    local last_check last_check_ago=""
+    local cache_count provider_count
+    local listed_count=0
+    local timer_status="unknown" timer_next=""
 
     # Get last check time
     if [[ -f "${NFTBAN_RBL_CACHE_DIR}/last_check" ]]; then
         last_check=$(cat "${NFTBAN_RBL_CACHE_DIR}/last_check")
+        local last_epoch now_epoch
+        last_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        if [[ $last_epoch -gt 0 ]]; then
+            local hours_ago=$(( (now_epoch - last_epoch) / 3600 ))
+            last_check_ago="${hours_ago}h ago"
+        fi
     else
         last_check="Never"
     fi
@@ -1145,20 +1186,188 @@ nftban_rbl_status() {
     # Count cache files
     cache_count=$(find "${NFTBAN_RBL_CACHE_DIR}" -name "*.cache" 2>/dev/null | wc -l)
 
+    # Count providers
+    provider_count=$(nftban_rbl_load_providers 2>/dev/null | wc -l) || provider_count=0
+
+    # Check for blacklisted IPs
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.json"
+    if [[ -f "$state_file" ]]; then
+        listed_count=$(grep -c '"listed"' "$state_file" 2>/dev/null || echo 0)
+    fi
+
+    # Timer status
+    if systemctl is-active nftban-rbl-check.timer &>/dev/null 2>&1; then
+        timer_status="active"
+        timer_next=$(systemctl show nftban-rbl-check.timer --property=NextElapseUSecRealtime 2>/dev/null | cut -d= -f2 | head -c 19 || echo "")
+    elif systemctl is-enabled nftban-rbl-check.timer &>/dev/null 2>&1; then
+        timer_status="enabled (not active)"
+    else
+        timer_status="disabled"
+    fi
+
+    # Count monitored IPs (auto-discovered)
+    local monitored_ipv4=0 monitored_ipv6=0
+    if [[ "${NFTBAN_RBL_ENABLED}" == "YES" ]]; then
+        monitored_ipv4=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | sort -u | wc -l)
+        if [[ "${NFTBAN_RBL_CHECK_IPV6:-YES}" == "YES" ]]; then
+            monitored_ipv6=$(ip -6 addr show 2>/dev/null | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u | wc -l)
+        fi
+    fi
+    local monitored_total=$((monitored_ipv4 + monitored_ipv6))
+
+    # Brief mode (one-line)
+    if [[ "$format" == "brief" ]]; then
+        if [[ "${NFTBAN_RBL_ENABLED}" == "YES" ]]; then
+            if [[ $listed_count -gt 0 ]]; then
+                echo "RBL: ENABLED — ${listed_count} IP(s) BLACKLISTED — ${provider_count} providers — last check: ${last_check_ago:-never}"
+            else
+                echo "RBL: ENABLED — clean — ${provider_count} providers — last check: ${last_check_ago:-never}"
+            fi
+        else
+            echo "RBL: DISABLED (enable with: nftban rbl enable)"
+        fi
+        return 0
+    fi
+
     if [[ "$format" == "json" ]]; then
-        echo "{"
-        echo "  \"enabled\": \"${NFTBAN_RBL_ENABLED}\","
-        echo "  \"last_check\": \"$last_check\","
-        echo "  \"cached_ips\": $cache_count,"
-        echo "  \"cache_ttl_hours\": ${NFTBAN_RBL_CACHE_TTL}"
-        echo "}"
+        if command -v jq &>/dev/null; then
+            jq -n \
+                --arg enabled "${NFTBAN_RBL_ENABLED}" \
+                --arg last_check "$last_check" \
+                --arg last_check_ago "${last_check_ago:-}" \
+                --argjson cached_ips "$cache_count" \
+                --argjson cache_ttl "${NFTBAN_RBL_CACHE_TTL}" \
+                --argjson provider_count "$provider_count" \
+                --argjson listed_count "$listed_count" \
+                --arg timer_status "$timer_status" \
+                --arg timer_next "${timer_next:-}" \
+                --argjson monitored_ipv4 "$monitored_ipv4" \
+                --argjson monitored_ipv6 "$monitored_ipv6" \
+                '{
+                    enabled: ($enabled == "YES"),
+                    last_check: $last_check,
+                    last_check_ago: $last_check_ago,
+                    cached_ips: $cached_ips,
+                    cache_ttl_hours: $cache_ttl,
+                    provider_count: $provider_count,
+                    listed_count: $listed_count,
+                    timer_status: $timer_status,
+                    timer_next: $timer_next,
+                    monitored_ipv4: $monitored_ipv4,
+                    monitored_ipv6: $monitored_ipv6
+                }'
+        else
+            echo "{"
+            echo "  \"enabled\": \"${NFTBAN_RBL_ENABLED}\","
+            echo "  \"last_check\": \"$last_check\","
+            echo "  \"cached_ips\": $cache_count,"
+            echo "  \"cache_ttl_hours\": ${NFTBAN_RBL_CACHE_TTL},"
+            echo "  \"provider_count\": $provider_count,"
+            echo "  \"listed_count\": $listed_count"
+            echo "}"
+        fi
     else
         echo "RBL Monitoring Status"
         echo "─────────────────────────────────────────────────────────"
-        echo "Enabled: ${NFTBAN_RBL_ENABLED}"
-        echo "Last Check: $last_check"
-        echo "Cached IPs: $cache_count"
-        echo "Cache TTL: ${NFTBAN_RBL_CACHE_TTL} hours"
+        echo "  Module:       RBL (Self-IP reputation monitoring)"
+        echo "  Enabled:      ${NFTBAN_RBL_ENABLED}"
+        if [[ "${NFTBAN_RBL_ENABLED}" != "YES" ]]; then
+            echo "                (enable with: nftban rbl enable)"
+        fi
+        echo "  Timer:        $timer_status"
+        [[ -n "$timer_next" ]] && echo "                (next: $timer_next)"
+        echo "  Last Check:   ${last_check}${last_check_ago:+ ($last_check_ago)}"
+        echo "  Providers:    $provider_count active"
+        echo "  Monitored:    $monitored_total IPs ($monitored_ipv4 IPv4, $monitored_ipv6 IPv6)"
+        if [[ $listed_count -gt 0 ]]; then
+            echo "  Blacklisted:  $listed_count (run 'nftban rbl check' for details)"
+        else
+            echo "  Blacklisted:  0"
+        fi
+        echo "  Cache:        $cache_count entries (${NFTBAN_RBL_CACHE_TTL}h TTL)"
+    fi
+}
+
+# =============================================================================
+# OBSERVABILITY COUNTERS (P1.5 — v1.29.0)
+# =============================================================================
+
+nftban_rbl_update_counters() {
+    # Update RBL observability counters after a check run
+    # Args: $1 = listed_count
+    #       $2 = clean_count
+    #       $3 = timeout_count
+    #       $4 = duration_ms (optional)
+
+    local listed="${1:-0}"
+    local clean="${2:-0}"
+    local timeout="${3:-0}"
+    local duration_ms="${4:-0}"
+    local counters_file="${NFTBAN_RBL_CACHE_DIR}/counters.dat"
+    local total=$((listed + clean + timeout))
+
+    # Load existing counters
+    local prev_total_checks=0 prev_total_listed=0 prev_total_timeouts=0
+    if [[ -f "$counters_file" ]]; then
+        prev_total_checks=$(grep "^total_checks=" "$counters_file" 2>/dev/null | cut -d= -f2 || echo 0)
+        prev_total_listed=$(grep "^total_listed=" "$counters_file" 2>/dev/null | cut -d= -f2 || echo 0)
+        prev_total_timeouts=$(grep "^total_timeouts=" "$counters_file" 2>/dev/null | cut -d= -f2 || echo 0)
+    fi
+
+    # Write updated counters
+    mkdir -p "$NFTBAN_RBL_CACHE_DIR" 2>/dev/null || true
+    cat > "$counters_file" <<EOF
+total_checks=$((prev_total_checks + total))
+total_listed=$((prev_total_listed + listed))
+total_timeouts=$((prev_total_timeouts + timeout))
+last_run_checks=$total
+last_run_listed=$listed
+last_run_timeouts=$timeout
+last_duration_ms=$duration_ms
+last_run_timestamp=$(date -Iseconds 2>/dev/null || date)
+EOF
+
+    nftban_rbl_log "INFO" "CHECK: total=$total listed=$listed clean=$clean timeout=$timeout duration=${duration_ms}ms"
+}
+
+nftban_rbl_get_counters() {
+    # Get current observability counters
+    # Args: $1 = format (text|json)
+    local format="${1:-text}"
+    local counters_file="${NFTBAN_RBL_CACHE_DIR}/counters.dat"
+
+    if [[ ! -f "$counters_file" ]]; then
+        if [[ "$format" == "json" ]]; then
+            echo '{"total_checks":0,"total_listed":0,"total_timeouts":0}'
+        else
+            echo "No counter data (run 'nftban rbl check' first)"
+        fi
+        return 0
+    fi
+
+    if [[ "$format" == "json" ]]; then
+        # Convert key=value to JSON
+        echo "{"
+        local first=1
+        while IFS='=' read -r key value; do
+            [[ -z "$key" ]] && continue
+            [[ $first -eq 0 ]] && echo ","
+            if [[ "$value" =~ ^[0-9]+$ ]]; then
+                echo -n "  \"$key\": $value"
+            else
+                echo -n "  \"$key\": \"$value\""
+            fi
+            first=0
+        done < "$counters_file"
+        echo ""
+        echo "}"
+    else
+        echo "RBL Observability Counters"
+        echo "─────────────────────────────────────────────────────────"
+        while IFS='=' read -r key value; do
+            [[ -z "$key" ]] && continue
+            printf "  %-20s  %s\n" "$key" "$value"
+        done < "$counters_file"
     fi
 }
 
@@ -1184,3 +1393,6 @@ export -f nftban_rbl_watchlist_add
 export -f nftban_rbl_watchlist_remove
 export -f nftban_rbl_watchlist_list
 export -f nftban_rbl_check_ip_parallel
+export -f nftban_rbl_log
+export -f nftban_rbl_update_counters
+export -f nftban_rbl_get_counters

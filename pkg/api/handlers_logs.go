@@ -121,7 +121,7 @@ func LogsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("[ERROR] Failed to read log file %s: %v", logFile, err)
 			respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: fmt.Sprintf("Failed to read log file: %v", err),
+				Error: "Failed to read log file: " + sanitizeError(err),
 			})
 			return
 		}
@@ -244,7 +244,7 @@ func LogsViewerHandler(w http.ResponseWriter, r *http.Request) {
 
 		log.Printf("[ERROR] Failed to read log file %s: %v", logFile, err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("Failed to read log file: %v", err),
+			Error: "Failed to read log file: " + sanitizeError(err),
 		})
 		return
 	}
@@ -395,7 +395,17 @@ func LogFileHandler(w http.ResponseWriter, r *http.Request) {
 	linesParam := r.URL.Query().Get("lines")
 	lines := "100"
 	if linesParam != "" {
-		lines = linesParam
+		if linesParam != "all" {
+			// Validate lines is a number between 1-10000 (VULN-05)
+			linesNum, convErr := strconv.Atoi(linesParam)
+			if convErr != nil || linesNum < 1 || linesNum > 10000 {
+				respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid lines parameter (must be 1-10000 or 'all')"})
+				return
+			}
+			lines = strconv.Itoa(linesNum)
+		} else {
+			lines = "all"
+		}
 	}
 
 	// Read log file
@@ -436,6 +446,13 @@ func PortScanLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if lines == "" {
 		lines = "100"
 	}
+	// Validate lines is a number between 1-10000 (VULN-04)
+	linesNum, convErr := strconv.Atoi(lines)
+	if convErr != nil || linesNum < 1 || linesNum > 10000 {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid lines parameter (must be 1-10000)"})
+		return
+	}
+	lines = strconv.Itoa(linesNum)
 
 	// Fetch portscan logs from nftban
 	output, err := execNFTBanCommand("logs", "--lines", lines, "--json")

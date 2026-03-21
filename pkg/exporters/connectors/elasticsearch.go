@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/logx"
 )
 
@@ -86,8 +87,8 @@ func DefaultESConfig() ESConfig {
 		Index:         "nftban-metrics",
 		IndexPattern:  "nftban-metrics-%Y.%m.%d",
 		BulkSize:      1000,
-		FlushInterval: 5 * time.Second,
-		Timeout:       30 * time.Second,
+		FlushInterval: constants.ElasticsearchFlushInterval,
+		Timeout:       constants.ElasticsearchHTTPTimeout,
 		MaxRetries:    3,
 		RetryInterval: time.Second,
 	}
@@ -110,7 +111,7 @@ func (c *ElasticsearchConnector) Connect(ctx context.Context) error {
 	transport := &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+		IdleConnTimeout:     constants.ElasticsearchIdleConnTimeout,
 	}
 
 	if c.config.TLS || c.config.TLSSkipVerify {

@@ -56,6 +56,8 @@ COMMANDS:
     enable              Enable HTTP Bot Guard protection
     disable             Disable HTTP Bot Guard protection
     status              Show bot guard status and statistics
+    config              Show bot guard configuration
+    stats               Show bot guard set statistics
     test <ip>           Test classification for a specific IP
     list [--set=NAME]   List IPs in bot guard sets
     verify <ip>         Manual FCrDNS verification for an IP
@@ -447,6 +449,127 @@ _nftban_botguard_verify() {
 }
 
 # =============================================================================
+# CONFIG / STATS SUBCOMMANDS (v1.29.0)
+# =============================================================================
+
+_nftban_botguard_config() {
+    local json_mode="${1:-false}"
+
+    local config_file="$_BOTGUARD_CONF"
+    local config_local="$_BOTGUARD_CONF_LOCAL"
+
+    local enabled
+    enabled=$(_botguard_config_get "HTTP_BOTGUARD_ENABLED" "false")
+    local suspect_rate
+    suspect_rate=$(_botguard_config_get "HTTP_BOT_SUSPECT_RATE" "30/second")
+    local loop_interval
+    loop_interval=$(_botguard_config_get "HTTP_BOT_FAST_LOOP_INTERVAL" "60")
+    local pressure_interval
+    pressure_interval=$(_botguard_config_get "HTTP_BOT_FAST_LOOP_PRESSURE_INTERVAL" "40")
+    local batch_interval
+    batch_interval=$(_botguard_config_get "HTTP_BOT_BOTSCAN_INTERVAL" "600")
+    local suspect_timeout
+    suspect_timeout=$(_botguard_config_get "HTTP_BOT_SUSPECT_TIMEOUT" "300")
+
+    if [[ "$json_mode" == "true" ]]; then
+        printf '{"config_file":"%s","config_local":"%s","local_exists":%s,"settings":{"enabled":%s,"suspect_rate":"%s","loop_interval":%s,"pressure_interval":%s,"batch_interval":%s,"suspect_timeout":%s}}\n' \
+            "$config_file" "$config_local" \
+            "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
+            "$enabled" "$suspect_rate" "$loop_interval" "$pressure_interval" \
+            "$batch_interval" "$suspect_timeout"
+    else
+        echo "Bot Guard Configuration"
+        echo "======================="
+        echo ""
+        echo "  Config File:        $config_file"
+        echo "  Override File:      $config_local"
+        if [[ -f "$config_local" ]]; then
+            echo "  Status:             [Override Active]"
+        else
+            echo "  Status:             [Using defaults]"
+        fi
+        echo ""
+        echo "Settings:"
+        echo "  Enabled:            $enabled"
+        echo "  Suspect Rate:       $suspect_rate"
+        echo "  Loop Interval:      ${loop_interval}s"
+        echo "  Pressure Interval:  ${pressure_interval}s"
+        echo "  Batch Interval:     ${batch_interval}s"
+        echo "  Suspect Timeout:    ${suspect_timeout}s"
+        echo ""
+        echo "To override settings, create/edit: $config_local"
+    fi
+}
+
+_nftban_botguard_stats() {
+    local json_mode="${1:-false}"
+
+    # Count IPs in each set
+    local suspect_v4=0 suspect_v6=0
+    local allow_v4=0 allow_v6=0
+    local ban_v4=0 ban_v6=0
+    local grey_v4=0 grey_v6=0
+    local pending_v4=0 pending_v6=0
+    local emergency_v4=0 emergency_v6=0
+
+    for set_pair in \
+        "http_bot_suspect:suspect_v4:suspect_v6" \
+        "http_bot_allow:allow_v4:allow_v6" \
+        "http_bot_ban:ban_v4:ban_v6" \
+        "http_bot_grey:grey_v4:grey_v6" \
+        "http_bot_pending:pending_v4:pending_v6" \
+        "http_bot_emergency:emergency_v4:emergency_v6"; do
+
+        local set_name="${set_pair%%:*}"
+        local rest="${set_pair#*:}"
+        local v4_var="${rest%%:*}"
+        local v6_var="${rest#*:}"
+
+        local v4_count=0 v6_count=0
+        if nft list set ip nftban "$set_name" &>/dev/null; then
+            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || echo "0")
+        fi
+        if nft list set ip6 nftban "${set_name}6" &>/dev/null; then
+            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || echo "0")
+        fi
+
+        declare "$v4_var=$v4_count"
+        declare "$v6_var=$v6_count"
+    done
+
+    local daemon_running="false"
+    if systemctl is-active nftband &>/dev/null; then
+        daemon_running="true"
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        printf '{"daemon_running":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
+            "$daemon_running" \
+            "$suspect_v4" "$suspect_v6" \
+            "$allow_v4" "$allow_v6" \
+            "$ban_v4" "$ban_v6" \
+            "$grey_v4" "$grey_v6" \
+            "$pending_v4" "$pending_v6" \
+            "$emergency_v4" "$emergency_v6"
+    else
+        echo "Bot Guard Statistics"
+        echo "===================="
+        echo ""
+        echo "  Daemon Running:   $daemon_running"
+        echo ""
+        printf "  %-12s  %6s  %6s\n" "Set" "IPv4" "IPv6"
+        printf "  %-12s  %6s  %6s\n" "───────────" "──────" "──────"
+        printf "  %-12s  %6s  %6s\n" "suspect" "$suspect_v4" "$suspect_v6"
+        printf "  %-12s  %6s  %6s\n" "pending" "$pending_v4" "$pending_v6"
+        printf "  %-12s  %6s  %6s\n" "allow" "$allow_v4" "$allow_v6"
+        printf "  %-12s  %6s  %6s\n" "grey" "$grey_v4" "$grey_v6"
+        printf "  %-12s  %6s  %6s\n" "ban" "$ban_v4" "$ban_v6"
+        printf "  %-12s  %6s  %6s\n" "emergency" "$emergency_v4" "$emergency_v6"
+        echo ""
+    fi
+}
+
+# =============================================================================
 # MAIN DISPATCH
 # =============================================================================
 
@@ -473,6 +596,12 @@ nftban_cmd_botguard() {
         status)
             _nftban_botguard_status "$json_mode"
             ;;
+        config)
+            _nftban_botguard_config "$json_mode"
+            ;;
+        stats)
+            _nftban_botguard_stats "$json_mode"
+            ;;
         test)
             local ip="${1:-}"
             shift || true
@@ -492,7 +621,7 @@ nftban_cmd_botguard() {
             _nftban_botguard_help
             ;;
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, test, list, verify, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, status, config, stats, test, list, verify, help" "$json_mode"
             return 1
             ;;
     esac
@@ -510,6 +639,8 @@ export -f _nftban_botguard_status
 export -f _nftban_botguard_test
 export -f _nftban_botguard_list
 export -f _nftban_botguard_verify
+export -f _nftban_botguard_config
+export -f _nftban_botguard_stats
 export -f _botguard_config_get
 export -f _botguard_config_set
 

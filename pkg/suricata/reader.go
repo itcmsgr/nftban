@@ -29,6 +29,8 @@ import (
 	"io"
 	"os"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // EveAlert represents a Suricata eve.json alert entry
@@ -176,7 +178,7 @@ func (r *EveReader) ReadEvent() (*Event, error) {
 // ReadEvents continuously reads events from eve.json
 // Sends events to the provided channel
 func (r *EveReader) ReadEvents(events chan<- *Event, stopChan <-chan struct{}) error {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(constants.SuricataEVEPollInterval)
 	defer ticker.Stop()
 
 	for {

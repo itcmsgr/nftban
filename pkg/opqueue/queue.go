@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/safeconv"
 )
@@ -208,8 +209,8 @@ func (s *Scheduler) fastWorker(ctx context.Context) {
 // Returns true if operation succeeded, false if all retries exhausted
 func (s *Scheduler) retryWithBackoff(opName string, operation func() error) bool {
 	maxRetries := 3
-	initialDelay := 10 * time.Millisecond
-	maxDelay := 500 * time.Millisecond
+	initialDelay := constants.OpQueueInitialDelay
+	maxDelay := constants.OpQueueMaxDelay
 
 	delay := initialDelay
 	for attempt := 0; attempt <= maxRetries; attempt++ {

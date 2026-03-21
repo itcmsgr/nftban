@@ -81,7 +81,7 @@ nftban_trace_start() {
 
     # Also store in temp file for crash detection (use mktemp for security)
     local trace_file
-    trace_file="$(mktemp -t nftban-trace-XXXXXX)" 2>/dev/null || trace_file="/tmp/nftban_trace_$$"
+    trace_file="$(mktemp -t nftban-trace-XXXXXX)" 2>/dev/null || { echo "mktemp failed" >&2; return 1; }
     echo "$_NFTBAN_TRACE_ID" > "$trace_file" 2>/dev/null || true
     # Store path for cleanup
     export _NFTBAN_TRACE_FILE="$trace_file"

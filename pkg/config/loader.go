@@ -62,12 +62,13 @@ func LoadFHSSpec() (map[string]FHSDirectory, error) {
 	libDir := cfg.LibDir
 
 	// Execute bash to source FHS spec and output data
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(`
-		source %s/core/nftban_fhs_spec.sh 2>/dev/null
+	// VULN-20: quote path via $1 to prevent injection
+	cmd := exec.Command("bash", "-c", `
+		source "$1"/core/nftban_fhs_spec.sh 2>/dev/null
 		for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
 			echo "$path|${NFTBAN_FHS_DIRECTORIES[$path]}"
 		done
-	`, libDir))
+	`, "_", libDir)
 
 	output, err := cmd.Output()
 	if err != nil {
