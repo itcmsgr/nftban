@@ -441,7 +441,8 @@ nftban_geoban_remove_from_nftables() {
         done
         cidr_list_v4="${cidr_list_v4%,}"
 
-        local delete_fragment="/etc/nftban/rules.d/geoban-delete-v4-$$.nft"
+        local delete_fragment
+        delete_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_del_v4_XXXXXX.nft")
         echo "delete element $table_v4 $set_v4 { $cidr_list_v4 }" > "$delete_fragment"
 
         if nft_ipc_apply_ruleset "$delete_fragment" 2>/dev/null; then
@@ -463,7 +464,8 @@ nftban_geoban_remove_from_nftables() {
         done
         cidr_list_v6="${cidr_list_v6%,}"
 
-        local delete_fragment="/etc/nftban/rules.d/geoban-delete-v6-$$.nft"
+        local delete_fragment
+        delete_fragment=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_geoban_del_v6_XXXXXX.nft")
         echo "delete element $table_v6 $set_v6 { $cidr_list_v6 }" > "$delete_fragment"
 
         if nft_ipc_apply_ruleset "$delete_fragment" 2>/dev/null; then

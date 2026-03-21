@@ -32,6 +32,7 @@ Depends: ${shlibs:Depends},
 Recommends: dnsutils,
             mailutils,
             logrotate,
+            netmask,
             whiptail
 Description: Open-source Linux IPS and nftables firewall manager
  NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
