@@ -167,6 +167,17 @@ func (w *NFTBackendWrapper) GetSetElements(tableName, setName string) ([]string,
 	return w.nft.GetSetElements(set)
 }
 
+// GetSetCount returns the number of elements in a set without loading them all into memory.
+// For interval sets, filters out IntervalEnd markers to return the true entry count.
+func (w *NFTBackendWrapper) GetSetCount(tableName, setName string) (int, error) {
+	set, err := w.getSet(setName)
+	if err != nil {
+		return 0, err
+	}
+
+	return w.nft.GetSetCount(set)
+}
+
 // InvalidateCache clears the set cache (call after external nft changes)
 func (w *NFTBackendWrapper) InvalidateCache() {
 	w.sets = make(map[string]*nftables.Set)
