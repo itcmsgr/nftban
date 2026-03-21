@@ -180,6 +180,9 @@ type Daemon struct {
 	opQueue     *opqueue.OpQueue     // Async operation queue for batched netlink
 	sourceIndex *opqueue.SourceIndex // Source tracking for shared sets
 
+	// v1.32.0: In-memory set element counters (huge set management)
+	setCounters *stats.SetCounters   // Per-set element counts (O(1) reads)
+
 	// v1.13.12: Config reload tracking
 	configHash    string       // SHA256 of loaded config files
 	lastReloadTs  time.Time    // When config was last loaded/reloaded

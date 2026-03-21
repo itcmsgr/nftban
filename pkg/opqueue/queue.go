@@ -563,6 +563,11 @@ type OpQueue struct {
 	// Backend for netlink operations
 	backend NetlinkBackend
 
+	// Flush callback for set counter updates (v1.32.0)
+	// Called after each successful flush with (setName, applied, opType)
+	// opType: "add" for adds, "delete" for deletes, "replace" for replace_set, "flush" for flush_set
+	onFlush func(setName string, applied int, opType string)
+
 	// Configuration
 	config QueueConfig
 
@@ -590,6 +595,13 @@ func NewOpQueue(backend NetlinkBackend, config QueueConfig) *OpQueue {
 	}
 	q.lastFlushTime.Store(time.Now())
 	return q
+}
+
+// SetOnFlush registers a callback that fires after each successful flush.
+// Callback receives: setName, count of elements applied, operation type.
+// Used by set counters to maintain in-memory element counts (v1.32.0).
+func (q *OpQueue) SetOnFlush(fn func(setName string, applied int, opType string)) {
+	q.onFlush = fn
 }
 
 // Start begins the async flush worker
@@ -840,6 +852,23 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 	q.pendingCount.Add(-int64(countBefore))
 	q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
 	q.lastFlushTime.Store(time.Now())
+
+	// Notify set counter callback (v1.32.0)
+	if q.onFlush != nil && result.Err == nil && result.Applied > 0 {
+		if result.WasReplace {
+			q.onFlush(setName, result.Adds, "replace")
+		} else if result.WasFlush {
+			q.onFlush(setName, 0, "flush")
+		} else {
+			// Individual ops: report net delta (adds - deletes)
+			if result.Adds > 0 {
+				q.onFlush(setName, result.Adds, "add")
+			}
+			if result.Deletes > 0 {
+				q.onFlush(setName, result.Deletes, "delete")
+			}
+		}
+	}
 
 	// Re-enqueue post-barrier ops EXTERNALLY (not inside flush)
 	for _, op := range result.PostBarrier {

@@ -220,6 +220,9 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int) FlushResul
 		if result.Applied < 0 {
 			result.Err = errors.New("replace_set failed")
 			result.Applied = 0
+		} else {
+			result.WasReplace = true
+			result.Adds = result.Applied
 		}
 	} else if flushPending {
 		if err := backend.FlushSet(table, setName); err != nil {
@@ -227,13 +230,16 @@ func (buf *SetBuffer) flush(backend NetlinkBackend, maxBatchSize int) FlushResul
 			result.Err = err
 		} else {
 			result.Applied = 1
+			result.WasFlush = true
 		}
 	}
 
 	// Apply pending individual ops
 	if len(pending) > 0 {
-		applied := buf.applyPending(backend, table, setName, pending, maxBatchSize)
-		result.Applied += applied
+		adds, deletes := buf.applyPendingCounted(backend, table, setName, pending, maxBatchSize)
+		result.Applied += adds + deletes
+		result.Adds += adds
+		result.Deletes += deletes
 	}
 
 	return result
@@ -283,7 +289,14 @@ func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string
 }
 
 // applyPending applies individual add/delete operations
+// applyPending applies individual add/delete operations (legacy, calls applyPendingCounted)
 func (buf *SetBuffer) applyPending(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int) int {
+	adds, deletes := buf.applyPendingCounted(backend, table, setName, pending, maxBatchSize)
+	return adds + deletes
+}
+
+// applyPendingCounted applies individual add/delete operations and returns separate counts
+func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int) (adds, deletes int) {
 	isIPv6 := strings.HasSuffix(setName, "_ipv6")
 
 	var toAdd, toDelete []SetElement
@@ -302,8 +315,6 @@ func (buf *SetBuffer) applyPending(backend NetlinkBackend, table, setName string
 		}
 	}
 
-	applied := 0
-
 	// Apply deletes first (in batches)
 	for i := 0; i < len(toDelete); i += maxBatchSize {
 		end := i + maxBatchSize
@@ -313,7 +324,7 @@ func (buf *SetBuffer) applyPending(backend NetlinkBackend, table, setName string
 		if err := backend.DeleteElements(table, setName, toDelete[i:end]); err != nil {
 			log.Printf("[opqueue] delete %s batch failed: %v", setName, err)
 		} else {
-			applied += end - i
+			deletes += end - i
 		}
 	}
 
@@ -326,9 +337,9 @@ func (buf *SetBuffer) applyPending(backend NetlinkBackend, table, setName string
 		if err := backend.AddElements(table, setName, toAdd[i:end]); err != nil {
 			log.Printf("[opqueue] add %s batch failed: %v", setName, err)
 		} else {
-			applied += end - i
+			adds += end - i
 		}
 	}
 
-	return applied
+	return adds, deletes
 }

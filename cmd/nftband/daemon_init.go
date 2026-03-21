@@ -32,6 +32,7 @@ import (
 	goruntime "runtime"
 
 	"github.com/itcmsgr/nftban/pkg/constants"
+	"github.com/itcmsgr/nftban/pkg/stats"
 
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/botguard"
@@ -392,6 +393,24 @@ func (d *Daemon) initOpQueue() error {
 	// Create OpQueue with default config
 	d.opQueue = opqueue.NewOpQueue(wrapper, opqueue.DefaultQueueConfig())
 
+	// v1.32.0: Initialize set element counters for huge set management
+	runDir, _, _, _ := getDaemonPaths()
+	d.setCounters = stats.NewSetCounters(runDir)
+
+	// Wire OpQueue flush callback to update set counters
+	d.opQueue.SetOnFlush(func(setName string, applied int, opType string) {
+		switch opType {
+		case "add":
+			d.setCounters.Add(setName, int64(applied))
+		case "delete":
+			d.setCounters.Add(setName, -int64(applied))
+		case "replace":
+			d.setCounters.Set(setName, int64(applied))
+		case "flush":
+			d.setCounters.Set(setName, 0)
+		}
+	})
+
 	// Create SourceIndex for tracking element sources
 	_, _, dataDir, _ := getDaemonPaths()
 	d.sourceIndex = opqueue.NewSourceIndex(dataDir + "/source_index.jsonl")
@@ -405,14 +424,73 @@ func (d *Daemon) initOpQueue() error {
 	d.opQueue.Start(d.ctx)
 	go d.sourceIndex.StartBackgroundSaver(d.ctx)
 
+	// Start set counter cache file writer (v1.32.0)
+	go d.setCounters.CacheWriterLoop(d.ctx)
+
 	// Reconcile source index with actual nft state
 	go func() {
 		time.Sleep(constants.DaemonStartupWait) // Wait for daemon to fully start
 		d.sourceIndex.ReconcileWithBackend(wrapper)
+
+		// v1.32.0: Reconcile set counters from kernel on startup (one-time full count)
+		d.reconcileSetCountersFromKernel(wrapper)
 	}()
 
 	log.Println("[OpQueue] Async operation queue initialized")
 	return nil
+}
+
+// reconcileSetCountersFromKernel counts elements in all nftban sets
+// and initializes the in-memory counters. Called once on startup. (v1.32.0)
+func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapper) {
+	log.Println("[set_counters] Reconciling set counts from kernel state...")
+
+	// Known set names in the nftban schema
+	setNames := []string{
+		"blacklist_ipv4", "blacklist_ipv6",
+		"whitelist_ipv4", "whitelist_ipv6",
+		"tcp_ports_in", "tcp_ports_out",
+		"udp_ports_in", "udp_ports_out",
+	}
+
+	for _, setName := range setNames {
+		elements, err := wrapper.GetSetElements("nftban", setName)
+		if err != nil {
+			// Set might not exist yet (e.g. IPv6 not configured)
+			log.Printf("[set_counters] %s: skipped (%v)", setName, err)
+			continue
+		}
+		count := int64(len(elements))
+		d.setCounters.SetReconciled(setName, count)
+		if count > 0 {
+			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
+		}
+	}
+
+	// Also check botguard sets if they exist
+	botguardSets := []string{
+		"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency",
+	}
+	for _, setName := range botguardSets {
+		elements, err := wrapper.GetSetElements("nftban", setName)
+		if err != nil {
+			continue // Botguard sets may not exist
+		}
+		count := int64(len(elements))
+		if count > 0 {
+			d.setCounters.SetReconciled(setName, count)
+		}
+	}
+
+	// Force immediate cache file write
+	if err := d.setCounters.WriteCacheFile(); err != nil {
+		log.Printf("[set_counters] Warning: cache write failed: %v", err)
+	}
+
+	globalScale := d.setCounters.GlobalScale()
+	log.Printf("[set_counters] Reconciliation complete — global scale: %s, exporter interval: %ds",
+		globalScale, int(d.setCounters.RecommendedExporterInterval().Seconds()))
 }
 
 func printHelp() {

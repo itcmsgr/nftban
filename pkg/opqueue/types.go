@@ -115,6 +115,10 @@ type QueueStats struct {
 type FlushResult struct {
 	SetName     string
 	Applied     int
+	Adds        int      // Count of add operations applied (v1.32.0)
+	Deletes     int      // Count of delete operations applied (v1.32.0)
+	WasReplace  bool     // True if this was a replace_set operation (v1.32.0)
+	WasFlush    bool     // True if this was a flush_set operation (v1.32.0)
 	PostBarrier []*SetOp // Ops to re-enqueue after flush
 	Err         error
 }

@@ -55,6 +55,23 @@ func (d *Daemon) handleStatsRequest() SocketResponse {
 	}
 }
 
+// handleSetCountsRequest returns in-memory set element counters (v1.32.0)
+// Replaces expensive nft list set kernel calls for monitoring/metrics
+func (d *Daemon) handleSetCountsRequest() SocketResponse {
+	if d.setCounters == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "set counters not initialized",
+		}
+	}
+
+	snap := d.setCounters.Snapshot()
+	return SocketResponse{
+		Success: true,
+		Data:    snap,
+	}
+}
+
 // handleStatsHistoryRequest returns historical stats for specified days
 func (d *Daemon) handleStatsHistoryRequest(params map[string]any) SocketResponse {
 	if d.stats == nil {
