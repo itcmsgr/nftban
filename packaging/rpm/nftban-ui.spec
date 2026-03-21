@@ -45,6 +45,12 @@ Features:
 %autosetup -n %{name}-%{version}
 
 %build
+# Generate templ files (compiled templates -> Go source)
+if ! command -v templ &>/dev/null; then
+    go install github.com/a-h/templ/cmd/templ@v0.3.977
+fi
+templ generate
+
 # Build main GUI server
 cd cmd/nftban-ui
 CGO_ENABLED=1 go build -trimpath -buildmode=pie -mod=readonly -modcacherw \

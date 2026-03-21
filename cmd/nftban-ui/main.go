@@ -196,6 +196,8 @@ func main() {
 	router.HandleFunc("/ui/frag/whitelist-stats", gothHandlers.RequireSession(gothHandlers.HandleFragWhitelistStats)).Methods("GET")
 	router.HandleFunc("/ui/frag/health-all", gothHandlers.RequireSession(gothHandlers.HandleFragHealthAll)).Methods("GET")
 	router.HandleFunc("/ui/frag/modules-list", gothHandlers.RequireSession(gothHandlers.HandleFragModulesList)).Methods("GET")
+	router.HandleFunc("/ui/frag/module/{name}/logs", gothHandlers.RequireSession(gothHandlers.HandleFragModuleLogs)).Methods("GET")
+	router.HandleFunc("/ui/frag/module/{name}/settings", gothHandlers.RequireSession(gothHandlers.HandleFragModuleSettings)).Methods("GET")
 
 	// Metrics pages fragments (HTMX partial updates)
 	router.HandleFunc("/ui/frag/metrics-summary", gothHandlers.RequireSession(gothHandlers.HandleFragMetricsSummary)).Methods("GET")

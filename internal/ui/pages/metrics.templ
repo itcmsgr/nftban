@@ -372,6 +372,31 @@ templ MetricsContentFragment(data ui.MetricsData) {
 					<span class="detail-value">{ data.GeoIP.DatabaseAge }</span>
 				</div>
 			</div>
+			if len(data.GeoIP.CountryStats) > 0 {
+				<div class="metrics-subtable">
+					<div class="subtable-header">Top Blocked Countries</div>
+					<table class="data-table compact">
+						<thead>
+							<tr>
+								<th>Country</th>
+								<th>Bans</th>
+								<th>Ranges</th>
+								<th>%</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, cs := range data.GeoIP.CountryStats {
+								<tr>
+									<td><span class="country-flag" title={ cs.Name }>{ cs.Code }</span> { cs.Name }</td>
+									<td>{ intToStr(cs.BanCount) }</td>
+									<td>{ intToStr(cs.RangeCount) }</td>
+									<td>{ fmt.Sprintf("%.1f%%", cs.Percent) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
 		</div>
 
 		<!-- Portscan Stats -->
@@ -394,6 +419,29 @@ templ MetricsContentFragment(data ui.MetricsData) {
 					<span class="detail-value">{ intToStr(data.Portscan.BlocksToday) }</span>
 				</div>
 			</div>
+			if len(data.Portscan.TopPorts) > 0 {
+				<div class="metrics-subtable">
+					<div class="subtable-header">Most Scanned Ports</div>
+					<table class="data-table compact">
+						<thead>
+							<tr>
+								<th>Port</th>
+								<th>Protocol</th>
+								<th>Scans</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, p := range data.Portscan.TopPorts {
+								<tr>
+									<td><code>{ intToStr(p.Port) }</code></td>
+									<td>{ p.Protocol }</td>
+									<td>{ intToStr(p.ScanCount) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
 		</div>
 
 		<!-- DDoS Stats -->
@@ -446,6 +494,39 @@ templ MetricsContentFragment(data ui.MetricsData) {
 					<span class="detail-value info">{ intToStr(data.Suricata.RulesLoaded) }</span>
 				</div>
 			</div>
+			if len(data.Suricata.TopAlerts) > 0 {
+				<div class="metrics-subtable">
+					<div class="subtable-header">Top Alerts</div>
+					<table class="data-table compact">
+						<thead>
+							<tr>
+								<th>SID</th>
+								<th>Signature</th>
+								<th>Severity</th>
+								<th>Count</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, a := range data.Suricata.TopAlerts {
+								<tr>
+									<td><code>{ a.SID }</code></td>
+									<td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">{ a.Signature }</td>
+									<td>
+										if a.Severity == "high" || a.Severity == "critical" {
+											<span class="badge badge-danger">{ a.Severity }</span>
+										} else if a.Severity == "medium" {
+											<span class="badge badge-warning">{ a.Severity }</span>
+										} else {
+											<span class="badge badge-info">{ a.Severity }</span>
+										}
+									</td>
+									<td>{ intToStr(a.Count) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
 		</div>
 	</div>
 
@@ -543,6 +624,24 @@ templ MetricsContentFragment(data ui.MetricsData) {
 		.detail-value.safe { color: var(--accent-safe); }
 		.detail-value.info { color: var(--accent-info); }
 		.detail-value.warning { color: var(--accent-warning); }
+
+		.metrics-subtable {
+			border-top: 1px solid var(--border-color);
+			padding: 0.5rem;
+		}
+		.subtable-header {
+			font-size: 0.75rem;
+			font-weight: 600;
+			color: var(--text-muted);
+			text-transform: uppercase;
+			padding: 0.5rem 0.5rem 0.25rem;
+		}
+		.data-table.compact {
+			font-size: 0.8rem;
+		}
+		.data-table.compact td, .data-table.compact th {
+			padding: 0.35rem 0.5rem;
+		}
 
 		.info-banner {
 			background: var(--bg-elevated);
