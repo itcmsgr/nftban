@@ -36,10 +36,13 @@ package botguard
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/netip"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/nftlock"
 )
 
 // SuspectReader reads kernel-populated suspect sets.
@@ -93,12 +96,23 @@ func (r *SuspectReader) readSet(ctx context.Context, table, setName string) ([]n
 	ctx, cancel := context.WithTimeout(ctx, r.cmdTimeout)
 	defer cancel()
 
+	// Acquire shared nft lock — prevents reads during bulk writes (v1.32.0 P0-3 fix)
+	lock, lockErr := nftlock.AcquireShared(5 * time.Second)
+	if lockErr != nil {
+		log.Printf("[botguard] nft read lock timeout, proceeding unlocked: %v", lockErr)
+	}
+
 	// nft list set "ip nftban" http_bot_suspect
 	args := append([]string{"list", "set"}, strings.Fields(table)...)
 	args = append(args, setName)
 
 	cmd := exec.CommandContext(ctx, "nft", args...) // #nosec G204 -- args built from trusted constants (table name + set name)
 	output, err := cmd.CombinedOutput()
+
+	// Release lock immediately after kernel read
+	if lock != nil {
+		lock.Release()
+	}
 	if err != nil {
 		outputStr := strings.TrimSpace(string(output))
 		// Set might not exist yet (module not enabled) — not an error
