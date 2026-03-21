@@ -148,10 +148,11 @@ for f in "${files[@]}"; do
   # Skip deleted or non-existent
   [[ -f "$f" ]] || continue
 
-  # Skip vendor, node_modules, .git
+  # Skip vendor, node_modules, .git, generated files
   [[ "$f" == vendor/* ]] && continue
   [[ "$f" == node_modules/* ]] && continue
   [[ "$f" == .git/* ]] && continue
+  [[ "$f" == *_templ.go ]] && continue
 
   if ! require_header_checks "$f"; then
     continue
