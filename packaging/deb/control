@@ -1,57 +1,53 @@
-Source: nftban-ui
-Section: admin
+Source: nftban-core
+Section: net
 Priority: optional
-Maintainer: Antonios Voulvoulis <itcmsgr@example.com>
+Maintainer: NFTBan Team <noreply@nftban.com>
 Build-Depends: debhelper-compat (= 13),
                golang-go (>= 2:1.21~),
-               libpam0g-dev,
-               dh-systemd
+               libpam0g-dev
 Standards-Version: 4.6.0
-Homepage: https://github.com/itcmsgr/nftban-dev
-Vcs-Git: https://github.com/itcmsgr/nftban-dev.git
-Vcs-Browser: https://github.com/itcmsgr/nftban-dev
+Homepage: https://github.com/itcmsgr/nftban
+Vcs-Git: https://github.com/itcmsgr/nftban.git
+Vcs-Browser: https://github.com/itcmsgr/nftban
 
-Package: nftban
-Architecture: any
+Package: nftban-core
+Architecture: amd64
 Depends: ${shlibs:Depends},
          ${misc:Depends},
-         nftables (>= 1.0.0),
-         systemd (>= 250),
-         bash (>= 5.0),
+         nftables (>= 0.9.0),
+         systemd,
+         bash (>= 4.0),
          bash-completion,
-         jq (>= 1.6),
+         jq,
          curl,
-         wget,
-         coreutils,
-         gzip,
          tar,
-         grep,
-         sed,
-         gawk,
+         gzip,
+         libpam0g,
          bc,
-         findutils,
-         util-linux,
+         gawk,
+         socat,
+         acl,
          iproute2,
-         polkitd | policykit-1,
-         adduser,
-         socat
-Recommends: logrotate,
-            python3-pip
-Description: NFTBAN - Enterprise firewall management engine for Linux
- NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
- It replaces legacy firewall scripts with a modern architecture featuring atomic
- rule updates, strict privilege separation via Polkit, and AI-assisted threat
- intelligence to create a resilient, self-healing network defense layer.
+         polkitd | policykit-1
+Recommends: dnsutils,
+            mailutils,
+            logrotate,
+            whiptail
+Description: Open-source Linux IPS and nftables firewall manager
+ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
+ nftables firewall manager built for modern server and DevOps environments.
  .
- The name NFTBAN (NFTables BAN actions) emphasizes its foundation on native
- nftables technology for high-performance, kernel-level packet filtering.
+ It uses a Go-based netlink daemon for asynchronous enforcement, applying
+ security rules directly through the Linux kernel for low-latency threat
+ response.
  .
  Key features:
-  - Atomic rule updates without connection disruption
-  - Granular privilege separation through Polkit
-  - Real-time threat intelligence integration
-  - Geographic blocking with GeoIP automation
-  - Port scan and DDoS detection at kernel level
-  - Hosting panel integration (DirectAdmin, cPanel, etc.)
-  - Modern CLI + optional Web GUI
+  - Native nftables integration for Linux 5.x+ systems
+  - Dual-table architecture (ip nftban / ip6 nftban)
+  - Automated SSH brute-force, port scan, and DDoS protection
+  - Real-time threat intelligence feeds and Geo-IP blocking
+  - HTTP Bot Guard with kernel-level suspect tracking
+  - RBL monitoring with multi-provider health checks
+  - Suricata DPI integration
+  - Modern CLI with 44+ commands + optional Web GUI
   - Prometheus/Grafana observability
