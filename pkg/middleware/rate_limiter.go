@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/netutil"
 )
 
@@ -113,7 +114,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		ip := netutil.GetClientIP(r)
 
 		if !rl.Allow(ip) {
-			log.Printf("[SECURITY] Rate limit exceeded for IP: %s on %s %s", ip, r.Method, r.URL.Path)
+			log.Printf("[SECURITY] Rate limit exceeded for IP: %s on %s %s", logutil.Sanitize(ip), r.Method, logutil.Sanitize(r.URL.Path))
 			http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
 			return
 		}
@@ -135,7 +136,7 @@ func (rl *RateLimiter) WrapHandler(handler http.HandlerFunc) http.HandlerFunc {
 		ip := netutil.GetClientIP(r)
 
 		if !rl.Allow(ip) {
-			log.Printf("[SECURITY] Rate limit exceeded for IP: %s on %s %s", ip, r.Method, r.URL.Path)
+			log.Printf("[SECURITY] Rate limit exceeded for IP: %s on %s %s", logutil.Sanitize(ip), r.Method, logutil.Sanitize(r.URL.Path))
 			http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
 			return
 		}

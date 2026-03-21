@@ -29,6 +29,7 @@ import (
 	"net/http"
 
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 )
 
@@ -90,7 +91,7 @@ func UIWhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Audit log
 	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s added IP to UI whitelist: %s", claims.Username, req.IP)
+	log.Printf("[AUDIT] User %s added IP to UI whitelist: %s", logutil.Sanitize(claims.Username), logutil.Sanitize(req.IP))
 
 	respondJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,

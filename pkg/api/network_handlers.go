@@ -113,7 +113,7 @@ func ConnectionsHandler(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	limit := 100 // Default limit
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 10000 {
 			limit = l
 		}
 	}

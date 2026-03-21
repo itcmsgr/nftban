@@ -32,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/logutil"
 )
 
 // getLoginAlertLogPath returns the login alert log path from central config
@@ -571,7 +573,7 @@ func LoginMonitorControlHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute: nftban login enable/disable <target>
 	output, err := execNFTBanCommand("login", req.Action, req.Target)
 	if err != nil {
-		log.Printf("[ERROR] Failed to %s login monitor %s: %v - Output: %s", req.Action, req.Target, err, output)
+		log.Printf("[ERROR] Failed to %s login monitor %s: %v - Output: %s", logutil.Sanitize(req.Action), logutil.Sanitize(req.Target), err, output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
 			Error: "Failed to " + req.Action + " login monitor: " + sanitizeError(err),
 		})

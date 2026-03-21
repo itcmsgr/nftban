@@ -38,6 +38,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/session"
@@ -373,7 +374,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 
 	user, err := h.Auth.Authenticate(username, password)
 	if err != nil {
-		log.Printf("[GOTH] Login failed for user %s: %v", username, err)
+		log.Printf("[GOTH] Login failed for user %s: %v", logutil.Sanitize(username), err)
 		http.Redirect(w, r, "/ui/login?error=Invalid+credentials", http.StatusSeeOther)
 		return
 	}
@@ -395,7 +396,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 		MaxAge:   1800, // 30 minutes - matches session store timeout
 	})
 
-	log.Printf("[GOTH] User %s logged in successfully", username)
+	log.Printf("[GOTH] User %s logged in successfully", logutil.Sanitize(username))
 	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 }
 
@@ -525,23 +526,23 @@ func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Reque
 	// SECURITY FIX: Use explicit allowlist instead of prefix check
 	// Prefix check alone could allow "nftban-../../malicious" type attacks
 	if !allowedRestartServices[serviceName] {
-		log.Printf("[GOTH] Service not in allowlist: %s", serviceName)
+		log.Printf("[GOTH] Service not in allowlist: %s", logutil.Sanitize(serviceName))
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger("Invalid service", "error"))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[GOTH] Restart service requested: %s", serviceName)
+	log.Printf("[GOTH] Restart service requested: %s", logutil.Sanitize(serviceName))
 
 	// Execute restart
 	if output, err := exec.Command("systemctl", "restart", serviceName).CombinedOutput(); err != nil {
-		log.Printf("[GOTH] Restart %s failed: %v - %s", serviceName, err, string(output))
+		log.Printf("[GOTH] Restart %s failed: %v - %s", logutil.Sanitize(serviceName), err, string(output))
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to restart %s", serviceName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[GOTH] Service %s restarted successfully", serviceName)
+	log.Printf("[GOTH] Service %s restarted successfully", logutil.Sanitize(serviceName))
 	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s restarted", serviceName), "success"))
 	w.WriteHeader(http.StatusOK)
 }
@@ -610,17 +611,17 @@ func (h *GOTHHandlers) HandleSyncFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[GOTH] Sync feed requested: %q", feedName) // %q quotes to prevent log injection
+	log.Printf("[GOTH] Sync feed requested: %q", logutil.Sanitize(feedName)) // %q + Sanitize to prevent log injection
 
 	// Execute feed sync command
 	if _, err := execNFTBanCommand("feeds", "sync", feedName); err != nil {
-		log.Printf("[GOTH] Feed sync failed for %s: %v", feedName, err)
+		log.Printf("[GOTH] Feed sync failed for %s: %v", logutil.Sanitize(feedName), err)
 		w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("Failed to sync %s", feedName), "error"))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[GOTH] Feed %s synced successfully", feedName)
+	log.Printf("[GOTH] Feed %s synced successfully", logutil.Sanitize(feedName))
 	w.Header().Set("HX-Trigger", jsonMarshalHXTrigger(fmt.Sprintf("%s synced", feedName), "success"))
 	w.WriteHeader(http.StatusOK)
 }
@@ -718,7 +719,7 @@ func executeBulkOperation(ips []string, opType bulkOperationType) BulkOperationR
 		if !netutil.IsValidIP(ip) {
 			failedCount++
 			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk %s: invalid IP format: %s", opName, ip)
+			log.Printf("[GOTH] Bulk %s: invalid IP format: %s", logutil.Sanitize(opName), logutil.Sanitize(ip))
 			continue
 		}
 
@@ -753,10 +754,10 @@ func executeBulkOperation(ips []string, opType bulkOperationType) BulkOperationR
 		if err != nil && !hasSuccess {
 			failedCount++
 			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk %s failed for %s: %v", opName, ip, err)
+			log.Printf("[GOTH] Bulk %s failed for %s: %v", logutil.Sanitize(opName), logutil.Sanitize(ip), err)
 		} else {
 			successCount++
-			log.Printf("[GOTH] Bulk %s success: %s", opName, ip)
+			log.Printf("[GOTH] Bulk %s success: %s", logutil.Sanitize(opName), logutil.Sanitize(ip))
 		}
 	}
 

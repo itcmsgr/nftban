@@ -35,6 +35,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/itcmsgr/nftban/internal/authproto"
 	"github.com/itcmsgr/nftban/internal/config"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 )
 
 // PAMAuth handles PAM-based authentication
@@ -241,7 +242,7 @@ func (p *PAMAuth) Authenticate(username, password string) (*User, error) {
 
 	// Check authentication result
 	if !resp.Success {
-		log.Printf("[AUTH] Failed login attempt for user: %s", username)
+		log.Printf("[AUTH] Failed login attempt for user: %s", logutil.Sanitize(username))
 		return nil, fmt.Errorf("authentication failed: %s", resp.Error)
 	}
 
@@ -258,7 +259,7 @@ func (p *PAMAuth) Authenticate(username, password string) (*User, error) {
 	}
 
 	// Success
-	log.Printf("[AUTH] Successful login: %s (UID: %s)", username, u.Uid)
+	log.Printf("[AUTH] Successful login: %s (UID: %s)", logutil.Sanitize(username), u.Uid)
 
 	return &User{
 		Username: username,
@@ -340,5 +341,5 @@ func (p *PAMAuth) getUserGroups(u *user.User) ([]string, error) {
 // AuditLog writes an audit log entry
 func (p *PAMAuth) AuditLog(username, action, result, clientIP string) {
 	// TODO: Write to audit log file
-	log.Printf("[AUDIT] User: %s | Action: %s | Result: %s | IP: %s", username, action, result, clientIP)
+	log.Printf("[AUDIT] User: %s | Action: %s | Result: %s | IP: %s", logutil.Sanitize(username), logutil.Sanitize(action), logutil.Sanitize(result), logutil.Sanitize(clientIP))
 }

@@ -35,6 +35,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/itcmsgr/nftban/pkg/logutil"
 )
 
 // SECURITY FIX: Regex to validate search filter input - prevents command injection
@@ -298,7 +300,7 @@ func LogFileHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// File might not exist yet or is inaccessible
 		if !os.IsNotExist(err) {
-			log.Printf("[ERROR] Failed to evaluate symlinks for %s: %v", cleanPath, err)
+			log.Printf("[ERROR] Failed to evaluate symlinks for %s: %v", logutil.Sanitize(cleanPath), err)
 			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Invalid log path"})
 			return
 		}
@@ -311,7 +313,7 @@ func LogFileHandler(w http.ResponseWriter, r *http.Request) {
 			realBaseDir = baseDir
 		}
 		if !strings.HasPrefix(realPath, realBaseDir+string(filepath.Separator)) {
-			log.Printf("[SECURITY] Symlink escape attempt detected: %s -> %s", cleanPath, realPath)
+			log.Printf("[SECURITY] Symlink escape attempt detected: %s -> %s", logutil.Sanitize(cleanPath), logutil.Sanitize(realPath))
 			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Invalid log path"})
 			return
 		}

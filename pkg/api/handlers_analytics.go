@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
@@ -155,7 +156,7 @@ func AnalyticsIPHandler(w http.ResponseWriter, r *http.Request) {
 
 	output, err := execNFTBanCoreCommand("analytics", "ip", ip, "--json")
 	if err != nil {
-		log.Printf("[ANALYTICS] Failed to lookup IP %s: %v", ip, err)
+		log.Printf("[ANALYTICS] Failed to lookup IP %s: %v", logutil.Sanitize(ip), err)
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"ip":      ip,
