@@ -74,7 +74,7 @@ jobs:
           fi
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3.32.3
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         if: always()
         with:
           sarif_file: osv-results.sarif
