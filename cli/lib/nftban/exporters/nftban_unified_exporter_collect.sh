@@ -114,18 +114,31 @@ collect_all_metrics() {
         # --- Ban Metrics (SINGLE SOURCE OF TRUTH: nft_schema.sh centralized counting) ---
         # These metrics align with nftban_stats.sh dashboard requirements
         # Variables declared at function level: active_v4/v6, blacklist_v4/v6_perm/temp
-        if declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
-            # Use centralized counting from nft_schema.sh (fast JSON API)
+        if declare -f nftban_nft_count_all_sets_cached >/dev/null 2>&1; then
+            # v1.32.0: Use daemon cache (0 kernel calls), falls back to kernel
             local counts_json
-            counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
+            counts_json=$(nftban_nft_count_all_sets_cached 2>/dev/null || echo '{}')
 
             if [[ -n "$counts_json" ]] && command -v jq &>/dev/null; then
-                active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
-                active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
-                blacklist_v4_temp=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
-                blacklist_v6_temp=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
-                blacklist_v4_perm=$(echo "$counts_json" | jq -r '.permanent.ipv4 // 0')
-                blacklist_v6_perm=$(echo "$counts_json" | jq -r '.permanent.ipv6 // 0')
+                # v1.32.0: Handle both daemon cache format and legacy kernel format
+                if echo "$counts_json" | jq -e '.sets' &>/dev/null; then
+                    # Daemon cache format: .sets.blacklist_ipv4.count
+                    active_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv4.count // 0')
+                    active_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv6.count // 0')
+                    # Temp/perm split not available from daemon cache — report all as permanent
+                    blacklist_v4_temp=0
+                    blacklist_v6_temp=0
+                    blacklist_v4_perm=$active_v4
+                    blacklist_v6_perm=$active_v6
+                else
+                    # Legacy kernel format: .blacklist.ipv4
+                    active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
+                    active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                    blacklist_v4_temp=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
+                    blacklist_v6_temp=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
+                    blacklist_v4_perm=$(echo "$counts_json" | jq -r '.permanent.ipv4 // 0')
+                    blacklist_v6_perm=$(echo "$counts_json" | jq -r '.permanent.ipv6 // 0')
+                fi
             fi
         elif command -v nft &>/dev/null; then
             # Fallback: Use direct nft_schema.sh counting functions
@@ -161,7 +174,13 @@ collect_all_metrics() {
         # Use fast JSON API for O(1) counting (same as blacklist)
         whitelist_v4=0
         whitelist_v6=0
-        if command -v nft &>/dev/null; then
+        # v1.32.0: Prefer cached counting (0 kernel calls)
+        if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+            whitelist_v4=$(nftban_nft_count_set_cached whitelist_ipv4 2>/dev/null) || whitelist_v4=0
+            [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
+            whitelist_v6=$(nftban_nft_count_set_cached whitelist_ipv6 2>/dev/null) || whitelist_v6=0
+            [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
+        elif command -v nft &>/dev/null; then
             whitelist_v4=$(nft -j list set "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v4=0
             [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
             whitelist_v6=$(nft -j list set "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v6=0
@@ -172,15 +191,25 @@ collect_all_metrics() {
         metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
 
         # --- Botguard Metrics (LIVE - real-time bot classification set counts) ---
-        # Note: counts_json returns nested objects per category: {"ipv4": N, "ipv6": N}
         local bg_suspect=0 bg_pending=0 bg_allow=0 bg_grey=0 bg_ban=0 bg_emergency=0
         if [[ -n "${counts_json:-}" ]] && command -v jq &>/dev/null; then
-            bg_suspect=$(echo "$counts_json" | jq -r '((.botguard.suspect.ipv4 // 0) + (.botguard.suspect.ipv6 // 0))')
-            bg_pending=$(echo "$counts_json" | jq -r '((.botguard.pending.ipv4 // 0) + (.botguard.pending.ipv6 // 0))')
-            bg_allow=$(echo "$counts_json" | jq -r '((.botguard.allow.ipv4 // 0) + (.botguard.allow.ipv6 // 0))')
-            bg_grey=$(echo "$counts_json" | jq -r '((.botguard.grey.ipv4 // 0) + (.botguard.grey.ipv6 // 0))')
-            bg_ban=$(echo "$counts_json" | jq -r '((.botguard.ban.ipv4 // 0) + (.botguard.ban.ipv6 // 0))')
-            bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))')
+            if echo "$counts_json" | jq -e '.sets' &>/dev/null; then
+                # v1.32.0: Daemon cache format — .sets.http_bot_suspect.count
+                bg_suspect=$(echo "$counts_json" | jq -r '((.sets.http_bot_suspect.count // 0) + (.sets.http_bot_suspect6.count // 0))')
+                bg_pending=$(echo "$counts_json" | jq -r '((.sets.http_bot_pending.count // 0) + (.sets.http_bot_pending6.count // 0))')
+                bg_allow=$(echo "$counts_json" | jq -r '((.sets.http_bot_allow.count // 0) + (.sets.http_bot_allow6.count // 0))')
+                bg_grey=$(echo "$counts_json" | jq -r '((.sets.http_bot_grey.count // 0) + (.sets.http_bot_grey6.count // 0))')
+                bg_ban=$(echo "$counts_json" | jq -r '((.sets.http_bot_ban.count // 0) + (.sets.http_bot_ban6.count // 0))')
+                bg_emergency=$(echo "$counts_json" | jq -r '((.sets.http_bot_emergency.count // 0) + (.sets.http_bot_emergency6.count // 0))')
+            else
+                # Legacy kernel format: .botguard.suspect.ipv4
+                bg_suspect=$(echo "$counts_json" | jq -r '((.botguard.suspect.ipv4 // 0) + (.botguard.suspect.ipv6 // 0))')
+                bg_pending=$(echo "$counts_json" | jq -r '((.botguard.pending.ipv4 // 0) + (.botguard.pending.ipv6 // 0))')
+                bg_allow=$(echo "$counts_json" | jq -r '((.botguard.allow.ipv4 // 0) + (.botguard.allow.ipv6 // 0))')
+                bg_grey=$(echo "$counts_json" | jq -r '((.botguard.grey.ipv4 // 0) + (.botguard.grey.ipv6 // 0))')
+                bg_ban=$(echo "$counts_json" | jq -r '((.botguard.ban.ipv4 // 0) + (.botguard.ban.ipv6 // 0))')
+                bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))')
+            fi
             # Validate numeric — fall back to 0 if jq returns non-numeric
             [[ "$bg_suspect" =~ ^[0-9]+$ ]] || bg_suspect=0
             [[ "$bg_pending" =~ ^[0-9]+$ ]] || bg_pending=0
@@ -554,19 +583,43 @@ collect_all_metrics() {
             metrics+="nftban_nftables_sets_total $nft_sets_total $timestamp\n"
 
             # nftban_nftables_set_elements - element count per set with set label
-            # IPv4 sets use 'ip' family, IPv6 sets use 'ip6' family
-            for set_name in blacklist_ipv4 whitelist_ipv4; do
+            # v1.32.0: Use cached counting (0 kernel calls) with kernel fallback
+            for set_name in blacklist_ipv4 whitelist_ipv4 blacklist_ipv6 whitelist_ipv6; do
                 local set_elem_count=0
-                set_elem_count=$(nft -j list set ip nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || true
+                if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
+                    set_elem_count=$(nftban_nft_count_set_cached "$set_name" 2>/dev/null) || true
+                else
+                    local _fam="ip"
+                    [[ "$set_name" == *"_ipv6" ]] && _fam="ip6"
+                    set_elem_count=$(nft -j list set "$_fam" nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || true
+                fi
                 [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
                 metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
             done
-            for set_name in blacklist_ipv6 whitelist_ipv6; do
-                local set_elem_count=0
-                set_elem_count=$(nft -j list set ip6 nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || true
-                [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
-                metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
-            done
+
+            # v1.32.0: Scale-level metrics from daemon cache (0 kernel calls)
+            local _scale_cache="/run/nftban/set_counts.json"
+            if [[ -f "$_scale_cache" ]] && command -v jq &>/dev/null; then
+                local _scale_age
+                _scale_age=$(( $(date +%s) - $(stat -c %Y "$_scale_cache" 2>/dev/null || echo 0) ))
+                if [[ "$_scale_age" -lt 120 ]]; then
+                    # Per-set scale level (numeric: 0=NORMAL, 1=LARGE, ..., 5=CRITICAL_SCALE)
+                    while IFS=$'\t' read -r _sname _snum; do
+                        [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum $timestamp\n"
+                    done < <(jq -r '.sets | to_entries[] | [.key, (.value.scale_num | tostring)] | @tsv' "$_scale_cache" 2>/dev/null)
+
+                    # Global scale mode (numeric)
+                    local _global_scale
+                    _global_scale=$(jq -r '.scale_mode // "NORMAL"' "$_scale_cache" 2>/dev/null)
+                    local _global_num=0
+                    case "$_global_scale" in
+                        LARGE) _global_num=1 ;; VERY_LARGE) _global_num=2 ;; HUGE) _global_num=3 ;;
+                        EXTREME) _global_num=4 ;; CRITICAL_SCALE) _global_num=5 ;;
+                    esac
+                    metrics+="nftban_global_scale_level $_global_num $timestamp\n"
+                    metrics+="nftban_scale_cache_age_seconds $_scale_age $timestamp\n"
+                fi
+            fi
 
             # nftban_nftables_commands_total - total nft commands executed
             local nft_commands_total=0

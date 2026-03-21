@@ -118,8 +118,11 @@ func (d *Daemon) gracefulShutdown() {
 	// Close event bus
 	d.bus.Close()
 
-	// Cancel context
+	// Cancel context (signals CacheWriterLoop and other bg goroutines to stop)
 	d.cancel()
+
+	// Wait for background goroutines (cache writer) to finish final flush
+	d.bgWg.Wait()
 
 	log.Println("nftband stopped")
 }

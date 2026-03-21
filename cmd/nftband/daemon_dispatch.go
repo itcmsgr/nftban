@@ -88,6 +88,9 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 	// v1.13.12: Config reload handler
 	case "reload":
 		return d.handleReloadRequest(req.Params)
+	// v1.32.0: Set element counters for huge set management
+	case "set_counts":
+		return d.handleSetCountsRequest()
 	default:
 		return SocketResponse{
 			Success: false,

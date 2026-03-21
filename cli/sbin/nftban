@@ -356,6 +356,10 @@ nftban_complete() {
                 echo "check-alerts"
                 echo "help"
                 ;;
+            scale)
+                echo "status"
+                echo "help"
+                ;;
             report)
                 echo "generate"
                 echo "email"
