@@ -57,7 +57,7 @@ StartLimitIntervalSec=300
 [Service]
 Type=notify
 NotifyAccess=main
-WatchdogSec=30s
+WatchdogSec=120s
 
 # Daemon runs as root (required for nftables operations)
 # This is the ONLY service allowed to run as root for nft operations
