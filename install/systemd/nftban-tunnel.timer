@@ -1,0 +1,43 @@
+# =============================================================================
+# NFTBan v1.30.0 - Tunnel Suspicion Scan Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-tunnel.timer"
+# meta:type="systemd"
+# meta:tier="OPTIONAL"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Timer for periodic DNS tunnel suspicion scanning (every 5 minutes)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-tunnel.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Tunnel Suspicion Scan Timer
+Documentation=https://nftban.com/docs/tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Timer]
+# Run every 5 minutes
+OnCalendar=*:0/5
+
+# JITTER: 30s variance to avoid thundering herd
+RandomizedDelaySec=30s
+
+# DETERMINISTIC: Same offset per host
+FixedRandomDelay=true
+
+# Persist if missed
+Persistent=true
+
+# Accuracy (allow 30s drift)
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

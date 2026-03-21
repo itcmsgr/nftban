@@ -233,6 +233,13 @@ directories:
       description: "HTTP Bot Guard configuration"
       created_by: package
 
+    - path: /etc/nftban/conf.d/tunnel
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "DNS tunnel suspicion configuration"
+      created_by: package
+
     - path: /etc/nftban/patterns.d
       mode: "0750"
       owner: root
@@ -440,6 +447,13 @@ directories:
       owner: nftban
       group: nftban
       description: "HTTP Bot Guard state (batch signals, decisions)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/tunnel
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "DNS tunnel suspicion state (scores, history)"
       created_by: tmpfiles
 
     - path: /var/lib/nftban/pro
