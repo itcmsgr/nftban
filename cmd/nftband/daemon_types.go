@@ -182,6 +182,7 @@ type Daemon struct {
 
 	// v1.32.0: In-memory set element counters (huge set management)
 	setCounters *stats.SetCounters   // Per-set element counts (O(1) reads)
+	bgWg        sync.WaitGroup       // Tracks background goroutines for clean shutdown
 
 	// v1.13.12: Config reload tracking
 	configHash    string       // SHA256 of loaded config files
