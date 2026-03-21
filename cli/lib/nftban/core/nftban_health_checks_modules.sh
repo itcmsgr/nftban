@@ -632,9 +632,89 @@ nftban_health_check_binary_integrity() {
     return $status
 }
 
+# =============================================================================
+# TUNNEL SUSPICION CHECK
+# =============================================================================
+
+nftban_health_check_tunnel() {
+    # Check tunnel suspicion module status (v1.30.0)
+    # Returns: 0=OK, 1=WARNING, 2=ERROR
+    # Advisory-only module — issues are informational only
+
+    local status=$HEALTH_OK
+    local tunnel_issues=()
+
+    # Check if tunnel is enabled
+    local tunnel_enabled="NO"
+    local tunnel_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf"
+    local tunnel_config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
+    if [[ -f "$tunnel_config_local" ]]; then
+        tunnel_enabled=$(grep -E "^NFTBAN_TUNNEL_ENABLED=" "$tunnel_config_local" 2>/dev/null | cut -d'"' -f2 || echo "NO")
+    fi
+    [[ -z "$tunnel_enabled" || "$tunnel_enabled" == "NO" ]] && \
+        [[ -f "$tunnel_config" ]] && \
+        tunnel_enabled=$(grep -E "^NFTBAN_TUNNEL_ENABLED=" "$tunnel_config" 2>/dev/null | cut -d'"' -f2 || echo "NO")
+
+    if [[ "$tunnel_enabled" != "YES" ]]; then
+        NFTBAN_HEALTH_RESULTS["tunnel"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["tunnel"]="Tunnel suspicion monitoring disabled (optional)"
+        return $HEALTH_OK
+    fi
+
+    # Check timer status
+    if systemctl is-enabled nftban-tunnel.timer &>/dev/null; then
+        if ! systemctl is-active nftban-tunnel.timer &>/dev/null; then
+            tunnel_issues+=("Tunnel timer enabled but not active")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        tunnel_issues+=("Tunnel enabled in config but timer not enabled")
+        tunnel_issues+=("  FIX: nftban tunnel enable")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check state directory
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
+    if [[ ! -d "$state_dir" ]]; then
+        tunnel_issues+=("Tunnel state directory missing: $state_dir")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check for HIGH suspicion IPs
+    local high_count=0
+    if [[ -d "$state_dir" ]]; then
+        for state_file in "${state_dir}"/*.state; do
+            [[ ! -f "$state_file" ]] && continue
+            local level
+            level=$(head -1 "$state_file" 2>/dev/null | cut -d'|' -f3)
+            [[ "$level" == "HIGH" ]] && high_count=$((high_count + 1))
+        done
+    fi
+
+    if [[ $high_count -gt 0 ]]; then
+        tunnel_issues+=("$high_count HIGH-suspicion DNS tunnel source(s) detected (advisory only)")
+        tunnel_issues+=("  Review: nftban tunnel top")
+        # Not a health error — advisory only, never bans
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_RESULTS["tunnel"]=$status
+    if [[ ${#tunnel_issues[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["tunnel"]="Tunnel monitoring active, no issues"
+    else
+        NFTBAN_HEALTH_ISSUES["tunnel"]="${tunnel_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("tunnel: ${tunnel_issues[*]}")
+        fi
+    fi
+
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
 export -f nftban_health_check_botguard
 export -f nftban_health_check_binary_integrity
+export -f nftban_health_check_tunnel
