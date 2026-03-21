@@ -31,6 +31,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // Config holds all bot guard configuration.
@@ -86,27 +88,27 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Enabled:              false, // Disabled until explicitly enabled
-		LoopInterval:         60 * time.Second,
-		LoopPressureInterval: 40 * time.Second,
+		LoopInterval:         constants.BotguardLoopInterval,
+		LoopPressureInterval: constants.BotguardLoopPressureInterval,
 		TripConn:             200,
 		ClearConn:            150,
 		EmergencyConn:        500,
 		SuspectRate:          "30/second",
 		SuspectBurst:         60,
-		SuspectTimeout:       5 * time.Minute,
-		AllowTTL:             24 * time.Hour,
-		BanTTL:               96 * time.Hour,
-		GreyTTL:              30 * time.Minute,
-		EmergencyTTL:         30 * time.Minute,
-		PendingTTL:           60 * time.Second,
+		SuspectTimeout:       constants.BotguardSuspectTimeout,
+		AllowTTL:             constants.BotguardAllowTTL,
+		BanTTL:               constants.BotguardBanTTL,
+		GreyTTL:              constants.BotguardGreyTTL,
+		EmergencyTTL:         constants.BotguardEmergencyTTL,
+		PendingTTL:           constants.BotguardPendingTTL,
 		AutoTune:             true,
 		BatchSignalFile:      "/var/lib/nftban/botguard/batch_signals.jsonl",
-		BatchInterval:        10 * time.Minute,
+		BatchInterval:        constants.BotguardBatchInterval,
 		VerifyWorkers:        8,
 		VerifyRateLimit:      10,
-		VerifyTimeout:        3 * time.Second,
-		VerifyCacheTTL:       24 * time.Hour,
-		VerifyNegTTL:         1 * time.Hour,
+		VerifyTimeout:        constants.BotguardVerifyTimeout,
+		VerifyCacheTTL:       constants.BotguardVerifyCacheTTL,
+		VerifyNegTTL:         constants.BotguardVerifyNegTTL,
 		AllowedCrawlersFile:  "/etc/nftban/conf.d/botguard/allowed_crawlers.conf",
 		DeniedCrawlersFile:   "/etc/nftban/conf.d/botguard/denied_crawlers.conf",
 		LogLevel:             "INFO",

@@ -24,7 +24,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
@@ -158,7 +157,7 @@ func HealthFixHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil && !strings.Contains(outputStr, "Fix complete") {
 		log.Printf("[ERROR] Health fix failed: %v (output: %s)", err, outputStr)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("Health fix failed: %v", err),
+			Error: "Health fix failed: " + sanitizeError(err),
 		})
 		return
 	}

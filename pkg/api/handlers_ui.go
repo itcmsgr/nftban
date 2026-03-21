@@ -84,7 +84,7 @@ func UIWhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := execNFTBanCommand("ui", "add-ip", req.IP)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to add to UI whitelist: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to add to UI whitelist: " + sanitizeError(err)})
 		return
 	}
 

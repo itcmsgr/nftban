@@ -61,7 +61,7 @@ func NFTablesValidateHandler(w http.ResponseWriter, r *http.Request) {
 			"success": true,
 			"data": map[string]interface{}{
 				"valid":  false,
-				"issues": []string{"Failed to validate nftables: " + err.Error()},
+				"issues": []string{"Failed to validate nftables: " + sanitizeError(err)},
 			},
 		})
 		return
@@ -77,7 +77,7 @@ func NFTablesValidateHandler(w http.ResponseWriter, r *http.Request) {
 				"success": true,
 				"data": map[string]interface{}{
 					"valid":  false,
-					"issues": []string{"Failed to get nftables ruleset: " + err.Error()},
+					"issues": []string{"Failed to get nftables ruleset: " + sanitizeError(err)},
 				},
 			})
 			return
@@ -195,7 +195,7 @@ func NFTablesSaveHandler(w http.ResponseWriter, r *http.Request) {
 	// Save with timestamp — v1.19.0: permissions 0640 (R36)
 	if err := os.WriteFile(backupPathWithTime, []byte(req.Ruleset), 0640); err != nil {
 		log.Printf("[ERROR] Failed to save nftables backup: %v", err)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to save backup: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to save backup: " + sanitizeError(err)})
 		return
 	}
 

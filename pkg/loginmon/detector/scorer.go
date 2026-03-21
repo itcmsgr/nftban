@@ -35,6 +35,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // BanAction represents a ban decision
@@ -76,13 +78,13 @@ func DefaultScorerConfig() ScorerConfig {
 		ThresholdTempBan:      45,  // 0.45
 		ThresholdEscalate:     65,  // 0.65
 		ThresholdPermanent:    100, // 1.00
-		TempBanDuration:       15 * time.Minute,
+		TempBanDuration:       constants.LoginmonTempBanDuration,
 		EscalateDurations:     []time.Duration{2 * time.Hour, 4 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-		ScoreDecayInterval:    5 * time.Minute,
+		ScoreDecayInterval:    constants.LoginmonScoreDecayInterval,
 		ScoreDecayAmount:      5,
-		IPRetentionDuration:   24 * time.Hour,
-		RecentBanWindow:       10 * time.Second,
-		RecentBanMaxWindow:    5 * time.Minute,
+		IPRetentionDuration:   constants.LoginmonIPRetention,
+		RecentBanWindow:       constants.LoginmonRecentBanWindow,
+		RecentBanMaxWindow:    constants.LoginmonRecentBanMaxWindow,
 	}
 }
 

@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
@@ -72,7 +73,7 @@ func LoadConfig(configDir string) (*Config, error) {
 
 	cfg := &Config{
 		GlobalThreshold: 10,
-		GlobalPeriod:    24 * time.Hour,
+		GlobalPeriod:    constants.PersistentDefaultPeriod,
 		GlobalAction:    "permanent",
 		Enabled:         true,
 		BanLog:          defaultLogDir + "/bans.log",

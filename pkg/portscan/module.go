@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -38,7 +39,7 @@ const (
 	ModuleVersion = "1.0.0"
 
 	// Check interval
-	DefaultCheckInterval = 60 * time.Second
+	DefaultCheckInterval = constants.PortscanCheckInterval
 )
 
 // getPortscanScript returns the portscan script path from central config
@@ -100,8 +101,8 @@ func New() *Module {
 			Enabled:      true,
 			Mode:         "auto",
 			BanThreshold: 3,                    // Default: 3 detections
-			BanDuration:  30 * time.Minute,     // Default: 30 min ban
-			TrackWindow:  5 * time.Minute,      // Default: 5 min window
+			BanDuration:  constants.PortscanBanDuration,  // Default: 30 min ban
+			TrackWindow:  constants.PortscanTrackWindow,  // Default: 5 min window
 		},
 	}
 	// Load config from files (will override defaults)
@@ -293,9 +294,9 @@ func (m *Module) Status() module.Status {
 // detectMode detects the current portscan detection mode
 func (m *Module) detectMode() {
 	scriptPath := getPortscanScript()
-	// Source the script and get mode
+	// Source the script and get mode (VULN-20: quote path via $1)
 	out, err := exec.Command("bash", "-c",
-		"source "+scriptPath+" 2>/dev/null && nftban_portscan_load_config && _nftban_portscan_detect_mode").Output()
+		"source \"$1\" 2>/dev/null && nftban_portscan_load_config && _nftban_portscan_detect_mode", "_", scriptPath).Output()
 	if err != nil {
 		m.mode = "classic" // Default fallback
 		return
@@ -304,19 +305,19 @@ func (m *Module) detectMode() {
 
 	// Check Suricata availability
 	out, _ = exec.Command("bash", "-c",
-		"source "+scriptPath+" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no").Output()
+		"source \"$1\" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no", "_", scriptPath).Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 
 // enable enables portscan detection
 func (m *Module) enable() error {
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_enable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_enable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
 // disable disables portscan detection
 func (m *Module) disable() error {
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_disable")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_disable", "_", getPortscanScript())
 	return cmd.Run()
 }
 
@@ -338,7 +339,7 @@ func (m *Module) runDetectionCycle(ctx context.Context) {
 // runCycle runs a single detection cycle
 func (m *Module) runCycle() {
 	// Run the bash detection script
-	cmd := exec.Command("bash", "-c", "source "+getPortscanScript()+" && nftban_portscan_run")
+	cmd := exec.Command("bash", "-c", "source \"$1\" && nftban_portscan_run", "_", getPortscanScript())
 	err := cmd.Run()
 
 	m.mu.Lock()

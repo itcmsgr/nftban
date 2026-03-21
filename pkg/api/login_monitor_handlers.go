@@ -573,7 +573,7 @@ func LoginMonitorControlHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("[ERROR] Failed to %s login monitor %s: %v - Output: %s", req.Action, req.Target, err, output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: "Failed to " + req.Action + " login monitor: " + err.Error(),
+			Error: "Failed to " + req.Action + " login monitor: " + sanitizeError(err),
 		})
 		return
 	}

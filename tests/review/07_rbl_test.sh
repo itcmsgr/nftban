@@ -335,6 +335,29 @@ check "rbls.conf is referenced in packaging/config" \
     grep -rq 'rbls\.conf' "${REPO_ROOT}/etc/" 2>/dev/null
 
 # =============================================================================
+# TEST: P0 Regression — v1.29.0 Correctness Fixes
+# =============================================================================
+# These tests verify the four P0 bugs fixed in v1.29.0 do not regress.
+# =============================================================================
+
+echo ""
+echo "=== P0 Regression Tests (v1.29.0) ==="
+
+RBL_CUSTOM_CONF="${REPO_ROOT}/etc/nftban/conf.d/rbl/custom.conf"
+
+check "P0.1: main.conf defaults NFTBAN_RBL_ENABLED to NO" \
+    grep -qP '^NFTBAN_RBL_ENABLED="NO"' "$RBL_MAIN_CONF"
+
+check "P0.2: NFTBAN_LOG_DIR is not a self-reference" \
+    bash -c '! grep -qP "NFTBAN_LOG_DIR=\"\\\$\{NFTBAN_LOG_DIR\}\"" "'"$RBL_CORE"'"'
+
+check "P0.3: Parallel function uses subshell to scope EXIT trap" \
+    bash -c 'sed -n "/^nftban_rbl_check_ip_parallel()/,/^[^ ]/p" "'"$RBL_CORE"'" | head -5 | grep -q "("'
+
+check "P0.4: custom.conf does not document enableip/disableip" \
+    bash -c '! grep -qi "enableip\|disableip" "'"$RBL_CUSTOM_CONF"'"'
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 

@@ -40,6 +40,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/util"
 )
 
@@ -662,9 +663,9 @@ func derivePaths(cfg *Config) *Paths {
 // defaultTimeouts returns sensible command timeouts
 func defaultTimeouts() *Timeouts {
 	return &Timeouts{
-		Fast:   5 * time.Second,   // status, simple queries
-		Medium: 30 * time.Second,  // ban, unban, search
-		Slow:   120 * time.Second, // sync, health, feed updates
+		Fast:   constants.IPCFastTimeout,   // status, simple queries
+		Medium: constants.IPCMediumTimeout,  // ban, unban, search
+		Slow:   constants.IPCSlowTimeout,    // sync, health, feed updates
 	}
 }
 

@@ -340,7 +340,7 @@ nftban_portscan_init() {
     nftban_portscan_load_config
 
     # Check if enabled
-    if [[ "${PORTSCAN_ENABLED:-true}" != "true" ]]; then
+    if [[ "${PORTSCAN_ENABLED:-false}" != "true" ]]; then
         _nftban_portscan_log "INFO" "Portscan detection is disabled"
         return 0
     fi
@@ -878,7 +878,7 @@ nftban_portscan_status() {
 
 # Run portscan detection cycle
 nftban_portscan_run() {
-    if [[ "${PORTSCAN_ENABLED:-true}" != "true" ]]; then
+    if [[ "${PORTSCAN_ENABLED:-false}" != "true" ]]; then
         return 0
     fi
 

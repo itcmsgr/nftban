@@ -79,7 +79,7 @@ func BanHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommandPrivileged(args...)
 	hasSuccess := strings.Contains(output, "✅") || strings.Contains(output, "has been banned successfully")
 	if err != nil && !hasSuccess {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to ban IP: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to ban IP: " + sanitizeError(err)})
 		return
 	}
 
@@ -116,7 +116,7 @@ func UnbanHandler(w http.ResponseWriter, r *http.Request) {
 	output, err := execNFTBanCommandPrivileged("unban", req.IP)
 	hasSuccess := strings.Contains(output, "✅") || strings.Contains(output, "has been unbanned") || strings.Contains(output, "removed successfully")
 	if err != nil && !hasSuccess {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to unban IP: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to unban IP: " + sanitizeError(err)})
 		return
 	}
 
@@ -176,7 +176,7 @@ func WhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := execNFTBanCommand(args...)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to add to whitelist: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to add to whitelist: " + sanitizeError(err)})
 		return
 	}
 
@@ -212,7 +212,7 @@ func WhitelistRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := execNFTBanCommand("whitelist", "remove", req.IP)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to remove from whitelist: %v", err)})
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to remove from whitelist: " + sanitizeError(err)})
 		return
 	}
 

@@ -52,6 +52,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/loginmon/detector"
 	"github.com/itcmsgr/nftban/pkg/metrics"
@@ -70,7 +71,7 @@ const (
 	EVEFreshnessThreshold = 60 // seconds
 
 	// Detection intervals
-	DefaultCheckInterval = 10 * time.Second
+	DefaultCheckInterval = constants.LoginmonCheckInterval
 )
 
 // getLoginmonPaths returns paths from central config
@@ -676,7 +677,7 @@ func (m *Module) runEVEWatcher(ctx context.Context) {
 
 	m.eveReader = bufio.NewReader(m.eveFile)
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(constants.LoginmonEVEPollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -748,7 +749,7 @@ func (m *Module) handleExternalLoginEvent(e eventbus.Event) {
 
 // runScoreDecay periodically decays IP scores
 func (m *Module) runScoreDecay(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(constants.LoginmonScoreDecayInterval)
 	defer ticker.Stop()
 
 	for {
@@ -763,7 +764,7 @@ func (m *Module) runScoreDecay(ctx context.Context) {
 
 // runCleanup periodically cleans up old IP entries
 func (m *Module) runCleanup(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(constants.LoginmonCleanupInterval)
 	defer ticker.Stop()
 
 	for {

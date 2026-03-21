@@ -191,8 +191,9 @@ func LoadPanelConfig(configDir, panelName string) (*PanelConfig, error) {
 
 	// Extract each variable using bash
 	for varName, portList := range varNames {
-		bashCmd := fmt.Sprintf("source %s && echo \"${%s:-}\"", panelConfigPath, varName)
-		cmd := exec.Command("bash", "-c", bashCmd)
+		// VULN-20: quote path via $1 to prevent injection
+		bashCmd := fmt.Sprintf("source \"$1\" && echo \"${%s:-}\"", varName)
+		cmd := exec.Command("bash", "-c", bashCmd, "_", panelConfigPath)
 		output, err := cmd.Output()
 		if err != nil {
 			// Variable might not be defined - that's OK, skip it

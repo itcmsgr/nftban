@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/constants"
 )
 
 // =============================================================================
@@ -43,10 +45,10 @@ const (
 	MaxPayloadSize = 64 * 1024 * 1024
 
 	// DefaultTimeout for connections
-	DefaultTimeout = 30 * time.Second
+	DefaultTimeout = constants.ZabbixSendTimeout
 
 	// DefaultInterval between metric pushes
-	DefaultInterval = 60 * time.Second
+	DefaultInterval = constants.ZabbixCollectInterval
 
 	// DefaultBatchSize for metric batching
 	DefaultBatchSize = 100

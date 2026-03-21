@@ -314,7 +314,7 @@ _nftban_portscan_config() {
                 --arg config_file "$config_file" \
                 --arg config_local "$config_local" \
                 --arg local_exists "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
-                --arg enabled "${PORTSCAN_ENABLED:-true}" \
+                --arg enabled "${PORTSCAN_ENABLED:-false}" \
                 --arg mode "${PORTSCAN_MODE:-auto}" \
                 --arg threshold "${PORTSCAN_THRESHOLD:-10}" \
                 --arg time_window "${PORTSCAN_TIME_WINDOW:-300}" \
@@ -336,7 +336,7 @@ _nftban_portscan_config() {
                     }
                 }')
         else
-            data="{\"config_file\":\"$config_file\",\"enabled\":${PORTSCAN_ENABLED:-true}}"
+            data="{\"config_file\":\"$config_file\",\"enabled\":${PORTSCAN_ENABLED:-false}}"
         fi
         json_output "true" "$data"
         return 0
@@ -355,7 +355,7 @@ _nftban_portscan_config() {
     fi
     echo ""
     echo "Detection Settings:"
-    echo "  Enabled:        ${PORTSCAN_ENABLED:-true}"
+    echo "  Enabled:        ${PORTSCAN_ENABLED:-false}"
     echo "  Mode:           ${PORTSCAN_MODE:-auto}"
     echo "  Threshold:      ${PORTSCAN_THRESHOLD:-10} ports"
     echo "  Time Window:    ${PORTSCAN_TIME_WINDOW:-300} seconds"

@@ -31,6 +31,8 @@ import (
 
 	goruntime "runtime"
 
+	"github.com/itcmsgr/nftban/pkg/constants"
+
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/botguard"
 	"github.com/itcmsgr/nftban/pkg/ddos"
@@ -405,7 +407,7 @@ func (d *Daemon) initOpQueue() error {
 
 	// Reconcile source index with actual nft state
 	go func() {
-		time.Sleep(5 * time.Second) // Wait for daemon to fully start
+		time.Sleep(constants.DaemonStartupWait) // Wait for daemon to fully start
 		d.sourceIndex.ReconcileWithBackend(wrapper)
 	}()
 
