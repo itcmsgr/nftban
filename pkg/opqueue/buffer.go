@@ -288,13 +288,6 @@ func (buf *SetBuffer) applyReplace(backend NetlinkBackend, table, setName string
 	return applied
 }
 
-// applyPending applies individual add/delete operations
-// applyPending applies individual add/delete operations (legacy, calls applyPendingCounted)
-func (buf *SetBuffer) applyPending(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int) int {
-	adds, deletes := buf.applyPendingCounted(backend, table, setName, pending, maxBatchSize)
-	return adds + deletes
-}
-
 // applyPendingCounted applies individual add/delete operations and returns separate counts
 func (buf *SetBuffer) applyPendingCounted(backend NetlinkBackend, table, setName string, pending map[string]*PendingOp, maxBatchSize int) (adds, deletes int) {
 	isIPv6 := strings.HasSuffix(setName, "_ipv6")
