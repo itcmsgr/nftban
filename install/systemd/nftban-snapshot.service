@@ -28,6 +28,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+User=root
+Group=root
 ExecStart=/usr/sbin/nftban snapshot create
 
 # Logging
