@@ -158,7 +158,7 @@ nftban_cmd_version() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --short|-s)
+            --short|-s|--brief|-b)
                 format="short"
                 shift
                 ;;
@@ -255,6 +255,7 @@ Display NFTBan version information.
 
 OPTIONS:
   --short, -s       Show version number only (e.g., "1.0.0")
+  --brief, -b       Alias for --short
   --numeric, -n     Show numeric version for comparison (e.g., "100")
   --check, -c       Check system requirements
   --update, -u      Check GitHub for newer version
@@ -264,6 +265,7 @@ OPTIONS:
 EXAMPLES:
   nftban version                 # Show full version information
   nftban version --short         # Show version number only
+  nftban version --brief         # Same as --short
   nftban version --json          # Get version in JSON format
   nftban version --check         # Check system requirements
   nftban version --update        # Check for updates from GitHub

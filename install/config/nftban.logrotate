@@ -112,6 +112,21 @@
 # File: /etc/logrotate.d/nftban-suricata (installed by nftban suricata setup)
 
 # =============================================================================
+# Tunnel Suspicion logs (v1.30.0 — DNS tunnel detection)
+# =============================================================================
+# Advisory-only module; logs suspicion scores and scan results
+/var/log/nftban/tunnel.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
+# =============================================================================
 # Bot Guard logs (v1.20.0 — HTTP crawler detection)
 # =============================================================================
 # Bot Guard Go daemon writes classification decisions and suspect tracking

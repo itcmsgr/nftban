@@ -1259,6 +1259,66 @@ rbl:
       options:
         --json: {type: bool, description: "Output in JSON format"}
 
+tunnel:
+  category: intelligence_reporting
+  description: "DNS tunnel suspicion monitoring (advisory-only)"
+  risk: core
+  audience: [cli, auditor]
+  capability: status_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: conditional
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban tunnel status"
+    - "nftban tunnel enable"
+    - "nftban tunnel disable"
+    - "nftban tunnel scan"
+    - "nftban tunnel top"
+    - "nftban tunnel top --limit 20"
+    - "nftban tunnel explain 192.168.1.100"
+    - "nftban tunnel status --json"
+  subcommands:
+    status:
+      mutates: false
+      description: "Show tunnel monitoring status and summary"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+        --brief: {type: bool, description: "One-line summary"}
+    enable:
+      mutates: true
+      requires_root: true
+      description: "Enable scheduled tunnel suspicion scanning (systemd timer)"
+    disable:
+      mutates: true
+      requires_root: true
+      description: "Disable scheduled tunnel suspicion scanning"
+    scan:
+      mutates: true
+      description: "Run a tunnel suspicion scan now"
+      options:
+        --quiet: {type: bool, description: "Minimal output (for timer)"}
+    top:
+      mutates: false
+      description: "Show top suspected IPs by score"
+      options:
+        --limit: {type: int, default: 10, description: "Number of results"}
+        --json: {type: bool, description: "Output in JSON format"}
+    explain:
+      mutates: false
+      description: "Show detailed signal breakdown for an IP"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to explain"}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    config:
+      mutates: false
+      description: "Show tunnel configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+
 trust:
   category: active_protection
   description: "Trusted provider IP ranges (CDN, cloud)"

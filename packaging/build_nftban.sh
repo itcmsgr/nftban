@@ -448,6 +448,8 @@ install -D -m 0644 install/systemd/nftban-botscan.timer %{buildroot}/usr/lib/sys
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
 install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
 install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
+install -D -m 0644 install/systemd/nftban-tunnel.service %{buildroot}/usr/lib/systemd/system/nftban-tunnel.service
+install -D -m 0644 install/systemd/nftban-tunnel.timer %{buildroot}/usr/lib/systemd/system/nftban-tunnel.timer
 install -D -m 0644 install/systemd/nftband.service %{buildroot}/usr/lib/systemd/system/nftband.service
 install -D -m 0644 install/systemd/nftband.socket %{buildroot}/usr/lib/systemd/system/nftband.socket
 
@@ -1189,9 +1191,9 @@ echo "[NFTBan] Configuring NFTBan v%{version}..."
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl,tunnel}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata,tunnel}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/{reports,watchdog,rbl,botguard,suricata}
 mkdir -p /var/cache/nftban/health
@@ -1250,6 +1252,8 @@ fi
 # Directory ownership (fhs-permissions.sh only handles files, not dirs)
 chown nftban:nftban /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
 chmod 0750 /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
+chown nftban:nftban /var/lib/nftban/tunnel 2>/dev/null || true
+chmod 0750 /var/lib/nftban/tunnel 2>/dev/null || true
 # Suricata log dir: owner=suricata (if exists), group=nftban, mode=0770
 if id suricata &>/dev/null; then
     chown suricata:nftban /var/log/nftban/suricata 2>/dev/null || true
@@ -1806,6 +1810,7 @@ if [ \$1 -eq 0 ]; then
                 nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer \
                 nftban-queue.service nftban-queue.timer nftban-botscan.service nftban-botscan.timer \
                 nftban-rbl-check.service nftban-rbl-check.timer \
+                nftban-tunnel.service nftban-tunnel.timer \
                 nftban-rollback.service nftban-rollback.timer nftban-snapshot.service nftban-snapshot.timer \
                 nftban-suricata-update.service nftban-suricata-update.timer nftban-suricata.service \
                 nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-inventory.timer \
@@ -1930,6 +1935,8 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/suricata/interfaces.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/tunnel
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/tunnel/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
@@ -2487,7 +2494,7 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
         systemctl stop "$unit" 2>/dev/null || true
     done
     # Stop timers
-    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer nftban-botscan.timer; do
+    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer nftban-botscan.timer nftban-tunnel.timer; do
         systemctl stop "$timer" 2>/dev/null || true
     done
 fi
@@ -2520,6 +2527,7 @@ PRERM
 /etc/nftban/conf.d/botguard/main.conf
 /etc/nftban/conf.d/botguard/allowed_crawlers.conf
 /etc/nftban/conf.d/botguard/denied_crawlers.conf
+/etc/nftban/conf.d/tunnel/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
 /etc/nftban/conf.d/metrics.conf
@@ -2536,7 +2544,7 @@ build_deb() {
 
     # Create directory structure
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/botguard,distros,whitelist.d,blacklist.d,ports.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard},log/nftban/botguard,cache/nftban},run/nftban}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel},log/nftban/botguard,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -2673,6 +2681,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.socket" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"

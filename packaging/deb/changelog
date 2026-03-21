@@ -1,3 +1,31 @@
+nftban (1.30.0-1) stable; urgency=medium
+
+  * v1.30.0 — Tunnel Suspicion Module + Install Experience Polish
+  * NEW: DNS Tunnel Suspicion Module (advisory-only, never bans)
+  * Tunnel: 5 DNS signals (entropy, TXT frequency, subdomain depth,
+    query volume, NXDOMAIN ratio) with configurable weights
+  * Tunnel: 4 DNS log parsers (BIND, Unbound, dnsmasq, systemd-resolved)
+  * Tunnel: CLI with status/top/explain/enable/disable/scan/config
+  * Tunnel: systemd timer (5-min interval), health check integration
+  * CLI: --brief alias for `nftban version`
+  * Systemd: explicit User=root on 3 oneshot services (auditability)
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 21 Mar 2026 18:00:00 +0000
+
+nftban (1.29.3-1) stable; urgency=medium
+
+  * v1.29.3 — UI Security, Module Viewers, Packaging Fixes
+  * Security: VULN-03 (session fixation) and VULN-12 (CSRF) fixes in UI
+  * UI: 8 module viewer pages (DDoS, Portscan, Login, Suricata, etc.)
+  * UI: 8-page UX improvements with consistent layouts
+  * Packaging: postinst FHS/ACL fixes for fresh install
+  * Packaging: templ generate integrated into DEB/RPM builds
+  * Fix: P0 fresh install lockout — missing nftables.conf SSH_PORT substitution
+  * Systemd: sd_notify/WatchdogSec support for nftband
+  * Systemd: SecurityHardening directives for all long-running services
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 21 Mar 2026 12:00:00 +0000
+
 nftban (1.29.0-1) stable; urgency=medium
 
   * v1.29.0 — RBL Correctness, Security Hardening, CI Fixes
