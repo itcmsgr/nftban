@@ -302,7 +302,11 @@ _tunnel_cmd_top() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --limit|-l)
-                limit="${2:-10}"
+                if [[ $# -lt 2 ]]; then
+                    echo "Error: --limit requires a value" >&2
+                    return 1
+                fi
+                limit="$2"
                 shift 2
                 ;;
             --json|-j)
@@ -417,9 +421,9 @@ _tunnel_cmd_explain() {
     local ts score level signals
     IFS='|' read -r ts score level signals <<< "$line"
 
-    # Parse signals: AVG_ENTROPY|TXT_RATIO|MAX_DEPTH|QUERY_COUNT|NXDOMAIN_RATIO
+    # Parse signals: AVG_ENTROPY:TXT_RATIO:MAX_DEPTH:QUERY_COUNT:NXDOMAIN_RATIO
     local avg_entropy txt_ratio max_depth query_count nxdomain_ratio
-    IFS='|' read -r avg_entropy txt_ratio max_depth query_count nxdomain_ratio <<< "$signals"
+    IFS=':' read -r avg_entropy txt_ratio max_depth query_count nxdomain_ratio <<< "$signals"
 
     local ts_human
     ts_human=$(date -d "@${ts}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$ts")

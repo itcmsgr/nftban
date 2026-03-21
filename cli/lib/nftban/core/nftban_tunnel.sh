@@ -29,7 +29,7 @@ set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_TUNNEL_LOADED:-}" ]] && return 0
-_NFTBAN_TUNNEL_LOADED=1
+readonly _NFTBAN_TUNNEL_LOADED=1
 
 # =============================================================================
 # LOAD DEPENDENCIES
@@ -150,7 +150,7 @@ nftban_tunnel_compute_signals() {
     local records_file="$1"
 
     if [[ ! -f "$records_file" || ! -s "$records_file" ]]; then
-        echo "0|0|0|0|0"
+        echo "0:0:0:0:0"
         return
     fi
 
@@ -214,7 +214,7 @@ nftban_tunnel_compute_signals() {
     }
     END {
         if (total == 0) {
-            print "0|0|0|0|0"
+            print "0:0:0:0:0"
             exit
         }
 
@@ -222,7 +222,7 @@ nftban_tunnel_compute_signals() {
         txt_ratio = txt_count / total
         nxdomain_ratio = nxdomain_count / total
 
-        printf "%.2f|%.4f|%d|%d|%.4f\n", avg_entropy, txt_ratio, max_depth, total, nxdomain_ratio
+        printf "%.2f:%.4f:%d:%d:%.4f\n", avg_entropy, txt_ratio, max_depth, total, nxdomain_ratio
     }
     ' "$records_file"
 }
@@ -233,7 +233,7 @@ nftban_tunnel_compute_signals() {
 
 nftban_tunnel_score_ip() {
     # Compute composite suspicion score for a source IP.
-    # Args: $1 = signal_string "AVG_ENTROPY|TXT_RATIO|MAX_DEPTH|QUERY_COUNT|NXDOMAIN_RATIO"
+    # Args: $1 = signal_string "AVG_ENTROPY:TXT_RATIO:MAX_DEPTH:QUERY_COUNT:NXDOMAIN_RATIO"
     # Returns: composite score (0-100) via stdout
     local signals="$1"
 
@@ -251,7 +251,7 @@ nftban_tunnel_score_ip() {
     local w_volume="${NFTBAN_TUNNEL_WEIGHT_QUERY_VOLUME:-20}"
     local w_nxdomain="${NFTBAN_TUNNEL_WEIGHT_NXDOMAIN_RATIO:-15}"
 
-    echo "$signals" | awk -F'|' \
+    echo "$signals" | awk -F':' \
         -v entropy_thresh="$entropy_thresh" \
         -v txt_thresh="$txt_thresh" \
         -v depth_thresh="$depth_thresh" \
@@ -323,10 +323,13 @@ nftban_tunnel_score_level() {
     # Convert numeric score to suspicion level string
     # Args: $1 = score (0-100)
     # Returns: NONE, LOW, MEDIUM, or HIGH
-    local score="$1"
+    local score="${1:-0}"
     local thresh_low="${NFTBAN_TUNNEL_THRESHOLD_LOW:-30}"
     local thresh_med="${NFTBAN_TUNNEL_THRESHOLD_MEDIUM:-60}"
     local thresh_high="${NFTBAN_TUNNEL_THRESHOLD_HIGH:-80}"
+
+    # Guard against empty or non-numeric score
+    [[ ! "$score" =~ ^[0-9]+$ ]] && score=0
 
     if [[ "$score" -ge "$thresh_high" ]]; then
         echo "HIGH"
@@ -500,6 +503,9 @@ nftban_tunnel_scan() {
     local ts_human
     ts_human=$(date '+%Y-%m-%d %H:%M:%S')
 
+    # Ensure log directory exists
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+
     # Check if enabled
     if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" != "YES" ]]; then
         [[ "$quiet" == "false" ]] && echo "Tunnel suspicion module is DISABLED"
@@ -523,7 +529,8 @@ nftban_tunnel_scan() {
     # Parse DNS logs into temp file
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/nftban-tunnel.XXXXXX)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    # Clean up temp dir on exit — use RETURN trap to avoid clobbering caller's EXIT trap
+    trap 'rm -rf "$tmp_dir"' RETURN
 
     local all_records="${tmp_dir}/all_records.txt"
     nftban_tunnel_parse_dns_logs "$TUNNEL_DNS_TYPE" "$TUNNEL_DNS_LOG_PATH" "$since_ts" > "$all_records" 2>/dev/null || true
@@ -538,6 +545,18 @@ nftban_tunnel_scan() {
     fi
 
     [[ "$quiet" == "false" ]] && echo "Parsed $total_records DNS queries"
+
+    # Filter excluded domains before splitting by IP
+    if [[ -n "${NFTBAN_TUNNEL_EXCLUDE_DOMAINS:-}" ]]; then
+        local filtered="${tmp_dir}/filtered.txt"
+        while IFS='|' read -r src_ip qname qtype rcode; do
+            if ! _tunnel_is_excluded_domain "$qname"; then
+                echo "${src_ip}|${qname}|${qtype}|${rcode}"
+            fi
+        done < "$all_records" > "$filtered"
+        mv "$filtered" "$all_records"
+        total_records=$(wc -l < "$all_records" 2>/dev/null || echo "0")
+    fi
 
     # Split records by source IP
     awk -F'|' '{print > ("'"$tmp_dir"'/" $1 ".records")}' "$all_records"
