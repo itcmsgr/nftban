@@ -533,9 +533,9 @@ jobs:
              # Rocky / Alma / RHEL
              sudo dnf install -y nftban-<distro>-x86_64.rpm
 
-             # Ubuntu / Debian
-             sudo dpkg -i nftban-<distro>-amd64.deb
-             sudo apt-get install -f -y
+             # Ubuntu / Debian (apt-get update required on fresh servers)
+             sudo apt-get update
+             sudo apt-get install -y ./nftban-<distro>-amd64.deb
 
           4. Enable and verify:
 

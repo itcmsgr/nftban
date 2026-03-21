@@ -80,10 +80,13 @@ templ NetworkContentFragment(data ui.NetworkPageData) {
 					<th>Interface</th>
 					<th>Status</th>
 					<th>IP Address</th>
+					<th>MAC</th>
+					<th>MTU</th>
 					<th>RX Rate</th>
 					<th>TX Rate</th>
 					<th>RX Total</th>
 					<th>TX Total</th>
+					<th>Packets (RX/TX)</th>
 					<th>Errors</th>
 					<th>Dropped</th>
 				</tr>
@@ -100,6 +103,8 @@ templ NetworkContentFragment(data ui.NetworkPageData) {
 							}
 						</td>
 						<td style="font-family: monospace;">{ iface.IPAddress }</td>
+						<td style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">{ iface.MACAddress }</td>
+						<td>{ intToStr(iface.MTU) }</td>
 						<td class="traffic-rx">
 							<span class="traffic-value">{ fmt.Sprintf("%.2f", iface.RxMbps) }</span>
 							<span class="traffic-unit">Mbps</span>
@@ -110,6 +115,7 @@ templ NetworkContentFragment(data ui.NetworkPageData) {
 						</td>
 						<td>{ formatBytes64(iface.RxBytes) }</td>
 						<td>{ formatBytes64(iface.TxBytes) }</td>
+						<td style="font-size: 0.85rem;">{ formatLargeNumber(iface.RxPackets) } / { formatLargeNumber(iface.TxPackets) }</td>
 						<td>
 							if iface.RxErrors > 0 || iface.TxErrors > 0 {
 								<span class="badge badge-warning">{ fmt.Sprintf("%d/%d", iface.RxErrors, iface.TxErrors) }</span>
@@ -128,7 +134,7 @@ templ NetworkContentFragment(data ui.NetworkPageData) {
 				}
 				if len(data.Interfaces) == 0 {
 					<tr>
-						<td colspan="9" style="text-align: center; color: var(--text-muted);">No interfaces found</td>
+						<td colspan="12" style="text-align: center; color: var(--text-muted);">No interfaces found</td>
 					</tr>
 				}
 			</tbody>

@@ -175,13 +175,14 @@ templ WhitelistTableFragment(data ui.WhitelistData) {
 				<th>Comment</th>
 				<th>Source</th>
 				<th>Added</th>
+				<th>Added By</th>
 				<th>Action</th>
 			</tr>
 		</thead>
 		<tbody>
 			if len(data.Entries) == 0 {
 				<tr>
-					<td colspan="6" class="empty-state">No whitelist entries found</td>
+					<td colspan="7" class="empty-state">No whitelist entries found</td>
 				</tr>
 			} else {
 				for _, entry := range data.Entries {
@@ -205,6 +206,13 @@ templ WhitelistTableFragment(data ui.WhitelistData) {
 						<td class="time-cell">
 							if entry.AddedAt != "" {
 								{ entry.AddedAt }
+							} else {
+								<span class="text-muted">--</span>
+							}
+						</td>
+						<td>
+							if entry.AddedBy != "" {
+								<span class="source-badge">{ entry.AddedBy }</span>
 							} else {
 								<span class="text-muted">--</span>
 							}

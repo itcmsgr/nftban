@@ -6,12 +6,13 @@
 // meta:type="templ"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-15"
-// meta:description="Module status page showing enabled/disabled modules"
+// meta:description="Module status page showing enabled/disabled modules with log and config viewers"
 // =============================================================================
 
 package pages
 
 import (
+	"fmt"
 	"github.com/itcmsgr/nftban/internal/ui"
 )
 
@@ -64,52 +65,307 @@ templ Modules(data ModulesData) {
 		<div id="modules-content">
 			@ModulesListFragment(data.Modules)
 		</div>
+
+		@modulesPageStyles()
 	}
 }
 
-// ModulesListFragment renders the list of modules
+// ModulesListFragment renders the list of modules as cards
 templ ModulesListFragment(modules []ui.ModuleStatus) {
-	<div class="card">
-		<table class="data-table">
-			<thead>
-				<tr>
-					<th>Module</th>
-					<th>Description</th>
-					<th>Status</th>
-					<th>State</th>
-				</tr>
-			</thead>
-			<tbody>
-				for _, mod := range modules {
-					<tr>
-						<td style="font-weight: 500;">{ mod.Name }</td>
-						<td style="color: var(--text-muted);">{ mod.Description }</td>
-						<td>
-							if mod.Enabled {
-								<span class="badge badge-success">Enabled</span>
-							} else {
-								<span class="badge badge-muted">Disabled</span>
-							}
-						</td>
-						<td>
-							if mod.Running {
-								<span class="badge badge-info">Running</span>
-							} else if mod.Enabled {
-								<span class="badge badge-warning">Stopped</span>
-							} else {
-								<span class="badge badge-muted">-</span>
-							}
-						</td>
-					</tr>
+	if len(modules) == 0 {
+		<div class="card">
+			<div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+				No modules found
+			</div>
+		</div>
+	} else {
+		for _, mod := range modules {
+			<div class="module-card">
+				<div class="module-header">
+					<div class="module-info">
+						<div class="module-name">{ mod.Name }</div>
+						<div class="module-desc">{ mod.Description }</div>
+					</div>
+					<div class="module-badges">
+						if mod.Enabled {
+							<span class="badge badge-success">Enabled</span>
+						} else {
+							<span class="badge badge-muted">Disabled</span>
+						}
+						if mod.Running {
+							<span class="badge badge-info">Running</span>
+						} else if mod.Enabled {
+							<span class="badge badge-warning">Stopped</span>
+						}
+					</div>
+					<div class="module-actions">
+						<button
+							class="btn btn-sm btn-secondary"
+							hx-get={ "/ui/frag/module/" + mod.Name + "/logs" }
+							hx-target={ "#module-panel-" + mod.Name }
+							hx-swap="innerHTML"
+						>
+							Logs
+						</button>
+						<button
+							class="btn btn-sm btn-secondary"
+							hx-get={ "/ui/frag/module/" + mod.Name + "/settings" }
+							hx-target={ "#module-panel-" + mod.Name }
+							hx-swap="innerHTML"
+						>
+							Config
+						</button>
+					</div>
+				</div>
+				<div class="module-metrics">
+					if mod.BansProduced > 0 {
+						<div class="module-metric">
+							<span class="metric-label">Bans</span>
+							<span class="metric-value">{ intToStr(mod.BansProduced) }</span>
+						</div>
+					}
+					if mod.CPUPercent > 0 {
+						<div class="module-metric">
+							<span class="metric-label">CPU</span>
+							<span class="metric-value">{ fmt.Sprintf("%.1f%%", mod.CPUPercent) }</span>
+						</div>
+					}
+					if mod.MemoryMB > 0 {
+						<div class="module-metric">
+							<span class="metric-label">Memory</span>
+							<span class="metric-value">{ fmt.Sprintf("%.1f MB", mod.MemoryMB) }</span>
+						</div>
+					}
+					if mod.LastSync != "" {
+						<div class="module-metric">
+							<span class="metric-label">Last Sync</span>
+							<span class="metric-value">{ mod.LastSync }</span>
+						</div>
+					}
+					if mod.ServiceName != "" {
+						<div class="module-metric">
+							<span class="metric-label">Service</span>
+							<span class="metric-value metric-service">{ mod.ServiceName }</span>
+						</div>
+					}
+				</div>
+				<div id={ "module-panel-" + mod.Name } class="module-panel"></div>
+			</div>
+		}
+	}
+}
+
+// ModuleLogsFragment renders journal log lines for a module
+templ ModuleLogsFragment(moduleName string, lines []string) {
+	<div class="module-panel-content">
+		<div class="module-panel-header">
+			<span class="module-panel-title">Journal Logs: { moduleName }</span>
+			<span class="module-panel-hint">Last { intToStr(len(lines)) } entries</span>
+		</div>
+		if len(lines) == 0 {
+			<div class="module-panel-empty">No log entries found for this module</div>
+		} else {
+			<div class="module-log-viewer">
+				for _, line := range lines {
+					<div class="module-log-line">{ line }</div>
 				}
-				if len(modules) == 0 {
-					<tr>
-						<td colspan="4" style="text-align: center; color: var(--text-muted);">
-							No modules found
-						</td>
-					</tr>
-				}
-			</tbody>
-		</table>
+			</div>
+		}
 	</div>
+}
+
+// ModuleSettingsFragment renders config lines for a module
+templ ModuleSettingsFragment(moduleName string, lines []string) {
+	<div class="module-panel-content">
+		<div class="module-panel-header">
+			<span class="module-panel-title">Configuration: { moduleName }</span>
+			<span class="module-panel-hint">Read-only</span>
+		</div>
+		if len(lines) == 0 {
+			<div class="module-panel-empty">No configuration found for this module</div>
+		} else {
+			<div class="module-config-viewer">
+				for _, line := range lines {
+					if isConfigComment(line) {
+						<div class="config-line config-comment">{ line }</div>
+					} else if isConfigSection(line) {
+						<div class="config-line config-section">{ line }</div>
+					} else {
+						<div class="config-line">{ line }</div>
+					}
+				}
+			</div>
+		}
+	</div>
+}
+
+// isConfigComment returns true if line starts with #
+func isConfigComment(line string) bool {
+	return len(line) > 0 && line[0] == '#'
+}
+
+// isConfigSection returns true if line starts with [
+func isConfigSection(line string) bool {
+	return len(line) > 0 && line[0] == '['
+}
+
+// modulesPageStyles contains scoped CSS for the modules page
+templ modulesPageStyles() {
+	<style>
+		.module-card {
+			background: var(--card-bg);
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			margin-bottom: 0.75rem;
+			overflow: hidden;
+		}
+		.module-header {
+			display: flex;
+			align-items: center;
+			padding: 1rem 1.25rem;
+			gap: 1rem;
+		}
+		.module-info {
+			flex: 1;
+			min-width: 0;
+		}
+		.module-name {
+			font-weight: 600;
+			font-size: 0.95rem;
+			color: var(--text-primary);
+			text-transform: capitalize;
+		}
+		.module-desc {
+			font-size: 0.8rem;
+			color: var(--text-muted);
+			margin-top: 0.15rem;
+		}
+		.module-badges {
+			display: flex;
+			gap: 0.4rem;
+			flex-shrink: 0;
+		}
+		.module-actions {
+			display: flex;
+			gap: 0.35rem;
+			flex-shrink: 0;
+		}
+		.btn-sm {
+			padding: 0.25rem 0.6rem;
+			font-size: 0.75rem;
+			border-radius: 4px;
+		}
+		.module-metrics {
+			display: flex;
+			gap: 1.25rem;
+			padding: 0.5rem 1.25rem;
+			border-top: 1px solid var(--border-color);
+			background: var(--bg-secondary, rgba(0,0,0,0.015));
+			flex-wrap: wrap;
+		}
+		.module-metrics:empty {
+			display: none;
+		}
+		.module-metric {
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
+			font-size: 0.78rem;
+		}
+		.metric-label {
+			color: var(--text-muted);
+		}
+		.metric-value {
+			font-weight: 600;
+			color: var(--text-primary);
+		}
+		.metric-service {
+			font-family: 'SF Mono', 'Fira Code', monospace;
+			font-size: 0.72rem;
+			font-weight: 400;
+			color: var(--text-muted);
+		}
+		.module-panel:empty {
+			display: none;
+		}
+		.module-panel-content {
+			border-top: 1px solid var(--border-color);
+			background: var(--bg-secondary, rgba(0,0,0,0.02));
+		}
+		.module-panel-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 0.6rem 1.25rem;
+			border-bottom: 1px solid var(--border-color);
+		}
+		.module-panel-title {
+			font-weight: 600;
+			font-size: 0.8rem;
+			color: var(--text-primary);
+			text-transform: capitalize;
+		}
+		.module-panel-hint {
+			font-size: 0.7rem;
+			color: var(--text-muted);
+		}
+		.module-panel-empty {
+			padding: 1.5rem;
+			text-align: center;
+			color: var(--text-muted);
+			font-size: 0.85rem;
+		}
+		.module-log-viewer {
+			max-height: 320px;
+			overflow-y: auto;
+			padding: 0.5rem 0;
+			font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+			font-size: 0.72rem;
+			line-height: 1.5;
+		}
+		.module-log-line {
+			padding: 0.15rem 1.25rem;
+			white-space: pre-wrap;
+			word-break: break-all;
+			color: var(--text-primary);
+		}
+		.module-log-line:hover {
+			background: var(--hover-bg, rgba(255,255,255,0.03));
+		}
+		.module-config-viewer {
+			max-height: 400px;
+			overflow-y: auto;
+			padding: 0.5rem 0;
+			font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+			font-size: 0.75rem;
+			line-height: 1.6;
+		}
+		.config-line {
+			padding: 0.1rem 1.25rem;
+			color: var(--text-primary);
+		}
+		.config-line:hover {
+			background: var(--hover-bg, rgba(255,255,255,0.03));
+		}
+		.config-comment {
+			color: var(--text-muted);
+			font-style: italic;
+		}
+		.config-section {
+			color: var(--accent-blue);
+			font-weight: 600;
+			margin-top: 0.4rem;
+		}
+		@media (max-width: 768px) {
+			.module-header {
+				flex-wrap: wrap;
+			}
+			.module-info {
+				width: 100%;
+			}
+			.module-badges, .module-actions {
+				width: auto;
+			}
+		}
+	</style>
 }

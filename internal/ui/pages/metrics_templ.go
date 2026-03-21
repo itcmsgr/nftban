@@ -1105,169 +1105,444 @@ func MetricsContentFragment(data ui.MetricsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</span></div></div></div><!-- Portscan Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Portscan Detection</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</span></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(data.GeoIP.CountryStats) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<div class=\"metrics-subtable\"><div class=\"subtable-header\">Top Blocked Countries</div><table class=\"data-table compact\"><thead><tr><th>Country</th><th>Bans</th><th>Ranges</th><th>%</th></tr></thead> <tbody>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, cs := range data.GeoIP.CountryStats {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "<tr><td><span class=\"country-flag\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var74 string
+				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(cs.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 390, Col: 55}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var75 string
+				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(cs.Code)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 390, Col: 67}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var76 string
+				templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(cs.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 390, Col: 86}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var77 string
+				templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(cs.BanCount))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 391, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var78 string
+				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(cs.RangeCount))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 392, Col: 38}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var79 string
+				templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", cs.Percent))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 393, Col: 48}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</tbody></table></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</div><!-- Portscan Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Portscan Detection</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.Portscan.Enabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<span class=\"badge badge-success\">Enabled</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "<span class=\"badge badge-success\">Enabled</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "<span class=\"badge badge-muted\">Disabled</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<span class=\"badge badge-muted\">Disabled</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Blocks</span> <span class=\"detail-value danger\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var74 string
-		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Portscan.TotalBlocks))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 390, Col: 76}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Blocks Today</span> <span class=\"detail-value\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var75 string
-		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Portscan.BlocksToday))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 394, Col: 69}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "</span></div></div></div><!-- DDoS Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">DDoS Protection</span> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.DDoS.Enabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "<span class=\"badge badge-success\">Enabled</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<span class=\"badge badge-muted\">Disabled</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Blocks</span> <span class=\"detail-value danger\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var76 string
-		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.TotalBlocks))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 412, Col: 72}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Blocks Today</span> <span class=\"detail-value\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var77 string
-		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.BlocksToday))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 416, Col: 65}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Active Mitigations</span> <span class=\"detail-value warning\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var78 string
-		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.ActiveMitigations))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 420, Col: 79}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</span></div></div></div><!-- Suricata Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Suricata IDS</span> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.Suricata.Enabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<span class=\"badge badge-success\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var79 string
-			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(data.Suricata.Status)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 430, Col: 61}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<span class=\"badge badge-muted\">Disabled</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Alerts</span> <span class=\"detail-value warning\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Blocks</span> <span class=\"detail-value danger\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var80 string
-		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.AlertsTotal))
+		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Portscan.TotalBlocks))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 438, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 415, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Alerts Today</span> <span class=\"detail-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Blocks Today</span> <span class=\"detail-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var81 string
-		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.AlertsToday))
+		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Portscan.BlocksToday))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 442, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 419, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Rules Loaded</span> <span class=\"detail-value info\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "</span></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var82 string
-		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.RulesLoaded))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 446, Col: 74}
+		if len(data.Portscan.TopPorts) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<div class=\"metrics-subtable\"><div class=\"subtable-header\">Most Scanned Ports</div><table class=\"data-table compact\"><thead><tr><th>Port</th><th>Protocol</th><th>Scans</th></tr></thead> <tbody>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, p := range data.Portscan.TopPorts {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<tr><td><code>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var82 string
+				templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(p.Port))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 436, Col: 37}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</code></td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var83 string
+				templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(p.Protocol)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 437, Col: 25}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var84 string
+				templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(p.ScanCount))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 438, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "</tbody></table></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</div><!-- DDoS Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">DDoS Protection</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</span></div></div></div></div><style>\n\t\t.metrics-summary-row {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(6, 1fr);\n\t\t\tgap: 1rem;\n\t\t\tmargin-bottom: 1.5rem;\n\t\t}\n\t\t@media (max-width: 1400px) {\n\t\t\t.metrics-summary-row {\n\t\t\t\tgrid-template-columns: repeat(3, 1fr);\n\t\t\t}\n\t\t}\n\t\t@media (max-width: 768px) {\n\t\t\t.metrics-summary-row {\n\t\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\t}\n\t\t}\n\t\t.metric-card {\n\t\t\tbackground: var(--bg-surface);\n\t\t\tborder: 1px solid var(--border-color);\n\t\t\tborder-radius: 8px;\n\t\t\tpadding: 1rem;\n\t\t\tdisplay: flex;\n\t\t\talign-items: center;\n\t\t\tgap: 1rem;\n\t\t}\n\t\t.metric-icon {\n\t\t\tfont-size: 2rem;\n\t\t\topacity: 0.8;\n\t\t}\n\t\t.metric-icon.danger { color: var(--accent-danger); }\n\t\t.metric-icon.safe, .metric-icon.ok { color: var(--accent-safe); }\n\t\t.metric-icon.info { color: var(--accent-info); }\n\t\t.metric-icon.warning { color: var(--accent-warning); }\n\t\t.metric-icon.error { color: var(--accent-danger); }\n\t\t.metric-info {\n\t\t\tflex: 1;\n\t\t}\n\t\t.metric-value {\n\t\t\tfont-size: 1.5rem;\n\t\t\tfont-weight: 700;\n\t\t\tfont-family: 'SF Mono', Monaco, monospace;\n\t\t}\n\t\t.metric-value.danger { color: var(--accent-danger); }\n\t\t.metric-value.safe, .metric-value.ok { color: var(--accent-safe); }\n\t\t.metric-value.info { color: var(--accent-info); }\n\t\t.metric-value.warning { color: var(--accent-warning); }\n\t\t.metric-value.error { color: var(--accent-danger); }\n\t\t.metric-label {\n\t\t\tfont-size: 0.75rem;\n\t\t\tcolor: var(--text-muted);\n\t\t\ttext-transform: uppercase;\n\t\t}\n\t\t.metric-detail {\n\t\t\tfont-size: 0.7rem;\n\t\t\tcolor: var(--text-muted);\n\t\t}\n\n\t\t.metrics-grid {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\tgap: 1.5rem;\n\t\t}\n\t\t@media (max-width: 1024px) {\n\t\t\t.metrics-grid {\n\t\t\t\tgrid-template-columns: 1fr;\n\t\t\t}\n\t\t}\n\t\t.metrics-detail-grid {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\tgap: 0.75rem;\n\t\t\tpadding: 0.5rem;\n\t\t}\n\t\t.detail-item {\n\t\t\tdisplay: flex;\n\t\t\tjustify-content: space-between;\n\t\t\talign-items: center;\n\t\t\tpadding: 0.5rem;\n\t\t\tbackground: var(--bg-elevated);\n\t\t\tborder-radius: 4px;\n\t\t}\n\t\t.detail-label {\n\t\t\tfont-size: 0.8rem;\n\t\t\tcolor: var(--text-muted);\n\t\t}\n\t\t.detail-value {\n\t\t\tfont-family: 'SF Mono', Monaco, monospace;\n\t\t\tfont-weight: 500;\n\t\t}\n\t\t.detail-value.danger { color: var(--accent-danger); }\n\t\t.detail-value.safe { color: var(--accent-safe); }\n\t\t.detail-value.info { color: var(--accent-info); }\n\t\t.detail-value.warning { color: var(--accent-warning); }\n\n\t\t.info-banner {\n\t\t\tbackground: var(--bg-elevated);\n\t\t\tpadding: 0.75rem 1rem;\n\t\t}\n\n\t\t.collector-status {\n\t\t\tpadding: 0.25rem 0.75rem;\n\t\t\tborder-radius: 4px;\n\t\t\tfont-size: 0.8rem;\n\t\t\tfont-weight: 500;\n\t\t\ttext-transform: uppercase;\n\t\t}\n\t</style>")
+		if data.DDoS.Enabled {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "<span class=\"badge badge-success\">Enabled</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<span class=\"badge badge-muted\">Disabled</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Blocks</span> <span class=\"detail-value danger\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var85 string
+		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.TotalBlocks))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 460, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Blocks Today</span> <span class=\"detail-value\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var86 string
+		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.BlocksToday))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 464, Col: 65}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Active Mitigations</span> <span class=\"detail-value warning\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var87 string
+		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.DDoS.ActiveMitigations))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 468, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "</span></div></div></div><!-- Suricata Stats --><div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Suricata IDS</span> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.Suricata.Enabled {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "<span class=\"badge badge-success\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var88 string
+			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(data.Suricata.Status)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 478, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "<span class=\"badge badge-muted\">Disabled</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "</div><div class=\"metrics-detail-grid\"><div class=\"detail-item\"><span class=\"detail-label\">Total Alerts</span> <span class=\"detail-value warning\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var89 string
+		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.AlertsTotal))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 486, Col: 77}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Alerts Today</span> <span class=\"detail-value\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var90 string
+		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.AlertsToday))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 490, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "</span></div><div class=\"detail-item\"><span class=\"detail-label\">Rules Loaded</span> <span class=\"detail-value info\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var91 string
+		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(data.Suricata.RulesLoaded))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 494, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</span></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(data.Suricata.TopAlerts) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<div class=\"metrics-subtable\"><div class=\"subtable-header\">Top Alerts</div><table class=\"data-table compact\"><thead><tr><th>SID</th><th>Signature</th><th>Severity</th><th>Count</th></tr></thead> <tbody>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, a := range data.Suricata.TopAlerts {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "<tr><td><code>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var92 string
+				templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(a.SID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 512, Col: 26}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</code></td><td style=\"max-width: 250px; overflow: hidden; text-overflow: ellipsis;\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var93 string
+				templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(a.Signature)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 513, Col: 95}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if a.Severity == "high" || a.Severity == "critical" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "<span class=\"badge badge-danger\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var94 string
+					templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(a.Severity)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 516, Col: 56}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else if a.Severity == "medium" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<span class=\"badge badge-warning\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var95 string
+					templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(a.Severity)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 518, Col: 57}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "<span class=\"badge badge-info\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var96 string
+					templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(a.Severity)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 520, Col: 54}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var97 string
+				templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(intToStr(a.Count))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/metrics.templ`, Line: 523, Col: 32}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "</td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "</tbody></table></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</div></div><style>\n\t\t.metrics-summary-row {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(6, 1fr);\n\t\t\tgap: 1rem;\n\t\t\tmargin-bottom: 1.5rem;\n\t\t}\n\t\t@media (max-width: 1400px) {\n\t\t\t.metrics-summary-row {\n\t\t\t\tgrid-template-columns: repeat(3, 1fr);\n\t\t\t}\n\t\t}\n\t\t@media (max-width: 768px) {\n\t\t\t.metrics-summary-row {\n\t\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\t}\n\t\t}\n\t\t.metric-card {\n\t\t\tbackground: var(--bg-surface);\n\t\t\tborder: 1px solid var(--border-color);\n\t\t\tborder-radius: 8px;\n\t\t\tpadding: 1rem;\n\t\t\tdisplay: flex;\n\t\t\talign-items: center;\n\t\t\tgap: 1rem;\n\t\t}\n\t\t.metric-icon {\n\t\t\tfont-size: 2rem;\n\t\t\topacity: 0.8;\n\t\t}\n\t\t.metric-icon.danger { color: var(--accent-danger); }\n\t\t.metric-icon.safe, .metric-icon.ok { color: var(--accent-safe); }\n\t\t.metric-icon.info { color: var(--accent-info); }\n\t\t.metric-icon.warning { color: var(--accent-warning); }\n\t\t.metric-icon.error { color: var(--accent-danger); }\n\t\t.metric-info {\n\t\t\tflex: 1;\n\t\t}\n\t\t.metric-value {\n\t\t\tfont-size: 1.5rem;\n\t\t\tfont-weight: 700;\n\t\t\tfont-family: 'SF Mono', Monaco, monospace;\n\t\t}\n\t\t.metric-value.danger { color: var(--accent-danger); }\n\t\t.metric-value.safe, .metric-value.ok { color: var(--accent-safe); }\n\t\t.metric-value.info { color: var(--accent-info); }\n\t\t.metric-value.warning { color: var(--accent-warning); }\n\t\t.metric-value.error { color: var(--accent-danger); }\n\t\t.metric-label {\n\t\t\tfont-size: 0.75rem;\n\t\t\tcolor: var(--text-muted);\n\t\t\ttext-transform: uppercase;\n\t\t}\n\t\t.metric-detail {\n\t\t\tfont-size: 0.7rem;\n\t\t\tcolor: var(--text-muted);\n\t\t}\n\n\t\t.metrics-grid {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\tgap: 1.5rem;\n\t\t}\n\t\t@media (max-width: 1024px) {\n\t\t\t.metrics-grid {\n\t\t\t\tgrid-template-columns: 1fr;\n\t\t\t}\n\t\t}\n\t\t.metrics-detail-grid {\n\t\t\tdisplay: grid;\n\t\t\tgrid-template-columns: repeat(2, 1fr);\n\t\t\tgap: 0.75rem;\n\t\t\tpadding: 0.5rem;\n\t\t}\n\t\t.detail-item {\n\t\t\tdisplay: flex;\n\t\t\tjustify-content: space-between;\n\t\t\talign-items: center;\n\t\t\tpadding: 0.5rem;\n\t\t\tbackground: var(--bg-elevated);\n\t\t\tborder-radius: 4px;\n\t\t}\n\t\t.detail-label {\n\t\t\tfont-size: 0.8rem;\n\t\t\tcolor: var(--text-muted);\n\t\t}\n\t\t.detail-value {\n\t\t\tfont-family: 'SF Mono', Monaco, monospace;\n\t\t\tfont-weight: 500;\n\t\t}\n\t\t.detail-value.danger { color: var(--accent-danger); }\n\t\t.detail-value.safe { color: var(--accent-safe); }\n\t\t.detail-value.info { color: var(--accent-info); }\n\t\t.detail-value.warning { color: var(--accent-warning); }\n\n\t\t.metrics-subtable {\n\t\t\tborder-top: 1px solid var(--border-color);\n\t\t\tpadding: 0.5rem;\n\t\t}\n\t\t.subtable-header {\n\t\t\tfont-size: 0.75rem;\n\t\t\tfont-weight: 600;\n\t\t\tcolor: var(--text-muted);\n\t\t\ttext-transform: uppercase;\n\t\t\tpadding: 0.5rem 0.5rem 0.25rem;\n\t\t}\n\t\t.data-table.compact {\n\t\t\tfont-size: 0.8rem;\n\t\t}\n\t\t.data-table.compact td, .data-table.compact th {\n\t\t\tpadding: 0.35rem 0.5rem;\n\t\t}\n\n\t\t.info-banner {\n\t\t\tbackground: var(--bg-elevated);\n\t\t\tpadding: 0.75rem 1rem;\n\t\t}\n\n\t\t.collector-status {\n\t\t\tpadding: 0.25rem 0.75rem;\n\t\t\tborder-radius: 4px;\n\t\t\tfont-size: 0.8rem;\n\t\t\tfont-weight: 500;\n\t\t\ttext-transform: uppercase;\n\t\t}\n\t</style>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

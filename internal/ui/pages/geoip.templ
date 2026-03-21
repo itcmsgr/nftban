@@ -371,6 +371,9 @@ templ GeoIPCountriesTableFragment(countries []ui.GeoCountryEntry) {
 				<span class="country-code">{ country.Code }</span>
 				<span class="country-name">{ country.Name }</span>
 				<span class="country-stats">
+					if country.IPCount > 0 {
+						<span title="Total IPs in ranges">{ formatLargeNumber(country.IPCount) } IPs</span>
+					}
 					<span title="IP Ranges">{ intToStr(country.RangeCount) } ranges</span>
 					<span title="Bans from this country">{ intToStr(country.BansFromHere) } bans</span>
 				</span>
