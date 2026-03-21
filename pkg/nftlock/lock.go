@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -87,6 +88,11 @@ var ErrLockBusy = fmt.Errorf("nft lock busy")
 
 // acquireLock acquires a lock with timeout using polling
 func acquireLock(lockType int, timeout time.Duration) (*Lock, error) {
+	// Ensure parent directory exists (may not if daemon hasn't started yet)
+	if err := os.MkdirAll(filepath.Dir(LockPath), 0755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(LockPath), err)
+	}
+
 	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", LockPath, err)
@@ -124,6 +130,11 @@ func acquireLock(lockType int, timeout time.Duration) (*Lock, error) {
 
 // tryLock attempts a non-blocking lock
 func tryLock(lockType int) (*Lock, error) {
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(LockPath), 0755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(LockPath), err)
+	}
+
 	file, err := os.OpenFile(LockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", LockPath, err)
