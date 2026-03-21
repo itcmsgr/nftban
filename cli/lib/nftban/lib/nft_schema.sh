@@ -92,11 +92,11 @@ readonly NFTBAN_TABLE_IPV4="${NFTBAN_TABLE_IPV4_FAMILY} ${NFTBAN_TABLE_IPV4_NAME
 # =============================================================================
 declare -g -A NFTBAN_IPV4_SETS=(
     # Whitelist - trusted IPs/networks (CIDR aggregated)
-    ["whitelist_ipv4"]="ipv4_addr|interval|Trusted IPs/networks"
+    ["whitelist_ipv4"]="ipv4_addr|interval|Trusted IPs/networks (auto-merge)"
 
     # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
     # Temp bans use timeout parameter (auto-expire)
-    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|All bans (feeds+geoban+auto+manual)"
+    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|All bans (feeds+geoban+auto+manual, auto-merge)"
 
     # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
@@ -151,11 +151,11 @@ readonly NFTBAN_TABLE_IPV6="${NFTBAN_TABLE_IPV6_FAMILY} ${NFTBAN_TABLE_IPV6_NAME
 # =============================================================================
 declare -g -A NFTBAN_IPV6_SETS=(
     # Whitelist - trusted IPv6/networks (CIDR aggregated)
-    ["whitelist_ipv6"]="ipv6_addr|interval|Trusted IPv6/networks"
+    ["whitelist_ipv6"]="ipv6_addr|interval|Trusted IPv6/networks (auto-merge)"
 
     # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
     # Temp bans use timeout parameter (auto-expire)
-    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|All bans (feeds+geoban+auto+manual)"
+    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|All bans (feeds+geoban+auto+manual, auto-merge)"
 
     # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
