@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 )
 
@@ -84,7 +85,7 @@ func BanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s banned IP: %s (reason: %s)", claims.Username, req.IP, req.Reason)
+	log.Printf("[AUDIT] User %s banned IP: %s (reason: %s)", logutil.Sanitize(claims.Username), logutil.Sanitize(req.IP), logutil.Sanitize(req.Reason))
 
 	respondJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
@@ -121,7 +122,7 @@ func UnbanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s unbanned IP: %s", claims.Username, req.IP)
+	log.Printf("[AUDIT] User %s unbanned IP: %s", logutil.Sanitize(claims.Username), logutil.Sanitize(req.IP))
 
 	respondJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
@@ -181,7 +182,7 @@ func WhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s added IP to whitelist: %s", claims.Username, req.IP)
+	log.Printf("[AUDIT] User %s added IP to whitelist: %s", logutil.Sanitize(claims.Username), logutil.Sanitize(req.IP))
 
 	respondJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
@@ -217,7 +218,7 @@ func WhitelistRemoveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s removed IP from whitelist: %s", claims.Username, req.IP)
+	log.Printf("[AUDIT] User %s removed IP from whitelist: %s", logutil.Sanitize(claims.Username), logutil.Sanitize(req.IP))
 
 	respondJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,

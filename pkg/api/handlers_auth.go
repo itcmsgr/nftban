@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/session"
@@ -195,7 +196,7 @@ func SessionLoginHandler(authService *auth.PAMAuth, store *session.Store) http.H
 		// Start metrics sampling for this session
 		sampler := metrics.GetSampler()
 		sampler.AddSession()
-		log.Printf("[SESSION] Created session for user %s (token: %s...)", req.Username, sess.Token[:8])
+		log.Printf("[SESSION] Created session for user %s (token: %s...)", logutil.Sanitize(req.Username), sess.Token[:8])
 
 		respondJSON(w, http.StatusOK, LoginResponse{
 			Success: true,
@@ -332,7 +333,7 @@ func SessionRevokeHandler(store *session.Store) http.HandlerFunc {
 
 		count := store.DeleteByUser(req.Username)
 
-		log.Printf("[ADMIN] User %s revoked %d sessions for user %s", claims.Username, count, req.Username)
+		log.Printf("[ADMIN] User %s revoked %d sessions for user %s", logutil.Sanitize(claims.Username), count, logutil.Sanitize(req.Username))
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success":  true,
 			"message":  fmt.Sprintf("Revoked %d sessions for user %s", count, req.Username),

@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/state"
 )
 
@@ -156,7 +157,7 @@ func FeedsControlHandler(w http.ResponseWriter, r *http.Request) {
 	feedName := strings.ToUpper(req.Feed)
 	output, err := execNFTBanCommand("feeds", req.Action, feedName)
 	if err != nil {
-		log.Printf("[ERROR] Feeds %s failed: %v - %s", req.Action, err, output)
+		log.Printf("[ERROR] Feeds %s failed: %v - %s", logutil.Sanitize(req.Action), err, output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to " + req.Action + " feed: " + sanitizeError(err)})
 		return
 	}
