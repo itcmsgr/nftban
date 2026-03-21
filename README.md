@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.30.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.31.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -148,6 +148,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **Port Scan Detection** | Automatic detection and blocking of reconnaissance |
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
 | **HTTP Bot Guard** | Intelligent crawler detection with kernel-native suspect marking |
+| **DNS Tunnel Suspicion** | Advisory-only DNS tunnel detection with 5 signals (v1.30.0) |
 | **Suricata IDS Integration** | Optional deep packet inspection |
 | **Prometheus Metrics** | Observability for monitoring stacks |
 | **Zabbix Integration** | Native trapper protocol export to Zabbix server |
@@ -212,7 +213,20 @@ nftban geoban list     # Geographic blocking
 nftban portscan status # Port scan detection
 nftban ddos status     # DDoS protection
 nftban botguard status # HTTP bot guard (v1.20.0)
+nftban tunnel status   # DNS tunnel suspicion (v1.30.0)
 ```
+
+### DNS Tunnel Suspicion (v1.30.0)
+```bash
+nftban tunnel enable       # Enable monitoring (disabled by default)
+nftban tunnel status       # Show status and summary
+nftban tunnel scan         # Run scan now
+nftban tunnel top          # Show top suspects by score
+nftban tunnel explain IP   # Signal breakdown for an IP
+nftban tunnel config       # Show configuration
+```
+
+> **Advisory-only** — the tunnel module scores DNS traffic for tunnel indicators but never bans or blocks. Enforcement is planned for a future release.
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.
 
