@@ -54,8 +54,8 @@ RestrictNamespaces=true
 # Filesystem access: read DNS logs, write state/logs
 ReadWritePaths=/var/lib/nftban /var/log/nftban
 
-# No network needed (reads local log files)
-RestrictAddressFamilies=AF_UNIX
+# Allow AF_INET/AF_INET6 for sendmail alerting on non-Postfix MTAs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 # Resource limits
 CPUQuota=50%

@@ -29,7 +29,7 @@ set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_TUNNEL_PARSERS_LOADED:-}" ]] && return 0
-_NFTBAN_TUNNEL_PARSERS_LOADED=1
+readonly _NFTBAN_TUNNEL_PARSERS_LOADED=1
 
 # =============================================================================
 # DNS SOURCE AUTO-DETECTION
@@ -191,6 +191,8 @@ nftban_tunnel_parse_bind() {
     # Parse BIND 9 query log (querylog format)
     # Format: DD-Mon-YYYY HH:MM:SS.mmm queries: info: client @0xPTR IP#PORT (QNAME): query: QNAME CLASS QTYPE FLAGS (IP)
     # Newer: DD-Mon-YYYY HH:MM:SS.mmm client @0xPTR IP#PORT (QNAME): query: QNAME CLASS QTYPE +FLAGS (IP)
+    # NOTE: since_ts filtering not implemented for BIND — parses entire log.
+    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -241,6 +243,8 @@ nftban_tunnel_parse_unbound() {
     # Parse Unbound log
     # Format: [TIMESTAMP] unbound[PID:TID] info: IP QNAME QTYPE QCLASS
     # With verbosity 2+: also shows replies with RCODE
+    # NOTE: since_ts filtering not implemented — parses entire log.
+    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -268,6 +272,8 @@ nftban_tunnel_parse_dnsmasq() {
     # Parse dnsmasq log (syslog format)
     # Format: Mon DD HH:MM:SS hostname dnsmasq[PID]: query[QTYPE] QNAME from IP
     # Reply:  Mon DD HH:MM:SS hostname dnsmasq[PID]: reply QNAME is <CNAME|IP|NXDOMAIN>
+    # NOTE: since_ts filtering not implemented — parses entire log.
+    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -313,12 +319,25 @@ nftban_tunnel_parse_resolved() {
     /[Qq]uery/ {
         # Best-effort parsing of resolved log entries
         # Format is not standardized — extract what we can
+        client_ip = ""
+        qname = ""
+        qtype = "A"
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
                 client_ip = $i
             }
+            # Look for domain-like tokens (contains dots, not IP)
+            if ($i ~ /\.[a-zA-Z]/ && $i !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+                qname = $i
+            }
+            # Look for query type keywords
+            if ($i ~ /^(A|AAAA|TXT|MX|CNAME|NS|SOA|SRV|PTR)$/) {
+                qtype = $i
+            }
         }
-        # This parser is best-effort; resolved logging is limited
+        if (client_ip != "" && qname != "") {
+            print client_ip "|" qname "|" qtype "|NOERROR"
+        }
     }
     '
 }
