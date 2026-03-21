@@ -1,3 +1,20 @@
+nftban (1.29.0-1) stable; urgency=medium
+
+  * v1.29.0 — RBL Correctness, Security Hardening, CI Fixes
+  * RBL: Fix default state mismatch, LOG_DIR self-reference, trap collision
+  * RBL: Enhanced status output, --brief flag, dedicated log file, health checks
+  * Security: 12 vulnerability fixes (VULN-01,02,04,05,13,19,20 + WI-3 + S2 + B5)
+  * Security: Log injection sanitization (pkg/logutil) across 15 Go files
+  * Security: API error sanitization (sanitizeError/sanitizeErrorMsg)
+  * CLI: Trust and botguard stats/config subcommands
+  * Go: 65+ timeout constants extracted to pkg/constants/timeouts.go
+  * GUI: 5 missing modules added (botguard, geoban, watchdog, trust, rbl, egress)
+  * GUI: 3 services added to restart allowlist
+  * Fix: Portscan PORTSCAN_ENABLED default mismatch (5 locations)
+  * Logrotate: Added rbl.log and nftban-actions.log rotation
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 21 Mar 2026 06:00:00 +0000
+
 nftban (1.9.1-1) stable; urgency=medium
 
   * Suricata Smart Management - Phase 2 Rules UX

@@ -54,6 +54,7 @@ ReadWritePaths=/run/nftban
 
 # Limits
 LimitNOFILE=65536
+MemoryMax=512M
 
 # Logging
 StandardOutput=journal
