@@ -123,7 +123,19 @@ func (c *NFTablesCollector) collectSetSizes(conn *nftables.Conn, snapshot *Snaps
 			}
 			key := family + "_" + set.Name
 
-			snapshot.NFTables.SetElements[key] = len(elements)
+			// For interval sets, filter out IntervalEnd markers (kernel returns
+			// start+end per entry, so raw len() would double-count)
+			if set.Interval {
+				count := 0
+				for _, elem := range elements {
+					if !elem.IntervalEnd {
+						count++
+					}
+				}
+				snapshot.NFTables.SetElements[key] = count
+			} else {
+				snapshot.NFTables.SetElements[key] = len(elements)
+			}
 		}
 	}
 
