@@ -306,7 +306,8 @@ func (sc *SetCounters) WriteCacheFile() error {
 	cacheFile := filepath.Join(sc.cacheDir, "set_counts.json")
 	tmpFile := cacheFile + ".tmp"
 
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	// 0640: root-rw, group-r — shell scripts read this via nftban group
+	if err := os.WriteFile(tmpFile, data, 0640); err != nil { // #nosec G306
 		return fmt.Errorf("write %s: %w", tmpFile, err)
 	}
 
