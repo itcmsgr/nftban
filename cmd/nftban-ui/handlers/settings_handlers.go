@@ -170,7 +170,7 @@ func (h *GOTHHandlers) HandleSettingsSave(w http.ResponseWriter, r *http.Request
 		section = "all"
 	}
 
-	log.Printf("[GOTH] Settings save requested for section: %s", section)
+	log.Printf("[GOTH] Settings save requested for section: %s", logutil.Sanitize(section))
 
 	// Build the config command arguments based on section
 	var args []string

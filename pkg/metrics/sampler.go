@@ -371,6 +371,9 @@ func (s *Sampler) GetRecentSamples(count int) []Sample {
 	if count <= 0 || count > len(s.samples) {
 		count = len(s.samples)
 	}
+	if count > s.maxSamples {
+		count = s.maxSamples
+	}
 
 	start := len(s.samples) - count
 	result := make([]Sample, count)

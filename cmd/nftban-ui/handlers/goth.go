@@ -374,7 +374,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 
 	user, err := h.Auth.Authenticate(username, password)
 	if err != nil {
-		log.Printf("[GOTH] Login failed for user %s: %v", username, err)
+		log.Printf("[GOTH] Login failed for user %s: %v", logutil.Sanitize(username), err)
 		http.Redirect(w, r, "/ui/login?error=Invalid+credentials", http.StatusSeeOther)
 		return
 	}
@@ -396,7 +396,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 		MaxAge:   1800, // 30 minutes - matches session store timeout
 	})
 
-	log.Printf("[GOTH] User %s logged in successfully", username)
+	log.Printf("[GOTH] User %s logged in successfully", logutil.Sanitize(username))
 	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 }
 
