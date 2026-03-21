@@ -549,9 +549,6 @@ get_nftables_set_sizes() {
 # Get detailed ban metrics (IPv4/IPv6, temp/perm breakdown)
 # Returns: family type count (e.g., "ipv4 permanent 10")
 get_ban_breakdown() {
-    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
-    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-
     # v1.32.0: Use cached counting (0 kernel calls) — temp/perm split not
     # available from cache, report all as permanent (consistent with unified arch)
     local v4_total=0 v4_temp=0 v4_perm=0
