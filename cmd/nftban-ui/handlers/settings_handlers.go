@@ -35,6 +35,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
@@ -237,25 +238,25 @@ func (h *GOTHHandlers) HandleSettingsSave(w http.ResponseWriter, r *http.Request
 
 		// SECURITY FIX: Validate config key against allowlist
 		if err := validateConfigKey(key); err != nil {
-			log.Printf("[GOTH] Settings save: security validation failed for key %s: %v", key, err)
+			log.Printf("[GOTH] Settings save: security validation failed for key %s: %v", logutil.Sanitize(key), err)
 			h.sendSettingsError(w, fmt.Sprintf("Security error: %v", err))
 			return
 		}
 
 		// SECURITY FIX: Validate config value to prevent command injection
 		if err := validateConfigValue(value); err != nil {
-			log.Printf("[GOTH] Settings save: security validation failed for value of %s: %v", key, err)
+			log.Printf("[GOTH] Settings save: security validation failed for value of %s: %v", logutil.Sanitize(key), err)
 			h.sendSettingsError(w, fmt.Sprintf("Security error: %v", err))
 			return
 		}
 
 		output, err := execNFTBanCommand("config", "set", key, value)
 		if err != nil {
-			log.Printf("[GOTH] Settings save: failed to set %s: %v - %s", key, err, output)
+			log.Printf("[GOTH] Settings save: failed to set %s: %v - %s", logutil.Sanitize(key), err, output)
 			h.sendSettingsError(w, fmt.Sprintf("Failed to set %s: %v", key, err))
 			return
 		}
-		log.Printf("[GOTH] Settings save: set %s = %s", key, value)
+		log.Printf("[GOTH] Settings save: set %s = %s", logutil.Sanitize(key), logutil.Sanitize(value))
 	}
 
 	log.Printf("[GOTH] Settings save: %d settings updated successfully", len(args))

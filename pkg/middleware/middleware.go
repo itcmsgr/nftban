@@ -33,6 +33,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/config"
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/logutil"
 	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/session"
 )
@@ -57,7 +58,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 		// Log request
 		duration := time.Since(start)
-		log.Printf("[HTTP] %s %s %s - %d - %v", clientIP, r.Method, r.RequestURI, lrw.statusCode, duration)
+		log.Printf("[HTTP] %s %s %s - %d - %v", logutil.Sanitize(clientIP), r.Method, logutil.Sanitize(r.RequestURI), lrw.statusCode, duration)
 	})
 }
 
@@ -91,13 +92,13 @@ func IPWhitelistMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			// Check if IP is whitelisted
 			allowed, err := netutil.IsIPWhitelisted(clientIP, cfg.IPWhitelistFile)
 			if err != nil {
-				log.Printf("[SECURITY] IP whitelist check error for %s: %v", clientIP, err)
+				log.Printf("[SECURITY] IP whitelist check error for %s: %v", logutil.Sanitize(clientIP), err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
 
 			if !allowed {
-				log.Printf("[SECURITY] Blocked access from non-whitelisted IP: %s", clientIP)
+				log.Printf("[SECURITY] Blocked access from non-whitelisted IP: %s", logutil.Sanitize(clientIP))
 				http.Error(w, "Access denied - IP not whitelisted", http.StatusForbidden)
 				return
 			}
@@ -144,7 +145,7 @@ func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			// Validate token using pre-initialized auth service
 			claims, err := authService.ValidateToken(tokenString)
 			if err != nil {
-				log.Printf("[AUTH] Invalid token from %s: %v", netutil.GetClientIP(r), err)
+				log.Printf("[AUTH] Invalid token from %s: %v", logutil.Sanitize(netutil.GetClientIP(r)), err)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -188,7 +189,7 @@ func SessionAuthMiddleware(store *session.Store) func(http.Handler) http.Handler
 			// Validate session token
 			sess, err := store.Get(token)
 			if err != nil {
-				log.Printf("[AUTH] Invalid session from %s: %v", netutil.GetClientIP(r), err)
+				log.Printf("[AUTH] Invalid session from %s: %v", logutil.Sanitize(netutil.GetClientIP(r)), err)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -248,7 +249,7 @@ func CSRFMiddleware(store *session.Store) func(http.Handler) http.Handler {
 			}
 
 			if sessionToken == "" {
-				log.Printf("[CSRF] Missing session token from %s", netutil.GetClientIP(r))
+				log.Printf("[CSRF] Missing session token from %s", logutil.Sanitize(netutil.GetClientIP(r)))
 				http.Error(w, "CSRF validation failed: no session", http.StatusForbidden)
 				return
 			}
@@ -256,7 +257,7 @@ func CSRFMiddleware(store *session.Store) func(http.Handler) http.Handler {
 			// Get session
 			sess, err := store.Get(sessionToken)
 			if err != nil {
-				log.Printf("[CSRF] Invalid session from %s: %v", netutil.GetClientIP(r), err)
+				log.Printf("[CSRF] Invalid session from %s: %v", logutil.Sanitize(netutil.GetClientIP(r)), err)
 				http.Error(w, "CSRF validation failed: invalid session", http.StatusForbidden)
 				return
 			}
@@ -272,7 +273,7 @@ func CSRFMiddleware(store *session.Store) func(http.Handler) http.Handler {
 
 			// Validate CSRF token
 			if !sess.ValidateCSRF(csrfToken) {
-				log.Printf("[CSRF] Invalid CSRF token from %s (user: %s)", netutil.GetClientIP(r), sess.Username)
+				log.Printf("[CSRF] Invalid CSRF token from %s (user: %s)", logutil.Sanitize(netutil.GetClientIP(r)), logutil.Sanitize(sess.Username))
 				http.Error(w, "CSRF validation failed: invalid token", http.StatusForbidden)
 				return
 			}

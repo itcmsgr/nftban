@@ -29,6 +29,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/logutil"
 )
 
 // SECURITY FIX: Connection limiting to prevent SSE resource exhaustion attacks
@@ -147,7 +149,7 @@ func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request
 	sessionCount := getSessionSSECount(sessionID)
 	if sessionCount >= maxSSEConnectionsPerSession {
 		log.Printf("[SSE] Per-session limit reached for session %s (%d/%d), rejecting",
-			sessionID[:8], sessionCount, maxSSEConnectionsPerSession)
+			logutil.Sanitize(sessionID[:8]), sessionCount, maxSSEConnectionsPerSession)
 		http.Error(w, "Too many connections from this session", http.StatusTooManyRequests)
 		return
 	}
