@@ -2098,6 +2098,25 @@ stats:
     - "nftban stats monitor"
     - "nftban stats export --json"
 
+scale:
+  category: intelligence_reporting
+  description: "Display nftables set scale levels and daemon counter status"
+  risk: core
+  audience: [cli, auditor]
+  capability: stats_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban scale"
+    - "nftban scale status"
+    - "nftban scale --json"
+  subcommands:
+    status: {mutates: false, description: "Show current scale levels (default)"}
+
 watchdog:
   category: intelligence_reporting
   description: "System resource monitoring, daemon stats, and profiling"

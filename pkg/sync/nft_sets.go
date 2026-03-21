@@ -121,6 +121,11 @@ func (m *NFTManager) GetSetElements(set *nftables.Set) ([]string, error) {
 
 	ips := make([]string, 0, len(elements)) // Pre-allocate to avoid reallocations
 	for _, elem := range elements {
+		// Skip interval-end markers — for interval sets (CIDR ranges), the kernel
+		// returns two elements per entry (start + end). We only want the start.
+		if elem.IntervalEnd {
+			continue
+		}
 		// Parse IP from element key
 		ip := net.IP(elem.Key)
 		if ip != nil {
@@ -196,10 +201,21 @@ func (m *NFTManager) FlushSet(set *nftables.Set) error {
 }
 
 // GetSetCount returns the number of elements in a set
+// For interval sets, filters out IntervalEnd markers to return the true entry count
 func (m *NFTManager) GetSetCount(set *nftables.Set) (int, error) {
 	elements, err := m.conn.GetSetElements(set)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get set elements: %w", err)
 	}
-	return len(elements), nil
+	if !set.Interval {
+		return len(elements), nil
+	}
+	// Interval sets: count only start elements (kernel returns start+end per entry)
+	count := 0
+	for _, elem := range elements {
+		if !elem.IntervalEnd {
+			count++
+		}
+	}
+	return count, nil
 }

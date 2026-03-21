@@ -114,6 +114,12 @@ main() {
 
     log "INFO" "NFTBan Maintenance Starting"
 
+    # v1.32.0: Cache table existence check (avoids 4 redundant kernel calls)
+    local _nft_table_available=false
+    if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+        _nft_table_available=true
+    fi
+
     # ==========================================================================
     # 1. SSH Port Monitoring (CRITICAL - Lockout Prevention)
     # ==========================================================================
@@ -141,7 +147,7 @@ main() {
 
             # v1.19.20 FIX: Also verify port is in nftables tcp_ports_in set
             # After firewall rebuild, config may be OK but nftables set is empty
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+            if [[ "$_nft_table_available" == "true" ]]; then
                 if ! nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT"; then
                     log "WARN" "SSH port $SSH_PORT in config but NOT in nftables - auto-fixing..."
                     nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
@@ -206,7 +212,7 @@ EOF
 
             # ATOMIC firewall update - only update whitelist, don't touch other rules
             log "INFO" "Atomically updating firewall whitelist for SSH port..."
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+            if [[ "$_nft_table_available" == "true" ]]; then
                 # Firewall is active - do atomic whitelist update
                 # This only updates the tcp_ports_in set, not the entire firewall
                 if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in >/dev/null 2>&1; then
@@ -360,7 +366,7 @@ EOF
 
                 # ATOMIC firewall update via daemon IPC (single-writer architecture)
                 log "INFO" "Adding IP $current_ipv4 to firewall whitelist via daemon..."
-                if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+                if [[ "$_nft_table_available" == "true" ]]; then
                     # Firewall is active - add IP via IPC
                     if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 "$current_ipv4"; then
                         log "INFO" "✅ IP $current_ipv4 whitelisted via daemon (no lockout risk)"
@@ -407,14 +413,16 @@ EOF
                     continue
                 fi
                 if ! nft get element ip6 nftban whitelist_ipv6 "{ $entry }" &>/dev/null; then
-                    if nft add element ip6 nftban whitelist_ipv6 "{ $entry }" 2>/dev/null; then
+                    # v1.32.0: Route writes through daemon IPC (lock + OpQueue)
+                    if nft_ipc_add_element "ip6 nftban" whitelist_ipv6 "$entry" 2>/dev/null; then
                         log "INFO" "Re-synced IPv6 to nftables whitelist: $entry"
                     fi
                 fi
             elif [[ "$entry" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]+)?$ ]]; then
                 # IPv4: Strict format check (4 octets, optional CIDR)
                 if ! nft get element ip nftban whitelist_ipv4 "{ $entry }" &>/dev/null; then
-                    if nft add element ip nftban whitelist_ipv4 "{ $entry }" 2>/dev/null; then
+                    # v1.32.0: Route writes through daemon IPC (lock + OpQueue)
+                    if nft_ipc_add_element "ip nftban" whitelist_ipv4 "$entry" 2>/dev/null; then
                         log "INFO" "Re-synced IPv4 to nftables whitelist: $entry"
                     fi
                 fi
@@ -455,28 +463,17 @@ EOF
             # Add IP to temp_whitelist via daemon IPC (single-writer architecture)
             # Timeout refreshes every 15min while user stays logged in
             # 4h = 14400 seconds
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-                # Determine if IPv4 or IPv6 and add to temp_whitelist via daemon
-                if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    # IPv4 - add/update with 4 hour timeout (refreshed every run)
-                    if ! nft list set ${NFTBAN_TABLE_IPV4} temp_whitelist_ipv4 2>/dev/null | grep -q "$ip"; then
-                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" temp_whitelist_ipv4 "$ip" 14400; then
-                            log "INFO" "✅ Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
-                        fi
-                    else
-                        # IP already whitelisted, refresh timeout to 4h via daemon
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" temp_whitelist_ipv4 "$ip" 14400 2>/dev/null || true
-                    fi
-                else
-                    # IPv6 - add/update with 4 hour timeout (refreshed every run)
-                    if ! nft list set ${NFTBAN_TABLE_IPV6} temp_whitelist_ipv6 2>/dev/null | grep -q "$ip"; then
-                        if nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" temp_whitelist_ipv6 "$ip" 14400; then
-                            log "INFO" "✅ Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
-                        fi
-                    else
-                        # IP already whitelisted, refresh timeout to 4h via daemon
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" temp_whitelist_ipv6 "$ip" 14400 2>/dev/null || true
-                    fi
+            # v1.32.0: Simplified — nft_ipc_add_element with timeout is idempotent
+            # (upserts: creates if missing, refreshes timeout if exists, 0 kernel reads)
+            if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                # IPv4 - add/refresh with 4 hour timeout via daemon IPC
+                if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" temp_whitelist_ipv4 "$ip" 14400 2>/dev/null; then
+                    log "INFO" "Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
+                fi
+            else
+                # IPv6 - add/refresh with 4 hour timeout via daemon IPC
+                if nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" temp_whitelist_ipv6 "$ip" 14400 2>/dev/null; then
+                    log "INFO" "Auto-whitelisted active SSH session: $ip (4h timeout, via daemon)"
                 fi
             fi
 
