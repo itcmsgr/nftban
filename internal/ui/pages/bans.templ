@@ -414,6 +414,7 @@ templ BansTableFragment(data ui.BansData) {
 				<th>Country</th>
 				<th>Reason</th>
 				<th>Module</th>
+				<th>Source</th>
 				<th>Banned At</th>
 				<th>Expires</th>
 				<th>Action</th>
@@ -422,7 +423,7 @@ templ BansTableFragment(data ui.BansData) {
 		<tbody>
 			if len(data.Bans) == 0 {
 				<tr>
-					<td colspan="9" class="empty-state">No bans found</td>
+					<td colspan="10" class="empty-state">No bans found</td>
 				</tr>
 			} else {
 				for _, ban := range data.Bans {
@@ -453,6 +454,13 @@ templ BansTableFragment(data ui.BansData) {
 						</td>
 						<td>
 							<span class="module-badge">{ ban.Module }</span>
+						</td>
+						<td class="source-cell">
+							if ban.Source != "" {
+								{ truncate(ban.Source, 25) }
+							} else {
+								<span class="text-muted">--</span>
+							}
 						</td>
 						<td class="time-cell">{ ban.BannedAt }</td>
 						<td class="time-cell">

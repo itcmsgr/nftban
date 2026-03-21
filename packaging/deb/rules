@@ -11,6 +11,12 @@ export GOFLAGS = -buildmode=pie -mod=readonly -modcacherw
 	dh $@ --with systemd
 
 override_dh_auto_build:
+	# Generate templ files (compiled templates -> Go source)
+	if ! command -v templ >/dev/null 2>&1; then \
+		go install github.com/a-h/templ/cmd/templ@v0.3.977; \
+	fi
+	templ generate
+
 	# Build GUI server
 	cd cmd/nftban-ui && \
 	go build -trimpath -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \

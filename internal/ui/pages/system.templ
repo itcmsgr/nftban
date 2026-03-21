@@ -27,7 +27,7 @@ templ System(data ui.SystemPageData) {
 			</button>
 		</div>
 
-		<div id="system-content">
+		<div id="system-content" hx-get="/ui/frag/system-info" hx-trigger="every 10s" hx-swap="innerHTML">
 			@SystemContentFragment(data)
 		</div>
 	}

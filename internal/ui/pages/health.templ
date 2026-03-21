@@ -12,6 +12,7 @@
 package pages
 
 import (
+	"fmt"
 	"strconv"
 	"github.com/itcmsgr/nftban/internal/ui"
 )
@@ -155,6 +156,135 @@ templ HealthContentFragment(data ui.HealthData) {
 		</table>
 	</div>
 
+	<!-- System Resources -->
+	if data.Extended.Resources.Status != "" {
+		<div class="card" style="margin-top: 1.5rem;">
+			<div class="card-header">
+				<span class="card-title">System Resources</span>
+				if data.Extended.Resources.Status == "ok" {
+					<span class="badge badge-success">OK</span>
+				} else if data.Extended.Resources.Status == "warning" {
+					<span class="badge badge-warning">Warning</span>
+				} else {
+					<span class="badge badge-danger">Critical</span>
+				}
+			</div>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+				<div class="system-stat">
+					<div class="system-label">Load Average</div>
+					<div class="system-value">{ fmt.Sprintf("%.2f / %.2f / %.2f", data.Extended.Resources.Load.Load1m, data.Extended.Resources.Load.Load5m, data.Extended.Resources.Load.Load15m) }</div>
+					<div style="font-size: 0.8rem; color: var(--text-muted);">{ intToStr(data.Extended.Resources.Load.CPUs) } CPUs</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Memory Usage</div>
+					<div class="system-value">{ intToStr(data.Extended.Resources.Memory.UsedPercent) }%</div>
+					<div style="font-size: 0.8rem; color: var(--text-muted);">{ intToStr(data.Extended.Resources.Memory.TotalMB) } MB total</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Disk Usage ({ data.Extended.Resources.Disk.Path })</div>
+					<div class="system-value">{ intToStr(data.Extended.Resources.Disk.UsedPercent) }%</div>
+				</div>
+			</div>
+		</div>
+	}
+
+	<!-- Suricata IDS Status -->
+	if data.Extended.Suricata.Installed {
+		<div class="card" style="margin-top: 1.5rem;">
+			<div class="card-header">
+				<span class="card-title">Suricata IDS</span>
+				if data.Extended.Suricata.Status == "ok" {
+					<span class="badge badge-success">OK</span>
+				} else if data.Extended.Suricata.Status == "warning" {
+					<span class="badge badge-warning">Warning</span>
+				} else if data.Extended.Suricata.Status != "" {
+					<span class="badge badge-danger">Error</span>
+				}
+			</div>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+				<div class="system-stat">
+					<div class="system-label">Service</div>
+					<div class="system-value">
+						if data.Extended.Suricata.ServiceActive {
+							<span style="color: var(--accent-green);">Active</span>
+						} else {
+							<span style="color: var(--accent-danger);">Inactive</span>
+						}
+					</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">EVE Log</div>
+					<div class="system-value">
+						if data.Extended.Suricata.EVEExists && data.Extended.Suricata.EVEFresh {
+							<span style="color: var(--accent-green);">Fresh</span>
+						} else if data.Extended.Suricata.EVEExists {
+							<span style="color: var(--accent-warning);">Stale</span>
+						} else {
+							<span style="color: var(--text-muted);">Missing</span>
+						}
+					</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Rules Loaded</div>
+					<div class="system-value">{ intToStr(data.Extended.Suricata.RulesLoaded) }</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Banning</div>
+					<div class="system-value">
+						if data.Extended.Suricata.BanningActive {
+							<span style="color: var(--accent-green);">Active</span>
+						} else {
+							<span style="color: var(--text-muted);">Inactive</span>
+						}
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+
+	<!-- DNS Resolver Status -->
+	if data.Extended.DNS.Status != "" {
+		<div class="card" style="margin-top: 1.5rem;">
+			<div class="card-header">
+				<span class="card-title">DNS Resolver</span>
+				if data.Extended.DNS.Status == "ok" {
+					<span class="badge badge-success">OK</span>
+				} else {
+					<span class="badge badge-warning">Issue</span>
+				}
+			</div>
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+				<div class="system-stat">
+					<div class="system-label">Resolver</div>
+					<div class="system-value" style="font-size: 0.9rem;">{ data.Extended.DNS.Resolver }</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Status</div>
+					<div class="system-value">
+						if data.Extended.DNS.Working {
+							<span style="color: var(--accent-green);">Working</span>
+						} else {
+							<span style="color: var(--accent-danger);">Failing</span>
+						}
+					</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Latency</div>
+					<div class="system-value">{ intToStr(data.Extended.DNS.LatencyMS) } ms</div>
+				</div>
+				if data.Extended.DNS.Hostname != "" {
+					<div class="system-stat">
+						<div class="system-label">Hostname</div>
+						<div class="system-value" style="font-size: 0.85rem;">{ data.Extended.DNS.Hostname }</div>
+					</div>
+				}
+			</div>
+		</div>
+	}
+
+	<!-- Firewall Conflicts -->
+	@HealthFirewallConflicts(data.Extended.FirewallConflicts)
+
 	<!-- Quick Commands -->
 	<div class="card" style="margin-top: 1.5rem;">
 		<div class="card-header">
@@ -179,6 +309,60 @@ templ HealthContentFragment(data ui.HealthData) {
 			</div>
 		</div>
 	</div>
+}
+
+// HealthFirewallConflicts renders conflicting firewall detections
+templ HealthFirewallConflicts(fc ui.HealthFirewallConflicts) {
+	if fc.CSF.Installed || fc.Firewalld.Installed || fc.UFW.Installed || fc.IPTables.Installed {
+		<div class="card" style="margin-top: 1.5rem;">
+			<div class="card-header">
+				<span class="card-title">Firewall Conflict Detection</span>
+			</div>
+			<table class="data-table">
+				<thead>
+					<tr>
+						<th>Firewall</th>
+						<th>Installed</th>
+						<th>Active</th>
+						<th>Conflict Level</th>
+					</tr>
+				</thead>
+				<tbody>
+					@healthFirewallRow("CSF", fc.CSF)
+					@healthFirewallRow("Firewalld", fc.Firewalld)
+					@healthFirewallRow("UFW", fc.UFW)
+					@healthFirewallRow("IPTables (legacy)", fc.IPTables)
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ healthFirewallRow(name string, fw ui.HealthFirewall) {
+	if fw.Installed {
+		<tr>
+			<td style="font-weight: 500;">{ name }</td>
+			<td><span class="badge badge-warning">Yes</span></td>
+			<td>
+				if fw.Active {
+					<span class="badge badge-danger">Active</span>
+				} else {
+					<span class="badge badge-muted">Inactive</span>
+				}
+			</td>
+			<td>
+				if fw.ConflictLevel == "critical" {
+					<span class="badge badge-danger">Critical</span>
+				} else if fw.ConflictLevel == "high" {
+					<span class="badge badge-danger">High</span>
+				} else if fw.ConflictLevel == "warning" {
+					<span class="badge badge-warning">Warning</span>
+				} else {
+					<span class="badge badge-muted">None</span>
+				}
+			</td>
+		</tr>
+	}
 }
 
 func intToStr(n int) string {
