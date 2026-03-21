@@ -597,6 +597,30 @@ collect_all_metrics() {
                 metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
             done
 
+            # v1.32.0: Scale-level metrics from daemon cache (0 kernel calls)
+            local _scale_cache="/run/nftban/set_counts.json"
+            if [[ -f "$_scale_cache" ]] && command -v jq &>/dev/null; then
+                local _scale_age
+                _scale_age=$(( $(date +%s) - $(stat -c %Y "$_scale_cache" 2>/dev/null || echo 0) ))
+                if [[ "$_scale_age" -lt 120 ]]; then
+                    # Per-set scale level (numeric: 0=NORMAL, 1=LARGE, ..., 5=CRITICAL_SCALE)
+                    while IFS=$'\t' read -r _sname _snum; do
+                        [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum $timestamp\n"
+                    done < <(jq -r '.sets | to_entries[] | [.key, (.value.scale_num | tostring)] | @tsv' "$_scale_cache" 2>/dev/null)
+
+                    # Global scale mode (numeric)
+                    local _global_scale
+                    _global_scale=$(jq -r '.scale_mode // "NORMAL"' "$_scale_cache" 2>/dev/null)
+                    local _global_num=0
+                    case "$_global_scale" in
+                        LARGE) _global_num=1 ;; VERY_LARGE) _global_num=2 ;; HUGE) _global_num=3 ;;
+                        EXTREME) _global_num=4 ;; CRITICAL_SCALE) _global_num=5 ;;
+                    esac
+                    metrics+="nftban_global_scale_level $_global_num $timestamp\n"
+                    metrics+="nftban_scale_cache_age_seconds $_scale_age $timestamp\n"
+                fi
+            fi
+
             # nftban_nftables_commands_total - total nft commands executed
             local nft_commands_total=0
             local commands_file="${NFTBAN_CACHE_DIR}/stats/nft_commands_total"
