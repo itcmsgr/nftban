@@ -1,56 +1,49 @@
 # =============================================================================
-# NFTBan v1.0.0 - Configuration Snapshot Service
+# NFTBan v1.30.0 - Tunnel Suspicion Scan Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban-snapshot.service"
+# meta:name="nftban-tunnel.service"
 # meta:type="systemd"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
-# meta:description="Create configuration snapshots"
+# meta:description="DNS tunnel suspicion scanner (advisory-only, never bans)"
 # meta:input="None"
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
 # meta:inventory.binaries="/usr/sbin/nftban"
 # meta:inventory.env_vars=""
-# meta:inventory.config_files=""
-# meta:inventory.systemd_units=""
+# meta:inventory.config_files="/etc/nftban/conf.d/tunnel/main.conf"
+# meta:inventory.systemd_units="nftban-tunnel.timer"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 # =============================================================================
 
 [Unit]
-Description=NFTBan Configuration Snapshot Service
-Documentation=man:nftban(8)
-Documentation=https://nftban.com/docs
-After=network-online.target nftables.service
-Wants=network-online.target
+Description=NFTBan Tunnel Suspicion Scanner
+Documentation=https://nftban.com/docs/tunnel
+After=network-online.target
 
 [Service]
 Type=oneshot
 User=root
 Group=root
-ExecStart=/usr/sbin/nftban snapshot create
+
+# Run tunnel scan
+ExecStart=/usr/sbin/nftban tunnel scan --quiet
 
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=nftban-snapshot
-
-# Resource limits
-CPUQuota=25%
-MemoryMax=256M
-TasksMax=10
-TimeoutStartSec=2min
-TimeoutStopSec=30s
+SyslogIdentifier=nftban-tunnel
 
 # =============================================================================
 # SECURITY HARDENING
 # =============================================================================
 NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -58,11 +51,17 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictNamespaces=true
 
-# No network needed
-RestrictAddressFamilies=AF_UNIX
+# Filesystem access: read DNS logs, write state/logs
+ReadWritePaths=/var/lib/nftban /var/log/nftban
 
-# Filesystem access
-ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
+# Allow AF_INET/AF_INET6 for sendmail alerting on non-Postfix MTAs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+CPUQuota=50%
+MemoryMax=256M
+TasksMax=10
+TimeoutStartSec=5min
 
 [Install]
 WantedBy=multi-user.target

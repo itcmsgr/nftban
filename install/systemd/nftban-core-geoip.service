@@ -27,6 +27,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+User=root
+Group=root
 ExecStart=/usr/lib/nftban/bin/nftban-core geoip update
 StandardOutput=journal
 StandardError=journal

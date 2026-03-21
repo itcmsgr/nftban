@@ -674,6 +674,40 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Bot Guard..........." "$botguard_status"
 
+    # Tunnel Suspicion (v1.30.0)
+    local tunnel_status="DISABLED"
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf" || true
+    fi
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local" || true
+    fi
+    if [[ "${NFTBAN_TUNNEL_ENABLED:-NO}" == "YES" ]]; then
+        local tunnel_high=0 tunnel_med=0
+        local tunnel_state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
+        if [[ -d "$tunnel_state_dir" ]]; then
+            for _sf in "${tunnel_state_dir}"/*.state; do
+                [[ ! -f "$_sf" ]] && continue
+                local _lvl
+                _lvl=$(head -1 "$_sf" 2>/dev/null | cut -d'|' -f3)
+                case "$_lvl" in
+                    HIGH) tunnel_high=$((tunnel_high + 1)) ;;
+                    MEDIUM) tunnel_med=$((tunnel_med + 1)) ;;
+                esac
+            done
+        fi
+        if [[ $tunnel_high -gt 0 ]]; then
+            tunnel_status="ACTIVE (H:${tunnel_high} M:${tunnel_med}) advisory-only"
+        elif [[ $tunnel_med -gt 0 ]]; then
+            tunnel_status="ACTIVE (M:${tunnel_med}) advisory-only"
+        else
+            tunnel_status="ENABLED (advisory-only)"
+        fi
+    fi
+    printf "  %-20s %s\n" "Tunnel Suspicion...." "$tunnel_status"
+
     # Metrics Database
     local metrics_db_status="NOT INSTALLED"
     local prom_running=false vm_running=false
@@ -953,6 +987,7 @@ output_terminal() {
         ["nftban-snapshot.timer"]="Snapshot creation"
         ["nftban-rollback.timer"]="Rollback check"
         ["nftban-rbl-check.timer"]="RBL Check"
+        ["nftban-tunnel.timer"]="Tunnel suspicion scan"
         ["nftban-pro-inventory.timer"]="Pro inventory collection"
         ["nftban-pro-license.timer"]="Pro license check"
         ["nftban-update.timer"]="Self-update check"
@@ -1412,6 +1447,29 @@ output_json() {
     fi
     echo "    \"botguard\": {\"enabled\": $json_botguard_enabled, \"ipv4_suspects\": $json_bg_v4, \"ipv6_suspects\": $json_bg_v6},"
 
+    # Tunnel Suspicion
+    local json_tunnel_enabled=false
+    local tunnel_val=""
+    tunnel_val=$(grep -m1 "^NFTBAN_TUNNEL_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/tunnel/main.conf.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+    [[ -z "$tunnel_val" ]] && tunnel_val=$(grep -m1 "^NFTBAN_TUNNEL_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/tunnel/main.conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+    [[ "$tunnel_val" == "YES" ]] && json_tunnel_enabled=true
+    local json_tunnel_high=0 json_tunnel_med=0
+    if [[ "$json_tunnel_enabled" == "true" ]]; then
+        local _tsd="${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
+        if [[ -d "$_tsd" ]]; then
+            for _tsf in "${_tsd}"/*.state; do
+                [[ ! -f "$_tsf" ]] && continue
+                local _tlvl
+                _tlvl=$(head -1 "$_tsf" 2>/dev/null | cut -d'|' -f3)
+                case "$_tlvl" in
+                    HIGH) json_tunnel_high=$((json_tunnel_high + 1)) ;;
+                    MEDIUM) json_tunnel_med=$((json_tunnel_med + 1)) ;;
+                esac
+            done
+        fi
+    fi
+    echo "    \"tunnel\": {\"enabled\": $json_tunnel_enabled, \"high\": $json_tunnel_high, \"medium\": $json_tunnel_med, \"advisory_only\": true},"
+
     # Feeds
     local feeds_count=0
     if [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
@@ -1423,7 +1481,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"
