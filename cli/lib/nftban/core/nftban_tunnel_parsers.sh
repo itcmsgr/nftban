@@ -35,6 +35,7 @@ readonly _NFTBAN_TUNNEL_PARSERS_LOADED=1
 # DNS SOURCE AUTO-DETECTION
 # =============================================================================
 
+# shellcheck disable=SC2034  # TUNNEL_DNS_TYPE used by nftban_tunnel.sh and cmd_tunnel.sh
 nftban_tunnel_detect_dns_source() {
     # Auto-detect which DNS resolver is running and where its logs are.
     # Sets global: TUNNEL_DNS_TYPE, TUNNEL_DNS_LOG_PATH
