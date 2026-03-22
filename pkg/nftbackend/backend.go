@@ -174,32 +174,6 @@ func isManualSource(source string) bool {
 	}
 }
 
-// getBlacklistSet returns the appropriate blacklist set for an IP
-// v1.33.0: Uses interval set (feeds/geoban) by default
-func (b *Backend) getBlacklistSet(ipStr string) (*nftables.Set, bool, error) {
-	ip := net.ParseIP(ipStr)
-	isIPv6 := false
-
-	if ip != nil {
-		isIPv6 = ip.To4() == nil
-	} else {
-		// CIDR - check if contains ':'
-		isIPv6 = strings.Contains(ipStr, ":")
-	}
-
-	if isIPv6 {
-		if b.setBlacklistIPv6 == nil {
-			return nil, true, fmt.Errorf("blacklist_ipv6 set not initialized")
-		}
-		return b.setBlacklistIPv6, true, nil
-	}
-
-	if b.setBlacklistIPv4 == nil {
-		return nil, false, fmt.Errorf("blacklist_ipv4 set not initialized")
-	}
-	return b.setBlacklistIPv4, false, nil
-}
-
 // getBlacklistSetForSource returns the appropriate set based on source + IP family
 // v1.33.0: Manual/auto-detect sources → hash set, feeds/geoban → interval set
 func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set, string, bool, error) {
