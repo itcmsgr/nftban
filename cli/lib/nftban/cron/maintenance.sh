@@ -322,6 +322,65 @@ EOF
     fi
 
     # ==========================================================================
+    # 1c. SYNPROXY vs SSH Port Correlation (CRITICAL - SSH Lockout Prevention)
+    # ==========================================================================
+    # v1.33.0: SYNPROXY notrack on the SSH port breaks conntrack-based whitelist/
+    # blacklist. The DDoS module doesn't know which port SSH uses, so if the SSH
+    # port is in the SYNPROXY notrack rules (from old defaults or user config),
+    # non-whitelisted IPs get locked out of SSH.
+    #
+    # This check: if SSH port appears in raw prerouting notrack → remove it and
+    # rebuild the raw rules without the SSH port.
+    if [[ "$_nft_table_available" == "true" ]] && [[ -n "$SSH_PORT" ]]; then
+        local family
+        for family in ip ip6; do
+            # Check if raw prerouting has a notrack rule that includes the SSH port
+            local raw_rule
+            raw_rule=$(nft -a list chain ${family} raw prerouting 2>/dev/null \
+                | grep -i 'SYNPROXY.*notrack' || true)
+
+            if [[ -n "$raw_rule" ]]; then
+                # Check if SSH port is in the port list of this rule
+                # The rule looks like: tcp dport { 22, 80, 443, ... } ... notrack
+                if echo "$raw_rule" | grep -qwE "(dport ${SSH_PORT}[^0-9]|[{,] *${SSH_PORT}[},[:space:]])"; then
+                    log "WARN" "SSH port ${SSH_PORT} found in SYNPROXY notrack rules (${family}) — lockout risk!"
+                    log "INFO" "Removing SYNPROXY raw rule containing SSH port..."
+
+                    # Remove the offending rule by handle
+                    local raw_handle
+                    raw_handle=$(echo "$raw_rule" | grep -oP 'handle \K\d+' | head -1 || true)
+                    if [[ -n "$raw_handle" ]]; then
+                        nft delete rule ${family} raw prerouting handle "$raw_handle" 2>/dev/null && {
+                            log "INFO" "Removed SYNPROXY notrack rule (handle ${raw_handle}) from ${family} raw"
+
+                            # Rebuild the rule WITHOUT the SSH port
+                            local old_ports new_ports
+                            # Extract port list from the removed rule
+                            old_ports=$(echo "$raw_rule" | grep -oP '\{ *\K[^}]+' | tr -d ' ')
+                            # Remove SSH port from the list
+                            new_ports=$(echo "$old_ports" | tr ',' '\n' | grep -vxF "$SSH_PORT" | tr '\n' ',' | sed 's/,$//')
+
+                            if [[ -n "$new_ports" ]]; then
+                                nft add rule ${family} raw prerouting \
+                                    tcp dport "{ ${new_ports} }" tcp flags syn / "syn,ack,fin,rst" \
+                                    notrack comment "\"SYNPROXY: notrack SYN\"" 2>/dev/null && {
+                                    log "INFO" "Rebuilt SYNPROXY notrack in ${family} without SSH port (ports: ${new_ports})"
+                                } || {
+                                    log "WARN" "Failed to rebuild SYNPROXY notrack in ${family}"
+                                }
+                            else
+                                log "INFO" "No ports remaining for SYNPROXY notrack in ${family} — rule removed"
+                            fi
+                        } || {
+                            log "WARN" "Failed to remove SYNPROXY notrack rule from ${family} raw"
+                        }
+                    fi
+                fi
+            fi
+        done
+    fi
+
+    # ==========================================================================
     # 2. System IP Monitoring (Lockout Prevention)
     # ==========================================================================
     log "INFO" "[2/9] Checking system IP addresses..."
