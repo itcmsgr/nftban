@@ -632,9 +632,15 @@ func (h *GOTHHandlers) getCPUInfo() ui.CPUInfo {
 		cpu.Threads, _ = strconv.Atoi(strings.TrimSpace(string(output)))
 	}
 
-	// Get physical cores
-	if output, err := exec.Command("sh", "-c", "grep -c '^processor' /proc/cpuinfo").Output(); err == nil {
-		cpu.Cores, _ = strconv.Atoi(strings.TrimSpace(string(output)))
+	// Get physical cores — v1.33.0: direct read, no shell (P1-13)
+	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
+		count := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "processor") {
+				count++
+			}
+		}
+		cpu.Cores = count
 	}
 
 	// Get load averages
