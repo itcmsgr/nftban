@@ -73,7 +73,7 @@ nftban_cmd_emulate() {
                 nftban_banner 2>/dev/null || true
                 echo "Error: Unknown option: $1" >&2
                 echo "Use 'nftban emulate --help' for usage" >&2
-                exit 1
+                return 1
                 ;;
             *)
                 if [[ -z "$ip" ]]; then
@@ -100,7 +100,7 @@ nftban_cmd_emulate() {
                     nftban_banner 2>/dev/null || true
                     echo "Error: Unexpected argument: $1" >&2
                     echo "Use 'nftban emulate --help' for usage" >&2
-                    exit 1
+                    return 1
                 fi
                 shift
                 ;;
@@ -118,14 +118,14 @@ nftban_cmd_emulate() {
         nftban_banner 2>/dev/null || true
         echo "Error: IP address required" >&2
         echo "Usage: nftban emulate <ip> [options]" >&2
-        exit 1
+        return 1
     fi
 
     # Validate IP format
     if ! _validate_ip "$ip"; then
         nftban_banner 2>/dev/null || true
         echo "Error: Invalid IP address: $ip" >&2
-        exit 1
+        return 1
     fi
 
     # Validate protocol if specified
@@ -135,7 +135,7 @@ nftban_cmd_emulate() {
             *)
                 nftban_banner 2>/dev/null || true
                 echo "Error: Invalid protocol: $proto (use tcp, udp, icmp)" >&2
-                exit 1
+                return 1
                 ;;
         esac
     fi
@@ -145,7 +145,7 @@ nftban_cmd_emulate() {
         if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
             nftban_banner 2>/dev/null || true
             echo "Error: Invalid port: $port (must be 1-65535)" >&2
-            exit 1
+            return 1
         fi
     fi
 
@@ -155,7 +155,7 @@ nftban_cmd_emulate() {
         *)
             nftban_banner 2>/dev/null || true
             echo "Error: Invalid direction: $direction (use in, out, fwd)" >&2
-            exit 1
+            return 1
             ;;
     esac
 
