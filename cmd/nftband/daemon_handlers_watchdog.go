@@ -175,9 +175,10 @@ func (d *Daemon) handleStatusRequest() SocketResponse {
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"version":       version.Version,
-			"uptime":        "TODO",
-			"modules":       len(d.registry.All()),
+			"version":        version.Version,
+			"uptime":         time.Since(d.startedAt).Truncate(time.Second).String(),
+			"uptime_seconds": int(time.Since(d.startedAt).Seconds()),
+			"modules":        len(d.registry.All()),
 			"events_total":  stats.Published,
 			"subscriptions": stats.Subscriptions,
 			// v1.13.12: Config reload tracking

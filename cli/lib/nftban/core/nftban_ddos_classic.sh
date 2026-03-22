@@ -108,7 +108,7 @@ _nftban_ddos_classic_load_config() {
     : "${DDOS_SYNPROXY_WSCALE:=7}"
     : "${DDOS_SYNPROXY_SACK:=true}"
     : "${DDOS_SYNPROXY_TSTAMP:=true}"
-    : "${DDOS_SYNPROXY_PORTS:=22,80,443,25,587,993,995,3306,5432,6379,27017}"
+    : "${DDOS_SYNPROXY_PORTS:=80,443,25,587,993,995,3306,5432,6379,27017}"
     : "${DDOS_SYNPROXY_CHAIN:=ddos_synproxy}"
     : "${DDOS_SYNPROXY_LOG_NEW:=false}"
     : "${DDOS_SYNPROXY_LOG_PREFIX:=NFTBAN_SYNPROXY:}"

@@ -103,24 +103,33 @@ get_block_count() {
     # v1.32.0: Use daemon cache (0 kernel calls) with kernel fallback
     case "$block_type" in
         total)
-            local black_v4 black_v6
+            # v1.33.0: Sum both interval (feeds) and hash (manual) sets
+            local black_v4 black_v6 manual_v4 manual_v6
 
             # Prefer cached counting from daemon
             if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
                 black_v4=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || black_v4=0
                 black_v6=$(nftban_nft_count_set_cached blacklist_ipv6 2>/dev/null) || black_v6=0
+                manual_v4=$(nftban_nft_count_set_cached blacklist_manual_ipv4 2>/dev/null) || manual_v4=0
+                manual_v6=$(nftban_nft_count_set_cached blacklist_manual_ipv6 2>/dev/null) || manual_v6=0
             elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
                 black_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || black_v4=0
                 black_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null) || black_v6=0
+                manual_v4=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null) || manual_v4=0
+                manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null) || manual_v6=0
             else
                 black_v4=0
                 black_v6=0
+                manual_v4=0
+                manual_v6=0
             fi
 
             [[ "$black_v4" =~ ^[0-9]+$ ]] || black_v4=0
             [[ "$black_v6" =~ ^[0-9]+$ ]] || black_v6=0
+            [[ "$manual_v4" =~ ^[0-9]+$ ]] || manual_v4=0
+            [[ "$manual_v6" =~ ^[0-9]+$ ]] || manual_v6=0
 
-            echo $((black_v4 + black_v6))
+            echo $((black_v4 + black_v6 + manual_v4 + manual_v6))
             ;;
         permanent|temporary|geoban)
             # All ban types unified in blacklist_ipv4/ipv6 — cannot distinguish from nft
@@ -530,7 +539,8 @@ get_nftables_set_sizes() {
     fi
 
     # Fallback: use cached counting functions or direct nft
-    local sets="whitelist_ipv4 whitelist_ipv6 blacklist_ipv4 blacklist_ipv6"
+    # v1.33.0: Include hash sets for manual/auto-detect bans
+    local sets="whitelist_ipv4 whitelist_ipv6 blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6"
     local set_name
     for set_name in $sets; do
         local count=0
@@ -549,21 +559,29 @@ get_nftables_set_sizes() {
 # Get detailed ban metrics (IPv4/IPv6, temp/perm breakdown)
 # Returns: family type count (e.g., "ipv4 permanent 10")
 get_ban_breakdown() {
-    # v1.32.0: Use cached counting (0 kernel calls) — temp/perm split not
-    # available from cache, report all as permanent (consistent with unified arch)
+    # v1.33.0: Sum interval (feeds) + hash (manual) sets
     local v4_total=0 v4_temp=0 v4_perm=0
     local v6_total=0 v6_temp=0 v6_perm=0
+    local v4_interval=0 v4_manual=0 v6_interval=0 v6_manual=0
 
     if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
-        v4_total=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || v4_total=0
-        v6_total=$(nftban_nft_count_set_cached blacklist_ipv6 2>/dev/null) || v6_total=0
+        v4_interval=$(nftban_nft_count_set_cached blacklist_ipv4 2>/dev/null) || v4_interval=0
+        v4_manual=$(nftban_nft_count_set_cached blacklist_manual_ipv4 2>/dev/null) || v4_manual=0
+        v6_interval=$(nftban_nft_count_set_cached blacklist_ipv6 2>/dev/null) || v6_interval=0
+        v6_manual=$(nftban_nft_count_set_cached blacklist_manual_ipv6 2>/dev/null) || v6_manual=0
     elif declare -f nftban_nft_count_set >/dev/null 2>&1; then
-        v4_total=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || v4_total=0
-        v6_total=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null) || v6_total=0
+        v4_interval=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null) || v4_interval=0
+        v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null) || v4_manual=0
+        v6_interval=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null) || v6_interval=0
+        v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null) || v6_manual=0
     fi
 
-    [[ "$v4_total" =~ ^[0-9]+$ ]] || v4_total=0
-    [[ "$v6_total" =~ ^[0-9]+$ ]] || v6_total=0
+    [[ "$v4_interval" =~ ^[0-9]+$ ]] || v4_interval=0
+    [[ "$v4_manual" =~ ^[0-9]+$ ]] || v4_manual=0
+    [[ "$v6_interval" =~ ^[0-9]+$ ]] || v6_interval=0
+    [[ "$v6_manual" =~ ^[0-9]+$ ]] || v6_manual=0
+    v4_total=$((v4_interval + v4_manual))
+    v6_total=$((v6_interval + v6_manual))
     v4_perm=$v4_total
     v6_perm=$v6_total
 

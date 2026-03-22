@@ -52,7 +52,7 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_config.sh" || return 1
 else
     echo "ERROR: Configuration module not found"
-    exit 1
+    return 1
 fi
 
 # Load schema validation module

@@ -20,6 +20,7 @@ package portscan
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,13 @@ const (
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getPortscanScript() string {
 	cfg := nftbanconf.MustLoad()
-	return cfg.LibDir + "/core/nftban_portscan.sh"
+	path := filepath.Join(cfg.LibDir, "core", "nftban_portscan.sh")
+	// v1.33.0: Validate path exists and is under LibDir (P1-4)
+	if !strings.HasPrefix(path, cfg.LibDir) {
+		log.Printf("[portscan] suspicious script path: %s", path)
+		return ""
+	}
+	return path
 }
 
 // portscanConfig holds module configuration loaded from config files

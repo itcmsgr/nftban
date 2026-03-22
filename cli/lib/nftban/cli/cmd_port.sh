@@ -81,7 +81,7 @@ if [[ ! $(type -t nftban_port_report_status) == "function" ]]; then
         source "${LIB_DIR}/core/nftban_report_port.sh" || return 1
     else
         echo "ERROR: nftban_report_port.sh not found at ${LIB_DIR}/core" >&2
-        exit 1
+        return 1
     fi
 fi
 
@@ -109,7 +109,7 @@ nftban_cmd_port() {
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Port scanning requires root privileges" >&2
         echo "Please run: sudo nftban port $subcmd" >&2
-        exit 1
+        return 1
     fi
 
     case "$subcmd" in

@@ -133,7 +133,7 @@ nftban_cmd_geoip() {
             nftban_banner
             echo "ERROR: Unknown geoip command: $subcommand" >&2
             echo "Run 'nftban geoip help' for usage information" >&2
-            exit 1
+            return 1
             ;;
     esac
 }

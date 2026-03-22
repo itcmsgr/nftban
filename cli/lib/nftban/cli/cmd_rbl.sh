@@ -77,7 +77,7 @@ if [[ ! $(type -t nftban_rbl_check_ip) == "function" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_rbl.sh" || return 1
     else
         echo "ERROR: nftban_rbl.sh not found" >&2
-        exit 1
+        return 1
     fi
 fi
 

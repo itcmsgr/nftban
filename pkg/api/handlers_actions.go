@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/auth"
@@ -34,12 +35,53 @@ import (
 	"github.com/itcmsgr/nftban/pkg/state"
 )
 
-// RulesHandler returns nftables statistics
+// RulesHandler returns nftables set statistics from daemon cache.
+// v1.33.0: Read real set data from /run/nftban/set_counts.json (P1-11)
 func RulesHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Parse nftables sets properly - for now return empty array
-	// The stats command output is plain text, not structured data
+	cacheFile := "/run/nftban/set_counts.json"
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		// Fallback: daemon may not be running
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"sets": []map[string]interface{}{},
+		})
+		return
+	}
+
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"sets": []map[string]interface{}{},
+		})
+		return
+	}
+
+	// Convert sets map to array format for API consumers
+	setsMap, ok := snapshot["sets"].(map[string]interface{})
+	if !ok {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"sets": []map[string]interface{}{},
+		})
+		return
+	}
+
+	sets := make([]map[string]interface{}, 0, len(setsMap))
+	for name, info := range setsMap {
+		entry := map[string]interface{}{
+			"name": name,
+		}
+		if m, ok := info.(map[string]interface{}); ok {
+			for k, v := range m {
+				entry[k] = v
+			}
+		}
+		sets = append(sets, entry)
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"sets": []map[string]interface{}{},
+		"sets":       sets,
+		"timestamp":  snapshot["timestamp"],
+		"scale_mode": snapshot["scale_mode"],
 	})
 }
 

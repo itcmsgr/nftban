@@ -405,7 +405,7 @@ EOF
 # Handle help
 if [[ "${1:-}" == "help" || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     nftban_setup_help
-    exit 0
+    return 0
 fi
 
 # Export the main function

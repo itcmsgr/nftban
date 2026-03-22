@@ -20,6 +20,7 @@ package ddos
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +46,13 @@ const (
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getDDOSScript() string {
 	cfg := nftbanconf.MustLoad()
-	return cfg.LibDir + "/core/nftban_ddos.sh"
+	path := filepath.Join(cfg.LibDir, "core", "nftban_ddos.sh")
+	// v1.33.0: Validate path is under LibDir (P1-4)
+	if !strings.HasPrefix(path, cfg.LibDir) {
+		log.Printf("[ddos] suspicious script path: %s", path)
+		return ""
+	}
+	return path
 }
 
 // ddosConfig holds module configuration loaded from config files

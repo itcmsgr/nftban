@@ -372,8 +372,9 @@ nftban_rbl_check_ip_parallel() {
         local reversed_ip
         local temp_dir
         local jobs="${NFTBAN_RBL_PARALLEL_JOBS:-10}"
-        # Cap parallel jobs to prevent resource exhaustion (VULN-19)
-        [[ "$jobs" -gt 20 ]] && jobs=20
+        # Cap parallel jobs to prevent resource exhaustion (VULN-19, P1-5)
+        # v1.33.0: Hard cap at 10 concurrent DNS lookups
+        [[ "$jobs" -gt 10 ]] && jobs=10
 
         reversed_ip=$(nftban_rbl_reverse_ip "$ip")
         temp_dir=$(mktemp -d)

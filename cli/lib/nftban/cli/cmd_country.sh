@@ -44,7 +44,7 @@ if [[ -f "$GEOBAN_HANDLER" ]]; then
     source "$GEOBAN_HANDLER" || return 1
 else
     echo "ERROR: GeoBan handler not found: $GEOBAN_HANDLER" >&2
-    exit 1
+    return 1
 fi
 
 # =============================================================================
