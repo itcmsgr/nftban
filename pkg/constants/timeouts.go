@@ -349,6 +349,9 @@ const (
 	// DaemonStartupWait is how long to wait for daemon to fully start.
 	DaemonStartupWait = 5 * time.Second
 
+	// ReconciliationLockTimeout is the timeout for acquiring the nft lock during reconciliation.
+	ReconciliationLockTimeout = 30 * time.Second
+
 	// HTTPReadTimeout is the read timeout for HTTP servers.
 	HTTPReadTimeout = 30 * time.Second
 

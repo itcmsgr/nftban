@@ -32,6 +32,7 @@ import (
 	goruntime "runtime"
 
 	"github.com/itcmsgr/nftban/pkg/constants"
+	"github.com/itcmsgr/nftban/pkg/nftlock"
 	"github.com/itcmsgr/nftban/pkg/stats"
 
 	"github.com/itcmsgr/nftban/pkg/banlog"
@@ -60,6 +61,11 @@ func (d *Daemon) Run() error {
 	// Ensure directories exist
 	if err := d.ensureDirectories(); err != nil {
 		return fmt.Errorf("failed to create directories: %w", err)
+	}
+
+	// v1.34.0: Pre-create nft lock file for early operations (LIVE-BUG-1 fix)
+	if _, err := os.OpenFile(nftlock.LockPath, os.O_CREATE|os.O_RDWR, 0640); err != nil { // #nosec G302
+		log.Printf("Warning: could not pre-create nft lock file: %v", err)
 	}
 
 	// Write PID file
@@ -431,13 +437,16 @@ func (d *Daemon) initOpQueue() error {
 		d.setCounters.CacheWriterLoop(d.ctx)
 	}()
 
-	// Reconcile source index with actual nft state
+	// Reconcile source index with actual nft state, then start periodic loop
 	go func() {
 		time.Sleep(constants.DaemonStartupWait) // Wait for daemon to fully start
 		d.sourceIndex.ReconcileWithBackend(wrapper)
 
 		// v1.32.0: Reconcile set counters from kernel on startup (one-time full count)
 		d.reconcileSetCountersFromKernel(wrapper)
+
+		// v1.34.0: Start periodic reconciliation after initial startup
+		d.startPeriodicReconciliation(wrapper)
 	}()
 
 	log.Println("[OpQueue] Async operation queue initialized")
@@ -452,6 +461,7 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 	// Known set names in the nftban schema
 	setNames := []string{
 		"blacklist_ipv4", "blacklist_ipv6",
+		"blacklist_manual_ipv4", "blacklist_manual_ipv6", // v1.34.0: hash sets
 		"whitelist_ipv4", "whitelist_ipv6",
 		"tcp_ports_in", "tcp_ports_out",
 		"udp_ports_in", "udp_ports_out",
