@@ -66,6 +66,50 @@ func (m *NFTManager) GetOrCreateSet(table *nftables.Table, setName string, ipv4 
 	return set, nil
 }
 
+// GetOrCreateHashSet gets or creates a hash set with timeout support (O(1) lookup)
+// v1.33.0: Used for manual/auto-detect bans where CIDR aggregation is not needed
+func (m *NFTManager) GetOrCreateHashSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// Try to get existing set
+	sets, err := m.conn.GetSets(table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sets: %w", err)
+	}
+
+	for _, set := range sets {
+		if set.Name == setName {
+			return set, nil
+		}
+	}
+
+	// Determine table family and IP type
+	var family, ipType string
+	var keyType nftables.SetDatatype
+	if ipv4 {
+		family = "ip"
+		ipType = "ipv4_addr"
+		keyType = nftables.TypeIPAddr
+	} else {
+		family = "ip6"
+		ipType = "ipv6_addr"
+		keyType = nftables.TypeIP6Addr
+	}
+
+	// Create hash set using nft CLI (timeout flag, NO interval, NO auto-merge)
+	setDef := fmt.Sprintf("{ type %s ; flags timeout ; }", ipType)
+	if err := nftAddSet(family, table.Name, setName, setDef); err != nil {
+		return nil, fmt.Errorf("failed to create hash set: %w", err)
+	}
+
+	// Return set object for compatibility
+	set := &nftables.Set{
+		Table:   table,
+		Name:    setName,
+		KeyType: keyType,
+	}
+
+	return set, nil
+}
+
 // GetOrCreateIntervalSet gets or creates an interval set for CIDR ranges
 func (m *NFTManager) GetOrCreateIntervalSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
 	// Try to get existing set

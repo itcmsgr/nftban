@@ -171,18 +171,27 @@ nftban_cmd_list() {
     local ip_count=0
 
     if [[ "$list_type" == "banned" || "$list_type" == "all" ]]; then
-        # v0.7.3: Unified blacklist (contains both permanent and temporary bans)
-        # Get blacklist_ipv4
-        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null; then
+        # v1.33.0: Hash sets first (manual/auto-detect, O(1))
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_manual_ipv4 &>/dev/null; then
             while IFS= read -r ip; do
                 [[ -n "$ip" ]] && all_ips["$ip"]="blacklist:ipv4"
-            done < <(parse_nft_set "$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null)" "blacklist_ipv4")
+            done < <(parse_nft_set "$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_manual_ipv4 2>/dev/null)" "blacklist_manual_ipv4")
         fi
-
-        # Get blacklist_ipv6
-        if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null; then
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_manual_ipv6 &>/dev/null; then
             while IFS= read -r ip; do
                 [[ -n "$ip" ]] && all_ips["$ip"]="blacklist:ipv6"
+            done < <(parse_nft_set "$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_manual_ipv6 2>/dev/null)" "blacklist_manual_ipv6")
+        fi
+
+        # Interval sets (feeds/geoban, CIDR aggregation)
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null; then
+            while IFS= read -r ip; do
+                [[ -n "$ip" && -z "${all_ips[$ip]+x}" ]] && all_ips["$ip"]="blacklist:ipv4"
+            done < <(parse_nft_set "$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null)" "blacklist_ipv4")
+        fi
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null; then
+            while IFS= read -r ip; do
+                [[ -n "$ip" && -z "${all_ips[$ip]+x}" ]] && all_ips["$ip"]="blacklist:ipv6"
             done < <(parse_nft_set "$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null)" "blacklist_ipv6")
         fi
     fi

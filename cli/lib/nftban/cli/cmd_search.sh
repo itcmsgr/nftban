@@ -183,10 +183,9 @@ _search_nftables() {
         ip_suffix="ipv4"
     fi
 
-    # Search in ip/ip6 nftban tables (v0.7.3 dual table architecture)
-    # Sets: whitelist, blacklist (blacklist contains both permanent + temporary bans)
-    # Note: feeds, geoban, and temp bans are ALL consolidated into blacklist by nftban-core
-    local all_sets=("whitelist_${ip_suffix}" "blacklist_${ip_suffix}")
+    # Search in ip/ip6 nftban tables
+    # v1.33.0: Check hash set (manual O(1)) first, then interval set (feeds)
+    local all_sets=("whitelist_${ip_suffix}" "blacklist_manual_${ip_suffix}" "blacklist_${ip_suffix}")
     for set in "${all_sets[@]}"; do
         # Temporarily disable errexit and ERR trap for this check
         # Save current trap, disable it, then restore
@@ -202,7 +201,13 @@ _search_nftables() {
             # Normalize set names for display (remove _ipv4/_ipv6 suffix)
             local display_set="${set//_ipv4/}"
             display_set="${display_set//_ipv6/}"
-            found_in+=("nftban:${display_set}")
+            # v1.33.0: blacklist_manual → blacklist (manual)
+            if [[ "$display_set" == "blacklist_manual" ]]; then
+                display_set="blacklist"
+                found_in+=("nftban:${display_set}:manual")
+            else
+                found_in+=("nftban:${display_set}")
+            fi
         fi
     done
 
@@ -523,8 +528,24 @@ _display_results() {
                     echo "    → Auto-expires (timeout active)"
                     echo "    → Details: No details available"
                     ;;
+                blacklist:manual)
+                    echo "  ✓ BLACKLISTED in $table (hash set — manual/auto-detect)"
+                    # Check if it has a timeout (temporary ban)
+                    local manual_ban_info manual_set_name manual_timeout_str manual_expires_str
+                    manual_set_name="blacklist_manual_ipv4"
+                    [[ "$ip" == *:* ]] && manual_set_name="blacklist_manual_ipv6"
+                    manual_ban_info=$(timeout 10s nft list set "$table" "$manual_set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
+                    if [[ "$manual_ban_info" == *"timeout"* ]]; then
+                        manual_timeout_str=$(echo "$manual_ban_info" | grep -oE 'timeout [0-9]+[smhd]' | head -1) || true
+                        manual_expires_str=$(echo "$manual_ban_info" | grep -oE 'expires [0-9]+[smhd]+[0-9]*[smhd]*' | head -1) || true
+                        echo "    → Type: Temporary ban ($manual_timeout_str)"
+                        [[ -n "$manual_expires_str" ]] && echo "    → Expires in: ${manual_expires_str#expires }"
+                    else
+                        echo "    → Type: Permanent ban"
+                    fi
+                    ;;
                 blacklist)
-                    echo "  ✓ BLACKLISTED in $table"
+                    echo "  ✓ BLACKLISTED in $table (interval set — feeds/geoban)"
                     # Check if it has a timeout (temporary ban)
                     local ban_info set_name timeout_str expires_str
                     set_name="blacklist_ipv4"
