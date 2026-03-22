@@ -23,7 +23,9 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/analytics"
@@ -32,6 +34,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/opqueue"
 	"github.com/itcmsgr/nftban/pkg/persistent"
 	"github.com/itcmsgr/nftban/pkg/timeutil"
 	"github.com/itcmsgr/nftban/pkg/version"
@@ -187,22 +190,86 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	// Step 6: Add to nftables via IPC (daemon is the single nft writer)
 	fmt.Println("Step 6: Adding to nftables via IPC...")
 
+	// v1.33.0: Determine target set for display (P0-10)
+	banSource := source
+	if banSource == "" {
+		banSource = "manual"
+	}
+	targetSet := opqueue.GetTargetSet(banSource, normalizedIP)
+	setType := "hash set"
+	if strings.Contains(targetSet, "blacklist_ipv4") && !strings.Contains(targetSet, "manual") ||
+		strings.Contains(targetSet, "blacklist_ipv6") && !strings.Contains(targetSet, "manual") {
+		setType = "interval set"
+	}
+
 	ipcClient := ipc.NewClient()
 	startTime := time.Now()
 
-	resp, err := ipcClient.Ban(normalizedIP, timeoutSeconds, reason, source)
-	if err != nil {
-		return fmt.Errorf("failed to ban via IPC: %w", err)
+	// v1.33.0: Progress indicator for slow operations (P0-9)
+	// Show spinner if ban takes >2s (typically interval set operations on large sets)
+	var banResp *ipc.Response
+	var banErr error
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		banResp, banErr = ipcClient.Ban(normalizedIP, timeoutSeconds, reason, source)
+		close(done)
+	}()
+
+	// Spinner loop — only activate after 2s
+	spinnerShown := false
+	ticker := time.NewTicker(500 * time.Millisecond)
+	spinChars := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+	spinIdx := 0
+
+	waitLoop:
+	for {
+		select {
+		case <-done:
+			break waitLoop
+		case <-ticker.C:
+			if time.Since(startTime) > 2*time.Second {
+				if !spinnerShown {
+					fmt.Printf("  %c Banning %s... (large %s, please wait)", spinChars[spinIdx], normalizedIP, setType)
+					spinnerShown = true
+				} else {
+					fmt.Printf("\r  %c Banning %s... (large %s, please wait)", spinChars[spinIdx], normalizedIP, setType)
+				}
+				spinIdx = (spinIdx + 1) % len(spinChars)
+			}
+		}
 	}
-	if !resp.Success {
-		return fmt.Errorf("failed to ban: %s", resp.Error)
+	ticker.Stop()
+	wg.Wait()
+
+	if spinnerShown {
+		fmt.Print("\r" + strings.Repeat(" ", 80) + "\r") // Clear spinner line
+	}
+
+	if banErr != nil {
+		return fmt.Errorf("failed to ban via IPC: %w", banErr)
+	}
+	if !banResp.Success {
+		return fmt.Errorf("failed to ban: %s", banResp.Error)
 	}
 	duration := time.Since(startTime)
 
+	// v1.33.0: Human-friendly timing with set type (P0-10)
+	durationStr := formatBanDuration(duration)
 	if timeoutSeconds > 0 {
-		fmt.Printf("  ✅ Added to nftables with %s timeout in %v\n", timeutil.FormatDurationSeconds(timeoutSeconds), duration)
+		fmt.Printf("  ✅ Added to nftables with %s timeout in %s (%s)\n", timeutil.FormatDurationSeconds(timeoutSeconds), durationStr, setType)
 	} else {
-		fmt.Printf("  ✅ Added to nftables (permanent) in %v\n", duration)
+		fmt.Printf("  ✅ Added to nftables (permanent) in %s (%s)\n", durationStr, setType)
+	}
+
+	// v1.33.0: Post-ban verification — confirm element is in kernel set (P0-8)
+	if verifyErr := verifyBanInKernel(normalizedIP, targetSet, isIPv4); verifyErr != nil {
+		fmt.Printf("  ⚠️  Verification: %v\n", verifyErr)
+	} else {
+		fmt.Printf("  ✓  Verified: %s is in %s\n", normalizedIP, targetSet)
 	}
 	fmt.Println()
 
@@ -318,4 +385,34 @@ func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// verifyBanInKernel confirms that an IP is present in the specified nft set.
+// Uses "nft get element" which returns exit 0 if found, non-zero if not.
+func verifyBanInKernel(ip, setName string, isIPv4 bool) error {
+	family := "ip"
+	if !isIPv4 {
+		family = "ip6"
+	}
+	// nft get element ip nftban blacklist_manual_ipv4 { 1.2.3.4 }
+	//nolint:gosec // ip and setName are validated upstream
+	cmd := exec.Command("nft", "get", "element", family, "nftban", setName, "{ "+ip+" }")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s not found in %s (kernel verification failed)", ip, setName)
+	}
+	return nil
+}
+
+// formatBanDuration returns a human-friendly duration string.
+func formatBanDuration(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return fmt.Sprintf("%dµs", d.Microseconds())
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return fmt.Sprintf("%.0fs", d.Seconds())
+	}
 }

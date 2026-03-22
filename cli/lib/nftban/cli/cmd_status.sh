@@ -1310,6 +1310,11 @@ output_json() {
         2) health_status="errors" ;;
     esac
 
+    # v1.33.0: JSON health parity — apply same PROTECTED downgrade as CLI (line 812-814)
+    if [[ "$json_state" == "PROTECTED" ]] && [[ "$health_status" == "errors" ]]; then
+        health_status="healthy"
+    fi
+
     # Memory protection state for JSON
     local json_pressure_level="normal"
     local json_pressure_pct=0
