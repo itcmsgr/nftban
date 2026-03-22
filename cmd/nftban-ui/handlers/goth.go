@@ -1425,13 +1425,29 @@ func readMemoryInfo() (usedGB, totalGB, percent float64) {
 }
 
 // readCPUPercent calculates CPU usage from /proc/stat.
+// v1.33.0: Pure Go — no shell injection (P1-13)
 func readCPUPercent() float64 {
-	output, err := exec.Command("sh", "-c", "grep 'cpu ' /proc/stat | awk '{printf \"%.1f\", ($2+$4)*100/($2+$4+$5)}'").Output()
+	data, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		return 0
 	}
-	val, _ := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	return val
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "cpu ") {
+			fields := strings.Fields(line)
+			if len(fields) < 6 {
+				return 0
+			}
+			user, _ := strconv.ParseFloat(fields[1], 64)
+			system, _ := strconv.ParseFloat(fields[3], 64)
+			idle, _ := strconv.ParseFloat(fields[4], 64)
+			total := user + system + idle
+			if total > 0 {
+				return (user + system) * 100 / total
+			}
+			return 0
+		}
+	}
+	return 0
 }
 
 // readDiskUsage reads disk usage for a given path using df.
@@ -1475,16 +1491,22 @@ func fetchNFTBanDaemonStats() (cpuPercent, memMB float64, uptime string) {
 }
 
 // fetchNFTBanProcessStats retrieves NFTBan process stats via ps (fallback).
+// v1.33.0: Direct exec without shell (P1-13)
 func fetchNFTBanProcessStats() (cpuPercent, memMB float64) {
-	output, err := exec.Command("sh", "-c", "ps aux | grep 'nftban' | grep -v grep | head -1 | awk '{print $3, $6}'").Output()
+	output, err := exec.Command("ps", "aux").Output()
 	if err != nil {
 		return 0, 0
 	}
-	parts := strings.Fields(string(output))
-	if len(parts) >= 2 {
-		cpuPercent, _ = strconv.ParseFloat(parts[0], 64)
-		if mem, err := strconv.ParseFloat(parts[1], 64); err == nil {
-			memMB = mem / 1024
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, "nftban") && !strings.Contains(line, "grep") {
+			parts := strings.Fields(line)
+			if len(parts) >= 6 {
+				cpuPercent, _ = strconv.ParseFloat(parts[2], 64)
+				if mem, err := strconv.ParseFloat(parts[5], 64); err == nil {
+					memMB = mem / 1024
+				}
+			}
+			break
 		}
 	}
 	return cpuPercent, memMB
