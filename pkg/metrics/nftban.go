@@ -485,6 +485,61 @@ var (
 		Name:      "cidr_current_total",
 		Help:      "Current total CIDRs loaded",
 	})
+
+	// =============================================================================
+	// Reconciliation Metrics (v1.34.0)
+	// =============================================================================
+
+	reconciliationDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Name:      "reconciliation_duration_seconds",
+		Help:      "Duration of periodic reconciliation cycle",
+		Buckets:   prometheus.ExponentialBuckets(0.1, 2, 10),
+	})
+
+	reconciliationDriftTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "reconciliation_drift_total",
+		Help:      "Count difference between kernel and in-memory state per set",
+	}, []string{"set"})
+
+	reconciliationLastTimestamp = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "reconciliation_last_timestamp",
+		Help:      "Unix timestamp of last reconciliation run",
+	})
+
+	reconciliationRunsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "reconciliation_runs_total",
+		Help:      "Total number of reconciliation cycles completed",
+	})
+
+	// =============================================================================
+	// Schema Validation Metrics (v1.34.0)
+	// =============================================================================
+
+	schemaValidationStatus = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "schema_validation_status",
+		Help:      "Schema validation status (0=valid, 1=drifted)",
+	})
+
+	schemaErrorsTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "schema_errors_total",
+		Help:      "Number of schema validation errors detected",
+	})
+
+	// =============================================================================
+	// Whitelist Overlap Metrics (v1.34.0)
+	// =============================================================================
+
+	whitelistOverlapCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "whitelist_overlap_count",
+		Help:      "Number of IPs present in both whitelist and blacklist sets",
+	})
 )
 
 // =============================================================================
@@ -854,6 +909,57 @@ func SetCIDRLimitHard(limit int) {
 // SetCIDRCurrentTotal sets the current total CIDRs loaded
 func SetCIDRCurrentTotal(count int) {
 	cidrCurrentTotal.Set(float64(count))
+}
+
+// =============================================================================
+// Reconciliation Recording Functions (v1.34.0)
+// =============================================================================
+
+// RecordReconciliationDuration records the duration of a reconciliation cycle
+func RecordReconciliationDuration(seconds float64) {
+	reconciliationDuration.Observe(seconds)
+}
+
+// SetReconciliationDrift sets the drift count for a specific set
+func SetReconciliationDrift(setName string, drift float64) {
+	reconciliationDriftTotal.WithLabelValues(setName).Set(drift)
+}
+
+// SetReconciliationLastTimestamp sets the timestamp of the last reconciliation
+func SetReconciliationLastTimestamp(ts float64) {
+	reconciliationLastTimestamp.Set(ts)
+}
+
+// RecordReconciliationRun increments the total reconciliation runs counter
+func RecordReconciliationRun() {
+	reconciliationRunsTotal.Inc()
+}
+
+// =============================================================================
+// Schema Validation Recording Functions (v1.34.0)
+// =============================================================================
+
+// SetSchemaValidationStatus sets whether schema validation passed or failed
+func SetSchemaValidationStatus(drifted bool) {
+	val := float64(0)
+	if drifted {
+		val = 1
+	}
+	schemaValidationStatus.Set(val)
+}
+
+// SetSchemaErrorsTotal sets the number of schema errors detected
+func SetSchemaErrorsTotal(count int) {
+	schemaErrorsTotal.Set(float64(count))
+}
+
+// =============================================================================
+// Whitelist Overlap Recording Functions (v1.34.0)
+// =============================================================================
+
+// SetWhitelistOverlapCount sets the number of overlapping IPs
+func SetWhitelistOverlapCount(count int) {
+	whitelistOverlapCount.Set(float64(count))
 }
 
 // =============================================================================
