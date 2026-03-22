@@ -54,7 +54,7 @@ if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" || return 1
 else
     echo "ERROR: nftban_task_queue.sh not found" >&2
-    exit 1
+    return 1
 fi
 
 # =============================================================================

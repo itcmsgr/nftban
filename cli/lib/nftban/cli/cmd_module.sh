@@ -66,7 +66,7 @@ if [[ ! $(type -t nftban_module_report_status) == "function" ]]; then
         source "${LIB_DIR}/core/nftban_report_module.sh" || return 1
     else
         echo "ERROR: nftban_report_module.sh not found at ${LIB_DIR}/core" >&2
-        exit 1
+        return 1
     fi
 fi
 

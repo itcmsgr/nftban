@@ -41,7 +41,7 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 else
     echo "ERROR: version.sh library not found" >&2
-    exit 1
+    return 1
 fi
 
 # Prevent double-loading

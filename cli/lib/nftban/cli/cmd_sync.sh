@@ -49,7 +49,7 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_sync.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_sync.sh" || return 1
 else
     echo "ERROR: Sync module not found: ${NFTBAN_LIB_DIR}/core/nftban_sync.sh" >&2
-    exit 1
+    return 1
 fi
 
 # =============================================================================

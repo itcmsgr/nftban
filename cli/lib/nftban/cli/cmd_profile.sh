@@ -292,7 +292,7 @@ nftban_cmd_profile() {
             echo ""
             echo "For configuration, use the wizard:"
             echo "  sudo nftban wizard"
-            exit 1
+            return 1
             ;;
     esac
 

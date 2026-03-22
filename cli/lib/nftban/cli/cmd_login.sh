@@ -91,7 +91,7 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" || return 1
 else
     echo "ERROR: Login alert module not found at ${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" >&2
-    exit 1
+    return 1
 fi
 
 # Load main login module (for multi-service detection: SSH, Dovecot, Postfix, Exim)
@@ -561,7 +561,7 @@ nftban_login_cmd_run() {
 
     if [[ "$alert_enabled" != "true" ]]; then
         echo "ERROR: Login alerts are disabled in configuration" >&2
-        exit 1
+        return 1
     fi
 
     # Use consolidated login module (SSH + mail services)
@@ -569,7 +569,7 @@ nftban_login_cmd_run() {
         # Initialize and detect services
         nftban_login_init || {
             echo "ERROR: Failed to initialize login module" >&2
-            exit 1
+            return 1
         }
 
         # Build detected services list for banner
@@ -1262,7 +1262,7 @@ nftban_cmd_login() {
             nftban_banner
             echo "ERROR: Unknown command: $subcommand" >&2
             echo "Run 'nftban login help' for usage information" >&2
-            exit 1
+            return 1
             ;;
     esac
 }
