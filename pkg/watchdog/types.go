@@ -197,6 +197,8 @@ type NFTablesMetrics struct {
 	SetElements      map[string]int `json:"set_elements"`       // set_name -> count
 	CountersEnabled  bool           `json:"counters_enabled"`   // Whether rules have counters
 	LastApplyLatency float64        `json:"last_apply_latency"` // Seconds
+	SchemaValid      bool           `json:"schema_valid"`                  // v1.34.0
+	SchemaErrors     []string       `json:"schema_errors,omitempty"`       // v1.34.0
 }
 
 // =============================================================================
