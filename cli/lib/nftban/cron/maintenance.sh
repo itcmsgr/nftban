@@ -286,6 +286,42 @@ EOF
     fi
 
     # ==========================================================================
+    # 1b. SYNPROXY Jump Order Check (CRITICAL - SSH Lockout Prevention)
+    # ==========================================================================
+    # v1.33.0: If DDoS SYNPROXY is enabled, its jump in the input chain MUST be
+    # BEFORE 'ct state established,related accept'. Otherwise, notracked packets
+    # (from SYNPROXY raw rules) never match conntrack and get dropped by policy,
+    # causing SSH lockout for non-whitelisted IPs.
+    if [[ "$_nft_table_available" == "true" ]]; then
+        local family
+        for family in ip ip6; do
+            local table_fam="${family} nftban"
+            # Check if SYNPROXY jump exists in the chain
+            local synproxy_handle established_handle
+            synproxy_handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+                | grep 'jump ddos_synproxy' | grep -oP 'handle \K\d+' | head -1 || true)
+            established_handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+                | grep 'ct state established,related accept' | grep -oP 'handle \K\d+' | head -1 || true)
+
+            if [[ -n "$synproxy_handle" ]] && [[ -n "$established_handle" ]]; then
+                # Both exist — check ordering (lower handle = earlier in chain)
+                if [[ "$synproxy_handle" -gt "$established_handle" ]]; then
+                    log "WARN" "SYNPROXY jump is AFTER established rule in ${family} — SSH lockout risk!"
+                    log "INFO" "Auto-fixing: moving SYNPROXY jump before established rule..."
+                    # Remove the misplaced jump
+                    nft delete rule ${table_fam} input handle "$synproxy_handle" 2>/dev/null || true
+                    # Re-insert before established,related
+                    nft insert rule ${table_fam} input position "$established_handle" \
+                        jump ddos_synproxy comment "\"SYNPROXY protection\"" 2>/dev/null || {
+                        log "WARN" "Failed to reposition SYNPROXY jump in ${family}"
+                    }
+                    log "INFO" "SYNPROXY jump repositioned in ${family} input chain"
+                fi
+            fi
+        done
+    fi
+
+    # ==========================================================================
     # 2. System IP Monitoring (Lockout Prevention)
     # ==========================================================================
     log "INFO" "[2/9] Checking system IP addresses..."
