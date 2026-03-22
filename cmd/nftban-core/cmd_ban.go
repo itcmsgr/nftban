@@ -22,7 +22,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -200,6 +202,13 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	if strings.Contains(targetSet, "blacklist_ipv4") && !strings.Contains(targetSet, "manual") ||
 		strings.Contains(targetSet, "blacklist_ipv6") && !strings.Contains(targetSet, "manual") {
 		setType = "interval set"
+	}
+
+	// v1.33.0: Set size warning for large interval sets (P1-7)
+	if setType == "interval set" {
+		if count := getSetCountFromCache(targetSet); count > 100000 {
+			fmt.Printf("  ⚠️  Target set %s has %d entries. Ban may take longer on interval sets.\n", targetSet, count)
+		}
 	}
 
 	ipcClient := ipc.NewClient()
@@ -401,6 +410,33 @@ func verifyBanInKernel(ip, setName string, isIPv4 bool) error {
 		return fmt.Errorf("%s not found in %s (kernel verification failed)", ip, setName)
 	}
 	return nil
+}
+
+// getSetCountFromCache reads the daemon's set count cache file to get element count.
+// Returns 0 if cache is unavailable (non-blocking, best-effort).
+func getSetCountFromCache(setName string) int {
+	data, err := os.ReadFile("/run/nftban/set_counts.json")
+	if err != nil {
+		return 0
+	}
+	var cache map[string]json.RawMessage
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return 0
+	}
+	setsData, ok := cache["sets"]
+	if !ok {
+		return 0
+	}
+	var sets map[string]map[string]any
+	if err := json.Unmarshal(setsData, &sets); err != nil {
+		return 0
+	}
+	if setInfo, ok := sets[setName]; ok {
+		if count, ok := setInfo["count"].(float64); ok {
+			return int(count)
+		}
+	}
+	return 0
 }
 
 // formatBanDuration returns a human-friendly duration string.
