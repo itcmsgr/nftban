@@ -64,6 +64,7 @@ USAGE:
 COMMANDS:
     enable              Enable DDoS protection (all configured protections)
     disable             Disable all DDoS protections
+    reload              Reload DDoS rules (re-reads config, strips SSH, no duplicates)
     status              Show status of all DDoS protections
     stats               Show DDoS statistics (use --json for GUI)
     test                Test DDoS protection rules
@@ -372,6 +373,14 @@ nftban_cmd_ddos() {
             nftban_ddos_disable
             ;;
 
+        reload)
+            # v1.34.0: Reload DDoS rules — re-reads config, strips SSH port,
+            # flushes raw table before re-adding (no duplicates)
+            echo "Reloading DDoS protection rules..."
+            nftban_ddos_disable 2>/dev/null || true
+            nftban_ddos_enable
+            ;;
+
         status)
             # Show status of all DDoS protections
             nftban_ddos_status
@@ -405,7 +414,7 @@ nftban_cmd_ddos() {
             ;;
 
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, stats, test, mode, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, reload, status, stats, test, mode, help" "$json_mode"
             return 1
             ;;
     esac

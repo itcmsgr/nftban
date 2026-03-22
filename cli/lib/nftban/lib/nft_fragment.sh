@@ -494,6 +494,21 @@ nft_fragment_render_synproxy() {
     local sack="${DDOS_SYNPROXY_SACK:-true}"
     local tstamp="${DDOS_SYNPROXY_TSTAMP:-true}"
     local ports="${DDOS_SYNPROXY_PORTS:-80,443,25,587,993,995,3306,5432,6379,27017}"
+
+    # v1.34.0 SECURITY FIX: Force-strip SSH port from SYNPROXY — notrack on SSH
+    # breaks conntrack for whitelisted IPs, causing SSH lockout under attack.
+    # The raw table fires before filter, so whitelisted IPs' SYN gets notracked,
+    # then subsequent ACK arrives as ct state INVALID and gets dropped.
+    local _ssh_port="${SSH_PORT:-22}"
+    [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state" ]] && \
+        _ssh_port=$(cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state" 2>/dev/null) || true
+    [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+    local _stripped_ports
+    _stripped_ports=$(echo "$ports" | tr ',' '\n' | grep -vxF "$_ssh_port" | tr '\n' ',' | sed 's/,$//')
+    if [[ "$_stripped_ports" != "$ports" ]]; then
+        log "WARN" "SYNPROXY: Stripped SSH port ${_ssh_port} from SYNPROXY ports (lockout prevention)" 2>/dev/null || true
+        ports="$_stripped_ports"
+    fi
     local log_prefix="${DDOS_SYNPROXY_LOG_PREFIX:-NFTBAN_SYNPROXY:}"
 
     # Build SYNPROXY options string
@@ -562,10 +577,22 @@ EOF
 nft_fragment_render_synproxy_raw() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
-    # v1.33.0: SSH removed from default SYNPROXY ports — SSH port is dynamic
-    # (user-configurable) and notrack breaks conntrack-based whitelist/blacklist.
-    # Users can add their SSH port back via DDOS_SYNPROXY_PORTS in config if needed.
     local ports="${DDOS_SYNPROXY_PORTS:-80,443,25,587,993,995,3306,5432,6379,27017}"
+
+    # v1.34.0 SECURITY FIX: Force-strip SSH port from SYNPROXY notrack rules.
+    # notrack in raw table fires BEFORE filter chain. Whitelisted IPs' SYN gets
+    # notracked → subsequent ACK arrives as ct state INVALID → DROPPED by first
+    # rule in input chain. This causes SSH lockout even for whitelisted IPs.
+    local _ssh_port="${SSH_PORT:-22}"
+    [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state" ]] && \
+        _ssh_port=$(cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state" 2>/dev/null) || true
+    [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+    local _stripped_ports
+    _stripped_ports=$(echo "$ports" | tr ',' '\n' | grep -vxF "$_ssh_port" | tr '\n' ',' | sed 's/,$//')
+    if [[ "$_stripped_ports" != "$ports" ]]; then
+        log "WARN" "SYNPROXY: Stripped SSH port ${_ssh_port} from notrack rules (lockout prevention)" 2>/dev/null || true
+        ports="$_stripped_ports"
+    fi
 
     nft_fragment_init || return 1
 
@@ -586,6 +613,8 @@ nft_fragment_render_synproxy_raw() {
 # --- IPv4 Raw Table (NOTRACK for SYNs) ---
 add table ip raw
 add chain ip raw prerouting { type filter hook prerouting priority raw; policy accept; }
+# v1.34.0: Flush before add to prevent duplicate notrack rules
+flush chain ip raw prerouting
 
 # Don't track SYN packets to SYNPROXY-protected ports (let SYNPROXY handle them)
 add rule ip raw prerouting tcp dport { ${ports} } tcp flags syn / syn,ack,fin,rst notrack comment "SYNPROXY: notrack SYN"
@@ -593,6 +622,8 @@ add rule ip raw prerouting tcp dport { ${ports} } tcp flags syn / syn,ack,fin,rs
 # --- IPv6 Raw Table (NOTRACK for SYNs) ---
 add table ip6 raw
 add chain ip6 raw prerouting { type filter hook prerouting priority raw; policy accept; }
+# v1.34.0: Flush before add to prevent duplicate notrack rules
+flush chain ip6 raw prerouting
 
 # Don't track SYN packets to SYNPROXY-protected ports
 add rule ip6 raw prerouting tcp dport { ${ports} } tcp flags syn / syn,ack,fin,rst notrack comment "SYNPROXY: notrack SYN"
