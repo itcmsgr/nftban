@@ -623,7 +623,24 @@ firewall_reload() {
     [[ "$quiet" == "false" ]] && echo "Syncing whitelist..."
     nftban whitelist sync --quick 2>/dev/null || true
 
+    # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
+    # firewall reload destroys DDoS chains (synproxy, portscan, ddos_protection).
+    # Without this step, reload leaves the server unprotected.
+    local _ddos_enabled="false"
+    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
+    if [[ -f "$_ddos_local_conf" ]]; then
+        _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
+    fi
+    if [[ "$_ddos_enabled" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying DDoS protection rules..."
+        nftban ddos reload 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply DDoS rules. Run: nftban ddos reload"
+        }
+    fi
+
     if [[ "$quiet" == "false" ]]; then
+        echo ""
+        echo "═══════════════════════════════════════════════════════"
         echo "Firewall rules reloaded successfully"
     fi
 }

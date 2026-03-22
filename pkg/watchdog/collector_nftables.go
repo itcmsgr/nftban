@@ -20,10 +20,12 @@ package watchdog
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/pkg/metrics"
 )
 
 // NFTablesCollector collects nftables metrics
@@ -39,6 +41,12 @@ type NFTablesCollector struct {
 	lastFullScan     time.Time
 	cachedRulesCount int
 	cacheDuration    time.Duration
+
+	// v1.34.0: Schema validation
+	schemaValidator  *SchemaValidator
+	schemaResult     *SchemaResult
+	schemaTick       int
+	schemaCheckEvery int // default 60 (= 5min at 5s base interval)
 }
 
 // NewNFTablesCollector creates a new nftables collector
@@ -47,8 +55,10 @@ func NewNFTablesCollector(cacheDuration time.Duration) *NFTablesCollector {
 		cacheDuration = 30 * time.Second
 	}
 	return &NFTablesCollector{
-		BaseCollector: NewBaseCollector("nftables"),
-		cacheDuration: cacheDuration,
+		BaseCollector:    NewBaseCollector("nftables"),
+		cacheDuration:    cacheDuration,
+		schemaValidator:  NewSchemaValidator(),
+		schemaCheckEvery: 60, // ~5 min at 5s base interval
 	}
 }
 
@@ -81,6 +91,25 @@ func (c *NFTablesCollector) Collect(ctx context.Context, snapshot *Snapshot) err
 
 	// Set last apply latency
 	snapshot.NFTables.LastApplyLatency = c.lastApplyLatency.Seconds()
+
+	// v1.34.0: Schema validation (every ~5 min)
+	c.schemaTick++
+	if c.schemaTick >= c.schemaCheckEvery {
+		c.schemaTick = 0
+		result := c.schemaValidator.Validate(conn)
+		c.schemaResult = &result
+		metrics.SetSchemaValidationStatus(!result.Valid)
+		metrics.SetSchemaErrorsTotal(len(result.Errors))
+		if !result.Valid {
+			log.Printf("[SCHEMA] Validation FAILED: %v", result.Errors)
+		}
+	}
+
+	// Populate schema result into snapshot
+	if c.schemaResult != nil {
+		snapshot.NFTables.SchemaValid = c.schemaResult.Valid
+		snapshot.NFTables.SchemaErrors = c.schemaResult.Errors
+	}
 
 	return nil
 }
