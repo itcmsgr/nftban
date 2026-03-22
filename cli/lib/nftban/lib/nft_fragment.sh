@@ -493,7 +493,7 @@ nft_fragment_render_synproxy() {
     local wscale="${DDOS_SYNPROXY_WSCALE:-7}"
     local sack="${DDOS_SYNPROXY_SACK:-true}"
     local tstamp="${DDOS_SYNPROXY_TSTAMP:-true}"
-    local ports="${DDOS_SYNPROXY_PORTS:-22,80,443,25,587,993,995,3306,5432,6379,27017}"
+    local ports="${DDOS_SYNPROXY_PORTS:-80,443,25,587,993,995,3306,5432,6379,27017}"
     local log_prefix="${DDOS_SYNPROXY_LOG_PREFIX:-NFTBAN_SYNPROXY:}"
 
     # Build SYNPROXY options string
@@ -562,7 +562,10 @@ EOF
 nft_fragment_render_synproxy_raw() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
-    local ports="${DDOS_SYNPROXY_PORTS:-22,80,443,25,587,993,995,3306,5432,6379,27017}"
+    # v1.33.0: SSH removed from default SYNPROXY ports — SSH port is dynamic
+    # (user-configurable) and notrack breaks conntrack-based whitelist/blacklist.
+    # Users can add their SSH port back via DDOS_SYNPROXY_PORTS in config if needed.
+    local ports="${DDOS_SYNPROXY_PORTS:-80,443,25,587,993,995,3306,5432,6379,27017}"
 
     nft_fragment_init || return 1
 
@@ -610,30 +613,43 @@ nft_fragment_render_synproxy_jump() {
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SYNPROXY_CHAIN:-ddos_synproxy}"
 
-    nft_fragment_init || return 1
+    # v1.33.0: SYNPROXY jump MUST be positioned BEFORE 'ct state established,related'
+    # because notrack (raw table) breaks conntrack for synproxied ports.
+    # If the jump is appended at the end (old behavior), untracked packets are
+    # dropped by policy before reaching the SYNPROXY chain → SSH lockout.
+    #
+    # Strategy: Find the handle of 'ct state established,related accept' in each
+    # input chain and insert the jump BEFORE it. Fall back to 'add rule' if the
+    # handle is not found (new install without stateful rule).
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/16-ddos-synproxy-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+    local family handle
+    for family in ip ip6; do
+        local table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan SYNPROXY - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
+        # Find handle of 'ct state established,related accept'
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep 'ct state established,related accept' \
+            | grep -oP 'handle \K\d+' | head -1)
 
-add rule ${table_ipv4} input jump ${chain} comment "SYNPROXY protection"
-add rule ${table_ipv6} input jump ${chain} comment "SYNPROXY protection"
-EOF
-    )
+        if [[ -n "$handle" ]]; then
+            # Insert BEFORE the established,related rule
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert SYNPROXY jump before handle $handle in ${table_fam}" >&2
+                # Fallback: append (better than nothing)
+                nft add rule ${table_fam} input jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null
+            }
+        else
+            # No established,related rule found — append
+            nft add rule ${table_fam} input jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null
+        fi
+    done
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
-
-    echo "$fragment_path"
+    # Return a dummy path for API compatibility (no file written)
+    echo "/dev/null"
 }
 
 # Remove only nftban-managed rules from raw prerouting chains
