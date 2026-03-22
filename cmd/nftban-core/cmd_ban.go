@@ -403,9 +403,16 @@ func verifyBanInKernel(ip, setName string, isIPv4 bool) error {
 	if !isIPv4 {
 		family = "ip6"
 	}
+	// Validate setName contains only safe characters (alphanumeric + underscore)
+	for _, c := range setName {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return fmt.Errorf("invalid set name: %s", setName)
+		}
+	}
+	// ip is already validated by net.ParseIP upstream in the ban flow
 	// nft get element ip nftban blacklist_manual_ipv4 { 1.2.3.4 }
-	//nolint:gosec // ip and setName are validated upstream
-	cmd := exec.Command("nft", "get", "element", family, "nftban", setName, "{ "+ip+" }")
+	args := []string{"get", "element", family, "nftban", setName, "{ " + ip + " }"}
+	cmd := exec.Command("nft", args...) //#nosec G204 -- args validated above
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s not found in %s (kernel verification failed)", ip, setName)
 	}
