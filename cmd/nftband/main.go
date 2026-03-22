@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/module"
@@ -67,6 +68,7 @@ func main() {
 		stats:     stats.NewCollector(stats.DefaultConfig()),
 		configDir: configDir,
 		connSem:   make(chan struct{}, MaxConcurrentIPCConns),
+		startedAt: time.Now(),
 	}
 
 	// Initialize dynamic watchdog

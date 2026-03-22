@@ -149,6 +149,10 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftband
 
+# v1.33.0: Rate-limit journal logging (prevent log spam during burst events)
+LogRateLimitIntervalSec=10s
+LogRateLimitBurst=1000
+
 [Install]
 WantedBy=multi-user.target
 Also=nftband.socket

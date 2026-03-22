@@ -193,7 +193,7 @@ _search_nftables() {
         local result
         result=$(
             set +e
-            timeout 2 nft get element "${table_family}" nftban "$set" "{ $ip }" &>/dev/null
+            timeout 10 nft get element "${table_family}" nftban "$set" "{ $ip }" &>/dev/null
             echo $?
         ) || true
 

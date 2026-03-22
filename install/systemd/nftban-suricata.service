@@ -101,6 +101,8 @@ LimitNPROC=512
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-suricata
+LogRateLimitIntervalSec=10s
+LogRateLimitBurst=1000
 
 [Install]
 WantedBy=multi-user.target
