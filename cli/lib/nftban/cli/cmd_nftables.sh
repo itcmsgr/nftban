@@ -327,7 +327,7 @@ nftban_cmd_nftables() {
         start)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_start
             ;;
@@ -335,7 +335,7 @@ nftban_cmd_nftables() {
         stop)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_stop
             ;;
@@ -343,7 +343,7 @@ nftban_cmd_nftables() {
         restart)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_restart
             ;;
@@ -351,7 +351,7 @@ nftban_cmd_nftables() {
         reload)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_reload
             ;;
@@ -359,7 +359,7 @@ nftban_cmd_nftables() {
         enable)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_enable
             ;;
@@ -367,7 +367,7 @@ nftban_cmd_nftables() {
         disable)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_disable
             ;;
@@ -387,7 +387,7 @@ nftban_cmd_nftables() {
         check)
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
-                exit 1
+                return 1
             fi
             _nftban_nftables_cmd_check
             ;;
@@ -404,7 +404,7 @@ nftban_cmd_nftables() {
             echo "ERROR: Unknown command: $action" >&2
             echo "" >&2
             echo "Run 'nftban nftables help' for available commands" >&2
-            exit 1
+            return 1
             ;;
     esac
 

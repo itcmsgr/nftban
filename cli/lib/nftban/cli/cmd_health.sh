@@ -88,11 +88,11 @@ for _module in "${_cmd_health_modules[@]}"; do
         # shellcheck source=/dev/null
         source "$_module_path" || {
             echo "ERROR: Failed to load health module: $_module" >&2
-            exit 1
+            return 1
         }
     else
         echo "ERROR: Health module not found: $_module_path" >&2
-        exit 1
+        return 1
     fi
 done
 

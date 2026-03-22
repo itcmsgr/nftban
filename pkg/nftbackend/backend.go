@@ -57,10 +57,12 @@ type Backend struct {
 	// Cached tables and sets for performance
 	tableIPv4 *nftables.Table
 	tableIPv6 *nftables.Table
-	setBlacklistIPv4 *nftables.Set
-	setBlacklistIPv6 *nftables.Set
-	setWhitelistIPv4 *nftables.Set
-	setWhitelistIPv6 *nftables.Set
+	setBlacklistIPv4       *nftables.Set // interval set for feeds/geoban
+	setBlacklistIPv6       *nftables.Set
+	setBlacklistManualIPv4 *nftables.Set // hash set for manual/auto-detect (v1.33.0)
+	setBlacklistManualIPv6 *nftables.Set
+	setWhitelistIPv4       *nftables.Set
+	setWhitelistIPv6       *nftables.Set
 
 	// Configuration (string form for legacy compatibility)
 	tableIPv4Str string
@@ -108,6 +110,9 @@ func (b *Backend) initCachedObjects() {
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "blacklist_ipv4", true); err == nil {
 			b.setBlacklistIPv4 = set
 		}
+		if set, err := b.nft.GetOrCreateHashSet(table, "blacklist_manual_ipv4", true); err == nil {
+			b.setBlacklistManualIPv4 = set
+		}
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "whitelist_ipv4", true); err == nil {
 			b.setWhitelistIPv4 = set
 		}
@@ -118,6 +123,9 @@ func (b *Backend) initCachedObjects() {
 		b.tableIPv6 = table
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "blacklist_ipv6", false); err == nil {
 			b.setBlacklistIPv6 = set
+		}
+		if set, err := b.nft.GetOrCreateHashSet(table, "blacklist_manual_ipv6", false); err == nil {
+			b.setBlacklistManualIPv6 = set
 		}
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "whitelist_ipv6", false); err == nil {
 			b.setWhitelistIPv6 = set
@@ -155,29 +163,55 @@ func (b *Backend) ensureNetlink() error {
 	return nil
 }
 
-// getBlacklistSet returns the appropriate blacklist set for an IP
-func (b *Backend) getBlacklistSet(ipStr string) (*nftables.Set, bool, error) {
+// isManualSource returns true if the source routes to hash sets (manual/auto-detect)
+func isManualSource(source string) bool {
+	switch source {
+	case "manual", "cli", "login", "portscan", "portscan-classic", "portscan-suricata",
+		"ddos", "ddos-classic", "ddos-suricata", "suricata", "persistent":
+		return true
+	default:
+		return false
+	}
+}
+
+// getBlacklistSetForSource returns the appropriate set based on source + IP family
+// v1.33.0: Manual/auto-detect sources → hash set, feeds/geoban → interval set
+func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set, string, bool, error) {
 	ip := net.ParseIP(ipStr)
 	isIPv6 := false
 
 	if ip != nil {
 		isIPv6 = ip.To4() == nil
 	} else {
-		// CIDR - check if contains ':'
 		isIPv6 = strings.Contains(ipStr, ":")
 	}
 
+	manual := isManualSource(source)
+
 	if isIPv6 {
-		if b.setBlacklistIPv6 == nil {
-			return nil, true, fmt.Errorf("blacklist_ipv6 set not initialized")
+		if manual {
+			if b.setBlacklistManualIPv6 == nil {
+				return nil, "", true, fmt.Errorf("blacklist_manual_ipv6 set not initialized")
+			}
+			return b.setBlacklistManualIPv6, "blacklist_manual_ipv6", true, nil
 		}
-		return b.setBlacklistIPv6, true, nil
+		if b.setBlacklistIPv6 == nil {
+			return nil, "", true, fmt.Errorf("blacklist_ipv6 set not initialized")
+		}
+		return b.setBlacklistIPv6, "blacklist_ipv6", true, nil
+	}
+
+	if manual {
+		if b.setBlacklistManualIPv4 == nil {
+			return nil, "", false, fmt.Errorf("blacklist_manual_ipv4 set not initialized")
+		}
+		return b.setBlacklistManualIPv4, "blacklist_manual_ipv4", false, nil
 	}
 
 	if b.setBlacklistIPv4 == nil {
-		return nil, false, fmt.Errorf("blacklist_ipv4 set not initialized")
+		return nil, "", false, fmt.Errorf("blacklist_ipv4 set not initialized")
 	}
-	return b.setBlacklistIPv4, false, nil
+	return b.setBlacklistIPv4, "blacklist_ipv4", false, nil
 }
 
 // BanRequest contains parameters for banning an IP
@@ -222,8 +256,12 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 		return nil, err
 	}
 
-	// Get appropriate set
-	set, isIPv6, err := b.getBlacklistSet(req.IP)
+	// Get appropriate set based on source (v1.33.0: hash vs interval routing)
+	source := req.Source
+	if source == "" {
+		source = "manual"
+	}
+	set, setName, isIPv6, err := b.getBlacklistSetForSource(req.IP, source)
 	if err != nil {
 		b.stats.Errors++
 		b.stats.LastError = err.Error()
@@ -240,10 +278,8 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 
 	b.stats.Bans++
 
-	setName := "blacklist_ipv4"
 	tableName := b.tableIPv4Str
 	if isIPv6 {
-		setName = "blacklist_ipv6"
 		tableName = b.tableIPv6Str
 	}
 
@@ -268,9 +304,9 @@ type UnbanResult struct {
 	Message string
 }
 
-// Unban removes an IP from the appropriate blacklist set
+// Unban removes an IP from all blacklist sets (hash + interval)
 // This is the ONLY authorized unban implementation
-// Uses netlink for ~50x faster performance vs CLI
+// v1.33.0: Tries hash set first (fast), then interval set
 func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -293,48 +329,92 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 		return nil, err
 	}
 
-	// Get appropriate set
-	set, isIPv6, err := b.getBlacklistSet(req.IP)
-	if err != nil {
-		b.stats.Errors++
-		b.stats.LastError = err.Error()
-		return nil, err
+	isIPv6 := false
+	if ip != nil {
+		isIPv6 = ip.To4() == nil
+	} else {
+		isIPv6 = strings.Contains(req.IP, ":")
 	}
 
-	// Delete IP from set
-	if err := b.nft.DeleteSetElements(set, []string{req.IP}); err != nil {
-		// Check if it's a "not found" error (not a real error)
-		if errors.Is(err, os.ErrNotExist) {
-			setName := "blacklist_ipv4"
+	// v1.33.0: Try removing from both sets (hash first, then interval)
+	// We don't know which set the IP is in, so try both
+	var removedFrom string
+	tableName := b.tableIPv4Str
+	if isIPv6 {
+		tableName = b.tableIPv6Str
+	}
+
+	// Try hash set first (O(1), fast)
+	var manualSet *nftables.Set
+	if isIPv6 {
+		manualSet = b.setBlacklistManualIPv6
+	} else {
+		manualSet = b.setBlacklistManualIPv4
+	}
+	if manualSet != nil {
+		err := b.nft.DeleteSetElements(manualSet, []string{req.IP})
+		if err == nil {
 			if isIPv6 {
-				setName = "blacklist_ipv6"
+				removedFrom = "blacklist_manual_ipv6"
+			} else {
+				removedFrom = "blacklist_manual_ipv4"
 			}
-			return &UnbanResult{
-				Success: true,
-				IP:      req.IP,
-				Set:     setName,
-				Message: "IP was not in blocklist",
-			}, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("netlink error: %v", err)
+			return nil, fmt.Errorf("nft delete element failed: %w", err)
 		}
-		b.stats.Errors++
-		b.stats.LastError = fmt.Sprintf("netlink error: %v", err)
-		return nil, fmt.Errorf("nft delete element failed: %w", err)
+	}
+
+	// Try interval set
+	var intervalSet *nftables.Set
+	if isIPv6 {
+		intervalSet = b.setBlacklistIPv6
+	} else {
+		intervalSet = b.setBlacklistIPv4
+	}
+	if intervalSet != nil {
+		err := b.nft.DeleteSetElements(intervalSet, []string{req.IP})
+		if err == nil {
+			if removedFrom == "" {
+				if isIPv6 {
+					removedFrom = "blacklist_ipv6"
+				} else {
+					removedFrom = "blacklist_ipv4"
+				}
+			} else {
+				removedFrom += " + blacklist_ipv4"
+				if isIPv6 {
+					removedFrom = removedFrom[:len(removedFrom)-len("blacklist_ipv4")] + "blacklist_ipv6"
+				}
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("netlink error: %v", err)
+			return nil, fmt.Errorf("nft delete element failed: %w", err)
+		}
+	}
+
+	if removedFrom == "" {
+		setName := "blacklist_ipv4"
+		if isIPv6 {
+			setName = "blacklist_ipv6"
+		}
+		return &UnbanResult{
+			Success: true,
+			IP:      req.IP,
+			Set:     setName,
+			Message: "IP was not in blocklist",
+		}, nil
 	}
 
 	b.stats.Unbans++
 
-	setName := "blacklist_ipv4"
-	tableName := b.tableIPv4Str
-	if isIPv6 {
-		setName = "blacklist_ipv6"
-		tableName = b.tableIPv6Str
-	}
-
 	return &UnbanResult{
 		Success: true,
 		IP:      req.IP,
-		Set:     setName,
-		Message: fmt.Sprintf("removed from %s %s", tableName, setName),
+		Set:     removedFrom,
+		Message: fmt.Sprintf("removed from %s %s", tableName, removedFrom),
 	}, nil
 }
 
@@ -574,33 +654,42 @@ func (b *Backend) CheckIP(ctx context.Context, ip string) (bool, string, error) 
 		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
 	}
 
-	var set *nftables.Set
-	var setName string
+	// v1.33.0: Check hash set first (O(1), fast), then interval set
+	type setCheck struct {
+		set  *nftables.Set
+		name string
+	}
+	var setsToCheck []setCheck
 	if isIPv6 {
-		set = b.setBlacklistIPv6
-		setName = "blacklist_ipv6"
-	} else {
-		set = b.setBlacklistIPv4
-		setName = "blacklist_ipv4"
-	}
-
-	if set == nil {
-		// Fall back to CLI
-		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
-	}
-
-	// Get set elements via netlink
-	elements, err := b.nft.GetSetElements(set)
-	if err != nil {
-		// Fall back to CLI on error
-		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
-	}
-
-	// Check if IP is in elements
-	for _, elem := range elements {
-		if elem == normalizedIP || strings.HasPrefix(elem, normalizedIP+"/") {
-			return true, setName, nil
+		setsToCheck = []setCheck{
+			{b.setBlacklistManualIPv6, "blacklist_manual_ipv6"},
+			{b.setBlacklistIPv6, "blacklist_ipv6"},
 		}
+	} else {
+		setsToCheck = []setCheck{
+			{b.setBlacklistManualIPv4, "blacklist_manual_ipv4"},
+			{b.setBlacklistIPv4, "blacklist_ipv4"},
+		}
+	}
+
+	for _, sc := range setsToCheck {
+		if sc.set == nil {
+			continue
+		}
+		elements, err := b.nft.GetSetElements(sc.set)
+		if err != nil {
+			continue
+		}
+		for _, elem := range elements {
+			if elem == normalizedIP || strings.HasPrefix(elem, normalizedIP+"/") {
+				return true, sc.name, nil
+			}
+		}
+	}
+
+	// Fall back to CLI if netlink had issues
+	if b.setBlacklistIPv4 == nil && b.setBlacklistManualIPv4 == nil {
+		return b.checkIPCLI(ctx, normalizedIP, isIPv6)
 	}
 
 	return false, "", nil
@@ -674,6 +763,8 @@ func (b *Backend) InvalidateCache() {
 	b.tableIPv6 = nil
 	b.setBlacklistIPv4 = nil
 	b.setBlacklistIPv6 = nil
+	b.setBlacklistManualIPv4 = nil
+	b.setBlacklistManualIPv6 = nil
 	b.setWhitelistIPv4 = nil
 	b.setWhitelistIPv6 = nil
 

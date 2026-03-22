@@ -197,6 +197,9 @@ type Daemon struct {
 	peakConns       int64      // Peak connections since reset (atomic)
 	activeConnsMu   sync.Mutex // Protects peak calculation
 
+	// v1.33.0: Daemon start time for uptime calculation
+	startedAt time.Time // Set when daemon starts
+
 	// Signal handling for PID cleanup
 	sigCh           chan os.Signal // Signal channel for shutdown
 	startupComplete bool           // True when initialization is complete

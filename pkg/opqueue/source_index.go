@@ -29,10 +29,12 @@ const (
 )
 
 // persistSets defines which sets need source tracking persistence
-// v2.1: All bans go to unified blacklist - track sources in database
+// v1.33.0: Both interval (feeds) and hash (manual) sets need tracking
 var persistSets = map[string]bool{
-	"blacklist_ipv4": true,
-	"blacklist_ipv6": true,
+	"blacklist_ipv4":        true,
+	"blacklist_ipv6":        true,
+	"blacklist_manual_ipv4": true,
+	"blacklist_manual_ipv6": true,
 }
 
 // IndexEntry represents a persisted index entry
@@ -347,9 +349,9 @@ func (si *SourceIndex) Stop() {
 
 // ReconcileWithBackend syncs index with actual nft state
 // Uses O(n) map lookups instead of O(n²) nested loops
-// v2.1: Only unified blacklist sets need reconciliation
+// v1.33.0: Both interval and hash blacklist sets need reconciliation
 func (si *SourceIndex) ReconcileWithBackend(backend NetlinkBackend) {
-	for _, setName := range []string{"blacklist_ipv4", "blacklist_ipv6"} {
+	for _, setName := range []string{"blacklist_ipv4", "blacklist_ipv6", "blacklist_manual_ipv4", "blacklist_manual_ipv6"} {
 		elements, err := backend.GetSetElements("nftban", setName)
 		if err != nil {
 			continue

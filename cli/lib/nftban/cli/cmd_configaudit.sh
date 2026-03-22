@@ -44,7 +44,7 @@ if [[ -f "$CONFIG_HANDLER" ]]; then
     source "$CONFIG_HANDLER" || return 1
 else
     echo "ERROR: Config handler not found: $CONFIG_HANDLER" >&2
-    exit 1
+    return 1
 fi
 
 # =============================================================================

@@ -122,9 +122,15 @@ collect_all_metrics() {
             if [[ -n "$counts_json" ]] && command -v jq &>/dev/null; then
                 # v1.32.0: Handle both daemon cache format and legacy kernel format
                 if echo "$counts_json" | jq -e '.sets' &>/dev/null; then
-                    # Daemon cache format: .sets.blacklist_ipv4.count
-                    active_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv4.count // 0')
-                    active_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv6.count // 0')
+                    # Daemon cache format: .sets.<setname>.count
+                    # v1.33.0: Sum interval (feeds) + hash (manual) sets
+                    local bl_interval_v4 bl_manual_v4 bl_interval_v6 bl_manual_v6
+                    bl_interval_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv4.count // 0')
+                    bl_manual_v4=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv4.count // 0')
+                    bl_interval_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_ipv6.count // 0')
+                    bl_manual_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv6.count // 0')
+                    active_v4=$((bl_interval_v4 + bl_manual_v4))
+                    active_v6=$((bl_interval_v6 + bl_manual_v6))
                     # Temp/perm split not available from daemon cache — report all as permanent
                     blacklist_v4_temp=0
                     blacklist_v6_temp=0
@@ -142,8 +148,14 @@ collect_all_metrics() {
             fi
         elif command -v nft &>/dev/null; then
             # Fallback: Use direct nft_schema.sh counting functions
-            active_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
-            active_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+            # v1.33.0: Sum interval (feeds) + hash (manual) sets
+            local fb_interval_v4 fb_manual_v4 fb_interval_v6 fb_manual_v6
+            fb_interval_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+            fb_manual_v4=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
+            fb_interval_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+            fb_manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
+            active_v4=$((fb_interval_v4 + fb_manual_v4))
+            active_v6=$((fb_interval_v6 + fb_manual_v6))
             blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo 0)
             blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
             blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))

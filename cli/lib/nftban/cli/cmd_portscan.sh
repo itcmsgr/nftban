@@ -419,7 +419,7 @@ nftban_cmd_portscan() {
     else
         echo "ERROR: Port scan detection module not found"
         echo "Expected: ${NFTBAN_LIB_DIR}/core/nftban_portscan.sh"
-        exit 1
+        return 1
     fi
 
     # NOTE: Root check removed - nftables operations require CAP_NET_ADMIN
@@ -476,7 +476,7 @@ nftban_cmd_portscan() {
             if [[ -z "$log_source" ]]; then
                 echo "❌ No suitable log source found"
                 echo "   Tried: /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl"
-                exit 1
+                return 1
             fi
 
             if [[ "$use_journalctl" == "true" ]]; then
@@ -591,7 +591,7 @@ nftban_cmd_portscan() {
             echo ""
             echo "Available commands: enable, disable, status, check, history, test, mode, sync, help"
             echo "Run 'nftban portscan help' for detailed usage information"
-            exit 1
+            return 1
             ;;
     esac
 

@@ -97,7 +97,7 @@ if [[ ! $(type -t nftban_feeds_discover_all) == "function" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" || return 1
     else
         echo "ERROR: nftban_feeds.sh not found" >&2
-        exit 1
+        return 1
     fi
 fi
 
@@ -525,7 +525,7 @@ nftban_cmd_feeds() {
                 else
                     echo "ERROR: Usage: nftban feeds enable <feed_name>" >&2
                 fi
-                exit 1
+                return 1
             fi
             nftban_feeds_enable_json "$1" "$json_mode"
             ;;
@@ -540,7 +540,7 @@ nftban_cmd_feeds() {
                 case "$1" in
                     --clean) ;; # v1.18.1: now default, kept for backwards compat
                     --json) ;; # already handled
-                    -*) echo "Unknown option: $1" >&2; exit 1 ;;
+                    -*) echo "Unknown option: $1" >&2; return 1 ;;
                     *) feed_name="$1" ;;
                 esac
                 shift
@@ -551,7 +551,7 @@ nftban_cmd_feeds() {
                 else
                     echo "ERROR: Usage: nftban feeds disable <feed_name>" >&2
                 fi
-                exit 1
+                return 1
             fi
             # v1.18.1: nftban_feeds_disable now handles cache cleanup + IPC flush automatically
             nftban_feeds_disable_json "$feed_name" "$json_mode"
@@ -563,7 +563,7 @@ nftban_cmd_feeds() {
             fi
             if [[ $# -lt 1 ]]; then
                 echo "ERROR: Usage: nftban feeds enable-category <category>" >&2
-                exit 1
+                return 1
             fi
             local cat_feeds
             cat_feeds=$(nftban_feeds_get_by_category "$1")
@@ -574,7 +574,7 @@ nftban_cmd_feeds() {
                 echo "Available categories: protection, ssh, web, email, anonymity"
                 echo ""
                 echo "Run 'nftban feeds list' to see all feeds by category"
-                exit 1
+                return 1
             fi
 
             echo "⏳ Enabling all feeds in category: $1"
@@ -638,7 +638,7 @@ nftban_cmd_feeds() {
         *)
             echo "ERROR: Unknown feeds action: $action" >&2
             _nftban_feeds_help
-            exit 1
+            return 1
             ;;
     esac
 }
@@ -917,7 +917,7 @@ nftban_feeds_update_json() {
                 echo "✓ Feed updated successfully"
             else
                 echo "✗ Feed update failed (check ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log)"
-                exit 1
+                return 1
             fi
         else
             nftban_feeds_update_all

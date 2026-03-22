@@ -82,21 +82,24 @@ readonly NFTBAN_TABLE_IPV4="${NFTBAN_TABLE_IPV4_FAMILY} ${NFTBAN_TABLE_IPV4_NAME
 
 # Sets in ip nftban (IPv4)
 # =============================================================================
-# v2.1 MINIMAL SCHEMA - CIDR Aggregation, No IP Duplicates
+# v2.2 DUAL SET SCHEMA - Hash + Interval (v1.33.0)
 # =============================================================================
-# Only 2 IP sets + 4 directional port sets per table
-# - Feeds, geoban, auto, manual ALL go to blacklist_ipv4 (no separate sets)
+# 3 IP sets + 4 directional port sets per table
+# - Feeds, geoban → blacklist_ipv4 (interval set, CIDR aggregation)
+# - Manual, auto-detect → blacklist_manual_ipv4 (hash set, O(1))
 # - Temp bans use timeout parameter (auto-expire)
 # - Source tracking done in daemon database
-# - CIDR aggregation reduces memory usage
 # =============================================================================
 declare -g -A NFTBAN_IPV4_SETS=(
     # Whitelist - trusted IPs/networks (CIDR aggregated)
     ["whitelist_ipv4"]="ipv4_addr|interval|Trusted IPs/networks (auto-merge)"
 
-    # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
+    # Blacklist - Feed/geoban bans (CIDR aggregated, interval set)
     # Temp bans use timeout parameter (auto-expire)
-    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|All bans (feeds+geoban+auto+manual, auto-merge)"
+    ["blacklist_ipv4"]="ipv4_addr|interval,timeout|Feed and geoban bans (CIDR aggregated, auto-merge)"
+
+    # Blacklist Manual - Manual/auto-detect bans (hash set, O(1) performance)
+    ["blacklist_manual_ipv4"]="ipv4_addr|timeout|Manual and auto-detect bans (hash O(1))"
 
     # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
@@ -147,15 +150,18 @@ readonly NFTBAN_TABLE_IPV6="${NFTBAN_TABLE_IPV6_FAMILY} ${NFTBAN_TABLE_IPV6_NAME
 
 # Sets in ip6 nftban (IPv6)
 # =============================================================================
-# v2.1 MINIMAL SCHEMA - Same as IPv4 (CIDR aggregated, no IP duplicates)
+# v2.2 DUAL SET SCHEMA - Same as IPv4 (hash + interval)
 # =============================================================================
 declare -g -A NFTBAN_IPV6_SETS=(
     # Whitelist - trusted IPv6/networks (CIDR aggregated)
     ["whitelist_ipv6"]="ipv6_addr|interval|Trusted IPv6/networks (auto-merge)"
 
-    # Blacklist - ALL bans: feeds, geoban, auto, manual (CIDR aggregated)
+    # Blacklist - Feed/geoban bans (CIDR aggregated, interval set)
     # Temp bans use timeout parameter (auto-expire)
-    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|All bans (feeds+geoban+auto+manual, auto-merge)"
+    ["blacklist_ipv6"]="ipv6_addr|interval,timeout|Feed and geoban bans (CIDR aggregated, auto-merge)"
+
+    # Blacklist Manual - Manual/auto-detect bans (hash set, O(1) performance)
+    ["blacklist_manual_ipv6"]="ipv6_addr|timeout|Manual and auto-detect bans (hash O(1))"
 
     # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
@@ -518,9 +524,13 @@ nftban_nft_get_set_name() {
         whitelist|trust)
             echo "whitelist_${suffix}"
             ;;
-        # v2.1: ALL ban sources go to unified blacklist
-        feeds|geoban|country|login|portscan|ddos|suricata|auto|manual|cli|ban|unban|blacklist|tempban|fail2ban|*)
+        # v1.33.0: Bulk sources stay in interval set (CIDR aggregation)
+        feeds|geoban|country)
             echo "blacklist_${suffix}"
+            ;;
+        # v1.33.0: Manual/auto-detect sources go to hash set (O(1))
+        login|portscan|ddos|suricata|auto|manual|cli|ban|unban|blacklist|tempban|fail2ban|*)
+            echo "blacklist_manual_${suffix}"
             ;;
     esac
 }
@@ -656,11 +666,16 @@ nftban_nft_count_set_with_timeout() {
 
 nftban_nft_count_blacklist() {
     # Fast count of blacklist elements (IPv4 + IPv6)
+    # v1.33.0: Counts both hash (manual) and interval (feeds) sets
     # Returns: "ipv4_count ipv6_count total_count"
 
-    local v4_count v6_count
-    v4_count=$(nftban_nft_count_set ip nftban blacklist_ipv4)
-    v6_count=$(nftban_nft_count_set ip6 nftban blacklist_ipv6)
+    local v4_interval v4_manual v6_interval v6_manual v4_count v6_count
+    v4_interval=$(nftban_nft_count_set ip nftban blacklist_ipv4)
+    v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4)
+    v6_interval=$(nftban_nft_count_set ip6 nftban blacklist_ipv6)
+    v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6)
+    v4_count=$((v4_interval + v4_manual))
+    v6_count=$((v6_interval + v6_manual))
 
     echo "$v4_count $v6_count $((v4_count + v6_count))"
 }
@@ -681,10 +696,12 @@ nftban_nft_count_all_sets() {
     # Returns JSON with all counts for efficient batch operations and unified metrics
     # v2.1: Only whitelist + blacklist (all bans unified)
 
-    # Core IP sets (v2.1 minimal schema)
-    local bl_v4 bl_v6 wl_v4 wl_v6
+    # Core IP sets (v1.33.0: interval + hash sets)
+    local bl_v4 bl_v6 wl_v4 wl_v6 bl_manual_v4 bl_manual_v6
     bl_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
     bl_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+    bl_manual_v4=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
+    bl_manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
     wl_v4=$(nftban_nft_count_set ip nftban whitelist_ipv4 2>/dev/null || echo 0)
     wl_v6=$(nftban_nft_count_set ip6 nftban whitelist_ipv6 2>/dev/null || echo 0)
 
@@ -715,9 +732,10 @@ nftban_nft_count_all_sets() {
 
     cat <<EOF
 {
-  "schema_version": "2.1",
+  "schema_version": "2.2",
   "whitelist": {"ipv4": $wl_v4, "ipv6": $wl_v6, "total": $((wl_v4 + wl_v6))},
-  "blacklist": {"ipv4": $bl_v4, "ipv6": $bl_v6, "total": $((bl_v4 + bl_v6)), "note": "all bans unified (feeds+geoban+auto+manual)"},
+  "blacklist": {"ipv4": $bl_v4, "ipv6": $bl_v6, "total": $((bl_v4 + bl_v6)), "note": "feed and geoban bans (interval set)"},
+  "blacklist_manual": {"ipv4": $bl_manual_v4, "ipv6": $bl_manual_v6, "total": $((bl_manual_v4 + bl_manual_v6)), "note": "manual and auto-detect bans (hash set)"},
   "ports": {
     "tcp_in": $tcp_in, "tcp_out": $tcp_out,
     "udp_in": $udp_in, "udp_out": $udp_out,
@@ -730,9 +748,9 @@ nftban_nft_count_all_sets() {
     "total_tracked": $((bg_suspect + bg_pending + bg_allow + bg_grey + bg_ban + bg_emergency + bg6_suspect + bg6_pending + bg6_allow + bg6_grey + bg6_ban + bg6_emergency))
   },
   "totals": {
-    "blocked_ipv4": $bl_v4,
-    "blocked_ipv6": $bl_v6,
-    "blocked_total": $((bl_v4 + bl_v6)),
+    "blocked_ipv4": $((bl_v4 + bl_manual_v4)),
+    "blocked_ipv6": $((bl_v6 + bl_manual_v6)),
+    "blocked_total": $((bl_v4 + bl_v6 + bl_manual_v4 + bl_manual_v6)),
     "whitelisted": $((wl_v4 + wl_v6))
   }
 }
@@ -773,20 +791,28 @@ nftban_is_whitelisted() {
 }
 
 # Check if IP is in central blacklist (nftables set)
+# v1.33.0: Checks both hash set (manual) and interval set (feeds)
 nftban_is_blacklisted() {
     local ip="$1"
     [[ -z "$ip" ]] && return 1
 
     # Determine IP family
     local family="ip"
-    local set_name="blacklist_ipv4"
+    local manual_set="blacklist_manual_ipv4"
+    local interval_set="blacklist_ipv4"
     if [[ "$ip" == *:* ]]; then
         family="ip6"
-        set_name="blacklist_ipv6"
+        manual_set="blacklist_manual_ipv6"
+        interval_set="blacklist_ipv6"
     fi
 
-    # Check nftables blacklist set (SINGLE SOURCE OF TRUTH)
-    if nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+    # Check hash set first (O(1), fast)
+    if nft get element "$family" nftban "$manual_set" "{ $ip }" &>/dev/null; then
+        return 0
+    fi
+
+    # Check interval set (O(n) on large sets, but needed for feed bans)
+    if nft get element "$family" nftban "$interval_set" "{ $ip }" &>/dev/null; then
         return 0
     fi
 

@@ -80,7 +80,7 @@ nftban_cmd_trust() {
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_trust.sh" || return 1
     else
         echo "ERROR: Trust module not found" >&2
-        exit 1
+        return 1
     fi
 
     # Check root for state-changing operations
@@ -89,7 +89,7 @@ nftban_cmd_trust() {
             if [[ "$EUID" -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
                 echo "Please run with sudo: sudo nftban trust $action $provider" >&2
-                exit 1
+                return 1
             fi
             ;;
     esac
@@ -105,7 +105,7 @@ nftban_cmd_trust() {
                 echo ""
                 echo "Available providers:"
                 nftban_trust_list_providers
-                exit 1
+                return 1
             fi
             nftban_trust_enable "$provider"
             ;;
@@ -113,7 +113,7 @@ nftban_cmd_trust() {
             if [[ -z "$provider" ]]; then
                 echo "ERROR: Provider name required" >&2
                 echo "Usage: nftban trust disable <PROVIDER>" >&2
-                exit 1
+                return 1
             fi
             nftban_trust_disable "$provider"
             ;;
@@ -150,7 +150,7 @@ nftban_cmd_trust() {
             echo "ERROR: Unknown trust action: $action" >&2
             echo ""
             _nftban_trust_help
-            exit 1
+            return 1
             ;;
     esac
 }

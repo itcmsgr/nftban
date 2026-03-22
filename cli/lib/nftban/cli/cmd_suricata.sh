@@ -134,11 +134,11 @@ for _module in "${_cmd_suricata_modules[@]}"; do
         # shellcheck source=/dev/null
         source "$_module_path" || {
             echo "ERROR: Failed to load suricata module: $_module" >&2
-            exit 1
+            return 1
         }
     else
         echo "ERROR: Suricata module not found: $_module_path" >&2
-        exit 1
+        return 1
     fi
 done
 

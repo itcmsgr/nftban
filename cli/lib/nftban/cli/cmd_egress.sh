@@ -505,7 +505,7 @@ nftban_cmd_egress() {
     # Check root
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Egress commands require root privileges" >&2
-        exit 1
+        return 1
     fi
 
     case "$subcmd" in
