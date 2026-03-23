@@ -197,7 +197,7 @@ nftban_geoban_apply_to_nftables() {
     # Check if IPv4 table exists (required)
     if ! nft list table $table_v4 &>/dev/null; then
         nftban_error "Table $table_v4 does not exist"
-        nftban_info "Run: nft -f nftban firewall reload"
+        nftban_info "Run: nftban firewall reload"
         return 1
     fi
 
@@ -214,7 +214,7 @@ nftban_geoban_apply_to_nftables() {
 
     if ! timeout 10s nft list set $table_v4 "$set_v4" &>/dev/null; then
         nftban_error "Set $set_v4 does not exist in $table_v4"
-        nftban_info "Base nftables config missing. Run: nft -f nftban firewall reload"
+        nftban_info "Base nftables config missing. Run: nftban firewall reload"
         return 1
     fi
 

@@ -775,7 +775,7 @@ nftban_is_whitelisted() {
     fi
 
     # Check nftables whitelist set (SINGLE SOURCE OF TRUTH)
-    if nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+    if nft get element -- "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
         return 0
     fi
 
@@ -807,12 +807,12 @@ nftban_is_blacklisted() {
     fi
 
     # Check hash set first (O(1), fast)
-    if nft get element "$family" nftban "$manual_set" "{ $ip }" &>/dev/null; then
+    if nft get element -- "$family" nftban "$manual_set" "{ $ip }" &>/dev/null; then
         return 0
     fi
 
     # Check interval set (O(n) on large sets, but needed for feed bans)
-    if nft get element "$family" nftban "$interval_set" "{ $ip }" &>/dev/null; then
+    if nft get element -- "$family" nftban "$interval_set" "{ $ip }" &>/dev/null; then
         return 0
     fi
 

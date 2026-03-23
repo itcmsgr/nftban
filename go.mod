@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/a-h/templ v0.3.977
 	github.com/coreos/go-systemd/v22 v22.6.0
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/nftables v0.2.0
 	github.com/gorilla/mux v1.8.1

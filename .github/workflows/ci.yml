@@ -11,8 +11,9 @@
 # Checks:
 #   - ShellCheck (bash linting)
 #   - Go build & tests
-#   - Go security scanning (gosec, staticcheck)
+#   - Architecture policy (nft writes, netlink imports, API surface, import boundaries)
 #   - Syntax validation for all scripts
+# Note: gosec + staticcheck run in secure-go.yml (SARIF upload)
 # =============================================================================
 
 name: CI
@@ -52,9 +53,11 @@ jobs:
           #   - maintenance.sh + sync.go + portscan_classic.sh migrated to IPC
           #   - Remaining: ddos_classic.sh, cmd_port.sh, geoban.sh, etc.
           #
-          # Using --warn-all until Wave 3 complete (58 violations remaining)
-          # TODO: Remove --warn-all when all migrations done
-          ./scripts/ci/check-nft-writes.sh --warn-all
+          # WRITE enforcement active (v1.38.0):
+          #   Core system files (health_fixes, maintenance, autoheal, firewall-init,
+          #   nft_fragment, ddos_classic, geoban) are in the allowed-paths list.
+          #   CLI commands must still use IPC.
+          ./scripts/ci/check-nft-writes.sh
 
       - name: Check netlink import policy
         run: |
@@ -99,6 +102,71 @@ jobs:
           echo ""
           echo "✓ Netlink import policy: PASSED"
 
+      - name: Public API surface guard
+        run: |
+          echo "=== Checking public API boundary (pkg/) ==="
+          VIOLATIONS=0
+          for gofile in $(find pkg/ -name "*.go" -type f 2>/dev/null); do
+            dir=$(dirname "$gofile")
+            # Only pkg/ipc/ and pkg/version/ are allowed
+            case "$dir" in
+              pkg/ipc|pkg/ipc/*|pkg/version|pkg/version/*) ;;
+              *)
+                echo "❌ FAIL: $gofile is outside allowed pkg/ directories"
+                echo "   Only pkg/ipc/ and pkg/version/ may contain public Go files."
+                echo "   Move to internal/ for private packages."
+                VIOLATIONS=1
+                ;;
+            esac
+          done
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ Public API surface: PASS (only pkg/ipc and pkg/version)"
+
+      - name: Suppression comment audit
+        run: |
+          echo "=== Auditing suppression comments ==="
+          NOSEC_COUNT=$(grep -r '#nosec' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          NOLINT_COUNT=$(grep -r '//nolint:' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          LINT_IGNORE_COUNT=$(grep -r '//lint:ignore' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          echo "  #nosec:        $NOSEC_COUNT"
+          echo "  //nolint::     $NOLINT_COUNT"
+          echo "  //lint:ignore: $LINT_IGNORE_COUNT"
+          echo ""
+          # Fail if //nolint: directives exist (should use //lint:ignore for staticcheck)
+          if [[ "$NOLINT_COUNT" -gt 0 ]]; then
+            echo "❌ FAIL: Found $NOLINT_COUNT //nolint: directives"
+            echo "   Use //lint:ignore <CHECK> <reason> for staticcheck suppressions"
+            grep -rn '//nolint:' --include="*.go" . 2>/dev/null || true
+            exit 1
+          fi
+          echo "✓ Suppression audit: PASS"
+
+      - name: Import boundary guard
+        run: |
+          echo "=== Checking import boundaries ==="
+          # cmd/nftban-core/ must not import internal/nftbackend
+          if grep -r 'internal/nftbackend' cmd/nftban-core/ --include="*.go" 2>/dev/null; then
+            echo "❌ FAIL: cmd/nftban-core/ imports internal/nftbackend"
+            echo "   CLI must use pkg/ipc to communicate with daemon."
+            exit 1
+          fi
+          echo "✓ Import boundary: PASS (CLI does not import nftbackend)"
+
+      - name: FHS spec generated files check
+        run: |
+          echo "=== Verifying FHS spec generated files are up to date ==="
+          # Re-run generator in --check mode (diffs generated vs committed)
+          if ! ./build/generate-fhs-outputs.sh --check; then
+            echo ""
+            echo "❌ FAIL: Generated FHS files are out of date"
+            echo "   Run: ./build/generate-fhs-outputs.sh"
+            echo "   Then commit the updated generated files"
+            exit 1
+          fi
+          echo "✓ FHS spec: PASS (generated files match YAML spec)"
+
   # ===========================================================================
   # BASH VALIDATION
   # ===========================================================================
@@ -123,27 +191,27 @@ jobs:
       - name: ShellCheck core scripts
         run: |
           echo "=== ShellCheck: Core ==="
-          shellcheck -x -S warning cli/lib/nftban/core/*.sh || true
+          shellcheck -x -S warning cli/lib/nftban/core/*.sh
 
       - name: ShellCheck CLI scripts
         run: |
           echo "=== ShellCheck: CLI ==="
-          shellcheck -x -S warning cli/lib/nftban/cli/*.sh || true
+          shellcheck -x -S warning cli/lib/nftban/cli/*.sh
 
       - name: ShellCheck lib scripts
         run: |
           echo "=== ShellCheck: Lib ==="
-          shellcheck -x -S warning cli/lib/nftban/lib/*.sh || true
+          shellcheck -x -S warning cli/lib/nftban/lib/*.sh
 
       - name: ShellCheck setup scripts
         run: |
           echo "=== ShellCheck: Setup ==="
-          shellcheck -x -S warning cli/lib/nftban/setup/*.sh || true
+          shellcheck -x -S warning cli/lib/nftban/setup/*.sh
 
       - name: ShellCheck install scripts
         run: |
           echo "=== ShellCheck: Install ==="
-          shellcheck -x -S warning install/*.sh || true
+          shellcheck -x -S warning install/*.sh
           shellcheck -x -S warning install.sh build.sh
 
   # ===========================================================================
@@ -177,6 +245,13 @@ jobs:
       - name: Generate templ files
         run: $(go env GOPATH)/bin/templ generate
 
+      - name: Verify templ generated files are committed
+        run: |
+          git diff --exit-code -- '*_templ.go' || {
+            echo "::error ::Generated *_templ.go files are out of date. Run 'templ generate' and commit."
+            exit 1
+          }
+
       - name: Verify go mod tidy
         run: |
           go mod tidy
@@ -200,17 +275,6 @@ jobs:
       - name: Run tests (including IPC integration tests)
         run: go test -race -v ./...
 
-      - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
-
-      - name: Run staticcheck
-        run: $(go env GOPATH)/bin/staticcheck ./...
-
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
-
-      - name: Run gosec
-        run: $(go env GOPATH)/bin/gosec -quiet ./... || true
 
   # ===========================================================================
   # BUILD VERIFICATION

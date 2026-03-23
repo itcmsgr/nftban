@@ -94,6 +94,9 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 	// v1.35.0: Manual reconciliation trigger
 	case "reconcile":
 		return d.handleReconcileRequest()
+	// v1.38.0: Source index element count
+	case "source_index_count":
+		return d.handleSourceIndexCountRequest()
 	default:
 		return SocketResponse{
 			Success: false,

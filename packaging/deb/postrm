@@ -5,12 +5,31 @@ case "$1" in
     purge)
         # =============================================================================
         # FULL CLEANUP — must match RPM %postun ($1 -eq 0) section
+        # v1.38.0: Added config backup, proper nft cleanup sequence, sysctl removal
         # =============================================================================
 
-        # Remove runtime directories
+        # -----------------------------------------------------------------
+        # STEP 1: Backup user configuration before purge
+        # -----------------------------------------------------------------
+        BACKUP_DIR="/var/tmp/nftban-config-backup-$(date +%Y%m%d-%H%M%S)"
+        if [ -d /etc/nftban ]; then
+            echo "nftban: Backing up user configuration to ${BACKUP_DIR} ..."
+            mkdir -p "$BACKUP_DIR" 2>/dev/null || true
+            cp -a /etc/nftban "$BACKUP_DIR/" 2>/dev/null || true
+            if [ -d /var/lib/nftban/state ]; then
+                cp -a /var/lib/nftban/state "$BACKUP_DIR/" 2>/dev/null || true
+            fi
+            echo "nftban: Config backup saved. Restore with: cp -a ${BACKUP_DIR}/nftban /etc/"
+        fi
+
+        # -----------------------------------------------------------------
+        # STEP 2: Remove runtime directories
+        # -----------------------------------------------------------------
         rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
-        # Purge ALL systemd units (FULL list — must match DEB prerm + RPM %preun)
+        # -----------------------------------------------------------------
+        # STEP 3: Purge ALL systemd units (must match DEB prerm + RPM %preun)
+        # -----------------------------------------------------------------
         for unit in \
             nftband.socket nftband.service \
             nftban-maintenance.timer nftban-maintenance.service \
@@ -35,19 +54,42 @@ case "$1" in
             deb-systemd-helper unmask "$unit" >/dev/null 2>&1 || true
         done
 
-        # Remove nftables tables (CRITICAL — firewall rules persist otherwise)
+        # -----------------------------------------------------------------
+        # STEP 4: Remove NFTBan include from system nftables config FIRST
+        # (must happen BEFORE table deletion so nftables.service won't
+        #  try to reload our tables after we delete them)
+        # -----------------------------------------------------------------
+        for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+            if [ -f "$nft_conf" ]; then
+                sed -i '/nftban/d' "$nft_conf" 2>/dev/null || true
+            fi
+        done
+
+        # -----------------------------------------------------------------
+        # STEP 5: Delete nftables tables (CRITICAL — rules persist otherwise)
+        # Flush first, then delete to ensure clean removal
+        # -----------------------------------------------------------------
         if command -v nft >/dev/null 2>&1; then
+            nft flush table ip nftban 2>/dev/null || true
+            nft flush table ip6 nftban 2>/dev/null || true
             nft delete table ip nftban 2>/dev/null || true
             nft delete table ip6 nftban 2>/dev/null || true
         fi
 
-        # Remove tmpfiles.d configuration
+        # Reload nftables.service so it picks up config without our includes
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl reload nftables.service 2>/dev/null || true
+        fi
+
+        # -----------------------------------------------------------------
+        # STEP 6: Remove auxiliary config files
+        # -----------------------------------------------------------------
         rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
         rm -f /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
-
-        # Remove logrotate configuration
         rm -f /etc/logrotate.d/nftban 2>/dev/null || true
         rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
+        rm -f /etc/sysctl.d/90-nftban.conf 2>/dev/null || true
+        sysctl --system >/dev/null 2>&1 || true
 
         # Remove polkit policies and rules
         rm -f /usr/share/polkit-1/actions/com.nftban.* 2>/dev/null || true
@@ -59,14 +101,10 @@ case "$1" in
             rm -f /usr/bin/yq 2>/dev/null || true
         fi
 
-        # Remove NFTBan include from system nftables config (distro-aware paths)
-        for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-            if [ -f "$nft_conf" ]; then
-                sed -i '/nftban/d' "$nft_conf" 2>/dev/null || true
-            fi
-        done
-
-        # Remove ALL configuration, data, logs, cache directories
+        # -----------------------------------------------------------------
+        # STEP 7: Remove ALL configuration, data, logs, cache directories
+        # (user config already backed up in STEP 1)
+        # -----------------------------------------------------------------
         rm -rf /etc/nftban 2>/dev/null || true
         rm -rf /var/lib/nftban 2>/dev/null || true
         rm -rf /var/log/nftban 2>/dev/null || true
@@ -74,11 +112,22 @@ case "$1" in
         rm -rf /usr/share/nftban 2>/dev/null || true
 
         echo "nftban: Complete purge finished."
-        echo "nftban: All configuration, data, logs, cache, and firewall rules removed."
+        echo "nftban: Config backup at: ${BACKUP_DIR}"
         echo "nftban: User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
         ;;
 
-    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    remove)
+        # v1.38.0: On non-purge remove, flush nft rules but keep tables
+        # This prevents orphaned rules that block traffic with no daemon to manage them
+        if command -v nft >/dev/null 2>&1; then
+            nft flush table ip nftban 2>/dev/null || true
+            nft flush table ip6 nftban 2>/dev/null || true
+            echo "nftban: Firewall rules flushed (tables preserved for reinstall)."
+            echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
         # Nothing to do
         ;;
 esac

@@ -108,7 +108,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	fmt.Println("Step 3: Creating emergency whitelist...")
 	emergencyFile := configloader.GetFHSPath("config") + "/emergency_whitelist.conf"
 
-	f, err := os.OpenFile(emergencyFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // non-sensitive config file
+	f, err := os.OpenFile(emergencyFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) // #nosec G302 -- non-sensitive config file, world-readable by design
 	if err != nil {
 		return fmt.Errorf("failed to create emergency whitelist: %w", err)
 	}

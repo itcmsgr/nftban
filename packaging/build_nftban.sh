@@ -454,6 +454,9 @@ install -D -m 0644 install/systemd/nftban-tunnel.timer %{buildroot}/usr/lib/syst
 install -D -m 0644 install/systemd/nftband.service %{buildroot}/usr/lib/systemd/system/nftband.service
 install -D -m 0644 install/systemd/nftband.socket %{buildroot}/usr/lib/systemd/system/nftband.socket
 
+# Sysctl tuning profile (v1.38.0)
+install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
+
 # PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
 # Removed: com.nftban.suricata.policy (unused custom actions)
 # Removed: 50-nftban-auth.rules (auth-helper never existed)
@@ -961,6 +964,12 @@ rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
 rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
 rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true
+
+# --- Apply sysctl tuning (v1.38.0) ---
+# Only apply if no user-custom sysctl overrides the same keys
+if [ -f /etc/sysctl.d/90-nftban.conf ]; then
+    sysctl --system >/dev/null 2>&1 || true
+fi
 
 # --- Suricata blocks in main logrotate (pre-1.19.6) ---
 # Old versions had Suricata log blocks inline in /etc/logrotate.d/nftban
@@ -1834,24 +1843,49 @@ fi
 # =============================================================================
 # Complete removal (\$1 -eq 0) — FULL CLEANUP
 # Must match DEB postrm purge section
+# v1.38.0: Added config backup, proper nft cleanup sequence, sysctl removal
 # =============================================================================
 if [ \$1 -eq 0 ]; then
     echo "[NFTBan] Complete removal — cleaning up all artifacts..."
 
-    # Remove nftables tables (CRITICAL — firewall rules persist otherwise)
+    # STEP 1: Backup user configuration before removal
+    BACKUP_DIR="/var/tmp/nftban-config-backup-\$(date +%Y%m%d-%H%M%S)"
+    if [ -d /etc/nftban ]; then
+        echo "[NFTBan] Backing up user configuration to \${BACKUP_DIR} ..."
+        mkdir -p "\$BACKUP_DIR" 2>/dev/null || true
+        cp -a /etc/nftban "\$BACKUP_DIR/" 2>/dev/null || true
+        if [ -d /var/lib/nftban/state ]; then
+            cp -a /var/lib/nftban/state "\$BACKUP_DIR/" 2>/dev/null || true
+        fi
+        echo "[NFTBan] Config backup saved. Restore with: cp -a \${BACKUP_DIR}/nftban /etc/"
+    fi
+
+    # STEP 2: Remove runtime directories
+    rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
+
+    # STEP 3: Remove NFTBan include from nftables.conf BEFORE table deletion
+    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+        if [ -f "\$nft_conf" ]; then
+            sed -i '/nftban/d' "\$nft_conf" 2>/dev/null || true
+        fi
+    done
+
+    # STEP 4: Flush and delete nftables tables (CRITICAL — rules persist otherwise)
     if command -v nft >/dev/null 2>&1; then
+        nft flush table ip nftban 2>/dev/null || true
+        nft flush table ip6 nftban 2>/dev/null || true
         nft delete table ip nftban 2>/dev/null || true
         nft delete table ip6 nftban 2>/dev/null || true
     fi
 
-    # Remove runtime directories
-    rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
+    # Reload nftables.service so it picks up config without our includes
+    systemctl reload nftables.service 2>/dev/null || true
 
-    # Remove tmpfiles.d configuration
+    # STEP 5: Remove auxiliary config files
     rm -f /etc/tmpfiles.d/nftban.conf 2>/dev/null || true
     rm -f /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
-
-    # Remove logrotate configuration
+    rm -f /etc/sysctl.d/90-nftban.conf 2>/dev/null || true
+    sysctl --system >/dev/null 2>&1 || true
     rm -f /etc/logrotate.d/nftban 2>/dev/null || true
     rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
 
@@ -1865,14 +1899,8 @@ if [ \$1 -eq 0 ]; then
         rm -f /usr/bin/yq 2>/dev/null || true
     fi
 
-    # Remove NFTBan include from system nftables config (distro-aware paths)
-    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-        if [ -f "\$nft_conf" ]; then
-            sed -i '/nftban/d' "\$nft_conf" 2>/dev/null || true
-        fi
-    done
-
-    # Remove ALL configuration, data, logs, cache directories
+    # STEP 6: Remove ALL configuration, data, logs, cache directories
+    # (user config already backed up in STEP 1)
     rm -rf /etc/nftban 2>/dev/null || true
     rm -rf /var/lib/nftban 2>/dev/null || true
     rm -rf /var/log/nftban 2>/dev/null || true
@@ -1880,6 +1908,7 @@ if [ \$1 -eq 0 ]; then
     rm -rf /usr/share/nftban 2>/dev/null || true
 
     echo "[NFTBan] Complete removal finished."
+    echo "[NFTBan] Config backup at: \${BACKUP_DIR}"
     echo "[NFTBan] User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
 fi
 
@@ -2478,30 +2507,45 @@ PREINST_EOF
     sed -i "s/v1\.0\.[0-9]*/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/postinst"
     chmod 0755 "${BUILD_DIR}/deb/DEBIAN/postinst"
 
-    # Create prerm script to handle immutable files and stop services before removal
-    cat > "${BUILD_DIR}/deb/DEBIAN/prerm" << 'PRERM'
-#!/bin/bash
+    # v1.38.0: Use canonical prerm from packaging/deb/prerm (FULL unit list)
+    if [[ -f "${PROJECT_ROOT}/packaging/deb/prerm" ]]; then
+        cp "${PROJECT_ROOT}/packaging/deb/prerm" "${BUILD_DIR}/deb/DEBIAN/prerm"
+    else
+        # Fallback: generate inline prerm
+        cat > "${BUILD_DIR}/deb/DEBIAN/prerm" << 'PRERM'
+#!/bin/sh
 set -e
-
-# Remove immutable flag before upgrade/remove (security protection on nft_schema.sh)
-if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
-    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-fi
-
-# Stop services on removal (not upgrade)
-if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
-    # Stop all nftban services
-    for unit in nftband.service nftban-core.service nftban-ui.service; do
-        systemctl stop "$unit" 2>/dev/null || true
-    done
-    # Stop timers
-    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer nftban-botscan.timer nftban-tunnel.timer; do
-        systemctl stop "$timer" 2>/dev/null || true
-    done
-fi
-
+for f in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+    [ -f "$f" ] && chattr -i "$f" 2>/dev/null || true
+done
+case "$1" in
+    remove|deconfigure)
+        for unit in nftband.socket nftband.service \
+            nftban-maintenance.timer nftban-maintenance.service \
+            nftban-health.timer nftban-health.service nftban-health-fix.service \
+            nftban-watchdog.timer nftban-watchdog.service \
+            nftban-login-monitor.service \
+            nftban-core-geoip.timer nftban-core-geoip.service \
+            nftban-core-feeds.timer nftban-core-feeds.service \
+            nftban-unified-exporter.timer nftban-unified-exporter.service \
+            nftban-queue.timer nftban-queue.service \
+            nftban-rbl-check.timer nftban-rbl-check.service \
+            nftban-rollback.timer nftban-rollback.service \
+            nftban-snapshot.timer nftban-snapshot.service \
+            nftban-suricata-update.timer nftban-suricata-update.service \
+            nftban-suricata.service nftban-suricata-stats.service \
+            nftban-pro-inventory.timer nftban-pro-inventory.service \
+            nftban-pro-license.timer nftban-pro-license.service \
+            nftban-update.timer nftban-update.service \
+            nftban-api.service nftban-firewall-init.service \
+            nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
+            deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
+        done
+        ;;
+esac
 exit 0
 PRERM
+    fi
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
 
     # P1-13 FIX: Include postrm for proper cleanup on apt-get purge
@@ -2687,6 +2731,10 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.socket" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
+
+    # Sysctl tuning profile (v1.38.0)
+    mkdir -p "${deb_root}/etc/sysctl.d"
+    install -m 0644 "${PROJECT_ROOT}/install/sysctl/90-nftban.conf" "${deb_root}/etc/sysctl.d/"
 
     # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ (not /etc/polkit-1/rules.d/)

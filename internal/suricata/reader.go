@@ -27,9 +27,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/itcmsgr/nftban/internal/constants"
 )
 
@@ -175,9 +177,53 @@ func (r *EveReader) ReadEvent() (*Event, error) {
 	return event, nil
 }
 
-// ReadEvents continuously reads events from eve.json
-// Sends events to the provided channel
+// ReadEvents continuously reads events from eve.json using inotify when
+// available, falling back to polling if inotify setup fails.
 func (r *EveReader) ReadEvents(events chan<- *Event, stopChan <-chan struct{}) error {
+	// Try inotify first (v1.38.0)
+	watcher, err := fsnotify.NewWatcher()
+	if err == nil {
+		defer watcher.Close()
+		if err := watcher.Add(r.path); err == nil {
+			log.Printf("[Suricata] Using inotify for %s", r.path)
+			return r.readEventsInotify(watcher, events, stopChan)
+		}
+		watcher.Close()
+		log.Printf("[Suricata] inotify watch failed for %s: %v — falling back to polling", r.path, err)
+	} else {
+		log.Printf("[Suricata] inotify unavailable: %v — falling back to polling", err)
+	}
+
+	// Fallback: polling
+	return r.readEventsPolling(events, stopChan)
+}
+
+// readEventsInotify reads events using inotify file change notifications.
+func (r *EveReader) readEventsInotify(watcher *fsnotify.Watcher, events chan<- *Event, stopChan <-chan struct{}) error {
+	for {
+		select {
+		case <-stopChan:
+			return nil
+		case fsEvent, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+			if fsEvent.Op&fsnotify.Write == 0 {
+				continue
+			}
+			r.drainEvents(events, stopChan)
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			log.Printf("[Suricata] inotify error: %v — switching to polling", err)
+			return r.readEventsPolling(events, stopChan)
+		}
+	}
+}
+
+// readEventsPolling reads events using timer-based polling.
+func (r *EveReader) readEventsPolling(events chan<- *Event, stopChan <-chan struct{}) error {
 	ticker := time.NewTicker(constants.SuricataEVEPollInterval)
 	defer ticker.Stop()
 
@@ -186,25 +232,28 @@ func (r *EveReader) ReadEvents(events chan<- *Event, stopChan <-chan struct{}) e
 		case <-stopChan:
 			return nil
 		case <-ticker.C:
-			// Try to read an event
-			event, err := r.ReadEvent()
-			if err != nil {
-				// Log error but continue
-				fmt.Fprintf(os.Stderr, "Error reading event: %v\n", err)
-				continue
-			}
+			r.drainEvents(events, stopChan)
+		}
+	}
+}
 
-			if event != nil {
-				// Send event to channel (non-blocking)
-				select {
-				case events <- event:
-				case <-stopChan:
-					return nil
-				default:
-					// Channel full, skip event
-					fmt.Fprintf(os.Stderr, "Warning: event channel full, dropping event\n")
-				}
-			}
+// drainEvents reads all available events from the reader and sends them to the channel.
+func (r *EveReader) drainEvents(events chan<- *Event, stopChan <-chan struct{}) {
+	for {
+		event, err := r.ReadEvent()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading event: %v\n", err)
+			return
+		}
+		if event == nil {
+			return // No more data available
+		}
+		select {
+		case events <- event:
+		case <-stopChan:
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Warning: event channel full, dropping event\n")
 		}
 	}
 }

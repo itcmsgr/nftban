@@ -98,6 +98,9 @@ const (
 
 const (
 	// BotguardLoopInterval is the Go classify loop tick (Clock 2).
+	// v1.38.0 evaluation: 30s would halve detection latency but doubles CPU cost.
+	// Keep 60s default; operators needing faster response can set
+	// HTTP_BOT_FAST_LOOP_INTERVAL=30 in botguard/main.conf.local.
 	BotguardLoopInterval = 60 * time.Second
 
 	// BotguardLoopPressureInterval is the loop tick under pressure.

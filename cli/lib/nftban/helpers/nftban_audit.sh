@@ -60,6 +60,17 @@ nftban_audit_log() {
     # Skip if audit is disabled
     [[ "${NFTBAN_AUDIT_ENABLED}" != "true" ]] && return 0
 
+    # v1.38.0: Sanitize fields to prevent log injection
+    # Strip newlines, carriage returns, control chars, and pipes from reason/target
+    reason="${reason//$'\n'/ }"
+    reason="${reason//$'\r'/}"
+    reason="${reason//|/-}"
+    reason="${reason//\"/\\\"}"     # Escape quotes for JSON safety
+    target="${target//$'\n'/ }"
+    target="${target//$'\r'/}"
+    target="${target//|/-}"
+    target="${target//\"/\\\"}"
+
     # Build timestamp
     local timestamp
     timestamp=$(nftban_timestamp)  # ISO 8601 UTC

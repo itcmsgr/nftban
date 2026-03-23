@@ -730,6 +730,34 @@ nftban_gui_restart() {
 }
 
 # ==============================================================================
+# Help
+# ==============================================================================
+
+nftban_cmd_gui_help() {
+    echo "Usage: nftban gui {enable|disable|status|restart|recompile|--fix}"
+    echo ""
+    echo "Commands:"
+    echo "  enable      Enable Web GUI with metrics monitoring"
+    echo "  disable     Disable Web GUI (revert to CLI only)"
+    echo "  status      Show current GUI and services status"
+    echo "  restart     Restart metrics exporters & Web GUI"
+    echo "  recompile   Rebuild Go binaries from source"
+    echo "  --fix       Auto-fix and enable GUI (alias for enable)"
+    echo ""
+    echo "What Gets Installed:"
+    echo "  • Web GUI (HTTPS on port 3940)"
+    echo "  • Metrics monitoring (Prometheus format)"
+    echo "  • Go binaries (nftban-core for feeds/geoip/sync)"
+    echo "  • Auto-installs: golang, prometheus, node-exporter (if missing)"
+    echo ""
+    echo "Examples:"
+    echo "  nftban gui enable       # Enable full stack with auto-install"
+    echo "  nftban gui status       # Check what's running"
+    echo "  nftban gui restart      # Restart all services"
+    echo "  nftban gui disable      # Disable and cleanup"
+}
+
+# ==============================================================================
 # Main command router
 # ==============================================================================
 
@@ -763,27 +791,7 @@ nftban_cmd_gui() {
             nftban_gui_restart
             ;;
         help|--help|-h)
-            echo "Usage: nftban gui {enable|disable|status|restart|recompile|--fix}"
-            echo ""
-            echo "Commands:"
-            echo "  enable      Enable Web GUI with metrics monitoring"
-            echo "  disable     Disable Web GUI (revert to CLI only)"
-            echo "  status      Show current GUI and services status"
-            echo "  restart     Restart metrics exporters & Web GUI"
-            echo "  recompile   Rebuild Go binaries from source"
-            echo "  --fix       Auto-fix and enable GUI (alias for enable)"
-            echo ""
-            echo "What Gets Installed:"
-            echo "  • Web GUI (HTTPS on port 3940)"
-            echo "  • Metrics monitoring (Prometheus format)"
-            echo "  • Go binaries (nftban-core for feeds/geoip/sync)"
-            echo "  • Auto-installs: golang, prometheus, node-exporter (if missing)"
-            echo ""
-            echo "Examples:"
-            echo "  nftban gui enable       # Enable full stack with auto-install"
-            echo "  nftban gui status       # Check what's running"
-            echo "  nftban gui restart      # Restart all services"
-            echo "  nftban gui disable      # Disable and cleanup"
+            nftban_cmd_gui_help
             ;;
         *)
             echo "Usage: nftban gui {enable|disable|status|restart|recompile|--fix}"

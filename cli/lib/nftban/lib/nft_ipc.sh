@@ -92,6 +92,14 @@ _nft_ipc_validate_ip() {
 # =============================================================================
 
 # Check if socat is available
+# v1.38.0: Lightweight JSON error response (no jq dependency)
+_nft_ipc_json_error() {
+    local msg="$1"
+    # Escape quotes in message for valid JSON
+    msg="${msg//\"/\\\"}"
+    echo "{\"success\":false,\"error\":\"${msg}\"}"
+}
+
 _nft_ipc_check_socat() {
     if ! command -v socat &>/dev/null; then
         echo "ERROR: socat is required for IPC communication" >&2
@@ -120,7 +128,7 @@ nft_ipc_request() {
     _nft_ipc_check_socat || return 1
 
     if [[ ! -S "$NFTBAN_DAEMON_SOCKET" ]]; then
-        echo '{"success":false,"error":"daemon socket not found"}'
+        _nft_ipc_json_error "daemon socket not found"
         return 1
     fi
 
@@ -136,7 +144,7 @@ nft_ipc_request() {
 
     # Validate request was built successfully
     if [[ -z "$request" ]]; then
-        echo '{"success":false,"error":"failed to build request JSON"}'
+        _nft_ipc_json_error "failed to build request JSON"
         return 1
     fi
 
@@ -144,7 +152,7 @@ nft_ipc_request() {
     response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
-        echo '{"success":false,"error":"daemon not responding"}'
+        _nft_ipc_json_error "daemon not responding"
         return 1
     fi
 
@@ -532,7 +540,7 @@ nft_ipc_replace_set() {
 
     # Validate file exists
     if [[ ! -f "$elements_file" ]]; then
-        echo '{"success":false,"error":"file not found"}'
+        _nft_ipc_json_error "file not found"
         return 1
     fi
 

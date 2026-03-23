@@ -1,3 +1,62 @@
+nftban (1.38.0-1) stable; urgency=medium
+
+  * v1.38.0 — CI Hardening + P1/P2 Completion
+  * CI: Remove duplicate gosec/staticcheck from ci.yml (secure-go.yml canonical)
+  * CI: ShellCheck steps now block on findings (removed || true)
+  * CI: nft write check enforced (--warn-all removed, allowed paths updated)
+  * CI: New guards — public API surface, suppression audit, import boundary
+  * CI: templ generated file dirty-tree check
+  * CI: Fix 9 dead //nolint: directives across Go files
+  * P1: Kernel sysctl tuning profile (90-nftban.conf)
+  * P1: PAM audit events persisted to /var/log/nftban/audit.log (JSON)
+  * P1: Source index TTL pruning with ExpiresAt field
+  * P1: Count disambiguation (kernel_elements, cache_count, source_index_count)
+  * P1: Dynamic WatchdogSec guidance logged at daemon startup
+  * P2: EVE reader: inotify with polling fallback (replaces 100ms polling)
+  * P2: Log integrity HMAC chain for tamper-evident bans.log/audit.log
+  * P2: Suricata scorer: feeds lookup, geoban check, DDoS counter integration
+  * P2: TOCTOU fix: mktemp + atomic rename in path_create_file_safe
+  * P2: Reason field sanitization in audit log (newlines, pipes, control chars)
+  * P2: nft get element uses -- separator
+  * P2: DEB control golang version bumped to 1.24
+  * P2: DEB changelog synced through v1.38.0
+  * P2: RPM changelog synced through v1.38.0
+  * P2: Implicit whitelist visibility (127.0.0.1, ::1, server IPs)
+  * P2: DDoS PARTIAL status clarity
+  * P2: Health --brief info text specificity
+  * P2: PartOf= on nftban-ui-auth.socket
+  * P2: BotGuard classify cycle evaluation (60s default confirmed)
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 22:00:00 +0000
+
+nftban (1.37.1-1) stable; urgency=medium
+
+  * v1.37.1 — Health Exit Code Fix (3-layer)
+  * Fix: health check/json/summary exit codes (warnings exit 0, not 1)
+  * Fix: render_json exit_code for warnings
+  * Fix: render_summary return code for warnings
+  * New: stats --brief using nftban_nft_count_all_sets()
+  * CI: 6 GitHub Actions dependency updates
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 20:00:00 +0000
+
+nftban (1.37.0-1) stable; urgency=medium
+
+  * v1.37.0 — GOTH GUI Catchup
+  * GUI template updates to match v1.36.0 internal/ path changes
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 19:00:00 +0000
+
+nftban (1.36.0-1) stable; urgency=medium
+
+  * v1.36.0 — Public Boundary Hardening
+  * Move 48 packages from pkg/ to internal/ (compiler-enforced private)
+  * Only pkg/ipc/ and pkg/version/ remain public
+  * Key renames: pkg/sync/ -> internal/setsync/, pkg/config/ -> internal/configloader/
+  * All Go imports, CI paths, docs updated
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 18:30:00 +0000
+
 nftban (1.35.0-1) stable; urgency=medium
 
   * v1.35.0 — Hardening + Health Intelligence + CLI Completeness

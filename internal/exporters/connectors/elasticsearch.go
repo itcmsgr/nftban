@@ -322,7 +322,7 @@ func (c *ElasticsearchConnector) doBulkRequest(ctx context.Context, body []byte)
 			defer resp.Body.Close()
 
 			if resp.StatusCode >= 400 {
-				bodyBytes, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort error body
+				bodyBytes, _ := io.ReadAll(resp.Body) // best-effort error body read
 				lastErr = fmt.Errorf("bulk request failed: %s - %s", resp.Status, string(bodyBytes))
 				continue
 			}

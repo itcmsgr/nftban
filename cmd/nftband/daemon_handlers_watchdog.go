@@ -222,3 +222,24 @@ func (d *Daemon) handleReloadRequest(params map[string]any) SocketResponse {
 		},
 	}
 }
+
+// handleSourceIndexCountRequest returns the total element count in the source index (v1.38.0)
+func (d *Daemon) handleSourceIndexCountRequest() SocketResponse {
+	if d.sourceIndex == nil {
+		return SocketResponse{
+			Success: true,
+			Data:    map[string]any{"count": 0},
+		}
+	}
+
+	total := 0
+	for _, setName := range []string{"blacklist_ipv4", "blacklist_ipv6", "blacklist_manual_ipv4", "blacklist_manual_ipv6"} {
+		elems := d.sourceIndex.GetAllElements(setName)
+		total += len(elems)
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data:    map[string]any{"count": total},
+	}
+}

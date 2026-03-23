@@ -576,17 +576,17 @@ run_lifecycle_tests() {
     log_info "Using documentation-range IPs (RFC 5737 / RFC 3849)"
     log_info "Tables: v4=${table_v4}, v6=${table_v6}"
 
-    # IPv4 ban → unban
+    # IPv4 ban → unban (v1.38.0: BUG-007 — use blacklist_manual_* after set separation)
     smoke_lifecycle "IPv4 ban/unban" \
         "nftban ban ${test_ban_v4} --reason smoke_test" \
         "nftban unban ${test_ban_v4}" \
-        "${table_v4}" "blacklist_ipv4" "${test_ban_v4}"
+        "${table_v4}" "blacklist_manual_ipv4" "${test_ban_v4}"
 
     # IPv6 ban → unban
     smoke_lifecycle "IPv6 ban/unban" \
         "nftban ban ${test_ban_v6} --reason smoke_test" \
         "nftban unban ${test_ban_v6}" \
-        "${table_v6}" "blacklist_ipv6" "${test_ban_v6}"
+        "${table_v6}" "blacklist_manual_ipv6" "${test_ban_v6}"
 
     # IPv4 whitelist add → remove
     smoke_lifecycle "IPv4 whitelist add/remove" \
@@ -637,15 +637,17 @@ run_lifecycle_tests() {
     # Then whitelist (should remove from blacklist)
     nftban whitelist add "$conflict_ip2" &>/dev/null || true
     # Verify it's no longer in blacklist
-    if ! nft get element ${table_v4} blacklist_ipv4 "{ $conflict_ip2 }" &>/dev/null; then
+    if ! nft get element ${table_v4} blacklist_manual_ipv4 "{ $conflict_ip2 }" &>/dev/null; then
         log_pass "Whitelist correctly removed IP from blacklist"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_fail "IP still in blacklist after whitelisting"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
-    # Cleanup
+    # Cleanup (v1.38.0: BUG-009 — also unban to remove from 99-manual.conf)
     nftban whitelist remove "$conflict_ip2" &>/dev/null || true
+    nftban unban "$conflict_ip2" &>/dev/null || true
+    nftban unban "$conflict_ip" &>/dev/null || true
 }
 
 # =============================================================================
@@ -1124,6 +1126,164 @@ run_geoban_nft_validation() {
 }
 
 # =============================================================================
+# NFT SCHEMA VALIDATION (v1.38.0)
+# =============================================================================
+# Validates live nft schema against canonical nft_schema.sh definitions.
+# Checks: tables, sets, chains, set types/flags, rule order.
+# Uses individual validators for granular PASS/FAIL per check.
+
+run_nft_schema_validation() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "NFT SCHEMA VALIDATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Prerequisites
+    if ! command -v nft &>/dev/null; then
+        log_warn "nft not found — skipping schema validation"
+        return 0
+    fi
+
+    # Ensure nft_schema.sh is loaded (provides NFTBAN_IPV4_SETS, etc.)
+    local lib_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+    if [[ -z "${NFTBAN_NFT_SCHEMA_LOADED:-}" ]]; then
+        if [[ -f "${lib_dir}/lib/nft_schema.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${lib_dir}/lib/nft_schema.sh" || {
+                log_fail "NFT schema — cannot load nft_schema.sh"
+                TESTS_TOTAL=$((TESTS_TOTAL + 1))
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+                return 0
+            }
+        else
+            log_warn "nft_schema.sh not found at ${lib_dir}/lib/nft_schema.sh — skipping"
+            return 0
+        fi
+    fi
+
+    # Source config for table names
+    source /etc/nftban/nftban.conf 2>/dev/null || true
+    source /etc/nftban/nftban.conf.local 2>/dev/null || true
+
+    local output=""
+
+    # ── Check 1: Required tables exist (IPv4 = FAIL, IPv6 = WARN) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if output=$(nftban_nft_validate_tables 2>&1); then
+        log_pass "NFT schema — required tables exist (ip nftban, ip6 nftban)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        # Distinguish IPv4 (FAIL) vs IPv6-only (WARN)
+        if echo "$output" | grep -q "^ERROR:.*${NFTBAN_TABLE_IPV4}"; then
+            log_fail "NFT schema — IPv4 table missing: ${NFTBAN_TABLE_IPV4}"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        else
+            log_warn "NFT schema — IPv6 table missing (IPv4 OK)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        fi
+    fi
+
+    # ── Check 2: IPv4 required sets exist (13 sets — FAIL if any missing) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local ipv4_sets_missing=0
+    local ipv4_sets_list=""
+    for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
+        if ! nft list set ${NFTBAN_TABLE_IPV4} "$set_name" &>/dev/null; then
+            ipv4_sets_missing=$((ipv4_sets_missing + 1))
+            ipv4_sets_list="${ipv4_sets_list} ${set_name}"
+        fi
+    done
+    if [[ $ipv4_sets_missing -eq 0 ]]; then
+        log_pass "NFT schema — all ${#NFTBAN_IPV4_SETS[@]} IPv4 sets exist"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "NFT schema — ${ipv4_sets_missing} IPv4 sets missing:${ipv4_sets_list}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Check 3: IPv6 required sets exist (13 sets — WARN if missing) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local ipv6_sets_missing=0
+    local ipv6_sets_list=""
+    for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
+        if ! nft list set ${NFTBAN_TABLE_IPV6} "$set_name" &>/dev/null; then
+            ipv6_sets_missing=$((ipv6_sets_missing + 1))
+            ipv6_sets_list="${ipv6_sets_list} ${set_name}"
+        fi
+    done
+    if [[ $ipv6_sets_missing -eq 0 ]]; then
+        log_pass "NFT schema — all ${#NFTBAN_IPV6_SETS[@]} IPv6 sets exist"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_warn "NFT schema — ${ipv6_sets_missing} IPv6 sets missing:${ipv6_sets_list}"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+
+    # ── Check 4: Base chains exist (input/forward/output per table — FAIL) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local chains_missing=0
+    local chains_list=""
+    for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
+        if ! nft list chain ip nftban "$chain_name" &>/dev/null; then
+            chains_missing=$((chains_missing + 1))
+            chains_list="${chains_list} ip:${chain_name}"
+        fi
+    done
+    for chain_name in "${!NFTBAN_IPV6_CHAINS[@]}"; do
+        if ! nft list chain ip6 nftban "$chain_name" &>/dev/null; then
+            chains_missing=$((chains_missing + 1))
+            chains_list="${chains_list} ip6:${chain_name}"
+        fi
+    done
+    if [[ $chains_missing -eq 0 ]]; then
+        log_pass "NFT schema — all base chains exist (input/forward/output x2)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "NFT schema — ${chains_missing} chains missing:${chains_list}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Check 5: Chain policies correct (input=drop, output=accept — FAIL) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if output=$(nftban_nft_validate_chains 2>&1); then
+        log_pass "NFT schema — chain types, hooks, and policies correct"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "NFT schema — chain validation errors"
+        log "  $output"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Check 6: Set types match (ipv4_addr, inet_service, etc. — FAIL) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if output=$(nftban_nft_validate_set_flags 2>&1); then
+        log_pass "NFT schema — set types and flags correct"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        # Differentiate ERROR (FAIL) from WARNING (pass with note)
+        if echo "$output" | grep -q "^ERROR:"; then
+            log_fail "NFT schema — set type/flag errors"
+            log "  $output"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        else
+            log_pass "NFT schema — set types correct (minor flag warnings)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        fi
+    fi
+
+    # ── Check 7: Rule order correct (blacklist before ct established — FAIL) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if output=$(nftban_nft_validate_rule_order 2>&1); then
+        log_pass "NFT schema — rule order correct (blacklist before established)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "NFT schema — SECURITY: rule order incorrect!"
+        log "  $output"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+# =============================================================================
 # WHITELIST SAFETY TESTS (v1.15.1)
 # =============================================================================
 # Verifies critical system IPs are whitelisted to prevent self-lockout:
@@ -1533,12 +1693,13 @@ Options:
 
 Test Modes:
   quick     = 3 tests    (version, help, status)
-  full      = ~43 tests  (core + binary integrity + modules + stats + search + help + protection + lifecycle + nft validation)
-  all       = 67+ tests  (every cmd_*.sh + binary integrity + extended status + protection + lifecycle + nft validation)
+  full      = ~50 tests  (core + binary integrity + modules + stats + search + help + protection + schema validation + lifecycle + nft validation)
+  all       = 74+ tests  (every cmd_*.sh + binary integrity + extended status + protection + schema validation + lifecycle + nft validation)
   lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
 Validation Tests (included in full/all):
   - Binary Integrity: verifies Go binaries are valid ELF executables
+  - NFT Schema: validates tables, sets, chains, types, rule order vs canonical schema
   - Feeds IPv4/IPv6: verifies CIDRs loaded in blacklist sets
   - Geoban IPv4/IPv6: verifies country CIDRs loaded in blacklist sets
 
@@ -1668,6 +1829,7 @@ main() {
             run_search_tests
             run_help_tests
             run_protection_tests
+            run_nft_schema_validation
             run_lifecycle_tests
             run_port_lifecycle_tests
             run_feeds_nft_validation
@@ -1682,6 +1844,7 @@ main() {
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
             run_protection_tests
+            run_nft_schema_validation
             run_lifecycle_tests
             run_port_lifecycle_tests
             run_feeds_nft_validation

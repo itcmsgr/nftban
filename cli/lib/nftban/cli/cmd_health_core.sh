@@ -181,7 +181,19 @@ nftban_health_cmd_brief() {
         echo "ERROR | ${ok_count} checks passed | ${error_count} errors, ${warning_count} warnings"
         return 2
     elif [[ $warning_count -gt 0 ]]; then
-        echo "HEALTHY | ${ok_count} checks passed | ${info_count} info"
+        # v1.38.0: Show specific warning reasons instead of generic "info"
+        local reasons=""
+        # Detect common optional-feature warnings
+        if ! command -v nftban-ui &>/dev/null && ! [[ -f /usr/lib/nftban/bin/nftban-ui ]]; then
+            reasons="${reasons:+$reasons, }gui-not-installed"
+        fi
+        if ! systemctl is-active --quiet nftban-prometheus-exporter.timer 2>/dev/null; then
+            reasons="${reasons:+$reasons, }metrics-inactive"
+        fi
+        if [[ -z "$reasons" ]]; then
+            reasons="optional-features"
+        fi
+        echo "HEALTHY | ${ok_count} checks passed | ${info_count} info (${reasons})"
         return 0
     else
         echo "HEALTHY | ${total_checks} checks passed | 0 info"

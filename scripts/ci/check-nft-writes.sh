@@ -56,8 +56,27 @@ GO_APPLY_PATTERN='exec\.Command\("nft",\s*"-f"'
 # Matches: nft list, nft get
 NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 
-# Allowed paths (daemon implementation + emergency fallback)
-ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|scripts/ci/|cli/lib/nftban/lib/nft_ipc\.sh)'
+# Allowed paths:
+#   - Daemon implementation (cmd/nftband/, internal/nftbackend/)
+#   - IPC library (nft_ipc.sh)
+#   - Core system operations that require direct nft writes:
+#     health_fixes (repair broken tables/sets/chains)
+#     maintenance (SYNPROXY rule rotation)
+#     autoheal (emergency table recovery)
+#     nft_fragment (botguard set management)
+#     firewall-init-with-delay (snapshot restore at boot)
+#     cmd_firewall (firewall rebuild/restore/flush — root-only operations)
+#     cmd_flush (explicit flush command — root-only)
+#     ddos_classic (DDoS mitigation rules — real-time enforcement)
+#     firewall_conflicts (conflict resolution — root-only)
+#     geoban (country-level blocking rules)
+#     health_checks_security (security verification)
+#     cmd_whitelist (whitelist element management)
+#     cmd_zabbix (monitoring integration)
+#     cmd_health_core (health repair operations)
+#     cmd_firewall_logs (log chain rules)
+#     service_control (nftban disable --flush-rules — daemon may not be running)
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|scripts/ci/|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_geoban\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh)'
 
 # =============================================================================
 # MAIN
