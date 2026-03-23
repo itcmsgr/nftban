@@ -1936,6 +1936,7 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
 %config(noreplace) /etc/logrotate.d/nftban
+%config(noreplace) /etc/sysctl.d/90-nftban.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.socket
 /usr/lib/systemd/system/*.timer
