@@ -13,7 +13,7 @@
 // These tests help identify edge cases, panics, and potential security issues
 // in parsing untrusted input (log lines, config files, IP addresses).
 //
-// Run with: go test -fuzz=FuzzParseLogLine -fuzztime=30s ./pkg/parser/
+// Run with: go test -fuzz=FuzzParseLogLine -fuzztime=30s ./internal/parser/
 //
 // meta:inventory.files="fuzz_test.go"
 // meta:inventory.binaries=""

@@ -21,7 +21,7 @@
 // The nftband daemon is the ONLY consumer of this package.
 //
 // v1.8.0: Refactored from CLI (exec.Command) to netlink (google/nftables) via
-// pkg/sync.NFTManager. Single point of truth for all nftables operations.
+// internal/setsync.NFTManager. Single point of truth for all nftables operations.
 // Performance: ~50x faster (syscall vs fork+exec per operation).
 //
 // See: ARCHITECTURE-NFT-POLICY.md

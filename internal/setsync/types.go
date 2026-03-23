@@ -30,9 +30,9 @@ import "github.com/google/nftables"
 // imports isolated to the sync package.
 //
 // Packages that need to work with nftables sets should:
-//   - Import pkg/sync (not github.com/google/nftables)
-//   - Use *sync.Set in their type definitions
-//   - Pass set references to sync package functions for operations
+//   - Import internal/setsync (not github.com/google/nftables)
+//   - Use *setsync.Set in their type definitions
+//   - Pass set references to setsync package functions for operations
 //
 // This abstraction supports the architecture principle of IPC-based firewall
 // operations, where only the nftband daemon (via the sync package) performs

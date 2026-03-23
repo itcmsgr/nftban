@@ -15,8 +15,8 @@
 //
 // Architecture:
 // - Implements the module.Module interface for daemon integration
-// - Uses pkg/loginmon/detector for high-performance signal-based detection
-// - Uses pkg/loginmon/detector.Scorer for threshold-based ban decisions
+// - Uses internal/loginmon/detector for high-performance signal-based detection
+// - Uses internal/loginmon/detector.Scorer for threshold-based ban decisions
 // - Dual-mode: Classic (journalctl) or Suricata (EVE JSON)
 // - Publishes events to the central event bus
 // - Runs log watchers as goroutines

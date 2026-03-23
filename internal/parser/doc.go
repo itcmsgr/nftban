@@ -15,18 +15,18 @@
 //
 // Covered Parsing Functions:
 //
-// 1. Log Line Parsing (pkg/loginmon/detector/):
+// 1. Log Line Parsing (internal/loginmon/detector/):
 //   - SSH authentication failures
 //   - Mail server auth failures (Dovecot, Postfix, Exim)
 //   - FTP auth failures (Pure-FTPd, vsftpd, ProFTPD)
 //   - Control panel auth failures (DirectAdmin, cPanel, Plesk)
 //
-// 2. Feed/Config Parsing (pkg/feeds/, pkg/netutil/):
+// 2. Feed/Config Parsing (internal/feeds/, internal/netutil/):
 //   - IP address parsing and validation
 //   - CIDR notation parsing
 //   - Feed file line parsing (IPs with comments, whitespace)
 //
-// 3. Utility Parsing (pkg/util/, pkg/timeutil/):
+// 3. Utility Parsing (internal/util/, internal/timeutil/):
 //   - Boolean string parsing
 //   - Integer/float parsing
 //   - Duration parsing with day/week support
@@ -35,15 +35,15 @@
 //
 // Run all fuzz tests for 30 seconds each:
 //
-//	go test -fuzz=. -fuzztime=30s ./pkg/parser/
+//	go test -fuzz=. -fuzztime=30s ./internal/parser/
 //
 // Run a specific fuzz test:
 //
-//	go test -fuzz=FuzzParseLogLine -fuzztime=60s ./pkg/parser/
+//	go test -fuzz=FuzzParseLogLine -fuzztime=60s ./internal/parser/
 //
 // Run with coverage:
 //
-//	go test -fuzz=FuzzParseLogLine -fuzztime=30s -coverprofile=fuzz.out ./pkg/parser/
+//	go test -fuzz=FuzzParseLogLine -fuzztime=30s -coverprofile=fuzz.out ./internal/parser/
 //
 // meta:inventory.files="doc.go,fuzz_test.go"
 // meta:inventory.binaries=""
