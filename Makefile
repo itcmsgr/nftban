@@ -44,24 +44,24 @@ test:
 # Run fuzz tests (30 seconds per test)
 fuzz:
 	@echo "Running fuzz tests..."
-	@go test -fuzz=FuzzParseLogLine -fuzztime=30s ./pkg/parser/
-	@go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./pkg/parser/
-	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./pkg/parser/
+	@go test -fuzz=FuzzParseLogLine -fuzztime=30s ./internal/parser/
+	@go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./internal/parser/
+	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./internal/parser/
 	@echo "Fuzz tests completed."
 
 # Run fuzz tests for longer duration (use for CI)
 fuzz-long:
 	@echo "Running extended fuzz tests (5 minutes each)..."
-	@go test -fuzz=FuzzParseLogLine -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzSSHDetector -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzMailDetector -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzFTPDetector -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzPanelDetector -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzParseFeedLine -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzParseBool -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzParseInt -fuzztime=5m ./pkg/parser/
-	@go test -fuzz=FuzzParseDuration -fuzztime=5m ./pkg/parser/
+	@go test -fuzz=FuzzParseLogLine -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzSSHDetector -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzMailDetector -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzFTPDetector -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzPanelDetector -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzParseFeedLine -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzParseBool -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzParseInt -fuzztime=5m ./internal/parser/
+	@go test -fuzz=FuzzParseDuration -fuzztime=5m ./internal/parser/
 	@echo "Extended fuzz tests completed."
 
 # Run all linters

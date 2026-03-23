@@ -8,7 +8,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Static analysis tests for CIDR consolidation engine review"
-# meta:inventory.files="pkg/sync/cidr.go,pkg/sync/cidr_test.go,pkg/netutil/ip.go,pkg/feeds/parser.go,pkg/geoban/geoban.go"
+# meta:inventory.files="internal/setsync/cidr.go,internal/setsync/cidr_test.go,internal/netutil/ip.go,internal/feeds/parser.go,internal/geoban/geoban.go"
 # meta:inventory.binaries="bash,grep"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -40,15 +40,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # Key source files under review
-CIDR_GO="pkg/sync/cidr.go"
-CIDR_TEST="pkg/sync/cidr_test.go"
-NFT_GO="pkg/sync/nft.go"
-DOC_GO="pkg/sync/doc.go"
-NETUTIL_IP="pkg/netutil/ip.go"
-FEEDS_PARSER="pkg/feeds/parser.go"
+CIDR_GO="internal/setsync/cidr.go"
+CIDR_TEST="internal/setsync/cidr_test.go"
+NFT_GO="internal/setsync/nft.go"
+DOC_GO="internal/setsync/doc.go"
+NETUTIL_IP="internal/netutil/ip.go"
+FEEDS_PARSER="internal/feeds/parser.go"
 # shellcheck disable=SC2034 # Reserved for future tests
-FEEDS_GO="pkg/feeds/feeds.go"
-GEOBAN_GO="pkg/geoban/geoban.go"
+FEEDS_GO="internal/feeds/feeds.go"
+GEOBAN_GO="internal/geoban/geoban.go"
 
 # Counters
 PASS=0
@@ -83,25 +83,25 @@ section() {
 
 section "File Existence"
 
-check "CIDR engine source file exists (pkg/sync/cidr.go)" \
+check "CIDR engine source file exists (internal/setsync/cidr.go)" \
     "$(test -f "$CIDR_GO" && echo 0 || echo 1)"
 
-check "CIDR engine test file exists (pkg/sync/cidr_test.go)" \
+check "CIDR engine test file exists (internal/setsync/cidr_test.go)" \
     "$(test -f "$CIDR_TEST" && echo 0 || echo 1)"
 
-check "NFTables manager source exists (pkg/sync/nft.go)" \
+check "NFTables manager source exists (internal/setsync/nft.go)" \
     "$(test -f "$NFT_GO" && echo 0 || echo 1)"
 
-check "Package doc exists (pkg/sync/doc.go)" \
+check "Package doc exists (internal/setsync/doc.go)" \
     "$(test -f "$DOC_GO" && echo 0 || echo 1)"
 
-check "Network utilities exist (pkg/netutil/ip.go)" \
+check "Network utilities exist (internal/netutil/ip.go)" \
     "$(test -f "$NETUTIL_IP" && echo 0 || echo 1)"
 
-check "Feed parser exists (pkg/feeds/parser.go)" \
+check "Feed parser exists (internal/feeds/parser.go)" \
     "$(test -f "$FEEDS_PARSER" && echo 0 || echo 1)"
 
-check "GeoBan module exists (pkg/geoban/geoban.go)" \
+check "GeoBan module exists (internal/geoban/geoban.go)" \
     "$(test -f "$GEOBAN_GO" && echo 0 || echo 1)"
 
 # =============================================================================

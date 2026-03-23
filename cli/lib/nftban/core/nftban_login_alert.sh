@@ -208,7 +208,7 @@ nftban_login_alert_log() {
 nftban_login_write_bans_log() {
     # Write ban entry to central bans.log for stats integration
     # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
-    # (matches pkg/banlog/banlog.go canonical format)
+    # (matches internal/banlog/banlog.go canonical format)
     local ip="$1"
     local reason="$2"
     local country="${3:-UNK}"

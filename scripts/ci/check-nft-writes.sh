@@ -57,7 +57,7 @@ GO_APPLY_PATTERN='exec\.Command\("nft",\s*"-f"'
 NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 
 # Allowed paths (daemon implementation + emergency fallback)
-ALLOWED_REGEX='^(cmd/nftband/|pkg/nftbackend/|scripts/ci/|cli/lib/nftban/lib/nft_ipc\.sh)'
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|scripts/ci/|cli/lib/nftban/lib/nft_ipc\.sh)'
 
 # =============================================================================
 # MAIN

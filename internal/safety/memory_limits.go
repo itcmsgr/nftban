@@ -21,15 +21,15 @@ package safety
 // MemoryLimits holds caps and TTLs to prevent unbounded memory growth (CWE-400)
 // All limits are configurable via environment variables with sane defaults.
 type MemoryLimits struct {
-	// Scorer limits (pkg/suricata/scorer.go)
+	// Scorer limits (internal/suricata/scorer.go)
 	ScorerMaxIPs         int // Max unique IPs tracked in scorer (default: 50000)
 	ScorerMaxEventsPerIP int // Max event timestamps per IP (default: 100)
 
-	// Analytics limits (pkg/analytics/state.go)
+	// Analytics limits (internal/analytics/state.go)
 	AnalyticsMaxIPOrigins     int // Max IPs in ipOrigins map (default: 100000)
 	AnalyticsMaxIPsPerCountry int // Max IPs per country (default: 10000)
 
-	// Stats cache limits (pkg/suricata/stats/cache.go)
+	// Stats cache limits (internal/suricata/stats/cache.go)
 	StatsMaxSIDs             int // Max SIDs tracked (default: 10000)
 	StatsMaxSourcesPerSID    int // Max unique sources per SID (default: 1000)
 

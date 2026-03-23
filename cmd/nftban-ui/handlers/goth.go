@@ -128,7 +128,7 @@ func jsonMarshalHXTrigger(message, msgType string) string {
 // nftReadOnly executes a read-only nft command for status display.
 // v1.19.0: Centralizes remaining nft calls (R20). These are read-only queries
 // (list tables, list counters) that don't modify firewall state.
-// WRITE operations MUST go through daemon IPC — see pkg/api/ handlers.
+// WRITE operations MUST go through daemon IPC — see internal/api/ handlers.
 func nftReadOnly(args ...string) ([]byte, error) {
 	return exec.Command("nft", args...).CombinedOutput()
 }
@@ -2709,7 +2709,7 @@ func (h *GOTHHandlers) getJournalEvents(filter string, limit int) []ui.EventEntr
 // =============================================================================
 
 func execNFTBanCommand(args ...string) (string, error) {
-	// Use central config for CLI path - same as pkg/api/handlers.go
+	// Use central config for CLI path - same as internal/api/handlers.go
 	// Use Get() instead of MustLoad() - config already loaded at startup
 	cfg := nftbanconf.Get()
 	cmd := exec.Command(cfg.Bin, args...)

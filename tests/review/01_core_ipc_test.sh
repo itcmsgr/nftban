@@ -34,7 +34,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # Directories under test
 SHELL_DIR="${REPO_ROOT}/cli/lib/nftban"
-GO_PKG_DIR="${REPO_ROOT}/pkg"
+GO_PKG_DIR="${REPO_ROOT}/internal"
 GO_CMD_DIR="${REPO_ROOT}/cmd"
 
 # The IPC library is the ONLY shell file allowed to contain emergency nft writes
@@ -110,9 +110,9 @@ else
 fi
 
 if [[ -d "$GO_PKG_DIR" ]]; then
-    check "Go pkg/ directory exists" 0
+    check "Go internal/ directory exists" 0
 else
-    check "Go pkg/ directory exists" 1
+    check "Go internal/ directory exists" 1
 fi
 
 if [[ -d "$GO_CMD_DIR" ]]; then
@@ -590,16 +590,16 @@ fi
 # =============================================================================
 # TEST 10: Go daemon is the ONLY place with nft write exec.Command calls
 # =============================================================================
-# In Go code, only pkg/nftbackend/ and pkg/sync/ should call nft for writes.
+# In Go code, only internal/nftbackend/ and internal/setsync/ should call nft for writes.
 # Other packages must use the IPC client.
 # =============================================================================
 
-section "T10: Go nft write operations confined to backend/sync"
+section "T10: Go nft write operations confined to backend/setsync"
 
 # Authorized Go packages for nft CLI execution
 GO_NFT_AUTHORIZED=(
-    "pkg/nftbackend/"
-    "pkg/sync/"
+    "internal/nftbackend/"
+    "internal/setsync/"
     "cmd/nftband/"
 )
 

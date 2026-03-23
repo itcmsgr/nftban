@@ -136,7 +136,7 @@ check_project_structure() {
 
     run_check "cli/ directory exists" "[ -d '$PROJECT_ROOT/cli' ]"
     run_check "cmd/ directory exists" "[ -d '$PROJECT_ROOT/cmd' ]"
-    run_check "pkg/ directory exists" "[ -d '$PROJECT_ROOT/pkg' ]"
+    run_check "internal/ directory exists" "[ -d '$PROJECT_ROOT/internal' ]"
     run_check "install/ directory exists" "[ -d '$PROJECT_ROOT/install' ]"
     run_check "packaging/ directory exists" "[ -d '$PROJECT_ROOT/packaging' ]"
     run_check "README.md exists" "[ -f '$PROJECT_ROOT/README.md' ]"
@@ -689,7 +689,7 @@ EOF
 
 ### Project Structure
 - **Critical Files**: README, LICENSE, go.mod, build.sh
-- **Core Directories**: cli/, cmd/, pkg/, install/, packaging/
+- **Core Directories**: cli/, cmd/, internal/, pkg/, install/, packaging/
 - **Status**: ✅ All present
 
 ### Security
