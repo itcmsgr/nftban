@@ -113,6 +113,15 @@ nftban_cmd_firewall() {
             show_firewall_help
             return 0
             ;;
+        status)
+            shift
+            firewall_status "$@"
+            ;;
+        init)
+            # v1.38.0: BUG-002 — alias to rebuild (firewall init was never implemented)
+            shift
+            firewall_rebuild "$@"
+            ;;
         validate)
             shift
             firewall_validate "$@"
@@ -165,12 +174,127 @@ nftban_cmd_firewall() {
             shift
             firewall_restore "$@"
             ;;
+        record)
+            shift
+            firewall_record "$@"
+            ;;
         *)
             echo "ERROR: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
             return 1
             ;;
     esac
+}
+
+# =============================================================================
+# SUBCOMMAND: STATUS (v1.38.0 — BUG-001 fix)
+# =============================================================================
+
+firewall_status() {
+    # Quick situational awareness: tables, sets, services, conflicts
+    # Usage: nftban firewall status [--json]
+
+    local json_mode=false
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode=true
+    done
+
+    # --- 1. Tables ---
+    local ipv4_table="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local ipv6_table="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+    local v4_ok=false v6_ok=false
+
+    nft list table $ipv4_table &>/dev/null 2>&1 && v4_ok=true
+    nft list table $ipv6_table &>/dev/null 2>&1 && v6_ok=true
+
+    if [[ "$json_mode" == "true" ]]; then
+        # Collect stats for JSON
+        local v4_sets=0 v6_sets=0 v4_chains=0 v6_chains=0 v4_elements=0 v6_elements=0
+        if [[ "$v4_ok" == "true" ]]; then
+            v4_sets=$(nft list sets $ipv4_table 2>/dev/null | grep -c "set " || echo 0)
+            v4_chains=$(nft list chains $ipv4_table 2>/dev/null | grep -c "chain " || echo 0)
+            v4_elements=$(nft list sets $ipv4_table 2>/dev/null | grep -oP 'elements\s*=\s*\K\d+' | paste -sd+ | bc 2>/dev/null || echo 0)
+        fi
+        if [[ "$v6_ok" == "true" ]]; then
+            v6_sets=$(nft list sets $ipv6_table 2>/dev/null | grep -c "set " || echo 0)
+            v6_chains=$(nft list chains $ipv6_table 2>/dev/null | grep -c "chain " || echo 0)
+            v6_elements=$(nft list sets $ipv6_table 2>/dev/null | grep -oP 'elements\s*=\s*\K\d+' | paste -sd+ | bc 2>/dev/null || echo 0)
+        fi
+
+        local daemon_active=false
+        systemctl is-active nftband &>/dev/null 2>&1 && daemon_active=true
+
+        cat <<ENDJSON
+{
+  "tables": {"ipv4": $v4_ok, "ipv6": $v6_ok},
+  "sets": {"ipv4": $v4_sets, "ipv6": $v6_sets},
+  "chains": {"ipv4": $v4_chains, "ipv6": $v6_chains},
+  "elements": {"ipv4": ${v4_elements:-0}, "ipv6": ${v6_elements:-0}},
+  "daemon": $daemon_active
+}
+ENDJSON
+        return 0
+    fi
+
+    # --- Text output ---
+    echo "Firewall Status"
+    echo "==============="
+    echo ""
+
+    # Tables
+    echo "Tables:"
+    if [[ "$v4_ok" == "true" ]]; then
+        echo "  IPv4 ($ipv4_table): ACTIVE"
+    else
+        echo "  IPv4 ($ipv4_table): MISSING"
+    fi
+    if [[ "$v6_ok" == "true" ]]; then
+        echo "  IPv6 ($ipv6_table): ACTIVE"
+    else
+        echo "  IPv6 ($ipv6_table): MISSING"
+    fi
+
+    # Sets summary
+    echo ""
+    echo "Sets:"
+    if [[ "$v4_ok" == "true" ]]; then
+        local set_count
+        set_count=$(nft list sets $ipv4_table 2>/dev/null | grep -c "set " || echo 0)
+        echo "  IPv4: ${set_count} sets"
+    fi
+    if [[ "$v6_ok" == "true" ]]; then
+        local set_count6
+        set_count6=$(nft list sets $ipv6_table 2>/dev/null | grep -c "set " || echo 0)
+        echo "  IPv6: ${set_count6} sets"
+    fi
+
+    # Services
+    echo ""
+    echo "Services:"
+    local services=("nftband" "nftban-maintenance.timer" "nftban-health.timer" "nftban-watchdog.timer")
+    for svc in "${services[@]}"; do
+        local state
+        state=$(systemctl is-active "$svc" 2>/dev/null || echo "inactive")
+        printf "  %-30s %s\n" "$svc" "$state"
+    done
+
+    # Conflicts
+    echo ""
+    echo "Firewall Conflicts:"
+    local has_conflict=false
+    for fw in fail2ban firewalld ufw csf lfd; do
+        if systemctl is-active "${fw}.service" &>/dev/null 2>&1 || systemctl is-active "${fw}d.service" &>/dev/null 2>&1; then
+            echo "  WARNING: $fw is ACTIVE (conflicts with NFTBan)"
+            has_conflict=true
+        fi
+    done
+    [[ "$has_conflict" == "false" ]] && echo "  None detected"
+
+    echo ""
+    echo "For details: nftban firewall validate --strict"
+    echo "For stats:   nftban firewall stats"
+
+    return 0
 }
 
 # =============================================================================
@@ -1087,6 +1211,449 @@ _restore_previous_firewall() {
 }
 
 # =============================================================================
+# SUBCOMMAND: RECORD (Schema Snapshot for Audit/Comparison)
+# =============================================================================
+
+firewall_record() {
+    # Snapshot current live nft schema to JSON for audit/comparison.
+    # Usage: nftban firewall record [--output <path>] [--json] [--diff <path>]
+
+    local output_file="/var/lib/nftban/schema/schema_record.json"
+    local to_stdout=false
+    local diff_file=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --output|-o)
+                shift
+                if [[ $# -eq 0 || "$1" == -* ]]; then
+                    echo "ERROR: --output requires a file path" >&2
+                    return 1
+                fi
+                output_file="$1"
+                shift
+                ;;
+            --json)
+                to_stdout=true
+                shift
+                ;;
+            --diff|-d)
+                shift
+                if [[ $# -eq 0 || "$1" == -* ]]; then
+                    echo "ERROR: --diff requires a file path" >&2
+                    return 1
+                fi
+                diff_file="$1"
+                shift
+                ;;
+            -h|--help)
+                show_record_help
+                return 0
+                ;;
+            *)
+                echo "ERROR: Unknown option: $1" >&2
+                echo "Try 'nftban firewall record --help' for more information." >&2
+                return 1
+                ;;
+        esac
+    done
+
+    # Diff mode: compare current schema against a previously recorded file
+    if [[ -n "$diff_file" ]]; then
+        _firewall_record_diff "$diff_file"
+        return $?
+    fi
+
+    # Ensure jq is available (required for JSON generation)
+    if ! command -v jq &>/dev/null; then
+        echo "ERROR: jq is required for schema recording. Install with: apt install jq" >&2
+        return 1
+    fi
+
+    # Ensure nft_schema.sh is loaded
+    if [[ -z "${NFTBAN_NFT_SCHEMA_LOADED:-}" ]]; then
+        if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" || {
+                echo "ERROR: Cannot load nft_schema.sh" >&2
+                return 1
+            }
+        fi
+    fi
+
+    # Get nftban version
+    local nftban_version="unknown"
+    if [[ -f /VERSION ]]; then
+        nftban_version=$(cat /VERSION 2>/dev/null | tr -d '[:space:]')
+    fi
+
+    # ── Collect table information ──
+    local tables_json="[]"
+    local existing_tables
+    existing_tables=$(nft list tables 2>/dev/null || true)
+    local table_arr=()
+    if echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV4}$"; then
+        table_arr+=("\"${NFTBAN_TABLE_IPV4}\"")
+    fi
+    if echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV6}$"; then
+        table_arr+=("\"${NFTBAN_TABLE_IPV6}\"")
+    fi
+    if [[ ${#table_arr[@]} -gt 0 ]]; then
+        tables_json=$(printf '%s\n' "${table_arr[@]}" | jq -s '.')
+    fi
+
+    # ── Collect set information (IPv4) ──
+    local ipv4_sets_json="{}"
+    local ipv4_set_entries=""
+    for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
+        local set_spec="${NFTBAN_IPV4_SETS[$set_name]}"
+        local _expected_type _expected_flags
+        IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
+
+        local count=0
+        local actual_type="" actual_flags=""
+        if nft list set ip nftban "$set_name" &>/dev/null; then
+            count=$(nftban_nft_count_set ip nftban "$set_name" 2>/dev/null || echo 0)
+            local set_info
+            set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)
+            actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
+            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+        fi
+
+        local entry
+        entry=$(jq -n \
+            --arg type "${actual_type:-missing}" \
+            --arg flags "${actual_flags:-}" \
+            --argjson elements "${count:-0}" \
+            '{type: $type, flags: $flags, elements: $elements}')
+        ipv4_set_entries="${ipv4_set_entries}$(jq -n --arg k "$set_name" --argjson v "$entry" '{($k): $v}')"$'\n'
+    done
+    if [[ -n "$ipv4_set_entries" ]]; then
+        ipv4_sets_json=$(echo "$ipv4_set_entries" | jq -s 'add')
+    fi
+
+    # ── Collect set information (IPv6) ──
+    local ipv6_sets_json="{}"
+    local ipv6_set_entries=""
+    for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
+        local set_spec="${NFTBAN_IPV6_SETS[$set_name]}"
+        local _expected_type _expected_flags
+        IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
+
+        local count=0
+        local actual_type="" actual_flags=""
+        if nft list set ip6 nftban "$set_name" &>/dev/null; then
+            count=$(nftban_nft_count_set ip6 nftban "$set_name" 2>/dev/null || echo 0)
+            local set_info
+            set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)
+            actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' | head -1 || true)
+            actual_flags=$(echo "$set_info" | grep -oP 'flags \K[a-z,]+' | head -1 || true)
+        fi
+
+        local entry
+        entry=$(jq -n \
+            --arg type "${actual_type:-missing}" \
+            --arg flags "${actual_flags:-}" \
+            --argjson elements "${count:-0}" \
+            '{type: $type, flags: $flags, elements: $elements}')
+        ipv6_set_entries="${ipv6_set_entries}$(jq -n --arg k "$set_name" --argjson v "$entry" '{($k): $v}')"$'\n'
+    done
+    if [[ -n "$ipv6_set_entries" ]]; then
+        ipv6_sets_json=$(echo "$ipv6_set_entries" | jq -s 'add')
+    fi
+
+    # ── Collect chain information ──
+    local ipv4_chains_json="{}"
+    local ipv4_chain_entries=""
+    for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
+        local chain_spec="${NFTBAN_IPV4_CHAINS[$chain_name]}"
+        local chain_type chain_hook chain_priority _chain_policy
+        IFS='|' read -r chain_type chain_hook chain_priority _chain_policy _ <<< "$chain_spec"
+
+        local actual_policy=""
+        if nft list chain ip nftban "$chain_name" &>/dev/null; then
+            local chain_info
+            chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null | head -3)
+            actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || true)
+        fi
+
+        local entry
+        entry=$(jq -n \
+            --arg type "$chain_type" \
+            --arg hook "$chain_hook" \
+            --argjson priority "$chain_priority" \
+            --arg policy "${actual_policy:-missing}" \
+            '{type: $type, hook: $hook, priority: $priority, policy: $policy}')
+        ipv4_chain_entries="${ipv4_chain_entries}$(jq -n --arg k "$chain_name" --argjson v "$entry" '{($k): $v}')"$'\n'
+    done
+    if [[ -n "$ipv4_chain_entries" ]]; then
+        ipv4_chains_json=$(echo "$ipv4_chain_entries" | jq -s 'add')
+    fi
+
+    local ipv6_chains_json="{}"
+    local ipv6_chain_entries=""
+    for chain_name in "${!NFTBAN_IPV6_CHAINS[@]}"; do
+        local chain_spec="${NFTBAN_IPV6_CHAINS[$chain_name]}"
+        local chain_type chain_hook chain_priority _chain_policy
+        IFS='|' read -r chain_type chain_hook chain_priority _chain_policy _ <<< "$chain_spec"
+
+        local actual_policy=""
+        if nft list chain ip6 nftban "$chain_name" &>/dev/null; then
+            local chain_info
+            chain_info=$(nft list chain ip6 nftban "$chain_name" 2>/dev/null | head -3)
+            actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || true)
+        fi
+
+        local entry
+        entry=$(jq -n \
+            --arg type "$chain_type" \
+            --arg hook "$chain_hook" \
+            --argjson priority "$chain_priority" \
+            --arg policy "${actual_policy:-missing}" \
+            '{type: $type, hook: $hook, priority: $priority, policy: $policy}')
+        ipv6_chain_entries="${ipv6_chain_entries}$(jq -n --arg k "$chain_name" --argjson v "$entry" '{($k): $v}')"$'\n'
+    done
+    if [[ -n "$ipv6_chain_entries" ]]; then
+        ipv6_chains_json=$(echo "$ipv6_chain_entries" | jq -s 'add')
+    fi
+
+    # ── Collect rule order validation ──
+    local rule_order_json="{}"
+    local ip_wl_before_bl=false ip_bl_before_est=false
+    local ip6_wl_before_bl=false ip6_bl_before_est=false
+
+    for family in ip ip6; do
+        local wl_set="whitelist_ipv4" bl_set="blacklist_ipv4"
+        [[ "$family" == "ip6" ]] && wl_set="whitelist_ipv6" && bl_set="blacklist_ipv6"
+
+        local rules
+        rules=$(nft -a list chain "$family" nftban input 2>/dev/null || true)
+        [[ -z "$rules" ]] && continue
+
+        local wl_h bl_h est_h
+        wl_h=$(echo "$rules" | grep -E "@${wl_set}.*accept" | grep -oP 'handle \K[0-9]+' | head -1 || true)
+        bl_h=$(echo "$rules" | grep -E "@${bl_set}.*drop" | grep -oP 'handle \K[0-9]+' | head -1 || true)
+        est_h=$(echo "$rules" | grep -E 'ct state.*established' | grep -oP 'handle \K[0-9]+' | head -1 || true)
+
+        wl_h=${wl_h:-0}; bl_h=${bl_h:-0}; est_h=${est_h:-0}
+
+        local wl_bl=false bl_est=false
+        [[ $wl_h -gt 0 && $bl_h -gt 0 && $wl_h -lt $bl_h ]] && wl_bl=true
+        [[ $bl_h -gt 0 && $est_h -gt 0 && $bl_h -lt $est_h ]] && bl_est=true
+
+        if [[ "$family" == "ip" ]]; then
+            ip_wl_before_bl=$wl_bl
+            ip_bl_before_est=$bl_est
+        else
+            ip6_wl_before_bl=$wl_bl
+            ip6_bl_before_est=$bl_est
+        fi
+    done
+
+    rule_order_json=$(jq -n \
+        --argjson ip_wl "$ip_wl_before_bl" \
+        --argjson ip_bl "$ip_bl_before_est" \
+        --argjson ip6_wl "$ip6_wl_before_bl" \
+        --argjson ip6_bl "$ip6_bl_before_est" \
+        '{ip: {whitelist_before_blacklist: $ip_wl, blacklist_before_established: $ip_bl}, ip6: {whitelist_before_blacklist: $ip6_wl, blacklist_before_established: $ip6_bl}}')
+
+    # ── Run validation checks ──
+    local tables_ok=false sets_ok=false chains_ok=false types_ok=false rule_order_ok=false
+    nftban_nft_validate_tables &>/dev/null && tables_ok=true
+    nftban_nft_validate_sets &>/dev/null && sets_ok=true
+    nftban_nft_validate_chains &>/dev/null && chains_ok=true
+    nftban_nft_validate_set_flags &>/dev/null && types_ok=true
+    nftban_nft_validate_rule_order &>/dev/null && rule_order_ok=true
+
+    local overall="PASS"
+    if [[ "$tables_ok" != "true" || "$sets_ok" != "true" || "$chains_ok" != "true" || "$types_ok" != "true" || "$rule_order_ok" != "true" ]]; then
+        overall="FAIL"
+    fi
+
+    local validation_json
+    validation_json=$(jq -n \
+        --argjson tables_ok "$tables_ok" \
+        --argjson sets_ok "$sets_ok" \
+        --argjson chains_ok "$chains_ok" \
+        --argjson types_ok "$types_ok" \
+        --argjson rule_order_ok "$rule_order_ok" \
+        --arg overall "$overall" \
+        '{tables_ok: $tables_ok, sets_ok: $sets_ok, chains_ok: $chains_ok, types_ok: $types_ok, rule_order_ok: $rule_order_ok, overall: $overall}')
+
+    # ── Assemble final JSON ──
+    local recorded_at
+    recorded_at=$(date -Is 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z')
+
+    local final_json
+    final_json=$(jq -n \
+        --arg recorded_at "$recorded_at" \
+        --arg nftban_version "$nftban_version" \
+        --argjson tables "$tables_json" \
+        --argjson ipv4_sets "$ipv4_sets_json" \
+        --argjson ipv6_sets "$ipv6_sets_json" \
+        --argjson ipv4_chains "$ipv4_chains_json" \
+        --argjson ipv6_chains "$ipv6_chains_json" \
+        --argjson rule_order "$rule_order_json" \
+        --argjson validation "$validation_json" \
+        '{
+            recorded_at: $recorded_at,
+            nftban_version: $nftban_version,
+            schema: {
+                tables: $tables,
+                sets: {
+                    "ip nftban": $ipv4_sets,
+                    "ip6 nftban": $ipv6_sets
+                },
+                chains: {
+                    "ip nftban": $ipv4_chains,
+                    "ip6 nftban": $ipv6_chains
+                },
+                rule_order: $rule_order,
+                validation: $validation
+            }
+        }')
+
+    # ── Output ──
+    if [[ "$to_stdout" == "true" ]]; then
+        echo "$final_json"
+    else
+        # Write to file
+        local output_dir
+        output_dir=$(dirname "$output_file")
+        if [[ ! -d "$output_dir" ]]; then
+            mkdir -p "$output_dir" 2>/dev/null || {
+                echo "ERROR: Cannot create directory: $output_dir" >&2
+                return 1
+            }
+        fi
+        echo "$final_json" > "$output_file" || {
+            echo "ERROR: Cannot write to: $output_file" >&2
+            return 1
+        }
+        echo "Schema recorded to: $output_file"
+        echo "Version: $nftban_version"
+        echo "Validation: $overall"
+        echo "Tables: $(echo "$tables_json" | jq -r 'length') | Sets: $((${#NFTBAN_IPV4_SETS[@]} + ${#NFTBAN_IPV6_SETS[@]})) | Chains: $((${#NFTBAN_IPV4_CHAINS[@]} + ${#NFTBAN_IPV6_CHAINS[@]}))"
+    fi
+
+    return 0
+}
+
+_firewall_record_diff() {
+    # Compare current live schema against a previously recorded JSON file
+    local baseline_file="$1"
+
+    if [[ ! -f "$baseline_file" ]]; then
+        echo "ERROR: Baseline file not found: $baseline_file" >&2
+        return 1
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        echo "ERROR: jq is required for schema diff. Install with: apt install jq" >&2
+        return 1
+    fi
+
+    # Validate JSON
+    if ! jq empty "$baseline_file" 2>/dev/null; then
+        echo "ERROR: Invalid JSON in baseline file: $baseline_file" >&2
+        return 1
+    fi
+
+    # Record current state to temp file
+    local current_file
+    current_file=$(mktemp /tmp/nftban_schema_current_XXXXXX.json) || return 1
+
+    # Capture current schema to stdout
+    firewall_record --json > "$current_file" 2>/dev/null || {
+        echo "ERROR: Failed to record current schema" >&2
+        rm -f "$current_file"
+        return 1
+    }
+
+    local baseline_time baseline_version
+    baseline_time=$(jq -r '.recorded_at // "unknown"' "$baseline_file")
+    baseline_version=$(jq -r '.nftban_version // "unknown"' "$baseline_file")
+    local current_version
+    current_version=$(jq -r '.nftban_version // "unknown"' "$current_file")
+
+    echo "NFTBan Schema Diff"
+    echo "==================="
+    echo ""
+    echo "Baseline: $baseline_file"
+    echo "  Recorded: $baseline_time"
+    echo "  Version:  $baseline_version"
+    echo ""
+    echo "Current:"
+    echo "  Version:  $current_version"
+    echo ""
+
+    local changes=0
+
+    # Compare tables
+    local baseline_tables current_tables
+    baseline_tables=$(jq -r '.schema.tables // [] | sort | .[]' "$baseline_file" 2>/dev/null)
+    current_tables=$(jq -r '.schema.tables // [] | sort | .[]' "$current_file" 2>/dev/null)
+
+    if [[ "$baseline_tables" != "$current_tables" ]]; then
+        echo "Tables: CHANGED"
+        local added removed
+        added=$(comm -13 <(echo "$baseline_tables" | sort) <(echo "$current_tables" | sort) 2>/dev/null || true)
+        removed=$(comm -23 <(echo "$baseline_tables" | sort) <(echo "$current_tables" | sort) 2>/dev/null || true)
+        [[ -n "$added" ]] && echo "  Added: $added"
+        [[ -n "$removed" ]] && echo "  Removed: $removed"
+        changes=$((changes + 1))
+    else
+        echo "Tables: unchanged"
+    fi
+
+    # Compare sets (count changes)
+    echo ""
+    echo "Set Element Counts:"
+    for table_key in "ip nftban" "ip6 nftban"; do
+        local jq_key="$table_key"
+        local baseline_sets current_sets
+        baseline_sets=$(jq -r --arg t "$jq_key" '.schema.sets[$t] // {} | keys[]' "$baseline_file" 2>/dev/null | sort)
+        current_sets=$(jq -r --arg t "$jq_key" '.schema.sets[$t] // {} | keys[]' "$current_file" 2>/dev/null | sort)
+
+        for set_name in $(echo -e "${baseline_sets}\n${current_sets}" | sort -u); do
+            local b_count c_count
+            b_count=$(jq -r --arg t "$jq_key" --arg s "$set_name" '.schema.sets[$t][$s].elements // 0' "$baseline_file" 2>/dev/null)
+            c_count=$(jq -r --arg t "$jq_key" --arg s "$set_name" '.schema.sets[$t][$s].elements // 0' "$current_file" 2>/dev/null)
+            if [[ "$b_count" != "$c_count" ]]; then
+                local delta=$((c_count - b_count))
+                local sign="+"
+                [[ $delta -lt 0 ]] && sign=""
+                echo "  ${table_key} ${set_name}: ${b_count} -> ${c_count} (${sign}${delta})"
+                changes=$((changes + 1))
+            fi
+        done
+    done
+
+    # Compare validation results
+    echo ""
+    local baseline_overall current_overall
+    baseline_overall=$(jq -r '.schema.validation.overall // "unknown"' "$baseline_file" 2>/dev/null)
+    current_overall=$(jq -r '.schema.validation.overall // "unknown"' "$current_file" 2>/dev/null)
+    if [[ "$baseline_overall" != "$current_overall" ]]; then
+        echo "Validation: ${baseline_overall} -> ${current_overall}"
+        changes=$((changes + 1))
+    else
+        echo "Validation: ${current_overall} (unchanged)"
+    fi
+
+    echo ""
+    if [[ $changes -eq 0 ]]; then
+        echo "Result: No differences detected"
+    else
+        echo "Result: ${changes} change(s) detected"
+    fi
+
+    rm -f "$current_file"
+    return 0
+}
+
+# =============================================================================
 # HELP FUNCTIONS
 # =============================================================================
 
@@ -1096,14 +1663,19 @@ Usage: nftban firewall <subcommand> [options]
 
 Firewall structure validation, IP/port checking, and management.
 
+Overview:
+  status        Quick overview (tables, sets, services, conflicts)
+  stats         Show firewall statistics (tables, chains, sets, IPs)
+
 Validation & Diagnostics:
   validate      Validate nftables structure (use --strict for full check)
   conflicts     Detect conflicting firewalls (fail2ban, ufw, etc.)
   check         Check if IP or port is blocked/allowed
-  stats         Show firewall statistics (tables, chains, sets, IPs)
   logs          View and filter firewall logs
+  record        Snapshot current nft schema to JSON for audit/comparison
 
 Operations:
+  init          Initialize firewall tables (alias for rebuild)
   reload        Reload nftables ruleset from config
   rebuild       Rebuild schema (fix corruption, keeps IPs)
   reset         Complete reset (flush all, rebuild clean)
@@ -1119,6 +1691,11 @@ Examples:
   # Quick checks
   nftban firewall check 1.2.3.4
   nftban firewall stats
+
+  # Schema audit
+  nftban firewall record               # Snapshot schema to JSON
+  nftban firewall record --json        # Output to stdout
+  nftban firewall record --diff file   # Compare against baseline
 
   # Recovery operations
   nftban firewall rebuild              # Fix corruption
@@ -1394,6 +1971,51 @@ Examples:
 After reset, restore data with:
   nftban geoban sync
   nftban feeds sync
+
+EOF
+}
+
+show_record_help() {
+    cat <<'EOF'
+Usage: nftban firewall record [OPTIONS]
+
+Snapshot the current live nft schema to a JSON file for audit/comparison.
+Creates a "known good" baseline that can later be diffed against.
+
+Options:
+  --output, -o <path>   Where to save (default: /var/lib/nftban/schema/schema_record.json)
+  --json                Output to stdout instead of file (for piping)
+  --diff, -d <path>     Compare current schema against a previously recorded file
+  -h, --help            Show this help message
+
+What it records:
+  - Tables present (ip nftban, ip6 nftban)
+  - All sets with types, flags, and element counts
+  - All chains with types, hooks, priorities, and policies
+  - Rule order validation (whitelist -> blacklist -> established)
+  - Overall validation result (PASS/FAIL)
+
+Examples:
+  # Record current schema to default location
+  nftban firewall record
+
+  # Record to custom path
+  nftban firewall record --output /tmp/schema_before_upgrade.json
+
+  # Output JSON to stdout (for piping)
+  nftban firewall record --json | jq .schema.validation
+
+  # Compare current schema against a baseline
+  nftban firewall record --diff /var/lib/nftban/schema/schema_record.json
+
+Workflow:
+  # Before upgrade: record baseline
+  nftban firewall record --output /var/lib/nftban/schema/pre_upgrade.json
+
+  # After upgrade: compare
+  nftban firewall record --diff /var/lib/nftban/schema/pre_upgrade.json
+
+Output location: /var/lib/nftban/schema/
 
 EOF
 }

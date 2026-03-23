@@ -10,7 +10,7 @@
 # Run: build/generate-fhs-outputs.sh
 # =============================================================================
 
-version: "1.3.0"
+version: "1.4.0"
 generated_header: "Generated from build/fhs-spec.yaml - DO NOT EDIT"
 
 # =============================================================================
@@ -282,6 +282,90 @@ directories:
       description: "Custom nftables rules"
       created_by: package
 
+    - path: /etc/nftban/conf.d/rbl
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "RBL check configuration"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/geoban
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Geographic ban configuration"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/geoip
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "GeoIP database configuration"
+      created_by: package
+
+    - path: /etc/nftban/nftables.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "NFTBan-managed nftables include fragments"
+      created_by: package
+
+    - path: /etc/nftban/ssl
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "TLS certificates for GUI/API"
+      created_by: package
+
+    - path: /etc/nftban/suricata
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata integration configuration"
+      created_by: package
+
+    - path: /etc/nftban/suricata/profiles
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata detection profiles"
+      created_by: package
+
+    - path: /etc/nftban/suricata/config
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata configuration files"
+      created_by: package
+
+    - path: /etc/nftban/suricata/rules
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata custom rules"
+      created_by: package
+
+    - path: /etc/nftban/suricata/cache
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata rule cache"
+      created_by: package
+
+    - path: /etc/nftban/suricata/state
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata state tracking"
+      created_by: package
+
+    - path: /etc/nftban/suricata/state/last-good
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Suricata last-good configuration backup"
+      created_by: package
+
     - path: /etc/nftban/connectors
       mode: "0750"
       owner: root
@@ -456,6 +540,97 @@ directories:
       description: "DNS tunnel suspicion state (scores, history)"
       created_by: tmpfiles
 
+    - path: /var/lib/nftban/analytics
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Analytics state data"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/backup
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Firewall backup snapshots (root-owned for integrity)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/config
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Runtime configuration state"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/login
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Login monitor state data"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/panels
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Panel integration state"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/portscan
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Port scan detection state"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/recorder
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Flight recorder events and snapshots"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/staging
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Feed staging area (temporary download/validation)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/state
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Critical runtime state files"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/suricata
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Suricata integration state"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/update-backups
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Update rollback backups (root-owned for integrity)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/watchdog
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Watchdog reports and state"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/reports/archive
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Archived reports"
+      created_by: tmpfiles
+
     - path: /var/lib/nftban/pro
       mode: "0750"
       owner: root
@@ -502,6 +677,13 @@ directories:
       description: "HTTP Bot Guard logs"
       created_by: tmpfiles
 
+    - path: /var/log/nftban/metrics
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Metrics export logs"
+      created_by: tmpfiles
+
     - path: /var/log/nftban/suricata
       mode: "0770"
       owner: suricata
@@ -535,6 +717,13 @@ directories:
       description: "Runtime data (PID files, sockets)"
       created_by: tmpfiles
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict"
+
+    - path: /run/nftban-ui
+      mode: "0755"
+      owner: root
+      group: nftban
+      description: "GUI/API runtime socket directory"
+      created_by: tmpfiles
 
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data

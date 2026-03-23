@@ -261,6 +261,19 @@ nftban_whitelist_remove_ip() {
 
 # List whitelisted IPs
 nftban_whitelist_list() {
+    # v1.38.0: Show implicit (always-protected) entries first
+    echo "Implicit (always protected):"
+    echo "────────────────────────────"
+    echo "  127.0.0.1       IMPLICIT (loopback IPv4)"
+    echo "  ::1             IMPLICIT (loopback IPv6)"
+    # Show server's own IPs
+    local _ip
+    while IFS= read -r _ip; do
+        [[ -z "$_ip" ]] && continue
+        echo "  ${_ip}  IMPLICIT (server IP)"
+    done < <(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[^/]+' 2>/dev/null; ip -6 addr show scope global 2>/dev/null | grep -oP 'inet6 \K[^/]+' 2>/dev/null)
+    echo ""
+
     echo "IPv4 Whitelist:"
     echo "───────────────"
     timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' || echo "  (empty or not available)"

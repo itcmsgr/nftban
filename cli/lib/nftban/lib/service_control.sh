@@ -718,12 +718,23 @@ nftban_enable_all() {
 }
 
 # Disable all NFTBan services (emergency mode)
-# Usage: nftban_disable_all
+# Usage: nftban_disable_all [--flush-rules]
+# Options:
+#   --flush-rules   Also flush nft tables (remove all firewall rules)
+#                   Without this flag, nft rules remain active in kernel
 nftban_disable_all() {
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Must be root to disable services" >&2
         return 1
     fi
+
+    # v1.38.0: Parse --flush-rules flag
+    local flush_rules=false
+    for arg in "$@"; do
+        case "$arg" in
+            --flush-rules) flush_rules=true ;;
+        esac
+    done
 
     echo "EMERGENCY: Disabling all NFTBan services..."
 
@@ -750,11 +761,27 @@ nftban_disable_all() {
         fi
     done
 
+    # v1.38.0: Flush nft tables if --flush-rules is set
+    if [[ "$flush_rules" == "true" ]]; then
+        echo "  Flushing nftables rules..."
+        if command -v nft >/dev/null 2>&1; then
+            nft flush table ip nftban 2>/dev/null || true
+            nft flush table ip6 nftban 2>/dev/null || true
+            echo "  NFTBan firewall rules removed from kernel."
+        fi
+    fi
+
     # Set master switch to disabled
     _nftban_set_config "NFTBAN_ENABLED" "false"
 
     echo ""
     echo "All NFTBan services stopped and disabled."
+    if [[ "$flush_rules" == "false" ]]; then
+        echo ""
+        echo "NOTE: Firewall rules remain active in kernel."
+        echo "  To also remove rules: nftban disable --flush-rules"
+        echo "  To delete tables:     nft delete table ip nftban; nft delete table ip6 nftban"
+    fi
     echo ""
     echo "To re-enable:"
     echo "  nftban enable"

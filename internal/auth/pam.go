@@ -29,7 +29,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/user"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -338,8 +341,56 @@ func (p *PAMAuth) getUserGroups(u *user.User) ([]string, error) {
 	return groups, nil
 }
 
-// AuditLog writes an audit log entry
+// auditLogPath is the persistent audit log file location
+const auditLogPath = "/var/log/nftban/audit.log"
+
+// auditMu serializes audit log writes
+var auditMu sync.Mutex
+
+// auditEntry represents a single JSON audit log record
+type auditEntry struct {
+	Timestamp string `json:"timestamp"`
+	Event     string `json:"event"`
+	User      string `json:"user"`
+	IP        string `json:"ip"`
+	Result    string `json:"result"`
+}
+
+// AuditLog writes an audit log entry to both syslog and /var/log/nftban/audit.log
 func (p *PAMAuth) AuditLog(username, action, result, clientIP string) {
-	// TODO: Write to audit log file
+	// Always log to syslog/stdout
 	log.Printf("[AUDIT] User: %s | Action: %s | Result: %s | IP: %s", logutil.Sanitize(username), logutil.Sanitize(action), logutil.Sanitize(result), logutil.Sanitize(clientIP))
+
+	// Persist to audit.log as JSON (one entry per line)
+	entry := auditEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Event:     logutil.Sanitize(action),
+		User:      logutil.Sanitize(username),
+		IP:        logutil.Sanitize(clientIP),
+		Result:    logutil.Sanitize(result),
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		log.Printf("[AUDIT] Failed to marshal audit entry: %v", err)
+		return
+	}
+
+	auditMu.Lock()
+	defer auditMu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(auditLogPath), 0750); err != nil {
+		log.Printf("[AUDIT] Failed to create audit log directory: %v", err)
+		return
+	}
+
+	f, err := os.OpenFile(auditLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640) // #nosec G302 -- audit log readable by nftban group
+	if err != nil {
+		log.Printf("[AUDIT] Failed to open audit log: %v", err)
+		return
+	}
+	defer f.Close()
+
+	f.Write(data)
+	f.Write([]byte("\n"))
 }

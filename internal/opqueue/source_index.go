@@ -39,11 +39,12 @@ var persistSets = map[string]bool{
 
 // IndexEntry represents a persisted index entry
 type IndexEntry struct {
-	Set     string   `json:"set"`
-	Element string   `json:"element"`
-	Sources []string `json:"sources"`
-	TTL     uint32   `json:"ttl,omitempty"`
-	Updated int64    `json:"updated"`
+	Set       string   `json:"set"`
+	Element   string   `json:"element"`
+	Sources   []string `json:"sources"`
+	TTL       uint32   `json:"ttl,omitempty"`
+	Updated   int64    `json:"updated"`
+	ExpiresAt int64    `json:"expires_at,omitempty"` // Unix timestamp; 0 = no expiry
 }
 
 // SourceIndex tracks which elements came from which source
@@ -53,6 +54,9 @@ type SourceIndex struct {
 
 	// set -> element -> sources
 	index map[string]map[string]map[string]struct{}
+
+	// set -> element -> expiry timestamp (0 = no expiry)
+	expiry map[string]map[string]int64
 
 	// Persistence
 	indexPath string
@@ -68,6 +72,7 @@ func NewSourceIndex(indexPath string) *SourceIndex {
 	}
 	return &SourceIndex{
 		index:     make(map[string]map[string]map[string]struct{}),
+		expiry:    make(map[string]map[string]int64),
 		indexPath: indexPath,
 		saveCh:    make(chan struct{}, 1),
 		stopCh:    make(chan struct{}),
@@ -91,6 +96,71 @@ func (si *SourceIndex) Add(setName, element, source string) {
 	if persistSets[setName] {
 		si.markDirty()
 	}
+}
+
+// AddWithExpiry adds an element with its source and an expiry time.
+// If expiresAt is 0, the entry never expires.
+func (si *SourceIndex) AddWithExpiry(setName, element, source string, expiresAt int64) {
+	si.mu.Lock()
+	defer si.mu.Unlock()
+
+	if si.index[setName] == nil {
+		si.index[setName] = make(map[string]map[string]struct{})
+	}
+	if si.index[setName][element] == nil {
+		si.index[setName][element] = make(map[string]struct{})
+	}
+	si.index[setName][element][source] = struct{}{}
+
+	if expiresAt > 0 {
+		if si.expiry[setName] == nil {
+			si.expiry[setName] = make(map[string]int64)
+		}
+		si.expiry[setName][element] = expiresAt
+	}
+
+	if persistSets[setName] {
+		si.markDirty()
+	}
+}
+
+// PruneExpired removes entries whose ExpiresAt has passed.
+// Returns the number of entries pruned.
+func (si *SourceIndex) PruneExpired() int {
+	now := time.Now().Unix()
+	pruned := 0
+
+	si.mu.Lock()
+	defer si.mu.Unlock()
+
+	for setName, elements := range si.expiry {
+		for element, expiresAt := range elements {
+			if expiresAt > 0 && expiresAt <= now {
+				// Remove from main index
+				if si.index[setName] != nil {
+					delete(si.index[setName], element)
+					if len(si.index[setName]) == 0 {
+						delete(si.index, setName)
+					}
+				}
+				delete(elements, element)
+				pruned++
+			}
+		}
+		if len(elements) == 0 {
+			delete(si.expiry, setName)
+		}
+	}
+
+	if pruned > 0 {
+		si.dirty.Store(true)
+		select {
+		case si.saveCh <- struct{}{}:
+		default:
+		}
+	}
+
+	return pruned
 }
 
 // Remove removes a source from an element
@@ -228,6 +298,14 @@ func (si *SourceIndex) LoadFromDisk() error {
 		for _, src := range entry.Sources {
 			si.index[entry.Set][entry.Element][src] = struct{}{}
 		}
+
+		// Restore expiry if set
+		if entry.ExpiresAt > 0 {
+			if si.expiry[entry.Set] == nil {
+				si.expiry[entry.Set] = make(map[string]int64)
+			}
+			si.expiry[entry.Set][entry.Element] = entry.ExpiresAt
+		}
 	}
 
 	return scanner.Err()
@@ -257,11 +335,17 @@ func (si *SourceIndex) SaveToDisk() error {
 				srcList = append(srcList, src)
 			}
 
+			var expiresAt int64
+			if si.expiry[setName] != nil {
+				expiresAt = si.expiry[setName][element]
+			}
+
 			entries = append(entries, IndexEntry{
-				Set:     setName,
-				Element: element,
-				Sources: srcList,
-				Updated: now,
+				Set:       setName,
+				Element:   element,
+				Sources:   srcList,
+				Updated:   now,
+				ExpiresAt: expiresAt,
 			})
 		}
 	}

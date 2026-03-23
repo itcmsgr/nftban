@@ -236,7 +236,7 @@ run_all_tests() {
     echo ""
     echo "=== FIREWALL COMMANDS ==="
     test_command "firewall status" "nftban firewall status"
-    test_command "firewall check" "nftban firewall check"
+    test_command "firewall check" "nftban firewall check 8.8.8.8"
 
     # Search & List Commands
     echo ""

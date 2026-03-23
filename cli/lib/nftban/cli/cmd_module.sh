@@ -79,6 +79,76 @@ if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
 fi
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_module_help() {
+    # Load output module for standard banner
+    source "${LIB_DIR}/core/nftban_output.sh" || return 1
+    nftban_banner
+    echo ""
+    echo "Usage:"
+    echo "  nftban module [detailed] [--save FILE] [--email ADDR]  # Show inventory"
+    echo "  nftban module summary                                   # One-line summary"
+    echo "  nftban module json [--save FILE]                       # JSON output"
+    echo "  nftban module validate [--save FILE] [--email ADDR]    # Metadata validation"
+    echo "  nftban module license [--save FILE] [--email ADDR]     # License compliance"
+    echo "  nftban module author [--save FILE] [--email ADDR]      # Author attribution"
+    echo "  nftban module depends [--save FILE] [--email ADDR]     # Dependency analysis"
+    echo "  nftban module html-report [--save FILE] [--email ADDR] # HTML report"
+    echo "  nftban module mail-report [path] [recipient]           # Mail report"
+    echo "  nftban module help                                      # Show this help"
+    echo ""
+    echo "NEW Validation Commands (v1.1.0):"
+    echo "  validate   - Check metadata completeness (name, version, type, owner, license)"
+    echo "  license    - Check license compliance (MPL-2.0 vs GPL vs missing)"
+    echo "  author     - Check author attribution (Antonios Voulvoulis)"
+    echo "  depends    - Analyze module dependencies"
+    echo ""
+    echo "NEW Flags:"
+    echo "  --save FILE     Save output to specified file"
+    echo "  --email ADDR    Email report to specified address"
+    echo ""
+    echo "Examples:"
+    echo "  nftban module                          # Show all modules (table)"
+    echo "  nftban module validate                 # Check metadata compliance"
+    echo "  nftban module license                  # Find GPL scripts (should be MPL-2.0)"
+    echo "  nftban module author                   # Find wrong/missing authors"
+    echo "  nftban module depends                  # Analyze dependencies"
+    echo ""
+    echo "  # Save reports to files:"
+    echo "  nftban module validate --save /tmp/validation.txt"
+    echo "  nftban module license --save ${NFTBAN_LOG_DIR}/license_check.txt"
+    echo ""
+    echo "  # Email reports:"
+    echo "  nftban module validate --email admin@example.com"
+    echo "  nftban module html-report --email security@example.com"
+    echo ""
+    echo "  # Combined save and email:"
+    echo "  nftban module author --save /tmp/authors.txt --email dev@example.com"
+    echo ""
+    echo "Output Columns:"
+    echo "  NAME     - Module name (from meta:name)"
+    echo "  VERSION  - Module version (from meta:version)"
+    echo "  TYPE     - Module type (core, cli, util, etc.)"
+    echo "  STATUS   - ENABLED or DISABLED"
+    echo "  PATH     - File path (relative to /usr/lib/nftban)"
+    echo ""
+    echo "Validation Reports (INFORMATIONAL ONLY):"
+    echo "  ✔ All validation commands are READ-ONLY"
+    echo "  ✔ No files are modified"
+    echo "  ✔ Reports show compliance issues for review"
+    echo "  ✔ Standard: MPL-2.0 license, Antonios Voulvoulis author"
+    echo ""
+    echo "Notes:"
+    echo "  - Scans all .sh files in /usr/lib/nftban/"
+    echo "  - Reads meta tags from file headers"
+    echo "  - Validation is informational only (no automatic fixes)"
+    echo "  - No special privileges required"
+    echo ""
+}
+
+# =============================================================================
 
 # MODULE COMMAND HANDLER
 # =============================================================================
@@ -405,70 +475,7 @@ nftban_cmd_module() {
             ;;
 
         help|--help|-h)
-            # Show help
-            # Load output module for standard banner
-            source "${LIB_DIR}/core/nftban_output.sh" || return 1
-            nftban_banner
-            echo ""
-            echo "Usage:"
-            echo "  nftban module [detailed] [--save FILE] [--email ADDR]  # Show inventory"
-            echo "  nftban module summary                                   # One-line summary"
-            echo "  nftban module json [--save FILE]                       # JSON output"
-            echo "  nftban module validate [--save FILE] [--email ADDR]    # Metadata validation"
-            echo "  nftban module license [--save FILE] [--email ADDR]     # License compliance"
-            echo "  nftban module author [--save FILE] [--email ADDR]      # Author attribution"
-            echo "  nftban module depends [--save FILE] [--email ADDR]     # Dependency analysis"
-            echo "  nftban module html-report [--save FILE] [--email ADDR] # HTML report"
-            echo "  nftban module mail-report [path] [recipient]           # Mail report"
-            echo "  nftban module help                                      # Show this help"
-            echo ""
-            echo "NEW Validation Commands (v1.1.0):"
-            echo "  validate   - Check metadata completeness (name, version, type, owner, license)"
-            echo "  license    - Check license compliance (MPL-2.0 vs GPL vs missing)"
-            echo "  author     - Check author attribution (Antonios Voulvoulis)"
-            echo "  depends    - Analyze module dependencies"
-            echo ""
-            echo "NEW Flags:"
-            echo "  --save FILE     Save output to specified file"
-            echo "  --email ADDR    Email report to specified address"
-            echo ""
-            echo "Examples:"
-            echo "  nftban module                          # Show all modules (table)"
-            echo "  nftban module validate                 # Check metadata compliance"
-            echo "  nftban module license                  # Find GPL scripts (should be MPL-2.0)"
-            echo "  nftban module author                   # Find wrong/missing authors"
-            echo "  nftban module depends                  # Analyze dependencies"
-            echo ""
-            echo "  # Save reports to files:"
-            echo "  nftban module validate --save /tmp/validation.txt"
-            echo "  nftban module license --save ${NFTBAN_LOG_DIR}/license_check.txt"
-            echo ""
-            echo "  # Email reports:"
-            echo "  nftban module validate --email admin@example.com"
-            echo "  nftban module html-report --email security@example.com"
-            echo ""
-            echo "  # Combined save and email:"
-            echo "  nftban module author --save /tmp/authors.txt --email dev@example.com"
-            echo ""
-            echo "Output Columns:"
-            echo "  NAME     - Module name (from meta:name)"
-            echo "  VERSION  - Module version (from meta:version)"
-            echo "  TYPE     - Module type (core, cli, util, etc.)"
-            echo "  STATUS   - ENABLED or DISABLED"
-            echo "  PATH     - File path (relative to /usr/lib/nftban)"
-            echo ""
-            echo "Validation Reports (INFORMATIONAL ONLY):"
-            echo "  ✔ All validation commands are READ-ONLY"
-            echo "  ✔ No files are modified"
-            echo "  ✔ Reports show compliance issues for review"
-            echo "  ✔ Standard: MPL-2.0 license, Antonios Voulvoulis author"
-            echo ""
-            echo "Notes:"
-            echo "  - Scans all .sh files in /usr/lib/nftban/"
-            echo "  - Reads meta tags from file headers"
-            echo "  - Validation is informational only (no automatic fixes)"
-            echo "  - No special privileges required"
-            echo ""
+            nftban_cmd_module_help
             return 0
             ;;
 
