@@ -1308,8 +1308,8 @@ firewall_record() {
     local ipv4_set_entries=""
     for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
         local set_spec="${NFTBAN_IPV4_SETS[$set_name]}"
-        local expected_type expected_flags
-        IFS='|' read -r expected_type expected_flags _ <<< "$set_spec"
+        local _expected_type _expected_flags
+        IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
 
         local count=0
         local actual_type="" actual_flags=""
@@ -1338,8 +1338,8 @@ firewall_record() {
     local ipv6_set_entries=""
     for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
         local set_spec="${NFTBAN_IPV6_SETS[$set_name]}"
-        local expected_type expected_flags
-        IFS='|' read -r expected_type expected_flags _ <<< "$set_spec"
+        local _expected_type _expected_flags
+        IFS='|' read -r _expected_type _expected_flags _ <<< "$set_spec"
 
         local count=0
         local actual_type="" actual_flags=""
@@ -1368,8 +1368,8 @@ firewall_record() {
     local ipv4_chain_entries=""
     for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
         local chain_spec="${NFTBAN_IPV4_CHAINS[$chain_name]}"
-        local chain_type chain_hook chain_priority chain_policy
-        IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+        local chain_type chain_hook chain_priority _chain_policy
+        IFS='|' read -r chain_type chain_hook chain_priority _chain_policy _ <<< "$chain_spec"
 
         local actual_policy=""
         if nft list chain ip nftban "$chain_name" &>/dev/null; then
@@ -1395,8 +1395,8 @@ firewall_record() {
     local ipv6_chain_entries=""
     for chain_name in "${!NFTBAN_IPV6_CHAINS[@]}"; do
         local chain_spec="${NFTBAN_IPV6_CHAINS[$chain_name]}"
-        local chain_type chain_hook chain_priority chain_policy
-        IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+        local chain_type chain_hook chain_priority _chain_policy
+        IFS='|' read -r chain_type chain_hook chain_priority _chain_policy _ <<< "$chain_spec"
 
         local actual_policy=""
         if nft list chain ip6 nftban "$chain_name" &>/dev/null; then
