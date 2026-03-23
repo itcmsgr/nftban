@@ -89,7 +89,8 @@ nftban/
 │   ├── nftban-core/       # Main Go binary
 │   ├── nftban-api-server/ # REST API
 │   └── nftban-ui/         # Web interface
-├── pkg/                    # Go packages
+├── internal/              # Go internal packages
+├── pkg/                    # Go public packages (ipc, version)
 ├── install/               # Installation scripts
 ├── packaging/             # RPM/DEB specs
 └── docs/                  # Documentation

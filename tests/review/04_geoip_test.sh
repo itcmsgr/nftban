@@ -34,7 +34,7 @@ GEOIP_DOWNLOAD="${REPO_ROOT}/cli/lib/nftban/core/nftban_geoip_download.sh"
 GEOIP_GO="${REPO_ROOT}/cli/lib/nftban/core/nftban_geoip_go.sh"
 CMD_GEOIP="${REPO_ROOT}/cli/lib/nftban/cli/cmd_geoip.sh"
 GEOIP_CONF="${REPO_ROOT}/etc/nftban/conf.d/geoip/main.conf"
-GO_LOOKUP="${REPO_ROOT}/pkg/geoip/lookup.go"
+GO_LOOKUP="${REPO_ROOT}/internal/geoip/lookup.go"
 TIMER_UNIT="${REPO_ROOT}/install/systemd/nftban-core-geoip.timer"
 SERVICE_UNIT="${REPO_ROOT}/install/systemd/nftban-core-geoip.service"
 

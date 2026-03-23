@@ -37,7 +37,7 @@ type DiffResult = util.DiffResult[string]
 // ComputeDiff compares desired state with current nftables state
 // Returns IPs that need to be added or removed
 //
-// This now uses the optimized generic diff engine from pkg/util
+// This now uses the optimized generic diff engine from internal/util
 // Benefits:
 // - Preallocated maps (no resizing)
 // - Zero allocations for struct{} map values

@@ -281,7 +281,7 @@ The system follows a **single-writer architecture** where all nftables operation
 
 **Surface:** Log monitor parses sshd, mail server, FTP server, and web server logs.
 
-**Code location:** `cli/lib/nftban/core/nftban_login_classic.sh`, `pkg/loginmon/`
+**Code location:** `cli/lib/nftban/core/nftban_login_classic.sh`, `internal/loginmon/`
 
 **Potential attacks:**
 - Inject shell metacharacters in SSH usernames
@@ -340,7 +340,7 @@ The system follows a **single-writer architecture** where all nftables operation
 
 **Surface:** Daemon generates and applies nftables rules via netlink.
 
-**Code location:** `pkg/nftbackend/backend.go`, `pkg/sync/`
+**Code location:** `internal/nftbackend/backend.go`, `internal/setsync/`
 
 **Potential attacks:**
 - Bypass blacklist via rule ordering manipulation
@@ -360,7 +360,7 @@ The system follows a **single-writer architecture** where all nftables operation
 
 **Surface:** External threat feeds parsed and loaded into nftables sets.
 
-**Code location:** `pkg/feeds/parser.go`, `pkg/feeds/loader.go`
+**Code location:** `internal/feeds/parser.go`, `internal/feeds/loader.go`
 
 **Potential attacks:**
 - Malicious feed provider injects whitelist IPs as blacklist (blocks legitimate services)

@@ -92,7 +92,7 @@ Activated by events, not by schedule.
 
 | Service | Replaced By | Removal Target |
 |---------|-------------|----------------|
-| `nftban-login-monitor.service` | `nftband` loginmon module (`pkg/loginmon`) | v1.23.0 |
+| `nftban-login-monitor.service` | `nftband` loginmon module (`internal/loginmon`) | v1.23.0 |
 
 The shell-based login monitor is superseded by the Go daemon's built-in
 loginmon module. Running both simultaneously causes duplicate ban attempts

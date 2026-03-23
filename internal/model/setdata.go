@@ -19,7 +19,7 @@
 package model
 
 // SetData represents nftables set data for template rendering
-// Used by pkg/feeds and pkg/geoban to return IP lists
+// Used by internal/feeds and internal/geoban to return IP lists
 type SetData struct {
 	// IPv4 contains IPv4 addresses and CIDRs
 	IPv4 []string `json:"ipv4"`
@@ -62,7 +62,7 @@ func (s *SetData) IsEmpty() bool {
 }
 
 // FirewallConfig represents complete firewall configuration
-// Used by pkg/firewall.Sync() to generate nftables rules
+// Used by internal/firewall.Sync() to generate nftables rules
 type FirewallConfig struct {
 	// Whitelist IPs (permanent, from /etc/nftban/whitelist.conf)
 	Whitelist *SetData `json:"whitelist"`

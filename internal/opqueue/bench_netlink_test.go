@@ -9,7 +9,7 @@
 // meta:inventory.privileges="root"
 //
 // NOTE: These benchmarks require root privileges and a real nftables setup.
-// Run with: sudo go test -bench=BenchmarkNetlink -benchtime=3s -v ./pkg/opqueue/...
+// Run with: sudo go test -bench=BenchmarkNetlink -benchtime=3s -v ./internal/opqueue/...
 //
 // These benchmarks measure ACTUAL kernel/netlink throughput, not mocked operations.
 
