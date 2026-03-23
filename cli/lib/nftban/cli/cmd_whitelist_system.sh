@@ -56,7 +56,7 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_system_ip.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_system_ip.sh" || return 1
 else
-    echo "ERROR: System IP module not found"
+    echo "ERROR: System IP module not found" >&2
     return 1
 fi
 

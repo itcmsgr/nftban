@@ -1,3 +1,58 @@
+nftban (1.35.0-1) stable; urgency=medium
+
+  * v1.35.0 — Hardening + Health Intelligence + CLI Completeness
+  * IPv4/IPv6 init failure alarm with Prometheus metric
+  * systemd hardening: OnFailure, RemoveIPC, RestrictNamespaces, IO priority
+  * Set size health monitoring (warns at 100K, critical at 500K)
+  * Portscan: reload + config subcommands
+  * RBL: fix CACHE_DIR default pointing to LOG_DIR
+  * Logrotate: added audit.log rotation
+  * Download script: mktemp instead of hardcoded /tmp
+  * Error handling standardization across top 15 commands
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 18:00:00 +0000
+
+nftban (1.34.0-1) stable; urgency=medium
+
+  * v1.34.0 — Periodic Reconciliation + Schema Validation
+  * Periodic reconciliation: daemon verifies kernel state on schedule
+  * Schema fingerprint validation via Prometheus metric
+  * SYNPROXY SSH lockout fix: force-strip SSH port from SYNPROXY
+  * DDoS reload subcommand for live config refresh
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 12:00:00 +0000
+
+nftban (1.33.0-1) stable; urgency=medium
+
+  * v1.33.0 — Set Separation + SYNPROXY SSH Fix + Security Hardening
+  * Set separation: hash sets for manual bans (O(1)), interval for feeds
+  * SYNPROXY SSH lockout prevention
+  * P1 security hardening across daemon and CLI
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sat, 22 Mar 2026 18:00:00 +0000
+
+nftban (1.32.0-1) stable; urgency=medium
+
+  * v1.32.0 — Cache-First Counting + Global NFT Lock
+  * Cache-first counting: 300-640x faster than kernel reads
+  * Global flock for nft operation serialization
+  * IntervalEnd filtering for correct element counts
+  * Scale levels and adaptive exporter intervals
+  * WatchdogSec increased to 120s for large set reconciliation
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sat, 22 Mar 2026 12:00:00 +0000
+
+nftban (1.31.0-1) stable; urgency=medium
+
+  * v1.31.0 — Auto-Merge + Counters + ExecStop IPv6
+  * auto-merge on 4 interval sets for better CIDR aggregation
+  * ExecStop: properly clean up ip6 nftban table on shutdown
+  * Counters: accurate element counting with interval-end filtering
+  * Geoban: mktemp for temporary file handling
+  * Recommends: netmask package for CIDR operations
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 23 Mar 2026 06:00:00 +0000
+
 nftban (1.30.0-1) stable; urgency=medium
 
   * v1.30.0 — Tunnel Suspicion Module + Install Experience Polish

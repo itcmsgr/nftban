@@ -59,7 +59,7 @@ cmd_suricata_profile() {
             local profile_name="${1:-}"
 
             if [[ -z "$profile_name" ]]; then
-                echo "ERROR: Profile name required"
+                echo "ERROR: Profile name required" >&2
                 echo ""
                 echo "Usage: nftban suricata profile set <PROFILE>"
                 echo ""
@@ -768,7 +768,7 @@ REQUIREMENTS:
 EOF
             ;;
         *)
-            echo "ERROR: Unknown eve subcommand: $action"
+            echo "ERROR: Unknown eve subcommand: $action" >&2
             echo "Run 'nftban suricata eve help' for usage"
             return 1
             ;;

@@ -481,7 +481,7 @@ nftban_watchdog_cmd_enable() {
 
     # Check if timer exists
     if ! systemctl list-unit-files nftban-watchdog.timer >/dev/null 2>&1; then
-        echo "Error: nftban-watchdog.timer not found"
+        echo "ERROR: nftban-watchdog.timer not found" >&2
         echo "The watchdog timer needs to be installed first."
         return 1
     fi
@@ -657,7 +657,7 @@ nftban_watchdog_cmd_stats() {
     response=$(_watchdog_ipc_call "stats" "{}")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from daemon"
+        echo "ERROR: No response from daemon" >&2
         return 1
     fi
 
@@ -667,7 +667,7 @@ nftban_watchdog_cmd_stats() {
     if [[ "$success" != "true" ]]; then
         local error
         error=$(echo "$response" | jq -r '.error // "unknown error"')
-        echo "Error: $error"
+        echo "ERROR: $error" >&2
         return 1
     fi
 
@@ -756,7 +756,7 @@ nftban_watchdog_cmd_stats_history() {
     response=$(_watchdog_ipc_call "stats_history" "{\"days\":$days}")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from daemon"
+        echo "ERROR: No response from daemon" >&2
         return 1
     fi
 
@@ -765,7 +765,7 @@ nftban_watchdog_cmd_stats_history() {
     if [[ "$success" != "true" ]]; then
         local error
         error=$(echo "$response" | jq -r '.error // "unknown error"')
-        echo "Error: $error"
+        echo "ERROR: $error" >&2
         return 1
     fi
 
@@ -813,7 +813,7 @@ nftban_watchdog_cmd_snapshot() {
     case "$profile_type" in
         heap|goroutine|cpu) ;;
         *)
-            echo "Error: Invalid profile type '$profile_type'"
+            echo "ERROR: Invalid profile type '$profile_type'" >&2
             echo "Valid types: heap, goroutine, cpu"
             return 1
             ;;
@@ -826,7 +826,7 @@ nftban_watchdog_cmd_snapshot() {
     response=$(_watchdog_ipc_call "snapshot_profile" "{\"type\":\"$profile_type\",\"duration\":$duration}")
 
     if [[ -z "$response" ]]; then
-        echo "Error: No response from daemon"
+        echo "ERROR: No response from daemon" >&2
         return 1
     fi
 
@@ -835,7 +835,7 @@ nftban_watchdog_cmd_snapshot() {
     if [[ "$success" != "true" ]]; then
         local error
         error=$(echo "$response" | jq -r '.error // "unknown error"')
-        echo "Error: $error"
+        echo "ERROR: $error" >&2
         return 1
     fi
 

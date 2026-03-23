@@ -832,7 +832,7 @@ nftban_cmd_search() {
 
     # Validate IP (basic check)
     if [[ ! "$ip" =~ ^[0-9a-fA-F:.\/]+$ ]]; then
-        echo "ERROR: Invalid IP address or port: $ip"
+        echo "ERROR: Invalid IP address or port: $ip" >&2
         return 1
     fi
 

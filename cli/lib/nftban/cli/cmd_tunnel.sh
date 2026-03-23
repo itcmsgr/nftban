@@ -88,7 +88,7 @@ nftban_cmd_tunnel() {
             _tunnel_cmd_usage
             ;;
         *)
-            echo "Error: Unknown subcommand: $subcommand" >&2
+            echo "ERROR: Unknown subcommand: $subcommand" >&2
             echo "Run 'nftban tunnel help' for usage" >&2
             return 1
             ;;
@@ -217,13 +217,13 @@ EOF
 
 _tunnel_cmd_enable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "Error: Must run as root to enable tunnel monitoring" >&2
+        echo "ERROR: Must run as root to enable tunnel monitoring" >&2
         return 1
     fi
 
     # Check if timer exists
     if ! systemctl list-unit-files 2>/dev/null | grep -q "nftban-tunnel.timer"; then
-        echo "Error: nftban-tunnel.timer not found" >&2
+        echo "ERROR: nftban-tunnel.timer not found" >&2
         echo "Please install nftban tunnel systemd units first" >&2
         return 1
     fi
@@ -263,7 +263,7 @@ _tunnel_cmd_enable() {
 
 _tunnel_cmd_disable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "Error: Must run as root to disable tunnel monitoring" >&2
+        echo "ERROR: Must run as root to disable tunnel monitoring" >&2
         return 1
     fi
 
@@ -303,7 +303,7 @@ _tunnel_cmd_top() {
         case "$1" in
             --limit|-l)
                 if [[ $# -lt 2 ]]; then
-                    echo "Error: --limit requires a value" >&2
+                    echo "ERROR: --limit requires a value" >&2
                     return 1
                 fi
                 limit="$2"

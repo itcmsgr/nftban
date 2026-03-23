@@ -540,7 +540,7 @@ _suricata_iface_configure_yaml() {
     local cluster_id_base="${SURICATA_CLUSTER_ID_BASE:-99}"
 
     if [[ ! -f "$yaml_path" ]]; then
-        echo "ERROR: suricata.yaml not found at $yaml_path"
+        echo "ERROR: suricata.yaml not found at $yaml_path" >&2
         return 1
     fi
 
@@ -548,7 +548,7 @@ _suricata_iface_configure_yaml() {
     IFS=',' read -ra iface_array <<< "$interfaces"
 
     if [[ ${#iface_array[@]} -eq 0 ]]; then
-        echo "ERROR: No interfaces specified"
+        echo "ERROR: No interfaces specified" >&2
         return 1
     fi
 
@@ -781,7 +781,7 @@ cmd_suricata_iface_set() {
     local interfaces="${1:-}"
 
     if [[ -z "$interfaces" ]]; then
-        echo "ERROR: Interface(s) required"
+        echo "ERROR: Interface(s) required" >&2
         echo ""
         echo "Usage: nftban suricata iface set <interface>[,interface2,...]"
         echo ""
@@ -1012,7 +1012,7 @@ cmd_suricata_iface() {
             cmd_suricata_iface_help
             ;;
         *)
-            echo "ERROR: Unknown iface command: $action"
+            echo "ERROR: Unknown iface command: $action" >&2
             echo "Run 'nftban suricata iface help' for usage"
             return 1
             ;;

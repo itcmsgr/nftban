@@ -106,6 +106,28 @@ nftban_cmd_blacklist() {
                 return 1
             fi
             ;;
+        reconcile)
+            # Trigger manual reconciliation via daemon IPC (v1.35.0)
+            echo "Triggering blacklist reconciliation..."
+            local ipc_helper="${NFTBAN_LIB_DIR}/helpers/ipc_client.sh"
+            if [[ -f "$ipc_helper" ]]; then
+                # shellcheck source=/dev/null
+                source "$ipc_helper" || return 1
+                local result
+                result=$(nftban_ipc_send '{"method":"reconcile"}' 2>&1)
+                if echo "$result" | grep -q '"success":true'; then
+                    echo "Reconciliation completed successfully"
+                    echo "$result" | grep -o '"data":"[^"]*"' | sed 's/"data":"//;s/"//'
+                else
+                    echo "ERROR: Reconciliation failed" >&2
+                    echo "$result" >&2
+                    return 1
+                fi
+            else
+                echo "ERROR: IPC client not found. Is nftband running?" >&2
+                return 1
+            fi
+            ;;
         help|--help|-h|"")
             nftban_blacklist_usage
             ;;
@@ -322,6 +344,7 @@ COMMANDS:
   files               Show persistent blacklist config files
   count [--json]      Quick count of blacklisted IPs
   flush [--yes]       Flush all blacklist sets (alias for 'nftban flush blacklist')
+  reconcile           Trigger manual reconciliation (verify kernel matches daemon state)
 
 ALIASES:
   add, ban            → nftban ban <IP>

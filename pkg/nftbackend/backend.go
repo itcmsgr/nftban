@@ -42,8 +42,19 @@ import (
 	"time"
 
 	"github.com/google/nftables"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	nftsync "github.com/itcmsgr/nftban/pkg/sync"
 )
+
+// familyInitStatus tracks whether each address family initialized successfully.
+// 0 = ok, 1 = failed. Exposed as nftban_family_init_status{family="ipv4|ipv6"}.
+var familyInitStatus = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: "nftban",
+	Name:      "family_init_status",
+	Help:      "Address family initialization status (0=ok, 1=failed)",
+}, []string{"family"})
 
 // Backend provides serialized access to nftables write operations.
 // All operations are thread-safe and atomic where possible.
@@ -116,6 +127,9 @@ func (b *Backend) initCachedObjects() {
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "whitelist_ipv4", true); err == nil {
 			b.setWhitelistIPv4 = set
 		}
+	} else {
+		log.Printf("ERROR: IPv4 table init failed: %v — IPv4 bans will NOT work", err)
+		familyInitStatus.WithLabelValues("ipv4").Set(1)
 	}
 
 	// Get/create IPv6 table and sets
@@ -130,6 +144,9 @@ func (b *Backend) initCachedObjects() {
 		if set, err := b.nft.GetOrCreateIntervalSet(table, "whitelist_ipv6", false); err == nil {
 			b.setWhitelistIPv6 = set
 		}
+	} else {
+		log.Printf("ERROR: IPv6 table init failed: %v — IPv6 bans will NOT work", err)
+		familyInitStatus.WithLabelValues("ipv6").Set(1)
 	}
 
 	// Initialize port sets (v1.15.0 - directional architecture)
