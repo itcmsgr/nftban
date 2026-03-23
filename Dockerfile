@@ -36,7 +36,7 @@ RUN go install github.com/a-h/templ/cmd/templ@v0.3.977 && \
 
 # Stage 2: Minimal runtime image
 # Pinned to SHA for OpenSSF Scorecard compliance
-FROM alpine:3.20@sha256:b0cb30c51c47cdfde647364301758b14c335dea2fddc9490d4f007d67ecb2538
+FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
