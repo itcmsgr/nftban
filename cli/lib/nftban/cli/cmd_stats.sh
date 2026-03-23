@@ -153,6 +153,39 @@ nftban_stats_get_counts_optimized() {
 }
 
 # =============================================================================
+# SUBCOMMAND: BRIEF (v1.37.1)
+# =============================================================================
+
+nftban_stats_cmd_brief() {
+    # v1.37.1: One-line stats output for scripts/monitoring
+    # Output: "75 banned | 9 whitelisted | 40 dropped | 1463 bans today"
+    local banned=0 whitelisted=0 dropped=0 bans_today=0
+
+    # Try cache-first counting (v1.32.0+), fallback to nft
+    local cache_file="/var/cache/nftban/set_counts.json"
+    if [[ -f "$cache_file" ]]; then
+        banned=$(jq -r '.total_banned // 0' "$cache_file" 2>/dev/null || echo 0)
+        whitelisted=$(jq -r '.total_whitelisted // 0' "$cache_file" 2>/dev/null || echo 0)
+    else
+        banned=$(nft list set ip nftban blacklist_manual_ipv4 2>/dev/null | grep -oP '^\t\t\S' | wc -l 2>/dev/null || echo 0)
+        whitelisted=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oP '^\t\t\S' | wc -l 2>/dev/null || echo 0)
+    fi
+
+    # Dropped packets from counters
+    dropped=$(nft list counters table ip nftban 2>/dev/null | grep -oP 'packets\s+\K[0-9]+' | paste -sd+ | bc 2>/dev/null || echo 0)
+
+    # Today's bans from log
+    local today
+    today=$(date +%Y-%m-%d)
+    local ban_log="${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}"
+    if [[ -f "$ban_log" ]]; then
+        bans_today=$(grep -c "$today" "$ban_log" 2>/dev/null || echo 0)
+    fi
+
+    echo "${banned} banned | ${whitelisted} whitelisted | ${dropped} dropped | ${bans_today} bans today"
+}
+
+# =============================================================================
 # MAIN CLI HANDLER
 # =============================================================================
 
@@ -167,6 +200,10 @@ nftban_cmd_stats() {
         help|-h|--help)
             nftban_stats_cmd_help
             return 0
+            ;;
+        --brief|-b)
+            nftban_stats_cmd_brief
+            return $?
             ;;
         dashboard|summary|"")
             shift || true

@@ -96,11 +96,14 @@ nftban_health_cmd_check() {
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
     local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
-    # Standardized exit codes: 0=OK, 1=WARNING, 2=ERROR
+    # Standardized exit codes: 0=OK/WARNING, 2=ERROR
+    # v1.37.1: Warnings about OPTIONAL features (Web GUI, metrics, etc.)
+    # must NOT cause non-zero exit. Only real errors (broken firewall,
+    # missing binaries, failed checks) should fail.
+    # This aligns full/json/summary modes with --brief (which already
+    # returns 0 for warnings).
     if [[ $error_count -gt 0 ]]; then
         result=2
-    elif [[ $warning_count -gt 0 ]]; then
-        result=1
     else
         result=0
     fi
@@ -151,7 +154,7 @@ nftban_health_cmd_check() {
 nftban_health_cmd_brief() {
     # v1.24.0: One-line health output for CI/fleet/monitoring
     # Output: HEALTHY | 26 checks passed | 4 info
-    # Returns: 0=healthy, 1=warnings, 2=errors
+    # Returns: 0=healthy (including warnings), 2=errors
 
     # Load health module if not already loaded
     if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
@@ -235,13 +238,10 @@ nftban_health_cmd_json() {
     # Render JSON (uses exported scalar counts for summary)
     nftban_health_render_json
 
-    # v1.24.1: Use exported counts for consistent exit code
+    # v1.37.1: Warnings exit 0 (optional features are not errors)
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
-    local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
     if [[ $error_count -gt 0 ]]; then
         return 2
-    elif [[ $warning_count -gt 0 ]]; then
-        return 1
     fi
     return 0
 }
