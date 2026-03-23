@@ -161,14 +161,19 @@ nftban_stats_cmd_brief() {
     # Output: "75 banned | 9 whitelisted | 40 dropped | 1463 bans today"
     local banned=0 whitelisted=0 dropped=0 bans_today=0
 
-    # Try cache-first counting (v1.32.0+), fallback to nft
-    local cache_file="/var/cache/nftban/set_counts.json"
-    if [[ -f "$cache_file" ]]; then
-        banned=$(jq -r '.total_banned // 0' "$cache_file" 2>/dev/null || echo 0)
-        whitelisted=$(jq -r '.total_whitelisted // 0' "$cache_file" 2>/dev/null || echo 0)
+    # Use nftban_nft_count_all_sets (same source as full dashboard)
+    if declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
+        local json
+        json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
+        banned=$(echo "$json" | jq -r '.blacklist.total // 0' 2>/dev/null || echo 0)
+        whitelisted=$(echo "$json" | jq -r '.whitelist.total // 0' 2>/dev/null || echo 0)
     else
-        banned=$(nft list set ip nftban blacklist_manual_ipv4 2>/dev/null | grep -oP '^\t\t\S' | wc -l 2>/dev/null || echo 0)
-        whitelisted=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oP '^\t\t\S' | wc -l 2>/dev/null || echo 0)
+        # Fallback: count from cache or nft directly
+        local cache_file="/var/cache/nftban/set_counts.json"
+        if [[ -f "$cache_file" ]]; then
+            banned=$(jq -r '.total_banned // 0' "$cache_file" 2>/dev/null || echo 0)
+            whitelisted=$(jq -r '.total_whitelisted // 0' "$cache_file" 2>/dev/null || echo 0)
+        fi
     fi
 
     # Dropped packets from counters

@@ -258,7 +258,8 @@ nftban_health_render_terminal() {
 nftban_health_render_summary() {
     # Render one-line summary of health status
     # Output: "Health: WARNING (2 warnings, 0 errors)"
-    # Returns: Overall health status code
+    # Returns: 0=OK/WARNING, 2=ERROR
+    # v1.37.1: Warnings exit 0 (optional features are not errors)
 
     # v1.24.1: Use exported scalar counts from check_all() (ground truth)
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
@@ -270,7 +271,7 @@ nftban_health_render_summary() {
         return 0
     elif [[ $error_count -eq 0 ]]; then
         echo "Health: WARNING ($warning_count warnings)"
-        return 1
+        return 0
     else
         echo "Health: ERROR ($error_count errors, $warning_count warnings)"
         return 2
