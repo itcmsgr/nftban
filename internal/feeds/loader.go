@@ -157,8 +157,6 @@ func loadFeedFile(filePath string, ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet ma
 	return ipv4Count, ipv6Count, ipv4CIDRCount, ipv6CIDRCount, nil
 }
 
-//nolint:U1000 // Helper function for future CIDR operations
-
 // GetFeedStats returns statistics about all feeds
 func GetFeedStats(feedsDir string) ([]FeedInfo, error) {
 	_, _, _, _, feedsInfo, err := LoadAllFeeds(feedsDir)

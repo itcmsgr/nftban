@@ -96,6 +96,11 @@ RestrictNamespaces=true
 # Graceful shutdown timeout (allow reconciliation to complete)
 TimeoutStopSec=30s
 
+# CPU scheduling (elevated priority for timely ban enforcement)
+# CPUWeight range: 1-10000 (default=100). 200 = 2x share vs default services.
+# CPUAffinity= can pin to specific cores if needed (e.g., CPUAffinity=0 1)
+CPUWeight=200
+
 # IO scheduling (don't starve other services)
 IOSchedulingClass=best-effort
 IOSchedulingPriority=4

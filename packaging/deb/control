@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: NFTBan Team <noreply@nftban.com>
 Build-Depends: debhelper-compat (= 13),
-               golang-go (>= 2:1.21~),
+               golang-go (>= 2:1.24~),
                libpam0g-dev
 Standards-Version: 4.6.0
 Homepage: https://github.com/itcmsgr/nftban
@@ -26,10 +26,10 @@ Depends: ${shlibs:Depends},
          bc,
          gawk,
          socat,
-         acl,
          iproute2,
          polkitd | policykit-1
-Recommends: dnsutils,
+Recommends: acl,
+            dnsutils,
             mailutils,
             logrotate,
             netmask,

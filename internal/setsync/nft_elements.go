@@ -517,7 +517,3 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 
 	return stats, nil
 }
-
-//nolint:U1000 // Helper method for set retrieval
-
-//nolint:U1000 // Helper method for batch CIDR operations

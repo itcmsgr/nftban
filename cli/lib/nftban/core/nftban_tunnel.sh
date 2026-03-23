@@ -512,11 +512,24 @@ nftban_tunnel_scan() {
         return 0
     fi
 
-    # Detect DNS source
+    # Detect DNS source (v1.38.0: BUG-005 — improved messaging)
     if ! nftban_tunnel_detect_dns_source; then
-        local msg="$ts_human|WARN|No DNS resolver detected — cannot scan"
+        local msg="$ts_human|WARN|No local DNS resolver detected — cannot scan (no query logs available)"
         echo "$msg" >> "$log_file" 2>/dev/null || true
-        [[ "$quiet" == "false" ]] && echo "WARNING: No DNS resolver detected"
+        if [[ "$quiet" == "false" ]]; then
+            echo "WARNING: No local DNS resolver detected (bind, unbound, dnsmasq, systemd-resolved)"
+            echo ""
+            echo "  Tunnel suspicion scoring requires DNS query logs from a local resolver."
+            echo "  Your server uses external resolvers directly — no query logs available."
+            # Show resolvers from resolv.conf for context
+            local resolvers
+            resolvers=$(grep -E '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | tr '\n' ', ' | sed 's/,$//')
+            [[ -n "$resolvers" ]] && echo "  Current resolvers: ${resolvers}"
+            echo ""
+            echo "  To use tunnel scanning, install a local resolver:"
+            echo "    apt install unbound   # or: yum install unbound"
+            echo "  Then: nftban tunnel enable"
+        fi
         return 1
     fi
 

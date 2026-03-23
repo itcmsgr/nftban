@@ -119,6 +119,33 @@ _scale_show() {
 }
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_scale_help() {
+    echo "Usage: nftban scale [status] [--json]"
+    echo ""
+    echo "Show nftables set scale levels and daemon counter status."
+    echo ""
+    echo "Subcommands:"
+    echo "  status    Show current scale levels (default)"
+    echo ""
+    echo "Options:"
+    echo "  --json    Output raw JSON from daemon cache"
+    echo ""
+    echo "Scale Levels:"
+    echo "  NORMAL         0 – 9,999 elements"
+    echo "  LARGE          10,000 – 49,999"
+    echo "  VERY_LARGE     50,000 – 99,999"
+    echo "  HUGE           100,000 – 249,999"
+    echo "  EXTREME        250,000 – 499,999"
+    echo "  CRITICAL_SCALE 500,000+"
+    echo ""
+    echo "The daemon maintains exact in-memory counters updated on every"
+    echo "add/delete/flush operation. Cache file: $SCALE_CACHE_FILE"
+}
+
+# =============================================================================
 # COMMAND ENTRY POINT
 # =============================================================================
 
@@ -138,26 +165,7 @@ nftban_cmd_scale() {
             _scale_show "$json_mode"
             ;;
         help|--help|-h)
-            echo "Usage: nftban scale [status] [--json]"
-            echo ""
-            echo "Show nftables set scale levels and daemon counter status."
-            echo ""
-            echo "Subcommands:"
-            echo "  status    Show current scale levels (default)"
-            echo ""
-            echo "Options:"
-            echo "  --json    Output raw JSON from daemon cache"
-            echo ""
-            echo "Scale Levels:"
-            echo "  NORMAL         0 – 9,999 elements"
-            echo "  LARGE          10,000 – 49,999"
-            echo "  VERY_LARGE     50,000 – 99,999"
-            echo "  HUGE           100,000 – 249,999"
-            echo "  EXTREME        250,000 – 499,999"
-            echo "  CRITICAL_SCALE 500,000+"
-            echo ""
-            echo "The daemon maintains exact in-memory counters updated on every"
-            echo "add/delete/flush operation. Cache file: $SCALE_CACHE_FILE"
+            nftban_cmd_scale_help
             ;;
         *)
             echo "Unknown subcommand: $subcmd" >&2

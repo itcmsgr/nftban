@@ -333,17 +333,32 @@ nftban_path_create_file_safe() {
         return 0
     fi
 
-    # Create new file with noclobber (prevents race condition)
-    set -C
-    if ! { : > "$path"; } 2>/dev/null; then
-        # Failed to create (race condition - file appeared)
-        set +C
-        echo "ERROR: Race condition detected - file appeared during creation" >&2
-        echo "  Path: $path" >&2
-        nftban_path_audit_log "DENIED" "race_condition path=$path"
+    # v1.38.0: Use mktemp + atomic rename to eliminate TOCTOU window
+    # This prevents race conditions where a symlink could be placed
+    # between the existence check and file creation.
+    local tmpfile
+    tmpfile=$(mktemp "${dir}/.nftban_safe_XXXXXX" 2>/dev/null)
+    if [[ -z "$tmpfile" ]]; then
+        echo "ERROR: Failed to create temp file in $dir" >&2
+        nftban_path_audit_log "DENIED" "mktemp_failed path=$path"
         return 1
     fi
-    set +C
+    chmod 0640 "$tmpfile" 2>/dev/null || true
+
+    # Atomic rename (same filesystem guaranteed since same directory)
+    if ! mv -n "$tmpfile" "$path" 2>/dev/null; then
+        # mv -n fails if target appeared (concurrent creation)
+        rm -f "$tmpfile" 2>/dev/null || true
+        if [[ -f "$path" ]]; then
+            # File was created concurrently — that's OK
+            nftban_path_audit_log "ALLOWED" "concurrent_create path=$path"
+            return 0
+        fi
+        echo "ERROR: Failed to atomically create file" >&2
+        echo "  Path: $path" >&2
+        nftban_path_audit_log "DENIED" "atomic_rename_failed path=$path"
+        return 1
+    fi
 
     nftban_path_audit_log "ALLOWED" "create_file path=$path"
     return 0

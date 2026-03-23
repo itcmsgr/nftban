@@ -68,8 +68,6 @@ func runNftFast(args ...string) ([]byte, error) {
 	return runNftWithTimeout(nftTimeoutFast, args...)
 }
 
-//nolint:U1000 // Helper for large batch operations with extended timeout
-
 // runNftWithTimeout executes an nft command with specified timeout
 func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -92,8 +90,6 @@ func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 func runNftFile(path string) ([]byte, error) {
 	return runNft("-f", path)
 }
-
-//nolint:U1000 // Helper for large rule files with extended timeout
 
 // isIgnorableNftError checks if an nft error output contains ignorable patterns
 // Returns true if the error can be safely ignored
@@ -233,4 +229,3 @@ func nftFamily(ipv4 bool) string {
 	return "ip6"
 }
 
-//nolint:U1000 // Helper for nftables type determination

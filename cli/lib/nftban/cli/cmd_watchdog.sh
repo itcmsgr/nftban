@@ -636,7 +636,7 @@ _watchdog_ipc_call() {
     local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
 
     if [[ ! -S "$socket_path" ]]; then
-        echo '{"success":false,"error":"daemon not running (socket not found)"}'
+        printf '{"success":false,"error":"daemon not running (socket not found)"}'
         return 1
     fi
 

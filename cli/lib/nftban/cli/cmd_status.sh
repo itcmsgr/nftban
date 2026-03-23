@@ -264,23 +264,18 @@ output_brief() {
     esac
 }
 
-output_terminal() {
-    # Output formatted terminal status - Clean professional layout v1.0
-    local quiet_mode="$1"
+# =============================================================================
+# STATUS SECTION HELPERS (v1.38.0)
+# Each function renders one section of the terminal status output.
+# Placed before output_terminal() to allow forward references.
+# =============================================================================
 
-    # v1.24.0: Use unified protection state function (single source of truth)
-    local protection_state
-    protection_state=$(_nftban_protection_state)
-
-    # Header with version and state
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan v${NFTBAN_VERSION:-unknown} — System Status — ${protection_state}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
+_status_section_system() {
     # ─────────────────────────────────────────────────────────────────────
     # SYSTEM
     # ─────────────────────────────────────────────────────────────────────
+    local protection_state="$1"
+
     echo "SYSTEM"
     echo "───────────────────────────────────────────────────────────────"
     printf "  %-20s %s\n" "Hostname............" "$(hostname)"
@@ -289,10 +284,14 @@ output_terminal() {
     printf "  %-20s %s\n" "NFTBan.............." "v${NFTBAN_VERSION:-unknown}"
     printf "  %-20s %s\n" "State..............." "$protection_state"
     echo ""
+}
 
+_status_section_firewall() {
     # ─────────────────────────────────────────────────────────────────────
     # FIREWALL
     # ─────────────────────────────────────────────────────────────────────
+    local quiet_mode="$1"
+
     echo "FIREWALL"
     echo "───────────────────────────────────────────────────────────────"
 
@@ -318,6 +317,16 @@ output_terminal() {
         ban_count=$(nftban_stats_count_active_bans)
     fi
     printf "  %-20s %s\n" "Banned IPs.........." "$ban_count"
+
+    # v1.38.0: Show footnote if cache and kernel counts differ
+    if declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
+        local _kernel_total
+        _kernel_total=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+        _kernel_total=${_kernel_total:-0}
+        if [[ "$_kernel_total" != "$ban_count" ]] && [[ "$_kernel_total" -gt 0 ]]; then
+            printf "  %-20s %s\n" "" "(kernel: $_kernel_total, cache may lag)"
+        fi
+    fi
 
     # Count whitelisted IPs (SINGLE SOURCE OF TRUTH: nftban_stats.sh)
     local whitelist_count=0
@@ -354,7 +363,9 @@ output_terminal() {
         echo "    View all:            nftban list all"
     fi
     echo ""
+}
 
+_status_section_services() {
     # ─────────────────────────────────────────────────────────────────────
     # SERVICES
     # ─────────────────────────────────────────────────────────────────────
@@ -369,10 +380,14 @@ output_terminal() {
     # v1.23.0: login-monitor removed (replaced by nftband loginmon module)
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     echo ""
+}
 
+_status_section_protection() {
     # ─────────────────────────────────────────────────────────────────────
     # PROTECTION MODULES
     # ─────────────────────────────────────────────────────────────────────
+    local quiet_mode="$1"
+
     echo "PROTECTION MODULES"
     echo "───────────────────────────────────────────────────────────────"
 
@@ -472,7 +487,7 @@ output_terminal() {
     elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
         ddos_status="NOT INSTALLED"
     elif [[ "$ddos_enabled" != "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
-        ddos_status="PARTIAL (rules exist but disabled — run 'nftban ddos enable')"
+        ddos_status="RULES LOADED (use 'nftban ddos enable' to activate)"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
@@ -792,10 +807,15 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "GUI................." "$gui_status"
     echo ""
+}
 
+_status_section_health() {
     # ─────────────────────────────────────────────────────────────────────
     # HEALTH
     # ─────────────────────────────────────────────────────────────────────
+    local protection_state="$1"
+    local quiet_mode="$2"
+
     echo "HEALTH"
     echo "───────────────────────────────────────────────────────────────"
 
@@ -937,7 +957,9 @@ output_terminal() {
         echo "      → Fix:     sudo nftban health fix all  (for root-only fixes)"
     fi
     echo ""
+}
 
+_status_section_activity() {
     # ─────────────────────────────────────────────────────────────────────
     # RECENT ACTIVITY
     # ─────────────────────────────────────────────────────────────────────
@@ -966,10 +988,14 @@ output_terminal() {
     printf "  %-20s %s\n" "Bans (24h).........." "$bans_24h"
     printf "  %-20s %s\n" "Unbans (24h)........" "$unbans_24h"
     echo ""
+}
 
+_status_section_timers() {
     # ─────────────────────────────────────────────────────────────────────
     # TIMERS
     # ─────────────────────────────────────────────────────────────────────
+    local quiet_mode="$1"
+
     echo "TIMERS"
     echo "───────────────────────────────────────────────────────────────"
 
@@ -1068,7 +1094,9 @@ output_terminal() {
         fi
     fi
     echo ""
+}
 
+_status_section_logs() {
     # ─────────────────────────────────────────────────────────────────────
     # LOGS
     # ─────────────────────────────────────────────────────────────────────
@@ -1097,7 +1125,9 @@ output_terminal() {
     printf "  %-20s %s\n" "Size................" "$log_size"
     printf "  %-20s %s\n" "Last rotation......." "$last_rotate"
     echo ""
+}
 
+_status_section_requirements() {
     # ─────────────────────────────────────────────────────────────────────
     # SYSTEM REQUIREMENTS
     # ─────────────────────────────────────────────────────────────────────
@@ -1143,6 +1173,36 @@ output_terminal() {
     printf "  %-20s %s\n" "Auto-Reports........" "$report_status"
     echo "      → ${NFTBAN_DATA_DIR}/reports/"
     echo ""
+}
+
+# =============================================================================
+# TERMINAL OUTPUT (orchestrator)
+# =============================================================================
+
+output_terminal() {
+    # Output formatted terminal status - Clean professional layout v1.0
+    # Decomposed in v1.38.0: each section is a _status_section_*() helper.
+    local quiet_mode="$1"
+
+    # v1.24.0: Use unified protection state function (single source of truth)
+    local protection_state
+    protection_state=$(_nftban_protection_state)
+
+    # Header with version and state
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan v${NFTBAN_VERSION:-unknown} — System Status — ${protection_state}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    _status_section_system "$protection_state"
+    _status_section_firewall "$quiet_mode"
+    _status_section_services
+    _status_section_protection "$quiet_mode"
+    _status_section_health "$protection_state" "$quiet_mode"
+    _status_section_activity
+    _status_section_timers "$quiet_mode"
+    _status_section_logs
+    _status_section_requirements
 
     # ─────────────────────────────────────────────────────────────────────
     # QUICK COMMANDS
@@ -1205,6 +1265,34 @@ output_json() {
         ban_count=$(echo "$bl_counts" | awk '{print $3}')  # Total is field 3
     fi
     echo "    \"banned_ips\": $ban_count,"
+
+    # v1.38.0: Count disambiguation — show all counting sources
+    # kernel_elements: Direct nft kernel query (authoritative)
+    # cache_count: From /var/cache/nftban stats cache (fast, may lag)
+    # source_index_count: From daemon source index (tracks per-module attribution)
+    local kernel_count=0 cache_count=0 source_index_count=0
+    if declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
+        local bl_raw
+        bl_raw=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
+        kernel_count=$(echo "$bl_raw" | awk '{print $3}')
+    fi
+    if declare -f nftban_stats_get_unified >/dev/null 2>&1; then
+        cache_count=$(nftban_stats_get_unified ".blacklist.total" 2>/dev/null || echo 0)
+    fi
+    # Source index count comes from daemon IPC if available
+    if [[ -S /run/nftban/nftband.sock ]]; then
+        local si_resp
+        si_resp=$(nftban_ipc_call "source_index_count" 2>/dev/null || echo "")
+        if [[ -n "$si_resp" ]]; then
+            source_index_count=$(echo "$si_resp" | grep -o '"count":[0-9]*' | head -1 | cut -d: -f2)
+            source_index_count=${source_index_count:-0}
+        fi
+    fi
+    echo "    \"counts\": {"
+    echo "      \"kernel_elements\": $kernel_count,"
+    echo "      \"cache_count\": $cache_count,"
+    echo "      \"source_index_count\": $source_index_count"
+    echo "    },"
 
     # Add GUI-required fields for dashboard
     # whitelist_ips: Total whitelist count

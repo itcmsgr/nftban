@@ -495,6 +495,30 @@ nftban_egress_enforce() {
 }
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_egress_help() {
+    echo ""
+    echo "USAGE: nftban port egress <command>"
+    echo ""
+    echo "COMMANDS:"
+    echo "  stats              Show outbound counters and allowed ports"
+    echo "  audit [hours]      Parse logs, find unknown ports (default: 24h)"
+    echo "  recommend          Suggest policy additions based on audit"
+    echo "  enforce            Switch to policy drop (requires confirmation)"
+    echo ""
+    echo "WORKFLOW:"
+    echo "  1. nftban port egress stats       # Check current counters"
+    echo "  2. nftban port egress audit 48    # Collect 48h of traffic data"
+    echo "  3. nftban port egress recommend   # See suggested additions"
+    echo "  4. nftban port add <port> tcp out # Add missing ports"
+    echo "  5. nftban emulate --out :443      # Test if port allowed"
+    echo "  6. nftban port egress enforce     # Enable restrictive mode"
+    echo ""
+}
+
+# =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
 
@@ -522,23 +546,7 @@ nftban_cmd_egress() {
             nftban_egress_enforce
             ;;
         help|--help|-h)
-            echo ""
-            echo "USAGE: nftban port egress <command>"
-            echo ""
-            echo "COMMANDS:"
-            echo "  stats              Show outbound counters and allowed ports"
-            echo "  audit [hours]      Parse logs, find unknown ports (default: 24h)"
-            echo "  recommend          Suggest policy additions based on audit"
-            echo "  enforce            Switch to policy drop (requires confirmation)"
-            echo ""
-            echo "WORKFLOW:"
-            echo "  1. nftban port egress stats       # Check current counters"
-            echo "  2. nftban port egress audit 48    # Collect 48h of traffic data"
-            echo "  3. nftban port egress recommend   # See suggested additions"
-            echo "  4. nftban port add <port> tcp out # Add missing ports"
-            echo "  5. nftban emulate --out :443      # Test if port allowed"
-            echo "  6. nftban port egress enforce     # Enable restrictive mode"
-            echo ""
+            nftban_cmd_egress_help
             ;;
         *)
             echo "ERROR: Unknown egress command: $subcmd" >&2
