@@ -183,8 +183,7 @@ nftban_cmd_status() {
                 ;;
             *)
                 echo "ERROR: Unknown option: $1" >&2
-                echo "" >&2
-                show_usage
+                show_usage >&2
                 return 1
                 ;;
         esac
@@ -473,7 +472,7 @@ output_terminal() {
     elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
         ddos_status="NOT INSTALLED"
     elif [[ "$ddos_enabled" != "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
-        ddos_status="PARTIAL (rules exist, not enabled)"
+        ddos_status="PARTIAL (rules exist but disabled — run 'nftban ddos enable')"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 

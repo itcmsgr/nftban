@@ -945,8 +945,77 @@ nftban_health_check_nft_schema() {
     return $status
 }
 
+# =============================================================================
+# SET SIZE HEALTH MONITORING (v1.35.0)
+# =============================================================================
+# Warns when nftables sets approach sizes that cause performance degradation.
+# Interval sets (blacklist_ipv4/ipv6) are O(n) — slow at 100K+, critical at 500K+.
+# Hash sets (blacklist_manual_*) are O(1) — no scaling concern.
+
+nftban_health_check_set_sizes() {
+    local status=$HEALTH_OK
+    local set_issues=()
+
+    # Read from daemon cache (fast) or fall back to nft (slow)
+    local cache_file="/run/nftban/set_counts.json"
+    local -A set_counts=()
+
+    if [[ -f "$cache_file" ]] && command -v jq &>/dev/null; then
+        # Parse cache file — keys are set names, values are counts
+        while IFS='=' read -r key val; do
+            set_counts["$key"]="$val"
+        done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' "$cache_file" 2>/dev/null || true)
+    else
+        # Fallback: query kernel directly for key sets
+        for set_name in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6 whitelist_ipv4 whitelist_ipv6; do
+            local family="ip"
+            [[ "$set_name" == *_ipv6 ]] && family="ip6"
+            local count
+            count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || echo "0")
+            set_counts["$set_name"]="$count"
+        done
+    fi
+
+    # Check interval sets (O(n) performance concern)
+    for set_name in blacklist_ipv4 blacklist_ipv6; do
+        local count="${set_counts[$set_name]:-0}"
+        if [[ "$count" -ge 500000 ]]; then
+            set_issues+=("CRITICAL: $set_name has ${count} elements (CRITICAL_SCALE) — expect 20-30s per query")
+            status=$HEALTH_CRITICAL
+        elif [[ "$count" -ge 100000 ]]; then
+            set_issues+=("WARNING: $set_name has ${count} elements (HUGE) — ban operations may take 10-60s")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    done
+
+    # Check whitelist sets (should be small)
+    for set_name in whitelist_ipv4 whitelist_ipv6; do
+        local count="${set_counts[$set_name]:-0}"
+        if [[ "$count" -ge 10000 ]]; then
+            set_issues+=("WARNING: $set_name has ${count} elements — whitelists should be small for performance")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    done
+
+    # Store results
+    if [[ ${#set_issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034  # Used by render functions externally
+        NFTBAN_HEALTH_ISSUES["set_sizes"]="${set_issues[*]}"
+        if [[ $status -ge $HEALTH_CRITICAL ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Set sizes: ${set_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Set sizes: ${set_issues[*]}")
+        fi
+    fi
+
+    # shellcheck disable=SC2034  # Used by render functions externally
+    NFTBAN_HEALTH_RESULTS["set_sizes"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
 export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
+export -f nftban_health_check_set_sizes

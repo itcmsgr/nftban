@@ -46,7 +46,7 @@ cmd_suricata_local() {
         add)
             local rule="$*"
             if [[ -z "$rule" ]]; then
-                echo "ERROR: Rule required"
+                echo "ERROR: Rule required" >&2
                 echo ""
                 echo "Usage: nftban suricata local add '<RULE>'"
                 echo ""
@@ -62,7 +62,7 @@ cmd_suricata_local() {
         remove)
             local sid="${1:-}"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata local remove <SID>"
                 return 1
@@ -73,7 +73,7 @@ cmd_suricata_local() {
         edit)
             local file="${NFTBAN_SURICATA_DIR:-/etc/nftban/suricata}/rules/local.rules"
             if [[ ! -f "$file" ]]; then
-                echo "ERROR: Local rules file not found"
+                echo "ERROR: Local rules file not found" >&2
                 echo "Create rules first with: nftban suricata local add '<rule>'"
                 return 1
             fi
@@ -167,7 +167,7 @@ cmd_suricata_custom() {
 
             local rule="$1"
             if [[ -z "$rule" ]]; then
-                echo "ERROR: Rule required"
+                echo "ERROR: Rule required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom add '<RULE>'"
                 echo ""
@@ -197,7 +197,7 @@ cmd_suricata_custom() {
 
             local sid="$1"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom remove <SID>"
                 echo ""
@@ -229,7 +229,7 @@ cmd_suricata_custom() {
             local new_rule="$2"
 
             if [[ -z "$sid" ]] || [[ -z "$new_rule" ]]; then
-                echo "ERROR: SID and new rule required"
+                echo "ERROR: SID and new rule required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom edit <SID> '<NEW_RULE>'"
                 echo ""
@@ -291,7 +291,7 @@ cmd_suricata_custom() {
 
             local sid="$1"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom enable <SID>"
                 echo ""
@@ -318,7 +318,7 @@ cmd_suricata_custom() {
 
             local sid="$1"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom disable <SID>"
                 echo ""
@@ -363,7 +363,7 @@ cmd_suricata_custom() {
 
             local backup_name="$1"
             if [[ -z "$backup_name" ]]; then
-                echo "ERROR: Backup name required"
+                echo "ERROR: Backup name required" >&2
                 echo ""
                 echo "Usage: nftban suricata custom rollback <BACKUP_NAME>"
                 echo ""

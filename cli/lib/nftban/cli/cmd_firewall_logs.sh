@@ -53,7 +53,7 @@ readonly DEFAULT_BURST="50 packets"
 # =============================================================================
 
 _fwlog_die() {
-    echo "Error: $*" >&2
+    echo "ERROR: $*" >&2
     return 1
 }
 

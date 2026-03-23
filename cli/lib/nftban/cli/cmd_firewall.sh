@@ -133,7 +133,7 @@ nftban_cmd_firewall() {
                 source "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh" || return 1
                 nftban_cmd_firewall_logs "$@"
             else
-                echo "Error: Firewall logs module not found" >&2
+                echo "ERROR: Firewall logs module not found" >&2
                 return 1
             fi
             ;;
@@ -157,7 +157,7 @@ nftban_cmd_firewall() {
                 source "${NFTBAN_CLI_DIR}/cmd_health_analysis.sh" || return 1
                 nftban_health_cmd_conflicts "$@"
             else
-                echo "Error: Health analysis module not found" >&2
+                echo "ERROR: Health analysis module not found" >&2
                 return 1
             fi
             ;;
@@ -166,7 +166,7 @@ nftban_cmd_firewall() {
             firewall_restore "$@"
             ;;
         *)
-            echo "Error: Unknown firewall subcommand: $subcommand" >&2
+            echo "ERROR: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
             return 1
             ;;
@@ -218,7 +218,7 @@ firewall_validate() {
                 return 0
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 echo "Try 'nftban firewall validate --help' for more information." >&2
                 return 1
                 ;;
@@ -230,7 +230,7 @@ firewall_validate() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
-        [[ "$quiet_mode" != "true" ]] && echo "Error: Cannot find nftban_validator.sh" >&2
+        [[ "$quiet_mode" != "true" ]] && echo "ERROR: Cannot find nftban_validator.sh" >&2
         return $VALIDATE_ENV_ERROR
     fi
 
@@ -471,7 +471,7 @@ firewall_check() {
                 return 0
                 ;;
             -*)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 echo "Try 'nftban firewall check --help' for more information." >&2
                 return 1
                 ;;
@@ -484,7 +484,7 @@ firewall_check() {
 
     # Validate value provided
     if [[ -z "$value" ]]; then
-        echo "Error: No IP or port specified" >&2
+        echo "ERROR: No IP or port specified" >&2
         echo "Try 'nftban firewall check --help' for more information." >&2
         return 1
     fi
@@ -494,7 +494,7 @@ firewall_check() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
-        echo "Error: Cannot find nftban_validator.sh" >&2
+        echo "ERROR: Cannot find nftban_validator.sh" >&2
         return 1
     fi
 
@@ -528,7 +528,7 @@ firewall_stats() {
                 return 0
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 echo "Try 'nftban firewall stats --help' for more information." >&2
                 return 1
                 ;;
@@ -540,7 +540,7 @@ firewall_stats() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
     else
-        echo "Error: Cannot find nftban_validator.sh" >&2
+        echo "ERROR: Cannot find nftban_validator.sh" >&2
         return 1
     fi
 
@@ -568,7 +568,7 @@ firewall_reload() {
                 shift
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -582,14 +582,14 @@ firewall_reload() {
     [[ -z "$nft_conf" ]] && nft_conf="/etc/nftables.conf"
 
     if [[ ! -f "$nft_conf" ]]; then
-        echo "Error: nftables config not found: $nft_conf" >&2
+        echo "ERROR: nftables config not found: $nft_conf" >&2
         echo "Check distro config in /etc/nftban/distros/" >&2
         return 1
     fi
 
     [[ "$quiet" == "false" ]] && echo "Reloading nftables configuration..."
     if ! nft -f "$nft_conf" 2>&1; then
-        echo "Error: Failed to reload nftables" >&2
+        echo "ERROR: Failed to reload nftables" >&2
         return 1
     fi
 
@@ -604,7 +604,7 @@ firewall_reload() {
         [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
         if grep -q '__SSH_PORT__' "$nftban_conf" 2>/dev/null; then
             local _tmp_conf
-            _tmp_conf=$(mktemp) || { echo "Error: mktemp failed" >&2; return 1; }
+            _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
             sed "s/__SSH_PORT__/${_ssh_port}/g" "$nftban_conf" > "$_tmp_conf"
             if ! nft -f "$_tmp_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
@@ -670,7 +670,7 @@ firewall_rebuild() {
                 return 0
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -717,12 +717,12 @@ firewall_rebuild() {
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         if ! nft -f "$nftban_conf" 2>&1; then
-            echo "Error: Failed to load NFTBan schema from $nftban_conf" >&2
+            echo "ERROR: Failed to load NFTBan schema from $nftban_conf" >&2
             echo "Try: nftban firewall reset --force" >&2
             return 1
         fi
     else
-        echo "Error: NFTBan config not found: $nftban_conf" >&2
+        echo "ERROR: NFTBan config not found: $nftban_conf" >&2
         return 1
     fi
 
@@ -802,7 +802,7 @@ firewall_reset() {
                 return 0
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -845,7 +845,7 @@ firewall_reset() {
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         if ! nft -f "$nftban_conf" 2>&1; then
-            echo "Error: Failed to load NFTBan schema" >&2
+            echo "ERROR: Failed to load NFTBan schema" >&2
             echo "Restoring backup..." >&2
             nft -f "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
             return 1
@@ -912,7 +912,7 @@ firewall_restore() {
             elif [[ -f "/var/lib/nftban/backup/$action" ]]; then
                 _restore_from_file "/var/lib/nftban/backup/$action"
             else
-                echo "Error: Unknown action or backup file not found: $action" >&2
+                echo "ERROR: Unknown action or backup file not found: $action" >&2
                 show_restore_help
                 return 1
             fi
@@ -968,7 +968,7 @@ _restore_create_backup() {
         echo "Backup saved: $backup_file"
         return 0
     else
-        echo "Error: Failed to create backup" >&2
+        echo "ERROR: Failed to create backup" >&2
         return 1
     fi
 }
@@ -991,7 +991,7 @@ _restore_from_file() {
     # Restore backup
     echo "[3/4] Restoring backup..."
     if ! nft -f "$backup_file" 2>&1; then
-        echo "Error: Failed to restore backup" >&2
+        echo "ERROR: Failed to restore backup" >&2
         echo "Attempting to reload NFTBan schema..." >&2
         # v1.24.0: Substitute __SSH_PORT__ if present
         local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"

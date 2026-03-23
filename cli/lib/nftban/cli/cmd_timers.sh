@@ -446,7 +446,7 @@ EXAMPLES:
 EOF
             ;;
         *)
-            echo "Error: Unknown subcommand '$subcommand'" >&2
+            echo "ERROR: Unknown subcommand '$subcommand'" >&2
             echo "Run 'nftban timers help' for usage" >&2
             return 1
             ;;

@@ -90,7 +90,18 @@ ProtectControlGroups=true
 # Additional hardening
 RestrictSUIDSGID=true
 LockPersonality=true
-# MemoryDenyWriteExecute=true  # Uncomment if Go runtime is compatible
+RemoveIPC=true
+RestrictNamespaces=true
+
+# Graceful shutdown timeout (allow reconciliation to complete)
+TimeoutStopSec=30s
+
+# IO scheduling (don't starve other services)
+IOSchedulingClass=best-effort
+IOSchedulingPriority=4
+
+# Alert on failure
+OnFailure=nftban-alert@%n.service
 
 # =============================================================================
 # RESOURCE LIMITS (Safety Net Only)

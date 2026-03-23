@@ -286,7 +286,7 @@ nftban_cmd_profile() {
             ;;
 
         *)
-            echo "ERROR: Unknown command: $action"
+            echo "ERROR: Unknown command: $action" >&2
             echo ""
             echo "Available commands: show, help"
             echo ""

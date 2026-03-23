@@ -188,7 +188,7 @@ cmd_suricata_rules() {
         rollback)
             local backup_name="${1:-}"
             if [[ -z "$backup_name" ]]; then
-                echo "ERROR: Backup name required"
+                echo "ERROR: Backup name required" >&2
                 echo ""
                 echo "Usage: nftban suricata rules rollback <BACKUP_NAME>"
                 echo ""
@@ -454,7 +454,7 @@ cmd_suricata_sid() {
         enable)
             local sid="${1:-}"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata sid enable <SID>"
                 return 1
@@ -465,7 +465,7 @@ cmd_suricata_sid() {
         disable)
             local sid="${1:-}"
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata sid disable <SID>"
                 return 1
@@ -498,7 +498,7 @@ cmd_suricata_sid() {
             local sid="${1:-}"
 
             if [[ -z "$sid" ]]; then
-                echo "ERROR: SID required"
+                echo "ERROR: SID required" >&2
                 echo ""
                 echo "Usage: nftban suricata sid info <SID>"
                 echo ""
@@ -636,7 +636,7 @@ cmd_suricata_category() {
         enable)
             local category="${1:-}"
             if [[ -z "$category" ]]; then
-                echo "ERROR: Category name required"
+                echo "ERROR: Category name required" >&2
                 echo ""
                 echo "Usage: nftban suricata category enable <CATEGORY>"
                 echo ""
@@ -649,7 +649,7 @@ cmd_suricata_category() {
         disable)
             local category="${1:-}"
             if [[ -z "$category" ]]; then
-                echo "ERROR: Category name required"
+                echo "ERROR: Category name required" >&2
                 echo ""
                 echo "Usage: nftban suricata category disable <CATEGORY>"
                 echo ""

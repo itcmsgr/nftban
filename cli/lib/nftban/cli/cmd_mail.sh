@@ -242,7 +242,7 @@ nftban_cmd_mail() {
 
             # Validate email format
             if ! nftban_mail_validate_address "$email"; then
-                echo "Error: Invalid email address: $email" >&2
+                echo "ERROR: Invalid email address: $email" >&2
                 return 1
             fi
 
@@ -351,7 +351,7 @@ NFTBAN_MAIL_ON_LOGIN_ALERT=\"YES\""
             local recipient="${1:-}"
 
             if [[ -z "$content" ]]; then
-                echo "Error: No content specified" >&2
+                echo "ERROR: No content specified" >&2
                 echo "Usage: nftban mail {content} [recipient]" >&2
                 echo "       nftban mail help" >&2
                 return 1

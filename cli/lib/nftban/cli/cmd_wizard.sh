@@ -479,7 +479,7 @@ _wizard_enable_modules() {
 cmd_wizard_install() {
     # Check root
     if [[ "$EUID" -ne 0 ]]; then
-        echo "ERROR: Wizard requires root privileges"
+        echo "ERROR: Wizard requires root privileges" >&2
         echo "Usage: sudo nftban wizard install"
         return 1
     fi
@@ -605,7 +605,7 @@ nftban_cmd_wizard() {
             cmd_wizard_help
             ;;
         *)
-            echo "ERROR: Unknown wizard command: $action"
+            echo "ERROR: Unknown wizard command: $action" >&2
             echo "Run 'nftban wizard help' for usage"
             return 1
             ;;

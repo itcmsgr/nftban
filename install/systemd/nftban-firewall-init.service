@@ -25,6 +25,7 @@ Description=NFTBan Firewall Initialization (with startup delay)
 Documentation=man:nftban(8)
 After=network-online.target nftables.service
 Wants=network-online.target
+OnFailure=nftban-alert@%n.service
 # NOTE: Don't use Before=sshd.service (would delay SSH)
 
 [Service]
