@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/suricata/recommendations"
-	"github.com/itcmsgr/nftban/pkg/suricata/stats"
+	"github.com/itcmsgr/nftban/internal/suricata/recommendations"
+	"github.com/itcmsgr/nftban/internal/suricata/stats"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

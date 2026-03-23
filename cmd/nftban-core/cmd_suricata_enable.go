@@ -20,8 +20,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/suricata"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/suricata"
 )
 
 // cmdSuricataEnable enables/disables a filter

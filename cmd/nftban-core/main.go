@@ -27,8 +27,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

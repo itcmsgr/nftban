@@ -26,9 +26,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/runtime"
-	sharedstate "github.com/itcmsgr/nftban/pkg/state"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/runtime"
+	sharedstate "github.com/itcmsgr/nftban/internal/state"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

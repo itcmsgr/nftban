@@ -25,12 +25,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/banlog"
-	"github.com/itcmsgr/nftban/pkg/blacklist"
-	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/blacklist"
+	"github.com/itcmsgr/nftban/internal/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/netutil"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

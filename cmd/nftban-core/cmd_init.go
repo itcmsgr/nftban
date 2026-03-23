@@ -28,9 +28,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/config"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/safety"
+	"github.com/itcmsgr/nftban/internal/configloader"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -75,7 +75,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	fmt.Println("Step 2: Loading configurations...")
 
 	// Load FHS spec
-	fhsSpec, err := config.LoadFHSSpec()
+	fhsSpec, err := configloader.LoadFHSSpec()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ⚠️  Warning: Could not load FHS spec: %v\n", err)
 		fmt.Println("  ℹ️  Continuing with defaults...")
@@ -84,7 +84,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	}
 
 	// Load distro config
-	distro, err := config.LoadDistroConfig()
+	distro, err := configloader.LoadDistroConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ⚠️  Warning: Could not load distro config: %v\n", err)
 		fmt.Println("  ℹ️  Continuing with defaults...")
@@ -93,7 +93,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	}
 
 	// Load services config
-	services, err := config.LoadServicesConfig()
+	services, err := configloader.LoadServicesConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ⚠️  Warning: Could not load services config: %v\n", err)
 	} else {
@@ -106,7 +106,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 
 	// Step 5: Create emergency whitelist file
 	fmt.Println("Step 3: Creating emergency whitelist...")
-	emergencyFile := config.GetFHSPath("config") + "/emergency_whitelist.conf"
+	emergencyFile := configloader.GetFHSPath("config") + "/emergency_whitelist.conf"
 
 	f, err := os.OpenFile(emergencyFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // non-sensitive config file
 	if err != nil {
@@ -149,7 +149,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 
 	// Step 6: Update whitelist using organized whitelist.d/ structure
 	fmt.Println("Step 4: Updating whitelist (whitelist.d/ structure)...")
-	whitelistDir := config.GetFHSPath("config") + "/whitelist.d"
+	whitelistDir := configloader.GetFHSPath("config") + "/whitelist.d"
 	whitelistFile := whitelistDir + "/01-nftban-init.conf"
 
 	// Ensure whitelist.d directory exists
@@ -161,7 +161,7 @@ func cmdInit(cfg *nftbanconf.Config) error {
 	existingIPs := make(map[string]bool)
 
 	// Read main whitelist.conf
-	mainWhitelist := config.GetFHSPath("config") + "/whitelist.conf"
+	mainWhitelist := configloader.GetFHSPath("config") + "/whitelist.conf"
 	if data, err := os.ReadFile(mainWhitelist); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {

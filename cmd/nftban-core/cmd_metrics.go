@@ -9,7 +9,7 @@
 // meta:description="Export Prometheus metrics for node_exporter textfile collector"
 // meta:input="Subcommand (export)"
 // meta:output="Prometheus metrics file"
-// meta:depends="github.com/itcmsgr/nftban/pkg/metrics,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/metrics,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files="/var/lib/node_exporter/textfile_collector/nftban.prom"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars="NFTBAN_METRICS_FILE,NFTBAN_DATA_DIR,NFTBAN_LOG_DIR"
@@ -25,8 +25,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // cmdMetrics handles the metrics export command

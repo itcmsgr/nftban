@@ -33,7 +33,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
-	"github.com/itcmsgr/nftban/pkg/metrics"
+	"github.com/itcmsgr/nftban/internal/metrics"
 	"golang.org/x/sys/unix"
 )
 

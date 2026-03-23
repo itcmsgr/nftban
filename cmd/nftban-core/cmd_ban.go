@@ -30,17 +30,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/blacklist"
-	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/blacklist"
+	"github.com/itcmsgr/nftban/internal/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/netutil"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/opqueue"
-	"github.com/itcmsgr/nftban/pkg/persistent"
-	"github.com/itcmsgr/nftban/pkg/timeutil"
+	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/persistent"
+	"github.com/itcmsgr/nftban/internal/timeutil"
 	"github.com/itcmsgr/nftban/pkg/version"
-	"github.com/itcmsgr/nftban/pkg/whitelist"
+	"github.com/itcmsgr/nftban/internal/whitelist"
 )
 
 // getBanConfigDir returns the config directory from passed config

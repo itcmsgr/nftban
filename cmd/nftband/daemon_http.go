@@ -26,7 +26,7 @@ import (
 	"net/http"
 	nethttpprof "net/http/pprof" // BUG-H4 FIX: explicit import instead of blank import to avoid polluting DefaultServeMux
 
-	"github.com/itcmsgr/nftban/pkg/constants"
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
