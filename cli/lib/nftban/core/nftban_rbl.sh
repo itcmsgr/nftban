@@ -83,7 +83,7 @@ fi
 : "${NFTBAN_RBL_CACHE_TTL:=24}"
 : "${NFTBAN_RBL_AUTO_DISCOVER_IPS:=YES}"
 : "${NFTBAN_RBL_CHECK_IPV6:=YES}"
-: "${NFTBAN_RBL_CACHE_DIR:=${NFTBAN_LOG_DIR}/rbl}"
+: "${NFTBAN_RBL_CACHE_DIR:=${NFTBAN_CACHE_DIR:-/var/cache/nftban}/rbl}"
 : "${NFTBAN_RBL_PROVIDERS_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/rbls.conf}"
 : "${NFTBAN_RBL_CUSTOM_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/custom.conf}"
 : "${NFTBAN_RBL_WATCHLIST_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/watchlist.conf}"

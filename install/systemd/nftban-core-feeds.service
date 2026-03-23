@@ -23,6 +23,7 @@
 Description=NFTBan Core - Feed Update
 Documentation=https://github.com/itcmsgr/nftban-dev
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

@@ -91,6 +91,9 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 	// v1.32.0: Set element counters for huge set management
 	case "set_counts":
 		return d.handleSetCountsRequest()
+	// v1.35.0: Manual reconciliation trigger
+	case "reconcile":
+		return d.handleReconcileRequest()
 	default:
 		return SocketResponse{
 			Success: false,

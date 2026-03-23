@@ -155,7 +155,7 @@ nftban_whitelist_add_ip() {
     nftban_ipc_check_or_emergency
     ipc_mode=$?
     if [[ $ipc_mode -eq 2 ]]; then
-        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
         return 1
     fi
 
@@ -228,7 +228,7 @@ nftban_whitelist_remove_ip() {
     nftban_ipc_check_or_emergency
     ipc_mode=$?
     if [[ $ipc_mode -eq 2 ]]; then
-        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
         return 1
     fi
 

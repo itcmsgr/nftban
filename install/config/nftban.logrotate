@@ -161,11 +161,12 @@
 }
 
 # =============================================================================
-# Audit trail log (nftban-actions.log)
+# Audit trail logs (actions + PAM audit)
 # =============================================================================
-# JSON-structured audit entries — ban/unban/config/whitelist actions
+# JSON-structured audit entries — ban/unban/config/whitelist actions + PAM events
 # Has in-code rotation at 50MB (nftban_audit_rotate) but needs logrotate as safety net
-/var/log/nftban/nftban-actions.log {
+/var/log/nftban/nftban-actions.log
+/var/log/nftban/audit.log {
     daily
     rotate 90
     compress

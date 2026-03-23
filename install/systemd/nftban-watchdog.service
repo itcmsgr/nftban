@@ -23,6 +23,7 @@
 Description=NFTBan System Watchdog Check
 Documentation=man:nftban(8)
 After=network.target nftables.service
+OnFailure=nftban-alert@%n.service
 
 [Service]
 Type=oneshot

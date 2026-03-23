@@ -254,7 +254,7 @@ nftban_cmd_rbl() {
             nftban_cmd_rbl_watchlist "$@"
             ;;
         *)
-            echo "Error: Unknown subcommand: $subcommand" >&2
+            echo "ERROR: Unknown subcommand: $subcommand" >&2
             echo "Run 'nftban rbl help' for usage" >&2
             return 1
             ;;
@@ -495,7 +495,7 @@ nftban_cmd_rbl_check() {
                 shift
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -522,7 +522,7 @@ nftban_cmd_rbl_check() {
     fi
 
     if [[ ${#ips_to_check[@]} -eq 0 ]]; then
-        echo "Error: No IPs to check" >&2
+        echo "ERROR: No IPs to check" >&2
         return 1
     fi
 
@@ -597,7 +597,7 @@ nftban_cmd_rbl_server() {
     shift || true
 
     if [[ "$subcmd" != "check" ]]; then
-        echo "Error: Unknown server subcommand: $subcmd" >&2
+        echo "ERROR: Unknown server subcommand: $subcmd" >&2
         echo "Usage: nftban rbl server check [options]" >&2
         return 1
     fi
@@ -638,7 +638,7 @@ nftban_cmd_rbl_server() {
                 shift
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -693,7 +693,7 @@ nftban_cmd_rbl_server() {
     [[ $quiet -eq 0 ]] && echo ""
 
     if [[ ${#all_ips[@]} -eq 0 ]]; then
-        echo "Error: No IPs found to check" >&2
+        echo "ERROR: No IPs found to check" >&2
         return 1
     fi
 
@@ -809,7 +809,7 @@ nftban_cmd_rbl_status() {
                 shift
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -848,7 +848,7 @@ nftban_cmd_rbl_list() {
                 shift
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
@@ -878,7 +878,7 @@ nftban_cmd_rbl_enable() {
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        echo "Error: Must run as root to enable timer" >&2
+        echo "ERROR: Must run as root to enable timer" >&2
         return 1
     fi
 
@@ -893,7 +893,7 @@ nftban_cmd_rbl_enable() {
 
     # Check if timer exists
     if ! systemctl list-unit-files | grep -q "nftban-rbl-check.timer"; then
-        echo "Error: nftban-rbl-check.timer not found" >&2
+        echo "ERROR: nftban-rbl-check.timer not found" >&2
         echo "Please install nftban RBL systemd units first" >&2
         return 1
     fi
@@ -923,7 +923,7 @@ nftban_cmd_rbl_disable() {
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        echo "Error: Must run as root to disable timer" >&2
+        echo "ERROR: Must run as root to disable timer" >&2
         return 1
     fi
 
@@ -962,7 +962,7 @@ nftban_cmd_rbl_cache() {
                         shift 2
                         ;;
                     *)
-                        echo "Error: Unknown option: $1" >&2
+                        echo "ERROR: Unknown option: $1" >&2
                         return 1
                         ;;
                 esac
@@ -991,7 +991,7 @@ nftban_cmd_rbl_cache() {
             fi
             ;;
         *)
-            echo "Error: Unknown cache subcommand: $subcmd" >&2
+            echo "ERROR: Unknown cache subcommand: $subcmd" >&2
             echo "Available: purge, show" >&2
             return 1
             ;;
@@ -1027,14 +1027,14 @@ nftban_cmd_rbl_alert() {
                 shift 2
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
+                echo "ERROR: Unknown option: $1" >&2
                 return 1
                 ;;
         esac
     done
 
     if [[ -z "$ip" ]]; then
-        echo "Error: --ip required for test alert" >&2
+        echo "ERROR: --ip required for test alert" >&2
         return 1
     fi
 
@@ -1046,7 +1046,7 @@ nftban_cmd_rbl_alert() {
     echo ""
 
     if [[ -z "${NFTBAN_RBL_ALERT_EMAIL:-}" ]]; then
-        echo "Error: NFTBAN_RBL_ALERT_EMAIL not configured" >&2
+        echo "ERROR: NFTBAN_RBL_ALERT_EMAIL not configured" >&2
         echo "Set in: /etc/nftban/conf.d/rbl/main.conf" >&2
         return 1
     fi
@@ -1157,7 +1157,7 @@ EOF
             local tag="${2:-default}"
 
             if [[ -z "$ip" ]]; then
-                echo "Error: IP address required" >&2
+                echo "ERROR: IP address required" >&2
                 echo "Usage: nftban rbl critical add <IP> [tag]" >&2
                 echo "" >&2
                 echo "Tags: mail, web, panel, smtp, dns" >&2
@@ -1167,13 +1167,13 @@ EOF
             # Validate IP format
             if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
                ! [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
-                echo "Error: Invalid IP address format: $ip" >&2
+                echo "ERROR: Invalid IP address format: $ip" >&2
                 return 1
             fi
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "Error: Must run as root to modify configuration" >&2
+                echo "ERROR: Must run as root to modify configuration" >&2
                 return 1
             fi
 
@@ -1212,14 +1212,14 @@ EOF
             local ip="${1:-}"
 
             if [[ -z "$ip" ]]; then
-                echo "Error: IP address required" >&2
+                echo "ERROR: IP address required" >&2
                 echo "Usage: nftban rbl critical remove <IP>" >&2
                 return 1
             fi
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "Error: Must run as root to modify configuration" >&2
+                echo "ERROR: Must run as root to modify configuration" >&2
                 return 1
             fi
 
@@ -1228,13 +1228,13 @@ EOF
             current_ips=$(_get_critical_ips)
 
             if [[ -z "$current_ips" ]]; then
-                echo "Error: No critical IPs configured" >&2
+                echo "ERROR: No critical IPs configured" >&2
                 return 1
             fi
 
             # Check if IP exists
             if ! [[ "$current_ips" == *"$ip:"* ]] && ! [[ "$current_ips" == *"$ip,"* ]] && ! [[ "$current_ips" == "$ip" ]]; then
-                echo "Error: IP $ip not found in critical list" >&2
+                echo "ERROR: IP $ip not found in critical list" >&2
                 return 1
             fi
 
@@ -1250,7 +1250,7 @@ EOF
             ;;
 
         *)
-            echo "Error: Unknown critical subcommand: $subcmd" >&2
+            echo "ERROR: Unknown critical subcommand: $subcmd" >&2
             echo "Available: list, add, remove" >&2
             return 1
             ;;
@@ -1277,7 +1277,7 @@ nftban_cmd_rbl_watchlist() {
                         shift
                         ;;
                     *)
-                        echo "Error: Unknown option: $1" >&2
+                        echo "ERROR: Unknown option: $1" >&2
                         return 1
                         ;;
                 esac
@@ -1293,7 +1293,7 @@ nftban_cmd_rbl_watchlist() {
             local notify_email="${4:-}"
 
             if [[ -z "$ip" ]]; then
-                echo "Error: IP address required" >&2
+                echo "ERROR: IP address required" >&2
                 echo "Usage: nftban rbl watchlist add <IP> [description] [tags] [notify_email]" >&2
                 echo "" >&2
                 echo "Tags: customer, partner, mail, web, critical (comma-separated)" >&2
@@ -1302,7 +1302,7 @@ nftban_cmd_rbl_watchlist() {
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "Error: Must run as root to modify watchlist" >&2
+                echo "ERROR: Must run as root to modify watchlist" >&2
                 return 1
             fi
 
@@ -1313,14 +1313,14 @@ nftban_cmd_rbl_watchlist() {
             local ip="${1:-}"
 
             if [[ -z "$ip" ]]; then
-                echo "Error: IP address required" >&2
+                echo "ERROR: IP address required" >&2
                 echo "Usage: nftban rbl watchlist remove <IP>" >&2
                 return 1
             fi
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "Error: Must run as root to modify watchlist" >&2
+                echo "ERROR: Must run as root to modify watchlist" >&2
                 return 1
             fi
 
@@ -1354,7 +1354,7 @@ nftban_cmd_rbl_watchlist() {
                         shift
                         ;;
                     *)
-                        echo "Error: Unknown option: $1" >&2
+                        echo "ERROR: Unknown option: $1" >&2
                         return 1
                         ;;
                 esac
@@ -1454,7 +1454,7 @@ nftban_cmd_rbl_watchlist() {
             ;;
 
         *)
-            echo "Error: Unknown watchlist subcommand: $subcmd" >&2
+            echo "ERROR: Unknown watchlist subcommand: $subcmd" >&2
             echo "Available: list, add, remove, check" >&2
             return 1
             ;;

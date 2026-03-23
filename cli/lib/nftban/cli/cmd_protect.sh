@@ -125,7 +125,7 @@ nftban_cmd_protect() {
         if [[ "$success" == "true" ]]; then
             echo "IP $ip marked as protected (will never be auto-evicted)"
         else
-            echo "Error: $error" >&2
+            echo "ERROR: $error" >&2
             return 1
         fi
     fi

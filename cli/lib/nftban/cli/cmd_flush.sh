@@ -288,7 +288,7 @@ _flush_check_daemon() {
     nftban_ipc_check_or_emergency
     _FLUSH_IPC_MODE=$?
     if [[ $_FLUSH_IPC_MODE -eq 2 ]]; then
-        echo "Error: nftband daemon is not running. Start with: systemctl start nftband" >&2
+        echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
         return 1
     fi
     return 0

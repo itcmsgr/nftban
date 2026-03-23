@@ -528,7 +528,7 @@ nftban_cmd_suricata() {
             cmd_suricata_help
             ;;
         *)
-            echo "ERROR: Unknown command: $action"
+            echo "ERROR: Unknown command: $action" >&2
             echo "Run 'nftban suricata help' for usage"
             return 1
             ;;
