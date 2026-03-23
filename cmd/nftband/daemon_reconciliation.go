@@ -97,6 +97,28 @@ func (d *Daemon) runReconciliation(wrapper *opqueue.NFTBackendWrapper) {
 		driftCount, duration.Round(time.Millisecond))
 }
 
+// handleReconcileRequest triggers manual reconciliation via IPC (v1.35.0).
+func (d *Daemon) handleReconcileRequest() SocketResponse {
+	nft := d.backend.GetNFTManager()
+	if nft == nil {
+		return SocketResponse{Success: false, Error: "nftables backend not initialized"}
+	}
+
+	wrapper, err := opqueue.NewNFTBackendWrapper(nft)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create wrapper: " + err.Error()}
+	}
+
+	start := time.Now()
+	d.runReconciliation(wrapper)
+	duration := time.Since(start)
+
+	return SocketResponse{
+		Success: true,
+		Data:    "reconciliation completed in " + duration.Round(time.Millisecond).String(),
+	}
+}
+
 // checkWhitelistOverlap detects IPs present in both whitelist and blacklist_manual sets (v1.34.0).
 // Only checks hash sets (blacklist_manual_*) — interval sets (blacklist_*) contain 500K+ CIDRs
 // and loading them would spike memory. Overlap with feed CIDRs is handled at sync time.

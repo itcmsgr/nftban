@@ -87,6 +87,8 @@ COMMANDS:
     history             Show detected scans (last 24 hours)
     test                Test port scan detection rules
     mode                Show or set detection mode (auto|classic|suricata|hybrid)
+    config              Show current configuration settings
+    reload              Reload detection (disable + re-enable with fresh config)
     help                Show this help message
 
 DESCRIPTION:
@@ -417,7 +419,7 @@ nftban_cmd_portscan() {
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_portscan.sh" || return 1
     else
-        echo "ERROR: Port scan detection module not found"
+        echo "ERROR: Port scan detection module not found" >&2
         echo "Expected: ${NFTBAN_LIB_DIR}/core/nftban_portscan.sh"
         return 1
     fi
@@ -582,14 +584,26 @@ nftban_cmd_portscan() {
             _nftban_portscan_mode "$mode_subcmd" "$json_mode" "$mode_arg"
             ;;
 
+        reload)
+            echo "Reloading port scan detection..."
+            echo ""
+            # Disable + re-enable to re-read config and rebuild nft chains
+            if nftban_portscan_disable 2>/dev/null; then
+                echo ""
+            fi
+            nftban_portscan_enable
+            echo ""
+            echo "Port scan detection reloaded successfully"
+            ;;
+
         help|--help|-h)
             _nftban_portscan_help
             ;;
 
         *)
-            echo "ERROR: Unknown command: $action"
+            echo "ERROR: Unknown command: $action" >&2
             echo ""
-            echo "Available commands: enable, disable, status, check, history, test, mode, sync, help"
+            echo "Available commands: enable, disable, status, check, history, test, mode, sync, config, reload, help"
             echo "Run 'nftban portscan help' for detailed usage information"
             return 1
             ;;

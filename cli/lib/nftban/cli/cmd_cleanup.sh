@@ -150,7 +150,7 @@ _cleanup_stats() {
             echo "  Protected:         $protected (never evict)"
             echo "  Evictable (>30d):  $evictable"
         else
-            echo "Error: Failed to get statistics" >&2
+            echo "ERROR: Failed to get statistics" >&2
             return 1
         fi
     fi
@@ -215,7 +215,7 @@ _cleanup_dry_run() {
             echo ""
             echo "To actually evict these IPs, run: nftban cleanup --execute"
         else
-            echo "Error: Failed to get evictable bans" >&2
+            echo "ERROR: Failed to get evictable bans" >&2
             return 1
         fi
     fi
@@ -274,7 +274,7 @@ _cleanup_execute() {
             echo ""
             echo "Memory freed. Run 'nftban cleanup --stats' to see current state."
         else
-            echo "Error: Failed to evict bans" >&2
+            echo "ERROR: Failed to evict bans" >&2
             return 1
         fi
     fi

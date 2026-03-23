@@ -51,7 +51,7 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_config.sh" || return 1
 else
-    echo "ERROR: Configuration module not found"
+    echo "ERROR: Configuration module not found" >&2
     return 1
 fi
 
@@ -245,7 +245,7 @@ nftban_cmd_config_test() {
 
     # Check if schema module is loaded
     if ! command -v nftban_configtest >/dev/null 2>&1; then
-        echo "ERROR: Schema validation module not available"
+        echo "ERROR: Schema validation module not available" >&2
         return 1
     fi
 
@@ -266,7 +266,7 @@ nftban_cmd_config_audit() {
 
     # Check if schema module is loaded
     if ! command -v nftban_configaudit >/dev/null 2>&1; then
-        echo "ERROR: Schema validation module not available"
+        echo "ERROR: Schema validation module not available" >&2
         return 1
     fi
 
@@ -279,7 +279,7 @@ nftban_cmd_config_show() {
 
     # Check if schema module is loaded
     if ! command -v nftban_config_load_effective >/dev/null 2>&1; then
-        echo "ERROR: Schema validation module not available"
+        echo "ERROR: Schema validation module not available" >&2
         return 1
     fi
 
@@ -719,8 +719,8 @@ nftban_cmd_config() {
     case "$subcommand" in
         get)
             if [[ -z "${1:-}" ]]; then
-                echo "ERROR: Module name required"
-                echo "Usage: nftban config get <module> [--json]"
+                echo "ERROR: Module name required" >&2
+                echo "Usage: nftban config get <module> [--json]" >&2
                 return 1
             fi
             nftban_cmd_config_get "$@"
@@ -728,8 +728,8 @@ nftban_cmd_config() {
 
         defaults)
             if [[ -z "${1:-}" ]]; then
-                echo "ERROR: Module name required"
-                echo "Usage: nftban config defaults <module> [--json]"
+                echo "ERROR: Module name required" >&2
+                echo "Usage: nftban config defaults <module> [--json]" >&2
                 return 1
             fi
             nftban_cmd_config_defaults "$@"
@@ -737,8 +737,8 @@ nftban_cmd_config() {
 
         overrides)
             if [[ -z "${1:-}" ]]; then
-                echo "ERROR: Module name required"
-                echo "Usage: nftban config overrides <module> [--json]"
+                echo "ERROR: Module name required" >&2
+                echo "Usage: nftban config overrides <module> [--json]" >&2
                 return 1
             fi
             nftban_cmd_config_overrides "$@"
@@ -746,8 +746,8 @@ nftban_cmd_config() {
 
         set)
             if [[ -z "${1:-}" ]] || [[ -z "${2:-}" ]]; then
-                echo "ERROR: Module name and KEY=VALUE required"
-                echo "Usage: nftban config set <module> KEY=VALUE"
+                echo "ERROR: Module name and KEY=VALUE required" >&2
+                echo "Usage: nftban config set <module> KEY=VALUE" >&2
                 return 1
             fi
             nftban_cmd_config_set "$@"
@@ -755,8 +755,8 @@ nftban_cmd_config() {
 
         reset)
             if [[ -z "${1:-}" ]] || [[ -z "${2:-}" ]]; then
-                echo "ERROR: Module name and KEY required"
-                echo "Usage: nftban config reset <module> KEY"
+                echo "ERROR: Module name and KEY required" >&2
+                echo "Usage: nftban config reset <module> KEY" >&2
                 return 1
             fi
             nftban_cmd_config_reset "$@"
@@ -764,8 +764,8 @@ nftban_cmd_config() {
 
         reset-all)
             if [[ -z "${1:-}" ]]; then
-                echo "ERROR: Module name required"
-                echo "Usage: nftban config reset-all <module>"
+                echo "ERROR: Module name required" >&2
+                echo "Usage: nftban config reset-all <module>" >&2
                 return 1
             fi
             nftban_cmd_config_reset_all "$@"

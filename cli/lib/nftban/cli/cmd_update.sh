@@ -698,7 +698,7 @@ _cmd_update_auto() {
                 ;;
             --email|-e)
                 email_arg="${2:-}"
-                shift 2 || { echo "Error: --email requires an argument" >&2; return 1; }
+                shift 2 || { echo "ERROR: --email requires an argument" >&2; return 1; }
                 ;;
             *)
                 shift

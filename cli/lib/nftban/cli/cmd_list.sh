@@ -149,7 +149,7 @@ nftban_cmd_list() {
                 ;;
             *)
                 echo "ERROR: Unknown option: $1" >&2
-                nftban_cmd_list_usage
+                nftban_cmd_list_usage >&2
                 return 1
                 ;;
         esac

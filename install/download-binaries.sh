@@ -55,7 +55,7 @@ if ! validate_version_tag "$VERSION"; then
 fi
 
 # Directories
-DOWNLOAD_DIR="${DOWNLOAD_DIR:-/tmp/nftban-binaries}"
+DOWNLOAD_DIR="${DOWNLOAD_DIR:-$(mktemp -d /tmp/nftban-binaries.XXXXXX)}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/lib/nftban/bin}"
 
 # Colors

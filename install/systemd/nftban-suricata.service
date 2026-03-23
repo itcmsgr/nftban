@@ -25,6 +25,7 @@ Documentation=man:nftban(8) https://nftban.com/docs
 After=network.target nftables.service suricata.service
 Requires=suricata.service
 PartOf=suricata.service
+OnFailure=nftban-alert@%n.service
 
 [Service]
 Type=simple

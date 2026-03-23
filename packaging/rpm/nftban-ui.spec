@@ -88,6 +88,10 @@ install -m 0644 install/pam/nftban-ui %{buildroot}%{_sysconfdir}/pam.d/nftban-ui
 install -d %{buildroot}%{_tmpfilesdir}
 install -m 0644 install/systemd/tmpfiles.d/nftban.conf %{buildroot}%{_tmpfilesdir}/nftban.conf
 
+# Install sysusers.d configuration for user/group creation
+install -d %{buildroot}%{_sysusersdir}
+install -m 0644 install/systemd/sysusers.d/nftban.conf %{buildroot}%{_sysusersdir}/nftban.conf
+
 # Install config files
 install -m 0644 install/config/allowed-gui-groups %{buildroot}%{_sysconfdir}/nftban/allowed-gui-groups
 
@@ -186,6 +190,9 @@ fi
 
 # tmpfiles.d configuration
 %{_tmpfilesdir}/nftban.conf
+
+# sysusers.d configuration
+%{_sysusersdir}/nftban.conf
 
 # Distro config parser module
 %{_prefix}/lib/nftban/lib/nftban_distro_config.sh

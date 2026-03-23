@@ -126,7 +126,7 @@ EOF
         if [[ "$success" == "true" ]]; then
             echo "IP $ip protection removed (can now be auto-evicted after 30 days)"
         else
-            echo "Error: $error" >&2
+            echo "ERROR: $error" >&2
             return 1
         fi
     fi

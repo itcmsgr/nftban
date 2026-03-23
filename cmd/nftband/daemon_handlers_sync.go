@@ -240,10 +240,25 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				ipv6CIDRs = append(ipv6CIDRs, cidr)
 			}
 
+			// v1.35.0: Global feed entry cap — reject feeds that would exceed limit
+			const maxFeedEntries = 1_000_000 // Safety cap: 1M total CIDRs
+			totalFeedCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+			if totalFeedCIDRs > maxFeedEntries {
+				log.Printf("[SYNC] WARNING: Feed total %d exceeds cap %d — truncating to cap",
+					totalFeedCIDRs, maxFeedEntries)
+				if len(ipv4CIDRs) > maxFeedEntries {
+					ipv4CIDRs = ipv4CIDRs[:maxFeedEntries]
+				}
+				remaining := maxFeedEntries - len(ipv4CIDRs)
+				if len(ipv6CIDRs) > remaining {
+					ipv6CIDRs = ipv6CIDRs[:remaining]
+				}
+				totalFeedCIDRs = len(ipv4CIDRs) + len(ipv6CIDRs)
+			}
+
 			// Memory safety check before loading feeds into nftables
 			// CIDR merging can use 3x memory temporarily
 			const bytesPerCIDR = 300 // conservative estimate
-			totalFeedCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
 			estimatedFeedBytes := int64(totalFeedCIDRs) * bytesPerCIDR
 			if !safety.CanAllocate(estimatedFeedBytes) {
 				log.Printf("[SYNC] Warning: Skipping feeds - insufficient memory for %d CIDRs (need ~%s)",
