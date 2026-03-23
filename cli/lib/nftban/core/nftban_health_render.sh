@@ -293,6 +293,7 @@ nftban_health_render_json() {
     local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
     # Determine overall status
+    # v1.37.1: Warnings exit 0 (optional features are not errors)
     local overall_status="ok"
     local exit_code=0
     if [[ $error_count -gt 0 ]]; then
@@ -300,7 +301,7 @@ nftban_health_render_json() {
         exit_code=2
     elif [[ $warning_count -gt 0 ]]; then
         overall_status="warning"
-        exit_code=1
+        exit_code=0
     fi
 
     echo "{"
