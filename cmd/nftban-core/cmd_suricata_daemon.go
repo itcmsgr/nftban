@@ -24,8 +24,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/suricata"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/suricata"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

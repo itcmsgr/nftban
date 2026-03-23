@@ -30,7 +30,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/logutil"
+	"github.com/itcmsgr/nftban/internal/logutil"
 )
 
 // SECURITY FIX: Connection limiting to prevent SSE resource exhaustion attacks

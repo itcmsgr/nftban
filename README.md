@@ -58,6 +58,27 @@ NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall ma
 
 It provides automated threat detection and response using native nftables for kernel-level enforcement, with Polkit-based privilege separation for secure operation without full root access.
 
+## Go Module Notice
+
+NFTBan is a **system-level firewall product**, not a general-purpose Go library.
+
+While this repository is a Go module and appears on [pkg.go.dev](https://pkg.go.dev/github.com/itcmsgr/nftban), it is **not designed or supported for use as an embeddable SDK**. The Go packages exist to implement the NFTBan daemon, CLI, and internal tooling.
+
+### Supported Public Packages
+
+| Package | Purpose |
+|---------|---------|
+| [`pkg/ipc`](https://pkg.go.dev/github.com/itcmsgr/nftban/pkg/ipc) | IPC client for communicating with the NFTBan daemon |
+| [`pkg/version`](https://pkg.go.dev/github.com/itcmsgr/nftban/pkg/version) | Version information |
+
+### For Integration with NFTBan
+
+- **CLI:** `nftban ban`, `nftban unban`, `nftban status`
+- **Go IPC client:** `pkg/ipc` — the supported public Go package
+- **HTTP API:** `http://127.0.0.1:8080/api/` (when daemon is running)
+
+All packages under `internal/` are implementation details and may change without notice between releases.
+
 > **BETA** | Tested on 5 lab servers. Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
 
 ---

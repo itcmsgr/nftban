@@ -9,7 +9,7 @@
 // meta:description="Run sync operations with pprof profiling for performance analysis"
 // meta:input="None"
 // meta:output="Profiling data on localhost:6060"
-// meta:depends="github.com/itcmsgr/nftban/pkg/blacklist,github.com/itcmsgr/nftban/pkg/whitelist,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/blacklist,github.com/itcmsgr/nftban/internal/whitelist,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -28,9 +28,9 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/blacklist"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/whitelist"
+	"github.com/itcmsgr/nftban/internal/blacklist"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/whitelist"
 )
 
 // getProfileSyncConfigDir returns the config directory from passed config

@@ -9,7 +9,7 @@
 // meta:description="Application configuration for nftban-ui server"
 // meta:input="Configuration file"
 // meta:output="Server configuration"
-// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -31,7 +31,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // SECURITY FIX: Minimum required length for JWT secret

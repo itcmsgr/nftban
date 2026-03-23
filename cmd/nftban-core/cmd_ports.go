@@ -9,7 +9,7 @@
 // meta:description="Manage allowed ports in nftables firewall"
 // meta:input="Subcommand (list, load, status)"
 // meta:output="Console output with port configuration"
-// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/network,github.com/itcmsgr/nftban/pkg/ports"
+// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/internal/network,github.com/itcmsgr/nftban/internal/ports"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -26,9 +26,9 @@ import (
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/network"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/ports"
+	"github.com/itcmsgr/nftban/internal/network"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/ports"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

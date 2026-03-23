@@ -24,9 +24,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/suricata"
+	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/suricata"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

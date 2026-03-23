@@ -28,7 +28,7 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/stats"
+	"github.com/itcmsgr/nftban/internal/stats"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

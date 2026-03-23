@@ -23,7 +23,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/itcmsgr/nftban/pkg/suricata/customrules"
+	"github.com/itcmsgr/nftban/internal/suricata/customrules"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

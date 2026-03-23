@@ -37,13 +37,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
-	"github.com/itcmsgr/nftban/pkg/auth"
-	"github.com/itcmsgr/nftban/pkg/logutil"
-	"github.com/itcmsgr/nftban/pkg/netutil"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/session"
-	"github.com/itcmsgr/nftban/pkg/state"
-	"github.com/itcmsgr/nftban/pkg/util"
+	"github.com/itcmsgr/nftban/internal/auth"
+	"github.com/itcmsgr/nftban/internal/logutil"
+	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/session"
+	"github.com/itcmsgr/nftban/internal/state"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 // GOTHHandlers holds dependencies for GOTH UI handlers

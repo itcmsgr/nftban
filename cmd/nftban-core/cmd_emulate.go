@@ -9,7 +9,7 @@
 // meta:description="Emulate packet decisions through nftables firewall rules"
 // meta:input="IP address, protocol, port, direction"
 // meta:output="JSON result with firewall decision"
-// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files=""
 // meta:inventory.binaries="nft"
 // meta:inventory.env_vars=""
@@ -28,7 +28,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // EmulateQuery represents the query parameters
