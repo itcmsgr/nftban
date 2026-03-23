@@ -32,9 +32,9 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
-	"github.com/itcmsgr/nftban/pkg/constants"
-	"github.com/itcmsgr/nftban/pkg/eventbus"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/constants"
+	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // handleSignals is the unified signal handler that runs as a goroutine.

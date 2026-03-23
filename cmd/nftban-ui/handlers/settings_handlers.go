@@ -35,8 +35,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
-	"github.com/itcmsgr/nftban/pkg/logutil"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/logutil"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // SettingsSaveRequest represents a settings save request

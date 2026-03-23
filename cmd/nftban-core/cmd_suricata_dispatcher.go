@@ -9,7 +9,7 @@
 // meta:description="Suricata IDS integration with profile, rules, and filter management"
 // meta:input="Subcommand (status, filters, daemon, enable, disable, set-threshold, set-action, profile-*, scan, rules-*, sid-*, custom-*, recommend)"
 // meta:output="Console output with Suricata configuration and status"
-// meta:depends="github.com/itcmsgr/nftban/pkg/suricata,github.com/itcmsgr/nftban/pkg/analytics,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/suricata,github.com/itcmsgr/nftban/internal/analytics,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files="/var/log/nftban/suricata/eve-alerts.json"
 // meta:inventory.binaries="suricata"
 // meta:inventory.env_vars=""
@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // getSuricataPaths returns suricata-related paths from passed config

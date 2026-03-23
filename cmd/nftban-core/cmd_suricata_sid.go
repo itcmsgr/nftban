@@ -27,7 +27,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/suricata/stats"
+	"github.com/itcmsgr/nftban/internal/suricata/stats"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

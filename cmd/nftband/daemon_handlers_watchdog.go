@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/version"
-	"github.com/itcmsgr/nftban/pkg/watchdog"
+	"github.com/itcmsgr/nftban/internal/watchdog"
 )
 
 // =============================================================================

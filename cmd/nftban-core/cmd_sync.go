@@ -9,7 +9,7 @@
 // meta:description="Synchronize whitelist and blacklist with nftables via daemon"
 // meta:input="None"
 // meta:output="Console output with sync results"
-// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

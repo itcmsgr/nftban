@@ -25,9 +25,9 @@ package main
 import (
 	"testing"
 
-	"github.com/itcmsgr/nftban/pkg/eventbus"
-	"github.com/itcmsgr/nftban/pkg/module"
-	"github.com/itcmsgr/nftban/pkg/stats"
+	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/module"
+	"github.com/itcmsgr/nftban/internal/stats"
 )
 
 // newTestDaemon creates a minimal Daemon for dispatch testing.

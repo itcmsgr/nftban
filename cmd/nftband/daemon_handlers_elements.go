@@ -24,9 +24,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/nftbackend"
-	"github.com/itcmsgr/nftban/pkg/persistence"
-	"github.com/itcmsgr/nftban/pkg/safety"
+	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/persistence"
+	"github.com/itcmsgr/nftban/internal/safety"
 )
 
 // handleAddElementRequest adds an element to any set

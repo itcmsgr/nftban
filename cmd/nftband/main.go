@@ -25,11 +25,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/eventbus"
-	"github.com/itcmsgr/nftban/pkg/module"
-	"github.com/itcmsgr/nftban/pkg/nftbackend"
-	"github.com/itcmsgr/nftban/pkg/safety"
-	"github.com/itcmsgr/nftban/pkg/stats"
+	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/module"
+	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/safety"
+	"github.com/itcmsgr/nftban/internal/stats"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

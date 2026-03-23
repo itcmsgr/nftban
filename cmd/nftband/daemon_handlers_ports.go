@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban/pkg/ports"
+	"github.com/itcmsgr/nftban/internal/ports"
 )
 
 // handleLoadPortsRequest loads ports into nftables port sets

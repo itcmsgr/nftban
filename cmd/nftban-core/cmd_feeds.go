@@ -9,7 +9,7 @@
 // meta:description="Manage threat intelligence feeds for IP blocking"
 // meta:input="Subcommand (list, load, stats, enable, disable, sync, update)"
 // meta:output="Console output with feed status and operations"
-// meta:depends="github.com/itcmsgr/nftban/pkg/feeds,github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/internal/feeds,github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -35,9 +35,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
