@@ -341,7 +341,7 @@ test_migrated_paths() {
 
     # 4.4 Verify sync.go has IPC calls
     log_info "Checking sync.go migration..."
-    if grep -q 'ipc\.NewClient' pkg/firewall/sync.go 2>/dev/null; then
+    if grep -q 'ipc\.NewClient' internal/firewall/sync.go 2>/dev/null; then
         log_pass "sync.go uses ipc.Client"
     else
         log_fail "sync.go not migrated"

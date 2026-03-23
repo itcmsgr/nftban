@@ -61,8 +61,8 @@ nftban_sync_full() {
     #
     # Algorithm (v0.6.0):
     # 1. Read static config (whitelist, blacklist, ports)
-    # 2. Build feed sets (Go pkg/feeds)
-    # 3. Build geoban sets (Go pkg/geoban)
+    # 2. Build feed sets (Go internal/feeds)
+    # 3. Build geoban sets (Go internal/geoban)
     # 4. Dump runtime sets (temp_ban_*, temp_whitelist_*)
     # 5. Generate rules.new.nft
     # 6. Validate: nft -c -f rules.new.nft
@@ -268,8 +268,8 @@ DESCRIPTION:
 
 ALGORITHM:
   1. Read static config (whitelist, blacklist, ports)
-  2. Build feed sets (Go pkg/feeds) - <2s for 50,000+ IPs
-  3. Build geoban sets (Go pkg/geoban) - <2s for 2,259 CIDRs
+  2. Build feed sets (Go internal/feeds) - <2s for 50,000+ IPs
+  3. Build geoban sets (Go internal/geoban) - <2s for 2,259 CIDRs
   4. Dump Fail2Ban runtime state (temp_ban_*, temp_whitelist_*)
   5. Generate new ruleset (rules.new.nft)
   6. Validate (nft -c -f)
@@ -289,7 +289,7 @@ ARCHITECTURE:
   - Tables: ip nftban (IPv4) + ip6 nftban (IPv6)
   - Unified blacklist (all bans consolidated per family)
   - Rule order: Drops BEFORE ct state established
-  - Go modules: pkg/feeds, pkg/geoban, pkg/firewall
+  - Go modules: internal/feeds, internal/geoban, internal/firewall
 
 EXAMPLES:
   # Full sync (production)

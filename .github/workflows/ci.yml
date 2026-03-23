@@ -63,8 +63,8 @@ jobs:
           #
           # Allowed paths:
           #   cmd/nftband/       - the daemon itself
-          #   pkg/nftbackend/    - daemon's nft backend
-          #   pkg/sync/          - nft operations library (used by daemon)
+          #   internal/nftbackend/    - daemon's nft backend
+          #   internal/setsync/      - nft set sync library (used by daemon)
           #
           # Forbidden in CLI:
           #   cmd/nftban-core/   - CLI must use IPC, not netlink

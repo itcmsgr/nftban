@@ -69,19 +69,19 @@ jobs:
         run: |
           echo "=== Fuzzing FuzzParseLogLine (30s) ==="
           echo "Tests login detection across SSH, Mail, FTP, and Panel log formats"
-          go test -fuzz=FuzzParseLogLine -fuzztime=30s ./pkg/parser/
+          go test -fuzz=FuzzParseLogLine -fuzztime=30s ./internal/parser/
 
       - name: Run FuzzParseFeedLine
         run: |
           echo "=== Fuzzing FuzzParseFeedLine (30s) ==="
           echo "Tests IP/CIDR feed line parsing with comments and whitespace"
-          go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./pkg/parser/
+          go test -fuzz=FuzzParseFeedLine -fuzztime=30s ./internal/parser/
 
       - name: Run FuzzValidateAndNormalizeIP
         run: |
           echo "=== Fuzzing FuzzValidateAndNormalizeIP (30s) ==="
           echo "Tests IP validation and normalization functions"
-          go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./pkg/parser/
+          go test -fuzz=FuzzValidateAndNormalizeIP -fuzztime=30s ./internal/parser/
 
       - name: Summary
         if: always()

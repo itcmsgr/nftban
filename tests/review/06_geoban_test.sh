@@ -51,7 +51,7 @@ SHELL_CORE="${REPO_ROOT}/cli/lib/nftban/core/nftban_geoban.sh"
 SHELL_CLI="${REPO_ROOT}/cli/lib/nftban/cli/cmd_geoban.sh"
 SHELL_CIDR="${REPO_ROOT}/cli/lib/nftban/lib/nftban_dataset_cidr.sh"
 SHELL_EXPORTER="${REPO_ROOT}/cli/lib/nftban/exporters/nftban_geoban_exporter.sh"
-GO_GEOBAN="${REPO_ROOT}/pkg/geoban/geoban.go"
+GO_GEOBAN="${REPO_ROOT}/internal/geoban/geoban.go"
 CONF_GEOBAN="${REPO_ROOT}/etc/nftban/conf.d/geoban/main.conf"
 METRICS_REG="${REPO_ROOT}/cli/lib/nftban/data/metrics-registry.json"
 

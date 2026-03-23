@@ -40,7 +40,7 @@ import (
 // - /etc/nftban/whitelist.d/*.conf (modular files)
 // Returns two sets: IPv4 and IPv6 addresses
 //
-// Now uses optimized generic Set type from pkg/util for:
+// Now uses optimized generic Set type from internal/util for:
 // - Zero memory overhead (struct{} instead of bool)
 // - Consistent API
 // - Better performance
@@ -145,7 +145,7 @@ func AddIP(configDir string, ipStr string) error {
 	}
 
 	// v1.19.0: Reject bogon/reserved ranges (R23)
-	// Uses shared bogon filter from pkg/sync/cidr.go
+	// Uses shared bogon filter from internal/setsync/cidr.go
 	filtered, stats := setsync.FilterProblematicCIDRs([]string{ipStr})
 	if stats.Bogon > 0 || stats.TooLarge > 0 {
 		return fmt.Errorf("refusing to whitelist %s: bogon/reserved range", ipStr)

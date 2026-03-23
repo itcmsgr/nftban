@@ -37,6 +37,7 @@ jobs:
               - 'go.sum'
               - 'cmd/**'
               - 'pkg/**'
+              - 'internal/**'
 
   analyze:
     name: Build, Test, Scan (Go)

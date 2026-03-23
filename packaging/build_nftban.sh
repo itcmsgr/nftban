@@ -423,7 +423,7 @@ install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib
 install -D -m 0644 install/systemd/nftban-health.service %{buildroot}/usr/lib/systemd/system/nftban-health.service
 install -D -m 0644 install/systemd/nftban-health.timer %{buildroot}/usr/lib/systemd/system/nftban-health.timer
 # v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
-# Deprecated since v1.21.3, replaced by Go daemon loginmon module (pkg/loginmon)
+# Deprecated since v1.21.3, replaced by Go daemon loginmon module (internal/loginmon)
 install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.service
 install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
 install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
@@ -1481,7 +1481,7 @@ if systemctl is-active nftban-login-monitor.service >/dev/null 2>&1 || \
    systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
     echo "[NFTBan] Cleaning up deprecated nftban-login-monitor.service..."
     systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
-    echo "[NFTBan] Login monitoring now handled by daemon loginmon module (pkg/loginmon)"
+    echo "[NFTBan] Login monitoring now handled by daemon loginmon module (internal/loginmon)"
 fi
 
 # STEP 9: Configure nftables to load NFTBan config (distro-aware)
@@ -2656,7 +2656,7 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.timer" "${deb_root}/usr/lib/systemd/system/"
     # v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
-    # Deprecated since v1.21.3, replaced by Go daemon loginmon module (pkg/loginmon)
+    # Deprecated since v1.21.3, replaced by Go daemon loginmon module (internal/loginmon)
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"

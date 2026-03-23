@@ -37,7 +37,7 @@ import (
 // - /etc/nftban/blacklist.d/*.conf (modular files organized by category)
 // Returns two sets: IPv4 and IPv6 addresses
 //
-// Now uses optimized generic Set type from pkg/util for:
+// Now uses optimized generic Set type from internal/util for:
 // - Zero memory overhead (struct{} instead of bool)
 // - Consistent API
 // - Better performance

@@ -79,7 +79,7 @@ func (d *Daemon) startHTTP() error {
 		})
 	})
 
-	// TODO: Mount existing pkg/api handlers here
+	// TODO: Mount existing internal/api handlers here
 	// mux.Handle("/api/v1/", api.NewRouter())
 
 	d.httpSrv = &http.Server{
