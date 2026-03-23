@@ -1849,7 +1849,7 @@ if [ \$1 -eq 0 ]; then
     echo "[NFTBan] Complete removal — cleaning up all artifacts..."
 
     # STEP 1: Backup user configuration before removal
-    BACKUP_DIR="/var/tmp/nftban-config-backup-\$(date +%Y%m%d-%H%M%S)"
+    BACKUP_DIR="/var/tmp/nftban-config-backup-\$(date +%%Y%%m%%d-%%H%%M%%S)"
     if [ -d /etc/nftban ]; then
         echo "[NFTBan] Backing up user configuration to \${BACKUP_DIR} ..."
         mkdir -p "\$BACKUP_DIR" 2>/dev/null || true
