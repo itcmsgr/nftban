@@ -14,8 +14,8 @@
 
 # Stage 1: Build Go binaries
 # v1.19.0: Pin builder image for OpenSSF Scorecard compliance (R40)
-# Update SHA: docker pull golang:1.24-alpine && docker inspect --format='{{index .RepoDigests 0}}' golang:1.24-alpine
-FROM golang:1.24-alpine AS builder
+# Update SHA: docker pull golang:1.25-alpine && docker inspect --format='{{index .RepoDigests 0}}' golang:1.25-alpine
+FROM golang:1.25-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev

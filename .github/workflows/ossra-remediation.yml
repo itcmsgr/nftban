@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.24.x"
+  GO_VERSION: "1.25.x"
 
 jobs:
   license-compliance:
@@ -55,9 +55,10 @@ jobs:
       - name: License scan (fail on restricted/copyleft)
         run: |
           set -euo pipefail
-          # Pin to v2.0.0 for reproducible builds (CodeQL: Pinned-Dependencies)
+          # Pin to v2.0.1 for reproducible builds (CodeQL: Pinned-Dependencies)
           # Note: go-licenses v2 uses /v2 module path per Go module versioning
-          go install github.com/google/go-licenses/v2@v2.0.0
+          # v2.0.1 required for Go 1.25+ compatibility (x/tools@v0.12.0 breaks on 1.25)
+          go install github.com/google/go-licenses/v2@v2.0.1
           # "restricted" includes copyleft-style licenses (e.g., GPL-family) per go-licenses classification.
           go-licenses check ./... --disallowed_types=restricted
 
