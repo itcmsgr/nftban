@@ -19,6 +19,10 @@
 
 // Package ipc provides inter-process communication for the NFTBan daemon architecture.
 //
+// This is a supported public package in the NFTBan module. It is the recommended
+// integration point for Go programs that need to communicate with a running
+// NFTBan daemon. All other NFTBan packages are internal implementation details.
+//
 // NFTBan uses a single-writer architecture where all nftables write operations
 // must go through the nftband daemon. This package provides the client-side IPC
 // mechanism for communicating with the daemon over a Unix socket.

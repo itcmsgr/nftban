@@ -23,10 +23,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/constants"
-	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/nftlock"
-	"github.com/itcmsgr/nftban/pkg/opqueue"
+	"github.com/itcmsgr/nftban/internal/constants"
+	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/nftlock"
+	"github.com/itcmsgr/nftban/internal/opqueue"
 )
 
 // startPeriodicReconciliation runs reconciliation on a schedule (v1.34.0)

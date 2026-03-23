@@ -34,10 +34,10 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/state"
-	"github.com/itcmsgr/nftban/pkg/timeutil"
-	"github.com/itcmsgr/nftban/pkg/util"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/state"
+	"github.com/itcmsgr/nftban/internal/timeutil"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 // =============================================================================

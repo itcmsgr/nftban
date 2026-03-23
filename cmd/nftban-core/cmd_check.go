@@ -9,7 +9,7 @@
 // meta:description="Check IP against whitelist, blacklist, and threat feeds"
 // meta:input="IP address string"
 // meta:output="Console output with IP status"
-// meta:depends="github.com/itcmsgr/nftban/pkg/blacklist,github.com/itcmsgr/nftban/pkg/feeds,github.com/itcmsgr/nftban/pkg/whitelist"
+// meta:depends="github.com/itcmsgr/nftban/internal/blacklist,github.com/itcmsgr/nftban/internal/feeds,github.com/itcmsgr/nftban/internal/whitelist"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -26,12 +26,12 @@ import (
 	"net"
 	"strings"
 
-	"github.com/itcmsgr/nftban/pkg/blacklist"
-	"github.com/itcmsgr/nftban/pkg/feeds"
-	"github.com/itcmsgr/nftban/pkg/netutil"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/blacklist"
+	"github.com/itcmsgr/nftban/internal/feeds"
+	"github.com/itcmsgr/nftban/internal/netutil"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
-	"github.com/itcmsgr/nftban/pkg/whitelist"
+	"github.com/itcmsgr/nftban/internal/whitelist"
 )
 
 // getCheckPaths returns config and data directories from passed config

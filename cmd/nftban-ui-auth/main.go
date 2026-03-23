@@ -34,8 +34,8 @@ import (
 	pam "github.com/msteinert/pam/v2"
 
 	"github.com/itcmsgr/nftban/internal/authproto"
-	"github.com/itcmsgr/nftban/pkg/auth"
-	"github.com/itcmsgr/nftban/pkg/system"
+	"github.com/itcmsgr/nftban/internal/auth"
+	"github.com/itcmsgr/nftban/internal/system"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

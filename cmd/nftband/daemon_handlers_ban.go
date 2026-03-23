@@ -26,16 +26,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/banlog"
-	"github.com/itcmsgr/nftban/pkg/eventbus"
-	"github.com/itcmsgr/nftban/pkg/geoip"
-	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/nftbackend"
-	"github.com/itcmsgr/nftban/pkg/persistence"
-	"github.com/itcmsgr/nftban/pkg/persistent"
-	"github.com/itcmsgr/nftban/pkg/safety"
-	"github.com/itcmsgr/nftban/pkg/whitelist"
+	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/geoip"
+	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/persistence"
+	"github.com/itcmsgr/nftban/internal/persistent"
+	"github.com/itcmsgr/nftban/internal/safety"
+	"github.com/itcmsgr/nftban/internal/whitelist"
 )
 
 // isWhitelisted checks if an IP is in the whitelist.

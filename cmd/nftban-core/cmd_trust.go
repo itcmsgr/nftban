@@ -9,7 +9,7 @@
 // meta:description="Manage trust feeds (whitelists) for cloud providers and CDNs"
 // meta:input="Subcommand (list, enable, disable, update, load)"
 // meta:output="Console output with trust feed status"
-// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/internal/nftbanconf"
 // meta:inventory.files="/var/lib/nftban/trust/*.txt"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/ipc"
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 

@@ -28,14 +28,14 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban/pkg/feeds"
-	"github.com/itcmsgr/nftban/pkg/geoban"
-	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/opqueue"
-	"github.com/itcmsgr/nftban/pkg/ports"
-	"github.com/itcmsgr/nftban/pkg/runtime"
-	"github.com/itcmsgr/nftban/pkg/safety"
-	nftsync "github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/internal/feeds"
+	"github.com/itcmsgr/nftban/internal/geoban"
+	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/ports"
+	"github.com/itcmsgr/nftban/internal/runtime"
+	"github.com/itcmsgr/nftban/internal/safety"
+	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
 // handleSyncRequest performs a full differential sync of whitelists/blacklists

@@ -31,23 +31,23 @@ import (
 
 	goruntime "runtime"
 
-	"github.com/itcmsgr/nftban/pkg/constants"
-	"github.com/itcmsgr/nftban/pkg/nftlock"
-	"github.com/itcmsgr/nftban/pkg/stats"
+	"github.com/itcmsgr/nftban/internal/constants"
+	"github.com/itcmsgr/nftban/internal/nftlock"
+	"github.com/itcmsgr/nftban/internal/stats"
 
-	"github.com/itcmsgr/nftban/pkg/banlog"
-	"github.com/itcmsgr/nftban/pkg/botguard"
-	"github.com/itcmsgr/nftban/pkg/ddos"
-	"github.com/itcmsgr/nftban/pkg/eventbus"
-	"github.com/itcmsgr/nftban/pkg/loginmon"
-	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/nftbackend"
-	"github.com/itcmsgr/nftban/pkg/opqueue"
-	"github.com/itcmsgr/nftban/pkg/portscan"
-	"github.com/itcmsgr/nftban/pkg/safeconv"
-	"github.com/itcmsgr/nftban/pkg/safety"
+	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/botguard"
+	"github.com/itcmsgr/nftban/internal/ddos"
+	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/loginmon"
+	"github.com/itcmsgr/nftban/internal/metrics"
+	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/portscan"
+	"github.com/itcmsgr/nftban/internal/safeconv"
+	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/pkg/version"
-	"github.com/itcmsgr/nftban/pkg/watchdog"
+	"github.com/itcmsgr/nftban/internal/watchdog"
 )
 
 // Run starts the daemon and blocks until shutdown

@@ -9,7 +9,7 @@
 // meta:description="Manage GeoIP database for country-based IP lookups"
 // meta:input="Subcommand (update, status, lookup)"
 // meta:output="Console output with GeoIP status and lookup results"
-// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf,github.com/oschwald/maxminddb-golang"
+// meta:depends="github.com/itcmsgr/nftban/internal/nftbanconf,github.com/oschwald/maxminddb-golang"
 // meta:inventory.files="/var/lib/nftban/geoip/*.mmdb"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -34,8 +34,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/safeconv"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/safeconv"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/oschwald/maxminddb-golang"
 )
