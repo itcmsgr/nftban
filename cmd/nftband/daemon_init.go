@@ -262,6 +262,9 @@ func (d *Daemon) Run() error {
 		WithMessage("NFTBan daemon started").
 		WithSeverity(eventbus.SeverityInfo))
 
+	// v1.38.0: Log recommended WatchdogSec based on total set elements
+	d.logWatchdogSecGuidance()
+
 	log.Printf("nftband ready - HTTP %s, Socket %s", getAPIAddr(), getSocketPath())
 
 	// Schedule auto-sync after startup
@@ -505,6 +508,31 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 	globalScale := d.setCounters.GlobalScale()
 	log.Printf("[set_counters] Reconciliation complete — global scale: %s, exporter interval: %ds",
 		globalScale, int(d.setCounters.RecommendedExporterInterval().Seconds()))
+}
+
+// logWatchdogSecGuidance logs a recommended WatchdogSec value based on total set elements.
+// Does NOT modify the service file — purely informational.
+func (d *Daemon) logWatchdogSecGuidance() {
+	if d.setCounters == nil {
+		return
+	}
+	var total int64
+	for _, name := range d.setCounters.AllSets() {
+		total += d.setCounters.Get(name)
+	}
+
+	var recommended string
+	switch {
+	case total < 50000:
+		recommended = "30s"
+	case total < 200000:
+		recommended = "60s"
+	case total < 500000:
+		recommended = "120s"
+	default:
+		recommended = "180s"
+	}
+	log.Printf("[WATCHDOG] Total set elements: %d — recommended WatchdogSec=%s", total, recommended)
 }
 
 func printHelp() {

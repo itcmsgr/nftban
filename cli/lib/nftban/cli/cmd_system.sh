@@ -237,7 +237,7 @@ nftban_system_disable() {
         echo "NFTBan System Disable"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "Usage: nftban disable <TARGET>"
+        echo "Usage: nftban disable <TARGET> [OPTIONS]"
         echo ""
         echo "Targets:"
         echo "  all       - EMERGENCY: Disable all NFTBan services"
@@ -245,6 +245,9 @@ nftban_system_disable() {
         echo "  suricata  - Disable Suricata management only"
         echo "  login     - Disable login monitoring only"
         echo "  timers    - Disable all maintenance timers"
+        echo ""
+        echo "Options:"
+        echo "  --flush-rules  Also flush nft firewall rules from kernel (with 'all' only)"
         echo ""
         echo "WARNING: 'nftban disable all' is for emergencies only!"
         echo "         Your server will be UNPROTECTED!"
@@ -258,10 +261,21 @@ nftban_system_disable() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
+    # v1.38.0: Collect extra flags (e.g., --flush-rules) for pass-through
+    shift || true
+    local extra_flags=("$@")
+
     case "$target" in
         all)
             echo "WARNING: This will disable ALL NFTBan services!"
-            echo "         Firewall rules will remain but won't be managed."
+            local has_flush=false
+            for _f in "${extra_flags[@]}"; do [[ "$_f" == "--flush-rules" ]] && has_flush=true; done
+            if [[ "$has_flush" == "true" ]]; then
+                echo "         Firewall rules WILL BE FLUSHED from kernel."
+            else
+                echo "         Firewall rules will remain active but unmanaged."
+                echo "         Use --flush-rules to also remove firewall rules."
+            fi
             echo ""
             read -r -p "Are you sure? (yes/no): " confirm
             if [[ "$confirm" != "yes" ]]; then
@@ -270,7 +284,7 @@ nftban_system_disable() {
             fi
 
             # Single source of truth: nftban_disable_all (v1.22.0)
-            nftban_disable_all
+            nftban_disable_all "${extra_flags[@]}"
             ;;
         nftables)
             echo "Disabling nftables management..."

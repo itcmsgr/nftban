@@ -250,7 +250,7 @@ EOF
                 fi
             else
                 log "WARN" "Firewall not initialized - whitelist updated but not applied"
-                log "INFO" "Run 'nftban firewall init' to activate firewall"
+                log "INFO" "Run 'nftban firewall rebuild' to activate firewall"
             fi
 
             # Save alert state to prevent spam (only alert once per port change)

@@ -206,6 +206,30 @@ fi
 %dir %attr(0750,nftban,nftban) %{_localstatedir}/log/nftban
 
 %changelog
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.38.0-1
+- v1.38.0: CI hardening, P1/P2 completion, sysctl tuning, PAM audit persistence
+
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.37.1-1
+- v1.37.1: Health exit code fix (3-layer), stats --brief
+
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.37.0-1
+- v1.37.0: GOTH GUI catchup for internal/ path changes
+
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.36.0-1
+- v1.36.0: Public boundary hardening — 48 packages pkg/ -> internal/
+
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.35.0-1
+- v1.35.0: Hardening, health intelligence, error standardization
+
+* Sun Mar 23 2026 Antonios Voulvoulis <contact@nftban.com> - 1.34.0-1
+- v1.34.0: Periodic reconciliation, schema validation, SYNPROXY fix
+
+* Sat Mar 22 2026 Antonios Voulvoulis <contact@nftban.com> - 1.33.0-1
+- v1.33.0: Set separation, P1 security hardening
+
+* Sat Mar 22 2026 Antonios Voulvoulis <contact@nftban.com> - 1.32.0-1
+- v1.32.0: Cache-first counting, global nft lock
+
 * Wed Dec 11 2024 Antonios Voulvoulis <contact@nftban.com> - 1.0.0-1
 - NFTBan v1.0.0 release
 - Unified security platform

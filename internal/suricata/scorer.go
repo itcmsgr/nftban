@@ -42,6 +42,17 @@ type IPScore struct {
 	lruElement *list.Element
 }
 
+// FeedsLookupFunc checks if an IP appears in threat intelligence feeds.
+// Returns true if the IP is listed.
+type FeedsLookupFunc func(ip string) bool
+
+// GeobanCheckFunc returns the country code for an IP and whether
+// it belongs to a high-risk country list.
+type GeobanCheckFunc func(ip string) (country string, highRisk bool)
+
+// DDoSCounterFunc returns the current packets-per-second rate for an IP.
+type DDoSCounterFunc func(ip string) int
+
 // Scorer calculates threat scores for IPs based on Suricata events
 // Implements bounded memory via LRU eviction and per-IP event caps.
 // Protects against CWE-400 (Uncontrolled Resource Consumption).
@@ -56,6 +67,11 @@ type Scorer struct {
 	lruList   *list.List
 	maxIPs    int
 	maxEvents int
+
+	// v1.38.0: Integration hooks (nil = disabled)
+	feedsLookup  FeedsLookupFunc
+	geobanCheck  GeobanCheckFunc
+	ddosCounter  DDoSCounterFunc
 }
 
 // NewScorer creates a new scorer with bounded memory
@@ -77,6 +93,15 @@ func NewScorer(config *Config) *Scorer {
 
 	return s
 }
+
+// SetFeedsLookup wires the feeds intelligence integration.
+func (s *Scorer) SetFeedsLookup(fn FeedsLookupFunc) { s.feedsLookup = fn }
+
+// SetGeobanCheck wires the geoban country-risk integration.
+func (s *Scorer) SetGeobanCheck(fn GeobanCheckFunc) { s.geobanCheck = fn }
+
+// SetDDoSCounter wires the DDoS PPS counter integration.
+func (s *Scorer) SetDDoSCounter(fn DDoSCounterFunc) { s.ddosCounter = fn }
 
 // Stop stops the scorer
 func (s *Scorer) Stop() {
@@ -224,21 +249,24 @@ func (s *Scorer) calculateScore(event *Event, ipScore *IPScore) int {
 		score += 50
 	}
 
-	// 3. TODO: Integrate with feeds module (when available)
-	// if feeds.IsBlacklisted(event.SrcIP) {
-	//     score += 30
-	// }
+	// 3. Feeds intelligence lookup (v1.38.0)
+	if s.feedsLookup != nil && s.feedsLookup(event.SrcIP) {
+		score += 30 // IP already in threat feeds
+	}
 
-	// 4. TODO: Integrate with geoban module (when available)
-	// country := geoban.Lookup(event.SrcIP)
-	// if country in high-risk countries {
-	//     score += 10
-	// }
+	// 4. Geoban country-risk check (v1.38.0)
+	if s.geobanCheck != nil {
+		if _, highRisk := s.geobanCheck(event.SrcIP); highRisk {
+			score += 10 // Source country is high-risk
+		}
+	}
 
-	// 5. TODO: Integrate with DDoS counters (when available)
-	// if ddos.GetPPS(event.SrcIP) > 1000 {
-	//     score += 40
-	// }
+	// 5. DDoS PPS counter (v1.38.0)
+	if s.ddosCounter != nil {
+		if pps := s.ddosCounter(event.SrcIP); pps > 1000 {
+			score += 40 // Active DDoS source
+		}
+	}
 
 	return score
 }

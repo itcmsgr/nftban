@@ -591,12 +591,42 @@ screen_tools() {
 }
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_menu_help() {
+    echo "Usage: nftban menu"
+    echo ""
+    echo "Launch interactive TUI menu (requires whiptail or dialog)."
+    echo ""
+    echo "The menu provides a guided interface for common NFTBan operations"
+    echo "including status, firewall management, protection modules, monitoring,"
+    echo "and utilities."
+    echo ""
+    echo "Dependencies:"
+    echo "  whiptail   Preferred TUI backend (install: dnf install newt / apt install whiptail)"
+    echo "  dialog     Alternative TUI backend"
+    echo "  (none)     Falls back to basic text selection menu"
+    echo ""
+}
+
+# =============================================================================
 # COMMAND HANDLER
 # =============================================================================
 
 nftban_cmd_menu() {
     # Main command entry point
-    # Args: none
+    # Args: [subcommand]
+
+    local subcmd="${1:-}"
+
+    # Handle help before launching TUI
+    case "$subcmd" in
+        help|--help|-h)
+            nftban_cmd_menu_help
+            return 0
+            ;;
+    esac
 
     # Show banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then

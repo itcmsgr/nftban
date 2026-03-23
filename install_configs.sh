@@ -129,22 +129,50 @@ _install_configs_ownership() {
     chown root:nftban /etc/nftban/conf.d && chmod 750 /etc/nftban/conf.d
     chown root:root /etc/nftban/distros && chmod 755 /etc/nftban/distros
 
-    # Config subdirs
-    for subdir in whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
-        [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
-    done
-    for subdir in botscan ddos portscan login panels rbl geoban geoip; do
-        [ -d "/etc/nftban/conf.d/$subdir" ] && chown root:nftban "/etc/nftban/conf.d/$subdir" && chmod 750 "/etc/nftban/conf.d/$subdir"
-    done
-    [ -d "/etc/nftban/patterns.d/botscan" ] && chown root:nftban "/etc/nftban/patterns.d/botscan" && chmod 750 "/etc/nftban/patterns.d/botscan"
+    # v1.38.0: BUG-006 fix — use FHS spec as single source of truth for ownership
+    # Source the generated FHS spec (contains NFTBAN_FHS_DIRECTORIES associative array)
+    local fhs_spec="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh"
+    if [[ -f "$fhs_spec" ]]; then
+        # shellcheck source=/dev/null
+        source "$fhs_spec"
+        # Apply ownership/permissions from FHS spec for all directories that exist
+        local dir spec mode owner group
+        for dir in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+            [[ ! -d "$dir" ]] && continue
+            spec="${NFTBAN_FHS_DIRECTORIES[$dir]}"
+            mode="${spec%%|*}"; spec="${spec#*|}"
+            owner="${spec%%|*}"; spec="${spec#*|}"
+            group="${spec%%|*}"
+            chown "${owner}:${group}" "$dir" 2>/dev/null || true
+            chmod "$mode" "$dir" 2>/dev/null || true
+        done
+    else
+        # Fallback: hardcoded list (kept in sync with fhs-spec.yaml v1.4.0)
+        # Config subdirs
+        for subdir in whitelist.d blacklist.d ports.d rules.d suricata patterns.d connectors nftables.d ssl; do
+            [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
+        done
+        for subdir in botscan ddos portscan login panels rbl geoban geoip botguard tunnel; do
+            [ -d "/etc/nftban/conf.d/$subdir" ] && chown root:nftban "/etc/nftban/conf.d/$subdir" && chmod 750 "/etc/nftban/conf.d/$subdir"
+        done
+        for subdir in suricata/profiles suricata/config suricata/rules suricata/cache suricata/state suricata/state/last-good; do
+            [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
+        done
+        [ -d "/etc/nftban/patterns.d/botscan" ] && chown root:nftban "/etc/nftban/patterns.d/botscan" && chmod 750 "/etc/nftban/patterns.d/botscan"
 
-    # /var/lib/nftban ownership
-    chown nftban:nftban /var/lib/nftban && chmod 750 /var/lib/nftban
-    chown nftban:nftban /var/lib/nftban/reports && chmod 750 /var/lib/nftban/reports
-    chown root:nftban-auditor /var/lib/nftban/reports/auditors && chmod 770 /var/lib/nftban/reports/auditors
-    for subdir in banned whitelist feeds geoip config state panels metrics stats queue mailspool pro; do
-        [ -d "/var/lib/nftban/$subdir" ] && chown nftban:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
-    done
+        # /var/lib/nftban ownership
+        chown root:nftban /var/lib/nftban && chmod 750 /var/lib/nftban
+        chown nftban:nftban /var/lib/nftban/reports && chmod 750 /var/lib/nftban/reports
+        [ -d "/var/lib/nftban/reports/auditors" ] && chown root:nftban-auditor /var/lib/nftban/reports/auditors && chmod 770 /var/lib/nftban/reports/auditors
+        for subdir in banned whitelist feeds geoip config state panels metrics stats queue mailspool \
+                      snapshots exports botguard tunnel analytics login portscan recorder staging \
+                      suricata watchdog reports/archive reports/baseline reports/watchdog; do
+            [ -d "/var/lib/nftban/$subdir" ] && chown nftban:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
+        done
+        for subdir in backup update-backups pro; do
+            [ -d "/var/lib/nftban/$subdir" ] && chown root:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
+        done
+    fi
 
     # Fix feed files ownership
     find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true

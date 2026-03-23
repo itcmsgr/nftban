@@ -873,6 +873,43 @@ nftban_pro_cmd_license_check() {
 }
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_pro_help() {
+    echo "Usage: nftban pro <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  enroll              Enroll with NFTBan Pro"
+    echo "  status              Show Pro subscription status"
+    echo "  disable             Disable Pro features"
+    echo "  token rotate        Rotate Pro token"
+    echo "  token revoke        Remove token and disable Pro"
+    echo "  token check         Verify token permissions"
+    echo "  inventory show      Display current inventory"
+    echo "  inventory run       Collect and submit inventory"
+    echo "  inventory submit    Force submit inventory"
+    echo ""
+    echo "Enrollment Options:"
+    echo "  --token-file PATH   Read token from file (recommended)"
+    echo "  --token VALUE       Direct token (saved in shell history)"
+    echo "  (none)              Interactive prompt"
+    echo ""
+    echo "Environment Variables:"
+    echo "  NFTBAN_PRO_TOKEN    One-shot token for automation"
+    echo ""
+    echo "Examples:"
+    echo "  nftban pro enroll                    # Interactive"
+    echo "  nftban pro enroll --token-file /tmp/token.txt"
+    echo "  nftban pro status"
+    echo "  nftban pro status --json"
+    echo "  nftban pro status --refresh"
+    echo "  nftban pro token check"
+    echo "  nftban pro inventory show"
+    echo ""
+}
+
+# =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
 
@@ -910,36 +947,7 @@ nftban_cmd_pro() {
             nftban_pro_cmd_license_check "$@"
             ;;
         help|--help|-h)
-            echo "Usage: nftban pro <command> [options]"
-            echo ""
-            echo "Commands:"
-            echo "  enroll              Enroll with NFTBan Pro"
-            echo "  status              Show Pro subscription status"
-            echo "  disable             Disable Pro features"
-            echo "  token rotate        Rotate Pro token"
-            echo "  token revoke        Remove token and disable Pro"
-            echo "  token check         Verify token permissions"
-            echo "  inventory show      Display current inventory"
-            echo "  inventory run       Collect and submit inventory"
-            echo "  inventory submit    Force submit inventory"
-            echo ""
-            echo "Enrollment Options:"
-            echo "  --token-file PATH   Read token from file (recommended)"
-            echo "  --token VALUE       Direct token (saved in shell history)"
-            echo "  (none)              Interactive prompt"
-            echo ""
-            echo "Environment Variables:"
-            echo "  NFTBAN_PRO_TOKEN    One-shot token for automation"
-            echo ""
-            echo "Examples:"
-            echo "  nftban pro enroll                    # Interactive"
-            echo "  nftban pro enroll --token-file /tmp/token.txt"
-            echo "  nftban pro status"
-            echo "  nftban pro status --json"
-            echo "  nftban pro status --refresh"
-            echo "  nftban pro token check"
-            echo "  nftban pro inventory show"
-            echo ""
+            nftban_cmd_pro_help
             ;;
         *)
             echo "Unknown command: $subcommand"

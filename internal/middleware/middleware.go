@@ -331,5 +331,3 @@ func GetClientIP(r *http.Request) string {
 	return netutil.GetClientIP(r)
 }
 
-//nolint:U1000 // Kept for backward compatibility
-// Deprecated: Use netutil.IsIPWhitelisted directly for new code

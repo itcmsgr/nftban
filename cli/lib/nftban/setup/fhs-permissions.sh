@@ -71,12 +71,7 @@ nftban_install_set_file_permissions() {
     find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chown nftban:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban" -type f -name "*" -not -path "/var/log/nftban/suricata/*" -exec chmod 0640 {} \; 2>/dev/null || true
     # /var/log/nftban/suricata - *
-    # v1.24.0: Only chown to suricata if user exists (pattern from nftban_permissions.sh)
-    if id suricata &>/dev/null; then
-        find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
-    else
-        find "/var/log/nftban/suricata" -type f -name "*" -exec chown root:nftban {} \; 2>/dev/null || true
-    fi
+    find "/var/log/nftban/suricata" -type f -name "*" -exec chown suricata:nftban {} \; 2>/dev/null || true
     find "/var/log/nftban/suricata" -type f -name "*" -exec chmod 0640 {} \; 2>/dev/null || true
 
     return 0

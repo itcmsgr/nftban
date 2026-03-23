@@ -70,6 +70,11 @@ func (d *Daemon) runReconciliation(wrapper *opqueue.NFTBackendWrapper) {
 	d.reconcileSetCountersFromKernel(wrapper)
 	d.sourceIndex.ReconcileWithBackend(wrapper)
 
+	// Prune expired source index entries (v1.38.0)
+	if pruned := d.sourceIndex.PruneExpired(); pruned > 0 {
+		log.Printf("[RECONCILE] Pruned %d expired source index entries", pruned)
+	}
+
 	// Check whitelist-blacklist overlap (hash sets only — interval sets too expensive)
 	d.checkWhitelistOverlap(wrapper)
 

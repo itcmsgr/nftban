@@ -79,6 +79,58 @@ if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
 fi
 
 # =============================================================================
+# HELP
+# =============================================================================
+
+nftban_cmd_fhs_help() {
+    # Load output module for standard banner
+    source "${LIB_DIR}/core/nftban_output.sh" || return 1
+    nftban_banner
+    echo ""
+    echo "Usage:"
+    echo "  nftban fhs [detailed]            # Show FHS compliance (default)"
+    echo "  nftban fhs summary               # Show one-line summary"
+    echo "  nftban fhs json                  # Show JSON output"
+    echo "  nftban fhs html-report           # Generate HTML report"
+    echo "  nftban fhs mail-report [path] [recipient]  # Mail report"
+    echo "  nftban fhs help                  # Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  nftban fhs                       # Show FHS compliance (FHS-style table)"
+    echo "  nftban fhs summary               # Output: 'FHS: 5 OK, 12 errors, 3 missing'"
+    echo "  nftban fhs json | jq .           # JSON output for parsing"
+    echo "  nftban fhs mail-report admin@example.com"
+    echo "  nftban fhs mail-report /var/lib/nftban/reports/fhs_report.html admin@example.com"
+    echo ""
+    echo "Output Columns:"
+    echo "  DIRECTORY - Directory path"
+    echo "  EXPECTED  - Expected permissions and ownership"
+    echo "  ACTUAL    - Actual permissions and ownership"
+    echo "  STATUS    - Compliance status (OK, ERROR, MISSING)"
+    echo "  NOTES     - Additional information or issues"
+    echo ""
+    echo "Status Values:"
+    echo "  ✔ OK      - Directory matches expected permissions/ownership"
+    echo "  ✖ ERROR   - Permissions or ownership mismatch"
+    echo "  ⚠ MISSING - Directory does not exist"
+    echo ""
+    echo "Checked Directories:"
+    echo "  /usr/lib/nftban          - Application libraries (755 root:root)"
+    echo "  /etc/nftban              - Configuration files (755 root:root)"
+    echo "  /var/lib/nftban          - Application state (750 nftban:nftban)"
+    echo "  ${NFTBAN_LOG_DIR}          - Log files (750 nftban:nftban)"
+    echo "  /var/cache/nftban        - Cache files (750 nftban:nftban)"
+    echo "  /run/nftban              - Runtime data (755 nftban:nftban)"
+    echo "  /usr/share/nftban        - Shared data (755 root:root)"
+    echo ""
+    echo "Notes:"
+    echo "  - No special privileges required (reads permissions only)"
+    echo "  - Checks against FHS (Filesystem Hierarchy Standard)"
+    echo "  - Helps ensure proper security posture"
+    echo ""
+}
+
+# =============================================================================
 
 # FHS COMMAND HANDLER
 # =============================================================================
@@ -205,52 +257,7 @@ nftban_cmd_fhs() {
             ;;
 
         help|--help|-h)
-            # Show help
-            # Load output module for standard banner
-            source "${LIB_DIR}/core/nftban_output.sh" || return 1
-            nftban_banner
-            echo ""
-            echo "Usage:"
-            echo "  nftban fhs [detailed]            # Show FHS compliance (default)"
-            echo "  nftban fhs summary               # Show one-line summary"
-            echo "  nftban fhs json                  # Show JSON output"
-            echo "  nftban fhs html-report           # Generate HTML report"
-            echo "  nftban fhs mail-report [path] [recipient]  # Mail report"
-            echo "  nftban fhs help                  # Show this help"
-            echo ""
-            echo "Examples:"
-            echo "  nftban fhs                       # Show FHS compliance (FHS-style table)"
-            echo "  nftban fhs summary               # Output: 'FHS: 5 OK, 12 errors, 3 missing'"
-            echo "  nftban fhs json | jq .           # JSON output for parsing"
-            echo "  nftban fhs mail-report admin@example.com"
-            echo "  nftban fhs mail-report /var/lib/nftban/reports/fhs_report.html admin@example.com"
-            echo ""
-            echo "Output Columns:"
-            echo "  DIRECTORY - Directory path"
-            echo "  EXPECTED  - Expected permissions and ownership"
-            echo "  ACTUAL    - Actual permissions and ownership"
-            echo "  STATUS    - Compliance status (OK, ERROR, MISSING)"
-            echo "  NOTES     - Additional information or issues"
-            echo ""
-            echo "Status Values:"
-            echo "  ✔ OK      - Directory matches expected permissions/ownership"
-            echo "  ✖ ERROR   - Permissions or ownership mismatch"
-            echo "  ⚠ MISSING - Directory does not exist"
-            echo ""
-            echo "Checked Directories:"
-            echo "  /usr/lib/nftban          - Application libraries (755 root:root)"
-            echo "  /etc/nftban              - Configuration files (755 root:root)"
-            echo "  /var/lib/nftban          - Application state (750 nftban:nftban)"
-            echo "  ${NFTBAN_LOG_DIR}          - Log files (750 nftban:nftban)"
-            echo "  /var/cache/nftban        - Cache files (750 nftban:nftban)"
-            echo "  /run/nftban              - Runtime data (755 nftban:nftban)"
-            echo "  /usr/share/nftban        - Shared data (755 root:root)"
-            echo ""
-            echo "Notes:"
-            echo "  - No special privileges required (reads permissions only)"
-            echo "  - Checks against FHS (Filesystem Hierarchy Standard)"
-            echo "  - Helps ensure proper security posture"
-            echo ""
+            nftban_cmd_fhs_help
             return 0
             ;;
 
