@@ -8,7 +8,7 @@
 # meta:name="cmd_health"
 # meta:type="cli"
 # meta:header="Health Check CLI Handler"
-# meta:version="1.0.31"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="CLI commands for health checks including registry validation"
@@ -150,28 +150,34 @@ nftban_cmd_health() {
             nftban_health_cmd_json "$@"
             ;;
         report)
-            nftban_health_cmd_report "$@"
+            # v1.39.0: Deprecated — use json instead
+            echo "REMOVED: 'nftban health report' was removed in v1.39.0" >&2
+            echo "Use: nftban health json" >&2
+            return 1
             ;;
         fix|enforce|--fix)
             nftban_health_cmd_fix "$@"
             ;;
         services)
-            echo "DEPRECATED: 'nftban health services' will be removed in v1.26" >&2
+            # v1.39.0: Removed deprecated subcommand
+            echo "REMOVED: 'nftban health services' was removed in v1.39.0" >&2
             echo "Use: nftban services" >&2
-            nftban_health_cmd_services "$@"
+            return 1
             ;;
         modules)
-            echo "DEPRECATED: 'nftban health modules' will be removed in v1.26" >&2
+            # v1.39.0: Removed deprecated subcommand
+            echo "REMOVED: 'nftban health modules' was removed in v1.39.0" >&2
             echo "Use: nftban module list" >&2
-            nftban_health_cmd_modules "$@"
+            return 1
             ;;
         binaries)
             nftban_health_cmd_binaries "$@"
             ;;
         permissions)
-            echo "DEPRECATED: 'nftban health permissions' will be removed in v1.26" >&2
+            # v1.39.0: Removed deprecated subcommand
+            echo "REMOVED: 'nftban health permissions' was removed in v1.39.0" >&2
             echo "Use: nftban fhs" >&2
-            nftban_health_cmd_permissions "$@"
+            return 1
             ;;
         geoip)
             nftban_health_cmd_geoip "$@"
@@ -254,23 +260,11 @@ COMMANDS:
     json                    Output JSON format
                             Machine-readable health data
 
-    report [format]         Generate health report (deprecated - use json)
-                            Formats: terminal (default), html, json
-
     fix, enforce [target]   Auto-fix common issues (requires root)
                             Targets: permissions, directories, services, all
 
-    services                Check systemd services status (DEPRECATED)
-                            Use: nftban services
-
-    modules                 Check loaded modules (DEPRECATED)
-                            Use: nftban module
-
     binaries                Check required binaries
                             Verifies nft, systemctl, jq, curl, etc.
-
-    permissions             Check file permissions (DEPRECATED)
-                            Use: nftban fhs
 
     geoip                   Check GeoIP system status
                             Tests binary, database, performance
@@ -334,13 +328,9 @@ EXAMPLES:
 
     # Manual fix (traditional approach)
     sudo nftban health fix all
-    sudo nftban health fix permissions
 
     # Or use 'enforce' (alias for 'fix')
     sudo nftban health enforce all
-
-    # Generate report
-    nftban health report terminal
 
     # Verify installation completeness
     nftban health install
@@ -387,12 +377,8 @@ export -f nftban_health_cmd_check
 export -f nftban_health_cmd_brief
 export -f nftban_health_cmd_summary
 export -f nftban_health_cmd_json
-export -f nftban_health_cmd_report
 export -f nftban_health_cmd_fix
-export -f nftban_health_cmd_services
-export -f nftban_health_cmd_modules
 export -f nftban_health_cmd_binaries
-export -f nftban_health_cmd_permissions
 export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_registries

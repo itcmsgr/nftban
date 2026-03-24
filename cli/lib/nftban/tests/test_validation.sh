@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="test_validation"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Test NFTBan validation library functions"
 # meta:inventory.files=""

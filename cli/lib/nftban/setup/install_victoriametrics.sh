@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="install_victoriametrics"
 # meta:type="setup"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Install and configure VictoriaMetrics from official GitHub releases"
 # meta:inventory.files=""

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
+# meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries="whmapi1"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"

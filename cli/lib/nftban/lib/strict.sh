@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="strict" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Provides consistent strict mode configuration for all bash scripts"
+# meta:name="strict" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Provides consistent strict mode configuration for all bash scripts"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CLI_ERROR_LOG,NFTBAN_ENABLE_ERROR_LOGGING"

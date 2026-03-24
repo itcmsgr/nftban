@@ -8,7 +8,7 @@
 # meta:name="nftban_stats_collect"
 # meta:type="core"
 # meta:header="Statistics Data Collection"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

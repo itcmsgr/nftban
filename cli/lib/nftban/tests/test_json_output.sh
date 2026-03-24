@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="test_json_output"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Test script for json_output.sh helper module"
 # meta:inventory.files=""

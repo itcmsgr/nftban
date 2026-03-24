@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_metrics" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)"
+# meta:name="nftban_metrics" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,curl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"

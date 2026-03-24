@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_panel_common" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared utility functions for panel firewall management"
+# meta:name="nftban_panel_common" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Shared utility functions for panel firewall management"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft,ss"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
@@ -423,6 +423,8 @@ _nftban_panel_simple_enable() {
     # Read existing state and update
     local temp_file
     temp_file=$(mktemp)
+    # v1.39.0: Cleanup trap for temp file (VULN-09)
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
     {
         echo "# NFTBan Panel State Configuration"
         echo "# Format: panelname=enabled|disabled"
@@ -503,6 +505,8 @@ _nftban_panel_simple_disable() {
     # Read existing state and update
     local temp_file
     temp_file=$(mktemp)
+    # v1.39.0: Cleanup trap for temp file (VULN-09)
+    trap 'rm -f "$temp_file" 2>/dev/null' RETURN
     {
         echo "# NFTBan Panel State Configuration"
         echo "# Format: panelname=enabled|disabled"

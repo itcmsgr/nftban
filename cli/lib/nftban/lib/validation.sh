@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="validation" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Validates and sanitizes all user inputs to prevent injection attacks"
+# meta:name="validation" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Validates and sanitizes all user inputs to prevent injection attacks"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

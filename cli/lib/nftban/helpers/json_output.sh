@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="json_output"
 # meta:type="helper"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Provides JSON output format for CLI commands when --json flag is used"
 # meta:inventory.files=""

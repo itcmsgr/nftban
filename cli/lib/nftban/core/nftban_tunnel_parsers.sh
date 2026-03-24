@@ -8,7 +8,7 @@
 # meta:name="nftban_tunnel_parsers"
 # meta:type="lib"
 # meta:header="Tunnel DNS Log Parsers"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

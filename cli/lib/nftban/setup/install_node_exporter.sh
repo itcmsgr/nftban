@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="install_node_exporter"
 # meta:type="setup"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Install and configure Node Exporter with textfile collector for NFTBan metrics"
 # meta:inventory.files=""

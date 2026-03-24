@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_emulate"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Simulates packet evaluation to show what nftban would do"
 # meta:inventory.files=""
@@ -493,7 +493,32 @@ nftban_emulate_packet() {
     else
         eval_order="{\"set\":\"$whitelist_set\",\"matched\":false}"
 
-        # 2. Check blacklist
+        # 2. Check blacklist_manual (hash set — manual/auto-detect bans)
+        # v1.39.0: Check manual set first (O(1) lookup, most common for CLI bans)
+        local manual_set="blacklist_manual_ipv4"
+        [[ "$family" == "ip6" ]] && manual_set="blacklist_manual_ipv6"
+
+        local manual_match
+        manual_match=$(_check_ip_in_set "$family" "$manual_set" "$ip")
+
+        if [[ -n "$manual_match" ]]; then
+            decision="block"
+            matched_set="$manual_set"
+            matched_cidr="$manual_match"
+            matched_handle=$(_get_set_rule_handle "$family" "$chain" "$manual_set")
+            list_type="$manual_set"
+            local mod_src
+            mod_src=$(_detect_module_source "$ip" "$manual_set")
+            module="${mod_src%|*}"
+            source="${mod_src#*|}"
+            explanation="The address $ip is part of $manual_match, which is in the manual blacklist (CLI/auto-detect bans)."
+            eval_order="${eval_order},{\"set\":\"$manual_set\",\"matched\":true,\"entry\":\"$manual_match\"}"
+        else
+            eval_order="${eval_order},{\"set\":\"$manual_set\",\"matched\":false}"
+        fi
+
+        # 3. Check blacklist (interval set — feeds/geoban CIDRs)
+        if [[ "$decision" != "block" ]]; then
         local blacklist_set="blacklist_ipv4"
         [[ "$family" == "ip6" ]] && blacklist_set="blacklist_ipv6"
 
@@ -514,8 +539,12 @@ nftban_emulate_packet() {
             eval_order="${eval_order},{\"set\":\"$blacklist_set\",\"matched\":true,\"entry\":\"$bl_match\"}"
         else
             eval_order="${eval_order},{\"set\":\"$blacklist_set\",\"matched\":false}"
+        fi
+        fi
 
-            # 3. Check port if specified (only for input/output chains)
+        if [[ "$decision" != "block" ]]; then
+
+            # 4. Check port if specified (only for input/output chains)
             if [[ -n "$port" && -n "$proto" ]]; then
                 local port_dir="in"
                 [[ "$chain" == "output" ]] && port_dir="out"
@@ -537,7 +566,7 @@ nftban_emulate_packet() {
                 fi
             fi
 
-            # 4. Default policy
+            # 5. Default policy
             if [[ "$decision" == "allow" && -z "$module" ]]; then
                 if [[ -z "$port" || -z "$proto" ]]; then
                     # IP-only check: not in whitelist or blacklist
@@ -551,6 +580,31 @@ nftban_emulate_packet() {
                 fi
             fi
         fi
+    fi
+
+    # v1.39.0: GeoIP + geoban context lookup
+    local geo_country="unknown" geo_city="unknown" geo_banned="false"
+    if declare -f nftban_geoip_lookup_fast &>/dev/null; then
+        local geo_json
+        geo_json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null) || true
+        if [[ -n "$geo_json" ]] && command -v jq &>/dev/null; then
+            geo_country=$(echo "$geo_json" | jq -r '.country // "unknown"' 2>/dev/null) || geo_country="unknown"
+            geo_city=$(echo "$geo_json" | jq -r '.city // "unknown"' 2>/dev/null) || geo_city="unknown"
+        fi
+    elif command -v nftban-core &>/dev/null; then
+        local geo_result
+        geo_result=$(nftban-core geoip lookup "$ip" 2>/dev/null) || true
+        if [[ -n "$geo_result" ]]; then
+            geo_country="${geo_result%%/*}"
+            geo_city="${geo_result#*/}"
+        fi
+    fi
+
+    # Check if country is geo-banned
+    local geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+    local country_lower="${geo_country,,}"
+    if [[ -f "${geoban_dir}/50-ban-${country_lower}.conf" ]]; then
+        geo_banned="true"
     fi
 
     # Build JSON output
@@ -578,6 +632,11 @@ nftban_emulate_packet() {
       "rule_handle": ${matched_handle:-null},
       "set_name": "${matched_set:-null}"
     },
+    "geo": {
+      "country": "${geo_country}",
+      "city": "${geo_city}",
+      "geo_banned": ${geo_banned}
+    },
     "explanation": "$explanation"
   },
   "evaluation_order": [${eval_order}]
@@ -591,6 +650,7 @@ nftban_emulate_format_text() {
 
     # Parse JSON (using jq if available, or basic parsing)
     local ip decision module source list_type matching_cidr chain handle explanation
+    local geo_country="unknown" geo_city="unknown" geo_banned="false"
 
     if command -v jq &>/dev/null; then
         ip=$(echo "$json" | jq -r '.query.ip')
@@ -602,6 +662,9 @@ nftban_emulate_format_text() {
         chain=$(echo "$json" | jq -r '.result.nftables.chain')
         handle=$(echo "$json" | jq -r '.result.nftables.rule_handle')
         explanation=$(echo "$json" | jq -r '.result.explanation')
+        geo_country=$(echo "$json" | jq -r '.result.geo.country // "unknown"')
+        geo_city=$(echo "$json" | jq -r '.result.geo.city // "unknown"')
+        geo_banned=$(echo "$json" | jq -r '.result.geo.geo_banned // false')
     else
         # Basic parsing without jq
         ip=$(echo "$json" | grep -o '"ip": *"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -613,6 +676,9 @@ nftban_emulate_format_text() {
         chain=$(echo "$json" | grep -o '"chain": *"[^"]*"' | cut -d'"' -f4)
         handle=$(echo "$json" | grep -o '"rule_handle": *[0-9]*' | grep -o '[0-9]*')
         explanation=$(echo "$json" | grep -o '"explanation": *"[^"]*"' | cut -d'"' -f4)
+        geo_country=$(echo "$json" | grep -o '"country": *"[^"]*"' | head -1 | cut -d'"' -f4)
+        geo_city=$(echo "$json" | grep -o '"city": *"[^"]*"' | cut -d'"' -f4)
+        geo_banned=$(echo "$json" | grep -o '"geo_banned": *[a-z]*' | grep -o '[a-z]*$')
     fi
 
     # Colors
@@ -647,6 +713,11 @@ NFTBan Packet Emulation
 
 ${BOLD}INPUT:${NC}   ${CYAN}${ip}${NC}
 ${BOLD}RESULT:${NC}  ${result_color}${result_icon} ${result_text}${NC}
+
+${BOLD}GEO${NC}
+────────────────────────────────────────────────────────────
+  Country............ ${geo_country}${geo_city:+ (${geo_city})}
+  Geo-banned......... $(if [[ "$geo_banned" == "true" ]]; then echo "${RED}YES${NC}"; else echo "${GREEN}no${NC}"; fi)
 
 ${BOLD}REASON${NC}
 ────────────────────────────────────────────────────────────

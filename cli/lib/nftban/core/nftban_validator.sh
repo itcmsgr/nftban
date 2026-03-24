@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_validator"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
 # meta:inventory.files=""
@@ -280,8 +280,11 @@ validate_structure() {
         fi
     fi
 
-    # Return non-zero if errors
-    [[ ${#errors[@]} -eq 0 ]]
+    # v1.39.0: Return explicit exit code (avoid implicit test-as-return-value)
+    if [[ ${#errors[@]} -gt 0 ]]; then
+        return 1
+    fi
+    return 0
 }
 
 # =============================================================================

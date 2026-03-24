@@ -50,7 +50,7 @@ fi
 # meta:name="cmd_login"
 # meta:type="cli"
 # meta:header="Login Alert CLI Handler"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

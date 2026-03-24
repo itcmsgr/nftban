@@ -7,7 +7,7 @@
 # meta:name="fhs-permissions"
 # meta:type="setup"
 # meta:header="FHS File Permissions"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

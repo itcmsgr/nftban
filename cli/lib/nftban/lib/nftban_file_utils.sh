@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_file_utils" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized file age, freshness, and staleness checking utilities"
+# meta:name="nftban_file_utils" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized file age, freshness, and staleness checking utilities"
 # meta:inventory.files="/usr/lib/nftban/lib/nftban_file_utils.sh"
 # meta:inventory.binaries="stat,date"
 # meta:inventory.env_vars=""

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_firewall_exporter"
 # meta:type="exporter"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Prometheus exporter for NFTables firewall metrics"
 # meta:inventory.files=""

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_distro_config" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Load and parse distribution-specific configuration"
+# meta:name="nftban_distro_config" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Load and parse distribution-specific configuration"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_DISTRO_CONF_DIR"

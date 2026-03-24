@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_prometheus_exporter"
 # meta:type="exporter"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Consolidated all-in-one metrics exporter: blocks, bandwidth, counters, health"
 # meta:inventory.files=""
