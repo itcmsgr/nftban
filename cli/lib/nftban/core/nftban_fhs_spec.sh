@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - FHS Specification (GENERATED)
+# NFTBan v1.39.0 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #

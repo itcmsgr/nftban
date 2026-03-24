@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - FHS Output Generator
+# NFTBan v1.39.0 - FHS Output Generator
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="generate-fhs-outputs"
 # meta:type="build"
 # meta:header="FHS Output Generator"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -59,6 +59,10 @@ RPM_FILES_OUT="${PROJECT_ROOT}/install/packaging/rpm/nftban-files.inc"
 JSON_OUT="${PROJECT_ROOT}/cli/lib/nftban/data/fhs_directories.json"
 SHELL_OUT="${PROJECT_ROOT}/cli/lib/nftban/core/nftban_fhs_spec.sh"
 PERMS_OUT="${PROJECT_ROOT}/cli/lib/nftban/setup/fhs-permissions.sh"
+
+# Read project version from /VERSION
+NFTBAN_GEN_VERSION="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null | tr -d '[:space:]')"
+: "${NFTBAN_GEN_VERSION:=1.0.0}"
 
 # Generated header
 HEADER="Generated from build/fhs-spec.yaml - DO NOT EDIT"
@@ -382,16 +386,16 @@ generate_shell_helper() {
     {
         echo "#!/usr/bin/env bash"
         echo "# ============================================================================="
-        echo "# NFTBan v1.0.0 - FHS Specification (GENERATED)"
+        echo "# NFTBan v${NFTBAN_GEN_VERSION} - FHS Specification (GENERATED)"
         echo "# ============================================================================="
         echo "# SPDX-License-Identifier: MPL-2.0"
+        echo "#"
+        echo "# meta:name=\"nftban_fhs_spec\""
+        echo "# meta:type=\"core\""
+        echo "# meta:header=\"FHS Specification\""
+        echo "# meta:version=\"${NFTBAN_GEN_VERSION}\""
     } > "$SHELL_OUT"
     cat >> "$SHELL_OUT" << 'SHELL_HEADER'
-#
-# meta:name="nftban_fhs_spec"
-# meta:type="core"
-# meta:header="FHS Specification"
-# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
