@@ -7,7 +7,7 @@
 # meta:name="cmd_blacklist"
 # meta:type="cli"
 # meta:header="Blacklist IP management"
-# meta:version="1.23.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

@@ -8,7 +8,7 @@
 # meta:name="cmd_list"
 # meta:type="cli"
 # meta:header="List Command"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="List banned IPs, whitelist, and other nftables sets"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_timestamp" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized timestamp generation for all NFTBan components"
+# meta:name="nftban_timestamp" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized timestamp generation for all NFTBan components"
 # meta:inventory.files=""
 # meta:inventory.binaries="date"
 # meta:inventory.env_vars=""

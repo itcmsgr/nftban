@@ -7,7 +7,7 @@
 #
 # meta:name="cmd_scale"
 # meta:type="cli"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-03-21"
 #

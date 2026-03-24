@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="smoke_test"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="CLI health check with ban lifecycle verification"
 # meta:inventory.files=""

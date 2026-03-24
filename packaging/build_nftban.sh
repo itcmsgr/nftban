@@ -532,9 +532,13 @@ end
 # =============================================================================
 # NFTBan - PREREQUISITE CHECKS
 # =============================================================================
+# v1.39.0: If this fails with dependency errors, use dnf/yum instead:
+#   dnf install ./nftban-core-*.rpm    (auto-resolves dependencies)
 echo ""
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo "  NFTBan v%{version} - Installation Prerequisite Checks"
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo "  TIP: Use 'dnf install ./nftban-core-*.rpm' for automatic dependency resolution"
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
@@ -1043,8 +1047,25 @@ if [[ -n "\$CONFLICTS" ]]; then
     echo "[NFTBan WARN] Found: \$CONFLICTS"
     echo ""
 
-    # If NFTBAN_TAKEOVER not already set, prompt user or fail for non-interactive
+    # If NFTBAN_TAKEOVER not already set, auto-detect or prompt
     if [[ "\${NFTBAN_TAKEOVER:-0}" != "1" ]]; then
+        # v1.39.0: Auto-takeover on panel servers (UX-INST-1)
+        _AUTO_TAKEOVER=false
+        if [[ -d /usr/local/psa ]] || \
+           [[ -d /usr/local/cpanel ]] || \
+           [[ -d /usr/local/directadmin ]] || \
+           [[ -d /usr/local/CyberCP ]] || \
+           [[ -d /usr/local/hestia ]] || \
+           [[ -d /usr/local/vesta ]] || \
+           [[ -d /usr/local/cwpsrv ]] || \
+           [[ -d /usr/local/interworx ]]; then
+            _AUTO_TAKEOVER=true
+            echo "[NFTBan] Panel server detected — auto-takeover enabled"
+        fi
+
+        if [[ "\$_AUTO_TAKEOVER" == "true" ]]; then
+            export NFTBAN_TAKEOVER=1
+        else
         echo "[NFTBan] NFTBan requires exclusive firewall control."
         echo "[NFTBan] You cannot run two firewalls simultaneously."
         echo ""
@@ -1093,6 +1114,7 @@ if [[ -n "\$CONFLICTS" ]]; then
             echo "[NFTBan ERROR] Then reinstall NFTBan."
             exit 1
         fi
+        fi  # end _AUTO_TAKEOVER else
     fi
 
     # Run takeover if flag is set (either from env or user choice)
@@ -1195,6 +1217,18 @@ else
     echo "[NFTBan] No conflicting firewalls found"
 fi
 echo "[NFTBan] Configuring NFTBan v%{version}..."
+
+# v1.39.0: Cleanup trap for failed install (UX-INST-2)
+_nftban_rpm_cleanup() {
+    local _exit=\$?
+    if [ \$_exit -ne 0 ]; then
+        echo "[NFTBan ERROR] Installation failed (exit \$_exit). Cleaning up..."
+        rm -rf /run/nftban 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+        echo "[NFTBan ERROR] Cleanup complete. Fix the issue and reinstall."
+    fi
+}
+trap _nftban_rpm_cleanup EXIT
 
 # STEP 1: (systemd overrides cleanup now in STEP 0 unified cleanup above)
 
@@ -1801,6 +1835,9 @@ fi
 find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
 find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
+# v1.39.0: Ensure %post exits 0 (cleanup trap checks $?)
+exit 0
+
 %preun
 # Remove immutable flags before uninstall/upgrade
 for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
@@ -2028,6 +2065,13 @@ fi
 %dir %attr(755,nftban,nftban) /run/nftban
 
 %changelog
+* Mon Mar 24 2026 NFTBan Team <noreply@nftban.com> - 1.39.0-1
+- v1.39.0 Bug Fixes + UX Hardening + Security Quick Wins
+- CIDR ban/unban routing fix, emulate blacklist_manual coverage
+- Install auto-takeover on panel servers
+- health --strict, --no-banner, deprecated subcommand removal
+- Security: GeoIP temp dir, Grafana password, panel cleanup trap
+
 * Mon Dec 09 2024 NFTBan Team <noreply@nftban.com> - 1.0.0-1
 - NFTBan v1.0.0 release
 - SAFE INSTALL FLOW: Auto-whitelist before enabling firewall

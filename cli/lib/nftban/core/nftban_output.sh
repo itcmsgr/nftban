@@ -8,7 +8,7 @@
 # meta:name="nftban_output"
 # meta:type="core"
 # meta:header="Output & Banner Module"
-# meta:version="1.0.32"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

@@ -9,7 +9,7 @@
 # meta:name="nftban_health_fixes"
 # meta:type="lib"
 # meta:header="Health Fix Functions"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1051,7 +1051,8 @@ nftban_health_fix_geoip() {
             local db_file="${geoip_dir}/dbip-country-lite.mmdb"
             # R17: Use mktemp for secure temp files (v1.19.12)
             local tmp_file
-            tmp_file=$(mktemp "${TMPDIR:-/tmp}/dbip-geoip.XXXXXXXXXX.mmdb.gz")
+            # v1.39.0: Use RUN_DIR instead of /tmp (VULN-14)
+            tmp_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/dbip-geoip.XXXXXXXXXX.mmdb.gz")
 
             echo "  → Downloading DB-IP Lite database..."
             if curl -fsSL -o "$tmp_file" "$db_url" --max-time 120 2>/dev/null; then

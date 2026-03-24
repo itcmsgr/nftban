@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_service_control" meta:type="lib" meta:version="1.1.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Low-level systemd primitives (nftban_systemd_*) - distinct from config-aware service_control.sh"
+# meta:name="nftban_service_control" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Low-level systemd primitives (nftban_systemd_*) - distinct from config-aware service_control.sh"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl"
 # meta:inventory.env_vars=""

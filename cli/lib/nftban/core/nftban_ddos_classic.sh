@@ -9,7 +9,7 @@
 # meta:name="nftban_ddos_classic"
 # meta:type="core"
 # meta:header="DDoS Protection (Classic)"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Pure nftables-based DDoS protection with rate limiting"
 # meta:input="IPC commands, nftables metrics"

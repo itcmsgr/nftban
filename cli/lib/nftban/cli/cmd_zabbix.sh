@@ -8,7 +8,7 @@
 # meta:name="cmd_zabbix"
 # meta:type="cli"
 # meta:header="Zabbix Integration"
-# meta:version="1.4.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

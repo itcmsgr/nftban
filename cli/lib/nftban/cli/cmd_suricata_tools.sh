@@ -8,7 +8,7 @@
 # meta:name="cmd_suricata_tools"
 # meta:type="cli"
 # meta:header="Suricata Tools Module"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

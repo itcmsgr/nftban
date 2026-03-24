@@ -8,7 +8,7 @@
 # meta:name="nftban_trust"
 # meta:type="module"
 # meta:header="Trust Integration Module"
-# meta:version="1.1.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

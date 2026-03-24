@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="provision_grafana_dashboards"
 # meta:type="setup"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Automatically provision NFTBan dashboards to Grafana"
 # meta:inventory.files=""

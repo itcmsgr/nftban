@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_portscan_exporter"
 # meta:type="exporter"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Export port scan detection and blocking metrics for Prometheus"
 # meta:inventory.files=""

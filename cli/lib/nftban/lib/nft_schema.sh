@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_schema" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -133,11 +133,9 @@ declare -g -A NFTBAN_IPV4_CHAINS=(
 declare -g -A NFTBAN_IPV4_HELPER_CHAINS=(
     ["portscan_detection"]="optional|Port scan detection logging"
     ["ddos_protection"]="optional|DDoS protection (SYN flood, conn limits, rate limits)"
-    ["synflood_protection"]="optional|SYN flood protection (deprecated - use ddos_protection)"
-    ["connlimit_protection"]="optional|Connection limit protection (deprecated - use ddos_protection)"
-    ["portflood_protection"]="optional|Port flood protection (deprecated - use ddos_protection)"
-    ["icmp_protection"]="optional|ICMP flood protection (deprecated - use ddos_protection)"
     ["http_bot_guard"]="optional|HTTP Bot Guard classification (v1.20.0)"
+    # v1.39.0: Removed deprecated chains: synflood_protection, connlimit_protection,
+    # portflood_protection, icmp_protection — all consolidated into ddos_protection
 )
 
 # =============================================================================
@@ -194,11 +192,9 @@ declare -g -A NFTBAN_IPV6_CHAINS=(
 declare -g -A NFTBAN_IPV6_HELPER_CHAINS=(
     ["portscan_detection"]="optional|Port scan detection logging"
     ["ddos_protection"]="optional|DDoS protection (SYN flood, conn limits, rate limits)"
-    ["synflood_protection"]="optional|SYN flood protection (deprecated - use ddos_protection)"
-    ["connlimit_protection"]="optional|Connection limit protection (deprecated - use ddos_protection)"
-    ["portflood_protection"]="optional|Port flood protection (deprecated - use ddos_protection)"
-    ["icmp_protection"]="optional|ICMP flood protection (deprecated - use ddos_protection)"
     ["http_bot_guard"]="optional|HTTP Bot Guard classification (v1.20.0)"
+    # v1.39.0: Removed deprecated chains: synflood_protection, connlimit_protection,
+    # portflood_protection, icmp_protection — all consolidated into ddos_protection
 )
 
 # =============================================================================

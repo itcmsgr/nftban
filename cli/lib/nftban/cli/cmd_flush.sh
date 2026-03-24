@@ -14,7 +14,7 @@
 # meta:name="cmd_flush"
 # meta:type="cli"
 # meta:header="Flush CLI"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

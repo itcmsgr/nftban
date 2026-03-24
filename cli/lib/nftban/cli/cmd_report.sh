@@ -33,7 +33,7 @@ fi
 # meta:name="cmd_report"
 # meta:type="cli"
 # meta:header="Report Generation CLI Handler"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

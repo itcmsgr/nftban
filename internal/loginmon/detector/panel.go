@@ -64,7 +64,7 @@ func NewPanelDetector() *PanelDetector {
 		sigCPHulk:      []byte("cphulkd"),
 		markerIpLower:  []byte("ip="),
 		sigPlesk:       []byte("plesk"),
-		sigPsaFailed:   []byte("psa"),
+		sigPsaFailed:   []byte("sw-cp-server"),
 		markerFrom:     []byte("from "),
 	}
 }

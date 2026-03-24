@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_dataset_cidr"
 # meta:type="library"
-# meta:version="1.19.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-02-23"
 # meta:description="Shared CIDR merge/consolidation for feeds, geoban, and future modules"

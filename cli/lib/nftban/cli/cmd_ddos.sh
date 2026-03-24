@@ -8,7 +8,7 @@
 # meta:name="cmd_ddos"
 # meta:type="cli"
 # meta:header="DDoS CLI"
-# meta:version="1.9.3"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

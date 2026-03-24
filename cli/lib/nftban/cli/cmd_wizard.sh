@@ -8,7 +8,7 @@
 # meta:name="cmd_wizard"
 # meta:type="cli"
 # meta:header="NFTBan Installation Wizard"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

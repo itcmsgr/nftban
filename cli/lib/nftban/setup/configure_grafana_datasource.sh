@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="configure_grafana_datasource"
 # meta:type="setup"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Configure Prometheus datasource in Grafana"
 # meta:inventory.files=""
@@ -23,7 +23,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/setup_utils.sh" || return 1
 # Configuration
 readonly GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
 readonly GRAFANA_USER="${GRAFANA_ADMIN_USER:-admin}"
-readonly GRAFANA_PASS="${GRAFANA_ADMIN_PASSWORD:-admin}"
+# v1.39.0: Generate random password if not explicitly set (VULN-10)
+if [[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
+    _GRAFANA_GEN_PASS=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 24)
+    readonly GRAFANA_PASS="${_GRAFANA_GEN_PASS}"
+    unset _GRAFANA_GEN_PASS
+    echo "NOTICE: Generated random Grafana admin password. Set GRAFANA_ADMIN_PASSWORD to override." >&2
+else
+    readonly GRAFANA_PASS="${GRAFANA_ADMIN_PASSWORD}"
+fi
 readonly PROMETHEUS_URL="${PROMETHEUS_URL:-http://localhost:9090}"
 readonly GRAFANA_PROVISIONING_DIR="/etc/grafana/provisioning/datasources"
 

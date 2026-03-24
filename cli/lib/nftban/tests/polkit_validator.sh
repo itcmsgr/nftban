@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="polkit_validator"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Comprehensive validation of Polkit rules for NFTBan RBAC"
 # meta:inventory.files=""

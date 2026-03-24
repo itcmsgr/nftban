@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_exporter_gui_cache"
 # meta:type="exporter"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="GUI cache file generation (traffic history, dropped by country/port)"
 # meta:inventory.files=""
