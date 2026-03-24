@@ -193,9 +193,11 @@ func isManualSource(source string) bool {
 
 // getBlacklistSetForSource returns the appropriate set based on source + IP family
 // v1.33.0: Manual/auto-detect sources → hash set, feeds/geoban → interval set
+// v1.39.0: CIDRs always route to interval set (hash sets don't support ranges)
 func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set, string, bool, error) {
 	ip := net.ParseIP(ipStr)
 	isIPv6 := false
+	isCIDR := strings.Contains(ipStr, "/")
 
 	if ip != nil {
 		isIPv6 = ip.To4() == nil
@@ -203,7 +205,8 @@ func (b *Backend) getBlacklistSetForSource(ipStr, source string) (*nftables.Set,
 		isIPv6 = strings.Contains(ipStr, ":")
 	}
 
-	manual := isManualSource(source)
+	// v1.39.0: CIDRs must use interval sets (hash sets don't support ranges)
+	manual := isManualSource(source) && !isCIDR
 
 	if isIPv6 {
 		if manual {

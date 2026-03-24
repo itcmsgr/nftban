@@ -62,6 +62,22 @@ case "$1" in
 
         log_info "Configuring NFTBan v${NFTBAN_VERSION}..."
 
+        # v1.39.0: Cleanup trap for failed install (UX-INST-2)
+        # On failure, remove half-installed state to prevent broken dpkg
+        _nftban_postinst_cleanup() {
+            local _exit=$?
+            if [[ $_exit -ne 0 ]]; then
+                log_error "Installation failed (exit $_exit). Cleaning up..."
+                # Remove runtime dirs (created during this install)
+                rm -rf /run/nftban 2>/dev/null || true
+                # Don't remove /etc/nftban or /var/lib/nftban — user may have config
+                # Remove systemd state for units we may have partially enabled
+                systemctl daemon-reload 2>/dev/null || true
+                log_error "Cleanup complete. Fix the issue and reinstall."
+            fi
+        }
+        trap _nftban_postinst_cleanup EXIT
+
         # =====================================================================
         # STEP 0: Security Check - CVE-2025-NFTBAN-001
         # =====================================================================
@@ -252,55 +268,75 @@ case "$1" in
             log_warn "Found: $CONFLICTS"
             log_warn ""
 
-            # If NFTBAN_TAKEOVER not already set, prompt user or fail for non-interactive
+            # If NFTBAN_TAKEOVER not already set, auto-detect or prompt
             if [[ "${NFTBAN_TAKEOVER:-0}" != "1" ]]; then
-                log_info "NFTBan requires exclusive firewall control."
-                log_info "You cannot run two firewalls simultaneously."
-                log_info ""
+                # v1.39.0: Auto-takeover on panel servers (UX-INST-1)
+                # Panels ALWAYS have conflicting firewalls (UFW/firewalld/CSF)
+                # Requiring NFTBAN_TAKEOVER=1 blocks 100% of panel installs
+                _AUTO_TAKEOVER=false
+                if [[ -d /usr/local/psa ]] || \
+                   [[ -d /usr/local/cpanel ]] || \
+                   [[ -d /usr/local/directadmin ]] || \
+                   [[ -d /usr/local/CyberCP ]] || \
+                   [[ -d /usr/local/hestia ]] || \
+                   [[ -d /usr/local/vesta ]] || \
+                   [[ -d /usr/local/cwpsrv ]] || \
+                   [[ -d /usr/local/interworx ]]; then
+                    _AUTO_TAKEOVER=true
+                    log_info "Panel server detected — auto-takeover enabled (no NFTBAN_TAKEOVER needed)"
+                fi
 
-                # Check if we have a terminal for interactive prompt
-                if [[ -t 0 ]]; then
-                    # Interactive mode - ask user
-                    log_info "How would you like to proceed?"
-                    log_info ""
-                    log_info "  [1] AUTO   - NFTBan will disable conflicting firewalls automatically"
-                    log_info "  [2] MANUAL - You will remove them yourself (installation aborts)"
-                    log_info ""
-                    read -p "[NFTBan] Enter choice [1/2]: " CONFLICT_CHOICE </dev/tty
-
-                    case "$CONFLICT_CHOICE" in
-                        1|auto|AUTO|a|A)
-                            log_info ""
-                            log_info "Auto-takeover selected."
-                            export NFTBAN_TAKEOVER=1
-                            ;;
-                        2|manual|MANUAL|m|M|*)
-                            log_info ""
-                            log_info "Manual removal selected."
-                            log_info ""
-                            log_info "Please remove the conflicting firewalls:"
-                            log_info "  - CSF: csf -x && apt remove csf lfd"
-                            log_info "  - UFW: ufw disable && apt remove ufw"
-                            log_info "  - firewalld: systemctl disable --now firewalld"
-                            log_info "  - iptables: systemctl disable --now iptables"
-                            log_info ""
-                            log_info "Then reinstall NFTBan."
-                            exit 1
-                            ;;
-                    esac
+                if [[ "$_AUTO_TAKEOVER" == "true" ]]; then
+                    export NFTBAN_TAKEOVER=1
                 else
-                    # Non-interactive mode - show instructions and exit
-                    log_error "Non-interactive install detected."
-                    log_error "Options:"
-                    log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
-                    log_error "  2. Manual removal:"
-                    log_error "     - CSF: csf -x && apt remove csf lfd"
-                    log_error "     - UFW: ufw disable && apt remove ufw"
-                    log_error "     - firewalld: systemctl disable --now firewalld"
-                    log_error "     - iptables: systemctl disable --now iptables"
-                    log_error ""
-                    log_error "Then reinstall NFTBan."
-                    exit 1
+                    log_info "NFTBan requires exclusive firewall control."
+                    log_info "You cannot run two firewalls simultaneously."
+                    log_info ""
+
+                    # Check if we have a terminal for interactive prompt
+                    if [[ -t 0 ]]; then
+                        # Interactive mode - ask user
+                        log_info "How would you like to proceed?"
+                        log_info ""
+                        log_info "  [1] AUTO   - NFTBan will disable conflicting firewalls automatically"
+                        log_info "  [2] MANUAL - You will remove them yourself (installation aborts)"
+                        log_info ""
+                        read -p "[NFTBan] Enter choice [1/2]: " CONFLICT_CHOICE </dev/tty
+
+                        case "$CONFLICT_CHOICE" in
+                            1|auto|AUTO|a|A)
+                                log_info ""
+                                log_info "Auto-takeover selected."
+                                export NFTBAN_TAKEOVER=1
+                                ;;
+                            2|manual|MANUAL|m|M|*)
+                                log_info ""
+                                log_info "Manual removal selected."
+                                log_info ""
+                                log_info "Please remove the conflicting firewalls:"
+                                log_info "  - CSF: csf -x && apt remove csf lfd"
+                                log_info "  - UFW: ufw disable && apt remove ufw"
+                                log_info "  - firewalld: systemctl disable --now firewalld"
+                                log_info "  - iptables: systemctl disable --now iptables"
+                                log_info ""
+                                log_info "Then reinstall NFTBan."
+                                exit 1
+                                ;;
+                        esac
+                    else
+                        # Non-interactive mode - show instructions and exit
+                        log_error "Non-interactive install detected."
+                        log_error "Options:"
+                        log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
+                        log_error "  2. Manual removal:"
+                        log_error "     - CSF: csf -x && apt remove csf lfd"
+                        log_error "     - UFW: ufw disable && apt remove ufw"
+                        log_error "     - firewalld: systemctl disable --now firewalld"
+                        log_error "     - iptables: systemctl disable --now iptables"
+                        log_error ""
+                        log_error "Then reinstall NFTBan."
+                        exit 1
+                    fi
                 fi
             fi
 

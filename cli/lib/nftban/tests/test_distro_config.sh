@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="test_distro_config"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Test all functions of nftban_distro_config.sh"
 # meta:inventory.files=""

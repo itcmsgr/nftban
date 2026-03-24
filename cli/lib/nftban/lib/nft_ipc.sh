@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_ipc" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="IPC client library for nftband daemon communication"
+# meta:name="nft_ipc" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="IPC client library for nftband daemon communication"
 # meta:inventory.files="/usr/lib/nftban/lib/nft_ipc.sh"
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_DAEMON_SOCKET,NFTBAN_IPC_TIMEOUT,NFTBAN_EMERGENCY_MODE"

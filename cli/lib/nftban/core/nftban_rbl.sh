@@ -8,7 +8,7 @@
 # meta:name="nftban_rbl"
 # meta:type="core"
 # meta:header="RBL Core Logic"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="RBL checking against 40+ DNS blackhole lists"

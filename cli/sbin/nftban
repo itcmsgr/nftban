@@ -234,6 +234,7 @@ nftban_complete() {
         echo "test"
         echo "emulate"
         echo "explain"
+        echo "verify"
         # CONFIG VALIDATION
         echo "configtest"
         echo "configaudit"
@@ -324,7 +325,7 @@ nftban_complete() {
                 echo "disable"
                 echo "status"
                 ;;
-            emulate|explain)
+            emulate|explain|verify)
                 echo "--proto"
                 echo "--port"
                 echo "--direction"
@@ -730,6 +731,21 @@ nftban_complete() {
 # =============================================================================
 
 main() {
+    # v1.39.0: Parse global flags before command dispatch
+    local _args=("$@")
+    local _filtered=()
+    for _arg in "${_args[@]}"; do
+        case "$_arg" in
+            --no-banner)
+                export NFTBAN_BANNER_MODE="none"
+                ;;
+            *)
+                _filtered+=("$_arg")
+                ;;
+        esac
+    done
+    set -- "${_filtered[@]+"${_filtered[@]}"}"
+
     local cmd="${1:-hello}"
 
     # Special completion endpoint for bash completion
@@ -818,6 +834,20 @@ main() {
                 return $?
             else
                 echo "ERROR: cmd_system.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
+        verify|explain)
+            # v1.39.0 P3-17: 'verify' and 'explain' are aliases for 'emulate'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_emulate.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_emulate.sh"
+                shift
+                nftban_cmd_emulate "$@"
+                return $?
+            else
+                echo "ERROR: cmd_emulate.sh not found" >&2
                 exit 1
             fi
             ;;
@@ -1133,7 +1163,7 @@ main() {
                 wathcdog|watchdgo|wacthdog)
                     suggestion="watchdog"
                     ;;
-                emualte|emualet|emluate)
+                emualte|emualet|emluate|vreify|verfiy|veirfy)
                     suggestion="emulate"
                     ;;
                 suricat|surikata|sruicata)

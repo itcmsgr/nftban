@@ -10,7 +10,7 @@
 # meta:name="cmd_panel"
 # meta:type="cli"
 # meta:header="Panel CLI Command"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

@@ -8,7 +8,7 @@
 # meta:name="nftban_watchdog_checks"
 # meta:type="core"
 # meta:header="System Watchdog Check Functions"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Resource check functions: load, memory, I/O, disk, FD, Suricata drift, top processes"

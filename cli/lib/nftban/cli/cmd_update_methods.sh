@@ -8,7 +8,7 @@
 # meta:name="cmd_update_methods"
 # meta:type="cli"
 # meta:header="Update Command Methods"
-# meta:version="1.14.1"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="maintenance"
 # meta:type="script"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Runs critical safety checks (SSH monitoring, autoheal, IP changes)"
 # meta:inventory.files=""

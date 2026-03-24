@@ -8,7 +8,7 @@
 # meta:name="cmd_unban"
 # meta:type="cli"
 # meta:header="Unban Command"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -48,6 +48,7 @@ nftban_cmd_unban() {
     # Usage: nftban unban <ip> [--json]
 
     local ip=""
+    local compact_mode="false"
     local json_mode
 
     # Check for help first
@@ -61,6 +62,11 @@ nftban_cmd_unban() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --json)
+                shift
+                ;;
+            --compact|-q)
+                # v1.39.0 P3-34: Compact output
+                compact_mode="true"
                 shift
                 ;;
             -*)
@@ -105,6 +111,13 @@ nftban_cmd_unban() {
         else
             json_output "false" '{}' "Failed to unban IP: $output"
         fi
+    elif [[ "$compact_mode" == "true" ]]; then
+        # v1.39.0 P3-34: Show only essential lines
+        if [[ $exit_code -eq 0 ]]; then
+            echo "$output" | grep -E "^✅|UNBANNED|removed|not found|not banned" || echo "Unbanned: $ip"
+        else
+            echo "$output" | grep -E "^Error|^failed|invalid" || echo "Failed: $ip"
+        fi
     else
         echo "$output"
     fi
@@ -126,6 +139,7 @@ Arguments:
   <ip>                IP address to unban (IPv4 or IPv6)
 
 Options:
+  --compact, -q       Compact output (essential info only)
   --help, -h          Show this help message
 
 Examples:

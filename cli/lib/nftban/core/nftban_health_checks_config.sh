@@ -9,7 +9,7 @@
 # meta:name="nftban_health_checks_config"
 # meta:type="lib"
 # meta:header="Health Check Config Functions"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_trace"
 # meta:type="helper"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Logs START/END of scripts with unique trace IDs to detect stuck scripts"
 # meta:inventory.files=""

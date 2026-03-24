@@ -1,3 +1,26 @@
+nftban (1.39.0-1) stable; urgency=medium
+
+  * v1.39.0 — Bug Fixes + UX Hardening + Security Quick Wins
+  * BEHAVIOR CHANGE: RFC1918 removed from default whitelist (explicit opt-in)
+  * CRITICAL FIX: CIDR ban/unban routes to interval set (hash crash fixed)
+  * CRITICAL FIX: Emulate now checks blacklist_manual sets (was showing ALLOWED)
+  * FIX: Whitelist conflict detection covers blacklist_manual sets
+  * FIX: Feed enable/disable exit codes corrected (0 on success)
+  * FIX: firewall validate exit code matches reported status
+  * FIX: Whitelist remove reports "not found" for absent entries
+  * FIX: Emulate adds geoban context (country, geo-banned status)
+  * INSTALL: Auto-takeover on panel servers (Plesk, cPanel, DirectAdmin, etc.)
+  * INSTALL: RPM pretrans dependency hint for dnf
+  * CLI: --strict mode for health check (warnings -> exit 1, for CI)
+  * CLI: --no-banner global flag (suppress header)
+  * CLEANUP: Deprecated health subcommands removed (services, modules, permissions, report)
+  * CLEANUP: Deprecated nft helper chains removed (synflood, connlimit, portflood, icmp)
+  * SECURITY: GeoIP temp files use /run/nftban instead of /tmp (VULN-14)
+  * SECURITY: Grafana setup generates random password (VULN-10)
+  * SECURITY: Panel enable/disable cleanup trap for temp files (VULN-09)
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Mon, 24 Mar 2026 22:00:00 +0000
+
 nftban (1.38.0-1) stable; urgency=medium
 
   * v1.38.0 — CI Hardening + P1/P2 Completion

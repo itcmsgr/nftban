@@ -8,7 +8,7 @@
 # meta:name="cmd_ban"
 # meta:type="cli"
 # meta:header="Ban Command"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Ban IP addresses permanently using nftban-core"
@@ -52,11 +52,14 @@ readonly CMD_BAN_LOADED=1
 nftban_cmd_ban() {
     # Ban an IP address using nftban-core
     # Usage: nftban ban <ip> [--reason "REASON"] [--timeout SECONDS] [--source SOURCE] [--json]
+    #        nftban ban --file <path> [--reason "REASON"] [--timeout SECONDS] [--source SOURCE]
 
     local ip=""
     local reason=""
     local timeout=""
     local ban_source=""
+    local ban_file=""
+    local compact_mode="false"
     local json_mode
 
     # Check for help first
@@ -84,6 +87,21 @@ nftban_cmd_ban() {
                 ban_source="$2"
                 shift 2
                 ;;
+            --compact|-q)
+                # v1.39.0 P3-34: Compact output (3 lines: action, result, total)
+                compact_mode="true"
+                shift
+                ;;
+            --file|--file=*)
+                # v1.39.0 P3-22: Bulk ban from file
+                if [[ "$1" == --file=* ]]; then
+                    ban_file="${1#--file=}"
+                    shift
+                else
+                    ban_file="$2"
+                    shift 2
+                fi
+                ;;
             -*)
                 cmd_error "Unknown option: $1" "$json_mode" nftban_cmd_ban_usage
                 return 1
@@ -93,12 +111,18 @@ nftban_cmd_ban() {
                     ip="$1"
                     shift
                 else
-                    cmd_error "Multiple IP addresses not supported" "$json_mode"
+                    cmd_error "Multiple IP addresses not supported. Use --file for bulk bans." "$json_mode"
                     return 1
                 fi
                 ;;
         esac
     done
+
+    # v1.39.0 P3-22: Bulk ban from file
+    if [[ -n "$ban_file" ]]; then
+        _nftban_cmd_ban_from_file "$ban_file" "$reason" "$timeout" "$ban_source" "$json_mode"
+        return $?
+    fi
 
     # Validate required arguments
     cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_ban_usage || return 1
@@ -170,11 +194,84 @@ nftban_cmd_ban() {
         else
             json_output "false" '{}' "Failed to ban IP: $output"
         fi
+    elif [[ "$compact_mode" == "true" ]]; then
+        # v1.39.0 P3-34: Show only essential lines
+        if [[ $exit_code -eq 0 ]]; then
+            echo "$output" | grep -E "^✅ IP|^The IP|^Entry saved|PERSISTENT OFFENDER|already banned" || echo "Banned: $ip"
+        else
+            echo "$output" | grep -E "^Error|^failed|whitelisted|invalid" || echo "Failed: $ip"
+        fi
     else
         echo "$output"
     fi
 
     return $exit_code
+}
+
+# =============================================================================
+# BULK BAN FROM FILE (v1.39.0 P3-22)
+# =============================================================================
+
+_nftban_cmd_ban_from_file() {
+    local file="$1" reason="$2" timeout="$3" ban_source="$4" json_mode="$5"
+
+    if [[ ! -f "$file" ]]; then
+        cmd_error "File not found: $file" "$json_mode"
+        return 1
+    fi
+
+    if [[ ! -r "$file" ]]; then
+        cmd_error "Cannot read file: $file" "$json_mode"
+        return 1
+    fi
+
+    local NFTBAN_CORE
+    NFTBAN_CORE=$(cmd_get_core_binary)
+    cmd_require_binary "$NFTBAN_CORE" "nftban-core" "$json_mode" || return 1
+
+    local total=0 success=0 skipped=0 failed=0
+    local line_ip
+
+    while IFS= read -r line_ip || [[ -n "$line_ip" ]]; do
+        # Skip empty lines and comments
+        line_ip="${line_ip%%#*}"
+        line_ip="${line_ip// /}"
+        [[ -z "$line_ip" ]] && continue
+
+        total=$((total + 1))
+
+        # Build command arguments
+        local cmd_args=("$line_ip")
+        [[ -n "$reason" ]] && cmd_args+=(--reason "$reason")
+        [[ -n "$timeout" ]] && cmd_args+=(--timeout "$timeout")
+        [[ -n "$ban_source" ]] && cmd_args+=(--source "$ban_source")
+
+        local output
+        if output=$("$NFTBAN_CORE" ban "${cmd_args[@]}" 2>&1); then
+            success=$((success + 1))
+        else
+            if [[ "$output" == *"whitelisted"* ]] || [[ "$output" == *"already"* ]]; then
+                skipped=$((skipped + 1))
+            else
+                failed=$((failed + 1))
+                echo "FAIL: $line_ip — $output" >&2
+            fi
+        fi
+    done < "$file"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local data
+        data="{\"total\":$total,\"success\":$success,\"skipped\":$skipped,\"failed\":$failed}"
+        if [[ $failed -eq 0 ]]; then
+            json_output "true" "$data"
+        else
+            json_output "false" "$data" "$failed IPs failed to ban"
+        fi
+    else
+        echo "Bulk ban complete: $success banned, $skipped skipped, $failed failed (of $total)"
+    fi
+
+    [[ $failed -eq 0 ]]
 }
 
 # =============================================================================
@@ -184,23 +281,26 @@ nftban_cmd_ban() {
 nftban_cmd_ban_usage() {
     cat <<EOF
 Usage: nftban ban <ip> [OPTIONS]
+       nftban ban --file <path> [OPTIONS]
 
-Ban an IP address.
+Ban an IP address or bulk ban from a file.
 
 Arguments:
   <ip>                  IP address to ban (IPv4 or IPv6)
 
 Options:
+  --file <path>         Ban all IPs from a file (one per line, # comments ok)
   --reason "TEXT"       Ban reason (optional, stored as comment)
   --timeout SECONDS     Temporary ban duration (omit for permanent)
   --source SOURCE       Ban source (e.g., login, portscan, ddos, manual)
+  --compact, -q         Compact output (essential info only)
   --help, -h            Show this help message
 
 Examples:
   nftban ban 192.168.1.100
   nftban ban 192.168.1.100 --reason "Brute force attack"
   nftban ban 192.168.1.100 --timeout 3600 --reason "SSH brute-force"
-  nftban ban 192.168.1.100 --timeout 86400 --source login --reason "Failed logins"
+  nftban ban --file /tmp/bad-ips.txt --reason "Bulk import" --source manual
   nftban ban 2001:db8::1
 
 Notes:
@@ -209,6 +309,7 @@ Notes:
   - With --timeout, ban auto-expires after specified seconds
   - IP is added to ${NFTBAN_CONFIG_DIR}/blacklist.d/99-manual.conf
   - Changes are synced to nftables immediately
+  - File format: one IP per line, # for comments, blank lines ignored
 
 See also:
   nftban unban <ip>     Remove IP ban

@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="test_checks"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Smoke tests for shared check functions library"
 # meta:inventory.files=""
