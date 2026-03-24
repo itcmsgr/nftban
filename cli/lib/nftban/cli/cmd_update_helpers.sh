@@ -8,7 +8,7 @@
 # meta:name="cmd_update_helpers"
 # meta:type="cli"
 # meta:header="Update Command Helpers"
-# meta:version="1.3.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

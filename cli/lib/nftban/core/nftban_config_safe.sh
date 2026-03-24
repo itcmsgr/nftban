@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_config_safe"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Secure configuration file parser that prevents arbitrary code execution"
 # meta:inventory.files=""

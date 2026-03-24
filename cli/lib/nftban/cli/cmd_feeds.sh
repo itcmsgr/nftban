@@ -54,7 +54,7 @@ fi
 # meta:name="cmd_feeds"
 # meta:type="cli"
 # meta:header="Feeds CLI"
-# meta:version="1.7.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

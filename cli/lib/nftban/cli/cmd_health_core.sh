@@ -8,7 +8,7 @@
 # meta:name="cmd_health_core"
 # meta:type="cli"
 # meta:header="Health Check Core Module"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -36,11 +36,12 @@ _CMD_HEALTH_CORE_LOADED="true"
 
 nftban_health_cmd_check() {
     # Run comprehensive health check
-    # Args: [--auto-heal] [--quiet] [--cache-status]
+    # Args: [--auto-heal] [--quiet] [--cache-status] [--strict]
 
     local auto_heal=0
     local quiet=0
     local cache_status=0
+    local strict_mode=0
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -58,9 +59,14 @@ nftban_health_cmd_check() {
                 cache_status=1
                 shift
                 ;;
+            --strict)
+                # v1.39.0: Treat warnings as failures (for CI pipelines)
+                strict_mode=1
+                shift
+                ;;
             *)
                 echo "ERROR: Unknown option: $1" >&2
-                echo "Usage: nftban health check [--auto-heal] [--quiet] [--cache-status]" >&2
+                echo "Usage: nftban health check [--auto-heal] [--quiet] [--cache-status] [--strict]" >&2
                 return 1
                 ;;
         esac
@@ -96,14 +102,15 @@ nftban_health_cmd_check() {
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
     local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
-    # Standardized exit codes: 0=OK/WARNING, 2=ERROR
+    # Standardized exit codes: 0=OK/WARNING, 1=WARNING(strict), 2=ERROR
     # v1.37.1: Warnings about OPTIONAL features (Web GUI, metrics, etc.)
     # must NOT cause non-zero exit. Only real errors (broken firewall,
     # missing binaries, failed checks) should fail.
-    # This aligns full/json/summary modes with --brief (which already
-    # returns 0 for warnings).
+    # v1.39.0: --strict mode makes warnings return exit 1 (for CI pipelines)
     if [[ $error_count -gt 0 ]]; then
         result=2
+    elif [[ $strict_mode -eq 1 && $warning_count -gt 0 ]]; then
+        result=1
     else
         result=0
     fi
@@ -154,7 +161,16 @@ nftban_health_cmd_check() {
 nftban_health_cmd_brief() {
     # v1.24.0: One-line health output for CI/fleet/monitoring
     # Output: HEALTHY | 26 checks passed | 4 info
-    # Returns: 0=healthy (including warnings), 2=errors
+    # Returns: 0=healthy (including warnings), 1=warning(strict), 2=errors
+    # v1.39.0: Supports --strict flag (warnings → exit 1)
+
+    local strict_mode=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --strict) strict_mode=1; shift ;;
+            *) shift ;;
+        esac
+    done
 
     # Load health module if not already loaded
     if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
@@ -194,6 +210,8 @@ nftban_health_cmd_brief() {
             reasons="optional-features"
         fi
         echo "HEALTHY | ${ok_count} checks passed | ${info_count} info (${reasons})"
+        # v1.39.0: --strict makes warnings fail
+        [[ $strict_mode -eq 1 ]] && return 1
         return 0
     else
         echo "HEALTHY | ${total_checks} checks passed | 0 info"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="cmd_common" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Reduces boilerplate in CLI handlers by providing common functions"
+# meta:name="cmd_common" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Reduces boilerplate in CLI handlers by providing common functions"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"

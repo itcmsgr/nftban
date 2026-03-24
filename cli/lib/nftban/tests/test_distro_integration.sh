@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="test_distro_integration"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Test parser module with distribution configs"
 # meta:inventory.files=""

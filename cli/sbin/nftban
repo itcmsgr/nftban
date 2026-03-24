@@ -730,6 +730,21 @@ nftban_complete() {
 # =============================================================================
 
 main() {
+    # v1.39.0: Parse global flags before command dispatch
+    local _args=("$@")
+    local _filtered=()
+    for _arg in "${_args[@]}"; do
+        case "$_arg" in
+            --no-banner)
+                export NFTBAN_BANNER_MODE="none"
+                ;;
+            *)
+                _filtered+=("$_arg")
+                ;;
+        esac
+    done
+    set -- "${_filtered[@]+"${_filtered[@]}"}"
+
     local cmd="${1:-hello}"
 
     # Special completion endpoint for bash completion

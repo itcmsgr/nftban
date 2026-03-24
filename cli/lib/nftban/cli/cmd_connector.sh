@@ -6,7 +6,7 @@
 # meta:name="cmd_connector"
 # meta:type="cli"
 # meta:header="Connector Management"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Manage generic metric and event connectors"

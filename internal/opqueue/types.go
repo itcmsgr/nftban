@@ -266,6 +266,7 @@ func GetSourceConfig(source string) (sourceConfig, bool) {
 }
 
 // GetTargetSet returns the appropriate set for a source and IP
+// v1.39.0: CIDRs always route to interval set (hash sets don't support ranges)
 func GetTargetSet(source, ip string) string {
 	cfg, _ := GetSourceConfig(source)
 
@@ -277,8 +278,23 @@ func GetTargetSet(source, ip string) string {
 		}
 	}
 
+	// v1.39.0: CIDRs must use interval sets
+	isCIDR := false
+	for _, c := range ip {
+		if c == '/' {
+			isCIDR = true
+			break
+		}
+	}
+
 	if isIPv6 {
+		if isCIDR {
+			return "blacklist_ipv6"
+		}
 		return cfg.IPv6Set
+	}
+	if isCIDR {
+		return "blacklist_ipv4"
 	}
 	return cfg.IPv4Set
 }

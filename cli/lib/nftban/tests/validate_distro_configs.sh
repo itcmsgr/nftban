@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="validate_distro_configs"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Validate distribution configuration files"
 # meta:inventory.files=""

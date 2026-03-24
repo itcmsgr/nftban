@@ -6,7 +6,7 @@
 # meta:name="nftban_feeds"
 # meta:type="core"
 # meta:header="Threat Feeds Core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Dynamic threat intelligence feeds with beautiful selection UI"
@@ -142,11 +142,13 @@ nftban_feeds_log() {
     mkdir -p "$(dirname "$NFTBAN_FEEDS_LOG")" || return 1
 
     # Log to dedicated feeds.log (timestamp already has brackets from library)
-    echo "${timestamp} [$level] $msg" | tee -a "$NFTBAN_FEEDS_LOG"
+    # v1.39.0: Use append instead of tee to prevent duplicate output (UX-INST-5)
+    # Write to log file silently, echo separately only if not in quiet/json mode
+    echo "${timestamp} [$level] $msg" >> "$NFTBAN_FEEDS_LOG" 2>/dev/null || true
 
     # Also log via main nftban logging if available
     if declare -f nftban_log_${level,,} >/dev/null 2>&1; then
-        nftban_log_${level,,} "FEEDS: $msg"
+        nftban_log_${level,,} "FEEDS: $msg" 2>/dev/null || true
     fi
 }
 
@@ -353,7 +355,7 @@ nftban_feeds_enable() {
         # NEVER execute synchronous sync - all feeds/ban/unban/countries managed by timer
         # This prevents 30+ second hangs with large feed sets and respects async architecture
         if command -v nftban_queue_add &>/dev/null; then
-            nftban_queue_add "feeds_sync" "Feed enabled: $feed_name" >/dev/null 2>&1
+            nftban_queue_add "feeds_sync" "Feed enabled: $feed_name" >/dev/null 2>&1 || true
             if [[ "$quiet" != "true" ]]; then
                 echo "   NFTables update queued (processed every 2 minutes)"
                 echo "   Check queue: tail -f ${NFTBAN_LOG_DIR}/queue.log"
@@ -425,7 +427,7 @@ nftban_feeds_disable() {
 
     # Queue feeds_sync as fallback (ensures eventual consistency)
     if command -v nftban_queue_add &>/dev/null; then
-        nftban_queue_add "feeds_sync" "Feed disabled: $feed_name" >/dev/null 2>&1
+        nftban_queue_add "feeds_sync" "Feed disabled: $feed_name" >/dev/null 2>&1 || true
     fi
 
     echo ""

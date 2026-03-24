@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="path_validator"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Cross-platform command path detection and validation for critical system utilities"
 # meta:inventory.files=""

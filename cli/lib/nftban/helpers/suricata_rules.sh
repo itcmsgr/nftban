@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="suricata_rules"
 # meta:type="helper"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Shared functions for Suricata rules, categories, and SID management"
 # meta:inventory.files=""

@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_file_ops"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Atomic file write operations to prevent race conditions and corruption"
 # meta:inventory.files=""

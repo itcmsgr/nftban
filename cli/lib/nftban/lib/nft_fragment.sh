@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_fragment" meta:type="lib" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
+# meta:name="nft_fragment" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
 # meta:inventory.files="/etc/nftban/rules.d"
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""

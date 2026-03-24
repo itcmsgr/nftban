@@ -8,7 +8,7 @@
 # meta:name="nftban_geoip_download"
 # meta:type="core"
 # meta:header="GeoIP Database Management"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Manages MaxMind GeoIP database download and updates"
@@ -144,7 +144,8 @@ _download_geoip() {
     # Extract database
     echo "[INFO] Extracting database..."
     local extract_dir
-    extract_dir=$(mktemp -d /tmp/geoip-extract.XXXXXX)
+    # v1.39.0: Use RUN_DIR instead of /tmp (VULN-14 — world-readable /tmp race)
+    extract_dir=$(mktemp -d "${NFTBAN_RUN_DIR:-/run/nftban}/geoip-extract.XXXXXX")
 
     if tar -xzf "${tmp_file}" -C "${extract_dir}"; then
         echo "[INFO] Extraction complete"

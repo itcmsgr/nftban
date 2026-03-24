@@ -8,7 +8,7 @@
 # meta:name="cmd_support"
 # meta:type="cli"
 # meta:header="Support Bundle Command"
-# meta:version="1.9.4"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

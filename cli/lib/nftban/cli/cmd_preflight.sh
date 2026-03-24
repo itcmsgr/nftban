@@ -7,7 +7,7 @@
 #
 # meta:name="cmd_preflight"
 # meta:type="cli"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:header="Preflight Check"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"

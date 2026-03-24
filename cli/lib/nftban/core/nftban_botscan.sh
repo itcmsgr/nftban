@@ -8,7 +8,7 @@
 # meta:name="nftban_botscan"
 # meta:type="core"
 # meta:header="Bot Scanner Detection Engine"
-# meta:version="1.0.30"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Bot scanner detection using pattern matching on access logs"

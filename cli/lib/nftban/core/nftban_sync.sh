@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_sync"
 # meta:type="core"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Atomic firewall reload using Go-based sync engine"
 # meta:inventory.files=""

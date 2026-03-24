@@ -7,7 +7,7 @@
 # meta:name="cmd_whitelist"
 # meta:type="cli"
 # meta:header="Whitelist IP management"
-# meta:version="1.0.0"
+# meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -135,18 +135,21 @@ nftban_whitelist_add_ip() {
     fi
 
     # Validate IP format and determine family
-    local table set_name blacklist_set family
+    # v1.39.0: Check both blacklist_manual_* (hash) and blacklist_* (interval) sets
+    local table set_name blacklist_set blacklist_manual_set family
     if [[ "$ip" =~ : ]]; then
         # IPv6
         table="ip6 nftban"
         set_name="whitelist_ipv6"
         blacklist_set="blacklist_ipv6"
+        blacklist_manual_set="blacklist_manual_ipv6"
         family="IPv6"
     else
         # IPv4
         table="ip nftban"
         set_name="whitelist_ipv4"
         blacklist_set="blacklist_ipv4"
+        blacklist_manual_set="blacklist_manual_ipv4"
         family="IPv4"
     fi
 
@@ -160,12 +163,31 @@ nftban_whitelist_add_ip() {
     fi
 
     # v1.18.7: First remove from blacklist if present (prevents whitelist/blacklist conflict)
-    if nft get element ${table} ${blacklist_set} "{ $ip }" &>/dev/null; then
-        if [[ $ipc_mode -eq 0 ]]; then
-            nft_ipc_delete_element "$table" "$blacklist_set" "$ip" 2>/dev/null || true
+    # v1.39.0: Check both blacklist_manual_* (hash) and blacklist_* (interval) sets
+    # v1.39.0: Use nftban-core unban to remove from BOTH nft sets AND blacklist conf files
+    #          (nft-only delete was insufficient — daemon reconciliation re-adds from conf)
+    local _bl_set _is_banned=false
+    for _bl_set in "$blacklist_manual_set" "$blacklist_set"; do
+        if nft get element ${table} ${_bl_set} "{ $ip }" &>/dev/null; then
+            _is_banned=true
+            break
+        fi
+    done
+    if [[ "$_is_banned" == "true" ]]; then
+        local _core_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+        if [[ -x "$_core_bin" ]]; then
+            "$_core_bin" unban "$ip" &>/dev/null || true
         else
-            # Emergency direct nft access (daemon down, emergency unlock present)
-            nft delete element ${table} ${blacklist_set} "{ $ip }" 2>/dev/null || true
+            # Fallback: direct nft delete (won't remove from conf files)
+            for _bl_set in "$blacklist_manual_set" "$blacklist_set"; do
+                if nft get element ${table} ${_bl_set} "{ $ip }" &>/dev/null; then
+                    if [[ $ipc_mode -eq 0 ]]; then
+                        nft_ipc_delete_element "$table" "$_bl_set" "$ip" 2>/dev/null || true
+                    else
+                        nft delete element ${table} ${_bl_set} "{ $ip }" 2>/dev/null || true
+                    fi
+                fi
+            done
         fi
         echo "Removed $ip from blacklist (was banned)"
     fi
@@ -200,6 +222,7 @@ nftban_whitelist_add_ip() {
 # Remove IP from whitelist via IPC (v1.18.0: IPC-only writes)
 # v1.19.0: Enforced IPC-only path with daemon-running check (R20)
 # v1.19.27: Added defense-in-depth IP validation
+# v1.39.0: Pre-check existence to prevent phantom success
 nftban_whitelist_remove_ip() {
     local ip="$1"
 
@@ -221,6 +244,12 @@ nftban_whitelist_remove_ip() {
         table="ip nftban"
         set_name="whitelist_ipv4"
         family="IPv4"
+    fi
+
+    # v1.39.0: Check if IP exists in whitelist before attempting removal
+    if ! nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
+        echo "INFO: $ip is not in the $family whitelist (nothing to remove)"
+        return 0
     fi
 
     # v1.19.0: Check daemon or emergency gate before any write operation
