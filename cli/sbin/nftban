@@ -234,6 +234,7 @@ nftban_complete() {
         echo "test"
         echo "emulate"
         echo "explain"
+        echo "verify"
         # CONFIG VALIDATION
         echo "configtest"
         echo "configaudit"
@@ -324,7 +325,7 @@ nftban_complete() {
                 echo "disable"
                 echo "status"
                 ;;
-            emulate|explain)
+            emulate|explain|verify)
                 echo "--proto"
                 echo "--port"
                 echo "--direction"
@@ -837,6 +838,20 @@ main() {
             fi
             ;;
 
+        verify|explain)
+            # v1.39.0 P3-17: 'verify' and 'explain' are aliases for 'emulate'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_emulate.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_emulate.sh"
+                shift
+                nftban_cmd_emulate "$@"
+                return $?
+            else
+                echo "ERROR: cmd_emulate.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
         service)
             # Alias: 'service' (singular) → 'services' (plural)
             if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_services.sh" ]]; then
@@ -1148,7 +1163,7 @@ main() {
                 wathcdog|watchdgo|wacthdog)
                     suggestion="watchdog"
                     ;;
-                emualte|emualet|emluate)
+                emualte|emualet|emluate|vreify|verfiy|veirfy)
                     suggestion="emulate"
                     ;;
                 suricat|surikata|sruicata)
