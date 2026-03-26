@@ -357,12 +357,16 @@ nftban_check_binary_integrity() {
         exists="true"
         size_bytes=$(stat -c %s "$binary" 2>/dev/null || echo "0")
 
-        # Get file type
-        file_type=$(file -b "$binary" 2>/dev/null || echo "unknown")
+        # Get file type (guard: 'file' may not be installed on minimal systems)
+        if command -v file >/dev/null 2>&1; then
+            file_type=$(file -b "$binary" 2>/dev/null || echo "unknown")
+        else
+            file_type="unknown (file command not installed)"
+        fi
         # Escape for JSON
         file_type="${file_type//\"/\\\"}"
 
-        if [[ "$file_type" == *"ELF"* ]]; then
+        if [[ "$file_type" == *"ELF"* ]] || [[ "$file_type" == *"unknown"* ]]; then
             is_elf="true"
             status_text="valid"
         else

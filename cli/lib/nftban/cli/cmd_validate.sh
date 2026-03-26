@@ -75,7 +75,7 @@ nftban_cmd_validate() {
                 json_output=true
                 shift
                 ;;
-            -h|--help)
+            -h|--help|help)
                 nftban_cmd_validate_help
                 return 0
                 ;;

@@ -786,6 +786,11 @@ main() {
         cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_whitelist_system.sh"
     fi
 
+    # Special case: firewall-logs uses underscore in filename
+    if [[ "$cmd" == "firewall-logs" ]]; then
+        cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_firewall_logs.sh"
+    fi
+
     # Special case: support-bundle is an alias for support
     if [[ "$cmd" == "support-bundle" ]]; then
         cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_support.sh"
@@ -876,6 +881,20 @@ main() {
                 return $?
             else
                 echo "ERROR: cmd_stats.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
+        rollback)
+            # Alias: 'nftban rollback' → 'nftban update rollback'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_update.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_update.sh"
+                shift
+                nftban_cmd_update "rollback" "$@"
+                return $?
+            else
+                echo "ERROR: cmd_update.sh not found" >&2
                 exit 1
             fi
             ;;
