@@ -28,6 +28,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/itcmsgr/nftban/internal/metrics"
 )
 
 // FeedInfo represents metadata about a threat feed
@@ -86,9 +88,17 @@ func LoadAllFeeds(feedsDir string) (map[string]bool, map[string]bool, map[string
 			lastUpdated = info.ModTime().Format("2006-01-02 15:04:05")
 		}
 
+		feedName := strings.TrimSuffix(entry.Name(), ".txt")
+
+		// v1.40.0: Record per-feed staleness metrics
+		if info != nil {
+			metrics.RecordFeedLastSuccess(feedName, info.ModTime())
+			metrics.UpdateFeedStaleness(feedName, info.ModTime(), metrics.DefaultFeedStaleThreshold)
+		}
+
 		// Store feed info (total = single IPs + CIDRs)
 		feedsInfo = append(feedsInfo, FeedInfo{
-			Name:        strings.TrimSuffix(entry.Name(), ".txt"),
+			Name:        feedName,
 			FilePath:    filePath,
 			IPv4Count:   ipv4Count + ipv4CIDRCount,
 			IPv6Count:   ipv6Count + ipv6CIDRCount,

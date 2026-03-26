@@ -27,8 +27,9 @@ import (
 
 // FastOp represents a high-priority operation (ban, unban, flush_source, flush_set)
 type FastOp struct {
-	SetName string
-	Op      *SetOp
+	SetName    string
+	Op         *SetOp
+	EnqueuedAt time.Time // v1.40.0: For enforcement latency tracking
 }
 
 // BulkJob represents a low-priority bulk operation (replace_set for feeds/geoban)
@@ -110,7 +111,7 @@ func (s *Scheduler) EnqueueFast(setName string, op *SetOp) error {
 	}
 
 	select {
-	case s.fastCh <- FastOp{SetName: setName, Op: op}:
+	case s.fastCh <- FastOp{SetName: setName, Op: op, EnqueuedAt: time.Now()}:
 		s.fastPending.Add(1)
 		return nil
 	default:
@@ -291,6 +292,15 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
 	metrics.RecordEventsApplied("fast", applied)
 	s.lastFastFlush.Store(time.Now())
+
+	// v1.40.0: Record per-op enforcement latency
+	now := time.Now()
+	for _, op := range batch {
+		if !op.EnqueuedAt.IsZero() {
+			latency := now.Sub(op.EnqueuedAt).Seconds()
+			metrics.RecordBanEnforcementLatency(op.Op.Type.String(), latency)
+		}
+	}
 }
 
 // drainFastBatch applies remaining fast operations on shutdown
