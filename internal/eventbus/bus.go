@@ -327,6 +327,9 @@ func (b *Bus) Publish(e Event) {
 	b.published++
 	b.metricsMu.Unlock()
 
+	// v1.40.0: Pipeline accounting — track every event generated
+	metrics.RecordEventGenerated(string(e.Type))
+
 	// Dispatch to matching handlers via worker pool
 	for _, sub := range subs {
 		if sub.eventType == "" || sub.eventType == e.Type {
