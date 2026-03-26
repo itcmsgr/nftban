@@ -584,10 +584,11 @@ nftban_cmd_portscan() {
             _nftban_portscan_mode "$mode_subcmd" "$json_mode" "$mode_arg"
             ;;
 
-        reload)
+        reload|restart)
             echo "Reloading port scan detection..."
             echo ""
             # Disable + re-enable to re-read config and rebuild nft chains
+            # v1.40.0: Also fixes wrong jump rule position
             if nftban_portscan_disable 2>/dev/null; then
                 echo ""
             fi
@@ -603,7 +604,7 @@ nftban_cmd_portscan() {
         *)
             echo "ERROR: Unknown command: $action" >&2
             echo ""
-            echo "Available commands: enable, disable, status, check, history, test, mode, sync, config, reload, help"
+            echo "Available commands: enable, disable, status, check, history, test, mode, sync, config, reload, restart, help"
             echo "Run 'nftban portscan help' for detailed usage information"
             return 1
             ;;
