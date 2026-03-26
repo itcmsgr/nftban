@@ -605,6 +605,12 @@ nftban_health_check_binary_integrity() {
         "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftband"
     )
 
+    # Guard: 'file' command may not be installed on minimal systems
+    if ! command -v file >/dev/null 2>&1; then
+        NFTBAN_HEALTH_ISSUES["binary_integrity"]="Skipped ('file' command not installed)"
+        return $HEALTH_OK
+    fi
+
     for binary in "${binaries[@]}"; do
         if [[ -f "$binary" ]]; then
             local file_type

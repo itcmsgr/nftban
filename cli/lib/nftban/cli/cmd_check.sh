@@ -70,7 +70,7 @@ nftban_cmd_check() {
                 json_output=true
                 shift
                 ;;
-            -h|--help)
+            -h|--help|help)
                 nftban_cmd_check_help
                 return 0
                 ;;

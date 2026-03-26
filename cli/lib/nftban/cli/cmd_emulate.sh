@@ -49,7 +49,7 @@ nftban_cmd_emulate() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)
+            -h|--help|help)
                 help=true
                 shift
                 ;;

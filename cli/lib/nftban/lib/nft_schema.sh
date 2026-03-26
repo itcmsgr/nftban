@@ -879,7 +879,8 @@ nftban_nft_validate_chains() {
 
         # Get actual chain properties
         local chain_info
-        chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null | head -3)
+        chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null || true)
+        chain_info=$(echo "$chain_info" | head -3)
 
         # Check policy
         actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || echo "")
