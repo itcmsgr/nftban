@@ -1857,6 +1857,41 @@ port:
       notes:
         - "Automatically whitelists all ports required by the control panel"
         - "See 'nftban panel' command for more panel options"
+    allow:
+      mutates: true
+      description: "Per-IP per-port access control using nft concat sets (v1.41.0)"
+      syntax: "nftban port allow <action> <port> from <ip> [--proto tcp|udp] [--timeout 1h] [--comment text]"
+      notes:
+        - "Uses nft concat sets (ipv4_addr . inet_service) for IP+port access"
+        - "Rules apply AFTER blacklist — banned IPs are always dropped"
+        - "Persisted to /etc/nftban/access.d/port_allow.conf"
+        - "Requires kernel 5.6+ for concat set timeout support"
+      subcommands:
+        add:
+          mutates: true
+          description: "Grant per-IP access to a specific port"
+          syntax: "nftban port allow add <port> from <ip> [--proto tcp|udp] [--timeout 1h] [--comment text]"
+          arguments:
+            port: {type: int, required: true, description: "Port number (1-65535)"}
+            ip: {type: string, required: true, description: "IPv4 or IPv6 address"}
+          options:
+            --proto: {type: enum, values: [tcp, udp], default: tcp, description: "Protocol"}
+            --timeout: {type: string, default: "0", description: "Timeout duration (e.g., 1h, 30m, 7d). 0 = permanent"}
+            --comment: {type: string, description: "Optional comment"}
+        remove:
+          mutates: true
+          description: "Revoke per-IP port access"
+          syntax: "nftban port allow remove <port> from <ip> [--proto tcp|udp]"
+        list:
+          mutates: false
+          description: "List all per-IP port access rules"
+          syntax: "nftban port allow list [--json]"
+          options:
+            --json: {type: bool, description: "Output in JSON format"}
+        flush:
+          mutates: true
+          description: "Remove all per-IP port access rules"
+          syntax: "nftban port allow flush [--yes]"
     egress:
       mutates: conditional
       description: "Outbound port policy audit and enforcement"
@@ -2172,7 +2207,7 @@ report:
   risk: core
   audience: [cli, auditor, panel]
   capability: report_read
-  mutates: false
+  mutates: conditional
   supports_dry_run: false
   requires_root: false
   panel_expose: true
@@ -2180,9 +2215,46 @@ report:
   has_json: true
   examples:
     - "nftban report generate"
-    - "nftban report schedule weekly"
+    - "nftban report schedule enable daily"
     - "nftban report email admin@example.com"
+    - "nftban report run daily"
     - "nftban report --json"
+  subcommands:
+    generate:
+      mutates: false
+      description: "Generate a security report"
+    run:
+      mutates: false
+      description: "Run a report by name (daily, weekly)"
+      syntax: "nftban report run <report-name>"
+    email:
+      mutates: false
+      description: "Email a report to a recipient"
+      syntax: "nftban report email [recipient]"
+    email-setup:
+      mutates: true
+      description: "Configure email settings for reports"
+    schedule:
+      mutates: true
+      description: "Manage report scheduling timers (v1.41.0)"
+      subcommands:
+        enable:
+          mutates: true
+          description: "Enable a scheduled report timer"
+          syntax: "nftban report schedule enable <period>"
+        disable:
+          mutates: true
+          description: "Disable a scheduled report timer"
+          syntax: "nftban report schedule disable <period>"
+        status:
+          mutates: false
+          description: "Show timer status"
+    list:
+      mutates: false
+      description: "List available reports"
+    status:
+      mutates: false
+      description: "Show reporting system status"
 
 metrics:
   category: intelligence_reporting
@@ -2617,6 +2689,24 @@ pro:
     license-check:
       mutates: true
       description: "Check license status (by timer)"
+    community:
+      description: "Anonymous community statistics (v1.41.0, opt-in, NO PII)"
+      subcommands:
+        show:
+          mutates: false
+          description: "Display exact JSON payload that would be submitted"
+        enable:
+          mutates: true
+          description: "Enable anonymous stats collection and submission"
+        disable:
+          mutates: true
+          description: "Disable anonymous stats collection"
+        status:
+          mutates: false
+          description: "Show community stats status and timer state"
+        submit:
+          mutates: true
+          description: "Submit stats now (called by timer)"
 
 gui:
   category: intelligence_reporting
