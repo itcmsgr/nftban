@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="nft_crosscheck"
 # meta:type="test"
-# meta:version="1.40.0"
+# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Cross-validates CLI-reported state vs actual nft kernel state"
 # meta:inventory.files=""
@@ -53,7 +53,7 @@ $JSON_MODE || echo ""
 # =========================================================================
 # Section 1: Table existence
 # =========================================================================
-$JSON_MODE || echo "[1/5] Table existence..."
+$JSON_MODE || echo "[1/6] Table existence..."
 
 for family in ip ip6; do
     if nft list table "$family" nftban &>/dev/null; then
@@ -67,15 +67,19 @@ done
 # Section 2: Required sets with correct types
 # =========================================================================
 $JSON_MODE || echo ""
-$JSON_MODE || echo "[2/5] Required sets..."
+$JSON_MODE || echo "[2/6] Required sets..."
 
 declare -A EXPECTED_SETS=(
     ["ip:whitelist_ipv4"]="ipv4_addr|interval"
     ["ip:blacklist_ipv4"]="ipv4_addr|interval,timeout"
     ["ip:blacklist_manual_ipv4"]="ipv4_addr|timeout"
+    ["ip:port_allow_tcp_ipv4"]="ipv4_addr . inet_service|timeout"
+    ["ip:port_allow_udp_ipv4"]="ipv4_addr . inet_service|timeout"
     ["ip6:whitelist_ipv6"]="ipv6_addr|interval"
     ["ip6:blacklist_ipv6"]="ipv6_addr|interval,timeout"
     ["ip6:blacklist_manual_ipv6"]="ipv6_addr|timeout"
+    ["ip6:port_allow_tcp_ipv6"]="ipv6_addr . inet_service|timeout"
+    ["ip6:port_allow_udp_ipv6"]="ipv6_addr . inet_service|timeout"
 )
 
 for key in "${!EXPECTED_SETS[@]}"; do
@@ -91,8 +95,8 @@ for key in "${!EXPECTED_SETS[@]}"; do
         continue
     }
 
-    # Check type
-    actual_type=$(echo "$set_output" | jq -r '.nftables[1].set.type // empty' 2>/dev/null) || true
+    # Check type (concat types return JSON arrays — join with " . ")
+    actual_type=$(echo "$set_output" | jq -r '.nftables[1].set.type | if type == "array" then join(" . ") else . end // empty' 2>/dev/null) || true
     if [[ "$actual_type" == "$expected_type" ]]; then
         log_pass "Set $family/$set_name type=$actual_type"
     else
@@ -104,7 +108,7 @@ done
 # Section 3: Set element counts
 # =========================================================================
 $JSON_MODE || echo ""
-$JSON_MODE || echo "[3/5] Set element counts..."
+$JSON_MODE || echo "[3/6] Set element counts..."
 
 for family in ip ip6; do
     nft list table "$family" nftban >/dev/null 2>&1 || continue
@@ -119,7 +123,7 @@ done
 # Section 4: Required chains
 # =========================================================================
 $JSON_MODE || echo ""
-$JSON_MODE || echo "[4/5] Required chains..."
+$JSON_MODE || echo "[4/6] Required chains..."
 
 for family in ip ip6; do
     for chain in input forward output; do
@@ -135,7 +139,7 @@ done
 # Section 5: Ban round-trip
 # =========================================================================
 $JSON_MODE || echo ""
-$JSON_MODE || echo "[5/5] Ban round-trip verification..."
+$JSON_MODE || echo "[5/6] Ban round-trip verification..."
 
 TEST_IP="198.51.100.254"  # TEST-NET-2
 
@@ -165,6 +169,62 @@ if nftban ban "$TEST_IP" --quiet 2>/dev/null; then
     fi
 else
     log_fail "Ban round-trip: ban command failed"
+fi
+
+# =========================================================================
+# Section 6: Named counter validation (v1.41.0)
+# =========================================================================
+$JSON_MODE || echo ""
+$JSON_MODE || echo "[6/6] Named counters..."
+
+EXPECTED_COUNTERS=(
+    "input_invalid_drop"
+    "input_whitelist_accept"
+    "input_blacklist_manual_drop"
+    "input_blacklist_drop"
+    "input_port_allow_tcp_accept"
+    "input_port_allow_udp_accept"
+    "input_ct_ssh_drop"
+    "input_ct_http_drop"
+    "input_ct_mail_drop"
+    "output_loopback_accept"
+    "output_established_accept"
+    "output_tcp_accept"
+    "output_udp_accept"
+    "output_egress_audit"
+)
+
+for family in ip ip6; do
+    nft list table "$family" nftban >/dev/null 2>&1 || continue
+
+    found_count=0
+    for cname in "${EXPECTED_COUNTERS[@]}"; do
+        if nft list counter "$family" nftban "$cname" &>/dev/null; then
+            ((found_count++))
+        fi
+    done
+
+    if [[ $found_count -eq ${#EXPECTED_COUNTERS[@]} ]]; then
+        log_pass "Named counters $family: all ${#EXPECTED_COUNTERS[@]} found"
+    elif [[ $found_count -gt 0 ]]; then
+        log_warn "Named counters $family: $found_count/${#EXPECTED_COUNTERS[@]} found (partial schema)"
+    else
+        log_warn "Named counters $family: none found (pre-v1.41.0 schema — anonymous fallback active)"
+    fi
+done
+
+# Also check the IPv4-specific icmp counter name
+if nft list counter ip nftban output_icmp_accept &>/dev/null; then
+    log_pass "Named counter ip/output_icmp_accept exists"
+else
+    nft list table ip nftban >/dev/null 2>&1 && log_warn "Named counter ip/output_icmp_accept missing" || true
+fi
+
+# IPv6-specific icmpv6 counter name
+if nft list counter ip6 nftban output_icmpv6_accept &>/dev/null; then
+    log_pass "Named counter ip6/output_icmpv6_accept exists"
+else
+    nft list table ip6 nftban >/dev/null 2>&1 && log_warn "Named counter ip6/output_icmpv6_accept missing" || true
 fi
 
 # =========================================================================

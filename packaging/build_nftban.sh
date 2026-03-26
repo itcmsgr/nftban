@@ -453,6 +453,11 @@ install -D -m 0644 install/systemd/nftban-tunnel.service %{buildroot}/usr/lib/sy
 install -D -m 0644 install/systemd/nftban-tunnel.timer %{buildroot}/usr/lib/systemd/system/nftban-tunnel.timer
 install -D -m 0644 install/systemd/nftband.service %{buildroot}/usr/lib/systemd/system/nftband.service
 install -D -m 0644 install/systemd/nftband.socket %{buildroot}/usr/lib/systemd/system/nftband.socket
+# v1.41.0: Report timer + community stats
+install -D -m 0644 install/systemd/nftban-report-daily.service %{buildroot}/usr/lib/systemd/system/nftban-report-daily.service
+install -D -m 0644 install/systemd/nftban-report-daily.timer %{buildroot}/usr/lib/systemd/system/nftban-report-daily.timer
+install -D -m 0644 install/systemd/nftban-community-stats.service %{buildroot}/usr/lib/systemd/system/nftban-community-stats.service
+install -D -m 0644 install/systemd/nftban-community-stats.timer %{buildroot}/usr/lib/systemd/system/nftban-community-stats.timer
 
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
@@ -507,9 +512,11 @@ mkdir -p %{buildroot}/usr/lib/nftban/tests
 find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildroot}/usr/lib/nftban/tests/ \;
 
 # Config directories (must match %files section)
-mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
+mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
-mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports,botguard}
+mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports,botguard,community}
+# v1.41.0: Community stats config default
+install -m 0644 install/config/conf.d/community_stats.conf.default %{buildroot}/etc/nftban/conf.d/community_stats.conf.default
 mkdir -p %{buildroot}/var/log/nftban/botguard
 mkdir -p %{buildroot}/var/cache/nftban
 mkdir -p %{buildroot}/run/nftban
@@ -1234,10 +1241,10 @@ trap _nftban_rpm_cleanup EXIT
 
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
-mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
+mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d,access.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,botguard,rbl,tunnel}
 mkdir -p /etc/nftban/patterns.d/botscan
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata,tunnel}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels,botguard,suricata,tunnel,community}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/{reports,watchdog,rbl,botguard,suricata}
 mkdir -p /var/cache/nftban/health
@@ -2634,7 +2641,7 @@ build_deb() {
 
     # Create directory structure
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel},log/nftban/botguard,cache/nftban},run/nftban}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel,community},log/nftban/botguard,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -2776,6 +2783,13 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.socket" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
+    # v1.41.0: Report timer + community stats
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-report-daily.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-report-daily.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.timer" "${deb_root}/usr/lib/systemd/system/"
+    # v1.41.0: Community stats config default
+    install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
     # Sysctl tuning profile (v1.38.0)
     mkdir -p "${deb_root}/etc/sysctl.d"

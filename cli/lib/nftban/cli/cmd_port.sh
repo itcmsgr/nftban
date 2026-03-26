@@ -48,7 +48,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # meta:name="cmd_port"
 # meta:type="cli"
 # meta:header="Port CLI Command"
-# meta:version="1.39.0"
+# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -106,6 +106,15 @@ nftban_cmd_port_help() {
     echo "  nftban port <subcommand> [options]"
     echo ""
     echo "SUBCOMMANDS:"
+    echo "  allow <action> [args]             Per-IP port access (v1.41.0)"
+    echo "    allow add <port> from <ip>      Grant IP access to port"
+    echo "      --proto tcp|udp              Protocol (default: tcp)"
+    echo "      --timeout 1h                 Access duration (default: permanent)"
+    echo "      --comment \"text\"              Reason for access"
+    echo "    allow remove <port> from <ip>   Revoke IP access to port"
+    echo "      --proto tcp|udp              Protocol (default: tcp)"
+    echo "    allow list [--json]             List all per-IP port rules"
+    echo "    allow flush                     Remove all per-IP port rules"
     echo "  status [options] [ports]          Show port status (3-section view)"
     echo "    Options:"
     echo "      --listening                   Show only listening services"
@@ -288,6 +297,12 @@ nftban_cmd_port() {
     fi
 
     case "$subcmd" in
+        allow)
+            # v1.41.0: Per-IP port access management
+            nftban_port_allow_dispatch "$@"
+            return $?
+            ;;
+
         status|list)
             # Show port status (terminal output)
             # Optional: port filter as argument
@@ -833,6 +848,325 @@ nftban_cmd_port() {
             ;;
     esac
 }
+
+# =============================================================================
+# PER-IP PORT ACCESS (v1.41.0)
+# =============================================================================
+
+# Persistence file for port allow rules
+readonly NFTBAN_PORT_ALLOW_CONFIG="${NFTBAN_CONFIG_DIR:-/etc/nftban}/access.d/port_allow.conf"
+
+nftban_port_allow_dispatch() {
+    # Dispatch port allow subcommands
+    local action="${1:-help}"
+    shift || true
+
+    case "$action" in
+        add)    nftban_port_allow_add "$@" ;;
+        remove) nftban_port_allow_remove "$@" ;;
+        list)   nftban_port_allow_list "$@" ;;
+        flush)  nftban_port_allow_flush "$@" ;;
+        help|--help|-h) nftban_port_allow_help ;;
+        *)
+            echo "ERROR: Unknown allow action: $action" >&2
+            echo "Run 'nftban port allow help' for usage" >&2
+            return 1
+            ;;
+    esac
+}
+
+nftban_port_allow_add() {
+    # Add per-IP port access
+    # Usage: nftban port allow add <port> from <ip> [--proto tcp|udp] [--timeout 1h] [--comment "text"]
+
+    local port="" ip="" proto="tcp" timeout_val="" comment_text=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            from) shift; ip="${1:-}"; shift || true ;;
+            --proto) shift; proto="${1:-tcp}"; shift || true ;;
+            --timeout) shift; timeout_val="${1:-}"; shift || true ;;
+            --comment) shift; comment_text="${1:-}"; shift || true ;;
+            *)
+                if [[ -z "$port" ]]; then
+                    port="$1"
+                elif [[ -z "$ip" ]]; then
+                    ip="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Validate required args
+    if [[ -z "$port" || -z "$ip" ]]; then
+        echo "ERROR: Port and IP required" >&2
+        echo "Usage: nftban port allow add <port> from <ip> [--proto tcp|udp] [--timeout 1h]" >&2
+        return 1
+    fi
+
+    # Validate port
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 || "$port" -gt 65535 ]]; then
+        echo "ERROR: Invalid port: $port (must be 1-65535)" >&2
+        return 1
+    fi
+
+    # Validate protocol
+    proto="${proto,,}"
+    if [[ "$proto" != "tcp" && "$proto" != "udp" ]]; then
+        echo "ERROR: Invalid protocol: $proto (must be tcp or udp)" >&2
+        return 1
+    fi
+
+    # Validate IP (basic check — daemon does full validation)
+    if [[ "$ip" != *"."* && "$ip" != *":"* ]]; then
+        echo "ERROR: Invalid IP address: $ip" >&2
+        return 1
+    fi
+
+    # Convert timeout to seconds for IPC
+    local timeout_seconds=0
+    if [[ -n "$timeout_val" ]]; then
+        # Parse duration: 30s, 5m, 1h, 1d
+        case "$timeout_val" in
+            *s) timeout_seconds="${timeout_val%s}" ;;
+            *m) timeout_seconds=$(( ${timeout_val%m} * 60 )) ;;
+            *h) timeout_seconds=$(( ${timeout_val%h} * 3600 )) ;;
+            *d) timeout_seconds=$(( ${timeout_val%d} * 86400 )) ;;
+            *)
+                if [[ "$timeout_val" =~ ^[0-9]+$ ]]; then
+                    timeout_seconds="$timeout_val"
+                else
+                    echo "ERROR: Invalid timeout: $timeout_val (use 30s, 5m, 1h, 1d)" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    fi
+
+    # Persist to config
+    mkdir -p "$(dirname "$NFTBAN_PORT_ALLOW_CONFIG")"
+    chmod 750 "$(dirname "$NFTBAN_PORT_ALLOW_CONFIG")"
+    local iso_date
+    iso_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    echo "${port}|${ip}|${proto}|${timeout_seconds}|${comment_text}|${iso_date}" >> "$NFTBAN_PORT_ALLOW_CONFIG"
+    chmod 640 "$NFTBAN_PORT_ALLOW_CONFIG"
+
+    # Apply via IPC
+    if nft_ipc_is_daemon_running 2>/dev/null; then
+        local params
+        params=$(jq -nc \
+            --arg ip "$ip" \
+            --argjson port "$port" \
+            --arg protocol "$proto" \
+            --argjson timeout "$timeout_seconds" \
+            '{ip: $ip, port: $port, protocol: $protocol, timeout: $timeout}')
+        local response
+        response=$(nft_ipc_request "access_allow" "$params")
+        if nft_ipc_success "$response"; then
+            echo "✅ Port $port ($proto) access granted to $ip"
+            [[ $timeout_seconds -gt 0 ]] && echo "   Expires in: $timeout_val"
+            [[ -n "$comment_text" ]] && echo "   Comment: $comment_text"
+        else
+            echo "⚠ Saved to config but IPC failed: $(nft_ipc_error "$response")" >&2
+            echo "  Port will be applied on daemon restart" >&2
+        fi
+    else
+        echo "✅ Port $port ($proto) access saved for $ip"
+        echo "   ℹ Daemon not running — will apply on start"
+    fi
+
+    return 0
+}
+
+nftban_port_allow_remove() {
+    # Remove per-IP port access
+    # Usage: nftban port allow remove <port> from <ip> [--proto tcp|udp]
+
+    local port="" ip="" proto="tcp"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            from) shift; ip="${1:-}"; shift || true ;;
+            --proto) shift; proto="${1:-tcp}"; shift || true ;;
+            *)
+                if [[ -z "$port" ]]; then
+                    port="$1"
+                elif [[ -z "$ip" ]]; then
+                    ip="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$port" || -z "$ip" ]]; then
+        echo "ERROR: Port and IP required" >&2
+        echo "Usage: nftban port allow remove <port> from <ip> [--proto tcp|udp]" >&2
+        return 1
+    fi
+
+    proto="${proto,,}"
+
+    # Remove from config file
+    if [[ -f "$NFTBAN_PORT_ALLOW_CONFIG" ]]; then
+        local pattern="^${port}|${ip}|${proto}|"
+        if grep -q "$pattern" "$NFTBAN_PORT_ALLOW_CONFIG" 2>/dev/null; then
+            sed -i "/${port}|${ip}|${proto}|/d" "$NFTBAN_PORT_ALLOW_CONFIG"
+            echo "✓ Removed from config"
+        else
+            echo "⚠ Entry not found in config" >&2
+        fi
+    fi
+
+    # Revoke via IPC
+    if nft_ipc_is_daemon_running 2>/dev/null; then
+        local params
+        params=$(jq -nc \
+            --arg ip "$ip" \
+            --argjson port "$port" \
+            --arg protocol "$proto" \
+            '{ip: $ip, port: $port, protocol: $protocol}')
+        local response
+        response=$(nft_ipc_request "access_revoke" "$params")
+        if nft_ipc_success "$response"; then
+            echo "✅ Port $port ($proto) access revoked from $ip"
+        else
+            echo "⚠ IPC revoke failed: $(nft_ipc_error "$response")" >&2
+        fi
+    else
+        echo "✅ Port $port ($proto) access removed from config"
+        echo "   ℹ Daemon not running — change takes effect on start"
+    fi
+
+    return 0
+}
+
+nftban_port_allow_list() {
+    # List all per-IP port access rules
+    # Usage: nftban port allow list [--json]
+
+    local json_output=false
+    [[ "${1:-}" == "--json" ]] && json_output=true
+
+    if [[ ! -f "$NFTBAN_PORT_ALLOW_CONFIG" ]] || [[ ! -s "$NFTBAN_PORT_ALLOW_CONFIG" ]]; then
+        if [[ "$json_output" == "true" ]]; then
+            echo '{"rules":[]}'
+        else
+            echo "No per-IP port access rules configured"
+        fi
+        return 0
+    fi
+
+    if [[ "$json_output" == "true" ]]; then
+        # JSON output
+        echo '{"rules":['
+        local first=true
+        while IFS='|' read -r port ip proto timeout comment date; do
+            [[ -z "$port" || "$port" == "#"* ]] && continue
+            if [[ "$first" == "true" ]]; then
+                first=false
+            else
+                echo ","
+            fi
+            printf '{"port":%s,"ip":"%s","protocol":"%s","timeout":%s,"comment":"%s","added":"%s"}' \
+                "$port" "$ip" "$proto" "$timeout" "$comment" "$date"
+        done < "$NFTBAN_PORT_ALLOW_CONFIG"
+        echo ']}'
+    else
+        # Table output
+        printf "%-7s %-8s %-40s %-12s %s\n" "PORT" "PROTO" "IP" "EXPIRES" "COMMENT"
+        printf "%-7s %-8s %-40s %-12s %s\n" "-------" "--------" "----------------------------------------" "------------" "-------"
+        while IFS='|' read -r port ip proto timeout comment date; do
+            [[ -z "$port" || "$port" == "#"* ]] && continue
+            local expires="permanent"
+            if [[ "$timeout" -gt 0 ]]; then
+                expires="${timeout}s"
+            fi
+            printf "%-7s %-8s %-40s %-12s %s\n" "$port" "$proto" "$ip" "$expires" "$comment"
+        done < "$NFTBAN_PORT_ALLOW_CONFIG"
+    fi
+
+    return 0
+}
+
+nftban_port_allow_flush() {
+    # Flush all per-IP port access rules
+
+    echo "Flushing all per-IP port access rules..."
+
+    # Clear config
+    if [[ -f "$NFTBAN_PORT_ALLOW_CONFIG" ]]; then
+        : > "$NFTBAN_PORT_ALLOW_CONFIG"
+        echo "✓ Config cleared"
+    fi
+
+    # Flush nft sets via IPC
+    if nft_ipc_is_daemon_running 2>/dev/null; then
+        local families=("ip" "ip6")
+        local sets=("port_allow_tcp" "port_allow_udp")
+        for fam in "${families[@]}"; do
+            local suffix="_ipv4"
+            [[ "$fam" == "ip6" ]] && suffix="_ipv6"
+            for set_base in "${sets[@]}"; do
+                nft_ipc_flush_set "${fam} nftban" "${set_base}${suffix}" 2>/dev/null || true
+            done
+        done
+        echo "✅ All per-IP port access rules flushed"
+    else
+        echo "✅ Config cleared (daemon not running — sets empty on start)"
+    fi
+
+    return 0
+}
+
+nftban_port_allow_help() {
+    echo "PER-IP PORT ACCESS (v1.41.0)"
+    echo ""
+    echo "Grant specific IPs access to specific ports without opening the port globally."
+    echo "Banned IPs are ALWAYS blocked (blacklist rules have higher priority)."
+    echo ""
+    echo "USAGE:"
+    echo "  nftban port allow add <port> from <ip> [options]"
+    echo "  nftban port allow remove <port> from <ip> [--proto tcp|udp]"
+    echo "  nftban port allow list [--json]"
+    echo "  nftban port allow flush"
+    echo ""
+    echo "OPTIONS:"
+    echo "  --proto tcp|udp       Protocol (default: tcp)"
+    echo "  --timeout <duration>  Access duration (30s, 5m, 1h, 1d; default: permanent)"
+    echo "  --comment \"text\"      Reason for access grant"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  # Allow admin MySQL access for 1 hour"
+    echo "  nftban port allow add 3306 from 10.0.0.5 --timeout 1h --comment 'DB admin'"
+    echo ""
+    echo "  # Allow permanent SSH access for office IP"
+    echo "  nftban port allow add 22 from 203.0.113.10 --comment 'Office IP'"
+    echo ""
+    echo "  # Allow UDP DNS from monitoring server"
+    echo "  nftban port allow add 53 from 10.0.0.100 --proto udp"
+    echo ""
+    echo "  # List all rules"
+    echo "  nftban port allow list"
+    echo ""
+    echo "  # Revoke access"
+    echo "  nftban port allow remove 3306 from 10.0.0.5"
+    echo ""
+    echo "PRECEDENCE:"
+    echo "  Blacklist (ban) > Port Allow > Global port rules"
+    echo "  A banned IP CANNOT access ports via 'port allow'."
+    echo ""
+}
+
+export -f nftban_port_allow_dispatch
+export -f nftban_port_allow_add
+export -f nftban_port_allow_remove
+export -f nftban_port_allow_list
+export -f nftban_port_allow_flush
+export -f nftban_port_allow_help
 
 # =============================================================================
 

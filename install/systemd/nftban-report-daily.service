@@ -1,0 +1,63 @@
+# =============================================================================
+# NFTBan v1.41.0 - Daily Report Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-report-daily.service"
+# meta:type="systemd"
+# meta:version="1.41.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Oneshot service for daily report generation"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Daily Report Generation
+Documentation=man:nftban(8)
+After=nftband.service
+Wants=nftband.service
+
+[Service]
+Type=oneshot
+
+# Generate and optionally email the daily report
+ExecStart=/usr/sbin/nftban report run daily
+
+# Exit codes: 0=OK, 1=error (non-fatal — don't restart)
+SuccessExitStatus=0 1
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Filesystem access
+ReadOnlyPaths=/etc/nftban /var/lib/nftban /var/log/nftban
+ReadWritePaths=/var/lib/nftban/reports
+
+# Network for email delivery
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=128M
+TasksMax=10
+TimeoutStartSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-report-daily
+
+[Install]
+WantedBy=multi-user.target
