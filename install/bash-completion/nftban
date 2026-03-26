@@ -65,7 +65,7 @@ _nftban() {
     local gui_cmds="status enable disable help"
     local metrics_cmds="status enable disable help"
     local stats_cmds="top ip recent monitor export --json help"
-    local report_cmds="generate schedule email --json help"
+    local report_cmds="generate run schedule email email-setup list status --json help"
     local fhs_cmds="check status --json help"
     local module_cmds="list status --json help"
     local services_cmds="status list detailed summary --json help"
@@ -83,7 +83,7 @@ _nftban() {
 
     # System & Infrastructure
     local nftables_cmds="status reload reset backup restore --json help"
-    local port_cmds="add remove block unblock status detailed list help"
+    local port_cmds="add remove block unblock allow status detailed list allow-panel egress help"
     local port_protocols="tcp udp both"
     local port_directions="in out inout"
     local system_cmds="status enable disable install uninstall --json help"
@@ -100,7 +100,7 @@ _nftban() {
     local configtest_cmds="--verbose --json help"
     local configaudit_cmds="--json help"
     local polkit_cmds="validate static runtime status groups rules test help"
-    local pro_cmds="status enroll unenroll license help"
+    local pro_cmds="status enroll disable token inventory license-check community help"
     local queue_cmds="status list process dlq metrics help"
     local rbl_cmds="check server status list enable disable cache alert critical watchlist help"
     local support_cmds="--network help"
@@ -457,11 +457,43 @@ _nftban() {
                             ;;
                     esac
                     ;;
+                pro)
+                    case "${sub_cmd}" in
+                        token)
+                            COMPREPLY=($(compgen -W "check rotate revoke" -- "${cur}"))
+                            ;;
+                        inventory)
+                            COMPREPLY=($(compgen -W "show run submit" -- "${cur}"))
+                            ;;
+                        community)
+                            COMPREPLY=($(compgen -W "show enable disable status submit" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                report)
+                    case "${sub_cmd}" in
+                        schedule)
+                            COMPREPLY=($(compgen -W "enable disable status" -- "${cur}"))
+                            ;;
+                        run)
+                            COMPREPLY=($(compgen -W "daily weekly monthly" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
                 port)
                     case "${sub_cmd}" in
                         add|remove|block|unblock)
                             # Expecting port number - show hint
                             COMPREPLY=($(compgen -W "22 80 443 25 465 587 3306 5432 8080 8443" -- "${cur}"))
+                            ;;
+                        allow)
+                            COMPREPLY=($(compgen -W "add remove list flush help" -- "${cur}"))
+                            ;;
+                        allow-panel)
+                            COMPREPLY=($(compgen -W "directadmin cpanel plesk" -- "${cur}"))
+                            ;;
+                        egress)
+                            COMPREPLY=($(compgen -W "status audit enforce report --json help" -- "${cur}"))
                             ;;
                     esac
                     ;;
