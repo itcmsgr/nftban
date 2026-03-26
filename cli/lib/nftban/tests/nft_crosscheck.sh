@@ -192,6 +192,8 @@ EXPECTED_COUNTERS=(
     "output_tcp_accept"
     "output_udp_accept"
     "output_egress_audit"
+    "total_input_accept"
+    "total_input_drop"
 )
 
 for family in ip ip6; do

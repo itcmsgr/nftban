@@ -1453,17 +1453,19 @@ output_json() {
         "/usr/lib/nftban/bin/nftban-core"
         "/usr/lib/nftban/bin/nftband"
     )
-    for json_binary in "${json_binaries[@]}"; do
-        if [[ -f "$json_binary" ]]; then
-            local json_file_type
-            json_file_type=$(file -b "$json_binary" 2>/dev/null)
-            if [[ "$json_file_type" != *"ELF"* ]]; then
-                json_binaries_valid=false
-                [[ -n "$json_corrupted_binaries" ]] && json_corrupted_binaries+=","
-                json_corrupted_binaries+="\"$(basename "$json_binary")\""
+    if command -v file >/dev/null 2>&1; then
+        for json_binary in "${json_binaries[@]}"; do
+            if [[ -f "$json_binary" ]]; then
+                local json_file_type
+                json_file_type=$(file -b "$json_binary" 2>/dev/null)
+                if [[ "$json_file_type" != *"ELF"* ]]; then
+                    json_binaries_valid=false
+                    [[ -n "$json_corrupted_binaries" ]] && json_corrupted_binaries+=","
+                    json_corrupted_binaries+="\"$(basename "$json_binary")\""
+                fi
             fi
-        fi
-    done
+        done
+    fi
 
     echo "  \"health\": {"
     echo "    \"status\": \"$health_status\","

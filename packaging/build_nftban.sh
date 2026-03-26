@@ -1303,6 +1303,8 @@ fi
 
 # Directory ownership (fhs-permissions.sh only handles files, not dirs)
 chown nftban:nftban /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
+# Fix log file ownership for daemon-created logs (v1.42.0)
+chown nftban:nftban /var/log/nftban/login-monitor.log 2>/dev/null || true
 chmod 0750 /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
 chown nftban:nftban /var/lib/nftban/tunnel 2>/dev/null || true
 chmod 0750 /var/lib/nftban/tunnel 2>/dev/null || true

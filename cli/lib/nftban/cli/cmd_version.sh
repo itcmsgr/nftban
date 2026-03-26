@@ -178,7 +178,7 @@ nftban_cmd_version() {
                 json_output=true
                 shift
                 ;;
-            --help|-h)
+            --help|-h|help)
                 nftban_cmd_version_usage
                 return 0
                 ;;

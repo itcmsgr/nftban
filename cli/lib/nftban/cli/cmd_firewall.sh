@@ -1375,7 +1375,8 @@ firewall_record() {
         local actual_policy=""
         if nft list chain ip nftban "$chain_name" &>/dev/null; then
             local chain_info
-            chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null | head -3)
+            chain_info=$(nft list chain ip nftban "$chain_name" 2>/dev/null || true)
+            chain_info=$(echo "$chain_info" | head -3)
             actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || true)
         fi
 
@@ -1402,7 +1403,8 @@ firewall_record() {
         local actual_policy=""
         if nft list chain ip6 nftban "$chain_name" &>/dev/null; then
             local chain_info
-            chain_info=$(nft list chain ip6 nftban "$chain_name" 2>/dev/null | head -3)
+            chain_info=$(nft list chain ip6 nftban "$chain_name" 2>/dev/null || true)
+            chain_info=$(echo "$chain_info" | head -3)
             actual_policy=$(echo "$chain_info" | grep -oP 'policy \K[a-z]+' || true)
         fi
 
