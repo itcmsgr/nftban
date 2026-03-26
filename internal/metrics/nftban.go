@@ -147,6 +147,21 @@ var (
 		Help:      "Whether feed data is stale (1=stale, 0=fresh). Stale = file mtime older than threshold",
 	}, []string{"feed"})
 
+	// v1.40.0: Ban duration histogram — time from ban to unban
+	banDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Name:      "ban_duration_seconds",
+		Help:      "Duration of bans from ban to unban (seconds)",
+		Buckets:   prometheus.ExponentialBuckets(60, 2, 16), // 1min to ~45 days
+	})
+
+	// v1.40.0: New unique IP velocity — distinct IPs banned for the first time
+	newUniqueIPsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "new_unique_ips_total",
+		Help:      "Total distinct IPs banned for the first time (not re-bans)",
+	}, []string{"family"})
+
 	// v1.40.0: Ban enforcement latency — time from enqueue to nftables insertion
 	banEnforcementLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "nftban",
@@ -581,14 +596,47 @@ var (
 // Metric Recording Functions
 // =============================================================================
 
+// banStartTimes tracks when IPs were banned (for duration histogram)
+var banStartTimes sync.Map // key: string (IP), value: time.Time
+
+// seenIPs tracks all IPs ever banned (for unique IP velocity)
+var seenIPs sync.Map // key: string (family+IP), value: struct{}
+
 // RecordBan records a successful ban operation
 func RecordBan(source, family string) {
 	bansTotal.WithLabelValues(source, family).Inc()
 }
 
+// RecordBanWithIP records a ban and tracks start time + unique IP velocity
+func RecordBanWithIP(source, family, ip string) {
+	bansTotal.WithLabelValues(source, family).Inc()
+
+	// Track ban start time for duration histogram
+	banStartTimes.Store(ip, time.Now())
+
+	// Track unique IP velocity
+	key := family + ":" + ip
+	if _, loaded := seenIPs.LoadOrStore(key, struct{}{}); !loaded {
+		newUniqueIPsTotal.WithLabelValues(family).Inc()
+	}
+}
+
 // RecordUnban records a successful unban operation
 func RecordUnban(source, family string) {
 	unbansTotal.WithLabelValues(source, family).Inc()
+}
+
+// RecordUnbanWithIP records an unban and observes ban duration if start time is known
+func RecordUnbanWithIP(source, family, ip string) {
+	unbansTotal.WithLabelValues(source, family).Inc()
+
+	// Observe ban duration
+	if startTime, ok := banStartTimes.LoadAndDelete(ip); ok {
+		if t, ok := startTime.(time.Time); ok {
+			duration := time.Since(t).Seconds()
+			banDurationSeconds.Observe(duration)
+		}
+	}
 }
 
 // RecordBanError records a ban operation error
