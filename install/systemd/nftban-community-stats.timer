@@ -1,0 +1,42 @@
+# =============================================================================
+# NFTBan v1.41.0 - Community Stats Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-community-stats.timer"
+# meta:type="systemd"
+# meta:version="1.41.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Timer for anonymous community stats submission (opt-in)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/community_stats.conf"
+# meta:inventory.systemd_units="nftban-community-stats.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Anonymous Community Stats Timer
+Documentation=man:nftban(8)
+# Only runs if community stats are enabled
+ConditionPathExists=/etc/nftban/conf.d/community_stats.conf
+
+[Timer]
+# Run daily
+OnCalendar=daily
+
+# JITTER: 30m variance
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host
+FixedRandomDelay=true
+
+# Persist across reboots
+Persistent=true
+
+# Unit to activate
+Unit=nftban-community-stats.service
+
+[Install]
+WantedBy=timers.target

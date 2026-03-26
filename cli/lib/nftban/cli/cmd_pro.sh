@@ -8,7 +8,7 @@
 # meta:name="cmd_pro"
 # meta:type="cli"
 # meta:header="Pro Subscription CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -946,12 +946,16 @@ nftban_cmd_pro() {
             # Internal command for timer
             nftban_pro_cmd_license_check "$@"
             ;;
+        community)
+            # v1.41.0: Anonymous community stats
+            nftban_pro_cmd_community "$@"
+            ;;
         help|--help|-h)
             nftban_cmd_pro_help
             ;;
         *)
             echo "Unknown command: $subcommand"
-            echo "Usage: nftban pro {enroll|status|disable|token|inventory|help}"
+            echo "Usage: nftban pro {enroll|status|disable|token|inventory|community|help}"
             return 1
             ;;
     esac

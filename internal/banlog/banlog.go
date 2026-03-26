@@ -6,7 +6,7 @@
 //
 // meta:name="banlog"
 // meta:type="package"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Central ban logging with audit trail support"
 // meta:inventory.files="/var/log/nftban/bans.log"
@@ -19,6 +19,8 @@
 package banlog
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sync"
@@ -31,9 +33,10 @@ import (
 // =============================================================================
 // NFTBan Central Ban Log
 // =============================================================================
-// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
-// Example: 2025-12-09|14:30:45|manual|192.168.1.100|US|BANNED|brute_force_ssh
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID
+// Example: 2025-12-09|14:30:45|manual|192.168.1.100|US|BANNED|brute_force_ssh|a1b2c3d4e5f6g7h8
 // Note: REASON field is optional (empty string if not provided)
+// Note: BAN_ID field (v1.41.0) links BAN→UNBAN entries. Empty for pre-v1.41.0 compat.
 //
 // This log is read by nftban_stats.sh for ACTIVITY HISTORY dashboard:
 // - login (SSH/auth failures)
@@ -106,6 +109,13 @@ func writeEntry(ip, source, country, status string) error {
 
 // writeEntryWithReason writes a log entry to ban.log with optional reason for audit
 func writeEntryWithReason(ip, source, country, status, reason string) error {
+	return writeEntryWithReasonAndID(ip, source, country, status, reason, "")
+}
+
+// writeEntryWithReasonAndID writes a log entry with optional reason and ban correlation ID
+// v1.41.0: Format is now 8 fields: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID
+// The 8th field is backward compatible — existing parsers using cut -d'|' -fN with N<=7 ignore it
+func writeEntryWithReasonAndID(ip, source, country, status, reason, banID string) error {
 	logMutex.Lock()
 	defer logMutex.Unlock()
 
@@ -124,8 +134,7 @@ func writeEntryWithReason(ip, source, country, status, reason string) error {
 	}
 	defer f.Close()
 
-	// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
-	// Note: REASON field added for audit trail (empty if not provided)
+	// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID
 	now := time.Now()
 	date := now.Format("2006-01-02")
 	timeStr := now.Format("15:04:05")
@@ -141,7 +150,7 @@ func writeEntryWithReason(ip, source, country, status, reason string) error {
 	// Sanitize reason (remove pipe characters to preserve format)
 	reason = sanitizeReason(reason)
 
-	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s\n", date, timeStr, source, ip, country, status, reason)
+	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s\n", date, timeStr, source, ip, country, status, reason, banID)
 
 	if _, err := f.WriteString(logLine); err != nil {
 		return fmt.Errorf("failed to write to ban log: %w", err)
@@ -183,6 +192,30 @@ func LogBanWithReason(ip, source, country, reason string) error {
 // Format: DATE|TIME|SOURCE|IP|COUNTRY|UNBANNED|REASON
 func LogUnbanWithReason(ip, source, country, reason string) error {
 	return writeEntryWithReason(ip, source, country, StatusUnbanned, reason)
+}
+
+// LogBanWithID writes a ban entry with a reason and correlation ID (v1.41.0)
+// The banID links this BAN entry to a future UNBAN entry for the same incident
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|BANNED|REASON|BAN_ID
+func LogBanWithID(ip, source, country, reason, banID string) error {
+	return writeEntryWithReasonAndID(ip, source, country, StatusBanned, reason, banID)
+}
+
+// LogUnbanWithID writes an unban entry with a correlation ID (v1.41.0)
+// The banID should match the ID from the original ban entry
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|UNBANNED|REASON|BAN_ID
+func LogUnbanWithID(ip, source, country, reason, banID string) error {
+	return writeEntryWithReasonAndID(ip, source, country, StatusUnbanned, reason, banID)
+}
+
+// GenerateBanID creates a unique 16-char hex ban correlation ID
+func GenerateBanID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 // sanitizeReason removes pipe characters from reason to preserve log format

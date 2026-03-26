@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftband"
 // meta:type="cmd"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Daemon initialization, configuration, and startup sequence"
 //
@@ -190,7 +190,10 @@ func (d *Daemon) Run() error {
 				banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
 			}
 			country := lookupCountry(e.IP)
-			_ = banlog.LogBanWithReason(e.IP, banSource, country, reason)
+			// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
+			banID := banlog.GenerateBanID()
+			d.banIDMap.Store(e.IP, banID)
+			_ = banlog.LogBanWithID(e.IP, banSource, country, reason, banID)
 
 			// Check persistent offender escalation for temp bans
 			// If this IP has been temp-banned too many times, escalate to permanent
@@ -199,6 +202,16 @@ func (d *Daemon) Run() error {
 			}
 		}
 	})
+
+	// v1.41.0: Subscribe attack rate tracker to ban/ddos/portscan events
+	attackTracker := metrics.GetAttackRateTracker()
+	for _, et := range []eventbus.EventType{eventbus.EventBan, eventbus.EventDDoSDetected, eventbus.EventPortscan} {
+		et := et // capture for closure
+		d.bus.Subscribe(et, func(e eventbus.Event) {
+			_ = et // avoid unused warning
+			attackTracker.RecordAttack()
+		})
+	}
 
 	// Start Unix socket
 	log.Println("Starting Unix socket...")
@@ -482,6 +495,21 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		d.setCounters.SetReconciled(setName, int64(count))
 		if count > 0 {
 			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
+		}
+	}
+
+	// v1.41.0: Also check port_allow concat sets
+	portAllowSets := []string{
+		"port_allow_tcp_ipv4", "port_allow_udp_ipv4",
+		"port_allow_tcp_ipv6", "port_allow_udp_ipv6",
+	}
+	for _, setName := range portAllowSets {
+		count, err := wrapper.GetSetCount("nftban", setName)
+		if err != nil {
+			continue // Port allow sets may not exist on older schemas
+		}
+		if count > 0 {
+			d.setCounters.SetReconciled(setName, int64(count))
 		}
 	}
 

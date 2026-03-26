@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_schema" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.41.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -114,6 +114,10 @@ declare -g -A NFTBAN_IPV4_SETS=(
     ["http_bot_grey"]="ipv4_addr|timeout|Suspicious bots, throttled"
     ["http_bot_ban"]="ipv4_addr|timeout|Denied/malicious bots"
     ["http_bot_emergency"]="ipv4_addr|timeout|Emergency pressure blocks"
+
+    # v1.41.0: Per-IP port access concat sets
+    ["port_allow_tcp_ipv4"]="ipv4_addr . inet_service|timeout|Per-IP TCP port access (concat)"
+    ["port_allow_udp_ipv4"]="ipv4_addr . inet_service|timeout|Per-IP UDP port access (concat)"
 )
 
 # Chains in ip nftban (IPv4)
@@ -174,6 +178,10 @@ declare -g -A NFTBAN_IPV6_SETS=(
     ["http_bot_grey6"]="ipv6_addr|timeout|Suspicious bots, throttled"
     ["http_bot_ban6"]="ipv6_addr|timeout|Denied/malicious bots"
     ["http_bot_emergency6"]="ipv6_addr|timeout|Emergency pressure blocks"
+
+    # v1.41.0: Per-IP port access concat sets
+    ["port_allow_tcp_ipv6"]="ipv6_addr . inet_service|timeout|Per-IP TCP port access (concat)"
+    ["port_allow_udp_ipv6"]="ipv6_addr . inet_service|timeout|Per-IP UDP port access (concat)"
 )
 
 # Chains in ip6 nftban (IPv6)
@@ -915,8 +923,8 @@ nftban_nft_validate_set_flags() {
         local set_info
         set_info=$(nft list set ip nftban "$set_name" 2>/dev/null)
 
-        # Check type
-        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' || true)
+        # Check type (v1.41.0: supports concat types like "ipv4_addr . inet_service")
+        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_ .]+' | sed 's/ *$//' || true)
         actual_type=$(echo "$actual_type" | head -1)
         [[ -z "$actual_type" ]] && actual_type=""
         if [[ "$actual_type" != "$expected_type" ]]; then
@@ -954,8 +962,8 @@ nftban_nft_validate_set_flags() {
         local set_info
         set_info=$(nft list set ip6 nftban "$set_name" 2>/dev/null)
 
-        # Check type
-        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_]+' || true)
+        # Check type (v1.41.0: supports concat types like "ipv6_addr . inet_service")
+        actual_type=$(echo "$set_info" | grep -oP 'type \K[a-z0-9_ .]+' | sed 's/ *$//' || true)
         actual_type=$(echo "$actual_type" | head -1)
         [[ -z "$actual_type" ]] && actual_type=""
         if [[ "$actual_type" != "$expected_type" ]]; then
@@ -1010,7 +1018,12 @@ nftban_nft_validate_rule_order() {
         established_handle=$(echo "$established_handle" | head -1)
         [[ -z "$established_handle" ]] && established_handle=0
 
-        # Validate order: whitelist < blacklist < established
+        # v1.41.0: Find port_allow handle
+        local port_allow_handle=0
+        port_allow_handle=$(echo "$rules" | grep -E "port_allow_tcp.*accept" | grep -oP 'handle \K[0-9]+' | head -1 || true)
+        [[ -z "$port_allow_handle" ]] && port_allow_handle=0
+
+        # Validate order: whitelist < blacklist < port_allow < established
         if [[ $whitelist_handle -gt 0 && $blacklist_handle -gt 0 ]]; then
             if [[ $whitelist_handle -gt $blacklist_handle ]]; then
                 echo "WARNING: ${family} nftban: Whitelist rule should come BEFORE blacklist rule" >&2
@@ -1024,9 +1037,68 @@ nftban_nft_validate_rule_order() {
                 status=1
             fi
         fi
+
+        # v1.41.0: port_allow must be AFTER blacklist (bans win) and BEFORE established
+        if [[ $port_allow_handle -gt 0 ]]; then
+            if [[ $blacklist_handle -gt 0 && $port_allow_handle -lt $blacklist_handle ]]; then
+                echo "CRITICAL: ${family} nftban: port_allow MUST come AFTER blacklist rules!" >&2
+                echo "  Current order allows port-allowed IPs to bypass bans!" >&2
+                status=1
+            fi
+            if [[ $established_handle -gt 0 && $port_allow_handle -gt $established_handle ]]; then
+                echo "WARNING: ${family} nftban: port_allow should come BEFORE 'ct state established'" >&2
+            fi
+        fi
     done
 
     return $status
+}
+
+nftban_nft_validate_named_counters() {
+    # v1.41.0: Validate named counters exist in nftables
+    # WARNING only (not error) for backward compat with pre-v1.41.0 schemas
+    # Returns: 0 always (warnings only)
+
+    local warnings=0
+
+    # Expected named counters per family (v1.41.0)
+    local -a expected_counters=(
+        "input_invalid_drop"
+        "input_whitelist_accept"
+        "input_blacklist_manual_drop"
+        "input_blacklist_drop"
+        "input_port_allow_tcp_accept"
+        "input_port_allow_udp_accept"
+        "input_ct_ssh_drop"
+        "input_ct_http_drop"
+        "input_ct_mail_drop"
+        "output_loopback_accept"
+        "output_established_accept"
+        "output_tcp_accept"
+        "output_udp_accept"
+    )
+
+    for family in ip ip6; do
+        local found=0
+        local missing=0
+        for counter_name in "${expected_counters[@]}"; do
+            if nft list counter "$family" nftban "$counter_name" &>/dev/null; then
+                ((found++)) || true
+            else
+                ((missing++)) || true
+            fi
+        done
+
+        if [[ $found -eq 0 ]]; then
+            echo "WARNING: ${family} nftban: No named counters found (using anonymous counters — consider 'nftban firewall rebuild')" >&2
+            ((warnings++)) || true
+        elif [[ $missing -gt 0 ]]; then
+            echo "WARNING: ${family} nftban: $missing of ${#expected_counters[@]} named counters missing" >&2
+            ((warnings++)) || true
+        fi
+    done
+
+    return 0
 }
 
 nftban_nft_validate_full() {
@@ -1138,9 +1210,22 @@ nftban_nft_validate_full() {
         ((warnings++)) || true
     fi
 
+    # 7b. Validate named counters (v1.41.0 — WARNING only)
+    echo ""
+    echo "7b. Named Counters (v1.41.0):"
+    if output=$(nftban_nft_validate_named_counters 2>&1); then
+        if [[ -z "$output" ]]; then
+            echo "   ✅ Named counters present"
+        else
+            echo "   ⚠️  Named counter issues"
+            echo "$output" | sed 's/^/      /'
+            ((warnings++)) || true
+        fi
+    fi
+
     # Show element counts
     echo ""
-    echo "7. Current Set Sizes:"
+    echo "8. Current Set Sizes:"
     local ipv4_wl ipv4_bl ipv4_tcp ipv4_udp ipv6_wl ipv6_bl
     ipv4_wl=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -c "elements = {" || echo 0)
     ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
@@ -1183,6 +1268,7 @@ export -f nftban_nft_validate_sets
 export -f nftban_nft_validate_chains
 export -f nftban_nft_validate_set_flags
 export -f nftban_nft_validate_rule_order
+export -f nftban_nft_validate_named_counters
 export -f nftban_nft_validate_full
 export -f nftban_nft_get_table_for_ip
 export -f nftban_nft_get_set_name
