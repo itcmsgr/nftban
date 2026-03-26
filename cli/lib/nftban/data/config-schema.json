@@ -3,14 +3,14 @@
   "$id": "https://nftban.com/schemas/config-v1.json",
   "title": "NFTBan Configuration Schema",
   "description": "Schema for NFTBan configuration validation and audit",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "type": "object",
   "metadata": {
     "schema_version": 1,
     "min_nftban_version": "1.0.0",
     "documentation_url": "https://nftban.com/docs/config",
     "generated_at": "2026-01-11T17:46:56+02:00",
-    "key_count": 909
+    "key_count": 957
   },
   "definitions": {
     "boolean_string": {
@@ -9855,6 +9855,471 @@
       "category": "features",
       "config_file": "conf.d/trust.conf",
       "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_CONSOLE": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Monitor console/TTY logins",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable/disable login monitoring master switch",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_FAILED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Alert on failed login attempts",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_FORMAT": {
+      "type": "string",
+      "default": "html",
+      "description": "Email alert format (html or text)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_GEOIP": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Include GeoIP location in alerts",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_LOG": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/log/nftban/login_alert.log",
+      "description": "Log file for login events",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_MODE": {
+      "type": "string",
+      "default": "realtime",
+      "description": "Alert mode (realtime, digest, both)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_SSH": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Monitor SSH logins",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_SU": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Monitor su command usage",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_ALERT_SUDO": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Monitor sudo command usage",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_DIGEST_FILE": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/lib/nftban/login_digest.json",
+      "description": "Digest data file location",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_DIGEST_TIME": {
+      "type": "string",
+      "default": "08:00",
+      "description": "Digest schedule time (HH:MM)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_FAILED_THRESHOLD": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "10",
+      "description": "Failed attempts before auto-ban",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_FAILED_WINDOW": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "300",
+      "description": "Time window for failed attempts (seconds)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_MONITOR_INTERVAL": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "5",
+      "description": "Interval between login checks (seconds)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_LOGIN_WHITELIST": {
+      "type": "string",
+      "default": "",
+      "description": "IPs that won't trigger alerts (space-separated)",
+      "introduced_in": "1.0.0",
+      "category": "monitoring",
+      "config_file": "conf.d/login_alert.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_BACKUP_GENERATIONS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "3",
+      "description": "Number of backup generations to keep",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_BACKUP_RULES": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/lib/nftban/backup.rules",
+      "description": "Backup ruleset location",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_BASELINE_RULES": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/etc/nftban/baseline.nft",
+      "description": "Minimal safe ruleset for emergency recovery",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_EMERGENCY_RESET_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable emergency rule reset",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_REBOOT_AUTO_APPLY": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Auto-apply rules after reboot",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_REBOOT_GRACE_PERIOD": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "300",
+      "description": "Grace period before auto-rollback (seconds)",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_RECOVERY_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable commit-confirm safety system",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_RESET_ON_BOOT": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Auto-reset firewall rules on boot",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_ROLLBACK_ALERT": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Send alert on rollback",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_ROLLBACK_ALERT_EMAIL": {
+      "type": "string",
+      "default": "",
+      "description": "Alert email for recovery events",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_ROLLBACK_CHECK_INTERVAL": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "15",
+      "description": "How often timer checks rollback deadline",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_ROLLBACK_FLAG": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/run/nftban.rollback.deadline",
+      "description": "Rollback flag file location",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_SSH_TEST_BEFORE_APPLY": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "SSH connectivity test before applying rules",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_SSH_TEST_PORT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "22",
+      "description": "SSH test port",
+      "introduced_in": "1.3.0",
+      "category": "security",
+      "config_file": "conf.d/recovery.conf",
+      "active_when": "always"
+    },
+    "NFTABLES_AUTO_START": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Auto-start nftables if not running",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "NFTABLES_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Whether NFTBan manages nftables",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "NFTBAN_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Master switch for NFTBan",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "SERVICES_START_ON_BOOT": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Start services on system boot",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "SURICATA_AUTO_START": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Auto-start Suricata if not running",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "SURICATA_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Whether NFTBan manages Suricata",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "config_file": "conf.d/services.conf",
+      "active_when": "always"
+    },
+    "TRUST_AWS_REGIONS": {
+      "type": "string",
+      "default": "",
+      "description": "Filter by AWS region",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AWS_SERVICES": {
+      "type": "string",
+      "default": "",
+      "description": "Filter by AWS service",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AWS_URL": {
+      "type": "string",
+      "default": "https://ip-ranges.amazonaws.com/ip-ranges.json",
+      "description": "AWS IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AZURE_URL": {
+      "type": "string",
+      "default": "",
+      "description": "Azure IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CLOUDFLARE_IPV4": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable Cloudflare IPv4 ranges",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CLOUDFLARE_IPV4_URL": {
+      "type": "string",
+      "default": "https://www.cloudflare.com/ips-v4",
+      "description": "Cloudflare IPv4 URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CLOUDFLARE_IPV6": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable Cloudflare IPv6 ranges",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CLOUDFLARE_IPV6_URL": {
+      "type": "string",
+      "default": "https://www.cloudflare.com/ips-v6",
+      "description": "Cloudflare IPv6 URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_DIGITALOCEAN_URL": {
+      "type": "string",
+      "default": "https://digitalocean.com/geo/google.csv",
+      "description": "DigitalOcean IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_FASTLY_URL": {
+      "type": "string",
+      "default": "https://api.fastly.com/public-ip-list",
+      "description": "Fastly IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_GOOGLE_URL": {
+      "type": "string",
+      "default": "https://www.gstatic.com/ipranges/cloud.json",
+      "description": "Google Cloud IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_QUICCLOUD_URL": {
+      "type": "string",
+      "default": "https://quic.cloud/ips",
+      "description": "QUIC.cloud IP ranges URL",
+      "introduced_in": "1.0.30",
+      "category": "network",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
     }
   },
   "deprecated": {
@@ -9879,6 +10344,9 @@
     "modules": "Module-specific settings",
     "notifications": "Alert and notification settings",
     "panels": "Hosting panel integration",
-    "detection": "Detection thresholds and tuning"
+    "detection": "Detection thresholds and tuning",
+    "monitoring": "Login monitoring and alerting",
+    "security": "Recovery, rollback, and safety settings",
+    "network": "Trusted provider IP range management"
   }
 }

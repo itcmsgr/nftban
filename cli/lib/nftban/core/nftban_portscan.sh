@@ -828,6 +828,7 @@ nftban_portscan_status() {
            [[ "$ipv4_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv4_jump_index" -gt "$ipv4_accept_index" ]]; then
             echo "    Position:  ❌ WRONG - After service accepts (rule #${ipv4_accept_index})"
             echo "    ⚠️  WARNING: Scans to open ports will NOT be detected!"
+            echo "    Fix: Run 'nftban portscan restart' to reposition the rule"
         else
             echo "    Position:  ✅ CORRECT - Before service accepts"
         fi
@@ -845,6 +846,7 @@ nftban_portscan_status() {
            [[ "$ipv6_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv6_jump_index" -gt "$ipv6_accept_index" ]]; then
             echo "    Position:  ❌ WRONG - After service accepts"
             echo "    ⚠️  WARNING: IPv6 scans to open ports will NOT be detected!"
+            echo "    Fix: Run 'nftban portscan restart' to reposition the rule"
         else
             echo "    Position:  ✅ CORRECT - Before service accepts"
         fi
