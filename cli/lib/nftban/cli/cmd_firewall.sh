@@ -960,9 +960,10 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "  [2/6] Backing up current ruleset..."
     nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
 
-    # Step 3: Flush everything
-    [[ "$quiet" == "false" ]] && echo "  [3/6] Flushing all nftables rules..."
-    nft flush ruleset 2>/dev/null || true
+    # Step 3: Remove NFTBan tables (preserves Docker/cPanel/foreign tables)
+    [[ "$quiet" == "false" ]] && echo "  [3/6] Removing NFTBan tables..."
+    nft delete table ip nftban 2>/dev/null || true
+    nft delete table ip6 nftban 2>/dev/null || true
 
     # Step 4: Reload NFTBan schema
     [[ "$quiet" == "false" ]] && echo "  [4/6] Loading clean NFTBan schema..."

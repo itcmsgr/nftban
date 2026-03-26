@@ -231,6 +231,18 @@ declare -g -A NFTBAN_DEPRECATED_TABLES=(
     ["inet nftban_runtime"]="OLD: v0.6.x runtime table (deprecated)"
 )
 
+# IPTABLES-NFT FOREIGN TABLES (created by iptables-nft translation layer)
+# These shadow tables can conflict with native nftables when using DROP policies
+declare -g -A NFTBAN_IPTABLES_NFT_TABLES=(
+    ["ip filter"]="iptables-nft: created by iptables commands (cPanel, fail2ban, Docker)"
+    ["ip nat"]="iptables-nft: NAT rules from iptables (Docker, port forwards)"
+    ["ip raw"]="iptables-nft: raw table from iptables (conntrack bypass)"
+    ["ip mangle"]="iptables-nft: mangle table from iptables (packet mangling)"
+    ["ip6 filter"]="ip6tables-nft: created by ip6tables commands"
+    ["ip6 nat"]="ip6tables-nft: IPv6 NAT rules from ip6tables"
+    ["ip6 raw"]="ip6tables-nft: IPv6 raw table from ip6tables"
+)
+
 # =============================================================================
 # CONNECTION TRACKING (CT) AND RATE LIMITS
 # =============================================================================
@@ -440,6 +452,15 @@ nftban_nft_validate_tables() {
             echo "INFO: Legacy table exists: ${deprecated_table}" >&2
             echo "  Reason: ${NFTBAN_DEPRECATED_TABLES[$deprecated_table]}" >&2
             echo "  Action: Can be removed after migration to ip/ip6 tables" >&2
+        fi
+    done
+
+    # v1.40.0: Check for iptables-nft foreign tables
+    for foreign_table in "${!NFTBAN_IPTABLES_NFT_TABLES[@]}"; do
+        if echo "$existing_tables" | grep -q "^table ${foreign_table}$"; then
+            echo "WARNING: iptables-nft table detected: ${foreign_table}" >&2
+            echo "  Source: ${NFTBAN_IPTABLES_NFT_TABLES[$foreign_table]}" >&2
+            echo "  Action: iptables -F && iptables -X (if not needed)" >&2
         fi
     done
 
@@ -1097,6 +1118,24 @@ nftban_nft_validate_full() {
     done
     if [[ $deprecated_found -eq 0 ]]; then
         echo "   ✅ No deprecated tables found"
+    fi
+
+    # v1.40.0: Check for iptables-nft foreign tables
+    echo ""
+    echo "   iptables-nft tables:"
+    local foreign_found=0
+    for foreign_table in "${!NFTBAN_IPTABLES_NFT_TABLES[@]}"; do
+        if echo "$existing_tables" | grep -q "^table ${foreign_table}$"; then
+            echo "   ⚠️  ${foreign_table}: ${NFTBAN_IPTABLES_NFT_TABLES[$foreign_table]}"
+            ((foreign_found++)) || true
+        fi
+    done
+    if [[ $foreign_found -eq 0 ]]; then
+        echo "   ✅ No iptables-nft tables found"
+    else
+        echo "   ℹ️  $foreign_found iptables-nft table(s) detected"
+        echo "   └─ Run: iptables -F && iptables -X && ip6tables -F && ip6tables -X"
+        ((warnings++)) || true
     fi
 
     # Show element counts

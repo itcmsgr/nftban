@@ -27,8 +27,9 @@ import (
 
 // FastOp represents a high-priority operation (ban, unban, flush_source, flush_set)
 type FastOp struct {
-	SetName string
-	Op      *SetOp
+	SetName    string
+	Op         *SetOp
+	EnqueuedAt time.Time // v1.40.0: For enforcement latency tracking
 }
 
 // BulkJob represents a low-priority bulk operation (replace_set for feeds/geoban)
@@ -110,7 +111,7 @@ func (s *Scheduler) EnqueueFast(setName string, op *SetOp) error {
 	}
 
 	select {
-	case s.fastCh <- FastOp{SetName: setName, Op: op}:
+	case s.fastCh <- FastOp{SetName: setName, Op: op, EnqueuedAt: time.Now()}:
 		s.fastPending.Add(1)
 		return nil
 	default:
@@ -289,7 +290,17 @@ func (s *Scheduler) applyFastBatch(batch []FastOp) {
 
 	s.fastPending.Add(-int64(len(batch)))
 	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
+	metrics.RecordEventsApplied("fast", applied)
 	s.lastFastFlush.Store(time.Now())
+
+	// v1.40.0: Record per-op enforcement latency
+	now := time.Now()
+	for _, op := range batch {
+		if !op.EnqueuedAt.IsZero() {
+			latency := now.Sub(op.EnqueuedAt).Seconds()
+			metrics.RecordBanEnforcementLatency(op.Op.Type.String(), latency)
+		}
+	}
 }
 
 // drainFastBatch applies remaining fast operations on shutdown
@@ -388,6 +399,7 @@ func (s *Scheduler) processBulkJob(ctx context.Context, job BulkJob) {
 
 	s.bulkPending.Add(-1)
 	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
+	metrics.RecordEventsApplied("bulk", applied)
 	s.lastBulkFlush.Store(time.Now())
 	log.Printf("[scheduler] bulk replace_set %s: %d elements applied", setName, applied)
 }
@@ -459,6 +471,7 @@ func (s *Scheduler) processBulkJobDirect(job BulkJob) {
 
 	s.bulkPending.Add(-1)
 	s.totalApplied.Add(safeconv.ToUint64OrZero(applied))
+	metrics.RecordEventsApplied("bulk", applied)
 	log.Printf("[scheduler] bulk replace_set %s: %d elements applied (shutdown)", setName, applied)
 }
 
@@ -537,6 +550,7 @@ func (s *Scheduler) EnqueueBulkFromFile(ctx context.Context, setName, filePath, 
 
 	// Update stats
 	s.totalApplied.Add(safeconv.ToUint64OrZero(totalApplied))
+	metrics.RecordEventsApplied("bulk", totalApplied)
 	s.lastBulkFlush.Store(time.Now())
 
 	log.Printf("[scheduler] streaming bulk replace_set %s: %d elements applied", setName, totalApplied)
@@ -710,6 +724,7 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 		result := buf.flush(q.backend, q.config.MaxBatchSize)
 		q.pendingCount.Add(-int64(countBefore))
 		q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
+		metrics.RecordEventsApplied("fast", result.Applied)
 	}
 
 	// Determine table
@@ -751,6 +766,7 @@ func (q *OpQueue) EnqueueReplaceFromFile(setName, filePath, source string, batch
 
 	// Update stats
 	q.totalApplied.Add(safeconv.ToUint64OrZero(totalApplied))
+	metrics.RecordEventsApplied("bulk", totalApplied)
 	q.lastFlushTime.Store(time.Now())
 
 	log.Printf("[opqueue] streaming replace_set %s: %d elements applied", setName, totalApplied)
@@ -863,6 +879,7 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 	// Update counters
 	q.pendingCount.Add(-int64(countBefore))
 	q.totalApplied.Add(safeconv.ToUint64OrZero(result.Applied))
+	metrics.RecordEventsApplied("fast", result.Applied)
 	q.lastFlushTime.Store(time.Now())
 
 	// Notify set counter callback (v1.32.0)

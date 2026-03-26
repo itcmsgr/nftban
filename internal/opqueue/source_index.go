@@ -384,6 +384,12 @@ func (si *SourceIndex) SaveToDisk() error {
 	if err := writer.Flush(); err != nil {
 		return err
 	}
+	// v1.40.0: fsync before close to minimize crash window.
+	// Ensures data hits disk before atomic rename, so a crash after rename
+	// won't leave a zero-length or partial file.
+	if err := file.Sync(); err != nil {
+		return err
+	}
 	if err := file.Close(); err != nil {
 		return err
 	}

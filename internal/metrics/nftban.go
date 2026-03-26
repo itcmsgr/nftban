@@ -27,6 +27,7 @@ package metrics
 
 import (
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -131,6 +132,55 @@ var (
 		Namespace: "nftban",
 		Name:      "opqueue_utilization_percent",
 		Help:      "Queue utilization percentage (100 = full, drops occurring)",
+	}, []string{"lane"}) // lane: fast, bulk
+
+	// v1.40.0: Feed staleness tracking — per-feed last-success timestamp and stale flag
+	feedLastSuccessTimestamp = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "feed_last_success_timestamp",
+		Help:      "Unix timestamp of last successful feed file load (from file mtime)",
+	}, []string{"feed"})
+
+	feedStale = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "feed_stale",
+		Help:      "Whether feed data is stale (1=stale, 0=fresh). Stale = file mtime older than threshold",
+	}, []string{"feed"})
+
+	// v1.40.0: Ban duration histogram — time from ban to unban
+	banDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Name:      "ban_duration_seconds",
+		Help:      "Duration of bans from ban to unban (seconds)",
+		Buckets:   prometheus.ExponentialBuckets(60, 2, 16), // 1min to ~45 days
+	})
+
+	// v1.40.0: New unique IP velocity — distinct IPs banned for the first time
+	newUniqueIPsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "new_unique_ips_total",
+		Help:      "Total distinct IPs banned for the first time (not re-bans)",
+	}, []string{"family"})
+
+	// v1.40.0: Ban enforcement latency — time from enqueue to nftables insertion
+	banEnforcementLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Name:      "ban_enforcement_latency_seconds",
+		Help:      "Time from ban enqueue to nftables element insertion",
+		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 16), // 0.1ms to ~3.2s
+	}, []string{"op"}) // op: add, delete, flush
+
+	// v1.40.0: Pipeline event accounting — generated vs applied for gap detection
+	eventsGeneratedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "events_generated_total",
+		Help:      "Total events published to eventbus",
+	}, []string{"type"}) // type: ban, unban, feed_sync, etc.
+
+	eventsAppliedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "events_applied_total",
+		Help:      "Total operations applied to nftables via opqueue",
 	}, []string{"lane"}) // lane: fast, bulk
 
 	// Authentication metrics
@@ -546,14 +596,47 @@ var (
 // Metric Recording Functions
 // =============================================================================
 
+// banStartTimes tracks when IPs were banned (for duration histogram)
+var banStartTimes sync.Map // key: string (IP), value: time.Time
+
+// seenIPs tracks all IPs ever banned (for unique IP velocity)
+var seenIPs sync.Map // key: string (family+IP), value: struct{}
+
 // RecordBan records a successful ban operation
 func RecordBan(source, family string) {
 	bansTotal.WithLabelValues(source, family).Inc()
 }
 
+// RecordBanWithIP records a ban and tracks start time + unique IP velocity
+func RecordBanWithIP(source, family, ip string) {
+	bansTotal.WithLabelValues(source, family).Inc()
+
+	// Track ban start time for duration histogram
+	banStartTimes.Store(ip, time.Now())
+
+	// Track unique IP velocity
+	key := family + ":" + ip
+	if _, loaded := seenIPs.LoadOrStore(key, struct{}{}); !loaded {
+		newUniqueIPsTotal.WithLabelValues(family).Inc()
+	}
+}
+
 // RecordUnban records a successful unban operation
 func RecordUnban(source, family string) {
 	unbansTotal.WithLabelValues(source, family).Inc()
+}
+
+// RecordUnbanWithIP records an unban and observes ban duration if start time is known
+func RecordUnbanWithIP(source, family, ip string) {
+	unbansTotal.WithLabelValues(source, family).Inc()
+
+	// Observe ban duration
+	if startTime, ok := banStartTimes.LoadAndDelete(ip); ok {
+		if t, ok := startTime.(time.Time); ok {
+			duration := time.Since(t).Seconds()
+			banDurationSeconds.Observe(duration)
+		}
+	}
 }
 
 // RecordBanError records a ban operation error
@@ -824,6 +907,57 @@ func SetOpQueueUtilization(lane string, pending, capacity int64) {
 	if capacity > 0 {
 		utilization := float64(pending) / float64(capacity) * 100
 		opqueueUtilization.WithLabelValues(lane).Set(utilization)
+	}
+}
+
+// =============================================================================
+// Pipeline Accounting Functions (v1.40.0)
+// =============================================================================
+// Track events_generated vs events_applied to detect pipeline gaps
+
+// RecordEventGenerated records an event published to the eventbus
+func RecordEventGenerated(eventType string) {
+	eventsGeneratedTotal.WithLabelValues(eventType).Inc()
+}
+
+// RecordEventsApplied records operations applied to nftables via opqueue
+func RecordEventsApplied(lane string, count int) {
+	eventsAppliedTotal.WithLabelValues(lane).Add(float64(count))
+}
+
+// =============================================================================
+// Ban Enforcement Latency Recording Functions (v1.40.0)
+// =============================================================================
+// Track time from enqueue to nftables element insertion
+
+// RecordBanEnforcementLatency records the latency of a ban enforcement operation
+func RecordBanEnforcementLatency(op string, latencySec float64) {
+	banEnforcementLatency.WithLabelValues(op).Observe(latencySec)
+}
+
+// =============================================================================
+// Feed Staleness Recording Functions (v1.40.0)
+// =============================================================================
+// Track per-feed file freshness for alerting on stale threat intelligence
+
+// DefaultFeedStaleThreshold is the default duration after which a feed is considered stale
+const DefaultFeedStaleThreshold = 48 * time.Hour
+
+// RecordFeedLastSuccess records the mtime of a successfully loaded feed file
+func RecordFeedLastSuccess(feedName string, mtime time.Time) {
+	feedLastSuccessTimestamp.WithLabelValues(feedName).Set(float64(mtime.Unix()))
+}
+
+// UpdateFeedStaleness checks all tracked feeds and sets the stale gauge
+// based on whether the feed file mtime is older than the threshold
+func UpdateFeedStaleness(feedName string, mtime time.Time, threshold time.Duration) {
+	if threshold <= 0 {
+		threshold = DefaultFeedStaleThreshold
+	}
+	if time.Since(mtime) > threshold {
+		feedStale.WithLabelValues(feedName).Set(1)
+	} else {
+		feedStale.WithLabelValues(feedName).Set(0)
 	}
 }
 

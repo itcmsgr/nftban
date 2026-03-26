@@ -223,7 +223,7 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	if strings.Contains(ip, ":") {
 		family = "ipv6"
 	}
-	metrics.RecordBan(source, family)
+	metrics.RecordBanWithIP(source, family, ip)
 
 	// Log ban to bans.log for stats tracking
 	banSource := banlog.SourceManual
@@ -302,7 +302,7 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 	if strings.Contains(ip, ":") {
 		family = "ipv6"
 	}
-	metrics.RecordUnban("manual", family)
+	metrics.RecordUnbanWithIP("manual", family, ip)
 
 	// Publish unban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventUnban, "cli").
@@ -442,7 +442,7 @@ func (d *Daemon) handleEvictOldBansRequest(params map[string]any) SocketResponse
 		if strings.Contains(ip, ":") {
 			family = "ipv6"
 		}
-		metrics.RecordUnban("eviction", family)
+		metrics.RecordUnbanWithIP("eviction", family, ip)
 		d.stats.RecordUnban()
 		evicted++
 	}
