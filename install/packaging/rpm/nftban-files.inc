@@ -47,6 +47,7 @@
 %dir %attr(0750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(0750,root,nftban) /etc/nftban/ports.d
 %dir %attr(0750,root,nftban) /etc/nftban/rules.d
+%dir %attr(0750,root,nftban) /etc/nftban/access.d
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/rbl
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/geoban
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/geoip

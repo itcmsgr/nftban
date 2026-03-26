@@ -246,6 +246,14 @@
         "created_by": "package"
       },
       {
+        "path": "/etc/nftban/access.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Per-IP port access rules (v1.41.0)",
+        "created_by": "package"
+      },
+      {
         "path": "/etc/nftban/conf.d/rbl",
         "mode": "0750",
         "owner": "root",
@@ -534,6 +542,14 @@
         "group": "nftban",
         "description": "DNS tunnel suspicion state (scores, history)",
         "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/community",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Community stats data (install ID, submission cache)",
+        "created_by": "package"
       },
       {
         "path": "/var/lib/nftban/analytics",
