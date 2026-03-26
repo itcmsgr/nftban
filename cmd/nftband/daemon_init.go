@@ -172,7 +172,7 @@ func (d *Daemon) Run() error {
 			if strings.Contains(e.IP, ":") {
 				family = "ipv6"
 			}
-			metrics.RecordBan(e.Source, family)
+			metrics.RecordBanWithIP(e.Source, family, e.IP)
 			// Log to bans.log with GeoIP country lookup
 			banSource := banlog.SourceManual
 			switch {
