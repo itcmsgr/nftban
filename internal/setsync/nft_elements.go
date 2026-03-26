@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nft"
 // meta:type="package"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Batch element operations, CIDR support, and timeouts"
 // meta:depends="github.com/google/nftables"
@@ -516,4 +516,133 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	}
 
 	return stats, nil
+}
+
+// =============================================================================
+// CONCAT SET OPERATIONS (v1.41.0 — IP + port concatenation sets)
+// =============================================================================
+
+// GetOrCreateConcatSet creates or retrieves a concat set (IP . port) for per-IP port access.
+// The set type is ipv4_addr . inet_service (or ipv6_addr) with timeout flag.
+func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	// Try to get existing set
+	sets, err := m.conn.GetSets(table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sets: %w", err)
+	}
+
+	for _, set := range sets {
+		if set.Name == setName {
+			return set, nil
+		}
+	}
+
+	// Create concat set: IP address . inet_service
+	addrType := nftables.TypeIPAddr
+	if !ipv4 {
+		addrType = nftables.TypeIP6Addr
+	}
+
+	set := &nftables.Set{
+		Table:      table,
+		Name:       setName,
+		HasTimeout: true,
+		KeyType:    nftables.MustConcatSetType(addrType, nftables.TypeInetService),
+	}
+
+	if err := m.conn.AddSet(set, nil); err != nil {
+		return nil, fmt.Errorf("failed to add concat set %s: %w", setName, err)
+	}
+
+	if err := m.conn.Flush(); err != nil {
+		return nil, fmt.Errorf("failed to flush concat set creation: %w", err)
+	}
+
+	return set, nil
+}
+
+// AddConcatIPPort adds an IP+port element to a concat set.
+// The key is concatenated as [IP bytes][port bytes (big-endian)].
+func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, timeout time.Duration) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port: %d", port)
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP: %s", ipStr)
+	}
+
+	// Build concat key: [IP bytes][port uint16 big-endian]
+	var key []byte
+	if ip4 := ip.To4(); ip4 != nil {
+		// IPv4: 4 bytes IP + padding to 4-byte boundary + 2 bytes port + 2 padding
+		key = make([]byte, 8) // 4 (IP) + 2 (port) + 2 (padding to align)
+		copy(key[0:4], ip4)
+		key[4] = byte(port >> 8)
+		key[5] = byte(port & 0xff)
+	} else if ip6 := ip.To16(); ip6 != nil {
+		// IPv6: 16 bytes IP + 2 bytes port + 2 padding
+		key = make([]byte, 20) // 16 (IP) + 2 (port) + 2 (padding)
+		copy(key[0:16], ip6)
+		key[16] = byte(port >> 8)
+		key[17] = byte(port & 0xff)
+	} else {
+		return fmt.Errorf("cannot convert IP: %s", ipStr)
+	}
+
+	elem := nftables.SetElement{Key: key}
+	if timeout > 0 {
+		elem.Timeout = timeout
+	}
+
+	if err := m.conn.SetAddElements(set, []nftables.SetElement{elem}); err != nil {
+		return fmt.Errorf("failed to add concat element: %w", err)
+	}
+
+	if err := m.conn.Flush(); err != nil {
+		return fmt.Errorf("failed to flush concat element: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteConcatIPPort removes an IP+port element from a concat set.
+func (m *NFTManager) DeleteConcatIPPort(set *nftables.Set, ipStr string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port: %d", port)
+	}
+
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP: %s", ipStr)
+	}
+
+	var key []byte
+	if ip4 := ip.To4(); ip4 != nil {
+		key = make([]byte, 8)
+		copy(key[0:4], ip4)
+		key[4] = byte(port >> 8)
+		key[5] = byte(port & 0xff)
+	} else if ip6 := ip.To16(); ip6 != nil {
+		key = make([]byte, 20)
+		copy(key[0:16], ip6)
+		key[16] = byte(port >> 8)
+		key[17] = byte(port & 0xff)
+	} else {
+		return fmt.Errorf("cannot convert IP: %s", ipStr)
+	}
+
+	if err := m.conn.SetDeleteElements(set, []nftables.SetElement{{Key: key}}); err != nil {
+		return fmt.Errorf("failed to delete concat element: %w", err)
+	}
+
+	if err := m.conn.Flush(); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // Idempotent: element already gone
+		}
+		return fmt.Errorf("failed to flush concat delete: %w", err)
+	}
+
+	return nil
 }

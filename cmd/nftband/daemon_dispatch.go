@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftband"
 // meta:type="cmd"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="IPC request routing and dispatcher"
 //
@@ -97,6 +97,11 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 	// v1.38.0: Source index element count
 	case "source_index_count":
 		return d.handleSourceIndexCountRequest()
+	// v1.41.0: Per-IP port access via concat sets
+	case "access_allow":
+		return d.handleAccessAllowRequest(req.Params)
+	case "access_revoke":
+		return d.handleAccessRevokeRequest(req.Params)
 	default:
 		return SocketResponse{
 			Success: false,

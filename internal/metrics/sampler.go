@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="sampler"
 // meta:type="package"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
 // meta:description="Global metrics sampler with Prometheus integration"
@@ -551,6 +551,9 @@ func (s *Sampler) takeSample() {
 	} else {
 		s.nftablesActiveGauge.Set(0)
 	}
+
+	// v1.41.0: Refresh attack rate gauge (prunes expired entries even without new events)
+	GetAttackRateTracker().RefreshGauge()
 
 	// ==========================================================================
 	// FULL TIER: Only when metricsEnabled (adds file reads and CLI calls)

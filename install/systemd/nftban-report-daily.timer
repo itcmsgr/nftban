@@ -1,0 +1,41 @@
+# =============================================================================
+# NFTBan v1.41.0 - Daily Report Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-report-daily.timer"
+# meta:type="systemd"
+# meta:version="1.41.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Timer for daily report generation"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-report-daily.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Daily Report Generation Timer
+Documentation=man:nftban(8)
+# Timer is NOT enabled by default — user opts in via: nftban report schedule enable daily
+
+[Timer]
+# Run daily at 06:00 AM
+OnCalendar=*-*-* 06:00:00
+
+# JITTER: 30m variance to avoid thundering herd on multi-server deployments
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
+
+# Persist timer across reboots (catch up on missed runs)
+Persistent=true
+
+# Unit to activate
+Unit=nftban-report-daily.service
+
+[Install]
+WantedBy=timers.target

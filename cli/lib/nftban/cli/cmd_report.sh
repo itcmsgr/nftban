@@ -33,7 +33,7 @@ fi
 # meta:name="cmd_report"
 # meta:type="cli"
 # meta:header="Report Generation CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -620,11 +620,25 @@ nftban_report_cmd_email_setup() {
 
 nftban_report_cmd_schedule() {
     # Manage scheduled reports
-    # Usage: nftban report schedule <daily|weekly|monthly|list|remove> [OPTIONS]
+    # Usage: nftban report schedule <enable|disable|status|daily|weekly|monthly|list|remove> [OPTIONS]
 
     local action="${1:-list}"
 
     case "$action" in
+        enable)
+            # v1.41.0: Enable systemd timer for report schedule
+            shift
+            nftban_report_schedule_timer_enable "${1:-daily}"
+            ;;
+        disable)
+            # v1.41.0: Disable systemd timer
+            shift
+            nftban_report_schedule_timer_disable "${1:-daily}"
+            ;;
+        status)
+            # v1.41.0: Show timer state
+            nftban_report_schedule_timer_status
+            ;;
         daily|weekly|monthly)
             shift
             nftban_report_schedule_add "$action" "$@"
@@ -638,10 +652,77 @@ nftban_report_cmd_schedule() {
             ;;
         *)
             echo "ERROR: Unknown schedule action: $action" >&2
-            echo "Valid actions: daily, weekly, monthly, list, remove" >&2
+            echo "Valid actions: enable, disable, status, daily, weekly, monthly, list, remove" >&2
             return 1
             ;;
     esac
+}
+
+# v1.41.0: Systemd timer management for scheduled reports
+
+nftban_report_schedule_timer_enable() {
+    local frequency="${1:-daily}"
+
+    local timer_unit="nftban-report-${frequency}.timer"
+
+    if ! systemctl list-unit-files "$timer_unit" &>/dev/null; then
+        echo "ERROR: Timer unit $timer_unit not found" >&2
+        echo "Only 'daily' timer is available in v1.41.0" >&2
+        return 1
+    fi
+
+    echo "Enabling $timer_unit..."
+    systemctl enable --now "$timer_unit" 2>/dev/null || {
+        echo "ERROR: Failed to enable $timer_unit" >&2
+        return 1
+    }
+
+    echo "Timer enabled. Next run:"
+    systemctl list-timers "$timer_unit" --no-pager 2>/dev/null || true
+    return 0
+}
+
+nftban_report_schedule_timer_disable() {
+    local frequency="${1:-daily}"
+
+    local timer_unit="nftban-report-${frequency}.timer"
+
+    echo "Disabling $timer_unit..."
+    systemctl disable --now "$timer_unit" 2>/dev/null || {
+        echo "WARNING: Timer $timer_unit may not exist or already disabled" >&2
+        return 0
+    }
+
+    echo "Timer disabled."
+    return 0
+}
+
+nftban_report_schedule_timer_status() {
+    echo "Report Timer Status:"
+    echo "===================="
+
+    local has_timer=false
+    for freq in daily weekly monthly; do
+        local timer_unit="nftban-report-${freq}.timer"
+        if systemctl list-unit-files "$timer_unit" &>/dev/null 2>&1; then
+            local state
+            state=$(systemctl is-enabled "$timer_unit" 2>/dev/null || echo "not-found")
+            local active
+            active=$(systemctl is-active "$timer_unit" 2>/dev/null || echo "inactive")
+            printf "  %-12s enabled=%-8s active=%s\n" "$freq:" "$state" "$active"
+            has_timer=true
+        fi
+    done
+
+    if ! $has_timer; then
+        echo "  No report timers installed."
+        echo "  Install timer units and run: nftban report schedule enable daily"
+    fi
+
+    echo ""
+    echo "Active Timers:"
+    systemctl list-timers "nftban-report-*" --no-pager 2>/dev/null || echo "  (none)"
+    return 0
 }
 
 nftban_report_schedule_add() {

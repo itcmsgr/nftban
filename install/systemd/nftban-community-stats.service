@@ -1,0 +1,63 @@
+# =============================================================================
+# NFTBan v1.41.0 - Community Stats Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-community-stats.service"
+# meta:type="systemd"
+# meta:version="1.41.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Oneshot service for anonymous community stats submission"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/community_stats.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Anonymous Community Stats Submission
+Documentation=man:nftban(8)
+After=network-online.target nftband.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Submit anonymous stats (NO PII — OS, version, bucketed CPU/RAM, panel, modules, health)
+ExecStart=/usr/sbin/nftban pro community submit
+
+# Exit codes: 0=OK, 1=error (non-fatal)
+SuccessExitStatus=0 1
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Filesystem access (read-only except stats write)
+ReadOnlyPaths=/etc/nftban /var/lib/nftban /proc /sys /etc/os-release
+ReadWritePaths=/var/lib/nftban/community
+
+# Network for stats API
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=64M
+TasksMax=5
+TimeoutStartSec=60
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-community-stats
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftband"
 // meta:type="cmd"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Single daemon that runs all nftban modules with HTTP API and Unix socket"
 //
@@ -204,6 +204,9 @@ type Daemon struct {
 	sigCh           chan os.Signal // Signal channel for shutdown
 	startupComplete bool           // True when initialization is complete
 	sigMu           sync.Mutex     // Protects startupComplete
+
+	// v1.41.0: Ban correlation ID tracking (IP → banID for BAN→UNBAN linking)
+	banIDMap sync.Map // key: string (IP), value: string (banID)
 }
 
 // SocketRequest is the format for CLI→daemon requests
