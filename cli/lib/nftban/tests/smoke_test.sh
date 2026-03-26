@@ -800,6 +800,78 @@ run_port_lifecycle_tests() {
 }
 
 # =============================================================================
+# PORT ALLOW (PER-IP ACCESS) LIFECYCLE SMOKE TEST (v1.41.0)
+# =============================================================================
+# Validates nftban port allow add/remove using concat sets.
+# Uses RFC 5737 documentation IPs (198.51.100.x) to avoid conflicts.
+
+run_port_allow_lifecycle_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "PORT ALLOW (PER-IP ACCESS) LIFECYCLE"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local table_v4="ip nftban"
+    local test_ip="198.51.100.99"
+    local test_port="59010"
+
+    if ! systemctl is-active nftband.service &>/dev/null; then
+        log_warn "nftband not running — skipping port allow lifecycle tests"
+        return 0
+    fi
+    if ! command -v nft &>/dev/null; then
+        log_warn "nft not found — skipping port allow lifecycle tests"
+        return 0
+    fi
+
+    # Cleanup any leftover from previous runs
+    nftban port allow remove "${test_port}" from "${test_ip}" &>/dev/null || true
+
+    # Test 1: port allow add (TCP, default)
+    log "─── Lifecycle: port allow add ${test_port} from ${test_ip} ───"
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if nftban port allow add "${test_port}" from "${test_ip}" --proto tcp --timeout 60 --comment "smoke-test" &>/dev/null; then
+        # Verify element in concat set
+        if nft list set ${table_v4} port_allow_tcp_ipv4 2>/dev/null | grep -q "${test_ip}"; then
+            log_pass "port allow add — ${test_ip}:${test_port} present in port_allow_tcp_ipv4"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "port allow add — element not found in port_allow_tcp_ipv4"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        log_fail "port allow add — command failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Test 2: port allow list (should show the entry)
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if nftban port allow list 2>/dev/null | grep -q "${test_ip}"; then
+        log_pass "port allow list — shows ${test_ip} entry"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "port allow list — ${test_ip} not in output"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Test 3: port allow remove
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if nftban port allow remove "${test_port}" from "${test_ip}" --proto tcp &>/dev/null; then
+        # Verify element removed
+        if ! nft list set ${table_v4} port_allow_tcp_ipv4 2>/dev/null | grep -q "${test_ip}"; then
+            log_pass "port allow remove — ${test_ip}:${test_port} absent from port_allow_tcp_ipv4"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "port allow remove — element still present"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        log_fail "port allow remove — command failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+# =============================================================================
 # BINARY INTEGRITY SMOKE TEST
 # =============================================================================
 # Validates that Go binaries are real ELF files (not corrupted or dummy files).
@@ -1832,6 +1904,7 @@ main() {
             run_nft_schema_validation
             run_lifecycle_tests
             run_port_lifecycle_tests
+            run_port_allow_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
             run_whitelist_safety_tests
@@ -1847,6 +1920,7 @@ main() {
             run_nft_schema_validation
             run_lifecycle_tests
             run_port_lifecycle_tests
+            run_port_allow_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
             run_whitelist_safety_tests

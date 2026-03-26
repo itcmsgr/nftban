@@ -41,6 +41,7 @@
 /etc/nftban/blacklist.d
 /etc/nftban/ports.d
 /etc/nftban/rules.d
+/etc/nftban/access.d
 /etc/nftban/conf.d/rbl
 /etc/nftban/conf.d/geoban
 /etc/nftban/conf.d/geoip

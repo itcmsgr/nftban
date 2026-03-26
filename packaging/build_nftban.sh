@@ -442,6 +442,7 @@ install -D -m 0644 install/systemd/nftban-suricata.service %{buildroot}/usr/lib/
 install -D -m 0644 install/systemd/nftban-suricata-stats.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-stats.service
 install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/systemd/system/nftban-ui.service
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
+install -D -m 0644 install/systemd/nftban-ui-auth.socket %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.socket
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
 install -D -m 0644 install/systemd/nftban-queue.timer %{buildroot}/usr/lib/systemd/system/nftban-queue.timer
 install -D -m 0644 install/systemd/nftban-botscan.service %{buildroot}/usr/lib/systemd/system/nftban-botscan.service
@@ -2000,6 +2001,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban
 %dir %attr(750,root,nftban) /etc/nftban/conf.d
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/*.conf
+%attr(640,root,nftban) /etc/nftban/conf.d/*.conf.default
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/ddos/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/login
@@ -2057,6 +2059,7 @@ fi
 %config(noreplace) %attr(640,root,nftban) /etc/nftban/blacklist.d/99-manual.conf
 %dir %attr(750,root,nftban) /etc/nftban/ports.d
 %dir %attr(750,root,nftban) /etc/nftban/rules.d
+%dir %attr(750,root,nftban) /etc/nftban/access.d
 %dir %attr(750,root,nftban) /etc/nftban/templates
 /etc/nftban/templates/nftban.logrotate
 /etc/nftban/templates/nftban-suricata.logrotate
@@ -2066,6 +2069,7 @@ fi
 %dir %attr(750,nftban,nftban) /var/lib/nftban/staging
 %dir %attr(750,nftban,nftban) /var/lib/nftban/reports
 %dir %attr(750,nftban,nftban) /var/lib/nftban/botguard
+%dir %attr(750,nftban,nftban) /var/lib/nftban/community
 %dir %attr(750,nftban,nftban) /var/log/nftban
 %dir %attr(750,nftban,nftban) /var/log/nftban/botguard
 %dir %attr(755,root,root) /var/cache/nftban
@@ -2630,6 +2634,7 @@ PRERM
 /etc/nftban/conf.d/metrics.conf
 /etc/nftban/conf.d/persistent.conf
 /etc/nftban/conf.d/watchdog.conf
+/etc/nftban/conf.d/community_stats.conf.default
 CONFFILES_EOF
 }
 
