@@ -57,25 +57,6 @@ var (
 	}, []string{"family", "counter"})
 )
 
-// expectedNamedCounters lists the named counters declared in nftables.conf (v1.41.0)
-// Same names exist in both ip and ip6 tables (except icmp vs icmpv6)
-var expectedNamedCounters = []string{
-	"input_invalid_drop",
-	"input_whitelist_accept",
-	"input_blacklist_manual_drop",
-	"input_blacklist_drop",
-	"input_port_allow_tcp_accept",
-	"input_port_allow_udp_accept",
-	"input_ct_ssh_drop",
-	"input_ct_http_drop",
-	"input_ct_mail_drop",
-	"output_loopback_accept",
-	"output_established_accept",
-	"output_tcp_accept",
-	"output_udp_accept",
-	"output_egress_audit",
-}
-
 // nftJSON represents the top-level nft -j output
 type nftJSON struct {
 	NFTables []json.RawMessage `json:"nftables"`
