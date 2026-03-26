@@ -133,6 +133,19 @@ var (
 		Help:      "Queue utilization percentage (100 = full, drops occurring)",
 	}, []string{"lane"}) // lane: fast, bulk
 
+	// v1.40.0: Pipeline event accounting — generated vs applied for gap detection
+	eventsGeneratedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "events_generated_total",
+		Help:      "Total events published to eventbus",
+	}, []string{"type"}) // type: ban, unban, feed_sync, etc.
+
+	eventsAppliedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "events_applied_total",
+		Help:      "Total operations applied to nftables via opqueue",
+	}, []string{"lane"}) // lane: fast, bulk
+
 	// Authentication metrics
 	authAttemptsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "nftban",
@@ -825,6 +838,21 @@ func SetOpQueueUtilization(lane string, pending, capacity int64) {
 		utilization := float64(pending) / float64(capacity) * 100
 		opqueueUtilization.WithLabelValues(lane).Set(utilization)
 	}
+}
+
+// =============================================================================
+// Pipeline Accounting Functions (v1.40.0)
+// =============================================================================
+// Track events_generated vs events_applied to detect pipeline gaps
+
+// RecordEventGenerated records an event published to the eventbus
+func RecordEventGenerated(eventType string) {
+	eventsGeneratedTotal.WithLabelValues(eventType).Inc()
+}
+
+// RecordEventsApplied records operations applied to nftables via opqueue
+func RecordEventsApplied(lane string, count int) {
+	eventsAppliedTotal.WithLabelValues(lane).Add(float64(count))
 }
 
 // =============================================================================
