@@ -565,6 +565,12 @@ func (s *Sampler) takeSample() {
 		s.geobanCountriesGauge.Set(float64(geobanCountries))
 		s.geobanRangesGauge.Set(float64(geobanRanges))
 
+		// Feed staleness: file stat only (no CLI) — check mtime of feed files
+		s.collectFeedStalenessMetrics()
+
+		// NFT rule counters: nft -j list table (one call per family)
+		CollectRuleCounters()
+
 		// Portscan and DDoS: CLI calls (only in FULL tier)
 		portscanBlocks := s.collectPortscanMetrics()
 		ddosBlocks := s.collectDDoSMetrics()
@@ -633,6 +639,30 @@ func (s *Sampler) collectGeobanMetrics() (countries, ranges int) {
 
 // Removed: collectBlacklistMetrics - now uses shared state from watchdog (NO CLI/file reads)
 // Removed: collectWhitelistMetrics - now uses shared state from watchdog (NO CLI/file reads)
+
+// collectFeedStalenessMetrics checks feed file mtimes and updates staleness gauges
+func (s *Sampler) collectFeedStalenessMetrics() {
+	_, dataDir := getMetricsPaths()
+	feedsDir := dataDir + "/feeds"
+
+	entries, err := os.ReadDir(feedsDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
+			continue
+		}
+		feedName := strings.TrimSuffix(entry.Name(), ".txt")
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		RecordFeedLastSuccess(feedName, info.ModTime())
+		UpdateFeedStaleness(feedName, info.ModTime(), DefaultFeedStaleThreshold)
+	}
+}
 
 // collectPortscanMetrics gets portscan blocks from stats
 func (s *Sampler) collectPortscanMetrics() int {
