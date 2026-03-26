@@ -1,0 +1,35 @@
+# =============================================================================
+# NFTBan v1.41.0 - Community Stats Configuration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="community_stats.conf"
+# meta:type="config"
+# meta:version="1.41.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Anonymous community stats collection (opt-in only)"
+# =============================================================================
+#
+# Anonymous stats help improve NFTBan by sharing non-identifying data:
+#   - OS type and version
+#   - NFTBan version
+#   - Bucketed CPU/RAM (e.g. "2-4 cores", "4-8GB")
+#   - Panel type (cPanel/Plesk/DirectAdmin/none)
+#   - Enabled modules list
+#   - Health status (ok/warn/error)
+#
+# NO hostname, IP addresses, logs, or any PII is ever sent.
+# Run 'nftban pro community show' to see the exact JSON payload.
+#
+# To enable: nftban pro community enable
+# To disable: nftban pro community disable
+# =============================================================================
+
+# Master switch — DISABLED by default (user must opt in)
+COMMUNITY_STATS_ENABLED=no
+
+# Unique anonymous installation ID (auto-generated on first enable)
+# This is a random UUID, NOT tied to any identifying information
+COMMUNITY_STATS_ID=""
+
+# API endpoint for stats submission
+COMMUNITY_STATS_URL="https://stats.nftban.com/api/v1/community"

@@ -91,6 +91,10 @@ fi
 _status_check_binaries() {
     # Check if Go binaries are valid ELF files
     # Returns 0 if all binaries are valid, 1 if any are corrupted
+    if ! command -v file >/dev/null 2>&1; then
+        # 'file' command not available — skip check silently
+        return 0
+    fi
     local binaries=(
         "/usr/lib/nftban/bin/nftban-core"
         "/usr/lib/nftban/bin/nftband"

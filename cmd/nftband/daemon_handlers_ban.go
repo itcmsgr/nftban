@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftband"
 // meta:type="cmd"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Ban/unban request handlers with whitelist and escalation"
 //
@@ -303,6 +303,16 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 		family = "ipv6"
 	}
 	metrics.RecordUnbanWithIP("manual", family, ip)
+
+	// v1.41.0: Log unban with correlation ID from original ban
+	country := lookupCountry(ip)
+	banID := ""
+	if storedID, ok := d.banIDMap.LoadAndDelete(ip); ok {
+		if id, ok := storedID.(string); ok {
+			banID = id
+		}
+	}
+	_ = banlog.LogUnbanWithID(ip, banlog.SourceManual, country, "", banID)
 
 	// Publish unban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventUnban, "cli").

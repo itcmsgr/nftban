@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban"
 // meta:type="package"
-// meta:version="1.0.0"
+// meta:version="1.41.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
 // meta:description="Prometheus metrics for ban/unban, feeds, sync, and auth operations"
@@ -535,6 +535,16 @@ var (
 		Name:      "cidr_current_total",
 		Help:      "Current total CIDRs loaded",
 	})
+
+	// =============================================================================
+	// Port Allow Metrics (v1.41.0)
+	// =============================================================================
+
+	portAllowRulesTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "port_allow_rules_total",
+		Help:      "Number of per-IP port access rules in concat sets",
+	}, []string{"family", "protocol"}) // family: ipv4, ipv6. protocol: tcp, udp
 
 	// =============================================================================
 	// Reconciliation Metrics (v1.34.0)
@@ -1094,6 +1104,15 @@ func SetSchemaErrorsTotal(count int) {
 // SetWhitelistOverlapCount sets the number of overlapping IPs
 func SetWhitelistOverlapCount(count int) {
 	whitelistOverlapCount.Set(float64(count))
+}
+
+// =============================================================================
+// Port Allow Metrics Recording Functions (v1.41.0)
+// =============================================================================
+
+// SetPortAllowRules sets the number of port allow rules for a family and protocol
+func SetPortAllowRules(family, protocol string, count int) {
+	portAllowRulesTotal.WithLabelValues(family, protocol).Set(float64(count))
 }
 
 // =============================================================================

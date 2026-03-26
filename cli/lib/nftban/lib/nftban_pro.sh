@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_pro" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Manages NFTBan Pro subscription, inventory, and license"
+# meta:name="nftban_pro" meta:type="lib" meta:version="1.41.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Manages NFTBan Pro subscription, inventory, and license"
 # meta:inventory.files=""
 # meta:inventory.binaries="curl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
@@ -576,6 +576,248 @@ nftban_pro_license_check_timer() {
 # =============================================================================
 # EXPORTS
 # =============================================================================
+
+# =============================================================================
+# COMMUNITY STATS (v1.41.0 — anonymous usage stats, opt-in only)
+# =============================================================================
+
+NFTBAN_COMMUNITY_CONF="/etc/nftban/conf.d/community_stats.conf"
+
+nftban_pro_cmd_community() {
+    local action="${1:-help}"
+    shift || true
+
+    case "$action" in
+        enable)  nftban_community_enable ;;
+        disable) nftban_community_disable ;;
+        show)    nftban_community_show ;;
+        status)  nftban_community_status ;;
+        submit)  nftban_community_submit ;;
+        help|--help|-h)
+            echo "Usage: nftban pro community {enable|disable|show|status|submit}"
+            echo ""
+            echo "  enable   - Opt in to anonymous community stats"
+            echo "  disable  - Opt out of community stats"
+            echo "  show     - Display exact JSON payload (verify no PII)"
+            echo "  status   - Show current state and timer info"
+            echo "  submit   - Manually submit stats now"
+            ;;
+        *)
+            echo "ERROR: Unknown community action: $action" >&2
+            return 1
+            ;;
+    esac
+}
+
+nftban_community_enable() {
+    # Create config from default if not exists
+    if [[ ! -f "$NFTBAN_COMMUNITY_CONF" ]]; then
+        local default_conf="/usr/lib/nftban/install/config/conf.d/community_stats.conf.default"
+        if [[ -f "$default_conf" ]]; then
+            cp "$default_conf" "$NFTBAN_COMMUNITY_CONF"
+        else
+            # Create minimal config
+            cat > "$NFTBAN_COMMUNITY_CONF" <<'CONFEOF'
+COMMUNITY_STATS_ENABLED=yes
+COMMUNITY_STATS_ID=""
+COMMUNITY_STATS_URL="https://stats.nftban.com/api/v1/community"
+CONFEOF
+        fi
+    fi
+
+    # Generate UUID if not set
+    local current_id
+    current_id=$(grep -oP 'COMMUNITY_STATS_ID="\K[^"]+' "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true)
+    if [[ -z "$current_id" ]]; then
+        local new_id
+        new_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || head -c 16 /dev/urandom | xxd -p)
+        sed -i "s|COMMUNITY_STATS_ID=\"\"|COMMUNITY_STATS_ID=\"$new_id\"|" "$NFTBAN_COMMUNITY_CONF"
+    fi
+
+    # Set enabled
+    sed -i 's|COMMUNITY_STATS_ENABLED=.*|COMMUNITY_STATS_ENABLED=yes|' "$NFTBAN_COMMUNITY_CONF"
+
+    # Enable systemd timer if available
+    if systemctl list-unit-files nftban-community-stats.timer &>/dev/null; then
+        systemctl enable --now nftban-community-stats.timer 2>/dev/null || true
+    fi
+
+    echo "Community stats ENABLED."
+    echo "Run 'nftban pro community show' to see the exact data being sent."
+    echo "Run 'nftban pro community disable' to opt out at any time."
+}
+
+nftban_community_disable() {
+    if [[ -f "$NFTBAN_COMMUNITY_CONF" ]]; then
+        sed -i 's|COMMUNITY_STATS_ENABLED=.*|COMMUNITY_STATS_ENABLED=no|' "$NFTBAN_COMMUNITY_CONF"
+    fi
+
+    # Disable timer
+    systemctl disable --now nftban-community-stats.timer 2>/dev/null || true
+
+    echo "Community stats DISABLED. No data will be sent."
+}
+
+nftban_community_show() {
+    echo "Community Stats Payload (this is exactly what gets sent):"
+    echo "========================================================="
+    nftban_community_build_payload
+    echo ""
+    echo "NOTE: No hostname, IP addresses, logs, or PII included."
+}
+
+nftban_community_status() {
+    echo "Community Stats Status:"
+    echo "======================="
+
+    if [[ ! -f "$NFTBAN_COMMUNITY_CONF" ]]; then
+        echo "  Config:  not configured"
+        echo "  Status:  disabled (never enabled)"
+        return 0
+    fi
+
+    # shellcheck source=/dev/null
+    source "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true
+
+    echo "  Enabled: ${COMMUNITY_STATS_ENABLED:-no}"
+    echo "  ID:      ${COMMUNITY_STATS_ID:-not set}"
+    echo "  URL:     ${COMMUNITY_STATS_URL:-not set}"
+
+    # Timer status
+    if systemctl list-unit-files nftban-community-stats.timer &>/dev/null 2>&1; then
+        local timer_state
+        timer_state=$(systemctl is-enabled nftban-community-stats.timer 2>/dev/null || echo "not-found")
+        local timer_active
+        timer_active=$(systemctl is-active nftban-community-stats.timer 2>/dev/null || echo "inactive")
+        echo "  Timer:   enabled=$timer_state active=$timer_active"
+    else
+        echo "  Timer:   not installed"
+    fi
+}
+
+nftban_community_build_payload() {
+    # Build the JSON payload with ONLY non-identifying data
+    local os_name os_version nftban_version cpu_bucket ram_bucket panel modules health
+
+    # OS info (generic, not hostname)
+    os_name=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}" || echo "unknown")
+    os_version=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}" || echo "unknown")
+
+    # NFTBan version
+    nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo "unknown")
+
+    # Bucketed CPU (not exact — privacy-preserving)
+    local cpu_count
+    cpu_count=$(nproc 2>/dev/null || echo "0")
+    if [[ "$cpu_count" -le 1 ]]; then cpu_bucket="1"
+    elif [[ "$cpu_count" -le 2 ]]; then cpu_bucket="2"
+    elif [[ "$cpu_count" -le 4 ]]; then cpu_bucket="2-4"
+    elif [[ "$cpu_count" -le 8 ]]; then cpu_bucket="4-8"
+    elif [[ "$cpu_count" -le 16 ]]; then cpu_bucket="8-16"
+    else cpu_bucket="16+"
+    fi
+
+    # Bucketed RAM (not exact)
+    local ram_mb
+    ram_mb=$(awk '/MemTotal/ { printf "%d", $2/1024 }' /proc/meminfo 2>/dev/null || echo "0")
+    if [[ "$ram_mb" -le 1024 ]]; then ram_bucket="<=1GB"
+    elif [[ "$ram_mb" -le 2048 ]]; then ram_bucket="1-2GB"
+    elif [[ "$ram_mb" -le 4096 ]]; then ram_bucket="2-4GB"
+    elif [[ "$ram_mb" -le 8192 ]]; then ram_bucket="4-8GB"
+    elif [[ "$ram_mb" -le 16384 ]]; then ram_bucket="8-16GB"
+    elif [[ "$ram_mb" -le 32768 ]]; then ram_bucket="16-32GB"
+    else ram_bucket="32GB+"
+    fi
+
+    # Panel type
+    panel="none"
+    [[ -d /usr/local/cpanel ]] && panel="cpanel"
+    [[ -d /usr/local/psa ]] && panel="plesk"
+    [[ -d /usr/local/directadmin ]] && panel="directadmin"
+
+    # Enabled modules (just names, no config)
+    modules=$(nftban status --brief 2>/dev/null | grep -oP 'modules:\K.*' || echo "")
+    modules="${modules## }"
+
+    # Health status (just ok/warn/error)
+    health=$(nftban health check --brief 2>/dev/null | head -1 || echo "unknown")
+
+    # Installation ID
+    local install_id=""
+    if [[ -f "$NFTBAN_COMMUNITY_CONF" ]]; then
+        install_id=$(grep -oP 'COMMUNITY_STATS_ID="\K[^"]+' "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true)
+    fi
+
+    # Output JSON
+    cat <<JSONEOF
+{
+  "schema_version": 1,
+  "install_id": "$install_id",
+  "nftban_version": "$nftban_version",
+  "os": "$os_name",
+  "os_version": "$os_version",
+  "cpu_bucket": "$cpu_bucket",
+  "ram_bucket": "$ram_bucket",
+  "panel": "$panel",
+  "modules": "$modules",
+  "health": "$health",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSONEOF
+}
+
+nftban_community_submit() {
+    # Read config
+    if [[ ! -f "$NFTBAN_COMMUNITY_CONF" ]]; then
+        echo "ERROR: Community stats not configured. Run 'nftban pro community enable' first." >&2
+        return 1
+    fi
+
+    # shellcheck source=/dev/null
+    source "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true
+
+    if [[ "${COMMUNITY_STATS_ENABLED:-no}" != "yes" ]]; then
+        echo "Community stats disabled. Enable with 'nftban pro community enable'."
+        return 0
+    fi
+
+    local url="${COMMUNITY_STATS_URL:-https://stats.nftban.com/api/v1/community}"
+    local payload
+    payload=$(nftban_community_build_payload)
+
+    echo "Submitting anonymous community stats..."
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        --connect-timeout 10 \
+        --max-time 30 \
+        "$url" 2>/dev/null) || http_code="000"
+
+    case "$http_code" in
+        200|201|204)
+            echo "Stats submitted successfully."
+            return 0
+            ;;
+        000)
+            echo "WARNING: Could not reach stats server (offline or network error)." >&2
+            return 1
+            ;;
+        *)
+            echo "WARNING: Stats submission returned HTTP $http_code." >&2
+            return 1
+            ;;
+    esac
+}
+
+export -f nftban_pro_cmd_community
+export -f nftban_community_enable
+export -f nftban_community_disable
+export -f nftban_community_show
+export -f nftban_community_status
+export -f nftban_community_build_payload
+export -f nftban_community_submit
 
 export -f nftban_pro_ensure_server_id
 export -f nftban_pro_get_server_id
