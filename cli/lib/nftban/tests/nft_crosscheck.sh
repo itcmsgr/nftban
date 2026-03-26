@@ -83,7 +83,8 @@ for key in "${!EXPECTED_SETS[@]}"; do
     set_name="${key#*:}"
     expected="${EXPECTED_SETS[$key]}"
     expected_type="${expected%%|*}"
-    expected_flags="${expected#*|}"
+    # expected_flags available for future flag validation
+    # expected_flags="${expected#*|}"
 
     set_output=$(nft -j list set "$family" nftban "$set_name" 2>/dev/null) || {
         log_fail "Set $family/$set_name MISSING"
@@ -106,7 +107,7 @@ $JSON_MODE || echo ""
 $JSON_MODE || echo "[3/5] Set element counts..."
 
 for family in ip ip6; do
-    table_output=$(nft list table "$family" nftban 2>/dev/null) || continue
+    nft list table "$family" nftban >/dev/null 2>&1 || continue
 
     for set_name in $(nft list sets "$family" nftban 2>/dev/null | grep -oP 'set \K\S+' | tr -d '{'); do
         nft_count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -cE '^\s+[0-9a-f]' || echo "0")
