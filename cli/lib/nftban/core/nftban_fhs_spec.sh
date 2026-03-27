@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.49.0 - FHS Specification (GENERATED)
+# NFTBan v1.50.0 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="nftban_fhs_spec"
 # meta:type="core"
 # meta:header="FHS Specification"
-# meta:version="1.49.0"
+# meta:version="1.50.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -60,6 +60,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/sbin"]="0755|root|root|System helper binaries"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/health"]="0755|root|root|Health check modules"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/data"]="0755|root|root|Static data files (registries, schemas)"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/templates"]="0755|root|root|Config templates with placeholders (rendered at install/rebuild)"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/tools"]="0755|root|root|Utility tools and scripts"
 
     # Configuration Directories (root:nftban)

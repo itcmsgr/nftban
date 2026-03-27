@@ -9,7 +9,7 @@
 # meta:name="nftban_health"
 # meta:type="core"
 # meta:header="Health Check System"
-# meta:version="1.39.0"
+# meta:version="1.50.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -508,6 +508,7 @@ nftban_health_check_all() {
     nftban_health_check_ssh_port || { ((warnings++)) || true; }
     nftban_health_check_systemd_hardening || { ((warnings++)) || true; }
     nftban_health_check_memory_protection || { ((warnings++)) || true; }
+    nftban_health_check_boot_safety || { ((errors++)) || true; }
 
     # Run service checks
     nftban_health_check_services || { ((warnings++)) || true; }
@@ -635,6 +636,7 @@ export -f nftban_health_check_gui
 export -f nftban_health_check_fhs
 export -f nftban_health_check_nft_schema
 export -f nftban_health_check_polkit
+export -f nftban_health_check_boot_safety
 export -f nftban_health_should_alert
 
 # Export fix functions (from nftban_health_fixes.sh)
