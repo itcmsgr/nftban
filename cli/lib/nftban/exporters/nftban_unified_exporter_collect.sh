@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_unified_exporter_collect"
 # meta:type="exporter"
-# meta:version="1.39.0"
+# meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Main metrics collection function (collect_all_metrics)"
 # meta:inventory.files=""
@@ -192,10 +192,11 @@ collect_all_metrics() {
             [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
             whitelist_v6=$(nftban_nft_count_set_cached whitelist_ipv6 2>/dev/null) || whitelist_v6=0
             [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
-        elif command -v nft &>/dev/null; then
-            whitelist_v4=$(nft -j list set "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v4=0
+        elif declare -f nftban_nft_count_set_elements >/dev/null 2>&1; then
+            # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
+            whitelist_v4=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4) || whitelist_v4=0
             [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
-            whitelist_v6=$(nft -j list set "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v6=0
+            whitelist_v6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6) || whitelist_v6=0
             [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
         fi
         metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"
@@ -600,10 +601,11 @@ collect_all_metrics() {
                 local set_elem_count=0
                 if declare -f nftban_nft_count_set_cached >/dev/null 2>&1; then
                     set_elem_count=$(nftban_nft_count_set_cached "$set_name" 2>/dev/null) || true
-                else
+                elif declare -f nftban_nft_count_set_elements >/dev/null 2>&1; then
+                    # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
                     local _fam="ip"
                     [[ "$set_name" == *"_ipv6" ]] && _fam="ip6"
-                    set_elem_count=$(nft -j list set "$_fam" nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || true
+                    set_elem_count=$(nftban_nft_count_set_elements "$_fam" nftban "$set_name") || true
                 fi
                 [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
                 metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"

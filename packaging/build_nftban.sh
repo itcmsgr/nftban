@@ -463,6 +463,9 @@ install -D -m 0644 install/systemd/nftban-community-stats.timer %{buildroot}/usr
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
 
+# v1.47.0 DEPLOY-006: tmpfiles.d for /run/nftban ownership (prevents root revert on restart)
+install -D -m 0644 install/systemd/tmpfiles.d/nftban.conf %{buildroot}/usr/lib/tmpfiles.d/nftban.conf
+
 # PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
 # Removed: com.nftban.suricata.policy (unused custom actions)
 # Removed: 50-nftban-auth.rules (auth-helper never existed)
@@ -981,6 +984,11 @@ systemctl daemon-reload 2>/dev/null || true
 # Only apply if no user-custom sysctl overrides the same keys
 if [ -f /etc/sysctl.d/90-nftban.conf ]; then
     sysctl --system >/dev/null 2>&1 || true
+fi
+
+# --- Apply tmpfiles.d for /run/nftban ownership (v1.47.0 DEPLOY-006) ---
+if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf >/dev/null 2>&1 || true
 fi
 
 # --- Suricata blocks in main logrotate (pre-1.19.6) ---
@@ -1984,6 +1992,7 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
 %config(noreplace) /etc/logrotate.d/nftban
 %config(noreplace) /etc/sysctl.d/90-nftban.conf
+/usr/lib/tmpfiles.d/nftban.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.socket
 /usr/lib/systemd/system/*.timer
@@ -2807,6 +2816,10 @@ build_deb() {
     # Sysctl tuning profile (v1.38.0)
     mkdir -p "${deb_root}/etc/sysctl.d"
     install -m 0644 "${PROJECT_ROOT}/install/sysctl/90-nftban.conf" "${deb_root}/etc/sysctl.d/"
+
+    # v1.47.0 DEPLOY-006: tmpfiles.d for /run/nftban ownership
+    mkdir -p "${deb_root}/usr/lib/tmpfiles.d"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/tmpfiles.d/nftban.conf" "${deb_root}/usr/lib/tmpfiles.d/"
 
     # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ (not /etc/polkit-1/rules.d/)

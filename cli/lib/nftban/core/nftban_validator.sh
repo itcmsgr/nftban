@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_validator"
 # meta:type="core"
-# meta:version="1.43.0"
+# meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
 # meta:inventory.files=""
@@ -576,15 +576,16 @@ get_firewall_stats() {
     local udp_ports_in_count=0
     local udp_ports_out_count=0
 
-    whitelist_ipv4_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    whitelist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    blacklist_ipv4_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    blacklist_ipv6_count=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
+    whitelist_ipv4_count=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4)
+    whitelist_ipv6_count=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6)
+    blacklist_ipv4_count=$(nftban_nft_count_set_elements ip nftban blacklist_ipv4)
+    blacklist_ipv6_count=$(nftban_nft_count_set_elements ip6 nftban blacklist_ipv6)
     # Directional port sets (v2.1 schema)
-    tcp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    tcp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} tcp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    udp_ports_in_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_in 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
-    udp_ports_out_count=$(nft -j list set ${NFTBAN_TABLE_IPV4} udp_ports_out 2>/dev/null | jq '[.nftables[] | select(.set?) | .set.elem[]? // empty] | length' || echo 0)
+    tcp_ports_in_count=$(nftban_nft_count_set_elements ip nftban tcp_ports_in)
+    tcp_ports_out_count=$(nftban_nft_count_set_elements ip nftban tcp_ports_out)
+    udp_ports_in_count=$(nftban_nft_count_set_elements ip nftban udp_ports_in)
+    udp_ports_out_count=$(nftban_nft_count_set_elements ip nftban udp_ports_out)
 
     # Output results
     if [[ "$output_json" == "true" ]]; then
