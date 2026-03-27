@@ -8,7 +8,7 @@
 # meta:name="cmd_trust"
 # meta:type="cli"
 # meta:header="Trust CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.45.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

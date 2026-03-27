@@ -302,6 +302,7 @@ nftban_health_verify_installation() {
         "curl"
         "systemctl"
     # Optional binaries - reserved for future validation
+    # required_bins consumed in loop below
     # shellcheck disable=SC2034
     )
 

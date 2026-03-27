@@ -33,14 +33,19 @@ source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 # =============================================================================
 
 # Log level constants for external use
+# exported constant used by modules that source this library
 # shellcheck disable=SC2034
 readonly LOG_LEVEL_DEBUG=0
+# exported constant used by modules that source this library
 # shellcheck disable=SC2034
 readonly LOG_LEVEL_INFO=1
+# exported constant used by modules that source this library
 # shellcheck disable=SC2034
 readonly LOG_LEVEL_WARN=2
+# exported constant used by modules that source this library
 # shellcheck disable=SC2034
 readonly LOG_LEVEL_ERROR=3
+# exported constant used by modules that source this library
 # shellcheck disable=SC2034
 readonly LOG_LEVEL_SUCCESS=4
 

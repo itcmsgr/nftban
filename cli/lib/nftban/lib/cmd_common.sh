@@ -143,6 +143,7 @@ cmd_validate_ip() {
         # Validate each octet is 0-255
         local ip_part="${ip%/*}"
         local IFS='.'
+        # intentional word-split on IFS='.' for octet parsing
         # shellcheck disable=SC2206
         local octets=($ip_part)
         for octet in "${octets[@]}"; do

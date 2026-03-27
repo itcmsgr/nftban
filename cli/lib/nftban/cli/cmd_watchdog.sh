@@ -791,6 +791,7 @@ nftban_watchdog_cmd_stats_history() {
 
         echo "$history" | jq -r '.[] | "\(.date)  \(.total_bans)  \(.total_unbans)  \(.peak_memory_mb)  \(.peak_goroutines)  \(.warning_count + .critical_count)"' | \
         while read -r line; do
+            # $line intentionally unquoted for printf field splitting
             # shellcheck disable=SC2086
             printf "%-12s  %8s  %8s  %8.1f MB  %10s  %8s\n" $line
         done

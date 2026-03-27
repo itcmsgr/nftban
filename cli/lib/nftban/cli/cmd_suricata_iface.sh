@@ -35,6 +35,7 @@ _CMD_SURICATA_IFACE_LOADED="true"
 # =============================================================================
 
 # Virtual interface patterns (excluded by default)
+# pattern constant used by suricata interface detection
 # shellcheck disable=SC2034
 readonly SURICATA_VIRTUAL_PATTERNS="^(lo|docker[0-9]*|cni[0-9]*|flannel|virbr[0-9]*|veth|br-|zt|tailscale[0-9]*|wg[0-9]*|tun[0-9]*|tap[0-9]*|podman[0-9]*|cali[a-z0-9]*|lxc[a-z0-9]*)"
 
