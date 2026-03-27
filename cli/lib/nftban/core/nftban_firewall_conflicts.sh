@@ -1006,6 +1006,7 @@ nftban_cleanup_ghost_tables() {
     return 0
 }
 
+# shellcheck disable=SC2120  # Function accepts optional --quiet flag
 nftban_validate_hook_authority() {
     # Validate that no non-NFTBan tables with input hooks remain after cleanup.
     # Uses LIVE nft state as source of truth.
