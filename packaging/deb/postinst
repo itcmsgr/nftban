@@ -706,6 +706,11 @@ case "$1" in
             # Saves ~10-20 seconds during install
         fi
 
+        # v1.47.0 DEPLOY-006: Apply tmpfiles.d for /run/nftban ownership
+        if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf >/dev/null 2>&1 || true
+        fi
+
         # =====================================================================
         # STEP 7.4: Cleanup rogue nftables tables before preflight
         # =====================================================================
