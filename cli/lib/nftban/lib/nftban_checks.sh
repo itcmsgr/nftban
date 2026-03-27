@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_checks" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Pure check functions returning consistent JSON, reusable across health/status/smoke"
+# meta:name="nftban_checks" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Pure check functions returning consistent JSON, reusable across health/status/smoke"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,stat,file"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR,NFTBAN_LOG_DIR,PORTSCAN_EVE_FRESHNESS_THRESHOLD"
@@ -596,17 +596,27 @@ nftban_check_firewall_conflict() {
             fi
             ;;
         csf)
-            if [[ -f /etc/csf/csf.conf ]]; then
+            # v1.48.0: Check both config file AND binary (CSF may be in non-standard path)
+            if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
                 installed="true"
                 status_text="installed"
-                if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+                # Check if CSF/lfd is actually running (service state is source of truth)
+                if systemctl is-active lfd &>/dev/null 2>&1; then
                     active="true"
                     enabled="true"
-                    conflict_level="critical"
-                    status_text="active_production"
-                elif grep -q "^TESTING = \"1\"" /etc/csf/csf.conf 2>/dev/null; then
+                    if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+                        conflict_level="critical"
+                        status_text="active_production"
+                    else
+                        conflict_level="critical"
+                        status_text="active_testing"
+                    fi
+                elif grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
                     conflict_level="warning"
-                    status_text="testing_mode"
+                    status_text="disabled_production_config"
+                elif grep -q "^TESTING = \"1\"" /etc/csf/csf.conf 2>/dev/null; then
+                    conflict_level="info"
+                    status_text="disabled_testing_config"
                 fi
             fi
             ;;

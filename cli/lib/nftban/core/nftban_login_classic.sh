@@ -338,17 +338,24 @@ _nftban_login_classic_process_web_log() {
     fi
 
     # DirectAdmin
+    # v1.48.0: Fixed regex — DA format is "'IP' N failed login attempts. Account 'user'"
+    # NOT cPanel format "FAILED LOGIN...ip=X.X.X.X"
     if [[ "$service" == "directadmin" ]]; then
-        if [[ "$line" =~ FAILED\ LOGIN.*ip=([0-9a-fA-F.:]+) ]]; then
+        if [[ "$line" =~ \'([0-9a-fA-F.:]+)\'.*failed\ login ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "directadmin" "failed"
         fi
     fi
 
-    # cPanel login failure (v1.18.8)
-    # Format: "FAILED LOGIN user=admin ip=1.2.3.4" or "Invalid credentials for user..."
+    # cPanel login failure (v1.18.8, v1.48.0: added access_log 401 format)
+    # Real format (access_log): "IP - user [date] "POST /login/?login_only=1" 401"
+    # Legacy format (login_log): "FAILED LOGIN user=admin ip=1.2.3.4"
     if [[ "$service" == "cpanel" ]]; then
-        if [[ "$line" =~ FAILED.*ip=([0-9a-fA-F.:]+) ]]; then
+        # v1.48.0: Real cPanel access_log — "IP - user [date] POST /login/ 401"
+        if [[ "$line" =~ ^([0-9a-fA-F.:]+).*POST.*/login/.*\ 401\  ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "failed"
+        elif [[ "$line" =~ FAILED.*ip=([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "cpanel" "failed"
         elif [[ "$line" =~ [Ii]nvalid.*ip=([0-9a-fA-F.:]+) ]]; then
@@ -357,13 +364,17 @@ _nftban_login_classic_process_web_log() {
         fi
     fi
 
-    # Plesk login failure (v1.18.8)
-    # Format: "Authentication failed for user admin from 1.2.3.4"
+    # Plesk login failure (v1.18.8, v1.48.0: fixed regex for real Plesk format)
+    # Real format: "[Action Log] Failed login attempt with login 'user' from IP 1.2.3.4"
     if [[ "$service" == "plesk" ]]; then
-        if [[ "$line" =~ [Aa]uthentication\ failed.*from\ ([0-9a-fA-F.:]+) ]]; then
+        # v1.48.0: Real Plesk panel.log format — "Failed login attempt...from IP X.X.X.X"
+        if [[ "$line" =~ [Ff]ailed\ login.*from\ IP\ ([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
-        elif [[ "$line" =~ [Ll]ogin\ failed.*from\ ([0-9a-fA-F.:]+) ]]; then
+        elif [[ "$line" =~ [Aa]uthentication\ failed.*from\ ([0-9a-fA-F.:]+) ]]; then
+            ip="${BASH_REMATCH[1]}"
+            _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
+        elif [[ "$line" =~ [Ii]ncorrect.*password.*from.*([0-9a-fA-F.:]+) ]]; then
             ip="${BASH_REMATCH[1]}"
             _nftban_login_classic_process_event "$ip" "unknown" "plesk" "failed"
         elif [[ "$line" =~ [Ii]nvalid\ credentials.*from\ ([0-9a-fA-F.:]+) ]]; then
@@ -936,10 +947,11 @@ nftban_login_classic_start() {
     fi
 
     # =========================================================================
-    # CPANEL - file-based monitoring (v1.18.8)
+    # CPANEL - file-based monitoring (v1.18.8, v1.48.0: fixed log path)
+    # v1.48.0: cPanel logs login failures as HTTP 401 in access_log, NOT login_log
     # =========================================================================
     if nftban_login_service_detected "cpanel"; then
-        local log_file="${LOGIN_SERVICE_CPANEL_LOG:-/usr/local/cpanel/logs/login_log}"
+        local log_file="${LOGIN_SERVICE_CPANEL_LOG:-/usr/local/cpanel/logs/access_log}"
         if [[ -f "$log_file" ]]; then
             nftban_login_log "INFO" "cPanel: starting file monitor ($log_file)"
             _nftban_login_classic_monitor_file "cpanel" "$log_file" "" &

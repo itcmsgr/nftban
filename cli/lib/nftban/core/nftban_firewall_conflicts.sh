@@ -8,7 +8,7 @@
 # meta:name="nftban_firewall_conflicts"
 # meta:type="lib"
 # meta:header="Firewall Conflict Detection"
-# meta:version="1.39.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -928,6 +928,124 @@ nftban_remove_ufw() {
     return 0
 }
 
+# =============================================================================
+# CENTRALIZED GHOST TABLE CLEANUP (v1.48.0)
+# =============================================================================
+# Single shared function for removing non-NFTBan nftables tables.
+# Based on LIVE nft state (not package/service detection).
+# Idempotent — safe to call from install, update, rebuild, conflict removal.
+# =============================================================================
+
+# Known ghost tables left by iptables-nft, firewalld, CSF, fail2ban, etc.
+# These are the tables we know are NOT ours and safe to remove.
+readonly -a _NFTBAN_KNOWN_GHOST_TABLES=(
+    "ip filter"
+    "ip6 filter"
+    "ip nat"
+    "ip6 nat"
+    "ip mangle"
+    "ip6 mangle"
+    # NOTE: "ip raw" and "ip6 raw" are NOT ghost tables — used by NFTBan SYNPROXY
+    "ip security"
+    "ip6 security"
+    "inet firewalld"
+    "inet filter"
+    "inet nftban_install_emergency"
+)
+
+nftban_cleanup_ghost_tables() {
+    # Remove known ghost nftables tables left by other firewalls.
+    # Uses LIVE nft state as source of truth.
+    # Args: [--quiet] [--report-only]
+    # Returns: 0=clean (nothing found or all removed), 1=tables remain (report-only)
+    #
+    # v1.48.0: Centralized, idempotent ghost table cleanup.
+    # Called from: conflict removal, install, update, rebuild, health repair.
+
+    local quiet=false report_only=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet|-q) quiet=true; shift ;;
+            --report-only) report_only=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    if ! command -v nft &>/dev/null; then
+        [[ "$quiet" == "false" ]] && echo "  nft not found — skipping ghost table cleanup"
+        return 0
+    fi
+
+    local live_tables removed=0 found=0
+    live_tables=$(nft list tables 2>/dev/null) || return 0
+
+    for ghost in "${_NFTBAN_KNOWN_GHOST_TABLES[@]}"; do
+        if echo "$live_tables" | grep -qx "table $ghost"; then
+            ((found++)) || true
+            if [[ "$report_only" == "true" ]]; then
+                [[ "$quiet" == "false" ]] && echo "  Ghost table found: $ghost"
+            else
+                if nft delete table $ghost 2>/dev/null; then
+                    ((removed++)) || true
+                    [[ "$quiet" == "false" ]] && echo "  Removed ghost table: $ghost"
+                else
+                    [[ "$quiet" == "false" ]] && echo "  WARNING: Failed to remove ghost table: $ghost"
+                fi
+            fi
+        fi
+    done
+
+    if [[ "$found" -eq 0 ]]; then
+        [[ "$quiet" == "false" ]] && echo "  No ghost tables found"
+    elif [[ "$report_only" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "  Found $found ghost table(s) — use nftban firewall repair-conflicts to remove"
+        return 1
+    else
+        [[ "$quiet" == "false" ]] && echo "  Cleaned $removed ghost table(s)"
+    fi
+    return 0
+}
+
+# shellcheck disable=SC2120  # Function accepts optional --quiet flag
+nftban_validate_hook_authority() {
+    # Validate that no non-NFTBan tables with input hooks remain after cleanup.
+    # Uses LIVE nft state as source of truth.
+    # Args: [--quiet]
+    # Returns: 0=NFTBan has clear authority, 1=conflicting hooks remain
+    #
+    # v1.48.0: Post-cleanup validation step.
+
+    local quiet=false
+    [[ "${1:-}" == "--quiet" || "${1:-}" == "-q" ]] && quiet=true
+
+    if ! command -v nft &>/dev/null; then
+        return 0
+    fi
+
+    local live_tables conflicts=0
+    live_tables=$(nft list tables 2>/dev/null) || return 0
+
+    while IFS= read -r table_line; do
+        [[ -z "$table_line" ]] && continue
+        local tspec="${table_line#table }"
+        # Skip NFTBan-owned tables (nftban + SYNPROXY raw tables)
+        case "$tspec" in
+            "ip nftban"|"ip6 nftban"|"ip raw"|"ip6 raw") continue ;;
+        esac
+        # Any remaining table is a potential conflict
+        ((conflicts++)) || true
+        [[ "$quiet" == "false" ]] && echo "  WARNING: Non-NFTBan table remains: $tspec"
+    done <<< "$live_tables"
+
+    if [[ "$conflicts" -gt 0 ]]; then
+        [[ "$quiet" == "false" ]] && echo "  Hook authority: CONFLICT ($conflicts foreign table(s) remain)"
+        return 1
+    fi
+
+    [[ "$quiet" == "false" ]] && echo "  Hook authority: CLEAR (NFTBan is sole firewall)"
+    return 0
+}
+
 # shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_firewalld() {
     # Remove/disable firewalld (distro-aware)
@@ -1037,6 +1155,9 @@ nftban_remove_csf() {
     # Remove/disable CSF (ConfigServer Firewall)
     # Usage: nftban_remove_csf [--uninstall]
     # Returns: 0=success, 1=not installed, 2=failed
+    #
+    # v1.48.0: Handles ALL CSF states (production, testing, disabled-but-installed).
+    #          Cleans ghost iptables-nft tables left by CSF regardless of mode.
 
     local uninstall=false
     [[ "${1:-}" == "--uninstall" ]] && uninstall=true
@@ -1047,14 +1168,20 @@ nftban_remove_csf() {
 
     echo "Disabling CSF..."
 
-    # Disable CSF (flushes all rules)
+    # Disable CSF (flushes all iptables rules)
     csf -x 2>/dev/null || true
 
-    # Stop lfd (Login Failure Daemon)
+    # Stop lfd (Login Failure Daemon) — regardless of TESTING mode
     systemctl stop lfd 2>/dev/null || true
     systemctl disable lfd 2>/dev/null || true
     systemctl stop csf 2>/dev/null || true
     systemctl disable csf 2>/dev/null || true
+
+    # v1.48.0: Clean ghost nftables tables left by CSF's iptables-nft backend.
+    # CSF uses iptables which on modern systems is iptables-nft, creating
+    # shadow tables (ip filter, ip nat, etc.) that persist after CSF is disabled.
+    echo "  Cleaning ghost nftables tables from CSF..."
+    nftban_cleanup_ghost_tables --quiet
 
     # Uninstall if requested (CSF has its own uninstaller)
     if [[ "$uninstall" == true ]]; then
@@ -1143,7 +1270,10 @@ nftban_remove_conflicts() {
                 fi
                 ;;
             csf)
-                if [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+                # v1.48.0: Trigger on ANY installed CSF — not just TESTING="0".
+                # CSF in any mode (production, testing, disabled) leaves ghost
+                # iptables-nft tables that conflict with NFTBan.
+                if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
                     to_remove+=("csf")
                 fi
                 ;;
@@ -1189,6 +1319,17 @@ nftban_remove_conflicts() {
         esac
     done
 
+    # v1.48.0: Centralized ghost table cleanup after all service removals.
+    # Even after services are stopped, ghost nft tables may persist.
+    # Source of truth is LIVE nft state, not service/package detection.
+    echo ""
+    echo "Cleaning ghost nftables tables..."
+    nftban_cleanup_ghost_tables
+
+    echo ""
+    echo "Validating hook authority..."
+    nftban_validate_hook_authority || true
+
     echo ""
     echo "=============================================="
     echo "Removed $removed_count conflicting firewall(s)"
@@ -1212,6 +1353,10 @@ export -f nftban_get_pkg_manager
 # Panel detection
 export -f nftban_detect_panel
 export -f nftban_get_panel_conflicts
+
+# Cleanup functions (v1.48.0)
+export -f nftban_cleanup_ghost_tables
+export -f nftban_validate_hook_authority
 
 # Removal functions
 export -f nftban_remove_fail2ban

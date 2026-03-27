@@ -185,6 +185,8 @@ EXPECTED_COUNTERS=(
     "input_blacklist_drop"
     "input_port_allow_tcp_accept"
     "input_port_allow_udp_accept"
+    "input_established_accept"
+    "input_icmp_accept"
     "input_ct_ssh_drop"
     "input_ct_http_drop"
     "input_ct_mail_drop"
