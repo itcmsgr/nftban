@@ -165,6 +165,13 @@ directories:
       description: "Static data files (registries, schemas)"
       created_by: package
 
+    - path: /usr/lib/nftban/templates
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Config templates with placeholders (rendered at install/rebuild)"
+      created_by: package
+
     - path: /usr/lib/nftban/tools
       mode: "0755"
       owner: root

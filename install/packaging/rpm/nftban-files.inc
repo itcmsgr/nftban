@@ -27,6 +27,7 @@
 %dir %attr(0755,root,root) /usr/lib/nftban/sbin
 %dir %attr(0755,root,root) /usr/lib/nftban/health
 %dir %attr(0755,root,root) /usr/lib/nftban/data
+%dir %attr(0755,root,root) /usr/lib/nftban/templates
 %dir %attr(0755,root,root) /usr/lib/nftban/tools
 
 # ---------------------------------------------------------------------------

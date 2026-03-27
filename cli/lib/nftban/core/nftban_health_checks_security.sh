@@ -9,7 +9,7 @@
 # meta:name="nftban_health_checks_security"
 # meta:type="lib"
 # meta:header="Health Check Security Functions"
-# meta:version="1.48.0"
+# meta:version="1.50.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1031,9 +1031,62 @@ nftban_health_check_set_sizes() {
     return $status
 }
 
+# =============================================================================
+# BOOT SAFETY CHECK (v1.50.0)
+# =============================================================================
+# Verifies /etc/nftban/nftables.conf is placeholder-free and nft-valid.
+# If placeholders remain, nftables.service boot/restart fails → no firewall.
+
+nftban_health_check_boot_safety() {
+    local status=$HEALTH_OK
+    local boot_issues=()
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+
+    if [[ ! -f "$nftban_conf" ]]; then
+        boot_issues+=("WARNING: NFTBan config not found: $nftban_conf")
+        status=$HEALTH_WARNING
+    else
+        # Check for unrendered placeholders (boot-fatal)
+        if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
+            boot_issues+=("CRITICAL: Live config contains unrendered placeholders — boot will fail!")
+            boot_issues+=("  └─ File: $nftban_conf")
+            local _placeholders
+            _placeholders=$(grep -oE '__[A-Z_]+__' "$nftban_conf" 2>/dev/null | sort -u | tr '\n' ' ' || true)
+            boot_issues+=("  └─ Found: ${_placeholders}")
+            boot_issues+=("  └─ FIX: nftban firewall rebuild")
+            status=$HEALTH_CRITICAL
+        fi
+
+        # Validate config syntax (only if no placeholder issue — nft -c would fail anyway)
+        if [[ $status -eq $HEALTH_OK ]]; then
+            local _validate_out
+            if ! _validate_out=$(nft -c -f "$nftban_conf" 2>&1); then
+                boot_issues+=("CRITICAL: Live config fails nft validation — boot will fail!")
+                boot_issues+=("  └─ Error: ${_validate_out}")
+                boot_issues+=("  └─ FIX: nftban firewall rebuild")
+                status=$HEALTH_CRITICAL
+            fi
+        fi
+    fi
+
+    if [[ ${#boot_issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034  # Used by render functions externally
+        NFTBAN_HEALTH_ISSUES["boot_safety"]="${boot_issues[*]}"
+        if [[ $status -eq $HEALTH_CRITICAL ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Boot safety: ${boot_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Boot safety: ${boot_issues[*]}")
+        fi
+    fi
+
+    # shellcheck disable=SC2034  # Used by render functions externally
+    NFTBAN_HEALTH_RESULTS["boot_safety"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
 export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
-export -f nftban_health_check_set_sizes
+export -f nftban_health_check_set_sizes nftban_health_check_boot_safety

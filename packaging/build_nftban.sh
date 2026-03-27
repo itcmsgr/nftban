@@ -374,8 +374,11 @@ cp -r cli/lib/nftban/* %{buildroot}/usr/lib/nftban/
 # (cp -r doesn't preserve permissions from source)
 find %{buildroot}/usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
 
-# Nftables config
+# Nftables config (pre-rendered with safe defaults, boot-safe)
 install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftables.conf
+
+# v1.50.0: Template with placeholders (always overwritten on upgrade, not %config)
+install -D -m 0644 install/nftables/nftables.conf.tpl %{buildroot}/usr/lib/nftban/templates/nftables.conf.tpl
 
 # Configuration files (conf.d with subdirectories)
 # NOTE: Central whitelist moved to whitelist.d/ - per-module whitelist.txt files removed
@@ -1223,9 +1226,13 @@ if [[ -n "\$CONFLICTS" ]]; then
         # Flush legacy rules (but NOT our emergency table)
         echo "[NFTBan]   Flushing legacy rules..."
         # Flush specific tables instead of entire ruleset to preserve emergency table
-        for table in \$(nft list tables 2>/dev/null | grep -v nftban_install_emergency | awk '{print \$2, \$3}'); do
-            nft flush table \$table 2>/dev/null || true
-            nft delete table \$table 2>/dev/null || true
+        # v1.49.0: Fixed word-splitting bug — "ip nftban" was split into "ip" + "nftban"
+        nft list tables 2>/dev/null | grep -v nftban_install_emergency | while IFS= read -r _tline; do
+            _tfamily=\$(echo "\$_tline" | awk '{print \$2}')
+            _tname=\$(echo "\$_tline" | awk '{print \$3}')
+            [[ -n "\$_tfamily" && -n "\$_tname" ]] || continue
+            nft flush table "\$_tfamily" "\$_tname" 2>/dev/null || true
+            nft delete table "\$_tfamily" "\$_tname" 2>/dev/null || true
         done
         iptables -F 2>/dev/null || true
         iptables -X 2>/dev/null || true
@@ -1409,11 +1416,12 @@ fi
 
 # STEP 5: **SAFETY** Auto-whitelist system IPs
 # CRITICAL: This MUST happen BEFORE enabling any firewall services
+# v1.49.0: Added timeout — during RPM upgrade, daemon may not be running yet
 echo "[NFTBan] Auto-whitelisting system IPs (lockout prevention)..."
 if command -v nftban >/dev/null 2>&1; then
     # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
     # Rule: Any live nft reload/apply needs session protection (IPv4 + IPv6)
-    nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
+    timeout 30s nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist skipped (daemon not ready — will sync after start)"
 fi
 
 # STEP 6: Download GeoIP database (free DB-IP version, with timeout)
@@ -1430,11 +1438,12 @@ if [ -x /usr/lib/nftban/bin/nftban-core ]; then
 fi
 
 # STEP 7: Enforce permissions and health check
+# v1.49.0: Added timeouts — daemon may not be running during RPM upgrade
 if command -v nftban >/dev/null 2>&1; then
     echo "[NFTBan] Enforcing permissions..."
-    nftban permissions enforce 2>/dev/null || true
+    timeout 30s nftban permissions enforce 2>/dev/null || true
     echo "[NFTBan] Running health check with auto-heal..."
-    nftban health check --auto-heal --quiet 2>/dev/null || true
+    timeout 60s nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
@@ -1653,31 +1662,57 @@ if [ -f /etc/nftban/whitelist.d/00-system.conf ]; then
 fi
 
 # Check 3: Verify nftban config is valid
-# v1.24.0: Substitute __SSH_PORT__ placeholder before validation
-# v1.27.0: Dynamic SSH port detection (state file → sshd_config → fallback 22)
+# v1.50.0: Full placeholder substitution (SSH port + CT limits) with atomic write
+# Template → render → validate → atomic replace
 if [ -f /etc/nftban/nftables.conf ]; then
+    # Detect SSH port: state file → sshd_config → ss listening → fallback 22
     _SSH_PORT=""
     [ -f /var/lib/nftban/state/ssh_port_active.state ] && _SSH_PORT=\$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
     if [ -z "\$_SSH_PORT" ] || ! echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$'; then
         _SSH_PORT=\$(grep -m1 '^Port ' /etc/ssh/sshd_config 2>/dev/null | awk '{print \$2}') || true
     fi
     if [ -z "\$_SSH_PORT" ] || ! echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$'; then
+        _SSH_PORT=\$(ss -tlnp 2>/dev/null | grep 'sshd' | awk '{print \$4}' | grep -oE '[0-9]+\$' | head -1) || true
+    fi
+    if [ -z "\$_SSH_PORT" ] || ! echo "\$_SSH_PORT" | grep -qE '^[0-9]+\$'; then
         _SSH_PORT=22
     fi
-    if grep -q '__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null; then
-        _TMP_CONF=\$(mktemp 2>/dev/null) || _TMP_CONF=""
+
+    # CT limits: source DDoS config for tuned values, fallback to safe defaults
+    _CT_SSH=15
+    _CT_HTTP=150
+    _CT_MAIL=150
+    _DDOS_CONF="/etc/nftban/conf.d/ddos/classic.conf"
+    _DDOS_LOCAL="\${_DDOS_CONF}.local"
+    [ -f "\$_DDOS_CONF" ] && . "\$_DDOS_CONF" 2>/dev/null || true
+    [ -f "\$_DDOS_LOCAL" ] && . "\$_DDOS_LOCAL" 2>/dev/null || true
+    [ -n "\${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ] && _CT_SSH="\$DDOS_CLASSIC_SSH_CONN_LIMIT"
+    [ -n "\${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ] && _CT_HTTP="\$DDOS_CLASSIC_HTTP_CONN_LIMIT"
+    [ -n "\${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ] && _CT_MAIL="\$DDOS_CLASSIC_SMTP_CONN_LIMIT"
+
+    if grep -qE '__SSH_PORT__|__CT_LIMIT_' /etc/nftban/nftables.conf 2>/dev/null; then
+        # Live config has placeholders (v1.49.0 upgrade or .rpmnew merge) → render + atomic replace
+        echo "[NFTBan] Rendering placeholders in live config (v1.49.0 → v1.50.0 migration)"
+        _TMP_CONF=\$(mktemp /etc/nftban/.nftables.conf.tmp.XXXXXX 2>/dev/null) || _TMP_CONF=""
         if [ -n "\$_TMP_CONF" ]; then
-            sed "s/__SSH_PORT__/\${_SSH_PORT}/g" /etc/nftban/nftables.conf > "\$_TMP_CONF"
-            if ! nft -c -f "\$_TMP_CONF" 2>/dev/null; then
-                echo "[NFTBan ERROR] NFTBan nftables config validation failed"
-                NFTABLES_SAFE=0
+            sed -e "s/__SSH_PORT__/\${_SSH_PORT}/g" \
+                -e "s/__CT_LIMIT_SSH__/\${_CT_SSH}/g" \
+                -e "s/__CT_LIMIT_HTTP__/\${_CT_HTTP}/g" \
+                -e "s/__CT_LIMIT_MAIL__/\${_CT_MAIL}/g" \
+                /etc/nftban/nftables.conf > "\$_TMP_CONF"
+            if nft -c -f "\$_TMP_CONF" 2>/dev/null; then
+                mv "\$_TMP_CONF" /etc/nftban/nftables.conf
+                chmod 640 /etc/nftban/nftables.conf
+                chown root:nftban /etc/nftban/nftables.conf 2>/dev/null || true
+                echo "[NFTBan] Config rendered: SSH=\${_SSH_PORT} CT_SSH=\${_CT_SSH} CT_HTTP=\${_CT_HTTP} CT_MAIL=\${_CT_MAIL}"
             else
-                cp "\$_TMP_CONF" /etc/nftban/nftables.conf
-                echo "[NFTBan] SSH port substituted: __SSH_PORT__ → \${_SSH_PORT}"
+                echo "[NFTBan ERROR] Rendered config validation failed — keeping original"
+                rm -f "\$_TMP_CONF"
+                NFTABLES_SAFE=0
             fi
-            rm -f "\$_TMP_CONF"
         fi
     else
+        # Config already rendered (no placeholders) — just validate
         if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
             echo "[NFTBan ERROR] NFTBan nftables config validation failed"
             NFTABLES_SAFE=0
@@ -2005,6 +2040,8 @@ fi
 /usr/lib/nftban/health
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
+# v1.50.0: Template with placeholders (always replaced on upgrade, NOT %config)
+/usr/lib/nftban/templates/nftables.conf.tpl
 # Main config files - root:nftban so services can read configs
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
@@ -2740,8 +2777,12 @@ build_deb() {
     mkdir -p "${deb_root}/etc/nftban"
     install -m 0640 "${PROJECT_ROOT}/install/config/nftban.conf" "${deb_root}/etc/nftban/nftban.conf"
 
-    # Copy nftables config (to nftban dir to avoid conflict with system nftables package)
+    # Copy nftables config (pre-rendered with safe defaults, boot-safe)
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"
+
+    # v1.50.0: Template with placeholders (always overwritten on upgrade)
+    mkdir -p "${deb_root}/usr/lib/nftban/templates"
+    install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf.tpl" "${deb_root}/usr/lib/nftban/templates/nftables.conf.tpl"
 
     # Copy conf.d directory with subdirectories
     # NOTE: Central whitelist moved to whitelist.d/ - per-module whitelist.txt files removed

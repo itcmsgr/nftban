@@ -692,7 +692,8 @@ case "$1" in
             # - Fresh install: nft reload happens in STEP 11, can lock out admin
             # - Upgrade: nft reload happens in STEP 11, can lock out admin
             # Protection must happen BEFORE reload, supports IPv4 and IPv6
-            if nftban whitelist-system sync --quick --protect-session 2>&1; then
+            # v1.49.0: timeout — during upgrade, daemon may not be running yet
+            if timeout 30s nftban whitelist-system sync --quick --protect-session 2>&1; then
                 WHITELIST_SYNC_OK=1
             else
                 log_warn "Auto-whitelist sync failed - CHECK YOUR ACCESS!"
@@ -708,7 +709,8 @@ case "$1" in
 
         if command -v nftban >/dev/null 2>&1; then
             # Enforce correct permissions using the built-in permission system
-            nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
+            # v1.49.0: timeout — during upgrade, daemon may not be running yet
+            timeout 30s nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
             # Full health check runs on first timer trigger (nftban-health.timer)
             # Saves ~10-20 seconds during install
         fi
@@ -961,37 +963,61 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 10.5: Additional config validation (secondary to STEP 0.4 preflight)
+        # STEP 10.5: Config validation with full placeholder substitution
         # =====================================================================
-        # Config file validation (complements live ruleset check from STEP 0.4)
-        # v1.27.0: Substitute __SSH_PORT__ placeholder before validation (was missing,
-        # causing false "Safety Mode" on all DEB installs)
+        # v1.50.0: Full 4-placeholder substitution (SSH port + CT limits)
+        # Template → render → validate → atomic replace
         if [[ -f /etc/nftban/nftables.conf ]] && [[ $NFTABLES_SAFE -eq 1 ]]; then
-            # Detect SSH port dynamically: state file → sshd_config → fallback 22
+            # Detect SSH port: state file → sshd_config → ss listening → fallback 22
             _SSH_PORT=""
             [[ -f /var/lib/nftban/state/ssh_port_active.state ]] && _SSH_PORT=$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
             if [[ -z "$_SSH_PORT" ]] || ! echo "$_SSH_PORT" | grep -qE '^[0-9]+$'; then
                 _SSH_PORT=$(grep -m1 '^Port ' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}') || true
             fi
             if [[ -z "$_SSH_PORT" ]] || ! echo "$_SSH_PORT" | grep -qE '^[0-9]+$'; then
+                _SSH_PORT=$(ss -tlnp 2>/dev/null | grep 'sshd' | awk '{print $4}' | grep -oE '[0-9]+$' | head -1) || true
+            fi
+            if [[ -z "$_SSH_PORT" ]] || ! echo "$_SSH_PORT" | grep -qE '^[0-9]+$'; then
                 _SSH_PORT=22
             fi
-            if grep -q '__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null; then
-                _TMP_CONF=$(mktemp 2>/dev/null) || _TMP_CONF=""
+
+            # CT limits: source DDoS config for tuned values, fallback to safe defaults
+            _CT_SSH=15
+            _CT_HTTP=150
+            _CT_MAIL=150
+            _DDOS_CONF="/etc/nftban/conf.d/ddos/classic.conf"
+            _DDOS_LOCAL="${_DDOS_CONF}.local"
+            # shellcheck disable=SC1090  # dynamic config path
+            [[ -f "$_DDOS_CONF" ]] && source "$_DDOS_CONF" 2>/dev/null || true
+            # shellcheck disable=SC1090  # dynamic config path
+            [[ -f "$_DDOS_LOCAL" ]] && source "$_DDOS_LOCAL" 2>/dev/null || true
+            [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _CT_SSH="$DDOS_CLASSIC_SSH_CONN_LIMIT"
+            [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _CT_HTTP="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
+            [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _CT_MAIL="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
+
+            if grep -qE '__SSH_PORT__|__CT_LIMIT_' /etc/nftban/nftables.conf 2>/dev/null; then
+                # Live config has placeholders (v1.49.0 upgrade) → render + atomic replace
+                log_info "Rendering placeholders in live config (v1.49.0 → v1.50.0 migration)"
+                _TMP_CONF=$(mktemp /etc/nftban/.nftables.conf.tmp.XXXXXX 2>/dev/null) || _TMP_CONF=""
                 if [[ -n "$_TMP_CONF" ]]; then
-                    sed "s/__SSH_PORT__/${_SSH_PORT}/g" /etc/nftban/nftables.conf > "$_TMP_CONF"
-                    if ! nft -c -f "$_TMP_CONF" 2>/dev/null; then
-                        log_error "NFTBan nftables config validation failed"
-                        NFTABLES_SAFE=0
+                    sed -e "s/__SSH_PORT__/${_SSH_PORT}/g" \
+                        -e "s/__CT_LIMIT_SSH__/${_CT_SSH}/g" \
+                        -e "s/__CT_LIMIT_HTTP__/${_CT_HTTP}/g" \
+                        -e "s/__CT_LIMIT_MAIL__/${_CT_MAIL}/g" \
+                        /etc/nftban/nftables.conf > "$_TMP_CONF"
+                    if nft -c -f "$_TMP_CONF" 2>/dev/null; then
+                        mv "$_TMP_CONF" /etc/nftban/nftables.conf
+                        chmod 640 /etc/nftban/nftables.conf
+                        chown root:nftban /etc/nftban/nftables.conf 2>/dev/null || true
+                        log_info "  Config rendered: SSH=${_SSH_PORT} CT_SSH=${_CT_SSH} CT_HTTP=${_CT_HTTP} CT_MAIL=${_CT_MAIL}"
                     else
-                        # Apply substitution to production file (P0 fix: without this,
-                        # nftables loads __SSH_PORT__ literally → kernel rejects → lockout)
-                        cp "$_TMP_CONF" /etc/nftban/nftables.conf
-                        log_info "  SSH port substituted: __SSH_PORT__ → ${_SSH_PORT}"
+                        log_error "Rendered config validation failed — keeping original"
+                        rm -f "$_TMP_CONF"
+                        NFTABLES_SAFE=0
                     fi
-                    rm -f "$_TMP_CONF"
                 fi
             else
+                # Config already rendered (no placeholders) — just validate
                 if ! nft -c -f /etc/nftban/nftables.conf 2>/dev/null; then
                     log_error "NFTBan nftables config validation failed"
                     NFTABLES_SAFE=0
