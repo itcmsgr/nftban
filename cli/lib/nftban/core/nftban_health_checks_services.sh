@@ -735,11 +735,14 @@ nftban_health_check_hung_processes() {
         elapsed=$(echo "$line" | awk '{print $2}')
         cmd=$(echo "$line" | awk '{$1=$2=""; print $0}' | sed 's/^ *//')
 
-        # Skip long-running services (daemon, exporter, health check itself)
-        [[ "$cmd" == *nftband* ]] && continue
-        [[ "$cmd" == *exporter* ]] && continue
-        [[ "$cmd" == *health* ]] && continue
-        [[ "$cmd" == *"login-monitor"* ]] && continue
+        # Skip long-running services and internal mechanisms
+        [[ "$cmd" == *nftband* ]] && continue            # Go daemon (always running)
+        [[ "$cmd" == *exporter* ]] && continue           # Prometheus exporter
+        [[ "$cmd" == *health* ]] && continue             # This health check itself
+        [[ "$cmd" == *"login-monitor"* ]] && continue    # Login monitor daemon
+        [[ "$cmd" == *"maintenance"* ]] && continue      # Maintenance cron (has own flock)
+        [[ "$cmd" == *"watchdog"* ]] && continue         # Watchdog timer
+        [[ "$cmd" == *"task_queue"* ]] && continue       # Queue processor (has own 20min recovery)
         # Skip non-nftban processes that happen to have "nftban" in args
         # (e.g. postgres connections to nftban_portal database)
         [[ "$cmd" != *"bash"* && "$cmd" != *"/usr/sbin/nftban"* && "$cmd" != *"/usr/lib/nftban"* ]] && continue
