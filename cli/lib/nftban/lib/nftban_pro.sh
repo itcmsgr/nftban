@@ -358,7 +358,7 @@ EOF
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_response
     _pro_tmp_response=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "$_pro_tmp_response"' RETURN
+    trap 'rm -f "${_pro_tmp_response:-}"' RETURN
 
     local response
     local http_code
@@ -439,7 +439,7 @@ nftban_pro_check_license() {
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_license
     _pro_tmp_license=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "$_pro_tmp_license"' RETURN
+    trap 'rm -f "${_pro_tmp_license:-}"' RETURN
 
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
@@ -564,9 +564,8 @@ nftban_pro_license_check_timer() {
     if nftban_pro_is_enabled; then
         echo "License valid - Pro features enabled"
         nftban_pro_enable_remote
-
-        # Submit inventory if changed
-        nftban_pro_submit_inventory false
+        # NOTE: Inventory submission handled by nftban-pro-inventory.timer (daily)
+        # Removed duplicate call here to avoid redundant execution (v1.46.0)
     else
         echo "License invalid - disabling Pro features"
         nftban_pro_disable_remote

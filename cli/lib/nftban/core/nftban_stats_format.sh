@@ -668,29 +668,9 @@ nftban_stats_cleanup_logs() {
         echo "[INFO] Cleaning up logs older than ${days} days..."
     fi
 
-    local cleaned=0
-
-    # Rotate ban log if too large (>10MB)
-    if [[ -f "$NFTBAN_BAN_LOG" ]]; then
-        local size
-        size=$(stat -c %s "$NFTBAN_BAN_LOG")
-        if [[ $size -gt 10485760 ]]; then  # 10MB
-            local backup
-            backup="${NFTBAN_BAN_LOG}.$(date +%Y%m%d-%H%M%S)"
-            mv "$NFTBAN_BAN_LOG" "$backup"
-            gzip "$backup" 2>/dev/null || true
-            touch "$NFTBAN_BAN_LOG"
-            chown nftban:nftban "$NFTBAN_BAN_LOG" 2>/dev/null || true
-            chmod 640 "$NFTBAN_BAN_LOG" 2>/dev/null || true
-
-            if type -t nftban_print_status >/dev/null 2>&1; then
-                nftban_print_status "success" "Rotated ban log: ${backup}.gz"
-            else
-                echo "[SUCCESS] Rotated: ${backup}.gz"
-            fi
-            cleaned=$((cleaned + 1)) || true
-        fi
-    fi
+    # NOTE: bans.log rotation handled exclusively by logrotate (copytruncate).
+    # The previous mv-based rotation here conflicted with copytruncate and could
+    # cause data loss when processes hold open file handles. Removed in v1.46.0.
 
     # Delete old compressed logs
     find "$(dirname "$NFTBAN_BAN_LOG")" -name "*.log.gz" -mtime +"${days}" -type f -delete 2>/dev/null || true

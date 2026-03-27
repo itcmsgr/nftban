@@ -577,6 +577,32 @@ nftban_health_fix_services() {
         fi
     done
 
+    # Fix failed timer-triggered services (e.g. exporter failing with 203/EXEC due to missing +x)
+    # The timer may be active but the triggered .service keeps failing
+    local timer_services=(
+        "nftban-unified-exporter.service"
+    )
+    for svc in "${timer_services[@]}"; do
+        if systemctl is-failed --quiet "$svc" 2>/dev/null; then
+            # Check if the failure is permission-related (203/EXEC = not executable)
+            local exit_status
+            exit_status=$(systemctl show -p ExecMainStatus "$svc" 2>/dev/null | cut -d= -f2)
+            if [[ "$exit_status" == "203" ]]; then
+                echo "  → $svc failed with 203/EXEC — fixing script permissions..."
+                find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}" -type f -name "*.sh" ! -perm -111 -exec chmod +x {} \; 2>/dev/null
+                systemctl reset-failed "$svc" 2>/dev/null || true
+                echo "  ✓ Fixed executable permissions on .sh files and reset $svc"
+                fixed_count=$((fixed_count + 1))
+            else
+                # Generic failed service — try restart
+                systemctl reset-failed "$svc" 2>/dev/null || true
+                systemctl restart "$svc" 2>/dev/null || true
+                echo "  ✓ Reset and restarted failed $svc (exit status: ${exit_status:-unknown})"
+                fixed_count=$((fixed_count + 1))
+            fi
+        fi
+    done
+
     # Fix stale PID file (case study: lab1 missing metrics due to PID mismatch)
     # When nftband restarts but PID file isn't updated, metrics exporter can't read runtime stats
     local pid_file="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid"

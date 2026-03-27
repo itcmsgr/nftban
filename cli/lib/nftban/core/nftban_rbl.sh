@@ -780,11 +780,30 @@ nftban_rbl_cache_set() {
 
 nftban_rbl_cache_purge() {
     # Purge RBL cache
-    # Args: $1 = IP address (optional, purge all if empty)
+    # Args: $1 = IP address, "--expired", or empty (purge all)
+    #   nftban_rbl_cache_purge              → purge ALL cache files
+    #   nftban_rbl_cache_purge 1.2.3.4      → purge specific IP
+    #   nftban_rbl_cache_purge --expired    → purge only files older than TTL (v1.46.0)
 
     local ip="${1:-}"
 
-    if [[ -n "$ip" ]]; then
+    if [[ "$ip" == "--expired" ]]; then
+        # Prune only expired entries (TTL-aware)
+        [[ ! -d "$NFTBAN_RBL_CACHE_DIR" ]] && return 0
+        local cache_ttl_seconds=$((NFTBAN_RBL_CACHE_TTL * 3600))
+        local pruned=0 now
+        now=$(date +%s)
+        for cache_file in "${NFTBAN_RBL_CACHE_DIR}"/*.cache; do
+            [[ -f "$cache_file" ]] || continue
+            local file_mtime
+            file_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+            if (( now - file_mtime > cache_ttl_seconds )); then
+                rm -f "$cache_file"
+                ((pruned++)) || true
+            fi
+        done
+        [[ $pruned -gt 0 ]] && echo "Pruned $pruned expired RBL cache entries"
+    elif [[ -n "$ip" ]]; then
         # Purge specific IP
         rm -f "${NFTBAN_RBL_CACHE_DIR}/${ip}.cache"
         echo "Purged cache for: $ip"

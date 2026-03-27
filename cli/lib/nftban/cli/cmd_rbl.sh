@@ -584,6 +584,9 @@ nftban_cmd_rbl_check() {
     mkdir -p "${NFTBAN_RBL_CACHE_DIR}" || return 1
     date -Iseconds > "${NFTBAN_RBL_CACHE_DIR}/last_check"
 
+    # Prune expired cache entries (v1.46.0 — prevent unbounded cache growth)
+    nftban_rbl_cache_purge --expired 2>/dev/null || true
+
     # Return exit code based on listings
     return $any_listed
 }
