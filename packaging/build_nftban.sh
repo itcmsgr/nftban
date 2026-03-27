@@ -1223,9 +1223,13 @@ if [[ -n "\$CONFLICTS" ]]; then
         # Flush legacy rules (but NOT our emergency table)
         echo "[NFTBan]   Flushing legacy rules..."
         # Flush specific tables instead of entire ruleset to preserve emergency table
-        for table in \$(nft list tables 2>/dev/null | grep -v nftban_install_emergency | awk '{print \$2, \$3}'); do
-            nft flush table \$table 2>/dev/null || true
-            nft delete table \$table 2>/dev/null || true
+        # v1.49.0: Fixed word-splitting bug — "ip nftban" was split into "ip" + "nftban"
+        nft list tables 2>/dev/null | grep -v nftban_install_emergency | while IFS= read -r _tline; do
+            _tfamily=\$(echo "\$_tline" | awk '{print \$2}')
+            _tname=\$(echo "\$_tline" | awk '{print \$3}')
+            [[ -n "\$_tfamily" && -n "\$_tname" ]] || continue
+            nft flush table "\$_tfamily" "\$_tname" 2>/dev/null || true
+            nft delete table "\$_tfamily" "\$_tname" 2>/dev/null || true
         done
         iptables -F 2>/dev/null || true
         iptables -X 2>/dev/null || true
@@ -1409,11 +1413,12 @@ fi
 
 # STEP 5: **SAFETY** Auto-whitelist system IPs
 # CRITICAL: This MUST happen BEFORE enabling any firewall services
+# v1.49.0: Added timeout — during RPM upgrade, daemon may not be running yet
 echo "[NFTBan] Auto-whitelisting system IPs (lockout prevention)..."
 if command -v nftban >/dev/null 2>&1; then
     # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
     # Rule: Any live nft reload/apply needs session protection (IPv4 + IPv6)
-    nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
+    timeout 30s nftban whitelist-system sync --quick --protect-session 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist skipped (daemon not ready — will sync after start)"
 fi
 
 # STEP 6: Download GeoIP database (free DB-IP version, with timeout)
@@ -1430,11 +1435,12 @@ if [ -x /usr/lib/nftban/bin/nftban-core ]; then
 fi
 
 # STEP 7: Enforce permissions and health check
+# v1.49.0: Added timeouts — daemon may not be running during RPM upgrade
 if command -v nftban >/dev/null 2>&1; then
     echo "[NFTBan] Enforcing permissions..."
-    nftban permissions enforce 2>/dev/null || true
+    timeout 30s nftban permissions enforce 2>/dev/null || true
     echo "[NFTBan] Running health check with auto-heal..."
-    nftban health check --auto-heal --quiet 2>/dev/null || true
+    timeout 60s nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)

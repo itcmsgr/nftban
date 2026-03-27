@@ -692,7 +692,8 @@ case "$1" in
             # - Fresh install: nft reload happens in STEP 11, can lock out admin
             # - Upgrade: nft reload happens in STEP 11, can lock out admin
             # Protection must happen BEFORE reload, supports IPv4 and IPv6
-            if nftban whitelist-system sync --quick --protect-session 2>&1; then
+            # v1.49.0: timeout — during upgrade, daemon may not be running yet
+            if timeout 30s nftban whitelist-system sync --quick --protect-session 2>&1; then
                 WHITELIST_SYNC_OK=1
             else
                 log_warn "Auto-whitelist sync failed - CHECK YOUR ACCESS!"
@@ -708,7 +709,8 @@ case "$1" in
 
         if command -v nftban >/dev/null 2>&1; then
             # Enforce correct permissions using the built-in permission system
-            nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
+            # v1.49.0: timeout — during upgrade, daemon may not be running yet
+            timeout 30s nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
             # Full health check runs on first timer trigger (nftban-health.timer)
             # Saves ~10-20 seconds during install
         fi
