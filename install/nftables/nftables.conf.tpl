@@ -63,16 +63,16 @@
 #     /etc/nftban/conf.d/<module>/<module>.conf        (defaults)
 #     /etc/nftban/conf.d/<module>/<module>.conf.local  (user overrides)
 #
-# CT LIMITS (rendered from template at install/rebuild):
-#   SSH:  15 concurrent per IP (default)
-#   HTTP: 150 concurrent per IP (default)
-#   MAIL: 150 concurrent per IP (default)
+# CT LIMITS (base schema placeholders, substituted at rebuild):
+#   __CT_LIMIT_SSH__   default: 15 (or DDoS SSH limit when DDoS active)
+#   __CT_LIMIT_HTTP__  default: 150 (or DDoS HTTP limit when DDoS active)
+#   __CT_LIMIT_MAIL__  default: 150 (or DDoS SMTP limit when DDoS active)
 #
-#   v1.50.0: This file is pre-rendered with safe defaults. The template with
-#   placeholders lives at /usr/lib/nftban/templates/nftables.conf.tpl.
-#   Values are substituted from DDoS config during 'nftban firewall rebuild'.
-#   Override via /etc/nftban/conf.d/ddos/classic.conf.local:
-#     DDOS_CLASSIC_SSH_CONN_LIMIT="20"
+#   v1.49.0 FIX-F: Base limits were dead when DDoS module active because
+#   DDoS helper chain had stricter limits (SSH:10 vs base:15). Now both
+#   use the same configurable values. Override via:
+#     /etc/nftban/conf.d/ddos/classic.conf.local:
+#       DDOS_CLASSIC_SSH_CONN_LIMIT="20"
 #
 # =============================================================================
 
@@ -349,9 +349,9 @@ table ip nftban {
         } counter name input_icmp_accept counter name total_input_accept accept
 
         # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport 22 ct count over 15 counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max 15 concurrent per IP"
-        ct state new tcp dport { 80, 443 } ct count over 150 counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max 150 concurrent per IP"
-        ct state new tcp dport { 25, 465, 587 } ct count over 150 counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max 150 concurrent per IP"
+        ct state new tcp dport __SSH_PORT__ ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP"
+        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent per IP"
+        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent per IP"
 
         # 7. SYN RATE LIMIT - Portscan detection (per source IP)
         # v1.46.0 FIX-B: Two-rule pattern — accept within limit, log+drop exceeded
@@ -655,9 +655,9 @@ table ip6 nftban {
         } counter name input_icmp_accept counter name total_input_accept accept
 
         # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport 22 ct count over 15 counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max 15 concurrent per IP"
-        ct state new tcp dport { 80, 443 } ct count over 150 counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max 150 concurrent per IP"
-        ct state new tcp dport { 25, 465, 587 } ct count over 150 counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max 150 concurrent per IP"
+        ct state new tcp dport __SSH_PORT__ ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP"
+        ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent per IP"
+        ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent per IP"
 
         # 7. SYN RATE LIMIT - Portscan detection (per source IP)
         # v1.46.0 FIX-B: Two-rule pattern (same as IPv4)

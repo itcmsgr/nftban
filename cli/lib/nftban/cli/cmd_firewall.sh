@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.49.0"
+# meta:version="1.50.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -755,11 +755,32 @@ firewall_reload() {
     fi
 
     # Step 2: Re-apply NFTBan schema
+    # v1.50.0: Render from template if available, otherwise use live config
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-    if [[ -f "$nftban_conf" ]]; then
+    local _template="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
+    if [[ -f "$_template" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema from template..."
+        local _tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
+        _firewall_substitute_placeholders "$_template" "$_tmp_conf"
+        if nft -c -f "$_tmp_conf" 2>/dev/null; then
+            mv "$_tmp_conf" "$nftban_conf"
+            chmod 640 "$nftban_conf" 2>/dev/null || true
+            chown root:nftban "$nftban_conf" 2>/dev/null || true
+            if ! nft -f "$nftban_conf" 2>&1; then
+                echo "Warning: Failed to re-apply NFTBan schema" >&2
+                echo "Try: nftban firewall rebuild" >&2
+            fi
+        else
+            echo "Warning: Template validation failed, loading live config" >&2
+            rm -f "$_tmp_conf"
+            if [[ -f "$nftban_conf" ]] && ! nft -f "$nftban_conf" 2>&1; then
+                echo "Try: nftban firewall rebuild" >&2
+            fi
+        fi
+    elif [[ -f "$nftban_conf" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema..."
-        # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
         if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
+            # Legacy: live config has placeholders, no template — render in place
             local _tmp_conf
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
             _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
@@ -812,7 +833,7 @@ firewall_rebuild() {
     #
     # v1.47.0 DEPLOY-001: Atomic rebuild — validate BEFORE flushing
     # v1.47.0 DEPLOY-002: Detect .rpmnew files from RPM upgrades
-    # v1.47.0 DEPLOY-003: Substitute __SSH_PORT__ placeholder
+    # v1.50.0: Template-based rebuild — render from .tpl, validate, atomic-write
     local force=false
     local quiet=false
     local use_new=false
@@ -858,57 +879,94 @@ firewall_rebuild() {
     timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
     timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null > "$backup_dir/blacklist_ipv6_$timestamp.txt" || true
 
-    # v1.47.0 DEPLOY-002: Check for .rpmnew files (RPM upgrade left new config unmerged)
+    # v1.50.0: Template-based rebuild architecture
+    # Source: /usr/lib/nftban/templates/nftables.conf.tpl (package-owned template)
+    # Target: /etc/nftban/nftables.conf (rendered, boot-safe live config)
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local template_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
     local rpmnew_conf="${nftban_conf}.rpmnew"
-    if [[ -f "$rpmnew_conf" ]]; then
-        if [[ "$use_new" == "true" ]]; then
-            [[ "$quiet" == "false" ]] && echo "  [INFO] Using new config from $rpmnew_conf (--use-new)"
-            nftban_conf="$rpmnew_conf"
+    local tmp_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/.nftables.conf.tmp"
+    local source_file=""
+
+    # Determine source: --use-new → .rpmnew, else template, else legacy fallback
+    if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
+        [[ "$quiet" == "false" ]] && echo "  [INFO] Using new config from $rpmnew_conf (--use-new)"
+        source_file="$rpmnew_conf"
+    elif [[ -f "$template_file" ]]; then
+        source_file="$template_file"
+    else
+        # Legacy migration: template not installed yet (pre-v1.50.0 package)
+        if [[ -f "$nftban_conf" ]]; then
+            if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
+                echo "WARNING: [LEGACY] Using live config as template source — run 'dnf reinstall nftban' to install template" >&2
+                source_file="$nftban_conf"
+            else
+                # Pre-v1.49.0 hardcoded config, no placeholders → load directly
+                [[ "$quiet" == "false" ]] && echo "  [INFO] Pre-template config detected, loading directly"
+                source_file=""
+            fi
         else
-            echo "" >&2
-            echo "WARNING: New config available at $rpmnew_conf" >&2
-            echo "  RPM upgrade created a new config but your existing one was modified." >&2
-            echo "  The rebuild will use the OLD config. New features (named counters, etc.) may be missing." >&2
-            echo "" >&2
-            echo "  Options:" >&2
-            echo "    1. Review and merge: diff $nftban_conf $rpmnew_conf" >&2
-            echo "    2. Use new config:   nftban firewall rebuild --use-new" >&2
-            echo "    3. Replace manually:  cp $rpmnew_conf $nftban_conf" >&2
-            echo "" >&2
+            echo "ERROR: Template not found: $template_file — reinstall nftban package" >&2
+            return 1
         fi
     fi
 
-    if [[ ! -f "$nftban_conf" ]]; then
-        echo "ERROR: NFTBan config not found: $nftban_conf" >&2
-        return 1
-    fi
-
-    # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
-    [[ "$quiet" == "false" ]] && echo "  [2/7] Preparing schema config..."
-    local load_conf="$nftban_conf"
-    local tmp_conf=""
-    if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
-        tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
-        _firewall_substitute_placeholders "$nftban_conf" "$tmp_conf"
-        load_conf="$tmp_conf"
-        [[ "$quiet" == "false" ]] && echo "    Substituted placeholders (SSH port + CT limits)"
-    fi
-
-    # v1.47.0 DEPLOY-001: Validate schema BEFORE flushing (atomic rebuild)
-    # nft -c -f validates syntax without applying — prevents lockout on bad config
-    [[ "$quiet" == "false" ]] && echo "  [3/7] Validating new schema (dry-run)..."
-    local validate_output
-    if ! validate_output=$(nft -c -f "$load_conf" 2>&1); then
-        echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
-        echo "  Config: $nftban_conf" >&2
-        echo "  Error:  $validate_output" >&2
+    # .rpmnew advisory warning (when not using --use-new)
+    if [[ "$use_new" != "true" && -f "$rpmnew_conf" ]]; then
         echo "" >&2
-        echo "  Fix the config file and retry: nftban firewall rebuild" >&2
-        [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
-        return 1
+        echo "WARNING: New config available at $rpmnew_conf" >&2
+        echo "  RPM upgrade created a new config but your existing one was modified." >&2
+        echo "  Options:" >&2
+        echo "    1. Review and merge: diff $nftban_conf $rpmnew_conf" >&2
+        echo "    2. Use new config:   nftban firewall rebuild --use-new" >&2
+        echo "" >&2
     fi
-    [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
+
+    # Render: substitute placeholders → temp file → validate → atomic write
+    [[ "$quiet" == "false" ]] && echo "  [2/7] Rendering schema from template..."
+    local load_conf="$nftban_conf"
+
+    if [[ -n "$source_file" ]]; then
+        if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$source_file" 2>/dev/null; then
+            _firewall_substitute_placeholders "$source_file" "$tmp_conf"
+            [[ "$quiet" == "false" ]] && echo "    Substituted placeholders (SSH port + CT limits)"
+        else
+            cp "$source_file" "$tmp_conf"
+        fi
+
+        # Validate rendered config BEFORE writing to live config
+        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating new schema (dry-run)..."
+        local validate_output
+        if ! validate_output=$(nft -c -f "$tmp_conf" 2>&1); then
+            echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
+            echo "  Source: $source_file" >&2
+            echo "  Error:  $validate_output" >&2
+            echo "" >&2
+            echo "  Fix the config file and retry: nftban firewall rebuild" >&2
+            rm -f "$tmp_conf"
+            return 1
+        fi
+        [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
+
+        # Atomic write: mv on same filesystem = atomic
+        mv "$tmp_conf" "$nftban_conf"
+        chmod 640 "$nftban_conf" 2>/dev/null || true
+        chown root:nftban "$nftban_conf" 2>/dev/null || true
+        load_conf="$nftban_conf"
+    else
+        # No template, no placeholders — validate live config directly
+        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating schema (dry-run)..."
+        local validate_output
+        if ! validate_output=$(nft -c -f "$load_conf" 2>&1); then
+            echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
+            echo "  Config: $load_conf" >&2
+            echo "  Error:  $validate_output" >&2
+            echo "" >&2
+            echo "  Fix the config file and retry: nftban firewall rebuild" >&2
+            return 1
+        fi
+        [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
+    fi
 
     # Step 4: Remove rogue tables (keep only NFTBan tables)
     [[ "$quiet" == "false" ]] && echo "  [4/7] Removing rogue tables..."
@@ -933,12 +991,10 @@ firewall_rebuild() {
     nft flush table ip6 nftban 2>/dev/null || true
 
     if ! nft -f "$load_conf" 2>&1; then
-        echo "ERROR: Failed to load NFTBan schema from $nftban_conf" >&2
+        echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
         echo "Try: nftban firewall reset --force" >&2
-        [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
         return 1
     fi
-    [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
 
     # Step 6: Re-sync system whitelist
     [[ "$quiet" == "false" ]] && echo "  [6/7] Re-syncing system whitelist..."
@@ -980,12 +1036,10 @@ firewall_rebuild() {
     done
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
 
-    # Handle .rpmnew: if --use-new succeeded, move old config to .bak and new to canonical
+    # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
-        local canonical_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-        cp "$canonical_conf" "${canonical_conf}.bak.${timestamp}" 2>/dev/null || true
-        mv "$rpmnew_conf" "$canonical_conf" 2>/dev/null || true
-        [[ "$quiet" == "false" ]] && echo "  Promoted .rpmnew to canonical config (old saved as .bak.${timestamp})"
+        rm -f "$rpmnew_conf" 2>/dev/null || true
+        [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config"
     fi
 
     [[ "$quiet" == "false" ]] && echo ""
@@ -1216,19 +1270,9 @@ _restore_from_file() {
     if ! nft -f "$backup_file" 2>&1; then
         echo "ERROR: Failed to restore backup" >&2
         echo "Attempting to reload NFTBan schema..." >&2
-        # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
+        # v1.50.0: Live config should be rendered (no placeholders). Just load it.
         local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-        if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$_nftban_conf" 2>/dev/null; then
-            local _tmp_f
-            _tmp_f=$(mktemp 2>/dev/null) || _tmp_f=""
-            if [[ -n "$_tmp_f" ]]; then
-                _firewall_substitute_placeholders "$_nftban_conf" "$_tmp_f"
-                nft -f "$_tmp_f" 2>/dev/null || true
-                rm -f "$_tmp_f"
-            else
-                nft -f "$_nftban_conf" 2>/dev/null || true
-            fi
-        else
+        if [[ -f "$_nftban_conf" ]]; then
             nft -f "$_nftban_conf" 2>/dev/null || true
         fi
         return 1
@@ -2014,15 +2058,16 @@ Use this when:
 
 What it does:
   1. Backs up current IPs from all sets
-  2. Detects .rpmnew config files (RPM upgrades)
-  3. Substitutes __SSH_PORT__ placeholder with detected port
-  4. Validates new schema (dry-run) BEFORE flushing
+  2. Renders template with SSH port + CT limits (from DDoS config)
+  3. Validates rendered schema (dry-run) BEFORE flushing
+  4. Atomic-writes rendered config to /etc/nftban/nftables.conf
   5. Removes rogue tables (non-NFTBan tables)
   6. Flushes and loads validated schema
   7. Re-syncs system whitelist + restores blacklist
 
 Safety: Schema is validated with 'nft -c -f' before any changes.
 If validation fails, existing firewall is preserved (no lockout).
+Source: /usr/lib/nftban/templates/nftables.conf.tpl (v1.50.0+)
 
 Options:
   --force, -f   Skip confirmation prompts
