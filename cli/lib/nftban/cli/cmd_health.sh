@@ -8,7 +8,7 @@
 # meta:name="cmd_health"
 # meta:type="cli"
 # meta:header="Health Check CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="CLI commands for health checks including registry validation"
@@ -140,6 +140,10 @@ nftban_cmd_health() {
         --brief|brief)
             # v1.24.0: One-line health output for CI/fleet/monitoring
             nftban_health_cmd_brief "$@"
+            ;;
+        --nagios|nagios)
+            # v1.43.0 P3-29: Nagios/monitoring plugin output format
+            nftban_health_cmd_nagios "$@"
             ;;
         summary)
             # One-line summary

@@ -3112,6 +3112,31 @@ test:
     - "nftban test all"
     - "nftban test --verbose --json"
 
+benchmark:
+  category: developer_sysadmin
+  description: "Performance benchmarking of NFTBan components"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  subcommands:
+    all: {mutates: false, description: "Run all benchmarks (default)"}
+    ipc: {mutates: false, description: "IPC socket latency benchmarks"}
+    nft: {mutates: false, description: "nftables operation timing"}
+    sets: {mutates: false, description: "Show nft set sizes"}
+  options:
+    --iterations: {type: int, shorthand: "-n", description: "Number of iterations", default: 10}
+    --json: {type: bool, description: "Output in JSON format"}
+  examples:
+    - "nftban benchmark"
+    - "nftban benchmark ipc --iterations 50"
+    - "nftban benchmark sets --json"
+
 emulate:
   category: developer_sysadmin
   description: "Simulate firewall rule evaluation (test inbound and outbound packets)"

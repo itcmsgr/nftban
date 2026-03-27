@@ -8,7 +8,7 @@
 # meta:name="cmd_health_core"
 # meta:type="cli"
 # meta:header="Health Check Core Module"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -326,8 +326,29 @@ nftban_health_cmd_report() {
 nftban_health_cmd_fix() {
     # Auto-fix common issues
     # Args: $1 = what to fix (optional: permissions|directories|services|all)
+    # Flags: --dry-run, --skip-downloads, --yes
 
     local what="${1:-all}"
+    local dry_run=0
+    local skip_downloads=0
+    local auto_yes=0
+
+    # v1.43.0 P3-27: Parse flags
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) dry_run=1 ;;
+            --skip-downloads) skip_downloads=1 ;;
+            --yes|-y) auto_yes=1 ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+    [[ ${#args[@]} -gt 0 ]] && what="${args[0]}"
+
+    # Export flags for sub-functions
+    export NFTBAN_FIX_DRY_RUN="$dry_run"
+    export NFTBAN_FIX_SKIP_DOWNLOADS="$skip_downloads"
+    export NFTBAN_FIX_AUTO_YES="$auto_yes"
 
     # Load health module
     if ! declare -f nftban_health_fix_permissions >/dev/null 2>&1; then
@@ -341,6 +362,16 @@ nftban_health_cmd_fix() {
     echo "================="
     echo ""
 
+    if [[ $dry_run -eq 1 ]]; then
+        echo "MODE: DRY-RUN (no changes will be made)"
+        echo ""
+    fi
+
+    if [[ $skip_downloads -eq 1 ]]; then
+        echo "NOTE: Downloads will be skipped (--skip-downloads)"
+        echo ""
+    fi
+
     # Show privilege level
     if [[ $EUID -eq 0 ]]; then
         echo "Running as: root (can fix everything)"
@@ -348,6 +379,20 @@ nftban_health_cmd_fix() {
         echo "Running as: $(whoami) (can fix owned files, will report what needs root)"
     fi
     echo ""
+
+    # Confirmation prompt (unless --yes or --dry-run)
+    if [[ "$what" == "all" && $auto_yes -eq 0 && $dry_run -eq 0 && -t 0 ]]; then
+        printf "This will attempt to fix all detected issues. Continue? [y/N] "
+        local reply
+        read -r reply
+        case "$reply" in
+            [yY]|[yY][eE][sS]) ;;
+            *)
+                echo "Aborted."
+                return 1
+                ;;
+        esac
+    fi
 
     case "$what" in
         permissions)
@@ -495,6 +540,53 @@ nftban_health_cmd_fix() {
 }
 
 # =============================================================================
+# COMMAND: nagios (v1.43.0 P3-29)
+# =============================================================================
+
+nftban_health_cmd_nagios() {
+    # v1.43.0 P3-29: Nagios/Icinga/monitoring plugin compatible output
+    # Output format: STATUS - summary | perfdata
+    # Exit codes: 0=OK, 1=WARNING, 2=CRITICAL, 3=UNKNOWN
+
+    # Load health module if not already loaded
+    if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || {
+            echo "UNKNOWN - Failed to load health check module"
+            return 3
+        }
+    fi
+
+    # Run all checks silently
+    nftban_health_check_all >/dev/null 2>&1 || true
+
+    local total_checks="${NFTBAN_HEALTH_TOTAL_CHECKS:-0}"
+    local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
+    local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
+    local ok_count=$((total_checks - error_count - warning_count))
+    [[ $ok_count -lt 0 ]] && ok_count=0
+
+    # Get ban count for perfdata
+    local ban_count=0
+    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+        ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
+    fi
+
+    # Perfdata format: label=value[;warn;crit;min;max]
+    local perfdata="checks=${total_checks} ok=${ok_count} warnings=${warning_count} errors=${error_count} bans=${ban_count}"
+
+    if [[ $error_count -gt 0 ]]; then
+        echo "CRITICAL - NFTBan: ${error_count} errors, ${warning_count} warnings of ${total_checks} checks | ${perfdata}"
+        return 2
+    elif [[ $warning_count -gt 0 ]]; then
+        echo "WARNING - NFTBan: ${warning_count} warnings of ${total_checks} checks | ${perfdata}"
+        return 1
+    else
+        echo "OK - NFTBan: ${total_checks} checks passed | ${perfdata}"
+        return 0
+    fi
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -504,3 +596,4 @@ export -f nftban_health_cmd_summary
 export -f nftban_health_cmd_json
 export -f nftban_health_cmd_report
 export -f nftban_health_cmd_fix
+export -f nftban_health_cmd_nagios

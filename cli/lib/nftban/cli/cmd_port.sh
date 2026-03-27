@@ -48,7 +48,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # meta:name="cmd_port"
 # meta:type="cli"
 # meta:header="Port CLI Command"
-# meta:version="1.41.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1111,7 +1111,9 @@ nftban_port_allow_flush() {
             local suffix="_ipv4"
             [[ "$fam" == "ip6" ]] && suffix="_ipv6"
             for set_base in "${sets[@]}"; do
-                nft_ipc_flush_set "${fam} nftban" "${set_base}${suffix}" 2>/dev/null || true
+                if ! nft_ipc_flush_set "${fam} nftban" "${set_base}${suffix}" 2>/dev/null; then
+                    echo "  ⚠ Failed to flush ${set_base}${suffix} via IPC" >&2
+                fi
             done
         done
         echo "✅ All per-IP port access rules flushed"

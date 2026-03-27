@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.40.0 - NFT Cross-Validation Script
+# NFTBan v1.43.0 - NFT Cross-Validation Script
 # =============================================================================
 # meta:name="nft_crosscheck"
 # meta:type="test"
-# meta:version="1.41.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Cross-validates CLI-reported state vs actual nft kernel state"
 # meta:inventory.files=""
@@ -228,6 +228,46 @@ if nft list counter ip6 nftban output_icmpv6_accept &>/dev/null; then
 else
     nft list table ip6 nftban >/dev/null 2>&1 && log_warn "Named counter ip6/output_icmpv6_accept missing" || true
 fi
+
+# v1.43.0: Family-specific synproxy counter
+for family in ip ip6; do
+    nft list table "$family" nftban >/dev/null 2>&1 || continue
+    if nft list counter "$family" nftban input_synproxy_accept &>/dev/null; then
+        log_pass "Named counter $family/input_synproxy_accept exists"
+    else
+        log_warn "Named counter $family/input_synproxy_accept missing"
+    fi
+done
+
+# v1.43.0: Counter packet validation (verify counters are wired — non-zero packets on active chains)
+for family in ip ip6; do
+    nft list table "$family" nftban >/dev/null 2>&1 || continue
+    for cname in "input_whitelist_accept" "output_established_accept"; do
+        counter_output=$(nft list counter "$family" nftban "$cname" 2>/dev/null) || continue
+        packets=$(echo "$counter_output" | grep -oP 'packets \K[0-9]+' || echo "0")
+        if [[ "$packets" -gt 0 ]]; then
+            log_pass "Counter $family/$cname: $packets packets (wired correctly)"
+        else
+            log_warn "Counter $family/$cname: 0 packets (may not be wired in rules)"
+        fi
+    done
+done
+
+# v1.43.0: Validate concat set types for port-allow sets
+for family in ip ip6; do
+    nft list table "$family" nftban >/dev/null 2>&1 || continue
+    local_suffix="ipv4"; [[ "$family" == "ip6" ]] && local_suffix="ipv6"
+    for proto in tcp udp; do
+        set_name="port_allow_${proto}_${local_suffix}"
+        set_out=$(nft -j list set "$family" nftban "$set_name" 2>/dev/null) || continue
+        actual_type=$(echo "$set_out" | jq -r '.nftables[1].set.type | if type == "array" then join(" . ") else . end // empty' 2>/dev/null) || true
+        if [[ "$actual_type" == *"inet_service"* ]]; then
+            log_pass "Concat set $family/$set_name type=$actual_type"
+        elif [[ -n "$actual_type" ]]; then
+            log_warn "Concat set $family/$set_name: unexpected type=$actual_type"
+        fi
+    done
+done
 
 # =========================================================================
 # Summary

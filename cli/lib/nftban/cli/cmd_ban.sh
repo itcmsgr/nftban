@@ -8,7 +8,7 @@
 # meta:name="cmd_ban"
 # meta:type="cli"
 # meta:header="Ban Command"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Ban IP addresses permanently using nftban-core"
@@ -60,6 +60,10 @@ nftban_cmd_ban() {
     local ban_source=""
     local ban_file=""
     local compact_mode="false"
+    local dry_run="false"
+    local auto_confirm="false"
+    local async_mode="false"
+    local wait_mode="false"
     local json_mode
 
     # Check for help first
@@ -90,6 +94,26 @@ nftban_cmd_ban() {
             --compact|-q)
                 # v1.39.0 P3-34: Compact output (3 lines: action, result, total)
                 compact_mode="true"
+                shift
+                ;;
+            --dry-run)
+                # v1.43.0 P3-21: Show what would happen without executing
+                dry_run="true"
+                shift
+                ;;
+            --yes|-y)
+                # v1.43.0 P3-24: Skip confirmation prompt
+                auto_confirm="true"
+                shift
+                ;;
+            --async)
+                # v1.43.0 P3-18: Return immediately, don't wait for IPC response
+                async_mode="true"
+                shift
+                ;;
+            --wait)
+                # v1.43.0 P3-18: Wait for nftables sync confirmation
+                wait_mode="true"
                 shift
                 ;;
             --file|--file=*)
@@ -150,6 +174,54 @@ nftban_cmd_ban() {
         fi
     fi
 
+    # v1.43.0 P3-21: Dry-run mode — show what would happen without executing
+    if [[ "$dry_run" == "true" ]]; then
+        local ban_type="permanent"
+        [[ -n "$timeout" ]] && ban_type="temporary (${timeout}s)"
+        local family="ip"
+        [[ "$ip" =~ : ]] && family="ip6"
+
+        if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+            local data
+            data=$(jq -n \
+                --arg ip "$ip" \
+                --arg family "$family" \
+                --arg ban_type "$ban_type" \
+                --arg reason "${reason:-manual}" \
+                --arg timeout "${timeout:-permanent}" \
+                --arg source "${ban_source:-manual}" \
+                '{dry_run: true, ip: $ip, family: $family, ban_type: $ban_type, reason: $reason, timeout: $timeout, source: $source}')
+            json_output "true" "$data"
+        else
+            echo "[DRY-RUN] Would ban IP: $ip"
+            echo "  Family:   $family"
+            echo "  Type:     $ban_type"
+            echo "  Reason:   ${reason:-(none)}"
+            echo "  Source:   ${ban_source:-manual}"
+            echo "  Blacklist: ${NFTBAN_CONFIG_DIR}/blacklist.d/99-manual.conf"
+            echo "  nft set:  $family nftban banned_${family}v4"
+            [[ "$family" == "ip6" ]] && echo "  nft set:  ip6 nftban banned_ipv6"
+        fi
+        return 0
+    fi
+
+    # v1.43.0 P3-24: Confirmation prompt for permanent bans
+    if [[ -z "$timeout" && "$auto_confirm" != "true" && "$json_mode" != "true" ]]; then
+        if [[ -t 0 ]]; then
+            echo "WARNING: This will permanently ban $ip (no timeout set)."
+            printf "Continue? [y/N] "
+            local reply
+            read -r reply
+            case "$reply" in
+                [yY]|[yY][eE][sS]) ;;
+                *)
+                    echo "Aborted."
+                    return 1
+                    ;;
+            esac
+        fi
+    fi
+
     # Check if nftban-core exists (required for ban command)
     local NFTBAN_CORE
     NFTBAN_CORE=$(cmd_get_core_binary)
@@ -160,6 +232,8 @@ nftban_cmd_ban() {
     [[ -n "$reason" ]] && cmd_args+=(--reason "$reason")
     [[ -n "$timeout" ]] && cmd_args+=(--timeout "$timeout")
     [[ -n "$ban_source" ]] && cmd_args+=(--source "$ban_source")
+    [[ "$async_mode" == "true" ]] && cmd_args+=(--async)
+    [[ "$wait_mode" == "true" ]] && cmd_args+=(--wait)
 
     # Call nftban-core ban (Go binary handles logging to bans.log)
     local output exit_code
@@ -294,6 +368,10 @@ Options:
   --timeout SECONDS     Temporary ban duration (omit for permanent)
   --source SOURCE       Ban source (e.g., login, portscan, ddos, manual)
   --compact, -q         Compact output (essential info only)
+  --dry-run             Show what would happen without executing
+  --yes, -y             Skip confirmation prompt for permanent bans
+  --async               Return immediately without waiting for sync
+  --wait                Wait for nftables sync confirmation
   --help, -h            Show this help message
 
 Examples:
