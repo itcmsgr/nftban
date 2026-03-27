@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_metrics_collector"
 # meta:type="exporter"
-# meta:version="1.39.0"
+# meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Central metrics collector - collect once, export to any backend"
 # meta:inventory.files=""
@@ -149,14 +149,15 @@ collect_ban_metrics() {
     # Active bans from nftables
     if command -v nft &>/dev/null; then
         local ipv4 ipv6
-        ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
+        ipv4=$(nftban_nft_count_set_elements ip nftban blacklist_ipv4)
+        ipv6=$(nftban_nft_count_set_elements ip6 nftban blacklist_ipv6)
         active=$((ipv4 + ipv6))
 
         # Whitelist
         local wl4 wl6
-        wl4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl4=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4)
+        wl6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6)
         whitelist=$((wl4 + wl6))
     fi
 
@@ -781,11 +782,11 @@ collect_nftables_perf_metrics() {
         # Sets count
         sets_total=$(nft list sets 2>/dev/null | grep -c "^\\s*set ") || sets_total=0
 
-        # Set elements - use JSON output for accuracy
-        bl_ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        bl_ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl_ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl_ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
+        bl_ipv4=$(nftban_nft_count_set_elements ip nftban blacklist_ipv4)
+        bl_ipv6=$(nftban_nft_count_set_elements ip6 nftban blacklist_ipv6)
+        wl_ipv4=$(nftban_nft_count_set_elements ip nftban whitelist_ipv4)
+        wl_ipv6=$(nftban_nft_count_set_elements ip6 nftban whitelist_ipv6)
     fi
 
     cat <<EOF
@@ -875,14 +876,15 @@ collect_nftables_metrics() {
         sets6=$(nft list sets ${NFTBAN_TABLE_IPV6} 2>/dev/null | grep -c "set ") || sets6=0
         sets=$((sets + sets6))
 
+        # v1.47.0: Use normalized wrapper for cross-distro nft JSON compatibility
         for set_name in blacklist_ipv4 whitelist_ipv4; do
             local count
-            count=$(nft -j list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            count=$(nftban_nft_count_set_elements ip nftban "$set_name")
             elements=$((elements + count))
         done
         for set_name in blacklist_ipv6 whitelist_ipv6; do
             local count
-            count=$(nft -j list set ${NFTBAN_TABLE_IPV6} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            count=$(nftban_nft_count_set_elements ip6 nftban "$set_name")
             elements=$((elements + count))
         done
 
