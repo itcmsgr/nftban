@@ -7,7 +7,7 @@
 # meta:name="cmd_status"
 # meta:type="cli"
 # meta:header="Global Status Command"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -180,6 +180,12 @@ nftban_cmd_status() {
             --brief|-b)
                 brief_mode=1
                 shift
+                ;;
+            pending|queue)
+                # v1.43.0 P3-25: Show pending/queued operations
+                shift || true
+                _nftban_status_pending "$@"
+                return $?
                 ;;
             help|-h|--help)
                 show_usage
@@ -1710,6 +1716,76 @@ SEE ALSO:
   nftban firewall validate    Detailed firewall info
   nftban stats dashboard      Detailed statistics
 EOF
+}
+
+# =============================================================================
+# SUBCOMMAND: pending (v1.43.0 P3-25)
+# =============================================================================
+
+_nftban_status_pending() {
+    # Show pending/queued operations from the daemon opqueue
+    # Args: [--json]
+
+    local json_mode=0
+    for arg in "$@"; do
+        [[ "$arg" == "--json" || "$arg" == "-j" ]] && json_mode=1
+    done
+
+    # Load IPC module
+    if ! declare -f nft_ipc_queue_status >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" || true
+        fi
+    fi
+
+    # Check daemon availability
+    if ! declare -f nft_ipc_is_daemon_running >/dev/null 2>&1 || ! nft_ipc_is_daemon_running; then
+        if [[ $json_mode -eq 1 ]]; then
+            echo '{"success":false,"error":"daemon not running","pending":[]}'
+        else
+            echo "Daemon is not running — no pending operations"
+        fi
+        return 1
+    fi
+
+    # Query daemon status (includes queue depth)
+    local response
+    response=$(nft_ipc_queue_status 2>/dev/null) || {
+        if [[ $json_mode -eq 1 ]]; then
+            echo '{"success":false,"error":"IPC query failed","pending":[]}'
+        else
+            echo "ERROR: Failed to query daemon status" >&2
+        fi
+        return 1
+    }
+
+    if [[ $json_mode -eq 1 ]]; then
+        echo "$response" | jq '{
+            success: true,
+            queue_depth: (.queue_depth // .pending_count // 0),
+            total_applied: (.total_applied // 0),
+            total_dropped: (.total_dropped // 0)
+        }' 2>/dev/null || echo "$response"
+    else
+        local depth applied dropped
+        depth=$(echo "$response" | jq -r '.queue_depth // .pending_count // 0' 2>/dev/null || echo "0")
+        applied=$(echo "$response" | jq -r '.total_applied // 0' 2>/dev/null || echo "0")
+        dropped=$(echo "$response" | jq -r '.total_dropped // 0' 2>/dev/null || echo "0")
+
+        echo "NFTBan Pending Operations"
+        echo "========================="
+        echo ""
+        echo "  Queue depth:     $depth"
+        echo "  Total applied:   $applied"
+        echo "  Total dropped:   $dropped"
+        echo ""
+        if [[ "$depth" == "0" ]]; then
+            echo "  No pending operations."
+        else
+            echo "  $depth operations waiting to be applied."
+        fi
+    fi
 }
 
 # =============================================================================

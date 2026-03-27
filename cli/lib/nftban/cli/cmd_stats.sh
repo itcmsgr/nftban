@@ -8,7 +8,7 @@
 # meta:name="cmd_stats"
 # meta:type="cli"
 # meta:header="Statistics CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -253,6 +253,11 @@ nftban_cmd_stats() {
         trend)
             shift || true
             nftban_stats_cmd_trend "$@"
+            ;;
+        attackers)
+            # v1.43.0 UX-3: Alias for 'stats top ips'
+            shift
+            nftban_stats_cmd_top "ips" "$@"
             ;;
         --today)
             # Show stats for today only
