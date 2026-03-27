@@ -19,7 +19,8 @@ umask 027
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-# shellcheck disable=SC1091  -- dynamic config path resolved at runtime
+# dynamic config path resolved at runtime
+# shellcheck disable=SC1091
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 
@@ -1061,7 +1062,8 @@ collect_metrics() {
             local ct_entries ct_max ct_util sn_drops sn_backlog
             local mod_suricata mod_loginmon mod_portscan mod_ddos mod_feeds mod_geoban mod_watchdog
             local fh_total fh_active fh_stale fh_errors
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r ct_entries ct_max ct_util sn_drops sn_backlog \
                 mod_suricata mod_loginmon mod_portscan mod_ddos mod_feeds mod_geoban mod_watchdog \
                 fh_total fh_active fh_stale fh_errors <<< "$phase1_values"
@@ -1155,7 +1157,8 @@ collect_metrics() {
         if [[ -n "$suricata_values" ]]; then
             local sur_up sur_alerts sur_sev1 sur_sev2 sur_sev3 sur_sev4
             local sur_rules sur_filtered sur_bans sur_eve_errors sur_last_ts sur_profile
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r sur_up sur_alerts sur_sev1 sur_sev2 sur_sev3 sur_sev4 \
                 sur_rules sur_filtered sur_bans sur_eve_errors sur_last_ts sur_profile <<< "$suricata_values"
 
@@ -1235,7 +1238,8 @@ collect_metrics() {
         if [[ -n "$eventbus_values" ]]; then
             local eb_total eb_ban eb_unban eb_login eb_ddos eb_portscan eb_suricata eb_feed
             local eb_dropped eb_queue eb_handlers
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r eb_total eb_ban eb_unban eb_login eb_ddos eb_portscan eb_suricata eb_feed \
                 eb_dropped eb_queue eb_handlers <<< "$eventbus_values"
 
@@ -1296,7 +1300,8 @@ collect_metrics() {
         if [[ -n "$nftperf_values" ]]; then
             local nft_latency nft_errors nft_rules nft_sets
             local nft_bl4 nft_bl6 nft_wl4 nft_wl6 nft_cmds
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r nft_latency nft_errors nft_rules nft_sets \
                 nft_bl4 nft_bl6 nft_wl4 nft_wl6 nft_cmds <<< "$nftperf_values"
 
@@ -1361,7 +1366,8 @@ collect_metrics() {
         if [[ -n "$bandetails_values" ]]; then
             local bd_manual bd_feeds bd_loginmon bd_portscan bd_ddos bd_suricata bd_geoban
             local bd_escalations bd_persistent bd_recidivist bd_failures
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r bd_manual bd_feeds bd_loginmon bd_portscan bd_ddos bd_suricata bd_geoban \
                 bd_escalations bd_persistent bd_recidivist bd_failures <<< "$bandetails_values"
 
@@ -1420,7 +1426,8 @@ collect_metrics() {
 
         if [[ -n "$analytics_values" ]]; then
             local an_unique an_recid an_top an_wdtrans an_info an_warn an_crit an_geoage
-            # shellcheck disable=SC2034  -- variables consumed later in this metrics block
+            # variables consumed later in this metrics block
+            # shellcheck disable=SC2034
             IFS=$'\t' read -r an_unique an_recid an_top an_wdtrans an_info an_warn an_crit an_geoage <<< "$analytics_values"
 
             echo "# HELP nftban_analytics_unique_ips_24h Unique IPs banned in last 24 hours" >> "$TEMP_FILE"

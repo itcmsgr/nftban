@@ -186,7 +186,8 @@ nftban_watchdog_check_memory() {
 
     while IFS=': ' read -r key value _; do
             # Memory stats - reserved for future metrics
-            # shellcheck disable=SC2034  -- case vars consumed by threshold checks below
+            # case vars consumed by threshold checks below
+            # shellcheck disable=SC2034
         case "$key" in
             MemTotal)     mem_total=$value ;;
             MemFree)      mem_free=$value ;;
@@ -619,7 +620,8 @@ nftban_watchdog_get_top_cpu() {
     if [[ "$NFTBAN_WATCHDOG_PROC_ENABLED" != "true" ]]; then return 0; fi
 
     # Process stats - only some fields used
-    # shellcheck disable=SC2034  -- count used in head -n below
+    # count used in head -n below
+    # shellcheck disable=SC2034
     local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
     [[ ! "$count" =~ ^[1-9][0-9]*$ ]] && count=10
     local -a procs=()

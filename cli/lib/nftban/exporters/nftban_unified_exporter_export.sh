@@ -255,7 +255,8 @@ export_zabbix() {
     # Create zabbix_sender input file
     local tmp_file
     tmp_file=$(mktemp)
-    # shellcheck disable=SC2064  -- $tmp_file must expand at set-time, not trap execution-time
+    # $tmp_file must expand at set-time, not trap execution-time
+    # shellcheck disable=SC2064
     trap "rm -f '$tmp_file'" RETURN
 
     # Convert format: metric timestamp -> hostname key value

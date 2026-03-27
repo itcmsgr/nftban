@@ -189,7 +189,8 @@ _queue_list_pending() {
     for task_file in "$QUEUE_PENDING_DIR"/*.task; do
         [[ ! -f "$task_file" ]] && continue
 
-        # shellcheck disable=SC1090  -- task file path from queue directory enumeration
+        # task file path from queue directory enumeration
+        # shellcheck disable=SC1090
         source "$task_file" || true
         # v1.19.20 FIX
         ((count++)) || true
@@ -256,7 +257,8 @@ _queue_dlq_show() {
         return 1
     fi
 
-    # shellcheck disable=SC1090  -- task file path from queue directory
+    # task file path from queue directory
+    # shellcheck disable=SC1090
     source "$task_file" || true
 
     local created_date dlq_date

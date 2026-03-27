@@ -1011,7 +1011,8 @@ nftban_portscan_check() {
         echo "Processing log file: $log_source"
         if type -t nftban_portscan_classic_process_logs &>/dev/null; then
             # Override the log file temporarily (used by sourced module)
-            # shellcheck disable=SC2034  -- consumed by nftban_portscan_classic_process_logs()
+            # consumed by nftban_portscan_classic_process_logs()
+            # shellcheck disable=SC2034
             PORTSCAN_CLASSIC_LOG_FILE="$log_source"
             nftban_portscan_classic_process_logs
         else
