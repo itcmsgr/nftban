@@ -105,9 +105,9 @@ _health_check_service() {
 
 _health_check_metrics_file() {
     local filepath="$1" name="$2"
-    # shellcheck disable=SC2178
+    # shellcheck disable=SC2178  -- nameref for pass-by-reference array semantics
     local -n issues_ref="$3"
-    # shellcheck disable=SC2178
+    # shellcheck disable=SC2178  -- nameref for pass-by-reference status variable
     local -n status_ref="$4"
     local max_fresh="${5:-120}" max_warning="${6:-300}"
 

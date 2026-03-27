@@ -69,7 +69,7 @@ TESTS_ORPHANS=0
 EMAIL_RECIPIENT=""
 
 # Trace IDs for this run (reserved for future trace tracking)
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034  -- reserved for future distributed tracing
 declare -a SMOKE_TRACE_IDS=()
 
 # =============================================================================
@@ -1050,7 +1050,7 @@ _nft_set_count() {
     # 1) Fast path: nft JSON + jq (no element dump, bounded by timeout)
     if command -v jq &>/dev/null; then
         local out
-        # shellcheck disable=SC2086
+        # shellcheck disable=SC2086  -- $nft_table must word-split (e.g. "ip nftban")
         if out="$(timeout ${timeout_sec}s nft -j list set ${nft_table} ${setname} 2>/dev/null)"; then
             # Count elements safely even if "elem" key missing
             # nft JSON: { "nftables":[ { "set": { "elem":[ ... ] } } ] }
@@ -1070,7 +1070,7 @@ _nft_set_count() {
 
     # 2) Fallback: timeout + plain list (can be slow, but bounded)
     local text_out exit_code
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $nft_table must word-split (e.g. "ip nftban")
     text_out="$(timeout ${timeout_sec}s nft list set ${nft_table} ${setname} 2>/dev/null)"
     exit_code=$?
 
@@ -1399,11 +1399,11 @@ _whitelist_contains() {
 
     if [[ "$ip" =~ : ]]; then
         # IPv6
-        # shellcheck disable=SC2086
+        # shellcheck disable=SC2086  -- $table_v6 must word-split (e.g. "ip6 nftban")
         nft list set ${table_v6} whitelist_ipv6 2>/dev/null | grep -qF "$ip"
     else
         # IPv4
-        # shellcheck disable=SC2086
+        # shellcheck disable=SC2086  -- $table_v4 must word-split (e.g. "ip nftban")
         nft list set ${table_v4} whitelist_ipv4 2>/dev/null | grep -qF "$ip"
     fi
 }
@@ -1520,7 +1520,7 @@ run_whitelist_safety_tests() {
 
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $table_v4 must word-split (e.g. "ip nftban")
     if nft list set ${table_v4} tcp_ports_in 2>/dev/null | grep -qw "$ssh_port"; then
         log_pass "SSH port $ssh_port is allowed in firewall"
         TESTS_PASSED=$((TESTS_PASSED + 1))

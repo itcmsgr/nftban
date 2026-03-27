@@ -171,7 +171,7 @@ nftban_blacklist_list() {
     # IPv4 blacklist from nftables
     echo "IPv4 Blacklist (nftables):"
     echo "──────────────────────────"
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $NFTBAN_TABLE_IPV4 must word-split (e.g. "ip nftban")
     local ipv4_output
     ipv4_output=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || true
     if [[ -n "$ipv4_output" ]]; then
@@ -191,7 +191,7 @@ nftban_blacklist_list() {
     # IPv6 blacklist from nftables
     echo "IPv6 Blacklist (nftables):"
     echo "──────────────────────────"
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $NFTBAN_TABLE_IPV6 must word-split (e.g. "ip6 nftban")
     local ipv6_output
     ipv6_output=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || true
     if [[ -n "$ipv6_output" ]]; then
@@ -291,7 +291,7 @@ nftban_blacklist_count() {
 
     # Count from nftables sets
     # v1.24.0: Capture output first, then count — prevents pipefail empty variable crash
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $NFTBAN_TABLE_IPV4 must word-split (e.g. "ip nftban")
     local nft_ipv4_count=0 nft_ipv6_count=0
     local ipv4_raw=""
     ipv4_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || ipv4_raw=""
@@ -299,7 +299,7 @@ nftban_blacklist_count() {
         nft_ipv4_count=$(echo "$ipv4_raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | grep -cE '[0-9a-fA-F]') || nft_ipv4_count=0
     fi
 
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  -- $NFTBAN_TABLE_IPV6 must word-split (e.g. "ip6 nftban")
     local ipv6_raw=""
     ipv6_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || ipv6_raw=""
     if [[ -n "$ipv6_raw" ]]; then

@@ -8,7 +8,7 @@
 # meta:name="cmd_country"
 # meta:type="cli"
 # meta:header="Country Command (GeoBan Alias)"
-# meta:version="1.39.0"
+# meta:version="1.45.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -52,11 +52,14 @@ fi
 # =============================================================================
 
 cmd_country_help() {
-    echo "Usage: nftban country [options]"
+    echo "Usage: nftban country [options] [--json]"
     echo ""
     echo "Alias for 'nftban geoban' - country-based IP blocking"
     echo ""
-    echo "Options passed to geoban subcommand."
+    echo "Options:"
+    echo "  --json          Output in JSON format (machine-readable)"
+    echo ""
+    echo "All options passed to geoban subcommand."
     echo "Run 'nftban geoban --help' for details."
 }
 
