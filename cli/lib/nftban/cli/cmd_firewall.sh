@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.39.0"
+# meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -776,8 +776,13 @@ firewall_reload() {
 firewall_rebuild() {
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
+    #
+    # v1.47.0 DEPLOY-001: Atomic rebuild — validate BEFORE flushing
+    # v1.47.0 DEPLOY-002: Detect .rpmnew files from RPM upgrades
+    # v1.47.0 DEPLOY-003: Substitute __SSH_PORT__ placeholder
     local force=false
     local quiet=false
+    local use_new=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -787,6 +792,11 @@ firewall_rebuild() {
                 ;;
             --quiet|-q)
                 quiet=true
+                shift
+                ;;
+            --use-new)
+                # v1.47.0 DEPLOY-002: Prefer .rpmnew config over existing
+                use_new=true
                 shift
                 ;;
             --help|-h)
@@ -809,14 +819,70 @@ firewall_rebuild() {
     timestamp=$(date +%Y%m%d_%H%M%S)
 
     # v2.1: Only whitelist + blacklist sets exist (feeds/geoban merged into blacklist)
-    [[ "$quiet" == "false" ]] && echo "  [1/5] Backing up current sets..."
+    [[ "$quiet" == "false" ]] && echo "  [1/7] Backing up current sets..."
     timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
     timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null > "$backup_dir/blacklist_ipv6_$timestamp.txt" || true
 
-    # Step 2: Remove rogue tables (keep only NFTBan tables)
-    [[ "$quiet" == "false" ]] && echo "  [2/5] Removing rogue tables..."
+    # v1.47.0 DEPLOY-002: Check for .rpmnew files (RPM upgrade left new config unmerged)
+    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+    local rpmnew_conf="${nftban_conf}.rpmnew"
+    if [[ -f "$rpmnew_conf" ]]; then
+        if [[ "$use_new" == "true" ]]; then
+            [[ "$quiet" == "false" ]] && echo "  [INFO] Using new config from $rpmnew_conf (--use-new)"
+            nftban_conf="$rpmnew_conf"
+        else
+            echo "" >&2
+            echo "WARNING: New config available at $rpmnew_conf" >&2
+            echo "  RPM upgrade created a new config but your existing one was modified." >&2
+            echo "  The rebuild will use the OLD config. New features (named counters, etc.) may be missing." >&2
+            echo "" >&2
+            echo "  Options:" >&2
+            echo "    1. Review and merge: diff $nftban_conf $rpmnew_conf" >&2
+            echo "    2. Use new config:   nftban firewall rebuild --use-new" >&2
+            echo "    3. Replace manually:  cp $rpmnew_conf $nftban_conf" >&2
+            echo "" >&2
+        fi
+    fi
+
+    if [[ ! -f "$nftban_conf" ]]; then
+        echo "ERROR: NFTBan config not found: $nftban_conf" >&2
+        return 1
+    fi
+
+    # v1.47.0 DEPLOY-003: Prepare config with placeholder substitution
+    [[ "$quiet" == "false" ]] && echo "  [2/7] Preparing schema config..."
+    local load_conf="$nftban_conf"
+    local tmp_conf=""
+    if grep -q '__SSH_PORT__' "$nftban_conf" 2>/dev/null; then
+        local _ssh_port=22
+        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
+        [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+        tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
+        sed "s/__SSH_PORT__/${_ssh_port}/g" "$nftban_conf" > "$tmp_conf"
+        load_conf="$tmp_conf"
+        [[ "$quiet" == "false" ]] && echo "    Substituted __SSH_PORT__ → ${_ssh_port}"
+    fi
+
+    # v1.47.0 DEPLOY-001: Validate schema BEFORE flushing (atomic rebuild)
+    # nft -c -f validates syntax without applying — prevents lockout on bad config
+    [[ "$quiet" == "false" ]] && echo "  [3/7] Validating new schema (dry-run)..."
+    local validate_output
+    if ! validate_output=$(nft -c -f "$load_conf" 2>&1); then
+        echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
+        echo "  Config: $nftban_conf" >&2
+        echo "  Error:  $validate_output" >&2
+        echo "" >&2
+        echo "  Fix the config file and retry: nftban firewall rebuild" >&2
+        [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
+        return 1
+    fi
+    [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
+
+    # Step 4: Remove rogue tables (keep only NFTBan tables)
+    [[ "$quiet" == "false" ]] && echo "  [4/7] Removing rogue tables..."
     local ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$|^table inet (filter|nftban)$"
     local ALL_TABLES
     ALL_TABLES=$(nft list tables 2>/dev/null || true)
@@ -831,31 +897,25 @@ firewall_rebuild() {
         fi
     done <<< "$ALL_TABLES"
 
-    # Step 3: Flush NFTBan tables (but don't delete them)
-    [[ "$quiet" == "false" ]] && echo "  [3/5] Flushing NFTBan tables..."
+    # Step 5: Flush + load (safe — we validated above)
+    [[ "$quiet" == "false" ]] && echo "  [5/7] Flushing and loading new schema..."
     nft flush table ip nftban 2>/dev/null || true
     nft flush table ip6 nftban 2>/dev/null || true
 
-    # Step 4: Reload schema from config
-    [[ "$quiet" == "false" ]] && echo "  [4/5] Rebuilding schema from config..."
-    local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-    if [[ -f "$nftban_conf" ]]; then
-        if ! nft -f "$nftban_conf" 2>&1; then
-            echo "ERROR: Failed to load NFTBan schema from $nftban_conf" >&2
-            echo "Try: nftban firewall reset --force" >&2
-            return 1
-        fi
-    else
-        echo "ERROR: NFTBan config not found: $nftban_conf" >&2
+    if ! nft -f "$load_conf" 2>&1; then
+        echo "ERROR: Failed to load NFTBan schema from $nftban_conf" >&2
+        echo "Try: nftban firewall reset --force" >&2
+        [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
         return 1
     fi
+    [[ -n "$tmp_conf" ]] && rm -f "$tmp_conf"
 
-    # Step 5: Re-sync system whitelist
-    [[ "$quiet" == "false" ]] && echo "  [5/6] Re-syncing system whitelist..."
+    # Step 6: Re-sync system whitelist
+    [[ "$quiet" == "false" ]] && echo "  [6/7] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
-    # Step 6: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
-    [[ "$quiet" == "false" ]] && echo "  [6/6] Restoring blacklist from backup..."
+    # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
+    [[ "$quiet" == "false" ]] && echo "  [7/7] Restoring blacklist from backup..."
     local restored_count=0
     for backup_file in "$backup_dir/blacklist_ipv4_$timestamp.txt" "$backup_dir/blacklist_ipv6_$timestamp.txt"; do
         [[ -f "$backup_file" ]] || continue
@@ -889,6 +949,14 @@ firewall_rebuild() {
         fi
     done
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
+
+    # Handle .rpmnew: if --use-new succeeded, move old config to .bak and new to canonical
+    if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
+        local canonical_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
+        cp "$canonical_conf" "${canonical_conf}.bak.${timestamp}" 2>/dev/null || true
+        mv "$rpmnew_conf" "$canonical_conf" 2>/dev/null || true
+        [[ "$quiet" == "false" ]] && echo "  Promoted .rpmnew to canonical config (old saved as .bak.${timestamp})"
+    fi
 
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Schema rebuilt successfully!"
@@ -1915,22 +1983,30 @@ Use this when:
   - Schema is corrupted (validation errors)
   - Rogue tables detected (ip raw, ip6 raw, etc.)
   - After manual nft commands broke the structure
+  - After RPM upgrade when .rpmnew config exists
 
 What it does:
   1. Backs up current IPs from all sets
-  2. Removes rogue tables (non-NFTBan tables)
-  3. Flushes NFTBan tables
-  4. Reloads schema from /etc/nftban/nftables.conf
-  5. Re-syncs system whitelist
+  2. Detects .rpmnew config files (RPM upgrades)
+  3. Substitutes __SSH_PORT__ placeholder with detected port
+  4. Validates new schema (dry-run) BEFORE flushing
+  5. Removes rogue tables (non-NFTBan tables)
+  6. Flushes and loads validated schema
+  7. Re-syncs system whitelist + restores blacklist
+
+Safety: Schema is validated with 'nft -c -f' before any changes.
+If validation fails, existing firewall is preserved (no lockout).
 
 Options:
   --force, -f   Skip confirmation prompts
   --quiet, -q   Suppress progress output
+  --use-new     Prefer .rpmnew config over existing (after RPM upgrade)
   -h, --help    Show this help message
 
 Examples:
   nftban firewall rebuild
   nftban firewall rebuild --force
+  nftban firewall rebuild --use-new   # Use RPM-provided new config
 
 Note: For complete reset (lose all data), use:
   nftban firewall reset --force

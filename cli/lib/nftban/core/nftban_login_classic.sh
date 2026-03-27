@@ -9,7 +9,7 @@
 # meta:name="nftban_login_classic"
 # meta:type="core"
 # meta:header="Login Monitor Classic Mode"
-# meta:version="1.39.0"
+# meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -171,11 +171,18 @@ _nftban_login_classic_monitor_journal() {
         fi
     fi
 
-    # Add units
-    IFS=',' read -ra unit_array <<< "$units"
-    for unit in "${unit_array[@]}"; do
-        journal_cmd+=(-u "$unit")
-    done
+    # Add journal filter
+    # v1.47.0: For SSH service, use _COMM=sshd instead of -u sshd
+    # This works across ALL OpenSSH versions including 9.9+ sshd-session split
+    # where auth failures may be logged under sshd-session unit instead of sshd
+    if [[ "$service" == "ssh" ]]; then
+        journal_cmd+=(_COMM=sshd)
+    else
+        IFS=',' read -ra unit_array <<< "$units"
+        for unit in "${unit_array[@]}"; do
+            journal_cmd+=(-u "$unit")
+        done
+    fi
 
     # Use JSON output if jq is available
     if command -v jq &>/dev/null && [[ "${LOGIN_CLASSIC_JOURNALCTL_JSON:-true}" == "true" ]]; then

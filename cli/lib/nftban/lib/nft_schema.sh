@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_schema" meta:type="lib" meta:version="1.43.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.47.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -611,6 +611,53 @@ nftban_nft_count_set() {
             fi
         fi
     fi
+}
+
+# =============================================================================
+# NFT JSON NORMALIZATION WRAPPER (v1.47.0 — cross-distro compatibility)
+# =============================================================================
+# nft JSON output format varies between versions:
+#   nft 1.0.2 (Ubuntu 22.04): .elem may be array, object, or absent
+#   nft 1.0.9 (AL9, Ubuntu 24.04): Normalized but slightly different nesting
+#   nft 1.1.x (Debian 13/14): Most stable
+#
+# This wrapper normalizes all variants to a reliable integer count.
+# All callers MUST use this instead of inline nft -j | jq parsing.
+# =============================================================================
+
+nftban_nft_count_set_elements() {
+    # Count elements in an nft set using JSON API with cross-version normalization
+    # Usage: nftban_nft_count_set_elements <family> <table> <set>
+    # Returns: Integer count (0 on error/empty)
+    #
+    # This is the CANONICAL way to count set elements across all nft versions.
+    # Unlike nftban_nft_count_set() which uses .nftables[1].set.elem (position-based),
+    # this uses a defensive jq query that handles all known JSON variants.
+
+    local family="${1:-ip}"
+    local table="${2:-nftban}"
+    local set_name="${3:-blacklist_ipv4}"
+
+    if ! command -v jq &>/dev/null; then
+        # Fallback to existing count function (text-based)
+        nftban_nft_count_set "$family" "$table" "$set_name"
+        return
+    fi
+
+    local json_output
+    json_output=$(nft -j list set "$family" "$table" "$set_name" 2>/dev/null) || { echo "0"; return; }
+
+    # Defensive jq: iterate all objects, find .set, count .elem
+    # Works across nft 1.0.2 through 1.1.x:
+    #   - .elem may be array (normal), absent (empty set), or nested differently
+    #   - .nftables[] may have metainfo objects before the set object
+    #   - Use select(.set?) to skip non-set objects (metainfo, etc.)
+    local count
+    count=$(echo "$json_output" | jq -r '
+        [.nftables[] | select(.set?) | .set.elem[]? // empty] | length
+    ' 2>/dev/null) || count=0
+
+    echo "${count:-0}"
 }
 
 # =============================================================================
