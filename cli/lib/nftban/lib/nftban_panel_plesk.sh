@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_panel_plesk" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Plesk panel integration with enable/disable/status/report/repair/test"
+# meta:name="nftban_panel_plesk" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Plesk panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
@@ -147,6 +147,41 @@ EOF
         echo "  This may indicate a broken installation."
         echo "  Please reinstall: dnf reinstall nftban"
         return 1
+    fi
+
+    # v1.48.0: Warn about CSF conflict
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        local csf_active=0
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            csf_active=1
+        fi
+        echo "╔═══════════════════════════════════════════════════════════════════╗"
+        echo "║ ⚠️  CSF (ConfigServer Firewall) is INSTALLED                      ║"
+        echo "╚═══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        if [[ "$csf_active" == "1" ]]; then
+            echo "CSF/LFD services are RUNNING — directly conflicts with NFTBan."
+        else
+            echo "CSF is installed but services appear stopped."
+        fi
+        echo "CSF manages its own iptables/nftables rules that conflict with NFTBan."
+        echo ""
+        echo "To disable: csf -x && systemctl disable csf lfd"
+        echo ""
+    fi
+
+    # v1.48.0 P3-61: Warn about Plesk Firewall extension
+    if [[ -d "/usr/local/psa/admin/htdocs/modules/firewall" ]] || \
+       plesk bin extension --list 2>/dev/null | grep -qi 'firewall'; then
+        echo "╔═══════════════════════════════════════════════════════════════════╗"
+        echo "║ ⚠️  Plesk Firewall Extension DETECTED                             ║"
+        echo "╚═══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "The Plesk Firewall extension conflicts with NFTBan."
+        echo "It injects its own rules that override NFTBan's protection."
+        echo ""
+        echo "Disable it now:  plesk bin extension --disable firewall"
+        echo ""
     fi
 
     # IMPORTANT WARNING: License server whitelist
@@ -395,6 +430,35 @@ nftban_panel_plesk_status() {
     fi
     echo ""
 
+    # v1.48.0 P3-61: Detect Plesk Firewall extension conflict
+    echo "Plesk Firewall Extension:"
+    if [[ -d "/usr/local/psa/admin/htdocs/modules/firewall" ]] || \
+       plesk bin extension --list 2>/dev/null | grep -qi 'firewall'; then
+        echo "  Status: ⚠️  INSTALLED (conflicts with NFTBan)"
+        echo "  Action: Disable the Plesk Firewall extension"
+        echo "          plesk bin extension --disable firewall"
+        echo "  Reason: Plesk Firewall injects its own nftables/iptables rules"
+        echo "          that conflict with NFTBan's rule management"
+    else
+        echo "  Status: ✓ NOT INSTALLED"
+    fi
+    echo ""
+
+    # v1.48.0: CSF detection
+    echo "CSF (ConfigServer Firewall):"
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            echo "  Status: ⚠️  RUNNING (conflicts with NFTBan)"
+            echo "  Action: csf -x && systemctl disable csf lfd"
+        else
+            echo "  Status: ⚠️  INSTALLED but stopped"
+            echo "  Tip:    Remove CSF if not needed: csf -u"
+        fi
+    else
+        echo "  Status: ✓ NOT INSTALLED"
+    fi
+    echo ""
+
     # Configuration file
     echo "Configuration:"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
@@ -471,11 +535,36 @@ nftban_panel_plesk_report() {
     done
     echo ""
 
+    # v1.48.0 P3-61: Plesk Firewall extension
+    echo "4. PLESK FIREWALL EXTENSION"
+    echo "   ───────────────────────────────────────────────────"
+    if [[ -d "/usr/local/psa/admin/htdocs/modules/firewall" ]] || \
+       plesk bin extension --list 2>/dev/null | grep -qi 'firewall'; then
+        echo "   Status: INSTALLED ⚠️  (conflicts with NFTBan)"
+        echo "   Fix:    plesk bin extension --disable firewall"
+    else
+        echo "   Status: NOT INSTALLED ✓"
+    fi
+    echo ""
+
     # Recommendations
-    echo "4. RECOMMENDATIONS"
+    echo "5. RECOMMENDATIONS"
     echo "   ───────────────────────────────────────────────────"
 
     local recommendations=()
+
+    # Check Plesk Firewall extension
+    if [[ -d "/usr/local/psa/admin/htdocs/modules/firewall" ]] || \
+       plesk bin extension --list 2>/dev/null | grep -qi 'firewall'; then
+        recommendations+=("Disable Plesk Firewall: plesk bin extension --disable firewall")
+    fi
+
+    # Check CSF
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            recommendations+=("Disable CSF: csf -x && systemctl disable csf lfd")
+        fi
+    fi
 
     # Check Plesk port
     if ! _nftban_panel_check_port 8443; then
@@ -504,7 +593,7 @@ nftban_panel_plesk_report() {
     echo ""
 
     # Configuration files
-    echo "5. CONFIGURATION FILES"
+    echo "6. CONFIGURATION FILES"
     echo "   ───────────────────────────────────────────────────"
     echo "   ${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf"
     echo "   ${NFTBAN_CONFIG_DIR}/nftban.conf.local (customizations)"

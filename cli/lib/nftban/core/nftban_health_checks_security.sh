@@ -9,7 +9,7 @@
 # meta:name="nftban_health_checks_security"
 # meta:type="lib"
 # meta:header="Health Check Security Functions"
-# meta:version="1.39.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -762,18 +762,36 @@ EOF
 
             ssh_issues+=("AUTO-FIXED: Updated SSH port to $current_ssh_port in ${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf")
 
-            # v1.25.0: Atomically update nft set — don't wait for manual reload (lockout prevention)
-            if type -t nft_ipc_add_element >/dev/null 2>&1 && nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
+            # v1.48.0: Direct nft commands with verification (replaces unreliable IPC)
+            # IPC add/delete was fire-and-forget — claimed success without verifying.
+            # Direct nft commands give immediate feedback and guaranteed state change.
+            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
                 # FIRST: Add new port (safety — ensure SSH access before removing old)
-                nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$current_ssh_port" 2>/dev/null || true
-                nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$current_ssh_port" 2>/dev/null || true
-                ssh_issues+=("AUTO-FIXED: Port $current_ssh_port added to nftables tcp_ports_in set")
+                local _add_ok=false
+                if nft add element ${NFTBAN_TABLE_IPV4} tcp_ports_in "{ $current_ssh_port }" 2>/dev/null; then
+                    _add_ok=true
+                fi
+                nft add element ${NFTBAN_TABLE_IPV6} tcp_ports_in "{ $current_ssh_port }" 2>/dev/null || true
 
-                # THEN: Remove old port
-                if [[ -n "$old_ssh_port" ]] && type -t nft_ipc_delete_element >/dev/null 2>&1; then
-                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$old_ssh_port" 2>/dev/null || true
-                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$old_ssh_port" 2>/dev/null || true
-                    ssh_issues+=("AUTO-FIXED: Old port $old_ssh_port removed from nftables")
+                if [[ "$_add_ok" == "true" ]]; then
+                    ssh_issues+=("AUTO-FIXED: Port $current_ssh_port added to nftables tcp_ports_in set")
+                else
+                    ssh_issues+=("FAILED: Could not add port $current_ssh_port to nftables — run: nftban firewall reload")
+                fi
+
+                # THEN: Remove old port (only after add confirmed)
+                if [[ -n "$old_ssh_port" ]] && [[ "$_add_ok" == "true" ]]; then
+                    local _del_ok=false
+                    if nft delete element ${NFTBAN_TABLE_IPV4} tcp_ports_in "{ $old_ssh_port }" 2>/dev/null; then
+                        _del_ok=true
+                    fi
+                    nft delete element ${NFTBAN_TABLE_IPV6} tcp_ports_in "{ $old_ssh_port }" 2>/dev/null || true
+
+                    if [[ "$_del_ok" == "true" ]]; then
+                        ssh_issues+=("AUTO-FIXED: Old port $old_ssh_port removed from nftables")
+                    else
+                        ssh_issues+=("WARNING: Could not remove old port $old_ssh_port from nftables — run: nftban firewall reload")
+                    fi
                 fi
             else
                 ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")

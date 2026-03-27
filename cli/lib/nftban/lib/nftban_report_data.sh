@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_report_data" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized data collection using nft_schema.sh SSOT"
+# meta:name="nftban_report_data" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized data collection using nft_schema.sh SSOT"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -218,8 +218,8 @@ _collect_module_status() {
         _mdata[MODULE_PORTSCAN_ACTIVITY]="-"
     fi
 
-    # Login Monitor
-    if systemctl is-active nftban-login-monitor.service &>/dev/null; then
+    # Login Monitor (v1.48.0: loginmon module runs inside nftband daemon)
+    if systemctl is-active nftband.service &>/dev/null; then
         _mdata[MODULE_LOGIN_STATUS]="Active"
         _mdata[MODULE_LOGIN_STATUS_CLASS]="status-active"
         _mdata[MODULE_LOGIN_CLASS]="active"
