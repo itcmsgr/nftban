@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
+# meta:name="nftban_panel_cpanel" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries="whmapi1"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
@@ -149,6 +149,35 @@ _nftban_cpanel_check_cphulk() {
     fi
 }
 
+# v1.48.0: CSF (ConfigServer Security & Firewall) detection
+_nftban_cpanel_check_csf() {
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        local csf_active=0
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            csf_active=1
+        fi
+
+        echo ""
+        echo "╔═══════════════════════════════════════════════════════════════════╗"
+        echo "║ ⚠️  CSF (ConfigServer Firewall) is INSTALLED                      ║"
+        echo "╚═══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        if [[ "$csf_active" == "1" ]]; then
+            echo "CSF/LFD services are RUNNING — this directly conflicts with NFTBan."
+        else
+            echo "CSF is installed but services appear stopped."
+        fi
+        echo ""
+        echo "CSF manages its own iptables/nftables rules that conflict with NFTBan."
+        echo "Running both causes ghost tables, rule conflicts, and lockout risk."
+        echo ""
+        echo "To disable CSF:"
+        echo "  csf -x                    # Disable CSF firewall"
+        echo "  systemctl disable csf lfd # Prevent restart on reboot"
+        echo ""
+    fi
+}
+
 # =============================================================================
 # ENABLE
 # =============================================================================
@@ -156,6 +185,8 @@ _nftban_cpanel_check_cphulk() {
 nftban_panel_cpanel_enable() {
     # Check for cPHulk conflict before proceeding
     _nftban_cpanel_check_cphulk
+    # v1.48.0: Check for CSF conflict
+    _nftban_cpanel_check_csf
 
     # Nice header for Web Hosting Panel
     cat <<'EOF'
@@ -444,6 +475,37 @@ nftban_panel_cpanel_status() {
         echo "  Firewall: ✓ OPEN"
     else
         echo "  Firewall: ✗ CLOSED"
+    fi
+    echo ""
+
+    # v1.48.0: cPHulk status
+    echo "cPHulk Brute Force:"
+    if command -v whmapi1 &>/dev/null; then
+        local cphulk_enabled
+        cphulk_enabled=$(whmapi1 cphulk_status 2>/dev/null | grep -i "is_enabled" | grep -oP '\d+' || echo "0")
+        if [[ "$cphulk_enabled" == "1" ]]; then
+            echo "  Status: ⚠️  ACTIVE (conflicts with NFTBan login monitoring)"
+            echo "  Action: whmapi1 configureservice service=cphulkd enabled=0"
+        else
+            echo "  Status: ✓ DISABLED (NFTBan handles brute force)"
+        fi
+    else
+        echo "  Status: N/A (whmapi1 not available)"
+    fi
+    echo ""
+
+    # v1.48.0: CSF status
+    echo "CSF (ConfigServer Firewall):"
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            echo "  Status: ⚠️  RUNNING (conflicts with NFTBan)"
+            echo "  Action: csf -x && systemctl disable csf lfd"
+        else
+            echo "  Status: ⚠️  INSTALLED but stopped"
+            echo "  Tip:    Remove CSF if not needed: csf -u"
+        fi
+    else
+        echo "  Status: ✓ NOT INSTALLED"
     fi
     echo ""
 

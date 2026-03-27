@@ -1174,6 +1174,13 @@ if [[ -n "\$CONFLICTS" ]]; then
             echo "[NFTBan]   ✓ iptables service disabled"
         fi
 
+        # v1.48.0: Clean ghost tables left by disabled services BEFORE flush
+        # CSF/firewalld/iptables leave shadow nft tables even after stop
+        echo "[NFTBan]   Cleaning ghost nftables tables from disabled services..."
+        for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet firewalld" "inet filter"; do
+            nft delete table \$ghost_table 2>/dev/null || true
+        done
+
         # =====================================================================
         # CRITICAL: Create emergency SSH/panel protection BEFORE any flush
         # This prevents lockout during takeover (v1.17.4 fix)
@@ -1584,6 +1591,17 @@ fi
 # PREFLIGHT: Lockout Prevention (Detect-Only, Fail-Safe)
 # =============================================================================
 # CRITICAL: Never modify third-party firewall config
+# v1.48.0: Clean ghost nftables tables before preflight validation.
+# Ghost tables from CSF/firewalld/iptables-nft may exist even when services
+# are already disabled (e.g., CSF was disabled before NFTBan install).
+echo "[NFTBan] Cleaning ghost nftables tables before preflight..."
+for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "ip raw" "inet firewalld" "inet filter"; do
+    if nft list table \$ghost_table &>/dev/null 2>&1; then
+        echo "[NFTBan]   Removing ghost table: \$ghost_table"
+        nft delete table \$ghost_table 2>/dev/null || true
+    fi
+done
+
 # CRITICAL: Never start nftables if unsafe
 # CRITICAL: Always preserve SSH access
 echo "[NFTBan] Preflight: Validating firewall safety..."

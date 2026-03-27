@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_fragment" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
+# meta:name="nft_fragment" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
 # meta:inventory.files="/etc/nftban/rules.d"
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""
@@ -348,24 +348,24 @@ flush chain ${table_ipv4} ${chain}
 
 # 1. Drop Christmas tree packets (all flags set - scan/attack signature)
 ${log_xmas_ipv4:+${log_xmas_ipv4}
-}add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg counter drop comment "SANITY: Xmas tree packet"
+}add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg counter name total_input_drop counter drop comment "SANITY: Xmas tree packet"
 
 # 2. Drop NULL packets (no flags - scan signature)
 ${log_null_ipv4:+${log_null_ipv4}
-}add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 counter drop comment "SANITY: NULL packet"
+}add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 counter name total_input_drop counter drop comment "SANITY: NULL packet"
 
 # 3. Drop new connections that aren't SYN (stateful bypass attempt)
 ${log_nonsyn_ipv4:+${log_nonsyn_ipv4}
-}add rule ${table_ipv4} ${chain} tcp flags & syn != syn ct state new counter drop comment "SANITY: new non-SYN"
+}add rule ${table_ipv4} ${chain} tcp flags & syn != syn ct state new counter name total_input_drop counter drop comment "SANITY: new non-SYN"
 
 # 4. Drop packets with invalid conntrack state
 ${log_invalid_ct_ipv4:+${log_invalid_ct_ipv4}
-}add rule ${table_ipv4} ${chain} ct state invalid counter drop comment "SANITY: invalid ct state"
+}add rule ${table_ipv4} ${chain} ct state invalid counter name total_input_drop counter drop comment "SANITY: invalid ct state"
 
 # 5. Drop fragmented packets to high ports (common in amplification attacks)
 ${log_frag_ipv4:+${log_frag_ipv4}
-}add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 tcp dport >= 1024 counter drop comment "SANITY: frag to high port"
-add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 udp dport >= 1024 counter drop comment "SANITY: frag to high port"
+}add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 tcp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: frag to high port"
+add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 udp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: frag to high port"
 
 # Return to continue processing
 add rule ${table_ipv4} ${chain} return
@@ -376,24 +376,24 @@ flush chain ${table_ipv6} ${chain}
 
 # 1. Drop Christmas tree packets
 ${log_xmas_ipv6:+${log_xmas_ipv6}
-}add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg counter drop comment "SANITY: Xmas tree packet"
+}add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg counter name total_input_drop counter drop comment "SANITY: Xmas tree packet"
 
 # 2. Drop NULL packets
 ${log_null_ipv6:+${log_null_ipv6}
-}add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 counter drop comment "SANITY: NULL packet"
+}add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 counter name total_input_drop counter drop comment "SANITY: NULL packet"
 
 # 3. Drop new connections that aren't SYN
 ${log_nonsyn_ipv6:+${log_nonsyn_ipv6}
-}add rule ${table_ipv6} ${chain} tcp flags & syn != syn ct state new counter drop comment "SANITY: new non-SYN"
+}add rule ${table_ipv6} ${chain} tcp flags & syn != syn ct state new counter name total_input_drop counter drop comment "SANITY: new non-SYN"
 
 # 4. Drop packets with invalid conntrack state
 ${log_invalid_ct_ipv6:+${log_invalid_ct_ipv6}
-}add rule ${table_ipv6} ${chain} ct state invalid counter drop comment "SANITY: invalid ct state"
+}add rule ${table_ipv6} ${chain} ct state invalid counter name total_input_drop counter drop comment "SANITY: invalid ct state"
 
 # Note: IPv6 fragmentation is handled differently (via extension headers)
 # Fragment header detection for IPv6
-add rule ${table_ipv6} ${chain} exthdr frag exists tcp dport >= 1024 counter drop comment "SANITY: IPv6 frag to high port"
-add rule ${table_ipv6} ${chain} exthdr frag exists udp dport >= 1024 counter drop comment "SANITY: IPv6 frag to high port"
+add rule ${table_ipv6} ${chain} exthdr frag exists tcp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: IPv6 frag to high port"
+add rule ${table_ipv6} ${chain} exthdr frag exists udp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: IPv6 frag to high port"
 
 # Return to continue processing
 add rule ${table_ipv6} ${chain} return
@@ -806,11 +806,11 @@ flush chain ${table_ipv4} ${chain}
 
 # SYN flood protection by /24 prefix
 add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
-add rule ${table_ipv4} ${chain} tcp flags syn counter drop comment "Prefix SYN flood: ${ipv4_mask} rate exceeded"
+add rule ${table_ipv4} ${chain} tcp flags syn counter name total_input_drop counter drop comment "Prefix SYN flood: ${ipv4_mask} rate exceeded"
 
 # Connection rate by /24 prefix
 add rule ${table_ipv4} ${chain} ct state new meter ${conn_meter} { ip saddr & ${ipv4_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
-add rule ${table_ipv4} ${chain} ct state new counter drop comment "Prefix conn flood: ${ipv4_mask} rate exceeded"
+add rule ${table_ipv4} ${chain} ct state new counter name total_input_drop counter drop comment "Prefix conn flood: ${ipv4_mask} rate exceeded"
 
 # Return to input chain for remaining traffic
 add rule ${table_ipv4} ${chain} return
@@ -821,11 +821,11 @@ flush chain ${table_ipv6} ${chain}
 
 # SYN flood protection by /64 prefix
 add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${syn_rate} burst ${syn_burst} packets } return comment "Prefix SYN: rate OK"
-add rule ${table_ipv6} ${chain} tcp flags syn counter drop comment "Prefix SYN flood: ${ipv6_mask} rate exceeded"
+add rule ${table_ipv6} ${chain} tcp flags syn counter name total_input_drop counter drop comment "Prefix SYN flood: ${ipv6_mask} rate exceeded"
 
 # Connection rate by /64 prefix
 add rule ${table_ipv6} ${chain} ct state new meter ${conn_meter}6 { ip6 saddr & ${ipv6_bitmask} limit rate ${conn_rate} burst ${conn_burst} packets } return comment "Prefix conn: rate OK"
-add rule ${table_ipv6} ${chain} ct state new counter drop comment "Prefix conn flood: ${ipv6_mask} rate exceeded"
+add rule ${table_ipv6} ${chain} ct state new counter name total_input_drop counter drop comment "Prefix conn flood: ${ipv6_mask} rate exceeded"
 
 # Return to input chain
 add rule ${table_ipv6} ${chain} return
@@ -975,21 +975,21 @@ flush chain ${table_ipv4} ${chain}
 
 # SYN Flood Protection
 add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
-add rule ${table_ipv4} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
+add rule ${table_ipv4} ${chain} tcp flags syn counter name total_input_drop counter drop comment "SYN flood: rate exceeded"
 
 # Connection Limits per Service
-add rule ${table_ipv4} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
-add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter drop comment "HTTP: max ${http_limit} conn/IP"
-add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter drop comment "HTTPS: max ${https_limit} conn/IP"
-add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter name total_input_drop counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
 
 # ICMP Rate Limiting
 add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
-add rule ${table_ipv4} ${chain} ip protocol icmp counter drop comment "ICMP flood: rate exceeded"
+add rule ${table_ipv4} ${chain} ip protocol icmp counter name total_input_drop counter drop comment "ICMP flood: rate exceeded"
 
 # UDP Flood Protection
 add rule ${table_ipv4} ${chain} ip protocol udp meter ${udp_meter} { ip saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
-add rule ${table_ipv4} ${chain} ip protocol udp counter drop comment "UDP flood: rate exceeded"
+add rule ${table_ipv4} ${chain} ip protocol udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
 # Return to input chain
 add rule ${table_ipv4} ${chain} return
@@ -1000,19 +1000,19 @@ flush chain ${table_ipv6} ${chain}
 
 # SYN Flood Protection
 add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
-add rule ${table_ipv6} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
+add rule ${table_ipv6} ${chain} tcp flags syn counter name total_input_drop counter drop comment "SYN flood: rate exceeded"
 
 # Connection Limits
-add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
-add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter drop comment "HTTP(S): max ${http_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter name total_input_drop counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP(S): max ${http_limit} conn/IP"
 
 # ICMPv6 Rate Limiting
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
-add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter drop comment "ICMPv6 flood: rate exceeded"
+add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter name total_input_drop counter drop comment "ICMPv6 flood: rate exceeded"
 
 # v1.46.0 FIX-J: IPv6 UDP Flood Protection (mirrors IPv4 pattern at line 992-993)
 add rule ${table_ipv6} ${chain} meta l4proto udp meter ${udp_meter}6 { ip6 saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
-add rule ${table_ipv6} ${chain} meta l4proto udp counter drop comment "UDP flood: rate exceeded"
+add rule ${table_ipv6} ${chain} meta l4proto udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
 # Return to input chain
 add rule ${table_ipv6} ${chain} return
@@ -1196,7 +1196,7 @@ flush chain ${table_ipv4} ${chain}
 ${log_rule_ipv4:+${log_rule_ipv4}
 }
 # Drop all traffic from banned IPs
-add rule ${table_ipv4} ${chain} ip saddr @${ban_set} counter drop comment "DDoS banned IP"
+add rule ${table_ipv4} ${chain} ip saddr @${ban_set} counter name total_input_drop counter drop comment "DDoS banned IP"
 
 # Return for non-banned traffic
 add rule ${table_ipv4} ${chain} return
@@ -1209,7 +1209,7 @@ flush chain ${table_ipv6} ${chain}
 ${log_rule_ipv6:+${log_rule_ipv6}
 }
 # Drop all traffic from banned IPs
-add rule ${table_ipv6} ${chain} ip6 saddr @${ban_set}6 counter drop comment "DDoS banned IP"
+add rule ${table_ipv6} ${chain} ip6 saddr @${ban_set}6 counter name total_input_drop counter drop comment "DDoS banned IP"
 
 # Return for non-banned traffic
 add rule ${table_ipv6} ${chain} return
@@ -1407,18 +1407,18 @@ add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
 # Level 4: Full ban - drop all packets immediately
-add rule ${table_ipv4} ${chain} ip saddr @${set_ban_1h} counter drop comment "Penalty: 1h ban"
+add rule ${table_ipv4} ${chain} ip saddr @${set_ban_1h} counter name total_input_drop counter drop comment "Penalty: 1h ban"
 
 # Level 3: Drop set - drop all packets
-add rule ${table_ipv4} ${chain} ip saddr @${set_drop_5m} counter drop comment "Penalty: 5m drop"
+add rule ${table_ipv4} ${chain} ip saddr @${set_drop_5m} counter name total_input_drop counter drop comment "Penalty: 5m drop"
 
 # Level 2: Severe rate limit (5m)
 add rule ${table_ipv4} ${chain} ip saddr @${set_limit_5m} limit rate ${limit_5m_rate} burst ${limit_5m_burst} packets counter return comment "Penalty: 5m rate limit OK"
-add rule ${table_ipv4} ${chain} ip saddr @${set_limit_5m} counter drop comment "Penalty: 5m rate exceeded"
+add rule ${table_ipv4} ${chain} ip saddr @${set_limit_5m} counter name total_input_drop counter drop comment "Penalty: 5m rate exceeded"
 
 # Level 1: Light rate limit (10s)
 add rule ${table_ipv4} ${chain} ip saddr @${set_limit_10s} limit rate ${limit_10s_rate} burst ${limit_10s_burst} packets counter return comment "Penalty: 10s rate limit OK"
-add rule ${table_ipv4} ${chain} ip saddr @${set_limit_10s} counter drop comment "Penalty: 10s rate exceeded"
+add rule ${table_ipv4} ${chain} ip saddr @${set_limit_10s} counter name total_input_drop counter drop comment "Penalty: 10s rate exceeded"
 
 # Return for non-penalized traffic
 add rule ${table_ipv4} ${chain} return
@@ -1428,18 +1428,18 @@ add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
 # Level 4: Full ban - drop all packets immediately
-add rule ${table_ipv6} ${chain} ip6 saddr @${set_ban_1h}6 counter drop comment "Penalty: 1h ban"
+add rule ${table_ipv6} ${chain} ip6 saddr @${set_ban_1h}6 counter name total_input_drop counter drop comment "Penalty: 1h ban"
 
 # Level 3: Drop set - drop all packets
-add rule ${table_ipv6} ${chain} ip6 saddr @${set_drop_5m}6 counter drop comment "Penalty: 5m drop"
+add rule ${table_ipv6} ${chain} ip6 saddr @${set_drop_5m}6 counter name total_input_drop counter drop comment "Penalty: 5m drop"
 
 # Level 2: Severe rate limit (5m)
 add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_5m}6 limit rate ${limit_5m_rate} burst ${limit_5m_burst} packets counter return comment "Penalty: 5m rate limit OK"
-add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_5m}6 counter drop comment "Penalty: 5m rate exceeded"
+add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_5m}6 counter name total_input_drop counter drop comment "Penalty: 5m rate exceeded"
 
 # Level 1: Light rate limit (10s)
 add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_10s}6 limit rate ${limit_10s_rate} burst ${limit_10s_burst} packets counter return comment "Penalty: 10s rate limit OK"
-add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_10s}6 counter drop comment "Penalty: 10s rate exceeded"
+add rule ${table_ipv6} ${chain} ip6 saddr @${set_limit_10s}6 counter name total_input_drop counter drop comment "Penalty: 10s rate exceeded"
 
 # Return for non-penalized traffic
 add rule ${table_ipv6} ${chain} return
@@ -1704,18 +1704,18 @@ flush chain ${table_ipv4} ${chain}
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_allow accept comment "BotGuard: verified crawler allow"
 
 # 2. Ban set: denied/malicious bots get dropped
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter drop comment "BotGuard: denied bot ban"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter name total_input_drop counter drop comment "BotGuard: denied bot ban"
 
 # 3. Emergency set: pressure mode immediate drop
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_emergency counter drop comment "BotGuard: emergency drop"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_emergency counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set: suspicious bots get heavy throttle
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new meter http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} counter drop comment "BotGuard: grey throttle exceeded"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set: awaiting classification, light throttle
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new meter http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} counter drop comment "BotGuard: pending throttle exceeded"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter: mark IPs exceeding rate for Go classification
 add rule ${table_ipv4} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter { ip saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect { ip saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"
@@ -1731,18 +1731,18 @@ flush chain ${table_ipv6} ${chain}
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_allow6 accept comment "BotGuard: verified crawler allow"
 
 # 2. Ban set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter drop comment "BotGuard: denied bot ban"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter name total_input_drop counter drop comment "BotGuard: denied bot ban"
 
 # 3. Emergency set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_emergency6 counter drop comment "BotGuard: emergency drop"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_emergency6 counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new meter http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} counter drop comment "BotGuard: grey throttle exceeded"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new meter http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} counter drop comment "BotGuard: pending throttle exceeded"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter
 add rule ${table_ipv6} ${chain} tcp dport {80, 443} ct state new meter http_bot_meter6 { ip6 saddr limit rate over ${suspect_rate} burst ${suspect_burst} packets } add @http_bot_suspect6 { ip6 saddr timeout ${suspect_timeout} } comment "BotGuard: suspect marking"

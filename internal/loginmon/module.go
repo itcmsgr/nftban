@@ -117,6 +117,10 @@ type Module struct {
 	journalCmd *exec.Cmd
 	eveFile    *os.File
 	eveReader  *bufio.Reader
+
+	// v1.48.0: File watchers for services that don't log to journalctl
+	// (DirectAdmin, cPanel, Plesk use their own log files)
+	fileWatcherCmds []*exec.Cmd
 }
 
 // New creates a new login monitor module
@@ -187,6 +191,9 @@ func (m *Module) Start(ctx context.Context) error {
 		go m.runEVEWatcher(ctx)
 	}
 
+	// v1.48.0: Start file watchers for panel services that don't log to journalctl
+	m.startFileWatchers(ctx)
+
 	// Start score decay goroutine
 	go m.runScoreDecay(ctx)
 
@@ -205,6 +212,13 @@ func (m *Module) Stop() error {
 	// Clean up journal command if running
 	if m.journalCmd != nil && m.journalCmd.Process != nil {
 		m.journalCmd.Process.Kill()
+	}
+
+	// v1.48.0: Clean up file watcher commands
+	for _, cmd := range m.fileWatcherCmds {
+		if cmd != nil && cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 	}
 
 	// Close EVE file if open
@@ -581,6 +595,65 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 		m.status.RecordError(err)
 		return
 	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			m.processLine(scanner.Bytes())
+		}
+	}
+}
+
+// panelLogPaths maps detected panel services to their log file paths.
+// These services log to their own files, NOT to journalctl/syslog.
+// v1.48.0: Verified against real servers (srv2=DA, lab4=cPanel, lab2=Plesk)
+var panelLogPaths = map[string][]string{
+	"directadmin": {"/var/log/directadmin/login.log"},
+	"cpanel":      {"/usr/local/cpanel/logs/access_log"},   // 401 on POST /login/
+	"plesk":       {"/var/log/plesk/panel.log"},              // "[Action Log] Failed login attempt"
+}
+
+// startFileWatchers launches tail -F watchers for panel services
+// that log to their own files instead of journalctl.
+func (m *Module) startFileWatchers(ctx context.Context) {
+	for service, paths := range panelLogPaths {
+		if !m.detectedServices[service] {
+			continue
+		}
+		for _, logPath := range paths {
+			if _, err := os.Stat(logPath); err != nil {
+				continue
+			}
+			go m.runFileWatcher(ctx, service, logPath)
+		}
+	}
+}
+
+// runFileWatcher tails a log file and feeds lines through the detector pipeline.
+func (m *Module) runFileWatcher(ctx context.Context, service, logPath string) {
+	cmd := exec.CommandContext(ctx, "tail", "-F", "-n", "0", logPath)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		m.status.RecordError(fmt.Errorf("file watcher %s: pipe: %w", service, err))
+		return
+	}
+	defer stdout.Close()
+
+	if err := cmd.Start(); err != nil {
+		m.status.RecordError(fmt.Errorf("file watcher %s: start: %w", service, err))
+		return
+	}
+
+	// Track for cleanup on Stop()
+	m.mu.Lock()
+	m.fileWatcherCmds = append(m.fileWatcherCmds, cmd)
+	m.mu.Unlock()
+
+	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, ModuleName).
+		WithMessage(fmt.Sprintf("File watcher started: %s (%s)", service, logPath)))
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {

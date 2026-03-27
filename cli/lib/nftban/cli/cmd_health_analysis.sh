@@ -8,7 +8,7 @@
 # meta:name="cmd_health_analysis"
 # meta:type="cli"
 # meta:header="Health Check Analysis Module"
-# meta:version="1.39.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -165,17 +165,49 @@ nftban_health_cmd_conflicts() {
     echo "└────────────────────────────────────────────────────────────┘"
     echo ""
 
+    # v1.48.0: Ghost table detection (live nft state)
+    local ghost_found=false
+    if command -v nft &>/dev/null; then
+        local live_tables
+        live_tables=$(nft list tables 2>/dev/null || true)
+        echo "┌────────────────────────────────────────────────────────────┐"
+        echo "│ GHOST NFT TABLES (live state)                              │"
+        echo "├────────────────────────────────────────────────────────────┤"
+        local ghost_count=0
+        while IFS= read -r tline; do
+            [[ -z "$tline" ]] && continue
+            local tspec="${tline#table }"
+            # Skip NFTBan-owned tables (nftban + SYNPROXY raw tables)
+            case "$tspec" in
+                "ip nftban"|"ip6 nftban"|"ip raw"|"ip6 raw") continue ;;
+            esac
+            printf "│  ✗ %-56s│\n" "$tspec"
+            ghost_found=true
+            ((ghost_count++)) || true
+        done <<< "$live_tables"
+        if [[ "$ghost_found" == "false" ]]; then
+            echo "│  ✓ No ghost tables — NFTBan has sole authority             │"
+        fi
+        echo "└────────────────────────────────────────────────────────────┘"
+        echo ""
+    fi
+
     # Show verdict
-    if [[ "$has_conflicts" == true ]]; then
+    if [[ "$has_conflicts" == true ]] || [[ "$ghost_found" == true ]]; then
         echo "  ┌──────────────────────────────────────────────────────────┐"
-        echo "  │  ⚠️  CONFLICTS DETECTED                                   │"
+        echo "  │  CONFLICTS DETECTED                                      │"
         echo "  │                                                          │"
-        echo "  │  These firewalls may interfere with NFTBan.              │"
+        if [[ "$has_conflicts" == true ]]; then
+            echo "  │  Conflicting firewalls may interfere with NFTBan.        │"
+        fi
+        if [[ "$ghost_found" == true ]]; then
+            echo "  │  Ghost nft tables found (left by disabled firewalls).    │"
+        fi
         echo "  │  Run: nftban health conflicts --fix                      │"
         echo "  └──────────────────────────────────────────────────────────┘"
     else
         echo "  ┌──────────────────────────────────────────────────────────┐"
-        echo "  │  ✅ NO CONFLICTS DETECTED                                 │"
+        echo "  │  NO CONFLICTS DETECTED                                   │"
         echo "  │                                                          │"
         echo "  │  System is clean. NFTBan can operate without conflicts.  │"
         echo "  └──────────────────────────────────────────────────────────┘"
@@ -197,10 +229,19 @@ nftban_health_cmd_conflicts() {
         else
             nftban_remove_conflicts --panel "$panel"
         fi
+        # v1.48.0: Always run ghost cleanup on --fix (idempotent)
+        if declare -f nftban_cleanup_ghost_tables &>/dev/null; then
+            echo ""
+            echo "Cleaning ghost nftables tables..."
+            nftban_cleanup_ghost_tables
+            echo ""
+            echo "Validating hook authority..."
+            nftban_validate_hook_authority || true
+        fi
     fi
 
     # Return based on actual conflicts found
-    if [[ "$has_conflicts" == true ]]; then
+    if [[ "$has_conflicts" == true ]] || [[ "$ghost_found" == true ]]; then
         return 1
     fi
     return 0

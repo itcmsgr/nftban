@@ -8,7 +8,7 @@
 # meta:name="cmd_health_core"
 # meta:type="cli"
 # meta:header="Health Check Core Module"
-# meta:version="1.43.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -449,7 +449,7 @@ nftban_health_cmd_fix() {
             # 7. Fix everything else
             # =================================================================
 
-            # v1.18.7: Remove conflicting firewalls automatically
+            # v1.48.0: Remove ALL conflicting firewalls automatically
             echo "[1/9] Removing conflicting firewalls..."
             if command -v apt-get &>/dev/null; then
                 # Debian/Ubuntu
@@ -459,6 +459,13 @@ nftban_health_cmd_fix() {
                 systemctl disable --now firewalld 2>/dev/null && echo "  ✓ Disabled firewalld" || true
             fi
             systemctl disable --now fail2ban 2>/dev/null && echo "  ✓ Disabled fail2ban" || true
+            # v1.48.0: CSF removal was missing — caused ghost tables on DirectAdmin/cPanel
+            if command -v csf &>/dev/null || [[ -f /etc/csf/csf.conf ]]; then
+                csf -x 2>/dev/null || true
+                systemctl stop lfd csf 2>/dev/null || true
+                systemctl disable lfd csf 2>/dev/null || true
+                echo "  ✓ Disabled CSF/LFD"
+            fi
 
             echo ""
             echo "[2/9] Fixing directories..."
@@ -478,20 +485,33 @@ nftban_health_cmd_fix() {
                 echo "  ⚠ Whitelist sync failed - proceeding with caution"
             }
 
-            # v1.18.7: Clean rogue nftables tables before rebuild
+            # v1.48.0: Centralized ghost table cleanup (replaces hardcoded list)
             echo ""
-            echo "[5/9] Cleaning rogue nftables tables..."
-            for rogue_table in "ip filter" "ip6 filter" "inet filter" "inet nftban_install_emergency"; do
-                if nft list table "$rogue_table" &>/dev/null; then
-                    echo "  Removing: $rogue_table"
-                    nft delete table "$rogue_table" 2>/dev/null || true
-                fi
-            done
+            echo "[5/9] Cleaning ghost nftables tables..."
+            if declare -f nftban_cleanup_ghost_tables &>/dev/null; then
+                nftban_cleanup_ghost_tables
+            else
+                # Fallback if function not loaded
+                for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet filter" "inet firewalld" "inet nftban_install_emergency"; do
+                    if nft list table $rogue_table &>/dev/null; then
+                        echo "  Removing: $rogue_table"
+                        nft delete table $rogue_table 2>/dev/null || true
+                    fi
+                done
+            fi
 
             echo ""
             echo "[6/9] Fixing nftables structure..."
             # Now safe to create/fix nftables structure
             nftban_health_fix_nftables
+
+            # v1.48.0: Sync ports to nft sets (catches SSH port changes)
+            # The health CHECK updates 00-ssh.conf and tries IPC, but IPC may fail.
+            # A full sync directly applies port config to nft sets.
+            if command -v nftban &>/dev/null; then
+                echo "  Syncing ports to firewall..."
+                nftban sync --quick 2>/dev/null || true
+            fi
 
             # v1.18.7: Download GeoIP database if missing
             echo ""
