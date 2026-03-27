@@ -54,6 +54,9 @@ Wants=nftables.service
 StartLimitBurst=5
 StartLimitIntervalSec=300
 
+# Alert on failure (v1.43.0: moved from [Service] — OnFailure is a Unit-level directive)
+OnFailure=nftban-alert@%n.service
+
 [Service]
 Type=notify
 NotifyAccess=main
@@ -104,9 +107,6 @@ CPUWeight=200
 # IO scheduling (don't starve other services)
 IOSchedulingClass=best-effort
 IOSchedulingPriority=4
-
-# Alert on failure
-OnFailure=nftban-alert@%n.service
 
 # =============================================================================
 # RESOURCE LIMITS (Safety Net Only)

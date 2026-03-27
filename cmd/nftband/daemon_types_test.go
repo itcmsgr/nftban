@@ -78,6 +78,9 @@ func TestValidNFTBanSet(t *testing.T) {
 		"http_bot_grey", "http_bot_grey6",
 		"http_bot_emergency", "http_bot_emergency6",
 		"http_bot_pending", "http_bot_pending6",
+		// Per-IP port access sets (v1.43.0)
+		"port_allow_tcp_ipv4", "port_allow_tcp_ipv6",
+		"port_allow_udp_ipv4", "port_allow_udp_ipv6",
 	}
 
 	for _, set := range validSets {
@@ -105,9 +108,9 @@ func TestValidNFTBanSet(t *testing.T) {
 
 func TestKnownNFTBanSets_Count(t *testing.T) {
 	// Verify we have the expected number of known sets
-	// 4 blacklist/whitelist + 2 persistent + 2 bogon + 2 geoban + 4 ports + 12 botguard = 26
-	if len(knownNFTBanSets) != 26 {
-		t.Errorf("expected 26 known sets, got %d", len(knownNFTBanSets))
+	// 4 blacklist/whitelist + 2 persistent + 2 bogon + 2 geoban + 4 ports + 12 botguard + 4 port_allow = 30
+	if len(knownNFTBanSets) != 30 {
+		t.Errorf("expected 30 known sets, got %d", len(knownNFTBanSets))
 	}
 }
 

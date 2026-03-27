@@ -82,6 +82,9 @@ var knownNFTBanSets = map[string]bool{
 	"http_bot_grey": true, "http_bot_grey6": true,
 	"http_bot_emergency": true, "http_bot_emergency6": true,
 	"http_bot_pending": true, "http_bot_pending6": true,
+	// Per-IP port access sets (v1.43.0 — BUG-008 fix: flush was silently failing)
+	"port_allow_tcp_ipv4": true, "port_allow_tcp_ipv6": true,
+	"port_allow_udp_ipv4": true, "port_allow_udp_ipv6": true,
 }
 
 func validNFTBanSet(set string) bool {
