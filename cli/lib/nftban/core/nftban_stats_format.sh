@@ -8,7 +8,7 @@
 # meta:name="nftban_stats_format"
 # meta:type="core"
 # meta:header="Statistics Display & Trends"
-# meta:version="1.39.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -243,6 +243,21 @@ nftban_stats_generate_dashboard() {
         manual=$(echo "$sources" | jq -r '.manual // 0')
         feeds=$(echo "$sources" | jq -r '.feeds // 0')
         suricata_bans=$(echo "$sources" | jq -r '.suricata // 0')
+
+        # Feeds: use actual loaded IPs (not bans.log which doesn't track feed loads)
+        if [[ "$use_unified_cache" == "true" ]]; then
+            local feeds_loaded
+            feeds_loaded=$(nftban_stats_get_unified ".feeds.ips_total" "0")
+            [[ "$feeds_loaded" -gt 0 ]] 2>/dev/null && feeds="$feeds_loaded"
+        elif [[ "$feeds" == "0" ]]; then
+            # Fallback: count feed files directly
+            local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+            if [[ -d "$feeds_dir" ]]; then
+                local feed_count
+                feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l)
+                [[ "$feed_count" -gt 0 ]] && feeds="$feed_count"
+            fi
+        fi
 
         echo "  Modules:"
         printf "      %-14s %s\n" "Login..........." "$login_bans"
