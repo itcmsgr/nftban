@@ -179,6 +179,7 @@ $JSON_MODE || echo "[6/6] Named counters..."
 
 EXPECTED_COUNTERS=(
     "input_invalid_drop"
+    "input_loopback_accept"
     "input_whitelist_accept"
     "input_blacklist_manual_drop"
     "input_blacklist_drop"
@@ -187,6 +188,9 @@ EXPECTED_COUNTERS=(
     "input_ct_ssh_drop"
     "input_ct_http_drop"
     "input_ct_mail_drop"
+    "input_syn_rate_exceeded"
+    "input_service_tcp_accept"
+    "input_service_udp_accept"
     "output_loopback_accept"
     "output_established_accept"
     "output_tcp_accept"

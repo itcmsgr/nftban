@@ -608,38 +608,13 @@ EOF
     fi
 
     # ==========================================================================
-    # 5. Trend Data Collection (Hourly)
+    # 5. Trend Data Collection — REMOVED in v1.46.0
     # ==========================================================================
-    # Check if this is an hourly run (first run at minute 00-14)
-    local current_minute
-    current_minute=$(date +%M)
-    if [[ $current_minute -lt 15 ]]; then
-        log "INFO" "[5/9] Collecting trend data (hourly)..."
-
-        # Collect stats trend data
-        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
-            source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" 2>/dev/null || true
-            if declare -f nftban_stats_trend_collect >/dev/null 2>&1; then
-                nftban_stats_trend_collect 2>/dev/null && log "INFO" "Stats trend collected" || true
-            fi
-        fi
-
-        # Collect watchdog trend data
-        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" ]]; then
-            source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" 2>/dev/null || true
-            if declare -f nftban_watchdog_trend_collect >/dev/null 2>&1; then
-                nftban_watchdog_trend_collect 2>/dev/null && log "INFO" "Watchdog trend collected" || true
-            fi
-            # Comprehensive cleanup of all watchdog/stats directories
-            if declare -f nftban_watchdog_cleanup_all >/dev/null 2>&1; then
-                local cleanup_count
-                cleanup_count=$(nftban_watchdog_cleanup_all 2>/dev/null) || cleanup_count=0
-                [[ $cleanup_count -gt 0 ]] && log "INFO" "Cleanup: removed $cleanup_count old files total"
-            fi
-        fi
-    else
-        log "INFO" "[5/9] Trend collection: Skipped (not hourly run)"
-    fi
+    # Trend collection + cleanup now handled exclusively by:
+    #   - nftban-watchdog.timer (every 2min) — trend collection + cleanup
+    #   - Go daemon (stats.CleanupHistory, stats.CleanupProfiles, Recorder.Cleanup)
+    # Removed from maintenance to eliminate duplicate execution (L1 audit finding).
+    log "INFO" "[5/9] Trend collection: Handled by watchdog timer (skipped)"
 
     # ==========================================================================
     # 6. Configuration Validation (Critical Files)

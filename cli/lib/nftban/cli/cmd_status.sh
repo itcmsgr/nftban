@@ -120,7 +120,7 @@ _status_check_binaries() {
 
 _nftban_protection_state() {
     # Determine protection state from live system checks.
-    # Returns one of: PROTECTED, DEGRADED, UNPROTECTED, DISABLED
+    # Returns one of: PROTECTED, MONITORING, DEGRADED, UNPROTECTED, DISABLED
     # Used by both output_terminal() and output_json() for consistency.
     local _nft_active=false _daemon_active=false _rules=0 _timers=0
 
@@ -135,7 +135,21 @@ _nftban_protection_state() {
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         echo "DISABLED"; return
     elif [[ "$_nft_active" == "true" ]] && [[ "$_daemon_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
-        [[ "$_timers" -gt 0 ]] && { echo "PROTECTED"; return; }
+        if [[ "$_timers" -gt 0 ]]; then
+            # v1.46.0: Check if any detection module is actually enabled
+            local _modules_active=0
+            grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
+            [[ $_modules_active -eq 0 ]] && grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null && ((_modules_active++)) || true
+            grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
+            [[ $_modules_active -le 1 ]] && grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null && ((_modules_active++)) || true
+            systemctl is-active nftban-login-monitor >/dev/null 2>&1 && ((_modules_active++)) || true
+            systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
+            if [[ "$_modules_active" -gt 0 ]]; then
+                echo "PROTECTED"; return
+            else
+                echo "MONITORING"; return
+            fi
+        fi
         echo "DEGRADED"; return
     elif [[ "$_nft_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
         echo "DEGRADED"; return
@@ -261,15 +275,15 @@ output_brief() {
         esac
     fi
 
-    # v1.24.1: When PROTECTED, health issues are informational not errors
-    if [[ "$protection_state" == "PROTECTED" && "$health_word" == "errors" ]]; then
+    # v1.24.1: When PROTECTED/MONITORING, health issues are informational not errors
+    if [[ ("$protection_state" == "PROTECTED" || "$protection_state" == "MONITORING") && "$health_word" == "errors" ]]; then
         health_word="info"
     fi
 
     echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
 
     case "$protection_state" in
-        PROTECTED|DEGRADED) return 0 ;;
+        PROTECTED|MONITORING|DEGRADED) return 0 ;;
         *)                  return 1 ;;
     esac
 }
@@ -838,8 +852,8 @@ _status_section_health() {
         health_status=$(cat "$health_cache" 2>/dev/null) || health_status="UNKNOWN"
     fi
 
-    # v1.24.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
-    if [[ "$protection_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
+    # v1.24.0: If firewall is PROTECTED/MONITORING, don't show misleading ERROR from optional checks
+    if [[ ("$protection_state" == "PROTECTED" || "$protection_state" == "MONITORING") ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
         printf "  %-20s %s\n" "Overall Status......" "OK (info notices)"
     else
         printf "  %-20s %s\n" "Overall Status......" "$health_status"
@@ -1230,7 +1244,7 @@ output_terminal() {
     # 0 = firewall IS protecting (PROTECTED or DEGRADED)
     # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
     case "$protection_state" in
-        PROTECTED|DEGRADED) return 0 ;;
+        PROTECTED|MONITORING|DEGRADED) return 0 ;;
         *)                  return 1 ;;
     esac
 }
@@ -1407,8 +1421,8 @@ output_json() {
         2) health_status="errors" ;;
     esac
 
-    # v1.33.0: JSON health parity — apply same PROTECTED downgrade as CLI (line 812-814)
-    if [[ "$json_state" == "PROTECTED" ]] && [[ "$health_status" == "errors" ]]; then
+    # v1.33.0: JSON health parity — apply same PROTECTED/MONITORING downgrade as CLI
+    if [[ ("$json_state" == "PROTECTED" || "$json_state" == "MONITORING") ]] && [[ "$health_status" == "errors" ]]; then
         health_status="healthy"
     fi
 
@@ -1608,7 +1622,7 @@ output_json() {
     # 0 = firewall IS protecting (PROTECTED or DEGRADED)
     # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
     case "$json_state" in
-        PROTECTED|DEGRADED) return 0 ;;
+        PROTECTED|MONITORING|DEGRADED) return 0 ;;
         *)                  return 1 ;;
     esac
 }

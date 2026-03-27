@@ -1369,7 +1369,7 @@ run_nft_schema_validation() {
     if declare -f nftban_nft_validate_named_counters >/dev/null 2>&1; then
         TESTS_TOTAL=$((TESTS_TOTAL + 1))
         if output=$(nftban_nft_validate_named_counters 2>&1); then
-            log_pass "NFT schema — named counters validated (34 expected)"
+            log_pass "NFT schema — named counters validated (38 expected)"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             # Named counters missing is a WARNING (anonymous counters still work)

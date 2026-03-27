@@ -613,17 +613,16 @@ nft_fragment_render_synproxy_raw() {
 # --- IPv4 Raw Table (NOTRACK for SYNs) ---
 add table ip raw
 add chain ip raw prerouting { type filter hook prerouting priority raw; policy accept; }
-# v1.34.0: Flush before add to prevent duplicate notrack rules
-flush chain ip raw prerouting
 
 # Don't track SYN packets to SYNPROXY-protected ports (let SYNPROXY handle them)
+# v1.46.0 FIX-H: Comment-based rule replacement instead of flush chain
+# Old: flush chain ip raw prerouting — destroyed Docker/K8s rules
+# New: Pre-cleanup via _nft_cleanup_synproxy_raw() deletes only our rules by comment
 add rule ip raw prerouting tcp dport { ${ports} } tcp flags syn / syn,ack,fin,rst notrack comment "SYNPROXY: notrack SYN"
 
 # --- IPv6 Raw Table (NOTRACK for SYNs) ---
 add table ip6 raw
 add chain ip6 raw prerouting { type filter hook prerouting priority raw; policy accept; }
-# v1.34.0: Flush before add to prevent duplicate notrack rules
-flush chain ip6 raw prerouting
 
 # Don't track SYN packets to SYNPROXY-protected ports
 add rule ip6 raw prerouting tcp dport { ${ports} } tcp flags syn / syn,ack,fin,rst notrack comment "SYNPROXY: notrack SYN"
@@ -1011,6 +1010,10 @@ add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter drop comment "ICMPv6 flood: rate exceeded"
 
+# v1.46.0 FIX-J: IPv6 UDP Flood Protection (mirrors IPv4 pattern at line 992-993)
+add rule ${table_ipv6} ${chain} meta l4proto udp meter ${udp_meter}6 { ip6 saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto udp counter drop comment "UDP flood: rate exceeded"
+
 # Return to input chain
 add rule ${table_ipv6} ${chain} return
 EOF
@@ -1025,35 +1028,45 @@ EOF
 }
 
 # Render DDoS classic jump rules fragment
+# v1.46.0 FIX-A: Insert BEFORE service port accept rules (was append → bypassed)
+# Uses same position-aware strategy as SYNPROXY jump (line 642)
 nft_fragment_render_ddos_classic_jump() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/21-ddos-classic-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Find handle of first service port accept rule (tcp dport @tcp_ports_in)
+        # Insert BEFORE it so DDoS rate limits fire before service port accept
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1)
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan DDoS Classic - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
+        if [[ -n "$handle" ]]; then
+            # Insert BEFORE service port rules
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS classic protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert DDoS jump before handle $handle in ${table_fam}" >&2
+                # Fallback: append (matches old behavior)
+                nft add rule ${table_fam} input jump "${chain}" \
+                    comment "\"DDoS classic protection\"" 2>/dev/null
+            }
+        else
+            # No service port rule found — append (new install)
+            nft add rule ${table_fam} input jump "${chain}" \
+                comment "\"DDoS classic protection\"" 2>/dev/null
+        fi
+    done
 
-add rule ${table_ipv4} input jump ${chain} comment "DDoS classic protection"
-add rule ${table_ipv6} input jump ${chain} comment "DDoS classic protection"
-EOF
-    )
-
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
-
-    echo "$fragment_path"
+    # Return a dummy path for API compatibility (no file written)
+    echo "/dev/null"
 }
 
 # Render DDoS classic cleanup fragment (for disable)
