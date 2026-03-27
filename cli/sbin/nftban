@@ -904,151 +904,86 @@ main() {
             nftban_render_banner
 
             echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📖 WHAT IS NFTBan?"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "NFTBan is a comprehensive Linux firewall management platform that"
-            echo "simplifies nftables configuration with intelligent threat protection:"
-            echo ""
-            echo "  🛡️  DDoS Protection      - Rate limiting & traffic flood mitigation"
-            echo "  🔍 Port Scan Detection  - Reconnaissance attack blocking"
-            echo "  🔐 Login Monitor        - SSH/PAM brute-force protection (replaces fail2ban)"
-            echo "  🌐 Threat Feeds         - Cloudflare, AbuseIPDB, Spamhaus & custom lists"
-            echo "  🗺️  GeoIP Blocking       - Country-based access control"
-            echo "  🦈 Suricata Integration - IDS/IPS with auto-detection"
-            echo "  📊 Prometheus Metrics   - Real-time monitoring & alerting"
-            echo "  🖥️  Web GUI              - Modern dashboard (nftban-ui)"
-            echo ""
 
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🚀 QUICK START GUIDE"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "Initial Setup:"
-            echo "  nftban check                  - Verify environment & dependencies"
-            echo "  nftban health                 - Run health checks & auto-fix"
-            echo "  nftban fhs                    - Check FHS compliance"
-            echo ""
-            echo "Enable Protection:"
-            echo "  nftban ddos enable            - Enable DDoS protection"
-            echo "  nftban portscan enable        - Enable port scan detection"
-            echo "  nftban login enable           - Enable login monitor (SSH protection)"
-            echo "  nftban feeds enable           - Enable threat intelligence feeds"
-            echo ""
-            echo "Monitoring:"
-            echo "  nftban status                 - Quick system status"
-            echo "  nftban stats dashboard        - Detailed statistics"
-            echo "  nftban watchdog report        - System resource monitoring"
-            echo "  nftban list                   - Show banned IPs"
-            echo "  nftban gui enable             - Enable Web GUI (port 3940)"
-            echo ""
-
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📊 CURRENT STATUS"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-
-            echo "  Platform:     v${NFTBAN_VERSION}"
-
-            # DYNAMIC: Check system user
-            if id nftban &>/dev/null; then
-                echo "  System User:  nftban (uid=$(id -u nftban))"
-            else
-                echo "  System User:  ⚠️  Not found"
+            # v1.46.0: Compact dashboard — protection state + module status
+            local _prot_state="UNKNOWN"
+            if declare -f _nftban_protection_state >/dev/null 2>&1; then
+                _prot_state=$(_nftban_protection_state)
             fi
 
-            # DYNAMIC: Protection Status
-            # Read config files directly (fast) instead of spawning subcommands
-            echo ""
-            echo "  Protection Status:"
+            case "$_prot_state" in
+                PROTECTED)   echo "  Protection:  PROTECTED" ;;
+                MONITORING)  echo "  Protection:  MONITORING (no detection modules enabled)" ;;
+                DEGRADED)    echo "  Protection:  DEGRADED" ;;
+                DISABLED)    echo "  Protection:  DISABLED" ;;
+                *)           echo "  Protection:  UNPROTECTED" ;;
+            esac
 
-            # DDoS - read from config
-            local ddos_status="⚪ Disabled"
+            echo ""
+
+            # Module status (2-column, parallel systemctl checks)
+            local _tmpdir
+            _tmpdir=$(mktemp -d)
+            systemctl is-active nftban-login-monitor   >"${_tmpdir}/login_active" 2>/dev/null &
+            systemctl is-active nftban-suricata         >"${_tmpdir}/suri_nftban" 2>/dev/null &
+            systemctl is-active suricata                >"${_tmpdir}/suri_native" 2>/dev/null &
+            systemctl is-active nftban-watchdog.timer   >"${_tmpdir}/watchdog_active" 2>/dev/null &
+            systemctl is-active nftban-ui               >"${_tmpdir}/gui" 2>/dev/null &
+            wait
+
+            # DDoS
+            local ddos_st="Disabled"
             local _ddos_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
             local _ddos_main="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf"
             if grep -q '^DDOS_ENABLED="true"' "$_ddos_conf" 2>/dev/null || \
                grep -q '^DDOS_ENABLED="true"' "$_ddos_main" 2>/dev/null; then
-                ddos_status="✅ Enabled"
+                ddos_st="Enabled"
             fi
-            echo "    DDoS:         ${ddos_status}"
 
-            # Portscan - read from config
-            local portscan_status="⚪ Disabled"
+            # Portscan
+            local ps_st="Disabled"
             local _ps_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
             local _ps_main="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf"
             if grep -q '^PORTSCAN_ENABLED="true"' "$_ps_conf" 2>/dev/null || \
                grep -q '^PORTSCAN_ENABLED="true"' "$_ps_main" 2>/dev/null; then
-                portscan_status="✅ Enabled"
+                ps_st="Enabled"
             fi
-            echo "    Portscan:     ${portscan_status}"
-
-            # Parallel systemctl checks (run all in background, collect results)
-            local _tmpdir
-            _tmpdir=$(mktemp -d)
-            systemctl is-active nftban-login-monitor   >"${_tmpdir}/login_active" 2>/dev/null &
-            systemctl is-enabled nftban-login-monitor   >"${_tmpdir}/login_enabled" 2>/dev/null &
-            systemctl is-active nftban-suricata         >"${_tmpdir}/suri_nftban" 2>/dev/null &
-            systemctl is-active suricata                >"${_tmpdir}/suri_native" 2>/dev/null &
-            systemctl is-active nftban-watchdog.timer   >"${_tmpdir}/watchdog_active" 2>/dev/null &
-            systemctl is-enabled nftban-watchdog.timer  >"${_tmpdir}/watchdog_enabled" 2>/dev/null &
-            systemctl is-active nftban-ui               >"${_tmpdir}/gui" 2>/dev/null &
-            wait
 
             # Login Monitor
-            if grep -q "^active" "${_tmpdir}/login_active" 2>/dev/null; then
-                echo "    Login Mon:    ✅ Active"
-            elif grep -q "^enabled" "${_tmpdir}/login_enabled" 2>/dev/null; then
-                echo "    Login Mon:    🔶 Enabled (stopped)"
-            else
-                echo "    Login Mon:    ⚪ Disabled"
-            fi
+            local login_st="Disabled"
+            grep -q "^active" "${_tmpdir}/login_active" 2>/dev/null && login_st="Active"
 
             # Suricata
+            local suri_st="Not installed"
             if grep -q "^active" "${_tmpdir}/suri_nftban" 2>/dev/null || \
                grep -q "^active" "${_tmpdir}/suri_native" 2>/dev/null; then
-                echo "    Suricata:     ✅ Active"
+                suri_st="Active"
             elif command -v suricata &>/dev/null; then
-                echo "    Suricata:     🔶 Installed (inactive)"
-            else
-                echo "    Suricata:     ⚪ Not installed"
+                suri_st="Inactive"
             fi
 
             # Watchdog
-            if grep -q "^active" "${_tmpdir}/watchdog_active" 2>/dev/null; then
-                echo "    Watchdog:     ✅ Active"
-            elif grep -q "^enabled" "${_tmpdir}/watchdog_enabled" 2>/dev/null; then
-                echo "    Watchdog:     🔶 Enabled (timer inactive)"
-            else
-                echo "    Watchdog:     ⚪ Disabled"
-            fi
+            local wd_st="Disabled"
+            grep -q "^active" "${_tmpdir}/watchdog_active" 2>/dev/null && wd_st="Active"
 
             # Web GUI
+            local gui_st="Disabled"
             if grep -q "^active" "${_tmpdir}/gui" 2>/dev/null; then
                 local gui_port
                 gui_port=$(grep "^PORT=" /etc/nftban/ui.conf 2>/dev/null | cut -d= -f2 || echo "3940")
-                echo "    Web GUI:      ✅ Running (port ${gui_port:-3940})"
-            else
-                echo "    Web GUI:      ⚪ Disabled"
+                gui_st="Port ${gui_port:-3940}"
             fi
 
             rm -rf "${_tmpdir}" 2>/dev/null || true
 
-            echo ""
-            echo "  Run 'nftban status' for detailed system status"
-            echo "  Run 'nftban help' for all commands"
-            echo ""
+            printf "  %-14s %-12s  %-14s %s\n" "DDoS:" "$ddos_st" "Portscan:" "$ps_st"
+            printf "  %-14s %-12s  %-14s %s\n" "Login Mon:" "$login_st" "Suricata:" "$suri_st"
+            printf "  %-14s %-12s  %-14s %s\n" "Watchdog:" "$wd_st" "Web GUI:" "$gui_st"
 
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📚 GET HELP"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
-            echo "  nftban help                   - Show all commands"
-            echo "  nftban <command> help         - Command-specific help"
-            echo ""
-            echo "  Website:   https://nftban.com"
-            echo "  Support:   contact@nftban.com"
-            echo "  GitHub:    https://github.com/itcmsgr/nftban"
+            echo "  nftban status          Detailed status"
+            echo "  nftban help            Essential commands"
+            echo "  nftban health          Run diagnostics"
             echo ""
             ;;
 
@@ -1056,9 +991,10 @@ main() {
         # -- all handled by auto-loader at line 736 (cmd_*.sh + nftban_cmd_*())
 
         help|--help|-h)
-            # Use new grouped help if available, fallback to banner
+            # v1.46.0: Pass remaining args so --all works (nftban help --all)
+            shift
             if declare -f nftban_print_help >/dev/null 2>&1; then
-                nftban_print_help
+                nftban_print_help "$@"
             else
                 # Fallback to old help (if help module fails to load)
                 nftban_render_banner simple

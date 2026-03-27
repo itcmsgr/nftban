@@ -245,7 +245,7 @@ nftban_pro_cmd_enroll() {
     local http_code
     local response_file
     response_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "$response_file"' RETURN
+    trap 'rm -f "${response_file:-}"' RETURN
 
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
         -H "Authorization: Bearer $token" \
@@ -863,9 +863,8 @@ nftban_pro_cmd_license_check() {
     if nftban_pro_is_enabled; then
         echo "  License valid - Pro features enabled"
         nftban_pro_enable_remote
-
-        # Also run inventory collection
-        nftban_pro_cmd_inventory_run --verbose
+        # NOTE: Inventory collection handled by nftban-pro-inventory.timer (daily)
+        # Removed duplicate call here to avoid 5x/day redundant execution (v1.46.0)
     else
         echo "  License invalid - disabling Pro features"
         nftban_pro_disable_remote

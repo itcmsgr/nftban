@@ -1065,9 +1065,10 @@ nftban_nft_validate_named_counters() {
 
     local warnings=0
 
-    # Expected named counters per family (v1.42.0 — 16 common + 1 family-specific)
+    # Expected named counters per family (v1.46.0 — 20 common + 1 family-specific)
     local -a expected_counters=(
         "input_invalid_drop"
+        "input_loopback_accept"
         "input_whitelist_accept"
         "input_blacklist_manual_drop"
         "input_blacklist_drop"
@@ -1076,6 +1077,9 @@ nftban_nft_validate_named_counters() {
         "input_ct_ssh_drop"
         "input_ct_http_drop"
         "input_ct_mail_drop"
+        "input_syn_rate_exceeded"
+        "input_service_tcp_accept"
+        "input_service_udp_accept"
         "output_loopback_accept"
         "output_established_accept"
         "output_tcp_accept"

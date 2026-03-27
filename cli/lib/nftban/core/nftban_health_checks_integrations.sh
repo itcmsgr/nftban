@@ -171,6 +171,14 @@ nftban_health_check_metrics() {
     if nftban_timer_is_active "nftban-unified-exporter.timer"; then
         metrics_issues+=("✓ Unified exporter timer: Active")
         unified_timer_ok=true
+        # BUG-012: Also check if the triggered service is failing (timer active but service 203/EXEC)
+        if systemctl is-failed --quiet nftban-unified-exporter.service 2>/dev/null; then
+            metrics_issues+=("⚠ Unified exporter service failing (timer active but service errors)")
+            metrics_issues+=("FIX: Check permissions: ls -la /usr/lib/nftban/exporters/nftban_unified_exporter.sh")
+            metrics_issues+=("FIX: chmod +x /usr/lib/nftban/exporters/nftban_unified_exporter.sh && systemctl restart nftban-unified-exporter.service")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            unified_timer_ok=false
+        fi
     elif nftban_service_exists "nftban-unified-exporter.timer"; then
         metrics_issues+=("⚠ Unified exporter timer exists but not running")
         metrics_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
