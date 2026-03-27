@@ -12,7 +12,7 @@
 # meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-02-10"
+# meta:updated_date="2026-03-27"
 #
 # meta:description="Wrapper that calls generate-help.sh for CLI help"
 # meta:input="None (called from main router)"
@@ -34,8 +34,14 @@ set -Eeuo pipefail
 # =============================================================================
 
 nftban_print_help() {
-    # Delegates to generate-help.sh for all help output
-    # Single source of truth: commands.registry.yml
+    # v1.46.0: Tiered help — essential commands by default, --all for full listing
+    local show_all=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all|-a) show_all=true; shift ;;
+            *) shift ;;
+        esac
+    done
 
     # Show unified banner if function available
     if type -t nftban_banner >/dev/null 2>&1; then
@@ -43,27 +49,68 @@ nftban_print_help() {
         echo ""
     fi
 
-    # Find generate-help.sh
-    local help_script=""
+    if [[ "$show_all" == "true" ]]; then
+        # Full help — delegate to generate-help.sh
+        local help_script=""
+        if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh" ]]; then
+            help_script="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh"
+        elif [[ -f "${BASH_SOURCE[0]%/*}/../../../scripts/generate-help.sh" ]]; then
+            help_script="$(cd "${BASH_SOURCE[0]%/*}/../../../scripts" && pwd)/generate-help.sh"
+        elif [[ -f "/opt/nftban/scripts/generate-help.sh" ]]; then
+            help_script="/opt/nftban/scripts/generate-help.sh"
+        fi
 
-    # 1. Installed location
-    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh" ]]; then
-        help_script="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh"
-    # 2. Development location (relative to this script)
-    elif [[ -f "${BASH_SOURCE[0]%/*}/../../../scripts/generate-help.sh" ]]; then
-        help_script="$(cd "${BASH_SOURCE[0]%/*}/../../../scripts" && pwd)/generate-help.sh"
-    # 3. Try common paths
-    elif [[ -f "/opt/nftban/scripts/generate-help.sh" ]]; then
-        help_script="/opt/nftban/scripts/generate-help.sh"
-    fi
-
-    if [[ -n "$help_script" ]] && [[ -f "$help_script" ]]; then
-        # Use generate-help.sh (single implementation)
-        bash "$help_script" --profile operator
+        if [[ -n "$help_script" ]] && [[ -f "$help_script" ]]; then
+            bash "$help_script" --profile operator
+        else
+            _nftban_help_minimal
+        fi
     else
-        # Minimal fallback
-        _nftban_help_minimal
+        # Default: show essential commands only
+        _nftban_help_essential
     fi
+}
+
+# =============================================================================
+# ESSENTIAL HELP (v1.46.0 — default, concise)
+# =============================================================================
+
+_nftban_help_essential() {
+    cat <<'EOF'
+USAGE:
+  nftban <command> [subcommand] [options]
+
+ESSENTIAL COMMANDS:
+  status        System status overview
+  health        Diagnostics and auto-repair
+  ban           Ban an IP address
+  unban         Remove IP ban
+  list          List banned/whitelisted IPs
+  search        Search IP across all sets
+  blacklist     Blacklist management (add/remove/list/flush)
+  whitelist     Whitelist management (add/remove/list)
+  feeds         Threat intelligence feeds
+  firewall      Firewall management (reload/rebuild/record)
+
+PROTECTION MODULES:
+  ddos          DDoS protection (enable/disable/status)
+  portscan      Port scan detection (enable/disable/status)
+  login         Login monitor — SSH brute-force protection
+  botguard      HTTP bot guard (enable/disable/status/list)
+  geoban        Geographic IP blocking (enable/disable/list)
+  suricata      Suricata IDS integration
+
+SYSTEM:
+  config        Configuration management
+  version       Version information
+  update        Update NFTBan
+
+EXIT CODES:
+  0  Success    1  Error    2  Warning
+
+Run 'nftban help --all' for all commands (60+)
+Run 'nftban <command> help' for command-specific help
+EOF
 }
 
 # =============================================================================
@@ -113,11 +160,12 @@ EOF
 
 export -f nftban_print_help
 export -f _nftban_help_minimal
+export -f _nftban_help_essential
 
 # =============================================================================
 # DIRECT EXECUTION
 # =============================================================================
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    nftban_print_help
+    nftban_print_help "$@"
 fi

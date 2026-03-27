@@ -30,8 +30,8 @@ Documentation=man:nftban(8) https://nftban.com/docs
 # Suricata is heaviest (downloads rules), so placed last in sequence
 OnCalendar=Sun *-*-* 03:40:00
 
-# Run 5 minutes after boot if missed
-OnBootSec=5min
+# Run 30 minutes after boot if missed (was 5min — increased to avoid boot congestion)
+OnBootSec=30min
 
 # JITTER: 30m variance (was 1h - reduced since we're staggered now)
 RandomizedDelaySec=30m

@@ -199,6 +199,23 @@
     create 0640 nftban nftban
 }
 
+# =============================================================================
+# Suricata Events Log (v1.46.0 — nftban's own suricata event processing log)
+# =============================================================================
+# This is NFTBan's suricata event processing log, NOT suricata's own logs.
+# Suricata's native logs are rotated by /etc/logrotate.d/nftban-suricata.
+/var/log/nftban/suricata-events.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 100M
+    create 0640 nftban nftban
+}
+
 # Generated reports - monthly rotation, keep 3 months
 /var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.txt /var/lib/nftban/reports/*.json {
     monthly
