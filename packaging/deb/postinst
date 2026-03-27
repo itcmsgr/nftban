@@ -381,6 +381,13 @@ case "$1" in
                     log_info "  ✓ iptables service disabled"
                 fi
 
+                # v1.48.0: Clean ghost tables left by disabled services BEFORE flush
+                # CSF/firewalld/iptables leave shadow nft tables even after stop
+                log_info "  Cleaning ghost nftables tables from disabled services..."
+                for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet firewalld" "inet filter"; do
+                    nft delete table $ghost_table 2>/dev/null || true
+                done
+
                 # =====================================================================
                 # CRITICAL: Create emergency SSH/panel protection BEFORE any flush
                 # This prevents lockout during takeover (v1.17.4 fix)
@@ -712,16 +719,26 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 7.4: Cleanup rogue nftables tables before preflight
+        # STEP 7.4: Cleanup ghost nftables tables before preflight
         # =====================================================================
-        # v1.18.7: Auto-cleanup common legacy tables that block install
-        log_info "Cleaning up rogue nftables tables..."
-        for rogue_table in "ip filter" "ip6 filter" "inet filter" "inet nftban_install_emergency"; do
-            if nft list table $rogue_table &>/dev/null; then
-                log_info "  Removing rogue table: $rogue_table"
-                nft delete table $rogue_table 2>/dev/null || true
+        # v1.48.0: Use centralized cleanup (idempotent, live-state-based).
+        # Replaces hardcoded table list — handles all iptables-nft/firewalld/CSF ghosts.
+        log_info "Cleaning ghost nftables tables..."
+        if [[ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]]; then
+            # shellcheck source=/dev/null
+            source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
+            if declare -f nftban_cleanup_ghost_tables &>/dev/null; then
+                nftban_cleanup_ghost_tables 2>/dev/null || true
             fi
-        done
+        else
+            # Fallback: inline cleanup if library not yet installed
+            for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet filter" "inet firewalld" "inet nftban_install_emergency"; do
+                if nft list table $rogue_table &>/dev/null 2>&1; then
+                    log_info "  Removing ghost table: $rogue_table"
+                    nft delete table $rogue_table 2>/dev/null || true
+                fi
+            done
+        fi
 
         # =====================================================================
         # STEP 7.5: Strict Preflight Check - Gate Service Enablement

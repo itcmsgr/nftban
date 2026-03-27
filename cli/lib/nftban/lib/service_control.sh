@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="service_control" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized service control for enable/disable NFTBan and subsystems"
+# meta:name="service_control" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Centralized service control for enable/disable NFTBan and subsystems"
 # meta:inventory.files=""
 # meta:inventory.binaries="systemctl,nftban,nftban-core"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
@@ -813,7 +813,10 @@ nftban_service_start() {
             systemctl start suricata.service
             ;;
         login|login_monitor)
-            systemctl start "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            # v1.48.0: Login monitoring handled by nftband daemon loginmon module
+            echo "Login monitoring is part of the nftband daemon (loginmon module)"
+            echo "Starting nftband daemon..."
+            systemctl start nftband.service
             ;;
         nftban|nftband)
             systemctl start nftband.service
@@ -843,7 +846,9 @@ nftban_service_stop() {
             systemctl stop suricata.service
             ;;
         login|login_monitor)
-            systemctl stop "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            # v1.48.0: Login monitoring handled by nftband daemon; stopping daemon stops all modules
+            echo "Login monitoring is part of the nftband daemon"
+            echo "To stop login monitoring, disable it: nftban login disable"
             ;;
         nftban|nftband)
             systemctl stop nftband.service

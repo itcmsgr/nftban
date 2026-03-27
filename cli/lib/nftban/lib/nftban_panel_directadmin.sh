@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_panel_directadmin" meta:type="lib" meta:version="1.39.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="DirectAdmin panel integration with enable/disable/status/report/repair/test"
+# meta:name="nftban_panel_directadmin" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="DirectAdmin panel integration with enable/disable/status/report/repair/test"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
@@ -209,6 +209,48 @@ EOF
         echo ""
     fi
 
+    # v1.48.0: Warn about CSF conflict
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        local csf_active=0
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            csf_active=1
+        fi
+        echo "╔═══════════════════════════════════════════════════════════════════╗"
+        echo "║ ⚠️  CSF (ConfigServer Firewall) is INSTALLED                      ║"
+        echo "╚═══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        if [[ "$csf_active" == "1" ]]; then
+            echo "CSF/LFD services are RUNNING — directly conflicts with NFTBan."
+        else
+            echo "CSF is installed but services appear stopped."
+        fi
+        echo "CSF manages its own iptables/nftables rules that conflict with NFTBan."
+        echo ""
+        echo "To disable: csf -x && systemctl disable csf lfd"
+        echo ""
+    fi
+
+    # v1.48.0 P3-57: Detect and warn about DA Brute Force Monitor
+    local bfm_conf="/usr/local/directadmin/data/admin/brute_force.conf"
+    if [[ -f "$bfm_conf" ]]; then
+        local bfm_enabled
+        bfm_enabled=$(grep -i '^brute_force_log_scanner=' "$bfm_conf" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        if [[ "$bfm_enabled" == "1" || "$bfm_enabled" == "yes" ]]; then
+            echo "╔═══════════════════════════════════════════════════════════════════╗"
+            echo "║ ⚠️  DirectAdmin BFM (Brute Force Monitor) is ACTIVE               ║"
+            echo "╚═══════════════════════════════════════════════════════════════════╝"
+            echo ""
+            echo "NFTBan replaces BFM with superior detection (journal + log watchers)."
+            echo "Running both causes duplicate bans and IP tracking conflicts."
+            echo ""
+            echo "To disable BFM:"
+            echo "  1. Edit $bfm_conf"
+            echo "  2. Set brute_force_log_scanner=0"
+            echo "  3. Restart DirectAdmin: systemctl restart directadmin"
+            echo ""
+        fi
+    fi
+
     # Mark DirectAdmin panel as enabled in state file
     echo "Enabling DirectAdmin panel in NFTBan..."
     local state_dir="${NFTBAN_DATA_DIR}/panels"
@@ -408,6 +450,42 @@ nftban_panel_directadmin_status() {
     fi
     echo ""
 
+    # v1.48.0: CSF detection
+    echo "CSF (ConfigServer Firewall):"
+    if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
+        if systemctl is-active csf.service &>/dev/null || systemctl is-active lfd.service &>/dev/null; then
+            echo "  Status: ⚠️  RUNNING (conflicts with NFTBan)"
+            echo "  Action: csf -x && systemctl disable csf lfd"
+        else
+            echo "  Status: ⚠️  INSTALLED but stopped"
+            echo "  Tip:    Remove CSF if not needed: csf -u"
+        fi
+    else
+        echo "  Status: ✓ NOT INSTALLED"
+    fi
+    echo ""
+
+    # v1.48.0 P3-57: Detect DA Brute Force Monitor (BFM) conflict
+    echo "Brute Force Monitor (BFM):"
+    local bfm_conf="/usr/local/directadmin/data/admin/brute_force.conf"
+    if [[ -f "$bfm_conf" ]]; then
+        local bfm_enabled
+        bfm_enabled=$(grep -i '^brute_force_log_scanner=' "$bfm_conf" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        if [[ "$bfm_enabled" == "1" || "$bfm_enabled" == "yes" ]]; then
+            echo "  Status: ⚠️  ACTIVE (conflicts with NFTBan login monitoring)"
+            echo "  Action: Disable BFM — NFTBan handles brute force detection"
+            echo "          Set brute_force_log_scanner=0 in $bfm_conf"
+        else
+            echo "  Status: ✓ DISABLED (NFTBan handles brute force detection)"
+        fi
+    elif [[ -f "/usr/local/directadmin/scripts/brute_force_monitor.sh" ]]; then
+        echo "  Status: ⚠️  SCRIPT EXISTS (check if enabled in directadmin.conf)"
+        echo "  Path:   /usr/local/directadmin/scripts/brute_force_monitor.sh"
+    else
+        echo "  Status: ✓ NOT FOUND"
+    fi
+    echo ""
+
     # Configuration file
     echo "Configuration:"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/directadmin/main.conf" ]]; then
@@ -508,8 +586,27 @@ nftban_panel_directadmin_report() {
     fi
     echo ""
 
+    # v1.48.0 P3-57: BFM detection
+    echo "5. BRUTE FORCE MONITOR (BFM)"
+    echo "   ───────────────────────────────────────────────────"
+    local bfm_conf="/usr/local/directadmin/data/admin/brute_force.conf"
+    if [[ -f "$bfm_conf" ]]; then
+        local bfm_enabled
+        bfm_enabled=$(grep -i '^brute_force_log_scanner=' "$bfm_conf" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        if [[ "$bfm_enabled" == "1" || "$bfm_enabled" == "yes" ]]; then
+            echo "   Status: ACTIVE ⚠️  (conflicts with NFTBan)"
+            echo "   Config: $bfm_conf"
+            echo "   Fix:    Set brute_force_log_scanner=0, restart DirectAdmin"
+        else
+            echo "   Status: DISABLED ✓ (NFTBan handles brute force)"
+        fi
+    else
+        echo "   Status: NOT CONFIGURED"
+    fi
+    echo ""
+
     # Recommendations
-    echo "5. RECOMMENDATIONS"
+    echo "6. RECOMMENDATIONS"
     echo "   ───────────────────────────────────────────────────"
 
     local recommendations=()
@@ -517,6 +614,15 @@ nftban_panel_directadmin_report() {
     # Check CloudFlare
     if ! _nftban_panel_check_cloudflare; then
         recommendations+=("Enable CloudFlare whitelist: nftban trust enable CLOUDFLARE")
+    fi
+
+    # Check BFM
+    if [[ -f "$bfm_conf" ]]; then
+        local bfm_val
+        bfm_val=$(grep -i '^brute_force_log_scanner=' "$bfm_conf" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+        if [[ "$bfm_val" == "1" || "$bfm_val" == "yes" ]]; then
+            recommendations+=("Disable BFM: set brute_force_log_scanner=0 in $bfm_conf")
+        fi
     fi
 
     # Check panel port

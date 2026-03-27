@@ -50,7 +50,7 @@ fi
 # meta:name="cmd_login"
 # meta:type="cli"
 # meta:header="Login Alert CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.48.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -148,13 +148,12 @@ nftban_login_cmd_status() {
         return 1
     fi
 
-    # Check service
-    if systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-        echo "✅ Service: Running"
-    elif systemctl is-enabled --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-        echo "⚠️  Service: Enabled but stopped (run 'nftban login enable' to start)"
+    # v1.48.0: Check nftband daemon (loginmon module), not removed bash service
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+        echo "✅ Daemon: nftband running (loginmon module active)"
     else
-        echo "⚪ Service: Disabled (run 'nftban login enable' to start)"
+        echo "⚠️  Daemon: nftband not running (login monitoring inactive)"
+        echo "   Start with: systemctl start nftband"
     fi
 
     echo ""
@@ -220,10 +219,9 @@ _nftban_login_cmd_status_json() {
         [[ -f "$config_file" ]] || [[ -f "$config_local" ]] && config_exists="true"
         [[ -f "${NFTBAN_LIB_DIR}/core/nftban_login_alert.sh" ]] && module_exists="true"
 
-        if systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
+        # v1.48.0: Check nftband daemon, not removed bash service
+        if systemctl is-active --quiet nftband.service 2>/dev/null; then
             service_status="running"
-        elif systemctl is-enabled --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-            service_status="stopped"
         fi
 
         if [[ -f "$NFTBAN_LOGIN_ALERT_LOG" ]]; then
@@ -287,49 +285,30 @@ _nftban_login_cmd_status_json() {
 }
 
 nftban_login_cmd_install() {
-    # Install/verify systemd service
-    # NOTE: Package installs service to /lib/systemd/system/ - don't duplicate!
+    # v1.48.0: Login monitoring is handled by the Go daemon (nftband) loginmon module
+    # The standalone nftban-login-monitor.service was removed in v1.23.0
 
-    if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Service installation requires root privileges" >&2
-        return 1
-    fi
-
-    local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-
-    echo "Installing NFTBan Login Monitor Service"
-    echo "========================================"
+    echo "NFTBan Login Monitor"
+    echo "===================="
+    echo ""
+    echo "Login monitoring is built into the nftband daemon (loginmon module)."
+    echo "No separate service installation is needed."
     echo ""
 
-    # Check if service already exists (from package)
-    # Use distro-specific systemd path, fallback to common locations
-    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
-    if [[ -f "${systemd_system_dir}/${service_name}" ]] || \
-       [[ -f "/lib/systemd/system/${service_name}" ]]; then
-        echo "✅ Service file exists (from package)"
-
-        # Remove any duplicate in /etc/systemd/system/ that may override
-        if [[ -f "/etc/systemd/system/${service_name}" ]]; then
-            echo "Removing duplicate override in /etc/systemd/system/..."
-            rm -f "/etc/systemd/system/${service_name}"
-            systemctl daemon-reload
-            echo "✅ Duplicate removed, using package service"
-        fi
+    # Check if daemon is running
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+        echo "✅ nftband daemon is running (loginmon module active)"
     else
-        # No package service - this shouldn't happen with proper install
-        echo "WARNING: No package service file found" >&2
-        echo "Please reinstall nftban package" >&2
-        return 1
+        echo "⚠️  nftband daemon is not running"
+        echo "   Start it with: systemctl start nftband"
     fi
 
     echo ""
-    echo "Service ready!"
+    echo "To configure login monitoring:"
+    echo "  nftban login enable       Enable login alerts"
+    echo "  nftban login status       Check monitoring status"
     echo ""
-    echo "To start monitoring:"
-    echo "  nftban login enable"
-    echo ""
-    echo "To check status:"
-    echo "  nftban login status"
+    echo "Configuration: /etc/nftban/conf.d/login/main.conf"
 }
 
 nftban_login_cmd_enable() {
@@ -389,38 +368,37 @@ nftban_login_cmd_enable() {
             echo "✅ All login monitoring enabled (ssh, su, sudo)"
             ;;
         service|"")
-            # Enable and start systemd service (auto-install if needed)
-            local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-            local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
-            if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
-               [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
-               [[ ! -f "${systemd_system_dir}/${service_name}" ]]; then
-                echo "Installing login monitor service..."
-                nftban_login_cmd_install >/dev/null 2>&1
-                echo "✅ Service installed"
-            fi
+            # v1.48.0: Login monitoring handled by nftband daemon loginmon module
+            # Enable config + ensure daemon is running (no separate service needed)
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "true" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "true" "$config_local"
-            systemctl daemon-reload >/dev/null 2>&1 || true
-            systemctl enable "${service_name}" >/dev/null 2>&1
-            if systemctl start "${service_name}" 2>&1; then
-                # Verify the service is actually running
-                sleep 1
-                if systemctl is-active --quiet "${service_name}"; then
-                    echo "✅ Login monitoring enabled and started (SSH alerts active)"
-                else
-                    echo "⚠️  Service enabled but failed to stay running" >&2
-                    echo "" >&2
-                    echo "Recent logs:" >&2
-                    journalctl -u "${service_name}" -n 10 --no-pager 2>/dev/null || true
-                    return 1
-                fi
+
+            # Also set LOGIN_ENABLED=true for Go daemon loginmon module
+            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
+            if [[ ! -f "$login_main_local" ]]; then
+                mkdir -p "$(dirname "$login_main_local")" || true
+                echo "# NFTBan Login Monitor - User Overrides" > "$login_main_local"
+                chmod 640 "$login_main_local"
+                chown root:nftban "$login_main_local" 2>/dev/null || true
+            fi
+            _nftban_login_set_config "LOGIN_ENABLED" "true" "$login_main_local"
+
+            # Check if nftband daemon is running (it contains the loginmon module)
+            if systemctl is-active --quiet nftband.service 2>/dev/null; then
+                echo "✅ Login monitoring enabled (nftband daemon loginmon module active)"
+                echo ""
+                echo "  Detected services are monitored automatically:"
+                echo "  - SSH (journalctl)"
+                echo "  - DirectAdmin, cPanel, Plesk (file watchers)"
+                echo "  - Dovecot, Postfix, Exim (journalctl)"
+                echo ""
+                echo "  Reload daemon to pick up config changes:"
+                echo "    systemctl reload nftband 2>/dev/null || systemctl restart nftband"
             else
-                echo "❌ Failed to start login monitor service" >&2
-                echo "" >&2
-                echo "Check service logs:" >&2
-                journalctl -u "${service_name}" -n 10 --no-pager 2>/dev/null || true
-                return 1
+                echo "⚠️  Login monitoring configured but nftband daemon is not running"
+                echo ""
+                echo "  Start the daemon:"
+                echo "    systemctl start nftband"
             fi
             ;;
         *)
@@ -473,18 +451,20 @@ nftban_login_cmd_disable() {
             echo "✅ All login monitoring disabled"
             ;;
         service|"")
-            # Stop and disable systemd service
-            local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-            local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
+            # v1.48.0: Disable login monitoring in config (daemon picks up on reload)
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "false" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "false" "$config_local"
-            # Check all possible service file locations
-            if [[ -f "/etc/systemd/system/${service_name}" ]] || \
-               [[ -f "/lib/systemd/system/${service_name}" ]] || \
-               [[ -f "${systemd_system_dir}/${service_name}" ]]; then
-                systemctl stop "${service_name}" 2>/dev/null || true
-                systemctl disable "${service_name}" 2>/dev/null || true
+
+            # Also disable in Go daemon loginmon config
+            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
+            if [[ -f "$login_main_local" ]]; then
+                _nftban_login_set_config "LOGIN_ENABLED" "false" "$login_main_local"
             fi
+
+            # Clean up legacy service if still present
+            local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            systemctl stop "${service_name}" 2>/dev/null || true
+            systemctl disable "${service_name}" 2>/dev/null || true
             echo "✅ Login monitoring disabled"
             ;;
         *)
@@ -532,9 +512,9 @@ nftban_login_cmd_logs() {
     fi
 
     echo ""
-    echo "Service logs (last $lines lines):"
-    echo "=================================="
-    journalctl -u ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} -n "$lines" --no-pager 2>/dev/null || echo "Service not running"
+    echo "Daemon logs (last $lines lines):"
+    echo "================================="
+    journalctl -u nftband.service -n "$lines" --no-pager 2>/dev/null || echo "Daemon not running"
 }
 
 nftban_login_cmd_test() {
@@ -628,11 +608,11 @@ nftban_login_cmd_stats() {
     echo "  Today:      $today_events"
     echo ""
 
-    # Service uptime
-    if systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
+    # Daemon uptime (v1.48.0: use nftband, not removed service)
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
         local uptime
-        uptime=$(systemctl show ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} --property=ActiveEnterTimestamp --value 2>/dev/null || echo "unknown")
-        echo "Service Started: $uptime"
+        uptime=$(systemctl show nftband.service --property=ActiveEnterTimestamp --value 2>/dev/null || echo "unknown")
+        echo "Daemon Started: $uptime"
     fi
 }
 
@@ -659,9 +639,10 @@ _nftban_login_cmd_stats_json() {
             today_events=$(grep -c "\[$today" "$log_file" 2>/dev/null) || today_events=0
         fi
 
-        if systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
+        # v1.48.0: Check nftband daemon, not removed service
+        if systemctl is-active --quiet nftband.service 2>/dev/null; then
             service_running="true"
-            service_uptime=$(systemctl show ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} --property=ActiveEnterTimestamp --value 2>/dev/null) || service_uptime=""
+            service_uptime=$(systemctl show nftband.service --property=ActiveEnterTimestamp --value 2>/dev/null) || service_uptime=""
         fi
 
         local data
@@ -784,38 +765,30 @@ CONF
         echo "✅ Log directory exists"
     fi
 
-    # 3. Check service file
-    local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
-    if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
-       [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
-       [[ ! -f "${systemd_system_dir}/${service_name}" ]]; then
-        echo "⚠️  Service not installed (run 'nftban login install')"
-        # v1.19.20 FIX
-        ((issues_found++)) || true
+    # 3. Check nftband daemon (loginmon module) — replaces removed bash service
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+        echo "✅ nftband daemon running (loginmon module active)"
     else
-        echo "✅ Service file exists"
+        echo "❌ nftband daemon not running (login monitoring inactive)"
+        ((issues_found++)) || true
 
-        # 4. Check if service should be running but isn't
-        if systemctl is-enabled --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-            if ! systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-                echo "❌ Service enabled but not running"
-                # v1.19.20 FIX
-                ((issues_found++)) || true
-
-                if [[ $EUID -eq 0 ]]; then
-                    echo "   Attempting to start service..."
-                    if systemctl start ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
-                        echo "   ✅ Service started"
-                        # v1.19.20 FIX
-                        ((issues_fixed++)) || true
-                    else
-                        echo "   ❌ Failed to start service"
-                    fi
-                fi
+        if [[ $EUID -eq 0 ]]; then
+            echo "   Attempting to start nftband..."
+            if systemctl start nftband.service 2>/dev/null; then
+                echo "   ✅ nftband started"
+                ((issues_fixed++)) || true
             else
-                echo "✅ Service running"
+                echo "   ❌ Failed to start nftband"
             fi
+        fi
+    fi
+
+    # Clean up legacy bash service if still lingering
+    if systemctl is-enabled --quiet nftban-login-monitor.service 2>/dev/null; then
+        echo "⚠️  Legacy nftban-login-monitor.service still enabled (removed in v1.23.0)"
+        if [[ $EUID -eq 0 ]]; then
+            systemctl disable --now nftban-login-monitor.service 2>/dev/null || true
+            echo "   ✅ Legacy service disabled"
         fi
     fi
 
@@ -846,31 +819,30 @@ CONF
 }
 
 nftban_login_cmd_restart() {
-    # Restart login monitoring service
+    # v1.48.0: Restart nftband daemon (loginmon module), not removed bash service
 
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Service management requires root privileges" >&2
         return 1
     fi
 
-    echo "Restarting NFTBan Login Monitor"
-    echo "================================"
+    echo "Restarting NFTBan Login Monitor (nftband daemon)"
+    echo "================================================="
     echo ""
 
-    local systemd_system_dir="${DISTRO_PATHS[systemd_system]:-/usr/lib/systemd/system}"
-    if [[ ! -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
-       [[ ! -f "/lib/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
-       [[ ! -f "${systemd_system_dir}/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
-        echo "ERROR: Service not installed. Run 'nftban login install' first." >&2
+    if ! systemctl is-active --quiet nftband.service 2>/dev/null && \
+       ! systemctl is-enabled --quiet nftband.service 2>/dev/null; then
+        echo "ERROR: nftband daemon not installed." >&2
+        echo "Login monitoring requires the nftband daemon." >&2
         return 1
     fi
 
-    echo "Restarting service..."
-    systemctl restart ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}
-    echo "✅ Service restarted"
+    echo "Restarting nftband daemon..."
+    systemctl restart nftband.service
+    echo "✅ nftband restarted (loginmon module will reinitialize)"
     echo ""
 
-    systemctl status ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} --no-pager -l
+    systemctl status nftband.service --no-pager -l 2>/dev/null | head -20
 }
 
 nftban_login_cmd_mode() {
@@ -940,12 +912,12 @@ nftban_login_cmd_mode() {
             ;;
     esac
 
-    # Restart service if running
-    if systemctl is-active --quiet ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null; then
+    # Restart daemon if running (to pick up config change)
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
         echo ""
-        echo "Restarting login monitor service..."
-        systemctl restart ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null || true
-        echo "✅ Service restarted"
+        echo "Restarting nftband daemon..."
+        systemctl restart nftband.service 2>/dev/null || true
+        echo "✅ Daemon restarted"
     fi
 }
 
@@ -1178,10 +1150,10 @@ CONFIGURATION:
     - LOGIN_FAIL_THRESHOLD: Failed attempts before ban (default: 5)
     - LOGIN_FAIL_WINDOW: Time window in seconds (default: 300)
 
-SYSTEMD SERVICE:
-    Service: ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}
-    Status:  systemctl status nftban-login-monitor
-    Logs:    journalctl -u nftban-login-monitor -f
+DAEMON (loginmon module):
+    Service: nftband.service (built-in loginmon module)
+    Status:  systemctl status nftband
+    Logs:    journalctl -u nftband -f
 
 For more information: https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference
 
