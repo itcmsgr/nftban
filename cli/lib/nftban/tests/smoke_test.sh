@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="smoke_test"
 # meta:type="test"
-# meta:version="1.43.0"
+# meta:version="1.44.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="CLI health check with ban lifecycle verification"
 # meta:inventory.files=""
@@ -490,8 +490,11 @@ smoke_lifecycle() {
     # Commands are test harness strings (e.g., "nftban ban 198.51.100.1")
     # that come from hardcoded test definitions, not user input.
 
+    # v1.44.0 BUG-009: Wrap lifecycle commands in timeout to prevent infinite hang
+    local lifecycle_timeout="${CURRENT_TIMEOUT:-30}"
+
     # Step 0: Cleanup — ensure test IP is not present
-    bash -c "${remove_cmd}" &>/dev/null || true
+    timeout "$lifecycle_timeout" bash -c "${remove_cmd}" &>/dev/null || true
     sleep 1
 
     # Step 1: Baseline — IP must NOT be in set
@@ -506,7 +509,7 @@ smoke_lifecycle() {
 
     # Step 2: Add (ban or whitelist add)
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if ! bash -c "${add_cmd}" &>/dev/null; then
+    if ! timeout "$lifecycle_timeout" bash -c "${add_cmd}" &>/dev/null; then
         log_fail "${name} add — command failed: ${add_cmd}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
         return 0
@@ -519,16 +522,16 @@ smoke_lifecycle() {
     else
         log_fail "${name} add — ${pattern} NOT found in ${nft_set}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        bash -c "${remove_cmd}" &>/dev/null || true
+        timeout "$lifecycle_timeout" bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
 
     # Step 3: Remove (unban or whitelist remove)
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    if ! bash -c "${remove_cmd}" &>/dev/null; then
+    if ! timeout "$lifecycle_timeout" bash -c "${remove_cmd}" &>/dev/null; then
         log_fail "${name} remove — command failed: ${remove_cmd}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        bash -c "${remove_cmd}" &>/dev/null || true
+        timeout "$lifecycle_timeout" bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
     sleep 1
@@ -536,7 +539,7 @@ smoke_lifecycle() {
     if _nft_set_contains "${nft_table}" "${nft_set}" "${pattern}"; then
         log_fail "${name} remove — ${pattern} still in ${nft_set}"
         TESTS_FAILED=$((TESTS_FAILED + 1))
-        bash -c "${remove_cmd}" &>/dev/null || true
+        timeout "$lifecycle_timeout" bash -c "${remove_cmd}" &>/dev/null || true
         return 0
     fi
     log_pass "${name} remove — ${pattern} absent from ${nft_set}"
@@ -578,13 +581,13 @@ run_lifecycle_tests() {
 
     # IPv4 ban → unban (v1.38.0: BUG-007 — use blacklist_manual_* after set separation)
     smoke_lifecycle "IPv4 ban/unban" \
-        "nftban ban ${test_ban_v4} --reason smoke_test" \
+        "nftban ban ${test_ban_v4} --reason smoke_test --yes" \
         "nftban unban ${test_ban_v4}" \
         "${table_v4}" "blacklist_manual_ipv4" "${test_ban_v4}"
 
     # IPv6 ban → unban
     smoke_lifecycle "IPv6 ban/unban" \
-        "nftban ban ${test_ban_v6} --reason smoke_test" \
+        "nftban ban ${test_ban_v6} --reason smoke_test --yes" \
         "nftban unban ${test_ban_v6}" \
         "${table_v6}" "blacklist_manual_ipv6" "${test_ban_v6}"
 

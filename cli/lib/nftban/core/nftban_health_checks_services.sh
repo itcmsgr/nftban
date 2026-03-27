@@ -10,7 +10,7 @@
 # meta:name="nftban_health_checks_services"
 # meta:type="lib"
 # meta:header="Health Check Services Functions"
-# meta:version="1.39.0"
+# meta:version="1.44.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -711,8 +711,111 @@ nftban_health_check_login_monitor_ipc() {
     return $status
 }
 
+# =============================================================================
+# HUNG PROCESS CHECK (v1.44.0 BUG-009: ban confirmation prompt can hang)
+# =============================================================================
+# Detects and auto-heals hung nftban CLI processes (e.g. stuck on read/IPC).
+# Logs all incidents to /var/log/nftban/health-incidents.log for quality tracking.
+# Args: $1 = auto_heal (0=check only, 1=auto-fix by killing hung processes)
+
+nftban_health_check_hung_processes() {
+    local auto_heal="${1:-0}"
+    local status=$HEALTH_OK
+    local hung_issues=()
+    local hung_count=0
+    local killed_count=0
+    local max_age=300  # 5 minutes — CLI commands should never take this long
+    local incident_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/health-incidents.log"
+
+    # Find nftban CLI processes (not daemon, not this health check)
+    local line
+    while IFS= read -r line; do
+        local pid elapsed cmd
+        pid=$(echo "$line" | awk '{print $1}')
+        elapsed=$(echo "$line" | awk '{print $2}')
+        cmd=$(echo "$line" | awk '{$1=$2=""; print $0}' | sed 's/^ *//')
+
+        # Skip long-running services (daemon, exporter, health check itself)
+        [[ "$cmd" == *nftband* ]] && continue
+        [[ "$cmd" == *exporter* ]] && continue
+        [[ "$cmd" == *health* ]] && continue
+        [[ "$cmd" == *"login-monitor"* ]] && continue
+
+        if [[ "$elapsed" -gt "$max_age" ]]; then
+            hung_issues+=("Hung PID $pid (${elapsed}s): $cmd")
+            ((hung_count++)) || true
+
+            # Diagnose root cause from /proc (best-effort)
+            local root_cause="unknown"
+            local wchan=""
+            wchan=$(cat "/proc/$pid/wchan" 2>/dev/null || echo "")
+            local fd_count=0
+            fd_count=$(ls "/proc/$pid/fd" 2>/dev/null | wc -l || echo 0)
+            if [[ "$wchan" == *"wait_woken"* ]] || [[ "$wchan" == *"pipe_read"* ]]; then
+                root_cause="blocked_on_read(likely_stdin_prompt)"
+            elif [[ "$wchan" == *"poll"* ]] || [[ "$wchan" == *"select"* ]]; then
+                root_cause="blocked_on_io(likely_ipc_socket)"
+            elif [[ "$wchan" == *"futex"* ]]; then
+                root_cause="blocked_on_lock"
+            fi
+
+            # Log incident for quality tracking (always, regardless of auto_heal)
+            local timestamp
+            timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+            mkdir -p "$(dirname "$incident_log")" 2>/dev/null || true
+            echo "[$timestamp] [HUNG_PROCESS] pid=$pid elapsed=${elapsed}s cause=$root_cause wchan=$wchan fds=$fd_count cmd=\"$cmd\"" >> "$incident_log" 2>/dev/null || true
+
+            # Syslog for centralized monitoring
+            logger -t nftban-health -p user.warning \
+                "Hung process detected: pid=$pid elapsed=${elapsed}s cause=$root_cause cmd=$cmd" 2>/dev/null || true
+
+            # Auto-heal: SIGTERM first, SIGKILL if still alive after 3s
+            if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                if kill -TERM "$pid" 2>/dev/null; then
+                    sleep 3
+                    if kill -0 "$pid" 2>/dev/null; then
+                        # Still alive — force kill
+                        kill -KILL "$pid" 2>/dev/null || true
+                        hung_issues+=("AUTO-FIXED: Force-killed PID $pid (SIGKILL)")
+                        echo "[$timestamp] [AUTO-HEAL] action=SIGKILL pid=$pid cmd=\"$cmd\"" >> "$incident_log" 2>/dev/null || true
+                    else
+                        hung_issues+=("AUTO-FIXED: Terminated PID $pid (SIGTERM)")
+                        echo "[$timestamp] [AUTO-HEAL] action=SIGTERM pid=$pid cmd=\"$cmd\"" >> "$incident_log" 2>/dev/null || true
+                    fi
+                    ((killed_count++)) || true
+                    logger -t nftban-health -p user.notice \
+                        "Auto-healed hung process: pid=$pid killed" 2>/dev/null || true
+                fi
+            fi
+        fi
+    done < <(ps -eo pid,etimes,args 2>/dev/null | grep '[n]ftban' | grep -v grep || true)
+
+    if [[ $hung_count -gt 0 ]]; then
+        if [[ $killed_count -eq $hung_count ]]; then
+            # All hung processes were killed — downgrade to warning
+            status=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("AUTO-FIXED: Killed $killed_count hung nftban process(es)")
+        elif [[ $killed_count -gt 0 ]]; then
+            status=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("Partially fixed: killed $killed_count/$hung_count hung process(es)")
+        else
+            status=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("$hung_count hung nftban process(es) detected (>${max_age}s)")
+            for issue in "${hung_issues[@]}"; do
+                NFTBAN_HEALTH_WARNINGS+=("$issue")
+            done
+            NFTBAN_HEALTH_WARNINGS+=("FIX: nftban health fix  OR  kill <PIDs>")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["hung_processes"]=$status
+    [[ ${#hung_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["hung_processes"]="${hung_issues[*]}"
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_services nftban_health_check_daemon
 export -f nftban_health_check_suricata nftban_health_check_suricata_capture
 export -f nftban_health_check_timers
 export -f nftban_health_check_maintenance_lock nftban_health_check_login_monitor_ipc
+export -f nftban_health_check_hung_processes
