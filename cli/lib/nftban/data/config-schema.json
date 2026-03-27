@@ -3,14 +3,14 @@
   "$id": "https://nftban.com/schemas/config-v1.json",
   "title": "NFTBan Configuration Schema",
   "description": "Schema for NFTBan configuration validation and audit",
-  "version": "1.0.28",
+  "version": "1.1.0",
   "type": "object",
   "metadata": {
     "schema_version": 1,
     "min_nftban_version": "1.0.0",
     "documentation_url": "https://nftban.com/docs/config",
     "generated_at": "2026-01-11T17:46:56+02:00",
-    "key_count": 957
+    "key_count": 1614
   },
   "definitions": {
     "boolean_string": {
@@ -10320,6 +10320,4251 @@
       "category": "network",
       "config_file": "conf.d/trust.conf",
       "active_when": "always"
+    },
+    "FEED_SPAMHAUS_DROP_URL": {
+      "type": "string",
+      "description": "Source URL for SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_SPAMHAUS_DROP_ENABLED": {
+      "type": "string",
+      "description": "Enable SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_SPAMHAUS_DROP_CATEGORY": {
+      "type": "string",
+      "description": "Category for SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_SPAMHAUS_DROP_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_SPAMHAUS_DROP_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_SPAMHAUS_DROP_SIZE": {
+      "type": "string",
+      "description": "Approximate size of SPAMHAUS_DROP feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_FEODO_URL": {
+      "type": "string",
+      "description": "Source URL for ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_FEODO_ENABLED": {
+      "type": "string",
+      "description": "Enable ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_ABUSECH_FEODO_CATEGORY": {
+      "type": "string",
+      "description": "Category for ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_FEODO_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_FEODO_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_FEODO_SIZE": {
+      "type": "string",
+      "description": "Approximate size of ABUSECH_FEODO feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_SSL_URL": {
+      "type": "string",
+      "description": "Source URL for ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_SSL_ENABLED": {
+      "type": "string",
+      "description": "Enable ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_ABUSECH_SSL_CATEGORY": {
+      "type": "string",
+      "description": "Category for ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_SSL_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_SSL_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_ABUSECH_SSL_SIZE": {
+      "type": "string",
+      "description": "Approximate size of ABUSECH_SSL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL1_URL": {
+      "type": "string",
+      "description": "Source URL for FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL1_ENABLED": {
+      "type": "string",
+      "description": "Enable FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_FIREHOL_LEVEL1_CATEGORY": {
+      "type": "string",
+      "description": "Category for FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL1_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL1_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL1_SIZE": {
+      "type": "string",
+      "description": "Approximate size of FIREHOL_LEVEL1 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL2_URL": {
+      "type": "string",
+      "description": "Source URL for FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL2_ENABLED": {
+      "type": "string",
+      "description": "Enable FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_FIREHOL_LEVEL2_CATEGORY": {
+      "type": "string",
+      "description": "Category for FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL2_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL2_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_LEVEL2_SIZE": {
+      "type": "string",
+      "description": "Approximate size of FIREHOL_LEVEL2 feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_SSH_URL": {
+      "type": "string",
+      "description": "Source URL for BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_SSH_ENABLED": {
+      "type": "string",
+      "description": "Enable BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_BLOCKLISTDE_SSH_CATEGORY": {
+      "type": "string",
+      "description": "Category for BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_SSH_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_SSH_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_SSH_SIZE": {
+      "type": "string",
+      "description": "Approximate size of BLOCKLISTDE_SSH feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_GREENSNOW_URL": {
+      "type": "string",
+      "description": "Source URL for GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_GREENSNOW_ENABLED": {
+      "type": "string",
+      "description": "Enable GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_GREENSNOW_CATEGORY": {
+      "type": "string",
+      "description": "Category for GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_GREENSNOW_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_GREENSNOW_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_GREENSNOW_SIZE": {
+      "type": "string",
+      "description": "Approximate size of GREENSNOW feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_APACHE_URL": {
+      "type": "string",
+      "description": "Source URL for BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_APACHE_ENABLED": {
+      "type": "string",
+      "description": "Enable BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_BLOCKLISTDE_APACHE_CATEGORY": {
+      "type": "string",
+      "description": "Category for BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_APACHE_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_APACHE_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_APACHE_SIZE": {
+      "type": "string",
+      "description": "Approximate size of BLOCKLISTDE_APACHE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_URL": {
+      "type": "string",
+      "description": "Source URL for BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_ENABLED": {
+      "type": "string",
+      "description": "Enable BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_CATEGORY": {
+      "type": "string",
+      "description": "Category for BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_BRUTEFORCE_SIZE": {
+      "type": "string",
+      "description": "Approximate size of BLOCKLISTDE_BRUTEFORCE feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_MAIL_URL": {
+      "type": "string",
+      "description": "Source URL for BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_MAIL_ENABLED": {
+      "type": "string",
+      "description": "Enable BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_BLOCKLISTDE_MAIL_CATEGORY": {
+      "type": "string",
+      "description": "Category for BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_MAIL_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_MAIL_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_BLOCKLISTDE_MAIL_SIZE": {
+      "type": "string",
+      "description": "Approximate size of BLOCKLISTDE_MAIL feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_STOPFORUMSPAM_URL": {
+      "type": "string",
+      "description": "Source URL for STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_STOPFORUMSPAM_ENABLED": {
+      "type": "string",
+      "description": "Enable STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_STOPFORUMSPAM_CATEGORY": {
+      "type": "string",
+      "description": "Category for STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_STOPFORUMSPAM_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_STOPFORUMSPAM_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_STOPFORUMSPAM_SIZE": {
+      "type": "string",
+      "description": "Approximate size of STOPFORUMSPAM feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_TOR_EXITS_URL": {
+      "type": "string",
+      "description": "Source URL for TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_TOR_EXITS_ENABLED": {
+      "type": "string",
+      "description": "Enable TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_TOR_EXITS_CATEGORY": {
+      "type": "string",
+      "description": "Category for TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_TOR_EXITS_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_TOR_EXITS_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_TOR_EXITS_SIZE": {
+      "type": "string",
+      "description": "Approximate size of TOR_EXITS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_PROXIES_URL": {
+      "type": "string",
+      "description": "Source URL for FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_PROXIES_ENABLED": {
+      "type": "string",
+      "description": "Enable FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_FIREHOL_PROXIES_CATEGORY": {
+      "type": "string",
+      "description": "Category for FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_PROXIES_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_PROXIES_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_PROXIES_SIZE": {
+      "type": "string",
+      "description": "Approximate size of FIREHOL_PROXIES feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_ANONYMOUS_URL": {
+      "type": "string",
+      "description": "Source URL for FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_ANONYMOUS_ENABLED": {
+      "type": "string",
+      "description": "Enable FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_FIREHOL_ANONYMOUS_CATEGORY": {
+      "type": "string",
+      "description": "Category for FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_ANONYMOUS_DESCRIPTION": {
+      "type": "string",
+      "description": "Description of FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_ANONYMOUS_INTERVAL": {
+      "type": "string",
+      "description": "Update interval for FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "FEED_FIREHOL_ANONYMOUS_SIZE": {
+      "type": "string",
+      "description": "Approximate size of FIREHOL_ANONYMOUS feed",
+      "introduced_in": "1.43.0",
+      "module": "feeds"
+    },
+    "NFTBAN_FEEDS_ENABLED": {
+      "type": "string",
+      "description": "Master switch for threat intelligence feeds",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEEDS_UPDATE_INTERVAL": {
+      "type": "string",
+      "description": "Feed update interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "3600",
+      "module": "feeds",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "FEEDS_AUTO_UPDATE": {
+      "type": "string",
+      "description": "Auto-update feeds via timer",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "feeds",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEEDS_DOWNLOAD_TIMEOUT": {
+      "type": "string",
+      "description": "Download timeout for feeds in seconds",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "feeds",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "FEEDS_MIN_ENTRIES": {
+      "type": "string",
+      "description": "Minimum valid entries in a feed",
+      "introduced_in": "1.43.0",
+      "default": "10",
+      "module": "feeds",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "FEEDS_MAX_ENTRIES": {
+      "type": "string",
+      "description": "Maximum entries cap per feed",
+      "introduced_in": "1.43.0",
+      "default": "500000",
+      "module": "feeds",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "GEOBAN_ENABLED": {
+      "type": "string",
+      "description": "Master GeoBan switch",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "geoban",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOBAN_ATOMIC": {
+      "type": "string",
+      "description": "Use atomic nftables operations for geoban",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "geoban",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOBAN_DEFAULT_POLICY": {
+      "type": "string",
+      "description": "Default policy: allow (whitelist) or deny (blacklist)",
+      "introduced_in": "1.43.0",
+      "default": "allow",
+      "module": "geoban"
+    },
+    "GEOBAN_LOGGING": {
+      "type": "string",
+      "description": "Enable GeoBan logging",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "geoban",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOBAN_LOG_BLOCKS": {
+      "type": "string",
+      "description": "Log blocked connections",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "geoban",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "HTTP_BOT_AUTO_TUNE": {
+      "type": "string",
+      "description": "Auto-adjust bot detection thresholds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_SUSPECT_RATE": {
+      "type": "string",
+      "description": "Suspect rate limiter pattern",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_SUSPECT_BURST": {
+      "type": "string",
+      "description": "Suspect burst allowance",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_SUSPECT_METER": {
+      "type": "string",
+      "description": "nftables meter name for suspects",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_SUSPECT_TIMEOUT": {
+      "type": "string",
+      "description": "Suspect timeout seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_TRIP_CONN": {
+      "type": "string",
+      "description": "Connection count trip threshold",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_CLEAR_CONN": {
+      "type": "string",
+      "description": "Clear at connection count",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_EMERGENCY_CONN": {
+      "type": "string",
+      "description": "Emergency connection limit",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_GREY_TTL": {
+      "type": "string",
+      "description": "Greylisted TTL in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_BAN_TTL": {
+      "type": "string",
+      "description": "Ban TTL in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_ALLOW_TTL": {
+      "type": "string",
+      "description": "Allow TTL in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_PENDING_TTL": {
+      "type": "string",
+      "description": "Pending state TTL in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_EMERGENCY_TTL": {
+      "type": "string",
+      "description": "Emergency mode TTL in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_FAST_LOOP_INTERVAL": {
+      "type": "string",
+      "description": "Fast loop interval in seconds",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "HTTP_BOT_LOG_DECISIONS": {
+      "type": "string",
+      "description": "Log blocking decisions",
+      "introduced_in": "1.43.0",
+      "module": "botguard"
+    },
+    "NFTBAN_WATCHDOG_ENABLED": {
+      "type": "string",
+      "description": "Master watchdog switch",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_INTERVAL": {
+      "type": "string",
+      "description": "Check interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "90",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_ALERT_THROTTLE": {
+      "type": "string",
+      "description": "Alert throttle in seconds",
+      "introduced_in": "1.43.0",
+      "default": "3600",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_LOAD_ENABLED": {
+      "type": "string",
+      "description": "Enable load average monitoring",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_LOAD_AVG": {
+      "type": "string",
+      "description": "Which load average to monitor (1/5/15 min)",
+      "introduced_in": "1.43.0",
+      "default": "5",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_LOAD_WARNING": {
+      "type": "string",
+      "description": "Load average warning threshold",
+      "introduced_in": "1.43.0",
+      "default": "10",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_LOAD_CRITICAL": {
+      "type": "string",
+      "description": "Load average critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "20",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_MEM_ENABLED": {
+      "type": "string",
+      "description": "Enable memory monitoring",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_MEM_WARNING": {
+      "type": "string",
+      "description": "Memory warning threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "80",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_MEM_CRITICAL": {
+      "type": "string",
+      "description": "Memory critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "95",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_SWAP_WARNING": {
+      "type": "string",
+      "description": "Swap warning threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "50",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_IOWAIT_ENABLED": {
+      "type": "string",
+      "description": "Enable I/O wait monitoring",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_IOWAIT_WARNING": {
+      "type": "string",
+      "description": "I/O wait warning threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "20",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_IOWAIT_CRITICAL": {
+      "type": "string",
+      "description": "I/O wait critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "40",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_DISK_ENABLED": {
+      "type": "string",
+      "description": "Enable disk monitoring",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_DISK_PATH": {
+      "type": "string",
+      "description": "Disk path to monitor",
+      "introduced_in": "1.43.0",
+      "default": "/var/log",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_DISK_WARNING": {
+      "type": "string",
+      "description": "Disk usage warning threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "80",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_DISK_CRITICAL": {
+      "type": "string",
+      "description": "Disk usage critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "95",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROC_ENABLED": {
+      "type": "string",
+      "description": "Enable process tracking",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_PROC_TOP_COUNT": {
+      "type": "string",
+      "description": "Number of top processes to track",
+      "introduced_in": "1.43.0",
+      "default": "10",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROC_CPU_ALERT": {
+      "type": "string",
+      "description": "CPU percent alert threshold per process",
+      "introduced_in": "1.43.0",
+      "default": "80",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROC_MEM_ALERT": {
+      "type": "string",
+      "description": "Memory MB alert threshold per process",
+      "introduced_in": "1.43.0",
+      "default": "2048",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_ALERT_EMAIL": {
+      "type": "string",
+      "description": "Send alerts via email",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_ALERT_SYSLOG": {
+      "type": "string",
+      "description": "Send alerts to syslog",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_LOG": {
+      "type": "string",
+      "description": "Watchdog log file path",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog.log",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_LOG_DIR": {
+      "type": "string",
+      "description": "Watchdog log directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_METRICS_ENABLED": {
+      "type": "string",
+      "description": "Enable watchdog Prometheus metrics",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_METRICS_FILE": {
+      "type": "string",
+      "description": "Watchdog metrics file path",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/metrics/watchdog.prom",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_REPORT_DIR": {
+      "type": "string",
+      "description": "Watchdog report directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/reports/watchdog",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_REPORT_RETENTION": {
+      "type": "string",
+      "description": "Report retention in days",
+      "introduced_in": "1.43.0",
+      "default": "7",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_CURRENT": {
+      "type": "string",
+      "description": "Current stats JSON path",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/stats/current.json",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_STATS_HISTORY_DIR": {
+      "type": "string",
+      "description": "Stats history directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/stats/history",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_STATS_ENABLED": {
+      "type": "string",
+      "description": "Enable runtime stats collection",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_STATS_INTERVAL_LIVE": {
+      "type": "string",
+      "description": "Live metrics collection interval",
+      "introduced_in": "1.43.0",
+      "default": "60",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_INTERVAL_IO": {
+      "type": "string",
+      "description": "I/O metrics collection interval",
+      "introduced_in": "1.43.0",
+      "default": "300",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Stats retention in days",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_MEMORY_WARN": {
+      "type": "string",
+      "description": "Stats memory warning in MB",
+      "introduced_in": "1.43.0",
+      "default": "200",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_MEMORY_CRIT": {
+      "type": "string",
+      "description": "Stats memory critical in MB",
+      "introduced_in": "1.43.0",
+      "default": "500",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_STALE_THRESHOLD": {
+      "type": "string",
+      "description": "Stats stale threshold in seconds",
+      "introduced_in": "1.43.0",
+      "default": "300",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_ENABLED": {
+      "type": "string",
+      "description": "Enable profiling",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_DIR": {
+      "type": "string",
+      "description": "Profile output directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/stats/profiles",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Profile retention in days",
+      "introduced_in": "1.43.0",
+      "default": "7",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_MAX_COUNT": {
+      "type": "string",
+      "description": "Maximum profile files",
+      "introduced_in": "1.43.0",
+      "default": "10",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_AUTO_CAPTURE": {
+      "type": "string",
+      "description": "Auto-capture profiles on anomalies",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "watchdog",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_WATCHDOG_TRENDS_JSONL": {
+      "type": "string",
+      "description": "Trend JSONL file path",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog/trends.jsonl",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_TRENDS_MAX_LINES": {
+      "type": "string",
+      "description": "Max trend log lines",
+      "introduced_in": "1.43.0",
+      "default": "10000",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_TRENDS_KEEP_LINES": {
+      "type": "string",
+      "description": "Keep trend log lines after rotation",
+      "introduced_in": "1.43.0",
+      "default": "5000",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_LOG": {
+      "type": "string",
+      "description": "Stats log path",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog/stats.log",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_ALERTS_LOG": {
+      "type": "string",
+      "description": "Alerts log path",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog/alerts.log",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_PROFILE_LOG": {
+      "type": "string",
+      "description": "Profile log path",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/watchdog/profiles.log",
+      "module": "watchdog",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_WATCHDOG_STATS_GOROUTINES_WARN": {
+      "type": "string",
+      "description": "Goroutine count warning threshold",
+      "introduced_in": "1.43.0",
+      "default": "100",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_WATCHDOG_STATS_GOROUTINES_CRIT": {
+      "type": "string",
+      "description": "Goroutine count critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "500",
+      "module": "watchdog",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "SURICATA_IFACE_MODE": {
+      "type": "string",
+      "description": "Interface detection mode",
+      "introduced_in": "1.43.0",
+      "default": "auto",
+      "module": "suricata"
+    },
+    "SURICATA_IFACES": {
+      "type": "string",
+      "description": "Interfaces to monitor (comma-separated)",
+      "introduced_in": "1.43.0",
+      "default": "",
+      "module": "suricata"
+    },
+    "SURICATA_ALLOW_MULTI": {
+      "type": "string",
+      "description": "Allow multiple Suricata instances",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "suricata"
+    },
+    "SURICATA_INCLUDE_VIRTUAL": {
+      "type": "string",
+      "description": "Include virtual interfaces",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "suricata"
+    },
+    "SURICATA_CLUSTER_ID_BASE": {
+      "type": "string",
+      "description": "NFQUEUE cluster ID base",
+      "introduced_in": "1.43.0",
+      "default": "99",
+      "module": "suricata"
+    },
+    "SURICATA_LAST_DETECTION": {
+      "type": "string",
+      "description": "Last detection timestamp",
+      "introduced_in": "1.43.0",
+      "default": "",
+      "module": "suricata"
+    },
+    "COMMUNITY_STATS_ENABLED": {
+      "type": "string",
+      "description": "Enable opt-in community statistics (no PII)",
+      "introduced_in": "1.43.0",
+      "default": "no",
+      "module": "community",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "COMMUNITY_STATS_ID": {
+      "type": "string",
+      "description": "Unique community stats identifier",
+      "introduced_in": "1.43.0",
+      "default": "",
+      "module": "community"
+    },
+    "COMMUNITY_STATS_URL": {
+      "type": "string",
+      "description": "Community stats API endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://stats.nftban.com/api/v1/community",
+      "module": "community"
+    },
+    "NFTBAN_CONNECTOR_ENABLED": {
+      "type": "string",
+      "description": "Master connector switch",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FIREWALL_AUTO": {
+      "type": "string",
+      "description": "Auto-configure firewall for connectors",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_INTERVAL": {
+      "type": "string",
+      "description": "Export interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "60",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_ENABLED": {
+      "type": "string",
+      "description": "Enable Elasticsearch connector",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_ADDRESSES": {
+      "type": "string",
+      "description": "Elasticsearch addresses",
+      "introduced_in": "1.43.0",
+      "default": "http://localhost:9200",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_TLS_ENABLED": {
+      "type": "string",
+      "description": "Enable TLS for Elasticsearch",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_INDEX": {
+      "type": "string",
+      "description": "Elasticsearch index name",
+      "introduced_in": "1.43.0",
+      "default": "nftban-metrics",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_BULK_SIZE": {
+      "type": "string",
+      "description": "Elasticsearch bulk size",
+      "introduced_in": "1.43.0",
+      "default": "1000",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_FLUSH_INTERVAL": {
+      "type": "string",
+      "description": "Elasticsearch flush interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "5",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_ENABLED": {
+      "type": "string",
+      "description": "Enable Kafka connector",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_BROKERS": {
+      "type": "string",
+      "description": "Kafka broker addresses",
+      "introduced_in": "1.43.0",
+      "default": "",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_TOPIC": {
+      "type": "string",
+      "description": "Kafka topic name",
+      "introduced_in": "1.43.0",
+      "default": "nftban-metrics",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_BATCH_SIZE": {
+      "type": "string",
+      "description": "Kafka batch size",
+      "introduced_in": "1.43.0",
+      "default": "16384",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_ACKS": {
+      "type": "string",
+      "description": "Kafka acknowledgment mode",
+      "introduced_in": "1.43.0",
+      "default": "1",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_ENABLED": {
+      "type": "string",
+      "description": "Enable file/NDJSON connector",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_DIR": {
+      "type": "string",
+      "description": "File connector output directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/log/nftban/metrics",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_PREFIX": {
+      "type": "string",
+      "description": "File connector prefix",
+      "introduced_in": "1.43.0",
+      "default": "nftban",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_ROTATE_DAILY": {
+      "type": "string",
+      "description": "Rotate files daily",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_RETENTION_DAYS": {
+      "type": "string",
+      "description": "File retention in days",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_COMPRESS": {
+      "type": "string",
+      "description": "Compress rotated files",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_ENABLED": {
+      "type": "string",
+      "description": "Enable syslog connector",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_SERVER": {
+      "type": "string",
+      "description": "Syslog server address",
+      "introduced_in": "1.43.0",
+      "default": "localhost",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_PORT": {
+      "type": "string",
+      "description": "Syslog server port",
+      "introduced_in": "1.43.0",
+      "default": "514",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_PROTOCOL": {
+      "type": "string",
+      "description": "Syslog protocol (udp/tcp)",
+      "introduced_in": "1.43.0",
+      "default": "udp",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_ENABLED": {
+      "type": "string",
+      "description": "Enable webhook connector",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_URL": {
+      "type": "string",
+      "description": "Webhook destination URL",
+      "introduced_in": "1.43.0",
+      "default": "",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_TIMEOUT": {
+      "type": "string",
+      "description": "Webhook request timeout in seconds",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "connectors"
+    },
+    "NFTBAN_PRO_ENABLED": {
+      "type": "string",
+      "description": "Enable NFTBan Pro features",
+      "introduced_in": "1.43.0",
+      "default": "false",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_TOKEN_FILE": {
+      "type": "string",
+      "description": "Path to Pro license token file",
+      "introduced_in": "1.43.0",
+      "default": "/etc/nftban/pro.token",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_SERVER_ID_FILE": {
+      "type": "string",
+      "description": "Path to server identity file",
+      "introduced_in": "1.43.0",
+      "default": "/etc/nftban/server_id",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_DATA_DIR": {
+      "type": "string",
+      "description": "Pro data directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/pro",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_INGEST_URL": {
+      "type": "string",
+      "description": "Data ingest API endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://pro.nftban.com/api/v1/ingest",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_ANALYSIS_URL": {
+      "type": "string",
+      "description": "Analysis API endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://pro.nftban.com/api/v1/analysis",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_REMOTE_WRITE_URL": {
+      "type": "string",
+      "description": "Metrics remote write endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://pro.nftban.com/api/v1/write",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_INVENTORY_URL": {
+      "type": "string",
+      "description": "Inventory API endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://pro.nftban.com/api/v1/inventory",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_STATUS_URL": {
+      "type": "string",
+      "description": "Enrollment status endpoint",
+      "introduced_in": "1.43.0",
+      "default": "https://pro.nftban.com/api/v1/enroll/status",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_SUBMIT_INTERVAL": {
+      "type": "string",
+      "description": "Submit interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "300",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_TIMEOUT": {
+      "type": "string",
+      "description": "Request timeout in seconds",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "pro"
+    },
+    "NFTBAN_PRO_HASH_IPS": {
+      "type": "string",
+      "description": "Hash IPs before sending to Pro",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "pro"
+    },
+    "NFTBAN_DYNAMIC_WATCHDOG_ENABLED": {
+      "type": "string",
+      "description": "Enable dynamic system pressure monitoring",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog"
+    },
+    "NFTBAN_DYNAMIC_WATCHDOG_INTERVAL": {
+      "type": "string",
+      "description": "Base collection interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "5",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_WARN_ENTER": {
+      "type": "string",
+      "description": "Enter WARNING at pressure score",
+      "introduced_in": "1.43.0",
+      "default": "60",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_WARN_EXIT": {
+      "type": "string",
+      "description": "Exit WARNING when below score",
+      "introduced_in": "1.43.0",
+      "default": "50",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_WARN_EXIT_DURATION": {
+      "type": "string",
+      "description": "Exit WARNING sustain time in seconds",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_CRIT_ENTER": {
+      "type": "string",
+      "description": "Enter CRITICAL at pressure score",
+      "introduced_in": "1.43.0",
+      "default": "80",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_CRIT_EXIT": {
+      "type": "string",
+      "description": "Exit CRITICAL when below score",
+      "introduced_in": "1.43.0",
+      "default": "70",
+      "module": "watchdog"
+    },
+    "NFTBAN_PRESSURE_CRIT_EXIT_DURATION": {
+      "type": "string",
+      "description": "Exit CRITICAL sustain time in seconds",
+      "introduced_in": "1.43.0",
+      "default": "60",
+      "module": "watchdog"
+    },
+    "NFTBAN_MEM_BUDGET_BYTES": {
+      "type": "string",
+      "description": "Memory budget in bytes",
+      "introduced_in": "1.43.0",
+      "default": "1073741824",
+      "module": "watchdog"
+    },
+    "NFTBAN_RSS_CRIT_PERCENT": {
+      "type": "string",
+      "description": "RSS critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "95",
+      "module": "watchdog"
+    },
+    "NFTBAN_HEAP_CRIT_PERCENT": {
+      "type": "string",
+      "description": "Heap critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "90",
+      "module": "watchdog"
+    },
+    "NFTBAN_CPU_CRIT_PERCENT": {
+      "type": "string",
+      "description": "CPU critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "80",
+      "module": "watchdog"
+    },
+    "NFTBAN_LOAD_NORMALIZED_CRIT": {
+      "type": "string",
+      "description": "Normalized load critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "4.0",
+      "module": "watchdog"
+    },
+    "NFTBAN_IOWAIT_CRIT_PERCENT": {
+      "type": "string",
+      "description": "I/O wait critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "40",
+      "module": "watchdog"
+    },
+    "NFTBAN_DISK_CRIT_PERCENT": {
+      "type": "string",
+      "description": "Disk critical threshold percent",
+      "introduced_in": "1.43.0",
+      "default": "95",
+      "module": "watchdog"
+    },
+    "NFTBAN_CONNTRACK_UTIL_CRIT": {
+      "type": "string",
+      "description": "Conntrack utilization critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "0.9",
+      "module": "watchdog"
+    },
+    "NFTBAN_SOFTNET_DROPS_RATE_CRIT": {
+      "type": "string",
+      "description": "Softnet drops per second critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "100",
+      "module": "watchdog"
+    },
+    "NFTBAN_GOROUTINES_CRIT": {
+      "type": "string",
+      "description": "Goroutine count critical threshold",
+      "introduced_in": "1.43.0",
+      "default": "10000",
+      "module": "watchdog"
+    },
+    "NFTBAN_PROFILE_AUTO_ENABLED": {
+      "type": "string",
+      "description": "Auto-capture profiles on anomalies",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog"
+    },
+    "NFTBAN_PROFILE_CPU_COOLDOWN": {
+      "type": "string",
+      "description": "CPU profile cooldown in seconds",
+      "introduced_in": "1.43.0",
+      "default": "900",
+      "module": "watchdog"
+    },
+    "NFTBAN_PROFILE_HEAP_COOLDOWN": {
+      "type": "string",
+      "description": "Heap profile cooldown in seconds",
+      "introduced_in": "1.43.0",
+      "default": "1800",
+      "module": "watchdog"
+    },
+    "NFTBAN_PROFILE_GOROUTINE_COOLDOWN": {
+      "type": "string",
+      "description": "Goroutine profile cooldown in seconds",
+      "introduced_in": "1.43.0",
+      "default": "300",
+      "module": "watchdog"
+    },
+    "NFTBAN_PROFILE_CPU_DURATION": {
+      "type": "string",
+      "description": "CPU profile duration in seconds",
+      "introduced_in": "1.43.0",
+      "default": "30",
+      "module": "watchdog"
+    },
+    "NFTBAN_DEGRADE_DISABLE_NFT_RULESET_SCAN": {
+      "type": "string",
+      "description": "Disable nft ruleset scan in degraded mode",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog"
+    },
+    "NFTBAN_DEGRADE_REDUCE_WORKERS_TO": {
+      "type": "string",
+      "description": "Reduce workers to N in degraded mode",
+      "introduced_in": "1.43.0",
+      "default": "2",
+      "module": "watchdog"
+    },
+    "NFTBAN_SURVIVAL_REDUCE_WORKERS_TO": {
+      "type": "string",
+      "description": "Reduce workers to N in survival mode",
+      "introduced_in": "1.43.0",
+      "default": "1",
+      "module": "watchdog"
+    },
+    "NFTBAN_DEGRADED_INTERVAL_MULTIPLIER": {
+      "type": "string",
+      "description": "Interval multiplier in degraded mode",
+      "introduced_in": "1.43.0",
+      "default": "2.0",
+      "module": "watchdog"
+    },
+    "NFTBAN_FREE_OS_MEMORY_ENABLED": {
+      "type": "string",
+      "description": "Enable OS memory freeing",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog"
+    },
+    "NFTBAN_FREE_OS_MEMORY_COOLDOWN": {
+      "type": "string",
+      "description": "Memory free cooldown in seconds",
+      "introduced_in": "1.43.0",
+      "default": "600",
+      "module": "watchdog"
+    },
+    "NFTBAN_FREE_OS_MEMORY_ONLY_IF_CPU_BELOW": {
+      "type": "string",
+      "description": "Only free memory if CPU below percent",
+      "introduced_in": "1.43.0",
+      "default": "40",
+      "module": "watchdog"
+    },
+    "NFTBAN_RECORDER_ENABLED": {
+      "type": "string",
+      "description": "Enable flight recorder",
+      "introduced_in": "1.43.0",
+      "default": "true",
+      "module": "watchdog"
+    },
+    "NFTBAN_RECORDER_DIR": {
+      "type": "string",
+      "description": "Flight recorder directory",
+      "introduced_in": "1.43.0",
+      "default": "/var/lib/nftban/recorder",
+      "module": "watchdog"
+    },
+    "NFTBAN_RECORDER_MAX_EVENTS": {
+      "type": "string",
+      "description": "Maximum recorder events",
+      "introduced_in": "1.43.0",
+      "default": "1000",
+      "module": "watchdog"
+    },
+    "NFTBAN_RECORDER_SNAPSHOT_INTERVAL": {
+      "type": "string",
+      "description": "Recorder snapshot interval in seconds",
+      "introduced_in": "1.43.0",
+      "default": "60",
+      "module": "watchdog"
+    },
+    "NFTBAN_RECORDER_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Recorder retention in days",
+      "introduced_in": "1.43.0",
+      "default": "7",
+      "module": "watchdog"
+    },
+    "DDOS_BAN_LOG": {
+      "type": "string",
+      "description": "Ddos ban log",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_BAN_LOG_PREFIX": {
+      "type": "string",
+      "description": "Ddos ban log prefix",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "NFTBAN_BAN:"
+    },
+    "DDOS_BAN_MIN_HITS": {
+      "type": "string",
+      "description": "Ddos ban min hits",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "5",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_BAN_REQUIRE_HANDSHAKE": {
+      "type": "string",
+      "description": "Ddos ban require handshake",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_BAN_REQUIRE_MULTI_SIGNAL": {
+      "type": "string",
+      "description": "Ddos ban require multi signal",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_BAN_SET": {
+      "type": "string",
+      "description": "Ddos ban set",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_banned"
+    },
+    "DDOS_BAN_TIMEOUT": {
+      "type": "string",
+      "description": "Ddos ban timeout",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "1h"
+    },
+    "DDOS_BAN_WINDOW": {
+      "type": "string",
+      "description": "Ddos ban window",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "60",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_PENALTY_LIMIT_10S_BURST": {
+      "type": "string",
+      "description": "Ddos penalty limit 10s burst",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_PENALTY_LIMIT_10S_RATE": {
+      "type": "string",
+      "description": "Ddos penalty limit 10s rate",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "50/second\""
+    },
+    "DDOS_PENALTY_LIMIT_5M_BURST": {
+      "type": "string",
+      "description": "Ddos penalty limit 5m burst",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "20",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_PENALTY_LIMIT_5M_RATE": {
+      "type": "string",
+      "description": "Ddos penalty limit 5m rate",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "10/second\""
+    },
+    "DDOS_PENALTY_SET_BAN_1H": {
+      "type": "string",
+      "description": "Ddos penalty set ban 1h",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_ban_1h"
+    },
+    "DDOS_PENALTY_SET_DROP_5M": {
+      "type": "string",
+      "description": "Ddos penalty set drop 5m",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_drop_5m"
+    },
+    "DDOS_PENALTY_SET_LIMIT_10S": {
+      "type": "string",
+      "description": "Ddos penalty set limit 10s",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_limit_10s"
+    },
+    "DDOS_PENALTY_SET_LIMIT_5M": {
+      "type": "string",
+      "description": "Ddos penalty set limit 5m",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_limit_5m"
+    },
+    "DDOS_PENALTY_TIMEOUT_10S": {
+      "type": "string",
+      "description": "Ddos penalty timeout 10s",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "10s"
+    },
+    "DDOS_PENALTY_TIMEOUT_1H": {
+      "type": "string",
+      "description": "Ddos penalty timeout 1h",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "1h"
+    },
+    "DDOS_PENALTY_TIMEOUT_5M": {
+      "type": "string",
+      "description": "Ddos penalty timeout 5m",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "5m"
+    },
+    "DDOS_PREFIX_CHAIN": {
+      "type": "string",
+      "description": "Ddos prefix chain",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_prefix"
+    },
+    "DDOS_PREFIX_CONN_BURST": {
+      "type": "string",
+      "description": "Ddos prefix conn burst",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "1000",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_PREFIX_CONN_RATE": {
+      "type": "string",
+      "description": "Ddos prefix conn rate",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "500/second"
+    },
+    "DDOS_PREFIX_ENABLED": {
+      "type": "string",
+      "description": "Ddos prefix enabled",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_PREFIX_IPV4_MASK": {
+      "type": "string",
+      "description": "Ddos prefix ipv4 mask",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "/24\"",
+      "$ref": "#/definitions/path"
+    },
+    "DDOS_PREFIX_IPV6_MASK": {
+      "type": "string",
+      "description": "Ddos prefix ipv6 mask",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "/64\"",
+      "$ref": "#/definitions/path"
+    },
+    "DDOS_PREFIX_METER_CONN": {
+      "type": "string",
+      "description": "Ddos prefix meter conn",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_prefix_conn"
+    },
+    "DDOS_PREFIX_METER_SYN": {
+      "type": "string",
+      "description": "Ddos prefix meter syn",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_prefix_syn"
+    },
+    "DDOS_PREFIX_SYN_BURST": {
+      "type": "string",
+      "description": "Ddos prefix syn burst",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "200",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_PREFIX_SYN_RATE": {
+      "type": "string",
+      "description": "Ddos prefix syn rate",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "100/second"
+    },
+    "DDOS_SANITY_CHAIN": {
+      "type": "string",
+      "description": "Ddos sanity chain",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_sanity"
+    },
+    "DDOS_SANITY_LOG_INVALID": {
+      "type": "string",
+      "description": "Ddos sanity log invalid",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_SANITY_LOG_PREFIX": {
+      "type": "string",
+      "description": "Ddos sanity log prefix",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "NFTBAN_SANITY:"
+    },
+    "DDOS_SURICATA_RATE_GATE_THRESHOLD": {
+      "type": "string",
+      "description": "Ddos suricata rate gate threshold",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_SURICATA_RATE_GATE_WINDOW": {
+      "type": "string",
+      "description": "Ddos suricata rate gate window",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_SYNPROXY_CHAIN": {
+      "type": "string",
+      "description": "Ddos synproxy chain",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "ddos_synproxy"
+    },
+    "DDOS_SYNPROXY_ENABLED": {
+      "type": "string",
+      "description": "Ddos synproxy enabled",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_SYNPROXY_LOG_NEW": {
+      "type": "string",
+      "description": "Ddos synproxy log new",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_SYNPROXY_LOG_PREFIX": {
+      "type": "string",
+      "description": "Ddos synproxy log prefix",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "NFTBAN_SYNPROXY:"
+    },
+    "DDOS_SYNPROXY_MSS": {
+      "type": "string",
+      "description": "Ddos synproxy mss",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "1460",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "DDOS_SYNPROXY_PORTS": {
+      "type": "string",
+      "description": "Ddos synproxy ports",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "80,443,25,587,993,995,3306,5432,6379,27017"
+    },
+    "DDOS_SYNPROXY_SACK": {
+      "type": "string",
+      "description": "Ddos synproxy sack",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_SYNPROXY_TSTAMP": {
+      "type": "string",
+      "description": "Ddos synproxy tstamp",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "DDOS_SYNPROXY_WSCALE": {
+      "type": "string",
+      "description": "Ddos synproxy wscale",
+      "introduced_in": "1.43.0",
+      "module": "ddos",
+      "default": "7",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "FEEDS_CACHE_DIR": {
+      "type": "string",
+      "description": "Feeds cache dir",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "/var/cache/nftban/feeds\"",
+      "$ref": "#/definitions/path"
+    },
+    "FEEDS_LOG_DOWNLOADS": {
+      "type": "string",
+      "description": "Feeds log downloads",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "true\""
+    },
+    "FEEDS_LOG_FILE": {
+      "type": "string",
+      "description": "Feeds log file",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "/var/log/nftban/feeds.log\"",
+      "$ref": "#/definitions/path"
+    },
+    "FEEDS_LOG_LEVEL": {
+      "type": "string",
+      "description": "Feeds log level",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "INFO\""
+    },
+    "FEEDS_LOG_PARSING": {
+      "type": "string",
+      "description": "Feeds log parsing",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "true\""
+    },
+    "FEEDS_STORAGE_DIR": {
+      "type": "string",
+      "description": "Feeds storage dir",
+      "introduced_in": "1.43.0",
+      "module": "feeds",
+      "default": "/var/lib/nftban/feeds\"",
+      "$ref": "#/definitions/path"
+    },
+    "GEOIP_AUTO_UPDATE": {
+      "type": "string",
+      "description": "Geoip auto update",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOIP_CACHE_LOOKUPS": {
+      "type": "string",
+      "description": "Geoip cache lookups",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOIP_CACHE_TTL": {
+      "type": "string",
+      "description": "Geoip cache ttl",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "3600",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "GEOIP_DB_FILE": {
+      "type": "string",
+      "description": "Geoip db file",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "dbip-country-lite.mmdb"
+    },
+    "GEOIP_LOG_FAILURES": {
+      "type": "string",
+      "description": "Geoip log failures",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOIP_LOG_UPDATES": {
+      "type": "string",
+      "description": "Geoip log updates",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "GEOIP_PRIVATE_COUNTRY": {
+      "type": "string",
+      "description": "Geoip private country",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "XX"
+    },
+    "GEOIP_PROVIDER": {
+      "type": "string",
+      "description": "Geoip provider",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "dbip"
+    },
+    "GEOIP_UNKNOWN_COUNTRY": {
+      "type": "string",
+      "description": "Geoip unknown country",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "--"
+    },
+    "GEOIP_UPDATE_INTERVAL": {
+      "type": "string",
+      "description": "Geoip update interval",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "weekly"
+    },
+    "GEOIP_VERIFY_DOWNLOAD": {
+      "type": "string",
+      "description": "Geoip verify download",
+      "introduced_in": "1.43.0",
+      "module": "geoip",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "HTTP_BOTGUARD_ENABLED": {
+      "type": "string",
+      "description": "Http botguard enabled",
+      "introduced_in": "1.43.0",
+      "module": "botguard",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "HTTP_BOT_BATCH_INTERVAL": {
+      "type": "string",
+      "description": "Http bot batch interval",
+      "introduced_in": "1.43.0",
+      "module": "botguard",
+      "default": "600",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "HTTP_BOT_BATCH_SIGNAL_FILE": {
+      "type": "string",
+      "description": "Http bot batch signal file",
+      "introduced_in": "1.43.0",
+      "module": "botguard",
+      "default": "/var/lib/nftban/botguard/batch_signals.jsonl",
+      "$ref": "#/definitions/path"
+    },
+    "HTTP_BOT_FAST_LOOP_PRESSURE_INTERVAL": {
+      "type": "string",
+      "description": "Http bot fast loop pressure interval",
+      "introduced_in": "1.43.0",
+      "module": "botguard",
+      "default": "40",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "HTTP_BOT_LOG_LEVEL": {
+      "type": "string",
+      "description": "Http bot log level",
+      "introduced_in": "1.43.0",
+      "module": "botguard",
+      "default": "INFO"
+    },
+    "NFTBAN_ACTIONS_LOG": {
+      "type": "string",
+      "description": "Nftban actions log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/nftban-actions.log"
+    },
+    "NFTBAN_ALERT_THROTTLE_SECONDS": {
+      "type": "string",
+      "description": "Nftban alert throttle seconds",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "3600\""
+    },
+    "NFTBAN_AUTH_BIN": {
+      "type": "string",
+      "description": "Nftban auth bin",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/usr/libexec/nftban-ui-auth",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_BANDWIDTH_CACHE_TTL": {
+      "type": "string",
+      "description": "Nftban bandwidth cache ttl",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "10\""
+    },
+    "NFTBAN_BAN_LOG": {
+      "type": "string",
+      "description": "Nftban ban log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/bans.log"
+    },
+    "NFTBAN_BIN": {
+      "type": "string",
+      "description": "Nftban bin",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/usr/sbin/nftban",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_CLI_ERROR_LOG": {
+      "type": "string",
+      "description": "Nftban cli error log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/cli-errors.log"
+    },
+    "NFTBAN_CLOUDFLARE_LOG": {
+      "type": "string",
+      "description": "Nftban cloudflare log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/cloudflare.log"
+    },
+    "NFTBAN_COLLECT_DEBUG": {
+      "type": "string",
+      "description": "Nftban collect debug",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_EVENTBUS": {
+      "type": "string",
+      "description": "Nftban collect eventbus",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_EXTENDED_MULT": {
+      "type": "string",
+      "description": "Nftban collect extended mult",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "5",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_FEEDS": {
+      "type": "string",
+      "description": "Nftban collect feeds",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_GEOIP": {
+      "type": "string",
+      "description": "Nftban collect geoip",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_INTERVAL": {
+      "type": "string",
+      "description": "Nftban collect interval",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "60",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_INVENTORY_MULT": {
+      "type": "string",
+      "description": "Nftban collect inventory mult",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "60",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_JITTER_ENABLED": {
+      "type": "string",
+      "description": "Nftban collect jitter enabled",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_JITTER_MAX": {
+      "type": "string",
+      "description": "Nftban collect jitter max",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "30",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_KERNEL": {
+      "type": "string",
+      "description": "Nftban collect kernel",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_LOCK_TIMEOUT": {
+      "type": "string",
+      "description": "Nftban collect lock timeout",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_LOG_DETECTION": {
+      "type": "string",
+      "description": "Nftban collect log detection",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_LOG_SINGLE_PASS": {
+      "type": "string",
+      "description": "Nftban collect log single pass",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_LOG_TIMING": {
+      "type": "string",
+      "description": "Nftban collect log timing",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_NETWORK": {
+      "type": "string",
+      "description": "Nftban collect network",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "enabled"
+    },
+    "NFTBAN_COLLECT_NFT_BATCH": {
+      "type": "string",
+      "description": "Nftban collect nft batch",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_PORTSCAN": {
+      "type": "string",
+      "description": "Nftban collect portscan",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_STALE_MAX_AGE": {
+      "type": "string",
+      "description": "Nftban collect stale max age",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "300",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_COLLECT_SURICATA": {
+      "type": "string",
+      "description": "Nftban collect suricata",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLLECT_USE_STALE_CACHE": {
+      "type": "string",
+      "description": "Nftban collect use stale cache",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_COLLECT_WATCHDOG": {
+      "type": "string",
+      "description": "Nftban collect watchdog",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "auto"
+    },
+    "NFTBAN_COLOR_OUTPUT": {
+      "type": "string",
+      "description": "Nftban color output",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONFIG_VERSION": {
+      "type": "string",
+      "description": "Nftban config version",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "2",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTORS_BATCH_SIZE": {
+      "type": "string",
+      "description": "Nftban connectors batch size",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTORS_DEBUG": {
+      "type": "string",
+      "description": "Nftban connectors debug",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_ENABLED": {
+      "type": "string",
+      "description": "Nftban connectors enabled",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_EXPORT_ALERTS": {
+      "type": "string",
+      "description": "Nftban connectors export alerts",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_EXPORT_BANS": {
+      "type": "string",
+      "description": "Nftban connectors export bans",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_EXPORT_HEALTH": {
+      "type": "string",
+      "description": "Nftban connectors export health",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_EXPORT_METRICS": {
+      "type": "string",
+      "description": "Nftban connectors export metrics",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_EXPORT_UNBANS": {
+      "type": "string",
+      "description": "Nftban connectors export unbans",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTORS_INTERVAL": {
+      "type": "string",
+      "description": "Nftban connectors interval",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "60",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTORS_RETRIES": {
+      "type": "string",
+      "description": "Nftban connectors retries",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTORS_RETRY_DELAY": {
+      "type": "string",
+      "description": "Nftban connectors retry delay",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "5",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTORS_RETRY_ENABLED": {
+      "type": "string",
+      "description": "Nftban connectors retry enabled",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_CONFIG_DIR": {
+      "type": "string",
+      "description": "Nftban connector config dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_CONFIG_DIR}/connectors"
+    },
+    "NFTBAN_CONNECTOR_DEBUG": {
+      "type": "string",
+      "description": "Nftban connector debug",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_API_KEY": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch api key",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_AUTH": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch auth",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_CA": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch ca",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_DATE_PATTERN": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch date pattern",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "daily"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_ENABLED": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch enabled",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_INDEX": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch index",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "nftban"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_PASS": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch pass",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_TLS": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch tls",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_TLS_INSECURE": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch tls insecure",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_URL": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch url",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ELASTICSEARCH_USER": {
+      "type": "string",
+      "description": "Nftban connector elasticsearch user",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_API_KEY": {
+      "type": "string",
+      "description": "Nftban connector es api key",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_INDEX_PATTERN": {
+      "type": "string",
+      "description": "Nftban connector es index pattern",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "nftban-metrics-%Y.%m.%d"
+    },
+    "NFTBAN_CONNECTOR_ES_PASSWORD": {
+      "type": "string",
+      "description": "Nftban connector es password",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_ES_TLS_SKIP_VERIFY": {
+      "type": "string",
+      "description": "Nftban connector es tls skip verify",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_ES_USERNAME": {
+      "type": "string",
+      "description": "Nftban connector es username",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_FILE_COMPRESSION": {
+      "type": "string",
+      "description": "Nftban connector file compression",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "gzip"
+    },
+    "NFTBAN_CONNECTOR_FILE_FORMAT": {
+      "type": "string",
+      "description": "Nftban connector file format",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "ndjson"
+    },
+    "NFTBAN_CONNECTOR_FILE_KEEP": {
+      "type": "string",
+      "description": "Nftban connector file keep",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "7",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTOR_FILE_MAX_SIZE": {
+      "type": "string",
+      "description": "Nftban connector file max size",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTOR_FILE_PATH": {
+      "type": "string",
+      "description": "Nftban connector file path",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "/var/lib/nftban/exports/metrics.ndjson",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_CONNECTOR_FILE_ROTATE_SIZE": {
+      "type": "string",
+      "description": "Nftban connector file rotate size",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "104857600",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_CONNECTOR_FILE_ROTATION": {
+      "type": "string",
+      "description": "Nftban connector file rotation",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "daily"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_PARTITION_KEY": {
+      "type": "string",
+      "description": "Nftban connector kafka partition key",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_ENABLED": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl enabled",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_MECHANISM": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl mechanism",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "PLAIN"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_PASS": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl pass",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_PASSWORD": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl password",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_USER": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl user",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SASL_USERNAME": {
+      "type": "string",
+      "description": "Nftban connector kafka sasl username",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SECURITY_PROTOCOL": {
+      "type": "string",
+      "description": "Nftban connector kafka security protocol",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "plaintext"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_SSL_CA": {
+      "type": "string",
+      "description": "Nftban connector kafka ssl ca",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_TLS_ENABLED": {
+      "type": "string",
+      "description": "Nftban connector kafka tls enabled",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_APP_NAME": {
+      "type": "string",
+      "description": "Nftban connector syslog app name",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "nftban"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_FACILITY": {
+      "type": "string",
+      "description": "Nftban connector syslog facility",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "local0"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_FORMAT": {
+      "type": "string",
+      "description": "Nftban connector syslog format",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "rfc5424"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_SEVERITY": {
+      "type": "string",
+      "description": "Nftban connector syslog severity",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "info"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_API_KEY": {
+      "type": "string",
+      "description": "Nftban connector webhook api key",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_API_KEY_HEADER": {
+      "type": "string",
+      "description": "Nftban connector webhook api key header",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "X-API-Key"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_AUTH": {
+      "type": "string",
+      "description": "Nftban connector webhook auth",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "none"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_CONTENT_TYPE": {
+      "type": "string",
+      "description": "Nftban connector webhook content type",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "application/json"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_HEADERS": {
+      "type": "string",
+      "description": "Nftban connector webhook headers",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "{}"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_PASS": {
+      "type": "string",
+      "description": "Nftban connector webhook pass",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_TOKEN": {
+      "type": "string",
+      "description": "Nftban connector webhook token",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_USER": {
+      "type": "string",
+      "description": "Nftban connector webhook user",
+      "introduced_in": "1.43.0",
+      "module": "connectors"
+    },
+    "NFTBAN_CORE_BIN": {
+      "type": "string",
+      "description": "Nftban core bin",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/usr/lib/nftban/bin/nftban-core",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_DDOS_ENABLED": {
+      "type": "string",
+      "description": "Nftban ddos enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_DEBUG_TRACE": {
+      "type": "string",
+      "description": "Nftban debug trace",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_DEBUG_TRACE_LOG": {
+      "type": "string",
+      "description": "Nftban debug trace log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/var/log/nftban/debug_trace.log",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_DISTRO_CONF_DIR": {
+      "type": "string",
+      "description": "Nftban distro conf dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/etc/nftban/distros",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_DRIFT_POLICY": {
+      "type": "string",
+      "description": "Nftban drift policy",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "alert"
+    },
+    "NFTBAN_EXPORT_CONNECTORS": {
+      "type": "string",
+      "description": "Nftban export connectors",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_EXPORT_JSON": {
+      "type": "string",
+      "description": "Nftban export json",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_EXPORT_PROMETHEUS": {
+      "type": "string",
+      "description": "Nftban export prometheus",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_FEEDS_AUTO_UPDATE": {
+      "type": "string",
+      "description": "Nftban feeds auto update",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_GEOIP_DATABASE": {
+      "type": "string",
+      "description": "Nftban geoip database",
+      "introduced_in": "1.43.0",
+      "module": "core"
+    },
+    "NFTBAN_GEOIP_DATABASES": {
+      "type": "string",
+      "description": "Nftban geoip databases",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb"
+    },
+    "NFTBAN_GEOIP_ENABLED": {
+      "type": "string",
+      "description": "Nftban geoip enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_GIT_BRANCH": {
+      "type": "string",
+      "description": "Nftban git branch",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "main"
+    },
+    "NFTBAN_GIT_REMOTE": {
+      "type": "string",
+      "description": "Nftban git remote",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "origin"
+    },
+    "NFTBAN_GIT_REPO": {
+      "type": "string",
+      "description": "Nftban git repo",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "/opt/nftban",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_GUI_ADDR": {
+      "type": "string",
+      "description": "Nftban gui addr",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "127.0.0.1:3940"
+    },
+    "NFTBAN_GUI_ENABLED": {
+      "type": "string",
+      "description": "Nftban gui enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_HEALTH_FILE_AGE_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban health file age threshold",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "600\""
+    },
+    "NFTBAN_HEALTH_MEMORY_WARNING": {
+      "type": "string",
+      "description": "Nftban health memory warning",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "600\""
+    },
+    "NFTBAN_HISTORY_MAX_COUNT": {
+      "type": "string",
+      "description": "Nftban history max count",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "30",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_HISTORY_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Nftban history retention days",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "14",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_JSON_CACHE_DIR": {
+      "type": "string",
+      "description": "Nftban json cache dir",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "/var/cache/nftban/metrics",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_JSON_COMBINED_FILE": {
+      "type": "string",
+      "description": "Nftban json combined file",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "combined.json"
+    },
+    "NFTBAN_JSON_DYNAMIC_FILE": {
+      "type": "string",
+      "description": "Nftban json dynamic file",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "dynamic.json"
+    },
+    "NFTBAN_JSON_INVENTORY_FILE": {
+      "type": "string",
+      "description": "Nftban json inventory file",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "inventory.json"
+    },
+    "NFTBAN_LOCAL_RETENTION": {
+      "type": "string",
+      "description": "Nftban local retention",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "2w"
+    },
+    "NFTBAN_LOGIN_MONITOR_ENABLED": {
+      "type": "string",
+      "description": "Nftban login monitor enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_LOGIN_MONITOR_LOG": {
+      "type": "string",
+      "description": "Nftban login monitor log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/login_alert.log"
+    },
+    "NFTBAN_LOG_LEVEL": {
+      "type": "string",
+      "description": "Nftban log level",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "INFO"
+    },
+    "NFTBAN_MAIL_METRICS_FILE": {
+      "type": "string",
+      "description": "Nftban mail metrics file",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/metrics/mail.prom"
+    },
+    "NFTBAN_MAIL_RETRY_ATTEMPTS": {
+      "type": "string",
+      "description": "Nftban mail retry attempts",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_MAIL_RETRY_BACKOFF": {
+      "type": "string",
+      "description": "Nftban mail retry backoff",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "5,15,45"
+    },
+    "NFTBAN_MAIL_SPOOL_DIR": {
+      "type": "string",
+      "description": "Nftban mail spool dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/mailspool"
+    },
+    "NFTBAN_MAINTENANCE_LOG": {
+      "type": "string",
+      "description": "Nftban maintenance log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/maintenance.log"
+    },
+    "NFTBAN_METRICS_BACKEND": {
+      "type": "string",
+      "description": "Nftban metrics backend",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "prometheus"
+    },
+    "NFTBAN_METRICS_ENABLED": {
+      "type": "string",
+      "description": "Nftban metrics enabled",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_METRICS_EXTERNAL_LABELS": {
+      "type": "string",
+      "description": "Nftban metrics external labels",
+      "introduced_in": "1.43.0",
+      "module": "metrics"
+    },
+    "NFTBAN_METRICS_MODE": {
+      "type": "string",
+      "description": "Nftban metrics mode",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "unified"
+    },
+    "NFTBAN_METRICS_NODE_EXPORTER_ADDR": {
+      "type": "string",
+      "description": "Nftban metrics node exporter addr",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "localhost:9100"
+    },
+    "NFTBAN_METRICS_PROMETHEUS_ADDR": {
+      "type": "string",
+      "description": "Nftban metrics prometheus addr",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "localhost:9090"
+    },
+    "NFTBAN_METRICS_REMOTE_MODE": {
+      "type": "string",
+      "description": "Nftban metrics remote mode",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "none"
+    },
+    "NFTBAN_METRICS_REMOTE_WRITE_TOKEN_FILE": {
+      "type": "string",
+      "description": "Nftban metrics remote write token file",
+      "introduced_in": "1.43.0",
+      "module": "metrics"
+    },
+    "NFTBAN_METRICS_REMOTE_WRITE_URL": {
+      "type": "string",
+      "description": "Nftban metrics remote write url",
+      "introduced_in": "1.43.0",
+      "module": "metrics"
+    },
+    "NFTBAN_METRICS_RETENTION_HINT": {
+      "type": "string",
+      "description": "Nftban metrics retention hint",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "90d"
+    },
+    "NFTBAN_METRICS_TEXTFILE_DIR": {
+      "type": "string",
+      "description": "Nftban metrics textfile dir",
+      "introduced_in": "1.43.0",
+      "module": "connectors",
+      "default": "/var/lib/node_exporter/textfile_collector",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_PORTSCAN_ENABLED": {
+      "type": "string",
+      "description": "Nftban portscan enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_PORTSCAN_LOG": {
+      "type": "string",
+      "description": "Nftban portscan log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/portscan.log"
+    },
+    "NFTBAN_PROFILE_MAX_COUNT": {
+      "type": "string",
+      "description": "Nftban profile max count",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_PROFILE_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Nftban profile retention days",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "7",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_PROMETHEUS_OUTPUT_FILE": {
+      "type": "string",
+      "description": "Nftban prometheus output file",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "nftban.prom"
+    },
+    "NFTBAN_PROMETHEUS_TEXTFILE_DIR": {
+      "type": "string",
+      "description": "Nftban prometheus textfile dir",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "/var/lib/node_exporter/textfile_collector",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_QUEUE_BACKOFF_BASE_SECONDS": {
+      "type": "string",
+      "description": "Nftban queue backoff base seconds",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "30",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_BACKOFF_MAX_SECONDS": {
+      "type": "string",
+      "description": "Nftban queue backoff max seconds",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "900",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_DLQ_AUTO_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Nftban queue dlq auto retention days",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "7",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_DLQ_DIR": {
+      "type": "string",
+      "description": "Nftban queue dlq dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/queue/dlq"
+    },
+    "NFTBAN_QUEUE_LOCK_STUCK_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban queue lock stuck threshold",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "1200",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_MAX_PENDING": {
+      "type": "string",
+      "description": "Nftban queue max pending",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "10000",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_MAX_RETRIES": {
+      "type": "string",
+      "description": "Nftban queue max retries",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_QUEUE_METRICS_FILE": {
+      "type": "string",
+      "description": "Nftban queue metrics file",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/metrics/queue.prom"
+    },
+    "NFTBAN_QUEUE_PENDING_DIR": {
+      "type": "string",
+      "description": "Nftban queue pending dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/queue/pending"
+    },
+    "NFTBAN_QUEUE_WORK_DIR": {
+      "type": "string",
+      "description": "Nftban queue work dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "${NFTBAN_DATA_DIR}/queue/work"
+    },
+    "NFTBAN_RECONCILE_CORE_TIMERS": {
+      "type": "string",
+      "description": "Nftban reconcile core timers",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_REPORTS_DIR": {
+      "type": "string",
+      "description": "Nftban reports dir",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "/var/lib/nftban/reports",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_REPORTS_ENABLED": {
+      "type": "string",
+      "description": "Nftban reports enabled",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_REPORTS_RETENTION_DAYS": {
+      "type": "string",
+      "description": "Nftban reports retention days",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "14",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_REPORTS_TOP_N": {
+      "type": "string",
+      "description": "Nftban reports top n",
+      "introduced_in": "1.43.0",
+      "module": "metrics",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_SERVICE_CORE": {
+      "type": "string",
+      "description": "Nftban service core",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-core.service"
+    },
+    "NFTBAN_SERVICE_DAEMON": {
+      "type": "string",
+      "description": "Nftban service daemon",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftband.service"
+    },
+    "NFTBAN_SERVICE_HEALTH": {
+      "type": "string",
+      "description": "Nftban service health",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-health.service"
+    },
+    "NFTBAN_SERVICE_LOGIN_MONITOR": {
+      "type": "string",
+      "description": "Nftban service login monitor",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-login-monitor.service"
+    },
+    "NFTBAN_SERVICE_MAINTENANCE": {
+      "type": "string",
+      "description": "Nftban service maintenance",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-maintenance.service"
+    },
+    "NFTBAN_SERVICE_METRICS_EXPORTER": {
+      "type": "string",
+      "description": "Nftban service metrics exporter",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-unified-exporter.service"
+    },
+    "NFTBAN_SERVICE_QUEUE": {
+      "type": "string",
+      "description": "Nftban service queue",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-queue.service"
+    },
+    "NFTBAN_SERVICE_SURICATA": {
+      "type": "string",
+      "description": "Nftban service suricata",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-suricata.service"
+    },
+    "NFTBAN_SERVICE_UI": {
+      "type": "string",
+      "description": "Nftban service ui",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-ui.service"
+    },
+    "NFTBAN_SERVICE_WATCHDOG": {
+      "type": "string",
+      "description": "Nftban service watchdog",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-watchdog.service"
+    },
+    "NFTBAN_SMTP_CONNECT_TIMEOUT": {
+      "type": "string",
+      "description": "Nftban smtp connect timeout",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_SMTP_MAX_TIME": {
+      "type": "string",
+      "description": "Nftban smtp max time",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "30",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_SOCKET_DAEMON": {
+      "type": "string",
+      "description": "Nftban socket daemon",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftband.socket"
+    },
+    "NFTBAN_STARTUP_DELAY": {
+      "type": "string",
+      "description": "Nftban startup delay",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "0",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_STATS_CACHE_TTL": {
+      "type": "string",
+      "description": "Nftban stats cache ttl",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "300\""
+    },
+    "NFTBAN_SURICATA_BAN_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban suricata ban threshold",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_SURICATA_CLOUDFLARE_WHITELIST": {
+      "type": "string",
+      "description": "Nftban suricata cloudflare whitelist",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_SURICATA_ENABLED": {
+      "type": "string",
+      "description": "Nftban suricata enabled",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_SURICATA_EVE_LOG": {
+      "type": "string",
+      "description": "Nftban suricata eve log",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/var/log/nftban/suricata/eve-alerts.json",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_SURICATA_LOG_DIR": {
+      "type": "string",
+      "description": "Nftban suricata log dir",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/var/log/nftban/suricata",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_SURICATA_PROFILE": {
+      "type": "string",
+      "description": "Nftban suricata profile",
+      "introduced_in": "1.43.0",
+      "module": "suricata"
+    },
+    "NFTBAN_SURICATA_PROFILE_MODE": {
+      "type": "string",
+      "description": "Nftban suricata profile mode",
+      "introduced_in": "1.43.0",
+      "module": "suricata",
+      "default": "auto"
+    },
+    "NFTBAN_SURICATA_SCORE_DECAY": {
+      "type": "string",
+      "description": "Nftban suricata score decay",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "3600",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TABLE_FAMILY": {
+      "type": "string",
+      "description": "Nftban table family",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "ip"
+    },
+    "NFTBAN_TABLE_IPV4": {
+      "type": "string",
+      "description": "Nftban table ipv4",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "ip nftban"
+    },
+    "NFTBAN_TABLE_IPV6": {
+      "type": "string",
+      "description": "Nftban table ipv6",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "ip6 nftban"
+    },
+    "NFTBAN_TABLE_NAME": {
+      "type": "string",
+      "description": "Nftban table name",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban"
+    },
+    "NFTBAN_TIMEOUT_FAST": {
+      "type": "string",
+      "description": "Nftban timeout fast",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "5\""
+    },
+    "NFTBAN_TIMEOUT_HTTP_DEFAULT": {
+      "type": "string",
+      "description": "Nftban timeout http default",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "60\""
+    },
+    "NFTBAN_TIMEOUT_HTTP_LONG": {
+      "type": "string",
+      "description": "Nftban timeout http long",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "300\""
+    },
+    "NFTBAN_TIMEOUT_IPC_SOCKET": {
+      "type": "string",
+      "description": "Nftban timeout ipc socket",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "300\""
+    },
+    "NFTBAN_TIMEOUT_MEDIUM": {
+      "type": "string",
+      "description": "Nftban timeout medium",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "30\""
+    },
+    "NFTBAN_TIMEOUT_SLOW": {
+      "type": "string",
+      "description": "Nftban timeout slow",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "120\""
+    },
+    "NFTBAN_TIMEOUT_SYNC": {
+      "type": "string",
+      "description": "Nftban timeout sync",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "600\""
+    },
+    "NFTBAN_TIMER_FEEDS": {
+      "type": "string",
+      "description": "Nftban timer feeds",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-core-feeds.timer"
+    },
+    "NFTBAN_TIMER_GEOIP": {
+      "type": "string",
+      "description": "Nftban timer geoip",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-core-geoip.timer"
+    },
+    "NFTBAN_TIMER_HEALTH": {
+      "type": "string",
+      "description": "Nftban timer health",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-health.timer"
+    },
+    "NFTBAN_TIMER_MAINTENANCE": {
+      "type": "string",
+      "description": "Nftban timer maintenance",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-maintenance.timer"
+    },
+    "NFTBAN_TIMER_METRICS_EXPORTER": {
+      "type": "string",
+      "description": "Nftban timer metrics exporter",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-unified-exporter.timer"
+    },
+    "NFTBAN_TIMER_QUEUE": {
+      "type": "string",
+      "description": "Nftban timer queue",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-queue.timer"
+    },
+    "NFTBAN_TIMER_SURICATA_UPDATE": {
+      "type": "string",
+      "description": "Nftban timer suricata update",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-suricata-update.timer"
+    },
+    "NFTBAN_TIMER_WATCHDOG": {
+      "type": "string",
+      "description": "Nftban timer watchdog",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "nftban-watchdog.timer"
+    },
+    "NFTBAN_TUNNEL_ALERT_COOLDOWN": {
+      "type": "string",
+      "description": "Nftban tunnel alert cooldown",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "3600",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_ALERT_EMAIL": {
+      "type": "string",
+      "description": "Nftban tunnel alert email",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_ALERT_ON_HIGH": {
+      "type": "string",
+      "description": "Nftban tunnel alert on high",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "YES",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_TUNNEL_BIND_LOG": {
+      "type": "string",
+      "description": "Nftban tunnel bind log",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_DNSMASQ_LOG": {
+      "type": "string",
+      "description": "Nftban tunnel dnsmasq log",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_DNS_SOURCE": {
+      "type": "string",
+      "description": "Nftban tunnel dns source",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "auto"
+    },
+    "NFTBAN_TUNNEL_ENABLED": {
+      "type": "string",
+      "description": "Nftban tunnel enabled",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "NO",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_TUNNEL_ENTROPY_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban tunnel entropy threshold",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "3.5"
+    },
+    "NFTBAN_TUNNEL_EXCLUDE_DOMAINS": {
+      "type": "string",
+      "description": "Nftban tunnel exclude domains",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_EXCLUDE_IPS": {
+      "type": "string",
+      "description": "Nftban tunnel exclude ips",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_LOG": {
+      "type": "string",
+      "description": "Nftban tunnel log",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "${NFTBAN_LOG_DIR:-/var/log/nftban}/tunnel.log"
+    },
+    "NFTBAN_TUNNEL_MAX_TRACKED_IPS": {
+      "type": "string",
+      "description": "Nftban tunnel max tracked ips",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "1000",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_NXDOMAIN_RATIO_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban tunnel nxdomain ratio threshold",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "0.20"
+    },
+    "NFTBAN_TUNNEL_QUERY_VOLUME_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban tunnel query volume threshold",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_SCAN_INTERVAL": {
+      "type": "string",
+      "description": "Nftban tunnel scan interval",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "5",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_STATE_DIR": {
+      "type": "string",
+      "description": "Nftban tunnel state dir",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "${NFTBAN_DATA_DIR:-/var/lib/nftban}/tunnel"
+    },
+    "NFTBAN_TUNNEL_STATE_TTL": {
+      "type": "string",
+      "description": "Nftban tunnel state ttl",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "24",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_SUBDOMAIN_DEPTH_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban tunnel subdomain depth threshold",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "4",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_THRESHOLD_HIGH": {
+      "type": "string",
+      "description": "Nftban tunnel threshold high",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "80\""
+    },
+    "NFTBAN_TUNNEL_THRESHOLD_LOW": {
+      "type": "string",
+      "description": "Nftban tunnel threshold low",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "30\""
+    },
+    "NFTBAN_TUNNEL_THRESHOLD_MEDIUM": {
+      "type": "string",
+      "description": "Nftban tunnel threshold medium",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "60\""
+    },
+    "NFTBAN_TUNNEL_TXT_RATIO_THRESHOLD": {
+      "type": "string",
+      "description": "Nftban tunnel txt ratio threshold",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "0.15"
+    },
+    "NFTBAN_TUNNEL_UNBOUND_LOG": {
+      "type": "string",
+      "description": "Nftban tunnel unbound log",
+      "introduced_in": "1.43.0",
+      "module": "tunnel"
+    },
+    "NFTBAN_TUNNEL_WEIGHT_ENTROPY": {
+      "type": "string",
+      "description": "Nftban tunnel weight entropy",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "25",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_WEIGHT_NXDOMAIN_RATIO": {
+      "type": "string",
+      "description": "Nftban tunnel weight nxdomain ratio",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "15",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_WEIGHT_QUERY_VOLUME": {
+      "type": "string",
+      "description": "Nftban tunnel weight query volume",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "20",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_WEIGHT_SUBDOMAIN_DEPTH": {
+      "type": "string",
+      "description": "Nftban tunnel weight subdomain depth",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "20",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_TUNNEL_WEIGHT_TXT_FREQ": {
+      "type": "string",
+      "description": "Nftban tunnel weight txt freq",
+      "introduced_in": "1.43.0",
+      "module": "tunnel",
+      "default": "20",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_UI_BIN": {
+      "type": "string",
+      "description": "Nftban ui bin",
+      "introduced_in": "1.43.0",
+      "module": "core",
+      "default": "/usr/sbin/nftban-ui",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_UPDATE_AUTO_ENABLED": {
+      "type": "string",
+      "description": "Nftban update auto enabled",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_AUTO_ROLLBACK": {
+      "type": "string",
+      "description": "Nftban update auto rollback",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_BACKUP": {
+      "type": "string",
+      "description": "Nftban update backup",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_BACKUP_COUNT": {
+      "type": "string",
+      "description": "Nftban update backup count",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_UPDATE_CHANNEL": {
+      "type": "string",
+      "description": "Nftban update channel",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "stable"
+    },
+    "NFTBAN_UPDATE_LOG_FILE": {
+      "type": "string",
+      "description": "Nftban update log file",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "/var/log/nftban/update.log",
+      "$ref": "#/definitions/path"
+    },
+    "NFTBAN_UPDATE_LOG_VERBOSE": {
+      "type": "string",
+      "description": "Nftban update log verbose",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_NOTIFY_EMAIL": {
+      "type": "string",
+      "description": "Nftban update notify email",
+      "introduced_in": "1.43.0",
+      "module": "update"
+    },
+    "NFTBAN_UPDATE_NOTIFY_FAILURE": {
+      "type": "string",
+      "description": "Nftban update notify failure",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_NOTIFY_SUCCESS": {
+      "type": "string",
+      "description": "Nftban update notify success",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_UPDATE_ROLLBACK_TIMEOUT": {
+      "type": "string",
+      "description": "Nftban update rollback timeout",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "300",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_UPDATE_SKIP_HIGH_LOAD": {
+      "type": "string",
+      "description": "Nftban update skip high load",
+      "introduced_in": "1.43.0",
+      "module": "update",
+      "default": "4.0"
+    },
+    "NFTBAN_ZABBIX_BATCH_SIZE": {
+      "type": "string",
+      "description": "Nftban zabbix batch size",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "100",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_DEBUG": {
+      "type": "string",
+      "description": "Nftban zabbix debug",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_FIREWALL_AUTO": {
+      "type": "string",
+      "description": "Nftban zabbix firewall auto",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_HOSTNAME": {
+      "type": "string",
+      "description": "Nftban zabbix hostname",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "auto"
+    },
+    "NFTBAN_ZABBIX_INTERVAL": {
+      "type": "string",
+      "description": "Nftban zabbix interval",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "60",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_LLD_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix lld enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_LLD_INTERVAL": {
+      "type": "string",
+      "description": "Nftban zabbix lld interval",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "0",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_METRICS_BANS": {
+      "type": "string",
+      "description": "Nftban zabbix metrics bans",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_DAEMON": {
+      "type": "string",
+      "description": "Nftban zabbix metrics daemon",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_FEEDS": {
+      "type": "string",
+      "description": "Nftban zabbix metrics feeds",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_GEOIP": {
+      "type": "string",
+      "description": "Nftban zabbix metrics geoip",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_MEMORY": {
+      "type": "string",
+      "description": "Nftban zabbix metrics memory",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_MODULES": {
+      "type": "string",
+      "description": "Nftban zabbix metrics modules",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_NFTABLES": {
+      "type": "string",
+      "description": "Nftban zabbix metrics nftables",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_METRICS_SERVER": {
+      "type": "string",
+      "description": "Nftban zabbix metrics server",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_PORT": {
+      "type": "string",
+      "description": "Nftban zabbix port",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "10051",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_PORT_SECONDARY": {
+      "type": "string",
+      "description": "Nftban zabbix port secondary",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "10051",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_PSK_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix psk enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_PSK_FILE": {
+      "type": "string",
+      "description": "Nftban zabbix psk file",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_PSK_IDENTITY": {
+      "type": "string",
+      "description": "Nftban zabbix psk identity",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_RETRIES": {
+      "type": "string",
+      "description": "Nftban zabbix retries",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_RETRY_COUNT": {
+      "type": "string",
+      "description": "Nftban zabbix retry count",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "3",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_RETRY_INTERVAL": {
+      "type": "string",
+      "description": "Nftban zabbix retry interval",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "5",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_SECONDARY_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix secondary enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_SECONDARY_PORT": {
+      "type": "string",
+      "description": "Nftban zabbix secondary port",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "10051",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_SECONDARY_SERVER": {
+      "type": "string",
+      "description": "Nftban zabbix secondary server",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_SECONDARY_TLS_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix secondary tls enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_SEND_MODE": {
+      "type": "string",
+      "description": "Nftban zabbix send mode",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "failover"
+    },
+    "NFTBAN_ZABBIX_SEND_TIMESTAMPS": {
+      "type": "string",
+      "description": "Nftban zabbix send timestamps",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "true",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_SERVER": {
+      "type": "string",
+      "description": "Nftban zabbix server",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_SERVER_SECONDARY": {
+      "type": "string",
+      "description": "Nftban zabbix server secondary",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_TIMEOUT": {
+      "type": "string",
+      "description": "Nftban zabbix timeout",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "10",
+      "$ref": "#/definitions/positive_integer"
+    },
+    "NFTBAN_ZABBIX_TLS_CA": {
+      "type": "string",
+      "description": "Nftban zabbix tls ca",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_TLS_CERT": {
+      "type": "string",
+      "description": "Nftban zabbix tls cert",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_TLS_ENABLED": {
+      "type": "string",
+      "description": "Nftban zabbix tls enabled",
+      "introduced_in": "1.43.0",
+      "module": "zabbix",
+      "default": "false",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "NFTBAN_ZABBIX_TLS_KEY": {
+      "type": "string",
+      "description": "Nftban zabbix tls key",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_TLS_PSK_FILE": {
+      "type": "string",
+      "description": "Nftban zabbix tls psk file",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "NFTBAN_ZABBIX_TLS_PSK_IDENTITY": {
+      "type": "string",
+      "description": "Nftban zabbix tls psk identity",
+      "introduced_in": "1.43.0",
+      "module": "zabbix"
+    },
+    "SURICATA_LAST_CANDIDATES": {
+      "type": "string",
+      "description": "Suricata last candidates",
+      "introduced_in": "1.43.0",
+      "module": "suricata"
     }
   },
   "deprecated": {
