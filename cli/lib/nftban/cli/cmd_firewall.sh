@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.47.0"
+# meta:version="1.49.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -79,6 +79,43 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER" || return 1
 fi
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+_firewall_substitute_placeholders() {
+    # Substitute __SSH_PORT__ and __CT_LIMIT_*__ placeholders in nftables.conf
+    # Usage: _firewall_substitute_placeholders <input_file> <output_file>
+    # v1.49.0 FIX-F: CT limits unified with DDoS module config
+    local input="$1" output="$2"
+
+    # SSH port
+    local _ssh_port=22
+    local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+    [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
+    [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+
+    # CT limits — use DDoS config when available, else sensible defaults
+    local _ct_ssh=15 _ct_http=150 _ct_mail=150
+    local _ddos_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/classic.conf"
+    local _ddos_local="${_ddos_conf}.local"
+    # Source DDoS config (defaults then overrides) to get tuned limits
+    # shellcheck disable=SC1090  # dynamic config path
+    [[ -f "$_ddos_conf" ]] && source "$_ddos_conf" 2>/dev/null || true
+    # shellcheck disable=SC1090  # dynamic config path
+    [[ -f "$_ddos_local" ]] && source "$_ddos_local" 2>/dev/null || true
+    # Use DDoS limits if defined, keeping base defaults as fallback
+    [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _ct_ssh="$DDOS_CLASSIC_SSH_CONN_LIMIT"
+    [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
+    [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _ct_mail="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
+
+    sed -e "s/__SSH_PORT__/${_ssh_port}/g" \
+        -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
+        -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
+        -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
+        "$input" > "$output"
+}
 
 # =============================================================================
 # MAIN COMMAND HANDLER
@@ -721,15 +758,11 @@ firewall_reload() {
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying NFTBan schema..."
-        # v1.24.0: Substitute __SSH_PORT__ placeholder with detected port
-        local _ssh_port=22
-        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
-        [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
-        if grep -q '__SSH_PORT__' "$nftban_conf" 2>/dev/null; then
+        # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
+        if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
             local _tmp_conf
             _tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
-            sed "s/__SSH_PORT__/${_ssh_port}/g" "$nftban_conf" > "$_tmp_conf"
+            _firewall_substitute_placeholders "$nftban_conf" "$_tmp_conf"
             if ! nft -f "$_tmp_conf" 2>&1; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
@@ -851,19 +884,15 @@ firewall_rebuild() {
         return 1
     fi
 
-    # v1.47.0 DEPLOY-003: Prepare config with placeholder substitution
+    # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
     [[ "$quiet" == "false" ]] && echo "  [2/7] Preparing schema config..."
     local load_conf="$nftban_conf"
     local tmp_conf=""
-    if grep -q '__SSH_PORT__' "$nftban_conf" 2>/dev/null; then
-        local _ssh_port=22
-        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
-        [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+    if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
         tmp_conf=$(mktemp) || { echo "ERROR: mktemp failed" >&2; return 1; }
-        sed "s/__SSH_PORT__/${_ssh_port}/g" "$nftban_conf" > "$tmp_conf"
+        _firewall_substitute_placeholders "$nftban_conf" "$tmp_conf"
         load_conf="$tmp_conf"
-        [[ "$quiet" == "false" ]] && echo "    Substituted __SSH_PORT__ → ${_ssh_port}"
+        [[ "$quiet" == "false" ]] && echo "    Substituted placeholders (SSH port + CT limits)"
     fi
 
     # v1.47.0 DEPLOY-001: Validate schema BEFORE flushing (atomic rebuild)
@@ -1187,16 +1216,13 @@ _restore_from_file() {
     if ! nft -f "$backup_file" 2>&1; then
         echo "ERROR: Failed to restore backup" >&2
         echo "Attempting to reload NFTBan schema..." >&2
-        # v1.24.0: Substitute __SSH_PORT__ if present
+        # v1.49.0: Unified placeholder substitution (SSH port + CT limits)
         local _nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
-        if grep -q '__SSH_PORT__' "$_nftban_conf" 2>/dev/null; then
-            local _ssh_port=22 _tmp_f
-            local _sp_f="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-            [[ -f "$_sp_f" ]] && _ssh_port=$(cat "$_sp_f" 2>/dev/null) || true
-            [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+        if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$_nftban_conf" 2>/dev/null; then
+            local _tmp_f
             _tmp_f=$(mktemp 2>/dev/null) || _tmp_f=""
             if [[ -n "$_tmp_f" ]]; then
-                sed "s/__SSH_PORT__/${_ssh_port}/g" "$_nftban_conf" > "$_tmp_f"
+                _firewall_substitute_placeholders "$_nftban_conf" "$_tmp_f"
                 nft -f "$_tmp_f" 2>/dev/null || true
                 rm -f "$_tmp_f"
             else

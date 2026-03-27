@@ -8,7 +8,7 @@
 # meta:name="nftban_stats_collect"
 # meta:type="core"
 # meta:header="Statistics Data Collection"
-# meta:version="1.39.0"
+# meta:version="1.49.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -289,6 +289,10 @@ nftban_stats_ban_sources() {
             manual=$(nftban_stats_get_unified ".bans_by_source.manual" "0")
             feeds=$(nftban_stats_get_unified ".bans_by_source.feeds" "0")
             suricata=$(nftban_stats_get_unified ".bans_by_source.suricata" "0")
+            # Feeds: use actual loaded IPs (feeds are bulk-loaded, not logged in bans.log)
+            local feeds_loaded
+            feeds_loaded=$(nftban_stats_get_unified ".feeds.ips_total" "0")
+            [[ "$feeds_loaded" -gt 0 ]] 2>/dev/null && feeds="$feeds_loaded"
             echo "{\"login\":$login,\"portscan\":$portscan,\"ddos\":$ddos,\"manual\":$manual,\"feeds\":$feeds,\"suricata\":$suricata}"
             return 0
         fi
@@ -304,6 +308,10 @@ nftban_stats_ban_sources() {
             manual=$(nftban_stats_get_unified ".bans_by_source_24h.manual" "0")
             feeds=$(nftban_stats_get_unified ".bans_by_source_24h.feeds" "0")
             suricata=$(nftban_stats_get_unified ".bans_by_source_24h.suricata" "0")
+            # Feeds: use actual loaded IPs (feeds are bulk-loaded, not logged in bans.log)
+            local feeds_loaded
+            feeds_loaded=$(nftban_stats_get_unified ".feeds.ips_total" "0")
+            [[ "$feeds_loaded" -gt 0 ]] 2>/dev/null && feeds="$feeds_loaded"
             echo "{\"login\":$login,\"portscan\":$portscan,\"ddos\":$ddos,\"manual\":$manual,\"feeds\":$feeds,\"suricata\":$suricata}"
             return 0
         fi
@@ -311,7 +319,15 @@ nftban_stats_ban_sources() {
 
     # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
-        echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":0,\"suricata\":0}"
+        # No ban log — still check for loaded feed IPs
+        local feed_total=0
+        local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        if [[ -d "$feeds_dir" ]]; then
+            # shellcheck disable=SC2312  # cat in subshell is fine here
+            feed_total=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l)
+            feed_total=${feed_total:-0}
+        fi
+        echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":$feed_total,\"suricata\":0}"
         return 0
     fi
 
@@ -336,6 +352,24 @@ nftban_stats_ban_sources() {
     END {
         printf "{\"login\":%d,\"portscan\":%d,\"ddos\":%d,\"manual\":%d,\"feeds\":%d,\"suricata\":%d}", login, portscan, ddos, manual, feeds, suricata
     }' "$NFTBAN_BAN_LOG")
+
+    # Feeds: override with actual loaded IPs (feeds are bulk-loaded, not logged in bans.log)
+    if command -v jq &>/dev/null && [[ -n "$result" ]]; then
+        local log_feeds
+        log_feeds=$(echo "$result" | jq -r '.feeds // 0')
+        if [[ "$log_feeds" == "0" ]]; then
+            local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+            if [[ -d "$feeds_dir" ]]; then
+                local feed_count
+                # shellcheck disable=SC2312  # cat in subshell is fine here
+                feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l)
+                feed_count=${feed_count:-0}
+                if [[ "$feed_count" -gt 0 ]]; then
+                    result=$(echo "$result" | jq -c ".feeds = $feed_count")
+                fi
+            fi
+        fi
+    fi
 
     nftban_stats_set_cache "$cache_key" "$result"
     echo "$result"
