@@ -740,6 +740,9 @@ nftban_health_check_hung_processes() {
         [[ "$cmd" == *exporter* ]] && continue
         [[ "$cmd" == *health* ]] && continue
         [[ "$cmd" == *"login-monitor"* ]] && continue
+        # Skip non-nftban processes that happen to have "nftban" in args
+        # (e.g. postgres connections to nftban_portal database)
+        [[ "$cmd" != *"bash"* && "$cmd" != *"/usr/sbin/nftban"* && "$cmd" != *"/usr/lib/nftban"* ]] && continue
 
         if [[ "$elapsed" -gt "$max_age" ]]; then
             hung_issues+=("Hung PID $pid (${elapsed}s): $cmd")

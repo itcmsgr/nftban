@@ -832,7 +832,7 @@ run_port_allow_lifecycle_tests() {
 
     # Test 1: port allow add (TCP, default)
     log "─── Lifecycle: port allow add ${test_port} from ${test_ip} ───"
-    TESTS_RUN=$((TESTS_RUN + 1))
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
     if nftban port allow add "${test_port}" from "${test_ip}" --proto tcp --timeout 60 --comment "smoke-test" &>/dev/null; then
         # Verify element in concat set
         if nft list set ${table_v4} port_allow_tcp_ipv4 2>/dev/null | grep -q "${test_ip}"; then
@@ -848,7 +848,7 @@ run_port_allow_lifecycle_tests() {
     fi
 
     # Test 2: port allow list (should show the entry)
-    TESTS_RUN=$((TESTS_RUN + 1))
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
     if nftban port allow list 2>/dev/null | grep -q "${test_ip}"; then
         log_pass "port allow list — shows ${test_ip} entry"
         TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -858,7 +858,7 @@ run_port_allow_lifecycle_tests() {
     fi
 
     # Test 3: port allow remove
-    TESTS_RUN=$((TESTS_RUN + 1))
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
     if nftban port allow remove "${test_port}" from "${test_ip}" --proto tcp &>/dev/null; then
         # Verify element removed
         if ! nft list set ${table_v4} port_allow_tcp_ipv4 2>/dev/null | grep -q "${test_ip}"; then
