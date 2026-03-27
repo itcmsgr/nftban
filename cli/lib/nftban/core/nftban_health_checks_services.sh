@@ -10,7 +10,7 @@
 # meta:name="nftban_health_checks_services"
 # meta:type="lib"
 # meta:header="Health Check Services Functions"
-# meta:version="1.44.0"
+# meta:version="1.45.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -149,6 +149,7 @@ nftban_health_check_daemon() {
         fi
 
         # Check for stale PID file (case study: lab1 missing metrics due to stale PID)
+        # Detection only — fix is in nftban_health_fixes.sh (called by `nftban health fix`)
         local pid_file="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid"
         if [[ -f "$pid_file" ]] && _health_service_active "nftband.service"; then
             local stored_pid actual_pid
@@ -159,20 +160,11 @@ nftban_health_check_daemon() {
                 if [[ "$stored_pid" != "$actual_pid" ]]; then
                     daemon_issues+=("⚠ Stale PID file: stored=$stored_pid, actual=$actual_pid (metrics affected)")
                     [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-
-                    # Auto-heal: Update PID file
-                    if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
-                        if echo "$actual_pid" > "$pid_file" 2>/dev/null; then
-                            daemon_issues+=("AUTO-FIXED: Updated PID file to $actual_pid")
-                        else
-                            daemon_issues+=("FAILED to update PID file")
-                        fi
-                    else
-                        daemon_issues+=("FIX: echo $actual_pid > $pid_file")
-                    fi
+                    daemon_issues+=("FIX: nftban health fix")
                 elif [[ ! -d "/proc/$stored_pid" ]]; then
                     daemon_issues+=("⚠ PID file points to non-existent process: $stored_pid")
                     [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                    daemon_issues+=("FIX: nftban health fix")
                 else
                     daemon_issues+=("✓ PID file valid: $stored_pid")
                 fi
@@ -482,7 +474,7 @@ nftban_health_check_timers() {
         timers+=("nftban-core-geoip.timer")   # GeoIP updates
     fi
 
-    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034  -- reserved for future optional timer checks
     local -a optional_timers=(
         "nftban-watchdog.timer"         # System resource monitoring
         "nftban-unified-exporter.timer" # Unified export
@@ -593,9 +585,9 @@ nftban_health_check_timers() {
     fi
 
     # Store results
-    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034  -- associative array consumed by parent health module
     NFTBAN_HEALTH_RESULTS["timers"]=$status
-    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034  -- associative array consumed by parent health module
     NFTBAN_HEALTH_ISSUES["timers"]="${timer_issues[*]}"
 
     return $status

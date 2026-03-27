@@ -7,6 +7,7 @@
 # meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-11-05"
+# meta:version="1.45.0"
 # meta:description="CLI handler that redirects profile commands to wizard"
 # meta:input="Command line arguments (select, apply, show, list, help)"
 # meta:output="Redirects to wizard or shows current config"
@@ -91,10 +92,62 @@ _nftban_profile_deprecated_notice() {
 # =============================================================================
 
 _nftban_profile_show() {
+    local json_mode="${NFTBAN_JSON:-false}"
+
+    # Helper to extract a config value
+    _profile_get() {
+        local key="$1"
+        if [[ -f "$NFTBAN_CONFIG_LOCAL" ]]; then
+            grep "^${key}=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2
+        fi
+    }
+
+    if [[ "$json_mode" == "true" ]] && command -v jq &>/dev/null; then
+        local configured_by="manual"
+        local config_date=""
+        if [[ -f "$NFTBAN_CONFIG_LOCAL" ]]; then
+            if grep -q "^# Configured by: NFTBan Wizard" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
+                configured_by="wizard"
+                config_date=$(grep "^# Timestamp:" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d':' -f2- | xargs || echo "")
+            fi
+        fi
+
+        jq -n \
+            --arg config_file "$NFTBAN_CONFIG_LOCAL" \
+            --argjson config_exists "$([[ -f "$NFTBAN_CONFIG_LOCAL" ]] && echo true || echo false)" \
+            --arg configured_by "$configured_by" \
+            --arg config_date "$config_date" \
+            --arg login_monitor "$(_profile_get LOGIN_MONITOR_ENABLED)" \
+            --arg ddos_protection "$(_profile_get DDOS_PROTECTION_ENABLED)" \
+            --arg portscan "$(_profile_get PORTSCAN_ENABLED)" \
+            --arg feeds "$(_profile_get NFTBAN_FEEDS_ENABLED)" \
+            --arg feeds_list "$(_profile_get NFTBAN_FEEDS_ENABLED_LIST)" \
+            --arg suricata "$(_profile_get SURICATA_ENABLED)" \
+            --arg metrics "$(_profile_get METRICS_EXPORTER_ENABLED)" \
+            --arg web_ui "$(_profile_get UI_ENABLED)" \
+            '{
+                config_file: $config_file,
+                config_exists: $config_exists,
+                configured_by: $configured_by,
+                config_date: (if $config_date == "" then null else $config_date end),
+                settings: {
+                    login_monitor: (if $login_monitor == "" then null else $login_monitor end),
+                    ddos_protection: (if $ddos_protection == "" then null else $ddos_protection end),
+                    portscan: (if $portscan == "" then null else $portscan end),
+                    feeds: (if $feeds == "" then null else $feeds end),
+                    feeds_list: (if $feeds_list == "" then null else $feeds_list end),
+                    suricata: (if $suricata == "" then null else $suricata end),
+                    metrics: (if $metrics == "" then null else $metrics end),
+                    web_ui: (if $web_ui == "" then null else $web_ui end)
+                }
+            }'
+        return 0
+    fi
+
     _nftban_profile_banner
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  📊 Current Configuration"
+    echo "  Current Configuration"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -120,51 +173,39 @@ _nftban_profile_show() {
         local setting_value
 
         # Login Monitor
-        if grep -q "^LOGIN_MONITOR_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^LOGIN_MONITOR_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  Login Monitor: $setting_value"
-        fi
+        setting_value=$(_profile_get LOGIN_MONITOR_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  Login Monitor: $setting_value"
 
         # DDoS Protection
-        if grep -q "^DDOS_PROTECTION_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^DDOS_PROTECTION_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  DDoS Protection: $setting_value"
-        fi
+        setting_value=$(_profile_get DDOS_PROTECTION_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  DDoS Protection: $setting_value"
 
         # Port Scan Detection
-        if grep -q "^PORTSCAN_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^PORTSCAN_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  Port Scan Detection: $setting_value"
-        fi
+        setting_value=$(_profile_get PORTSCAN_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  Port Scan Detection: $setting_value"
 
         # Threat Feeds
-        if grep -q "^NFTBAN_FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^NFTBAN_FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
+        setting_value=$(_profile_get NFTBAN_FEEDS_ENABLED)
+        if [[ -n "$setting_value" ]]; then
             echo "  Threat Feeds: $setting_value"
             if [[ "$setting_value" == "yes" ]]; then
                 local enabled_feeds
-                enabled_feeds=$(grep "^NFTBAN_FEEDS_ENABLED_LIST=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "")
+                enabled_feeds=$(_profile_get NFTBAN_FEEDS_ENABLED_LIST)
                 [[ -n "$enabled_feeds" ]] && echo "  Enabled Feeds: $enabled_feeds"
             fi
         fi
 
         # Suricata IDS
-        if grep -q "^SURICATA_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^SURICATA_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  Suricata IDS: $setting_value"
-        fi
+        setting_value=$(_profile_get SURICATA_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  Suricata IDS: $setting_value"
 
         # Metrics Exporter
-        if grep -q "^METRICS_EXPORTER_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^METRICS_EXPORTER_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  Metrics Exporter: $setting_value"
-        fi
+        setting_value=$(_profile_get METRICS_EXPORTER_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  Metrics Exporter: $setting_value"
 
         # Web UI
-        if grep -q "^UI_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^UI_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
-            echo "  Web UI: $setting_value"
-        fi
+        setting_value=$(_profile_get UI_ENABLED)
+        [[ -n "$setting_value" ]] && echo "  Web UI: $setting_value"
     else
         echo "No configuration file found at: $NFTBAN_CONFIG_LOCAL"
         echo ""
@@ -191,11 +232,14 @@ _nftban_profile_help() {
 
     cat <<'HELP'
 USAGE:
-    nftban profile <command>
+    nftban profile <command> [--json]
 
 COMMANDS:
     show                Show current configuration
     help                Show this help message
+
+OPTIONS:
+    --json, -j          Output in JSON format (machine-readable)
 
 DEPRECATED (use wizard instead):
     select              → Use: sudo nftban wizard
@@ -268,7 +312,16 @@ _nftban_profile_redirect_to_wizard() {
 # =============================================================================
 
 nftban_cmd_profile() {
-    local action="${1:-show}"
+    # Strip --json flag before parsing action
+    local -a positional=()
+    for arg in "$@"; do
+        case "$arg" in
+            --json|-j) export NFTBAN_JSON="true" ;;
+            *)         positional+=("$arg") ;;
+        esac
+    done
+
+    local action="${positional[0]:-show}"
 
     # Handle commands
     case "$action" in

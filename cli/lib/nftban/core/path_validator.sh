@@ -219,7 +219,7 @@ load_paths_from_config() {
     fi
 
     # Source the config file to load variables
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090  -- config path determined at runtime from validation args
     source "$config_file" 2>/dev/null || return 1
 
     # Set global variables from config
