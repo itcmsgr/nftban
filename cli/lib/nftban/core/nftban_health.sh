@@ -515,6 +515,7 @@ nftban_health_check_all() {
     nftban_health_check_protection || { ((warnings++)) || true; }
     nftban_health_check_maintenance_lock "$auto_heal" || { ((warnings++)) || true; }
     nftban_health_check_login_monitor_ipc || { ((errors++)) || true; }
+    nftban_health_check_hung_processes "$auto_heal" || { ((warnings++)) || true; }
     nftban_health_check_suricata 2>/dev/null || { ((warnings++)) || true; }
     nftban_health_check_suricata_capture 2>/dev/null || { ((warnings++)) || true; }
 
