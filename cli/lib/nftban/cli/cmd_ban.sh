@@ -8,7 +8,7 @@
 # meta:name="cmd_ban"
 # meta:type="cli"
 # meta:header="Ban Command"
-# meta:version="1.43.0"
+# meta:version="1.44.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Ban IP addresses permanently using nftban-core"
@@ -206,12 +206,17 @@ nftban_cmd_ban() {
     fi
 
     # v1.43.0 P3-24: Confirmation prompt for permanent bans
+    # v1.44.0 BUG-009: Add 10s timeout to prevent infinite hang in scripts
     if [[ -z "$timeout" && "$auto_confirm" != "true" && "$json_mode" != "true" ]]; then
         if [[ -t 0 ]]; then
             echo "WARNING: This will permanently ban $ip (no timeout set)."
             printf "Continue? [y/N] "
             local reply
-            read -r reply
+            if ! read -r -t 10 reply; then
+                echo ""
+                echo "Aborted (no response within 10s)."
+                return 1
+            fi
             case "$reply" in
                 [yY]|[yY][eE][sS]) ;;
                 *)

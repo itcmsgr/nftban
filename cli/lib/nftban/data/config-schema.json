@@ -12568,6 +12568,13 @@
       "module": "core",
       "default": "${NFTBAN_LOG_DIR}/cli-errors.log"
     },
+    "NFTBAN_HEALTH_INCIDENTS_LOG": {
+      "type": "string",
+      "description": "Health check incident log for quality tracking (hung processes, auto-heal actions)",
+      "introduced_in": "1.44.0",
+      "module": "core",
+      "default": "${NFTBAN_LOG_DIR}/health-incidents.log"
+    },
     "NFTBAN_CLOUDFLARE_LOG": {
       "type": "string",
       "description": "Nftban cloudflare log",

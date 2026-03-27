@@ -178,6 +178,27 @@
     create 0640 nftban nftban
 }
 
+# =============================================================================
+# Health & diagnostic logs (v1.44.0 — quality tracking)
+# =============================================================================
+# health-incidents.log: Structured hung-process incidents, auto-heal actions
+# cli-errors.log: CLI error traces from strict mode
+# debug_trace.log: Debug trace entries (can be large)
+# watchdog.log: Watchdog check results
+/var/log/nftban/health-incidents.log
+/var/log/nftban/cli-errors.log
+/var/log/nftban/debug_trace.log
+/var/log/nftban/watchdog.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
 # Generated reports - monthly rotation, keep 3 months
 /var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.txt /var/lib/nftban/reports/*.json {
     monthly
