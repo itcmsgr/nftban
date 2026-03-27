@@ -25,6 +25,7 @@
 /usr/lib/nftban/sbin
 /usr/lib/nftban/health
 /usr/lib/nftban/data
+/usr/lib/nftban/templates
 /usr/lib/nftban/tools
 /etc/nftban
 /etc/nftban/conf.d
