@@ -157,10 +157,12 @@ validate_structure() {
         --argjson nftban_prio "$nftban_priority" \
         --slurpfile ruleset <(printf '%s' "$ruleset") '
         # Find all base chains on input/forward hooks (excluding nftban table)
+        # Skip chains with policy=accept — they are pass-through (e.g. Ubuntu/UFW default inet filter)
         # Handle both formats: {"nftables": [...]} or direct array [...]
         (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end) |
         map(select(.chain? and .chain.table != "nftban" and
-                   (.chain.hook == "input" or .chain.hook == "forward"))) |
+                   (.chain.hook == "input" or .chain.hook == "forward") and
+                   (.chain.policy != "accept"))) |
         # Output as tab-separated: family, table, name, hook, prio, severity
         map([
             .chain.family,
@@ -182,6 +184,21 @@ validate_structure() {
             warnings+=("WARNING: Other firewall chain detected: $family $table $name (priority $prio) - NFTBan runs first (safe)")
         fi
     done <<< "$chain_issues"
+
+    # Informational: detect pass-through chains (policy accept) — harmless but worth noting
+    local passthrough_chains
+    passthrough_chains=$(jq -r -n \
+        --slurpfile ruleset <(printf '%s' "$ruleset") '
+        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end) |
+        map(select(.chain? and .chain.table != "nftban" and
+                   (.chain.hook == "input" or .chain.hook == "forward") and
+                   .chain.policy == "accept")) |
+        map("\(.chain.family) \(.chain.table) \(.chain.name) \(.chain.hook)") | .[]
+    ')
+    while IFS= read -r pt_chain; do
+        [[ -z "$pt_chain" ]] && continue
+        warnings+=("INFO: Pass-through chain detected: $pt_chain (policy accept — no impact on NFTBan)")
+    done <<< "$passthrough_chains"
 
     # ==========================================================================
     # BATCH CHECK: Required sets
