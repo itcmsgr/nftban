@@ -166,6 +166,14 @@ _bench_ipc() {
 _bench_nft() {
     local iterations="$1" json_mode="$2"
 
+    # Ensure IPC module is loaded (writes must go through daemon)
+    if ! declare -f nft_ipc_add_element >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" || true
+        fi
+    fi
+
     local list_total=0 add_total=0 del_total=0
     local list_ok=0 add_ok=0 del_ok=0
     local i
@@ -182,12 +190,12 @@ _bench_nft() {
         fi
     done
 
-    # Benchmark: nft add/delete element (use a test IP in whitelist temporarily)
+    # Benchmark: IPC add/delete element (architecture policy: all writes via daemon)
     local test_ip="198.51.100.99"  # RFC 5737 documentation range
     for ((i=1; i<=iterations; i++)); do
         local start_ns end_ns elapsed_ms
         start_ns=$(date +%s%N 2>/dev/null || echo 0)
-        if nft add element ip nftban whitelist_ipv4 "{ $test_ip }" 2>/dev/null; then
+        if nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$test_ip" 2>/dev/null; then
             end_ns=$(date +%s%N 2>/dev/null || echo 0)
             elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
             add_total=$((add_total + elapsed_ms))
@@ -195,7 +203,7 @@ _bench_nft() {
 
             # Delete it
             start_ns=$(date +%s%N 2>/dev/null || echo 0)
-            if nft delete element ip nftban whitelist_ipv4 "{ $test_ip }" 2>/dev/null; then
+            if nft_ipc_delete_element "ip nftban" "whitelist_ipv4" "$test_ip" 2>/dev/null; then
                 end_ns=$(date +%s%N 2>/dev/null || echo 0)
                 elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
                 del_total=$((del_total + elapsed_ms))

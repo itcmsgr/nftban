@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_validator"
 # meta:type="core"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
 # meta:inventory.files=""

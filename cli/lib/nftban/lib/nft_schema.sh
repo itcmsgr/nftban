@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_schema" meta:type="lib" meta:version="1.41.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.43.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
