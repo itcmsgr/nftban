@@ -831,7 +831,8 @@ nftban_progress_update() {
 # Stop the spinner and optionally show completion message
 # Usage: nftban_progress_end "Done!" or nftban_progress_end
 # Function accepts optional arguments for progress customization
-# shellcheck disable=SC2120  -- called with and without args depending on context
+# called with and without args depending on context
+# shellcheck disable=SC2120
 nftban_progress_end() {
     local message="${1:-}"
 

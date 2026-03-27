@@ -474,7 +474,8 @@ nftban_health_check_timers() {
         timers+=("nftban-core-geoip.timer")   # GeoIP updates
     fi
 
-    # shellcheck disable=SC2034  -- reserved for future optional timer checks
+    # reserved for future optional timer checks
+    # shellcheck disable=SC2034
     local -a optional_timers=(
         "nftban-watchdog.timer"         # System resource monitoring
         "nftban-unified-exporter.timer" # Unified export
@@ -585,9 +586,11 @@ nftban_health_check_timers() {
     fi
 
     # Store results
-    # shellcheck disable=SC2034  -- associative array consumed by parent health module
+    # associative array consumed by parent health module
+    # shellcheck disable=SC2034
     NFTBAN_HEALTH_RESULTS["timers"]=$status
-    # shellcheck disable=SC2034  -- associative array consumed by parent health module
+    # associative array consumed by parent health module
+    # shellcheck disable=SC2034
     NFTBAN_HEALTH_ISSUES["timers"]="${timer_issues[*]}"
 
     return $status

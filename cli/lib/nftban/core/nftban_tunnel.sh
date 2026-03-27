@@ -360,7 +360,8 @@ _tunnel_is_excluded_domain() {
     read -ra patterns <<< "$excludes"
     for pattern in "${patterns[@]}"; do
         pattern=$(echo "$pattern" | xargs)  # trim whitespace
-        # shellcheck disable=SC2254  -- $pattern intentionally unquoted for glob matching
+        # $pattern intentionally unquoted for glob matching
+        # shellcheck disable=SC2254
         case "$domain" in
             $pattern) return 0 ;;
         esac

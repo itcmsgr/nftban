@@ -18,7 +18,8 @@ IFS=$'\n\t'
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
-# shellcheck disable=SC1091  -- dynamic config path resolved at runtime
+# dynamic config path resolved at runtime
+# shellcheck disable=SC1091
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null || true
 

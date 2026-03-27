@@ -311,7 +311,8 @@ nftban_polkit_rules() {
             for dir in "${rule_dirs[@]}"; do
                 if [[ -d "$dir" ]]; then
                     echo "Directory: $dir"
-                    # shellcheck disable=SC2010  -- ls piped to grep for display only, not parsed
+                    # ls piped to grep for display only, not parsed
+                    # shellcheck disable=SC2010
                     ls -la "$dir" 2>/dev/null | grep -E 'nftban|^total' | sed 's/^/  /'
                     echo ""
                 fi
