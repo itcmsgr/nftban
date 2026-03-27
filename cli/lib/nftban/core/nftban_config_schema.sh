@@ -457,6 +457,7 @@ nftban_config_validate_value() {
 
     # Type validation (reserved for future type checking)
     local prop_type
+    # reserved for future type-checking validation
     # shellcheck disable=SC2034
     prop_type=$(echo "$prop_def" | jq -r '.type // "string"' || echo "string")
 

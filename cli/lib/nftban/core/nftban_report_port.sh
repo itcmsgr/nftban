@@ -8,7 +8,7 @@
 # meta:name="nftban_report_port"
 # meta:type="core"
 # meta:header="Port Report Core"
-# meta:version="1.39.0"
+# meta:version="1.45.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Scans listening services and analyzes nftables firewall status per port"
@@ -782,11 +782,30 @@ nftban_port_render_json() {
 
     json_ports+="]"
 
+    # Build per-IP access rules JSON
+    local per_ip_json="["
+    local per_ip_first=true
+    local per_ip_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/access.d/port_allow.conf"
+    if [[ -f "$per_ip_config" ]] && [[ -s "$per_ip_config" ]]; then
+        while IFS='|' read -r pa_port pa_ip pa_proto pa_timeout pa_comment pa_date; do
+            [[ -z "$pa_port" || "$pa_port" == "#"* ]] && continue
+            if [[ "$per_ip_first" == "true" ]]; then
+                per_ip_first=false
+            else
+                per_ip_json+=","
+            fi
+            pa_comment="${pa_comment//\"/\\\"}"
+            per_ip_json+="{\"port\":${pa_port},\"ip\":\"${pa_ip}\",\"protocol\":\"${pa_proto}\",\"timeout\":${pa_timeout:-0},\"comment\":\"${pa_comment}\",\"added\":\"${pa_date}\"}"
+        done < "$per_ip_config"
+    fi
+    per_ip_json+="]"
+
     # Output JSON
     echo "{"
     echo "  \"timestamp\":\"$(date --iso-8601=seconds)\","
     echo "  \"total\":$(echo "$json_ports" | { grep -o '{' || true; } | wc -l),"
-    echo "  \"ports\":$json_ports"
+    echo "  \"ports\":$json_ports,"
+    echo "  \"per_ip_access\":$per_ip_json"
     echo "}"
 
     return 0
@@ -1116,6 +1135,63 @@ nftban_port_render_section_outbound() {
     echo ""
 }
 
+nftban_port_render_section_per_ip_access() {
+    # Section 4: Per-IP Access Rules (v1.45.0)
+    # Shows per-IP port access rules from port_allow.conf
+
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/access.d/port_allow.conf"
+
+    echo ""
+    echo "┌──────────────────────────────────────────────────────────────────────────────────┐"
+    echo "│  SECTION 4: PER-IP ACCESS RULES                                                  │"
+    echo "│  Per-IP port access grants (nftban port allow)                                   │"
+    echo "└──────────────────────────────────────────────────────────────────────────────────┘"
+    echo ""
+
+    if [[ ! -f "$config_file" ]] || [[ ! -s "$config_file" ]]; then
+        echo "  (No per-IP port access rules configured)"
+        echo ""
+        echo "  Add rules with: nftban port allow add <port> from <ip>"
+        echo ""
+        return 0
+    fi
+
+    printf "%-7s %-8s %-40s %-12s %-24s %s\n" \
+        "PORT" "PROTO" "IP" "EXPIRES" "ADDED" "COMMENT"
+    echo "──────────────────────────────────────────────────────────────────────────────────"
+
+    local count=0
+    while IFS='|' read -r port ip proto timeout comment date; do
+        [[ -z "$port" || "$port" == "#"* ]] && continue
+
+        local expires="permanent"
+        if [[ "${timeout:-0}" -gt 0 ]]; then
+            # Convert seconds to human-readable
+            if [[ "$timeout" -ge 86400 ]]; then
+                expires="$((timeout / 86400))d"
+            elif [[ "$timeout" -ge 3600 ]]; then
+                expires="$((timeout / 3600))h"
+            elif [[ "$timeout" -ge 60 ]]; then
+                expires="$((timeout / 60))m"
+            else
+                expires="${timeout}s"
+            fi
+        fi
+
+        # Truncate date to just date portion if ISO format
+        local short_date="${date%%T*}"
+
+        printf "%-7s %-8s %-40s %-12s %-24s %s\n" \
+            "$port" "${proto^^}" "$ip" "$expires" "${short_date:-unknown}" "${comment:--}"
+
+        count=$((count + 1))
+    done < "$config_file"
+
+    echo ""
+    echo "Total per-IP rules: $count"
+    echo ""
+}
+
 nftban_port_render_table() {
     # Render port report as terminal table or JSON
     # Uses: NFTBAN_PORT_OUTPUT_FORMAT, NFTBAN_PORT_DETAILED, NFTBAN_PORT_FILTER_PORTS, NFTBAN_PORT_SECTION
@@ -1151,6 +1227,7 @@ nftban_port_render_table() {
                 nftban_port_render_section_listening
                 nftban_port_render_section_inbound
                 nftban_port_render_section_outbound
+                nftban_port_render_section_per_ip_access
                 ;;
         esac
 

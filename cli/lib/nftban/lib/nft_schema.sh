@@ -133,6 +133,7 @@ declare -g -A NFTBAN_IPV4_CHAINS=(
 # These chains MAY exist when protection features are enabled
 # If present, they MUST be called via "jump" from input chain AFTER ct state established
 # Helper chains - reserved for nftables schema validation
+# associative array consumed by schema validation modules
 # shellcheck disable=SC2034
 declare -g -A NFTBAN_IPV4_HELPER_CHAINS=(
     ["portscan_detection"]="optional|Port scan detection logging"
@@ -217,12 +218,14 @@ declare -g -A NFTBAN_IPV6_HELPER_CHAINS=(
 # when botguard enable applies rules before sets exist.
 # =============================================================================
 
+# associative array reserved for future module-specific sets
 # shellcheck disable=SC2034
 declare -g -A NFTBAN_IPV4_MODULE_SETS=(
     # Currently empty — botguard sets moved to required sets in v1.21.4
     ["_placeholder"]="none|none|Placeholder for future module sets"
 )
 
+# associative array reserved for future module-specific sets
 # shellcheck disable=SC2034
 declare -g -A NFTBAN_IPV6_MODULE_SETS=(
     # Currently empty — botguard sets moved to required sets in v1.21.4

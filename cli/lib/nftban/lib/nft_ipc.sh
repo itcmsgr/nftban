@@ -38,6 +38,7 @@ _nft_ipc_validate_ipv4() {
     [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
     # Check each octet is 0-255
     local IFS='.'
+    # intentional word-split on IFS='.' for octet parsing
     # shellcheck disable=SC2206
     local -a octets=($ip)
     for octet in "${octets[@]}"; do
@@ -459,6 +460,7 @@ nft_emergency_ban() {
     fi
 
     # C7 fix: $table contains space (e.g. "ip nftban"), must not be quoted as single arg
+    # $table must word-split into "ip nftban" for nft syntax
     # shellcheck disable=SC2086
     nft add element $table "$set" "$element"
 }

@@ -139,6 +139,7 @@ nftban_config_load() {
         nftban_config_parse_ini "$file"
     else
         # Bash format - source it
+        # config file path determined by format detection
         # shellcheck disable=SC1090
         source "$file" || true
     fi

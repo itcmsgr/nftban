@@ -48,7 +48,7 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # meta:name="cmd_port"
 # meta:type="cli"
 # meta:header="Port CLI Command"
-# meta:version="1.43.0"
+# meta:version="1.45.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
