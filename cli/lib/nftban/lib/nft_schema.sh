@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_schema" meta:type="lib" meta:version="1.41.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:name="nft_schema" meta:type="lib" meta:version="1.43.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Canonical nftables schema to prevent table structure drift"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -1062,7 +1062,7 @@ nftban_nft_validate_named_counters() {
 
     local warnings=0
 
-    # Expected named counters per family (v1.41.0)
+    # Expected named counters per family (v1.42.0 — 16 common + 1 family-specific)
     local -a expected_counters=(
         "input_invalid_drop"
         "input_whitelist_accept"
@@ -1077,6 +1077,9 @@ nftban_nft_validate_named_counters() {
         "output_established_accept"
         "output_tcp_accept"
         "output_udp_accept"
+        "output_egress_audit"
+        "total_input_accept"
+        "total_input_drop"
     )
 
     for family in ip ip6; do

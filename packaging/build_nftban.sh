@@ -2683,8 +2683,14 @@ build_deb() {
     done
     log_info "Installed ${sbin_count} sbin helper scripts"
 
-    # Copy VERSION file
-    install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
+    # Copy VERSION file (WARN-005: ensure it's non-empty)
+    if [[ -s "${PROJECT_ROOT}/VERSION" ]]; then
+        install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
+    else
+        echo "${PKG_VERSION}" > "${deb_root}/usr/lib/nftban/VERSION"
+        chmod 0644 "${deb_root}/usr/lib/nftban/VERSION"
+        log_warn "VERSION file was empty, wrote PKG_VERSION=${PKG_VERSION}"
+    fi
 
     # Write BUILD_TARGET from the build container's OS (distro detection at install time)
     if [[ -f /etc/os-release ]]; then

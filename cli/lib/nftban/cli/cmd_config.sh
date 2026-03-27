@@ -9,7 +9,7 @@
 # meta:name="cmd_config"
 # meta:type="cli"
 # meta:header="Configuration CLI Handler"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -299,6 +299,19 @@ nftban_cmd_config_show() {
             to_entries | sort_by(.key) | .[] |
             "  \(.key)\("                                   "[0:35-(.key|length)]) = \(.value)"
         '
+
+        # v1.43.0 P3-35: Divergence explanation footer
+        echo ""
+        echo "────────────────────────────────────────────────────────"
+        echo "NOTE: Config values above reflect files on disk."
+        echo "The running nftables ruleset may differ if:"
+        echo "  1. Config was changed but daemon not reloaded"
+        echo "  2. Manual nft commands were run outside NFTBan"
+        echo "  3. A health fix or rebuild is in progress"
+        echo ""
+        echo "To compare:  nftban config diff"
+        echo "To reload:   nftban config reload"
+        echo "To verify:   nftban validate"
     fi
 }
 

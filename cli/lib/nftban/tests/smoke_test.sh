@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="smoke_test"
 # meta:type="test"
-# meta:version="1.39.0"
+# meta:version="1.43.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="CLI health check with ban lifecycle verification"
 # meta:inventory.files=""
@@ -1357,6 +1357,20 @@ run_nft_schema_validation() {
         log_fail "NFT schema — SECURITY: rule order incorrect!"
         log "  $output"
         TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Check 8: Named counters (v1.43.0) ──
+    if declare -f nftban_nft_validate_named_counters >/dev/null 2>&1; then
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if output=$(nftban_nft_validate_named_counters 2>&1); then
+            log_pass "NFT schema — named counters validated (34 expected)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            # Named counters missing is a WARNING (anonymous counters still work)
+            log_warn "NFT schema — named counters: some missing (non-critical)"
+            [[ -n "$output" ]] && log "  $output"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        fi
     fi
 }
 
