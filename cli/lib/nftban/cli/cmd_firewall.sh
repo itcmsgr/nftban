@@ -1040,7 +1040,8 @@ firewall_rebuild() {
     # Step 4: Remove rogue tables (keep only NFTBan tables)
     [[ "$quiet" == "false" ]] && echo "  [4/12] Removing rogue tables..."
     # v1.48.0: Include SYNPROXY raw tables in allowed list
-    local ALLOWED_TABLES_PATTERN="^table (ip|ip6) (nftban|raw)$|^table inet (filter|nftban)$"
+    # v1.51.1: Include emergency install table (postinst lockout prevention)
+    local ALLOWED_TABLES_PATTERN="^table (ip|ip6) (nftban|raw)$|^table inet (filter|nftban|nftban_install_emergency)$"
     local ALL_TABLES
     ALL_TABLES=$(nft list tables 2>/dev/null || true)
 

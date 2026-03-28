@@ -950,7 +950,7 @@ readonly -a _NFTBAN_KNOWN_GHOST_TABLES=(
     "ip6 security"
     "inet firewalld"
     "inet filter"
-    "inet nftban_install_emergency"
+    # v1.51.1: nftban_install_emergency is NOT a ghost — it protects SSH during postinst
 )
 
 nftban_cleanup_ghost_tables() {

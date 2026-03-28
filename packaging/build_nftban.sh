@@ -1614,7 +1614,8 @@ if [ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]; then
 else
     # Fallback: inline cleanup if library not yet installed (fresh install)
     # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
-    for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter" "inet nftban_install_emergency"; do
+    # v1.51.1: NEVER delete nftban_install_emergency — it protects SSH during install
+    for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter"; do
         if nft list table \$ghost_table &>/dev/null 2>&1; then
             echo "[NFTBan]   Removing ghost table: \$ghost_table"
             nft delete table \$ghost_table 2>/dev/null || true
@@ -1746,6 +1747,34 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     INSTALLED_SCHEMA=\$(cat "\$SCHEMA_FILE" 2>/dev/null || echo "1.0")
 
     sleep 1
+
+    # v1.51.1: CRITICAL — ensure SSH port is in config BEFORE rebuild
+    # Without this, firewall rebuild loads base schema (port 22 only)
+    # and wipes custom SSH port → lockout on non-standard SSH servers
+    _POSTINST_SSH_PORT=\$(ss -tlnp 2>/dev/null | grep sshd | awk '{print \$4}' | sed 's/.*://' | head -1)
+    [[ -z "\$_POSTINST_SSH_PORT" ]] && _POSTINST_SSH_PORT=\$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print \$2}' | head -1 || true)
+    _POSTINST_SSH_PORT=\${_POSTINST_SSH_PORT:-22}
+    if [[ "\$_POSTINST_SSH_PORT" != "22" ]]; then
+        echo "[NFTBan] Custom SSH port \$_POSTINST_SSH_PORT detected — ensuring config inclusion"
+        _MAIN_LOCAL="/etc/nftban/nftban.conf.local"
+        # Add SSH port to TCP_PORTS_IN if not already there
+        _CURRENT_PORTS=\$(grep -E "^TCP_PORTS_IN=" "\$_MAIN_LOCAL" 2>/dev/null | cut -d= -f2 || true)
+        if [[ -z "\$_CURRENT_PORTS" ]]; then
+            _BASE_PORTS=\$(grep -E "^TCP_PORTS_IN=" /etc/nftban/nftban.conf 2>/dev/null | cut -d= -f2 || echo "22,80,443")
+            if ! echo ",\${_BASE_PORTS}," | grep -q ",\${_POSTINST_SSH_PORT},"; then
+                echo "TCP_PORTS_IN=\${_BASE_PORTS},\${_POSTINST_SSH_PORT}" >> "\$_MAIN_LOCAL"
+                echo "[NFTBan]   Added SSH port \$_POSTINST_SSH_PORT to TCP_PORTS_IN"
+            fi
+        elif ! echo ",\${_CURRENT_PORTS}," | grep -q ",\${_POSTINST_SSH_PORT},"; then
+            sed -i "s|^TCP_PORTS_IN=.*|TCP_PORTS_IN=\${_CURRENT_PORTS},\${_POSTINST_SSH_PORT}|" "\$_MAIN_LOCAL"
+            echo "[NFTBan]   Added SSH port \$_POSTINST_SSH_PORT to TCP_PORTS_IN"
+        fi
+        # Also set SSH_PORT config
+        if ! grep -q "^SSH_PORT=" "\$_MAIN_LOCAL" 2>/dev/null; then
+            echo "SSH_PORT=\$_POSTINST_SSH_PORT" >> "\$_MAIN_LOCAL"
+        fi
+    fi
+
     if [[ "\$INSTALLED_SCHEMA" != "\$CURRENT_SCHEMA" ]]; then
         echo "[NFTBan] Schema migration: \$INSTALLED_SCHEMA -> \$CURRENT_SCHEMA"
         echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
