@@ -1,0 +1,280 @@
+# =============================================================================
+# NFTBan - CI: Architecture Policy
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Enforce architecture invariants and code policy gates
+#
+# Checks:
+#   - nft write policy (single-writer via daemon)
+#   - Netlink import boundary (CLI must use IPC)
+#   - Public API surface guard (only pkg/ipc + pkg/version)
+#   - Suppression comment audit (//lint:ignore only, no //nolint:)
+#   - Import boundary guard (CLI cannot import nftbackend)
+#   - FHS spec generated files match committed versions
+#   - Distro config completeness (all .conf files valid)
+#   - Hardcoded path detector (paths should come from distro config)
+#   - systemd directive version guard (min systemd 249)
+#   - nft template placeholder guard (rendered config must be boot-safe)
+# =============================================================================
+
+name: Architecture Policy
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-arch-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-check:
+    name: Policy Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # =====================================================================
+      # EXISTING CHECKS
+      # =====================================================================
+
+      - name: Check nft write policy
+        run: ./scripts/ci/check-nft-writes.sh
+
+      - name: Check netlink import policy
+        run: |
+          echo "=== Checking netlink import architecture policy ==="
+          VIOLATIONS=0
+
+          echo "Checking cmd/nftban-core for forbidden netlink imports..."
+          if grep -r "github.com/google/nftables" cmd/nftban-core/ 2>/dev/null; then
+            echo "::error::cmd/nftban-core imports netlink directly — CLI must use IPC (pkg/ipc)"
+            VIOLATIONS=1
+          else
+            echo "✓ cmd/nftban-core: No direct netlink imports"
+          fi
+
+          echo ""
+          echo "Verifying daemon uses netlink (expected)..."
+          if grep -q "github.com/google/nftables" cmd/nftband/main.go 2>/dev/null || \
+             grep -q "nftbackend" cmd/nftband/main.go 2>/dev/null; then
+            echo "✓ cmd/nftband: Uses nftbackend (correct — daemon owns nft writes)"
+          fi
+
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ Netlink import policy: PASSED"
+
+      - name: Public API surface guard
+        run: |
+          echo "=== Checking public API boundary (pkg/) ==="
+          VIOLATIONS=0
+          for gofile in $(find pkg/ -name "*.go" -type f 2>/dev/null); do
+            dir=$(dirname "$gofile")
+            case "$dir" in
+              pkg/ipc|pkg/ipc/*|pkg/version|pkg/version/*) ;;
+              *)
+                echo "::error::$gofile is outside allowed pkg/ directories — move to internal/"
+                VIOLATIONS=1
+                ;;
+            esac
+          done
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ Public API surface: PASS (only pkg/ipc and pkg/version)"
+
+      - name: Suppression comment audit
+        run: |
+          echo "=== Auditing suppression comments ==="
+          NOSEC_COUNT=$(grep -r '#nosec' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          NOLINT_COUNT=$(grep -r '//nolint:' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          LINT_IGNORE_COUNT=$(grep -r '//lint:ignore' --include="*.go" . 2>/dev/null | wc -l || echo 0)
+          echo "  #nosec:        $NOSEC_COUNT"
+          echo "  //nolint::     $NOLINT_COUNT"
+          echo "  //lint:ignore: $LINT_IGNORE_COUNT"
+          echo ""
+          if [[ "$NOLINT_COUNT" -gt 0 ]]; then
+            echo "::error::Found $NOLINT_COUNT //nolint: directives — use //lint:ignore <CHECK> <reason>"
+            grep -rn '//nolint:' --include="*.go" . 2>/dev/null || true
+            exit 1
+          fi
+          echo "✓ Suppression audit: PASS"
+
+      - name: Import boundary guard
+        run: |
+          echo "=== Checking import boundaries ==="
+          if grep -r 'internal/nftbackend' cmd/nftban-core/ --include="*.go" 2>/dev/null; then
+            echo "::error::cmd/nftban-core/ imports internal/nftbackend — CLI must use pkg/ipc"
+            exit 1
+          fi
+          echo "✓ Import boundary: PASS (CLI does not import nftbackend)"
+
+      - name: FHS spec generated files check
+        run: |
+          echo "=== Verifying FHS spec generated files are up to date ==="
+          if ! ./build/generate-fhs-outputs.sh --check; then
+            echo ""
+            echo "::error::Generated FHS files are out of date — run: ./build/generate-fhs-outputs.sh"
+            exit 1
+          fi
+          echo "✓ FHS spec: PASS (generated files match YAML spec)"
+
+      # =====================================================================
+      # NEW CHECKS (v1.50.1 — Distribution Compatibility Audit)
+      # =====================================================================
+
+      - name: Distro config completeness
+        run: |
+          echo "=== Validating distribution config files ==="
+          ./cli/lib/nftban/tests/validate_distro_configs.sh etc/nftban/distros/
+
+      - name: Hardcoded path detector
+        run: |
+          echo "=== Checking for hardcoded binary paths ==="
+          #
+          # Shell scripts should use distro config variables, not hardcoded paths.
+          # Allowed exceptions:
+          #   - etc/nftban/distros/*.conf (distro configs define the paths)
+          #   - cli/lib/nftban/tests/ (test fixtures)
+          #   - cli/lib/nftban/data/ (FHS spec, schemas)
+          #   - install/ (install scripts target known paths)
+          #   - packaging/ (RPM/DEB specs target known paths)
+          #   - .github/ (CI scripts)
+          #
+          VIOLATIONS=0
+          TMPFILE=$(mktemp)
+          trap 'rm -f "$TMPFILE"' EXIT
+
+          # Detect hardcoded /var/log/secure or /var/log/auth.log in runtime code
+          # These differ between RHEL (/var/log/secure) and Debian (/var/log/auth.log)
+          grep -rn '/var/log/secure\|/var/log/auth\.log' \
+              --include="*.sh" \
+              cli/lib/nftban/core/ \
+              cli/lib/nftban/cli/ \
+              cli/lib/nftban/lib/ \
+              cli/lib/nftban/setup/ \
+              2>/dev/null | \
+              grep -v '#.*hardcoded\|DISTRO_PATHS\|fallback\|default\|example\|# ' | \
+              grep -v 'nftban_distro_config\.sh' \
+              >> "$TMPFILE" || true
+
+          COUNT=$(wc -l < "$TMPFILE" | tr -d ' ')
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "⚠ Found $COUNT hardcoded auth log paths (should use DISTRO_PATHS[auth_log]):"
+            cat "$TMPFILE"
+            echo ""
+            echo "NOTE: Reporting as warning — fix in future PR"
+          else
+            echo "✓ No hardcoded auth log paths in runtime code"
+          fi
+
+          # Detect hardcoded /sbin/nft (Debian legacy path) — should always be /usr/sbin/nft or variable
+          grep -rn '"/sbin/nft"\|/sbin/nft ' \
+              --include="*.sh" --include="*.go" \
+              cli/lib/nftban/core/ \
+              cli/lib/nftban/cli/ \
+              cli/lib/nftban/lib/ \
+              cmd/ internal/ \
+              2>/dev/null | \
+              grep -v '#.*\|//.*\|test\|example' \
+              > "$TMPFILE" || true
+
+          COUNT=$(wc -l < "$TMPFILE" | tr -d ' ')
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo ""
+            echo "::error::Found $COUNT references to /sbin/nft (legacy path) — use /usr/sbin/nft or distro config"
+            cat "$TMPFILE"
+            VIOLATIONS=1
+          else
+            echo "✓ No legacy /sbin/nft paths"
+          fi
+
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            exit 1
+          fi
+          echo ""
+          echo "✓ Hardcoded path check: PASS"
+
+      - name: systemd directive version guard
+        run: |
+          echo "=== Checking systemd directives against minimum version (249) ==="
+          #
+          # NFTBan supports systemd 249+ (EL9 baseline).
+          # Flag directives that require newer systemd versions.
+          #
+          VIOLATIONS=0
+
+          # Directives requiring systemd >= 250+
+          FORBIDDEN_DIRECTIVES=(
+            "SetCredential="         # 250
+            "LoadCredential="        # 250
+            "LoadCredentialEncrypted=" # 250
+            "RuntimeRandomizedExtraSec=" # 251
+            "ExecSearchPath="        # 252
+            "OpenFile="              # 253
+            "MemoryZSwapMax="        # 254
+            "CoredumpReceive="       # 255
+            "ExitType="              # 256
+            "SurviveFinalKillSignal=" # 256
+          )
+
+          for directive in "${FORBIDDEN_DIRECTIVES[@]}"; do
+            name="${directive%=}"
+            if grep -rn "$directive" install/systemd/ 2>/dev/null | grep -v '^#' | grep -v '#.*'; then
+              echo "::error::Found $name in systemd units — requires systemd > 249 (min supported)"
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+          done
+
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ All systemd directives compatible with systemd 249+ (EL9 baseline)"
+
+      - name: nft template placeholder guard
+        run: |
+          echo "=== Verifying boot-safety of shipped nft config ==="
+          #
+          # Invariant: install/nftables/nftables.conf must NEVER contain placeholders.
+          # It is included by systemd nftables.service at boot — raw placeholders = no firewall.
+          #
+          # The template (nftables.conf.tpl) SHOULD have placeholders.
+          #
+
+          # 1. Rendered config must be placeholder-free
+          if grep -qE '__[A-Z_]{3,}__' install/nftables/nftables.conf 2>/dev/null; then
+            echo "::error::install/nftables/nftables.conf contains placeholders — BOOT UNSAFE!"
+            echo "This file is loaded by nftables.service at boot. Placeholders cause nft syntax errors."
+            echo "Render with safe defaults: __SSH_PORT__→22, __CT_LIMIT_SSH__→15, etc."
+            grep -n '__[A-Z_]\+__' install/nftables/nftables.conf
+            exit 1
+          fi
+          echo "✓ Rendered config (nftables.conf) is placeholder-free"
+
+          # 2. Template must HAVE placeholders (sanity check)
+          if [[ -f install/nftables/nftables.conf.tpl ]]; then
+            if ! grep -qE '__[A-Z_]{3,}__' install/nftables/nftables.conf.tpl; then
+              echo "::error::install/nftables/nftables.conf.tpl has NO placeholders — template is broken"
+              exit 1
+            fi
+            echo "✓ Template (nftables.conf.tpl) contains placeholders"
+          fi
+
+          # 3. Safe config must not have CT_LIMIT placeholders
+          if [[ -f install/nftables/nftables-safe.conf ]]; then
+            if grep -qE '__CT_LIMIT_[A-Z]+__' install/nftables/nftables-safe.conf; then
+              echo "::error::nftables-safe.conf contains CT_LIMIT placeholders — must use hardcoded defaults"
+              exit 1
+            fi
+            echo "✓ Safe config has no CT_LIMIT placeholders"
+          fi
+
+          echo ""
+          echo "✓ Boot-safety check: PASS"
