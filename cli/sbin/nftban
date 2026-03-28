@@ -900,8 +900,8 @@ main() {
             ;;
 
         hello|"")
-            # Show banner (already dynamic - shows hostname, kernel, nftables stats)
-            nftban_render_banner
+            # v1.52.0: Use unified banner (same as all other commands)
+            nftban_banner_unified "hello" 2>/dev/null || nftban_banner "hello" 2>/dev/null || true
 
             echo ""
 
