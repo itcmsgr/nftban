@@ -489,6 +489,12 @@ case "$1" in
             log_info "  Created group: nftban-auditor"
         fi
 
+        # Create nftban-panel group (panel integration, limited reload access via polkit)
+        if ! getent group nftban-panel > /dev/null 2>&1; then
+            addgroup --system nftban-panel
+            log_info "  Created group: nftban-panel"
+        fi
+
         # Create suricata group if not exists (needed for nftban-suricata-update.service)
         if ! getent group suricata > /dev/null 2>&1; then
             addgroup --system suricata
