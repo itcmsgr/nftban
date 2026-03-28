@@ -1586,7 +1586,7 @@ echo "[NFTBan] Syncing whitelist files to nftables..."
 SYNC_SUCCESS=0
 for i in 1 2 3; do
     sleep 1
-    if nftban sync >/dev/null 2>&1; then
+    if timeout 15s nftban sync >/dev/null 2>&1; then
         SYNC_SUCCESS=1
         echo "[NFTBan]   Whitelist sync completed successfully"
         break
@@ -1597,19 +1597,30 @@ if [ "\$SYNC_SUCCESS" -eq 0 ]; then
 fi
 
 # =============================================================================
-# PREFLIGHT: Lockout Prevention (Detect-Only, Fail-Safe)
+# PREFLIGHT: Ghost Table Cleanup + Lockout Prevention
 # =============================================================================
-# CRITICAL: Never modify third-party firewall config
-# v1.48.0: Clean ghost nftables tables before preflight validation.
-# Ghost tables from CSF/firewalld/iptables-nft may exist even when services
-# are already disabled (e.g., CSF was disabled before NFTBan install).
+# v1.50.1: Use centralized ghost table cleanup (idempotent, live-state-based).
+# Handles all iptables-nft/firewalld/CSF ghosts from canonical list.
+# NOTE: ip raw / ip6 raw are NFTBan-owned (SYNPROXY) — never removed.
 echo "[NFTBan] Cleaning ghost nftables tables before preflight..."
-for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "ip raw" "inet firewalld" "inet filter"; do
-    if nft list table \$ghost_table &>/dev/null 2>&1; then
-        echo "[NFTBan]   Removing ghost table: \$ghost_table"
-        nft delete table \$ghost_table 2>/dev/null || true
+if [ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]; then
+    source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
+    if type nftban_cleanup_ghost_tables >/dev/null 2>&1; then
+        nftban_cleanup_ghost_tables 2>/dev/null || true
+        if type nftban_validate_hook_authority >/dev/null 2>&1; then
+            nftban_validate_hook_authority 2>/dev/null || true
+        fi
     fi
-done
+else
+    # Fallback: inline cleanup if library not yet installed (fresh install)
+    # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
+    for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter" "inet nftban_install_emergency"; do
+        if nft list table \$ghost_table &>/dev/null 2>&1; then
+            echo "[NFTBan]   Removing ghost table: \$ghost_table"
+            nft delete table \$ghost_table 2>/dev/null || true
+        fi
+    done
+fi
 
 # CRITICAL: Never start nftables if unsafe
 # CRITICAL: Always preserve SSH access
@@ -1738,34 +1749,34 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     if [[ "\$INSTALLED_SCHEMA" != "\$CURRENT_SCHEMA" ]]; then
         echo "[NFTBan] Schema migration: \$INSTALLED_SCHEMA -> \$CURRENT_SCHEMA"
         echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
-        if nftban firewall rebuild >/dev/null 2>&1; then
+        if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
             echo "\$CURRENT_SCHEMA" > "\$SCHEMA_FILE"
             # Sync configs to load all values (ports, whitelist, blacklist)
-            nftban sync >/dev/null 2>&1 || true
+            timeout 15s nftban sync >/dev/null 2>&1 || true
             echo "[NFTBan] Schema migration complete."
         else
             echo "[NFTBan WARN] Firewall rebuild failed - run manually: nftban firewall rebuild"
         fi
     else
         # Schema unchanged - just sync (preserves temp bans)
-        nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
+        timeout 15s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
     fi
 
     # v1.18.7: Auto-detect and protect services
     echo "[NFTBan] Detecting services..."
 
     # Detect panel and enable ports
-    DETECTED_PANEL=\$(nftban panel detect 2>/dev/null || echo "none")
+    DETECTED_PANEL=\$(timeout 10s nftban panel detect 2>/dev/null || echo "none")
     if [[ "\$DETECTED_PANEL" != "none" && -n "\$DETECTED_PANEL" ]]; then
         echo "[NFTBan] Panel detected: \$DETECTED_PANEL - enabling ports..."
-        nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
+        timeout 30s nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
     fi
 
     # v1.23.0: Login monitoring handled by daemon loginmon module
-    nftban login enable >/dev/null 2>&1 || true
+    timeout 30s nftban login enable >/dev/null 2>&1 || true
 
     # Show detected services
-    DETECTED_SERVICES=\$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
+    DETECTED_SERVICES=\$(timeout 10s nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
     echo "[NFTBan] Login protection enabled for:\$DETECTED_SERVICES"
 
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."

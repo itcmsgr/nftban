@@ -381,11 +381,16 @@ case "$1" in
                     log_info "  ✓ iptables service disabled"
                 fi
 
-                # v1.48.0: Clean ghost tables left by disabled services BEFORE flush
-                # CSF/firewalld/iptables leave shadow nft tables even after stop
+                # v1.50.1: Clean ghost tables left by disabled services BEFORE flush
+                # CSF/firewalld/iptables-nft leave shadow nft tables even after stop.
+                # NOTE: ip raw / ip6 raw are NFTBan-owned (SYNPROXY) — never removed.
+                # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
                 log_info "  Cleaning ghost nftables tables from disabled services..."
-                for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet firewalld" "inet filter"; do
-                    nft delete table $ghost_table 2>/dev/null || true
+                for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter" "inet nftban_install_emergency"; do
+                    if nft list table $ghost_table &>/dev/null 2>&1; then
+                        log_info "    Removed ghost table: $ghost_table"
+                        nft delete table $ghost_table 2>/dev/null || true
+                    fi
                 done
 
                 # =====================================================================
@@ -723,18 +728,23 @@ case "$1" in
         # =====================================================================
         # STEP 7.4: Cleanup ghost nftables tables before preflight
         # =====================================================================
-        # v1.48.0: Use centralized cleanup (idempotent, live-state-based).
-        # Replaces hardcoded table list — handles all iptables-nft/firewalld/CSF ghosts.
+        # v1.50.1: Use centralized cleanup (idempotent, live-state-based).
+        # Handles all iptables-nft/firewalld/CSF ghosts from canonical list.
+        # NOTE: ip raw / ip6 raw are NFTBan-owned (SYNPROXY) — never removed.
         log_info "Cleaning ghost nftables tables..."
         if [[ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]]; then
             # shellcheck source=/dev/null
             source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
             if declare -f nftban_cleanup_ghost_tables &>/dev/null; then
                 nftban_cleanup_ghost_tables 2>/dev/null || true
+                if declare -f nftban_validate_hook_authority &>/dev/null; then
+                    nftban_validate_hook_authority 2>/dev/null || true
+                fi
             fi
         else
-            # Fallback: inline cleanup if library not yet installed
-            for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "inet filter" "inet firewalld" "inet nftban_install_emergency"; do
+            # Fallback: inline cleanup if library not yet installed (fresh install)
+            # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
+            for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter" "inet nftban_install_emergency"; do
                 if nft list table $rogue_table &>/dev/null 2>&1; then
                     log_info "  Removing ghost table: $rogue_table"
                     nft delete table $rogue_table 2>/dev/null || true
@@ -757,7 +767,7 @@ case "$1" in
         # Use consolidated command: nftban firewall validate --strict
         # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
         if command -v nftban >/dev/null 2>&1; then
-            PREFLIGHT_OUTPUT=$(nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
+            PREFLIGHT_OUTPUT=$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
 
             if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
                 PREFLIGHT_PASSED=0
@@ -955,11 +965,11 @@ case "$1" in
         # STEP 10: Sync whitelist.d files to nftables sets
         # =====================================================================
         log_info "Syncing whitelist files to nftables..."
-        if nftban sync --quick >/dev/null 2>&1; then
+        if timeout 15s nftban sync --quick >/dev/null 2>&1; then
             log_info "  Whitelist sync completed"
         else
             sleep 0.5
-            nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
+            timeout 15s nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
         fi
 
         # =====================================================================
@@ -1047,17 +1057,17 @@ case "$1" in
             if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
                 log_info "Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
                 log_info "Rebuilding firewall (temp bans will be cleared)..."
-                if nftban firewall rebuild >/dev/null 2>&1; then
+                if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
                     echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
                     # Sync configs to load all values (ports, whitelist, blacklist)
-                    nftban sync >/dev/null 2>&1 || true
+                    timeout 15s nftban sync >/dev/null 2>&1 || true
                     log_info "Schema migration complete."
                 else
                     log_warn "Firewall rebuild failed - run manually: nftban firewall rebuild"
                 fi
             else
                 # Schema unchanged - just sync (preserves temp bans)
-                nftban sync >/dev/null 2>&1 || log_warn "Sync failed (non-critical)"
+                timeout 15s nftban sync >/dev/null 2>&1 || log_warn "Sync failed (non-critical)"
             fi
         else
             log_warn ""
@@ -1092,7 +1102,7 @@ case "$1" in
         # =====================================================================
         log_info "Enabling login monitoring (SSH/FTP brute-force protection)..."
         if command -v nftban >/dev/null 2>&1; then
-            if nftban login enable 2>/dev/null; then
+            if timeout 30s nftban login enable 2>/dev/null; then
                 log_info "  Login monitoring enabled successfully"
             else
                 log_warn "  Login monitoring enable failed (run manually: nftban login enable)"

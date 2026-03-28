@@ -1054,13 +1054,17 @@ nftban_watchdog_cmd_trends() {
         # Formatted output
         echo "Recent Watchdog Trends (last $last_count entries)"
         echo "═══════════════════════════════════════════════════════════════"
-        printf "%-25s  %-8s  %5s  %5s  %5s  %7s\n" "TIMESTAMP" "MODE" "CPU%" "MEM%" "IO%" "ACTIONS"
+        echo "STATUS: OK=healthy  WARN=degraded  CRIT=critical"
+        echo ""
+        printf "%-25s  %-8s  %5s  %5s  %5s  %7s\n" "TIMESTAMP" "STATUS" "CPU%" "MEM%" "IO%" "ACTIONS"
         echo "───────────────────────────────────────────────────────────────"
 
         if command -v jq &>/dev/null; then
             tail -n "$last_count" "$trends_file" | jq -r '
-                "\(.ts | split("T") | .[0] + " " + (.[1] | split("+")[0] | split(".")[0]))  \(.mode | if . == "normal" then "OK" elif . == "degraded" then "WARN" else "CRIT" end | . + ("        "[0:(8-length)]))  \(.cpu | tostring | . + ("     "[0:(5-length)]))  \(.mem | tostring | . + ("     "[0:(5-length)]))  \(.io | tostring | . + ("     "[0:(5-length)]))  \(.actions)"
-            ' 2>/dev/null || {
+                [(.ts | split("T") | .[0] + " " + (.[1] | split("+")[0] | split(".")[0])),
+                 ({"normal":"OK","degraded":"WARN","critical":"CRIT"}[.mode] // .mode),
+                 .cpu, .mem, .io, .actions] | @csv
+            ' 2>/dev/null | awk -F',' '{gsub(/"/, ""); printf "%-25s  %-8s  %5s  %5s  %5s  %7s\n", $1, $2, $3, $4, $5, $6}' || {
                 echo "(jq parse error - showing raw data)"
                 tail -n "$last_count" "$trends_file"
             }

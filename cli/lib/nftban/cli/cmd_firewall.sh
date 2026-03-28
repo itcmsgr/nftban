@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.50.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -90,10 +90,41 @@ _firewall_substitute_placeholders() {
     # v1.49.0 FIX-F: CT limits unified with DDoS module config
     local input="$1" output="$2"
 
-    # SSH port
-    local _ssh_port=22
-    local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-    [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
+    # SSH port detection — live nft → sshd_config → ss → state file → default 22
+    # Priority: live firewall (truth) → config → runtime → saved state
+    local _ssh_port=""
+    # 1. Live nft set (the running firewall IS the truth)
+    if command -v nft &>/dev/null; then
+        local _live_ports
+        _live_ports=$(nft list set ip nftban tcp_ports_in 2>/dev/null | grep -oP 'elements\s*=\s*\{\s*\K[^}]+' | tr ',' '\n' | tr -d ' ') || true
+        while IFS= read -r _p; do
+            [[ "$_p" =~ ^[0-9]+$ ]] || continue
+            [[ "$_p" == "80" || "$_p" == "443" ]] && continue
+            _ssh_port="$_p"
+            break
+        done <<< "${_live_ports:-}"
+    fi
+    # 2. sshd_config (if nft set empty or only has 80/443)
+    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
+        _ssh_port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' /etc/ssh/sshd_config 2>/dev/null) || true
+        if [[ -z "$_ssh_port" ]]; then
+            for _inc in /etc/ssh/sshd_config.d/*.conf; do
+                [[ -f "$_inc" ]] || continue
+                _ssh_port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' "$_inc" 2>/dev/null) || true
+                [[ -n "$_ssh_port" ]] && break
+            done
+        fi
+    fi
+    # 3. ss (what sshd is actually listening on)
+    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
+        _ssh_port=$(ss -tlnp 2>/dev/null | grep -oP '"sshd".*:(\K[0-9]+)' | head -1) || true
+    fi
+    # 4. State file
+    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
+        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
+    fi
+    # 5. Fallback to port 22
     [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
 
     # CT limits — use DDoS config when available, else sensible defaults
@@ -816,6 +847,44 @@ firewall_reload() {
         }
     fi
 
+    # Step 4b (v1.50.1): Re-apply portscan if enabled — reload destroys jump rules
+    local _portscan_enabled="false"
+    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
+    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
+        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    if [[ "$_portscan_enabled" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying portscan detection rules..."
+        nftban portscan enable --quiet 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply portscan rules. Run: nftban portscan enable"
+        }
+    fi
+
+    # Step 4c (v1.50.1): Re-apply botguard if enabled — reload destroys nft rules
+    local _botguard_enabled="false"
+    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
+    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
+        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    if [[ "$_botguard_enabled" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying BotGuard rules..."
+        nftban botguard enable --quiet 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard enable"
+        }
+    fi
+
+    # Step 5 (v1.50.1): Re-sync feeds — reload destroys sets (delete table + recreate)
+    [[ "$quiet" == "false" ]] && echo "Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null || true
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+    fi
+
+    # Step 6 (v1.50.1): Re-sync geoban
+    [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
+    timeout 120s nftban geoban sync 2>/dev/null || true
+
     if [[ "$quiet" == "false" ]]; then
         echo ""
         echo "═══════════════════════════════════════════════════════"
@@ -873,7 +942,7 @@ firewall_rebuild() {
     timestamp=$(date +%Y%m%d_%H%M%S)
 
     # v2.1: Only whitelist + blacklist sets exist (feeds/geoban merged into blacklist)
-    [[ "$quiet" == "false" ]] && echo "  [1/7] Backing up current sets..."
+    [[ "$quiet" == "false" ]] && echo "  [1/12] Backing up current sets..."
     timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
@@ -923,7 +992,7 @@ firewall_rebuild() {
     fi
 
     # Render: substitute placeholders → temp file → validate → atomic write
-    [[ "$quiet" == "false" ]] && echo "  [2/7] Rendering schema from template..."
+    [[ "$quiet" == "false" ]] && echo "  [2/12] Rendering schema from template..."
     local load_conf="$nftban_conf"
 
     if [[ -n "$source_file" ]]; then
@@ -935,7 +1004,7 @@ firewall_rebuild() {
         fi
 
         # Validate rendered config BEFORE writing to live config
-        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating new schema (dry-run)..."
+        [[ "$quiet" == "false" ]] && echo "  [3/12] Validating new schema (dry-run)..."
         local validate_output
         if ! validate_output=$(nft -c -f "$tmp_conf" 2>&1); then
             echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
@@ -955,7 +1024,7 @@ firewall_rebuild() {
         load_conf="$nftban_conf"
     else
         # No template, no placeholders — validate live config directly
-        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating schema (dry-run)..."
+        [[ "$quiet" == "false" ]] && echo "  [3/12] Validating schema (dry-run)..."
         local validate_output
         if ! validate_output=$(nft -c -f "$load_conf" 2>&1); then
             echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
@@ -969,7 +1038,7 @@ firewall_rebuild() {
     fi
 
     # Step 4: Remove rogue tables (keep only NFTBan tables)
-    [[ "$quiet" == "false" ]] && echo "  [4/7] Removing rogue tables..."
+    [[ "$quiet" == "false" ]] && echo "  [4/12] Removing rogue tables..."
     # v1.48.0: Include SYNPROXY raw tables in allowed list
     local ALLOWED_TABLES_PATTERN="^table (ip|ip6) (nftban|raw)$|^table inet (filter|nftban)$"
     local ALL_TABLES
@@ -986,7 +1055,7 @@ firewall_rebuild() {
     done <<< "$ALL_TABLES"
 
     # Step 5: Flush + load (safe — we validated above)
-    [[ "$quiet" == "false" ]] && echo "  [5/7] Flushing and loading new schema..."
+    [[ "$quiet" == "false" ]] && echo "  [5/12] Flushing and loading new schema..."
     nft flush table ip nftban 2>/dev/null || true
     nft flush table ip6 nftban 2>/dev/null || true
 
@@ -997,11 +1066,11 @@ firewall_rebuild() {
     fi
 
     # Step 6: Re-sync system whitelist
-    [[ "$quiet" == "false" ]] && echo "  [6/7] Re-syncing system whitelist..."
+    [[ "$quiet" == "false" ]] && echo "  [6/12] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
     # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
-    [[ "$quiet" == "false" ]] && echo "  [7/7] Restoring blacklist from backup..."
+    [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist from backup..."
     local restored_count=0
     for backup_file in "$backup_dir/blacklist_ipv4_$timestamp.txt" "$backup_dir/blacklist_ipv6_$timestamp.txt"; do
         [[ -f "$backup_file" ]] || continue
@@ -1035,6 +1104,74 @@ firewall_rebuild() {
         fi
     done
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
+
+    # Step 8 (v1.50.1): Re-apply DDoS protection if enabled
+    [[ "$quiet" == "false" ]] && echo "  [8/12] Re-applying protection modules..."
+    local _ddos_enabled="false"
+    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
+    if [[ -f "$_ddos_local_conf" ]]; then
+        _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
+    fi
+    if [[ "$_ddos_enabled" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "    DDoS protection: re-applying..."
+        nftban ddos reload 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed. Run: nftban ddos reload"
+        }
+    fi
+
+    # Step 9 (v1.50.1): Re-apply portscan if enabled
+    [[ "$quiet" == "false" ]] && echo "  [9/12] Re-applying portscan detection..."
+    local _portscan_enabled="false"
+    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
+    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
+        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    if [[ "$_portscan_enabled" == "true" ]]; then
+        nftban portscan enable --quiet 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed. Run: nftban portscan enable"
+        }
+    else
+        [[ "$quiet" == "false" ]] && echo "    Portscan: not enabled, skipped"
+    fi
+
+    # Step 10 (v1.50.1): Re-apply botguard if enabled
+    [[ "$quiet" == "false" ]] && echo "  [10/12] Re-applying BotGuard..."
+    local _botguard_enabled="false"
+    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
+    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
+        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    if [[ "$_botguard_enabled" == "true" ]]; then
+        nftban botguard enable --quiet 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable"
+        }
+    else
+        [[ "$quiet" == "false" ]] && echo "    BotGuard: not enabled, skipped"
+    fi
+
+    # Step 11: Re-sync feeds (v1.50.1: auto-restore, was manual-only)
+    [[ "$quiet" == "false" ]] && echo "  [11/12] Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    No feeds to sync (disabled or empty)"; }
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (not configured or failed)"; }
+    else
+        [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (no sync function available)"
+    fi
+
+    # Step 12: Re-sync geoban (v1.50.1: auto-restore, was manual-only)
+    [[ "$quiet" == "false" ]] && echo "  [12/12] Re-syncing GeoBan..."
+    if command -v nftban &>/dev/null; then
+        timeout 120s nftban geoban sync 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    GeoBan synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (not configured or failed)"; }
+    else
+        [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)"
+    fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
@@ -1100,7 +1237,7 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "Performing complete firewall reset..."
 
     # Step 1: Stop nftban services temporarily
-    [[ "$quiet" == "false" ]] && echo "  [1/6] Stopping NFTBan services..."
+    [[ "$quiet" == "false" ]] && echo "  [1/11] Stopping NFTBan services..."
     systemctl stop nftban-maintenance.timer 2>/dev/null || true
     systemctl stop nftband 2>/dev/null || true
 
@@ -1109,16 +1246,16 @@ firewall_reset() {
     mkdir -p "$backup_dir" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
-    [[ "$quiet" == "false" ]] && echo "  [2/6] Backing up current ruleset..."
+    [[ "$quiet" == "false" ]] && echo "  [2/11] Backing up current ruleset..."
     nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
 
     # Step 3: Remove NFTBan tables (preserves Docker/cPanel/foreign tables)
-    [[ "$quiet" == "false" ]] && echo "  [3/6] Removing NFTBan tables..."
+    [[ "$quiet" == "false" ]] && echo "  [3/11] Removing NFTBan tables..."
     nft delete table ip nftban 2>/dev/null || true
     nft delete table ip6 nftban 2>/dev/null || true
 
     # Step 4: Reload NFTBan schema
-    [[ "$quiet" == "false" ]] && echo "  [4/6] Loading clean NFTBan schema..."
+    [[ "$quiet" == "false" ]] && echo "  [4/11] Loading clean NFTBan schema..."
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         if ! nft -f "$nftban_conf" 2>&1; then
@@ -1130,21 +1267,60 @@ firewall_reset() {
     fi
 
     # Step 5: Re-sync system whitelist (lockout protection)
-    [[ "$quiet" == "false" ]] && echo "  [5/6] Re-syncing system whitelist..."
+    [[ "$quiet" == "false" ]] && echo "  [5/11] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
-    # Step 6: Restart services
-    [[ "$quiet" == "false" ]] && echo "  [6/6] Restarting NFTBan services..."
+    # Step 6 (v1.50.1): Re-apply DDoS protection if enabled
+    [[ "$quiet" == "false" ]] && echo "  [6/11] Re-applying protection modules..."
+    local _ddos_enabled="false"
+    local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
+    [[ -f "$_ddos_local_conf" ]] && _ddos_enabled=$(grep -oP '^DDOS_ENABLED="\K[^"]+' "$_ddos_local_conf" 2>/dev/null || echo "false")
+    if [[ "$_ddos_enabled" == "true" ]]; then
+        nftban ddos reload 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed"
+    fi
+
+    # Step 7 (v1.50.1): Re-apply portscan if enabled
+    [[ "$quiet" == "false" ]] && echo "  [7/11] Re-applying portscan detection..."
+    local _portscan_enabled="false"
+    local _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local"
+    [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
+        [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
+    if [[ "$_portscan_enabled" == "true" ]]; then
+        nftban portscan enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed"
+    fi
+
+    # Step 8 (v1.50.1): Re-apply botguard if enabled
+    [[ "$quiet" == "false" ]] && echo "  [8/11] Re-applying BotGuard..."
+    local _botguard_enabled="false"
+    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
+    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
+        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
+    if [[ "$_botguard_enabled" == "true" ]]; then
+        nftban botguard enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed"
+    fi
+
+    # Step 9: Re-sync feeds (v1.50.1: auto-restore)
+    [[ "$quiet" == "false" ]] && echo "  [9/11] Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null || true
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+    fi
+
+    # Step 10: Re-sync geoban (v1.50.1: auto-restore)
+    [[ "$quiet" == "false" ]] && echo "  [10/11] Re-syncing GeoBan..."
+    timeout 120s nftban geoban sync 2>/dev/null || true
+
+    # Step 11: Restart services
+    [[ "$quiet" == "false" ]] && echo "  [11/11] Restarting NFTBan services..."
     systemctl start nftban-maintenance.timer 2>/dev/null || true
     systemctl start nftband 2>/dev/null || true
 
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Firewall reset complete!"
     [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/ruleset_$timestamp.nft"
-    [[ "$quiet" == "false" ]] && echo ""
-    [[ "$quiet" == "false" ]] && echo "Next steps:"
-    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban geoban sync' to restore GeoBan"
-    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban feeds sync' to restore threat feeds"
 
     return 0
 }
