@@ -1065,6 +1065,7 @@ nftban_validate_hook_authority() {
     done
 
     # Export globals for callers that need structured results
+    # shellcheck disable=SC2034  # Consumed by postinst, health, config doctor
     NFTBAN_HOOK_AUTHORITY_LEVEL="ok"
     NFTBAN_HOOK_AUTHORITY_DETAILS=()
 
@@ -1139,6 +1140,7 @@ nftban_validate_hook_authority() {
     elif [[ "$info" -gt 0 ]]; then
         level="info"; retcode=0
     fi
+    # shellcheck disable=SC2034  # Consumed by postinst, health, config doctor
     NFTBAN_HOOK_AUTHORITY_LEVEL="$level"
 
     # JSON output
