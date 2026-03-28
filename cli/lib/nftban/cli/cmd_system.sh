@@ -97,13 +97,11 @@ nftban_system_enable() {
             ;;
         login)
             echo "Enabling login monitoring..."
-            # Delegate to login module
+            # v1.52.0: Delegate to login module (runs inside nftband, not standalone service)
             if declare -f nftban_login_cmd_enable &>/dev/null; then
                 nftban_login_cmd_enable "service"
             else
-                systemctl enable "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || true
-                systemctl start "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || true
-                echo "  Login monitoring enabled"
+                echo "  Login module not loaded — run: nftban login enable"
             fi
             ;;
         timers)
@@ -304,12 +302,11 @@ nftban_system_disable() {
             ;;
         login)
             echo "Disabling login monitoring..."
+            # v1.52.0: Delegate to login module (runs inside nftband, not standalone service)
             if declare -f nftban_login_cmd_disable &>/dev/null; then
                 nftban_login_cmd_disable "service"
             else
-                systemctl stop "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || true
-                systemctl disable "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || true
-                echo "  Login monitoring disabled"
+                echo "  Login module not loaded — run: nftban login disable"
             fi
             ;;
         timers)
@@ -377,11 +374,8 @@ nftban_system_restart() {
                 echo "  Suricata: disabled in config (skipping)"
             fi
 
-            # Login monitor (if active)
-            if systemctl is-active --quiet "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null; then
-                echo "  Restarting ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}..."
-                systemctl restart "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" || true
-            fi
+            # v1.52.0: Login monitor runs inside nftband — restarting daemon covers it
+            echo "  Login monitor: handled by nftband restart above"
             ;;
         nftables)
             echo "Restarting nftables..."
@@ -392,8 +386,9 @@ nftban_system_restart() {
             systemctl restart suricata.service
             ;;
         login)
-            echo "Restarting login monitor..."
-            systemctl restart "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            # v1.52.0: Login monitor runs inside nftband — restart daemon
+            echo "Restarting nftband (includes login monitor)..."
+            systemctl restart nftband.service 2>/dev/null || echo "  Failed — run: systemctl restart nftband"
             ;;
         timers)
             echo "Restarting all NFTBan timers..."
@@ -460,8 +455,15 @@ nftban_system_status() {
         suri_status=$(systemctl is-active suricata.service 2>/dev/null || echo "inactive")
     fi
 
-    local login_status
-    login_status=$(systemctl is-active "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" 2>/dev/null || echo "inactive")
+    # v1.52.0: Login monitor runs inside nftband — check config + daemon
+    local login_status="inactive"
+    if systemctl is-active nftband >/dev/null 2>&1; then
+        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+        local _lm_en="false"
+        [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" == "true" ]] && login_status="active"
+    fi
 
     # JSON output mode
     if [[ "$json_mode" == "--json" || "$json_mode" == "-j" ]]; then

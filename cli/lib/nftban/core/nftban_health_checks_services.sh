@@ -675,8 +675,17 @@ nftban_health_check_login_monitor_ipc() {
     local ipc_issues=()
     local socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
 
-    # Only check if login monitor service is active
-    if systemctl is-active --quiet nftban-login-monitor.service 2>/dev/null; then
+    # v1.52.0: Login monitor runs inside nftband (not standalone service since v1.23.0)
+    # Check if daemon is running AND login monitor is enabled in config
+    local _lm_active=false
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+        local _lm_en="false"
+        [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" == "true" ]] && _lm_active=true
+    fi
+    if [[ "$_lm_active" == "true" ]]; then
         # Check if daemon socket exists
         if [[ ! -S "$socket" ]]; then
             ipc_issues+=("Login monitor running but IPC socket missing: $socket")

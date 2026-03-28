@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.51.0 - Config Doctor — System Integrity Audit
+# NFTBan v1.52.0 - Config Doctor — System Integrity Audit
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Full config+kernel+runtime integrity audit
@@ -8,7 +8,7 @@
 # meta:name="nftban_config_doctor"
 # meta:type="core"
 # meta:header="Config Doctor — System Integrity Audit"
-# meta:version="1.51.0"
+# meta:version="1.52.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -487,7 +487,7 @@ _doctor_global_drift() {
 }
 
 # =============================================================================
-# STEP 4: PER-MODULE AUDIT (L1-L3)
+# STEP 4: PER-MODULE AUDIT (L1-L4)
 # =============================================================================
 
 # Module results accumulator: module -> JSON object
@@ -569,12 +569,120 @@ _doctor_module_audit() {
         l3_referenced=$l2_materialized
     fi
 
+    # --- L4: Effective Targeting (v1.52.0) ---
+    # Only check L4 if module is ACTIVE (L1+L2+L3 all true)
+    local l4_effective=true l4_detail="" l4_source="nft+config"
+    if [[ "$l1_enabled" == "true" && "$l2_materialized" == "true" && "$l3_referenced" == "true" ]]; then
+        case "$mod_name" in
+            login)
+                # SSH port config↔kernel match
+                local _cfg_ssh_port _kernel_ssh_ports
+                _cfg_ssh_port=$(_doctor_config_val "SSH_PORT")
+                [[ -z "$_cfg_ssh_port" ]] && _cfg_ssh_port="22"
+                _kernel_ssh_ports=$(_doctor_nft_port_set_values "tcp_ports_in")
+                if [[ -n "$_kernel_ssh_ports" ]] && ! echo ",$_kernel_ssh_ports," | grep -q ",$_cfg_ssh_port,"; then
+                    l4_effective=false
+                    l4_detail="SSH port $_cfg_ssh_port not in kernel tcp_ports_in ($_kernel_ssh_ports)"
+                    _doctor_finding "$_SEV_WARN" "module_l4_ssh_mismatch" \
+                        "$mod_name: SSH port $_cfg_ssh_port not in firewall port set — login bans may not protect SSH" "nft+config" "$mod_name"
+                else
+                    l4_detail="Protecting SSH on port $_cfg_ssh_port"
+                fi
+                ;;
+            portscan)
+                # Open port count vs detection effectiveness
+                local _tcp_open _port_count
+                _tcp_open=$(_doctor_nft_port_set_values "tcp_ports_in")
+                _port_count=$(echo "$_tcp_open" | tr ',' '\n' | grep -c '[0-9]' 2>/dev/null || echo "0")
+                if (( _port_count > 20 )); then
+                    l4_detail="$_port_count open ports — portscan detection effectiveness reduced (INFO)"
+                    _doctor_finding "$_SEV_INFO" "module_l4_many_ports" \
+                        "$mod_name: $_port_count open ports — portscan detection less effective with many open ports" "nft" "$mod_name"
+                else
+                    l4_detail="$_port_count open ports — effective detection range"
+                fi
+                ;;
+            botguard)
+                # HTTP port in tcp_ports_in check
+                local _tcp_ports
+                _tcp_ports=$(_doctor_nft_port_set_values "tcp_ports_in")
+                local _has_http=false
+                echo ",$_tcp_ports," | grep -q ",80," && _has_http=true
+                echo ",$_tcp_ports," | grep -q ",443," && _has_http=true
+                echo ",$_tcp_ports," | grep -q ",8080," && _has_http=true
+                echo ",$_tcp_ports," | grep -q ",8443," && _has_http=true
+                if [[ "$_has_http" == "false" ]]; then
+                    l4_effective=false
+                    l4_detail="No HTTP/HTTPS port in tcp_ports_in — BotGuard has no target"
+                    _doctor_finding "$_SEV_WARN" "module_l4_no_http_target" \
+                        "$mod_name: No HTTP/HTTPS port (80/443/8080/8443) in firewall — BotGuard cannot protect anything" "nft" "$mod_name"
+                else
+                    l4_detail="HTTP traffic is being inspected"
+                fi
+                ;;
+            ddos)
+                # Jump ordering: DDoS must be before tcp_ports_in accept
+                local _jump_order
+                _jump_order=$(echo "$_DOCTOR_NFT_JSON" | jq -r '
+                    [.nftables[] | select(.rule?) | .rule |
+                     select(.chain == "input" and .table == "nftban") |
+                     .expr[]? |
+                     if .jump? then .jump.target
+                     elif .match? then
+                       if (.match.right? | type) == "string" and (.match.right? | test("@tcp_ports_in")) then "@tcp_ports_in"
+                       else empty end
+                     else empty end] | join(",")
+                ' 2>/dev/null || echo "")
+                # Check if ddos_protection appears before @tcp_ports_in in the rule chain
+                local _ddos_pos _ports_pos
+                _ddos_pos=$(echo ",$_jump_order" | grep -ob 'ddos_protection' | head -1 | cut -d: -f1)
+                _ports_pos=$(echo ",$_jump_order" | grep -ob '@tcp_ports_in' | head -1 | cut -d: -f1)
+                if [[ -n "$_ddos_pos" && -n "$_ports_pos" ]] && (( _ddos_pos > _ports_pos )); then
+                    l4_effective=false
+                    l4_detail="DDoS jump is AFTER tcp_ports_in accept — traffic bypasses DDoS checks"
+                    _doctor_finding "$_SEV_ERR" "module_l4_ddos_ordering" \
+                        "$mod_name: DDoS protection chain is inserted AFTER port accept — ineffective (FIX-A regression)" "nft" "$mod_name"
+                else
+                    l4_detail="DDoS chain correctly ordered before port accept"
+                fi
+                ;;
+            synproxy)
+                # SSH port must NOT be in SYNPROXY config (breaks SSH conntrack)
+                local _synproxy_conf="/etc/nftban/conf.d/ddos/synproxy.conf"
+                local _synproxy_local="${_synproxy_conf}.local"
+                local _synproxy_ports=""
+                [[ -f "$_synproxy_conf" ]] && _synproxy_ports=$(grep -m1 'SYNPROXY_PORTS=' "$_synproxy_conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || true)
+                [[ -f "$_synproxy_local" ]] && _synproxy_ports=$(grep -m1 'SYNPROXY_PORTS=' "$_synproxy_local" 2>/dev/null | cut -d= -f2 | tr -d '"' || true)
+                local _cfg_ssh
+                _cfg_ssh=$(_doctor_config_val "SSH_PORT")
+                [[ -z "$_cfg_ssh" ]] && _cfg_ssh="22"
+                if [[ -n "$_synproxy_ports" ]] && echo ",$_synproxy_ports," | grep -q ",$_cfg_ssh,"; then
+                    l4_effective=false
+                    l4_detail="SSH port $_cfg_ssh is in SYNPROXY target — breaks SSH conntrack"
+                    _doctor_finding "$_SEV_ERR" "module_l4_synproxy_ssh" \
+                        "$mod_name: SSH port $_cfg_ssh in SYNPROXY config — this breaks SSH connection tracking (MISCONFIGURED)" "config" "$mod_name"
+                else
+                    l4_detail="SSH port excluded from SYNPROXY — correct"
+                fi
+                ;;
+            *)
+                l4_detail=""
+                ;;
+        esac
+    fi
+
     # --- State Matrix ---
     if [[ "$l1_enabled" == "true" ]]; then
         if [[ "$l2_materialized" == "true" ]]; then
             if [[ "$l3_referenced" == "true" ]]; then
-                state_label="ACTIVE"
-                _doctor_finding "$_SEV_OK" "module_active" "$mod_name: ACTIVE (enabled+materialized+referenced)" "nft" "$mod_name"
+                if [[ "$l4_effective" == "true" ]]; then
+                    state_label="EFFECTIVE"
+                    _doctor_finding "$_SEV_OK" "module_effective" "$mod_name: EFFECTIVE (L1-L4 all pass)" "nft+config" "$mod_name"
+                else
+                    state_label="MISCONFIGURED"
+                    mod_status="$_SEV_WARN"
+                    _doctor_finding "$_SEV_WARN" "module_misconfigured" "$mod_name: MISCONFIGURED (active but targeting issue)" "nft+config" "$mod_name"
+                fi
             else
                 state_label="UNWIRED"
                 mod_status="$_SEV_WARN"
@@ -615,12 +723,16 @@ _doctor_module_audit() {
         --argjson l3_val "$l3_referenced" \
         --arg l3_src "$l3_source" \
         --arg l3_rules "$l3_rules" \
+        --argjson l4_val "$l4_effective" \
+        --arg l4_src "$l4_source" \
+        --arg l4_detail "$l4_detail" \
         '{
             status: $status,
             state: $state,
             enabled: {value: $l1_val, source: $l1_src, key: $l1_key},
             materialized: {value: $l2_val, source: $l2_src, artifacts: [$l2_art]},
-            referenced: {value: $l3_val, source: $l3_src, rules: [$l3_rules]}
+            referenced: {value: $l3_val, source: $l3_src, rules: [$l3_rules]},
+            effective_targeting: {value: $l4_val, source: $l4_src, detail: $l4_detail}
         }')
 }
 
@@ -868,15 +980,16 @@ _doctor_render_human() {
     fi
 
     # Modules section
-    echo "MODULES (L1:enabled → L2:materialized → L3:referenced)"
-    echo "────────────────────────────────────────────────────────"
+    echo "MODULES (L1:enabled → L2:materialized → L3:referenced → L4:targeting)"
+    echo "──────────────────────────────────────────────────────────────────────"
     for mod_name in portscan ddos botguard login feeds geoip geoban suricata synproxy; do
         [[ -n "$filter_module" && "$filter_module" != "$mod_name" ]] && continue
         local mresult="${_DOCTOR_MODULE_RESULTS[$mod_name]:-}"
         [[ -z "$mresult" ]] && continue
-        local mstate mstatus
+        local mstate mstatus ml4detail
         mstate=$(echo "$mresult" | jq -r '.state')
         mstatus=$(echo "$mresult" | jq -r '.status')
+        ml4detail=$(echo "$mresult" | jq -r '.effective_targeting.detail // empty')
         local icon="✓"
         case "$mstatus" in
             warning) icon="⚠" ;;
@@ -884,6 +997,7 @@ _doctor_render_human() {
             info)    icon="ℹ" ;;
         esac
         printf "  %s %-12s %s\n" "$icon" "$mod_name" "$mstate"
+        [[ -n "$ml4detail" && "$mstate" != "DISABLED" ]] && printf "    └─ %s\n" "$ml4detail"
     done
     echo ""
 

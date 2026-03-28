@@ -14,7 +14,7 @@
 // meta:inventory.env_vars="NFTBAN_METRICS_FILE,NFTBAN_API_URL"
 // meta:inventory.config_files=""
 // meta:inventory.systemd_units=""
-// meta:inventory.network="localhost:8080"
+// meta:inventory.network="localhost:9580"
 // meta:inventory.privileges="none"
 // =============================================================================
 
@@ -119,7 +119,7 @@ type basicStatsFromAPI struct {
 func (c *Collector) tryGetBasicStatsFromAPI() *basicStatsFromAPI {
 	apiURL := os.Getenv("NFTBAN_API_URL")
 	if apiURL == "" {
-		apiURL = "http://127.0.0.1:8080"
+		apiURL = "http://127.0.0.1:9580"
 	}
 
 	client := &http.Client{Timeout: 2 * time.Second}

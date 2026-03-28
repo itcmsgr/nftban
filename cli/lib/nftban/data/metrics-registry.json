@@ -50,7 +50,7 @@
     "endpoints": {
       "daemon_http": {
         "path": "/metrics",
-        "port": 8080,
+        "port": 9580,
         "source": "promhttp.Handler()",
         "required": false
       },
