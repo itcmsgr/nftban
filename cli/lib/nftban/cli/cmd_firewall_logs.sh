@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall_logs"
 # meta:type="cli"
 # meta:header="Firewall Logs Command"
-# meta:version="1.39.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -41,6 +41,9 @@ readonly FWLOG_INCLUDE="${NFTBAN_CONFIG_DIR}/nftables.d/fwlog.nft"
 
 # Structured log prefix for reliable parsing
 readonly LOG_PREFIX="NFTBAN_FW"
+
+# Base schema prefixes (always present in nft rules, no enable needed)
+readonly BASE_SCHEMA_PREFIXES="nftban:|NFTBAN_PORTSCAN|NFTBAN_EGRESS_AUDIT"
 
 # Default settings
 readonly DEFAULT_LINES=50
@@ -313,7 +316,6 @@ _fwlog_status() {
 
     echo ""
     echo "  Log source:  journalctl -k (kernel messages)"
-    echo "  Prefix:      $LOG_PREFIX"
     echo "  Config:      $FWLOG_CONFIG"
 
     if [[ -f "$FWLOG_INCLUDE" ]]; then
@@ -322,11 +324,21 @@ _fwlog_status() {
 
     echo ""
 
-    # Show recent log count
-    local count
-    count=$(journalctl -k --since "1 hour ago" --no-pager 2>/dev/null | grep -c "$LOG_PREFIX" || echo "0")
-    echo "  Logs (last hour): $count entries"
+    # Show recent log counts — both structured and base schema
+    local structured_count base_count
+    local journal_hour
+    journal_hour=$(journalctl -k --since "1 hour ago" --no-pager 2>/dev/null || true)
+    structured_count=$(echo "$journal_hour" | grep -c -F "$LOG_PREFIX" || echo "0")
+    base_count=$(echo "$journal_hour" | grep -c -E "$BASE_SCHEMA_PREFIXES" || echo "0")
+
+    echo "  Logs (last hour):"
+    echo "    Structured (NFTBAN_FW):    $structured_count entries"
+    echo "    Base schema (nftban:drop): $base_count entries"
     echo ""
+    if [[ "$FWLOG_ENABLED" != "true" ]] && [[ "$base_count" -gt 0 ]]; then
+        echo "  Base schema logs are available. View with: nftban firewall logs show"
+        echo ""
+    fi
 }
 
 # =============================================================================
@@ -334,9 +346,13 @@ _fwlog_status() {
 # =============================================================================
 
 _fwlog_parse_to_tsv() {
-    # Parse kernel log lines with NFTBAN_FW prefix to TSV
+    # Parse kernel log lines to TSV — handles BOTH formats:
+    #   1. Structured: NFTBAN_FW action=DROP reason=policy_drop SRC=... DPT=...
+    #   2. Base schema: nftban: drop: SRC=... DPT=...
+    #   3. Portscan:    NFTBAN_PORTSCAN:SYN SRC=... DPT=...
+    #   4. Egress:      NFTBAN_EGRESS_AUDIT: SRC=... DPT=...
     # Output: time action reason proto src srcport dst dstport
-    awk -v prefix="$LOG_PREFIX" '
+    awk '
     function extract_kv(line, key,   r, start, end) {
         r = ""
         start = index(line, key"=")
@@ -349,16 +365,41 @@ _fwlog_parse_to_tsv() {
         return r
     }
 
-    $0 ~ prefix {
+    /NFTBAN_FW|nftban:|NFTBAN_PORTSCAN|NFTBAN_EGRESS_AUDIT/ {
         # Timestamp from short-iso format: 2026-01-23T20:57:20+0200
         ts = substr($1, 1, 19)
         gsub("T", " ", ts)
 
-        # Extract from structured prefix
-        action = extract_kv($0, "action")
-        reason = extract_kv($0, "reason")
+        action = ""; reason = ""
 
-        # Extract from kernel nft log fields
+        # Format 1: Structured (NFTBAN_FW action=DROP reason=...)
+        if (index($0, "NFTBAN_FW") > 0) {
+            action = extract_kv($0, "action")
+            reason = extract_kv($0, "reason")
+        }
+        # Format 2: Base schema (nftban: drop: ...)
+        else if (index($0, "nftban: drop:") > 0) {
+            action = "DROP"
+            reason = "base_drop"
+        }
+        else if (index($0, "nftban: accept:") > 0) {
+            action = "ACCEPT"
+            reason = "base_accept"
+        }
+        # Format 3: Portscan (NFTBAN_PORTSCAN:SYN / :UDP)
+        else if (index($0, "NFTBAN_PORTSCAN") > 0) {
+            action = "DROP"
+            if (index($0, "NFTBAN_PORTSCAN:SYN") > 0) reason = "portscan_syn"
+            else if (index($0, "NFTBAN_PORTSCAN:UDP") > 0) reason = "portscan_udp"
+            else reason = "portscan"
+        }
+        # Format 4: Egress audit (NFTBAN_EGRESS_AUDIT:)
+        else if (index($0, "NFTBAN_EGRESS_AUDIT") > 0) {
+            action = "AUDIT"
+            reason = "egress_audit"
+        }
+
+        # Extract from kernel nft log fields (common to all formats)
         proto = extract_kv($0, "PROTO")
         src   = extract_kv($0, "SRC")
         dst   = extract_kv($0, "DST")
@@ -588,17 +629,43 @@ _fwlog_query_and_display() {
         cmd+=(-n "$lines")
     fi
 
-    # Execute and filter
-    local raw_logs
+    # Execute and filter — search for structured AND base schema prefixes
+    local raw_logs="" log_source=""
+
+    # 1. Try structured logs first (NFTBAN_FW prefix from "logs enable")
     raw_logs=$("${cmd[@]}" 2>/dev/null | grep -F "$LOG_PREFIX" || true)
+    if [[ -n "$raw_logs" ]]; then
+        log_source="structured"
+    fi
+
+    # 2. Also search base schema logs (nftban: drop:, NFTBAN_PORTSCAN:, etc.)
+    local base_logs=""
+    base_logs=$("${cmd[@]}" 2>/dev/null | grep -E "$BASE_SCHEMA_PREFIXES" || true)
+    if [[ -n "$base_logs" ]]; then
+        if [[ -n "$raw_logs" ]]; then
+            # Merge both (structured + base), deduplicate
+            raw_logs=$(printf '%s\n%s' "$raw_logs" "$base_logs" | sort -u)
+            log_source="both"
+        else
+            raw_logs="$base_logs"
+            log_source="base"
+        fi
+    fi
 
     if [[ -z "$raw_logs" ]]; then
         echo "No firewall log entries found."
         echo ""
         echo "Tips:"
-        echo "  - Enable logging: nftban firewall logs enable"
-        echo "  - Check status:   nftban firewall logs status"
+        echo "  - Enable structured logging: nftban firewall logs enable"
+        echo "  - Check status:              nftban firewall logs status"
+        echo "  - Base schema drops are logged with prefix 'nftban: drop:'"
         return 0
+    fi
+
+    if [[ "$log_source" == "base" ]]; then
+        echo "  [INFO] Showing base schema logs (structured logging not enabled)"
+        echo "         Enable structured logging for richer filtering: nftban firewall logs enable"
+        echo ""
     fi
 
     if [[ "$output" == "raw" ]]; then
@@ -606,7 +673,7 @@ _fwlog_query_and_display() {
         return 0
     fi
 
-    # Parse and filter
+    # Parse and filter — use combined parser for both formats
     local filtered
     filtered=$(echo "$raw_logs" | _fwlog_parse_to_tsv | _fwlog_filter_tsv "$ip" "$src" "$dst" "$port" "$proto" "$action" "$reason")
 
