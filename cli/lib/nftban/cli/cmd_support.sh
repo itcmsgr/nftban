@@ -8,7 +8,7 @@
 # meta:name="cmd_support"
 # meta:type="cli"
 # meta:header="Support Bundle Command"
-# meta:version="1.39.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -22,7 +22,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-16"
-# meta:updated_date="2026-02-04"
+# meta:updated_date="2026-03-28"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -987,6 +987,536 @@ _collect_recent_errors() {
     _support_log OK "Recent errors"
 }
 
+_collect_ssh_port() {
+    local bundle_dir="$1"
+    local ssh_dir="$bundle_dir/ssh"
+    mkdir -p "$ssh_dir" || return 1
+
+    {
+        echo "# SSH Port Diagnostics"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # sshd_config port
+        echo "=== sshd_config ==="
+        if [[ -f /etc/ssh/sshd_config ]]; then
+            grep -Ei '^[[:space:]]*(Port|ListenAddress)' /etc/ssh/sshd_config 2>/dev/null || echo "No explicit Port/ListenAddress (default 22)"
+            # Include drop-in configs
+            for inc in /etc/ssh/sshd_config.d/*.conf; do
+                [[ -f "$inc" ]] || continue
+                local port_line
+                port_line=$(grep -Ei '^[[:space:]]*Port' "$inc" 2>/dev/null) || true
+                [[ -n "$port_line" ]] && echo "  $inc: $port_line"
+            done
+        else
+            echo "/etc/ssh/sshd_config not found"
+        fi
+        echo ""
+
+        # State file
+        echo "=== NFTBan SSH State ==="
+        local state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port"
+        if [[ -f "$state_file" ]]; then
+            echo "State file: $(cat "$state_file")"
+        else
+            echo "No state file ($state_file)"
+        fi
+        echo ""
+
+        # Live listening port
+        echo "=== Live SSH Listening ==="
+        ss -tlnp 2>/dev/null | grep -E 'sshd|:22\b' || echo "No sshd listeners found"
+        echo ""
+
+        # nftables tcp_ports_in set
+        echo "=== nft tcp_ports_in (SSH) ==="
+        if command -v nft &>/dev/null; then
+            nft list set ip nftban tcp_ports_in 2>/dev/null || echo "Set not found"
+        fi
+        echo ""
+
+        # nftables.conf SSH port
+        echo "=== /etc/nftban/nftables.conf SSH ==="
+        if [[ -f /etc/nftban/nftables.conf ]]; then
+            grep -n 'ssh\|22\|__SSH_PORT__' /etc/nftban/nftables.conf 2>/dev/null | head -5 || echo "No SSH references"
+        fi
+
+    } > "$ssh_dir/ssh-port.txt"
+    _support_log OK "SSH port diagnostics"
+}
+
+_collect_firewall_conflicts() {
+    local bundle_dir="$1"
+    local conflict_dir="$bundle_dir/conflicts"
+    mkdir -p "$conflict_dir" || return 1
+
+    {
+        echo "# Firewall Conflict Detection"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Ghost table scan
+        echo "=== Ghost Tables (iptables-nft artifacts) ==="
+        if command -v nft &>/dev/null; then
+            local all_tables
+            all_tables=$(nft list tables 2>/dev/null) || all_tables=""
+            local ghost_candidates=("ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter")
+            for gt in "${ghost_candidates[@]}"; do
+                if echo "$all_tables" | grep -qF "table $gt"; then
+                    echo "  FOUND: $gt"
+                else
+                    echo "  clean: $gt"
+                fi
+            done
+        else
+            echo "nft not available"
+        fi
+        echo ""
+
+        # CSF detection
+        echo "=== CSF (ConfigServer Firewall) ==="
+        if [[ -f /etc/csf/csf.conf ]]; then
+            echo "CSF installed: /etc/csf/csf.conf"
+            grep -E '^TESTING\s*=' /etc/csf/csf.conf 2>/dev/null || true
+            grep -E '^TCP_IN\s*=' /etc/csf/csf.conf 2>/dev/null || true
+            systemctl is-active csf 2>/dev/null && echo "CSF service: active" || echo "CSF service: inactive/not found"
+        else
+            echo "CSF not installed"
+        fi
+        echo ""
+
+        # firewalld detection
+        echo "=== firewalld ==="
+        if command -v firewall-cmd &>/dev/null; then
+            echo "firewalld installed"
+            systemctl is-active firewalld 2>/dev/null && echo "firewalld: active" || echo "firewalld: inactive"
+        else
+            echo "firewalld not installed"
+        fi
+        echo ""
+
+        # iptables-nft detection
+        echo "=== iptables backend ==="
+        if command -v iptables &>/dev/null; then
+            echo "iptables version: $(iptables --version 2>&1)"
+            if iptables --version 2>&1 | grep -q 'nf_tables'; then
+                echo "Backend: nf_tables (iptables-nft)"
+            else
+                echo "Backend: legacy"
+            fi
+        else
+            echo "iptables not installed"
+        fi
+
+    } > "$conflict_dir/firewall-conflicts.txt"
+    _support_log OK "Firewall conflict detection"
+}
+
+_collect_config_divergence() {
+    local bundle_dir="$1"
+    local div_dir="$bundle_dir/config-divergence"
+    mkdir -p "$div_dir" || return 1
+
+    {
+        echo "# Config Divergence Detection"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # .rpmnew files
+        echo "=== RPM .rpmnew Files ==="
+        local rpmnew_count=0
+        while IFS= read -r -d '' f; do
+            echo "  FOUND: $f ($(stat -c '%y' "$f" 2>/dev/null || echo 'unknown date'))"
+            rpmnew_count=$((rpmnew_count + 1))
+        done < <(find /etc/nftban -name '*.rpmnew' -print0 2>/dev/null)
+        [[ $rpmnew_count -eq 0 ]] && echo "  None found"
+        echo ""
+
+        # .dpkg-dist files
+        echo "=== DEB .dpkg-dist Files ==="
+        local dpkg_count=0
+        while IFS= read -r -d '' f; do
+            echo "  FOUND: $f ($(stat -c '%y' "$f" 2>/dev/null || echo 'unknown date'))"
+            dpkg_count=$((dpkg_count + 1))
+        done < <(find /etc/nftban -name '*.dpkg-dist' -print0 2>/dev/null)
+        [[ $dpkg_count -eq 0 ]] && echo "  None found"
+        echo ""
+
+        # Placeholder check in live config
+        echo "=== Placeholder Check (nftables.conf) ==="
+        if [[ -f /etc/nftban/nftables.conf ]]; then
+            local placeholders
+            placeholders=$(grep -cE '__SSH_PORT__|__CT_LIMIT_SSH__|__CT_LIMIT_HTTP__|__CT_LIMIT_MAIL__' /etc/nftban/nftables.conf 2>/dev/null) || placeholders=0
+            if [[ "$placeholders" -gt 0 ]]; then
+                echo "  CRITICAL: $placeholders raw placeholders found — BOOT UNSAFE"
+                grep -n '__SSH_PORT__\|__CT_LIMIT_' /etc/nftban/nftables.conf 2>/dev/null
+            else
+                echo "  OK: No raw placeholders — boot safe"
+            fi
+        else
+            echo "  /etc/nftban/nftables.conf not found"
+        fi
+        echo ""
+
+        # Template availability
+        echo "=== Template File ==="
+        local tpl="/usr/lib/nftban/templates/nftables.conf.tpl"
+        if [[ -f "$tpl" ]]; then
+            echo "  Present: $tpl ($(stat -c '%y' "$tpl" 2>/dev/null || echo 'unknown date'))"
+        else
+            echo "  Missing: $tpl (pre-v1.50.0 install)"
+        fi
+
+    } > "$div_dir/config-divergence.txt"
+    _support_log OK "Config divergence detection"
+}
+
+_collect_feeds_nft_mismatch() {
+    local bundle_dir="$1"
+    local feeds_dir="$bundle_dir/feeds-mismatch"
+    mkdir -p "$feeds_dir" || return 1
+
+    {
+        echo "# Feeds vs NFT Set Mismatch Check"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Feed files on disk
+        echo "=== Feed Files on Disk ==="
+        local disk_total=0
+        local data_feeds="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        if [[ -d "$data_feeds" ]]; then
+            for feed_file in "$data_feeds"/*.txt; do
+                [[ -f "$feed_file" ]] || continue
+                local count
+                count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
+                echo "  $(basename "$feed_file"): $count IPs"
+                disk_total=$((disk_total + count))
+            done
+            echo "  TOTAL on disk: $disk_total IPs"
+        else
+            echo "  Feed directory not found ($data_feeds)"
+        fi
+        echo ""
+
+        # NFT set counts
+        echo "=== NFT Set Element Counts ==="
+        if command -v nft &>/dev/null; then
+            for setname in blacklist_ipv4 blacklist_ipv6; do
+                local nft_count
+                nft_count=$(nft -j list set ip nftban "$setname" 2>/dev/null | grep -o '"elem"' | wc -l) || nft_count=0
+                # Fallback: count elements line by line
+                if [[ "$nft_count" -eq 0 ]]; then
+                    nft_count=$(nft list set ip nftban "$setname" 2>/dev/null | grep -cE '^\s+[0-9]') || nft_count=0
+                fi
+                echo "  $setname: $nft_count elements"
+            done
+        else
+            echo "  nft not available"
+        fi
+        echo ""
+
+        # Mismatch verdict
+        echo "=== Mismatch Verdict ==="
+        if [[ "$disk_total" -gt 0 ]]; then
+            local nft_v4
+            nft_v4=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -cE '^\s+[0-9]') || nft_v4=0
+            if [[ "$nft_v4" -eq 0 ]]; then
+                echo "  WARNING: $disk_total IPs on disk but 0 in nft — feeds not loaded"
+                echo "  Fix: nftban feeds update && nftban sync"
+            else
+                echo "  OK: disk=$disk_total nft=$nft_v4"
+            fi
+        else
+            echo "  No feed IPs on disk — nothing to compare"
+        fi
+
+    } > "$feeds_dir/feeds-nft-mismatch.txt"
+    _support_log OK "Feeds vs NFT mismatch check"
+}
+
+_collect_panel_detection() {
+    local bundle_dir="$1"
+    local panel_dir="$bundle_dir/panel"
+    mkdir -p "$panel_dir" || return 1
+
+    {
+        echo "# Control Panel Detection"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # DirectAdmin
+        echo "=== DirectAdmin ==="
+        if [[ -d /usr/local/directadmin ]]; then
+            echo "Installed: /usr/local/directadmin"
+            /usr/local/directadmin/directadmin v 2>/dev/null || echo "Version unknown"
+            # BFM status
+            if [[ -f /usr/local/directadmin/conf/directadmin.conf ]]; then
+                grep -i 'brute_force' /usr/local/directadmin/conf/directadmin.conf 2>/dev/null | head -5 || echo "No BFM config"
+            fi
+        else
+            echo "Not installed"
+        fi
+        echo ""
+
+        # cPanel
+        echo "=== cPanel ==="
+        if [[ -f /usr/local/cpanel/version ]]; then
+            echo "Installed: $(cat /usr/local/cpanel/version 2>/dev/null)"
+            # cPHulk status
+            if command -v whmapi1 &>/dev/null; then
+                whmapi1 configureservice service=cphulkd 2>/dev/null | grep -E 'enabled|running' | head -3 || echo "cPHulk status unknown"
+            fi
+        else
+            echo "Not installed"
+        fi
+        echo ""
+
+        # Plesk
+        echo "=== Plesk ==="
+        if [[ -f /usr/local/psa/version ]]; then
+            echo "Installed: $(cat /usr/local/psa/version 2>/dev/null)"
+            # Plesk Firewall extension
+            if [[ -d /usr/local/psa/admin/plib/modules/firewall ]]; then
+                echo "Plesk Firewall extension: installed"
+            else
+                echo "Plesk Firewall extension: not installed"
+            fi
+        else
+            echo "Not installed"
+        fi
+        echo ""
+
+        # CSF on panels
+        echo "=== CSF with Panel ==="
+        if [[ -f /etc/csf/csf.conf ]]; then
+            echo "CSF installed"
+            grep -E '^TESTING\s*=' /etc/csf/csf.conf 2>/dev/null || true
+            if [[ -f /usr/local/cpanel/version ]]; then
+                echo "Panel: cPanel (CSF+cPanel combo)"
+            elif [[ -d /usr/local/directadmin ]]; then
+                echo "Panel: DirectAdmin (CSF+DA combo)"
+            fi
+        fi
+
+    } > "$panel_dir/panel-detection.txt"
+    _support_log OK "Control panel detection"
+}
+
+_collect_boot_safety() {
+    local bundle_dir="$1"
+    local boot_dir="$bundle_dir/boot-safety"
+    mkdir -p "$boot_dir" || return 1
+
+    {
+        echo "# Boot Safety Check"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        local nftables_conf="/etc/nftban/nftables.conf"
+        local template="/usr/lib/nftban/templates/nftables.conf.tpl"
+
+        # Config file exists
+        echo "=== Config File Status ==="
+        if [[ -f "$nftables_conf" ]]; then
+            echo "Config: $nftables_conf ($(stat -c '%s bytes, %y' "$nftables_conf" 2>/dev/null))"
+        else
+            echo "CRITICAL: $nftables_conf NOT FOUND — no firewall on boot"
+        fi
+        echo ""
+
+        # Placeholder scan
+        echo "=== Placeholder Scan ==="
+        if [[ -f "$nftables_conf" ]]; then
+            local ph_count
+            ph_count=$(grep -cE '__[A-Z_]+__' "$nftables_conf" 2>/dev/null) || ph_count=0
+            if [[ "$ph_count" -gt 0 ]]; then
+                echo "CRITICAL: $ph_count raw placeholders — nftables will fail on boot"
+                grep -n '__[A-Z_]+__' "$nftables_conf" 2>/dev/null
+            else
+                echo "OK: No raw placeholders"
+            fi
+        fi
+        echo ""
+
+        # nft validation
+        echo "=== Config Validation ==="
+        if command -v nft &>/dev/null && [[ -f "$nftables_conf" ]]; then
+            if nft -c -f "$nftables_conf" 2>&1; then
+                echo "PASS: nft -c -f validates successfully"
+            else
+                echo "FAIL: nft -c -f validation failed"
+            fi
+        else
+            echo "Cannot validate (nft or config missing)"
+        fi
+        echo ""
+
+        # nftables.service include chain
+        echo "=== nftables.service Include Chain ==="
+        if [[ -f /etc/sysconfig/nftables.conf ]]; then
+            echo "Source: /etc/sysconfig/nftables.conf"
+            grep -n 'include.*nftban' /etc/sysconfig/nftables.conf 2>/dev/null || echo "No nftban include found"
+        elif [[ -f /etc/nftables.conf ]]; then
+            echo "Source: /etc/nftables.conf"
+            grep -n 'include.*nftban' /etc/nftables.conf 2>/dev/null || echo "No nftban include found"
+        fi
+        echo ""
+
+        # Template file
+        echo "=== Template ==="
+        if [[ -f "$template" ]]; then
+            echo "Template: $template (present)"
+        else
+            echo "Template: $template (MISSING — pre-v1.50.0?)"
+        fi
+
+    } > "$boot_dir/boot-safety.txt"
+    _support_log OK "Boot safety check"
+}
+
+_collect_ipc_test() {
+    local bundle_dir="$1"
+    local ipc_dir="$bundle_dir/ipc"
+    mkdir -p "$ipc_dir" || return 1
+
+    {
+        echo "# NFTBand IPC Connectivity Test"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        local sock="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+
+        echo "=== Socket Status ==="
+        if [[ -S "$sock" ]]; then
+            echo "Socket: $sock (exists)"
+            ls -la "$sock" 2>&1
+        else
+            echo "Socket: $sock (NOT FOUND)"
+            echo "nftband may not be running"
+        fi
+        echo ""
+
+        echo "=== systemd Socket Activation ==="
+        systemctl is-active nftband.socket 2>/dev/null && echo "nftband.socket: active" || echo "nftband.socket: inactive/missing"
+        systemctl is-active nftband.service 2>/dev/null && echo "nftband.service: active" || echo "nftband.service: inactive"
+        echo ""
+
+        echo "=== IPC Quick Sync Test ==="
+        if command -v nftban &>/dev/null; then
+            local start_time end_time
+            start_time=$(date +%s%N 2>/dev/null || date +%s)
+            if timeout 10s nftban sync --quick 2>&1; then
+                end_time=$(date +%s%N 2>/dev/null || date +%s)
+                echo "IPC sync: OK"
+            else
+                end_time=$(date +%s%N 2>/dev/null || date +%s)
+                echo "IPC sync: FAILED (exit $?)"
+            fi
+        else
+            echo "nftban not in PATH"
+        fi
+
+    } > "$ipc_dir/ipc-test.txt"
+    _support_log OK "IPC connectivity test"
+}
+
+_collect_postinst_history() {
+    local bundle_dir="$1"
+    local hist_dir="$bundle_dir/install-history"
+    mkdir -p "$hist_dir" || return 1
+
+    {
+        echo "# Package Install/Upgrade History"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== RPM History ==="
+        if command -v rpm &>/dev/null; then
+            rpm -qa --last 2>/dev/null | grep -i nftban | head -20 || echo "No nftban RPMs in history"
+        else
+            echo "rpm not available"
+        fi
+        echo ""
+
+        echo "=== DEB History ==="
+        if [[ -f /var/log/dpkg.log ]]; then
+            grep -i nftban /var/log/dpkg.log 2>/dev/null | tail -20 || echo "No nftban entries in dpkg.log"
+        elif [[ -f /var/log/dpkg.log.1 ]]; then
+            grep -i nftban /var/log/dpkg.log.1 2>/dev/null | tail -20 || echo "No nftban entries"
+        else
+            echo "dpkg.log not available"
+        fi
+        echo ""
+
+        echo "=== DNF/YUM Transaction History ==="
+        if command -v dnf &>/dev/null; then
+            dnf history list 2>/dev/null | head -20 || echo "dnf history unavailable"
+        elif command -v yum &>/dev/null; then
+            yum history list 2>/dev/null | head -20 || echo "yum history unavailable"
+        fi
+        echo ""
+
+        echo "=== Install State File ==="
+        if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/.install_type" ]]; then
+            echo "Type: $(cat "${NFTBAN_CONFIG_DIR:-/etc/nftban}/.install_type" 2>/dev/null)"
+        fi
+        if [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_date" ]]; then
+            echo "Install date: $(cat "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_date" 2>/dev/null)"
+        fi
+
+    } > "$hist_dir/install-history.txt"
+    _support_log OK "Package install history"
+}
+
+_collect_botguard_status() {
+    local bundle_dir="$1"
+    local mod_dir="$bundle_dir/modules"
+    mkdir -p "$mod_dir" || return 1
+
+    {
+        echo "# BotGuard Module Status"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        if command -v nftban &>/dev/null; then
+            nftban botguard status 2>&1 || echo "Command failed or module not available"
+        else
+            echo "nftban not in PATH"
+        fi
+    } > "$mod_dir/botguard.txt"
+    _support_log OK "BotGuard module status"
+}
+
+_collect_suricata_status() {
+    local bundle_dir="$1"
+    local mod_dir="$bundle_dir/modules"
+    mkdir -p "$mod_dir" || return 1
+
+    {
+        echo "# Suricata Module Status"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        if command -v nftban &>/dev/null; then
+            nftban suricata status 2>&1 || echo "Command failed or module not available"
+            echo ""
+            echo "=== Suricata Service ==="
+            systemctl is-active suricata 2>/dev/null && echo "suricata: active" || echo "suricata: inactive/not installed"
+            echo ""
+            echo "=== Suricata Logs (last 10 alerts) ==="
+            if [[ -f /var/log/suricata/fast.log ]]; then
+                tail -10 /var/log/suricata/fast.log 2>/dev/null || echo "Cannot read fast.log"
+            elif [[ -f /var/log/suricata/eve.json ]]; then
+                tail -5 /var/log/suricata/eve.json 2>/dev/null || echo "Cannot read eve.json"
+            else
+                echo "No Suricata log files found"
+            fi
+        else
+            echo "nftban not in PATH"
+        fi
+    } > "$mod_dir/suricata.txt"
+    _support_log OK "Suricata module status"
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLERS
 # =============================================================================
@@ -1030,13 +1560,25 @@ _cmd_support_bundle() {
     _collect_update_info "$bundle_dir"
     _collect_services "$bundle_dir"
 
-    # NEW: Extended diagnostics (v1.9.4)
+    # Extended diagnostics (v1.9.4)
     _collect_mail_status "$bundle_dir"
     _collect_module_status "$bundle_dir"
     _collect_stats_summary "$bundle_dir"
     _collect_disk_usage "$bundle_dir"
     _collect_cron_jobs "$bundle_dir"
     _collect_recent_errors "$bundle_dir"
+
+    # v1.50.1: Deploy safety + operational diagnostics
+    _collect_ssh_port "$bundle_dir"
+    _collect_firewall_conflicts "$bundle_dir"
+    _collect_config_divergence "$bundle_dir"
+    _collect_feeds_nft_mismatch "$bundle_dir"
+    _collect_panel_detection "$bundle_dir"
+    _collect_boot_safety "$bundle_dir"
+    _collect_ipc_test "$bundle_dir"
+    _collect_postinst_history "$bundle_dir"
+    _collect_botguard_status "$bundle_dir"
+    _collect_suricata_status "$bundle_dir"
 
     # Network info (optional, can be sensitive)
     if [[ "$include_network" == "true" ]]; then
@@ -1257,12 +1799,21 @@ OUTPUT:
     - update/             Update check and backup list
     - services/           Systemd service/timer status
     - network/            Network info (if --network)
-    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login)
+    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login,
+                          botguard, suricata)
     - mail/               Mail system status and configuration
     - stats-summary.txt   Current statistics and top IPs
     - disk-usage.txt      NFTBan directory sizes
     - cron-jobs.txt       Scheduled tasks and timers
     - recent-errors.txt   Recent errors from logs
+    - ssh/                SSH port detection (sshd_config, ss, nft set)
+    - conflicts/          Ghost tables, CSF, firewalld, iptables-nft backend
+    - config-divergence/  .rpmnew/.dpkg-dist files, placeholder detection
+    - feeds-mismatch/     Feed files on disk vs NFT set element counts
+    - panel/              Control panel detection (DA, cPanel, Plesk, CSF)
+    - boot-safety/        Placeholder scan, nft -c -f validation, include chain
+    - ipc/                nftband socket + IPC sync test
+    - install-history/    RPM/DEB install and upgrade history
     - MANIFEST.txt        Bundle inventory
 
 SECURITY:
