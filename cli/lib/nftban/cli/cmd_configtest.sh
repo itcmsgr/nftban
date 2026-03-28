@@ -8,7 +8,7 @@
 # meta:name="cmd_configtest"
 # meta:type="cli"
 # meta:header="ConfigTest Command (config test Alias)"
-# meta:version="1.39.0"
+# meta:version="1.51.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -61,11 +61,12 @@ cmd_configtest_help() {
 }
 
 nftban_cmd_configtest() {
-    # ConfigTest command - alias for config test
+    # ConfigTest command - deprecated alias for config validate (v1.51.0)
     # Delegates all arguments to nftban_cmd_config_test
     case "${1:-}" in
         -h|--help|help) cmd_configtest_help; return 0 ;;
     esac
+    echo "NOTICE: 'nftban configtest' is deprecated. Use 'nftban config validate' instead." >&2
     nftban_cmd_config_test "$@"
 }
 

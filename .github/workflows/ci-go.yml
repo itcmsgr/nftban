@@ -1,0 +1,129 @@
+# =============================================================================
+# NFTBan - CI: Go Build & Test
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Go code validation, build verification, and test execution
+#
+# Checks:
+#   - templ code generation (up to date)
+#   - go mod tidy (dependencies clean)
+#   - go vet (semantic analysis)
+#   - go build (all packages + named binaries)
+#   - go test -race (unit + integration tests with race detector)
+#   - Binary verification (ELF type, minimum size)
+#   - CLI structure validation
+#
+# Note: This merges the former go-check + build-verify jobs into one,
+#       eliminating duplicate Go/templ/libpam setup (~1 min saved).
+# =============================================================================
+
+name: Go Build & Test
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go-build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
+      - name: Cache Go modules
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
+      - name: Verify templ generated files are committed
+        run: |
+          git diff --exit-code -- '*_templ.go' || {
+            echo "::error::Generated *_templ.go files are out of date. Run 'templ generate' and commit."
+            exit 1
+          }
+
+      - name: Verify go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || {
+            echo "::error::Run 'go mod tidy' and commit changes"
+            exit 1
+          }
+
+      - name: Run go vet
+        run: |
+          go vet ./... 2>&1 | tee /tmp/vet.out
+          if [ -s /tmp/vet.out ]; then
+            echo "::error::go vet found issues:"
+            cat /tmp/vet.out
+            exit 1
+          fi
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Build named binaries
+        run: |
+          mkdir -p bin
+          go build -trimpath -o bin/nftban-core ./cmd/nftban-core
+          go build -trimpath -o bin/nftban-ui ./cmd/nftban-ui
+          go build -trimpath -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
+          go build -trimpath -o bin/nftband ./cmd/nftband
+
+      - name: Verify binaries
+        run: |
+          echo "=== Built binaries ==="
+          ls -lh bin/
+          for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+            file bin/$binary
+            TYPE=$(file -b bin/$binary)
+            if [[ ! "$TYPE" =~ ELF ]]; then
+              echo "::error::bin/$binary is not an ELF binary: $TYPE"
+              exit 1
+            fi
+            SIZE=$(stat -c%s "bin/$binary")
+            if [[ "$SIZE" -lt 102400 ]]; then
+              echo "::error::bin/$binary is suspiciously small ($SIZE bytes)"
+              exit 1
+            fi
+            echo "✓ $binary: ELF, ${SIZE} bytes"
+          done
+
+      - name: Run tests with race detector
+        run: go test -race -v ./...
+
+      - name: Verify CLI structure
+        run: |
+          echo "=== Verifying CLI structure ==="
+          test -f cli/sbin/nftban || { echo "FAIL: cli/sbin/nftban missing"; exit 1; }
+          test -f cli/lib/nftban/nftban_help.sh || { echo "FAIL: nftban_help.sh missing"; exit 1; }
+          test -d cli/lib/nftban/core || { echo "FAIL: core/ missing"; exit 1; }
+          test -d cli/lib/nftban/cli || { echo "FAIL: cli/ missing"; exit 1; }
+          test -d cli/lib/nftban/lib || { echo "FAIL: lib/ missing"; exit 1; }
+          echo "✓ CLI structure valid"
