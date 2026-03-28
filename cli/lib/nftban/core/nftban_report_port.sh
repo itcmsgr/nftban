@@ -8,7 +8,7 @@
 # meta:name="nftban_report_port"
 # meta:type="core"
 # meta:header="Port Report Core"
-# meta:version="1.45.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Scans listening services and analyzes nftables firewall status per port"
@@ -16,7 +16,7 @@
 # meta:output="Three-section port status (listeners, inbound policy, outbound policy)"
 # meta:depends="bash,ss,nft"
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-03-08"
+# meta:updated_date="2026-03-28"
 # meta:inventory.files=""
 # meta:inventory.binaries="ss,nft"
 # meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6"
@@ -181,11 +181,99 @@ nftban_port_is_loopback() {
 }
 
 nftban_port_bind_scope() {
+    # Returns: wildcard | loopback | specific
     local a="${1-}"
-    if nftban_port_is_loopback "$a"; then echo "LOCAL-ONLY"; return; fi
-    [[ "$a" == "0.0.0.0" || "$a" == "::" || "$a" == "*" ]] && { echo "PUBLIC"; return; }
-    # Any non-loopback specific IP is considered exposed
-    echo "PUBLIC"
+    if nftban_port_is_loopback "$a"; then echo "loopback"; return; fi
+    [[ "$a" == "0.0.0.0" || "$a" == "::" || "$a" == "*" ]] && { echo "wildcard"; return; }
+    echo "specific"
+}
+
+nftban_port_compute_exposure() {
+    # Correlate listener + firewall + bind → exposure state
+    # Args: $1=port $2=proto
+    # Output: "EXPOSURE|FIREWALL|ICON|DETAIL"
+    #   EXPOSURE: EXPOSED, BLOCKED, INTERNAL, UNUSED-RULE, MISCONFIG, NOT-RUNNING
+    #   FIREWALL: ALLOWED, BLOCKED, NO-RULE
+    #   ICON: visual indicator
+    #   DETAIL: human explanation
+    local port="$1" proto="$2"
+
+    # 1. Is it listening?
+    local listening="no"
+    local bind_scope="none"
+    local k4="${proto}_${port}_ipv4" k6="${proto}_${port}_ipv6"
+    local b4="${NFTBAN_PORT_BIND_ADDR[$k4]:-}" b6="${NFTBAN_PORT_BIND_ADDR[$k6]:-}"
+
+    if [[ -n "${NFTBAN_PORT_LISTEN_MAP[$k4]:-}" ]] || [[ -n "${NFTBAN_PORT_LISTEN_MAP[$k6]:-}" ]]; then
+        listening="yes"
+        # Determine bind scope (most permissive wins)
+        local sc4="" sc6=""
+        [[ -n "$b4" ]] && sc4="$(nftban_port_bind_scope "$b4")"
+        [[ -n "$b6" ]] && sc6="$(nftban_port_bind_scope "$b6")"
+        if [[ "$sc4" == "wildcard" || "$sc6" == "wildcard" ]]; then
+            bind_scope="wildcard"
+        elif [[ "$sc4" == "specific" || "$sc6" == "specific" ]]; then
+            bind_scope="specific"
+        elif [[ "$sc4" == "loopback" || "$sc6" == "loopback" ]]; then
+            bind_scope="loopback"
+        fi
+    fi
+
+    # 2. Is it allowed in firewall?
+    local fw_status="NO-RULE"
+    if [[ "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_input"]:-}" == "accept" ]] || \
+       [[ "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv4"]:-}" == "accept" ]] || \
+       [[ "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]:-}" == "accept" ]]; then
+        fw_status="ALLOWED"
+    elif [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_input"]+x}" ]] || \
+         [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv4"]+x}" ]] || \
+         [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]]; then
+        fw_status="BLOCKED"
+    fi
+
+    # 3. Correlate: exposure = listening AND firewall AND bind
+    local exposure="" icon="" detail=""
+
+    if [[ "$listening" == "yes" ]]; then
+        if [[ "$bind_scope" == "loopback" ]]; then
+            # Bound to localhost — never externally reachable
+            exposure="INTERNAL"
+            icon="~"
+            detail="Bound to localhost only"
+        elif [[ "$fw_status" == "ALLOWED" ]]; then
+            # Listening + allowed + not loopback = EXPOSED
+            exposure="EXPOSED"
+            icon="!"
+            detail="Publicly reachable"
+        elif [[ "$fw_status" == "BLOCKED" ]]; then
+            # Listening but firewall blocks — MISCONFIG or intentional
+            exposure="MISCONFIG"
+            icon="?"
+            detail="Listening but firewall blocks traffic"
+        else
+            # Listening but no firewall rule — default DROP policy blocks
+            exposure="BLOCKED"
+            icon="x"
+            detail="No firewall rule (default drop)"
+        fi
+    else
+        # Not listening
+        if [[ "$fw_status" == "ALLOWED" ]]; then
+            exposure="UNUSED-RULE"
+            icon="-"
+            detail="Firewall allows but no service running"
+        elif [[ "$fw_status" == "BLOCKED" ]]; then
+            exposure="NOT-RUNNING"
+            icon="."
+            detail="Not running, blocked"
+        else
+            exposure="NOT-RUNNING"
+            icon="."
+            detail="Not running"
+        fi
+    fi
+
+    printf "%s|%s|%s|%s\n" "$exposure" "$fw_status" "$icon" "$detail"
 }
 
 # =============================================================================
@@ -472,7 +560,7 @@ nftban_port_detect_service() {
         bind="$(nftban_port_trim "${b4:-}${b4:+ / }${b6:-}")"
         local sc4=""; [[ -n "$b4" ]] && sc4="$(nftban_port_bind_scope "$b4")"
         local sc6=""; [[ -n "$b6" ]] && sc6="$(nftban_port_bind_scope "$b6")"
-        if [[ "$sc4" == "PUBLIC" || "$sc6" == "PUBLIC" ]]; then scope="PUBLIC"; else scope="LOCAL-ONLY"; fi
+        if [[ "$sc4" == "wildcard" || "$sc6" == "wildcard" || "$sc4" == "specific" || "$sc6" == "specific" ]]; then scope="network"; else scope="loopback"; fi
     fi
 
     local sname="${NFTBAN_PORT_SERVICE_NAME["${port}_${proto}"]-}"
@@ -766,6 +854,14 @@ nftban_port_render_json() {
         svc="${svc//\"/\\\"}"
         notes="${notes//\"/\\\"}"
 
+        # Compute exposure (v1.50.1)
+        local exp_result
+        exp_result="$(nftban_port_compute_exposure "$port" "$proto")"
+        local exp_label exp_fw exp_icon exp_detail
+        # shellcheck disable=SC2034  # exp_icon consumed by read but unused in JSON
+        IFS='|' read -r exp_label exp_fw exp_icon exp_detail <<< "$exp_result"
+        exp_detail="${exp_detail//\"/\\\"}"
+
         json_ports+="{"
         json_ports+="\"port\":$port,"
         json_ports+="\"protocol\":\"${proto^^}\","
@@ -773,6 +869,9 @@ nftban_port_render_json() {
         json_ports+="\"service\":\"$svc\","
         json_ports+="\"status\":\"$status\","
         json_ports+="\"listening\":$(if [[ "$running" == "yes" ]]; then echo "true"; else echo "false"; fi),"
+        json_ports+="\"exposure\":\"$exp_label\","
+        json_ports+="\"firewall\":\"$exp_fw\","
+        json_ports+="\"exposure_detail\":\"$exp_detail\","
         json_ports+="\"ipv4_in\":\"$v4in\","
         json_ports+="\"ipv4_out\":\"$v4out\","
         json_ports+="\"ipv6_in\":\"$v6in\","
@@ -812,84 +911,148 @@ nftban_port_render_json() {
 }
 
 # =============================================================================
-# THREE-SECTION PORT STATUS DISPLAY (v1.19.24)
+# PORT STATUS DISPLAY (v1.50.1 — Exposure View)
 # =============================================================================
-# Section 1: Listening Services - what processes are actually listening
-# Section 2: Inbound Firewall Policy - what's allowed in nftables INPUT
-# Section 3: Outbound Firewall Policy - what's allowed in nftables OUTPUT
+# Section 1: SERVICE EXPOSURE — correlated kernel (nft) + runtime (ss) state
+#            Computes: EXPOSED, BLOCKED, INTERNAL, MISCONFIG, UNUSED-RULE
+# Section 2: OUTBOUND FIREWALL POLICY — egress dependencies
+# Section 3: PER-IP ACCESS RULES — per-IP port grants
+# Legacy:    Section 2 (inbound) kept for backward compat, not shown by default
 # =============================================================================
 
 # Global config for section filtering
-NFTBAN_PORT_SECTION="${NFTBAN_PORT_SECTION:-all}"  # all, listening, inbound, outbound
+NFTBAN_PORT_SECTION="${NFTBAN_PORT_SECTION:-all}"  # all, exposure, outbound
 
-nftban_port_render_section_listening() {
-    # Section 1: Listening Services - runtime socket view
-    # Shows what processes are actually listening on ports
+nftban_port_render_section_exposure() {
+    # Section 1: SERVICE EXPOSURE (v1.50.1)
+    # Correlates kernel nft state + runtime ss state → real reachability
+    # Sources of truth: nft -j list ruleset (firewall), ss -tulpen (listeners)
 
     echo ""
     echo "┌──────────────────────────────────────────────────────────────────────────────────┐"
-    echo "│  SECTION 1: LISTENING SERVICES                                                   │"
-    echo "│  Runtime socket view - what processes are actually listening                     │"
+    echo "│  SECTION 1: SERVICE EXPOSURE (Effective Reachability)                             │"
+    echo "│  Kernel state (nft) + Runtime (ss) = actual security posture                    │"
     echo "└──────────────────────────────────────────────────────────────────────────────────┘"
     echo ""
-    printf "%-10s %-14s %-18s %-14s %-12s %-12s\n" \
-        "PORT" "PROTO" "SERVICE" "PROCESS" "BIND" "SCOPE"
-    echo "──────────────────────────────────────────────────────────────────────────────────"
+    printf "%-7s %-5s %-16s %-14s %-10s %-12s %s\n" \
+        "PORT" "PROTO" "SERVICE" "PROCESS" "FIREWALL" "EXPOSURE" "DETAIL"
+    echo "──────────────────────────────────────────────────────────────────────────────────────"
 
-    local count=0
-    local -a keys=()
+    local count_exposed=0 count_blocked=0 count_internal=0 count_misconfig=0 count_unused=0 count_total=0
+
+    # Collect ALL ports — from both listeners AND firewall rules
+    local -A all_ports=()
     local k
 
-    # Collect only listening ports
+    # From listeners
     for k in "${!NFTBAN_PORT_LISTEN_MAP[@]}"; do
-        keys+=("$k")
+        local _proto="${k%%_*}"
+        local _rest="${k#*_}"
+        local _port="${_rest%%_*}"
+        local _family="${_rest##*_}"
+        # Skip ipv6 dups when ipv4 exists
+        [[ "$_family" == "ipv6" ]] && [[ -n "${NFTBAN_PORT_LISTEN_MAP["${_proto}_${_port}_ipv4"]:-}" ]] && continue
+        all_ports["${_port}_${_proto}"]=1
+    done
+
+    # From firewall (input rules only)
+    for k in "${!NFTBAN_PORT_NFT_GENERIC[@]}"; do
+        [[ "$k" != *_input ]] && continue
+        local _port="${k%%_*}"
+        local _rest="${k#*_}"
+        local _proto="${_rest%%_*}"
+        all_ports["${_port}_${_proto}"]=1
+    done
+    for k in "${!NFTBAN_PORT_NFT_RULES[@]}"; do
+        [[ "$k" != *_input_* ]] && continue
+        local _port="${k%%_*}"
+        local _rest="${k#*_}"
+        local _proto="${_rest%%_*}"
+        all_ports["${_port}_${_proto}"]=1
     done
 
     # Sort by port number
-    IFS=$'\n' read -r -d '' -a sorted < <(printf '%s\n' "${keys[@]}" | sort -t_ -k2n && printf '\0') || true
+    local -a sorted_keys=()
+    for k in "${!all_ports[@]}"; do sorted_keys+=("$k"); done
+    IFS=$'\n' read -r -d '' -a sorted_keys < <(printf '%s\n' "${sorted_keys[@]}" | sort -t_ -k1n -k2 && printf '\0') || true
 
-    for key in "${sorted[@]}"; do
-        # Key format: proto_port_family (e.g., tcp_22_ipv4)
-        local proto="${key%%_*}"
-        local rest="${key#*_}"
-        local port="${rest%%_*}"
-        local family="${rest##*_}"
+    for entry in "${sorted_keys[@]}"; do
+        local port="${entry%%_*}" proto="${entry##*_}"
 
-        # Skip duplicate entries (show once per port/proto, prefer ipv4)
-        [[ "$family" == "ipv6" ]] && [[ -n "${NFTBAN_PORT_LISTEN_MAP["${proto}_${port}_ipv4"]:-}" ]] && continue
-
-        local proc="${NFTBAN_PORT_LISTEN_MAP[$key]:-}"
-        local bind="${NFTBAN_PORT_BIND_ADDR[$key]:-*}"
-
-        # Get service name
+        # Service detection
         local svc="${NFTBAN_HOSTING_SERVICES["${port}_${proto}"]:-}"
         if [[ -z "$svc" ]] && [[ -r /etc/services ]]; then
             svc="$(awk -v P="$port" -v R="$proto" '!/^#/ && NF >= 2 { if ($2 ~ P"/"R) { print $1; exit; } }' /etc/services 2>/dev/null || true)"
         fi
-        [[ -z "$svc" ]] && svc="Unknown"
+        [[ -z "$svc" ]] && svc="unknown"
 
-        # Determine scope
-        local scope="PUBLIC"
-        if nftban_port_is_loopback "$bind"; then
-            scope="LOCAL-ONLY"
+        # Process info
+        local k4="${proto}_${port}_ipv4" k6="${proto}_${port}_ipv6"
+        local proc="${NFTBAN_PORT_LISTEN_MAP[$k4]:-${NFTBAN_PORT_LISTEN_MAP[$k6]:-}}"
+        local proc_display="-"
+        if [[ -n "$proc" ]]; then
+            proc_display="${proc:0:14}"
+            [[ ${#proc} -gt 14 ]] && proc_display="${proc:0:12}.."
         fi
 
-        # Format process info (trim to 14 chars)
-        local proc_display="${proc:0:14}"
-        [[ ${#proc} -gt 14 ]] && proc_display="${proc:0:12}.."
+        # Compute exposure
+        local exp_result
+        exp_result="$(nftban_port_compute_exposure "$port" "$proto")"
+        local exposure fw_label icon detail
+        IFS='|' read -r exposure fw_label icon detail <<< "$exp_result"
 
-        printf "%-10s %-14s %-18s %-14s %-12s %-12s\n" \
-            "$port" "${proto^^}" "$svc" "$proc_display" "$bind" "$scope"
+        # Color-code firewall column
+        local fw_display
+        case "$fw_label" in
+            ALLOWED) fw_display="${C_GREEN:-}ALLOWED${C_RESET:-}" ;;
+            BLOCKED) fw_display="${C_RED:-}BLOCKED${C_RESET:-}" ;;
+            *)       fw_display="${C_YELLOW:-}NO-RULE${C_RESET:-}" ;;
+        esac
 
-        count=$((count + 1))
+        # Color-code exposure column
+        local exp_display
+        case "$exposure" in
+            EXPOSED)     exp_display="${C_RED:-}! EXPOSED${C_RESET:-}";   count_exposed=$((count_exposed + 1)) ;;
+            BLOCKED)     exp_display="${C_GREEN:-}x BLOCKED${C_RESET:-}"; count_blocked=$((count_blocked + 1)) ;;
+            INTERNAL)    exp_display="${C_YELLOW:-}~ INTERNAL${C_RESET:-}"; count_internal=$((count_internal + 1)) ;;
+            MISCONFIG)   exp_display="${C_RED:-}? MISCONFIG${C_RESET:-}"; count_misconfig=$((count_misconfig + 1)) ;;
+            UNUSED-RULE) exp_display="${C_YELLOW:-}- UNUSED${C_RESET:-}";  count_unused=$((count_unused + 1)) ;;
+            NOT-RUNNING) exp_display=". CLOSED";  ;;
+            *)           exp_display="  $exposure" ;;
+        esac
+
+        printf "%-7s %-5s %-16s %-14s %-10b %-22b %s\n" \
+            "$port" "${proto^^}" "$svc" "$proc_display" "$fw_display" "$exp_display" "$detail"
+
+        count_total=$((count_total + 1))
     done
 
-    if [[ $count -eq 0 ]]; then
-        echo "  (No listening services detected)"
+    if [[ $count_total -eq 0 ]]; then
+        echo "  (No services or firewall rules detected)"
     fi
+
+    # Summary
     echo ""
-    echo "Total listening: $count"
+    echo "──────────────────────────────────────────────────────────────────────────────────────"
+    printf "  Total: %d" "$count_total"
+    [[ $count_exposed -gt 0 ]] && printf "  |  ${C_RED:-}EXPOSED: %d${C_RESET:-}" "$count_exposed"
+    [[ $count_internal -gt 0 ]] && printf "  |  INTERNAL: %d" "$count_internal"
+    [[ $count_blocked -gt 0 ]] && printf "  |  BLOCKED: %d" "$count_blocked"
+    [[ $count_misconfig -gt 0 ]] && printf "  |  ${C_RED:-}MISCONFIG: %d${C_RESET:-}" "$count_misconfig"
+    [[ $count_unused -gt 0 ]] && printf "  |  UNUSED: %d" "$count_unused"
     echo ""
+    echo ""
+
+    # Actionable warnings
+    if [[ $count_misconfig -gt 0 ]]; then
+        echo -e "  ${C_RED:-}WARNING:${C_RESET:-} $count_misconfig service(s) are listening but firewall blocks traffic."
+        echo "  If intentional, ignore. If not: nftban firewall rebuild"
+        echo ""
+    fi
+    if [[ $count_unused -gt 0 ]]; then
+        echo -e "  ${C_YELLOW:-}NOTE:${C_RESET:-} $count_unused firewall rule(s) allow ports with no running service."
+        echo ""
+    fi
 }
 
 nftban_port_render_section_inbound() {
@@ -944,21 +1107,14 @@ nftban_port_render_section_inbound() {
         v4_badge="${C_GREEN:-}✔${C_RESET:-}"
         v6_badge="${C_GREEN:-}✔${C_RESET:-}"
 
-        # Determine access level
-        local access="Public"
-        if [[ "$listening" == "Yes" ]]; then
-            # Check if bound to localhost
-            local k4="${proto}_${port}_ipv4"
-            local bind4="${NFTBAN_PORT_BIND_ADDR[$k4]:-}"
-            if nftban_port_is_loopback "$bind4"; then
-                access="Local-only"
-            fi
-        else
-            access="Open (no listener)"
-        fi
+        # Compute exposure for inbound display
+        local exp_result
+        exp_result="$(nftban_port_compute_exposure "$port" "$proto")"
+        local _exposure _fw _icon _detail
+        IFS='|' read -r _exposure _fw _icon _detail <<< "$exp_result"
 
         printf "%-10s %-10s %-18s %-10b %-10b %-14s %-12s\n" \
-            "$port" "${proto^^}" "$svc" "$v4_badge" "$v6_badge" "$listening" "$access"
+            "$port" "${proto^^}" "$svc" "$v4_badge" "$v6_badge" "$listening" "$_exposure"
 
         count=$((count + 1))
     done
@@ -1006,20 +1162,14 @@ nftban_port_render_section_inbound() {
             v6_badge="${C_GREEN:-}✔${C_RESET:-}"
         fi
 
-        # Determine access level
-        local access="Public"
-        if [[ "$listening" == "Yes" ]]; then
-            local k4="${proto}_${port}_ipv4"
-            local bind4="${NFTBAN_PORT_BIND_ADDR[$k4]:-}"
-            if nftban_port_is_loopback "$bind4"; then
-                access="Local-only"
-            fi
-        else
-            access="Open (no listener)"
-        fi
+        # Compute exposure for inbound display
+        local exp_result
+        exp_result="$(nftban_port_compute_exposure "$port" "$proto")"
+        local _exposure _fw _icon _detail
+        IFS='|' read -r _exposure _fw _icon _detail <<< "$exp_result"
 
         printf "%-10s %-10s %-18s %-10b %-10b %-14s %-12s\n" \
-            "$port" "${proto^^}" "$svc" "$v4_badge" "$v6_badge" "$listening" "$access"
+            "$port" "${proto^^}" "$svc" "$v4_badge" "$v6_badge" "$listening" "$_exposure"
 
         count=$((count + 1))
     done
@@ -1214,18 +1364,14 @@ nftban_port_render_table() {
 
         # Render requested sections
         case "$section" in
-            listening)
-                nftban_port_render_section_listening
-                ;;
-            inbound)
-                nftban_port_render_section_inbound
+            listening|inbound|exposure)
+                nftban_port_render_section_exposure
                 ;;
             outbound)
                 nftban_port_render_section_outbound
                 ;;
             all|*)
-                nftban_port_render_section_listening
-                nftban_port_render_section_inbound
+                nftban_port_render_section_exposure
                 nftban_port_render_section_outbound
                 nftban_port_render_section_per_ip_access
                 ;;
@@ -1236,11 +1382,14 @@ nftban_port_render_table() {
 
         # Legend
         echo "Legend:"
-        echo -e "  ${C_GREEN:-}✔${C_RESET:-} Allowed   ${C_RED:-}✖${C_RESET:-} Blocked   ${C_YELLOW:-}−${C_RESET:-} No explicit rule"
+        echo -e "  ! EXPOSED   = Listening + firewall allows + bound to network"
+        echo -e "  x BLOCKED   = Not reachable (firewall drops or no rule)"
+        echo -e "  ~ INTERNAL  = Bound to localhost only (never reachable externally)"
+        echo -e "  ? MISCONFIG = Listening but firewall blocks (check config)"
+        echo -e "  - UNUSED    = Firewall allows but no service running"
+        echo -e "  . CLOSED    = Not running"
         echo ""
-        echo "Access Labels:"
-        echo "  Inbound:  Public | Local-only | Open (no listener)"
-        echo "  Outbound: Egress allowed | Egress (IPv4/IPv6 only)"
+        echo "Sources: nft (kernel firewall state) + ss (runtime sockets)"
         echo ""
 
         # v1.19.21 FIX: Active exports (E1)
@@ -1328,7 +1477,12 @@ nftban_port_render_table() {
         v6in="$(cut -d'|' -f3 <<< "$status_line")"
         v6out="$(cut -d'|' -f4 <<< "$status_line")"
         notes="$(cut -d'|' -f5 <<< "$status_line")"
-        [[ -n "$scope" ]] && notes="$(nftban_port_trim "$notes $scope")"
+        # Compute exposure for legacy formats (v1.50.1)
+        local exp_result_legacy
+        exp_result_legacy="$(nftban_port_compute_exposure "$port" "$proto")"
+        local _exp_label=""
+        IFS='|' read -r _exp_label _ _ _ <<< "$exp_result_legacy"
+        [[ -n "$_exp_label" ]] && notes="$(nftban_port_trim "$notes $_exp_label")"
 
         # Populate array in caller scope
         NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$v4in"
