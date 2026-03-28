@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.31.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.53.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -10,7 +10,9 @@
 
 ### CI/CD Status
 
-[![CI](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml)
+[![Shell Quality](https://github.com/itcmsgr/nftban/actions/workflows/ci-bash.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-bash.yml)
+[![Go Quality](https://github.com/itcmsgr/nftban/actions/workflows/ci-go.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-go.yml)
+[![Architecture](https://github.com/itcmsgr/nftban/actions/workflows/ci-architecture.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-architecture.yml)
 [![Build Packages](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml)
 [![Docker](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml)
 [![ShellCheck](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml)
