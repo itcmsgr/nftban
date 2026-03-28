@@ -9,7 +9,7 @@
 # meta:name="nftban_health_checks_security"
 # meta:type="lib"
 # meta:header="Health Check Security Functions"
-# meta:version="1.50.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -819,7 +819,7 @@ EOF
         if [[ -n "$nft_tcp_ports" ]] && echo "$nft_tcp_ports" | grep -q "elements"; then
             if ! echo "$nft_tcp_ports" | grep -qw "$current_ssh_port"; then
                 ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports_in set")
-                ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
+                ssh_issues+=("Fix: nftban firewall reload")
                 status=$HEALTH_ERROR
             fi
 
@@ -834,7 +834,7 @@ EOF
         elif [[ -n "$nft_tcp_ports" ]]; then
             # Set exists but has no elements — SSH port definitely missing
             ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports_in set (set empty)")
-            ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
+            ssh_issues+=("Fix: nftban firewall reload")
             status=$HEALTH_ERROR
         fi
     fi
