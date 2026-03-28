@@ -302,8 +302,8 @@ func TestBuildVariables_Defaults(t *testing.T) {
 // =============================================================================
 
 func TestConstants(t *testing.T) {
-	if DefaultHTTPAddr != "127.0.0.1:8080" {
-		t.Errorf("DefaultHTTPAddr = %q, want %q", DefaultHTTPAddr, "127.0.0.1:8080")
+	if DefaultHTTPAddr != "127.0.0.1:9580" {
+		t.Errorf("DefaultHTTPAddr = %q, want %q", DefaultHTTPAddr, "127.0.0.1:9580")
 	}
 	if PprofAddr != "127.0.0.1:6060" {
 		t.Errorf("PprofAddr = %q, want %q", PprofAddr, "127.0.0.1:6060")

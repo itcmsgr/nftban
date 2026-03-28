@@ -13,7 +13,7 @@
 // meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LOG_DIR"
 // meta:inventory.config_files="/etc/nftban/nftban.conf"
 // meta:inventory.systemd_units="nftband.service, nftband.socket"
-// meta:inventory.network="8080/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
+// meta:inventory.network="9580/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
 // meta:inventory.privileges="root"
 // =============================================================================
 
@@ -82,8 +82,19 @@ func (d *Daemon) startHTTP() error {
 	// TODO: Mount existing internal/api handlers here
 	// mux.Handle("/api/v1/", api.NewRouter())
 
+	addr := getAPIAddr()
+
+	// v1.52.0: Pre-check if port is available — if not, skip HTTP API gracefully
+	// This prevents noisy errors when Apache/DA/cPanel/nginx is on the same port
+	testLn, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Printf("[WARN] HTTP API port %s unavailable (%v) — API disabled, IPC socket still works", addr, err)
+		return nil
+	}
+	testLn.Close()
+
 	d.httpSrv = &http.Server{
-		Addr:    getAPIAddr(),
+		Addr:    addr,
 		Handler: mux,
 	}
 

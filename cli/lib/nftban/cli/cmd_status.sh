@@ -142,7 +142,15 @@ _nftban_protection_state() {
             [[ $_modules_active -eq 0 ]] && grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null && ((_modules_active++)) || true
             grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
             [[ $_modules_active -le 1 ]] && grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null && ((_modules_active++)) || true
-            systemctl is-active nftban-login-monitor >/dev/null 2>&1 && ((_modules_active++)) || true
+            # v1.52.0: Login monitor runs inside nftband (not standalone service since v1.23.0)
+            # Check config-enabled + daemon running
+            if systemctl is-active nftband >/dev/null 2>&1; then
+                local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+                local _lm_enabled="false"
+                [[ -f "${_lm_conf}.local" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+                [[ "$_lm_enabled" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+                [[ "$_lm_enabled" == "true" ]] && ((_modules_active++)) || true
+            fi
             systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
             if [[ "$_modules_active" -gt 0 ]]; then
                 echo "PROTECTED"; return
@@ -607,12 +615,19 @@ _status_section_protection() {
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
     [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(list: nftban feeds list | enable: nftban feeds enable <FEED>)"
 
-    # Login Monitor (deprecated v1.23.0 — replaced by nftband loginmon module)
-    # Only show if the legacy service still exists on this system
-    if [[ -f /lib/systemd/system/nftban-login-monitor.service ]] || \
-       [[ -f /etc/systemd/system/nftban-login-monitor.service ]]; then
-        printf "  %-20s %s\n" "Login Monitor......." "DEPRECATED (use: nftband loginmon)"
+    # Login Monitor (v1.52.0: runs inside nftband as loginmon module)
+    local login_mon_status="DISABLED"
+    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+        local _lm_en="false"
+        [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        if [[ "$_lm_en" == "true" ]]; then
+            login_mon_status="ACTIVE (nftband loginmon)"
+        fi
     fi
+    printf "  %-20s %s\n" "Login Monitor......." "$login_mon_status"
+    [[ "$login_mon_status" == "DISABLED" ]] && printf "      %-16s %s\n" "" "(enable: nftban login enable)"
 
     # GeoIP (database module) - use nftban-core directly for accurate detection
     local geoip_status="NOT INSTALLED"
