@@ -1422,6 +1422,51 @@ if command -v nftban >/dev/null 2>&1; then
     timeout 60s nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
+# =============================================================================
+# PREFLIGHT: Strict Validation — Gate Service Enablement
+# =============================================================================
+# v1.52.0: Mirrored from DEB postinst — RPM was missing this gate.
+# If preflight fails, NFTBan installs but does NOT enforce.
+echo "[NFTBan] Running strict preflight check..."
+
+PREFLIGHT_PASSED=1
+PREFLIGHT_EXIT=0
+PREFLIGHT_OUTPUT=""
+
+if command -v nftban >/dev/null 2>&1; then
+    PREFLIGHT_OUTPUT=\$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=\$?
+
+    if [[ \$PREFLIGHT_EXIT -ne 0 ]]; then
+        PREFLIGHT_PASSED=0
+
+        PREFLIGHT_REASON="unknown"
+        PREFLIGHT_ACTION="nftban firewall validate --strict"
+
+        if echo "\$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
+            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1)
+        elif echo "\$PREFLIGHT_OUTPUT" | grep -q "ERROR:"; then
+            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "ERROR:" | head -1)
+        elif echo "\$PREFLIGHT_OUTPUT" | grep -q "FAIL:"; then
+            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "FAIL:" | head -1)
+        fi
+
+        echo "[NFTBan ERROR]"
+        echo "[NFTBan ERROR] Strict preflight failed — refusing to enable enforcement"
+        echo "[NFTBan ERROR] Reason: \$PREFLIGHT_REASON"
+        echo "[NFTBan ERROR] Fix: \$PREFLIGHT_ACTION"
+        echo "[NFTBan ERROR] NFTBan is installed but NOT enforcing."
+        echo "[NFTBan ERROR] Fix the issue and run: nftban firewall rebuild"
+        echo "[NFTBan ERROR]"
+    else
+        echo "[NFTBan]   Strict preflight passed — safe to enable enforcement"
+    fi
+else
+    echo "[NFTBan WARN] nftban command not found — skipping strict preflight"
+fi
+
+# ONLY enable services and firewall if preflight passed
+if [[ \$PREFLIGHT_PASSED -eq 1 ]]; then
+
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
 # NOTE: %%systemd_post macros removed due to el10 compatibility issues
@@ -2072,6 +2117,23 @@ if [[ "\$PANEL_DETECTED" != "none" ]]; then
     fi
 else
     echo "[NFTBan]   No hosting panel detected (standalone server)"
+fi
+
+fi  # End of PREFLIGHT_PASSED gate
+
+if [[ \$PREFLIGHT_PASSED -ne 1 ]]; then
+    echo ""
+    echo "[NFTBan] ========================================"
+    echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} Files Installed"
+    echo "[NFTBan] ========================================"
+    echo ""
+    echo "[NFTBan WARN] ENFORCEMENT DISABLED due to preflight failure."
+    echo ""
+    echo "[NFTBan] To enable NFTBan after fixing conflicts:"
+    echo "[NFTBan]   1. Fix the issue reported above"
+    echo "[NFTBan]   2. Run: nftban firewall validate --strict"
+    echo "[NFTBan]   3. Run: nftban firewall rebuild"
+    echo ""
 fi
 
 # FIX v1.17.0: Final cache ownership fix (exporter runs as nftban user)
