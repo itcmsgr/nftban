@@ -199,9 +199,10 @@ nftban_health_render_terminal() {
         for error in "${NFTBAN_HEALTH_ERRORS[@]}"; do
             echo "  - $error"
         done
-        # Also show issues from checks that have ERROR status but no explicit ERRORS entry
+        # Also show issues from checks that have ERROR/CRITICAL status but no explicit ERRORS entry
+        # v1.50.1: Only show ERROR (2) and CRITICAL (3) — not DISABLED (5) or NOT_INSTALLED (4)
         for _ek in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
-            if [[ "${NFTBAN_HEALTH_RESULTS[$_ek]}" -ge 2 ]] && [[ -n "${NFTBAN_HEALTH_ISSUES[$_ek]:-}" ]]; then
+            if [[ "${NFTBAN_HEALTH_RESULTS[$_ek]}" -eq 2 || "${NFTBAN_HEALTH_RESULTS[$_ek]}" -eq 3 ]] && [[ -n "${NFTBAN_HEALTH_ISSUES[$_ek]:-}" ]]; then
                 # Check if this issue is already covered in NFTBAN_HEALTH_ERRORS
                 local _already_shown=false
                 for _existing in "${NFTBAN_HEALTH_ERRORS[@]}"; do

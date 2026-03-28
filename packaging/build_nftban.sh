@@ -1597,19 +1597,30 @@ if [ "\$SYNC_SUCCESS" -eq 0 ]; then
 fi
 
 # =============================================================================
-# PREFLIGHT: Lockout Prevention (Detect-Only, Fail-Safe)
+# PREFLIGHT: Ghost Table Cleanup + Lockout Prevention
 # =============================================================================
-# CRITICAL: Never modify third-party firewall config
-# v1.48.0: Clean ghost nftables tables before preflight validation.
-# Ghost tables from CSF/firewalld/iptables-nft may exist even when services
-# are already disabled (e.g., CSF was disabled before NFTBan install).
+# v1.50.1: Use centralized ghost table cleanup (idempotent, live-state-based).
+# Handles all iptables-nft/firewalld/CSF ghosts from canonical list.
+# NOTE: ip raw / ip6 raw are NFTBan-owned (SYNPROXY) — never removed.
 echo "[NFTBan] Cleaning ghost nftables tables before preflight..."
-for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip mangle" "ip raw" "inet firewalld" "inet filter"; do
-    if nft list table \$ghost_table &>/dev/null 2>&1; then
-        echo "[NFTBan]   Removing ghost table: \$ghost_table"
-        nft delete table \$ghost_table 2>/dev/null || true
+if [ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]; then
+    source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
+    if type nftban_cleanup_ghost_tables >/dev/null 2>&1; then
+        nftban_cleanup_ghost_tables 2>/dev/null || true
+        if type nftban_validate_hook_authority >/dev/null 2>&1; then
+            nftban_validate_hook_authority 2>/dev/null || true
+        fi
     fi
-done
+else
+    # Fallback: inline cleanup if library not yet installed (fresh install)
+    # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
+    for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter" "inet nftban_install_emergency"; do
+        if nft list table \$ghost_table &>/dev/null 2>&1; then
+            echo "[NFTBan]   Removing ghost table: \$ghost_table"
+            nft delete table \$ghost_table 2>/dev/null || true
+        fi
+    done
+fi
 
 # CRITICAL: Never start nftables if unsafe
 # CRITICAL: Always preserve SSH access
