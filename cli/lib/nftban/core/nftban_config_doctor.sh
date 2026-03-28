@@ -156,51 +156,97 @@ _doctor_nft_chain_exists() {
 
 _doctor_nft_chain_has_jump() {
     # Check if input chain has a jump to the specified chain
-    local target="$1"
-    echo "$_DOCTOR_NFT_JSON" | jq -e --arg t "$target" '
-        [.nftables[] | select(.rule?) | .rule |
-         select(.chain == "input" and .table == "nftban") |
-         .expr[]? | select(.jump?) | .jump.target] |
-        any(. == $t)
-    ' >/dev/null 2>&1
+    # Optional $2 = family ("ip" or "ip6"), omit for any-family
+    local target="$1" family="${2:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg t "$target" --arg f "$family" '
+            [.nftables[] | select(.rule?) | .rule |
+             select(.chain == "input" and .table == "nftban" and .family == $f) |
+             .expr[]? | select(.jump?) | .jump.target] |
+            any(. == $t)
+        ' >/dev/null 2>&1
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg t "$target" '
+            [.nftables[] | select(.rule?) | .rule |
+             select(.chain == "input" and .table == "nftban") |
+             .expr[]? | select(.jump?) | .jump.target] |
+            any(. == $t)
+        ' >/dev/null 2>&1
+    fi
 }
 
 _doctor_nft_set_elements() {
     # Count elements in an nft set from cached JSON
-    local set_name="$1"
-    echo "$_DOCTOR_NFT_JSON" | jq --arg s "$set_name" '
-        [.nftables[] | select(.set?) | .set |
-         select(.name == $s and .table == "nftban") |
-         .elem // [] | length] | add // 0
-    ' 2>/dev/null
+    # Optional $2 = family ("ip" or "ip6"), omit for sum of both
+    local set_name="$1" family="${2:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq --arg s "$set_name" --arg f "$family" '
+            [.nftables[] | select(.set?) | .set |
+             select(.name == $s and .table == "nftban" and .family == $f) |
+             .elem // [] | length] | add // 0
+        ' 2>/dev/null
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq --arg s "$set_name" '
+            [.nftables[] | select(.set?) | .set |
+             select(.name == $s and .table == "nftban") |
+             .elem // [] | length] | add // 0
+        ' 2>/dev/null
+    fi
 }
 
 _doctor_nft_set_exists() {
-    # Check if a set exists
-    local set_name="$1"
-    echo "$_DOCTOR_NFT_JSON" | jq -e --arg s "$set_name" '
-        .nftables[] | select(.set?) | .set |
-        select(.name == $s and .table == "nftban")
-    ' >/dev/null 2>&1
+    # Check if a set exists in nftban table
+    # Optional $2 = family ("ip" or "ip6"), omit for any-family
+    local set_name="$1" family="${2:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg s "$set_name" --arg f "$family" '
+            .nftables[] | select(.set?) | .set |
+            select(.name == $s and .table == "nftban" and .family == $f)
+        ' >/dev/null 2>&1
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg s "$set_name" '
+            .nftables[] | select(.set?) | .set |
+            select(.name == $s and .table == "nftban")
+        ' >/dev/null 2>&1
+    fi
 }
 
 _doctor_nft_port_set_values() {
     # Get port values from an nft set as comma-separated list
-    local set_name="$1"
-    echo "$_DOCTOR_NFT_JSON" | jq -r --arg s "$set_name" '
-        [.nftables[] | select(.set?) | .set |
-         select(.name == $s and .table == "nftban") |
-         .elem[]? | if type == "object" then .val // . else . end |
-         if type == "number" then . else empty end] | sort | map(tostring) | join(",")
-    ' 2>/dev/null
+    # Optional $2 = family ("ip" or "ip6"), omit for merged
+    local set_name="$1" family="${2:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq -r --arg s "$set_name" --arg f "$family" '
+            [.nftables[] | select(.set?) | .set |
+             select(.name == $s and .table == "nftban" and .family == $f) |
+             .elem[]? | if type == "object" then .val // . else . end |
+             if type == "number" then . else empty end] | sort | unique | map(tostring) | join(",")
+        ' 2>/dev/null
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq -r --arg s "$set_name" '
+            [.nftables[] | select(.set?) | .set |
+             select(.name == $s and .table == "nftban") |
+             .elem[]? | if type == "object" then .val // . else . end |
+             if type == "number" then . else empty end] | sort | unique | map(tostring) | join(",")
+        ' 2>/dev/null
+    fi
 }
 
 _doctor_nft_counter_count() {
-    # Count named counters in ip nftban
-    echo "$_DOCTOR_NFT_JSON" | jq '
-        [.nftables[] | select(.counter?) | .counter |
-         select(.table == "nftban")] | length
-    ' 2>/dev/null
+    # Count named counters in nftban table
+    # Optional $1 = family ("ip" or "ip6"), omit for total across both
+    local family="${1:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq --arg f "$family" '
+            [.nftables[] | select(.counter?) | .counter |
+             select(.table == "nftban" and .family == $f)] | length
+        ' 2>/dev/null
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq '
+            [.nftables[] | select(.counter?) | .counter |
+             select(.table == "nftban")] | length
+        ' 2>/dev/null
+    fi
 }
 
 # =============================================================================
@@ -308,7 +354,7 @@ _doctor_core_integrity() {
     local present_v4=0
     if [[ "$ipv4_ok" == "true" ]]; then
         for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
-            if _doctor_nft_set_exists "$set_name"; then
+            if _doctor_nft_set_exists "$set_name" "ip"; then
                 ((present_v4++)) || true
             fi
         done
@@ -326,7 +372,7 @@ _doctor_core_integrity() {
     local present_v6=0
     if [[ "$ipv6_ok" == "true" ]]; then
         for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
-            if _doctor_nft_set_exists "$set_name"; then
+            if _doctor_nft_set_exists "$set_name" "ip6"; then
                 ((present_v6++)) || true
             fi
         done
@@ -338,16 +384,28 @@ _doctor_core_integrity() {
         _doctor_finding "$_SEV_ERR" "sets_incomplete" "$present_v6 of $expected_v6 IPv6 sets present" "nft"
     fi
 
-    # --- Named Counters ---
-    local counter_count
-    counter_count=$(_doctor_nft_counter_count)
-    if [[ "$counter_count" -ge 22 ]]; then
-        _doctor_finding "$_SEV_OK" "counters_present" "$counter_count named counters present" "nft"
-    elif [[ "$counter_count" -gt 0 ]]; then
+    # --- Named Counters (IPv4) ---
+    local counter_v4
+    counter_v4=$(_doctor_nft_counter_count "ip")
+    if [[ "$counter_v4" -ge 11 ]]; then
+        _doctor_finding "$_SEV_OK" "counters_present" "$counter_v4 IPv4 named counters present" "nft"
+    elif [[ "$counter_v4" -gt 0 ]]; then
         [[ "$section_status" != "$_SEV_ERR" ]] && section_status="$_SEV_WARN"
-        _doctor_finding "$_SEV_WARN" "counters_partial" "$counter_count of 22 expected named counters present" "nft"
+        _doctor_finding "$_SEV_WARN" "counters_partial" "$counter_v4 of 11+ expected IPv4 named counters" "nft"
     else
-        _doctor_finding "$_SEV_INFO" "counters_absent" "No named counters (anonymous counters in use)" "nft"
+        _doctor_finding "$_SEV_INFO" "counters_absent" "No IPv4 named counters (anonymous counters in use)" "nft"
+    fi
+
+    # --- Named Counters (IPv6) ---
+    local counter_v6
+    counter_v6=$(_doctor_nft_counter_count "ip6")
+    if [[ "$counter_v6" -ge 11 ]]; then
+        _doctor_finding "$_SEV_OK" "counters_present" "$counter_v6 IPv6 named counters present" "nft"
+    elif [[ "$counter_v6" -gt 0 ]]; then
+        [[ "$section_status" != "$_SEV_ERR" ]] && section_status="$_SEV_WARN"
+        _doctor_finding "$_SEV_WARN" "counters_partial" "$counter_v6 of 11+ expected IPv6 named counters" "nft"
+    else
+        _doctor_finding "$_SEV_INFO" "counters_absent" "No IPv6 named counters (anonymous counters in use)" "nft"
     fi
 
     # --- Hook Authority ---
@@ -468,36 +526,37 @@ _doctor_global_drift() {
     config_tcp_in=$(_doctor_config_val "TCP_PORTS_IN")
     config_ssh_port=$(_doctor_config_val "SSH_PORT")
 
-    # Get kernel TCP ports
-    local kernel_tcp_in
-    kernel_tcp_in=$(_doctor_nft_port_set_values "tcp_ports_in")
+    # Get kernel TCP ports (check both families)
+    for _family in "ip" "ip6"; do
+        local kernel_tcp_in
+        kernel_tcp_in=$(_doctor_nft_port_set_values "tcp_ports_in" "$_family")
 
-    if [[ -n "$config_tcp_in" && -n "$kernel_tcp_in" ]]; then
-        # Normalize: sort both, compare
-        local config_sorted kernel_sorted
-        config_sorted=$(echo "$config_tcp_in" | tr ',' '\n' | sort -n | tr '\n' ',' | sed 's/,$//')
-        kernel_sorted=$(echo "$kernel_tcp_in" | tr ',' '\n' | sort -n | tr '\n' ',' | sed 's/,$//')
+        if [[ -n "$config_tcp_in" && -n "$kernel_tcp_in" ]]; then
+            # Normalize: sort both, compare
+            local config_sorted kernel_sorted
+            config_sorted=$(echo "$config_tcp_in" | tr ',' '\n' | sort -n | tr '\n' ',' | sed 's/,$//')
+            kernel_sorted=$(echo "$kernel_tcp_in" | tr ',' '\n' | sort -n | tr '\n' ',' | sed 's/,$//')
 
-        if [[ "$config_sorted" != "$kernel_sorted" ]]; then
-            _doctor_finding "$_SEV_WARN" "drift_tcp_ports" \
-                "TCP_PORTS_IN drift: config=$config_sorted kernel=$kernel_sorted" "nft" "" \
-                "$(jq -nc --arg cv "$config_sorted" --arg kv "$kernel_sorted" '{config_value: $cv, kernel_value: $kv}')"
-        else
-            _doctor_finding "$_SEV_OK" "tcp_ports_synced" "TCP_PORTS_IN: config matches kernel" "nft"
-        fi
-    fi
-
-    # SSH port check
-    if [[ -n "$config_ssh_port" ]]; then
-        # Check if SSH port is in the kernel TCP port set
-        if [[ -n "$kernel_tcp_in" ]]; then
-            if ! echo ",$kernel_tcp_in," | grep -q ",${config_ssh_port},"; then
-                _doctor_finding "$_SEV_ERR" "ssh_port_not_allowed" \
-                    "SSH_PORT=$config_ssh_port is NOT in kernel tcp_ports_in ($kernel_tcp_in)" "nft" "" \
-                    "$(jq -nc --arg p "$config_ssh_port" '{port: $p}')"
+            if [[ "$config_sorted" != "$kernel_sorted" ]]; then
+                _doctor_finding "$_SEV_WARN" "drift_tcp_ports" \
+                    "$_family TCP_PORTS_IN drift: config=$config_sorted kernel=$kernel_sorted" "nft" "" \
+                    "$(jq -nc --arg cv "$config_sorted" --arg kv "$kernel_sorted" --arg f "$_family" '{family: $f, config_value: $cv, kernel_value: $kv}')"
+            else
+                _doctor_finding "$_SEV_OK" "tcp_ports_synced" "$_family TCP_PORTS_IN: config matches kernel" "nft"
             fi
         fi
-    fi
+
+        # SSH port check
+        if [[ -n "$config_ssh_port" ]]; then
+            if [[ -n "$kernel_tcp_in" ]]; then
+                if ! echo ",$kernel_tcp_in," | grep -q ",${config_ssh_port},"; then
+                    _doctor_finding "$_SEV_ERR" "ssh_port_not_allowed" \
+                        "$_family SSH_PORT=$config_ssh_port is NOT in kernel tcp_ports_in ($kernel_tcp_in)" "nft" "" \
+                        "$(jq -nc --arg p "$config_ssh_port" --arg f "$_family" '{family: $f, port: $p}')"
+                fi
+            fi
+        fi
+    done
 
     # Check for unapplied module enables (config says enabled but no kernel artifacts)
     for mod_name in "${!_DOCTOR_MODULES[@]}"; do
@@ -512,13 +571,21 @@ _doctor_global_drift() {
         _doctor_config_bool "$enable_key" && config_enabled=true
 
         local kernel_present=false
-        _doctor_nft_chain_exists "$chain_artifact" && kernel_present=true
+        # Check both families — chain should exist in at least ip
+        _doctor_nft_chain_exists "$chain_artifact" "ip" && kernel_present=true
 
         if [[ "$config_enabled" == "true" && "$kernel_present" == "false" ]]; then
             _DOCTOR_OVR_UNAPPLIED+=("$(jq -nc --arg k "$enable_key" --arg m "$mod_name" \
                 '{key: $k, module: $m, config_value: "true", kernel_value: "chain missing", source: "config.local", kernel_source: "nft"}')")
             _doctor_finding "$_SEV_WARN" "drift_module_unapplied" \
-                "$mod_name: enabled in config but $chain_artifact chain missing (needs rebuild)" "config.local" "$mod_name"
+                "$mod_name: enabled in config but $chain_artifact chain missing in ip nftban (needs rebuild)" "config.local" "$mod_name"
+        fi
+
+        # Also check IPv6 parity for chain-based modules
+        if [[ "$config_enabled" == "true" ]] && _doctor_nft_chain_exists "$chain_artifact" "ip" && \
+           ! _doctor_nft_chain_exists "$chain_artifact" "ip6"; then
+            _doctor_finding "$_SEV_WARN" "drift_module_ipv6_missing" \
+                "$mod_name: $chain_artifact chain present in ip but MISSING in ip6 nftban" "nft" "$mod_name"
         fi
     done
 }
@@ -549,12 +616,12 @@ _doctor_module_audit() {
 
     # --- L2: Kernel artifacts exist? ---
     if [[ -n "$chain_artifact" ]]; then
-        _doctor_nft_chain_exists "$chain_artifact" && l2_materialized=true
+        _doctor_nft_chain_exists "$chain_artifact" "ip" && l2_materialized=true
         l2_artifacts="chain:$chain_artifact"
     elif [[ -n "$set_artifact" ]]; then
         # Module uses sets instead of chains (feeds, geoban)
         local elem_count
-        elem_count=$(_doctor_nft_set_elements "$set_artifact")
+        elem_count=$(_doctor_nft_set_elements "$set_artifact" "ip")
         if [[ "${elem_count:-0}" -gt 0 ]]; then
             l2_materialized=true
             l2_artifacts="set:$set_artifact(${elem_count} elements)"
@@ -587,7 +654,9 @@ _doctor_module_audit() {
             synproxy)
                 if _doctor_nft_table_exists "ip" "raw"; then
                     l2_materialized=true
-                    l2_artifacts="table:ip raw"
+                    local _raw_arts="table:ip raw"
+                    _doctor_nft_table_exists "ip6" "raw" && _raw_arts="table:ip raw + ip6 raw"
+                    l2_artifacts="$_raw_arts"
                 fi
                 ;;
         esac
@@ -595,7 +664,7 @@ _doctor_module_audit() {
 
     # --- L3: Referenced in active rule path? ---
     if [[ -n "$chain_artifact" ]]; then
-        _doctor_nft_chain_has_jump "$chain_artifact" && l3_referenced=true
+        _doctor_nft_chain_has_jump "$chain_artifact" "ip" && l3_referenced=true
         l3_rules="input→$chain_artifact"
     elif [[ "$mod_name" == "feeds" || "$mod_name" == "geoban" ]]; then
         # Feed/geoban data lives in blacklist set which is always referenced
@@ -616,7 +685,7 @@ _doctor_module_audit() {
                 local _cfg_ssh_port _kernel_ssh_ports
                 _cfg_ssh_port=$(_doctor_config_val "SSH_PORT")
                 [[ -z "$_cfg_ssh_port" ]] && _cfg_ssh_port="22"
-                _kernel_ssh_ports=$(_doctor_nft_port_set_values "tcp_ports_in")
+                _kernel_ssh_ports=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
                 if [[ -n "$_kernel_ssh_ports" ]] && ! echo ",$_kernel_ssh_ports," | grep -q ",$_cfg_ssh_port,"; then
                     l4_effective=false
                     l4_detail="SSH port $_cfg_ssh_port not in kernel tcp_ports_in ($_kernel_ssh_ports)"
@@ -629,7 +698,7 @@ _doctor_module_audit() {
             portscan)
                 # Open port count vs detection effectiveness
                 local _tcp_open _port_count
-                _tcp_open=$(_doctor_nft_port_set_values "tcp_ports_in")
+                _tcp_open=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
                 _port_count=$(echo "$_tcp_open" | tr ',' '\n' | grep -c '[0-9]' 2>/dev/null || echo "0")
                 if (( _port_count > 20 )); then
                     l4_detail="$_port_count open ports — portscan detection effectiveness reduced (INFO)"
@@ -642,7 +711,7 @@ _doctor_module_audit() {
             botguard)
                 # HTTP port in tcp_ports_in check
                 local _tcp_ports
-                _tcp_ports=$(_doctor_nft_port_set_values "tcp_ports_in")
+                _tcp_ports=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
                 local _has_http=false
                 echo ",$_tcp_ports," | grep -q ",80," && _has_http=true
                 echo ",$_tcp_ports," | grep -q ",443," && _has_http=true
@@ -662,7 +731,7 @@ _doctor_module_audit() {
                 local _jump_order
                 _jump_order=$(echo "$_DOCTOR_NFT_JSON" | jq -r '
                     [.nftables[] | select(.rule?) | .rule |
-                     select(.chain == "input" and .table == "nftban") |
+                     select(.chain == "input" and .table == "nftban" and .family == "ip") |
                      .expr[]? |
                      if .jump? then .jump.target
                      elif .match? then
@@ -826,7 +895,7 @@ _doctor_security_gaps() {
     if [[ "$ddos_enabled" == "false" ]]; then
         # Check if SSH is in allowed ports — warning if no DDoS protection
         local kernel_tcp
-        kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in")
+        kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
         local ssh_port="${config_ssh:-22}"
         if echo ",$kernel_tcp," | grep -q ",${ssh_port},"; then
             _doctor_finding "$_SEV_WARN" "no_ct_limit_ssh" \
@@ -839,7 +908,7 @@ _doctor_security_gaps() {
     _doctor_config_bool "HTTP_BOTGUARD_ENABLED" && botguard_enabled=true
     if [[ "$botguard_enabled" == "false" ]]; then
         local kernel_tcp
-        kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in")
+        kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
         if echo ",$kernel_tcp," | grep -qE ",80,|,443,|,8080,|,8443,"; then
             _doctor_finding "$_SEV_WARN" "no_botguard_http" \
                 "HTTP/S ports exposed but BotGuard disabled" "config"
@@ -869,10 +938,10 @@ _doctor_diff_kernel() {
 
     local findings=()
 
-    # TCP_PORTS_IN
+    # TCP_PORTS_IN (check ip family — ip6 should match)
     local config_tcp kernel_tcp
     config_tcp=$(_doctor_config_val "TCP_PORTS_IN")
-    kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in")
+    kernel_tcp=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
     if [[ -n "$config_tcp" && -n "$kernel_tcp" ]]; then
         local cfg_sorted kern_sorted
         cfg_sorted=$(echo "$config_tcp" | tr ',' '\n' | sort -n | tr '\n' ',' | sed 's/,$//')
@@ -921,7 +990,7 @@ _doctor_diff_kernel() {
         _doctor_config_bool "$enable_key" && config_val="true"
 
         local kernel_val="absent"
-        _doctor_nft_chain_exists "$chain_artifact" && kernel_val="present"
+        _doctor_nft_chain_exists "$chain_artifact" "ip" && kernel_val="present"
 
         local status_sym="✓ SYNCED"
         if { [[ "$config_val" == "true" && "$kernel_val" == "absent" ]] || \

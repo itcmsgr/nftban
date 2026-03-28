@@ -21,7 +21,7 @@ _nftban() {
     # DEBUG: debug smoke emulate setup menu
 
     # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
-    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight"
+    local commands="status health validate config sync version help firewall ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -97,8 +97,9 @@ _nftban() {
     # New commands (added for completion)
     local botscan_cmds="status enable disable --json help"
     local botguard_cmds="status enable disable test --json help"
-    local configtest_cmds="--verbose --json help"
-    local configaudit_cmds="--json help"
+    local export_cmds="--format --output --since --until --last help"
+    local tunnel_cmds="status enable disable reset list test --json help"
+    local benchmark_cmds="run status --json help"
     local polkit_cmds="validate static runtime status groups rules test help"
     local pro_cmds="status enroll disable token inventory license-check community help"
     local queue_cmds="status list process dlq metrics help"
@@ -301,11 +302,14 @@ _nftban() {
                 botguard)
                     COMPREPLY=($(compgen -W "${botguard_cmds}" -- "${cur}"))
                     ;;
-                configtest)
-                    COMPREPLY=($(compgen -W "${configtest_cmds}" -- "${cur}"))
+                export)
+                    COMPREPLY=($(compgen -W "${export_cmds}" -- "${cur}"))
                     ;;
-                configaudit)
-                    COMPREPLY=($(compgen -W "${configaudit_cmds}" -- "${cur}"))
+                tunnel)
+                    COMPREPLY=($(compgen -W "${tunnel_cmds}" -- "${cur}"))
+                    ;;
+                benchmark)
+                    COMPREPLY=($(compgen -W "${benchmark_cmds}" -- "${cur}"))
                     ;;
                 polkit)
                     COMPREPLY=($(compgen -W "${polkit_cmds}" -- "${cur}"))

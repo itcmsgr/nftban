@@ -1353,8 +1353,9 @@ TOP COMMAND:
 EXPORT OPTIONS:
     --format FORMAT        Export format (json, csv)
     --output FILE          Output file path
-    --since DATE           Start date
-    --until DATE           End date
+    --last PERIOD          Time window (24h, 7d, 30d)
+    --since DATE           Start date (absolute)
+    --until DATE           End date (absolute)
 
 MONITOR OPTIONS:
     --interval SECONDS     Refresh interval (default: 5)

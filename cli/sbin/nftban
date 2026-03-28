@@ -235,9 +235,7 @@ nftban_complete() {
         echo "emulate"
         echo "explain"
         echo "verify"
-        # CONFIG VALIDATION
-        echo "configtest"
-        echo "configaudit"
+        # CONFIG VALIDATION (deprecated: configtest→config validate, configaudit→config audit)
         # MEMORY & BAN MANAGEMENT
         echo "protect"
         echo "unprotect"
@@ -614,13 +612,7 @@ nftban_complete() {
                 echo "diff"
                 echo "help"
                 ;;
-            configtest)
-                echo "--verbose"
-                echo "--json"
-                ;;
-            configaudit)
-                echo "--json"
-                ;;
+            # configtest/configaudit removed — deprecated, use config validate/audit
             protect)
                 echo "--json"
                 echo "help"
@@ -1132,6 +1124,12 @@ main() {
                     ;;
                 unintsall|unisntall|uninstll)
                     suggestion="uninstall"
+                    ;;
+                configtest)
+                    suggestion="config validate"
+                    ;;
+                configaudit)
+                    suggestion="config audit"
                     ;;
             esac
 
