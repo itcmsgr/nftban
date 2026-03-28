@@ -101,10 +101,14 @@ get_value() {
     awk -F= -v section="$section" -v key="$key" '
         /^\[.*\]/ { in_section=0 }
         $0 == "["section"]" { in_section=1; next }
-        in_section && $1 ~ "^"key"$" {
-            gsub(/^[ \t]+|[ \t]+$/, "", $2)
-            print $2
-            exit
+        in_section {
+            k = $1
+            gsub(/^[ \t]+|[ \t]+$/, "", k)
+            if (k == key) {
+                gsub(/^[ \t]+|[ \t]+$/, "", $2)
+                print $2
+                exit
+            }
         }
     ' "$file"
 }
@@ -131,8 +135,8 @@ validate_syntax() {
             continue
         fi
 
-        # Check for key=value pairs
-        if [[ ! "$line" =~ ^[a-z_]+=.+ ]]; then
+        # Check for key=value pairs (with optional spaces around =)
+        if [[ ! "$line" =~ ^[a-z_]+[[:space:]]*=[[:space:]]*.* ]]; then
             echo -e "${RED}  ✗ Invalid line format: $line${NC}"
             # v1.19.20 FIX
             ((syntax_errors++)) || true
@@ -250,6 +254,9 @@ validate_query_cmd() {
     family=$(get_value "$file" "distro" "family")
     local query_cmd
     query_cmd=$(get_value "$file" "package_manager" "query_cmd")
+
+    # query_cmd is optional — skip validation if not present
+    [[ -z "$query_cmd" ]] && return 0
 
     case "$family" in
         rhel)
