@@ -285,35 +285,49 @@ nftban_detect_conflicting_tables() {
 
     # 1. ip filter (created by iptables-nft, Plesk, CSF, etc.)
     if echo "$tables" | grep -q "^table ip filter"; then
-        # Check the priority of the filter table's input chain
-        local filter_prio
-        filter_prio=$(nft -j list chain ip filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+        # v1.53.0: Check if table has an INPUT chain before checking priority.
+        # Empty tables (no chains) are INFO, not CRITICAL — iptables-nft creates
+        # empty tables on any iptables invocation but they have no hooks.
+        if nft list chain ip filter INPUT &>/dev/null; then
+            local filter_prio
+            filter_prio=$(nft -j list chain ip filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
 
-        if [[ "$filter_prio" -le "$actual_nftban_prio" ]]; then
-            # CRITICAL: filter table runs before or same as NFTBan
-            status=2
-            NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip filter' table (priority $filter_prio) runs before NFTBan (priority $actual_nftban_prio)")
-            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+            if [[ "$filter_prio" -le "$actual_nftban_prio" ]]; then
+                # CRITICAL: filter table has INPUT hook at competing priority
+                status=2
+                NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip filter' table (priority $filter_prio) runs before NFTBan (priority $actual_nftban_prio)")
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+            else
+                status=1
+                NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists (priority $filter_prio) - NFTBan has higher priority")
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
+            fi
         else
-            # INFO: Filter table exists, check priority
-            status=1
-            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists (priority $filter_prio) - NFTBan has same priority")
+            # Table exists but has no INPUT chain — harmless artifact from iptables-nft
+            [[ $status -eq 0 ]] && status=1
+            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists but has no hooks (iptables-nft artifact, harmless)")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
         fi
     fi
 
     # 2. ip6 filter
     if echo "$tables" | grep -q "^table ip6 filter"; then
-        local filter6_prio
-        filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+        if nft list chain ip6 filter INPUT &>/dev/null; then
+            local filter6_prio
+            filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
 
-        if [[ "$filter6_prio" -le "$actual_nftban_prio" ]]; then
-            status=2
-            NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip6 filter' table (priority $filter6_prio) runs before NFTBan")
-            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+            if [[ "$filter6_prio" -le "$actual_nftban_prio" ]]; then
+                status=2
+                NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip6 filter' table (priority $filter6_prio) runs before NFTBan")
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+            else
+                status=1
+                NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip6 filter' table exists (priority $filter6_prio) - NFTBan runs first (safe)")
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
+            fi
         else
-            status=1
-            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip6 filter' table exists (priority $filter6_prio) - NFTBan runs first (safe)")
+            [[ $status -eq 0 ]] && status=1
+            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip6 filter' table exists but has no hooks (harmless)")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
         fi
     fi
@@ -1008,42 +1022,167 @@ nftban_cleanup_ghost_tables() {
 
 # shellcheck disable=SC2120  # Function accepts optional --quiet flag
 nftban_validate_hook_authority() {
-    # Validate that no non-NFTBan tables with input hooks remain after cleanup.
-    # Uses LIVE nft state as source of truth.
-    # Args: [--quiet]
-    # Returns: 0=NFTBan has clear authority, 1=conflicting hooks remain
+    # =========================================================================
+    # CANONICAL FIREWALL AUTHORITY CLASSIFIER
+    # =========================================================================
+    # Single source of truth for hook authority validation.
+    # Consumers: postinst, health, CLI status, config doctor.
+    # Callers MUST NOT implement separate hook detection — use this function.
     #
-    # v1.48.0: Post-cleanup validation step.
+    # Inspects LIVE kernel nftables state only. No file/package assumptions.
+    # Checks actual base chain hook registrations, not mere table presence.
+    #
+    # Severity model (explicit, shared across all callers):
+    #   OK       (0): Only NFTBan owns input/forward hooks. Clean authority.
+    #   INFO     (0): Foreign tables exist but have NO base chains with hooks.
+    #                  Typical: empty ip filter from iptables-nft. Harmless.
+    #   WARN     (1): Foreign hooked chains exist outside core authority hooks
+    #                  (output-only), or partial/uncertain state needs inspection.
+    #   CRITICAL (2): Foreign base chains with hook input or hook forward.
+    #                  Active competing filtering authority. Must be resolved.
+    #
+    # NFTBan claims exclusive ownership of: hook input, hook forward.
+    # NFTBan does NOT claim exclusive output ownership — output-only foreign
+    # hooks are WARN (inspection recommended), not CRITICAL.
+    #
+    # Args: [--quiet] [--json]
+    # Returns: 0=OK/INFO, 1=WARN, 2=CRITICAL
+    # Globals set: NFTBAN_HOOK_AUTHORITY_LEVEL (ok|info|warn|critical)
+    #              NFTBAN_HOOK_AUTHORITY_DETAILS (array of detail strings)
+    #
+    # v1.48.0: Post-cleanup validation step (table-existence only).
+    # v1.53.0: Hook-aware rewrite — inspects actual base chain hooks.
+    #          Empty tables without hooks → INFO, not false CRITICAL.
+    #          Forward hook coverage added. Output treated as WARN.
 
-    local quiet=false
-    [[ "${1:-}" == "--quiet" || "${1:-}" == "-q" ]] && quiet=true
+    local quiet=false json=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet|-q) quiet=true ;;
+            --json) json=true ;;
+        esac
+        shift
+    done
+
+    # Export globals for callers that need structured results
+    # shellcheck disable=SC2034  # Consumed by postinst, health, config doctor
+    NFTBAN_HOOK_AUTHORITY_LEVEL="ok"
+    NFTBAN_HOOK_AUTHORITY_DETAILS=()
 
     if ! command -v nft &>/dev/null; then
+        NFTBAN_HOOK_AUTHORITY_LEVEL="ok"
+        [[ "$json" == "true" ]] && echo '{"authority":"unknown","reason":"nft not found"}'
         return 0
     fi
 
-    local live_tables conflicts=0
+    local live_tables
     live_tables=$(nft list tables 2>/dev/null) || return 0
+
+    local critical=0 warn=0 info=0
+    local -a critical_details=()
+    local -a warn_details=()
+    local -a info_details=()
 
     while IFS= read -r table_line; do
         [[ -z "$table_line" ]] && continue
         local tspec="${table_line#table }"
+
         # Skip NFTBan-owned tables (nftban + SYNPROXY raw tables)
         case "$tspec" in
             "ip nftban"|"ip6 nftban"|"ip raw"|"ip6 raw") continue ;;
         esac
-        # Any remaining table is a potential conflict
-        ((conflicts++)) || true
-        [[ "$quiet" == "false" ]] && echo "  WARNING: Non-NFTBan table remains: $tspec"
+
+        # Foreign table found — inspect its actual base chains
+        local table_content
+        table_content=$(nft list table $tspec 2>/dev/null) || continue
+
+        # Parse for base chains with hook registrations
+        local has_input=false has_forward=false has_output=false
+        # Match "type filter hook input" / "type nat hook input" etc.
+        echo "$table_content" | grep -qE "hook[[:space:]]+input" && has_input=true
+        echo "$table_content" | grep -qE "hook[[:space:]]+forward" && has_forward=true
+        echo "$table_content" | grep -qE "hook[[:space:]]+output" && has_output=true
+
+        if [[ "$has_input" == "true" || "$has_forward" == "true" ]]; then
+            # CRITICAL: foreign table has input or forward hooks.
+            # This is a competing filtering authority regardless of priority,
+            # rule count, or policy. The hook registration itself is the conflict.
+            ((critical++)) || true
+            local hooks=""
+            [[ "$has_input" == "true" ]] && hooks+="input "
+            [[ "$has_forward" == "true" ]] && hooks+="forward "
+            [[ "$has_output" == "true" ]] && hooks+="output "
+            critical_details+=("CRITICAL: '${tspec}' owns hooks: ${hooks}(competing authority)")
+            NFTBAN_HOOK_AUTHORITY_DETAILS+=("CRITICAL: '${tspec}' owns hooks: ${hooks}")
+        elif [[ "$has_output" == "true" ]]; then
+            # WARN: output-only hook. NFTBan does not claim exclusive output
+            # ownership, but this warrants inspection — another system is
+            # influencing egress filtering.
+            ((warn++)) || true
+            warn_details+=("WARN: '${tspec}' has output hook (egress — review recommended)")
+            NFTBAN_HOOK_AUTHORITY_DETAILS+=("WARN: '${tspec}' has output hook")
+        else
+            # INFO: table exists but has NO base chains with hooks.
+            # Typical: empty 'ip filter' created by iptables-nft on any
+            # iptables invocation. Zero filtering impact. Harmless.
+            ((info++)) || true
+            info_details+=("INFO: '${tspec}' exists, no hooks (harmless residue)")
+            NFTBAN_HOOK_AUTHORITY_DETAILS+=("INFO: '${tspec}' no hooks")
+        fi
     done <<< "$live_tables"
 
-    if [[ "$conflicts" -gt 0 ]]; then
-        [[ "$quiet" == "false" ]] && echo "  Hook authority: CONFLICT ($conflicts foreign table(s) remain)"
-        return 1
+    # Determine overall level
+    local level="ok" retcode=0
+    if [[ "$critical" -gt 0 ]]; then
+        level="critical"; retcode=2
+    elif [[ "$warn" -gt 0 ]]; then
+        level="warn"; retcode=1
+    elif [[ "$info" -gt 0 ]]; then
+        level="info"; retcode=0
+    fi
+    # shellcheck disable=SC2034  # Consumed by postinst, health, config doctor
+    NFTBAN_HOOK_AUTHORITY_LEVEL="$level"
+
+    # JSON output
+    if [[ "$json" == "true" ]]; then
+        echo -n "{\"authority\":\"${level}\",\"critical\":${critical},\"warn\":${warn},\"info\":${info}"
+        if [[ ${#NFTBAN_HOOK_AUTHORITY_DETAILS[@]} -gt 0 ]]; then
+            echo -n ",\"details\":["
+            local first=true
+            for d in "${NFTBAN_HOOK_AUTHORITY_DETAILS[@]}"; do
+                [[ "$first" == "true" ]] && first=false || echo -n ","
+                echo -n "\"$(echo "$d" | sed 's/"/\\"/g')\""
+            done
+            echo -n "]"
+        fi
+        echo "}"
+        return $retcode
     fi
 
-    [[ "$quiet" == "false" ]] && echo "  Hook authority: CLEAR (NFTBan is sole firewall)"
-    return 0
+    # Text output
+    if [[ "$quiet" == "false" ]]; then
+        for d in "${critical_details[@]}"; do echo "  $d"; done
+        for d in "${warn_details[@]}"; do echo "  $d"; done
+        for d in "${info_details[@]}"; do echo "  $d"; done
+
+        case "$level" in
+            critical)
+                echo "  Hook authority: VIOLATED ($critical foreign input/forward hook(s))"
+                echo "  Fix: nftban firewall repair-conflicts"
+                ;;
+            warn)
+                echo "  Hook authority: CLEAR with warnings ($warn foreign output hook(s))"
+                ;;
+            info)
+                echo "  Hook authority: CLEAR (foreign tables have no hooks)"
+                ;;
+            ok)
+                echo "  Hook authority: CLEAR (NFTBan is sole firewall)"
+                ;;
+        esac
+    fi
+
+    return $retcode
 }
 
 # shellcheck disable=SC2120  # Function accepts optional --uninstall flag
