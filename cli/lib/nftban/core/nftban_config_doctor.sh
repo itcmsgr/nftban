@@ -139,12 +139,19 @@ _doctor_nft_table_exists() {
 }
 
 _doctor_nft_chain_exists() {
-    # Check if chain exists in ip nftban
-    local chain="$1"
-    echo "$_DOCTOR_NFT_JSON" | jq -e --arg c "$chain" '
-        .nftables[] | select(.chain?) | .chain |
-        select(.name == $c and .table == "nftban")
-    ' >/dev/null 2>&1
+    # Check if chain exists in nftban table (any family)
+    local chain="$1" family="${2:-}"
+    if [[ -n "$family" ]]; then
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg c "$chain" --arg f "$family" '
+            .nftables[] | select(.chain?) | .chain |
+            select(.name == $c and .table == "nftban" and .family == $f)
+        ' >/dev/null 2>&1
+    else
+        echo "$_DOCTOR_NFT_JSON" | jq -e --arg c "$chain" '
+            .nftables[] | select(.chain?) | .chain |
+            select(.name == $c and .table == "nftban")
+        ' >/dev/null 2>&1
+    fi
 }
 
 _doctor_nft_chain_has_jump() {
@@ -271,11 +278,11 @@ _doctor_core_integrity() {
         _doctor_finding "$_SEV_ERR" "table_missing" "Table ip6 nftban MISSING" "nft"
     fi
 
-    # --- Chains ---
+    # --- Chains (IPv4) ---
     if [[ "$ipv4_ok" == "true" ]]; then
         for chain in input forward output; do
-            if _doctor_nft_chain_exists "$chain"; then
-                _doctor_finding "$_SEV_OK" "chain_present" "Chain $chain exists" "nft"
+            if _doctor_nft_chain_exists "$chain" "ip"; then
+                _doctor_finding "$_SEV_OK" "chain_present" "Chain $chain exists in ip nftban" "nft"
             else
                 section_status="$_SEV_ERR"
                 _doctor_finding "$_SEV_ERR" "chain_missing" "Chain $chain MISSING in ip nftban" "nft"
@@ -283,22 +290,52 @@ _doctor_core_integrity() {
         done
     fi
 
-    # --- Sets ---
-    local expected_sets=0
-    [[ -v NFTBAN_IPV4_SETS ]] && expected_sets=${#NFTBAN_IPV4_SETS[@]}
-    local present_sets=0
-    if [[ "$ipv4_ok" == "true" ]]; then
-        for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
-            if _doctor_nft_set_exists "$set_name"; then
-                ((present_sets++)) || true
+    # --- Chains (IPv6) ---
+    if [[ "$ipv6_ok" == "true" ]]; then
+        for chain in input forward output; do
+            if _doctor_nft_chain_exists "$chain" "ip6"; then
+                _doctor_finding "$_SEV_OK" "chain_present" "Chain $chain exists in ip6 nftban" "nft"
+            else
+                section_status="$_SEV_ERR"
+                _doctor_finding "$_SEV_ERR" "chain_missing" "Chain $chain MISSING in ip6 nftban" "nft"
             fi
         done
     fi
-    if [[ $present_sets -eq $expected_sets ]]; then
-        _doctor_finding "$_SEV_OK" "sets_complete" "All $expected_sets IPv4 sets present" "nft"
+
+    # --- Sets (IPv4) ---
+    local expected_v4=0
+    declare -p NFTBAN_IPV4_SETS &>/dev/null && expected_v4=${#NFTBAN_IPV4_SETS[@]}
+    local present_v4=0
+    if [[ "$ipv4_ok" == "true" ]]; then
+        for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
+            if _doctor_nft_set_exists "$set_name"; then
+                ((present_v4++)) || true
+            fi
+        done
+    fi
+    if [[ $present_v4 -eq $expected_v4 ]] && [[ $expected_v4 -gt 0 ]]; then
+        _doctor_finding "$_SEV_OK" "sets_complete" "All $expected_v4 IPv4 sets present" "nft"
     else
         section_status="$_SEV_ERR"
-        _doctor_finding "$_SEV_ERR" "sets_incomplete" "$present_sets of $expected_sets IPv4 sets present" "nft"
+        _doctor_finding "$_SEV_ERR" "sets_incomplete" "$present_v4 of $expected_v4 IPv4 sets present" "nft"
+    fi
+
+    # --- Sets (IPv6) ---
+    local expected_v6=0
+    declare -p NFTBAN_IPV6_SETS &>/dev/null && expected_v6=${#NFTBAN_IPV6_SETS[@]}
+    local present_v6=0
+    if [[ "$ipv6_ok" == "true" ]]; then
+        for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
+            if _doctor_nft_set_exists "$set_name"; then
+                ((present_v6++)) || true
+            fi
+        done
+    fi
+    if [[ $present_v6 -eq $expected_v6 ]] && [[ $expected_v6 -gt 0 ]]; then
+        _doctor_finding "$_SEV_OK" "sets_complete" "All $expected_v6 IPv6 sets present" "nft"
+    else
+        section_status="$_SEV_ERR"
+        _doctor_finding "$_SEV_ERR" "sets_incomplete" "$present_v6 of $expected_v6 IPv6 sets present" "nft"
     fi
 
     # --- Named Counters ---
