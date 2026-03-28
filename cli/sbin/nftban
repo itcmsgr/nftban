@@ -235,9 +235,7 @@ nftban_complete() {
         echo "emulate"
         echo "explain"
         echo "verify"
-        # CONFIG VALIDATION
-        echo "configtest"
-        echo "configaudit"
+        # CONFIG VALIDATION (deprecated: configtest→config validate, configaudit→config audit)
         # MEMORY & BAN MANAGEMENT
         echo "protect"
         echo "unprotect"
@@ -583,11 +581,17 @@ nftban_complete() {
                 echo "help"
                 ;;
             firewall)
-                echo "validate"
-                echo "check"
+                echo "status"
                 echo "stats"
+                echo "validate"
+                echo "conflicts"
+                echo "check"
                 echo "logs"
+                echo "record"
                 echo "reload"
+                echo "rebuild"
+                echo "reset"
+                echo "restore"
                 echo "help"
                 ;;
             list)
@@ -602,25 +606,22 @@ nftban_complete() {
                 echo "help"
                 ;;
             config)
+                echo "validate"
+                echo "audit"
+                echo "doctor"
+                echo "diff"
+                echo "show"
                 echo "get"
                 echo "defaults"
                 echo "overrides"
                 echo "set"
                 echo "reset"
                 echo "reset-all"
-                echo "test"
-                echo "audit"
-                echo "show"
-                echo "diff"
+                echo "apply"
+                echo "status"
                 echo "help"
                 ;;
-            configtest)
-                echo "--verbose"
-                echo "--json"
-                ;;
-            configaudit)
-                echo "--json"
-                ;;
+            # configtest/configaudit removed — deprecated, use config validate/audit
             protect)
                 echo "--json"
                 echo "help"
@@ -1132,6 +1133,12 @@ main() {
                     ;;
                 unintsall|unisntall|uninstll)
                     suggestion="uninstall"
+                    ;;
+                configtest)
+                    suggestion="config validate"
+                    ;;
+                configaudit)
+                    suggestion="config audit"
                     ;;
             esac
 
