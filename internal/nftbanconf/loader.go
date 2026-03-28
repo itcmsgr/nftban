@@ -580,7 +580,7 @@ func defaultConfig() *Config {
 		SuricataEnabled:     false,
 		GUIEnabled:          false,
 		GUIAddr:             "127.0.0.1:3940",
-		APIAddr:             ":8080",
+		APIAddr:             ":9580",
 		PortscanEnabled:     false,
 		DDoSEnabled:         false,
 		LoginMonitorEnabled: false,
