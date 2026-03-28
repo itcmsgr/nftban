@@ -142,7 +142,15 @@ _nftban_protection_state() {
             [[ $_modules_active -eq 0 ]] && grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null && ((_modules_active++)) || true
             grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
             [[ $_modules_active -le 1 ]] && grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null && ((_modules_active++)) || true
-            systemctl is-active nftban-login-monitor >/dev/null 2>&1 && ((_modules_active++)) || true
+            # v1.52.0: Login monitor runs inside nftband (not standalone service since v1.23.0)
+            # Check config-enabled + daemon running
+            if systemctl is-active nftband >/dev/null 2>&1; then
+                local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+                local _lm_enabled="false"
+                [[ -f "${_lm_conf}.local" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+                [[ "$_lm_enabled" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+                [[ "$_lm_enabled" == "true" ]] && ((_modules_active++)) || true
+            fi
             systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
             if [[ "$_modules_active" -gt 0 ]]; then
                 echo "PROTECTED"; return

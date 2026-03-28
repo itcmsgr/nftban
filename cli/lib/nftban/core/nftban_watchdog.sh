@@ -344,15 +344,24 @@ nftban_watchdog_report() {
         printf "  %-20s %8s %10s %10s\n" "nftband" "-" "-" "stopped"
     fi
 
-    # Login monitor
-    local login_mem_kb=0 login_mem_mb=0
-    if systemctl is-active nftban-login-monitor &>/dev/null; then
-        login_mem_kb=$(systemctl show nftban-login-monitor --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
-        login_mem_mb=$((login_mem_kb / 1024 / 1024))
-        printf "  %-20s %8s %10s %10s\n" "login-monitor" "-" "${login_mem_mb}MB" "running"
-    else
-        printf "  %-20s %8s %10s %10s\n" "login-monitor" "-" "-" "stopped"
+    # Login monitor (v1.52.0: runs inside nftband as loginmon module, not standalone service)
+    local _login_status="stopped" _login_conf="/etc/nftban/conf.d/login/main.conf"
+    if [[ -n "$daemon_pid" ]]; then
+        # Daemon is running — check if loginmon is enabled in config
+        local _login_enabled="false"
+        if [[ -f "${_login_conf}.local" ]]; then
+            _login_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_login_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        fi
+        if [[ "$_login_enabled" != "true" ]] && [[ -f "$_login_conf" ]]; then
+            _login_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_login_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        fi
+        if [[ "$_login_enabled" == "true" ]]; then
+            _login_status="active (in nftband)"
+        else
+            _login_status="disabled"
+        fi
     fi
+    printf "  %-20s %8s %10s %10s\n" "login-monitor" "-" "-" "$_login_status"
 
     # Suricata (use pidof - more reliable than pgrep for this binary)
     local suricata_pid suricata_mem_kb=0 suricata_mem_mb=0 suricata_cpu=0
