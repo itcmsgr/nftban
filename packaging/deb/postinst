@@ -757,7 +757,7 @@ case "$1" in
         # Use consolidated command: nftban firewall validate --strict
         # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
         if command -v nftban >/dev/null 2>&1; then
-            PREFLIGHT_OUTPUT=$(nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
+            PREFLIGHT_OUTPUT=$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
 
             if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
                 PREFLIGHT_PASSED=0
@@ -955,11 +955,11 @@ case "$1" in
         # STEP 10: Sync whitelist.d files to nftables sets
         # =====================================================================
         log_info "Syncing whitelist files to nftables..."
-        if nftban sync --quick >/dev/null 2>&1; then
+        if timeout 15s nftban sync --quick >/dev/null 2>&1; then
             log_info "  Whitelist sync completed"
         else
             sleep 0.5
-            nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
+            timeout 15s nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
         fi
 
         # =====================================================================
@@ -1047,17 +1047,17 @@ case "$1" in
             if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
                 log_info "Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
                 log_info "Rebuilding firewall (temp bans will be cleared)..."
-                if nftban firewall rebuild >/dev/null 2>&1; then
+                if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
                     echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
                     # Sync configs to load all values (ports, whitelist, blacklist)
-                    nftban sync >/dev/null 2>&1 || true
+                    timeout 15s nftban sync >/dev/null 2>&1 || true
                     log_info "Schema migration complete."
                 else
                     log_warn "Firewall rebuild failed - run manually: nftban firewall rebuild"
                 fi
             else
                 # Schema unchanged - just sync (preserves temp bans)
-                nftban sync >/dev/null 2>&1 || log_warn "Sync failed (non-critical)"
+                timeout 15s nftban sync >/dev/null 2>&1 || log_warn "Sync failed (non-critical)"
             fi
         else
             log_warn ""
@@ -1092,7 +1092,7 @@ case "$1" in
         # =====================================================================
         log_info "Enabling login monitoring (SSH/FTP brute-force protection)..."
         if command -v nftban >/dev/null 2>&1; then
-            if nftban login enable 2>/dev/null; then
+            if timeout 30s nftban login enable 2>/dev/null; then
                 log_info "  Login monitoring enabled successfully"
             else
                 log_warn "  Login monitoring enable failed (run manually: nftban login enable)"

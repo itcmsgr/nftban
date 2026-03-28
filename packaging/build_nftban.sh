@@ -1586,7 +1586,7 @@ echo "[NFTBan] Syncing whitelist files to nftables..."
 SYNC_SUCCESS=0
 for i in 1 2 3; do
     sleep 1
-    if nftban sync >/dev/null 2>&1; then
+    if timeout 15s nftban sync >/dev/null 2>&1; then
         SYNC_SUCCESS=1
         echo "[NFTBan]   Whitelist sync completed successfully"
         break
@@ -1738,34 +1738,34 @@ if [ "\$NFTABLES_SAFE" -eq 1 ]; then
     if [[ "\$INSTALLED_SCHEMA" != "\$CURRENT_SCHEMA" ]]; then
         echo "[NFTBan] Schema migration: \$INSTALLED_SCHEMA -> \$CURRENT_SCHEMA"
         echo "[NFTBan] Rebuilding firewall (temp bans will be cleared)..."
-        if nftban firewall rebuild >/dev/null 2>&1; then
+        if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
             echo "\$CURRENT_SCHEMA" > "\$SCHEMA_FILE"
             # Sync configs to load all values (ports, whitelist, blacklist)
-            nftban sync >/dev/null 2>&1 || true
+            timeout 15s nftban sync >/dev/null 2>&1 || true
             echo "[NFTBan] Schema migration complete."
         else
             echo "[NFTBan WARN] Firewall rebuild failed - run manually: nftban firewall rebuild"
         fi
     else
         # Schema unchanged - just sync (preserves temp bans)
-        nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
+        timeout 15s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
     fi
 
     # v1.18.7: Auto-detect and protect services
     echo "[NFTBan] Detecting services..."
 
     # Detect panel and enable ports
-    DETECTED_PANEL=\$(nftban panel detect 2>/dev/null || echo "none")
+    DETECTED_PANEL=\$(timeout 10s nftban panel detect 2>/dev/null || echo "none")
     if [[ "\$DETECTED_PANEL" != "none" && -n "\$DETECTED_PANEL" ]]; then
         echo "[NFTBan] Panel detected: \$DETECTED_PANEL - enabling ports..."
-        nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
+        timeout 30s nftban panel "\$DETECTED_PANEL" enable >/dev/null 2>&1 || true
     fi
 
     # v1.23.0: Login monitoring handled by daemon loginmon module
-    nftban login enable >/dev/null 2>&1 || true
+    timeout 30s nftban login enable >/dev/null 2>&1 || true
 
     # Show detected services
-    DETECTED_SERVICES=\$(nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
+    DETECTED_SERVICES=\$(timeout 10s nftban login services 2>/dev/null | grep -v "^Detected" | tr '\n' ' ' || echo "ssh")
     echo "[NFTBan] Login protection enabled for:\$DETECTED_SERVICES"
 
     echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
