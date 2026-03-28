@@ -9,7 +9,7 @@
 # meta:name="cmd_config"
 # meta:type="cli"
 # meta:header="Configuration CLI Handler"
-# meta:version="1.43.0"
+# meta:version="1.51.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -60,6 +60,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" || return 1
 fi
 
+# Load config doctor module (v1.51.0)
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_doctor.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/core/nftban_config_doctor.sh" || return 1
+fi
+
 # Load IPC library for reload verification
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" ]]; then
     # shellcheck source=/dev/null
@@ -74,81 +80,39 @@ show_usage() {
     cat <<'EOF'
 Usage: nftban config <command> [module] [options]
 
-COMMANDS:
-  get <module>              Get current configuration (merged defaults + overrides)
-  defaults <module>         Show default configuration values
-  overrides <module>        Show local override values
-  set <module> KEY=VALUE    Set configuration value in .conf.local
-  reset <module> KEY        Reset single key to default (remove override)
-  reset-all <module>        Reset all configuration to defaults
-  reload [module]           Apply config changes to running services (SIGHUP)
+INTEGRITY COMMANDS:
+  validate [--verbose] [--json]    Validate config values against schema
+  audit [--json]                   Semantic override analysis (dead/stale/unapplied)
+  diff [--kernel] [--json]         Value-level diff (base<>local, config<>kernel)
+  doctor [--module M] [--json]     Full system integrity audit (config+kernel+runtime)
 
-VALIDATION COMMANDS:
-  test [--verbose] [--json] Validate all configuration against schema
-  audit [--json]            Audit config for drift, deprecated, and new options
-  show                      Show effective merged configuration (all sources)
-  diff                      Show differences between defaults and local overrides
+CONFIGURATION COMMANDS:
+  show                             Show effective merged configuration
+  get <module> [--json]            Get module configuration
+  defaults <module> [--json]       Show module default values
+  overrides <module> [--json]      Show module local overrides
+  set <module> KEY=VALUE           Set override in .conf.local
+  reset <module> KEY               Remove single override
+  reset-all <module>               Remove all module overrides
 
-MODULES:
-  portscan                  Port scan detection configuration
-  ddos                      DDoS protection configuration
-  login                     Login monitoring configuration
+SERVICE COMMANDS:
+  apply [module]                   Apply config to running services
+  status                           Show config reload status
 
-OPTIONS:
-  --json                    Output in JSON format
-  --verbose                 Show detailed output (for test command)
+MODULES: portscan, ddos, login, geoip, geoban, botguard, suricata, feeds, trust
+
+  health = "Is my system running correctly RIGHT NOW?" (services, processes, perms)
+  doctor = "Is my system CONFIGURED correctly?" (config<>kernel<>runtime alignment)
 
 EXAMPLES:
-  # Validate all configuration
-  nftban config test
-
-  # Validate with verbose output
-  nftban config test --verbose
-
-  # Audit configuration for drift and deprecated options
-  nftban config audit
-
-  # Show effective merged configuration
-  nftban config show
-
-  # Show what has been overridden locally
-  nftban config diff
-
-  # View current portscan configuration (defaults + overrides)
-  nftban config get portscan
-
-  # Set a configuration value (saves to .conf.local)
+  nftban config validate              # Schema validation
+  nftban config doctor                # Full system integrity audit
+  nftban config doctor --module ddos  # Audit single module
+  nftban config diff                  # Base vs local overrides
+  nftban config diff --kernel         # Config vs kernel state
+  nftban config get portscan --json   # Module config in JSON
   sudo nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
-
-  # Reset a single value to default
-  sudo nftban config reset portscan PORTSCAN_BAN_THRESHOLD
-
-  # Get config in JSON format
-  nftban config get portscan --json
-
-CONFIGURATION FILES:
-  /etc/nftban/nftban.conf           Main config defaults (DO NOT EDIT)
-  /etc/nftban/nftban.conf.local     Main config local overrides
-  /etc/nftban/conf.d/*.conf         Module config defaults (DO NOT EDIT)
-  /etc/nftban/conf.d/*.conf.local   Module config local overrides
-
-HOW IT WORKS:
-  - Default values come from .conf files (shipped with packages)
-  - Local overrides are stored in .conf.local files
-  - Overrides take precedence over defaults
-  - Use 'set' to add/update overrides, 'reset' to remove them
-  - Use 'reload' to apply changes to running services (sends SIGHUP)
-  - Timer-based services (feeds, metrics, zabbix) auto-reload on next run
-  - The 'test' command validates against the schema
-  - The 'audit' command detects drift, deprecated keys, and new options
-
-CONFIG RELOAD:
-  # After changing config, apply to running services:
-  sudo nftban config set portscan PORTSCAN_BAN_THRESHOLD=20
-  sudo nftban config reload portscan
-
-  # Or reload all services at once:
-  sudo nftban config reload
+  sudo nftban config apply portscan   # Apply to running service
 
 EOF
 }
@@ -635,11 +599,33 @@ nftban_cmd_config_status() {
 
 nftban_cmd_config_diff() {
     # Show differences between defaults and local overrides
-    local json_mode="${1:-0}"
+    # v1.51.0: --kernel mode compares config vs kernel state
+    local json_mode="0"
+    local kernel_mode="0"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_mode="1" ;;
+            --kernel) kernel_mode="1" ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    # --kernel mode: config vs kernel state
+    if [[ "$kernel_mode" == "1" ]]; then
+        if command -v _doctor_diff_kernel >/dev/null 2>&1; then
+            _doctor_diff_kernel "$json_mode"
+        else
+            echo "ERROR: Config doctor module not loaded (required for --kernel)" >&2
+            return 1
+        fi
+        return $?
+    fi
+
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
-    echo "Configuration Differences (defaults vs local overrides)"
-    echo "════════════════════════════════════════════════════════════"
+    echo "═══ Config Diff: BASE ↔ LOCAL ═══"
     echo ""
 
     local has_diff=0
@@ -784,12 +770,16 @@ nftban_cmd_config() {
             nftban_cmd_config_reset_all "$@"
             ;;
 
-        test|validate)
+        validate|test)
             nftban_cmd_config_test "$@"
             ;;
 
         audit)
             nftban_cmd_config_audit "$@"
+            ;;
+
+        doctor)
+            nftban_cmd_config_doctor "$@"
             ;;
 
         show)
@@ -804,7 +794,7 @@ nftban_cmd_config() {
             nftban_cmd_config_status "$@"
             ;;
 
-        reload|apply)
+        apply|reload)
             nftban_cmd_config_reload "$@"
             ;;
 

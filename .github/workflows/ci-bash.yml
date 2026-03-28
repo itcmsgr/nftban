@@ -1,0 +1,71 @@
+# =============================================================================
+# NFTBan - CI: Bash Validation
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Shell script syntax checking and static analysis
+#
+# Checks:
+#   - bash -n syntax validation on all .sh files
+#   - ShellCheck at warning severity (-S warning) with source following (-x)
+#   - Covers: core/, cli/, lib/, setup/, install/, build.sh, install.sh
+# =============================================================================
+
+name: Bash Validation
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-bash-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bash-check:
+    name: Shell Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Syntax check all bash scripts
+        run: |
+          echo "=== Checking bash syntax ==="
+          find cli install packaging -name "*.sh" -type f | while read -r script; do
+            bash -n "$script" || { echo "FAIL: $script"; exit 1; }
+          done
+          bash -n build.sh install.sh
+          echo "✓ All bash syntax valid"
+
+      - name: ShellCheck core scripts
+        run: |
+          echo "=== ShellCheck: Core ==="
+          shellcheck -x -S warning cli/lib/nftban/core/*.sh
+
+      - name: ShellCheck CLI scripts
+        run: |
+          echo "=== ShellCheck: CLI ==="
+          shellcheck -x -S warning cli/lib/nftban/cli/*.sh
+
+      - name: ShellCheck lib scripts
+        run: |
+          echo "=== ShellCheck: Lib ==="
+          shellcheck -x -S warning cli/lib/nftban/lib/*.sh
+
+      - name: ShellCheck setup scripts
+        run: |
+          echo "=== ShellCheck: Setup ==="
+          shellcheck -x -S warning cli/lib/nftban/setup/*.sh
+
+      - name: ShellCheck install scripts
+        run: |
+          echo "=== ShellCheck: Install ==="
+          shellcheck -x -S warning install/*.sh
+          shellcheck -x -S warning install.sh build.sh
