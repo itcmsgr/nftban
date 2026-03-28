@@ -1036,7 +1036,7 @@ func SettingsNetworkFragment(data ui.ExtendedSettingsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\"></div></div><div class=\"setting-item\"><div class=\"setting-info\"><label class=\"setting-label\" for=\"api_addr\">API Address</label> <span class=\"setting-description\">REST API listen address (host:port)</span></div><div class=\"setting-control\"><input type=\"text\" id=\"api_addr\" name=\"api_addr\" class=\"form-input\" placeholder=\":8080\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\"></div></div><div class=\"setting-item\"><div class=\"setting-info\"><label class=\"setting-label\" for=\"api_addr\">API Address</label> <span class=\"setting-description\">REST API listen address (host:port)</span></div><div class=\"setting-control\"><input type=\"text\" id=\"api_addr\" name=\"api_addr\" class=\"form-input\" placeholder=\":9580\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
