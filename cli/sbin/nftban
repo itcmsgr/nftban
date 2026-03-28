@@ -581,11 +581,17 @@ nftban_complete() {
                 echo "help"
                 ;;
             firewall)
-                echo "validate"
-                echo "check"
+                echo "status"
                 echo "stats"
+                echo "validate"
+                echo "conflicts"
+                echo "check"
                 echo "logs"
+                echo "record"
                 echo "reload"
+                echo "rebuild"
+                echo "reset"
+                echo "restore"
                 echo "help"
                 ;;
             list)
@@ -600,16 +606,19 @@ nftban_complete() {
                 echo "help"
                 ;;
             config)
+                echo "validate"
+                echo "audit"
+                echo "doctor"
+                echo "diff"
+                echo "show"
                 echo "get"
                 echo "defaults"
                 echo "overrides"
                 echo "set"
                 echo "reset"
                 echo "reset-all"
-                echo "test"
-                echo "audit"
-                echo "show"
-                echo "diff"
+                echo "apply"
+                echo "status"
                 echo "help"
                 ;;
             # configtest/configaudit removed — deprecated, use config validate/audit
