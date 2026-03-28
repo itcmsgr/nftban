@@ -1674,6 +1674,20 @@ config:
     - "nftban config reload"
     - "nftban config reload portscan"
   subcommands:
+    validate:
+      mutates: false
+      description: "Validate config values against schema"
+      aliases: ["test"]
+    audit:
+      mutates: false
+      description: "Semantic override analysis (dead/stale/unapplied)"
+    doctor:
+      mutates: false
+      description: "Full system integrity audit (config+kernel+runtime)"
+      introduced_in: "1.51.0"
+    diff:
+      mutates: false
+      description: "Value-level diff (base<>local, config<>kernel)"
     show:
       mutates: false
       description: "Show effective merged configuration"
@@ -1698,22 +1712,14 @@ config:
       mutates: true
       requires_root: true
       description: "Reset all configuration to defaults"
-    test:
-      mutates: false
-      description: "Validate configuration against schema"
-    audit:
-      mutates: false
-      description: "Audit config for drift"
-    diff:
-      mutates: false
-      description: "Show differences from defaults"
-    status:
-      mutates: false
-      description: "Show config tracking status"
-    reload:
+    apply:
       mutates: true
       requires_root: true
-      description: "Apply config changes (SIGHUP)"
+      description: "Apply config to running services"
+      aliases: ["reload"]
+    status:
+      mutates: false
+      description: "Show config reload status"
   allowlist:
     paths:
       - /etc/nftban/nftban.conf
@@ -1721,7 +1727,10 @@ config:
 
 configaudit:
   category: infrastructure
-  description: "Audit configuration for drift (alias for config audit)"
+  description: "DEPRECATED: Use 'nftban config audit' instead"
+  deprecated: true
+  deprecated_in: "1.51.0"
+  successor: "config audit"
   risk: core
   audience: [cli, auditor]
   capability: config_view
@@ -1732,12 +1741,14 @@ configaudit:
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban configaudit"
-    - "nftban configaudit --json"
+    - "nftban config audit"
 
 configtest:
   category: infrastructure
-  description: "Validate configuration against schema (alias for config test)"
+  description: "DEPRECATED: Use 'nftban config validate' instead"
+  deprecated: true
+  deprecated_in: "1.51.0"
+  successor: "config validate"
   risk: core
   audience: [cli, auditor]
   capability: config_view
@@ -1748,9 +1759,7 @@ configtest:
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban configtest"
-    - "nftban configtest --verbose"
-    - "nftban configtest --json"
+    - "nftban config validate"
 
 port:
   category: infrastructure

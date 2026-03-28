@@ -31,7 +31,7 @@ _nftban() {
     local status_cmds="--json help"
     local health_cmds="check summary json report fix services modules binaries permissions geoip pro registries gui install conflicts config rbl posture --auto-heal --json help"
     local validate_cmds="all firewall config permissions --json help"
-    local config_cmds="show edit validate reload get set help"
+    local config_cmds="validate audit doctor diff show get defaults overrides set reset reset-all apply status help"
     local sync_cmds="full validate status --dry-run help"
 
     # Firewall & Security commands
