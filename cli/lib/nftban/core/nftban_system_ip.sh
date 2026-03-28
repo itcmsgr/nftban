@@ -209,19 +209,27 @@ HEADER
     fi
 
     # Also add to nftables immediately via IPC (v1.18.0: IPC-only writes)
-    if declare -f nft_ipc_add_element &>/dev/null; then
+    # v1.51.0 FIX: Check daemon is running before IPC — blocks forever if daemon
+    # stopped (e.g. during RPM upgrade). Fallback to direct nft add element.
+    # See: srv2 lockout 2026-03-28 (CSF disable + custom SSH port + IPC hang)
+    if declare -f nft_ipc_add_element &>/dev/null && systemctl is-active nftband.service &>/dev/null; then
         if [[ "$ip" =~ : ]]; then
             # IPv6
-            if nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null; then
-                # Verify addition (read-only check)
+            if timeout 10s nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null; then
                 nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || true
             fi
         else
             # IPv4
-            if nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null; then
-                # Verify addition (read-only check)
+            if timeout 10s nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null; then
                 nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || true
             fi
+        fi
+    elif nft list tables 2>/dev/null | grep -q 'nftban'; then
+        # Daemon down but nftban tables exist — direct nft write (postinst safe path)
+        if [[ "$ip" =~ : ]]; then
+            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null || true
+        else
+            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null || true
         fi
     fi
 
@@ -419,9 +427,12 @@ nftban_whitelist_system_sync() {
     echo ""
     echo "═══════════════════════════════════════════════════════"
 
-    # Reload nftables if atomic reload available (skip verbose output in quick mode)
-    if declare -f nftban_atomic_reload >/dev/null 2>&1; then
-        [[ "$quick_mode" != "true" ]] && echo "" && echo "Syncing to nftables..."
+    # Reload nftables if atomic reload available
+    # v1.51.0 FIX: Skip reload in quick mode (postinst) — daemon may be stopped,
+    # reload would wipe emergency SSH protection rules before whitelist is complete.
+    # See: srv2 lockout 2026-03-28 (atomic_reload wiped emergency rules during postinst)
+    if [[ "$quick_mode" != "true" ]] && declare -f nftban_atomic_reload >/dev/null 2>&1; then
+        echo "" && echo "Syncing to nftables..."
         nftban_atomic_reload 2>/dev/null || true
     fi
 }

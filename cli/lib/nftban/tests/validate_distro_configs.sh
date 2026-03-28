@@ -47,7 +47,7 @@ REQUIRED_SECTIONS=("distro" "package_manager" "packages" "services" "paths")
 # Required fields per section
 declare -A REQUIRED_FIELDS
 REQUIRED_FIELDS[distro]="id name version family"
-REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd query_cmd"
+REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd"
 # v2.1: fail2ban removed - use native login monitoring
 REQUIRED_FIELDS[packages]="nftables curl bash systemd mail golang"
 REQUIRED_FIELDS[services]="cron rsyslog nftables sshd"

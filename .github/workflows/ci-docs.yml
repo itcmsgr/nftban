@@ -1,0 +1,83 @@
+# =============================================================================
+# NFTBan - CI: Documentation Validation
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Validate documentation files and generation scripts
+#
+# Checks:
+#   - Critical docs contain no build error messages
+#   - Documentation generation scripts produce valid output
+# =============================================================================
+
+name: Documentation Validation
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-check:
+    name: Docs Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install yq
+        run: pip3 install yq
+
+      - name: Check for error messages in documentation
+        run: |
+          echo "=== Checking documentation for build errors ==="
+
+          DOC_FILES=(
+            "docs/wiki/OPERATOR_GUIDE.md"
+            "docs/README.md"
+            "README.md"
+          )
+
+          ERRORS_FOUND=0
+
+          for doc in "${DOC_FILES[@]}"; do
+            if [[ -f "$doc" ]]; then
+              echo "Checking $doc..."
+              if grep -qE "^ERROR:|^FATAL:|yq is required|pip install|brew install" "$doc"; then
+                echo "::error::$doc contains error messages!"
+                grep -n "ERROR:\|FATAL:\|yq is required\|pip install\|brew install" "$doc"
+                ERRORS_FOUND=1
+              else
+                echo "✓ $doc is clean"
+              fi
+            fi
+          done
+
+          if [[ $ERRORS_FOUND -eq 1 ]]; then
+            echo ""
+            echo "To fix: install yq, regenerate docs, commit corrected files"
+            exit 1
+          fi
+
+          echo "✓ All documentation files are error-free"
+
+      - name: Validate documentation can be generated
+        run: |
+          echo "=== Validating documentation generation ==="
+
+          ./scripts/generate-wiki-operator.sh > /tmp/operator-test.md
+
+          lines=$(wc -l < /tmp/operator-test.md)
+          if [[ $lines -lt 100 ]]; then
+            echo "::error::Generated documentation is suspiciously short ($lines lines)"
+            head -20 /tmp/operator-test.md
+            exit 1
+          fi
+
+          echo "✓ Documentation generation successful ($lines lines)"
