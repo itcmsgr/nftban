@@ -129,7 +129,7 @@ table ip nftban {
     set tcp_ports_in {
         type inet_service
         comment "Allowed inbound TCP ports"
-        elements = { 22, 80, 443 }
+        elements = { __SSH_PORT__, 80, 443 }
     }
 
     set tcp_ports_out {
@@ -438,7 +438,7 @@ table ip6 nftban {
     set tcp_ports_in {
         type inet_service
         comment "Allowed inbound TCP ports"
-        elements = { 22, 80, 443 }
+        elements = { __SSH_PORT__, 80, 443 }
     }
 
     set tcp_ports_out {
