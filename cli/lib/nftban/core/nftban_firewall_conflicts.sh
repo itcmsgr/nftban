@@ -8,7 +8,7 @@
 # meta:name="nftban_firewall_conflicts"
 # meta:type="lib"
 # meta:header="Firewall Conflict Detection"
-# meta:version="1.48.0"
+# meta:version="1.52.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1343,6 +1343,47 @@ nftban_remove_conflicts() {
 }
 
 # =============================================================================
+# FIREWALL AUTHORITY (v1.52.0)
+# =============================================================================
+
+# Authority state file path
+declare -g _NFTBAN_AUTHORITY_FILE="/etc/nftban/.firewall_authority"
+
+nftban_check_firewall_authority() {
+    # Check if NFTBan has live firewall authority (hook chain + table + authority file).
+    # Returns: "nftban" if authoritative, "" otherwise.
+    # This checks LIVE state — not just file presence.
+
+    # NFTBan table must exist
+    if ! nft list table ip nftban &>/dev/null; then
+        echo ""
+        return 0
+    fi
+
+    # NFTBan input hook chain must exist (table alone is not enough — could be half-loaded)
+    if ! nft list chain ip nftban input &>/dev/null; then
+        echo ""
+        return 0
+    fi
+
+    # Both table + chain exist — NFTBan is authoritative
+    # (authority file is secondary confirmation, not required for pre-v1.52 installs)
+    echo "nftban"
+    return 0
+}
+
+nftban_write_authority() {
+    # Write the firewall authority state file.
+    # Called ONLY after successful firewall activation + verification.
+    local _authority="${1:-nftban}"
+    local _dir
+    _dir=$(dirname "$_NFTBAN_AUTHORITY_FILE")
+    [[ -d "$_dir" ]] || mkdir -p "$_dir" 2>/dev/null || true
+    echo "$_authority" > "$_NFTBAN_AUTHORITY_FILE" 2>/dev/null || true
+    chmod 644 "$_NFTBAN_AUTHORITY_FILE" 2>/dev/null || true
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -1357,6 +1398,10 @@ export -f nftban_get_panel_conflicts
 # Cleanup functions (v1.48.0)
 export -f nftban_cleanup_ghost_tables
 export -f nftban_validate_hook_authority
+
+# Authority functions (v1.52.0)
+export -f nftban_check_firewall_authority
+export -f nftban_write_authority
 
 # Removal functions
 export -f nftban_remove_fail2ban
