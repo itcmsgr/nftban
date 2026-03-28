@@ -1147,17 +1147,23 @@ run_feeds_nft_validation() {
     log "FEEDS NFT VALIDATION"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Check if feeds are enabled
+    # Check if any feeds have IPs loaded (non-empty .txt files)
     local feeds_dir="${NFTBAN_FEEDS_DIR:-/etc/nftban/feeds}"
-    local feed_count
-    feed_count=$(find "$feeds_dir" -name "*.txt" -type f 2>/dev/null | wc -l || echo 0)
+    local loaded_ips=0
+    local feed_file
+    for feed_file in "$feeds_dir"/*.txt; do
+        [[ -f "$feed_file" ]] || continue
+        local ip_count
+        ip_count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || ip_count=0
+        loaded_ips=$((loaded_ips + ip_count))
+    done
 
-    if [[ "$feed_count" -eq 0 ]]; then
-        log_warn "No feed files found in ${feeds_dir} — skipping feeds validation"
+    if [[ "$loaded_ips" -eq 0 ]]; then
+        log_warn "No feed IPs loaded in ${feeds_dir} — skipping feeds validation"
         return 0
     fi
 
-    log_info "Found ${feed_count} feed file(s) in ${feeds_dir}"
+    log_info "Found ${loaded_ips} IPs across feed files in ${feeds_dir}"
 
     # Source config for table names
     source /etc/nftban/nftban.conf 2>/dev/null || true
