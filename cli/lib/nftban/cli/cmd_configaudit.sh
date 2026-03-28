@@ -8,7 +8,7 @@
 # meta:name="cmd_configaudit"
 # meta:type="cli"
 # meta:header="ConfigAudit Command (config audit Alias)"
-# meta:version="1.39.0"
+# meta:version="1.51.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -61,11 +61,12 @@ cmd_configaudit_help() {
 }
 
 nftban_cmd_configaudit() {
-    # ConfigAudit command - alias for config audit
+    # ConfigAudit command - deprecated alias for config audit (v1.51.0)
     # Delegates all arguments to nftban_cmd_config_audit
     case "${1:-}" in
         -h|--help|help) cmd_configaudit_help; return 0 ;;
     esac
+    echo "NOTICE: 'nftban configaudit' is deprecated. Use 'nftban config audit' instead." >&2
     nftban_cmd_config_audit "$@"
 }
 
