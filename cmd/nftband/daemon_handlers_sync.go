@@ -13,7 +13,7 @@
 // meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LOG_DIR"
 // meta:inventory.config_files="/etc/nftban/nftban.conf"
 // meta:inventory.systemd_units="nftband.service, nftband.socket"
-// meta:inventory.network="8080/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
+// meta:inventory.network="9580/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
 // meta:inventory.privileges="root"
 // =============================================================================
 

@@ -13,7 +13,7 @@
 // meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LOG_DIR"
 // meta:inventory.config_files="/etc/nftban/nftban.conf"
 // meta:inventory.systemd_units="nftband.service, nftband.socket"
-// meta:inventory.network="8080/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
+// meta:inventory.network="9580/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
 // meta:inventory.privileges="root"
 //
 // Architecture:
@@ -52,7 +52,8 @@ import (
 
 const (
 	// HTTP API default (can be overridden via NFTBAN_API_ADDR config)
-	DefaultHTTPAddr = "127.0.0.1:8080"
+	// v1.52.0: Changed from 8080 to 9580 — 8080 conflicts with Apache/DA/cPanel/nginx
+	DefaultHTTPAddr = "127.0.0.1:9580"
 
 	// Profiling (pprof) - localhost only for security
 	PprofAddr = "127.0.0.1:6060"
