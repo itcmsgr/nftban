@@ -99,7 +99,7 @@ _nftban() {
     local botguard_cmds="status enable disable test --json help"
     local export_cmds="--format --output --since --until --last help"
     local tunnel_cmds="status enable disable scan top explain config --json help"
-    local benchmark_cmds="run status --json help"
+    local benchmark_cmds="all ipc nft sets --iterations --json help"
     local polkit_cmds="validate static runtime status groups rules test help"
     local pro_cmds="status enroll disable token inventory license-check community help"
     local queue_cmds="status list process dlq metrics help"
