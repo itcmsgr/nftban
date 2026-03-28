@@ -80,7 +80,7 @@ While this repository is a Go module and appears on [pkg.go.dev](https://pkg.go.
 
 - **CLI:** `nftban ban`, `nftban unban`, `nftban status`
 - **Go IPC client:** `pkg/ipc` — the supported public Go package
-- **HTTP API:** `http://127.0.0.1:8080/api/` (when daemon is running)
+- **HTTP API:** `http://127.0.0.1:9580/api/` (when daemon is running)
 
 All packages under `internal/` are implementation details and may change without notice between releases.
 

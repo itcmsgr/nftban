@@ -32,7 +32,7 @@ Direct import of engine packages (nftbackend, botguard, suricata, etc.) would by
 
 1. **Go programs**: Use `pkg/ipc` to communicate with the daemon
 2. **Shell scripts**: Use the `nftban` CLI commands
-3. **HTTP clients**: Use the daemon's HTTP API at `127.0.0.1:8080/api/`
+3. **HTTP clients**: Use the daemon's HTTP API at `127.0.0.1:9580/api/`
 4. **Monitoring**: Use the Prometheus exporter or Zabbix integration
 
 ## Decision History
