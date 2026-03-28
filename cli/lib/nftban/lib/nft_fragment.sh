@@ -1002,9 +1002,11 @@ flush chain ${table_ipv6} ${chain}
 add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
 add rule ${table_ipv6} ${chain} tcp flags syn counter name total_input_drop counter drop comment "SYN flood: rate exceeded"
 
-# Connection Limits
+# Connection Limits per Service
 add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter name total_input_drop counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
-add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP(S): max ${http_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
 
 # ICMPv6 Rate Limiting
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
