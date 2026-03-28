@@ -1404,13 +1404,9 @@ _collect_ipc_test() {
 
         echo "=== IPC Quick Sync Test ==="
         if command -v nftban &>/dev/null; then
-            local start_time end_time
-            start_time=$(date +%s%N 2>/dev/null || date +%s)
             if timeout 10s nftban sync --quick 2>&1; then
-                end_time=$(date +%s%N 2>/dev/null || date +%s)
                 echo "IPC sync: OK"
             else
-                end_time=$(date +%s%N 2>/dev/null || date +%s)
                 echo "IPC sync: FAILED (exit $?)"
             fi
         else
