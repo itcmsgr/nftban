@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.31.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.52.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -10,7 +10,9 @@
 
 ### CI/CD Status
 
-[![CI](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci.yml)
+[![Bash](https://github.com/itcmsgr/nftban/actions/workflows/ci-bash.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-bash.yml)
+[![Go](https://github.com/itcmsgr/nftban/actions/workflows/ci-go.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-go.yml)
+[![Architecture](https://github.com/itcmsgr/nftban/actions/workflows/ci-architecture.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/ci-architecture.yml)
 [![Build Packages](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/build-packages.yml)
 [![Docker](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/docker.yml)
 [![ShellCheck](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/itcmsgr/nftban/actions/workflows/shellcheck.yml)
@@ -75,11 +77,11 @@ While this repository is a Go module and appears on [pkg.go.dev](https://pkg.go.
 
 - **CLI:** `nftban ban`, `nftban unban`, `nftban status`
 - **Go IPC client:** `pkg/ipc` — the supported public Go package
-- **HTTP API:** `http://127.0.0.1:8080/api/` (when daemon is running)
+- **HTTP API:** `http://127.0.0.1:9580/api/` (when daemon is running)
 
 All packages under `internal/` are implementation details and may change without notice between releases.
 
-> **BETA** | Tested on 5 lab servers. Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
+> **BETA** | Tested on 6 lab servers (Debian 13, Rocky 10, Ubuntu 24.04, AlmaLinux 9 x2, Ubuntu monitor). Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
 
 ---
 
@@ -165,14 +167,15 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 |---------|-------------|
 | **Threat Intelligence Feeds** | Automatic blocking from Spamhaus, AbuseIPDB, Firehol |
 | **Geographic Blocking** | Block or allow traffic by country code |
-| **Login Monitoring** | Detects SSH brute-force and suspicious authentication patterns |
+| **Login Monitoring** | Detects brute-force on SSH, Dovecot, Postfix, Exim, FTP, DirectAdmin, cPanel, Plesk |
 | **Port Scan Detection** | Automatic detection and blocking of reconnaissance |
-| **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
+| **DDoS Protection** | Rate limiting, SYN flood protection, SYNPROXY, connection limits |
 | **HTTP Bot Guard** | Intelligent crawler detection with kernel-native suspect marking |
-| **DNS Tunnel Suspicion** | Advisory-only DNS tunnel detection with 5 signals (v1.30.0) |
-| **Suricata IDS Integration** | Optional deep packet inspection |
+| **DNS Tunnel Suspicion** | Advisory-only DNS tunnel detection with 5 signals |
+| **Suricata IDS Integration** | Optional deep packet inspection (L7) |
+| **Config Doctor** | Full system integrity audit (config vs kernel vs runtime) with L1-L4 checks |
+| **Lockout Prevention** | 6-phase postinst pipeline with SSH port detection and authority model |
 | **Prometheus Metrics** | Observability for monitoring stacks |
-| **Zabbix Integration** | Native trapper protocol export to Zabbix server |
 | **Portal (pro.nftban.com)** | Centralized metrics aggregation and fleet management |
 | **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
 | **Whitelist Safety Tests** | Protected whitelists with automated safety validation |
@@ -211,11 +214,12 @@ nftban status
 
 ### System & Health
 ```bash
-nftban status          # System overview
-nftban health          # Diagnostics with auto-heal
-nftban validate        # Firewall structure validation
-nftban services        # Systemd services status
-nftban configtest      # Validate config against schema
+nftban status            # System overview
+nftban health            # Diagnostics with auto-heal
+nftban config validate   # Config against schema + nft syntax
+nftban config doctor     # Full integrity audit (config↔kernel↔runtime)
+nftban config diff       # Config vs kernel state comparison
+nftban services          # Systemd services status
 ```
 
 ### IP Management
@@ -228,13 +232,14 @@ nftban whitelist add   # Add to whitelist
 
 ### Protection Modules
 ```bash
-nftban login status    # SSH login monitoring
+nftban login status    # Login monitoring (SSH, mail, FTP, panels)
 nftban feeds list      # Threat feed status
 nftban geoban list     # Geographic blocking
 nftban portscan status # Port scan detection
-nftban ddos status     # DDoS protection
-nftban botguard status # HTTP bot guard (v1.20.0)
-nftban tunnel status   # DNS tunnel suspicion (v1.30.0)
+nftban ddos status     # DDoS protection (L1)
+nftban botguard status # HTTP bot guard (L2)
+nftban suricata status # Suricata IDS (L3)
+nftban tunnel status   # DNS tunnel suspicion
 ```
 
 ### DNS Tunnel Suspicion (v1.30.0)
@@ -273,15 +278,15 @@ ip6 nftban {                 # IPv6 rules
 }
 ```
 
-> **v1.18 Unified Blacklist**: All ban sources (feeds, geoban, login, ddos, portscan, manual) route to single `blacklist_ipv4/ipv6` set. Source tracking maintained in daemon database.
+> **Unified Blacklist**: All ban sources (feeds, geoban, login, ddos, portscan, manual) route to single `blacklist_ipv4/ipv6` set. Source tracking maintained in daemon database.
 
 ### Components
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `nftban` | Bash CLI | Main command-line interface (76 commands) |
-| `nftban-core` | Go Binary | Backend for feeds, geoip, sync |
-| `nftban-ui` | Go Binary | Web interface server |
+| `nftban` | Bash CLI | Main command-line interface (76+ commands) |
+| `nftband` | Go Daemon | Unified daemon: feeds, geoip, sync, login monitoring, IPC, HTTP API |
+| `nftban-ui` | Go Binary | Web interface server (v2.0) |
 
 ---
 
@@ -293,7 +298,7 @@ ip6 nftban {                 # IPv6 rules
 - **systemd**: 252+ (sysusers.d, tmpfiles.d support)
 - **jq**: JSON processor (auto-installed)
 - **yq**: YAML processor (auto-installed)
-- **Go 1.21+**: For building from source (optional)
+- **Go 1.24+**: For building from source (optional)
 
 ---
 
@@ -342,7 +347,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ## Security & Supply Chain
 
-NFTBan follows **defense-in-depth** security practices with **12 automated security tools** across our CI/CD pipeline.
+NFTBan follows **defense-in-depth** security practices with **13 automated security tools** across our CI/CD pipeline.
 
 ### Security Certifications & Compliance
 
