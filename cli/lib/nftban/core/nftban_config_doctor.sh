@@ -284,7 +284,8 @@ _doctor_core_integrity() {
     fi
 
     # --- Sets ---
-    local expected_sets=${#NFTBAN_IPV4_SETS[@]:-0}
+    local expected_sets=0
+    [[ -v NFTBAN_IPV4_SETS ]] && expected_sets=${#NFTBAN_IPV4_SETS[@]}
     local present_sets=0
     if [[ "$ipv4_ok" == "true" ]]; then
         for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
