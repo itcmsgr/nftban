@@ -29,13 +29,13 @@ _nftban() {
 
     # Core commands
     local status_cmds="--json help"
-    local health_cmds="check summary json report fix services modules binaries permissions geoip pro registries gui install conflicts config rbl posture --auto-heal --json help"
+    local health_cmds="check summary json fix enforce binaries geoip pro registries install verify conflicts config posture security --auto-heal --json help"
     local validate_cmds="all firewall config permissions --json help"
     local config_cmds="validate audit doctor diff show get defaults overrides set reset reset-all apply status help"
     local sync_cmds="full validate status --dry-run help"
 
     # Firewall & Security commands
-    local firewall_cmds="status validate check stats logs reload reset help"
+    local firewall_cmds="status stats validate conflicts check logs record init reload rebuild reset restore --json help"
     local ban_cmds="--timeout --reason --source --json help"
     local unban_cmds="--json help"
     local list_cmds="banned whitelist all --json help"
@@ -51,29 +51,29 @@ _nftban() {
     # Protection Modules
     local ddos_cmds="status enable disable test config --json help"
     local portscan_cmds="status enable disable check history test --json help"
-    local login_cmds="status stats install enable disable restart health-fix logs test run --json help"
+    local login_cmds="status stats enable disable restart logs test run mode digest --json help"
     local login_targets="ssh su sudo console service all"
-    local feeds_cmds="status list select enable disable update download --json help"
-    local trust_cmds="list enable disable update load status --json help"
+    local feeds_cmds="select list enable disable enable-cat update status --json help"
+    local trust_cmds="list enable disable update status --json help"
     local trust_providers="CLOUDFLARE QUICCLOUD AWS GOOGLE AZURE FASTLY DIGITALOCEAN LINODE VULTR OVH HETZNER ALL"
     local country_cmds="list enable disable mode status apply --json help"
     local country_codes="CN RU KP IR SY BY CU VE MM AF IQ LY SD YE US GB DE FR NL"
-    local geoban_cmds="status ban unban whitelist unwhitelist list --json help"
-    local geoip_cmds="status lookup update config --json help"
+    local geoban_cmds="enable disable ban unban whitelist unwhitelist list status update refresh --json help"
+    local geoip_cmds="status update lookup config --json help"
 
     # Monitoring & Reporting
     local gui_cmds="status enable disable help"
     local metrics_cmds="status enable disable help"
-    local stats_cmds="top ip recent monitor export --json help"
+    local stats_cmds="summary dashboard top export monitor cleanup trend --json help"
     local report_cmds="generate run schedule email email-setup list status --json help"
     local fhs_cmds="check status --json help"
     local module_cmds="list status --json help"
-    local services_cmds="status list detailed summary --json help"
-    local timers_cmds="status enable disable help"
+    local services_cmds="status --json help"
+    local timers_cmds="status enable disable --json help"
     local mail_cmds="status port-status test config help"
 
     # Debug & Testing
-    local debug_cmds="enable disable trace help"
+    local debug_cmds="status enable disable trace logs dump --json help"
     local smoke_cmds="--verbose --json help"
     local emulate_cmds="--proto --port --direction --json help"
     local setup_cmds="install uninstall configure wizard help"
@@ -83,13 +83,13 @@ _nftban() {
 
     # System & Infrastructure
     local nftables_cmds="status reload reset backup restore --json help"
-    local port_cmds="add remove block unblock allow status detailed list allow-panel egress help"
+    local port_cmds="allow list status --json help"
     local port_protocols="tcp udp both"
     local port_directions="in out inout"
     local system_cmds="status enable disable install uninstall --json help"
 
     # Watchdog (System Resource Monitoring)
-    local watchdog_cmds="status check report history trends enable disable --json help"
+    local watchdog_cmds="status check run report trend trends history enable disable --json help"
 
     # Emergency/Recovery
     local flush_cmds="blacklist whitelist feeds geoban ddos all --yes --dry-run help"
@@ -98,7 +98,7 @@ _nftban() {
     local botscan_cmds="status enable disable --json help"
     local botguard_cmds="status enable disable test --json help"
     local export_cmds="--format --output --since --until --last help"
-    local tunnel_cmds="status enable disable reset list test --json help"
+    local tunnel_cmds="status enable disable scan top explain config --json help"
     local benchmark_cmds="run status --json help"
     local polkit_cmds="validate static runtime status groups rules test help"
     local pro_cmds="status enroll disable token inventory license-check community help"
@@ -114,9 +114,9 @@ _nftban() {
     local cleanup_cmds="--stats --dry-run --execute --count --json help"
 
     # New commands (connector, modes, snapshot, zabbix, preflight)
-    local connector_cmds="list add enable disable test show push --json help"
+    local connector_cmds="list add remove enable disable test show push --json help"
     local modes_cmds="--json help"
-    local snapshot_cmds="create list --json help"
+    local snapshot_cmds="create list restore --json help"
     local zabbix_cmds="setup status test push reload template discover targets config --json help"
     local preflight_cmds="--strict --json help"
 
