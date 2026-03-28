@@ -80,6 +80,7 @@ nftban_health_render_terminal() {
         [systemd_hardening]="Systemd Hardening"
         [memory_protection]="Memory Protection"
         [ssh_port]="SSH Port"
+        [boot_safety]="Boot Safety"
         [cli_errors]="CLI Errors"
         [rbl]="RBL"
         [timers]="Timers"
@@ -114,7 +115,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries binary_integrity paths permissions auditor_acls services daemon timers modules config geoip geoban rbl databases nftables_security nft_schema conflicting_firewalls resources fhs nftban_bin queue_processor protection maintenance_lock login_monitor_ipc suricata suricata_capture registry cli_errors; do
+    for check in binaries binary_integrity paths permissions auditor_acls services daemon timers modules config geoip geoban rbl databases nftables_security nft_schema conflicting_firewalls resources fhs nftban_bin queue_processor protection maintenance_lock login_monitor_ipc suricata suricata_capture registry cli_errors ssh_port boot_safety; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
@@ -151,7 +152,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in ssh_port systemd_hardening memory_protection metrics zabbix connectors watchdog gui polkit bash_completion portscan_prefix v030_helpers pro; do
+    for check in systemd_hardening memory_protection metrics zabbix connectors watchdog gui polkit bash_completion portscan_prefix v030_helpers pro; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text

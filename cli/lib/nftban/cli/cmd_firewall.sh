@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.50.0"
+# meta:version="1.50.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -816,6 +816,18 @@ firewall_reload() {
         }
     fi
 
+    # Step 5 (v1.50.1): Re-sync feeds — reload destroys sets (delete table + recreate)
+    [[ "$quiet" == "false" ]] && echo "Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null || true
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+    fi
+
+    # Step 6 (v1.50.1): Re-sync geoban
+    [[ "$quiet" == "false" ]] && echo "Re-syncing GeoBan..."
+    timeout 120s nftban geoban sync 2>/dev/null || true
+
     if [[ "$quiet" == "false" ]]; then
         echo ""
         echo "═══════════════════════════════════════════════════════"
@@ -873,7 +885,7 @@ firewall_rebuild() {
     timestamp=$(date +%Y%m%d_%H%M%S)
 
     # v2.1: Only whitelist + blacklist sets exist (feeds/geoban merged into blacklist)
-    [[ "$quiet" == "false" ]] && echo "  [1/7] Backing up current sets..."
+    [[ "$quiet" == "false" ]] && echo "  [1/9] Backing up current sets..."
     timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null > "$backup_dir/whitelist_ipv6_$timestamp.txt" || true
@@ -923,7 +935,7 @@ firewall_rebuild() {
     fi
 
     # Render: substitute placeholders → temp file → validate → atomic write
-    [[ "$quiet" == "false" ]] && echo "  [2/7] Rendering schema from template..."
+    [[ "$quiet" == "false" ]] && echo "  [2/9] Rendering schema from template..."
     local load_conf="$nftban_conf"
 
     if [[ -n "$source_file" ]]; then
@@ -935,7 +947,7 @@ firewall_rebuild() {
         fi
 
         # Validate rendered config BEFORE writing to live config
-        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating new schema (dry-run)..."
+        [[ "$quiet" == "false" ]] && echo "  [3/9] Validating new schema (dry-run)..."
         local validate_output
         if ! validate_output=$(nft -c -f "$tmp_conf" 2>&1); then
             echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
@@ -955,7 +967,7 @@ firewall_rebuild() {
         load_conf="$nftban_conf"
     else
         # No template, no placeholders — validate live config directly
-        [[ "$quiet" == "false" ]] && echo "  [3/7] Validating schema (dry-run)..."
+        [[ "$quiet" == "false" ]] && echo "  [3/9] Validating schema (dry-run)..."
         local validate_output
         if ! validate_output=$(nft -c -f "$load_conf" 2>&1); then
             echo "ERROR: Schema validation FAILED — existing firewall preserved!" >&2
@@ -969,7 +981,7 @@ firewall_rebuild() {
     fi
 
     # Step 4: Remove rogue tables (keep only NFTBan tables)
-    [[ "$quiet" == "false" ]] && echo "  [4/7] Removing rogue tables..."
+    [[ "$quiet" == "false" ]] && echo "  [4/9] Removing rogue tables..."
     # v1.48.0: Include SYNPROXY raw tables in allowed list
     local ALLOWED_TABLES_PATTERN="^table (ip|ip6) (nftban|raw)$|^table inet (filter|nftban)$"
     local ALL_TABLES
@@ -986,7 +998,7 @@ firewall_rebuild() {
     done <<< "$ALL_TABLES"
 
     # Step 5: Flush + load (safe — we validated above)
-    [[ "$quiet" == "false" ]] && echo "  [5/7] Flushing and loading new schema..."
+    [[ "$quiet" == "false" ]] && echo "  [5/9] Flushing and loading new schema..."
     nft flush table ip nftban 2>/dev/null || true
     nft flush table ip6 nftban 2>/dev/null || true
 
@@ -997,11 +1009,11 @@ firewall_rebuild() {
     fi
 
     # Step 6: Re-sync system whitelist
-    [[ "$quiet" == "false" ]] && echo "  [6/7] Re-syncing system whitelist..."
+    [[ "$quiet" == "false" ]] && echo "  [6/9] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
     # Step 7: Restore blacklist from backup (BUG FIX: R74 - blacklist was never restored)
-    [[ "$quiet" == "false" ]] && echo "  [7/7] Restoring blacklist from backup..."
+    [[ "$quiet" == "false" ]] && echo "  [7/9] Restoring blacklist from backup..."
     local restored_count=0
     for backup_file in "$backup_dir/blacklist_ipv4_$timestamp.txt" "$backup_dir/blacklist_ipv6_$timestamp.txt"; do
         [[ -f "$backup_file" ]] || continue
@@ -1035,6 +1047,30 @@ firewall_rebuild() {
         fi
     done
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
+
+    # Step 8: Re-sync feeds (v1.50.1: auto-restore, was manual-only)
+    [[ "$quiet" == "false" ]] && echo "  [8/9] Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    No feeds to sync (disabled or empty)"; }
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (not configured or failed)"; }
+    else
+        [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (no sync function available)"
+    fi
+
+    # Step 9: Re-sync geoban (v1.50.1: auto-restore, was manual-only)
+    [[ "$quiet" == "false" ]] && echo "  [9/9] Re-syncing GeoBan..."
+    if command -v nftban &>/dev/null; then
+        timeout 120s nftban geoban sync 2>/dev/null && \
+            { [[ "$quiet" == "false" ]] && echo "    GeoBan synced to nftables"; } || \
+            { [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (not configured or failed)"; }
+    else
+        [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)"
+    fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
@@ -1100,7 +1136,7 @@ firewall_reset() {
     [[ "$quiet" == "false" ]] && echo "Performing complete firewall reset..."
 
     # Step 1: Stop nftban services temporarily
-    [[ "$quiet" == "false" ]] && echo "  [1/6] Stopping NFTBan services..."
+    [[ "$quiet" == "false" ]] && echo "  [1/8] Stopping NFTBan services..."
     systemctl stop nftban-maintenance.timer 2>/dev/null || true
     systemctl stop nftband 2>/dev/null || true
 
@@ -1109,16 +1145,16 @@ firewall_reset() {
     mkdir -p "$backup_dir" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
-    [[ "$quiet" == "false" ]] && echo "  [2/6] Backing up current ruleset..."
+    [[ "$quiet" == "false" ]] && echo "  [2/8] Backing up current ruleset..."
     nft list ruleset > "$backup_dir/ruleset_$timestamp.nft" 2>/dev/null || true
 
     # Step 3: Remove NFTBan tables (preserves Docker/cPanel/foreign tables)
-    [[ "$quiet" == "false" ]] && echo "  [3/6] Removing NFTBan tables..."
+    [[ "$quiet" == "false" ]] && echo "  [3/8] Removing NFTBan tables..."
     nft delete table ip nftban 2>/dev/null || true
     nft delete table ip6 nftban 2>/dev/null || true
 
     # Step 4: Reload NFTBan schema
-    [[ "$quiet" == "false" ]] && echo "  [4/6] Loading clean NFTBan schema..."
+    [[ "$quiet" == "false" ]] && echo "  [4/8] Loading clean NFTBan schema..."
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     if [[ -f "$nftban_conf" ]]; then
         if ! nft -f "$nftban_conf" 2>&1; then
@@ -1130,21 +1166,29 @@ firewall_reset() {
     fi
 
     # Step 5: Re-sync system whitelist (lockout protection)
-    [[ "$quiet" == "false" ]] && echo "  [5/6] Re-syncing system whitelist..."
+    [[ "$quiet" == "false" ]] && echo "  [5/8] Re-syncing system whitelist..."
     nftban whitelist sync >/dev/null 2>&1 || true
 
-    # Step 6: Restart services
-    [[ "$quiet" == "false" ]] && echo "  [6/6] Restarting NFTBan services..."
+    # Step 6: Re-sync feeds (v1.50.1: auto-restore)
+    [[ "$quiet" == "false" ]] && echo "  [6/8] Re-syncing threat feeds..."
+    if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
+        nftban_feeds_sync_to_nftables 2>/dev/null || true
+    elif [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
+        timeout 120s "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds sync 2>/dev/null || true
+    fi
+
+    # Step 7: Re-sync geoban (v1.50.1: auto-restore)
+    [[ "$quiet" == "false" ]] && echo "  [7/8] Re-syncing GeoBan..."
+    timeout 120s nftban geoban sync 2>/dev/null || true
+
+    # Step 8: Restart services
+    [[ "$quiet" == "false" ]] && echo "  [8/8] Restarting NFTBan services..."
     systemctl start nftban-maintenance.timer 2>/dev/null || true
     systemctl start nftband 2>/dev/null || true
 
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Firewall reset complete!"
     [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/ruleset_$timestamp.nft"
-    [[ "$quiet" == "false" ]] && echo ""
-    [[ "$quiet" == "false" ]] && echo "Next steps:"
-    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban geoban sync' to restore GeoBan"
-    [[ "$quiet" == "false" ]] && echo "  - Run 'nftban feeds sync' to restore threat feeds"
 
     return 0
 }
