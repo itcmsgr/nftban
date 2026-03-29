@@ -395,11 +395,56 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c "
-            dnf install -y /packages/*.rpm &&
-            nftban --version &&
-            systemctl list-unit-files | grep nftban
-          " && echo "✅ ${{ matrix.distro }} install test passed" || echo "❌ ${{ matrix.distro }} install test failed"
+          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+            set -euo pipefail
+            INSTALL_LOG=$(mktemp)
+
+            echo "=== Phase 1: Package Installation ==="
+            if dnf install -y --allowerasing /packages/*.rpm > "$INSTALL_LOG" 2>&1; then
+              echo "[PASS] Package installed cleanly"
+              INSTALL_CLEAN=true
+            else
+              INSTALL_EXIT=$?
+              echo "[WARN] Package install exited $INSTALL_EXIT (postinst may have failed)"
+              cat "$INSTALL_LOG"
+              INSTALL_CLEAN=false
+            fi
+
+            echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
+            echo -n "CLI wrapper exists: "
+            test -x /usr/sbin/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "CLI runs: "
+            /usr/sbin/nftban version && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Library dir exists: "
+            test -d /usr/lib/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Config dir exists: "
+            test -d /etc/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Systemd units installed: "
+            ls /usr/lib/systemd/system/nftban*.service >/dev/null 2>&1 \
+              && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
+            if [[ "$INSTALL_CLEAN" == "true" ]]; then
+              echo "[INFO] Postinst succeeded — full install in container"
+            else
+              if grep -qE "nftables|nft:|RTNETLINK|Operation not permitted" "$INSTALL_LOG"; then
+                echo "[EXPECTED] Postinst failed due to missing nftables kernel (Docker limitation)"
+              elif grep -qE "Failed to connect.*D-Bus|systemctl.*not found|Failed to.*service" "$INSTALL_LOG"; then
+                echo "[EXPECTED] Postinst failed due to missing systemd (Docker limitation)"
+              else
+                echo "[UNEXPECTED] Postinst failed for unknown reason — INVESTIGATE"
+                cat "$INSTALL_LOG"
+                exit 1
+              fi
+            fi
+
+            rm -f "$INSTALL_LOG"
+            echo "=== Install test PASSED ==="
+          '
 
   # ==========================================================================
   # TEST INSTALLATION (DEB)
@@ -451,12 +496,58 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c "
-            apt-get update &&
-            apt-get install -y /packages/*.deb &&
-            nftban --version &&
-            systemctl list-unit-files | grep nftban
-          " && echo "✅ ${{ matrix.distro }} install test passed" || echo "❌ ${{ matrix.distro }} install test failed"
+          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+            set -euo pipefail
+            INSTALL_LOG=$(mktemp)
+
+            echo "=== Phase 1: Package Installation ==="
+            apt-get update -qq > /dev/null 2>&1
+            if apt-get install -y /packages/*.deb > "$INSTALL_LOG" 2>&1; then
+              echo "[PASS] Package installed cleanly"
+              INSTALL_CLEAN=true
+            else
+              INSTALL_EXIT=$?
+              echo "[WARN] Package install exited $INSTALL_EXIT (postinst may have failed)"
+              cat "$INSTALL_LOG"
+              INSTALL_CLEAN=false
+            fi
+
+            echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
+            echo -n "CLI wrapper exists: "
+            test -x /usr/sbin/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "CLI runs: "
+            /usr/sbin/nftban version && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Library dir exists: "
+            test -d /usr/lib/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Config dir exists: "
+            test -d /etc/nftban && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo -n "Systemd units installed: "
+            ls /lib/systemd/system/nftban*.service >/dev/null 2>&1 \
+              || ls /usr/lib/systemd/system/nftban*.service >/dev/null 2>&1 \
+              && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
+            if [[ "$INSTALL_CLEAN" == "true" ]]; then
+              echo "[INFO] Postinst succeeded — full install in container"
+            else
+              if grep -qE "nftables|nft:|RTNETLINK|Operation not permitted" "$INSTALL_LOG"; then
+                echo "[EXPECTED] Postinst failed due to missing nftables kernel (Docker limitation)"
+              elif grep -qE "Failed to connect.*D-Bus|systemctl.*not found|Failed to.*service" "$INSTALL_LOG"; then
+                echo "[EXPECTED] Postinst failed due to missing systemd (Docker limitation)"
+              else
+                echo "[UNEXPECTED] Postinst failed for unknown reason — INVESTIGATE"
+                cat "$INSTALL_LOG"
+                exit 1
+              fi
+            fi
+
+            rm -f "$INSTALL_LOG"
+            echo "=== Install test PASSED ==="
+          '
 
   # ==========================================================================
   # CONSOLIDATE ALL PACKAGES

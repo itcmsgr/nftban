@@ -45,6 +45,9 @@ jobs:
 
       - name: Check nft write policy
         run: ./scripts/ci/check-nft-writes.sh
+        env:
+          # Explicit: NEVER use --warn-all in CI (would disable enforcement)
+          WARN_ALL: "0"
 
       - name: Check netlink import policy
         run: |
