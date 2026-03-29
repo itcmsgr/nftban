@@ -23,7 +23,7 @@ umask 027
 
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 readonly GO_EXPORTER="${GO_EXPORTER:-nftban-core}"
-readonly BASH_EXPORTER="${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh"
+readonly BASH_EXPORTER="${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh"
 readonly LOG_TAG="nftban-metrics-wrapper"
 
 # =============================================================================

@@ -1725,42 +1725,6 @@ config:
       - /etc/nftban/nftban.conf
       - /etc/nftban/geoip.conf
 
-configaudit:
-  category: infrastructure
-  description: "DEPRECATED: Use 'nftban config audit' instead"
-  deprecated: true
-  deprecated_in: "1.51.0"
-  successor: "config audit"
-  risk: core
-  audience: [cli, auditor]
-  capability: config_view
-  mutates: false
-  supports_dry_run: false
-  requires_root: false
-  panel_expose: false
-  output_modes: [json, text]
-  has_json: true
-  examples:
-    - "nftban config audit"
-
-configtest:
-  category: infrastructure
-  description: "DEPRECATED: Use 'nftban config validate' instead"
-  deprecated: true
-  deprecated_in: "1.51.0"
-  successor: "config validate"
-  risk: core
-  audience: [cli, auditor]
-  capability: config_view
-  mutates: false
-  supports_dry_run: false
-  requires_root: false
-  panel_expose: false
-  output_modes: [json, text]
-  has_json: true
-  examples:
-    - "nftban config validate"
-
 port:
   category: infrastructure
   description: "Port allow/block management with protocol and direction control (IPv4+IPv6 applied automatically)"

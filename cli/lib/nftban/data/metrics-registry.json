@@ -26,11 +26,6 @@
       "description": "Textfile collector for node_exporter",
       "output": "/var/lib/node_exporter/textfile_collector/nftban.prom"
     },
-    "shell_prometheus": {
-      "file": "cli/lib/nftban/exporters/nftban_prometheus_exporter.sh",
-      "description": "Shell-based Prometheus exporter (daemon stats, watchdog, runtime)",
-      "output": "stdout (OpenMetrics format)"
-    },
     "shell_zabbix": {
       "file": "cli/lib/nftban/exporters/nftban_zabbix_exporter.sh",
       "description": "Shell-based Zabbix exporter (trapper items)",
