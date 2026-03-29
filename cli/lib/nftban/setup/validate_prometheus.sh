@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="validate_prometheus"
 # meta:type="setup"
-# meta:version="1.39.0"
+# meta:version="1.54.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Validate Prometheus installation and NFTBan metrics collection"
 # meta:inventory.files=""
@@ -27,60 +27,19 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 readonly SCRIPT_NAME
 readonly PROMETHEUS_PORT=9090
 
-# Colors for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[0;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m' # No Color
+# Shared validation utilities (print_color, test_header, test_result, counters)
+# shellcheck source=lib_validation.sh
+source "${BASH_SOURCE[0]%/*}/lib_validation.sh" || exit 1
 
-# Test counters
-TOTAL_TESTS=0
-PASSED_TESTS=0
-FAILED_TESTS=0
-WARNING_TESTS=0
+# Colors for output (used by print_summary and main)
+readonly RED="$_VAL_RED"
+readonly GREEN="$_VAL_GREEN"
+readonly YELLOW="$_VAL_YELLOW"
+readonly BLUE="$_VAL_BLUE"
 
 # =============================================================================
 # FUNCTIONS
 # =============================================================================
-
-# Print colored message
-print_color() {
-    local color="$1"
-    shift
-    echo -e "${color}$*${NC}"
-}
-
-# Print test header
-test_header() {
-    echo ""
-    print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    print_color "$BLUE" "TEST: $*"
-    print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-}
-
-# Print test result
-test_result() {
-    local status="$1"
-    local message="$2"
-
-    TOTAL_TESTS=$((TOTAL_TESTS + 1))
-
-    case "$status" in
-        PASS)
-            print_color "$GREEN" "✓ PASS: $message"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-            ;;
-        FAIL)
-            print_color "$RED" "✗ FAIL: $message"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-            ;;
-        WARN)
-            print_color "$YELLOW" "⚠ WARN: $message"
-            WARNING_TESTS=$((WARNING_TESTS + 1))
-            ;;
-    esac
-}
 
 # Print usage
 usage() {
