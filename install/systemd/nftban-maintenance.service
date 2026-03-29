@@ -25,8 +25,9 @@
 #   - Autoheal (fixes permissions, creates directories)
 #   - Configuration validation
 #
-# SECURITY NOTE: Runs as root because it must write to /etc/nftban/ports.d and
-# /etc/nftban/whitelist.d for SSH lockout prevention. This is safety-critical.
+# SECURITY NOTE: Runs as root because it must write to /etc/nftban/ for:
+#   - ports.d and whitelist.d: SSH lockout prevention (safety-critical)
+#   - nftables.conf + .nftables.conf.tmp: firewall reload/rebuild via autoheal
 # /etc must remain root-owned (not group-writable by nftban) per FHS standards.
 # Strict sandboxing limits root to only necessary paths.
 #
@@ -66,9 +67,10 @@ RestrictSUIDSGID=true
 LockPersonality=true
 
 # Minimal filesystem access - root can only write to these paths
+# /etc/nftban: firewall reload/rebuild writes .nftables.conf.tmp + rendered nftables.conf
 # /etc/nftban/ports.d and /etc/nftban/whitelist.d: SSH lockout prevention
 # /var/lib/nftban, /var/log/nftban, /var/cache/nftban, /run/nftban: normal state
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
 # Network access (IPC socket + curl for SSH port detection)
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
