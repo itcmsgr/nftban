@@ -58,6 +58,9 @@ node_modules/
 *.tar.gz
 *.tgz
 
+# Go daemon binary
+nftband
+
 # Debug
 *.debug
 __debug_bin
