@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_unified_exporter_collect"
 # meta:type="exporter"
-# meta:version="1.47.0"
+# meta:version="1.56.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Main metrics collection function (collect_all_metrics)"
 # meta:inventory.files=""
@@ -38,6 +38,19 @@ collect_all_metrics() {
     # Helper: check if a group is active
     # shellcheck disable=SC2076  # Literal match intended (not regex)
     group_active() { [[ " $collection_groups " =~ " $1 " ]]; }
+
+    # =========================================================================
+    # CACHE PRE-FILL: Preserve extended/inventory data across live-only runs
+    # =========================================================================
+    # On live-only runs, extended (firewall, modules, etc.) and inventory
+    # (server hostname, version, etc.) variables would default to 0/"unknown".
+    # Pre-fill from previous stats.json so the JSON cache stays accurate.
+    # =========================================================================
+    local _prev_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/metrics/stats.json"
+    local _prev=""
+    if [[ -f "$_prev_cache" ]]; then
+        _prev=$(cat "$_prev_cache" 2>/dev/null) || _prev=""
+    fi
 
     # =========================================================================
     # LIVE METRICS (every run - 60s)
@@ -388,6 +401,7 @@ collect_all_metrics() {
 
             local rate
             rate=$(echo "scale=2; $bans_5m / 5" | bc 2>/dev/null || echo "0")
+            [[ "$rate" == .* ]] && rate="0${rate}"  # JSON requires leading zero
 
             # Time window metrics
             metrics+="nftban_bans_last_1h $bans_1h $timestamp\n"
@@ -431,7 +445,8 @@ collect_all_metrics() {
         local goroutines=0
         if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
             rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
-            fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
+            fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l) || fds=0
+            fds=${fds//[[:space:]]/}  # strip whitespace from wc -l
             threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
 
             metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
@@ -670,6 +685,37 @@ collect_all_metrics() {
     local server_uptime=0 disk_total=0 disk_used=0 disk_used_pct=0
     # Sets/elements totals
     local sets_count=0 elements_total=0
+
+    # Pre-fill extended variables from previous cache when group is inactive
+    if ! group_active "extended" && [[ -n "$_prev" ]]; then
+        local _ext
+        _ext=$(echo "$_prev" | jq -r '[
+            .firewall.sets_total, .firewall.elements_total,
+            .modules.enabled, .modules.active, .modules.failed,
+            .module_status.login, .module_status.portscan, .module_status.ddos,
+            .module_status.suricata, .module_status.feeds, .module_status.geoban,
+            .module_status.watchdog, .module_status.botguard,
+            .feed_health.sync_errors_total, .feed_health.stale_count,
+            .geoban.countries_blocked,
+            .server.cpu_cores, .server.memory_total_bytes, .server.memory_available_bytes,
+            .server.memory_used_pct, .server.uptime_seconds,
+            .server.disk_total_bytes, .server.disk_used_bytes, .server.disk_used_pct
+        ] | @tsv' 2>/dev/null) || _ext=""
+        if [[ -n "$_ext" ]]; then
+            IFS=$'\t' read -r \
+                sets_count elements_total \
+                mod_enabled mod_active mod_failed \
+                module_login_status module_portscan_status module_ddos_status \
+                module_suricata_status module_feeds_status module_geoban_status \
+                module_watchdog_status module_botguard_status \
+                feeds_sync_errors feeds_stale_count \
+                geoban_countries_blocked \
+                cpu_cores memory_total memory_available \
+                memory_used_pct server_uptime \
+                disk_total disk_used disk_used_pct \
+                <<< "$_ext"
+        fi
+    fi
 
     if group_active "extended"; then
 
@@ -1058,6 +1104,27 @@ collect_all_metrics() {
     local server_primary_ip="" server_mac="" server_subnet_mask="" server_networks=""
     local server_location="" nftban_version=""
 
+    # Pre-fill inventory variables from previous cache when group is inactive
+    if ! group_active "inventory" && [[ -n "$_prev" ]]; then
+        local _inv
+        _inv=$(echo "$_prev" | jq -r '[
+            .server.hostname, .server.fqdn, .server.os, .server.os_release,
+            .server.kernel, .server.arch, .server.cpu_model, .server.type,
+            .server.vendor, .server.model, .server.serial,
+            .server.primary_ip, .server.mac_address, .server.subnet_mask,
+            .server.networks, .server.location, .server.nftban_version
+        ] | @tsv' 2>/dev/null) || _inv=""
+        if [[ -n "$_inv" ]]; then
+            IFS=$'\t' read -r \
+                server_hostname server_fqdn server_os server_os_release \
+                server_kernel server_arch server_cpu_model server_type \
+                server_vendor server_model server_serial \
+                server_primary_ip server_mac server_subnet_mask \
+                server_networks server_location nftban_version \
+                <<< "$_inv"
+        fi
+    fi
+
     if group_active "inventory"; then
 
         # --- Server Inventory Metrics (for Zabbix host inventory auto-population) ---
@@ -1264,6 +1331,8 @@ collect_all_metrics() {
                 metrics+="nftban_network_tx_mbps{interface=\"${iface}\"} $tx_mbps $timestamp\n"
                 total_rx_mbps=$(echo "$total_rx_mbps + $rx_mbps" | bc -l 2>/dev/null || echo "$total_rx_mbps")
                 total_tx_mbps=$(echo "$total_tx_mbps + $tx_mbps" | bc -l 2>/dev/null || echo "$total_tx_mbps")
+                [[ "$total_rx_mbps" == .* ]] && total_rx_mbps="0${total_rx_mbps}"
+                [[ "$total_tx_mbps" == .* ]] && total_tx_mbps="0${total_tx_mbps}"
             fi
         fi
 

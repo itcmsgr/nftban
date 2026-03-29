@@ -134,6 +134,7 @@ _exporter_modules=(
     "nftban_unified_exporter_helpers.sh"
     "nftban_unified_exporter_collect.sh"
     "nftban_unified_exporter_export.sh"
+    "nftban_exporter_json_compat.sh"
 )
 
 for _module in "${_exporter_modules[@]}"; do
@@ -166,7 +167,8 @@ main() {
         && [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]] \
         && [[ "${NFTBAN_EXPORT_PROMETHEUS:-false}" != "true" ]] \
         && [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" != "true" ]] \
-        && [[ "${NFTBAN_PORTAL_ENABLED:-false}" != "true" ]]; then
+        && [[ "${NFTBAN_PORTAL_ENABLED:-false}" != "true" ]] \
+        && [[ "${NFTBAN_EXPORT_JSON:-true}" != "true" ]]; then
         log_debug "No export targets enabled — skipping collection"
         exit 0
     fi
@@ -204,6 +206,11 @@ main() {
 
     # Step 2: Export to enabled targets only
     local export_count=0
+
+    # Legacy JSON compat (dynamic.json/inventory.json/combined.json)
+    if [[ "${NFTBAN_EXPORT_JSON:-true}" == "true" ]]; then
+        export_legacy_json && ((export_count++)) || true
+    fi
 
     # Prometheus export (only if enabled)
     if [[ "${NFTBAN_EXPORT_PROMETHEUS:-false}" == "true" ]]; then

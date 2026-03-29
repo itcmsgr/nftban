@@ -616,12 +616,21 @@ _status_section_protection() {
     [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(list: nftban feeds list | enable: nftban feeds enable <FEED>)"
 
     # Login Monitor (v1.52.0: runs inside nftband as loginmon module)
+    # v1.56.0 FIX: Check both LOGIN_ENABLED (Go daemon config) and
+    #   NFTBAN_LOGIN_ALERT_ENABLED (bash alert config) — `nftban login enable` writes LOGIN_ENABLED
     local login_mon_status="DISABLED"
     if systemctl is-active --quiet nftband.service 2>/dev/null; then
-        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
         local _lm_en="false"
-        [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        # Check Go daemon loginmon config (LOGIN_ENABLED — written by `nftban login enable`)
+        local _lm_go_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+        [[ -f "${_lm_go_conf}.local" ]] && _lm_en=$(grep -m1 '^LOGIN_ENABLED=' "${_lm_go_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_go_conf" ]] && _lm_en=$(grep -m1 '^LOGIN_ENABLED=' "$_lm_go_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        # Fallback: check bash alert config (NFTBAN_LOGIN_ALERT_ENABLED)
+        if [[ "$_lm_en" != "true" ]]; then
+            local _lm_alert_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
+            [[ -f "${_lm_alert_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "${_lm_alert_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+            [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_alert_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "$_lm_alert_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        fi
         if [[ "$_lm_en" == "true" ]]; then
             login_mon_status="ACTIVE (nftband loginmon)"
         fi
