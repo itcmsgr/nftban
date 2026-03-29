@@ -16,7 +16,7 @@
 // meta:inventory.privileges="none"
 // =============================================================================
 
-package persistent
+package escalation
 
 import (
 	"bufio"
