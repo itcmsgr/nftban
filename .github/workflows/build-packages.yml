@@ -395,11 +395,16 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c "
-            dnf install -y /packages/*.rpm &&
-            nftban --version &&
+          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+            set -euo pipefail
+            echo "=== Installing NFTBan RPM ==="
+            dnf install -y /packages/*.rpm
+            echo "=== Verifying binary ==="
+            nftban --version
+            echo "=== Verifying systemd units ==="
             systemctl list-unit-files | grep nftban
-          " && echo "✅ ${{ matrix.distro }} install test passed" || echo "❌ ${{ matrix.distro }} install test failed"
+            echo "=== Install test PASSED ==="
+          '
 
   # ==========================================================================
   # TEST INSTALLATION (DEB)
@@ -451,12 +456,17 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c "
-            apt-get update &&
-            apt-get install -y /packages/*.deb &&
-            nftban --version &&
+          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+            set -euo pipefail
+            echo "=== Installing NFTBan DEB ==="
+            apt-get update -qq
+            apt-get install -y /packages/*.deb
+            echo "=== Verifying binary ==="
+            nftban --version
+            echo "=== Verifying systemd units ==="
             systemctl list-unit-files | grep nftban
-          " && echo "✅ ${{ matrix.distro }} install test passed" || echo "❌ ${{ matrix.distro }} install test failed"
+            echo "=== Install test PASSED ==="
+          '
 
   # ==========================================================================
   # CONSOLIDATE ALL PACKAGES
