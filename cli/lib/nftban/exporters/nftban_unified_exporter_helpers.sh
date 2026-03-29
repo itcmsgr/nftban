@@ -36,6 +36,9 @@ cleanup_temp_files() {
 
     rm -f "${prom_file}".tmp "${prom_file}".?????? 2>/dev/null || true
     rm -f "${json_cache}.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/dynamic.json.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/inventory.json.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/combined.json.tmp" 2>/dev/null || true
     rm -f "${BANDWIDTH_STATE}.tmp" 2>/dev/null || true
     rm -f "${METRICS_CACHE}.tmp" 2>/dev/null || true
 
