@@ -53,7 +53,7 @@ check_prometheus_running() {
     fi
 }
 
-create_provisioning_config() {
+create_datasource_provisioning_config() {
     print_info "Creating Prometheus datasource provisioning config..."
 
     mkdir -p "$GRAFANA_PROVISIONING_DIR" || return 1
@@ -159,7 +159,7 @@ main() {
     check_root
     check_grafana_running
     check_prometheus_running
-    create_provisioning_config
+    create_datasource_provisioning_config
     restart_grafana
     verify_datasource || true
     print_next_steps

@@ -1,12 +1,12 @@
 // =============================================================================
-// NFTBan v1.0 - nftband Daemon - Watchdog, status, modules, and reload handlers
+// NFTBan v1.0 - nftband Daemon - Watchdog, reload, and source-index handlers
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftband"
 // meta:type="cmd"
 // meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-// meta:description="Watchdog, status, modules, and reload handlers"
+// meta:description="Watchdog, reload, and source-index handlers"
 //
 // meta:inventory.files="/usr/lib/nftban/bin/nftband"
 // meta:inventory.binaries="nftband"
@@ -22,7 +22,6 @@ package main
 import (
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/watchdog"
 )
 
@@ -159,41 +158,6 @@ func (d *Daemon) handleWatchdogEventsRequest(params map[string]any) SocketRespon
 			"count":  len(events),
 			"events": eventList,
 		},
-	}
-}
-
-// handleStatusRequest returns daemon status
-func (d *Daemon) handleStatusRequest() SocketResponse {
-	stats := d.bus.Stats()
-
-	// Get config info (thread-safe)
-	d.reloadMu.RLock()
-	configHash := d.configHash
-	lastReload := d.lastReloadTs
-	d.reloadMu.RUnlock()
-
-	return SocketResponse{
-		Success: true,
-		Data: map[string]any{
-			"version":        version.Version,
-			"uptime":         time.Since(d.startedAt).Truncate(time.Second).String(),
-			"uptime_seconds": int(time.Since(d.startedAt).Seconds()),
-			"modules":        len(d.registry.All()),
-			"events_total":  stats.Published,
-			"subscriptions": stats.Subscriptions,
-			// v1.13.12: Config reload tracking
-			"config_hash":   configHash,
-			"config_loaded": lastReload.Format(time.RFC3339),
-		},
-	}
-}
-
-// handleModulesRequest returns module statuses
-func (d *Daemon) handleModulesRequest() SocketResponse {
-	statuses := d.registry.StatusAll()
-	return SocketResponse{
-		Success: true,
-		Data:    statuses,
 	}
 }
 

@@ -4,7 +4,7 @@
 # meta:type="exporter"
 # meta:version="1.47.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Central metrics collector - collect once, export to any backend"
+# meta:description="DEPRECATED v1.54.0: Use nftban-unified-exporter instead. Will be removed in v1.56.0."
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
