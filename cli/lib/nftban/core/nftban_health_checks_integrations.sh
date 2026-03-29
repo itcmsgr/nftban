@@ -116,9 +116,9 @@ nftban_health_check_metrics() {
     local status=$HEALTH_OK
     local metrics_issues=()
 
-    # Check if metrics exporter script exists (determine if metrics are installable)
+    # Check if unified exporter exists (v1.55.0: replaces legacy prometheus_exporter)
     local exporter_installed=false
-    if [[ -f "${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh" ]]; then
+    if [[ -f "${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh" ]]; then
         exporter_installed=true
     fi
 
@@ -137,17 +137,17 @@ nftban_health_check_metrics() {
         fi
     fi
 
-    # Check if metrics exporter script exists
-    if [[ ! -f "${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh" ]]; then
+    # Check if unified exporter script exists
+    if [[ ! -f "${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh" ]]; then
         metrics_issues+=("Metrics exporter not installed (optional)")
         NFTBAN_HEALTH_ISSUES["metrics"]="Not installed (optional feature)"
         return $HEALTH_NOT_INSTALLED
     fi
 
     # Check if exporter script is executable
-    if [[ ! -x "${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh" ]]; then
+    if [[ ! -x "${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh" ]]; then
         metrics_issues+=("Metrics exporter not executable")
-        metrics_issues+=("FIX: sudo chmod +x ${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh")
+        metrics_issues+=("FIX: sudo chmod +x ${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh")
         status=$HEALTH_ERROR
     fi
 
