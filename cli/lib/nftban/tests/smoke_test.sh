@@ -5,7 +5,7 @@
 # =============================================================================
 # meta:name="smoke_test"
 # meta:type="test"
-# meta:version="1.44.0"
+# meta:version="1.56.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="CLI health check with ban lifecycle verification"
 # meta:inventory.files=""
@@ -1556,6 +1556,264 @@ run_whitelist_safety_tests() {
 }
 
 # =============================================================================
+# METRICS & EXPORTER VALIDATION
+# =============================================================================
+# Validates stats.json, dynamic.json, and exporter output integrity.
+# Based on real bugs found during v1.56.0 testing:
+#   - open_fds JSON corruption (pipefail + wc -l producing "0\n0")
+#   - rate_per_minute bare decimal (.60 instead of 0.60)
+#   - Extended/inventory data zeroed on live-only runs
+#   - daemon.version showing "unknown" when inventory group not active
+# =============================================================================
+
+run_metrics_validation() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "METRICS & EXPORTER VALIDATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local metrics_dir="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/metrics"
+    local stats_json="${metrics_dir}/stats.json"
+    local dynamic_json="${metrics_dir}/dynamic.json"
+    local inventory_json="${metrics_dir}/inventory.json"
+    local combined_json="${metrics_dir}/combined.json"
+
+    # Skip if jq not available
+    if ! command -v jq &>/dev/null; then
+        log_warn "jq not installed — skipping metrics validation"
+        return 0
+    fi
+
+    # ── Test: stats.json exists and is valid JSON ──
+    log ""
+    log "─── stats.json Validity ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if [[ ! -f "$stats_json" ]]; then
+        log_warn "stats.json not found at $stats_json (exporter may not have run)"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    elif jq -e . "$stats_json" >/dev/null 2>&1; then
+        log_pass "stats.json — valid JSON ($(wc -c < "$stats_json") bytes)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        local jq_err
+        jq_err=$(jq . "$stats_json" 2>&1 | tail -1)
+        log_fail "stats.json — INVALID JSON: $jq_err"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        # Cannot proceed with further stats.json tests
+        return 0
+    fi
+
+    # ── Test: No bare decimals in stats.json (JSON spec violation) ──
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    # Match patterns like ": .60" or ": -.60" (bare decimals without leading zero)
+    if grep -qE ':\s+(-)?\.([0-9])' "$stats_json" 2>/dev/null; then
+        local bare_decimals
+        bare_decimals=$(grep -oE ':\s+(-)?\.([0-9]+)' "$stats_json" | head -3)
+        log_fail "stats.json — bare decimal(s) found (invalid JSON): $bare_decimals"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        log_pass "stats.json — no bare decimals (JSON number format correct)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+
+    # ── Test: Required fields are populated (not zero/unknown on cached runs) ──
+    log ""
+    log "─── stats.json Required Fields ───"
+
+    # firewall.sets_total should be > 0 if nftables is active
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local fw_sets
+    fw_sets=$(jq -r '.firewall.sets_total // 0' "$stats_json" 2>/dev/null)
+    if [[ "$fw_sets" -gt 0 ]] 2>/dev/null; then
+        log_pass "firewall.sets_total = $fw_sets (populated)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    elif command -v nft &>/dev/null && nft list tables 2>/dev/null | grep -q nftban; then
+        log_fail "firewall.sets_total = $fw_sets (zero despite active nftban tables)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        log_warn "firewall.sets_total = $fw_sets (nftban tables not loaded — OK)"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    fi
+
+    # server.nftban_version should not be "unknown"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local s_ver
+    s_ver=$(jq -r '.server.nftban_version // "unknown"' "$stats_json" 2>/dev/null)
+    if [[ "$s_ver" != "unknown" ]] && [[ "$s_ver" != "null" ]] && [[ -n "$s_ver" ]]; then
+        log_pass "server.nftban_version = $s_ver"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "server.nftban_version = \"$s_ver\" (should show actual version)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # server.hostname should not be "unknown"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local s_host
+    s_host=$(jq -r '.server.hostname // "unknown"' "$stats_json" 2>/dev/null)
+    if [[ "$s_host" != "unknown" ]] && [[ "$s_host" != "null" ]] && [[ -n "$s_host" ]]; then
+        log_pass "server.hostname = $s_host"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "server.hostname = \"$s_host\" (should show actual hostname)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # memory.open_fds should be a sane integer (not "0\n0", not negative)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local m_fds
+    m_fds=$(jq -r '.memory.open_fds // 0' "$stats_json" 2>/dev/null)
+    if [[ "$m_fds" =~ ^[0-9]+$ ]]; then
+        log_pass "memory.open_fds = $m_fds (valid integer)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "memory.open_fds = \"$m_fds\" (expected integer, got corrupted value)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # daemon.status should be 0 or 1
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local d_status
+    d_status=$(jq -r '.daemon.status // -1' "$stats_json" 2>/dev/null)
+    if [[ "$d_status" == "0" ]] || [[ "$d_status" == "1" ]]; then
+        log_pass "daemon.status = $d_status"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "daemon.status = \"$d_status\" (expected 0 or 1)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Test: Cross-consistency with CLI ──
+    log ""
+    log "─── Metrics Cross-Consistency ───"
+
+    # Compare stats.json blacklist total with nftban status
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local json_bans cli_bans
+    json_bans=$(jq -r '.blacklist.total // 0' "$stats_json" 2>/dev/null)
+    cli_bans=$(nftban status --quiet 2>/dev/null | grep -oP 'Active Bans:\s*\K\d+' || echo "")
+
+    if [[ -z "$cli_bans" ]]; then
+        # Try alternate format
+        cli_bans=$(nftban blacklist count 2>/dev/null | grep -oP '\d+' | head -1 || echo "")
+    fi
+
+    if [[ -n "$cli_bans" ]] && [[ -n "$json_bans" ]]; then
+        # Allow ±5% tolerance (bans can change between reads)
+        local diff=$((json_bans - cli_bans))
+        [[ $diff -lt 0 ]] && diff=$((-diff))
+        local threshold=$(( (json_bans / 20) + 2 ))  # 5% + 2 for small counts
+
+        if [[ $diff -le $threshold ]]; then
+            log_pass "ban count consistency — stats.json=$json_bans, CLI=$cli_bans (delta=$diff, threshold=$threshold)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "ban count MISMATCH — stats.json=$json_bans, CLI=$cli_bans (delta=$diff > threshold=$threshold)"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        log_warn "ban count cross-check skipped (stats.json=$json_bans, CLI=$cli_bans)"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    fi
+
+    # ── Test: Legacy compat JSON files (if NFTBAN_EXPORT_JSON enabled) ──
+    log ""
+    log "─── Legacy JSON Compat Files ───"
+
+    for compat_file in "$dynamic_json" "$combined_json"; do
+        local fname
+        fname=$(basename "$compat_file")
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if [[ ! -f "$compat_file" ]]; then
+            log_warn "$fname not found (legacy compat may be disabled)"
+            TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+        elif jq -e . "$compat_file" >/dev/null 2>&1; then
+            log_pass "$fname — valid JSON ($(wc -c < "$compat_file") bytes)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "$fname — INVALID JSON"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    done
+
+    # Verify dynamic.json has required top-level keys (legacy schema)
+    if [[ -f "$dynamic_json" ]] && jq -e . "$dynamic_json" >/dev/null 2>&1; then
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        local required_keys=("daemon" "bans" "memory" "modules" "feeds" "network" "kernel")
+        local missing_keys=()
+        for key in "${required_keys[@]}"; do
+            if ! jq -e ".$key" "$dynamic_json" >/dev/null 2>&1; then
+                missing_keys+=("$key")
+            fi
+        done
+        if [[ ${#missing_keys[@]} -eq 0 ]]; then
+            log_pass "dynamic.json — all ${#required_keys[@]} required sections present"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "dynamic.json — missing sections: ${missing_keys[*]}"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    fi
+
+    # Verify inventory.json (if it exists — hourly only)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if [[ ! -f "$inventory_json" ]]; then
+        log_warn "inventory.json not found (generated hourly — may not exist yet)"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    elif jq -e '.server.hostname' "$inventory_json" >/dev/null 2>&1; then
+        log_pass "inventory.json — valid with server.hostname"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "inventory.json — missing server.hostname"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # ── Test: Login monitor config-status consistency ──
+    log ""
+    log "─── Login Monitor Status Consistency ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    local lm_conf_enabled="false"
+    local lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+    # Check .local first (override), then base config
+    if [[ -f "${lm_conf}.local" ]]; then
+        lm_conf_enabled=$(grep -m1 '^LOGIN_ENABLED=' "${lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    fi
+    if [[ "$lm_conf_enabled" != "true" ]] && [[ -f "$lm_conf" ]]; then
+        lm_conf_enabled=$(grep -m1 '^LOGIN_ENABLED=' "$lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    fi
+    # Fallback: check legacy key
+    if [[ "$lm_conf_enabled" != "true" ]]; then
+        local alert_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/alerts.conf"
+        for f in "${alert_conf}.local" "$alert_conf"; do
+            if [[ -f "$f" ]]; then
+                local v
+                v=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "$f" 2>/dev/null | cut -d'"' -f2 || echo "")
+                [[ "$v" == "true" ]] && lm_conf_enabled="true" && break
+            fi
+        done
+    fi
+
+    local lm_status_output
+    lm_status_output=$(nftban login status 2>/dev/null || echo "")
+    local lm_cli_active="false"
+    if echo "$lm_status_output" | grep -qiE 'ACTIVE|ENABLED|running'; then
+        lm_cli_active="true"
+    fi
+
+    if [[ "$lm_conf_enabled" == "$lm_cli_active" ]]; then
+        log_pass "login monitor — config=$lm_conf_enabled matches CLI=$lm_cli_active"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    elif [[ "$lm_conf_enabled" == "true" ]] && [[ "$lm_cli_active" == "false" ]]; then
+        log_fail "login monitor — config=enabled but CLI shows disabled (status display bug?)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        log_pass "login monitor — config=$lm_conf_enabled, CLI=$lm_cli_active (consistent)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+}
+
+# =============================================================================
 # ALL CLI COMMANDS TEST (comprehensive)
 # =============================================================================
 # Automatically discovers and tests ALL cmd_*.sh files
@@ -1942,6 +2200,7 @@ main() {
             run_feeds_nft_validation
             run_geoban_nft_validation
             run_whitelist_safety_tests
+            run_metrics_validation
             ;;
         all)
             # Comprehensive: test ALL CLI commands
@@ -1958,6 +2217,7 @@ main() {
             run_feeds_nft_validation
             run_geoban_nft_validation
             run_whitelist_safety_tests
+            run_metrics_validation
             ;;
         lifecycle)
             run_lifecycle_tests
