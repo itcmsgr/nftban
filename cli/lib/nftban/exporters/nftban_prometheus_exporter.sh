@@ -4,7 +4,7 @@
 # meta:type="exporter"
 # meta:version="1.39.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Consolidated all-in-one metrics exporter: blocks, bandwidth, counters, health"
+# meta:description="DEPRECATED v1.54.0: Use nftban-unified-exporter instead. Will be removed in v1.56.0."
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
