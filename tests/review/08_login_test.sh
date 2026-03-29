@@ -398,50 +398,23 @@ fi
 
 section "6. Systemd service unit"
 
-# 6a. Service unit file exists
-if [[ -f "$SERVICE_UNIT" ]]; then
-    check "Service unit file exists: nftban-login-monitor.service" 0
+# v1.55.0: nftban-login-monitor.service unit file removed (deprecated since v1.23.0)
+# The login monitor now runs as part of the Go daemon (nftband internal/loginmon)
+
+# 6a. Service unit file removed (expected since v1.55.0)
+if [[ ! -f "$SERVICE_UNIT" ]]; then
+    check "Service unit file removed (v1.55.0): nftban-login-monitor.service" 0
 else
-    check "Service unit file exists: nftban-login-monitor.service" 1
+    check "Service unit file removed (v1.55.0): nftban-login-monitor.service" 1
 fi
 
-# 6b. Service ExecStart runs nftban login run
-grep_check \
-    "Service: ExecStart invokes 'nftban login run'" \
-    'ExecStart=.*/nftban login run' \
-    "$SERVICE_UNIT"
-
-# 6c. Service has Restart=on-failure for resilience
-grep_check \
-    "Service: Restart=on-failure configured" \
-    'Restart=on-failure' \
-    "$SERVICE_UNIT"
-
-# 6d. Service has security hardening (NoNewPrivileges)
-grep_check \
-    "Service: NoNewPrivileges=true hardening" \
-    'NoNewPrivileges=true' \
-    "$SERVICE_UNIT"
-
-# 6e. Service runs as unprivileged user (not root)
-grep_check \
-    "Service: runs as unprivileged nftban user" \
-    'User=nftban' \
-    "$SERVICE_UNIT"
-
-# 6f. Service has memory limit
-grep_check \
-    "Service: memory limit configured (MemoryMax)" \
-    'MemoryMax=' \
-    "$SERVICE_UNIT"
-
-# 6g. Service name referenced in source code
+# 6b. Service name still referenced in CLI (upgrade cleanup code)
 grep_check \
     "CLI: references nftban-login-monitor service name" \
     'nftban-login-monitor' \
     "$CMD_LOGIN"
 
-# 6h. Meta tag references the systemd unit
+# 6c. Meta tag references the systemd unit
 grep_check \
     "Core: meta tag declares nftban-login-monitor.service" \
     'meta:inventory.systemd_units=.*nftban-login-monitor' \

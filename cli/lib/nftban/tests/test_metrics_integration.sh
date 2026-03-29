@@ -77,7 +77,7 @@ test_skip() {
 test_exporter_exists() {
     # v1.19.20 FIX
     ((TESTS_RUN++)) || true
-    if [[ -f "/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh" ]]; then
+    if [[ -f "/usr/lib/nftban/exporters/nftban_unified_exporter.sh" ]]; then
         test_pass "Exporter script exists"
         return 0
     else
@@ -89,7 +89,7 @@ test_exporter_exists() {
 test_exporter_executable() {
     # v1.19.20 FIX
     ((TESTS_RUN++)) || true
-    if [[ -x "/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh" ]]; then
+    if [[ -x "/usr/lib/nftban/exporters/nftban_unified_exporter.sh" ]]; then
         test_pass "Exporter script is executable"
         return 0
     else
@@ -101,7 +101,7 @@ test_exporter_executable() {
 test_exporter_runs() {
     # v1.19.20 FIX
     ((TESTS_RUN++)) || true
-    if timeout 10 /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh >/dev/null 2>&1; then
+    if timeout 10 /usr/lib/nftban/exporters/nftban_unified_exporter.sh >/dev/null 2>&1; then
         test_pass "Exporter script runs without errors"
         return 0
     else
@@ -116,7 +116,7 @@ test_metrics_file_created() {
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
 
     # Run exporter
-    /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh >/dev/null 2>&1 || true
+    /usr/lib/nftban/exporters/nftban_unified_exporter.sh >/dev/null 2>&1 || true
 
     if [[ -f "$metrics_file" ]]; then
         test_pass "Metrics file created: $metrics_file"

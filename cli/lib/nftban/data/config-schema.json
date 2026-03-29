@@ -11270,78 +11270,6 @@
       "module": "watchdog",
       "$ref": "#/definitions/positive_integer"
     },
-    "NFTBAN_WATCHDOG_STATS_CURRENT": {
-      "type": "string",
-      "description": "Current stats JSON path",
-      "introduced_in": "1.43.0",
-      "default": "/var/lib/nftban/stats/current.json",
-      "module": "watchdog",
-      "$ref": "#/definitions/path"
-    },
-    "NFTBAN_WATCHDOG_STATS_HISTORY_DIR": {
-      "type": "string",
-      "description": "Stats history directory",
-      "introduced_in": "1.43.0",
-      "default": "/var/lib/nftban/stats/history",
-      "module": "watchdog",
-      "$ref": "#/definitions/path"
-    },
-    "NFTBAN_WATCHDOG_STATS_ENABLED": {
-      "type": "string",
-      "description": "Enable runtime stats collection",
-      "introduced_in": "1.43.0",
-      "default": "true",
-      "module": "watchdog",
-      "$ref": "#/definitions/boolean_string"
-    },
-    "NFTBAN_WATCHDOG_STATS_INTERVAL_LIVE": {
-      "type": "string",
-      "description": "Live metrics collection interval",
-      "introduced_in": "1.43.0",
-      "default": "60",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_INTERVAL_IO": {
-      "type": "string",
-      "description": "I/O metrics collection interval",
-      "introduced_in": "1.43.0",
-      "default": "300",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_RETENTION_DAYS": {
-      "type": "string",
-      "description": "Stats retention in days",
-      "introduced_in": "1.43.0",
-      "default": "30",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_MEMORY_WARN": {
-      "type": "string",
-      "description": "Stats memory warning in MB",
-      "introduced_in": "1.43.0",
-      "default": "200",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_MEMORY_CRIT": {
-      "type": "string",
-      "description": "Stats memory critical in MB",
-      "introduced_in": "1.43.0",
-      "default": "500",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_STALE_THRESHOLD": {
-      "type": "string",
-      "description": "Stats stale threshold in seconds",
-      "introduced_in": "1.43.0",
-      "default": "300",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
     "NFTBAN_WATCHDOG_PROFILE_ENABLED": {
       "type": "string",
       "description": "Enable profiling",
@@ -11406,14 +11334,6 @@
       "module": "watchdog",
       "$ref": "#/definitions/positive_integer"
     },
-    "NFTBAN_WATCHDOG_STATS_LOG": {
-      "type": "string",
-      "description": "Stats log path",
-      "introduced_in": "1.43.0",
-      "default": "/var/log/nftban/watchdog/stats.log",
-      "module": "watchdog",
-      "$ref": "#/definitions/path"
-    },
     "NFTBAN_WATCHDOG_ALERTS_LOG": {
       "type": "string",
       "description": "Alerts log path",
@@ -11429,22 +11349,6 @@
       "default": "/var/log/nftban/watchdog/profiles.log",
       "module": "watchdog",
       "$ref": "#/definitions/path"
-    },
-    "NFTBAN_WATCHDOG_STATS_GOROUTINES_WARN": {
-      "type": "string",
-      "description": "Goroutine count warning threshold",
-      "introduced_in": "1.43.0",
-      "default": "100",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_WATCHDOG_STATS_GOROUTINES_CRIT": {
-      "type": "string",
-      "description": "Goroutine count critical threshold",
-      "introduced_in": "1.43.0",
-      "default": "500",
-      "module": "watchdog",
-      "$ref": "#/definitions/positive_integer"
     },
     "SURICATA_IFACE_MODE": {
       "type": "string",

@@ -371,12 +371,6 @@ install_systemd() {
         ok "Suricata rules updater units -> $systemd_dir"
     fi
 
-    # Login monitor
-    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-login-monitor.service" ]]; then
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-login-monitor.service" "$systemd_dir/"
-        ok "Login monitor service -> $systemd_dir"
-    fi
-
     # Maintenance tasks
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-maintenance.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-maintenance.service" "$systemd_dir/"

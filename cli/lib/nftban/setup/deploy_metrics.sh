@@ -88,13 +88,13 @@ step1_enable_exporter() {
     print_step "1" "Enable NFTBan Metrics Exporter"
 
     # Check if exporter is installed
-    if [[ ! -f "/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh" ]]; then
+    if [[ ! -f "/usr/lib/nftban/exporters/nftban_unified_exporter.sh" ]]; then
         print_error "NFTBan metrics exporter not found"
-        print_info "Install NFTBan v1.0.0+ first"
+        print_info "Install NFTBan v1.39.0+ first"
         exit 1
     fi
 
-    print_info "Found NFTBan prometheus exporter"
+    print_info "Found NFTBan unified exporter"
 
     # Enable and start timer
     if systemctl list-unit-files | grep -q "nftban-unified-exporter.timer"; then
@@ -104,7 +104,7 @@ step1_enable_exporter() {
 
         # Run exporter once to create initial metrics
         print_info "Running exporter to generate initial metrics..."
-        /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh || true
+        /usr/lib/nftban/exporters/nftban_unified_exporter.sh || true
         print_status "Initial metrics generated"
     else
         print_error "Metrics exporter systemd units not found"
