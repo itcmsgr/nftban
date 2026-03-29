@@ -40,7 +40,7 @@ jobs:
               - 'internal/**'
 
   analyze:
-    name: Build, Test, Scan (Go)
+    name: Go Security Analysis
     needs: filter
     if: needs.filter.outputs.go_changed == 'true'
     runs-on: ubuntu-latest
@@ -245,3 +245,27 @@ jobs:
           echo "- Code quality issues (staticcheck)" >> $GITHUB_STEP_SUMMARY
           echo "- Race conditions (go test -race)" >> $GITHUB_STEP_SUMMARY
           echo "- Filesystem vulnerabilities (trivy)" >> $GITHUB_STEP_SUMMARY
+
+  # Required-check pass-through for non-Go PRs
+  # When paths-filter skips the analyze job, this ensures the required check still passes
+  secure-go-gate:
+    name: Build, Test, Scan (Go)
+    if: always()
+    needs: [filter, analyze]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate result
+        run: |
+          if [[ "${{ needs.filter.outputs.go_changed }}" != "true" ]]; then
+            echo "No Go changes detected — security scan skipped (OK)"
+            exit 0
+          fi
+          if [[ "${{ needs.analyze.result }}" == "failure" ]]; then
+            echo "::error::Go security analysis failed"
+            exit 1
+          fi
+          if [[ "${{ needs.analyze.result }}" == "cancelled" ]]; then
+            echo "::error::Go security analysis was cancelled"
+            exit 1
+          fi
+          echo "Go security analysis passed"
