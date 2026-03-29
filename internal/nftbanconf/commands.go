@@ -146,11 +146,6 @@ func (c *CommandPaths) GeoIPDownloadScript() string {
 	return c.CoreScript("nftban_geoip_download.sh")
 }
 
-// PrometheusExporter returns path to prometheus exporter
-func (c *CommandPaths) PrometheusExporter() string {
-	return c.ExporterScript("nftban_prometheus_exporter.sh")
-}
-
 // =============================================================================
 // Config File Paths
 // =============================================================================

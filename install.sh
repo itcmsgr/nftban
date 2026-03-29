@@ -271,13 +271,6 @@ LOGIN_CONF
     chown root:nftban /etc/nftban/conf.d/login_alert.conf
 fi
 
-# Enable login monitor service
-if systemctl list-unit-files nftban-login-monitor.service &>/dev/null 2>&1; then
-    systemctl enable nftban-login-monitor.service 2>/dev/null || true
-    systemctl start nftban-login-monitor.service 2>/dev/null || true
-    ok "Login monitoring enabled"
-fi
-
 # Enable GeoIP
 if [[ -f /etc/nftban/conf.d/geoip/main.conf ]]; then
     if ! grep -q "^NFTBAN_GEOIP_ENABLED=" /etc/nftban/conf.d/geoip/main.conf 2>/dev/null; then
