@@ -151,6 +151,7 @@ generate_legacy() {
 
     # The legacy collector depends on nft_schema.sh for nftban_nft_count_set_elements()
     # but doesn't source it itself. Wrap in a subshell that pre-sources the dependency.
+    # shellcheck disable=SC1090  # Dynamic source paths (runtime-resolved)
     if (
         source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
         [[ -f "$nft_schema" ]] && source "$nft_schema" 2>/dev/null || true

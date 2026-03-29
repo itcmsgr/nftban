@@ -217,6 +217,7 @@ _build_legacy_dynamic() {
     }
 
     # Parse all extracted values
+    # shellcheck disable=SC2034  # Variables assigned via read, used in heredoc JSON template
     local d_status d_pid d_uptime
     local b_active b_24h b_1h b_rate b_total b_permanent b_whitelist
     local m_rss m_fds m_threads m_goroutines
@@ -234,6 +235,7 @@ _build_legacy_dynamic() {
     local s_version
     local fh_errors fh_stale
 
+    # shellcheck disable=SC2034  # All variables used in heredoc JSON template below
     IFS=$'\t' read -r \
         d_status d_pid d_uptime \
         b_active b_24h b_1h b_rate b_total b_permanent b_whitelist \
@@ -278,6 +280,7 @@ _build_legacy_dynamic() {
     suricata_json=$(_build_legacy_suricata)
 
     # nftables_perf from daemon stats + nft (gap fill)
+    # shellcheck disable=SC2034  # Variables used in heredoc JSON template
     local nftp_latency=0 nftp_errors=0 nftp_rules=0 nftp_commands=0
     local daemon_stats_file="${NFTBAN_RUN_DIR:-/run/nftban}/stats.json"
     if [[ -f "$daemon_stats_file" ]]; then
