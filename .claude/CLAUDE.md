@@ -62,7 +62,7 @@ emulate, search, list, fhs, botguard, tunnel
 
 ### Current Version
 ```
-v1.19.13 (check /VERSION file for updates)
+v1.56.0 (check /VERSION file for updates)
 ```
 
 ### NOT Supported (Common Hallucinations)
@@ -130,6 +130,27 @@ When user says `which files did you read?`:
 - Show grep/glob commands used
 
 ---
+
+## Documentation Style Rules
+
+When writing wiki pages, docs, README sections, or release notes, follow:
+
+- **Writing standard:** `.claude/docs/DOCS_WRITING_STANDARD.md` — principles, tone, structure, fact discipline
+- **Do/Don't guide:** `.claude/docs/DOCS_DO_AND_DONT.md` — 24 paired examples
+- **Claims guardrails:** `.claude/docs/CLAIMS_AND_WORDING_GUARDRAILS.md` — safe vs unsafe wording
+- **Pre-publish checklist:** `.claude/docs/WIKI_PAGE_CHECKLIST.md` — verification before publishing
+- **Claude rewrite rules:** `.claude/docs/DOCS_REWRITE_RULES_FOR_CLAUDE.md` — standing instructions for doc rewrites
+- **Wiki style guide:** `.claude/WIKI_STYLE_GUIDE.md` — markdown formatting, templates
+- **Brand guide:** `.claude/BRAND_GUIDE.md` — positioning, SEO, tone
+
+### Key writing rules (summary)
+- **No marketing.** No superlatives, no comparisons to other tools, no promotional language.
+- **No comparisons.** Never frame NFTBan against competing tools. Describe what it does.
+- **Calm tone.** Write like a senior engineer explaining to a peer.
+- **Code-truth first.** Every claim must trace to code, config, runtime, or a release.
+- **Version scope.** Every behavior claim needs "As of vX.Y.Z" or equivalent.
+- **Mechanisms, not adjectives.** "Uses atomic rebuild" not "robust deployment."
+- **CLI is a report.** Kernel verification (`nft list set`) proves enforcement, not CLI output alone.
 
 ## Additional Resources
 
