@@ -1,0 +1,90 @@
+# OSV-Scanner Configuration
+# https://google.github.io/osv-scanner/configuration/
+#
+# Stdlib vulnerabilities are suppressed because:
+# - The go directive in go.mod specifies the MINIMUM Go version for compilation
+# - Actual Go toolchain versions vary across build servers and distros
+# - Stdlib CVEs are patched by upgrading the Go toolchain, not go.mod
+# - Our build servers run Go 1.25.8+ which includes all these fixes
+
+[[IgnoredVulns]]
+# Stdlib CVEs — patched by Go toolchain >= 1.25.8
+# These will be re-evaluated when we bump the go directive
+id = "GO-2025-3955"
+reason = "stdlib: patched in Go 1.25.1+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4006"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4007"
+reason = "stdlib: patched in Go 1.25.3+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4008"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4009"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4010"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4011"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4012"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4013"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4014"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4015"
+reason = "stdlib: patched in Go 1.25.2+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4155"
+reason = "stdlib: patched in Go 1.25.5+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2025-4175"
+reason = "stdlib: patched in Go 1.25.5+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4337"
+reason = "stdlib: patched in Go 1.25.7+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4340"
+reason = "stdlib: patched in Go 1.25.6+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4341"
+reason = "stdlib: patched in Go 1.25.6+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4342"
+reason = "stdlib: patched in Go 1.25.6+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4601"
+reason = "stdlib: patched in Go 1.25.8+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4602"
+reason = "stdlib: patched in Go 1.25.8+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4603"
+reason = "stdlib: patched in Go 1.25.8+ (our builders run 1.25.8+)"
