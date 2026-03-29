@@ -172,6 +172,7 @@ jobs:
       - name: Verify SLSA Provenance
         run: |
           echo "Verifying SLSA provenance..."
+          VERIFY_FAILED=0
           for binary in dist/nftban-*; do
             if [[ ! "$binary" =~ \.intoto\.jsonl$ ]] && [[ ! "$binary" =~ SHA256SUMS$ ]]; then
               provenance="${binary}.intoto.jsonl"
@@ -180,11 +181,16 @@ jobs:
                 slsa-verifier verify-artifact "$binary" \
                   --provenance-path "$provenance" \
                   --source-uri github.com/itcmsgr/nftban || {
-                    echo "::warning::Provenance verification failed for $(basename "$binary")"
+                    echo "::error::Provenance verification failed for $(basename "$binary")"
+                    VERIFY_FAILED=1
                   }
               fi
             fi
           done
+          if [[ "$VERIFY_FAILED" -ne 0 ]]; then
+            echo "::error::One or more SLSA provenance verifications failed"
+            exit 1
+          fi
 
       - name: Generate SLSA Summary
         run: |

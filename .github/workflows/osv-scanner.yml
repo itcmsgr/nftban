@@ -45,6 +45,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y libpam0g-dev
+
       - name: Install OSV-Scanner
         run: |
           curl -sSfL https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner
@@ -53,9 +61,18 @@ jobs:
 
       - name: Run OSV-Scanner
         run: |
-          # Scan only go.mod/go.sum (lockfile mode)
-          # Using --experimental-call-analysis=false to skip compilation
-          ./osv-scanner scan --lockfile=go.mod --format=sarif --output=osv-results.sarif || true
+          # Scan go.mod in lockfile mode
+          # Go + libpam0g-dev installed so govulncheck call analysis can compile
+          # Config: osv-scanner.toml suppresses stdlib CVEs (patched by Go toolchain)
+          # Exit 0 = clean, Exit 1 = vulnerabilities found, Exit 128 = scan error
+          ./osv-scanner scan --config=osv-scanner.toml --lockfile=go.mod \
+            --format=sarif --output=osv-results.sarif; OSV_EXIT=$?
+          if [[ "$OSV_EXIT" -eq 128 ]]; then
+            echo "::warning::OSV-Scanner encountered an error (exit 128) — check skipped"
+          elif [[ "$OSV_EXIT" -ne 0 ]]; then
+            echo "::error::OSV-Scanner found vulnerabilities in Go dependencies"
+            exit 1
+          fi
 
       - name: Check SARIF output
         run: |
