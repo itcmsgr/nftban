@@ -54,8 +54,14 @@ jobs:
       - name: Run OSV-Scanner
         run: |
           # Scan only go.mod/go.sum (lockfile mode)
-          # Using --experimental-call-analysis=false to skip compilation
-          ./osv-scanner scan --lockfile=go.mod --format=sarif --output=osv-results.sarif || true
+          # Exit 0 = clean, Exit 1 = vulnerabilities found, Exit 128 = scan error
+          ./osv-scanner scan --lockfile=go.mod --format=sarif --output=osv-results.sarif; OSV_EXIT=$?
+          if [[ "$OSV_EXIT" -eq 128 ]]; then
+            echo "::warning::OSV-Scanner encountered an error (exit 128) — check skipped"
+          elif [[ "$OSV_EXIT" -ne 0 ]]; then
+            echo "::error::OSV-Scanner found vulnerabilities in Go dependencies"
+            exit 1
+          fi
 
       - name: Check SARIF output
         run: |
