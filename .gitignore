@@ -58,8 +58,8 @@ node_modules/
 *.tar.gz
 *.tgz
 
-# Go daemon binary
-nftband
+# Go daemon binary (at repo root only, not cmd/nftband/ source dir)
+/nftband
 
 # Debug
 *.debug

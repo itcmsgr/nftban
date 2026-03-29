@@ -37,7 +37,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
-	"github.com/itcmsgr/nftban/internal/persistent"
+	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/timeutil"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/whitelist"
@@ -353,7 +353,7 @@ func lookupCountryAndCity(ip string) (string, string) {
 // Returns true if ban count within the configured period exceeds the threshold.
 func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	// Load configuration
-	cfg, err := persistent.LoadConfig(configDir)
+	cfg, err := escalation.LoadConfig(configDir)
 	if err != nil {
 		return false, fmt.Errorf("failed to load persistent offender config: %w", err)
 	}
@@ -366,12 +366,12 @@ func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	filterCfg := cfg.GetFilterConfig(filterName)
 
 	// Log this temp ban for escalation tracking
-	if err := persistent.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
+	if err := escalation.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
 		return false, fmt.Errorf("failed to log ban: %w", err)
 	}
 
 	// Count recent bans for this IP within the configured period
-	banCount, err := persistent.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
+	banCount, err := escalation.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
 	if err != nil {
 		return false, fmt.Errorf("failed to count bans: %w", err)
 	}
@@ -379,14 +379,14 @@ func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	// Check if threshold exceeded
 	if banCount >= filterCfg.Threshold {
 		// Log persistent offender
-		if err := persistent.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount); err != nil {
+		if err := escalation.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount); err != nil {
 			// Log error but don't fail the ban
 			fmt.Printf("  ⚠️  Warning: Failed to log persistent offender: %v\n", err)
 		}
 
 		// Add to persistent offenders file
 		reason := fmt.Sprintf(">=%d bans in %s from %s", filterCfg.Threshold, filterCfg.Period, filterName)
-		if err := persistent.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
+		if err := escalation.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
 			return false, fmt.Errorf("failed to add to persistent offenders: %w", err)
 		}
 
