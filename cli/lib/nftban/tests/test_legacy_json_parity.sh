@@ -264,8 +264,8 @@ compare_schemas() {
     local missing_found=false
     while IFS= read -r key; do
         local legacy_type compat_type
-        legacy_type=$(grep -E "^${key} " "$legacy_types" | awk '{print $2}')
-        compat_type=$(grep -E "^${key} " "$compat_types" | awk '{print $2}')
+        legacy_type=$(awk -v k="${key}" '$1 == k' "$legacy_types" | awk '{print $2}')
+        compat_type=$(awk -v k="${key}" '$1 == k' "$compat_types" | awk '{print $2}')
 
         if [[ -z "$compat_type" ]]; then
             echo -e "  ${RED}MISSING${NC}  $key  (legacy type: $legacy_type)"
@@ -288,7 +288,7 @@ compare_schemas() {
         type_l=$(echo "$line" | awk '{print $2}')
 
         local type_c
-        type_c=$(grep -E "^${key} " "$compat_types" | awk '{print $2}')
+        type_c=$(awk -v k="${key}" '$1 == k' "$compat_types" | awk '{print $2}')
 
         if [[ -n "$type_c" ]] && [[ "$type_l" != "$type_c" ]]; then
             echo -e "  ${RED}MISMATCH${NC}  $key  (legacy: $type_l, compat: $type_c)"
@@ -308,9 +308,9 @@ compare_schemas() {
     local extra_found=false
     while IFS= read -r key; do
         local compat_type
-        compat_type=$(grep -E "^${key} " "$compat_types" | awk '{print $2}')
+        compat_type=$(awk -v k="${key}" '$1 == k' "$compat_types" | awk '{print $2}')
 
-        if ! grep -qE "^${key}$" "$legacy_keys"; then
+        if ! awk -v k="${key}" '$1 == k {found=1} END {exit !found}' "$legacy_keys"; then
             echo -e "  ${YELLOW}EXTRA${NC}    $key  (type: $compat_type)"
             ((EXTRA++)) || true
             extra_found=true
