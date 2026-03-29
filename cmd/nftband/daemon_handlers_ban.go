@@ -33,7 +33,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/persistence"
-	"github.com/itcmsgr/nftban/internal/persistent"
+	"github.com/itcmsgr/nftban/internal/escalation"
 	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/whitelist"
 )
@@ -76,7 +76,7 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 	}
 
 	// Load persistent offender configuration
-	cfg, err := persistent.LoadConfig(d.configDir)
+	cfg, err := escalation.LoadConfig(d.configDir)
 	if err != nil {
 		log.Printf("[ESCALATE] Failed to load persistent config: %v", err)
 		return
@@ -88,13 +88,13 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 	filterCfg := cfg.GetFilterConfig(filterName)
 
 	// Log this temp ban for escalation tracking
-	if err := persistent.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
+	if err := escalation.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
 		log.Printf("[ESCALATE] Failed to log temp ban for %s: %v", ip, err)
 		return
 	}
 
 	// Count recent bans within the configured period
-	banCount, err := persistent.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
+	banCount, err := escalation.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
 	if err != nil {
 		log.Printf("[ESCALATE] Failed to count bans for %s: %v", ip, err)
 		return
@@ -108,11 +108,11 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 		ip, banCount, filterCfg.Threshold, filterCfg.Period, filterName)
 
 	// Log persistent offender event
-	_ = persistent.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount)
+	_ = escalation.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount)
 
 	// Add to persistent offenders config file
 	reason := fmt.Sprintf(">=%d bans in %s from %s", filterCfg.Threshold, filterCfg.Period, filterName)
-	if err := persistent.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
+	if err := escalation.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
 		log.Printf("[ESCALATE] Failed to add %s to persistent offenders file: %v", ip, err)
 		return
 	}
