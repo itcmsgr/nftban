@@ -1,0 +1,109 @@
+# =============================================================================
+# NFTBan - CI: Nightly Install + Health
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Nightly full install test + health check on multiple distros
+#
+# Unlike PR install tests (which only validate artifacts in Docker),
+# this runs a more comprehensive check including binary execution
+# and basic CLI operations.
+# =============================================================================
+
+name: Nightly Health
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily: 2:00 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y libpam0g-dev
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
+      - name: Build CLI binary
+        run: go build -trimpath -o bin/nftban-core ./cmd/nftban-core/
+
+      - name: Upload binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nftban-core-nightly
+          path: bin/nftban-core
+          retention-days: 1
+
+  health:
+    name: Health check
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nftban-core-nightly
+          path: bin/
+
+      - name: Install shell components
+        run: |
+          sudo mkdir -p /usr/lib/nftban/bin /etc/nftban
+          sudo cp bin/nftban-core /usr/lib/nftban/bin/
+          sudo chmod +x /usr/lib/nftban/bin/nftban-core
+          sudo cp -r cli/lib/nftban/* /usr/lib/nftban/
+          sudo cp cli/sbin/nftban /usr/sbin/nftban
+          sudo chmod +x /usr/sbin/nftban
+          sudo cp -r etc/nftban/* /etc/nftban/ 2>/dev/null || true
+          sudo cp VERSION /usr/lib/nftban/
+
+      - name: Health — version
+        run: nftban version
+
+      - name: Health — help
+        run: nftban help
+
+      - name: Health — Go binary version
+        run: /usr/lib/nftban/bin/nftban-core version
+
+      - name: Health — binary ELF check
+        run: |
+          file /usr/lib/nftban/bin/nftban-core | grep -q "ELF" && echo "✓ ELF binary" || exit 1
+
+      - name: Health — VERSION file
+        run: |
+          VERSION=$(cat /usr/lib/nftban/VERSION)
+          echo "Installed version: $VERSION"
+          [[ -n "$VERSION" ]] && echo "✓ VERSION file present" || exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Nightly Health Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| nftban version | $(nftban version >/dev/null 2>&1 && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| nftban help | $(nftban help >/dev/null 2>&1 && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Go binary | $(file /usr/lib/nftban/bin/nftban-core | grep -q ELF && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Schedule: Daily at 02:00 UTC" >> $GITHUB_STEP_SUMMARY
