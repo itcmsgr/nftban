@@ -58,7 +58,7 @@ check_dashboards_exist() {
     print_status "Found $dashboard_count NFTBan dashboard(s)"
 }
 
-create_provisioning_config() {
+create_dashboard_provisioning_config() {
     print_info "Creating Grafana provisioning configuration..."
 
     # Create provisioning directory if it doesn't exist
@@ -244,7 +244,7 @@ main() {
     check_root
     check_grafana_installed
     check_dashboards_exist
-    create_provisioning_config
+    create_dashboard_provisioning_config
     copy_dashboards
     set_permissions
     restart_grafana
