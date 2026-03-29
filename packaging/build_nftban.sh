@@ -1553,6 +1553,8 @@ fi
 # Enable and start core timers (reconciliation already read NFTBAN_RECONCILE above)
 if [ "\$NFTBAN_RECONCILE" = "true" ]; then
     echo "[NFTBan] Starting core timers..."
+    # Clear any stale failure state from previous version bugs (v1.56.1 fix)
+    systemctl reset-failed nftban-maintenance.service 2>/dev/null || true
     systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
     systemctl enable --now nftban-health.timer 2>/dev/null || true
     systemctl enable --now nftban-watchdog.timer 2>/dev/null || true

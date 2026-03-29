@@ -200,7 +200,7 @@ Detection Modules:
 
 Exporters (cli/lib/nftban/exporters/):
   - nftban_unified_exporter.sh      - Main collector/exporter (Prometheus + textfile)
-  - nftban_metrics_collector.sh     - Metrics gathering logic (DEPRECATED v1.54.0, removal v1.56.0)
+  - nftban_exporter_json_compat.sh  - Legacy JSON compatibility layer (dynamic/inventory/combined.json)
   - nftban_*_exporter.sh            - Module-specific exporters
 ```
 
