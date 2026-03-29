@@ -15,7 +15,7 @@
 #
 # COMPATIBILITY LAYER RATIONALE:
 # ==============================
-# The legacy metrics_collector.sh produced 3 JSON files:
+# The former metrics_collector.sh (removed v1.57.0) produced 3 JSON files:
 #   - dynamic.json  (every run)
 #   - inventory.json (hourly)
 #   - combined.json  (merge of both)

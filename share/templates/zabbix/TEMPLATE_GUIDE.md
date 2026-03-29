@@ -437,7 +437,7 @@ preprocessing:
    ```bash
    # Clear cache and resend
    rm -f /var/cache/nftban/metrics/*.json
-   /usr/lib/nftban/exporters/nftban_metrics_collector.sh --force
+   /usr/lib/nftban/exporters/nftban_unified_exporter.sh
    /usr/lib/nftban/exporters/nftban_zabbix_exporter.sh
    ```
 
