@@ -200,13 +200,15 @@ main() {
             cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.${backup_timestamp}"
 
             # Update whitelist with new SSH port (format: PORT/PROTOCOL)
-            cat > "$SSH_WHITELIST" <<EOF
+            # v1.59.1 TOCTOU: Atomic write — temp+chmod+mv (prevents window with wrong perms)
+            cat > "${SSH_WHITELIST}.tmp" <<EOF
 # SSH port auto-updated by maintenance: $(date '+%Y-%m-%d %H:%M:%S')
 # DO NOT DELETE - LOCKOUT RISK!
 # Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
 ${SSH_PORT}/T
 EOF
-            chmod 644 "$SSH_WHITELIST"
+            chmod 644 "${SSH_WHITELIST}.tmp"
+            mv -f "${SSH_WHITELIST}.tmp" "$SSH_WHITELIST"
 
             log "INFO" "SSH port $SSH_PORT added to whitelist"
 
@@ -272,13 +274,15 @@ EOF
         # SSH whitelist missing - create it
         log "WARN" "SSH whitelist missing - creating..."
         mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" || return 1
-        cat > "$SSH_WHITELIST" <<EOF
+        # v1.59.1 TOCTOU: Atomic write — temp+chmod+mv (prevents window with wrong perms)
+        cat > "${SSH_WHITELIST}.tmp" <<EOF
 # SSH port auto-added during maintenance: $(date '+%Y-%m-%d %H:%M:%S')
 # DO NOT DELETE - LOCKOUT RISK!
 # Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
 ${SSH_PORT}/T
 EOF
-        chmod 644 "$SSH_WHITELIST"
+        chmod 644 "${SSH_WHITELIST}.tmp"
+        mv -f "${SSH_WHITELIST}.tmp" "$SSH_WHITELIST"
         # Track this as the active SSH port (atomic write)
         mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
         echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
@@ -439,7 +443,6 @@ EOF
     if [[ -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]]; then
         # Get current public IPs
         current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
-        # shellcheck disable=SC2034  # Reserved for IPv6 monitoring
         current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
 
         # Validate IPv4 format - reject HTTP error messages and non-IP responses
@@ -449,8 +452,17 @@ EOF
             current_ipv4=""
         fi
 
+        # v1.59.1: Validate IPv6 format — reject HTTP error messages and non-IP responses
+        # Must match hex digits and colons, optional CIDR suffix
+        if [[ -n "$current_ipv6" ]] && ! [[ "$current_ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+            log "WARN" "Invalid IPv6 response from ifconfig.me (got: ${current_ipv6:0:50}...)"
+            current_ipv6=""
+        fi
+
+        local _wl_file="${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+
         # Check if IPv4 changed
-        if [[ -n "$current_ipv4" ]] && ! grep -q "$current_ipv4" "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" 2>/dev/null; then
+        if [[ -n "$current_ipv4" ]] && ! grep -q "$current_ipv4" "$_wl_file" 2>/dev/null; then
             # Check if we already alerted about this IP
             if [[ -f "$IP_ALERT_STATE" ]] && grep -q "$current_ipv4" "$IP_ALERT_STATE" 2>/dev/null; then
                 # Already alerted about this IP, skip alert (no spam)
@@ -459,9 +471,12 @@ EOF
                 log "WARN" "System IPv4 changed: $current_ipv4 (not in whitelist)"
                 log "INFO" "Auto-adding to whitelist (lockout prevention)..."
 
-                # Auto-add to whitelist
-                echo "# Auto-added by maintenance: $(date)" >> "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
-                echo "$current_ipv4" >> "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+                # v1.59.1 TOCTOU: Atomic append — copy+append+chmod+mv
+                cp "$_wl_file" "${_wl_file}.tmp"
+                echo "# Auto-added by maintenance: $(date)" >> "${_wl_file}.tmp"
+                echo "$current_ipv4" >> "${_wl_file}.tmp"
+                chmod 644 "${_wl_file}.tmp"
+                mv -f "${_wl_file}.tmp" "$_wl_file"
                 log "INFO" "✅ Added $current_ipv4 to whitelist"
 
                 # ATOMIC firewall update via daemon IPC (single-writer architecture)
@@ -491,6 +506,50 @@ EOF
                 if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
                     echo "NFTBan Security Alert: System IPv4 changed to $current_ipv4, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
                         mail -s "[NFTBan] IP Address Auto-Updated on $(hostname)" root 2>/dev/null || true
+                fi
+            fi
+        fi
+
+        # v1.59.1: IPv6 parity — auto-add IPv6 when public address changes (lockout prevention)
+        if [[ -n "$current_ipv6" ]] && ! grep -q "$current_ipv6" "$_wl_file" 2>/dev/null; then
+            if [[ -f "$IP_ALERT_STATE" ]] && grep -q "$current_ipv6" "$IP_ALERT_STATE" 2>/dev/null; then
+                log "INFO" "IPv6 $current_ipv6 already in pending whitelist"
+            else
+                log "WARN" "System IPv6 changed: $current_ipv6 (not in whitelist)"
+                log "INFO" "Auto-adding IPv6 to whitelist (lockout prevention)..."
+
+                # Atomic append — copy+append+chmod+mv
+                cp "$_wl_file" "${_wl_file}.tmp"
+                echo "# Auto-added IPv6 by maintenance: $(date)" >> "${_wl_file}.tmp"
+                echo "$current_ipv6" >> "${_wl_file}.tmp"
+                chmod 644 "${_wl_file}.tmp"
+                mv -f "${_wl_file}.tmp" "$_wl_file"
+                log "INFO" "✅ Added $current_ipv6 to whitelist"
+
+                # Firewall update via daemon IPC
+                if [[ "$_nft_table_available" == "true" ]]; then
+                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 "$current_ipv6"; then
+                        log "INFO" "✅ IPv6 $current_ipv6 whitelisted via daemon (no lockout risk)"
+                    else
+                        log "WARN" "Daemon IPC failed for IPv6, using safe full reload..."
+                        if nftban firewall reload >/dev/null 2>&1; then
+                            log "INFO" "✅ Firewall reloaded - IPv6 $current_ipv6 now protected"
+                        else
+                            log "WARN" "Reload failed - IPv6 whitelisted in config but not yet active"
+                        fi
+                    fi
+                else
+                    log "WARN" "Firewall not initialized - IPv6 whitelist updated but not applied"
+                fi
+
+                # Save alert state
+                mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
+                echo "$current_ipv6 $(date)" >> "$IP_ALERT_STATE"
+
+                # Email alert
+                if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
+                    echo "NFTBan Security Alert: System IPv6 changed to $current_ipv6, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
+                        mail -s "[NFTBan] IPv6 Address Auto-Updated on $(hostname)" root 2>/dev/null || true
                 fi
             fi
         fi

@@ -511,10 +511,12 @@ nftban_feeds_update_single() {
 
     # v1.19.0: Write to staging file first, validate, then atomically rename (R05)
     # This preserves last-known-good data on validation failure
+    # v1.59.1 TOCTOU: Set perms before rename (prevents window with wrong perms)
     local staging_file="${parsed_file}.staging"
-    echo "$parse_result" > "$staging_file"
-    chown nftban:nftban "$staging_file" 2>/dev/null || true
-    chmod 640 "$staging_file" 2>/dev/null || true
+    echo "$parse_result" > "${staging_file}.tmp"
+    chown nftban:nftban "${staging_file}.tmp" 2>/dev/null || true
+    chmod 640 "${staging_file}.tmp" 2>/dev/null || true
+    mv -f "${staging_file}.tmp" "$staging_file"
     local ip_count
     # v1.18.1 FIX: Prevent exit code 1 when parse_result is empty
     ip_count=$(echo "$parse_result" | grep -c . || echo "0")
