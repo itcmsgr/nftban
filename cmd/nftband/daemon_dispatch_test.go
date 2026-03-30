@@ -136,6 +136,8 @@ func TestHandleSocketRequest_AllMethodsDefined(t *testing.T) {
 		"protect_ban", "unprotect_ban", "get_evictable_bans", "evict_old_bans",
 		"permanent_ban_stats", "replace_set", "flush_source", "queue_status",
 		"reload",
+		"set_counts", "reconcile", "source_index_count",
+		"access_allow", "access_revoke",
 	}
 
 	d := newTestDaemon()
@@ -163,5 +165,27 @@ func TestHandleSocketRequest_AllMethodsDefined(t *testing.T) {
 				t.Errorf("method %q is not handled in dispatch switch", method)
 			}
 		})
+	}
+}
+
+func TestDispatch_ConcurrentRequests_NoRace(t *testing.T) {
+	d := newTestDaemon()
+	defer d.bus.Close()
+
+	done := make(chan struct{}, 20)
+	for i := 0; i < 20; i++ {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Expected — nil subsystems
+				}
+				done <- struct{}{}
+			}()
+			d.handleSocketRequest(SocketRequest{Method: "ping"})
+			d.handleSocketRequest(SocketRequest{Method: "nonexistent"})
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		<-done
 	}
 }
