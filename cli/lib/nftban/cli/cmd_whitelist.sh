@@ -97,8 +97,8 @@ nftban_cmd_whitelist() {
             nftban_whitelist_remove_ip "$ip"
             ;;
         list|show)
-            # Show whitelist
-            nftban_whitelist_list
+            # Show whitelist (v1.59.0: added --json support)
+            nftban_whitelist_list "$@"
             ;;
         sync|whitelistme)
             # Pass to whitelist-system for these commands
@@ -290,26 +290,101 @@ nftban_whitelist_remove_ip() {
 
 # List whitelisted IPs
 nftban_whitelist_list() {
+    # v1.59.0 UX-2: Added --json support for scripting/monitoring
+    local _json_mode="false"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) _json_mode="true"; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    # Collect implicit IPs
+    local -a _implicit_ipv4=("127.0.0.1")
+    local -a _implicit_ipv6=("::1")
+    local _ip
+    while IFS= read -r _ip; do
+        [[ -z "$_ip" ]] && continue
+        _implicit_ipv4+=("$_ip")
+    done < <(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[^/]+' 2>/dev/null)
+    while IFS= read -r _ip; do
+        [[ -z "$_ip" ]] && continue
+        _implicit_ipv6+=("$_ip")
+    done < <(ip -6 addr show scope global 2>/dev/null | grep -oP 'inet6 \K[^/]+' 2>/dev/null)
+
+    # Collect kernel whitelist entries
+    local _wl_v4 _wl_v6
+    _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed '/^$/d') || true
+    _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed '/^$/d') || true
+
+    if [[ "$_json_mode" == "true" ]]; then
+        # JSON output
+        local _json='{"implicit":{"ipv4":['
+        local _first=true
+        for _ip in "${_implicit_ipv4[@]}"; do
+            [[ "$_first" == "true" ]] && _first=false || _json+=","
+            _json+="\"$_ip\""
+        done
+        _json+='],"ipv6":['
+        _first=true
+        for _ip in "${_implicit_ipv6[@]}"; do
+            [[ "$_first" == "true" ]] && _first=false || _json+=","
+            _json+="\"$_ip\""
+        done
+        _json+=']}'
+        _json+=',"whitelist":{"ipv4":['
+        _first=true
+        while IFS= read -r _ip; do
+            [[ -z "$_ip" ]] && continue
+            [[ "$_first" == "true" ]] && _first=false || _json+=","
+            _json+="\"$_ip\""
+        done <<< "$_wl_v4"
+        _json+='],"ipv6":['
+        _first=true
+        while IFS= read -r _ip; do
+            [[ -z "$_ip" ]] && continue
+            [[ "$_first" == "true" ]] && _first=false || _json+=","
+            _json+="\"$_ip\""
+        done <<< "$_wl_v6"
+        _json+=']}}'
+        echo "$_json"
+        return 0
+    fi
+
     # v1.38.0: Show implicit (always-protected) entries first
     echo "Implicit (always protected):"
     echo "────────────────────────────"
     echo "  127.0.0.1       IMPLICIT (loopback IPv4)"
     echo "  ::1             IMPLICIT (loopback IPv6)"
-    # Show server's own IPs
-    local _ip
-    while IFS= read -r _ip; do
-        [[ -z "$_ip" ]] && continue
+    for _ip in "${_implicit_ipv4[@]}"; do
+        [[ "$_ip" == "127.0.0.1" ]] && continue
         echo "  ${_ip}  IMPLICIT (server IP)"
-    done < <(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[^/]+' 2>/dev/null; ip -6 addr show scope global 2>/dev/null | grep -oP 'inet6 \K[^/]+' 2>/dev/null)
+    done
+    for _ip in "${_implicit_ipv6[@]}"; do
+        [[ "$_ip" == "::1" ]] && continue
+        echo "  ${_ip}  IMPLICIT (server IP)"
+    done
     echo ""
 
     echo "IPv4 Whitelist:"
     echo "───────────────"
-    timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' || echo "  (empty or not available)"
+    if [[ -n "$_wl_v4" ]]; then
+        while IFS= read -r _ip; do
+            [[ -n "$_ip" ]] && echo "  $_ip"
+        done <<< "$_wl_v4"
+    else
+        echo "  (empty or not available)"
+    fi
     echo ""
     echo "IPv6 Whitelist:"
     echo "───────────────"
-    timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' || echo "  (empty or not available)"
+    if [[ -n "$_wl_v6" ]]; then
+        while IFS= read -r _ip; do
+            [[ -n "$_ip" ]] && echo "  $_ip"
+        done <<< "$_wl_v6"
+    else
+        echo "  (empty or not available)"
+    fi
 }
 
 # Show usage

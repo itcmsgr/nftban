@@ -266,7 +266,46 @@ nftban_feeds_select() {
 }
 
 # List feeds with beautiful formatting
+# v1.59.0 UX-2: Added --json support
 nftban_feeds_list() {
+    # Check for --json flag
+    local _feeds_json_mode="false"
+    local _arg
+    for _arg in "$@"; do
+        [[ "$_arg" == "--json" ]] && _feeds_json_mode="true"
+    done
+
+    if [[ "$_feeds_json_mode" == "true" ]]; then
+        # JSON output: array of feed objects
+        local _json='{"feeds":['
+        local _first=true
+        local _categories
+        _categories=$(nftban_feeds_get_categories 2>/dev/null) || true
+        for _cat in $_categories; do
+            local _cat_feeds
+            _cat_feeds=$(nftban_feeds_get_by_category "$_cat" 2>/dev/null) || true
+            for _feed in $_cat_feeds; do
+                local _enabled _desc _interval _count=0
+                _enabled=$(nftban_feeds_get_property "$_feed" "ENABLED" 2>/dev/null) || true
+                _desc=$(nftban_feeds_get_property "$_feed" "DESCRIPTION" 2>/dev/null) || true
+                _interval=$(nftban_feeds_get_property "$_feed" "INTERVAL" 2>/dev/null) || true
+                if [[ "$_enabled" == "true" ]]; then
+                    local _feed_lower="${_feed,,}"
+                    local _feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${_feed_lower}.txt"
+                    [[ -f "$_feed_file" ]] && _count=$(wc -l < "$_feed_file")
+                fi
+                [[ "$_first" == "true" ]] && _first=false || _json+=","
+                # Escape description for JSON
+                _desc="${_desc//\\/\\\\}"
+                _desc="${_desc//\"/\\\"}"
+                _json+="{\"name\":\"$_feed\",\"category\":\"$_cat\",\"enabled\":$_enabled,\"description\":\"$_desc\",\"interval\":\"${_interval:-DAILY}\",\"ips\":$_count}"
+            done
+        done
+        _json+=']}'
+        echo "$_json"
+        return 0
+    fi
+
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
@@ -282,7 +321,7 @@ nftban_feeds_list() {
     # Show stats
     local stats
     stats=$(nftban_feeds_get_stats)
-    echo "📊 Status: $stats"
+    echo "Status: $stats"
     echo ""
 
     # Get all categories

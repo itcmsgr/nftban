@@ -28,6 +28,9 @@ readonly NFTBAN_LOGGER_LOADED=1
 # shellcheck source=/etc/nftban/nftban.conf
 source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" 2>/dev/null || true
 
+# v1.59.0 P3-66: Cache version for log entries (read once at module load)
+NFTBAN_LOG_VERSION="$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
+
 # =============================================================================
 # LOG LEVELS
 # =============================================================================
@@ -94,13 +97,13 @@ nftban_log() {
     local log_line
     case "${NFTBAN_LOG_FORMAT}" in
         timestamp)
-            log_line="[$timestamp] [$level] [$module] $message"
+            log_line="[$timestamp] [v${NFTBAN_LOG_VERSION}] [$level] [$module] $message"
             ;;
         simple)
             log_line="[$level] [$module] $message"
             ;;
         *)
-            log_line="[$timestamp] [$level] [$module] $message"
+            log_line="[$timestamp] [v${NFTBAN_LOG_VERSION}] [$level] [$module] $message"
             ;;
     esac
 
