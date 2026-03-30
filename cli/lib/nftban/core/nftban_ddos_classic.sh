@@ -345,6 +345,9 @@ _nftban_ddos_synproxy_setup_via_ipc() {
     echo "  Setting up SYNPROXY protection..."
 
     # Step 1: Apply raw table rules (notrack for SYN packets)
+    # v1.60.2 FIX: Clean stale notrack rules BEFORE adding new ones to prevent
+    # duplicates accumulating across reloads (causes connection resets on OLS/LiteSpeed)
+    _nft_cleanup_synproxy_raw
     local raw_path
     raw_path=$(nft_fragment_render_synproxy_raw) || {
         echo "  ERROR: Failed to render SYNPROXY raw fragment"

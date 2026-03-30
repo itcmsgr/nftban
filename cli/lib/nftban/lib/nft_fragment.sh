@@ -1867,6 +1867,8 @@ nft_fragment_enable_module() {
             ;;
         ddos-synproxy|ddos_synproxy|synproxy)
             # SYNPROXY requires raw table rules first
+            # v1.60.2 FIX: Clean stale notrack rules BEFORE adding to prevent duplicates
+            _nft_cleanup_synproxy_raw
             local raw_path
             raw_path=$(nft_fragment_render_synproxy_raw) || return 1
             nft_fragment_apply "$raw_path" || return 1
