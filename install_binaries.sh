@@ -69,11 +69,9 @@ install_core() {
             ok "CAP_NET_ADMIN set on nftban-core" || \
             warn "Could not set CAP_NET_ADMIN on nftban-core"
 
-        if [[ -x /usr/sbin/nft ]]; then
-            setcap 'cap_net_admin+ep' /usr/sbin/nft 2>/dev/null && \
-                ok "CAP_NET_ADMIN set on /usr/sbin/nft" || \
-                warn "Could not set CAP_NET_ADMIN on /usr/sbin/nft"
-        fi
+        # v1.59.0 SEC-1: Removed setcap on /usr/sbin/nft — granting CAP_NET_ADMIN
+        # to system nft binary affects ALL users, not just nftban (privilege escalation).
+        # nftban CLI runs as root, nftband runs as root service, nftban-core has its own cap.
     else
         warn "setcap not found - install libcap for capability support"
     fi

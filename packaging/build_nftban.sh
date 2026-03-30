@@ -1215,6 +1215,7 @@ AUTHORITY_DECISION=\$(_check_authority)
 echo "[NFTBan]   Authority decision: \$AUTHORITY_DECISION"
 
 if [[ "\$AUTHORITY_DECISION" == "ABORT" ]]; then
+    NFTBAN_INSTALL_FAILED=1
     exit 1
 fi
 
@@ -1225,10 +1226,14 @@ fi
 echo "[NFTBan] Configuring NFTBan v%{version}..."
 
 # v1.39.0: Cleanup trap for failed install (UX-INST-2)
+# v1.59.0 BUG-4: Only treat as failure if NFTBAN_INSTALL_FAILED is set.
+# Previous behavior: any non-zero $? triggered error message, including
+# sourced scripts or subshells that set -e and exit non-zero internally.
+# This caused false "Installation failed" errors on AlmaLinux 9.
+NFTBAN_INSTALL_FAILED=0
 _nftban_rpm_cleanup() {
-    local _exit=\$?
-    if [ \$_exit -ne 0 ]; then
-        echo "[NFTBan ERROR] Installation failed (exit \$_exit). Cleaning up..."
+    if [ "\$NFTBAN_INSTALL_FAILED" -eq 1 ]; then
+        echo "[NFTBan ERROR] Installation failed. Cleaning up..."
         rm -rf /run/nftban 2>/dev/null || true
         systemctl daemon-reload 2>/dev/null || true
         echo "[NFTBan ERROR] Cleanup complete. Fix the issue and reinstall."
@@ -1338,11 +1343,9 @@ if [ -x /usr/lib/nftban/bin/nftban-core ]; then
         echo "[NFTBan WARN] Could not set CAP_NET_ADMIN on nftban-core"
 fi
 
-# Set capabilities for nft binary (required for CLI fallback operations)
-if [ -x /usr/sbin/nft ]; then
-    setcap 'cap_net_admin+ep' /usr/sbin/nft 2>/dev/null || \
-        echo "[NFTBan WARN] Could not set CAP_NET_ADMIN on nft"
-fi
+# v1.59.0 SEC-1: Removed setcap on /usr/sbin/nft — granting CAP_NET_ADMIN
+# to system nft binary is a privilege escalation vector (affects all users).
+# nftban CLI runs as root, nftband runs as root service.
 
 # STEP 4: Polkit
 echo "[NFTBan] Installing polkit policies..."
