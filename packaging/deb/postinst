@@ -606,11 +606,9 @@ case "$1" in
         [ -d /etc/nftban/suricata/state ] && chmod 770 /etc/nftban/suricata/state
         [ -f /etc/nftban/suricata/suricata.yaml.overlay ] && chmod 664 /etc/nftban/suricata/suricata.yaml.overlay
 
-        # Set capabilities for nft binary (required for CLI fallback operations)
-        if [ -x /usr/sbin/nft ]; then
-            setcap 'cap_net_admin+ep' /usr/sbin/nft 2>/dev/null || \
-                log_warn "Could not set CAP_NET_ADMIN on nft"
-        fi
+        # v1.59.0 SEC-1: Removed setcap on /usr/sbin/nft — granting CAP_NET_ADMIN
+        # to system nft binary is a privilege escalation vector (affects all users).
+        # nftban CLI runs as root, nftband runs as root service.
 
         # =====================================================================
         # STEP 5: Install Polkit Policies

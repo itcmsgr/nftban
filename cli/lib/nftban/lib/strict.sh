@@ -113,6 +113,7 @@ EOF
                 echo "Line:     ${bash_lineno}"
                 echo "Command:  ${BASH_COMMAND}"
                 echo "Exit:     ${exit_code}"
+                echo "Version:  $(cat /usr/lib/nftban/VERSION 2>/dev/null || echo unknown)"
                 echo "User:     ${USER:-unknown}"
                 echo "PWD:      ${PWD:-unknown}"
                 echo ""
