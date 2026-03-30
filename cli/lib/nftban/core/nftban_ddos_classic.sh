@@ -630,6 +630,18 @@ nftban_ddos_classic_enable() {
 
         # Stage 2: Classic rate limiting and connection limits
         _nftban_ddos_classic_setup_via_ipc || return 1
+
+        echo ""
+
+        # Penalty Ladder: Graduated response sets (populated by maintenance timer)
+        if declare -f nft_fragment_enable_module >/dev/null 2>&1; then
+            echo "  Setting up Penalty Ladder sets..."
+            if nft_fragment_enable_module ddos-penalty 2>/dev/null; then
+                echo "     Penalty ladder: 4-tier sets deployed"
+            else
+                echo "  WARNING: Penalty ladder setup failed (non-fatal)"
+            fi
+        fi
     else
         echo "  WARNING: IPC not available, DDoS classic cannot be enabled"
         echo "  Ensure nftband daemon is running and nft_fragment.sh is loaded"
@@ -661,6 +673,13 @@ nftban_ddos_classic_enable() {
     echo "    SSH Conn:  max ${DDOS_CLASSIC_SSH_CONN_LIMIT}/IP"
     echo "    HTTP Conn: max ${DDOS_CLASSIC_HTTP_CONN_LIMIT}/IP"
     echo "    ICMP Rate: ${DDOS_CLASSIC_ICMP_RATE} burst ${DDOS_CLASSIC_ICMP_BURST}"
+    echo ""
+    echo "  Penalty Ladder:"
+    echo "    Tier 1: ${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s} (${DDOS_PENALTY_TIMEOUT_10S:-10s})"
+    echo "    Tier 2: ${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m} (${DDOS_PENALTY_TIMEOUT_5M:-5m})"
+    echo "    Tier 3: ${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m} (${DDOS_PENALTY_TIMEOUT_5M:-5m})"
+    echo "    Tier 4: ${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h} (${DDOS_PENALTY_TIMEOUT_1H:-1h})"
+    echo "    Escalate: after ${DDOS_CLASSIC_ESCALATE_THRESHOLD:-3} strikes"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -682,7 +701,12 @@ nftban_ddos_classic_disable() {
     if _nftban_ddos_classic_has_ipc; then
         # Remove in reverse order of enable
 
-        # Remove classic rate limiting first
+        # Remove penalty ladder first (added last during enable)
+        if declare -f nft_fragment_disable_module >/dev/null 2>&1; then
+            nft_fragment_disable_module ddos-penalty 2>/dev/null || true
+        fi
+
+        # Remove classic rate limiting
         _nftban_ddos_classic_remove_via_ipc || true
 
         # Remove prefix aggregation
@@ -818,6 +842,25 @@ nftban_ddos_classic_status() {
         fi
     else
         echo "  IPv6: N/A (table not found)"
+    fi
+
+    # Penalty Ladder Status
+    echo ""
+    echo "Penalty Ladder:"
+    local penalty_set="${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}"
+    if nft list set $table_v4 "$penalty_set" &>/dev/null; then
+        local count_10s count_5m count_drop count_ban
+        count_10s=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}" 2>/dev/null | grep -c 'expires' || echo "0")
+        count_5m=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}" 2>/dev/null | grep -c 'expires' || echo "0")
+        count_drop=$(nft list set $table_v4 "${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}" 2>/dev/null | grep -c 'expires' || echo "0")
+        count_ban=$(nft list set $table_v4 "${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}" 2>/dev/null | grep -c 'expires' || echo "0")
+        echo "  Status: DEPLOYED"
+        echo "  Tier 1 (limit 10s): ${count_10s} IPs"
+        echo "  Tier 2 (limit 5m):  ${count_5m} IPs"
+        echo "  Tier 3 (drop 5m):   ${count_drop} IPs"
+        echo "  Tier 4 (ban 1h):    ${count_ban} IPs"
+    else
+        echo "  Status: NOT DEPLOYED (run 'nftban ddos enable')"
     fi
 
     echo ""
