@@ -8,7 +8,7 @@
 # meta:name="cmd_update_methods"
 # meta:type="cli"
 # meta:header="Update Command Methods"
-# meta:version="1.39.0"
+# meta:version="1.60.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -118,7 +118,7 @@ _download_package() {
                     rm -f "$output" "${tmp_dir}/SHA256SUMS"
                     return 1
                 fi
-                _update_log INFO "Package checksum verified: OK"
+                _update_log INFO "Package checksum verified: OK (sha256:${actual_hash:0:16}...)"
                 rm -f "${tmp_dir}/SHA256SUMS"
             else
                 # C11 fix: FAIL instead of silently skipping when SHA256SUMS unavailable
