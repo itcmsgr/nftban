@@ -9,7 +9,7 @@
 # meta:name="cmd_update"
 # meta:type="cli"
 # meta:header="Update Command"
-# meta:version="1.39.0"
+# meta:version="1.60.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -292,6 +292,13 @@ _cmd_update_main() {
         esac
     fi
 
+    # Log context for audit trail
+    local _update_hostname
+    _update_hostname=$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown")
+    _update_log INFO "=== Update started on ${_update_hostname} ==="
+    _update_log INFO "From: v${current_version} | Type: ${install_type} | Source: ${source}"
+    local _update_start_seconds=$SECONDS
+
     echo "  Install type:  $install_type"
     echo "  Current:       v$current_version"
     echo "  Source:        $source"
@@ -350,11 +357,17 @@ _cmd_update_main() {
     esac
 
     if [[ $result -ne 0 ]]; then
+        local _update_duration=$(( SECONDS - _update_start_seconds ))
+        _update_log ERROR "=== Update failed: v${current_version} (${_update_duration}s) ==="
+        _update_write_history "$current_version" "$current_version" "fail" "$install_type" "$_update_duration"
         echo ""
         _update_log ERROR "Update failed"
         _update_log INFO "Run 'nftban update repair' to fix broken install state"
         _update_log INFO "Run 'nftban update rollback' to restore previous version"
         _update_log INFO "Run 'nftban update force' to force reinstall"
+        echo ""
+        echo "  Log: $UPDATE_LOG_FILE"
+        echo ""
         return $result
     fi
 
@@ -398,11 +411,20 @@ _cmd_update_main() {
     # Show result
     local new_version
     new_version=$(_get_current_version)
+    local _update_duration=$(( SECONDS - _update_start_seconds ))
+
+    _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
+
+    # Write history entry
+    _update_write_history "$current_version" "$new_version" "ok" "$install_type" "$_update_duration"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Updated: v$current_version → v$new_version"
+    echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Log: $UPDATE_LOG_FILE"
+    echo "  History: nftban update history"
     echo ""
 
     return 0
@@ -568,6 +590,51 @@ _cmd_update_repair() {
     return $repair_status
 }
 
+_cmd_update_history() {
+    # Show update history from JSON state file
+    local history_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-history.json"
+
+    if [[ ! -f "$history_file" ]]; then
+        echo "  No update history found."
+        echo "  History is recorded after the first update using v1.60.1+."
+        return 0
+    fi
+
+    # JSON output mode
+    if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
+        cat "$history_file"
+        return 0
+    fi
+
+    # Human-readable output
+    _update_banner
+    echo ""
+    echo "  UPDATE HISTORY (last 20)"
+    echo "  ────────────────────────────────────────────────────"
+
+    if ! command -v jq &>/dev/null; then
+        echo "  (jq not available — showing raw JSON)"
+        echo ""
+        cat "$history_file"
+        return 0
+    fi
+
+    local count
+    count=$(jq 'length' "$history_file" 2>/dev/null || echo 0)
+
+    if [[ "$count" -eq 0 ]]; then
+        echo "  (empty)"
+        return 0
+    fi
+
+    jq -r '.[] | "  \(.timestamp)  \(.from) → \(.to)  \(.status)  \(.type)  \(.duration_s)s"' "$history_file" 2>/dev/null
+    echo ""
+    echo "  Entries: $count"
+    echo "  File: $history_file"
+    echo "  JSON: nftban update history --json"
+    echo ""
+}
+
 _cmd_update_help() {
     cat << 'EOF'
 NFTBan Update - Multi-source update system
@@ -586,6 +653,7 @@ COMMANDS:
     rollback            Restore previous version from backup (fixes dpkg first)
     repair              Fix broken install (dpkg state, immutable flags, restore backup)
     list                List available backups
+    history             Show update history (last 20 updates, --json supported)
     auto [ACTION]       Manage auto-update timer (enable|disable|status)
                         Requires --email for enable (mandatory notification)
     help                Show this help message
@@ -631,6 +699,10 @@ EXAMPLES:
 
     # List available backups
     nftban update list
+
+    # Show update history
+    nftban update history
+    nftban update history --json
 
     # Enable weekly auto-updates (uses global NFTBAN_MAIL_RECIPIENT if set)
     nftban update auto enable
@@ -1408,6 +1480,9 @@ nftban_cmd_update() {
         list|--list|-l)
             _update_banner
             _list_backups
+            ;;
+        history|--history)
+            _cmd_update_history
             ;;
         auto)
             shift || true
