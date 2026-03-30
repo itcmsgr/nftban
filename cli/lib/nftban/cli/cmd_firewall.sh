@@ -849,8 +849,10 @@ firewall_reload() {
     fi
 
     # Step 3: Re-sync system whitelist (ensures admin IPs are protected)
+    # v1.59.1 BUG-5: Removed --quick — firewall reload is interactive, not postinst.
+    # --quick skipped public IP detection AND atomic reload → server IPs not in nft set → lockout risk.
     [[ "$quiet" == "false" ]] && echo "Syncing whitelist..."
-    nftban whitelist sync --quick 2>/dev/null || true
+    nftban whitelist sync 2>/dev/null || true
 
     # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
     # firewall reload destroys DDoS chains (synproxy, portscan, ddos_protection).
