@@ -314,8 +314,9 @@ nftban_whitelist_list() {
 
     # Collect kernel whitelist entries
     local _wl_v4 _wl_v6
-    _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed '/^$/d') || true
-    _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed '/^$/d') || true
+    # v1.59.1 BUG-9: Trim both leading AND trailing whitespace from nft output (was leaving trailing spaces in JSON)
+    _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d') || true
+    _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -E "elements.*=" | sed 's/.*= {//' | sed 's/}//' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d') || true
 
     if [[ "$_json_mode" == "true" ]]; then
         # JSON output

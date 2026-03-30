@@ -505,10 +505,11 @@ _display_results() {
             [[ "$loc_set" != "whitelist" ]] && is_whitelisted_only="false"
         done <<< "$found_sets"
 
+        # v1.59.1 BUG-7: Guard display echo against SIGPIPE/broken pipe under set -e
         if [[ "$is_whitelisted_only" == "true" ]]; then
-            echo "✓ STATUS: WHITELISTED"
+            echo "✓ STATUS: WHITELISTED" || true
         else
-            echo "✗ STATUS: BANNED"
+            echo "✗ STATUS: BANNED" || true
         fi
         echo ""
         echo "Found in nftables sets:"

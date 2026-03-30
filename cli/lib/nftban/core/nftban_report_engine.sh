@@ -745,13 +745,14 @@ nftban_report_save_file() {
         return 1
     }
 
-    # Write file with secure permissions
-    echo "$content" > "$file_path" || {
-        echo "Error: Cannot write to '$file_path'" >&2
+    # v1.59.1 TOCTOU: Atomic write — temp+chmod+mv (prevents window with wrong perms)
+    echo "$content" > "${file_path}.tmp" || {
+        echo "Error: Cannot write to '${file_path}.tmp'" >&2
         return 1
     }
 
-    chmod 600 "$file_path" 2>/dev/null || true
+    chmod 600 "${file_path}.tmp" 2>/dev/null || true
+    mv -f "${file_path}.tmp" "$file_path"
 
     echo "Report saved to: $file_path" >&2
     return 0
