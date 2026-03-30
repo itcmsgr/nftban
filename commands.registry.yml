@@ -3275,6 +3275,8 @@ update:
     - "nftban update local /path/to/nftban"
     - "nftban update rollback"
     - "nftban update list"
+    - "nftban update history"
+    - "nftban update history --json"
     - "nftban update auto enable --email admin@example.com"
     - "nftban update auto enable --email panel"
     - "nftban update auto status"
@@ -3301,6 +3303,10 @@ update:
     list:
       mutates: false
       description: "List available backups"
+    history:
+      mutates: false
+      description: "Show update history (last 20)"
+      has_json: true
     force:
       mutates: true
       description: "Force reinstall/update"
