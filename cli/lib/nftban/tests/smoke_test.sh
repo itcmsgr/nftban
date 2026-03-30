@@ -1033,7 +1033,7 @@ smoke_test_auditor_acls() {
 # Validates that feeds/geoban CIDRs are actually loaded in nftables sets.
 # Non-destructive: checks current state without modifying sets.
 
-# Get element count from an nft set (enterprise-grade: never hang)
+# Get element count from an nft set (robust: never hang)
 # Usage: _nft_set_count <nft_table> <set_name>
 # Returns: element count, or "[FAIL]..." on error
 # Strategy: JSON+jq (fast, no dump) → timeout+text fallback → explicit fail

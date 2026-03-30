@@ -277,7 +277,7 @@ _metrics_enable_pro() {
     echo "   Pro Features:"
     echo "   - Metrics streaming to pro.nftban.com"
     echo "   - Server inventory and benchmarking"
-    echo "   - AI-powered recommendations (coming soon)"
+    echo "   - Centralized recommendations (planned for v2.x)"
     echo "   - Centralized dashboard at https://pro.nftban.com"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

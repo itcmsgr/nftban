@@ -950,7 +950,7 @@ login:
 
 botguard:
   category: active_protection
-  description: "HTTP Bot Guard — intelligent crawler detection & protection"
+  description: "HTTP Bot Guard — automated crawler detection & protection"
   risk: advanced
   audience: [cli]
   capability: policy_change

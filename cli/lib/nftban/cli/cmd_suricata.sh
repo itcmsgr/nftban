@@ -405,7 +405,7 @@ COMMANDS:
     sid         SID enable/disable and stats (see: nftban suricata sid help)
     local       Manage local user rules (see: nftban suricata local help)
     custom      Manage nftban auto-rules (see: nftban suricata custom help)
-    recommend   Get intelligent rule recommendations (see: nftban suricata recommend help)
+    recommend   Get data-driven rule recommendations (see: nftban suricata recommend help)
     help        Show this help message
 
 QUICK START:

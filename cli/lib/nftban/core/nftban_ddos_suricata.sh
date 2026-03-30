@@ -14,7 +14,7 @@
 # meta:homepage="https://nftban.com"
 #
 # **Description**
-# Intelligent DDoS protection using Suricata IDS alerts:
+# Suricata-based DDoS protection using IDS alerts:
 # - EVE JSON parsing for real-time alerts
 # - Signature-based detection (DDoS categories)
 # - Scoring engine with multi-signal correlation

@@ -173,7 +173,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **Login Monitoring** | Detects SSH brute-force and suspicious authentication patterns |
 | **Port Scan Detection** | Automatic detection and blocking of reconnaissance |
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
-| **HTTP Bot Guard** | Intelligent crawler detection with kernel-native suspect marking |
+| **HTTP Bot Guard** | Automated crawler detection with kernel-native suspect marking |
 | **DNS Tunnel Suspicion** | Advisory-only DNS tunnel detection with 5 signals (v1.30.0) |
 | **Suricata IDS Integration** | Optional deep packet inspection |
 | **Prometheus Metrics** | Observability for monitoring stacks |

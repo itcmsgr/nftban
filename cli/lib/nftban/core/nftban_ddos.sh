@@ -291,7 +291,7 @@ nftban_ddos_enable() {
             echo ""
 
             # Enable Suricata as Layer 1
-            echo "  [Layer 1] Suricata (intelligent detection)..."
+            echo "  [Layer 1] Suricata (signature-based detection)..."
                 # shellcheck disable=SC2034  # Reserved for dual-mode toggle
                 DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
                 nftban_ddos_suricata_enable || enable_result=$?

@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.21.0 - HTTP Bot Guard: Intelligent Crawler Detection & Protection
+// NFTBan v1.21.0 - HTTP Bot Guard: Automated Crawler Detection & Protection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Package: botguard
