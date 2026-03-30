@@ -26,7 +26,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// cmdSuricataRecommend generates intelligent recommendations
+// cmdSuricataRecommend generates data-driven recommendations
 func cmdSuricataRecommend() error {
 	fmt.Println(version.BannerWithEmoji("💡", "Suricata Rule Recommendations"))
 	fmt.Println(strings.Repeat("=", 70))

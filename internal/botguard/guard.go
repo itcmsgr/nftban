@@ -103,7 +103,7 @@ func Descriptor() module.Descriptor {
 	return module.Descriptor{
 		Name:        ModuleName,
 		Version:     ModuleVersion,
-		Description: "HTTP Bot Guard: Intelligent Crawler Detection & Protection",
+		Description: "HTTP Bot Guard: Automated Crawler Detection & Protection",
 		Optional:    true,
 		ConfigFile:  filepath.Join(configDir, "main.conf"),
 	}

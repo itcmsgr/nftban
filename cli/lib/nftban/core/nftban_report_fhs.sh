@@ -411,7 +411,7 @@ nftban_fhs_generate_html_report() {
         recommendations_section='<h2>🔧 Recommendations</h2>
         <div class="alert alert-info">
             <strong>To fix permission issues:</strong><br>
-            <code>nftban fhs fix</code> - Automatically fix all permission issues (coming soon)<br>
+            <code>nftban fhs fix</code> - Automatically fix all permission issues (planned for v2.x)<br>
             <br>
             <strong>Manual fix commands:</strong>'
 

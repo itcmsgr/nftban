@@ -248,7 +248,7 @@ DEPRECATED (use wizard instead):
 
 MIGRATION TO WIZARD:
 
-    The wizard replaces static profiles with an intelligent setup that:
+    The wizard replaces static profiles with an adaptive setup that:
 
     1. Detects your environment automatically:
        • CPU cores, RAM, disk space
