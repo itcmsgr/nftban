@@ -3,7 +3,7 @@
 # NFTBan v1.12.0 - Suricata IDS CLI Command - Interface Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Intelligent interface detection for Suricata af-packet configuration
+# Purpose: Automatic interface detection for Suricata af-packet configuration
 #
 # meta:name="cmd_suricata_iface"
 # meta:type="cli"

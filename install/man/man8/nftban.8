@@ -1,46 +1,46 @@
 .\" NFTBan - nftables-based firewall management
 .\" Copyright (c) 2024-2026 Antonios Voulvoulis
-.TH NFTBAN 8 "January 2026" "NFTBan 1.2.1" "System Administration"
+.TH NFTBAN 8 "March 2026" "NFTBan 1.60.3" "System Administration"
 .SH NAME
-nftban \- nftables-based firewall management and intrusion prevention system
+nftban \- open-source Linux IPS and nftables firewall manager
 .SH SYNOPSIS
 .B nftban
 .RI [ command ]
 .RI [ subcommand ]
 .RI [ options ]
 .SH DESCRIPTION
-.B NFTBAN
-is an enterprise-grade firewall management engine built on Linux nftables.
-It replaces legacy iptables-based scripts with a modern architecture featuring
-atomic rule updates, strict privilege separation via Polkit, and AI-assisted
-threat intelligence.
+.B NFTBan
+is an open-source Linux Intrusion Prevention System (IPS) and firewall manager
+built on nftables. It provides kernel-native enforcement with atomic rule
+updates, privilege separation via Polkit, and automated threat detection
+through feeds and IDS integration.
 .PP
 The name
-.B NFTBAN
+.B NFTBan
 stands for
 .IR "NFTables BAN actions" ,
-emphasizing its foundation on native nftables technology for high-performance,
-kernel-level packet filtering and ban enforcement.
+reflecting its foundation on native nftables technology for kernel-level
+packet filtering and ban enforcement.
 .PP
 .B Key Capabilities:
-.IP "\fBAtomic Performance\fR" 4
-Leverages native nftables for near-instant rule updates without flushing
+.IP "\fBAtomic Rule Updates\fR" 4
+Uses native nftables transactions for rule updates without flushing
 existing connections or causing network disruption.
-.IP "\fBSecurity First\fR" 4
+.IP "\fBPrivilege Separation\fR" 4
 Uses Polkit for granular privilege separation, enabling firewall management
 without requiring full root access.
-.IP "\fBIntelligent Defense\fR" 4
-Integrates AI-assisted threat intelligence for proactive, self-healing network
-protection. Supports real-time feeds from Spamhaus, AbuseIPDB, and Firehol.
-.IP "\fBHosting Ready\fR" 4
-Built-in support for DirectAdmin, cPanel, CWP, CyberPanel, and custom control
-panels. Automatically detects and whitelists critical service ports.
+.IP "\fBThreat Detection\fR" 4
+Integrates with threat intelligence feeds (Spamhaus, AbuseIPDB, Firehol) and
+Suricata IDS for automated detection and response.
+.IP "\fBHosting Panel Support\fR" 4
+Integrates with DirectAdmin, cPanel, Plesk, CyberPanel, and other control
+panels. Detects and whitelists critical service ports.
 .SH ARCHITECTURE
-.B NFTBAN
+.B NFTBan
 operates through direct integration with the Linux nftables netfilter framework.
-All firewall operations are executed as atomic nftables transactions, providing
-deterministic, high-performance packet filtering at the kernel level with zero
-connection disruption during rule updates.
+All firewall operations are executed as atomic nftables transactions. The Go
+daemon (nftband) handles runtime ban/unban, IPC, and login monitoring. The Bash
+CLI handles schema generation, configuration, deployment, and metrics export.
 .SH COMMANDS
 .SS "Core Commands"
 .TP

@@ -64,7 +64,7 @@ readonly NFTBAN_VERSION_MINOR
 readonly NFTBAN_VERSION_PATCH
 
 # Version details
-readonly NFTBAN_VERSION_NAME="Unified Security Platform"
+readonly NFTBAN_VERSION_NAME="Linux IPS & nftables Firewall"
 readonly NFTBAN_VERSION_DATE="2026-03-18"
 NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 readonly NFTBAN_BUILD_DATE

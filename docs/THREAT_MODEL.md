@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-NFTBan is an enterprise-grade Linux Intrusion Prevention System (IPS) and firewall manager built on nftables. It provides automated threat detection and response through:
+NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables. It provides automated threat detection and response through:
 
 - **Login monitoring** - Detects brute-force attacks against SSH, mail, FTP, and web services
 - **Portscan detection** - Identifies network reconnaissance activity

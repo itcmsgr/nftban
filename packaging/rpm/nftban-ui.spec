@@ -22,9 +22,8 @@ Requires:       socat
 Requires(pre):  shadow-utils
 
 %description
-Professional web interface for NFTBAN firewall management. Provides enterprise-grade
-control over nftables-based security policies through a modern, security-hardened
-web console.
+Web interface for NFTBan firewall management. Provides control over
+nftables-based security policies through a security-hardened web console.
 
 Built with an 8-layer security architecture featuring socket-based PAM authentication,
 JWT session management, and Polkit integration. No setuid binaries, no privilege

@@ -1,6 +1,6 @@
 # NFTBan Architecture
 
-This document describes the high-level architecture of NFTBan, an enterprise-grade
+This document describes the high-level architecture of NFTBan, an open-source
 Linux Intrusion Prevention System (IPS) and firewall manager built on nftables.
 
 ---

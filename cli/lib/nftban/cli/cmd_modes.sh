@@ -371,7 +371,7 @@ _modes_help() {
     echo ""
     echo "    auto      - Automatically choose based on Suricata availability"
     echo "    classic   - Traditional log-based detection (no IDS)"
-    echo "    suricata  - Use Suricata IDS for intelligent detection"
+    echo "    suricata  - Use Suricata IDS for signature-based detection"
     echo "    hybrid    - Use both classic and Suricata together"
     echo ""
     echo "    The \"Effective\" column shows what mode is actually being used after"

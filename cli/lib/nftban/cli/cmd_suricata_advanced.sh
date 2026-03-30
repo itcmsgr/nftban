@@ -511,7 +511,7 @@ COMMANDS:
     help        Show this help message
 
 DESCRIPTION:
-    Analyzes SID trigger statistics and provides intelligent
+    Analyzes SID trigger statistics and provides data-driven
     recommendations for optimizing your Suricata ruleset.
 
 RECOMMENDATION TYPES:
