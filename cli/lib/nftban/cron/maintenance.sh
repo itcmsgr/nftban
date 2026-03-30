@@ -123,7 +123,7 @@ main() {
     # ==========================================================================
     # 1. SSH Port Monitoring (CRITICAL - Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[1/9] Checking SSH port configuration..."
+    log "INFO" "[1/10] Checking SSH port configuration..."
 
     # Auto-detect current SSH port from sshd_config
     SSH_PORT=22
@@ -387,7 +387,7 @@ EOF
     # ==========================================================================
     # 2. System IP Monitoring (Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[2/9] Checking system IP addresses..."
+    log "INFO" "[2/10] Checking system IP addresses..."
 
     IP_ALERT_STATE="${NFTBAN_DATA_DIR}/state/ip_change_alert.state"
 
@@ -598,7 +598,7 @@ EOF
     # ==========================================================================
     # 3. Active SSH Session Protection (Auto-Whitelist Logged-In Users)
     # ==========================================================================
-    log "INFO" "[3/9] Protecting active SSH sessions..."
+    log "INFO" "[3/10] Protecting active SSH sessions..."
 
     # File to track active SSH IPs with timestamps
     ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
@@ -659,7 +659,7 @@ EOF
     # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
-    log "INFO" "[4/9] Running auto-heal..."
+    log "INFO" "[4/10] Running auto-heal..."
 
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" ]]; then
         if "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" >> "$LOGFILE" 2>&1; then
@@ -678,12 +678,12 @@ EOF
     #   - nftban-watchdog.timer (every 2min) — trend collection + cleanup
     #   - Go daemon (stats.CleanupHistory, stats.CleanupProfiles, Recorder.Cleanup)
     # Removed from maintenance to eliminate duplicate execution (L1 audit finding).
-    log "INFO" "[5/9] Trend collection: Handled by watchdog timer (skipped)"
+    log "INFO" "[5/10] Trend collection: Handled by watchdog timer (skipped)"
 
     # ==========================================================================
     # 6. Configuration Validation (Critical Files)
     # ==========================================================================
-    log "INFO" "[6/9] Validating critical configuration..."
+    log "INFO" "[6/10] Validating critical configuration..."
 
     local config_ok=true
 
@@ -714,7 +714,7 @@ EOF
     # ==========================================================================
     # 7. Portscan Stealth Aggregation (Every 15 min)
     # ==========================================================================
-    log "INFO" "[7/9] Running portscan stealth aggregation..."
+    log "INFO" "[7/10] Running portscan stealth aggregation..."
 
     # Load portscan module for aggregation
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
@@ -737,7 +737,7 @@ EOF
     # ==========================================================================
     # 8. Firewall Conflict Drift Detection (Every 15 min)
     # ==========================================================================
-    log "INFO" "[8/9] Checking for firewall conflicts (drift guard)..."
+    log "INFO" "[8/10] Checking for firewall conflicts (drift guard)..."
 
     # Load conflict detection library
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
@@ -812,9 +812,31 @@ EOF
     fi
 
     # ==========================================================================
-    # 9. Complete
+    # 9. DDoS Penalty Ladder Scan (v1.60.2)
     # ==========================================================================
-    log "INFO" "[9/9] NFTBan Maintenance Complete"
+    log "INFO" "[9/10] DDoS penalty ladder scan..."
+
+    # Source DDoS classic module for penalty scan function
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ddos_classic.sh" ]]; then
+        # Only source if not already loaded
+        if ! declare -f nftban_ddos_penalty_scan >/dev/null 2>&1; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_ddos_classic.sh" 2>/dev/null || true
+        fi
+
+        if declare -f nftban_ddos_penalty_scan >/dev/null 2>&1; then
+            nftban_ddos_penalty_scan 2>/dev/null || true
+            log "INFO" "DDoS penalty scan: OK"
+        else
+            log "INFO" "DDoS penalty scan: Skipped (function not available)"
+        fi
+    else
+        log "INFO" "DDoS penalty scan: Skipped (module not found)"
+    fi
+
+    # ==========================================================================
+    # 10. Complete
+    # ==========================================================================
+    log "INFO" "[10/10] NFTBan Maintenance Complete"
 
     return 0
 }

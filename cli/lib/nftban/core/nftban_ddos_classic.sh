@@ -75,12 +75,13 @@ _nftban_ddos_classic_load_config() {
     fi
 
     # Set defaults if not configured
-    : "${DDOS_CLASSIC_SYN_RATE:=25/second}"
-    : "${DDOS_CLASSIC_SYN_BURST:=50}"
-    : "${DDOS_CLASSIC_SSH_CONN_LIMIT:=10}"
-    : "${DDOS_CLASSIC_HTTP_CONN_LIMIT:=100}"
-    : "${DDOS_CLASSIC_HTTPS_CONN_LIMIT:=100}"
-    : "${DDOS_CLASSIC_SMTP_CONN_LIMIT:=20}"
+    # v1.60.2: Raised defaults — previous values too tight for production web workloads
+    : "${DDOS_CLASSIC_SYN_RATE:=100/second}"
+    : "${DDOS_CLASSIC_SYN_BURST:=200}"
+    : "${DDOS_CLASSIC_SSH_CONN_LIMIT:=15}"
+    : "${DDOS_CLASSIC_HTTP_CONN_LIMIT:=200}"
+    : "${DDOS_CLASSIC_HTTPS_CONN_LIMIT:=200}"
+    : "${DDOS_CLASSIC_SMTP_CONN_LIMIT:=30}"
     : "${DDOS_CLASSIC_DNS_CONN_LIMIT:=50}"
     : "${DDOS_CLASSIC_GENERIC_CONN_LIMIT:=50}"
     : "${DDOS_CLASSIC_ICMP_RATE:=10/second}"
@@ -102,8 +103,8 @@ _nftban_ddos_classic_load_config() {
     : "${DDOS_CLASSIC_UDP_METER:=ddos_udp_flood}"
     : "${DDOS_CLASSIC_BLOCK_SET:=ddos_blocked}"
 
-    # SYNPROXY defaults
-    : "${DDOS_SYNPROXY_ENABLED:=true}"
+    # SYNPROXY defaults (disabled by default since v1.60.2 — see classic.conf)
+    : "${DDOS_SYNPROXY_ENABLED:=false}"
     : "${DDOS_SYNPROXY_MSS:=1460}"
     : "${DDOS_SYNPROXY_WSCALE:=7}"
     : "${DDOS_SYNPROXY_SACK:=true}"
@@ -174,23 +175,24 @@ _nftban_ddos_classic_auto_tune() {
     _nftban_ddos_classic_log "INFO" "Auto-tuning: cores=$cores, mem=${mem_gb}GB"
 
     # Scale connection limits based on resources
+    # v1.60.2: Raised all profiles to avoid false positives
     if [[ $cores -ge 4 && $mem_gb -ge 4 ]]; then
-        # High-end system: more generous limits
-        DDOS_CLASSIC_SYN_RATE="50/second"
-        DDOS_CLASSIC_SYN_BURST="100"
-        DDOS_CLASSIC_HTTP_CONN_LIMIT="200"
-        DDOS_CLASSIC_HTTPS_CONN_LIMIT="200"
+        # High-end system: generous limits for production web servers
+        DDOS_CLASSIC_SYN_RATE="200/second"
+        DDOS_CLASSIC_SYN_BURST="400"
+        DDOS_CLASSIC_HTTP_CONN_LIMIT="300"
+        DDOS_CLASSIC_HTTPS_CONN_LIMIT="300"
         _nftban_ddos_classic_log "INFO" "Auto-tune: HIGH profile applied"
     elif [[ $cores -ge 2 && $mem_gb -ge 2 ]]; then
-        # Medium system: default limits
+        # Medium system: default limits (already raised in v1.60.2)
         _nftban_ddos_classic_log "INFO" "Auto-tune: MEDIUM profile (defaults)"
     else
-        # Low-end system: stricter limits
-        DDOS_CLASSIC_SYN_RATE="15/second"
-        DDOS_CLASSIC_SYN_BURST="30"
-        DDOS_CLASSIC_HTTP_CONN_LIMIT="50"
-        DDOS_CLASSIC_HTTPS_CONN_LIMIT="50"
-        DDOS_CLASSIC_SSH_CONN_LIMIT="5"
+        # Low-end system: tighter but still safe limits
+        DDOS_CLASSIC_SYN_RATE="50/second"
+        DDOS_CLASSIC_SYN_BURST="100"
+        DDOS_CLASSIC_HTTP_CONN_LIMIT="100"
+        DDOS_CLASSIC_HTTPS_CONN_LIMIT="100"
+        DDOS_CLASSIC_SSH_CONN_LIMIT="8"
         _nftban_ddos_classic_log "INFO" "Auto-tune: LOW profile applied"
     fi
 }
@@ -331,6 +333,10 @@ _nftban_ddos_sanity_remove_via_ipc() {
 _nftban_ddos_synproxy_setup_via_ipc() {
     if [[ "${DDOS_SYNPROXY_ENABLED}" != "true" ]]; then
         echo "  SYNPROXY: Disabled (DDOS_SYNPROXY_ENABLED=false)"
+        # v1.60.2: Clean up stale SYNPROXY rules from previous installs where
+        # it was enabled by default. Prevents leftover notrack rules causing
+        # connection resets after upgrade.
+        _nft_cleanup_synproxy_raw 2>/dev/null || true
         return 0
     fi
 
@@ -345,6 +351,9 @@ _nftban_ddos_synproxy_setup_via_ipc() {
     echo "  Setting up SYNPROXY protection..."
 
     # Step 1: Apply raw table rules (notrack for SYN packets)
+    # v1.60.2 FIX: Clean stale notrack rules BEFORE adding new ones to prevent
+    # duplicates accumulating across reloads (causes connection resets on OLS/LiteSpeed)
+    _nft_cleanup_synproxy_raw
     local raw_path
     raw_path=$(nft_fragment_render_synproxy_raw) || {
         echo "  ERROR: Failed to render SYNPROXY raw fragment"
@@ -973,6 +982,124 @@ _nftban_ddos_ban_has_ipc() {
 }
 
 # =============================================================================
+# PENALTY LADDER POPULATOR (v1.60.2)
+# =============================================================================
+# Scans nft SYN flood meter for IPs that triggered rate limiting, tracks
+# repeat offenders in a state file, and promotes them through the penalty
+# ladder sets: ddos_limit_10s → ddos_limit_5m → ddos_drop_5m → ddos_ban_1h.
+#
+# Called from maintenance timer (every 5 minutes).
+# Design: no daemon dependency, no dynamic pressure response, reads nft
+# meter directly, uses atomic state file, nftables expiry handles cleanup.
+
+nftban_ddos_penalty_scan() {
+    _nftban_ddos_classic_load_config
+
+    local table_v4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local table_v6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
+    local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
+
+    # Penalty set names
+    local set_10s="${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}"
+    local set_5m="${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}"
+    local set_drop="${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}"
+    local set_ban="${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}"
+    local escalate_threshold="${DDOS_CLASSIC_ESCALATE_THRESHOLD:-3}"
+
+    # State file for tracking repeat offenders
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state"
+    local state_file="${state_dir}/ddos_penalty_strikes.json"
+    mkdir -p "$state_dir" 2>/dev/null || true
+
+    # Check if penalty sets exist (DDoS must be enabled)
+    if ! nft list set ${table_v4} ${set_10s} &>/dev/null; then
+        return 0  # Penalty ladder not deployed, nothing to do
+    fi
+
+    # Extract IPs from SYN flood meter (these IPs triggered rate limiting)
+    # Meter entries look like: "1.2.3.4 limit rate 100/second burst 200 packets"
+    local offenders_v4 offenders_v6
+    offenders_v4=$(nft list meter ${table_v4} ${syn_meter} 2>/dev/null \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -u) || true
+    offenders_v6=$(nft list meter ${table_v6} ${syn_meter}6 2>/dev/null \
+        | grep -oE '[0-9a-fA-F:]+:[0-9a-fA-F:]+' | grep -v '^::$' | sort -u) || true
+
+    [[ -z "$offenders_v4" && -z "$offenders_v6" ]] && return 0
+
+    # Read existing strikes (or start fresh)
+    local strikes_json="{}"
+    if command -v jq &>/dev/null && [[ -f "$state_file" ]] && jq empty "$state_file" 2>/dev/null; then
+        strikes_json=$(cat "$state_file")
+    fi
+
+    local now
+    now=$(date +%s)
+    local promoted=0
+
+    # Process each offender (IPv4 + IPv6)
+    local ip family table_fam
+    for ip in $offenders_v4 $offenders_v6; do
+        # Determine family
+        if [[ "$ip" =~ : ]]; then
+            family="ip6"; table_fam="$table_v6"
+            local suffix="6"
+        else
+            family="ip"; table_fam="$table_v4"
+            local suffix=""
+        fi
+
+        # Skip whitelisted IPs (whitelist_ipv4 in ip table, whitelist_ipv6 in ip6 table)
+        local wl_set="whitelist_ipv4"
+        [[ "$family" == "ip6" ]] && wl_set="whitelist_ipv6"
+        if nft get element ${table_fam} ${wl_set} "{ $ip }" &>/dev/null; then
+            continue
+        fi
+
+        # Increment strike counter
+        local current_strikes
+        current_strikes=$(echo "$strikes_json" | jq -r --arg ip "$ip" '.[$ip].strikes // 0') 2>/dev/null || current_strikes=0
+
+        current_strikes=$((current_strikes + 1))
+        strikes_json=$(echo "$strikes_json" | jq --arg ip "$ip" --argjson s "$current_strikes" --argjson t "$now" \
+            '.[$ip] = {"strikes": $s, "last_seen": $t}') 2>/dev/null || continue
+
+        # Determine penalty level based on strikes
+        local target_set=""
+        if [[ $current_strikes -ge $((escalate_threshold * 4)) ]]; then
+            target_set="${set_ban}${suffix}"
+        elif [[ $current_strikes -ge $((escalate_threshold * 3)) ]]; then
+            target_set="${set_drop}${suffix}"
+        elif [[ $current_strikes -ge $((escalate_threshold * 2)) ]]; then
+            target_set="${set_5m}${suffix}"
+        elif [[ $current_strikes -ge $escalate_threshold ]]; then
+            target_set="${set_10s}${suffix}"
+        fi
+
+        # Add to penalty set if threshold reached
+        if [[ -n "$target_set" ]]; then
+            if nft add element ${table_fam} ${target_set} "{ $ip }" 2>/dev/null; then
+                _nftban_ddos_classic_log "INFO" "Penalty: ${ip} → ${target_set} (strikes=${current_strikes})"
+                promoted=$((promoted + 1))
+            fi
+        fi
+    done
+
+    # Prune stale entries (not seen in 2 hours)
+    local cutoff=$((now - 7200))
+    strikes_json=$(echo "$strikes_json" | jq --argjson cutoff "$cutoff" \
+        'to_entries | map(select(.value.last_seen > $cutoff)) | from_entries') 2>/dev/null || true
+
+    # Atomic write state file
+    local tmp_state
+    tmp_state=$(mktemp "${state_file}.XXXXXX") || return 0
+    echo "$strikes_json" > "$tmp_state" && mv -f "$tmp_state" "$state_file" || rm -f "$tmp_state"
+    chmod 0640 "$state_file" 2>/dev/null || true
+
+    [[ $promoted -gt 0 ]] && _nftban_ddos_classic_log "INFO" "Penalty scan: ${promoted} IPs promoted"
+    return 0
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -982,3 +1109,4 @@ export -f nftban_ddos_classic_status
 export -f nftban_ddos_ban_ip
 export -f nftban_ddos_unban_ip
 export -f nftban_ddos_list_banned
+export -f nftban_ddos_penalty_scan
