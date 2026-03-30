@@ -493,7 +493,7 @@
     "DDOS_CLASSIC_HTTPS_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "100",
+      "default": "200",
       "description": "D C H C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -503,7 +503,7 @@
     "DDOS_CLASSIC_HTTP_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "100",
+      "default": "200",
       "description": "D C H C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -643,7 +643,7 @@
     "DDOS_CLASSIC_SMTP_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "20",
+      "default": "30",
       "description": "D C S C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -653,7 +653,7 @@
     "DDOS_CLASSIC_SSH_CONN_LIMIT": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "10",
+      "default": "15",
       "description": "D C S C L",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -663,7 +663,7 @@
     "DDOS_CLASSIC_SYN_BURST": {
       "type": "string",
       "$ref": "#/definitions/positive_integer",
-      "default": "50",
+      "default": "200",
       "description": "D C S B",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -683,7 +683,7 @@
     "DDOS_CLASSIC_SYN_RATE": {
       "type": "string",
       "$ref": "#/definitions/string",
-      "default": "25/second",
+      "default": "100/second",
       "description": "D C S R",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -12194,10 +12194,10 @@
     },
     "DDOS_SYNPROXY_ENABLED": {
       "type": "string",
-      "description": "Ddos synproxy enabled",
+      "description": "Enable SYNPROXY protection (disabled by default since v1.60.2 — breaks LiteSpeed/OLS, conflicts with stateful pipelines)",
       "introduced_in": "1.43.0",
       "module": "ddos",
-      "default": "true",
+      "default": "false",
       "$ref": "#/definitions/boolean_string"
     },
     "DDOS_SYNPROXY_LOG_NEW": {

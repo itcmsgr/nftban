@@ -916,8 +916,8 @@ nft_fragment_render_ddos_classic() {
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
 
     # Rate limits and bursts
-    local syn_rate="${DDOS_CLASSIC_SYN_RATE:-25/second}"
-    local syn_burst="${DDOS_CLASSIC_SYN_BURST:-50}"
+    local syn_rate="${DDOS_CLASSIC_SYN_RATE:-100/second}"
+    local syn_burst="${DDOS_CLASSIC_SYN_BURST:-200}"
     local icmp_rate="${DDOS_CLASSIC_ICMP_RATE:-10/second}"
     local icmp_burst="${DDOS_CLASSIC_ICMP_BURST:-20}"
     local icmpv6_rate="${DDOS_CLASSIC_ICMPV6_RATE:-10/second}"
@@ -926,10 +926,11 @@ nft_fragment_render_ddos_classic() {
     local udp_burst="${DDOS_CLASSIC_UDP_BURST:-200}"
 
     # Connection limits per service
-    local ssh_limit="${DDOS_CLASSIC_SSH_CONN_LIMIT:-10}"
-    local http_limit="${DDOS_CLASSIC_HTTP_CONN_LIMIT:-100}"
-    local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-100}"
-    local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-20}"
+    local ssh_limit="${DDOS_CLASSIC_SSH_CONN_LIMIT:-15}"
+    local http_limit="${DDOS_CLASSIC_HTTP_CONN_LIMIT:-200}"
+    local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-200}"
+    local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-30}"
+    local dns_limit="${DDOS_CLASSIC_DNS_CONN_LIMIT:-50}"
 
     # SSH port detection: state file → sshd_config → fallback 22
     local ssh_port=22
@@ -966,6 +967,8 @@ nft_fragment_render_ddos_classic() {
 #   SYN Rate: ${syn_rate} burst ${syn_burst}
 #   SSH Conn: max ${ssh_limit}/IP (port ${ssh_port})
 #   HTTP Conn: max ${http_limit}/IP
+#   SMTP Conn: max ${smtp_limit}/IP
+#   DNS Conn: max ${dns_limit}/IP (TCP+UDP)
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
 
@@ -982,6 +985,9 @@ add rule ${table_ipv4} ${chain} tcp dport ${ssh_port} ct state new ct count over
 add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
 add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
+add rule ${table_ipv4} ${chain} udp dport 53 meter ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
+add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
 # ICMP Rate Limiting
 add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
@@ -1007,6 +1013,9 @@ add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over
 add rule ${table_ipv6} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
 add rule ${table_ipv6} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
 add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
+add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 meter ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
 # ICMPv6 Rate Limiting
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
@@ -1867,6 +1876,8 @@ nft_fragment_enable_module() {
             ;;
         ddos-synproxy|ddos_synproxy|synproxy)
             # SYNPROXY requires raw table rules first
+            # v1.60.2 FIX: Clean stale notrack rules BEFORE adding to prevent duplicates
+            _nft_cleanup_synproxy_raw
             local raw_path
             raw_path=$(nft_fragment_render_synproxy_raw) || return 1
             nft_fragment_apply "$raw_path" || return 1
