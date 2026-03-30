@@ -388,10 +388,13 @@ EOF
     IP_ALERT_STATE="${NFTBAN_DATA_DIR}/state/ip_change_alert.state"
 
     # Create system whitelist if missing (CRITICAL FOR LOCKOUT PREVENTION)
+    # v1.59.0 SEC-2: Atomic write via temp file to prevent TOCTOU race
     if [[ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]]; then
         log "WARN" "System whitelist missing - creating now (lockout prevention)..."
         mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d" || return 1
-        cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" <<EOF
+        local _wl_tmp
+        _wl_tmp="${NFTBAN_CONFIG_DIR}/whitelist.d/.00-system.conf.tmp.$$"
+        cat > "$_wl_tmp" <<EOF
 # NFTBan System IP Whitelist (Auto-Generated)
 # This file contains server IPs and SSH client IPs for lockout prevention
 # DO NOT EDIT - Automatically managed by maintenance script
@@ -402,25 +405,27 @@ EOF
 
         # Add all server IPs from interfaces
         ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | while read -r ip; do
-            echo "$ip  # Server IPv4 (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+            echo "$ip  # Server IPv4 (auto-detected)" >> "$_wl_tmp"
             log "INFO" "Added server IPv4 to whitelist: $ip"
         done || true
 
         ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1$' | grep -v '^fe80:' | while read -r ip; do
-            echo "$ip  # Server IPv6 (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+            echo "$ip  # Server IPv6 (auto-detected)" >> "$_wl_tmp"
             log "INFO" "Added server IPv6 to whitelist: $ip"
         done || true
 
         # Add SSH client IP if available
         if [[ -n "${SSH_CLIENT:-}" ]]; then
             SSH_IP="${SSH_CLIENT%% *}"
-            echo "$SSH_IP  # SSH client IP (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+            echo "$SSH_IP  # SSH client IP (auto-detected)" >> "$_wl_tmp"
             log "INFO" "Added SSH client IP to whitelist: $SSH_IP"
         fi
 
-        chmod 640 "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
-        chown root:nftban "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" 2>/dev/null || true
-        log "INFO" "✅ System whitelist created with all server and client IPs"
+        # Atomic: set permissions on temp file, then move into place
+        chmod 640 "$_wl_tmp"
+        chown root:nftban "$_wl_tmp" 2>/dev/null || true
+        mv -f "$_wl_tmp" "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+        log "INFO" "System whitelist created with all server and client IPs"
 
         # Reload firewall to apply whitelist
         if nftban firewall reload >/dev/null 2>&1; then

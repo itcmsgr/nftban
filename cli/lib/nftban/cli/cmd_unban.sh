@@ -69,6 +69,10 @@ nftban_cmd_unban() {
                 compact_mode="true"
                 shift
                 ;;
+            --yes|-y)
+                # v1.59.0 UX-1: Accept --yes for scripting consistency with nftban ban
+                shift
+                ;;
             -*)
                 cmd_error "Unknown option: $1" "$json_mode" nftban_cmd_unban_usage
                 return 1
