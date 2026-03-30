@@ -212,25 +212,25 @@ HEADER
     # v1.51.0 FIX: Check daemon is running before IPC — blocks forever if daemon
     # stopped (e.g. during RPM upgrade). Fallback to direct nft add element.
     # See: srv2 lockout 2026-03-28 (CSF disable + custom SSH port + IPC hang)
+    # v1.59.1 BUG-6: Log warning when both IPC and direct nft paths fail (was silently swallowed)
+    local _nft_added="false"
     if declare -f nft_ipc_add_element &>/dev/null && systemctl is-active nftband.service &>/dev/null; then
         if [[ "$ip" =~ : ]]; then
-            # IPv6
-            if timeout 10s nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null; then
-                nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || true
-            fi
+            timeout 10s nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null && _nft_added="true"
         else
-            # IPv4
-            if timeout 10s nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null; then
-                nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || true
-            fi
+            timeout 10s nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null && _nft_added="true"
         fi
-    elif nft list tables 2>/dev/null | grep -q 'nftban'; then
-        # Daemon down but nftban tables exist — direct nft write (postinst safe path)
+    fi
+    # Fallback: direct nft if IPC failed or daemon down
+    if [[ "$_nft_added" == "false" ]] && nft list tables 2>/dev/null | grep -q 'nftban'; then
         if [[ "$ip" =~ : ]]; then
-            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null || true
+            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null && _nft_added="true"
         else
-            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null || true
+            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null && _nft_added="true"
         fi
+    fi
+    if [[ "$_nft_added" == "false" ]]; then
+        echo "[WARN] Failed to add $ip to nft set (config updated, nft pending next reload)" >&2
     fi
 
     echo "[ADD] Whitelisted: $ip ($comment)"
