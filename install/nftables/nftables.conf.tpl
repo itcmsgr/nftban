@@ -7,7 +7,7 @@
 # meta:type="config"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
-# meta:description="Enterprise-grade nftables schema with CIDR aggregation"
+# meta:description="Production nftables schema with CIDR aggregation"
 # meta:input="None"
 # meta:output="nftables ruleset with IPv4/IPv6 tables"
 # meta:depends=""

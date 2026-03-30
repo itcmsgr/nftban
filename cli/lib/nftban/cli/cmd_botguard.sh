@@ -64,7 +64,7 @@ COMMANDS:
     help                Show this help message
 
 DESCRIPTION:
-    HTTP Bot Guard provides intelligent crawler detection and protection
+    HTTP Bot Guard provides automated crawler detection and protection
     using a three-clock hybrid architecture:
 
       Clock 1 (Kernel):  nft meter marks suspect IPs per-packet

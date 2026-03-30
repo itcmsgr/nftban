@@ -26,7 +26,7 @@
 // - 3M+ lines/sec on match (2 allocations)
 // - 100x improvement over legacy regex-based detection
 //
-// This module provides intelligent, risk-based ban decisions
+// This module provides automated, risk-based ban decisions
 //
 // meta:inventory.files="module.go"
 // meta:inventory.binaries=""

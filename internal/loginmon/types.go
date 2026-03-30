@@ -19,7 +19,7 @@
 // - Detects: new IPs, country changes, bad ASN, credential stuffing
 // - Integrates with Suricata + SSH parser + nftban brain
 //
-// Multi-source correlation with risk scoring for intelligent threat detection
+// Multi-source correlation with risk scoring for automated threat detection
 //
 // meta:inventory.files="types.go"
 // meta:inventory.binaries=""
