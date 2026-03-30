@@ -1,0 +1,18 @@
+# =============================================================================
+# NFTBan — CODEOWNERS
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# GitHub uses this file to automatically request reviews.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# =============================================================================
+
+# Default owner for everything
+* @itcmsgr
+
+# CI workflows — changes here affect all PRs
+.github/ @itcmsgr
+
+# Go dependencies — supply chain sensitive
+go.mod @itcmsgr
+go.sum @itcmsgr
