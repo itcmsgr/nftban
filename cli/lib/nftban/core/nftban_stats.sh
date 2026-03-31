@@ -130,7 +130,7 @@ nftban_stats_set_cache() {
 
     [[ "$STATS_CACHE_ENABLED" != "true" ]] && return 0
 
-    echo "$data" > "$cache_file" 2>/dev/null || true
+    echo "$data" > "${cache_file}.tmp" 2>/dev/null && mv -f "${cache_file}.tmp" "$cache_file" 2>/dev/null || true
 }
 
 nftban_stats_clear_cache() {

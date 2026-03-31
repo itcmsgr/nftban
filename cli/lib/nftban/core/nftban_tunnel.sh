@@ -411,7 +411,7 @@ nftban_tunnel_save_score() {
     local safe_ip="${ip//:/_}"
 
     # Write state file: timestamp|score|level|signals
-    echo "${ts}|${score}|${level}|${signals}" > "${state_dir}/${safe_ip}.state"
+    echo "${ts}|${score}|${level}|${signals}" > "${state_dir}/${safe_ip}.state.tmp" && mv -f "${state_dir}/${safe_ip}.state.tmp" "${state_dir}/${safe_ip}.state"
 }
 
 nftban_tunnel_load_scores() {
@@ -663,7 +663,7 @@ _tunnel_maybe_alert() {
     fi
 
     # Record alert time
-    echo "$ts" > "$cooldown_file" 2>/dev/null || true
+    echo "$ts" > "${cooldown_file}.tmp" 2>/dev/null && mv -f "${cooldown_file}.tmp" "$cooldown_file" 2>/dev/null || true
 
     # Try to send alert email
     local alert_email="${NFTBAN_TUNNEL_ALERT_EMAIL:-}"

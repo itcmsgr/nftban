@@ -67,15 +67,15 @@ updates:
       - "dependencies"
       - "docker"
 
-  # npm (for UI if applicable)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "deps(npm)"
-    labels:
-      - "dependencies"
-      - "npm"
+  # TODO v2.x: Uncomment when GUI adds package.json
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
+  #   open-pull-requests-limit: 3
+  #   commit-message:
+  #     prefix: "deps(npm)"
+  #   labels:
+  #     - "dependencies"
+  #     - "npm"
