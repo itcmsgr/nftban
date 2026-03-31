@@ -143,98 +143,69 @@ EOF
 # These are kept separate because they need idempotent handling
 # v1.19.20 FIX: Implements PORTSCAN_NFT_JUMP_POSITION for correct rule ordering
 nft_fragment_render_portscan_classic_jump() {
-    local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-    local position="${PORTSCAN_NFT_JUMP_POSITION:-established}"
 
-    nft_fragment_init || return 1
+    # v1.60.6: Rewritten — direct nft insert (mirrors DDoS classic pattern).
+    # Previous code used fragment files with "add rule position $handle" after
+    # established, which placed the jump AFTER the SYN rate meter. The SYN meter
+    # accepts all slow TCP SYN traffic, so TCP portscan detection was dead.
+    #
+    # New strategy: insert BEFORE the SYN meter rule so portscan sees all new
+    # TCP SYN packets before any broad accept path.
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/11-portscan-classic-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+    local family handle table_fam meter_name
+    for family in ip ip6; do
+        table_fam="${family} nftban"
 
-    # v1.19.20 FIX: Find the handle to insert AFTER based on position config
-    # This ensures portscan detection sees traffic BEFORE service accepts
-    local ipv4_cmd="add rule ${table_ipv4} input jump ${chain}"
-    local ipv6_cmd="add rule ${table_ipv6} input jump ${chain}"
-    local position_comment="(appended to end - fallback)"
-    local handle_ipv4=""
-    local handle_ipv6=""
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    case "$position" in
-        first)
-            # Insert at beginning of chain (before everything)
-            ipv4_cmd="insert rule ${table_ipv4} input jump ${chain}"
-            ipv6_cmd="insert rule ${table_ipv6} input jump ${chain}"
-            position_comment="(at beginning)"
-            ;;
-        established)
-            # Find handle of "ct state established" rule
-            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
-                grep -E "ct state.*(established|related)" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv4" ]]; then
-                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
-                position_comment="(after established, handle ${handle_ipv4})"
-            fi
-            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
-                grep -E "ct state.*(established|related)" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv6" ]]; then
-                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
-            fi
-            ;;
-        whitelist)
-            # Find handle of whitelist rule
-            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
-                grep -E "@whitelist" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv4" ]]; then
-                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
-                position_comment="(after whitelist, handle ${handle_ipv4})"
-            fi
-            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
-                grep -E "@whitelist" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv6" ]]; then
-                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
-            fi
-            ;;
-        ddos)
-            # Find handle of ddos jump rule
-            handle_ipv4=$(nft -a list chain ${table_ipv4} input 2>/dev/null | \
-                grep -E "jump ddos" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv4" ]]; then
-                ipv4_cmd="add rule ${table_ipv4} input position ${handle_ipv4} jump ${chain}"
-                position_comment="(after ddos, handle ${handle_ipv4})"
-            fi
-            handle_ipv6=$(nft -a list chain ${table_ipv6} input 2>/dev/null | \
-                grep -E "jump ddos" | grep -oP 'handle \K\d+' | head -1) || true
-            if [[ -n "$handle_ipv6" ]]; then
-                ipv6_cmd="add rule ${table_ipv6} input position ${handle_ipv6} jump ${chain}"
-            fi
-            ;;
-    esac
+        # Select family-specific meter name
+        if [[ "$family" == "ip" ]]; then
+            meter_name="syn_meter_v4"
+        else
+            meter_name="syn_meter_v6"
+        fi
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan Portscan Classic - Jump Rules
-# Generated: ${timestamp}
-# Position: ${position} ${position_comment}
-# Managed by nftband - DO NOT EDIT MANUALLY
-#
-# NOTE: Jump rules are added idempotently. If the jump already exists,
-# nftables will add a duplicate. The bash script checks before rendering.
+        # Primary anchor: SYN rate meter rule
+        # Insert BEFORE it so portscan sees all new TCP SYN traffic
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep "meter ${meter_name}" \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-${ipv4_cmd}
-${ipv6_cmd}
-EOF
-    )
+        if [[ -n "$handle" ]]; then
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Portscan detection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert portscan jump before SYN meter in ${table_fam}" >&2
+                # Do NOT fall back to append — that would silently place after SYN meter
+                continue
+            }
+            continue
+        fi
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
+        # Secondary anchor: service accept (@tcp_ports_in) — same as DDoS classic
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    echo "$fragment_path"
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: SYN meter not found in ${table_fam} — inserting before service accept" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Portscan detection\"" 2>/dev/null || {
+                echo "ERROR: Failed to insert portscan jump in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
+
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for portscan jump in ${table_fam} — module placement UNSAFE" >&2
+    done
+
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render portscan classic cleanup fragment (for disable)
