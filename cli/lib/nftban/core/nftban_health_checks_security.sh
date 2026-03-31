@@ -1084,9 +1084,58 @@ nftban_health_check_boot_safety() {
     return $status
 }
 
+# =============================================================================
+# PORTSCAN PLACEMENT CHECK (v1.60.6)
+# =============================================================================
+# Verifies portscan_detection jump is before SYN meter in input chain.
+# If portscan is after the SYN meter, TCP detection is structurally dead
+# because the meter accepts all slow SYN traffic before portscan sees it.
+
+nftban_health_check_portscan_placement() {
+    local status=$HEALTH_OK
+    local issues=()
+
+    # Only check if portscan is enabled
+    local ps_enabled="${PORTSCAN_ENABLED:-false}"
+    if [[ "$ps_enabled" != "true" ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_RESULTS["portscan_placement"]=$HEALTH_DISABLED
+        return $HEALTH_DISABLED
+    fi
+
+    local family meter_name chain_rules jump_idx meter_idx
+    for family in ip ip6; do
+        [[ "$family" == "ip" ]] && meter_name="syn_meter_v4" || meter_name="syn_meter_v6"
+
+        chain_rules=$(nft -a list chain ${family} nftban input 2>/dev/null) || continue
+
+        jump_idx=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
+        meter_idx=$(echo "$chain_rules" | grep -n "meter ${meter_name}" | cut -d: -f1 | head -1) || true
+
+        if [[ -z "$jump_idx" ]]; then
+            issues+=("ERROR: Portscan enabled but ${family} jump rule missing — detection inactive")
+            status=$HEALTH_ERROR
+        elif [[ -n "$meter_idx" ]] && [[ "$jump_idx" -gt "$meter_idx" ]]; then
+            issues+=("ERROR: Portscan ${family} jump AFTER SYN meter — TCP detection dead. Fix: nftban portscan restart")
+            status=$HEALTH_ERROR
+        fi
+    done
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_ISSUES["portscan_placement"]="${issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Portscan placement: ${issues[*]}")
+    fi
+
+    # shellcheck disable=SC2034
+    NFTBAN_HEALTH_RESULTS["portscan_placement"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
 export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
+export -f nftban_health_check_portscan_placement

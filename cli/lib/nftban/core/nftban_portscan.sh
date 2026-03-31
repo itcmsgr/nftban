@@ -793,69 +793,71 @@ nftban_portscan_status() {
     echo "NFTABLES RULE VERIFICATION"
     echo "───────────────────────────────────────────────────────────"
 
-    local expected_position="${PORTSCAN_NFT_JUMP_POSITION:-established}"
-    local ipv4_jump_exists=false ipv6_jump_exists=false
-    local ipv4_jump_index=0 ipv6_jump_index=0
-    local ipv4_accept_index=0 ipv6_accept_index=0
     local chain_rules=""
 
-    # Check IPv4 jump rule
-    if nft list chain ip nftban input &>/dev/null; then
-        chain_rules=$(nft -a list chain ip nftban input 2>/dev/null) || true
-        if echo "$chain_rules" | grep -q "jump portscan_detection"; then
-            ipv4_jump_exists=true
-            ipv4_jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
-        fi
-        # Find first service accept rule (tcp dport ... accept)
-        ipv4_accept_index=$(echo "$chain_rules" | grep -n "tcp dport.*accept" | head -1 | cut -d: -f1) || true
-    fi
+    # v1.60.6: Validate portscan jump position relative to SYN meter
+    # The SYN meter accepts all slow TCP SYN traffic — if portscan jump is
+    # after the meter, TCP detection is structurally dead.
+    local family_label jump_index meter_index accept_index
+    for family_label in "IPv4:ip" "IPv6:ip6"; do
+        local label="${family_label%%:*}"
+        local fam="${family_label##*:}"
+        local meter_name="syn_meter_v4"
+        [[ "$fam" == "ip6" ]] && meter_name="syn_meter_v6"
 
-    # Check IPv6 jump rule
-    if nft list chain ip6 nftban input &>/dev/null; then
-        chain_rules=$(nft -a list chain ip6 nftban input 2>/dev/null) || true
-        if echo "$chain_rules" | grep -q "jump portscan_detection"; then
-            ipv6_jump_exists=true
-            ipv6_jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
-        fi
-        ipv6_accept_index=$(echo "$chain_rules" | grep -n "tcp dport.*accept" | head -1 | cut -d: -f1) || true
-    fi
+        echo "  ${label} Jump Rule:"
 
-    # Display IPv4 results
-    echo "  IPv4 Jump Rule:"
-    if [[ "$ipv4_jump_exists" == "true" ]]; then
-        echo "    Exists:    ✅ YES (rule #${ipv4_jump_index})"
-        if [[ -n "$ipv4_accept_index" ]] && [[ "$ipv4_accept_index" =~ ^[0-9]+$ ]] && \
-           [[ "$ipv4_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv4_jump_index" -gt "$ipv4_accept_index" ]]; then
-            echo "    Position:  ❌ WRONG - After service accepts (rule #${ipv4_accept_index})"
-            echo "    ⚠️  WARNING: Scans to open ports will NOT be detected!"
-            echo "    Fix: Run 'nftban portscan restart' to reposition the rule"
+        if ! nft list chain ${fam} nftban input &>/dev/null; then
+            echo "    Chain:     ❌ ${fam} nftban input not found"
+            echo ""
+            continue
+        fi
+
+        chain_rules=$(nft -a list chain ${fam} nftban input 2>/dev/null) || true
+
+        # Find jump position
+        jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
+        # Find SYN meter position
+        meter_index=$(echo "$chain_rules" | grep -n "meter ${meter_name}" | cut -d: -f1 | head -1) || true
+        # Find service accept position
+        accept_index=$(echo "$chain_rules" | grep -n '@tcp_ports_in' | head -1 | cut -d: -f1) || true
+
+        if [[ -z "$jump_index" ]]; then
+            echo "    Exists:    ❌ NO - Jump rule not found!"
+            echo "    TCP+UDP:   ❌ UNREACHABLE - Portscan detection NOT active"
+            echo ""
+            continue
+        fi
+
+        echo "    Exists:    ✅ YES (rule #${jump_index})"
+
+        # Primary check: is jump before SYN meter?
+        if [[ -n "$meter_index" ]] && [[ "$meter_index" =~ ^[0-9]+$ ]] && \
+           [[ "$jump_index" =~ ^[0-9]+$ ]]; then
+            if [[ "$jump_index" -lt "$meter_index" ]]; then
+                echo "    Position:  ✅ CORRECT - Before SYN rate meter"
+                echo "    TCP+UDP:   ✅ Both protocols visible to detection"
+            else
+                echo "    Position:  ❌ SHADOWED - After SYN rate meter (rule #${meter_index})"
+                echo "    TCP:       ❌ DEAD - SYN meter accepts all slow TCP before portscan"
+                echo "    UDP:       ✅ Still detected (bypasses SYN meter)"
+                echo "    Fix: nftban portscan restart"
+            fi
+        elif [[ -n "$accept_index" ]] && [[ "$accept_index" =~ ^[0-9]+$ ]] && \
+             [[ "$jump_index" =~ ^[0-9]+$ ]]; then
+            # Fallback: check against service accept if meter not found
+            if [[ "$jump_index" -lt "$accept_index" ]]; then
+                echo "    Position:  ✅ Before service accepts"
+                echo "    SYN Meter: ⚠️  UNKNOWN - meter not found, cannot verify TCP path"
+            else
+                echo "    Position:  ❌ WRONG - After service accepts (rule #${accept_index})"
+                echo "    Fix: nftban portscan restart"
+            fi
         else
-            echo "    Position:  ✅ CORRECT - Before service accepts"
+            echo "    Position:  ⚠️  UNKNOWN - Cannot find SYN meter or service rules"
         fi
-    else
-        echo "    Exists:    ❌ NO - Jump rule not found!"
-        echo "    ⚠️  WARNING: Portscan detection is NOT active in nftables!"
-    fi
-    echo ""
-
-    # Display IPv6 results
-    echo "  IPv6 Jump Rule:"
-    if [[ "$ipv6_jump_exists" == "true" ]]; then
-        echo "    Exists:    ✅ YES (rule #${ipv6_jump_index})"
-        if [[ -n "$ipv6_accept_index" ]] && [[ "$ipv6_accept_index" =~ ^[0-9]+$ ]] && \
-           [[ "$ipv6_jump_index" =~ ^[0-9]+$ ]] && [[ "$ipv6_jump_index" -gt "$ipv6_accept_index" ]]; then
-            echo "    Position:  ❌ WRONG - After service accepts"
-            echo "    ⚠️  WARNING: IPv6 scans to open ports will NOT be detected!"
-            echo "    Fix: Run 'nftban portscan restart' to reposition the rule"
-        else
-            echo "    Position:  ✅ CORRECT - Before service accepts"
-        fi
-    else
-        echo "    Exists:    ❌ NO - IPv6 jump rule not found!"
-    fi
-    echo ""
-    echo "  Expected Position: after '${expected_position}' rule"
-    echo ""
+        echo ""
+    done
 
     # ==========================================================================
     # COMMANDS
