@@ -793,13 +793,12 @@ nftban_portscan_status() {
     echo "NFTABLES RULE VERIFICATION"
     echo "───────────────────────────────────────────────────────────"
 
-    local ipv4_jump_exists=false ipv6_jump_exists=false
     local chain_rules=""
 
     # v1.60.6: Validate portscan jump position relative to SYN meter
     # The SYN meter accepts all slow TCP SYN traffic — if portscan jump is
     # after the meter, TCP detection is structurally dead.
-    local family_label jump_exists jump_index meter_index accept_index
+    local family_label jump_index meter_index accept_index
     for family_label in "IPv4:ip" "IPv6:ip6"; do
         local label="${family_label%%:*}"
         local fam="${family_label##*:}"
