@@ -1028,10 +1028,14 @@ _collect_ssh_port() {
         ss -tlnp 2>/dev/null | grep -E 'sshd|:22\b' || echo "No sshd listeners found"
         echo ""
 
-        # nftables tcp_ports_in set
+        # nftables tcp_ports_in set (IPv4 + IPv6)
         echo "=== nft tcp_ports_in (SSH) ==="
         if command -v nft &>/dev/null; then
+            echo "# IPv4:"
             nft list set ip nftban tcp_ports_in 2>/dev/null || echo "Set not found"
+            echo ""
+            echo "# IPv6:"
+            nft list set ip6 nftban tcp_ports_in 2>/dev/null || echo "Set not found"
         fi
         echo ""
 
@@ -1203,11 +1207,13 @@ _collect_feeds_nft_mismatch() {
         echo "=== NFT Set Element Counts ==="
         if command -v nft &>/dev/null; then
             for setname in blacklist_ipv4 blacklist_ipv6; do
+                local nft_family="ip"
+                [[ "$setname" == *_ipv6 ]] && nft_family="ip6"
                 local nft_count
-                nft_count=$(nft -j list set ip nftban "$setname" 2>/dev/null | grep -o '"elem"' | wc -l) || nft_count=0
+                nft_count=$(nft -j list set "$nft_family" nftban "$setname" 2>/dev/null | grep -o '"elem"' | wc -l) || nft_count=0
                 # Fallback: count elements line by line
                 if [[ "$nft_count" -eq 0 ]]; then
-                    nft_count=$(nft list set ip nftban "$setname" 2>/dev/null | grep -cE '^\s+[0-9]') || nft_count=0
+                    nft_count=$(nft list set "$nft_family" nftban "$setname" 2>/dev/null | grep -cE '^\s+[0-9]') || nft_count=0
                 fi
                 echo "  $setname: $nft_count elements"
             done

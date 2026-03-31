@@ -70,7 +70,7 @@ get_run_count() {
         echo "${count:-0}"
     else
         mkdir -p "$(dirname "$RUN_COUNT_FILE")" || return 1
-        echo "0" > "$RUN_COUNT_FILE"
+        echo "0" > "${RUN_COUNT_FILE}.tmp" && mv -f "${RUN_COUNT_FILE}.tmp" "$RUN_COUNT_FILE"
         echo "0"
     fi
 }
@@ -80,7 +80,7 @@ increment_run_count() {
     local count
     count=$(get_run_count)
     count=$((count + 1))
-    echo "$count" > "$RUN_COUNT_FILE"
+    echo "$count" > "${RUN_COUNT_FILE}.tmp" && mv -f "${RUN_COUNT_FILE}.tmp" "$RUN_COUNT_FILE"
     echo "$count"
 }
 
@@ -317,7 +317,7 @@ get_connection_stats() {
 # Update peak bandwidth values (5-minute window)
 update_bandwidth_peaks() {
     local rx_mbps=$1 tx_mbps=$2 current_ts=$3
-    [[ ! -f "$BANDWIDTH_PEAKS" ]] && echo "0 0 $current_ts" > "$BANDWIDTH_PEAKS"
+    [[ ! -f "$BANDWIDTH_PEAKS" ]] && { echo "0 0 $current_ts" > "${BANDWIDTH_PEAKS}.tmp" && mv -f "${BANDWIDTH_PEAKS}.tmp" "$BANDWIDTH_PEAKS"; }
     local peak_data peak_rx peak_tx peak_ts
     peak_data=$(cat "$BANDWIDTH_PEAKS" 2>/dev/null || echo "0 0 0")
     read -r peak_rx peak_tx peak_ts <<< "$peak_data"
@@ -327,6 +327,6 @@ update_bandwidth_peaks() {
         [[ $(echo "$rx_mbps > $peak_rx" | bc -l 2>/dev/null || echo 0) -eq 1 ]] && peak_rx=$rx_mbps
         [[ $(echo "$tx_mbps > $peak_tx" | bc -l 2>/dev/null || echo 0) -eq 1 ]] && peak_tx=$tx_mbps
     fi
-    echo "$peak_rx $peak_tx $peak_ts" > "$BANDWIDTH_PEAKS"
+    echo "$peak_rx $peak_tx $peak_ts" > "${BANDWIDTH_PEAKS}.tmp" && mv -f "${BANDWIDTH_PEAKS}.tmp" "$BANDWIDTH_PEAKS"
     echo "$peak_rx $peak_tx"
 }

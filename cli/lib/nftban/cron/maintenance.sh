@@ -720,6 +720,12 @@ EOF
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" 2>/dev/null || true
 
+        # Process kernel logs → emit micro-events for aggregation
+        # Without this step, aggregate() finds no events to analyze
+        if declare -f nftban_portscan_classic_process_logs >/dev/null 2>&1; then
+            nftban_portscan_classic_process_logs 2>/dev/null || true
+        fi
+
         # Run aggregation if function exists
         if declare -f nftban_portscan_aggregate >/dev/null 2>&1; then
             if nftban_portscan_aggregate --since 24h --ban 2>/dev/null; then

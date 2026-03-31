@@ -774,7 +774,7 @@ EOF
             mv "$temp_file" "$NFTBAN_TREND_FILE"
     else
         # Initialize new file
-        echo "{\"samples\":[$sample],\"retention_hours\":$NFTBAN_TREND_RETENTION}" > "$NFTBAN_TREND_FILE"
+        echo "{\"samples\":[$sample],\"retention_hours\":$NFTBAN_TREND_RETENTION}" > "${NFTBAN_TREND_FILE}.tmp" && mv -f "${NFTBAN_TREND_FILE}.tmp" "$NFTBAN_TREND_FILE"
     fi
 
     chown nftban:nftban "$NFTBAN_TREND_FILE" 2>/dev/null || true

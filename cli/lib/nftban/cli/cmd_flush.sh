@@ -693,23 +693,28 @@ _flush_ddos() {
     echo "Flush target: ddos (ddos_blocked set)"
     echo ""
 
-    # Check if DDoS set exists
-    if ! timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked &>/dev/null; then
+    # Check if DDoS set exists (IPv4 or IPv6)
+    local _v4_exists=false _v6_exists=false
+    timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked &>/dev/null && _v4_exists=true
+    timeout 10s nft list set "$NFTBAN_TABLE_IPV6" ddos_blocked &>/dev/null && _v6_exists=true
+    if [[ "$_v4_exists" == "false" && "$_v6_exists" == "false" ]]; then
         echo "DDoS set (ddos_blocked) not found - DDoS protection may not be active"
         return 0
     fi
 
-    # Count entries
-    local count
-    count=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+    # Count entries (IPv4 + IPv6)
+    local count_v4=0 count_v6=0 count
+    [[ "$_v4_exists" == "true" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
+    [[ "$_v6_exists" == "true" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    count=$(( count_v4 + count_v6 ))
 
-    echo "DDoS blocked IPs: ~$count entries"
+    echo "DDoS blocked IPs: ~$count entries (IPv4: $count_v4, IPv6: $count_v6)"
     echo ""
     echo "NOTE: DDoS entries have timeouts and auto-expire"
 
     if [[ "$dry_run" == "true" ]]; then
         echo ""
-        echo "[DRY-RUN] Would flush: flush set $NFTBAN_TABLE_IPV4 ddos_blocked"
+        echo "[DRY-RUN] Would flush: ddos_blocked (IPv4 + IPv6)"
         return 0
     fi
 
@@ -719,17 +724,14 @@ _flush_ddos() {
     # v1.19.0: Check daemon or emergency gate (R20)
     _flush_check_daemon || return 1
 
-    # Execute flush via IPC
+    # Execute flush via IPC (IPv4 + IPv6)
     echo ""
-    if _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked"; then
-        echo "[OK] Flushed ddos_blocked set"
-    else
-        echo "[WARN] Failed to flush ddos_blocked"
-    fi
+    [[ "$_v4_exists" == "true" ]] && { _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked" && echo "[OK] Flushed ddos_blocked (IPv4)" || echo "[WARN] Failed to flush ddos_blocked (IPv4)"; }
+    [[ "$_v6_exists" == "true" ]] && { _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "ddos_blocked" && echo "[OK] Flushed ddos_blocked (IPv6)" || echo "[WARN] Failed to flush ddos_blocked (IPv6)"; }
 
     echo ""
     echo "DDoS flush complete:"
-    echo "  - Removed ~$count blocked IPs"
+    echo "  - Removed ~$count blocked IPs (IPv4: $count_v4, IPv6: $count_v6)"
 
     return 0
 }
@@ -779,11 +781,13 @@ _flush_all() {
     _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "whitelist_ipv4" && echo "[OK] Flushed whitelist_ipv4"
     _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "whitelist_ipv6" && echo "[OK] Flushed whitelist_ipv6"
 
-    # Flush DDoS
-    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked" && echo "[OK] Flushed ddos_blocked"
+    # Flush DDoS (IPv4 + IPv6)
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "ddos_blocked" && echo "[OK] Flushed ddos_blocked (IPv4)"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "ddos_blocked" && echo "[OK] Flushed ddos_blocked (IPv6)"
 
-    # Flush portscan
-    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "portscan_blocked" && echo "[OK] Flushed portscan_blocked"
+    # Flush portscan (IPv4 + IPv6)
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV4" "portscan_blocked" && echo "[OK] Flushed portscan_blocked (IPv4)"
+    _flush_set_via_ipc "$NFTBAN_TABLE_IPV6" "portscan_blocked" && echo "[OK] Flushed portscan_blocked (IPv6)"
 
     # CRITICAL: Restore system whitelist immediately
     echo ""

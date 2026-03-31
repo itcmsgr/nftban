@@ -131,13 +131,15 @@ nftban_health_cmd_check() {
             local cache_dir="${NFTBAN_CACHE_DIR}/health"
             mkdir -p "$cache_dir" 2>/dev/null || true
             # Status codes: 0=OK, 1=WARNING, 2=ERROR
+            local _hc_tmp="${cache_dir}/health_status.cache.tmp"
             case "$result" in
-                0) echo "OK" > "${cache_dir}/health_status.cache" ;;
-                1) echo "WARNING" > "${cache_dir}/health_status.cache" ;;
-                2) echo "ERROR" > "${cache_dir}/health_status.cache" ;;
-                *) echo "UNKNOWN" > "${cache_dir}/health_status.cache" ;;
+                0) echo "OK" > "$_hc_tmp" ;;
+                1) echo "WARNING" > "$_hc_tmp" ;;
+                2) echo "ERROR" > "$_hc_tmp" ;;
+                *) echo "UNKNOWN" > "$_hc_tmp" ;;
             esac
-            chmod 644 "${cache_dir}/health_status.cache" 2>/dev/null || true
+            chmod 644 "$_hc_tmp" 2>/dev/null || true
+            mv -f "$_hc_tmp" "${cache_dir}/health_status.cache" 2>/dev/null || true
         fi
     fi
 

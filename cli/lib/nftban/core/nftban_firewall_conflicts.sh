@@ -1518,8 +1518,10 @@ nftban_write_authority() {
     local _dir
     _dir=$(dirname "$_NFTBAN_AUTHORITY_FILE")
     [[ -d "$_dir" ]] || mkdir -p "$_dir" 2>/dev/null || true
-    echo "$_authority" > "$_NFTBAN_AUTHORITY_FILE" 2>/dev/null || true
-    chmod 644 "$_NFTBAN_AUTHORITY_FILE" 2>/dev/null || true
+    local _tmp_auth="${_NFTBAN_AUTHORITY_FILE}.tmp"
+    echo "$_authority" > "$_tmp_auth" 2>/dev/null || true
+    chmod 644 "$_tmp_auth" 2>/dev/null || true
+    mv -f "$_tmp_auth" "$_NFTBAN_AUTHORITY_FILE" 2>/dev/null || true
 }
 
 # =============================================================================
