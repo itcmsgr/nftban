@@ -509,6 +509,7 @@ nftban_health_check_all() {
     nftban_health_check_systemd_hardening || { ((warnings++)) || true; }
     nftban_health_check_memory_protection || { ((warnings++)) || true; }
     nftban_health_check_boot_safety || { ((errors++)) || true; }
+    nftban_health_check_portscan_placement || { ((warnings++)) || true; }
 
     # Run service checks
     nftban_health_check_services || { ((warnings++)) || true; }
