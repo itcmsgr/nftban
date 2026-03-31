@@ -359,21 +359,21 @@ _config_save_loaded() {
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
     # Main config
-    _config_get_checksum "$config_dir/nftban.conf" > "$_CONFIG_TRACK_DIR/nftban.conf.sha256"
+    _config_get_checksum "$config_dir/nftban.conf" > "$_CONFIG_TRACK_DIR/nftban.conf.sha256.tmp" && mv -f "$_CONFIG_TRACK_DIR/nftban.conf.sha256.tmp" "$_CONFIG_TRACK_DIR/nftban.conf.sha256"
     [[ -f "$config_dir/nftban.conf.local" ]] && \
-        _config_get_checksum "$config_dir/nftban.conf.local" > "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256"
+        { _config_get_checksum "$config_dir/nftban.conf.local" > "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256.tmp" && mv -f "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256.tmp" "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256"; }
 
     # Module configs
     for conf in "$config_dir"/conf.d/*/*.conf "$config_dir"/conf.d/*.conf; do
         [[ -f "$conf" ]] || continue
         local name
         name=$(basename "$conf")
-        _config_get_checksum "$conf" > "$_CONFIG_TRACK_DIR/${name}.sha256"
+        _config_get_checksum "$conf" > "$_CONFIG_TRACK_DIR/${name}.sha256.tmp" && mv -f "$_CONFIG_TRACK_DIR/${name}.sha256.tmp" "$_CONFIG_TRACK_DIR/${name}.sha256"
         [[ -f "${conf}.local" ]] && \
-            _config_get_checksum "${conf}.local" > "$_CONFIG_TRACK_DIR/${name}.local.sha256"
+            { _config_get_checksum "${conf}.local" > "$_CONFIG_TRACK_DIR/${name}.local.sha256.tmp" && mv -f "$_CONFIG_TRACK_DIR/${name}.local.sha256.tmp" "$_CONFIG_TRACK_DIR/${name}.local.sha256"; }
     done
 
-    date +%s > "$_CONFIG_TRACK_DIR/.timestamp"
+    date +%s > "$_CONFIG_TRACK_DIR/.timestamp.tmp" && mv -f "$_CONFIG_TRACK_DIR/.timestamp.tmp" "$_CONFIG_TRACK_DIR/.timestamp"
 }
 
 _config_check_changes() {

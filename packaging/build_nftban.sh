@@ -1777,8 +1777,8 @@ fi
 if [[ "\$NFTABLES_SAFE" -eq 1 ]]; then
 
     if [[ "\$AUTHORITY_DECISION" == "UPDATE" ]]; then
-        # UPDATE: NFTBan already authoritative — reload if needed
-        echo "[NFTBan] Phase 4: Update mode — skipping takeover"
+        # UPDATE: NFTBan already authoritative — rebuild with new config
+        echo "[NFTBan] Phase 4: Update mode — rebuilding firewall with new config"
 
         CURRENT_SCHEMA="2.1"
         SCHEMA_FILE="/etc/nftban/.schema_version"
@@ -1786,18 +1786,23 @@ if [[ "\$NFTABLES_SAFE" -eq 1 ]]; then
 
         if [[ "\$INSTALLED_SCHEMA" != "\$CURRENT_SCHEMA" ]]; then
             echo "[NFTBan]   Schema migration: \$INSTALLED_SCHEMA -> \$CURRENT_SCHEMA"
-            if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
-                echo "\$CURRENT_SCHEMA" > "\$SCHEMA_FILE"
-                timeout 15s nftban sync >/dev/null 2>&1 || true
-                echo "[NFTBan]   Schema migration complete."
-            else
-                echo "[NFTBan WARN] Firewall rebuild failed - run manually: nftban firewall rebuild"
-            fi
+        fi
+
+        # v1.60.5: Always rebuild on update — Phase 3 rendered a new config with
+        # detected SSH port and CT limits. Previous code only rebuilt on schema change
+        # and used 'systemctl reload nftables' otherwise, which does NOT load the
+        # NFTBan-rendered config. This caused SSH port mismatches after upgrades
+        # (e.g. port 55000 missing from tcp_ports_in → lockout risk).
+        if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
+            echo "\$CURRENT_SCHEMA" > "\$SCHEMA_FILE"
+            timeout 15s nftban sync >/dev/null 2>&1 || true
+            echo "[NFTBan]   Firewall rebuild complete."
         else
+            echo "[NFTBan WARN] Firewall rebuild failed - falling back to nftables reload"
             if systemctl is-active nftables >/dev/null 2>&1; then
                 systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
             fi
-            timeout 15s nftban sync >/dev/null 2>&1 || echo "[NFTBan WARN] Sync failed (non-critical)"
+            echo "[NFTBan WARN] Run manually if needed: nftban firewall rebuild"
         fi
 
     elif [[ "\$AUTHORITY_DECISION" == "TAKEOVER" ]]; then

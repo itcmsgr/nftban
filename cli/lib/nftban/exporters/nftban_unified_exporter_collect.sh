@@ -1043,7 +1043,7 @@ collect_all_metrics() {
                     softnet_drops_rate=$(awk -v d="$drops_delta" -v t="$time_delta" 'BEGIN {printf "%.2f", (d/t)*60}')
                 fi
             fi
-            echo "$softnet_drops_total $timestamp" > "$softnet_state"
+            echo "$softnet_drops_total $timestamp" > "${softnet_state}.tmp" && mv -f "${softnet_state}.tmp" "$softnet_state"
             metrics+="nftban_softnet_backlog_total $softnet_drops_rate $timestamp\n"
         fi
 

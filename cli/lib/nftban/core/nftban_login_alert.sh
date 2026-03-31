@@ -320,7 +320,7 @@ nftban_login_digest_add() {
 
     # Create empty JSON array if file doesn't exist or is empty
     if [[ ! -s "$digest_file" ]]; then
-        echo "[]" > "$digest_file"
+        echo "[]" > "${digest_file}.tmp" && mv -f "${digest_file}.tmp" "$digest_file"
     fi
 
     # Build JSON entry (escape special characters)
@@ -361,7 +361,7 @@ EOF
 nftban_login_digest_clear() {
     # Clear the digest file after sending
     local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-/var/lib/nftban/login_digest.json}"
-    echo "[]" > "$digest_file"
+    echo "[]" > "${digest_file}.tmp" && mv -f "${digest_file}.tmp" "$digest_file"
     nftban_login_alert_log "Digest file cleared"
 }
 

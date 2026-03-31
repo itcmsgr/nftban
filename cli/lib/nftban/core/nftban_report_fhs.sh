@@ -466,7 +466,7 @@ nftban_fhs_generate_html_report() {
     html_content="${html_content//\{FHS_TABLE_ROWS\}/$table_rows}"
 
     # Write HTML file
-    echo "$html_content" > "$report_file"
+    echo "$html_content" > "${report_file}.tmp" && mv -f "${report_file}.tmp" "$report_file"
 
     # Set permissions
     chmod 640 "$report_file" 2>/dev/null || true

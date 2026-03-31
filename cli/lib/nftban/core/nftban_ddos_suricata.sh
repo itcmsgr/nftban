@@ -541,7 +541,7 @@ nftban_ddos_suricata_enable() {
 
     if ! timeout 10s nft list set $table "$set" &>/dev/null; then
         local set_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-set-$$.nft"
-        echo "add set $table $set { type ipv4_addr; flags timeout; }" > "$set_fragment"
+        echo "add set $table $set { type ipv4_addr; flags timeout; }" > "${set_fragment}.tmp" && mv -f "${set_fragment}.tmp" "$set_fragment"
         nft_ipc_apply_ruleset "$set_fragment" 2>/dev/null || true
         rm -f "$set_fragment" 2>/dev/null
     fi
@@ -549,7 +549,7 @@ nftban_ddos_suricata_enable() {
     # Add drop rule for blocked set (via IPC fragment)
     if ! nft list chain $table input 2>/dev/null | grep -q "@$set drop"; then
         local rule_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-rule-$$.nft"
-        echo "add rule $table input ip saddr @$set counter drop comment \"DDoS Suricata blocked\"" > "$rule_fragment"
+        echo "add rule $table input ip saddr @$set counter drop comment \"DDoS Suricata blocked\"" > "${rule_fragment}.tmp" && mv -f "${rule_fragment}.tmp" "$rule_fragment"
         nft_ipc_apply_ruleset "$rule_fragment" 2>/dev/null || true
         rm -f "$rule_fragment" 2>/dev/null
     fi
