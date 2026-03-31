@@ -193,7 +193,7 @@ _nftban_login_classic_monitor_journal() {
             local cursor
             cursor=$(echo "$line" | jq -r '.__CURSOR // empty' 2>/dev/null)
             if [[ -n "$cursor" && "${LOGIN_CLASSIC_CURSOR_ENABLED:-true}" == "true" ]]; then
-                echo "$cursor" > "$cursor_file" 2>/dev/null || true
+                echo "$cursor" > "${cursor_file}.tmp" 2>/dev/null && mv -f "${cursor_file}.tmp" "$cursor_file" 2>/dev/null || true
             fi
 
             local message

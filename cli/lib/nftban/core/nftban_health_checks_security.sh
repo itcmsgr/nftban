@@ -806,7 +806,7 @@ EOF
 
     # Update the active SSH port state file (tracks what port is currently in use)
     if mkdir -p "${NFTBAN_DATA_DIR}/state" 2>/dev/null; then
-        echo "$current_ssh_port" > "$ssh_port_active" 2>/dev/null || true
+        echo "$current_ssh_port" > "${ssh_port_active}.tmp" 2>/dev/null && mv -f "${ssh_port_active}.tmp" "$ssh_port_active" 2>/dev/null || true
     fi
 
     # Verify SSH port is actually in nftables (v0.7.3: check IPv4 table)
