@@ -288,15 +288,17 @@ nftban_rbl_watchlist_remove() {
         return 1
     fi
 
-    # Check if exists
-    if ! grep -q "^${ip}|" "$watchlist_file" 2>/dev/null; then
+    # Atomic check + remove: filter out entry, compare line counts to detect if it existed
+    local _before _after
+    _before=$(wc -l < "$watchlist_file" 2>/dev/null || echo 0)
+    grep -v "^${ip}|" "$watchlist_file" > "${watchlist_file}.tmp" 2>/dev/null || true
+    _after=$(wc -l < "${watchlist_file}.tmp" 2>/dev/null || echo 0)
+    if [[ "$_before" -eq "$_after" ]]; then
+        rm -f "${watchlist_file}.tmp"
         echo "Error: IP $ip not found in watchlist" >&2
         return 1
     fi
-
-    # Remove entry
-    grep -v "^${ip}|" "$watchlist_file" > "${watchlist_file}.tmp"
-    mv "${watchlist_file}.tmp" "$watchlist_file"
+    mv -f "${watchlist_file}.tmp" "$watchlist_file"
 
     echo "Removed from watchlist: $ip"
     return 0

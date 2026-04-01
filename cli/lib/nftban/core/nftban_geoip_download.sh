@@ -134,10 +134,10 @@ _download_geoip() {
         return 1
     fi
 
-    # Create directory if it doesn't exist
+    # Create directory if it doesn't exist (atomic: mkdir + set perms without following symlinks)
     if [[ ! -d "${db_dir}" ]]; then
         mkdir -p "${db_dir}" || return 1
-        chown nftban:nftban "${db_dir}"
+        chown -h nftban:nftban "${db_dir}"
         chmod 750 "${db_dir}"
     fi
 
@@ -179,13 +179,14 @@ _download_geoip() {
 
     # Backup existing database before overwrite
     if [[ -f "${db_file}" ]]; then
-        cp -p "${db_file}" "${db_file}.backup"
+        cp -p "${db_file}" "${db_file}.backup" 2>/dev/null || true
         echo "[INFO] Backed up existing database to ${db_file}.backup"
     fi
 
-    mv "${mmdb_file}" "${db_file}"
-    chown nftban:nftban "${db_file}"
-    chmod 640 "${db_file}"
+    # Set ownership on extracted file BEFORE moving to final path (avoids chown-after-mv TOCTOU)
+    chown nftban:nftban "${mmdb_file}" 2>/dev/null || true
+    chmod 640 "${mmdb_file}"
+    mv -f "${mmdb_file}" "${db_file}"
 
     echo "[INFO] Database installed: ${db_file}"
     echo "[INFO] File size: $(du -h ${db_file} | cut -f1)"
