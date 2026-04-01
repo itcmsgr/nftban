@@ -609,7 +609,7 @@ _cmd_update_history() {
     # Human-readable output
     _update_banner
     echo ""
-    echo "  UPDATE HISTORY (last 20)"
+    echo "  UPDATE HISTORY (last 9)"
     echo "  ────────────────────────────────────────────────────"
 
     if ! command -v jq &>/dev/null; then
@@ -653,7 +653,7 @@ COMMANDS:
     rollback            Restore previous version from backup (fixes dpkg first)
     repair              Fix broken install (dpkg state, immutable flags, restore backup)
     list                List available backups
-    history             Show update history (last 20 updates, --json supported)
+    history             Show update history (last 9 updates, --json supported)
     auto [ACTION]       Manage auto-update timer (enable|disable|status)
                         Requires --email for enable (mandatory notification)
     help                Show this help message
