@@ -3100,12 +3100,12 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 
 ### Testing
 
-**Verified on 5 Lab Servers:**
-- lab.mywebhost.gr (AlmaLinux 10)
-- lab1.mywebhost.gr (Rocky Linux 9)
-- lab2.mywebhost.gr (Ubuntu 24.04)
-- lab3.mywebhost.gr (CentOS Stream 10)
-- lab4.mywebhost.gr (Fedora 42)
+**Verified on 5 lab servers:**
+- AlmaLinux 10
+- Rocky Linux 9
+- Ubuntu 24.04
+- CentOS Stream 10
+- Fedora 42
 
 ---
 

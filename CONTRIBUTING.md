@@ -56,7 +56,7 @@ Please read our [Code of Conduct](.github/CODE_OF_CONDUCT.md) before contributin
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.24+
 - Bash 4.4+
 - nftables
 - Linux (Rocky/Alma/Ubuntu/Debian)
