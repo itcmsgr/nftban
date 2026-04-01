@@ -358,7 +358,7 @@ table ip nftban {
         # Old rule logged WITHIN limit (normal traffic) due to nftables semantics.
         # Now: meter accepts OK traffic, follow-up rule catches rate-exceeded SYNs.
         tcp flags syn ct state new meter syn_meter_v4 { ip saddr limit rate 25/second burst 50 packets } counter name total_input_accept accept comment "SYN rate OK"
-        tcp flags syn ct state new counter name input_syn_rate_exceeded log prefix "NFTBAN_PORTSCAN: " drop comment "SYN rate exceeded"
+        tcp flags syn ct state new counter name input_syn_rate_exceeded counter name total_input_drop log prefix "NFTBAN_PORTSCAN: " drop comment "SYN rate exceeded"
 
         # 8. Directional Services (Inbound only)
         tcp dport @tcp_ports_in ct state new counter name input_service_tcp_accept counter name total_input_accept accept
@@ -662,7 +662,7 @@ table ip6 nftban {
         # 7. SYN RATE LIMIT - Portscan detection (per source IP)
         # v1.46.0 FIX-B: Two-rule pattern (same as IPv4)
         tcp flags syn ct state new meter syn_meter_v6 { ip6 saddr limit rate 25/second burst 50 packets } counter name total_input_accept accept comment "SYN rate OK"
-        tcp flags syn ct state new counter name input_syn_rate_exceeded log prefix "NFTBAN_PORTSCAN: " drop comment "SYN rate exceeded"
+        tcp flags syn ct state new counter name input_syn_rate_exceeded counter name total_input_drop log prefix "NFTBAN_PORTSCAN: " drop comment "SYN rate exceeded"
 
         # 8. Directional Services
         tcp dport @tcp_ports_in ct state new counter name input_service_tcp_accept counter name total_input_accept accept

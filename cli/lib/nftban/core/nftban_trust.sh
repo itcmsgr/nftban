@@ -391,8 +391,11 @@ _trust_write_whitelist() {
 
     _trust_log "INFO" "Writing $name IPs to whitelist: $whitelist_file"
 
+    # v1.61.1 TOCTOU fix: build in tmp file, atomic mv at end
+    local _wl_tmp="${whitelist_file}.tmp.$$"
+
     # Create whitelist file with header
-    cat > "$whitelist_file" << EOF
+    cat > "$_wl_tmp" << EOF
 # =============================================================================
 # NFTBan Trusted Provider Whitelist: $name
 # =============================================================================
@@ -411,20 +414,21 @@ EOF
     # Append IPv4 ranges (read once to avoid TOCTOU double-read)
     local _v4_content=""
     if [[ -f "$ipv4_cache" ]] && _v4_content=$(cat "$ipv4_cache" 2>/dev/null) && [[ -n "$_v4_content" ]]; then
-        printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$whitelist_file"
+        printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$_wl_tmp"
         total=$((total + $(printf '%s\n' "$_v4_content" | wc -l)))
     fi
 
     # Append IPv6 ranges (read once to avoid TOCTOU double-read)
     local _v6_content=""
     if [[ -f "$ipv6_cache" ]] && _v6_content=$(cat "$ipv6_cache" 2>/dev/null) && [[ -n "$_v6_content" ]]; then
-        printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$whitelist_file"
+        printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$_wl_tmp"
         total=$((total + $(printf '%s\n' "$_v6_content" | wc -l)))
     fi
 
-    # Set correct permissions
-    chmod 640 "$whitelist_file" 2>/dev/null || true
-    chown root:nftban "$whitelist_file" 2>/dev/null || true
+    # Set correct permissions then atomic move
+    chmod 640 "$_wl_tmp" 2>/dev/null || true
+    chown root:nftban "$_wl_tmp" 2>/dev/null || true
+    mv -f "$_wl_tmp" "$whitelist_file" 2>/dev/null || rm -f "$_wl_tmp"
 
     _trust_log "INFO" "Wrote $total $name IP ranges to whitelist"
 }
