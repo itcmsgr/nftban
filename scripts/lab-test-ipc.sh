@@ -19,7 +19,7 @@
 # PURPOSE: Validate IPC architecture before enabling CI enforcement
 #
 # USAGE:
-#   ssh root@lab4.example.test
+#   ssh root@<your-test-server>
 #   cd /path/to/nftban
 #   ./scripts/lab-test-ipc.sh
 #
