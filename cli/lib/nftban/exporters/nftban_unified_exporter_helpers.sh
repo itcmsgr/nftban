@@ -139,19 +139,19 @@ acquire_lock() {
     # Create lock file directory
     mkdir -p "$(dirname "$METRICS_LOCK")" || return 1
 
-    # FIX v1.17.0: Ensure lock file is writable by current user
-    # If lock file exists but we can't write to it, remove and recreate
-    if [[ -f "$METRICS_LOCK" ]] && [[ ! -w "$METRICS_LOCK" ]]; then
+    # FIX v1.17.0 + v1.60.8 TOCTOU: Attempt touch directly; if it fails, try removal once
+    # Avoids check-then-remove race where another process could recreate the lock between test and rm
+    if ! touch "$METRICS_LOCK" 2>/dev/null; then
         rm -f "$METRICS_LOCK" 2>/dev/null || {
             log_error "Cannot remove stale lock file: $METRICS_LOCK (permission denied)"
             log_error "Fix: sudo rm -f \"$METRICS_LOCK\" && sudo chown nftban:nftban \"$(dirname "$METRICS_LOCK")\""
             exit 1
         }
+        touch "$METRICS_LOCK" 2>/dev/null || {
+            log_error "Cannot create lock file: $METRICS_LOCK (permission denied)"
+            exit 1
+        }
     fi
-    touch "$METRICS_LOCK" 2>/dev/null || {
-        log_error "Cannot create lock file: $METRICS_LOCK (permission denied)"
-        exit 1
-    }
 
     # Read current lock holder PID BEFORE exec truncates the file
     local prev_pid

@@ -408,24 +408,18 @@ EOF
 
     local total=0
 
-    # Append IPv4 ranges
-    if [[ -f "$ipv4_cache" ]]; then
-        {
-            echo "# $name IPv4 Ranges"
-            cat "$ipv4_cache"
-            echo ""
-        } >> "$whitelist_file"
-        total=$((total + $(wc -l < "$ipv4_cache")))
+    # Append IPv4 ranges (read once to avoid TOCTOU double-read)
+    local _v4_content=""
+    if [[ -f "$ipv4_cache" ]] && _v4_content=$(cat "$ipv4_cache" 2>/dev/null) && [[ -n "$_v4_content" ]]; then
+        printf '# %s IPv4 Ranges\n%s\n\n' "$name" "$_v4_content" >> "$whitelist_file"
+        total=$((total + $(printf '%s\n' "$_v4_content" | wc -l)))
     fi
 
-    # Append IPv6 ranges
-    if [[ -f "$ipv6_cache" ]]; then
-        {
-            echo "# $name IPv6 Ranges"
-            cat "$ipv6_cache"
-            echo ""
-        } >> "$whitelist_file"
-        total=$((total + $(wc -l < "$ipv6_cache")))
+    # Append IPv6 ranges (read once to avoid TOCTOU double-read)
+    local _v6_content=""
+    if [[ -f "$ipv6_cache" ]] && _v6_content=$(cat "$ipv6_cache" 2>/dev/null) && [[ -n "$_v6_content" ]]; then
+        printf '# %s IPv6 Ranges\n%s\n\n' "$name" "$_v6_content" >> "$whitelist_file"
+        total=$((total + $(printf '%s\n' "$_v6_content" | wc -l)))
     fi
 
     # Set correct permissions
