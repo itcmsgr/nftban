@@ -1493,14 +1493,14 @@ nftban_check_firewall_authority() {
     # Returns: "nftban" if authoritative, "" otherwise.
     # This checks LIVE state — not just file presence.
 
-    # NFTBan table must exist
-    if ! nft list table ip nftban &>/dev/null; then
+    # NFTBan table must exist (either IPv4 or IPv6)
+    if ! nft list table ip nftban &>/dev/null && ! nft list table ip6 nftban &>/dev/null; then
         echo ""
         return 0
     fi
 
     # NFTBan input hook chain must exist (table alone is not enough — could be half-loaded)
-    if ! nft list chain ip nftban input &>/dev/null; then
+    if ! nft list chain ip nftban input &>/dev/null && ! nft list chain ip6 nftban input &>/dev/null; then
         echo ""
         return 0
     fi

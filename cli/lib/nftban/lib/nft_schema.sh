@@ -1295,9 +1295,12 @@ nftban_nft_validate_full() {
     ipv4_tcp=$(nft list set ip nftban tcp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
     ipv4_udp=$(nft list set ip nftban udp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
     ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
+    local ipv6_tcp ipv6_udp
+    ipv6_tcp=$(nft list set ip6 nftban tcp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
+    ipv6_udp=$(nft list set ip6 nftban udp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
 
     echo "   IPv4: whitelist=${ipv4_wl:-0}, blacklist=active, tcp_ports_in=${ipv4_tcp:-0}, udp_ports_in=${ipv4_udp:-0}"
-    echo "   IPv6: whitelist=${ipv6_wl:-0}, blacklist=active"
+    echo "   IPv6: whitelist=${ipv6_wl:-0}, blacklist=active, tcp_ports_in=${ipv6_tcp:-0}, udp_ports_in=${ipv6_udp:-0}"
 
     # Summary
     echo ""
