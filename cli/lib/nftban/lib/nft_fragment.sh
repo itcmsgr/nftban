@@ -45,6 +45,18 @@ nft_fragment_init() {
     return 0
 }
 
+# v1.61.0: Remove stale append-based *-jump.nft fragments from pre-v1.61.0
+# These files used "add rule ... jump" which APPENDS (wrong position).
+# Jump renderers now use inline "nft insert position" (correct position).
+# Called once per enable/rebuild cycle — safe and idempotent.
+nft_fragment_cleanup_stale_jumps() {
+    local stale
+    for stale in "${NFTBAN_FRAGMENT_DIR}"/*-jump.nft; do
+        [[ -e "$stale" ]] || continue
+        rm -f "$stale" 2>/dev/null || true
+    done
+}
+
 # Write fragment atomically (temp + rename)
 # Usage: _nft_fragment_write <path> <content>
 _nft_fragment_write() {
@@ -70,6 +82,9 @@ _nft_fragment_write() {
 nft_fragment_apply() {
     local path="$1"
     local check_only="${2:-0}"
+
+    # Jump renderers return /dev/null (rules applied inline via nft insert)
+    [[ "$path" == "/dev/null" ]] && return 0
 
     if [[ ! -f "$path" ]]; then
         echo "ERROR: Fragment not found: $path" >&2
@@ -1890,6 +1905,9 @@ nft_fragment_enable_module() {
     local module="$1"
     local fragment_path
 
+    # v1.61.0: Clean stale *-jump.nft files from pre-v1.61.0 on first call
+    nft_fragment_cleanup_stale_jumps
+
     case "$module" in
         portscan-classic|portscan_classic)
             fragment_path=$(nft_fragment_render_portscan_classic) || return 1
@@ -2110,6 +2128,7 @@ nft_fragment_list() {
 
 export NFTBAN_FRAGMENT_DIR
 export -f nft_fragment_init
+export -f nft_fragment_cleanup_stale_jumps
 export -f nft_fragment_apply
 export -f nft_fragment_render_portscan_classic
 export -f nft_fragment_render_portscan_classic_jump
