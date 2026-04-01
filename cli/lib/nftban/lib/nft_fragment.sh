@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nft_fragment" meta:type="lib" meta:version="1.48.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
+# meta:name="nft_fragment" meta:type="lib" meta:version="1.61.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="Fragment renderer for nftables rulesets"
 # meta:inventory.files="/etc/nftban/rules.d"
 # meta:inventory.binaries="nft"
 # meta:inventory.env_vars=""
@@ -172,7 +172,7 @@ nft_fragment_render_portscan_classic_jump() {
         # Primary anchor: SYN rate meter rule
         # Insert BEFORE it so portscan sees all new TCP SYN traffic
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep "meter ${meter_name}" \
+            | grep "${meter_name}" \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
@@ -380,38 +380,57 @@ EOF
 }
 
 # Render DDoS sanity jump rules fragment
+# v1.61.0: Insert BEFORE @whitelist_ip (not append) so sanity sees all traffic
+# including service-port xmas/null/frag packets that were previously missed.
 nft_fragment_render_ddos_sanity_jump() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SANITY_CHAIN:-ddos_sanity}"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/13-ddos-sanity-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Primary anchor: @whitelist_ip — insert BEFORE whitelist accept
+        # Consistent with template design: ct state invalid (handle 42) is already before whitelist
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@whitelist_ip' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan DDoS Sanity - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
-#
-# NOTE: This jump should be FIRST in the input chain to filter
-# malformed packets before any other processing.
+        if [[ -n "$handle" ]]; then
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Sanity check (Stage 3)\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert sanity jump before whitelist in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-add rule ${table_ipv4} input jump ${chain} comment "Sanity check (Stage 3)"
-add rule ${table_ipv6} input jump ${chain} comment "Sanity check (Stage 3)"
-EOF
-    )
+        # Secondary anchor: @blacklist_manual — still before hard-deny
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@blacklist_manual' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: Whitelist not found in ${table_fam} — inserting before blacklist_manual" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Sanity check (Stage 3)\"" 2>/dev/null || {
+                echo "ERROR: Failed to insert sanity jump in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-    echo "$fragment_path"
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for sanity jump in ${table_fam} — module placement UNSAFE" >&2
+    done
+
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render DDoS sanity cleanup fragment (for disable)
@@ -633,19 +652,20 @@ nft_fragment_render_synproxy_jump() {
 
         # Find handle of 'ct state established,related accept'
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'ct state established,related accept' \
+            | grep 'established,related' \
             | grep -oP 'handle \K\d+' | head -1)
 
         if [[ -n "$handle" ]]; then
             # Insert BEFORE the established,related rule
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null || {
                 echo "WARNING: Failed to insert SYNPROXY jump before handle $handle in ${table_fam}" >&2
-                # Fallback: append (better than nothing)
-                nft add rule ${table_fam} input jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null
+                # Do NOT fall back to append — that would place after service accept (dead code)
+                continue
             }
         else
-            # No established,related rule found — append
-            nft add rule ${table_fam} input jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null
+            # No established,related rule found — do NOT append blindly
+            echo "ERROR: Cannot find safe anchor for SYNPROXY jump in ${table_fam} — module placement UNSAFE" >&2
+            continue
         fi
     done
 
@@ -812,35 +832,42 @@ EOF
 }
 
 # Render DDoS prefix aggregation jump rules fragment
+# v1.61.0: Insert BEFORE @tcp_ports_in (not append) so prefix sees service-port floods.
+# Same proven anchor as DDoS classic (lines 1030-1032).
 nft_fragment_render_ddos_prefix_jump() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PREFIX_CHAIN:-ddos_prefix}"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/19-ddos-prefix-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Primary anchor: @tcp_ports_in — insert BEFORE service port accept
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan DDoS Prefix Aggregation - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
+        if [[ -n "$handle" ]]; then
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Prefix aggregation protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert prefix jump before service accept in ${table_fam}" >&2
+                # Do NOT fall back to append — that would silently place after service accept
+                continue
+            }
+            continue
+        fi
 
-add rule ${table_ipv4} input jump ${chain} comment "Prefix aggregation protection"
-add rule ${table_ipv6} input jump ${chain} comment "Prefix aggregation protection"
-EOF
-    )
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for prefix jump in ${table_fam} — module placement UNSAFE" >&2
+    done
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
-
-    echo "$fragment_path"
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render DDoS prefix aggregation cleanup fragment (for disable)
@@ -1036,14 +1063,13 @@ nft_fragment_render_ddos_classic_jump() {
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS classic protection\"" 2>/dev/null || {
                 echo "WARNING: Failed to insert DDoS jump before handle $handle in ${table_fam}" >&2
-                # Fallback: append (matches old behavior)
-                nft add rule ${table_fam} input jump "${chain}" \
-                    comment "\"DDoS classic protection\"" 2>/dev/null
+                # Do NOT fall back to append — that would place after service accept (dead code)
+                continue
             }
         else
-            # No service port rule found — append (new install)
-            nft add rule ${table_fam} input jump "${chain}" \
-                comment "\"DDoS classic protection\"" 2>/dev/null
+            # No service port rule found — do NOT append blindly
+            echo "ERROR: Cannot find safe anchor for DDoS classic jump in ${table_fam} — module placement UNSAFE" >&2
+            continue
         fi
     done
 
@@ -1207,38 +1233,56 @@ EOF
 }
 
 # Render DDoS ban jump rules fragment
+# v1.61.0: Insert BEFORE @blacklist_manual (not append) so DDoS-banned IPs get
+# DDoS-specific attribution. After whitelist so admin trust overrides automated ban.
 nft_fragment_render_ddos_ban_jump() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="ddos_ban_enforce"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/05-ddos-ban-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Primary anchor: @blacklist_manual — insert BEFORE manual blacklist
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@blacklist_manual' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan DDoS Ban - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
-#
-# NOTE: This jump should be EARLY in the input chain (after sanity checks)
-# to drop banned IPs before any rate limiting or connection tracking.
+        if [[ -n "$handle" ]]; then
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS ban check (Stage 4)\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert ban jump before blacklist_manual in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-add rule ${table_ipv4} input jump ${chain} comment "DDoS ban check (Stage 4)"
-add rule ${table_ipv6} input jump ${chain} comment "DDoS ban check (Stage 4)"
-EOF
-    )
+        # Secondary anchor: @blacklist_ip — still before feed blacklist
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@blacklist_ip' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: blacklist_manual not found in ${table_fam} — inserting before blacklist_ip" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS ban check (Stage 4)\"" 2>/dev/null || {
+                echo "ERROR: Failed to insert ban jump in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-    echo "$fragment_path"
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for ban jump in ${table_fam} — module placement UNSAFE" >&2
+    done
+
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render DDoS ban cleanup fragment (for disable)
@@ -1437,35 +1481,56 @@ EOF
 }
 
 # Render penalty ladder jump rules
+# v1.61.0: Insert BEFORE established,related (not append) so penalized IPs cannot
+# benefit from stateful bypass. After port_allow so admin per-IP grants override penalty.
 nft_fragment_render_ddos_penalty_jump() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PENALTY_CHAIN:-ddos_penalty}"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/08-ddos-penalty-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Primary anchor: established,related — insert BEFORE stateful bypass
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep 'established,related' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan DDoS Penalty Ladder - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
+        if [[ -n "$handle" ]]; then
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS penalty ladder\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert penalty jump before established in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-add rule ${table_ipv4} input jump ${chain} comment "DDoS penalty ladder"
-add rule ${table_ipv6} input jump ${chain} comment "DDoS penalty ladder"
-EOF
-    )
+        # Secondary anchor: @tcp_ports_in — at least before service accept
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: established,related not found in ${table_fam} — inserting before service accept" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS penalty ladder\"" 2>/dev/null || {
+                echo "ERROR: Failed to insert penalty jump in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-    echo "$fragment_path"
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for penalty jump in ${table_fam} — module placement UNSAFE" >&2
+    done
+
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render penalty ladder cleanup fragment (for disable)
@@ -1743,36 +1808,43 @@ EOF
 }
 
 # Render HTTP Bot Guard jump rules fragment
-# Jump is placed BEFORE ddos_protection so bot classification runs first
+# v1.61.0: Insert BEFORE @tcp_ports_in (not append) so botguard classifies HTTP
+# traffic before service accept. Port-scoped to 80/443 only.
 nft_fragment_render_http_botguard_jump() {
     local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
 
-    nft_fragment_init || return 1
+    local family handle table_fam
+    for family in ip ip6; do
+        table_fam="${family} nftban"
+        # Skip if jump already exists
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+            continue
+        fi
 
-    local fragment_path="${NFTBAN_FRAGMENT_DIR}/16-http-botguard-jump.nft"
-    local timestamp
-    timestamp=$(date -Iseconds)
+        # Primary anchor: @tcp_ports_in — insert BEFORE service port accept
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
-    local content
-    content=$(cat <<EOF
-#!/usr/sbin/nft -f
-# NFTBan HTTP Bot Guard - Jump Rules
-# Generated: ${timestamp}
-# Managed by nftband - DO NOT EDIT MANUALLY
+        if [[ -n "$handle" ]]; then
+            # shellcheck disable=SC1083 # Braces are nft syntax, not shell
+            nft insert rule ${table_fam} input position "$handle" \
+                tcp dport {80, 443} jump "${chain}" \
+                comment "\"HTTP Bot Guard\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert botguard jump before service accept in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
 
-add rule ${table_ipv4} input tcp dport {80, 443} jump ${chain} comment "HTTP Bot Guard"
-add rule ${table_ipv6} input tcp dport {80, 443} jump ${chain} comment "HTTP Bot Guard"
-EOF
-    )
+        # No anchor found — do NOT append blindly
+        echo "ERROR: Cannot find safe anchor for botguard jump in ${table_fam} — module placement UNSAFE" >&2
+    done
 
-    _nft_fragment_write "$fragment_path" "$content" || {
-        echo "ERROR: Failed to write fragment: $fragment_path" >&2
-        return 1
-    }
-
-    echo "$fragment_path"
+    # Return dummy path for API compatibility (no fragment file written)
+    echo "/dev/null"
 }
 
 # Render HTTP Bot Guard cleanup fragment (for disable)

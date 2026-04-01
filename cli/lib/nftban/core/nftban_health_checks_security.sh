@@ -1110,7 +1110,7 @@ nftban_health_check_portscan_placement() {
         chain_rules=$(nft -a list chain ${family} nftban input 2>/dev/null) || continue
 
         jump_idx=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
-        meter_idx=$(echo "$chain_rules" | grep -n "meter ${meter_name}" | cut -d: -f1 | head -1) || true
+        meter_idx=$(echo "$chain_rules" | grep -n "${meter_name}" | cut -d: -f1 | head -1) || true
 
         if [[ -z "$jump_idx" ]]; then
             issues+=("ERROR: Portscan enabled but ${family} jump rule missing — detection inactive")
@@ -1132,10 +1132,70 @@ nftban_health_check_portscan_placement() {
     return $status
 }
 
+# v1.61.0: Verify all placement-sensitive module jumps are before their anchors.
+# Modules checked: ddos_sanity, ddos_ban_enforce, ddos_penalty, ddos_prefix,
+# ddos_protection (classic), http_bot_guard, portscan_detection, ddos_synproxy.
+#
+# A module is considered BROKEN if its jump exists but is AFTER its anchor.
+# A module is considered MISSING if it is enabled but its jump does not exist.
+# Missing anchors indicate chain structure damage (requires rebuild).
+
+nftban_health_check_module_jump_placement() {
+    local status=$HEALTH_OK
+    local issues=()
+
+    # Module definitions: chain_name|anchor_grep|module_description
+    # Only check modules that have jump rules in the input chain
+    local -a modules=(
+        "ddos_sanity|@whitelist_ip|DDoS sanity"
+        "ddos_ban_enforce|@blacklist_manual|DDoS ban enforce"
+        "ddos_penalty|established,related|DDoS penalty"
+        "ddos_prefix|@tcp_ports_in|DDoS prefix"
+        "ddos_protection|@tcp_ports_in|DDoS classic"
+        "http_bot_guard|@tcp_ports_in|HTTP Bot Guard"
+        "ddos_synproxy|established,related|SYNPROXY"
+    )
+
+    local family chain_rules
+    for family in ip ip6; do
+        chain_rules=$(nft -a list chain ${family} nftban input 2>/dev/null) || continue
+
+        local mod_entry chain anchor_grep desc jump_idx anchor_idx
+        for mod_entry in "${modules[@]}"; do
+            IFS='|' read -r chain anchor_grep desc <<< "$mod_entry"
+
+            # Find jump position (line number in chain output)
+            jump_idx=$(echo "$chain_rules" | grep -n "jump ${chain}" | cut -d: -f1 | head -1) || true
+            anchor_idx=$(echo "$chain_rules" | grep -n "${anchor_grep}" | cut -d: -f1 | head -1) || true
+
+            # Skip if jump does not exist (module may not be enabled)
+            [[ -z "$jump_idx" ]] && continue
+
+            if [[ -z "$anchor_idx" ]]; then
+                issues+=("ERROR: ${desc} (${family}) jump exists but anchor '${anchor_grep}' missing — chain structure damaged")
+                status=$HEALTH_ERROR
+            elif [[ "$jump_idx" -gt "$anchor_idx" ]]; then
+                issues+=("ERROR: ${desc} (${family}) jump AFTER anchor '${anchor_grep}' — module functionally dead. Fix: rebuild or restart module")
+                status=$HEALTH_ERROR
+            fi
+        done
+    done
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_ISSUES["module_jump_placement"]="${issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Module jump placement: ${issues[*]}")
+    fi
+
+    # shellcheck disable=SC2034
+    NFTBAN_HEALTH_RESULTS["module_jump_placement"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
 export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
-export -f nftban_health_check_portscan_placement
+export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement

@@ -818,7 +818,7 @@ nftban_portscan_status() {
         # Find jump position
         jump_index=$(echo "$chain_rules" | grep -n "jump portscan_detection" | cut -d: -f1 | head -1) || true
         # Find SYN meter position
-        meter_index=$(echo "$chain_rules" | grep -n "meter ${meter_name}" | cut -d: -f1 | head -1) || true
+        meter_index=$(echo "$chain_rules" | grep -n "${meter_name}" | cut -d: -f1 | head -1) || true
         # Find service accept position
         accept_index=$(echo "$chain_rules" | grep -n '@tcp_ports_in' | head -1 | cut -d: -f1) || true
 
