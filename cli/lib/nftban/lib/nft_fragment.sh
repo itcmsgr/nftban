@@ -173,7 +173,7 @@ nft_fragment_render_portscan_classic_jump() {
         table_fam="${family} nftban"
 
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -263,7 +263,7 @@ nft_fragment_has_jump() {
     local table="$1"
     local chain="$2"
 
-    nft list chain ${table} input 2>/dev/null | grep -q "jump ${chain}"
+    nft list chain ${table} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1
 }
 
 # =============================================================================
@@ -406,7 +406,7 @@ nft_fragment_render_ddos_sanity_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -661,7 +661,7 @@ nft_fragment_render_synproxy_jump() {
     for family in ip ip6; do
         local table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -858,7 +858,7 @@ nft_fragment_render_ddos_prefix_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -1063,7 +1063,7 @@ nft_fragment_render_ddos_classic_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -1259,7 +1259,7 @@ nft_fragment_render_ddos_ban_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -1507,7 +1507,7 @@ nft_fragment_render_ddos_penalty_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
@@ -1834,7 +1834,7 @@ nft_fragment_render_http_botguard_jump() {
     for family in ip ip6; do
         table_fam="${family} nftban"
         # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep -q "jump ${chain}"; then
+        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
         fi
 
