@@ -1384,6 +1384,48 @@ run_nft_schema_validation() {
             TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     fi
+
+    # ── Check 9: Module jump placement (v1.61.0) ──
+    # Verifies placement-sensitive module jumps are BEFORE their anchors.
+    # A jump AFTER its anchor means the module is functionally dead.
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local placement_errors=0
+    local placement_details=""
+    local _jmp_modules=(
+        "ddos_sanity|@whitelist_ip"
+        "ddos_ban_enforce|@blacklist_manual"
+        "ddos_penalty|established,related"
+        "portscan_detection|syn_meter_v"
+        "ddos_protection|@tcp_ports_in"
+        "ddos_prefix|@tcp_ports_in"
+        "http_bot_guard|@tcp_ports_in"
+        "ddos_synproxy|established,related"
+    )
+    for _jmp_family in ip ip6; do
+        local _jmp_chain_out
+        _jmp_chain_out=$(nft -a list chain ${_jmp_family} nftban input 2>/dev/null) || continue
+        local _jmp_entry _jmp_chain _jmp_anchor _jmp_idx _jmp_anc_idx
+        for _jmp_entry in "${_jmp_modules[@]}"; do
+            IFS='|' read -r _jmp_chain _jmp_anchor <<< "$_jmp_entry"
+            _jmp_idx=$(echo "$_jmp_chain_out" | grep -n "jump ${_jmp_chain}" | cut -d: -f1 | head -1) || true
+            [[ -z "$_jmp_idx" ]] && continue  # module not active, skip
+            _jmp_anc_idx=$(echo "$_jmp_chain_out" | grep -n "${_jmp_anchor}" | cut -d: -f1 | head -1) || true
+            if [[ -z "$_jmp_anc_idx" ]]; then
+                placement_errors=$((placement_errors + 1))
+                placement_details="${placement_details} ${_jmp_family}:${_jmp_chain}(anchor_missing)"
+            elif [[ "$_jmp_idx" -gt "$_jmp_anc_idx" ]]; then
+                placement_errors=$((placement_errors + 1))
+                placement_details="${placement_details} ${_jmp_family}:${_jmp_chain}(after_anchor)"
+            fi
+        done
+    done
+    if [[ $placement_errors -eq 0 ]]; then
+        log_pass "NFT schema — module jump placement correct (all active jumps before anchors)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "NFT schema — ${placement_errors} module jump(s) mispositioned:${placement_details}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
 }
 
 # =============================================================================
