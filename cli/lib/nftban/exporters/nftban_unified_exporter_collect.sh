@@ -1282,6 +1282,11 @@ collect_all_metrics() {
         # Variables declared at function level for JSON cache access
         mkdir -p "$(dirname "$BANDWIDTH_STATE")" || return 1
 
+        # Read bandwidth state once before loop (avoids per-interface TOCTOU)
+        local _bw_prev_state=""
+        [[ -f "$BANDWIDTH_STATE" ]] && _bw_prev_state=$(cat "$BANDWIDTH_STATE" 2>/dev/null) || true
+        local _bw_new_state=""
+
         # Get all physical interfaces (exclude lo, docker, veth, etc.)
         for iface_path in /sys/class/net/*; do
             [[ ! -d "$iface_path" ]] && continue
@@ -1313,10 +1318,10 @@ collect_all_metrics() {
         total_rx_dropped=$((total_rx_dropped + rx_drop))
         total_tx_dropped=$((total_tx_dropped + tx_drop))
 
-        # Calculate Mbps from previous state
-        if [[ -f "$BANDWIDTH_STATE" ]]; then
+        # Calculate Mbps from previous state (read from snapshot, not file)
+        if [[ -n "$_bw_prev_state" ]]; then
             local prev_data prev_ts prev_rx prev_tx
-            prev_data=$(grep "^${iface} " "$BANDWIDTH_STATE" 2>/dev/null || echo "")
+            prev_data=$(echo "$_bw_prev_state" | grep "^${iface} " || echo "")
             if [[ -n "$prev_data" ]]; then
                 read -r _ prev_rx prev_tx prev_ts <<< "$prev_data"
                 local rx_delta=$((rx_bytes - prev_rx))
@@ -1336,11 +1341,15 @@ collect_all_metrics() {
             fi
         fi
 
-        # Update state file (append/replace for this interface)
-        grep -v "^${iface} " "$BANDWIDTH_STATE" 2>/dev/null > "${BANDWIDTH_STATE}.tmp" || true
-        echo "${iface} ${rx_bytes} ${tx_bytes} ${timestamp}" >> "${BANDWIDTH_STATE}.tmp"
-        mv "${BANDWIDTH_STATE}.tmp" "$BANDWIDTH_STATE"
+        # Accumulate new state entry (write once after loop)
+        _bw_new_state+="${iface} ${rx_bytes} ${tx_bytes} ${timestamp}\n"
     done
+
+        # Write all bandwidth state entries atomically (single write instead of per-interface)
+        if [[ -n "$_bw_new_state" ]]; then
+            printf '%b' "$_bw_new_state" > "${BANDWIDTH_STATE}.tmp" 2>/dev/null && \
+                mv -f "${BANDWIDTH_STATE}.tmp" "$BANDWIDTH_STATE" || rm -f "${BANDWIDTH_STATE}.tmp"
+        fi
 
     # Total bandwidth and peaks
     metrics+="nftban_network_total_rx_mbps $total_rx_mbps $timestamp\n"
