@@ -91,7 +91,6 @@
 /var/log/nftban/geoban.log
 /var/log/nftban/botscan.log
 /var/log/nftban/login_alert.log
-/var/log/nftban/update.log
 /var/log/nftban/cron.log
 /var/log/nftban/rbl.log {
     weekly
