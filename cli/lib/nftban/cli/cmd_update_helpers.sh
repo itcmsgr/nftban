@@ -227,7 +227,7 @@ _load_config() {
 }
 
 _update_write_history() {
-    # Write update result to JSON history file (keep last 20 entries)
+    # Write update result to JSON history file (keep last 9 entries)
     # Args: $1=from_version $2=to_version $3=status(ok|fail) $4=install_type $5=duration_secs
     local from_ver="$1" to_ver="$2" status="$3" install_type="$4" duration="$5"
     local history_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-history.json"
@@ -243,10 +243,10 @@ _update_write_history() {
     mkdir -p "$(dirname "$history_file")" 2>/dev/null || true
 
     if command -v jq &>/dev/null && [[ -f "$history_file" ]] && jq empty "$history_file" 2>/dev/null; then
-        # Prepend new entry + keep last 20
+        # Prepend new entry + keep last 9
         local tmp_hist
         tmp_hist=$(mktemp "${history_file}.XXXXXX") || return 0
-        jq --argjson entry "$new_entry" '[$entry] + . | .[0:20]' "$history_file" > "$tmp_hist" 2>/dev/null && \
+        jq --argjson entry "$new_entry" '[$entry] + . | .[0:9]' "$history_file" > "$tmp_hist" 2>/dev/null && \
             mv -f "$tmp_hist" "$history_file" || rm -f "$tmp_hist"
     else
         # First entry or no jq — write single-element array

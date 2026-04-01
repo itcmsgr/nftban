@@ -1127,9 +1127,9 @@ nftban_health_fix_whitelist() {
         return 1
     fi
 
-    # Check if nftban table exists
-    if ! nft list table ip nftban &>/dev/null; then
-        echo "  ⚠️  nftban nftables table not found"
+    # Check if nftban tables exist (IPv4 + IPv6)
+    if ! nft list table ip nftban &>/dev/null && ! nft list table ip6 nftban &>/dev/null; then
+        echo "  ⚠️  nftban nftables tables not found (neither IPv4 nor IPv6)"
         echo "    Run: systemctl restart nftables"
         return 1
     fi
