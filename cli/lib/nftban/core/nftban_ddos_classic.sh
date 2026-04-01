@@ -235,7 +235,7 @@ _nftban_ddos_classic_chain_exists() {
 _nftban_ddos_classic_jump_exists() {
     local table="$1"
     local chain="$2"
-    nft list chain $table input 2>/dev/null | grep -q "jump $chain"
+    nft list chain $table input 2>/dev/null | grep "jump $chain" >/dev/null 2>&1
 }
 
 _nftban_ddos_synproxy_chain_exists() {
