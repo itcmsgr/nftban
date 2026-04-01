@@ -1829,6 +1829,7 @@ nft_fragment_render_http_botguard_jump() {
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
+            # shellcheck disable=SC1083 # Braces are nft syntax, not shell
             nft insert rule ${table_fam} input position "$handle" \
                 tcp dport {80, 443} jump "${chain}" \
                 comment "\"HTTP Bot Guard\"" 2>/dev/null || {

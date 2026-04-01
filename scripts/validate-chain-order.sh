@@ -344,7 +344,7 @@ done
 
 if [[ "$JSON_OUTPUT" == "true" ]]; then
     echo "["
-    local first=true
+    first=true
     for result in "${JSON_RESULTS[@]}"; do
         if [[ "$first" == "true" ]]; then
             echo "  ${result}"
