@@ -560,7 +560,8 @@ nftban_geoban_fetch_bash() {
     } > "$output_file"
 
     # Create tracking JSON (simple format for bash mode)
-    cat > "$tracking_file" <<EOF
+    # v1.61.1 TOCTOU fix: atomic write via tmp+mv
+    cat > "${tracking_file}.tmp" <<EOF
 {
   "country": "$cc",
   "action": "$action",
@@ -571,6 +572,7 @@ nftban_geoban_fetch_bash() {
   "url": "https://www.ipdeny.com/ipblocks/data/countries/${cc_lower}.zone"
 }
 EOF
+    mv -f "${tracking_file}.tmp" "$tracking_file" 2>/dev/null || rm -f "${tracking_file}.tmp"
 
     nftban_success "Downloaded $ip_count IPv4 ranges for $cc (bash mode)"
     nftban_info "File: $output_file"
