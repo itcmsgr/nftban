@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.55.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.61.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -176,10 +176,10 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **HTTP Bot Guard** | Automated crawler detection with kernel-native suspect marking |
 | **DNS Tunnel Suspicion** | Advisory-only DNS tunnel detection with 5 signals (v1.30.0) |
 | **Suricata IDS Integration** | Optional deep packet inspection |
-| **Prometheus Metrics** | Observability for monitoring stacks |
-| **Zabbix Integration** | Native trapper protocol export to Zabbix server |
+| **Prometheus-Compatible Metrics** | Observability endpoint for monitoring stacks |
+| **Zabbix Integration** | Template-based Zabbix integration |
 | **Portal (pro.nftban.com)** | Centralized metrics aggregation and fleet management |
-| **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
+| **Export Connectors** | Config templates for Elasticsearch, Kafka, syslog |
 | **Whitelist Safety Tests** | Protected whitelists with automated safety validation |
 
 ---
@@ -220,7 +220,7 @@ nftban status          # System overview
 nftban health          # Diagnostics with auto-heal
 nftban validate        # Firewall structure validation
 nftban services        # Systemd services status
-nftban configtest      # Validate config against schema
+nftban config validate # Validate config against schema
 ```
 
 ### IP Management
@@ -285,7 +285,7 @@ ip6 nftban {                 # IPv6 rules
 | Component | Type | Description |
 |-----------|------|-------------|
 | `nftban` | Bash CLI | Main command-line interface (76 commands) |
-| `nftban-core` | Go Binary | Backend for feeds, geoip, sync |
+| `nftband` | Go Binary | Backend daemon for feeds, geoip, sync |
 | `nftban-ui` | Go Binary | Web interface server |
 
 ---
@@ -298,7 +298,7 @@ ip6 nftban {                 # IPv6 rules
 - **systemd**: 252+ (sysusers.d, tmpfiles.d support)
 - **jq**: JSON processor (auto-installed)
 - **yq**: YAML processor (auto-installed)
-- **Go 1.21+**: For building from source (optional)
+- **Go 1.24+**: For building from source (optional)
 
 ---
 
