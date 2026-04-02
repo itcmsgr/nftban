@@ -285,10 +285,10 @@ smoke_test_cmd() {
         log_pass "$name - OK with warnings (exit=1, ${output_len} chars, ${duration}s)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "2" ]] && [[ "$name" == "health summary" ]]; then
-        # Health exit code 2 = errors present (acceptable - report but don't fail test)
-        log_warn "$name - Errors detected (exit=2, ${output_len} chars, ${duration}s)"
-        log_warn "  This is expected if system has health issues. Check 'nftban health summary' manually."
-        TESTS_PASSED=$((TESTS_PASSED + 1))
+        # v1.65.0: Health exit code 2 = errors present — FAIL (structural problems must be investigated)
+        log_fail "$name - Health ERRORS detected (exit=2, ${output_len} chars, ${duration}s)"
+        log_fail "  Run 'nftban health summary' to see failing checks."
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     elif [[ "$exit_code" == "4" ]] && [[ "$name" == "health summary" ]]; then
         # Health exit code 4 = permission fixes applied (acceptable)
         log_pass "$name - OK, fixes applied (exit=4, ${output_len} chars, ${duration}s)"
