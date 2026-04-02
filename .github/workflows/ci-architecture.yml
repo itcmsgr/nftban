@@ -15,6 +15,8 @@
 #   - Hardcoded path detector (paths should come from distro config)
 #   - systemd directive version guard (min systemd 249)
 #   - nft template placeholder guard (rendered config must be boot-safe)
+#   - Anchor jump placement lint G1-G3 (v1.64.0)
+#   - Anchor marker count validation (v1.64.0)
 # =============================================================================
 
 name: Architecture Policy
@@ -281,3 +283,24 @@ jobs:
 
           echo ""
           echo "✓ Boot-safety check: PASS"
+
+      # v1.64.0: Anchor jump placement lint (static analysis — no nft binary needed)
+      - name: Lint jump placement (G1-G3)
+        run: bash scripts/lint-jump-placement.sh
+
+      # v1.64.0: Anchor marker count in template
+      - name: Validate anchor markers in template
+        run: |
+          echo "=== Verifying NFTBAN_ANCHOR markers ==="
+          TPL="install/nftables/nftables.conf.tpl"
+          CONF="install/nftables/nftables.conf"
+          for f in "$TPL" "$CONF"; do
+            count=$(grep -c 'NFTBAN_ANCHOR:ANCHOR_' "$f" || true)
+            if [[ "$count" -ne 28 ]]; then
+              echo "::error::${f}: expected 28 NFTBAN_ANCHOR markers, found ${count}"
+              exit 1
+            fi
+            echo "✓ ${f}: ${count} anchor markers"
+          done
+          echo ""
+          echo "✓ Anchor marker check: PASS"

@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_invariant_validator"
 # meta:type="core"
-# meta:version="1.63.0"
+# meta:version="1.64.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-02"
 # meta:description="Validates firewall invariants: anchor structure, phase order, safety properties"
@@ -181,6 +181,35 @@ _validate_structural() {
         _inv_record "INV-S-004" "PASS" "All active module chains exist"
     fi
     _inv_record "INV-S-005" "PASS" "Module jump presence verified"
+
+    # INV-S-008: Active module chains must have >= 1 rule (not empty)
+    local empty_ok=true
+    for mod_entry in "${_INV_MODULE_ANCHORS[@]}"; do
+        IFS='|' read -r chain_name mod_anchor <<< "$mod_entry"
+        for family in ip ip6; do
+            if [[ "$family" == "ip" ]]; then
+                chain_output="$chain_ip"
+            else
+                chain_output="$chain_ip6"
+            fi
+
+            # Only check if jump exists (module is active)
+            if echo "$chain_output" | grep "jump ${chain_name}" >/dev/null 2>&1; then
+                local chain_rules
+                chain_rules=$(nft list chain ${family} nftban "${chain_name}" 2>/dev/null) || continue
+                # Count rule lines (exclude chain header/footer, comments-only lines)
+                local rule_count
+                rule_count=$(echo "$chain_rules" | grep -cE '^\s+(meta|ip|ip6|tcp|udp|ct |counter|drop|accept|jump|reject|log|return|limit|meter)' || true)
+                if [[ "$rule_count" -eq 0 ]]; then
+                    _inv_record "INV-S-008" "WARNING" "Chain ${chain_name} in ${family} has 0 rules (module enabled but ineffective)"
+                    empty_ok=false
+                fi
+            fi
+        done
+    done
+    if [[ "$empty_ok" == "true" ]]; then
+        _inv_record "INV-S-008" "PASS" "All active module chains have rules"
+    fi
 
     # INV-S-007: No duplicate module jumps
     local dup_ok=true
@@ -427,7 +456,7 @@ _inv_output_text() {
     # Group by category
     local id status detail
     for id in \
-        INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 \
+        INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 INV-S-008 \
         INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \
         INV-F-001 INV-F-002 INV-F-003; do
 

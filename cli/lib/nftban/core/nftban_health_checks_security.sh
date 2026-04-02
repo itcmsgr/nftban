@@ -1151,6 +1151,7 @@ nftban_health_check_module_jump_placement() {
         "ddos_sanity|NFTBAN_ANCHOR:ANCHOR_TRUSTED|DDoS sanity"
         "ddos_ban_enforce|NFTBAN_ANCHOR:ANCHOR_BAN|DDoS ban enforce"
         "ddos_penalty|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|DDoS penalty"
+        "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT|Portscan detection"
         "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS prefix"
         "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS classic"
         "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE|HTTP Bot Guard"
@@ -1209,15 +1210,20 @@ nftban_health_check_anchor_integrity() {
         if type nftban_validate_invariants &>/dev/null; then
             nftban_validate_invariants >/dev/null 2>&1 || true
 
-            # Extract anchor-related invariant results (INV-S-003, INV-S-006, INV-O-001..006)
+            # Extract all invariant results (v1.64.0: expanded from 8 to all 19)
             local id entry inv_status
-            for id in INV-S-003 INV-S-006 INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006; do
+            for id in INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 INV-S-008 \
+                      INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \
+                      INV-F-001 INV-F-002 INV-F-003; do
                 entry="${NFTBAN_INVARIANT_RESULTS[$id]:-}"
                 [[ -z "$entry" ]] && continue
                 inv_status="${entry%%|*}"
                 if [[ "$inv_status" == "ERROR" ]]; then
                     issues+=("${id}: ${entry#*|}")
                     status=$HEALTH_ERROR
+                elif [[ "$inv_status" == "WARNING" && "$status" -lt "$HEALTH_WARNING" ]]; then
+                    issues+=("${id}: ${entry#*|}")
+                    status=$HEALTH_WARNING
                 fi
             done
         fi
