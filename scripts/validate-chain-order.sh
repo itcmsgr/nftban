@@ -51,14 +51,15 @@ set -Eeuo pipefail
 # =============================================================================
 
 declare -a MODULE_DEFS=(
-    "ddos_sanity|@whitelist_ip|DDoS sanity|optional"
-    "ddos_ban_enforce|@blacklist_manual|DDoS ban enforce|optional"
-    "ddos_penalty|established,related|DDoS penalty|optional"
-    "portscan_detection|syn_meter_v|Portscan detection|optional"
-    "ddos_protection|@tcp_ports_in|DDoS classic|optional"
-    "ddos_prefix|@tcp_ports_in|DDoS prefix|optional"
-    "http_bot_guard|@tcp_ports_in|HTTP Bot Guard|optional"
-    "ddos_synproxy|established,related|SYNPROXY|optional"
+    # v1.62.1: Primary anchors use NFTBAN_ANCHOR comment markers (stable across versions)
+    "ddos_sanity|NFTBAN_ANCHOR:ANCHOR_TRUSTED|DDoS sanity|optional"
+    "ddos_ban_enforce|NFTBAN_ANCHOR:ANCHOR_BAN|DDoS ban enforce|optional"
+    "ddos_penalty|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|DDoS penalty|optional"
+    "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT|Portscan detection|optional"
+    "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS classic|optional"
+    "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS prefix|optional"
+    "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE|HTTP Bot Guard|optional"
+    "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|SYNPROXY|optional"
 )
 
 # =============================================================================
