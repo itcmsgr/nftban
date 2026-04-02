@@ -1047,8 +1047,6 @@ nft_fragment_render_ddos_classic_jump() {
 
         # v1.63.0: No fallback — anchor is required (health check validates presence)
         echo "ERROR: ANCHOR_SERVICE not found in ${table_fam} — run: nftban firewall rebuild" >&2
-        continue
-        fi
     done
 
     # Return a dummy path for API compatibility (no file written)
