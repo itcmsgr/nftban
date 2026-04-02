@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_invariant_validator"
 # meta:type="core"
-# meta:version="1.64.0"
+# meta:version="1.66.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-02"
 # meta:description="Validates firewall invariants: anchor structure, phase order, safety properties"
@@ -23,7 +23,7 @@
 # Invariant classes:
 #   INV-S: Structural — tables, chains, anchors exist
 #   INV-O: Order — anchors in correct sequence, module jumps before anchors
-#   INV-F: Safety — whitelist before blacklist, SSH reachable, anti-lockout
+#   INV-F: Safety — whitelist before blacklist, SSH reachable, anti-lockout, SYN port-policy
 #
 # Usage:
 #   source nftban_invariant_validator.sh
@@ -397,6 +397,25 @@ _validate_safety() {
     else
         _inv_record "INV-F-003" "WARNING" "whitelist_ipv4 set not found"
     fi
+
+    # INV-F-004: DETECT-phase SYN accept must be restricted to service ports
+    # v1.66.1: Prevents regression of SERVICE bypass bug — any terminal accept for
+    # tcp flags syn in DETECT without @tcp_ports_in means TCP port policy is bypassed.
+    local detect_start detect_end detect_rules
+    detect_start=$(echo "$chain_output" | grep -n 'NFTBAN_ANCHOR:ANCHOR_DETECT' | head -1 | cut -d: -f1 || true)
+    detect_end=$(echo "$chain_output" | grep -n 'NFTBAN_ANCHOR:ANCHOR_SERVICE' | head -1 | cut -d: -f1 || true)
+
+    if [[ -n "$detect_start" && -n "$detect_end" ]]; then
+        detect_rules=$(echo "$chain_output" | sed -n "${detect_start},${detect_end}p")
+        # Check for tcp flags syn + accept WITHOUT @tcp_ports_in
+        if echo "$detect_rules" | grep -E 'tcp flags syn.*accept' | grep -v '@tcp_ports_in' >/dev/null 2>&1; then
+            _inv_record "INV-F-004" "ERROR" "DETECT has SYN accept without tcp_ports_in restriction — TCP port-policy bypass"
+        else
+            _inv_record "INV-F-004" "PASS" "DETECT-phase SYN accept is restricted to service ports"
+        fi
+    else
+        _inv_record "INV-F-004" "WARNING" "Cannot locate DETECT/SERVICE anchors for SYN accept validation"
+    fi
 }
 
 # =============================================================================
@@ -458,7 +477,7 @@ _inv_output_text() {
     for id in \
         INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 INV-S-008 \
         INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \
-        INV-F-001 INV-F-002 INV-F-003; do
+        INV-F-001 INV-F-002 INV-F-003 INV-F-004; do
 
         # Category headers
         case "$id" in
