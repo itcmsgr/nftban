@@ -1258,6 +1258,74 @@ nftban_health_check_anchor_integrity() {
     return $status
 }
 
+# v1.65.0 (M-06): Detect config-enabled modules not loaded in kernel.
+# Compares what config says is enabled with what nft actually has.
+nftban_health_check_kernel_parity() {
+    local status=$HEALTH_OK
+    local issues=()
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    # Module → chain name → config check
+    # Format: config_path|config_key|chain_name|label
+    local -a module_checks=(
+        "conf.d/ddos/main.conf|DDOS_ENABLED|ddos_protection|DDoS Classic"
+        "conf.d/portscan/main.conf|PORTSCAN_ENABLED|portscan_detection|Portscan"
+    )
+
+    local entry config_rel config_key chain_name label
+    local config_val chain_exists
+
+    for entry in "${module_checks[@]}"; do
+        IFS='|' read -r config_rel config_key chain_name label <<< "$entry"
+
+        # Check config: .local overrides base
+        config_val="false"
+        if [[ -f "${config_dir}/${config_rel}.local" ]]; then
+            config_val=$(grep -m1 "^${config_key}=" "${config_dir}/${config_rel}.local" 2>/dev/null | cut -d'"' -f2 || echo "")
+        fi
+        if [[ -z "$config_val" || "$config_val" == "false" ]] && [[ -f "${config_dir}/${config_rel}" ]]; then
+            config_val=$(grep -m1 "^${config_key}=" "${config_dir}/${config_rel}" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        fi
+
+        [[ "$config_val" != "true" ]] && continue
+
+        # Module enabled in config — verify kernel has the chain with rules
+        chain_exists=false
+        local rule_count=0
+        if nft list chain ip nftban "${chain_name}" &>/dev/null; then
+            chain_exists=true
+            rule_count=$(nft list chain ip nftban "${chain_name}" 2>/dev/null \
+                | grep -cE '^\s+(meta|ip|tcp|udp|ct |counter|drop|accept|jump|reject|log|return|limit|meter)' || true)
+        fi
+
+        if [[ "$chain_exists" == "false" ]]; then
+            issues+=("${label}: enabled in config but chain missing from kernel")
+            status=$HEALTH_ERROR
+        elif [[ "$rule_count" -eq 0 ]]; then
+            issues+=("${label}: enabled in config but chain has 0 rules in kernel")
+            status=$HEALTH_WARNING
+        fi
+
+        # Also check the jump exists in input chain
+        if [[ "$chain_exists" == "true" ]]; then
+            if ! nft list chain ip nftban input 2>/dev/null | grep "jump ${chain_name}" >/dev/null 2>&1; then
+                issues+=("${label}: chain exists but jump missing from input chain")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    done
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_ISSUES["kernel_parity"]="${issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Kernel parity: ${issues[*]}")
+    fi
+
+    # shellcheck disable=SC2034
+    NFTBAN_HEALTH_RESULTS["kernel_parity"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
@@ -1265,4 +1333,4 @@ export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
 export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement
-export -f nftban_health_check_anchor_integrity
+export -f nftban_health_check_anchor_integrity nftban_health_check_kernel_parity
