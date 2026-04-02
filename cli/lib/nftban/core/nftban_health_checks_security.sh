@@ -1200,39 +1200,46 @@ nftban_health_check_module_jump_placement() {
 nftban_health_check_anchor_integrity() {
     local status=$HEALTH_OK
     local issues=()
-    local expected_anchors=(HYGIENE TRUSTED BAN ESTABLISHED DETECT SERVICE FINAL)
 
-    local family chain_output
-    for family in ip ip6; do
-        chain_output=$(nft -a list chain ${family} nftban input 2>/dev/null) || {
-            issues+=("Cannot list ${family} nftban input chain")
-            status=$HEALTH_ERROR
-            continue
-        }
+    # Delegate to the invariant validator (single source of truth for anchor checks)
+    local inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
+    if [[ -f "$inv_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$inv_lib" 2>/dev/null || true
+        if type nftban_validate_invariants &>/dev/null; then
+            nftban_validate_invariants >/dev/null 2>&1 || true
 
-        local prev_line=0
-        local anchor
-        for anchor in "${expected_anchors[@]}"; do
-            local count
-            count=$(echo "$chain_output" | grep -c "NFTBAN_ANCHOR:ANCHOR_${anchor}" || true)
-            if [[ "$count" -eq 0 ]]; then
-                issues+=("Missing ANCHOR_${anchor} in ${family}")
-                status=$HEALTH_ERROR
-            elif [[ "$count" -gt 1 ]]; then
-                issues+=("Duplicate ANCHOR_${anchor} in ${family} (count=${count})")
-                status=$HEALTH_ERROR
-            else
-                # Check order: each anchor must appear after the previous one
-                local line_num
-                line_num=$(echo "$chain_output" | grep -n "NFTBAN_ANCHOR:ANCHOR_${anchor}" | cut -d: -f1 | head -1)
-                if [[ "$prev_line" -gt 0 && "$line_num" -le "$prev_line" ]]; then
-                    issues+=("ANCHOR_${anchor} out of order in ${family} (line ${line_num} <= prev ${prev_line})")
+            # Extract anchor-related invariant results (INV-S-003, INV-S-006, INV-O-001..006)
+            local id entry inv_status
+            for id in INV-S-003 INV-S-006 INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006; do
+                entry="${NFTBAN_INVARIANT_RESULTS[$id]:-}"
+                [[ -z "$entry" ]] && continue
+                inv_status="${entry%%|*}"
+                if [[ "$inv_status" == "ERROR" ]]; then
+                    issues+=("${id}: ${entry#*|}")
                     status=$HEALTH_ERROR
                 fi
-                prev_line=$line_num
-            fi
+            done
+        fi
+    else
+        # Fallback: basic anchor count check if invariant validator not available
+        local expected_anchors=(HYGIENE TRUSTED BAN ESTABLISHED DETECT SERVICE FINAL)
+        local family chain_output anchor count
+        for family in ip ip6; do
+            chain_output=$(nft -a list chain ${family} nftban input 2>/dev/null) || {
+                issues+=("Cannot list ${family} nftban input chain")
+                status=$HEALTH_ERROR
+                continue
+            }
+            for anchor in "${expected_anchors[@]}"; do
+                count=$(echo "$chain_output" | grep -c "NFTBAN_ANCHOR:ANCHOR_${anchor}" || true)
+                if [[ "$count" -ne 1 ]]; then
+                    issues+=("ANCHOR_${anchor} in ${family}: count=${count} (expected 1)")
+                    status=$HEALTH_ERROR
+                fi
+            done
         done
-    done
+    fi
 
     if [[ ${#issues[@]} -gt 0 ]]; then
         # shellcheck disable=SC2034
