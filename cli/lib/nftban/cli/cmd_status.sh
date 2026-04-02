@@ -185,13 +185,13 @@ _nftban_protection_state() {
 
     # DDoS: check kernel chain has rules
     local _ddos_rules=0
-    _ddos_rules=$(nft list chain ip nftban ddos_protection 2>/dev/null \
+    _ddos_rules=$(nft -a list chain ip nftban ddos_protection 2>/dev/null \
         | grep -c "# handle" || true)
     [[ "${_ddos_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
 
     # Portscan: check kernel chain has rules
     local _ps_rules=0
-    _ps_rules=$(nft list chain ip nftban portscan_detection 2>/dev/null \
+    _ps_rules=$(nft -a list chain ip nftban portscan_detection 2>/dev/null \
         | grep -c "# handle" || true)
     [[ "${_ps_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
 
@@ -234,7 +234,7 @@ _check_config_divergence() {
     fi
     if [[ "$_ddos_conf" == "true" ]]; then
         local _ddos_rules=0
-        _ddos_rules=$(nft list chain ip nftban ddos_protection 2>/dev/null | grep -c "# handle" || true)
+        _ddos_rules=$(nft -a list chain ip nftban ddos_protection 2>/dev/null | grep -c "# handle" || true)
         [[ "${_ddos_rules:-0}" -eq 0 ]] && echo "ddos"
     fi
 
@@ -248,7 +248,7 @@ _check_config_divergence() {
     fi
     if [[ "$_ps_conf" == "true" ]]; then
         local _ps_rules=0
-        _ps_rules=$(nft list chain ip nftban portscan_detection 2>/dev/null | grep -c "# handle" || true)
+        _ps_rules=$(nft -a list chain ip nftban portscan_detection 2>/dev/null | grep -c "# handle" || true)
         [[ "${_ps_rules:-0}" -eq 0 ]] && echo "portscan"
     fi
 }
@@ -430,7 +430,7 @@ _status_section_system() {
     if [[ -n "$_divergence" ]]; then
         local _div_mod
         while IFS= read -r _div_mod; do
-            [[ -n "$_div_mod" ]] && printf "  %-20s %s\n" "" "Config divergence: ${_div_mod} enabled in config but not in kernel — run 'nftban rebuild'"
+            [[ -n "$_div_mod" ]] && printf "  %-20s %s\n" "" "Config divergence: ${_div_mod} enabled in config but not in kernel — run 'nftban firewall rebuild'"
         done <<< "$_divergence"
     fi
 
