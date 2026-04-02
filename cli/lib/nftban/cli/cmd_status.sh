@@ -135,6 +135,30 @@ _nftban_protection_state() {
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         echo "DISABLED"; return
     elif [[ "$_nft_active" == "true" ]] && [[ "$_daemon_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
+        # v1.65.0 (H-01): Check anchor integrity before claiming PROTECTED
+        # A structurally broken firewall (missing anchors, wrong order) is DEGRADED, not PROTECTED
+        local _anchor_ok=true
+        local _inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
+        if [[ -f "$_inv_lib" ]]; then
+            (
+                # Subshell to avoid polluting caller's namespace
+                # shellcheck source=/dev/null
+                source "$_inv_lib" 2>/dev/null || exit 0
+                if type nftban_validate_invariants &>/dev/null; then
+                    nftban_validate_invariants >/dev/null 2>&1 || exit $?
+                fi
+                exit 0
+            )
+            local _inv_exit=$?
+            # exit 2 = ERROR (structural problem) → DEGRADED
+            # exit 1 = WARNING (SSH port, empty whitelist) → still PROTECTED
+            [[ $_inv_exit -ge 2 ]] && _anchor_ok=false
+        fi
+
+        if [[ "$_anchor_ok" == "false" ]]; then
+            echo "DEGRADED"; return
+        fi
+
         if [[ "$_timers" -gt 0 ]]; then
             # v1.46.0: Check if any detection module is actually enabled
             local _modules_active=0
