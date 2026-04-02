@@ -115,13 +115,19 @@ _status_check_binaries() {
 }
 
 # =============================================================================
-# PROTECTION STATE — Single Source of Truth (v1.24.0)
+# PROTECTION STATE — Single Source of Truth (v1.66.0)
 # =============================================================================
+# v1.66.0: 3-state model with kernel-first detection and reason codes.
+# Returns: PROTECTED | DEGRADED[:reason] | DOWN
+# Exit code contract:
+#   0 = PROTECTED    — everything works
+#   1 = DEGRADED     — firewall up but issues
+#   2 = DOWN         — nothing protecting
+# NFTBAN_EXIT_COMPAT=v1 → DEGRADED returns 0 (one-release transition)
 
 _nftban_protection_state() {
-    # Determine protection state from live system checks.
-    # Returns one of: PROTECTED, MONITORING, DEGRADED, UNPROTECTED, DISABLED
-    # Used by both output_terminal() and output_json() for consistency.
+    # Determine protection state from live kernel + service checks.
+    # Returns: PROTECTED, DEGRADED:D-xxx, or DOWN
     local _nft_active=false _daemon_active=false _rules=0 _timers=0
 
     systemctl is-active nftables.service >/dev/null 2>&1 && _nft_active=true
@@ -132,61 +138,119 @@ _nftban_protection_state() {
     fi
     _timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
 
+    # DOWN: kernel disabled, nftables not active, or no rules loaded
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        echo "DISABLED"; return
-    elif [[ "$_nft_active" == "true" ]] && [[ "$_daemon_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
-        # v1.65.0 (H-01): Check anchor integrity before claiming PROTECTED
-        # A structurally broken firewall (missing anchors, wrong order) is DEGRADED, not PROTECTED
-        local _anchor_ok=true
-        local _inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
-        if [[ -f "$_inv_lib" ]]; then
-            (
-                # Subshell to avoid polluting caller's namespace
-                # shellcheck source=/dev/null
-                source "$_inv_lib" 2>/dev/null || exit 0
-                if type nftban_validate_invariants &>/dev/null; then
-                    nftban_validate_invariants >/dev/null 2>&1 || exit $?
-                fi
-                exit 0
-            )
-            local _inv_exit=$?
-            # exit 2 = ERROR (structural problem) → DEGRADED
-            # exit 1 = WARNING (SSH port, empty whitelist) → still PROTECTED
-            [[ $_inv_exit -ge 2 ]] && _anchor_ok=false
-        fi
-
-        if [[ "$_anchor_ok" == "false" ]]; then
-            echo "DEGRADED"; return
-        fi
-
-        if [[ "$_timers" -gt 0 ]]; then
-            # v1.46.0: Check if any detection module is actually enabled
-            local _modules_active=0
-            grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
-            [[ $_modules_active -eq 0 ]] && grep -q '^DDOS_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null && ((_modules_active++)) || true
-            grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" 2>/dev/null && ((_modules_active++)) || true
-            [[ $_modules_active -le 1 ]] && grep -q '^PORTSCAN_ENABLED="true"' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null && ((_modules_active++)) || true
-            # v1.52.0: Login monitor runs inside nftband (not standalone service since v1.23.0)
-            # Check config-enabled + daemon running
-            if systemctl is-active nftband >/dev/null 2>&1; then
-                local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
-                local _lm_enabled="false"
-                [[ -f "${_lm_conf}.local" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
-                [[ "$_lm_enabled" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-                [[ "$_lm_enabled" == "true" ]] && ((_modules_active++)) || true
-            fi
-            systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
-            if [[ "$_modules_active" -gt 0 ]]; then
-                echo "PROTECTED"; return
-            else
-                echo "MONITORING"; return
-            fi
-        fi
-        echo "DEGRADED"; return
-    elif [[ "$_nft_active" == "true" ]] && [[ "$_rules" -gt 0 ]]; then
-        echo "DEGRADED"; return
+        echo "DOWN"; return
     fi
-    echo "UNPROTECTED"
+    if [[ "$_nft_active" != "true" ]] || [[ "$_rules" -eq 0 ]]; then
+        echo "DOWN"; return
+    fi
+
+    # nftables is active with rules — check for DEGRADED conditions
+
+    # D-DAEMON: nftband not running
+    if [[ "$_daemon_active" != "true" ]]; then
+        echo "DEGRADED:D-DAEMON"; return
+    fi
+
+    # D-ANCHOR: invariant validator returned ERROR (structural problem)
+    local _anchor_ok=true
+    local _inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
+    if [[ -f "$_inv_lib" ]]; then
+        (
+            # Subshell to avoid polluting caller's namespace
+            # shellcheck source=/dev/null
+            source "$_inv_lib" 2>/dev/null || exit 0
+            if type nftban_validate_invariants &>/dev/null; then
+                nftban_validate_invariants >/dev/null 2>&1 || exit $?
+            fi
+            exit 0
+        )
+        local _inv_exit=$?
+        # exit 2 = ERROR (structural problem) → DEGRADED
+        # exit 1 = WARNING (SSH port, empty whitelist) → still ok
+        [[ $_inv_exit -ge 2 ]] && _anchor_ok=false
+    fi
+    if [[ "$_anchor_ok" == "false" ]]; then
+        echo "DEGRADED:D-ANCHOR"; return
+    fi
+
+    # D-NOTIMERS: no nftban timers active
+    if [[ "$_timers" -eq 0 ]]; then
+        echo "DEGRADED:D-NOTIMERS"; return
+    fi
+
+    # v1.66.0: Kernel-first module detection — probe nft chains, not config files
+    local _modules_active=0
+
+    # DDoS: check kernel chain has rules
+    local _ddos_rules=0
+    _ddos_rules=$(nft list chain ip nftban ddos_protection 2>/dev/null \
+        | grep -c "# handle" || true)
+    [[ "${_ddos_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
+
+    # Portscan: check kernel chain has rules
+    local _ps_rules=0
+    _ps_rules=$(nft list chain ip nftban portscan_detection 2>/dev/null \
+        | grep -c "# handle" || true)
+    [[ "${_ps_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
+
+    # Suricata: service check (correct — it's an external service)
+    systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
+
+    # Login monitor: runs inside nftband — check config + daemon
+    if [[ "$_daemon_active" == "true" ]]; then
+        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
+        local _lm_enabled="false"
+        [[ -f "${_lm_conf}.local" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_enabled" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        [[ "$_lm_enabled" == "true" ]] && ((_modules_active++)) || true
+    fi
+
+    # D-NOMODULE: no detection modules in kernel
+    if [[ "$_modules_active" -eq 0 ]]; then
+        echo "DEGRADED:D-NOMODULE"; return
+    fi
+
+    echo "PROTECTED"
+}
+
+# =============================================================================
+# CONFIG DIVERGENCE CHECK (v1.66.0)
+# =============================================================================
+
+_check_config_divergence() {
+    # Compare config-enabled modules with kernel state.
+    # Outputs divergent module names (one per line), empty if no divergence.
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    # DDoS: config says enabled, kernel says no
+    local _ddos_conf="false"
+    if [[ -f "${config_dir}/conf.d/ddos/main.conf.local" ]]; then
+        _ddos_conf=$(grep -m1 '^DDOS_ENABLED=' "${config_dir}/conf.d/ddos/main.conf.local" 2>/dev/null | cut -d'"' -f2 || echo "")
+    fi
+    if [[ -z "$_ddos_conf" || "$_ddos_conf" == "false" ]] && [[ -f "${config_dir}/conf.d/ddos/main.conf" ]]; then
+        _ddos_conf=$(grep -m1 '^DDOS_ENABLED=' "${config_dir}/conf.d/ddos/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    fi
+    if [[ "$_ddos_conf" == "true" ]]; then
+        local _ddos_rules=0
+        _ddos_rules=$(nft list chain ip nftban ddos_protection 2>/dev/null | grep -c "# handle" || true)
+        [[ "${_ddos_rules:-0}" -eq 0 ]] && echo "ddos"
+    fi
+
+    # Portscan: config says enabled, kernel says no
+    local _ps_conf="false"
+    if [[ -f "${config_dir}/conf.d/portscan/main.conf.local" ]]; then
+        _ps_conf=$(grep -m1 '^PORTSCAN_ENABLED=' "${config_dir}/conf.d/portscan/main.conf.local" 2>/dev/null | cut -d'"' -f2 || echo "")
+    fi
+    if [[ -z "$_ps_conf" || "$_ps_conf" == "false" ]] && [[ -f "${config_dir}/conf.d/portscan/main.conf" ]]; then
+        _ps_conf=$(grep -m1 '^PORTSCAN_ENABLED=' "${config_dir}/conf.d/portscan/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    fi
+    if [[ "$_ps_conf" == "true" ]]; then
+        local _ps_rules=0
+        _ps_rules=$(nft list chain ip nftban portscan_detection 2>/dev/null | grep -c "# handle" || true)
+        [[ "${_ps_rules:-0}" -eq 0 ]] && echo "portscan"
+    fi
 }
 
 # =============================================================================
@@ -277,12 +341,15 @@ nftban_cmd_status() {
 }
 
 output_brief() {
-    # v1.24.0: One-line status output for CI/fleet/monitoring
-    # Format: PROTECTED | v1.23.2 | 26 banned | 9 whitelisted | healthy
-    # Exit code: 0=PROTECTED/DEGRADED, 1=UNPROTECTED/DISABLED
+    # v1.66.0: One-line status output for CI/fleet/monitoring
+    # Format: PROTECTED | v1.66.0 | 26 banned | 9 whitelisted | healthy
+    # Exit codes: 0=PROTECTED, 1=DEGRADED, 2=DOWN
 
-    local protection_state
-    protection_state=$(_nftban_protection_state)
+    local protection_state_raw
+    protection_state_raw=$(_nftban_protection_state)
+    local base_state="${protection_state_raw%%:*}"
+    local reason="${protection_state_raw#*:}"
+    [[ "$reason" == "$base_state" ]] && reason=""
 
     local ban_count=0
     if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
@@ -307,16 +374,26 @@ output_brief() {
         esac
     fi
 
-    # v1.24.1: When PROTECTED/MONITORING, health issues are informational not errors
-    if [[ ("$protection_state" == "PROTECTED" || "$protection_state" == "MONITORING") && "$health_word" == "errors" ]]; then
+    # When PROTECTED, health issues are informational not errors
+    if [[ "$base_state" == "PROTECTED" && "$health_word" == "errors" ]]; then
         health_word="info"
     fi
 
-    echo "${protection_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
+    # v1.66.0: Include reason code for DEGRADED
+    local display_state="$base_state"
+    [[ -n "$reason" ]] && display_state="${base_state}:${reason}"
 
-    case "$protection_state" in
-        PROTECTED|MONITORING|DEGRADED) return 0 ;;
-        *)                  return 1 ;;
+    echo "${display_state} | v${NFTBAN_VERSION:-unknown} | ${ban_count} banned | ${whitelist_count} whitelisted | ${health_word}"
+
+    # v1.66.0: Exit code contract — 0=PROTECTED, 1=DEGRADED, 2=DOWN
+    case "$base_state" in
+        PROTECTED) return 0 ;;
+        DEGRADED)
+            # NFTBAN_EXIT_COMPAT=v1 → DEGRADED returns 0 (one-release transition)
+            [[ "${NFTBAN_EXIT_COMPAT:-}" == "v1" ]] && return 0
+            return 1
+            ;;
+        *) return 2 ;;
     esac
 }
 
@@ -330,7 +407,14 @@ _status_section_system() {
     # ─────────────────────────────────────────────────────────────────────
     # SYSTEM
     # ─────────────────────────────────────────────────────────────────────
-    local protection_state="$1"
+    local protection_state_raw="$1"
+    local base_state="${protection_state_raw%%:*}"
+    local reason="${protection_state_raw#*:}"
+    [[ "$reason" == "$base_state" ]] && reason=""
+
+    # v1.66.0: Show reason in parentheses for DEGRADED
+    local state_display="$base_state"
+    [[ -n "$reason" ]] && state_display="${base_state} (${reason})"
 
     echo "SYSTEM"
     echo "───────────────────────────────────────────────────────────────"
@@ -338,7 +422,18 @@ _status_section_system() {
     printf "  %-20s %s\n" "Kernel.............." "$(uname -r)"
     printf "  %-20s %s\n" "Uptime.............." "$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk '{print $3, $4}' | sed 's/,$//')"
     printf "  %-20s %s\n" "NFTBan.............." "v${NFTBAN_VERSION:-unknown}"
-    printf "  %-20s %s\n" "State..............." "$protection_state"
+    printf "  %-20s %s\n" "State..............." "$state_display"
+
+    # v1.66.0: Config divergence hint
+    local _divergence
+    _divergence=$(_check_config_divergence 2>/dev/null)
+    if [[ -n "$_divergence" ]]; then
+        local _div_mod
+        while IFS= read -r _div_mod; do
+            [[ -n "$_div_mod" ]] && printf "  %-20s %s\n" "" "Config divergence: ${_div_mod} enabled in config but not in kernel — run 'nftban rebuild'"
+        done <<< "$_divergence"
+    fi
+
     echo ""
 }
 
@@ -900,8 +995,9 @@ _status_section_health() {
         health_status=$(cat "$health_cache" 2>/dev/null) || health_status="UNKNOWN"
     fi
 
-    # v1.24.0: If firewall is PROTECTED/MONITORING, don't show misleading ERROR from optional checks
-    if [[ ("$protection_state" == "PROTECTED" || "$protection_state" == "MONITORING") ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
+    # v1.66.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
+    local _health_base_state="${protection_state%%:*}"
+    if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
         printf "  %-20s %s\n" "Overall Status......" "OK (info notices)"
     else
         printf "  %-20s %s\n" "Overall Status......" "$health_status"
@@ -1256,9 +1352,10 @@ output_terminal() {
     # Decomposed in v1.38.0: each section is a _status_section_*() helper.
     local quiet_mode="$1"
 
-    # v1.24.0: Use unified protection state function (single source of truth)
+    # v1.66.0: Use unified protection state function (single source of truth)
     local protection_state
     protection_state=$(_nftban_protection_state)
+    local _base_state="${protection_state%%:*}"
 
     # Header with version and state
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1288,25 +1385,48 @@ output_terminal() {
     echo "  nftban help              Show all commands"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # v1.24.0: Exit code = protection state, NOT health findings
-    # 0 = firewall IS protecting (PROTECTED or DEGRADED)
-    # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
-    case "$protection_state" in
-        PROTECTED|MONITORING|DEGRADED) return 0 ;;
-        *)                  return 1 ;;
+    # v1.66.0: Exit code contract — 0=PROTECTED, 1=DEGRADED, 2=DOWN
+    case "$_base_state" in
+        PROTECTED) return 0 ;;
+        DEGRADED)
+            [[ "${NFTBAN_EXIT_COMPAT:-}" == "v1" ]] && return 0
+            return 1
+            ;;
+        *) return 2 ;;
     esac
 }
 
 output_json() {
     # Output JSON format
 
-    # v1.24.0: Use unified protection state function (single source of truth)
-    local json_state
-    json_state=$(_nftban_protection_state)
+    # v1.66.0: Use unified protection state function (single source of truth)
+    local json_state_raw
+    json_state_raw=$(_nftban_protection_state)
+    local json_base_state="${json_state_raw%%:*}"
+    local json_reason="${json_state_raw#*:}"
+    [[ "$json_reason" == "$json_base_state" ]] && json_reason=""
+
+    # v1.66.0: Config divergence detection
+    local _json_divergence
+    _json_divergence=$(_check_config_divergence 2>/dev/null)
+    local _json_div_array=""
+    if [[ -n "$_json_divergence" ]]; then
+        local _first=true _div_item
+        while IFS= read -r _div_item; do
+            if [[ -n "$_div_item" ]]; then
+                [[ "$_first" == "true" ]] && _first=false || _json_div_array+=", "
+                _json_div_array+="\"${_div_item}\""
+            fi
+        done <<< "$_json_divergence"
+    fi
 
     echo "{"
     echo "  \"version\": \"${NFTBAN_VERSION:-unknown}\","
-    echo "  \"state\": \"$json_state\","
+    echo "  \"state\": \"$json_base_state\","
+    if [[ -n "$json_reason" ]]; then
+        echo "  \"degraded_reason\": \"$json_reason\","
+    fi
+    echo "  \"config_divergence\": [${_json_div_array}],"
     echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
     echo "  \"hostname\": \"$(hostname)\","
 
@@ -1469,8 +1589,8 @@ output_json() {
         2) health_status="errors" ;;
     esac
 
-    # v1.33.0: JSON health parity — apply same PROTECTED/MONITORING downgrade as CLI
-    if [[ ("$json_state" == "PROTECTED" || "$json_state" == "MONITORING") ]] && [[ "$health_status" == "errors" ]]; then
+    # v1.66.0: JSON health parity — when PROTECTED, health errors are informational
+    if [[ "$json_base_state" == "PROTECTED" ]] && [[ "$health_status" == "errors" ]]; then
         health_status="healthy"
     fi
 
@@ -1666,12 +1786,14 @@ output_json() {
     # Exit marker for testing validation
     command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "status"
 
-    # v1.24.0: Exit code = protection state, NOT health findings
-    # 0 = firewall IS protecting (PROTECTED or DEGRADED)
-    # 1 = firewall NOT protecting (UNPROTECTED or DISABLED)
-    case "$json_state" in
-        PROTECTED|MONITORING|DEGRADED) return 0 ;;
-        *)                  return 1 ;;
+    # v1.66.0: Exit code contract — 0=PROTECTED, 1=DEGRADED, 2=DOWN
+    case "$json_base_state" in
+        PROTECTED) return 0 ;;
+        DEGRADED)
+            [[ "${NFTBAN_EXIT_COMPAT:-}" == "v1" ]] && return 0
+            return 1
+            ;;
+        *) return 2 ;;
     esac
 }
 
