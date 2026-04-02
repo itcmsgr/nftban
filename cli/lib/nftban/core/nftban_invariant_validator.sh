@@ -40,7 +40,9 @@ set -Eeuo pipefail
 # CONSTANTS
 # =============================================================================
 
+# shellcheck disable=SC2034
 readonly INVARIANT_PASS=0
+# shellcheck disable=SC2034
 readonly INVARIANT_WARNING=1
 readonly INVARIANT_ERROR=2
 
@@ -155,7 +157,6 @@ _validate_structural() {
 
     # INV-S-004 + INV-S-005: Module chains + jumps (only for active modules)
     local modules_ok=true
-    local jumps_ok=true
     local mod_entry chain_name mod_anchor
     for mod_entry in "${_INV_MODULE_ANCHORS[@]}"; do
         IFS='|' read -r chain_name mod_anchor <<< "$mod_entry"
@@ -224,7 +225,6 @@ _validate_order() {
         # Only check order in first family (ip) to avoid duplicate reports
         if [[ "$family" == "ip" ]]; then
             # INV-O-001 through INV-O-006: Sequential anchor order
-            local prev_anchor="" prev_line=0 order_ok=true
             local -a order_pairs=(
                 "HYGIENE|TRUSTED|INV-O-001"
                 "TRUSTED|BAN|INV-O-002"
@@ -247,7 +247,6 @@ _validate_order() {
                     local note=""
                     [[ "$inv_id" == "INV-O-003" ]] && note=" (CVE protection)"
                     _inv_record "$inv_id" "$severity" "ANCHOR_${a} (line ${a_line}) NOT before ANCHOR_${b} (line ${b_line})${note}"
-                    order_ok=false
                 else
                     local note=""
                     [[ "$inv_id" == "INV-O-003" ]] && note=" (CVE protection)"
@@ -426,7 +425,7 @@ _inv_output_text() {
     echo "────────────────────────────────────────────────────────────"
 
     # Group by category
-    local category="" id status detail
+    local id status detail
     for id in \
         INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 \
         INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \

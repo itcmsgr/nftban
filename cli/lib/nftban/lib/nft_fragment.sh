@@ -168,20 +168,13 @@ nft_fragment_render_portscan_classic_jump() {
     # New strategy: insert BEFORE the SYN meter rule so portscan sees all new
     # TCP SYN packets before any broad accept path.
 
-    local family handle table_fam meter_name
+    local family handle table_fam
     for family in ip ip6; do
         table_fam="${family} nftban"
 
         # Skip if jump already exists
         if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
-        fi
-
-        # Select family-specific meter name
-        if [[ "$family" == "ip" ]]; then
-            meter_name="syn_meter_v4"
-        else
-            meter_name="syn_meter_v6"
         fi
 
         # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
