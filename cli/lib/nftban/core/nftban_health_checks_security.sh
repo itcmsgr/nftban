@@ -1193,6 +1193,65 @@ nftban_health_check_module_jump_placement() {
     return $status
 }
 
+# v1.63.0: Validate anchor skeleton integrity.
+# Checks: all 7 NFTBAN_ANCHOR markers present exactly once per address family,
+# and anchor order matches the canonical phase model.
+
+nftban_health_check_anchor_integrity() {
+    local status=$HEALTH_OK
+    local issues=()
+
+    # Delegate to the invariant validator (single source of truth for anchor checks)
+    local inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
+    if [[ -f "$inv_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$inv_lib" 2>/dev/null || true
+        if type nftban_validate_invariants &>/dev/null; then
+            nftban_validate_invariants >/dev/null 2>&1 || true
+
+            # Extract anchor-related invariant results (INV-S-003, INV-S-006, INV-O-001..006)
+            local id entry inv_status
+            for id in INV-S-003 INV-S-006 INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006; do
+                entry="${NFTBAN_INVARIANT_RESULTS[$id]:-}"
+                [[ -z "$entry" ]] && continue
+                inv_status="${entry%%|*}"
+                if [[ "$inv_status" == "ERROR" ]]; then
+                    issues+=("${id}: ${entry#*|}")
+                    status=$HEALTH_ERROR
+                fi
+            done
+        fi
+    else
+        # Fallback: basic anchor count check if invariant validator not available
+        local expected_anchors=(HYGIENE TRUSTED BAN ESTABLISHED DETECT SERVICE FINAL)
+        local family chain_output anchor count
+        for family in ip ip6; do
+            chain_output=$(nft -a list chain ${family} nftban input 2>/dev/null) || {
+                issues+=("Cannot list ${family} nftban input chain")
+                status=$HEALTH_ERROR
+                continue
+            }
+            for anchor in "${expected_anchors[@]}"; do
+                count=$(echo "$chain_output" | grep -c "NFTBAN_ANCHOR:ANCHOR_${anchor}" || true)
+                if [[ "$count" -ne 1 ]]; then
+                    issues+=("ANCHOR_${anchor} in ${family}: count=${count} (expected 1)")
+                    status=$HEALTH_ERROR
+                fi
+            done
+        done
+    fi
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_ISSUES["anchor_integrity"]="${issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Anchor integrity: ${issues[*]}")
+    fi
+
+    # shellcheck disable=SC2034
+    NFTBAN_HEALTH_RESULTS["anchor_integrity"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
@@ -1200,3 +1259,4 @@ export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
 export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement
+export -f nftban_health_check_anchor_integrity

@@ -457,6 +457,23 @@ firewall_validate() {
         validate_structure "false" || validation_result=$VALIDATE_STRUCTURE_ERROR
     fi
 
+    # Run invariant validation (anchor structure, order, safety)
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_invariant_validator.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_invariant_validator.sh" || true
+        local inv_exit=0
+        if [[ "$quiet_mode" == "true" ]]; then
+            nftban_validate_invariants >/dev/null 2>&1 || inv_exit=$?
+        elif [[ "$output_json" == "true" ]]; then
+            nftban_validate_invariants --json || inv_exit=$?
+        else
+            nftban_validate_invariants || inv_exit=$?
+        fi
+        if [[ $inv_exit -ge 2 && $validation_result -eq $VALIDATE_OK ]]; then
+            validation_result=$VALIDATE_STRUCTURE_ERROR
+        fi
+    fi
+
     # If strict mode, run additional checks
     if [[ "$strict_mode" == "true" ]]; then
         local strict_exit=$VALIDATE_OK
