@@ -201,7 +201,7 @@ _validate_structural() {
                 local rule_count
                 rule_count=$(echo "$chain_rules" | grep -cE '^\s+(meta|ip|ip6|tcp|udp|ct |counter|drop|accept|jump|reject|log|return|limit|meter)' || true)
                 if [[ "$rule_count" -eq 0 ]]; then
-                    _inv_record "INV-S-008" "WARNING" "Chain ${chain_name} in ${family} has 0 rules (module enabled but ineffective)"
+                    _inv_record "INV-S-008" "ERROR" "Chain ${chain_name} in ${family} has 0 rules (jump to empty chain = dead protection)"
                     empty_ok=false
                 fi
             fi

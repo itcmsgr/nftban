@@ -242,6 +242,25 @@ nft_fragment_has_jump() {
     nft list chain ${table} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1
 }
 
+# v1.65.0: Remove jump rule(s) from input chain for a module
+# Usage: nft_fragment_remove_jump <chain_name>
+# Removes jump from both ip and ip6 tables. Idempotent — no error if jump absent.
+nft_fragment_remove_jump() {
+    local chain_name="$1"
+    local table_fam handle
+
+    for table_fam in "ip nftban" "ip6 nftban"; do
+        # Find all handle(s) for this jump in the input chain
+        while IFS= read -r handle; do
+            [[ -z "$handle" ]] && continue
+            nft delete rule ${table_fam} input handle "$handle" 2>/dev/null || true
+        done < <(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep "jump ${chain_name}" \
+            | grep -oE 'handle [0-9]+' \
+            | awk '{print $2}')
+    done
+}
+
 # =============================================================================
 # DDOS SANITY FRAGMENTS (Packet Validation - Stage 3)
 # =============================================================================
@@ -1990,41 +2009,47 @@ nft_fragment_enable_module() {
 nft_fragment_disable_module() {
     local module="$1"
     local fragment_path
+    local chain_name=""
 
     case "$module" in
         portscan-classic|portscan_classic)
+            chain_name="portscan_detection"
             fragment_path=$(nft_fragment_render_portscan_classic_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-sanity|ddos_sanity)
+            chain_name="ddos_sanity"
             fragment_path=$(nft_fragment_render_ddos_sanity_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-synproxy|ddos_synproxy|synproxy)
-            # First, remove nftban-managed rules from raw prerouting chains
-            # (targeted deletion to avoid destroying Docker/K8s rules)
+            chain_name="ddos_synproxy"
             _nft_cleanup_synproxy_raw
-            # Then flush nftban-owned SYNPROXY chains
             fragment_path=$(nft_fragment_render_synproxy_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-prefix|ddos_prefix)
+            chain_name="ddos_prefix"
             fragment_path=$(nft_fragment_render_ddos_prefix_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-classic|ddos_classic)
+            chain_name="ddos_protection"
             fragment_path=$(nft_fragment_render_ddos_classic_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-ban|ddos_ban)
+            chain_name="ddos_ban_enforce"
             fragment_path=$(nft_fragment_render_ddos_ban_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         ddos-penalty|ddos_penalty)
+            chain_name="ddos_penalty"
             fragment_path=$(nft_fragment_render_ddos_penalty_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         http-botguard|http_botguard|botguard)
+            chain_name="http_bot_guard"
             fragment_path=$(nft_fragment_render_http_botguard_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
@@ -2033,6 +2058,12 @@ nft_fragment_disable_module() {
             return 1
             ;;
     esac
+
+    # v1.65.0: Remove jump rule from input chain (H-02 audit fix)
+    # Previous behavior: flush chain only → stale jump to empty chain remained
+    if [[ -n "$chain_name" ]]; then
+        nft_fragment_remove_jump "$chain_name"
+    fi
 
     return 0
 }

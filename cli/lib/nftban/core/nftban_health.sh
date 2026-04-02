@@ -512,6 +512,7 @@ nftban_health_check_all() {
     nftban_health_check_portscan_placement || { ((warnings++)) || true; }
     nftban_health_check_module_jump_placement || { ((errors++)) || true; }
     nftban_health_check_anchor_integrity || { ((errors++)) || true; }
+    nftban_health_check_kernel_parity || { ((errors++)) || true; }
 
     # Run service checks
     nftban_health_check_services || { ((warnings++)) || true; }
