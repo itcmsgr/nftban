@@ -1193,6 +1193,58 @@ nftban_health_check_module_jump_placement() {
     return $status
 }
 
+# v1.63.0: Validate anchor skeleton integrity.
+# Checks: all 7 NFTBAN_ANCHOR markers present exactly once per address family,
+# and anchor order matches the canonical phase model.
+
+nftban_health_check_anchor_integrity() {
+    local status=$HEALTH_OK
+    local issues=()
+    local expected_anchors=(HYGIENE TRUSTED BAN ESTABLISHED DETECT SERVICE FINAL)
+
+    local family chain_output
+    for family in ip ip6; do
+        chain_output=$(nft -a list chain ${family} nftban input 2>/dev/null) || {
+            issues+=("Cannot list ${family} nftban input chain")
+            status=$HEALTH_ERROR
+            continue
+        }
+
+        local prev_line=0
+        local anchor
+        for anchor in "${expected_anchors[@]}"; do
+            local count
+            count=$(echo "$chain_output" | grep -c "NFTBAN_ANCHOR:ANCHOR_${anchor}" || true)
+            if [[ "$count" -eq 0 ]]; then
+                issues+=("Missing ANCHOR_${anchor} in ${family}")
+                status=$HEALTH_ERROR
+            elif [[ "$count" -gt 1 ]]; then
+                issues+=("Duplicate ANCHOR_${anchor} in ${family} (count=${count})")
+                status=$HEALTH_ERROR
+            else
+                # Check order: each anchor must appear after the previous one
+                local line_num
+                line_num=$(echo "$chain_output" | grep -n "NFTBAN_ANCHOR:ANCHOR_${anchor}" | cut -d: -f1 | head -1)
+                if [[ "$prev_line" -gt 0 && "$line_num" -le "$prev_line" ]]; then
+                    issues+=("ANCHOR_${anchor} out of order in ${family} (line ${line_num} <= prev ${prev_line})")
+                    status=$HEALTH_ERROR
+                fi
+                prev_line=$line_num
+            fi
+        done
+    done
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        # shellcheck disable=SC2034
+        NFTBAN_HEALTH_ISSUES["anchor_integrity"]="${issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Anchor integrity: ${issues[*]}")
+    fi
+
+    # shellcheck disable=SC2034
+    NFTBAN_HEALTH_RESULTS["anchor_integrity"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
@@ -1200,3 +1252,4 @@ export -f nftban_health_check_polkit nftban_health_check_systemd_hardening
 export -f nftban_health_check_ssh_port nftban_health_check_nft_schema
 export -f nftban_health_check_set_sizes nftban_health_check_boot_safety
 export -f nftban_health_check_portscan_placement nftban_health_check_module_jump_placement
+export -f nftban_health_check_anchor_integrity
