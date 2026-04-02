@@ -184,32 +184,30 @@ nft_fragment_render_portscan_classic_jump() {
             meter_name="syn_meter_v6"
         fi
 
-        # Primary anchor: SYN rate meter rule
-        # Insert BEFORE it so portscan sees all new TCP SYN traffic
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep "${meter_name}" \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_DETECT' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"Portscan detection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert portscan jump before SYN meter in ${table_fam}" >&2
-                # Do NOT fall back to append — that would silently place after SYN meter
+                echo "WARNING: Failed to insert portscan jump at ANCHOR_DETECT in ${table_fam}" >&2
                 continue
             }
             continue
         fi
 
-        # Secondary anchor: service accept (@tcp_ports_in) — same as DDoS classic
+        # Fallback: legacy SYN rate meter grep (pre-v1.62 templates)
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
+            | grep "${meter_name}" \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            echo "WARNING: SYN meter not found in ${table_fam} — inserting before service accept" >&2
+            echo "WARNING: ANCHOR_DETECT not found in ${table_fam} — using legacy SYN meter anchor" >&2
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"Portscan detection\"" 2>/dev/null || {
-                echo "ERROR: Failed to insert portscan jump in ${table_fam}" >&2
+                echo "WARNING: Failed to insert portscan jump before SYN meter in ${table_fam}" >&2
                 continue
             }
             continue
@@ -410,28 +408,27 @@ nft_fragment_render_ddos_sanity_jump() {
             continue
         fi
 
-        # Primary anchor: @whitelist_ip — insert BEFORE whitelist accept
-        # Consistent with template design: ct state invalid (handle 42) is already before whitelist
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@whitelist_ip' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_TRUSTED' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"Sanity check (Stage 3)\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert sanity jump before whitelist in ${table_fam}" >&2
+                echo "WARNING: Failed to insert sanity jump at ANCHOR_TRUSTED in ${table_fam}" >&2
                 continue
             }
             continue
         fi
 
-        # Secondary anchor: @blacklist_manual — still before hard-deny
+        # Fallback: legacy whitelist set grep (pre-v1.62 templates)
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@blacklist_manual' \
+            | grep '@whitelist_ip' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            echo "WARNING: Whitelist not found in ${table_fam} — inserting before blacklist_manual" >&2
+            echo "WARNING: ANCHOR_TRUSTED not found in ${table_fam} — using legacy whitelist anchor" >&2
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"Sanity check (Stage 3)\"" 2>/dev/null || {
                 echo "ERROR: Failed to insert sanity jump in ${table_fam}" >&2
@@ -665,20 +662,31 @@ nft_fragment_render_synproxy_jump() {
             continue
         fi
 
-        # Find handle of 'ct state established,related accept'
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'established,related' \
-            | grep -oP 'handle \K\d+' | head -1)
+            | grep 'NFTBAN_ANCHOR:ANCHOR_ESTABLISHED' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            # Insert BEFORE the established,related rule
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert SYNPROXY jump before handle $handle in ${table_fam}" >&2
-                # Do NOT fall back to append — that would place after service accept (dead code)
+                echo "WARNING: Failed to insert SYNPROXY jump at ANCHOR_ESTABLISHED in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
+
+        # Fallback: legacy established,related grep (pre-v1.62 templates)
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep 'established,related' \
+            | grep -oP 'handle \K\d+' | head -1) || true
+
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: ANCHOR_ESTABLISHED not found in ${table_fam} — using legacy established anchor" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert SYNPROXY jump in ${table_fam}" >&2
                 continue
             }
         else
-            # No established,related rule found — do NOT append blindly
             echo "ERROR: Cannot find safe anchor for SYNPROXY jump in ${table_fam} — module placement UNSAFE" >&2
             continue
         fi
@@ -862,16 +870,30 @@ nft_fragment_render_ddos_prefix_jump() {
             continue
         fi
 
-        # Primary anchor: @tcp_ports_in — insert BEFORE service port accept
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_SERVICE' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"Prefix aggregation protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert prefix jump before service accept in ${table_fam}" >&2
-                # Do NOT fall back to append — that would silently place after service accept
+                echo "WARNING: Failed to insert prefix jump at ANCHOR_SERVICE in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
+
+        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
+
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"Prefix aggregation protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert prefix jump in ${table_fam}" >&2
                 continue
             }
             continue
@@ -1067,22 +1089,33 @@ nft_fragment_render_ddos_classic_jump() {
             continue
         fi
 
-        # Find handle of first service port accept rule (tcp dport @tcp_ports_in)
-        # Insert BEFORE it so DDoS rate limits fire before service port accept
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
-            | grep -oP 'handle \K\d+' | head -1)
+            | grep 'NFTBAN_ANCHOR:ANCHOR_SERVICE' \
+            | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            # Insert BEFORE service port rules
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS classic protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert DDoS jump before handle $handle in ${table_fam}" >&2
-                # Do NOT fall back to append — that would place after service accept (dead code)
+                echo "WARNING: Failed to insert DDoS jump at ANCHOR_SERVICE in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
+
+        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
+
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
+            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
+                comment "\"DDoS classic protection\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert DDoS jump in ${table_fam}" >&2
                 continue
             }
         else
-            # No service port rule found — do NOT append blindly
             echo "ERROR: Cannot find safe anchor for DDoS classic jump in ${table_fam} — module placement UNSAFE" >&2
             continue
         fi
@@ -1263,27 +1296,27 @@ nft_fragment_render_ddos_ban_jump() {
             continue
         fi
 
-        # Primary anchor: @blacklist_manual — insert BEFORE manual blacklist
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@blacklist_manual' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_BAN' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS ban check (Stage 4)\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert ban jump before blacklist_manual in ${table_fam}" >&2
+                echo "WARNING: Failed to insert ban jump at ANCHOR_BAN in ${table_fam}" >&2
                 continue
             }
             continue
         fi
 
-        # Secondary anchor: @blacklist_ip — still before feed blacklist
+        # Fallback: legacy @blacklist_manual grep (pre-v1.62 templates)
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@blacklist_ip' \
+            | grep '@blacklist_manual' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            echo "WARNING: blacklist_manual not found in ${table_fam} — inserting before blacklist_ip" >&2
+            echo "WARNING: ANCHOR_BAN not found in ${table_fam} — using legacy blacklist_manual anchor" >&2
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS ban check (Stage 4)\"" 2>/dev/null || {
                 echo "ERROR: Failed to insert ban jump in ${table_fam}" >&2
@@ -1511,27 +1544,27 @@ nft_fragment_render_ddos_penalty_jump() {
             continue
         fi
 
-        # Primary anchor: established,related — insert BEFORE stateful bypass
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'established,related' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_ESTABLISHED' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS penalty ladder\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert penalty jump before established in ${table_fam}" >&2
+                echo "WARNING: Failed to insert penalty jump at ANCHOR_ESTABLISHED in ${table_fam}" >&2
                 continue
             }
             continue
         fi
 
-        # Secondary anchor: @tcp_ports_in — at least before service accept
+        # Fallback: legacy established,related grep (pre-v1.62 templates)
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
+            | grep 'established,related' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
-            echo "WARNING: established,related not found in ${table_fam} — inserting before service accept" >&2
+            echo "WARNING: ANCHOR_ESTABLISHED not found in ${table_fam} — using legacy established anchor" >&2
             nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
                 comment "\"DDoS penalty ladder\"" 2>/dev/null || {
                 echo "ERROR: Failed to insert penalty jump in ${table_fam}" >&2
@@ -1838,9 +1871,9 @@ nft_fragment_render_http_botguard_jump() {
             continue
         fi
 
-        # Primary anchor: @tcp_ports_in — insert BEFORE service port accept
+        # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_SERVICE' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
@@ -1848,7 +1881,24 @@ nft_fragment_render_http_botguard_jump() {
             nft insert rule ${table_fam} input position "$handle" \
                 tcp dport {80, 443} jump "${chain}" \
                 comment "\"HTTP Bot Guard\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert botguard jump before service accept in ${table_fam}" >&2
+                echo "WARNING: Failed to insert botguard jump at ANCHOR_SERVICE in ${table_fam}" >&2
+                continue
+            }
+            continue
+        fi
+
+        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
+        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
+            | grep '@tcp_ports_in' \
+            | grep -oP 'handle \K\d+' | head -1) || true
+
+        if [[ -n "$handle" ]]; then
+            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
+            # shellcheck disable=SC1083 # Braces are nft syntax, not shell
+            nft insert rule ${table_fam} input position "$handle" \
+                tcp dport {80, 443} jump "${chain}" \
+                comment "\"HTTP Bot Guard\"" 2>/dev/null || {
+                echo "WARNING: Failed to insert botguard jump in ${table_fam}" >&2
                 continue
             }
             continue
