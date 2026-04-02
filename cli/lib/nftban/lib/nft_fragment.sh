@@ -168,20 +168,13 @@ nft_fragment_render_portscan_classic_jump() {
     # New strategy: insert BEFORE the SYN meter rule so portscan sees all new
     # TCP SYN packets before any broad accept path.
 
-    local family handle table_fam meter_name
+    local family handle table_fam
     for family in ip ip6; do
         table_fam="${family} nftban"
 
         # Skip if jump already exists
         if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
             continue
-        fi
-
-        # Select family-specific meter name
-        if [[ "$family" == "ip" ]]; then
-            meter_name="syn_meter_v4"
-        else
-            meter_name="syn_meter_v6"
         fi
 
         # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
@@ -198,23 +191,8 @@ nft_fragment_render_portscan_classic_jump() {
             continue
         fi
 
-        # Fallback: legacy SYN rate meter grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep "${meter_name}" \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_DETECT not found in ${table_fam} — using legacy SYN meter anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"Portscan detection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert portscan jump before SYN meter in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for portscan jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_DETECT not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -422,23 +400,8 @@ nft_fragment_render_ddos_sanity_jump() {
             continue
         fi
 
-        # Fallback: legacy whitelist set grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@whitelist_ip' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_TRUSTED not found in ${table_fam} — using legacy whitelist anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"Sanity check (Stage 3)\"" 2>/dev/null || {
-                echo "ERROR: Failed to insert sanity jump in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for sanity jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_TRUSTED not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -675,21 +638,8 @@ nft_fragment_render_synproxy_jump() {
             continue
         fi
 
-        # Fallback: legacy established,related grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'established,related' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_ESTABLISHED not found in ${table_fam} — using legacy established anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" comment "\"SYNPROXY protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert SYNPROXY jump in ${table_fam}" >&2
-                continue
-            }
-        else
-            echo "ERROR: Cannot find safe anchor for SYNPROXY jump in ${table_fam} — module placement UNSAFE" >&2
-            continue
-        fi
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_ESTABLISHED not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return a dummy path for API compatibility (no file written)
@@ -884,23 +834,8 @@ nft_fragment_render_ddos_prefix_jump() {
             continue
         fi
 
-        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"Prefix aggregation protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert prefix jump in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for prefix jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_SERVICE not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -1103,22 +1038,8 @@ nft_fragment_render_ddos_classic_jump() {
             continue
         fi
 
-        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"DDoS classic protection\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert DDoS jump in ${table_fam}" >&2
-                continue
-            }
-        else
-            echo "ERROR: Cannot find safe anchor for DDoS classic jump in ${table_fam} — module placement UNSAFE" >&2
-            continue
-        fi
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_SERVICE not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return a dummy path for API compatibility (no file written)
@@ -1310,23 +1231,8 @@ nft_fragment_render_ddos_ban_jump() {
             continue
         fi
 
-        # Fallback: legacy @blacklist_manual grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@blacklist_manual' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_BAN not found in ${table_fam} — using legacy blacklist_manual anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"DDoS ban check (Stage 4)\"" 2>/dev/null || {
-                echo "ERROR: Failed to insert ban jump in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for ban jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_BAN not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -1558,23 +1464,8 @@ nft_fragment_render_ddos_penalty_jump() {
             continue
         fi
 
-        # Fallback: legacy established,related grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'established,related' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_ESTABLISHED not found in ${table_fam} — using legacy established anchor" >&2
-            nft insert rule ${table_fam} input position "$handle" jump "${chain}" \
-                comment "\"DDoS penalty ladder\"" 2>/dev/null || {
-                echo "ERROR: Failed to insert penalty jump in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for penalty jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: No fallback — anchor is required (health check validates presence)
+        echo "ERROR: ANCHOR_ESTABLISHED not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -1887,25 +1778,8 @@ nft_fragment_render_http_botguard_jump() {
             continue
         fi
 
-        # Fallback: legacy @tcp_ports_in grep (pre-v1.62 templates)
-        handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep '@tcp_ports_in' \
-            | grep -oP 'handle \K\d+' | head -1) || true
-
-        if [[ -n "$handle" ]]; then
-            echo "WARNING: ANCHOR_SERVICE not found in ${table_fam} — using legacy tcp_ports_in anchor" >&2
-            # shellcheck disable=SC1083 # Braces are nft syntax, not shell
-            nft insert rule ${table_fam} input position "$handle" \
-                tcp dport {80, 443} jump "${chain}" \
-                comment "\"HTTP Bot Guard\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert botguard jump in ${table_fam}" >&2
-                continue
-            }
-            continue
-        fi
-
-        # No anchor found — do NOT append blindly
-        echo "ERROR: Cannot find safe anchor for botguard jump in ${table_fam} — module placement UNSAFE" >&2
+        # v1.63.0: Legacy fallback removed — anchor is required
+        echo "ERROR: ANCHOR_SERVICE not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
