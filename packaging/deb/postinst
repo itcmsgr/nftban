@@ -752,46 +752,56 @@ case "$1" in
         # This is the AUTHORITATIVE check that gates service enablement.
         # If preflight fails, NFTBan installs but does NOT enforce.
         # This allows package install to succeed while requiring admin action.
-        log_info "Running strict preflight check..."
+        #
+        # v1.66.0: UPDATE mode skips pre-rebuild preflight. When updating our
+        # own rules, the old kernel state will ALWAYS fail the new validator
+        # (new invariants, anchors, template rules). The rebuild validates
+        # post-load. Preflight still runs for FRESH and TAKEOVER installs.
 
         PREFLIGHT_PASSED=1
         PREFLIGHT_EXIT=0
         PREFLIGHT_OUTPUT=""
 
-        # Use consolidated command: nftban firewall validate --strict
-        # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
-        if command -v nftban >/dev/null 2>&1; then
-            PREFLIGHT_OUTPUT=$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
-
-            if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
-                PREFLIGHT_PASSED=0
-
-                # v1.18.7: Parse actual output for accurate error message
-                if echo "$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
-                    PREFLIGHT_REASON=$(echo "$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1 | sed 's/.*CRITICAL: //')
-                else
-                    # Fallback to exit code mapping
-                    case $PREFLIGHT_EXIT in
-                        10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
-                        20) PREFLIGHT_REASON="Firewall authority conflict" ;;
-                        30) PREFLIGHT_REASON="NFTables hook collision" ;;
-                        *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;
-                    esac
-                fi
-                PREFLIGHT_ACTION="nftban firewall validate --strict"
-
-                log_error ""
-                log_error "Strict preflight failed - refusing to enable enforcement"
-                log_error "Reason: $PREFLIGHT_REASON"
-                log_error "Fix: $PREFLIGHT_ACTION"
-                log_error "NFTBan is installed but NOT enforcing."
-                log_error "Fix the issue and run: dpkg-reconfigure nftban-core"
-                log_error ""
-            else
-                log_info "  Strict preflight passed - safe to enable enforcement"
-            fi
+        if [[ "$AUTHORITY_DECISION" == "UPDATE" ]]; then
+            log_info "Update mode — skipping pre-rebuild preflight (will validate after rebuild)"
         else
-            log_warn "nftban command not found - skipping strict preflight"
+            log_info "Running strict preflight check..."
+
+            # Use consolidated command: nftban firewall validate --strict
+            # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
+            if command -v nftban >/dev/null 2>&1; then
+                PREFLIGHT_OUTPUT=$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
+
+                if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
+                    PREFLIGHT_PASSED=0
+
+                    # v1.18.7: Parse actual output for accurate error message
+                    if echo "$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
+                        PREFLIGHT_REASON=$(echo "$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1 | sed 's/.*CRITICAL: //')
+                    else
+                        # Fallback to exit code mapping
+                        case $PREFLIGHT_EXIT in
+                            10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
+                            20) PREFLIGHT_REASON="Firewall authority conflict" ;;
+                            30) PREFLIGHT_REASON="NFTables hook collision" ;;
+                            *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;
+                        esac
+                    fi
+                    PREFLIGHT_ACTION="nftban firewall validate --strict"
+
+                    log_error ""
+                    log_error "Strict preflight failed - refusing to enable enforcement"
+                    log_error "Reason: $PREFLIGHT_REASON"
+                    log_error "Fix: $PREFLIGHT_ACTION"
+                    log_error "NFTBan is installed but NOT enforcing."
+                    log_error "Fix the issue and run: dpkg-reconfigure nftban-core"
+                    log_error ""
+                else
+                    log_info "  Strict preflight passed - safe to enable enforcement"
+                fi
+            else
+                log_warn "nftban command not found - skipping strict preflight"
+            fi
         fi
 
         # =====================================================================
