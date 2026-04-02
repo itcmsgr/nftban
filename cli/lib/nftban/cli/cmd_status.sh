@@ -235,7 +235,7 @@ _check_config_divergence() {
     if [[ "$_ddos_conf" == "true" ]]; then
         local _ddos_rules=0
         _ddos_rules=$(nft -a list chain ip nftban ddos_protection 2>/dev/null | grep -c "# handle" || true)
-        [[ "${_ddos_rules:-0}" -eq 0 ]] && echo "ddos"
+        [[ "${_ddos_rules:-0}" -eq 0 ]] && echo "ddos" || true
     fi
 
     # Portscan: config says enabled, kernel says no
@@ -249,8 +249,10 @@ _check_config_divergence() {
     if [[ "$_ps_conf" == "true" ]]; then
         local _ps_rules=0
         _ps_rules=$(nft -a list chain ip nftban portscan_detection 2>/dev/null | grep -c "# handle" || true)
-        [[ "${_ps_rules:-0}" -eq 0 ]] && echo "portscan"
+        [[ "${_ps_rules:-0}" -eq 0 ]] && echo "portscan" || true
     fi
+
+    return 0
 }
 
 # =============================================================================
