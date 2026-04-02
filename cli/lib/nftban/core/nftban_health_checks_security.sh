@@ -1146,14 +1146,15 @@ nftban_health_check_module_jump_placement() {
 
     # Module definitions: chain_name|anchor_grep|module_description
     # Only check modules that have jump rules in the input chain
+    # v1.62.1: Primary anchors use NFTBAN_ANCHOR comment markers
     local -a modules=(
-        "ddos_sanity|@whitelist_ip|DDoS sanity"
-        "ddos_ban_enforce|@blacklist_manual|DDoS ban enforce"
-        "ddos_penalty|established,related|DDoS penalty"
-        "ddos_prefix|@tcp_ports_in|DDoS prefix"
-        "ddos_protection|@tcp_ports_in|DDoS classic"
-        "http_bot_guard|@tcp_ports_in|HTTP Bot Guard"
-        "ddos_synproxy|established,related|SYNPROXY"
+        "ddos_sanity|NFTBAN_ANCHOR:ANCHOR_TRUSTED|DDoS sanity"
+        "ddos_ban_enforce|NFTBAN_ANCHOR:ANCHOR_BAN|DDoS ban enforce"
+        "ddos_penalty|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|DDoS penalty"
+        "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS prefix"
+        "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS classic"
+        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE|HTTP Bot Guard"
+        "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|SYNPROXY"
     )
 
     local family chain_rules

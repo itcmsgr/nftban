@@ -1391,15 +1391,16 @@ run_nft_schema_validation() {
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local placement_errors=0
     local placement_details=""
+    # v1.62.1: Primary anchors use NFTBAN_ANCHOR comment markers
     local _jmp_modules=(
-        "ddos_sanity|@whitelist_ip"
-        "ddos_ban_enforce|@blacklist_manual"
-        "ddos_penalty|established,related"
-        "portscan_detection|syn_meter_v"
-        "ddos_protection|@tcp_ports_in"
-        "ddos_prefix|@tcp_ports_in"
-        "http_bot_guard|@tcp_ports_in"
-        "ddos_synproxy|established,related"
+        "ddos_sanity|NFTBAN_ANCHOR:ANCHOR_TRUSTED"
+        "ddos_ban_enforce|NFTBAN_ANCHOR:ANCHOR_BAN"
+        "ddos_penalty|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED"
+        "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT"
+        "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE"
+        "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE"
+        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE"
+        "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED"
     )
     for _jmp_family in ip ip6; do
         local _jmp_chain_out
