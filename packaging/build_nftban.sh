@@ -1430,41 +1430,53 @@ fi
 # =============================================================================
 # v1.52.0: Mirrored from DEB postinst — RPM was missing this gate.
 # If preflight fails, NFTBan installs but does NOT enforce.
-echo "[NFTBan] Running strict preflight check..."
+#
+# v1.66.0: UPDATE mode skips pre-rebuild preflight. When we're updating our
+# own rules, the old kernel state will ALWAYS fail the new validator (new
+# invariants, new anchors, new template rules). The rebuild itself validates
+# post-load (cmd_firewall.sh firewall_rebuild → firewall_validate at the end).
+# Preflight still runs for FRESH and TAKEOVER installs where we need to check
+# the system BEFORE touching anything.
 
 PREFLIGHT_PASSED=1
 PREFLIGHT_EXIT=0
 PREFLIGHT_OUTPUT=""
 
-if command -v nftban >/dev/null 2>&1; then
-    PREFLIGHT_OUTPUT=\$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=\$?
-
-    if [[ \$PREFLIGHT_EXIT -ne 0 ]]; then
-        PREFLIGHT_PASSED=0
-
-        PREFLIGHT_REASON="unknown"
-        PREFLIGHT_ACTION="nftban firewall validate --strict"
-
-        if echo "\$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
-            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1)
-        elif echo "\$PREFLIGHT_OUTPUT" | grep -q "ERROR:"; then
-            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "ERROR:" | head -1)
-        elif echo "\$PREFLIGHT_OUTPUT" | grep -q "FAIL:"; then
-            PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "FAIL:" | head -1)
-        fi
-
-        echo "[NFTBan ERROR]"
-        echo "[NFTBan ERROR] Strict preflight failed — refusing to enable enforcement"
-        echo "[NFTBan ERROR] Reason: \$PREFLIGHT_REASON"
-        echo "[NFTBan ERROR] Fix: \$PREFLIGHT_ACTION"
-        echo "[NFTBan ERROR] NFTBan is installed but NOT enforcing."
-        echo "[NFTBan ERROR] Fix the issue and run: nftban firewall rebuild"
-        echo "[NFTBan ERROR]"
-    else
-        echo "[NFTBan]   Strict preflight passed — safe to enable enforcement"
-    fi
+if [[ "\$AUTHORITY_DECISION" == "UPDATE" ]]; then
+    echo "[NFTBan] Update mode — skipping pre-rebuild preflight (will validate after rebuild)"
 else
-    echo "[NFTBan WARN] nftban command not found — skipping strict preflight"
+    echo "[NFTBan] Running strict preflight check..."
+
+    if command -v nftban >/dev/null 2>&1; then
+        PREFLIGHT_OUTPUT=\$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=\$?
+
+        if [[ \$PREFLIGHT_EXIT -ne 0 ]]; then
+            PREFLIGHT_PASSED=0
+
+            PREFLIGHT_REASON="unknown"
+            PREFLIGHT_ACTION="nftban firewall validate --strict"
+
+            if echo "\$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1)
+            elif echo "\$PREFLIGHT_OUTPUT" | grep -q "ERROR:"; then
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "ERROR:" | head -1)
+            elif echo "\$PREFLIGHT_OUTPUT" | grep -q "FAIL:"; then
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "FAIL:" | head -1)
+            fi
+
+            echo "[NFTBan ERROR]"
+            echo "[NFTBan ERROR] Strict preflight failed — refusing to enable enforcement"
+            echo "[NFTBan ERROR] Reason: \$PREFLIGHT_REASON"
+            echo "[NFTBan ERROR] Fix: \$PREFLIGHT_ACTION"
+            echo "[NFTBan ERROR] NFTBan is installed but NOT enforcing."
+            echo "[NFTBan ERROR] Fix the issue and run: nftban firewall rebuild"
+            echo "[NFTBan ERROR]"
+        else
+            echo "[NFTBan]   Strict preflight passed — safe to enable enforcement"
+        fi
+    else
+        echo "[NFTBan WARN] nftban command not found — skipping strict preflight"
+    fi
 fi
 
 # ONLY enable services and firewall if preflight passed
