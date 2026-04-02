@@ -120,8 +120,8 @@ _cmd_update_status() {
     if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
         local pkg_info=""
         case "$install_type" in
-            rpm) pkg_info=$(rpm -q nftban 2>/dev/null || echo 'not installed') ;;
-            deb) pkg_info=$(dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed') ;;
+            rpm) pkg_info=$(rpm -q nftban-core 2>&1 | grep -v 'is not installed' || rpm -q nftban 2>&1 | grep -v 'is not installed' || echo 'not installed') ;;
+            deb) pkg_info=$(dpkg-query -W -f='${Package} ${Version}' nftban-core 2>/dev/null || dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed') ;;
             git) pkg_info="$NFTBAN_GIT_REPO@$NFTBAN_GIT_BRANCH" ;;
             *) pkg_info="unknown" ;;
         esac
@@ -154,12 +154,12 @@ EOF
     case "$install_type" in
         rpm)
             local rpm_pkg
-            rpm_pkg=$(rpm -q nftban 2>/dev/null || echo 'not installed')
+            rpm_pkg=$(rpm -q nftban-core 2>&1 | grep -v 'is not installed' || rpm -q nftban 2>&1 | grep -v 'is not installed' || echo 'not installed')
             printf "  │ RPM Package:      %-38s │\n" "$rpm_pkg"
             ;;
         deb)
             local deb_pkg
-            deb_pkg=$(dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed')
+            deb_pkg=$(dpkg-query -W -f='${Package} ${Version}' nftban-core 2>/dev/null || dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed')
             printf "  │ DEB Package:      %-38s │\n" "$deb_pkg"
             ;;
         git)
