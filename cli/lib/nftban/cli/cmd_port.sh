@@ -1520,7 +1520,7 @@ nftban_port_allow_directadmin() {
                 fi
             fi
 
-            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1)) || true
         done
     fi
 
@@ -1600,7 +1600,7 @@ nftban_port_allow_directadmin() {
                 fi
             fi
 
-            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1)) || true
         done
     fi
 

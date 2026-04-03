@@ -137,7 +137,7 @@ _count_set_elements() {
     # More accurate count
     local count
     count=$(timeout 10s nft list set $table "$set" 2>/dev/null | grep -oP '(?<=elements = \{ ).*(?= \})' | tr ',' '\n' | wc -l)
-    [[ $count -gt 0 ]] && echo "$count" || echo "0"
+    if [[ $count -gt 0 ]]; then echo "$count"; else echo "0"; fi
 }
 
 # Count IPs in files

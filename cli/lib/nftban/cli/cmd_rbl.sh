@@ -684,7 +684,7 @@ nftban_cmd_rbl_server() {
             [[ $quiet -eq 0 ]] && echo "  ✓ $ip"
         done < <(ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1' | grep -v '^fe80:' | grep -v '^fc00:' | grep -v '^fd00:' | sort -u)
         [[ $quiet -eq 0 ]] && [[ $ipv6_count -eq 0 ]] && echo "  (none found)"
-        [[ $quiet -eq 0 ]] && echo ""
+        [[ $quiet -eq 0 ]] && echo "" || true
     fi
 
     # 3. Hostname resolution
@@ -767,7 +767,7 @@ nftban_cmd_rbl_server() {
             fi
         fi
 
-        [[ $quiet -eq 0 ]] && echo ""
+        [[ $quiet -eq 0 ]] && echo "" || true
     done
 
     # Final summary
@@ -783,7 +783,7 @@ nftban_cmd_rbl_server() {
     if [[ $total_listed -gt 0 ]]; then
         [[ $quiet -eq 0 ]] && echo "⚠️  WARNING: Server has $total_listed IP(s) on RBL blacklists!"
     else
-        [[ $quiet -eq 0 ]] && echo "✅ All IPs are clean (not blacklisted)"
+        [[ $quiet -eq 0 ]] && echo "✅ All IPs are clean (not blacklisted)" || true
     fi
 
     # Update last check timestamp
@@ -990,7 +990,7 @@ nftban_cmd_rbl_cache() {
                 find "${NFTBAN_RBL_CACHE_DIR}" -name "*.cache" -exec basename {} \; | \
                     sed 's/.cache$//' | \
                     head -n 20
-                [[ $cache_count -gt 20 ]] && echo "... and $((cache_count - 20)) more"
+                [[ $cache_count -gt 20 ]] && echo "... and $((cache_count - 20)) more" || true
             fi
             ;;
         *)

@@ -93,7 +93,7 @@ nftban_cmd_services() {
 
     # Check for --json flag in arguments
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     shift || true

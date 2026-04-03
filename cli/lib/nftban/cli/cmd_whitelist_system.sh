@@ -135,7 +135,7 @@ nftban_cmd_whitelist_system() {
     # Check for --json flag in remaining args (suppress banner for JSON output)
     local json_mode=false
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     # Show banner (skip for JSON output to avoid polluting machine-readable output)

@@ -194,7 +194,7 @@ cmd_timers_status() {
             local last_trigger
             last_trigger=$(timer_last_trigger "$timer")
             echo "     Next run:    $next_run"
-            [[ "$last_trigger" != "N/A" && "$last_trigger" != "n/a" ]] && echo "     Last run:    $last_trigger"
+            [[ "$last_trigger" != "N/A" && "$last_trigger" != "n/a" ]] && echo "     Last run:    $last_trigger" || true
         fi
 
         echo ""

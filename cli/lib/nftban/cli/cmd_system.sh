@@ -462,7 +462,7 @@ nftban_system_status() {
         local _lm_en="false"
         [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
         [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_en" == "true" ]] && login_status="active"
+        [[ "$_lm_en" == "true" ]] && login_status="active" || true
     fi
 
     # JSON output mode

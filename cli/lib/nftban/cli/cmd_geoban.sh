@@ -100,7 +100,7 @@ nftban_cmd_geoban() {
     # Check if --json flag is present - skip banner for JSON output
     local json_mode="false"
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     # Show banner (skip for JSON output)
@@ -252,7 +252,7 @@ nftban_geoban_stats() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     # Get banned countries from geoban.d directory
@@ -369,7 +369,7 @@ nftban_geoban_config() {
 
     # Check for --json flag in arguments
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     local config_file="${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
@@ -491,7 +491,7 @@ nftban_geoban_test() {
     # Test GeoBan module configuration and connectivity
     local json_mode="false"
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     echo "GeoBan Module Test"

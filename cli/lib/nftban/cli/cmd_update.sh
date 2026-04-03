@@ -934,7 +934,7 @@ EOF
     local next_run=""
     if systemctl is-active nftban-update.timer &>/dev/null; then
         next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
-        [[ -n "$next_run" ]] && echo "  Next run:          $next_run"
+        [[ -n "$next_run" ]] && echo "  Next run:          $next_run" || true
     fi
 
     echo ""
@@ -1075,7 +1075,7 @@ _update_auto_status() {
 
     if [[ "$timer_active" == "active" ]]; then
         next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
-        [[ -n "$next_run" ]] && echo "  Next run:          $next_run"
+        [[ -n "$next_run" ]] && echo "  Next run:          $next_run" || true
     fi
 
     # Last run info from service
