@@ -278,8 +278,6 @@ ip6 nftban {                 # IPv6 rules
 }
 ```
 
-> **v1.18 Unified Blacklist**: All ban sources (feeds, geoban, login, ddos, portscan, manual) route to single `blacklist_ipv4/ipv6` set. Source tracking maintained in daemon database.
-
 ### Components
 
 | Component | Type | Description |
