@@ -157,6 +157,7 @@ _nftban_protection_state() {
     local _anchor_ok=true
     local _inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
     if [[ -f "$_inv_lib" ]]; then
+        local _inv_exit=0
         (
             # Subshell to avoid polluting caller's namespace
             # shellcheck source=/dev/null
@@ -165,8 +166,7 @@ _nftban_protection_state() {
                 nftban_validate_invariants >/dev/null 2>&1 || exit $?
             fi
             exit 0
-        )
-        local _inv_exit=$?
+        ) || _inv_exit=$?
         # exit 2 = ERROR (structural problem) → DEGRADED
         # exit 1 = WARNING (SSH port, empty whitelist) → still ok
         [[ $_inv_exit -ge 2 ]] && _anchor_ok=false || true

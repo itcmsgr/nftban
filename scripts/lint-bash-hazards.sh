@@ -23,6 +23,8 @@
 #   H1: Reject `nft list` without `-a` when output is grepped for `# handle`
 #   H2: Reject `[[ ... ]] && <action>` as last statement before `}` or `fi`
 #       (under set -e, false condition = exit 1 = script abort)
+#   H3: Reject subshell `)` followed by `=$?` on next line
+#       (under set -e, non-zero subshell exit kills before $? is captured)
 #
 # Exit codes:
 #   0  All checks passed
@@ -168,6 +170,55 @@ fi
 echo ""
 
 # =============================================================================
+# H3: Subshell/command exit captured via $? on next line (set -e hazard)
+# =============================================================================
+# Pattern:
+#   )           ← subshell closes with non-zero exit
+#   var=$?      ← never reached — set -e already killed the script
+#
+# Safe pattern:
+#   ) || _var=$?            ← non-zero captured inline
+#   ) || true; _var=$?      ← suppressed, then captured
+#   if ( ... ); then        ← conditional context, set -e doesn't fire
+#
+# Strategy: find lines that are just `)` followed by a line containing `=$?`
+# =============================================================================
+
+echo "=== H3: Checking for subshell exit capture via \$? on next line ==="
+h3_violations=0
+
+# Find all closing-paren lines `)` and check if next line captures $?
+while IFS=: read -r file lineno content; do
+    stripped=$(echo "$content" | sed 's/^[[:space:]]*//')
+    # Must be a standalone `)` — not part of case pattern or inline
+    [[ "$stripped" != ")" ]] && continue
+
+    # Check next line for =$?
+    next_line=$(sed -n "$((lineno + 1))p" "$file" 2>/dev/null || true)
+    next_stripped=$(echo "$next_line" | sed 's/^[[:space:]]*//')
+
+    if echo "$next_stripped" | grep -qE '=\$\?' 2>/dev/null; then
+        # This is the hazard: ) on one line, $? capture on next
+        # Check it's not already guarded with || on the ) line itself
+        echo "::error file=${file},line=${lineno}::H3 VIOLATION: subshell ')' followed by '\$?' capture — set -e kills before capture"
+        echo "  ${lineno}: ${content}"
+        echo "  $((lineno + 1)): ${next_line}"
+        echo "  Fix: use ') || var=\$?' or ') || true' on the closing paren line"
+        h3_violations=$((h3_violations + 1))
+    fi
+done < <(grep -rn '^\s*)$' "$CLI_DIR" --include="*.sh" 2>/dev/null || true)
+
+if [[ $h3_violations -gt 0 ]]; then
+    echo ""
+    echo "FAIL: $h3_violations H3 violation(s) — capture exit inline with '|| var=\$?'"
+    failures=$((failures + h3_violations))
+else
+    echo "PASS: No subshell exit capture hazards found"
+fi
+
+echo ""
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 
@@ -176,6 +227,6 @@ if [[ $failures -gt 0 ]]; then
     echo "FAIL: $failures bash hazard violation(s) found"
     exit 1
 else
-    echo "PASS: All bash hazard checks passed (H1 + H2)"
+    echo "PASS: All bash hazard checks passed (H1 + H2 + H3)"
     exit 0
 fi
