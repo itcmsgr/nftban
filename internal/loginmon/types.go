@@ -162,7 +162,8 @@ type Config struct {
 	SSHRootAttempt    int16 // Bonus score for root attempts (default: 10)
 
 	// Mail scores
-	DovecotAuthFail int16 // Score for Dovecot auth failure (default: 15)
+	DovecotAuthFail int16 // Score for Dovecot native auth failure (default: 15)
+	DovecotPamFail  int16 // Score for Dovecot PAM auth failure (default: 15)
 	PostfixSASL     int16 // Score for Postfix SASL failure (default: 15)
 	EximAuthFail    int16 // Score for Exim auth failure (default: 15)
 
@@ -237,6 +238,7 @@ func DefaultConfig() *Config {
 		SSHTooMany:        30,
 		SSHRootAttempt:    10,
 		DovecotAuthFail:   15,
+		DovecotPamFail:    15,
 		PostfixSASL:       15,
 		EximAuthFail:      15,
 		FTPAuthFail:       15,
