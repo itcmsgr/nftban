@@ -191,7 +191,7 @@ _nftban_profile_show() {
             if [[ "$setting_value" == "yes" ]]; then
                 local enabled_feeds
                 enabled_feeds=$(_profile_get NFTBAN_FEEDS_ENABLED_LIST)
-                [[ -n "$enabled_feeds" ]] && echo "  Enabled Feeds: $enabled_feeds"
+                [[ -n "$enabled_feeds" ]] && echo "  Enabled Feeds: $enabled_feeds" || true
             fi
         fi
 

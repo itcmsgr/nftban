@@ -318,7 +318,7 @@ nftban_cmd_nftables() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     shift || true

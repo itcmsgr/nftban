@@ -200,7 +200,7 @@ nftban_cmd_ban() {
             echo "  Source:   ${ban_source:-manual}"
             echo "  Blacklist: ${NFTBAN_CONFIG_DIR}/blacklist.d/99-manual.conf"
             echo "  nft set:  $family nftban banned_${family}v4"
-            [[ "$family" == "ip6" ]] && echo "  nft set:  ip6 nftban banned_ipv6"
+            [[ "$family" == "ip6" ]] && echo "  nft set:  ip6 nftban banned_ipv6" || true
         fi
         return 0
     fi

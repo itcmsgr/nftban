@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_invariant_validator"
 # meta:type="core"
-# meta:version="1.66.1"
+# meta:version="1.67.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-02"
 # meta:description="Validates firewall invariants: anchor structure, phase order, safety properties"
@@ -23,7 +23,7 @@
 # Invariant classes:
 #   INV-S: Structural — tables, chains, anchors exist
 #   INV-O: Order — anchors in correct sequence, module jumps before anchors
-#   INV-F: Safety — whitelist before blacklist, SSH reachable, anti-lockout, SYN port-policy
+#   INV-F: Safety — whitelist before blacklist, SSH reachable, anti-lockout, SYN port-policy, NDP scope, /64 gate
 #
 # Usage:
 #   source nftban_invariant_validator.sh
@@ -416,6 +416,51 @@ _validate_safety() {
     else
         _inv_record "INV-F-004" "WARNING" "Cannot locate DETECT/SERVICE anchors for SYN accept validation"
     fi
+
+    # INV-F-005: IPv6 NDP must be scoped to link-local sources (v1.67.0)
+    # NDP from non-link-local sources is spoofed or misconfigured (RFC 4861).
+    local ipv6_chain_output
+    ipv6_chain_output=$(nft -a list chain ip6 nftban input 2>/dev/null) || ipv6_chain_output=""
+
+    if [[ -n "$ipv6_chain_output" ]]; then
+        # Check for NDP accept rules (nd-neighbor-solicit, nd-router-advert, etc.)
+        local ndp_rules
+        ndp_rules=$(echo "$ipv6_chain_output" | grep -E 'nd-(neighbor|router)-(solicit|advert)' || true)
+        if [[ -n "$ndp_rules" ]]; then
+            # Every NDP accept rule must have fe80::/10 source restriction
+            if echo "$ndp_rules" | grep 'accept' | grep -v 'fe80::/10' >/dev/null 2>&1; then
+                _inv_record "INV-F-005" "ERROR" "IPv6 NDP accept without fe80::/10 source restriction — spoofed NDP accepted"
+            else
+                _inv_record "INV-F-005" "PASS" "IPv6 NDP accept restricted to link-local (fe80::/10)"
+            fi
+        else
+            _inv_record "INV-F-005" "WARNING" "No NDP rules found in IPv6 input chain"
+        fi
+    else
+        _inv_record "INV-F-005" "WARNING" "Cannot read ip6 nftban input chain"
+    fi
+
+    # INV-F-006: IPv6 DETECT phase must have /64 prefix SYN gate (v1.67.0)
+    # Without this, a hostile source rotating addresses within one /64 bypasses
+    # per-IP SYN metering and gets unlimited service admission.
+    if [[ -n "$ipv6_chain_output" ]]; then
+        local ipv6_detect_start ipv6_detect_end ipv6_detect_rules
+        ipv6_detect_start=$(echo "$ipv6_chain_output" | grep -n 'NFTBAN_ANCHOR:ANCHOR_DETECT' | head -1 | cut -d: -f1 || true)
+        ipv6_detect_end=$(echo "$ipv6_chain_output" | grep -n 'NFTBAN_ANCHOR:ANCHOR_SERVICE' | head -1 | cut -d: -f1 || true)
+
+        if [[ -n "$ipv6_detect_start" && -n "$ipv6_detect_end" ]]; then
+            ipv6_detect_rules=$(echo "$ipv6_chain_output" | sed -n "${ipv6_detect_start},${ipv6_detect_end}p")
+            if echo "$ipv6_detect_rules" | grep -E 'ffff:ffff:ffff:ffff::.*limit rate' >/dev/null 2>&1; then
+                _inv_record "INV-F-006" "PASS" "IPv6 DETECT has /64 prefix SYN gate"
+            else
+                _inv_record "INV-F-006" "WARNING" "IPv6 DETECT missing /64 prefix SYN gate — address rotation risk"
+            fi
+        else
+            _inv_record "INV-F-006" "WARNING" "Cannot locate IPv6 DETECT/SERVICE anchors for /64 gate validation"
+        fi
+    else
+        _inv_record "INV-F-006" "WARNING" "Cannot read ip6 nftban input chain"
+    fi
 }
 
 # =============================================================================
@@ -477,7 +522,7 @@ _inv_output_text() {
     for id in \
         INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 INV-S-008 \
         INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \
-        INV-F-001 INV-F-002 INV-F-003 INV-F-004; do
+        INV-F-001 INV-F-002 INV-F-003 INV-F-004 INV-F-005 INV-F-006; do
 
         # Category headers
         case "$id" in

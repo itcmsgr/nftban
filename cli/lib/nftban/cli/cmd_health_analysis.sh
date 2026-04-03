@@ -258,7 +258,7 @@ nftban_health_cmd_config() {
 
     local verbose=false
     for arg in "$@"; do
-        [[ "$arg" == "--verbose" || "$arg" == "-v" ]] && verbose=true
+        [[ "$arg" == "--verbose" || "$arg" == "-v" ]] && verbose=true || true
     done
 
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
@@ -356,7 +356,7 @@ nftban_health_cmd_config() {
         # Verbose: show config files
         if [[ "$verbose" == true && -n "$conf_file" ]]; then
             echo "             └─ $conf_file"
-            [[ -f "$local_conf" ]] && echo "             └─ $local_conf (override)"
+            [[ -f "$local_conf" ]] && echo "             └─ $local_conf (override)" || true
         fi
     done
 
@@ -693,7 +693,7 @@ nftban_health_cmd_posture() {
                 ((warnings++)) || true
             fi
         done
-        [[ "$systemd_found" == true ]] && break
+        [[ "$systemd_found" == true ]] && break || true
     done
 
     [[ "$systemd_found" != true ]] && printf "  %-28s ℹ️  No NFTBan services found\n" "Services"
@@ -775,7 +775,7 @@ nftban_health_cmd_gui() {
 
     local json_mode=""
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="--json"
+        [[ "$arg" == "--json" ]] && json_mode="--json" || true
     done
 
     echo "NFTBan GUI Registry Validation"

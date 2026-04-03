@@ -272,7 +272,7 @@ nftban_feeds_list() {
     local _feeds_json_mode="false"
     local _arg
     for _arg in "$@"; do
-        [[ "$_arg" == "--json" ]] && _feeds_json_mode="true"
+        [[ "$_arg" == "--json" ]] && _feeds_json_mode="true" || true
     done
 
     if [[ "$_feeds_json_mode" == "true" ]]; then
@@ -292,7 +292,7 @@ nftban_feeds_list() {
                 if [[ "$_enabled" == "true" ]]; then
                     local _feed_lower="${_feed,,}"
                     local _feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${_feed_lower}.txt"
-                    [[ -f "$_feed_file" ]] && _count=$(wc -l < "$_feed_file")
+                    [[ -f "$_feed_file" ]] && _count=$(wc -l < "$_feed_file") || true
                 fi
                 [[ "$_first" == "true" ]] && _first=false || _json+=","
                 # Escape description for JSON
@@ -537,7 +537,7 @@ nftban_cmd_feeds() {
 
     # Check for --json flag in arguments
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     shift || true

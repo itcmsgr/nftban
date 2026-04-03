@@ -232,7 +232,7 @@ _nftban_botscan_stats_json() {
 
         local mode_val
         mode_val=$(grep "^BOTSCAN_ACTION_MODE=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'") || true
-        [[ -n "$mode_val" ]] && action_mode="$mode_val"
+        [[ -n "$mode_val" ]] && action_mode="$mode_val" || true
     fi
 
     # Count patterns
@@ -676,7 +676,7 @@ nftban_cmd_botscan() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
     shift || true
 

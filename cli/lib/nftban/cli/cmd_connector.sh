@@ -367,7 +367,7 @@ _cmd_connector_remove() {
 
     if [[ "$force" != "true" ]]; then
         read -rp "Remove connector '$name'? [y/N]: " confirm
-        [[ ! "$confirm" =~ ^[Yy] ]] && return 0
+        [[ ! "$confirm" =~ ^[Yy] ]] && return 0 || true
     fi
 
     rm -f "$config_file"
@@ -529,7 +529,7 @@ _cmd_connector_test() {
                 _connector_print_warning "Directory does not exist: $dir"
                 echo "Will be created on first write"
             else
-                [[ "$verbose" == "true" ]] && echo "      ✅ OK"
+                [[ "$verbose" == "true" ]] && echo "      ✅ OK" || true
             fi
 
             [[ "$verbose" == "true" ]] && echo "[2/2] Test complete"

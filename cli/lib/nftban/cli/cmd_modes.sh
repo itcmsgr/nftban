@@ -126,7 +126,7 @@ _modes_read_config() {
         if [[ -f "$local_file" ]]; then
             local local_value
             local_value=$(grep -E "^${var_name}=" "$local_file" 2>/dev/null | tail -1 | cut -d'"' -f2)
-            [[ -n "$local_value" ]] && value="$local_value"
+            [[ -n "$local_value" ]] && value="$local_value" || true
         fi
     fi
     

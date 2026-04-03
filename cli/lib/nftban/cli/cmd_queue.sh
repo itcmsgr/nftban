@@ -323,7 +323,7 @@ nftban_cmd_queue() {
     # Check for JSON mode
     local json_mode="false"
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     case "$subcmd" in

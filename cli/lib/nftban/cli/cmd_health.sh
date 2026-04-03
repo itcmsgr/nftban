@@ -112,7 +112,7 @@ nftban_cmd_health() {
 
     # Check for --json flag in arguments
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     # Shift to get remaining args
