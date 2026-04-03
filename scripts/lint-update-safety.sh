@@ -57,7 +57,7 @@ u1_violations=0
 
 for file in "$RPM_POSTINST" "$DEB_POSTINST"; do
     [[ -f "$file" ]] || continue
-    basename=$(basename "$file")
+
 
     # Look for the dangerous pattern: rebuild fail block containing systemctl reload nftables
     # This catches both "systemctl reload nftables" and "systemctl reload nftables 2>/dev/null"
@@ -106,7 +106,7 @@ u2_violations=0
 
 for file in "$RPM_POSTINST" "$DEB_POSTINST"; do
     [[ -f "$file" ]] || continue
-    basename=$(basename "$file")
+
 
     # Find all "rebuild failed/FAILED" error/warn messages
     while IFS=: read -r lineno content; do
