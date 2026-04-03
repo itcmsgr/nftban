@@ -103,7 +103,7 @@ nftban_cmd_panel() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     # Show banner (skip for JSON output)

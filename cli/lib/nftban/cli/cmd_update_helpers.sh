@@ -129,7 +129,7 @@ _remove_immutable_flags() {
     chattr_bin=$(command -v chattr 2>/dev/null || echo "")
     if [[ -z "$chattr_bin" ]]; then
         for p in /usr/bin/chattr /bin/chattr /sbin/chattr /usr/sbin/chattr; do
-            [[ -x "$p" ]] && chattr_bin="$p" && break
+            [[ -x "$p" ]] && chattr_bin="$p" && break || true
         done
     fi
 
@@ -142,7 +142,7 @@ _remove_immutable_flags() {
     local lsattr_bin
     lsattr_bin=$(command -v lsattr 2>/dev/null || echo "")
     [[ -z "$lsattr_bin" ]] && for p in /usr/bin/lsattr /bin/lsattr; do
-        [[ -x "$p" ]] && lsattr_bin="$p" && break
+        [[ -x "$p" ]] && lsattr_bin="$p" && break || true
     done
 
     # Critical file that is known to be immutable

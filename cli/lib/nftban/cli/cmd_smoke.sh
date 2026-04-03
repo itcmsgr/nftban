@@ -487,7 +487,7 @@ _verify_geoban() {
     echo "  2. Blocked countries:"
     if command -v nftban >/dev/null 2>&1; then
         nftban geoban list 2>/dev/null | grep "BLOCKED" | head -5 | sed 's/^/     /'
-        [[ $blocked_countries -gt 5 ]] && echo "     ... and $((blocked_countries - 5)) more"
+        [[ $blocked_countries -gt 5 ]] && echo "     ... and $((blocked_countries - 5)) more" || true
     fi
 
     # Verify GeoIP database is available

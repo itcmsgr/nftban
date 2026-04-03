@@ -236,7 +236,7 @@ _nftban_trust_stats() {
                 ipv4_cache=$(_trust_get_cache_file "$provider" "ipv4" 2>/dev/null || echo "")
                 ipv6_cache=$(_trust_get_cache_file "$provider" "ipv6" 2>/dev/null || echo "")
                 [[ -f "$ipv4_cache" ]] && total_ipv4=$((total_ipv4 + $(wc -l < "$ipv4_cache")))
-                [[ -f "$ipv6_cache" ]] && total_ipv6=$((total_ipv6 + $(wc -l < "$ipv6_cache")))
+                [[ -f "$ipv6_cache" ]] && total_ipv6=$((total_ipv6 + $(wc -l < "$ipv6_cache"))) || true
             fi
         done
     fi

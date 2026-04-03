@@ -386,13 +386,13 @@ _eve_get_path() {
     if [[ -f "$local_conf" ]]; then
         local val
         val=$(grep -E "^NFTBAN_SURICATA_EVE_LOG=" "$local_conf" 2>/dev/null | cut -d'"' -f2 || true)
-        [[ -n "$val" ]] && { echo "$val"; return; }
+        [[ -n "$val" ]] && { echo "$val"; return; } || true
     fi
 
     if [[ -f "$config_file" ]]; then
         local val
         val=$(grep -E "^NFTBAN_SURICATA_EVE_LOG=" "$config_file" 2>/dev/null | cut -d'"' -f2 || true)
-        [[ -n "$val" ]] && { echo "$val"; return; }
+        [[ -n "$val" ]] && { echo "$val"; return; } || true
     fi
 
     # Default path

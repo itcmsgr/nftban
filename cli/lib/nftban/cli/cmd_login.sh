@@ -1175,7 +1175,7 @@ nftban_cmd_login() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     # Load output module (for help banner)

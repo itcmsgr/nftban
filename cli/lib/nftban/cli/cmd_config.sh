@@ -350,7 +350,7 @@ _config_send_sighup() {
 _config_get_checksum() {
     # Get SHA256 checksum of config file
     local file="$1"
-    [[ -f "$file" ]] && sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || echo "missing"
+    if [[ -f "$file" ]]; then sha256sum "$file" 2>/dev/null | cut -d' ' -f1; else echo "missing"; fi
 }
 
 _config_save_loaded() {
@@ -394,7 +394,7 @@ _config_check_changes() {
     if [[ -f "$config_dir/nftban.conf.local" ]]; then
         current=$(_config_get_checksum "$config_dir/nftban.conf.local")
         loaded=$(cat "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256" 2>/dev/null || echo "none")
-        [[ "$current" != "$loaded" ]] && changed=0
+        [[ "$current" != "$loaded" ]] && changed=0 || true
     fi
 
     return $changed

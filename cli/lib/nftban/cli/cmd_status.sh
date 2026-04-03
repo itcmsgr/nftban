@@ -169,7 +169,7 @@ _nftban_protection_state() {
         local _inv_exit=$?
         # exit 2 = ERROR (structural problem) → DEGRADED
         # exit 1 = WARNING (SSH port, empty whitelist) → still ok
-        [[ $_inv_exit -ge 2 ]] && _anchor_ok=false
+        [[ $_inv_exit -ge 2 ]] && _anchor_ok=false || true
     fi
     if [[ "$_anchor_ok" == "false" ]]; then
         echo "DEGRADED:D-ANCHOR"; return
@@ -585,7 +585,7 @@ _status_section_protection() {
                     now_ts=$(date +%s)
                 fi
                 eve_age=$(( now_ts - freshest_mtime ))
-                [[ $eve_age -le $eve_threshold ]] && eve_fresh=true
+                [[ $eve_age -le $eve_threshold ]] && eve_fresh=true || true
             fi
 
             if [[ "$eve_fresh" == "true" ]]; then
@@ -596,7 +596,7 @@ _status_section_protection() {
                 for ef in "$eve_file" "$eve_dir"/eve-alerts.*.json; do
                     [[ -f "$ef" ]] || continue
                     rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$ef" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
-                    [[ "${rules_loaded:-0}" -gt 0 ]] && break
+                    [[ "${rules_loaded:-0}" -gt 0 ]] && break || true
                 done
                 shopt -u nullglob
 
@@ -750,7 +750,7 @@ _status_section_protection() {
         if [[ "$_lm_en" != "true" ]]; then
             local _lm_alert_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login_alert.conf"
             [[ -f "${_lm_alert_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "${_lm_alert_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
-            [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_alert_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "$_lm_alert_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+            [[ "$_lm_en" != "true" ]] && [[ -f "$_lm_alert_conf" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_ALERT_ENABLED=' "$_lm_alert_conf" 2>/dev/null | cut -d'"' -f2 || echo "false") || true
         fi
         if [[ "$_lm_en" == "true" ]]; then
             login_mon_status="ACTIVE (nftband loginmon)"
@@ -1085,7 +1085,7 @@ _status_section_health() {
             count=$(find "$unit_path" -maxdepth 1 -name 'nftban*.service' -type f \
                     -exec grep -l '^\s*NoNewPrivileges\s*=\s*false\s*$' {} + 2>/dev/null | wc -l) || count=0
             security_issues=$((count + 0))  # Ensure numeric
-            [[ $security_issues -gt 0 ]] && break
+            [[ $security_issues -gt 0 ]] && break || true
         fi
     done
 
@@ -1624,7 +1624,7 @@ output_json() {
         fs=$(jq -r '.feeds_skipped // false' "$json_protection_file" 2>/dev/null || echo "false")
         gs=$(jq -r '.geoban_skipped // false' "$json_protection_file" 2>/dev/null || echo "false")
         [[ "$fs" == "true" ]] && json_feeds_skipped=true
-        [[ "$gs" == "true" ]] && json_geoban_skipped=true
+        [[ "$gs" == "true" ]] && json_geoban_skipped=true || true
     fi
 
     # Check permanent bans
@@ -1633,7 +1633,7 @@ output_json() {
         json_perm_bans=$(jq -r '.bans | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
         json_perm_protected=$(jq -r '[.bans[]] | map(select(.protected == true)) | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
         [[ ! "$json_perm_bans" =~ ^[0-9]+$ ]] && json_perm_bans=0
-        [[ ! "$json_perm_protected" =~ ^[0-9]+$ ]] && json_perm_protected=0
+        [[ ! "$json_perm_protected" =~ ^[0-9]+$ ]] && json_perm_protected=0 || true
     fi
 
     # Check binary integrity for JSON output
@@ -1726,7 +1726,7 @@ output_json() {
         local bg_val=""
         bg_val=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
         [[ -z "$bg_val" ]] && bg_val=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "${NFTBAN_CONFIG_DIR}/conf.d/botguard/main.conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
-        [[ "$bg_val" == "true" ]] && json_botguard_enabled=true
+        [[ "$bg_val" == "true" ]] && json_botguard_enabled=true || true
     fi
     local json_bg_v4=0 json_bg_v6=0
     if [[ "$json_botguard_enabled" == "true" ]]; then
@@ -1914,7 +1914,7 @@ _nftban_status_pending() {
 
     local json_mode=0
     for arg in "$@"; do
-        [[ "$arg" == "--json" || "$arg" == "-j" ]] && json_mode=1
+        [[ "$arg" == "--json" || "$arg" == "-j" ]] && json_mode=1 || true
     done
 
     # Load IPC module

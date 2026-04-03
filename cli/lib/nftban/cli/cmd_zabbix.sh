@@ -148,7 +148,7 @@ _zabbix_firewall_allow() {
         server_ip="$server"
     else
         server_ip=$(getent hosts "$server" 2>/dev/null | awk '{print $1}' | head -1)
-        [[ -z "$server_ip" ]] && server_ip=$(host "$server" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
+        [[ -z "$server_ip" ]] && server_ip=$(host "$server" 2>/dev/null | awk '/has address/ {print $4}' | head -1) || true
     fi
 
     [[ -z "$server_ip" ]] && return 1
@@ -345,7 +345,7 @@ _cmd_zabbix_setup() {
 
         if [[ "$tls" != "true" ]]; then
             read -rp "Enable PSK authentication? [y/N]: " psk_answer
-            [[ "$psk_answer" =~ ^[Yy] ]] && psk="true"
+            [[ "$psk_answer" =~ ^[Yy] ]] && psk="true" || true
         fi
     fi
 
@@ -678,13 +678,13 @@ _cmd_zabbix_test() {
                 [[ "$verbose" == "true" ]] && echo "      ⚠️  Sent (item may not exist in Zabbix)"
             else
                 [[ "$quiet" != "true" ]] && _zabbix_print_warning "Test metric sent but may not be processed"
-                [[ "$verbose" == "true" ]] && echo "      Response: $result"
+                [[ "$verbose" == "true" ]] && echo "      Response: $result" || true
             fi
         else
-            [[ "$verbose" == "true" ]] && echo "      ⚠️  Skipped (zabbix_sender not installed)"
+            [[ "$verbose" == "true" ]] && echo "      ⚠️  Skipped (zabbix_sender not installed)" || true
         fi
     else
-        [[ "$verbose" == "true" ]] && echo "[3/4] Dry run - skipping metric send"
+        [[ "$verbose" == "true" ]] && echo "[3/4] Dry run - skipping metric send" || true
     fi
 
     [[ "$verbose" == "true" ]] && echo "[4/4] Test complete"
