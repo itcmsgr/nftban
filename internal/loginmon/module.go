@@ -399,6 +399,10 @@ func (m *Module) parseShellConfig(content string) {
 			var v int
 			fmt.Sscanf(value, "%d", &v)
 			m.config.EximAuthFail = safeconv.ToInt16OrDefault(v, 10)
+		case "DOVECOT_PAM_FAIL_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.DovecotPamFail = safeconv.ToInt16OrDefault(v, 10)
 
 		// FTP score deltas
 		case "FTP_AUTH_FAIL_SCORE":
@@ -616,9 +620,32 @@ var panelLogPaths = map[string][]string{
 	"plesk":       {"/var/log/plesk/panel.log"},              // "[Action Log] Failed login attempt"
 }
 
-// startFileWatchers launches tail -F watchers for panel services
+// mailLogPaths maps mail services to their log file paths.
+// Mail services (Exim, Dovecot, Postfix) log to plain files, NOT journalctl.
+// v1.69.0: Verified against lab (Debian 13), lab2 (Ubuntu 24.04/Plesk),
+//          lab4 (AlmaLinux 9/cPanel), srv2 (AlmaLinux 9/DirectAdmin).
+// Zero journal entries for SYSLOG_FACILITY=4+10 from mail on all 4 servers.
+var mailLogPaths = map[string][]string{
+	"exim": {
+		"/var/log/exim/mainlog",  // DirectAdmin (EL9)
+		"/var/log/exim4/mainlog", // Debian/Ubuntu
+	},
+	"dovecot": {
+		"/var/log/maillog",   // EL9, Ubuntu via rsyslog
+		"/var/log/mail.log",  // Debian default
+		"/var/log/secure",    // EL9 PAM auth (dovecot:auth)
+		"/var/log/auth.log",  // Debian/Ubuntu PAM auth
+	},
+	"postfix": {
+		"/var/log/maillog",  // EL9, Ubuntu via rsyslog
+		"/var/log/mail.log", // Debian default
+	},
+}
+
+// startFileWatchers launches tail -F watchers for services
 // that log to their own files instead of journalctl.
 func (m *Module) startFileWatchers(ctx context.Context) {
+	// Panel services (DirectAdmin, cPanel, Plesk)
 	for service, paths := range panelLogPaths {
 		if !m.detectedServices[service] {
 			continue
@@ -627,6 +654,24 @@ func (m *Module) startFileWatchers(ctx context.Context) {
 			if _, err := os.Stat(logPath); err != nil {
 				continue
 			}
+			go m.runFileWatcher(ctx, service, logPath)
+		}
+	}
+
+	// Mail services (Exim, Dovecot, Postfix) — log to files, not journalctl
+	watchedPaths := make(map[string]bool) // Deduplicate shared paths (e.g. /var/log/maillog)
+	for service, paths := range mailLogPaths {
+		if !m.detectedServices[service] {
+			continue
+		}
+		for _, logPath := range paths {
+			if watchedPaths[logPath] {
+				continue // Already watching this file from another service
+			}
+			if _, err := os.Stat(logPath); err != nil {
+				continue
+			}
+			watchedPaths[logPath] = true
 			go m.runFileWatcher(ctx, service, logPath)
 		}
 	}

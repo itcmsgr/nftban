@@ -46,6 +46,7 @@ const (
 	ReasonDovecotAuthFail      uint16 = 2001
 	ReasonPostfixSASL          uint16 = 2002
 	ReasonEximAuthFail         uint16 = 2003
+	ReasonDovecotPamFail       uint16 = 2004
 	ReasonFTPAuthFail          uint16 = 3001
 	ReasonDirectAdminLogin     uint16 = 4001
 	ReasonCPanelLogin          uint16 = 4002
@@ -65,6 +66,7 @@ var ReasonName = map[uint16]string{
 	ReasonDovecotAuthFail:    "dovecot_auth_fail",
 	ReasonPostfixSASL:        "postfix_sasl_fail",
 	ReasonEximAuthFail:       "exim_auth_fail",
+	ReasonDovecotPamFail:     "dovecot_pam_fail",
 	ReasonFTPAuthFail:        "ftp_auth_fail",
 	ReasonDirectAdminLogin:   "directadmin_login_fail",
 	ReasonCPanelLogin:        "cpanel_login_fail",
