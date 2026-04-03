@@ -9,7 +9,7 @@
 # meta:name="cmd_update"
 # meta:type="cli"
 # meta:header="Update Command"
-# meta:version="1.68.0"
+# meta:version="1.70.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -578,6 +578,34 @@ _cmd_update_main() {
         _update_log OK "VERSION: $new_version (reinstalled same version)"
     else
         _update_log WARN "VERSION: could not determine installed version"
+    fi
+
+    # V6: Invariant validation — kernel schema matches installed code expectations
+    # v1.70.0: This is the governing invariant. If the installed code's structural
+    # expectations don't match the live kernel schema, the update is not trustworthy.
+    local _inv_validator="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
+    if [[ -f "$_inv_validator" ]]; then
+        # Source the validator if not already loaded
+        if ! declare -f nftban_validate_invariants >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            source "$_inv_validator" 2>/dev/null || true
+        fi
+        if declare -f nftban_validate_invariants >/dev/null 2>&1; then
+            local _inv_exit=0
+            nftban_validate_invariants >/dev/null 2>&1 || _inv_exit=$?
+            if [[ $_inv_exit -eq 0 ]]; then
+                _update_log OK "Invariant validation: PASS (all structural invariants hold)"
+            elif [[ $_inv_exit -eq 1 ]]; then
+                _update_log WARN "Invariant validation: WARNING (non-critical invariant issues)"
+            else
+                _update_log ERROR "Invariant validation: FAIL (kernel schema does not match installed code)"
+                _verify_fail=1
+            fi
+        else
+            _update_log WARN "Invariant validator not available (skipped)"
+        fi
+    else
+        _update_log WARN "Invariant validator not found: $_inv_validator (skipped)"
     fi
 
     # Handle verification failure
