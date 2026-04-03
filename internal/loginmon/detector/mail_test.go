@@ -46,7 +46,7 @@ func TestMailDetector_DovecotNative(t *testing.T) {
 	}{
 		{
 			name:       "dovecot auth failed IPv4",
-			line:       "Apr 03 14:22:01 srv2 dovecot[1234]: imap-login: Disconnected: user=<admin>, method=PLAIN, rip=185.234.72.10, lip=10.0.0.1",
+			line:       "Apr 03 14:22:01 srv2 dovecot: imap-login: auth failed, rip=185.234.72.10, lip=10.0.0.1, user=<admin>, method=PLAIN",
 			wantIP:     "185.234.72.10",
 			wantReason: ReasonDovecotAuthFail,
 			wantMatch:  true,
