@@ -106,7 +106,7 @@ _nftban() {
     local rbl_cmds="check server status list enable disable cache alert critical watchlist help"
     local support_cmds="--network help"
     local suricata_cmds="install enable disable status eve rules profile scan services sid category local custom recommend iface help"
-    local update_cmds="check status github git local force repair rollback list help"
+    local update_cmds="check status github git local force repair rollback list history auto preflight verify auto-apply help"
 
     # Memory/Ban Management (NEW)
     local protect_cmds="--json help"
