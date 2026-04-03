@@ -287,23 +287,19 @@ nft_fragment_render_ddos_sanity() {
     local log_xmas_ipv4=""
     local log_null_ipv4=""
     local log_nonsyn_ipv4=""
-    local log_invalid_ct_ipv4=""
     local log_frag_ipv4=""
     local log_xmas_ipv6=""
     local log_null_ipv6=""
     local log_nonsyn_ipv6=""
-    local log_invalid_ct_ipv6=""
 
     if [[ "$log_invalid" == "true" ]]; then
         log_xmas_ipv4="add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg limit rate 5/second burst 10 packets log prefix \"${log_prefix}XMAS \" level warn"
         log_null_ipv4="add rule ${table_ipv4} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 limit rate 5/second burst 10 packets log prefix \"${log_prefix}NULL \" level warn"
         log_nonsyn_ipv4="add rule ${table_ipv4} ${chain} tcp flags & syn != syn ct state new limit rate 5/second burst 10 packets log prefix \"${log_prefix}NONSYN \" level warn"
-        log_invalid_ct_ipv4="add rule ${table_ipv4} ${chain} ct state invalid limit rate 5/second burst 10 packets log prefix \"${log_prefix}INVALID \" level warn"
         log_frag_ipv4="add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 tcp dport >= 1024 limit rate 5/second burst 10 packets log prefix \"${log_prefix}FRAG \" level warn"
         log_xmas_ipv6="add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == fin|syn|rst|psh|ack|urg limit rate 5/second burst 10 packets log prefix \"${log_prefix}XMAS \" level warn"
         log_null_ipv6="add rule ${table_ipv6} ${chain} tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 limit rate 5/second burst 10 packets log prefix \"${log_prefix}NULL \" level warn"
         log_nonsyn_ipv6="add rule ${table_ipv6} ${chain} tcp flags & syn != syn ct state new limit rate 5/second burst 10 packets log prefix \"${log_prefix}NONSYN \" level warn"
-        log_invalid_ct_ipv6="add rule ${table_ipv6} ${chain} ct state invalid limit rate 5/second burst 10 packets log prefix \"${log_prefix}INVALID \" level warn"
     fi
 
     local content
@@ -339,11 +335,10 @@ ${log_null_ipv4:+${log_null_ipv4}
 ${log_nonsyn_ipv4:+${log_nonsyn_ipv4}
 }add rule ${table_ipv4} ${chain} tcp flags & syn != syn ct state new counter name total_input_drop counter drop comment "SANITY: new non-SYN"
 
-# 4. Drop packets with invalid conntrack state
-${log_invalid_ct_ipv4:+${log_invalid_ct_ipv4}
-}add rule ${table_ipv4} ${chain} ct state invalid counter name total_input_drop counter drop comment "SANITY: invalid ct state"
+# v1.67.1: Removed duplicate ct state invalid drop — base input HYGIENE phase
+# already drops ct state invalid before ddos_sanity runs.
 
-# 5. Drop fragmented packets to high ports (common in amplification attacks)
+# 4. Drop fragmented packets to high ports (common in amplification attacks)
 ${log_frag_ipv4:+${log_frag_ipv4}
 }add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 tcp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: frag to high port"
 add rule ${table_ipv4} ${chain} ip frag-off & 0x1fff != 0 udp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: frag to high port"
@@ -367,11 +362,10 @@ ${log_null_ipv6:+${log_null_ipv6}
 ${log_nonsyn_ipv6:+${log_nonsyn_ipv6}
 }add rule ${table_ipv6} ${chain} tcp flags & syn != syn ct state new counter name total_input_drop counter drop comment "SANITY: new non-SYN"
 
-# 4. Drop packets with invalid conntrack state
-${log_invalid_ct_ipv6:+${log_invalid_ct_ipv6}
-}add rule ${table_ipv6} ${chain} ct state invalid counter name total_input_drop counter drop comment "SANITY: invalid ct state"
+# v1.67.1: Removed duplicate ct state invalid drop — base input HYGIENE phase
+# already drops ct state invalid before ddos_sanity runs.
 
-# Note: IPv6 fragmentation is handled differently (via extension headers)
+# 4. IPv6 fragmentation (handled via extension headers)
 # Fragment header detection for IPv6
 add rule ${table_ipv6} ${chain} exthdr frag exists tcp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: IPv6 frag to high port"
 add rule ${table_ipv6} ${chain} exthdr frag exists udp dport >= 1024 counter name total_input_drop counter drop comment "SANITY: IPv6 frag to high port"
@@ -952,12 +946,10 @@ nft_fragment_render_ddos_classic() {
 # Generated: ${timestamp}
 # Managed by nftband - DO NOT EDIT MANUALLY
 #
-# Thresholds:
-#   SYN Rate: ${syn_rate} burst ${syn_burst}
-#   SSH Conn: max ${ssh_limit}/IP (port ${ssh_port})
-#   HTTP Conn: max ${http_limit}/IP
-#   SMTP Conn: max ${smtp_limit}/IP
-#   DNS Conn: max ${dns_limit}/IP (TCP+UDP)
+# v1.67.1: Removed duplicate SYN/SSH/HTTP/HTTPS rules (base input handles these).
+# Remaining unique thresholds:
+#   SMTP Conn: max ${smtp_limit}/IP (tighter than base 150)
+#   DNS Conn: max ${dns_limit}/IP (TCP+UDP, unique)
 #   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
 #   UDP Rate: ${udp_rate} burst ${udp_burst}
 
@@ -965,24 +957,26 @@ nft_fragment_render_ddos_classic() {
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
-# SYN Flood Protection
-add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
-add rule ${table_ipv4} ${chain} tcp flags syn counter name total_input_drop counter drop comment "SYN flood: rate exceeded"
+# v1.67.1: Removed duplicate SYN flood meter + SSH/HTTP/HTTPS conn limits.
+# Base input DETECT phase already enforces:
+#   - SYN rate (syn_meter_v4, 25/sec) — tighter, fires first, terminal accept
+#   - SSH ct count (base __CT_LIMIT_SSH__) — same threshold, fires first
+#   - HTTP/HTTPS ct count (base __CT_LIMIT_HTTP__) — tighter (150 vs 200), fires first
+# Only unique protections remain below.
 
-# Connection Limits per Service
-add rule ${table_ipv4} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter name total_input_drop counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
-add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
-add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
+# SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
 add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+
+# DNS Protection (unique — no base schema equivalent)
 add rule ${table_ipv4} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
 add rule ${table_ipv4} ${chain} udp dport 53 meter ddos_dns_udp { ip saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv4} ${chain} udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
-# ICMP Rate Limiting
+# ICMP Rate Limiting (unique — base allows ICMP without rate limit)
 add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
 add rule ${table_ipv4} ${chain} ip protocol icmp counter name total_input_drop counter drop comment "ICMP flood: rate exceeded"
 
-# UDP Flood Protection
+# UDP Flood Protection (unique — generic UDP rate limit)
 add rule ${table_ipv4} ${chain} ip protocol udp meter ${udp_meter} { ip saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
 add rule ${table_ipv4} ${chain} ip protocol udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
@@ -993,24 +987,21 @@ add rule ${table_ipv4} ${chain} return
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
-# SYN Flood Protection
-add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
-add rule ${table_ipv6} ${chain} tcp flags syn counter name total_input_drop counter drop comment "SYN flood: rate exceeded"
+# v1.67.1: Same deduplication as IPv4 — removed SYN meter + SSH/HTTP/HTTPS conn limits.
 
-# Connection Limits per Service
-add rule ${table_ipv6} ${chain} tcp dport ${ssh_port} ct state new ct count over ${ssh_limit} counter name total_input_drop counter drop comment "SSH(${ssh_port}): max ${ssh_limit} conn/IP"
-add rule ${table_ipv6} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter name total_input_drop counter drop comment "HTTP: max ${http_limit} conn/IP"
-add rule ${table_ipv6} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter name total_input_drop counter drop comment "HTTPS: max ${https_limit} conn/IP"
+# SMTP Connection Limit (tighter than base: ${smtp_limit} vs base 150)
 add rule ${table_ipv6} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter name total_input_drop counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+
+# DNS Protection (unique)
 add rule ${table_ipv6} ${chain} tcp dport 53 ct state new ct count over ${dns_limit} counter name total_input_drop counter drop comment "DNS/TCP: max ${dns_limit} conn/IP"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 meter ddos_dns_udp6 { ip6 saddr limit rate ${dns_limit}/second burst ${dns_limit} packets } return comment "DNS/UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp udp dport 53 counter name total_input_drop counter drop comment "DNS/UDP flood: rate exceeded"
 
-# ICMPv6 Rate Limiting
+# ICMPv6 Rate Limiting (unique)
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter name total_input_drop counter drop comment "ICMPv6 flood: rate exceeded"
 
-# v1.46.0 FIX-J: IPv6 UDP Flood Protection (mirrors IPv4 pattern at line 992-993)
+# UDP Flood Protection (unique)
 add rule ${table_ipv6} ${chain} meta l4proto udp meter ${udp_meter}6 { ip6 saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
 add rule ${table_ipv6} ${chain} meta l4proto udp counter name total_input_drop counter drop comment "UDP flood: rate exceeded"
 
