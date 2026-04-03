@@ -18,6 +18,7 @@
 #   - Anchor jump placement lint G1-G3 (v1.64.0)
 #   - Anchor marker count validation (v1.64.0)
 #   - Bash hazard lint H1-H2 (v1.66.3): nft -a flag + set -e traps
+#   - Update safety lint U1-U2 (v1.70.0): rebuild failure must be fatal
 # =============================================================================
 
 name: Architecture Policy
@@ -292,6 +293,10 @@ jobs:
       # v1.66.3: Bash hazard lint — nft -a flag + set -e traps
       - name: Lint bash hazards (H1-H2)
         run: bash scripts/lint-bash-hazards.sh
+
+      # v1.70.0: Update safety lint — rebuild failure must be fatal, no fallback reload
+      - name: Lint update safety (U1-U2)
+        run: bash scripts/lint-update-safety.sh
 
       # v1.64.0: Anchor marker count in template
       - name: Validate anchor markers in template
