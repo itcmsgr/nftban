@@ -14130,6 +14130,14 @@
       "module": "update",
       "default": "stable"
     },
+    "NFTBAN_UPDATE_FAILURE_COOLDOWN": {
+      "type": "string",
+      "description": "Cooldown period after auto-update failure (seconds). Set to 0 to disable.",
+      "introduced_in": "1.68.0",
+      "module": "update",
+      "default": "604800",
+      "$ref": "#/definitions/positive_integer"
+    },
     "NFTBAN_UPDATE_LOG_FILE": {
       "type": "string",
       "description": "Nftban update log file",

@@ -9,7 +9,7 @@
 # meta:name="cmd_update"
 # meta:type="cli"
 # meta:header="Update Command"
-# meta:version="1.60.1"
+# meta:version="1.68.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -94,6 +94,29 @@ done
 
 # Cleanup temporary variables
 unset _UPDATE_CLI_DIR _update_modules _module _module_path
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+_update_detect_ssh_port() {
+    # Detect active SSH port using canonical 3-tier fallback:
+    #   1. State file (most reliable, written by nftban)
+    #   2. sshd_config Port directive
+    #   3. Default 22
+    local ssh_port=22
+    local ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
+    if [[ -f "$ssh_port_file" ]]; then
+        local _sp
+        _sp=$(cat "$ssh_port_file" 2>/dev/null) || true
+        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
+    elif [[ -f /etc/ssh/sshd_config ]]; then
+        local _sp
+        _sp=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1) || true
+        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
+    fi
+    echo "$ssh_port"
+}
 
 # =============================================================================
 # MAIN COMMANDS
@@ -197,6 +220,19 @@ EOF
 
 _cmd_update_check() {
     # Check for available updates
+    # Supports: --cache flag to write /var/cache/nftban/update_available.json
+
+    _load_config
+
+    local write_cache=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --cache) write_cache=1; shift ;;
+            --json|-j) export NFTBAN_JSON="true"; shift ;;
+            *) shift ;;
+        esac
+    done
+
     local install_type current_version latest_version
     install_type=$(_detect_install_type)
     current_version=$(_get_current_version)
@@ -207,11 +243,57 @@ _cmd_update_check() {
         update_available="true"
     fi
 
+    # Determine channel eligibility
+    local channel="${NFTBAN_UPDATE_CHANNEL:-stable}"
+    local eligible="false"
+    local reason="blocked_check_failed"
+
+    if [[ "$latest_version" == "unknown" ]]; then
+        reason="blocked_check_failed"
+    elif [[ "$current_version" == "$latest_version" ]]; then
+        reason="blocked_same_version"
+    else
+        local cur_major cur_minor cur_patch lat_major lat_minor lat_patch
+        IFS='.' read -r cur_major cur_minor cur_patch <<< "$current_version"
+        IFS='.' read -r lat_major lat_minor lat_patch <<< "$latest_version"
+
+        if [[ "$channel" == "latest" ]]; then
+            eligible="true"
+            reason="eligible_any"
+        elif [[ "$channel" == "stable" ]]; then
+            if [[ "$cur_major" != "$lat_major" ]]; then
+                reason="blocked_major_on_stable"
+            elif [[ "$cur_minor" != "$lat_minor" ]]; then
+                reason="blocked_minor_on_stable"
+            else
+                eligible="true"
+                reason="eligible_patch"
+            fi
+        fi
+    fi
+
+    # Write cache if requested (atomic write)
+    if [[ $write_cache -eq 1 ]]; then
+        local cache_dir="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+        local cache_file="${cache_dir}/update_available.json"
+        mkdir -p "$cache_dir" 2>/dev/null || true
+        local _ts
+        _ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        local _tmp
+        _tmp=$(mktemp "${cache_file}.XXXXXX") || {
+            _update_log ERROR "Failed to create temp file for cache"
+            return 1
+        }
+        printf '{"timestamp":"%s","current":"%s","latest":"%s","available":%s,"channel":"%s","eligible":%s,"reason":"%s"}\n' \
+            "$_ts" "$current_version" "$latest_version" "$update_available" "$channel" "$eligible" "$reason" > "$_tmp"
+        mv -f "$_tmp" "$cache_file"
+        chmod 0644 "$cache_file" 2>/dev/null || true
+    fi
+
     # JSON output mode (v1.19.13)
     if [[ "${NFTBAN_JSON:-}" == "true" ]]; then
-        cat <<EOF
-{"install_type":"$install_type","current_version":"$current_version","latest_version":"$latest_version","update_available":$update_available}
-EOF
+        printf '{"install_type":"%s","current_version":"%s","latest_version":"%s","update_available":%s,"channel":"%s","eligible":%s,"reason":"%s"}\n' \
+            "$install_type" "$current_version" "$latest_version" "$update_available" "$channel" "$eligible" "$reason"
         return 0
     fi
 
@@ -230,17 +312,25 @@ EOF
     fi
 
     echo "  Latest:        v$latest_version"
+    echo "  Channel:       $channel"
+    echo "  Eligible:      $eligible ($reason)"
     echo ""
 
     if [[ "$current_version" == "$latest_version" ]]; then
         _update_log OK "Already up to date"
-        return 0
-    else
+    elif [[ "$eligible" == "true" ]]; then
         _update_log INFO "Update available: v$current_version → v$latest_version"
         echo ""
         echo "  Run 'nftban update' to install"
-        return 0
+    else
+        _update_log INFO "Update v$latest_version available but not eligible on '$channel' channel"
+        echo ""
+        echo "  Run 'nftban update' for manual update"
     fi
+
+    [[ $write_cache -eq 1 ]] && _update_log OK "Cache written: ${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
+
+    return 0
 }
 
 _cmd_update_main() {
@@ -359,7 +449,11 @@ _cmd_update_main() {
     if [[ $result -ne 0 ]]; then
         local _update_duration=$(( SECONDS - _update_start_seconds ))
         _update_log ERROR "=== Update failed: v${current_version} (${_update_duration}s) ==="
-        _update_write_history "$current_version" "$current_version" "fail" "$install_type" "$_update_duration"
+        _update_write_history "$current_version" "$current_version" "install_fail" "$install_type" "$_update_duration"
+        # Write failure marker for circuit breaker
+        local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+        mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
         echo ""
         _update_log ERROR "Update failed"
         _update_log INFO "Run 'nftban update repair' to fix broken install state"
@@ -408,15 +502,104 @@ _cmd_update_main() {
         done
     fi
 
-    # Show result
+    # Post-update verification (UPD-P1-1)
     local new_version
     new_version=$(_get_current_version)
-    local _update_duration=$(( SECONDS - _update_start_seconds ))
+    echo ""
+    _update_log INFO "Running post-update verification..."
+    local _verify_fail=0
 
+    # V1: nftables authority — nftban table must exist
+    if command -v nft &>/dev/null; then
+        if nft list tables 2>/dev/null | grep >/dev/null 2>&1 nftban; then
+            _update_log OK "nftables authority: nftban table present"
+        else
+            _update_log ERROR "nftables authority: nftban table not found"
+            _verify_fail=1
+        fi
+    else
+        _update_log WARN "nft command not available, skipping authority check"
+    fi
+
+    # V2: SSH port reachable in whitelist
+    if command -v nft &>/dev/null; then
+        local _ssh_port
+        _ssh_port=$(_update_detect_ssh_port)
+        local _ssh_in_set=0
+        # Check IPv4 tcp_ports_in
+        if nft list set inet nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+            _ssh_in_set=1
+        fi
+        # Check IPv6 tcp_ports_in
+        if nft list set inet nftban6 tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+            _ssh_in_set=1
+        fi
+        if [[ $_ssh_in_set -eq 1 ]]; then
+            _update_log OK "SSH port ${_ssh_port}: present in service ports"
+        else
+            _update_log ERROR "SSH port ${_ssh_port}: NOT in service ports — lockout risk"
+            _verify_fail=1
+        fi
+    fi
+
+    # V3: Health check severity — exit 2 = critical failure
+    if [[ $health_status -ge 2 ]]; then
+        _update_log ERROR "Health check returned critical errors (exit $health_status)"
+        _verify_fail=1
+    fi
+
+    # V4: Daemon active (if installed)
+    if systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
+        if systemctl is-active --quiet nftband.service 2>/dev/null; then
+            _update_log OK "Daemon nftband.service: active"
+        else
+            _update_log ERROR "Daemon nftband.service: not active"
+            _verify_fail=1
+        fi
+    fi
+
+    # V5: VERSION matches expected target
+    if [[ -n "${arg:-}" && "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # Explicit version was requested — verify exact match
+        if [[ "$new_version" == "$arg" ]]; then
+            _update_log OK "VERSION: $new_version matches target $arg"
+        else
+            _update_log ERROR "VERSION: $new_version does not match target $arg"
+            _verify_fail=1
+        fi
+    elif [[ "$new_version" != "unknown" && "$new_version" != "$current_version" ]]; then
+        _update_log OK "VERSION: updated to $new_version"
+    else
+        _update_log WARN "VERSION: still at $new_version (expected change from $current_version)"
+    fi
+
+    # Handle verification failure
+    local _update_duration=$(( SECONDS - _update_start_seconds ))
+    if [[ $_verify_fail -ne 0 ]]; then
+        _update_log ERROR "=== Post-update verification FAILED: v${current_version} → v${new_version} (${_update_duration}s) ==="
+        _update_write_history "$current_version" "$new_version" "verify_fail" "$install_type" "$_update_duration"
+        # Write failure marker for circuit breaker
+        local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+        mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
+        echo ""
+        _update_log ERROR "Post-update verification failed"
+        _update_log INFO "Run 'nftban update verify' to re-check"
+        _update_log INFO "Run 'nftban update rollback' to restore previous version"
+        echo ""
+        echo "  Log: $UPDATE_LOG_FILE"
+        echo ""
+        return 1
+    fi
+
+    # Show result
     _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
 
     # Write history entry
-    _update_write_history "$current_version" "$new_version" "ok" "$install_type" "$_update_duration"
+    _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+
+    # Clear failure marker on success
+    rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -635,6 +818,382 @@ _cmd_update_history() {
     echo ""
 }
 
+_cmd_update_preflight() {
+    # Pre-flight checks for auto-update — ALL hard gates
+    # Returns: 0=all pass, 1=blocked (with reason)
+    local _pf_fail=0 _pf_count=0 _pf_pass=0
+
+    _pf_check() {
+        _pf_count=$(( _pf_count + 1 ))
+        local label="$1" result="$2"
+        if [[ "$result" == "PASS" ]]; then
+            _pf_pass=$(( _pf_pass + 1 ))
+            echo "  [PASS] PF${_pf_count}: $label"
+        elif [[ "$result" == "WARN" ]]; then
+            _pf_pass=$(( _pf_pass + 1 ))
+            echo "  [WARN] PF${_pf_count}: $label"
+        else
+            _pf_fail=1
+            echo "  [FAIL] PF${_pf_count}: $label"
+        fi
+    }
+
+    echo ""
+    echo "  UPDATE PREFLIGHT (9 checks)"
+    echo "  ────────────────────────────────────────────────────"
+
+    # Load config (grep-based, not source)
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/update.conf"
+    local config_local="${config_file}.local"
+    local _auto_enabled="false"
+    if [[ -f "$config_local" ]]; then
+        local _val
+        _val=$(grep -E '^\s*NFTBAN_UPDATE_AUTO_ENABLED=' "$config_local" 2>/dev/null | tail -1 | sed 's/.*="\?\([^"]*\)"\?.*/\1/') || true
+        [[ -n "$_val" ]] && _auto_enabled="$_val"
+    fi
+    if [[ "$_auto_enabled" != "true" && -f "$config_file" ]]; then
+        local _val
+        _val=$(grep -E '^\s*NFTBAN_UPDATE_AUTO_ENABLED=' "$config_file" 2>/dev/null | tail -1 | sed 's/.*="\?\([^"]*\)"\?.*/\1/') || true
+        [[ -n "$_val" ]] && _auto_enabled="$_val"
+    fi
+
+    # PF1: Auto-update enabled
+    if [[ "$_auto_enabled" == "true" ]]; then
+        _pf_check "Auto-update enabled" "PASS"
+    else
+        _pf_check "Auto-update enabled (current: $_auto_enabled)" "FAIL"
+    fi
+
+    # PF2: Cache fresh (<48h)
+    local cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
+    local _cache_fresh="FAIL"
+    if [[ -f "$cache_file" ]]; then
+        local _cache_mtime _now _cache_age
+        _now=$(date +%s)
+        _cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+        _cache_age=$(( _now - _cache_mtime ))
+        if [[ $_cache_age -lt 172800 ]]; then
+            _cache_fresh="PASS"
+        fi
+    fi
+    if [[ "$_cache_fresh" == "PASS" ]]; then
+        _pf_check "Cache fresh ($(( _cache_age / 3600 ))h old)" "PASS"
+    else
+        _pf_check "Cache missing or stale (run: nftban update check --cache)" "FAIL"
+    fi
+
+    # PF3: Eligible in cache
+    local _eligible="false"
+    if [[ -f "$cache_file" ]]; then
+        if command -v jq &>/dev/null; then
+            _eligible=$(jq -r '.eligible // false' "$cache_file" 2>/dev/null || echo "false")
+        else
+            _eligible=$(grep -o '"eligible":[a-z]*' "$cache_file" 2>/dev/null | head -1 | sed 's/.*://') || true
+        fi
+    fi
+    if [[ "$_eligible" == "true" ]]; then
+        _pf_check "Cache shows eligible update" "PASS"
+    else
+        _pf_check "Cache shows not eligible (eligible=$_eligible)" "FAIL"
+    fi
+
+    # PF4: nftables authority
+    if command -v nft &>/dev/null; then
+        if nft list tables 2>/dev/null | grep >/dev/null 2>&1 nftban; then
+            _pf_check "nftables authority: nftban table present" "PASS"
+        else
+            _pf_check "nftables authority: nftban table not found" "FAIL"
+        fi
+    else
+        _pf_check "nftables authority: nft command not available" "FAIL"
+    fi
+
+    # PF5: SSH port in service ports
+    if command -v nft &>/dev/null; then
+        local _ssh_port
+        _ssh_port=$(_update_detect_ssh_port)
+        local _ssh_ok=0
+        nft list set inet nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        nft list set inet nftban6 tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        if [[ $_ssh_ok -eq 1 ]]; then
+            _pf_check "SSH port ${_ssh_port} in service ports" "PASS"
+        else
+            _pf_check "SSH port ${_ssh_port} NOT in service ports" "FAIL"
+        fi
+    else
+        _pf_check "SSH port check: nft not available" "FAIL"
+    fi
+
+    # PF6: Config validation
+    if command -v nftban &>/dev/null; then
+        if nftban config validate --quiet 2>/dev/null; then
+            _pf_check "Config validation passed" "PASS"
+        else
+            _pf_check "Config validation failed" "FAIL"
+        fi
+    else
+        _pf_check "Config validation: nftban command not available" "FAIL"
+    fi
+
+    # PF7: No active lock
+    if [[ -f "$UPDATE_LOCK_FILE" ]]; then
+        if command -v fuser &>/dev/null; then
+            if fuser "$UPDATE_LOCK_FILE" &>/dev/null 2>&1; then
+                _pf_check "Update lock: active (another update running)" "FAIL"
+            else
+                _pf_check "Update lock: stale file (will be overridden)" "WARN"
+            fi
+        else
+            _pf_check "Update lock: file exists, cannot verify holder (fuser unavailable)" "FAIL"
+        fi
+    else
+        _pf_check "No active update lock" "PASS"
+    fi
+
+    # PF8: Load average acceptable
+    local _load_thresh="${NFTBAN_UPDATE_SKIP_HIGH_LOAD:-4.0}"
+    if [[ "$_load_thresh" != "0" ]]; then
+        local _load_avg
+        _load_avg=$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo "0")
+        local _is_high=0
+        if command -v bc &>/dev/null; then
+            _is_high=$(echo "$_load_avg > $_load_thresh" | bc -l 2>/dev/null || echo "0")
+        else
+            _is_high=$(awk -v load="$_load_avg" -v thresh="$_load_thresh" 'BEGIN { print (load > thresh) ? 1 : 0 }')
+        fi
+        if [[ "$_is_high" == "1" ]]; then
+            _pf_check "Load average ${_load_avg} > threshold ${_load_thresh}" "FAIL"
+        else
+            _pf_check "Load average ${_load_avg} <= ${_load_thresh}" "PASS"
+        fi
+    else
+        _pf_check "Load check disabled" "PASS"
+    fi
+
+    # PF9: Circuit breaker clear
+    local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+    local _cooldown="${NFTBAN_UPDATE_FAILURE_COOLDOWN:-604800}"
+    if [[ -f "$_fail_marker" && "$_cooldown" != "0" ]]; then
+        local _now _marker_mtime _marker_age
+        _now=$(date +%s)
+        _marker_mtime=$(stat -c %Y "$_fail_marker" 2>/dev/null || echo "0")
+        _marker_age=$(( _now - _marker_mtime ))
+        if [[ $_marker_age -lt $_cooldown ]]; then
+            _pf_check "Circuit breaker active (failure ${_marker_age}s ago, cooldown ${_cooldown}s)" "FAIL"
+        else
+            _pf_check "Circuit breaker: marker expired" "PASS"
+        fi
+    else
+        _pf_check "Circuit breaker clear" "PASS"
+    fi
+
+    # Summary
+    echo ""
+    echo "  Result: ${_pf_pass}/${_pf_count} checks passed"
+    if [[ $_pf_fail -ne 0 ]]; then
+        echo "  Status: BLOCKED — resolve failures before auto-apply"
+        echo ""
+        return 1
+    else
+        echo "  Status: READY for auto-apply"
+        echo ""
+        return 0
+    fi
+}
+
+_cmd_update_verify() {
+    # Post-update verification (standalone)
+    # 6 checks: nft auth, SSH, health, daemon, VERSION, invariants
+    # Supports: --expected VERSION for exact match
+
+    local expected_version=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --expected) expected_version="${2:-}"; shift 2 || { echo "ERROR: --expected requires a version" >&2; return 1; } ;;
+            *) shift ;;
+        esac
+    done
+
+    echo ""
+    echo "  POST-UPDATE VERIFICATION (6 checks)"
+    echo "  ────────────────────────────────────────────────────"
+
+    local _vf_fail=0 _vf_count=0 _vf_pass=0
+
+    _vf_check() {
+        _vf_count=$(( _vf_count + 1 ))
+        local label="$1" result="$2"
+        if [[ "$result" == "PASS" ]]; then
+            _vf_pass=$(( _vf_pass + 1 ))
+            echo "  [PASS] VF${_vf_count}: $label"
+        elif [[ "$result" == "WARN" ]]; then
+            _vf_pass=$(( _vf_pass + 1 ))
+            echo "  [WARN] VF${_vf_count}: $label"
+        else
+            _vf_fail=1
+            echo "  [FAIL] VF${_vf_count}: $label"
+        fi
+    }
+
+    # VF1: nftables authority
+    if command -v nft &>/dev/null; then
+        if nft list tables 2>/dev/null | grep >/dev/null 2>&1 nftban; then
+            _vf_check "nftables authority: nftban table present" "PASS"
+        else
+            _vf_check "nftables authority: nftban table not found" "FAIL"
+        fi
+    else
+        _vf_check "nftables authority: nft command not available" "FAIL"
+    fi
+
+    # VF2: SSH port in service ports
+    if command -v nft &>/dev/null; then
+        local _ssh_port
+        _ssh_port=$(_update_detect_ssh_port)
+        local _ssh_ok=0
+        nft list set inet nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        nft list set inet nftban6 tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        if [[ $_ssh_ok -eq 1 ]]; then
+            _vf_check "SSH port ${_ssh_port} in service ports" "PASS"
+        else
+            _vf_check "SSH port ${_ssh_port} NOT in service ports — lockout risk" "FAIL"
+        fi
+    else
+        _vf_check "SSH port check: nft not available" "FAIL"
+    fi
+
+    # VF3: Health check
+    local _health_exit=0
+    nftban health check --auto-heal --cache-status &>/dev/null || _health_exit=$?
+    if [[ $_health_exit -eq 0 ]]; then
+        _vf_check "Health check passed" "PASS"
+    elif [[ $_health_exit -eq 1 ]]; then
+        _vf_check "Health check: warnings (non-critical)" "WARN"
+    else
+        _vf_check "Health check: critical errors (exit $_health_exit)" "FAIL"
+    fi
+
+    # VF4: Daemon responsive
+    if systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
+        if systemctl is-active --quiet nftband.service 2>/dev/null; then
+            _vf_check "Daemon nftband.service: active" "PASS"
+        else
+            _vf_check "Daemon nftband.service: not active" "FAIL"
+        fi
+    else
+        _vf_check "Daemon nftband.service: not installed (optional)" "PASS"
+    fi
+
+    # VF5: VERSION present + valid
+    local _cur_ver
+    _cur_ver=$(_get_current_version)
+    if [[ -z "$_cur_ver" || "$_cur_ver" == "unknown" ]]; then
+        _vf_check "VERSION: not found or unknown" "FAIL"
+    elif ! [[ "$_cur_ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        _vf_check "VERSION: invalid format '$_cur_ver'" "FAIL"
+    elif [[ -n "$expected_version" ]]; then
+        if [[ "$_cur_ver" == "$expected_version" ]]; then
+            _vf_check "VERSION: $_cur_ver matches expected $expected_version" "PASS"
+        else
+            _vf_check "VERSION: $_cur_ver does not match expected $expected_version" "FAIL"
+        fi
+    else
+        _vf_check "VERSION: $_cur_ver (valid)" "PASS"
+    fi
+
+    # VF6: Invariant validator
+    if command -v nftban &>/dev/null; then
+        local _inv_exit=0
+        nftban firewall validate &>/dev/null || _inv_exit=$?
+        if [[ $_inv_exit -eq 0 ]]; then
+            _vf_check "Invariant validator passed" "PASS"
+        else
+            _vf_check "Invariant validator: errors (exit $_inv_exit)" "FAIL"
+        fi
+    else
+        _vf_check "Invariant validator: nftban command not available" "FAIL"
+    fi
+
+    # Summary
+    echo ""
+    echo "  Result: ${_vf_pass}/${_vf_count} checks passed"
+    if [[ $_vf_fail -ne 0 ]]; then
+        echo "  Status: VERIFICATION FAILED"
+        echo ""
+        return 1
+    else
+        echo "  Status: VERIFIED"
+        echo ""
+        return 0
+    fi
+}
+
+_cmd_update_auto_apply() {
+    # Self-validates cache then applies update
+    # Does NOT assume preflight was run — self-sufficient safety
+
+    local cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
+
+    echo ""
+    _update_log INFO "Auto-apply: validating cache..."
+
+    # 1. Cache file exists
+    if [[ ! -f "$cache_file" ]]; then
+        _update_log ERROR "No cache file found. Run: nftban update check --cache"
+        return 1
+    fi
+
+    # 2. Cache fresh (<48h)
+    local _now _cache_mtime _cache_age
+    _now=$(date +%s)
+    _cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+    _cache_age=$(( _now - _cache_mtime ))
+    if [[ $_cache_age -ge 172800 ]]; then
+        _update_log ERROR "Cache stale ($(( _cache_age / 3600 ))h old). Run: nftban update check --cache"
+        return 1
+    fi
+
+    # 3. Parse cache
+    local _eligible="" _target="" _current="" _reason=""
+    if command -v jq &>/dev/null; then
+        _eligible=$(jq -r '.eligible // false' "$cache_file" 2>/dev/null || echo "false")
+        _target=$(jq -r '.latest // ""' "$cache_file" 2>/dev/null || echo "")
+        _current=$(jq -r '.current // ""' "$cache_file" 2>/dev/null || echo "")
+        _reason=$(jq -r '.reason // ""' "$cache_file" 2>/dev/null || echo "")
+    else
+        _eligible=$(grep -o '"eligible":[a-z]*' "$cache_file" 2>/dev/null | head -1 | sed 's/.*://') || true
+        _target=$(grep -o '"latest":"[^"]*"' "$cache_file" 2>/dev/null | head -1 | sed 's/.*:"//;s/"//') || true
+        _current=$(grep -o '"current":"[^"]*"' "$cache_file" 2>/dev/null | head -1 | sed 's/.*:"//;s/"//') || true
+        _reason=$(grep -o '"reason":"[^"]*"' "$cache_file" 2>/dev/null | head -1 | sed 's/.*:"//;s/"//') || true
+    fi
+
+    # 3. Eligible
+    if [[ "$_eligible" != "true" ]]; then
+        _update_log ERROR "Not eligible for auto-update (reason: ${_reason:-unknown})"
+        return 1
+    fi
+
+    # 4. Target version present and valid
+    if [[ -z "$_target" ]] || ! [[ "$_target" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        _update_log ERROR "Invalid target version in cache: '$_target'"
+        return 1
+    fi
+
+    # 5. Current version < target version
+    local _live_current
+    _live_current=$(_get_current_version)
+    if [[ "$_live_current" == "$_target" ]]; then
+        _update_log INFO "Already up to date: v${_live_current}"
+        return 0
+    fi
+
+    _update_log INFO "Auto-apply: v${_live_current} → v${_target}"
+
+    # 6. Call main update
+    _cmd_update_main "github" "$_target"
+    return $?
+}
+
 _cmd_update_help() {
     cat << 'EOF'
 NFTBan Update - Multi-source update system
@@ -645,6 +1204,7 @@ USAGE:
 COMMANDS:
     (none)              Auto-detect install type and update from appropriate source
     check               Check if updates are available (no changes)
+    check --cache       Check + write eligibility cache for auto-apply
     status              Show current installation information
     github [VERSION]    Update from GitHub releases (RPM/DEB packages)
     git [BRANCH]        Update from git repository (requires git install)
@@ -656,7 +1216,17 @@ COMMANDS:
     history             Show update history (last 9 updates, --json supported)
     auto [ACTION]       Manage auto-update timer (enable|disable|status)
                         Requires --email for enable (mandatory notification)
+    preflight           Validate system readiness for auto-update (9 checks)
+    verify              Post-update health verification (6 checks)
+    verify --expected V Verify and confirm VERSION matches V exactly
+    auto-apply          Install from cached eligibility (self-validates)
     help                Show this help message
+
+AUTOMATED UPDATE WORKFLOW:
+    1. check --cache     Discover updates, write eligibility cache
+    2. preflight         Validate system readiness (9 checks)
+    3. auto-apply        Install from cached eligibility
+    4. verify            Confirm post-update health
 
 AUTO-DETECTION:
     The update command automatically detects your install type:
@@ -1147,6 +1717,26 @@ _cmd_update_auto_run() {
         return 1
     fi
 
+    # Circuit breaker: skip if recent failure within cooldown period
+    local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+    local _cooldown="${NFTBAN_UPDATE_FAILURE_COOLDOWN:-604800}"
+    if [[ -f "$_fail_marker" && "$_cooldown" != "0" ]]; then
+        local _marker_age _marker_mtime _now
+        _now=$(date +%s)
+        _marker_mtime=$(stat -c %Y "$_fail_marker" 2>/dev/null || echo "0")
+        _marker_age=$(( _now - _marker_mtime ))
+        if [[ $_marker_age -lt $_cooldown ]]; then
+            local _remaining=$(( _cooldown - _marker_age ))
+            local _days=$(( _remaining / 86400 ))
+            _update_log WARN "Circuit breaker active: previous update failed ${_marker_age}s ago (cooldown: ${_cooldown}s, ${_days}d remaining)"
+            _update_log INFO "Clear manually: rm $_fail_marker"
+            return 1
+        else
+            _update_log INFO "Circuit breaker: failure marker expired (${_marker_age}s > ${_cooldown}s), clearing"
+            rm -f "$_fail_marker" 2>/dev/null || true
+        fi
+    fi
+
     # Resolve notification email (same chain as _update_auto_enable)
     # Priority: NFTBAN_UPDATE_NOTIFY_EMAIL -> NFTBAN_MAIL_RECIPIENT -> panel detection
     local resolved_email="${NFTBAN_UPDATE_NOTIFY_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}"
@@ -1387,7 +1977,7 @@ nftban_cmd_update() {
 
     case "$cmd" in
         check|--check|-c)
-            _cmd_update_check
+            _cmd_update_check "$@"
             ;;
         status|--status|-s)
             _cmd_update_status
@@ -1485,12 +2075,20 @@ nftban_cmd_update() {
             _cmd_update_history
             ;;
         auto)
-            shift || true
             _cmd_update_auto "$@"
             ;;
         auto-run)
             # Called by systemd timer - non-interactive
             _cmd_update_auto_run
+            ;;
+        preflight|pre-flight)
+            _cmd_update_preflight
+            ;;
+        verify)
+            _cmd_update_verify "$@"
+            ;;
+        auto-apply)
+            _cmd_update_auto_apply
             ;;
         help|-h|--help)
             _cmd_update_help
