@@ -526,12 +526,14 @@ _cmd_update_main() {
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
         local _ssh_in_set=0
-        # Check IPv4 tcp_ports_in (ip family, not inet — legacy split schema)
-        if nft list set ip nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+        local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+        local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+        # Check IPv4 tcp_ports_in
+        if nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
             _ssh_in_set=1
         fi
         # Check IPv6 tcp_ports_in
-        if nft list set ip6 nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+        if nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
             _ssh_in_set=1
         fi
         if [[ $_ssh_in_set -eq 1 ]]; then
@@ -689,7 +691,7 @@ _cmd_update_repair() {
 
         # Verify nftban package state
         local pkg_line
-        pkg_line=$(dpkg -l nftban 2>/dev/null | tail -1) || true
+        pkg_line=$(dpkg -l nftban-core 2>/dev/null | tail -1 || dpkg -l nftban 2>/dev/null | tail -1) || true
         if [[ -n "$pkg_line" ]]; then
             local pkg_status
             pkg_status=$(echo "$pkg_line" | awk '{print $1}')
@@ -918,8 +920,10 @@ _cmd_update_preflight() {
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
         local _ssh_ok=0
-        nft list set ip nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        nft list set ip6 nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+        local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
         if [[ $_ssh_ok -eq 1 ]]; then
             _pf_check "SSH port ${_ssh_port} in service ports" "PASS"
         else
@@ -1056,8 +1060,10 @@ _cmd_update_verify() {
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
         local _ssh_ok=0
-        nft list set ip nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        nft list set ip6 nftban tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+        local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
+        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
         if [[ $_ssh_ok -eq 1 ]]; then
             _vf_check "SSH port ${_ssh_port} in service ports" "PASS"
         else
