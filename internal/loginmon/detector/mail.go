@@ -14,7 +14,8 @@
 // meta:description="Signal-based mail authentication failure detection"
 //
 // Detection Patterns:
-// - Dovecot: "auth failed, rip=<ip>"
+// - Dovecot native: "auth failed, rip=<ip>"
+// - Dovecot PAM:    "pam_unix(dovecot:auth): authentication failure ... rhost=<ip>"
 // - Postfix: "SASL LOGIN authentication failed.*[<ip>]"
 // - Exim: "authenticator failed for.*[<ip>]"
 //
@@ -36,18 +37,24 @@ import (
 
 // MailDetector detects mail authentication failures (Dovecot, Postfix, Exim)
 type MailDetector struct {
-	// Dovecot signals
+	// Dovecot native signals ("auth failed, rip=<ip>")
 	sigDovecot    []byte
 	sigAuthFailed []byte
 	markerRip     []byte // "rip="
 
+	// Dovecot PAM signals ("pam_unix(dovecot:auth): authentication failure ... rhost=<ip>")
+	sigPamDovecot  []byte // "pam_unix(dovecot"
+	sigAuthFailure []byte // "authentication failure"
+	markerRhost    []byte // "rhost="
+
 	// Postfix signals
-	sigPostfix    []byte
-	sigSASL       []byte
+	sigPostfix []byte
+	sigSASL    []byte
 
 	// Exim signals
 	sigExim          []byte
 	sigAuthenticator []byte
+	sigFailed        []byte
 
 	// Common markers
 	markerBracketOpen  []byte
@@ -62,6 +69,11 @@ func NewMailDetector() *MailDetector {
 		sigAuthFailed: []byte("auth failed"),
 		markerRip:     []byte("rip="),
 
+		// Dovecot PAM
+		sigPamDovecot:  []byte("pam_unix(dovecot"),
+		sigAuthFailure: []byte("authentication failure"),
+		markerRhost:    []byte("rhost="),
+
 		// Postfix
 		sigPostfix: []byte("postfix"),
 		sigSASL:    []byte("SASL"),
@@ -69,6 +81,7 @@ func NewMailDetector() *MailDetector {
 		// Exim
 		sigExim:          []byte("exim"),
 		sigAuthenticator: []byte("authenticator"),
+		sigFailed:        []byte("failed"),
 
 		// Common
 		markerBracketOpen:  []byte("["),
@@ -90,13 +103,20 @@ func (d *MailDetector) Detect(line []byte) (Verdict, bool) {
 		return d.detectDovecot(line)
 	}
 
-	// Stage 2: Postfix SASL detection
+	// Stage 2: Dovecot PAM detection (auth.log / secure)
+	if bytes.Contains(line, d.sigPamDovecot) && bytes.Contains(lineLower, d.sigAuthFailure) {
+		return d.detectDovecotPam(line)
+	}
+
+	// Stage 3: Postfix SASL detection
 	if bytes.Contains(lineLower, d.sigPostfix) && bytes.Contains(line, d.sigSASL) {
 		return d.detectPostfix(line)
 	}
 
-	// Stage 3: Exim detection
-	if bytes.Contains(lineLower, d.sigExim) && bytes.Contains(lineLower, d.sigAuthenticator) {
+	// Stage 4: Exim detection
+	// Match either "exim" + "authenticator" (syslog format) or
+	// "authenticator" + "failed" (bare Exim mainlog without syslog prefix)
+	if bytes.Contains(lineLower, d.sigAuthenticator) && bytes.Contains(lineLower, d.sigFailed) {
 		return d.detectExim(line)
 	}
 
@@ -140,6 +160,55 @@ func (d *MailDetector) detectDovecot(line []byte) (Verdict, bool) {
 	}, true
 }
 
+// detectDovecotPam handles "pam_unix(dovecot:auth): authentication failure; ... rhost=<ip> user=<user>"
+func (d *MailDetector) detectDovecotPam(line []byte) (Verdict, bool) {
+	// Find "rhost=" marker
+	rhostIdx := bytes.Index(line, d.markerRhost)
+	if rhostIdx == -1 {
+		return Verdict{}, false
+	}
+
+	// Extract IP after "rhost="
+	ipStart := rhostIdx + len(d.markerRhost)
+	if ipStart >= len(line) {
+		return Verdict{}, false
+	}
+	ipEnd := bytes.IndexAny(line[ipStart:], " \t\n\r")
+	if ipEnd == -1 {
+		ipEnd = len(line) - ipStart
+	}
+	if ipEnd <= 0 || ipStart+ipEnd > len(line) {
+		return Verdict{}, false
+	}
+
+	ipBytes := line[ipStart : ipStart+ipEnd]
+	addr, err := netip.ParseAddr(string(ipBytes))
+	if err != nil {
+		return Verdict{}, false
+	}
+
+	// Try to extract user from "user=" or "ruser=" field
+	var user string
+	if idx := bytes.Index(line, []byte(" user=")); idx != -1 {
+		uStart := idx + 6
+		uEnd := bytes.IndexAny(line[uStart:], " \t\n\r")
+		if uEnd == -1 {
+			uEnd = len(line) - uStart
+		}
+		if uEnd > 0 && uStart+uEnd <= len(line) {
+			user = string(line[uStart : uStart+uEnd])
+		}
+	}
+
+	return Verdict{
+		IP:         addr,
+		Reason:     ReasonDovecotPamFail,
+		ScoreDelta: 15,
+		Service:    "dovecot",
+		User:       user,
+	}, true
+}
+
 // detectPostfix handles "postfix/smtpd[...]: ... SASL LOGIN authentication failed: ... [<ip>]"
 func (d *MailDetector) detectPostfix(line []byte) (Verdict, bool) {
 	// Must contain "authentication failed"
@@ -161,15 +230,15 @@ func (d *MailDetector) detectPostfix(line []byte) (Verdict, bool) {
 	}, true
 }
 
-// detectExim handles "exim ... authenticator failed for ... [<ip>]"
+// detectExim handles "exim ... authenticator failed for ... [<ip>]:port"
+// Exim log format has multiple bracket IPs:
+//   [attacker]:port H=([claimed]) [attacker] I=[local]:port
+// We extract the FIRST valid bracket IP, which is the remote peer.
 func (d *MailDetector) detectExim(line []byte) (Verdict, bool) {
-	// Must contain "failed"
-	if !bytes.Contains(bytes.ToLower(line), []byte("failed")) {
-		return Verdict{}, false
-	}
+	// "authenticator" + "failed" already verified by Detect() prefilter
 
-	// Find IP in brackets [x.x.x.x]
-	addr, ok := d.extractBracketIP(line)
+	// Find first valid bracket IP (forward scan — Exim puts attacker IP first)
+	addr, ok := d.extractFirstBracketIP(line)
 	if !ok {
 		return Verdict{}, false
 	}
@@ -180,6 +249,26 @@ func (d *MailDetector) detectExim(line []byte) (Verdict, bool) {
 		ScoreDelta: 15,
 		Service:    "exim",
 	}, true
+}
+
+// extractFirstBracketIP extracts the first valid IP from [x.x.x.x] format (forward scan)
+// Used by Exim where the remote peer IP appears before H= and I= fields
+func (d *MailDetector) extractFirstBracketIP(line []byte) (netip.Addr, bool) {
+	for i := 0; i < len(line); i++ {
+		if line[i] == '[' {
+			// Find matching ]
+			for j := i + 1; j < len(line); j++ {
+				if line[j] == ']' {
+					ipBytes := line[i+1 : j]
+					if addr, err := netip.ParseAddr(string(ipBytes)); err == nil {
+						return addr, true
+					}
+					break
+				}
+			}
+		}
+	}
+	return netip.Addr{}, false
 }
 
 // extractBracketIP extracts an IP address from [x.x.x.x] format
