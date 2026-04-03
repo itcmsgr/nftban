@@ -7,7 +7,7 @@
 # meta:name="cmd_status"
 # meta:type="cli"
 # meta:header="Global Status Command"
-# meta:version="1.43.0"
+# meta:version="1.70.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -160,10 +160,16 @@ _nftban_protection_state() {
         local _inv_exit=0
         (
             # Subshell to avoid polluting caller's namespace
+            # v1.70.0: Disable ERR trap — inherited via set -E, would fire inside
+            # the validator on individual invariant failures before the function
+            # can return its composite exit code.
+            trap - ERR
+            set +e
             # shellcheck source=/dev/null
             source "$_inv_lib" 2>/dev/null || exit 0
             if type nftban_validate_invariants &>/dev/null; then
-                nftban_validate_invariants >/dev/null 2>&1 || exit $?
+                nftban_validate_invariants >/dev/null 2>&1
+                exit $?
             fi
             exit 0
         ) || _inv_exit=$?
