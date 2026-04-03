@@ -899,8 +899,7 @@ nft_fragment_render_ddos_classic() {
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
 
     # Rate limits and bursts
-    local syn_rate="${DDOS_CLASSIC_SYN_RATE:-100/second}"
-    local syn_burst="${DDOS_CLASSIC_SYN_BURST:-200}"
+    # v1.67.1: Removed syn_rate/syn_burst (SYN flood deduped to base input)
     local icmp_rate="${DDOS_CLASSIC_ICMP_RATE:-10/second}"
     local icmp_burst="${DDOS_CLASSIC_ICMP_BURST:-20}"
     local icmpv6_rate="${DDOS_CLASSIC_ICMPV6_RATE:-10/second}"
@@ -909,27 +908,14 @@ nft_fragment_render_ddos_classic() {
     local udp_burst="${DDOS_CLASSIC_UDP_BURST:-200}"
 
     # Connection limits per service
-    local ssh_limit="${DDOS_CLASSIC_SSH_CONN_LIMIT:-15}"
-    local http_limit="${DDOS_CLASSIC_HTTP_CONN_LIMIT:-200}"
-    local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-200}"
+    # v1.67.1: Removed ssh_limit, http_limit, https_limit (deduped to base input)
     local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-30}"
     local dns_limit="${DDOS_CLASSIC_DNS_CONN_LIMIT:-50}"
 
-    # SSH port detection: state file → sshd_config → fallback 22
-    local ssh_port=22
-    local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-    if [[ -f "$_ssh_port_file" ]]; then
-        local _sp
-        _sp=$(cat "$_ssh_port_file" 2>/dev/null) || true
-        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
-    elif [[ -f /etc/ssh/sshd_config ]]; then
-        local _sp
-        _sp=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1) || true
-        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
-    fi
+    # v1.67.1: Removed SSH port detection — no longer needed (SSH ct count deduped to base)
 
     # Meter names
-    local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
+    # v1.67.1: Removed syn_meter (SYN flood deduped to base input)
     local icmp_meter="${DDOS_CLASSIC_ICMP_METER:-ddos_icmp_flood}"
     local udp_meter="${DDOS_CLASSIC_UDP_METER:-ddos_udp_flood}"
 
