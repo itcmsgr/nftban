@@ -361,7 +361,7 @@ nftban_watchdog_cmd_report() {
 
     # Parse args
     for arg in "$@"; do
-        [[ "$arg" == "--save" ]] && save_report=true
+        [[ "$arg" == "--save" ]] && save_report=true || true
     done
 
     # Run all checks (|| true prevents set -e from exiting on WARNING/CRITICAL status)
@@ -650,7 +650,7 @@ nftban_watchdog_cmd_stats() {
     local json_mode=false
 
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true
+        [[ "$arg" == "--json" ]] && json_mode=true || true
     done
 
     local response
@@ -861,7 +861,7 @@ nftban_watchdog_cmd_profiles() {
     local json_mode=false
 
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true
+        [[ "$arg" == "--json" ]] && json_mode=true || true
     done
 
     if [[ ! -d "$profile_dir" ]]; then
@@ -939,7 +939,7 @@ nftban_watchdog_cmd_trend() {
     local json_mode=0
 
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=1
+        [[ "$arg" == "--json" ]] && json_mode=1 || true
     done
 
     # Ensure trend functions are available

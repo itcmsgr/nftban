@@ -219,7 +219,7 @@ nftban_egress_audit() {
                 [[ -n "$dst" ]] && tcp_dests["$dport"]="$dst"
             else
                 udp_ports["$dport"]=$(( ${udp_ports["$dport"]:-0} + 1 ))
-                [[ -n "$dst" ]] && udp_dests["$dport"]="$dst"
+                [[ -n "$dst" ]] && udp_dests["$dport"]="$dst" || true
             fi
         fi
     done <<< "$audit_entries"

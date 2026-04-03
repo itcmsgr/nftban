@@ -119,7 +119,7 @@ _firewall_substitute_placeholders() {
         for _inc in /etc/ssh/sshd_config.d/*.conf; do
             [[ -f "$_inc" ]] || continue
             _ssh_port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' "$_inc" 2>/dev/null) || true
-            [[ -n "$_ssh_port" ]] && break
+            [[ -n "$_ssh_port" ]] && break || true
         done
     fi
     # 2. ss (what sshd is actually listening on)
@@ -181,7 +181,7 @@ nftban_cmd_firewall() {
     # Check for --json flag in all args (suppress banner for JSON output)
     local json_mode=false
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break || true
     done
 
     # Show banner (skip for JSON output to avoid polluting machine-readable output)
@@ -284,7 +284,7 @@ firewall_status() {
 
     local json_mode=false
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true
+        [[ "$arg" == "--json" ]] && json_mode=true || true
     done
 
     # --- 1. Tables ---
@@ -592,12 +592,12 @@ _check_firewall_conflicts() {
     if [[ $severity -ge $CONFLICT_WARNING ]]; then
         [[ "$json_mode" == "false" ]] && echo "[FAIL] Firewall authority conflict detected"
         for conflict in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
-            [[ "$json_mode" == "false" ]] && echo "       $conflict"
+            [[ "$json_mode" == "false" ]] && echo "       $conflict" || true
         done
         [[ "$json_mode" == "false" ]] && echo ""
         [[ "$json_mode" == "false" ]] && echo "       Remediation:"
         for fix in "${NFTBAN_FIREWALL_FIXES[@]}"; do
-            [[ "$json_mode" == "false" ]] && echo "       $fix"
+            [[ "$json_mode" == "false" ]] && echo "       $fix" || true
         done
         return 1
     elif [[ $severity -eq $CONFLICT_INFO ]]; then
@@ -666,7 +666,7 @@ _check_nft_collisions() {
     if [[ -n "$collisions" ]]; then
         [[ "$json_mode" == "false" ]] && echo "[FAIL] Non-NFTBan active input hooks detected:"
         echo "$collisions" | while IFS= read -r line; do
-            [[ "$json_mode" == "false" ]] && echo "       $line"
+            [[ "$json_mode" == "false" ]] && echo "       $line" || true
         done
         [[ "$json_mode" == "false" ]] && echo ""
         [[ "$json_mode" == "false" ]] && echo "       Fix: nft flush ruleset && nftban firewall rebuild"
@@ -882,7 +882,7 @@ firewall_reload() {
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying DDoS protection rules..."
         nftban ddos reload 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply DDoS rules. Run: nftban ddos reload"
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply DDoS rules. Run: nftban ddos reload" || true
         }
     fi
 
@@ -895,7 +895,7 @@ firewall_reload() {
     if [[ "$_portscan_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying portscan detection rules..."
         nftban portscan enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply portscan rules. Run: nftban portscan enable"
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply portscan rules. Run: nftban portscan enable" || true
         }
     fi
 
@@ -908,7 +908,7 @@ firewall_reload() {
     if [[ "$_botguard_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying BotGuard rules..."
         nftban botguard enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard enable"
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard enable" || true
         }
     fi
 
@@ -1073,7 +1073,7 @@ firewall_rebuild() {
             echo "  Fix the config file and retry: nftban firewall rebuild" >&2
             return 1
         fi
-        [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED"
+        [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED" || true
     fi
 
     # Step 4: Remove rogue tables (keep only NFTBan tables)
@@ -1089,7 +1089,7 @@ firewall_rebuild() {
         if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
             local TABLE_SPEC="${table_line#table }"
             if nft delete table "$TABLE_SPEC" 2>/dev/null; then
-                [[ "$quiet" == "false" ]] && echo "    Deleted rogue table: $TABLE_SPEC"
+                [[ "$quiet" == "false" ]] && echo "    Deleted rogue table: $TABLE_SPEC" || true
             fi
         fi
     done <<< "$ALL_TABLES"
@@ -1140,7 +1140,7 @@ firewall_rebuild() {
         if nft add element $table_family $set_name "{ $elements }" 2>/dev/null; then
             # v1.19.20 FIX
             ((restored_count++)) || true
-            [[ "$quiet" == "false" ]] && echo "    Restored: $set_name"
+            [[ "$quiet" == "false" ]] && echo "    Restored: $set_name" || true
         fi
     done
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
@@ -1155,7 +1155,7 @@ firewall_rebuild() {
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "    DDoS protection: re-applying..."
         nftban ddos reload 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed. Run: nftban ddos reload"
+            [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed. Run: nftban ddos reload" || true
         }
     fi
 
@@ -1168,10 +1168,10 @@ firewall_rebuild() {
         [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
     if [[ "$_portscan_enabled" == "true" ]]; then
         nftban portscan enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed. Run: nftban portscan enable"
+            [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed. Run: nftban portscan enable" || true
         }
     else
-        [[ "$quiet" == "false" ]] && echo "    Portscan: not enabled, skipped"
+        [[ "$quiet" == "false" ]] && echo "    Portscan: not enabled, skipped" || true
     fi
 
     # Step 10 (v1.50.1): Re-apply botguard if enabled
@@ -1183,10 +1183,10 @@ firewall_rebuild() {
         [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
     if [[ "$_botguard_enabled" == "true" ]]; then
         nftban botguard enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable"
+            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable" || true
         }
     else
-        [[ "$quiet" == "false" ]] && echo "    BotGuard: not enabled, skipped"
+        [[ "$quiet" == "false" ]] && echo "    BotGuard: not enabled, skipped" || true
     fi
 
     # Step 11: Re-sync feeds (v1.50.1: auto-restore, was manual-only)
@@ -1200,7 +1200,7 @@ firewall_rebuild() {
             { [[ "$quiet" == "false" ]] && echo "    Feeds synced to nftables"; } || \
             { [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (not configured or failed)"; }
     else
-        [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (no sync function available)"
+        [[ "$quiet" == "false" ]] && echo "    Feeds sync skipped (no sync function available)" || true
     fi
 
     # Step 12: Re-sync geoban (v1.50.1: auto-restore, was manual-only)
@@ -1210,13 +1210,13 @@ firewall_rebuild() {
             { [[ "$quiet" == "false" ]] && echo "    GeoBan synced to nftables"; } || \
             { [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (not configured or failed)"; }
     else
-        [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)"
+        [[ "$quiet" == "false" ]] && echo "    GeoBan sync skipped (nftban not available)" || true
     fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
     if [[ "$use_new" == "true" && -f "$rpmnew_conf" ]]; then
         rm -f "$rpmnew_conf" 2>/dev/null || true
-        [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config"
+        [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config" || true
     fi
 
     [[ "$quiet" == "false" ]] && echo ""

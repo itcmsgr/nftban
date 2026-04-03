@@ -100,7 +100,7 @@ cmd_suricata_rules() {
             local disable_dir="${SURICATA_CONFIG_DIR:-/etc/suricata}/disable.conf.d"
             if [[ -d "$disable_dir" ]]; then
                 for conf_file in "$disable_dir"/*.conf; do
-                    [[ -f "$conf_file" ]] && update_args+=("--disable-conf=$conf_file")
+                    [[ -f "$conf_file" ]] && update_args+=("--disable-conf=$conf_file") || true
                 done
             fi
 
@@ -256,7 +256,7 @@ cmd_suricata_rules() {
             fi
 
             if [[ $exit_code -eq 0 ]]; then
-                [[ "$quiet" != "--quiet" ]] && echo "OK: Rules verified"
+                [[ "$quiet" != "--quiet" ]] && echo "OK: Rules verified" || true
             fi
             return $exit_code
             ;;

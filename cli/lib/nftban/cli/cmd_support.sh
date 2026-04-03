@@ -867,7 +867,7 @@ _collect_module_status() {
             if [[ -d /var/cache/nftban/rbl ]]; then
                 ls -la /var/cache/nftban/rbl/ 2>&1 || true
                 for f in /var/cache/nftban/rbl/*.json; do
-                    [[ -f "$f" ]] && echo "$(basename "$f"): $(cat "$f" 2>/dev/null | head -5)"
+                    [[ -f "$f" ]] && echo "$(basename "$f"): $(cat "$f" 2>/dev/null | head -5)" || true
                 done
             fi
         } > "$mod_dir/rbl.txt"
@@ -1006,7 +1006,7 @@ _collect_ssh_port() {
                 [[ -f "$inc" ]] || continue
                 local port_line
                 port_line=$(grep -Ei '^[[:space:]]*Port' "$inc" 2>/dev/null) || true
-                [[ -n "$port_line" ]] && echo "  $inc: $port_line"
+                [[ -n "$port_line" ]] && echo "  $inc: $port_line" || true
             done
         else
             echo "/etc/ssh/sshd_config not found"

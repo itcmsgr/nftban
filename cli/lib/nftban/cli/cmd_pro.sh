@@ -825,7 +825,7 @@ nftban_pro_cmd_inventory_run() {
     if nftban_pro_submit_inventory true >/dev/null 2>&1; then
         [[ "$verbose" == "true" ]] && echo "  Submission successful"
     else
-        [[ "$verbose" == "true" ]] && echo "  Submission failed (will retry)"
+        [[ "$verbose" == "true" ]] && echo "  Submission failed (will retry)" || true
     fi
 
     return 0

@@ -153,7 +153,7 @@ cmd_suricata_stats() {
     # Show Suricata statistics for monitoring/API
     local json_mode="false"
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     local installed="false"
@@ -205,7 +205,7 @@ cmd_suricata_config() {
     # Show Suricata configuration settings
     local json_mode="false"
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="true"
+        [[ "$arg" == "--json" ]] && json_mode="true" || true
     done
 
     # Configuration values

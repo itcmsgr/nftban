@@ -285,7 +285,7 @@ nftban_cmd_list() {
                 [[ "$set_name" == "blacklist" ]] && banned_count=$((banned_count + 1))
                 [[ "$set_name" == "whitelist" ]] && whitelist_count=$((whitelist_count + 1))
                 [[ "$ip_version" == "ipv4" ]] && ipv4_count=$((ipv4_count + 1))
-                [[ "$ip_version" == "ipv6" ]] && ipv6_count=$((ipv6_count + 1))
+                [[ "$ip_version" == "ipv6" ]] && ipv6_count=$((ipv6_count + 1)) || true
             done
         fi
 

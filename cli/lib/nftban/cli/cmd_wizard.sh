@@ -87,7 +87,7 @@ _wizard_detect_env() {
 
     [[ "$ROLE_WEB" -eq 1 ]] && WEB_TCP_PORTS="80,443"
     [[ "$ROLE_MAIL" -eq 1 ]] && MAIL_TCP_PORTS="25,465,587,993,995"
-    [[ "$ROLE_DB" -eq 1 ]] && DB_TCP_PORTS="3306,5432"
+    [[ "$ROLE_DB" -eq 1 ]] && DB_TCP_PORTS="3306,5432" || true
 }
 
 _wizard_show_env() {
