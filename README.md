@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.61.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/badge/version-1.68.0-blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev/)
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
@@ -285,8 +285,29 @@ ip6 nftban {                 # IPv6 rules
 | Component | Type | Description |
 |-----------|------|-------------|
 | `nftban` | Bash CLI | Main command-line interface (76 commands) |
-| `nftband` | Go Binary | Backend daemon for feeds, geoip, sync |
-| `nftban-ui` | Go Binary | Web interface server |
+| `nftband` | Go daemon | Backend daemon for feeds, login monitoring, IPC |
+| `nftban-ui` | Go binary | Web interface server |
+
+### How NFTBan Works
+
+NFTBan operates as a CLI-driven firewall management system with a Go daemon backend:
+
+```
+User/Timer → CLI (Bash) → IPC Socket → Daemon (Go) → nftables (kernel)
+                ↓                           ↓
+          nft commands              ban/unban execution
+          schema rebuild            login monitoring
+          module management         feed processing
+```
+
+1. **CLI** (`nftban`) issues commands — ban, unban, enable modules, rebuild firewall
+2. **Daemon** (`nftband`) handles long-running tasks — feed updates, login monitoring, IPC
+3. **nftables kernel** enforces all rules — sets, chains, counters are the enforcement boundary
+4. **Atomic rebuild** validates schema in a temp namespace before applying to production
+
+The CLI communicates with the daemon via a Unix socket (`/run/nftban/nftband.sock`) authenticated with `SO_PEERCRED`. nftables rules are applied using transaction-based atomic operations — all rules load or none do.
+
+> CLI output is a **report**, not proof of enforcement. Kernel state is verified with `nft list set` commands.
 
 ---
 
@@ -339,9 +360,36 @@ NFTBan development uses AI tools for code generation and review. All code is hum
 
 ## License
 
-Mozilla Public License 2.0 (MPL-2.0)
+NFTBan Core is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**.
 
 Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
+
+### What MPL-2.0 Means
+
+MPL-2.0 is a **file-level copyleft** license:
+
+- You may use, modify, and distribute NFTBan freely
+- If you modify an MPL-licensed file, the modified file must remain under MPL-2.0 and be made available in source form
+- You may combine MPL-licensed files with files under other licenses (including proprietary) in the same project — only the MPL files carry the copyleft obligation
+- You do not need to open-source your own separate modules, integrations, or applications that use NFTBan
+
+This means NFTBan can be integrated into proprietary infrastructure without requiring disclosure of your own code, as long as modifications to NFTBan's own files remain open.
+
+See [LICENSE](LICENSE) for the full license text.
+
+### Architecture Boundary
+
+| Layer | License | Scope |
+|-------|---------|-------|
+| **Core engine** | MPL-2.0 | nftables schema, CLI, daemon, modules, detection, health, CI |
+| **Pro portal** | Separate commercial license | pro.nftban.com, fleet management, telemetry aggregation |
+| **Documentation & brand** | All rights reserved | Logos, brand assets, marketing materials |
+
+The Core and Pro layers communicate via defined interfaces (CLI, IPC socket, HTTP API). They are architecturally separate.
+
+### Trademark
+
+"NFTBan" is a trademark of the NFTBAN Project / Antonios Voulvoulis. The MPL-2.0 license grants rights to the code, **not** to the NFTBan name, logo, or brand. Forks must use a different name and branding. See [TRADEMARK.md](TRADEMARK.md) for the full policy.
 
 ---
 
