@@ -88,8 +88,8 @@ When a module is disabled, it is **NOT loaded** (zero overhead).
 
 ```bash
 # /etc/nftban/conf.d/ddos/classic.conf.local
-DDOS_CLASSIC_HTTP_CONN_LIMIT="200"
-DDOS_CLASSIC_SYN_RATE="50/second"
+DDOS_CLASSIC_SMTP_CONN_LIMIT="50"
+DDOS_CLASSIC_ICMP_RATE="5/second"
 ```
 
 ## 4. Directional Service Model
@@ -128,8 +128,10 @@ Priority | Rule                            | Purpose
 3        | whitelist accept                | Trusted IPs bypass checks
 4        | blacklist drop                  | ⚠️ BEFORE established!
 5        | ct state established accept     | ✅ NOW safe (after bans)
-6        | ICMPv4/ICMPv6 accept            | Control plane
-7        | CT limits (DDoS)                | Connection/rate limits
+6        | ICMPv4/ICMPv6 accept            | Control plane (NDP: fe80::/10 only)
+7a       | /64 prefix SYN gate (IPv6)      | Anti-rotation: drops /64 >100 SYN/sec
+7b       | Per-IP SYN rate limit           | 25/sec terminal accept
+7c       | CT limits (SSH/HTTP/HTTPS)      | Connection count limits
 8        | Services (ports) accept         | Public services
 9        | default deny                    | Drop everything else
 ```
@@ -140,14 +142,28 @@ If blacklist appears AFTER `ct state established`, a banned attacker can keep ac
 
 ## 6. Connection Limits (CT Limits)
 
-### Defaults (configurable via ddos.conf)
+### Base Schema Limits (always active)
+
+As of v1.67.0, the base input chain enforces these limits in the DETECT phase:
+
+| Rule | Limit | Notes |
+|------|-------|-------|
+| SYN rate (per IP) | 25/second burst 50 | `syn_meter_v4`/`syn_meter_v6`, terminal accept |
+| SYN /64 prefix (IPv6) | 100/second burst 200 | `syn_prefix_meter_v6`, anti-rotation gate |
+| SSH ct count | configurable (default 15) | Per `__CT_LIMIT_SSH__` in template |
+| HTTP/HTTPS ct count | configurable (default 150) | Per `__CT_LIMIT_HTTP__` in template |
+
+### DDoS Module Limits (when `nftban ddos enable`)
+
+As of v1.67.1, the DDoS classic module only adds limits that are **not covered** by the base schema:
 
 | Service | Limit | Config Variable |
 |---------|-------|-----------------|
-| SSH | 10 concurrent/IP | `DDOS_CLASSIC_SSH_CONN_LIMIT` |
-| HTTP | 100 concurrent/IP | `DDOS_CLASSIC_HTTP_CONN_LIMIT` |
-| HTTPS | 100 concurrent/IP | `DDOS_CLASSIC_HTTPS_CONN_LIMIT` |
-| SYN Rate | 25/second | `DDOS_CLASSIC_SYN_RATE` |
+| SMTP | 30 concurrent/IP | `DDOS_CLASSIC_SMTP_CONN_LIMIT` |
+| DNS/TCP | 50 concurrent/IP | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
+| DNS/UDP | 50/second | `DDOS_CLASSIC_DNS_CONN_LIMIT` |
+| ICMP | 10/second burst 20 | `DDOS_CLASSIC_ICMP_RATE` |
+| UDP | 100/second burst 200 | `DDOS_CLASSIC_UDP_RATE` |
 
 ### Whitelisted IPs Bypass All Limits
 
@@ -155,26 +171,36 @@ IPs in `whitelist_ipv4/ipv6` are accepted BEFORE any limits are evaluated.
 
 ## 7. ICMPv6 Requirements
 
-Blocking all ICMPv6 breaks IPv6 completely. These types are **essential**:
+Blocking all ICMPv6 breaks IPv6 completely. As of v1.67.0, ICMPv6 is split into two rules:
+
+**Rule 1 — Error + Echo (any source):**
 
 ```nft
 icmpv6 type {
-    echo-request, echo-reply,
     destination-unreachable,
     packet-too-big,
     time-exceeded,
     parameter-problem,
-    nd-router-solicit,      # Router discovery
-    nd-router-advert,       # Router advertisement
-    nd-neighbor-solicit,    # Neighbor discovery
-    nd-neighbor-advert,     # Neighbor advertisement
-    nd-redirect             # Redirect
-}
+    echo-request, echo-reply
+} accept
 ```
 
+**Rule 2 — NDP (link-local only, per RFC 4861):**
+
+```nft
+ip6 saddr fe80::/10 icmpv6 type {
+    nd-router-solicit,
+    nd-router-advert,
+    nd-neighbor-solicit,
+    nd-neighbor-advert
+} accept
+```
+
+`nd-redirect` is intentionally excluded (unnecessary for servers, attack surface).
+
 **Without these:**
-- PMTU blackholes
-- Neighbor Discovery failure
+- PMTU blackholes (missing error types)
+- Neighbor Discovery failure (missing NDP)
 - Silent IPv6 routing collapse
 
 ## 8. Chain Priorities
