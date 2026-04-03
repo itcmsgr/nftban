@@ -253,9 +253,9 @@ _cmd_update_check() {
     elif [[ "$current_version" == "$latest_version" ]]; then
         reason="blocked_same_version"
     else
-        local cur_major cur_minor cur_patch lat_major lat_minor lat_patch
-        IFS='.' read -r cur_major cur_minor cur_patch <<< "$current_version"
-        IFS='.' read -r lat_major lat_minor lat_patch <<< "$latest_version"
+        local cur_major cur_minor lat_major lat_minor
+        IFS='.' read -r cur_major cur_minor _ <<< "$current_version"
+        IFS='.' read -r lat_major lat_minor _ <<< "$latest_version"
 
         if [[ "$channel" == "latest" ]]; then
             eligible="true"
