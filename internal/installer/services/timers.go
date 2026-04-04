@@ -82,10 +82,7 @@ func shouldReconcile(exec executor.Executor) bool {
 			if strings.HasPrefix(line, "NFTBAN_RECONCILE_CORE_TIMERS=") {
 				val := strings.TrimPrefix(line, "NFTBAN_RECONCILE_CORE_TIMERS=")
 				val = strings.Trim(val, "\"")
-				if val == "false" {
-					return false
-				}
-				return true
+				return val != "false"
 			}
 		}
 	}
