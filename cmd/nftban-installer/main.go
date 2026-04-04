@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,7 +46,13 @@ func main() {
 	log := logging.New(cfg.logPath, cfg.verbose)
 	defer log.Close()
 
+	// Write run header to log file for post-mortem analysis
+	hostname, osInfo := systemIdentity()
+	log.RunHeader(version.Version, cfg.mode, hostname, osInfo)
+
 	log.Info("nftban-installer %s starting (mode=%s, repair=%v)", version.Version, cfg.mode, cfg.repair)
+	log.Debug("flags: rpm=%v takeover=%v force=%v dry-run=%v verbose=%v", cfg.rpm, cfg.takeover, cfg.force, cfg.dryRun, cfg.verbose)
+	log.Debug("state-dir=%s log=%s", cfg.stateDir, cfg.logPath)
 
 	// Global timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
@@ -66,6 +73,8 @@ func main() {
 	// Try to read existing state (ok if missing — fresh install)
 	if err := sf.Read(); err != nil && !os.IsNotExist(err) {
 		log.Warn("could not read state file: %v", err)
+	} else if err == nil {
+		log.Debug("previous state: %s (phase=%s, mode=%s)", sf.State, sf.PhaseReached, sf.Mode)
 	}
 
 	// Set metadata
@@ -73,7 +82,32 @@ func main() {
 	sf.Version = version.Version
 
 	exitCode := run(ctx, exec, sf, cfg, log)
+
+	// Write run footer with final state for post-mortem
+	log.RunFooter(string(sf.State), exitCode)
+
 	os.Exit(exitCode)
+}
+
+// systemIdentity returns hostname and OS identification for log headers.
+func systemIdentity() (hostname, osInfo string) {
+	hostname, _ = os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+
+	// Read /etc/os-release for OS identification
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return hostname, "unknown"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			osInfo = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+			return hostname, osInfo
+		}
+	}
+	return hostname, "unknown"
 }
 
 // run is the top-level orchestrator. Returns a process exit code.
@@ -109,17 +143,20 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {
 			log.Error("phase %s failed: %v", p.name, err)
+			log.PhaseEnd(p.name)
 			// State file already updated by the phase function
 			return report(sf, log)
 		}
 	}
 
+	log.PhaseEnd("Validate")
 	return report(sf, log)
 }
 
 // runRepair reads the state file and resumes from the last failed phase.
 func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) int {
 	log.Info("repair mode: current state is %s", sf.State)
+	log.Debug("previous failure: %s (phase=%s)", sf.FailureReason, sf.PhaseReached)
 
 	if sf.State == state.StateCommitted {
 		log.Info("system already COMMITTED, nothing to repair")
@@ -128,6 +165,7 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 
 	startPhase := sf.State.ResumePhase()
 	log.Info("resuming from phase %s", startPhase)
+	log.StateChange(string(sf.State), "repair", fmt.Sprintf("resume_from=%s", startPhase))
 
 	phases := []struct {
 		phase state.Phase
@@ -142,6 +180,7 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 	}
 
 	started := false
+	lastName := ""
 	for _, p := range phases {
 		if p.phase == startPhase {
 			started = true
@@ -158,10 +197,15 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {
 			log.Error("repair phase %s failed: %v", p.name, err)
+			log.PhaseEnd(p.name)
 			return report(sf, log)
 		}
+		lastName = p.name
 	}
 
+	if lastName != "" {
+		log.PhaseEnd(lastName)
+	}
 	return report(sf, log)
 }
 
@@ -224,7 +268,7 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 	}
 
 	log.Info("state file: %s", sf.Path())
-	log.Info("log file: %s", logging.DefaultLogPath)
+	log.Info("log file: %s", log.LogPath())
 
 	return sf.State.ExitCode()
 }

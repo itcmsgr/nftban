@@ -30,10 +30,15 @@ import (
 const DefaultLogPath = "/var/log/nftban/installer.log"
 
 // Logger writes to both console and a persistent log file.
+// The log file is append-only — every install/update/repair run is preserved
+// as a contiguous block delimited by RunHeader/RunFooter for post-mortem analysis.
 type Logger struct {
-	console io.Writer
-	logFile *os.File
-	verbose bool
+	console   io.Writer
+	logFile   *os.File
+	verbose   bool
+	runStart  time.Time
+	phaseStart time.Time
+	logPath   string
 }
 
 // New creates a Logger. logPath may be empty to use DefaultLogPath.
@@ -44,8 +49,10 @@ func New(logPath string, verbose bool) *Logger {
 	}
 
 	l := &Logger{
-		console: os.Stdout,
-		verbose: verbose,
+		console:  os.Stdout,
+		verbose:  verbose,
+		runStart: time.Now(),
+		logPath:  logPath,
 	}
 
 	// Ensure parent directory exists
@@ -64,6 +71,33 @@ func (l *Logger) Close() {
 	if l.logFile != nil {
 		l.logFile.Close()
 	}
+}
+
+// LogPath returns the path to the log file being written.
+func (l *Logger) LogPath() string {
+	return l.logPath
+}
+
+// RunHeader writes a clear delimiter block marking the start of an installer run.
+// This is essential for finding where a specific install/update begins in the log.
+func (l *Logger) RunHeader(version, mode, hostname, osInfo string) {
+	sep := strings.Repeat("=", 72)
+	blank := ""
+	l.writeFile("", blank)
+	l.writeFile("", sep)
+	l.writeFile("RUN", fmt.Sprintf("nftban-installer %s — %s", version, mode))
+	l.writeFile("RUN", fmt.Sprintf("host=%s os=%s", hostname, osInfo))
+	l.writeFile("RUN", fmt.Sprintf("started=%s pid=%d", l.runStart.Format(time.RFC3339), os.Getpid()))
+	l.writeFile("", sep)
+}
+
+// RunFooter writes the closing delimiter with elapsed time and final state.
+func (l *Logger) RunFooter(finalState string, exitCode int) {
+	elapsed := time.Since(l.runStart)
+	sep := strings.Repeat("-", 72)
+	l.writeFile("", sep)
+	l.writeFile("END", fmt.Sprintf("state=%s exit=%d elapsed=%s", finalState, exitCode, elapsed.Round(time.Millisecond)))
+	l.writeFile("", sep)
 }
 
 // Info logs an informational message to both console and file.
@@ -102,12 +136,72 @@ func (l *Logger) Debug(format string, args ...interface{}) {
 	}
 }
 
-// Phase prints a phase separator banner.
+// Phase prints a phase separator banner and records the phase start time.
 func (l *Logger) Phase(name string) {
+	// Log elapsed time from previous phase if there was one
+	if !l.phaseStart.IsZero() {
+		elapsed := time.Since(l.phaseStart)
+		l.writeFile("PHASE", fmt.Sprintf("previous phase completed in %s", elapsed.Round(time.Millisecond)))
+	}
+	l.phaseStart = time.Now()
+
 	sep := strings.Repeat("=", 60)
 	l.Info("%s", sep)
 	l.Info("Phase: %s", name)
 	l.Info("%s", sep)
+}
+
+// PhaseEnd records the elapsed time for the current phase. Called automatically
+// by Phase() for the previous phase, but should also be called for the final phase.
+func (l *Logger) PhaseEnd(name string) {
+	if l.phaseStart.IsZero() {
+		return
+	}
+	elapsed := time.Since(l.phaseStart)
+	l.writeFile("PHASE", fmt.Sprintf("%s completed in %s", name, elapsed.Round(time.Millisecond)))
+	l.phaseStart = time.Time{}
+}
+
+// CmdResult logs the result of a command execution. This captures every
+// external command's exit code and stderr for root cause analysis.
+// Only writes to file (not console) unless verbose or non-zero exit.
+func (l *Logger) CmdResult(name string, exitCode int, stderr string) {
+	stderr = strings.TrimSpace(stderr)
+	if exitCode == 0 {
+		l.writeFile("CMD", fmt.Sprintf("OK  %s (exit=0)", name))
+		if stderr != "" && l.verbose {
+			l.writeFile("CMD", fmt.Sprintf("    stderr: %s", truncate(stderr, 200)))
+		}
+	} else {
+		msg := fmt.Sprintf("FAIL %s (exit=%d)", name, exitCode)
+		if stderr != "" {
+			msg += fmt.Sprintf(" stderr=%s", truncate(stderr, 300))
+		}
+		l.writeFile("CMD", msg)
+		if l.verbose {
+			fmt.Fprintf(l.console, "[NFTBan] [cmd] %s\n", msg)
+		}
+	}
+}
+
+// Detect logs a detection result (SSH, panel, conflicts, authority).
+// These are the key facts needed for root cause analysis.
+func (l *Logger) Detect(category, key, value string) {
+	msg := fmt.Sprintf("[%s] %s=%s", category, key, value)
+	l.writeFile("DETECT", msg)
+	if l.verbose {
+		ts := time.Now().Format("15:04:05")
+		fmt.Fprintf(l.console, "[NFTBan] %s detect: %s\n", ts, msg)
+	}
+}
+
+// StateChange logs a state machine transition to file.
+func (l *Logger) StateChange(from, to, reason string) {
+	msg := fmt.Sprintf("%s -> %s", from, to)
+	if reason != "" {
+		msg += fmt.Sprintf(" reason=%s", reason)
+	}
+	l.writeFile("STATE", msg)
 }
 
 // Result prints a final result line (no timestamp on console for cleaner output).
@@ -122,5 +216,18 @@ func (l *Logger) writeFile(level, msg string) {
 		return
 	}
 	ts := time.Now().Format(time.RFC3339)
-	fmt.Fprintf(l.logFile, "%s [%s] %s\n", ts, level, msg)
+	if level == "" {
+		// Bare line (separators, blank lines)
+		fmt.Fprintf(l.logFile, "%s\n", msg)
+	} else {
+		fmt.Fprintf(l.logFile, "%s [%s] %s\n", ts, level, msg)
+	}
+}
+
+// truncate limits a string to maxLen characters, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
