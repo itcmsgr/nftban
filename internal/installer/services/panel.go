@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - Installer Panel Enable
+// NFTBan v1.75.1 - Installer Panel Enable
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-services-panel"
@@ -26,7 +26,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
-// EnablePanel runs "nftban services enable <panel>" for the detected panel.
+// EnablePanel runs "nftban panel <name> enable" for the detected panel.
 // Non-fatal — logs warnings.
 func EnablePanel(exec executor.Executor, panel detect.PanelType, log *logging.Logger) {
 	if panel == detect.PanelNone {
@@ -37,8 +37,8 @@ func EnablePanel(exec executor.Executor, panel detect.PanelType, log *logging.Lo
 	panelArg := strings.ToLower(string(panel))
 	log.Info("enabling panel integration: %s", panel)
 
-	res := exec.Run(fhs.NftbanCLI, "services", "enable", panelArg)
-	log.CmdResult("nftban services enable "+panelArg, res.ExitCode, res.Stderr)
+	res := exec.Run(fhs.NftbanCLI, "panel", panelArg, "enable")
+	log.CmdResult("nftban panel "+panelArg+" enable", res.ExitCode, res.Stderr)
 
 	if res.ExitCode != 0 {
 		log.Warn("panel enable %s failed (exit %d) — non-fatal", panel, res.ExitCode)
