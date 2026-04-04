@@ -1,12 +1,12 @@
 // =============================================================================
-// NFTBan v1.73 - nftban-installer - RPM/DEB install finalizer
+// NFTBan v1.75 - nftban-installer - RPM/DEB install finalizer
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban-installer"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-04"
-// meta:description="Go-based RPM install finalizer replacing shell %post"
+// meta:description="Go-based RPM/DEB install finalizer replacing shell postinst"
 // meta:inventory.files="/usr/lib/nftban/bin/nftban-installer"
 // meta:inventory.binaries="nftban-installer"
 // meta:inventory.env_vars="NFTBAN_TAKEOVER, NFTBAN_INSTALLER_LOG"
