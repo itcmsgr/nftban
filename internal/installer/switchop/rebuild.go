@@ -40,7 +40,9 @@ func Rebuild(exec executor.Executor, log *logging.Logger) error {
 
 	if res.ExitCode != 0 {
 		// Write install-failed marker for runtime CLI
-		_ = exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644)
+		if err := exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644); err != nil {
+			log.Warn("failed to write install-failed marker: %v", err)
+		}
 		return fmt.Errorf("nftban firewall rebuild failed (exit %d): %s", res.ExitCode, res.Stderr)
 	}
 

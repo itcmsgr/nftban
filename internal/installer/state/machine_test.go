@@ -201,9 +201,9 @@ func TestStateFile_Transition(t *testing.T) {
 		t.Errorf("PhaseReached = %s, want DETECT", sf.PhaseReached)
 	}
 
-	// Transition to failure
-	if err := sf.Transition(StateFailedRebuild, PhaseSwitch, "rebuild exit 1"); err != nil {
-		t.Fatalf("Transition: %v", err)
+	// Transition to failure — must return error so phase runner halts
+	if err := sf.Transition(StateFailedRebuild, PhaseSwitch, "rebuild exit 1"); err == nil {
+		t.Fatal("Transition to failure state should return error")
 	}
 	if sf.FailureReason != "rebuild exit 1" {
 		t.Errorf("FailureReason = %q, want %q", sf.FailureReason, "rebuild exit 1")

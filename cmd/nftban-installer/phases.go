@@ -150,41 +150,65 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 }
 
 // phaseSwitch disables conflicts, enables nftables, runs rebuild.
+//
+// SSH Safety Invariant: At every point during this function, at least one of:
+//   - The pre-existing firewall is still running and accepting SSH, OR
+//   - The inet nftban_install_emergency table exists accepting SSH, OR
+//   - The nftban ruleset is loaded with SSH port in tcp_ports_in
 func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+	emergencyInjected := false
 
-	// 1. TAKEOVER: disable conflicting firewalls
+	// 1. TAKEOVER / FRESH: inject emergency SSH table BEFORE any destructive action.
+	// On UPDATE, nftban tables already exist with SSH in sets — no emergency needed.
+	if pd.decision == authority.Takeover || pd.decision == authority.Fresh {
+		if err := switchop.InjectEmergencySSH(exec, pd.sshPort, log); err != nil {
+			log.Error("cannot inject emergency SSH table: %v", err)
+			return sf.Transition(state.StateFailedNoFirewall, state.PhaseSwitch,
+				"emergency SSH inject failed: "+err.Error())
+		}
+		emergencyInjected = true
+	}
+
+	// 2. TAKEOVER: disable conflicting firewalls (emergency table protects SSH)
 	if pd.decision == authority.Takeover {
 		if err := switchop.DisableConflicts(exec, pd.conflicts, log); err != nil {
+			// Emergency table LEFT IN PLACE — SSH still safe
 			return sf.Transition(state.StateFailedTakeover, state.PhaseSwitch, err.Error())
 		}
-		switchop.CleanGhostTables(exec, log)
 		log.StateChange(string(sf.State), "takeover_complete", "conflicts disabled")
-	} else if pd.decision == authority.Fresh {
-		// Fresh: just clean any ghost tables
-		switchop.CleanGhostTables(exec, log)
-	}
-	// UPDATE: no takeover needed, but still clean ghost tables
-	if pd.decision == authority.Update {
-		switchop.CleanGhostTables(exec, log)
 	}
 
-	// 2. Assert SSH port is in live nft sets (before rebuild)
-	switchop.AssertSSHInLiveSet(exec, pd.sshPort, log)
+	// 3. Clean ghost tables (all paths). Emergency table is NOT cleaned here —
+	// its lifecycle is managed explicitly below.
+	switchop.CleanGhostTables(exec, log)
 
-	// 3. Enable nftables service
+	// 4. Enable nftables service
 	if err := switchop.EnableNftables(exec, log); err != nil {
+		// Emergency table LEFT IN PLACE — SSH still safe
 		return sf.Transition(state.StateFailedNoFirewall, state.PhaseSwitch, err.Error())
 	}
 
-	// 4. daemon-reload (pick up any new unit files)
+	// 5. Assert SSH port is in live nft sets (NOW nftban tables exist)
+	switchop.AssertSSHInLiveSet(exec, pd.sshPort, log)
+
+	// 6. daemon-reload (pick up any new unit files)
 	if err := exec.DaemonReload(); err != nil {
 		log.Warn("daemon-reload: %v", err)
 	}
 
-	// 5. REBUILD — FATAL on failure (v1.70.0 invariant)
+	// 7. REBUILD — FATAL on failure (v1.70.0 invariant)
 	if err := switchop.Rebuild(exec, log); err != nil {
+		// Emergency table LEFT IN PLACE — SSH still safe
 		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, err.Error())
+	}
+
+	// 8. Post-rebuild: re-assert SSH in live sets (belt-and-suspenders)
+	switchop.AssertSSHInLiveSet(exec, pd.sshPort, log)
+
+	// 9. Remove emergency SSH table — nftban rules proven in kernel
+	if emergencyInjected {
+		switchop.RemoveEmergencySSH(exec, log)
 	}
 
 	log.PhaseEnd("Switch")
