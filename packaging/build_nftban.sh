@@ -1280,8 +1280,11 @@ fi
 echo "[NFTBan] Setting permissions via FHS spec..."
 
 if [ -f /usr/lib/nftban/setup/fhs-permissions.sh ]; then
-    # Source the central permissions script
+    # Source the central permissions script (v1.72.0: save/restore shell opts — POSIX safe)
+    _saved_opts="\$(set +o 2>/dev/null)" || true
     . /usr/lib/nftban/setup/fhs-permissions.sh
+    eval "\$_saved_opts" 2>/dev/null || true
+    set +e 2>/dev/null || true; set +u 2>/dev/null || true; set +o pipefail 2>/dev/null || true
 
     # Call the single source-of-truth permission function
     if declare -f nftban_install_set_file_permissions >/dev/null 2>&1; then
@@ -1462,11 +1465,11 @@ else
             PREFLIGHT_ACTION="nftban firewall validate --strict"
 
             if echo "\$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
-                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1)
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1 || true)
             elif echo "\$PREFLIGHT_OUTPUT" | grep -q "ERROR:"; then
-                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "ERROR:" | head -1)
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "ERROR:" | head -1 || true)
             elif echo "\$PREFLIGHT_OUTPUT" | grep -q "FAIL:"; then
-                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "FAIL:" | head -1)
+                PREFLIGHT_REASON=\$(echo "\$PREFLIGHT_OUTPUT" | grep "FAIL:" | head -1 || true)
             fi
 
             echo "[NFTBan ERROR]"
@@ -1493,6 +1496,24 @@ echo "[NFTBan] Enabling systemd services..."
 # (systemd-rpm-macros 256+ causes "invalid option -- 'e'" errors)
 # Using explicit systemctl commands instead - achieves same result
 
+# v1.72.0: POSIX-safe config value lookup — no local, no [[ ]], no pipelines
+# Tolerates missing files and missing keys (returns empty string, exit 0)
+_nftban_conf_value() {
+    _ncv_key="\$1"
+    _ncv_file="\${2:-/etc/nftban/nftban.conf}"
+    _ncv_line=""
+
+    [ -f "\$_ncv_file" ] || { printf '%s\n' ""; return 0; }
+
+    _ncv_line="\$(grep -m1 "^\${_ncv_key}=" "\$_ncv_file" 2>/dev/null || true)"
+    [ -n "\$_ncv_line" ] || { printf '%s\n' ""; return 0; }
+
+    _ncv_val="\${_ncv_line#*=}"
+    _ncv_val="\${_ncv_val#\\\"}"
+    _ncv_val="\${_ncv_val%\\\"}"
+    printf '%s\n' "\$_ncv_val"
+}
+
 # BUG-R48 FIX: %%systemd_post only runs on fresh install (\$1 -eq 1), NOT upgrades.
 # Timers that were disabled (manually or never enabled) stay disabled on upgrades.
 # Explicit enable ensures timers work after ANY install/upgrade.
@@ -1501,14 +1522,13 @@ echo "[NFTBan] Enabling systemd services..."
 # Respects NFTBAN_RECONCILE_CORE_TIMERS config option (default: true).
 # Core timers are always enabled unless admin explicitly opts out.
 NFTBAN_RECONCILE="true"
-if [ -f /etc/nftban/nftban.conf ]; then
-    _reconcile_val=\$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf 2>/dev/null | cut -d'"' -f2)
-    [ -n "\$_reconcile_val" ] && NFTBAN_RECONCILE="\$_reconcile_val"
-    # Check .local override
-    if [ -f /etc/nftban/nftban.conf.local ]; then
-        _reconcile_local=\$(grep -m1 '^NFTBAN_RECONCILE_CORE_TIMERS=' /etc/nftban/nftban.conf.local 2>/dev/null | cut -d'"' -f2)
-        [ -n "\$_reconcile_local" ] && NFTBAN_RECONCILE="\$_reconcile_local"
-    fi
+_reconcile_val=\$(_nftban_conf_value "NFTBAN_RECONCILE_CORE_TIMERS" /etc/nftban/nftban.conf)
+if [ -n "\$_reconcile_val" ]; then
+    NFTBAN_RECONCILE="\$_reconcile_val"
+fi
+_reconcile_local=\$(_nftban_conf_value "NFTBAN_RECONCILE_CORE_TIMERS" /etc/nftban/nftban.conf.local)
+if [ -n "\$_reconcile_local" ]; then
+    NFTBAN_RECONCILE="\$_reconcile_local"
 fi
 
 if [ "\$NFTBAN_RECONCILE" = "true" ]; then
@@ -1608,11 +1628,15 @@ fi
 echo "[NFTBan] Configuring nftables service..."
 # Source distro config library to get correct paths
 if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
+    # v1.72.0: save/restore shell opts — POSIX safe
+    _saved_opts="\$(set +o 2>/dev/null)" || true
     source /usr/lib/nftban/lib/nftban_distro_config.sh 2>/dev/null || true
+    eval "\$_saved_opts" 2>/dev/null || true
+    set +e 2>/dev/null || true; set +u 2>/dev/null || true; set +o pipefail 2>/dev/null || true
 
     # Get distro-specific nftables.conf path
     nftban_distro_load_config 2>/dev/null || true
-    SYSTEM_NFT_CONF=\$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
+    SYSTEM_NFT_CONF=\$(nftban_distro_get_path "nftables_conf" 2>/dev/null || true)
 
     if [ -n "\$SYSTEM_NFT_CONF" ] && [ -f "\$SYSTEM_NFT_CONF" ]; then
         # Check if already configured
@@ -1644,7 +1668,11 @@ fi
 # =============================================================================
 echo "[NFTBan] Cleaning ghost nftables tables before preflight..."
 if [ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]; then
+    # v1.72.0: save/restore shell opts — POSIX safe
+    _saved_opts="\$(set +o 2>/dev/null)" || true
     source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
+    eval "\$_saved_opts" 2>/dev/null || true
+    set +e 2>/dev/null || true; set +u 2>/dev/null || true; set +o pipefail 2>/dev/null || true
     if type nftban_cleanup_ghost_tables >/dev/null 2>&1; then
         nftban_cleanup_ghost_tables 2>/dev/null || true
         if type nftban_validate_hook_authority >/dev/null 2>&1; then
@@ -2017,7 +2045,11 @@ if [[ "\$NFTABLES_SAFE" -eq 1 && -n "\$SSH_PORT_EFFECTIVE" ]]; then
 
     # Write authority file
     if [ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]; then
+        # v1.72.0: save/restore shell opts — POSIX safe
+        _saved_opts="\$(set +o 2>/dev/null)" || true
         source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
+        eval "\$_saved_opts" 2>/dev/null || true
+        set +e 2>/dev/null || true; set +u 2>/dev/null || true; set +o pipefail 2>/dev/null || true
         if type nftban_write_authority >/dev/null 2>&1; then
             nftban_write_authority "nftban"
         fi
