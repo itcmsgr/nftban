@@ -21,7 +21,7 @@ _nftban() {
     # DEBUG: debug smoke emulate setup menu
 
     # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
-    local commands="status health validate config sync version help firewall ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark"
+    local commands="status health validate config sync version help firewall firewall-logs ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -36,6 +36,7 @@ _nftban() {
 
     # Firewall & Security commands
     local firewall_cmds="status stats validate conflicts check logs record init reload rebuild reset restore --json help"
+    local firewall_logs_cmds="enable disable status show help"
     local ban_cmds="--timeout --reason --source --json help"
     local unban_cmds="--json help"
     local list_cmds="banned whitelist all --json help"
@@ -155,6 +156,9 @@ _nftban() {
                 # Firewall & Security
                 firewall)
                     COMPREPLY=($(compgen -W "${firewall_cmds}" -- "${cur}"))
+                    ;;
+                firewall-logs)
+                    COMPREPLY=($(compgen -W "${firewall_logs_cmds}" -- "${cur}"))
                     ;;
                 ban)
                     # Ban expects an IP address first, then options

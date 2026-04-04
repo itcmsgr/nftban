@@ -9,7 +9,7 @@
 # meta:name="cmd_update"
 # meta:type="cli"
 # meta:header="Update Command"
-# meta:version="1.70.0"
+# meta:version="1.71.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -18,7 +18,7 @@
 # meta:inventory.binaries="curl"
 # meta:inventory.env_vars="NFTBAN_UPDATE_SOURCE"
 # meta:inventory.config_files="/etc/nftban/update.conf"
-# meta:inventory.systemd_units=""
+# meta:inventory.systemd_units="nftban-update-check.timer,nftban-update-apply.timer"
 # meta:inventory.network="github.com"
 # meta:inventory.privileges="root"
 #
@@ -1158,6 +1158,31 @@ _cmd_update_verify() {
     echo "  Result: ${_vf_pass}/${_vf_count} checks passed"
     if [[ $_vf_fail -ne 0 ]]; then
         echo "  Status: VERIFICATION FAILED"
+
+        # B2: Auto-rollback if in auto-apply context (systemd ExecStartPost)
+        if [[ "${NFTBAN_UPDATE_AUTO_CONTEXT:-}" == "true" ]]; then
+            echo ""
+            echo "  Auto-apply context detected — triggering rollback..."
+            if declare -f _do_rollback >/dev/null 2>&1; then
+                _do_rollback 2>&1 | while IFS= read -r line; do
+                    echo "    $line"
+                done
+                # Check rollback result
+                if command -v nft &>/dev/null && nft list tables 2>/dev/null | grep >/dev/null 2>&1 nftban; then
+                    echo "  Rollback: firewall authority restored"
+                else
+                    echo "  Rollback: firewall authority NOT restored — manual intervention required"
+                fi
+            else
+                echo "  Rollback: _do_rollback not available"
+            fi
+        fi
+
+        # Write failure marker (circuit breaker)
+        local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+        mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
+
         echo ""
         return 1
     else
@@ -1228,7 +1253,10 @@ _cmd_update_auto_apply() {
 
     _update_log INFO "Auto-apply: v${_live_current} → v${_target}"
 
-    # 6. Call main update
+    # 6. Set auto-apply context for verify-triggered rollback
+    export NFTBAN_UPDATE_AUTO_CONTEXT="true"
+
+    # 7. Call main update
     _cmd_update_main "github" "$_target"
     return $?
 }
@@ -1329,9 +1357,13 @@ EXAMPLES:
     nftban update auto disable
 
 AUTO-UPDATE:
-    The auto-update feature runs weekly (Sunday 4:00 AM) via systemd timer.
-    Email notification is MANDATORY - you cannot enable auto-updates without
-    configuring a notification email to ensure you're informed of results.
+    v1.71.0: Split into two systemd units for privilege separation:
+      nftban-update-check.timer   Daily 03:30 — unprivileged, writes cache only
+      nftban-update-apply.timer   Weekly Sun 04:00 — privileged, gated by preflight+verify
+
+    The check timer is enabled by default (read-only, harmless).
+    The apply timer must be enabled explicitly with notification email:
+      nftban update auto enable --email admin@example.com
 
     Email is resolved in order:
       1. --email argument (explicit)
@@ -1340,7 +1372,9 @@ AUTO-UPDATE:
       4. Panel admin email (if --email panel)
 
     Configuration: /etc/nftban/conf.d/update.conf
-    Logs: ${NFTBAN_LOG_DIR}/update.log, journalctl -u nftban-update.service
+    Logs: ${NFTBAN_LOG_DIR}/update.log
+          journalctl -u nftban-update-check.service  (daily check)
+          journalctl -u nftban-update-apply.service  (auto-apply)
 
 CONFIGURATION:
     File: /etc/nftban/update.conf
@@ -1523,7 +1557,10 @@ EOF
 
     # Enable and start timer
     _update_log INFO "Enabling systemd timer..."
-    if systemctl enable --now nftban-update.timer 2>/dev/null; then
+    # Enable check timer (daily, read-only — always safe)
+    systemctl enable --now nftban-update-check.timer 2>/dev/null || true
+    # Enable apply timer (weekly, gated by preflight + verify)
+    if systemctl enable --now nftban-update-apply.timer 2>/dev/null; then
         _update_log OK "Timer enabled"
     else
         _update_log WARN "Could not enable timer (systemd may not be available)"
@@ -1539,16 +1576,17 @@ EOF
     echo "  Notification:      $resolved_email"
     echo "  Config:            $config_local"
 
-    # Show next run time if timer is active
+    # Show next run time if apply timer is active
     local next_run=""
-    if systemctl is-active nftban-update.timer &>/dev/null; then
-        next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
-        [[ -n "$next_run" ]] && echo "  Next run:          $next_run" || true
+    if systemctl is-active nftban-update-apply.timer &>/dev/null; then
+        next_run=$(systemctl show nftban-update-apply.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
+        [[ -n "$next_run" ]] && echo "  Next apply:        $next_run" || true
     fi
 
     echo ""
     echo "  Check status:      nftban update auto status"
-    echo "  View logs:         journalctl -u nftban-update.service"
+    echo "  View check logs:   journalctl -u nftban-update-check.service"
+    echo "  View apply logs:   journalctl -u nftban-update-apply.service"
     echo ""
 }
 
@@ -1575,11 +1613,16 @@ _update_auto_disable() {
         _update_log OK "Configuration updated: $config_local"
     fi
 
-    # Disable timer
-    if systemctl disable --now nftban-update.timer 2>/dev/null; then
-        _update_log OK "Timer disabled"
+    # Disable both update timers
+    if systemctl disable --now nftban-update-apply.timer 2>/dev/null; then
+        _update_log OK "Apply timer disabled"
     else
-        _update_log INFO "Timer was not active"
+        _update_log INFO "Apply timer was not active"
+    fi
+    if systemctl disable --now nftban-update-check.timer 2>/dev/null; then
+        _update_log OK "Check timer disabled"
+    else
+        _update_log INFO "Check timer was not active"
     fi
 
     echo ""
@@ -1647,10 +1690,13 @@ _update_auto_status() {
         email_source="mail.conf (global)"
     fi
 
-    # Timer status
+    # Timer status (split units: check + apply)
     local timer_active timer_enabled next_run last_run exit_code
-    timer_active=$(systemctl is-active nftban-update.timer 2>/dev/null || echo "inactive")
-    timer_enabled=$(systemctl is-enabled nftban-update.timer 2>/dev/null || echo "disabled")
+    local check_timer_active check_timer_enabled
+    check_timer_active=$(systemctl is-active nftban-update-check.timer 2>/dev/null || echo "inactive")
+    check_timer_enabled=$(systemctl is-enabled nftban-update-check.timer 2>/dev/null || echo "disabled")
+    timer_active=$(systemctl is-active nftban-update-apply.timer 2>/dev/null || echo "inactive")
+    timer_enabled=$(systemctl is-enabled nftban-update-apply.timer 2>/dev/null || echo "disabled")
 
     # Configuration
     echo "  Configuration"
@@ -1672,33 +1718,46 @@ _update_auto_status() {
     echo "  Notify failure:    $notify_failure"
     echo ""
 
-    # Timer status
-    echo "  Systemd Timer"
+    # Timer status (split units v1.71.0)
+    echo "  Systemd Timers"
     echo "  ─────────────────────────────────────"
-    if [[ "$timer_active" == "active" ]]; then
-        echo "  Timer status:      ACTIVE (running)"
+    echo "  Check timer:"
+    if [[ "$check_timer_active" == "active" ]]; then
+        echo "    Status:          ACTIVE (running)"
     else
-        echo "  Timer status:      INACTIVE"
+        echo "    Status:          INACTIVE"
     fi
-    echo "  Timer enabled:     $timer_enabled"
-
+    echo "    Enabled:         $check_timer_enabled"
+    if [[ "$check_timer_active" == "active" ]]; then
+        local check_next
+        check_next=$(systemctl show nftban-update-check.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
+        [[ -n "$check_next" ]] && echo "    Next check:      $check_next" || true
+    fi
+    echo ""
+    echo "  Apply timer:"
     if [[ "$timer_active" == "active" ]]; then
-        next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
-        [[ -n "$next_run" ]] && echo "  Next run:          $next_run" || true
+        echo "    Status:          ACTIVE (running)"
+    else
+        echo "    Status:          INACTIVE"
+    fi
+    echo "    Enabled:         $timer_enabled"
+    if [[ "$timer_active" == "active" ]]; then
+        next_run=$(systemctl show nftban-update-apply.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
+        [[ -n "$next_run" ]] && echo "    Next apply:      $next_run" || true
     fi
 
-    # Last run info from service
-    if systemctl show nftban-update.service &>/dev/null 2>&1; then
-        last_run=$(systemctl show nftban-update.service --property=ExecMainExitTimestamp --value 2>/dev/null || echo "")
-        exit_code=$(systemctl show nftban-update.service --property=ExecMainStatus --value 2>/dev/null || echo "")
+    # Last run info from apply service
+    if systemctl show nftban-update-apply.service &>/dev/null 2>&1; then
+        last_run=$(systemctl show nftban-update-apply.service --property=ExecMainExitTimestamp --value 2>/dev/null || echo "")
+        exit_code=$(systemctl show nftban-update-apply.service --property=ExecMainStatus --value 2>/dev/null || echo "")
 
         if [[ -n "$last_run" && "$last_run" != "n/a" ]]; then
-            echo "  Last run:          $last_run"
+            echo "    Last apply:      $last_run"
             case "$exit_code" in
-                0) echo "  Last result:       SUCCESS (updated)" ;;
-                1) echo "  Last result:       OK (no update needed)" ;;
-                2) echo "  Last result:       FAILED" ;;
-                *) [[ -n "$exit_code" ]] && echo "  Last exit code:    $exit_code" ;;
+                0) echo "    Last result:     SUCCESS (updated)" ;;
+                1) echo "    Last result:     OK (no update needed)" ;;
+                2) echo "    Last result:     FAILED" ;;
+                *) [[ -n "$exit_code" ]] && echo "    Last exit code:  $exit_code" ;;
             esac
         fi
     fi
@@ -1929,7 +1988,7 @@ Time:     $(date '+%Y-%m-%d %H:%M:%S %Z')
 The update was applied automatically and all health checks passed.
 
 View update log: ${NFTBAN_LOG_DIR}/update.log
-View service log: journalctl -u nftban-update.service"
+View apply log: journalctl -u nftban-update-apply.service"
     else
         subject="[NFTBan] Update FAILED on $hostname_val"
         body="NFTBan auto-update failed!
@@ -1942,7 +2001,7 @@ Details: $extra_msg}
 
 Please check the server and review the logs:
   ${NFTBAN_LOG_DIR}/update.log
-  journalctl -u nftban-update.service
+  journalctl -u nftban-update-apply.service
 
 To manually update:
   sudo nftban update

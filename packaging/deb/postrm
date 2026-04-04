@@ -47,7 +47,8 @@ case "$1" in
             nftban-suricata.service nftban-suricata-stats.service \
             nftban-pro-inventory.timer nftban-pro-inventory.service \
             nftban-pro-license.timer nftban-pro-license.service \
-            nftban-update.timer nftban-update.service \
+            nftban-update-check.timer nftban-update-check.service \
+            nftban-update-apply.timer nftban-update-apply.service \
             nftban-api.service nftban-firewall-init.service \
             nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
             deb-systemd-helper purge "$unit" >/dev/null 2>&1 || true

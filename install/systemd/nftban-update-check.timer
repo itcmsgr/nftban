@@ -1,0 +1,48 @@
+# =============================================================================
+# NFTBan v1.71.0 - Daily Update Check Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-update-check.timer"
+# meta:type="systemd"
+# meta:tier="CORE"
+# meta:version="1.71.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Daily update check timer — read-only, enabled by default"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/update.conf"
+# meta:inventory.systemd_units="nftban-update-check.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+#
+# Purpose: Schedule daily update availability checks
+#
+# Runs daily at 03:30 (30 min after health check at 03:00).
+# Writes cache only — no mutation, safe to enable by default.
+#
+# Schedule: Daily 3:30 AM with 15-minute jitter
+# =============================================================================
+
+[Unit]
+Description=NFTBan Daily Update Check Timer
+Documentation=man:nftban(8)
+
+[Timer]
+# Run daily at 03:30 AM (after health check at 03:00)
+OnCalendar=*-*-* 03:30:00
+
+# 15-minute jitter for fleet distribution
+RandomizedDelaySec=15m
+
+# Deterministic offset per host
+FixedRandomDelay=true
+
+# Catch up on missed runs after sleep/shutdown
+Persistent=true
+
+# Timer precision
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

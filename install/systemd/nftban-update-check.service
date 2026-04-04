@@ -1,0 +1,77 @@
+# =============================================================================
+# NFTBan v1.71.0 - Update Check Service (Unprivileged)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-update-check.service"
+# meta:type="systemd"
+# meta:version="1.71.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Unprivileged update check — writes cache, no mutation"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/update.conf"
+# meta:inventory.systemd_units="nftban-update-check.timer"
+# meta:inventory.network="github.com"
+# meta:inventory.privileges="nftban"
+#
+# Purpose: Check for available NFTBan updates (read-only)
+#
+# Runs as unprivileged nftban user. Queries GitHub API for latest
+# release and writes eligibility cache to /var/cache/nftban/.
+# No system mutation occurs.
+#
+# Exit codes:
+#   0 = Update available and eligible
+#   1 = No update needed / not eligible
+#
+# Logs: journalctl -u nftban-update-check.service
+# =============================================================================
+
+[Unit]
+Description=NFTBan Update Check (Unprivileged)
+Documentation=man:nftban(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+ExecStart=/usr/sbin/nftban update check --cache
+
+# Accept exit 0 (update found) and exit 1 (no update / not eligible)
+SuccessExitStatus=0 1
+
+# =============================================================================
+# SECURITY HARDENING — read-only, no privileges
+# =============================================================================
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/cache/nftban
+CapabilityBoundingSet=
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-update-check
+
+# =============================================================================
+# RESOURCE LIMITS
+# =============================================================================
+TimeoutStartSec=30
+MemoryMax=64M
