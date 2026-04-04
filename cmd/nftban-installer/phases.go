@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - nftban-installer - Phase Implementations
+// NFTBan v1.75.1 - nftban-installer - Phase Implementations
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban-installer-phases"
@@ -172,7 +172,7 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 
 	// 2. TAKEOVER: disable conflicting firewalls (emergency table protects SSH)
 	if pd.decision == authority.Takeover {
-		if err := switchop.DisableConflicts(exec, pd.conflicts, log); err != nil {
+		if err := switchop.DisableConflicts(exec, pd.conflicts, pd.panel, log); err != nil {
 			// Emergency table LEFT IN PLACE — SSH still safe
 			return sf.Transition(state.StateFailedTakeover, state.PhaseSwitch, err.Error())
 		}
@@ -184,7 +184,7 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 	switchop.CleanGhostTables(exec, log)
 
 	// 4. Enable nftables service
-	if err := switchop.EnableNftables(exec, log); err != nil {
+	if err := switchop.EnableNftables(exec, pd.distro, log); err != nil {
 		// Emergency table LEFT IN PLACE — SSH still safe
 		return sf.Transition(state.StateFailedNoFirewall, state.PhaseSwitch, err.Error())
 	}

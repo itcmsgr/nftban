@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - Installer Switchop Tests
+// NFTBan v1.75.1 - Installer Switchop Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-switchop-test"
@@ -18,6 +18,7 @@
 package switchop
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
@@ -28,7 +29,8 @@ func TestEnableNftables_Success(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
 
-	err := EnableNftables(mock, newTestLogger())
+	distro := &detect.DistroInfo{NftConfPath: "/etc/nftables.conf"}
+	err := EnableNftables(mock, distro, newTestLogger())
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
@@ -38,6 +40,82 @@ func TestEnableNftables_NotActive(t *testing.T) {
 	// Mock auto-activates on ServiceStart, so we can't easily test the failure case.
 	// The code is straightforward — skip.
 	t.Skip("mock auto-activates on ServiceStart — skip negative test")
+}
+
+func TestCleanXtCompat_XtTargetDetected(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+
+	confPath := "/etc/sysconfig/nftables.conf"
+	mock.Files[confPath] = []byte("table ip filter { chain FORWARD { xt target \"REDIRECT\" } }")
+
+	// nft -c -f should fail with xt target error
+	mock.RunResults["nft:-c:-f:"+confPath] = executor.Result{
+		ExitCode: 1,
+		Stderr:   "Error: xt target not found",
+	}
+
+	distro := &detect.DistroInfo{NftConfPath: confPath}
+	err := EnableNftables(mock, distro, newTestLogger())
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Verify backup was created (any file starting with confPath.xt-backup.)
+	foundBackup := false
+	for path := range mock.WrittenFiles {
+		if strings.HasPrefix(path, confPath+".xt-backup.") {
+			foundBackup = true
+			break
+		}
+	}
+	if !foundBackup {
+		t.Error("expected xt-backup file to be created")
+	}
+
+	// Verify clean config was written
+	written := mock.WrittenFiles[confPath]
+	if written == nil {
+		t.Fatal("expected clean config to be written to confPath")
+	}
+	if !strings.Contains(string(written), "include \"/etc/nftban/nftables.conf\"") {
+		t.Error("expected clean config to include nftban nftables.conf")
+	}
+}
+
+func TestCleanXtCompat_NoXtIssues(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+
+	confPath := "/etc/nftables.conf"
+	mock.Files[confPath] = []byte("#!/usr/sbin/nft -f\nflush ruleset\n")
+
+	// nft -c -f succeeds — no xt issues
+	mock.RunResults["nft:-c:-f:"+confPath] = executor.Result{ExitCode: 0}
+
+	distro := &detect.DistroInfo{NftConfPath: confPath}
+	err := EnableNftables(mock, distro, newTestLogger())
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Should NOT create a backup — config was clean
+	for path := range mock.WrittenFiles {
+		if strings.Contains(path, "xt-backup") {
+			t.Errorf("unexpected backup file created: %s", path)
+		}
+	}
+}
+
+func TestCleanXtCompat_NoConfPath(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+
+	distro := &detect.DistroInfo{NftConfPath: ""}
+	err := EnableNftables(mock, distro, newTestLogger())
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
 }
 
 func TestCleanGhostTables(t *testing.T) {
@@ -77,7 +155,7 @@ func TestDisableConflicts(t *testing.T) {
 		{Name: "firewalld", Service: "firewalld.service", Active: true},
 	}
 
-	err := DisableConflicts(mock, conflicts, newTestLogger())
+	err := DisableConflicts(mock, conflicts, detect.PanelNone, newTestLogger())
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
@@ -90,7 +168,66 @@ func TestDisableConflicts_EmptyService(t *testing.T) {
 		{Name: "iptables-nft", Service: "", Active: true},
 	}
 
-	err := DisableConflicts(mock, conflicts, newTestLogger())
+	err := DisableConflicts(mock, conflicts, detect.PanelNone, newTestLogger())
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+}
+
+func TestDisableConflicts_CSFWithDirectAdmin(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["csf.service"] = true
+	mock.Services["lfd.service"] = true
+	mock.ExistingCommands["iptables"] = true
+	mock.ExistingCommands["ip6tables"] = true
+
+	// Set up DA custombuild
+	buildCmd := "/usr/local/directadmin/custombuild/build"
+	mock.Files[buildCmd] = []byte("#!/bin/bash")
+	mock.Dirs["/usr/local/directadmin"] = true
+
+	// custombuild set csf no succeeds
+	mock.RunResults[buildCmd+":set:csf:no"] = executor.Result{ExitCode: 0}
+
+	// options.conf shows csf=no after set
+	optionsPath := "/usr/local/directadmin/custombuild/options.conf"
+	mock.Files[optionsPath] = []byte("csf=no\nfirewall=no\n")
+
+	conflicts := []detect.Conflict{
+		{Name: "CSF", Service: "csf.service", Active: true},
+		{Name: "CSF", Service: "lfd.service", Active: true},
+	}
+
+	err := DisableConflicts(mock, conflicts, detect.PanelDirectAdmin, newTestLogger())
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Verify custombuild was called
+	found := false
+	for _, cmd := range mock.Commands {
+		if cmd.Name == buildCmd && len(cmd.Args) == 3 &&
+			cmd.Args[0] == "set" && cmd.Args[1] == "csf" && cmd.Args[2] == "no" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected custombuild set csf no to be called")
+	}
+}
+
+func TestDisableConflicts_CSFWithCPanel(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["csf.service"] = true
+	mock.ExistingCommands["iptables"] = true
+
+	conflicts := []detect.Conflict{
+		{Name: "CSF", Service: "csf.service", Active: true},
+	}
+
+	// cPanel — no custombuild disarm needed, masking is sufficient
+	err := DisableConflicts(mock, conflicts, detect.PanelCPanel, newTestLogger())
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
