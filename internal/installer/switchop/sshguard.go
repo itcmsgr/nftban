@@ -18,6 +18,7 @@
 package switchop
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -25,8 +26,62 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
+// emergencyTable is the name of the last-resort SSH safety table.
+const emergencyTable = "nftban_install_emergency"
+
+// InjectEmergencySSH creates a minimal inet table that accepts the SSH port.
+// This table acts as a last-resort safety net during install transitions.
+// It MUST be removed only after nftban rules are proven in the kernel.
+// Idempotent: deletes any existing emergency table before creating.
+//
+// Priority -1: evaluated before nftban chains (priority 0).
+// Policy accept: fail-open — safety net, not security boundary.
+func InjectEmergencySSH(exec executor.Executor, sshPort int, log *logging.Logger) error {
+	// Clean up any pre-existing emergency table (idempotent)
+	if exec.NftTableExists("inet", emergencyTable) {
+		_ = exec.NftDeleteTable("inet", emergencyTable)
+	}
+
+	nftRules := fmt.Sprintf(`table inet %s {
+    chain input {
+        type filter hook input priority -1; policy accept;
+        tcp dport %d accept
+    }
+}`, emergencyTable, sshPort)
+
+	// Write rules to temp file and load with nft -f
+	tmpPath := "/tmp/.nftban-emergency-ssh.nft"
+	if err := exec.WriteFileAtomic(tmpPath, []byte(nftRules+"\n"), 0600); err != nil {
+		return fmt.Errorf("write emergency SSH rules: %w", err)
+	}
+	defer func() { _ = exec.Remove(tmpPath) }()
+
+	res := exec.Run("nft", "-f", tmpPath)
+	if res.ExitCode != 0 {
+		return fmt.Errorf("inject emergency SSH table: %s", strings.TrimSpace(res.Stderr))
+	}
+
+	log.Info("injected emergency SSH table (port %d, priority -1)", sshPort)
+	return nil
+}
+
+// RemoveEmergencySSH removes the emergency SSH table.
+// Call only after nftban rules are proven in the kernel with SSH port present.
+// No-op if table doesn't exist.
+func RemoveEmergencySSH(exec executor.Executor, log *logging.Logger) {
+	if !exec.NftTableExists("inet", emergencyTable) {
+		return
+	}
+	if err := exec.NftDeleteTable("inet", emergencyTable); err != nil {
+		log.Warn("remove emergency SSH table: %v", err)
+	} else {
+		log.Info("removed emergency SSH table (nftban rules proven)")
+	}
+}
+
 // AssertSSHInLiveSet verifies the SSH port exists in the live nft tcp_ports_in
-// sets for both ip and ip6. If missing, adds it. This MUST run before rebuild.
+// sets for both ip and ip6. If missing, adds it.
+// Call after EnableNftables (nftban tables must exist) and before/after rebuild.
 func AssertSSHInLiveSet(exec executor.Executor, sshPort int, log *logging.Logger) {
 	portStr := strconv.Itoa(sshPort)
 
