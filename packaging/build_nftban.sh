@@ -1762,6 +1762,7 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-installer" "${deb_root}/usr/lib/nftban/bin/"
 
     # Download yq at BUILD time (supply-chain safe - not at install time)
     # SHA256 verified before bundling in package

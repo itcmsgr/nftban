@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - nftban-installer - CLI flag parsing
+// NFTBan v1.75 - nftban-installer - CLI flag parsing
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban-installer-flags"
@@ -30,7 +30,7 @@ import (
 type config struct {
 	mode        string // "install" or "upgrade"
 	rpm         bool   // called from RPM %post
-	deb         bool   // called from DEB postinst (reserved, not implemented v1.73)
+	deb         bool   // called from DEB postinst
 	repair      bool   // resume from last failed phase
 	force       bool   // re-run all phases ignoring state
 	takeover    bool   // approve takeover of conflicting firewalls
@@ -48,7 +48,7 @@ func parseFlags() *config {
 
 	flag.StringVar(&cfg.mode, "mode", "", "Install mode: install or upgrade (required unless --repair)")
 	flag.BoolVar(&cfg.rpm, "rpm", false, "Called from RPM %post")
-	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst (reserved)")
+	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst")
 	flag.BoolVar(&cfg.repair, "repair", false, "Resume from last failed phase")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
 	flag.BoolVar(&cfg.takeover, "takeover", false, "Approve takeover of conflicting firewalls")
@@ -78,11 +78,6 @@ func parseFlags() *config {
 			fmt.Fprintf(os.Stderr, "       nftban-installer --repair [flags]\n")
 			os.Exit(state.ExitFatal)
 		}
-	}
-
-	if cfg.deb {
-		fmt.Fprintf(os.Stderr, "error: --deb is not implemented in v1.73 (deferred to next release)\n")
-		os.Exit(state.ExitFatal)
 	}
 
 	return cfg
