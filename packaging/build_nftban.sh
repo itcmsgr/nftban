@@ -1509,8 +1509,8 @@ _nftban_conf_value() {
     [ -n "\$_ncv_line" ] || { printf '%s\n' ""; return 0; }
 
     _ncv_val="\${_ncv_line#*=}"
-    _ncv_val="\${_ncv_val#\\\"}"
-    _ncv_val="\${_ncv_val%\\\"}"
+    case "\$_ncv_val" in '"'*) _ncv_val="\${_ncv_val#?}" ;; esac
+    case "\$_ncv_val" in *'"') _ncv_val="\${_ncv_val%?}" ;; esac
     printf '%s\n' "\$_ncv_val"
 }
 
