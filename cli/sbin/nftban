@@ -250,6 +250,10 @@ nftban_complete() {
         echo "pro"
         # PREFLIGHT
         echo "preflight"
+        # ADDITIONAL COMMANDS
+        echo "tunnel"
+        echo "benchmark"
+        echo "export"
         return 0
     fi
 
@@ -552,8 +556,15 @@ nftban_complete() {
                 echo "github"
                 echo "git"
                 echo "local"
+                echo "force"
+                echo "repair"
                 echo "rollback"
                 echo "list"
+                echo "history"
+                echo "auto"
+                echo "preflight"
+                echo "verify"
+                echo "auto-apply"
                 echo "help"
                 ;;
             support|support-bundle)
@@ -641,6 +652,105 @@ nftban_complete() {
             preflight)
                 echo "--strict"
                 echo "--json"
+                echo "help"
+                ;;
+            suricata)
+                echo "install"
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "eve"
+                echo "rules"
+                echo "profile"
+                echo "scan"
+                echo "services"
+                echo "sid"
+                echo "category"
+                echo "local"
+                echo "custom"
+                echo "recommend"
+                echo "iface"
+                echo "help"
+                ;;
+            pro)
+                echo "status"
+                echo "enroll"
+                echo "disable"
+                echo "token"
+                echo "inventory"
+                echo "license-check"
+                echo "community"
+                echo "help"
+                ;;
+            rbl)
+                echo "check"
+                echo "server"
+                echo "status"
+                echo "list"
+                echo "enable"
+                echo "disable"
+                echo "cache"
+                echo "help"
+                ;;
+            benchmark)
+                echo "all"
+                echo "ipc"
+                echo "nft"
+                echo "sets"
+                echo "help"
+                ;;
+            tunnel)
+                echo "status"
+                echo "enable"
+                echo "disable"
+                echo "scan"
+                echo "top"
+                echo "explain"
+                echo "config"
+                echo "help"
+                ;;
+            firewall-logs)
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "show"
+                echo "help"
+                ;;
+            export)
+                echo "--format"
+                echo "--output"
+                echo "--since"
+                echo "--until"
+                echo "--last"
+                echo "help"
+                ;;
+            connector)
+                echo "list"
+                echo "add"
+                echo "remove"
+                echo "enable"
+                echo "disable"
+                echo "test"
+                echo "show"
+                echo "push"
+                echo "help"
+                ;;
+            snapshot)
+                echo "create"
+                echo "list"
+                echo "restore"
+                echo "help"
+                ;;
+            zabbix)
+                echo "setup"
+                echo "status"
+                echo "test"
+                echo "push"
+                echo "reload"
+                echo "template"
+                echo "discover"
+                echo "targets"
+                echo "config"
                 echo "help"
                 ;;
             *)
