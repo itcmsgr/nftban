@@ -571,14 +571,11 @@ nftban_enable_all() {
     echo "[8/10] Enabling login monitor..."
     if declare -f nftban_login_cmd_enable &>/dev/null; then
         nftban_login_cmd_enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
+    elif command -v nftban >/dev/null 2>&1; then
+        # cmd_login.sh may not be loaded in this context — call via CLI
+        nftban login enable >/dev/null 2>&1 && echo "  ✅ Login monitor enabled"
     else
-        if systemctl list-unit-files "$svc_login" &>/dev/null 2>&1; then
-            systemctl enable "$svc_login" 2>/dev/null && \
-            systemctl start "$svc_login" 2>/dev/null && \
-            echo "  ✅ Login monitor enabled"
-        else
-            echo "  ⚠️  Login monitor service not installed (optional)"
-        fi
+        echo "  ⚠️  Login monitor: nftban CLI not available"
     fi
     echo ""
 

@@ -324,7 +324,7 @@ nftban_stats_ban_sources() {
         local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
         if [[ -d "$feeds_dir" ]]; then
             # shellcheck disable=SC2312  # cat in subshell is fine here
-            feed_total=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l)
+            feed_total=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
             feed_total=${feed_total:-0}
         fi
         echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":$feed_total,\"suricata\":0}"
@@ -362,7 +362,7 @@ nftban_stats_ban_sources() {
             if [[ -d "$feeds_dir" ]]; then
                 local feed_count
                 # shellcheck disable=SC2312  # cat in subshell is fine here
-                feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l)
+                feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
                 feed_count=${feed_count:-0}
                 if [[ "$feed_count" -gt 0 ]]; then
                     result=$(echo "$result" | jq -c ".feeds = $feed_count")
