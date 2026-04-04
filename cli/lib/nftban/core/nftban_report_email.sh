@@ -140,7 +140,7 @@ nftban_report_email_generate() {
     local login_alert_log="${NFTBAN_LOG_DIR}/login_alert.log"
     if [[ -f "$login_alert_log" ]]; then
         # Count actual "Banning" entries from yesterday and today
-        login_bans=$(grep "Banning IP" "$login_alert_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        login_bans=$(grep "Banning IP" "$login_alert_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l || true)
         login_bans=${login_bans//[^0-9]/}  # Strip non-digits
         login_bans=${login_bans:-0}
     fi
@@ -148,7 +148,7 @@ nftban_report_email_generate() {
     # Count portscan bans
     local portscan_log="${NFTBAN_LOG_DIR}/portscan.log"
     if [[ -f "$portscan_log" ]]; then
-        portscan_bans=$(grep -Ei "ban|block" "$portscan_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        portscan_bans=$(grep -Ei "ban|block" "$portscan_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l || true)
         portscan_bans=${portscan_bans//[^0-9]/}
         portscan_bans=${portscan_bans:-0}
     fi
@@ -156,7 +156,7 @@ nftban_report_email_generate() {
     # Count DDoS bans
     local ddos_log="${NFTBAN_LOG_DIR}/ddos.log"
     if [[ -f "$ddos_log" ]]; then
-        ddos_bans=$(grep -Ei "ban|block" "$ddos_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        ddos_bans=$(grep -Ei "ban|block" "$ddos_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l || true)
         ddos_bans=${ddos_bans//[^0-9]/}
         ddos_bans=${ddos_bans:-0}
     fi
