@@ -82,7 +82,7 @@ func sshFromListener(exec executor.Executor) int {
 			continue
 		}
 		// Extract port from LISTEN address column (e.g., *:22 or 0.0.0.0:55000)
-		m := portRe.FindStringSubmatch(strings.Fields(safeField(line, 3)))
+		m := portRe.FindStringSubmatch(safeField(line, 3))
 		if m != nil {
 			return validatePort(m[1])
 		}
