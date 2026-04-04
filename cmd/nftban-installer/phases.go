@@ -1,0 +1,239 @@
+// =============================================================================
+// NFTBan v1.73 - nftban-installer - Phase Implementations
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="nftban-installer-phases"
+// meta:type="cmd"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-04-04"
+// meta:description="Phase implementations wiring detect/render/switchop/services/validate"
+// meta:inventory.files="cmd/nftban-installer/phases.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/itcmsgr/nftban/internal/installer/authority"
+	"github.com/itcmsgr/nftban/internal/installer/detect"
+	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/fhs"
+	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/render"
+	"github.com/itcmsgr/nftban/internal/installer/services"
+	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
+	"github.com/itcmsgr/nftban/internal/installer/validate"
+)
+
+// phaseData holds state accumulated across phases (detect→prepare→switch etc.)
+// Stored on the config struct or passed via state file fields.
+type phaseData struct {
+	sshPort    int
+	panel      detect.PanelType
+	conflicts  []detect.Conflict
+	decision   authority.Decision
+	distro     *detect.DistroInfo
+	ctLimits   detect.CTLimits
+}
+
+// globalPhaseData is set by phaseDetect and consumed by later phases.
+// This is intentionally package-level since phases run sequentially in a single process.
+var globalPhaseData phaseData
+
+// phaseDetect discovers SSH port, panel, conflicts, distro, authority decision.
+func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	pd := &globalPhaseData
+
+	// 1. Detect SSH port
+	sshPort, err := detect.SSHPort(exec, log)
+	if err != nil {
+		log.Error("SSH port detection failed: %v", err)
+		return sf.Transition(state.StateFailedSSH, state.PhaseDetect, err.Error())
+	}
+	pd.sshPort = sshPort
+	sf.SSHPort = sshPort
+	log.Detect("ssh", "port", fmt.Sprintf("%d", sshPort))
+
+	// 2. Detect panel
+	pd.panel = detect.DetectPanel(exec, log)
+	sf.Panel = string(pd.panel)
+	if pd.panel != detect.PanelNone {
+		log.Detect("panel", "type", string(pd.panel))
+	}
+
+	// 3. Detect distro
+	distro, err := detect.DetectDistro(exec, log)
+	if err != nil {
+		log.Warn("distro detection failed: %v — using defaults", err)
+		pd.distro = &detect.DistroInfo{NftConfPath: "/etc/nftables.conf"}
+	} else {
+		pd.distro = distro
+		log.Detect("distro", "id", distro.ID)
+		log.Detect("distro", "nft_conf", distro.NftConfPath)
+	}
+
+	// 4. Detect conflicts
+	pd.conflicts = detect.DetectConflicts(exec, log)
+	if len(pd.conflicts) > 0 {
+		names := detect.ConflictNames(pd.conflicts)
+		sf.Conflicts = strings.Join(names, ",")
+		log.Detect("conflicts", "services", sf.Conflicts)
+	}
+
+	// 5. Detect CT limits (for nftables rendering)
+	pd.ctLimits = detect.ReadCTLimits(exec, log)
+	log.Detect("ct_limits", "ssh", fmt.Sprintf("%d", pd.ctLimits.SSH))
+	log.Detect("ct_limits", "http", fmt.Sprintf("%d", pd.ctLimits.HTTP))
+	log.Detect("ct_limits", "mail", fmt.Sprintf("%d", pd.ctLimits.Mail))
+
+	// 6. Authority classification
+	// Read takeover flag from environment or config
+	forceApprove := exec.Getenv("NFTBAN_TAKEOVER") == "1"
+	pd.decision = authority.Classify(exec, pd.conflicts, pd.panel, forceApprove, log)
+	sf.Authority = string(pd.decision)
+	log.Detect("authority", "decision", string(pd.decision))
+	log.StateChange(string(sf.State), string(state.StateDetectComplete), "authority="+string(pd.decision))
+
+	if pd.decision == authority.Abort {
+		return sf.Transition(state.StateFailedAbort, state.PhaseDetect,
+			"conflicts detected, takeover not approved: "+sf.Conflicts)
+	}
+
+	log.PhaseEnd("Detect")
+	return sf.Transition(state.StateDetectComplete, state.PhaseDetect, "")
+}
+
+// phasePrepare runs stale cleanup, FHS setup, template rendering, config persistence.
+func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	pd := &globalPhaseData
+
+	// 1. Clean stale files from prior versions
+	services.CleanStaleFiles(exec, log)
+
+	// 2. Ensure FHS directories exist
+	fhs.EnsureDirectories(exec, log)
+
+	// 3. Set FHS permissions
+	fhs.SetPermissions(exec, log)
+
+	// 4. Set binary capabilities
+	fhs.SetCapabilities(exec, log)
+
+	// 5. Render nftables.conf (substitute SSH port + CT limits)
+	if err := render.RenderNftablesConf(exec, pd.sshPort, pd.ctLimits, log); err != nil {
+		log.Error("nftables.conf render failed: %v", err)
+		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
+	}
+
+	// 6. Integrate NFTBan include into system nftables.conf
+	if pd.distro != nil && pd.distro.NftConfPath != "" {
+		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath, log); err != nil {
+			log.Warn("system conf integration: %v", err)
+			// Non-fatal — system conf might not exist
+		}
+	}
+
+	// 7. Persist SSH port to conf.local and state file
+	render.PersistSSHPort(exec, pd.sshPort, log)
+
+	log.PhaseEnd("Prepare")
+	return sf.Transition(state.StatePrepareComplete, state.PhasePrepare, "")
+}
+
+// phaseSwitch disables conflicts, enables nftables, runs rebuild.
+func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	pd := &globalPhaseData
+
+	// 1. TAKEOVER: disable conflicting firewalls
+	if pd.decision == authority.Takeover {
+		if err := switchop.DisableConflicts(exec, pd.conflicts, log); err != nil {
+			return sf.Transition(state.StateFailedTakeover, state.PhaseSwitch, err.Error())
+		}
+		switchop.CleanGhostTables(exec, log)
+		log.StateChange(string(sf.State), "takeover_complete", "conflicts disabled")
+	} else if pd.decision == authority.Fresh {
+		// Fresh: just clean any ghost tables
+		switchop.CleanGhostTables(exec, log)
+	}
+	// UPDATE: no takeover needed, but still clean ghost tables
+	if pd.decision == authority.Update {
+		switchop.CleanGhostTables(exec, log)
+	}
+
+	// 2. Assert SSH port is in live nft sets (before rebuild)
+	switchop.AssertSSHInLiveSet(exec, pd.sshPort, log)
+
+	// 3. Enable nftables service
+	if err := switchop.EnableNftables(exec, log); err != nil {
+		return sf.Transition(state.StateFailedNoFirewall, state.PhaseSwitch, err.Error())
+	}
+
+	// 4. daemon-reload (pick up any new unit files)
+	if err := exec.DaemonReload(); err != nil {
+		log.Warn("daemon-reload: %v", err)
+	}
+
+	// 5. REBUILD — FATAL on failure (v1.70.0 invariant)
+	if err := switchop.Rebuild(exec, log); err != nil {
+		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, err.Error())
+	}
+
+	log.PhaseEnd("Switch")
+	return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
+}
+
+// phaseConfigure starts daemon, timers, panel, login, whitelist sync.
+func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	pd := &globalPhaseData
+
+	// 1. Start daemon (socket + service)
+	services.StartDaemon(exec, log)
+
+	// 2. Reconcile timers
+	services.ReconcileTimers(exec, log)
+
+	// 3. Enable panel integration
+	services.EnablePanel(exec, pd.panel, log)
+
+	// 4. Enable login monitoring
+	services.EnableLogin(exec, log)
+
+	// 5. Whitelist sync (loads whitelists and feeds)
+	services.SyncWhitelist(exec, log)
+
+	log.PhaseEnd("Configure")
+	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
+}
+
+// phaseValidate runs post-install assertions and writes authority files.
+func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	pd := &globalPhaseData
+
+	// 1. Write authority files
+	validate.WriteAuthorityFiles(exec, pd.decision, log)
+
+	// 2. Run assertions
+	results := validate.RunAssertions(exec, pd.sshPort, log)
+
+	if validate.AllPassed(results) {
+		log.Info("all post-install assertions passed — COMMITTED")
+		// Clean up install-failed marker if present
+		_ = exec.Remove(fhs.InstallFailedMarker)
+		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
+	}
+
+	// Some assertions failed → DEGRADED
+	failed := validate.FailedNames(results)
+	reason := "failed assertions: " + strings.Join(failed, ", ")
+	log.Warn("some assertions failed — DEGRADED: %s", reason)
+	return sf.Transition(state.StateDegraded, state.PhaseValidate, reason)
+}
