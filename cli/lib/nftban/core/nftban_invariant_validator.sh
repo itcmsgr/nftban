@@ -387,8 +387,8 @@ _validate_safety() {
     local wl_set wl_count
     wl_set=$(nft list set ip nftban whitelist_ipv4 2>/dev/null) || wl_set=""
     if [[ -n "$wl_set" ]]; then
-        # Count element lines (lines with IP addresses between { and })
-        wl_count=$(echo "$wl_set" | grep -cE '^\s+[0-9]+\.' || true)
+        # Count IPs — check both multi-line (large sets) and inline elements format
+        wl_count=$(echo "$wl_set" | grep -coE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)
         if [[ "$wl_count" -gt 0 ]]; then
             _inv_record "INV-F-003" "PASS" "Whitelist has ${wl_count} entries"
         else
