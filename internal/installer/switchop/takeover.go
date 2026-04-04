@@ -51,22 +51,59 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel
 		}
 	}
 
-	// Flush legacy iptables rules
+	// Flush legacy iptables rules (reset policies, flush all tables, delete chains)
 	for _, cmd := range []string{"iptables", "ip6tables"} {
 		if exec.CommandExists(cmd) {
-			res := exec.Run(cmd, "-F")
-			log.CmdResult(cmd+" -F", res.ExitCode, res.Stderr)
-			res = exec.Run(cmd, "-X")
-			log.CmdResult(cmd+" -X", res.ExitCode, res.Stderr)
+			// Reset policies to ACCEPT before flushing (prevents DROP lockout)
+			for _, chain := range []string{"INPUT", "FORWARD", "OUTPUT"} {
+				exec.Run(cmd, "-P", chain, "ACCEPT")
+			}
+			// Flush and delete chains in all tables
+			for _, table := range []string{"filter", "nat", "mangle"} {
+				exec.Run(cmd, "-t", table, "-F")
+				exec.Run(cmd, "-t", table, "-X")
+			}
+			log.Info("flushed all %s rules (filter/nat/mangle)", cmd)
 		}
 	}
 
 	// Disarm panel CSF management (prevents re-enable on panel update)
 	if hasCSF {
+		disarmCSFArtifacts(exec, log)
 		disarmPanelCSF(exec, panel, log)
 	}
 
 	return nil
+}
+
+// disarmCSFArtifacts removes CSF cron jobs and disables the CSF binary to prevent
+// ghost iptables rules from being recreated after service masking.
+func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
+	// Remove CSF/LFD cron jobs (lfd-cron runs "csf --lfd restart" daily)
+	for _, cronFile := range []string{"/etc/cron.d/lfd-cron", "/etc/cron.d/csf-cron"} {
+		if exec.FileExists(cronFile) {
+			res := exec.Run("rm", "-f", cronFile)
+			if res.ExitCode == 0 {
+				log.Info("removed CSF cron: %s", cronFile)
+			} else {
+				log.Warn("failed to remove %s: %s", cronFile, res.Stderr)
+			}
+		}
+	}
+
+	// Disable CSF binary (rename to .disabled to prevent accidental execution)
+	csfBin := "/usr/sbin/csf"
+	if exec.FileExists(csfBin) {
+		res := exec.Run("mv", csfBin, csfBin+".disabled")
+		if res.ExitCode == 0 {
+			log.Info("disabled CSF binary: %s -> %s.disabled", csfBin, csfBin)
+		} else {
+			log.Warn("failed to disable CSF binary: %s", res.Stderr)
+		}
+	}
+
+	// NOTE: Ghost nft tables (ip filter, ip nat, etc.) are cleaned by
+	// CleanGhostTables() which runs after DisableConflicts in the phase pipeline.
 }
 
 // disarmPanelCSF prevents the hosting panel from re-enabling CSF after masking.

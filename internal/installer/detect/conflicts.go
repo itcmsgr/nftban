@@ -58,11 +58,13 @@ func DetectConflicts(exec executor.Executor, log *logging.Logger) []Conflict {
 	seen := make(map[string]bool)
 	var conflicts []Conflict
 
-	// Check systemd services
+	// Check systemd services.
+	// Dedup by service (not name) — CSF has two services (csf.service + lfd.service)
+	// and both must be stopped+disabled+masked.
 	for _, svc := range conflictServices {
 		if exec.ServiceActive(svc.service) {
-			if !seen[svc.name] {
-				seen[svc.name] = true
+			if !seen[svc.service] {
+				seen[svc.service] = true
 				conflicts = append(conflicts, Conflict{
 					Name:    svc.name,
 					Service: svc.service,
