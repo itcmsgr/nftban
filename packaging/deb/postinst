@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v1.52.0 - DEB Package Post-Install Script
+# NFTBan v1.75.0 - DEB Package Post-Install Script (Go installer wrapper)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
@@ -8,87 +8,47 @@
 # meta:type="packaging"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
-# meta:description="DEB package post-install script for NFTBan"
+# meta:description="DEB postinst thin wrapper — delegates to Go nftban-installer"
 # meta:input="None"
 # meta:output="Configured NFTBan system"
-# meta:depends="adduser,addgroup,systemctl,chown,chmod,mkdir"
-# meta:inventory.files="/etc/nftban/,/var/lib/nftban/,/var/log/nftban/"
-# meta:inventory.binaries="adduser,addgroup,usermod,systemctl,chown,chmod,mkdir,setcap"
+# meta:depends="adduser,addgroup,systemctl"
+# meta:inventory.files="/etc/nftban/,/var/lib/nftban/"
+# meta:inventory.binaries="adduser,addgroup,usermod,systemctl"
 # meta:inventory.env_vars=""
-# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftables.conf"
-# meta:inventory.systemd_units="nftband.socket,nftband.service,nftban-maintenance.timer,nftban-health.timer"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
-# Purpose: SAFE INSTALL FLOW - Setup user/groups, permissions, whitelist BEFORE
-#          enabling firewall to prevent self-lockout
-#
-# Installation Flow:
-#   1. Create groups (nftban, nftban-auditor)
-#   2. Create nftban system user
-#   3. Create FHS directory structure
-#   4. Set correct permissions
-#   5. Install polkit policies
-#   6. **SAFETY** Auto-whitelist system IPs (SSH client, interfaces, public IP)
-#   7. Run health check / validation
-#   8. THEN enable timers and services
-#
-# This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
+# v1.75.0: Replaced 1,545-line shell postinst with thin Go installer wrapper.
+# The Go binary (nftban-installer) handles: detection, rendering, switchop,
+# services, validation, permissions, whitelist sync, panel/login enable,
+# stale cleanup, post-install assertions, authority + history writes.
+# This wrapper handles only DEB-idiomatic bootstrap that must run before Go.
 # =============================================================================
 
 set -Eeuo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+NFTBAN_INSTALLER="/usr/lib/nftban/bin/nftban-installer"
 
-log_info() { echo -e "${GREEN}[NFTBan]${NC} $*"; }
-log_warn() { echo -e "${YELLOW}[NFTBan WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[NFTBan ERROR]${NC} $*"; }
+log_info()  { echo "[NFTBan] $*"; }
+log_warn()  { echo "[NFTBan WARN] $*"; }
+log_error() { echo "[NFTBan ERROR] $*"; }
 
 case "$1" in
     configure)
-        # Get version from VERSION file (single source of truth)
-        NFTBAN_VERSION="unknown"
-        for version_file in /usr/lib/nftban/VERSION /var/lib/dpkg/info/nftban-core.list; do
-            if [[ -f "$version_file" ]]; then
-                NFTBAN_VERSION=$(cat "$version_file" 2>/dev/null | tr -d '[:space:]')
-                break
-            fi
-        done
-        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="unknown"
 
-        log_info "Configuring NFTBan v${NFTBAN_VERSION}..."
+        # =================================================================
+        # PRE-GO BOOTSTRAP (must run before any nftban binary)
+        # =================================================================
 
-        # v1.39.0: Cleanup trap for failed install (UX-INST-2)
-        # On failure, remove half-installed state to prevent broken dpkg
-        _nftban_postinst_cleanup() {
-            local _exit=$?
-            if [[ $_exit -ne 0 ]]; then
-                log_error "Installation failed (exit $_exit). Cleaning up..."
-                # Remove runtime dirs (created during this install)
-                rm -rf /run/nftban 2>/dev/null || true
-                # Don't remove /etc/nftban or /var/lib/nftban — user may have config
-                # Remove systemd state for units we may have partially enabled
-                systemctl daemon-reload 2>/dev/null || true
-                log_error "Cleanup complete. Fix the issue and reinstall."
-            fi
-        }
-        trap _nftban_postinst_cleanup EXIT
-
-        # =====================================================================
-        # STEP 0: Security Check - CVE-2025-NFTBAN-001
-        # =====================================================================
+        # --- CVE-2025-NFTBAN-001: conflicting inet filter table ---
         if command -v nft >/dev/null 2>&1; then
             if nft list table inet filter >/dev/null 2>&1; then
-                if [[ -n "${2:-}" ]]; then
-                    # UPGRADE: Auto-clean the conflicting table (STEP 7.4 also handles this)
+                if [ -n "${2:-}" ]; then
                     log_warn "Conflicting 'inet filter' table detected — auto-removing for upgrade"
                     nft delete table inet filter 2>/dev/null || true
                 else
-                    # FRESH INSTALL: Hard-fail — admin must resolve conflict first
                     log_error "Conflicting 'inet filter' table detected!"
                     log_error "This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
                     log_error "Please run: nft delete table inet filter"
@@ -98,1445 +58,125 @@ case "$1" in
             fi
         fi
 
-        # =====================================================================
-        # STEP 0.1: Remove immutable flags before upgrade (security files)
-        # =====================================================================
-        # NOTE: SSH client IP protection moved to nftban_whitelist_system_sync()
-        # which is called in STEP 6. This ensures single source of truth.
-        # Critical security files are marked immutable to prevent tampering
-        # Remove flags before upgrade to allow package manager to update them
+        # --- Remove immutable flags so package manager can overwrite files ---
         for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-            if [[ -f "$immutable_file" ]]; then
+            if [ -f "$immutable_file" ]; then
                 chattr -i "$immutable_file" 2>/dev/null || true
             fi
         done
 
-        # =====================================================================
-        # STEP 0.15: Distro compatibility check (v1.22.3)
-        # =====================================================================
-        # Warn if the package was built for a different distro version
-        if [[ -f /usr/lib/nftban/BUILD_TARGET ]] && [[ -f /etc/os-release ]]; then
-            source /etc/os-release 2>/dev/null || true
+        # --- Distro compatibility warning ---
+        if [ -f /usr/lib/nftban/BUILD_TARGET ] && [ -f /etc/os-release ]; then
+            # shellcheck source=/dev/null
+            . /etc/os-release 2>/dev/null || true
             _build_target=$(cat /usr/lib/nftban/BUILD_TARGET 2>/dev/null || echo "unknown:0")
             _build_id="${_build_target%%:*}"
             _build_ver="${_build_target#*:}"
-            _running_id="${ID:-unknown}"
-            _running_ver="${VERSION_ID:-0}"
-
-            if [[ "$_build_id" != "unknown" && "$_build_id" != "$_running_id" ]]; then
-                log_warn "Package built for $_build_id but running on $_running_id"
-                log_warn "  This may cause library incompatibilities"
-                log_warn "  Recommended: use the correct package for your OS"
-            elif [[ "$_build_ver" != "0" && "$_build_ver" != "$_running_ver" ]]; then
-                log_warn "Package built for $_build_id $_build_ver but running on $_running_id $_running_ver"
-                log_warn "  Use: nftban update  (auto-selects correct package for your OS)"
-            fi
-            unset _build_target _build_id _build_ver _running_id _running_ver
-        fi
-
-        # =====================================================================
-        # STEP 0.2: Cleanup obsolete/stale files from ALL previous versions
-        # =====================================================================
-        # UNIFIED STALE CLEANUP — must match RPM %post cleanup section
-        # Add new entries here when files are moved/renamed/removed between versions.
-        # Each entry: version where it became stale, what replaced it.
-        log_info "Cleaning up obsolete files from previous versions..."
-        OBSOLETE_CLEANED=0
-
-        # --- Binary paths (pre-1.8.13) ---
-        # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
-        if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
-            rm -f "/usr/bin/nftban"
-            log_info "Removed stale: /usr/bin/nftban (migrated to /usr/sbin)"
-            ((OBSOLETE_CLEANED++)) || true
-        fi
-
-        # --- Nested directories (pre-1.13.9) ---
-        for stale_dir in "/usr/lib/nftban/lib/nftban" "/usr/lib/nftban/etc"; do
-            if [[ -d "$stale_dir" ]]; then
-                rm -rf "$stale_dir"
-                log_info "Removed stale dir: $stale_dir"
-                ((OBSOLETE_CLEANED++)) || true
-            fi
-        done
-
-        # --- Relocated shell scripts (pre-1.15) ---
-        # These were moved to cli/ or helpers/ subdirectories
-        for stale_file in \
-            "/usr/lib/nftban/core/cmd_health.sh" \
-            "/usr/lib/nftban/json_output.sh" \
-            "/usr/lib/nftban/cmd_ui.sh"; do
-            if [[ -f "$stale_file" ]]; then
-                rm -f "$stale_file"
-                log_info "Removed stale: $stale_file"
-                ((OBSOLETE_CLEANED++)) || true
-            fi
-        done
-
-        # --- Obsolete Polkit rules (pre-1.0.18) ---
-        for stale_polkit in \
-            /etc/polkit-1/rules.d/10-nftban-core.rules \
-            /etc/polkit-1/rules.d/20-nftban-suricata.rules \
-            /etc/polkit-1/rules.d/50-nftban-auth.rules \
-            /etc/polkit-1/rules.d/50-nftban-auth.rules.in \
-            /etc/polkit-1/rules.d/50-nftban-v030.rules \
-            /etc/polkit-1/rules.d/60-nftban-services.rules \
-            /etc/polkit-1/rules.d/50-nftban-port-status.rules \
-            /etc/polkit-1/rules.d/50-nftban-port-status.rules.in \
-            /usr/share/polkit-1/rules.d/10-nftban-core.rules \
-            /usr/share/polkit-1/rules.d/20-nftban-suricata.rules \
-            /usr/share/polkit-1/rules.d/50-nftban-auth.rules \
-            /usr/share/polkit-1/rules.d/50-nftban-v030.rules \
-            /usr/share/polkit-1/rules.d/60-nftban-services.rules \
-            /usr/share/polkit-1/rules.d/50-nftban-port-status.rules \
-            /usr/share/polkit-1/actions/com.nftban.suricata.policy; do
-            if [[ -f "$stale_polkit" ]]; then
-                rm -f "$stale_polkit"
-                log_info "Removed stale polkit: $stale_polkit"
-                ((OBSOLETE_CLEANED++)) || true
-            fi
-        done
-
-        # --- Old systemd overrides (various versions) ---
-        # Remove user-space overrides that conflict with package-managed unit files
-        if ls /etc/systemd/system/nftban-*.service /etc/systemd/system/nftban-*.timer 2>/dev/null | grep -q .; then
-            rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
-            rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
-            rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
-            systemctl daemon-reload 2>/dev/null || true
-            log_info "Removed stale systemd overrides"
-            ((OBSOLETE_CLEANED++)) || true
-        fi
-
-        # --- Suricata blocks in main logrotate (pre-1.19.6) ---
-        # Old versions had Suricata log blocks inline in /etc/logrotate.d/nftban
-        # which breaks logrotate when Suricata user doesn't exist.
-        # Now split to /etc/logrotate.d/nftban-suricata (conditionally installed).
-        if [[ -f /etc/logrotate.d/nftban ]]; then
-            if grep -q "su suricata" /etc/logrotate.d/nftban 2>/dev/null; then
-                log_info "Detected old Suricata blocks in /etc/logrotate.d/nftban — replacing with clean version"
-                install -m 0644 /usr/lib/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || \
-                    install -m 0644 /etc/nftban/templates/nftban.logrotate /etc/logrotate.d/nftban 2>/dev/null || true
-                ((OBSOLETE_CLEANED++)) || true
+            if [ "$_build_id" != "unknown" ] && [ "$_build_id" != "${ID:-unknown}" ]; then
+                log_warn "Package built for $_build_id but running on ${ID:-unknown}"
+            elif [ "$_build_ver" != "0" ] && [ "$_build_ver" != "${VERSION_ID:-0}" ]; then
+                log_warn "Package built for $_build_id $_build_ver but running on ${ID:-unknown} ${VERSION_ID:-0}"
             fi
         fi
 
-        [[ $OBSOLETE_CLEANED -gt 0 ]] && log_info "Cleaned $OBSOLETE_CLEANED obsolete items"
-
-        # =====================================================================
-        # v1.52.0 SIX-PHASE POSTINST PIPELINE
-        # Invariant: Never activate a live firewall until the candidate
-        # ruleset has been rendered and validated.
-        # Authority model: TAKE IT OR LEAVE IT — NFTBan is sole authority
-        # or does not take over.
-        # =====================================================================
-
-        NFTABLES_SAFE=1
-        AUTHORITY_DECISION=""
-        CONFLICTS=""
-        SSH_PORT_DETECTED=true
-
-        # =================================================================
-        # PHASE 1: DETECT (read-only, no system changes)
-        # =================================================================
-        log_info "Phase 1: Detecting system state..."
-
-        # --- SSH port detection (4-source chain, NO fallback to 22) ---
-        _detect_ssh_port() {
-            local _port=""
-
-            # 1. ss listening (what sshd is actually bound to — most authoritative)
-            _port=$(ss -tlnp 2>/dev/null | grep -oP '"sshd".*:\K[0-9]+' | head -1) || true
-            if [[ -z "$_port" || ! "$_port" =~ ^[0-9]+$ ]]; then
-                _port=$(ss -tlnp 2>/dev/null | grep sshd | awk '{print $4}' | sed 's/.*://' | head -1) || true
-            fi
-
-            # 2. sshd_config (includes drop-in dirs)
-            if [[ -z "$_port" || ! "$_port" =~ ^[0-9]+$ ]]; then
-                _port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' /etc/ssh/sshd_config 2>/dev/null) || true
-                if [[ -z "$_port" ]]; then
-                    for _inc in /etc/ssh/sshd_config.d/*.conf; do
-                        [[ -f "$_inc" ]] || continue
-                        _port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' "$_inc" 2>/dev/null) || true
-                        [[ -n "$_port" ]] && break
-                    done
-                fi
-            fi
-
-            # 3. State file (persisted by maintenance cron on existing installs)
-            if [[ -z "$_port" || ! "$_port" =~ ^[0-9]+$ ]]; then
-                [[ -f /var/lib/nftban/state/ssh_port_active.state ]] && \
-                    _port=$(cat /var/lib/nftban/state/ssh_port_active.state 2>/dev/null) || true
-            fi
-
-            # 4. Existing nftban.conf.local override (upgrade with prior config)
-            if [[ -z "$_port" || ! "$_port" =~ ^[0-9]+$ ]]; then
-                _port=$(grep -m1 -oP '^SSH_PORT=\K[0-9]+' /etc/nftban/nftban.conf.local 2>/dev/null) || true
-            fi
-
-            # Validate: must be numeric and in valid port range
-            if [[ "$_port" =~ ^[0-9]+$ ]] && (( _port >= 1 && _port <= 65535 )); then
-                echo "$_port"
-            fi
-        }
-
-        SSH_PORT_EFFECTIVE=$(_detect_ssh_port)
-        if [[ -z "$SSH_PORT_EFFECTIVE" ]]; then
-            SSH_PORT_DETECTED=false
-            log_error "Cannot determine SSH port from any source"
-            log_error "  Checked: ss listener, sshd_config, state file, nftban.conf.local"
-            log_error "  Firewall activation will be aborted for safety"
-            log_error "  Fix: Set SSH_PORT in /etc/nftban/nftban.conf.local and run: nftban firewall rebuild"
-            NFTABLES_SAFE=0
-        else
-            log_info "  SSH port detected: $SSH_PORT_EFFECTIVE"
-        fi
-
-        # CT limits: source DDoS config for tuned values, fallback to safe defaults
-        _CT_SSH=15
-        _CT_HTTP=150
-        _CT_MAIL=150
-        _DDOS_CONF="/etc/nftban/conf.d/ddos/classic.conf"
-        _DDOS_LOCAL="${_DDOS_CONF}.local"
-        # shellcheck disable=SC1090
-        [[ -f "$_DDOS_CONF" ]] && source "$_DDOS_CONF" 2>/dev/null || true
-        # shellcheck disable=SC1090
-        [[ -f "$_DDOS_LOCAL" ]] && source "$_DDOS_LOCAL" 2>/dev/null || true
-        [[ -n "${DDOS_CLASSIC_SSH_CONN_LIMIT:-}" ]] && _CT_SSH="$DDOS_CLASSIC_SSH_CONN_LIMIT"
-        [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _CT_HTTP="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
-        [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _CT_MAIL="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
-
-        # Detect panel type
-        DETECTED_PANEL_TYPE="none"
-        if [[ -d /usr/local/directadmin ]]; then DETECTED_PANEL_TYPE="directadmin"
-        elif [[ -d /usr/local/cpanel ]]; then DETECTED_PANEL_TYPE="cpanel"
-        elif [[ -d /usr/local/psa ]]; then DETECTED_PANEL_TYPE="plesk"
-        elif [[ -d /usr/local/CyberCP ]]; then DETECTED_PANEL_TYPE="cyberpanel"
-        elif [[ -d /usr/local/hestia ]]; then DETECTED_PANEL_TYPE="hestia"
-        elif [[ -d /usr/local/vesta ]]; then DETECTED_PANEL_TYPE="vesta"
-        elif [[ -d /usr/local/cwpsrv ]]; then DETECTED_PANEL_TYPE="cwp"
-        elif [[ -d /usr/local/interworx ]]; then DETECTED_PANEL_TYPE="interworx"
-        fi
-
-        # cPHulk info (not a blocking conflict)
-        if systemctl is-active cphulkd.service &>/dev/null 2>&1; then
-            log_info "  cPHulk detected (cPanel brute force) — will be disabled during panel setup"
-        fi
-
-        # =================================================================
-        # PHASE 2: DECIDE (authority model)
-        # =================================================================
-        log_info "Phase 2: Determining authority..."
-
-        _check_authority() {
-            # Returns: UPDATE | TAKEOVER | FRESH | ABORT
-
-            # --- NFTBan authority check (live hooks + chain) ---
-            local _nftban_authoritative=false
-            if command -v nft &>/dev/null && \
-               nft list table ip nftban &>/dev/null 2>&1 && \
-               nft list chain ip nftban input &>/dev/null 2>&1; then
-                _nftban_authoritative=true
-            fi
-
-            if [[ "$_nftban_authoritative" == "true" ]]; then
-                echo "UPDATE"
-                return 0
-            fi
-
-            # --- Conflict detection: active services + live artifacts ---
-            CONFLICTS=""
-            systemctl is-active csf.service &>/dev/null 2>&1 && CONFLICTS="${CONFLICTS}CSF "
-            systemctl is-active lfd.service &>/dev/null 2>&1 && CONFLICTS="${CONFLICTS}CSF "
-            systemctl is-active ufw.service &>/dev/null 2>&1 && CONFLICTS="${CONFLICTS}UFW "
-            systemctl is-active firewalld.service &>/dev/null 2>&1 && CONFLICTS="${CONFLICTS}firewalld "
-            systemctl is-active iptables.service &>/dev/null 2>&1 && CONFLICTS="${CONFLICTS}iptables "
-
-            # Also check for live non-NFTBan tables with hooks
-            if command -v nft &>/dev/null; then
-                local _live_tables
-                _live_tables=$(nft list tables 2>/dev/null) || true
-                while IFS= read -r _tline; do
-                    [[ -z "$_tline" ]] && continue
-                    local _ts="${_tline#table }"
-                    case "$_ts" in
-                        "ip nftban"|"ip6 nftban"|"ip raw"|"ip6 raw"|"inet nftban_install_emergency") continue ;;
-                    esac
-                    [[ "$_ts" == *"firewalld"* ]] && CONFLICTS="${CONFLICTS}firewalld "
-                    [[ "$_ts" == *"filter"* ]] && CONFLICTS="${CONFLICTS}iptables-nft "
-                    [[ "$_ts" == *"nat"* || "$_ts" == *"mangle"* ]] && CONFLICTS="${CONFLICTS}iptables-nft "
-                done <<< "${_live_tables:-}"
-            fi
-
-            # Deduplicate
-            CONFLICTS=$(echo "$CONFLICTS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//')
-
-            [[ -z "$CONFLICTS" ]] && { echo "FRESH"; return 0; }
-
-            # --- Takeover approval ---
-            [[ "${NFTBAN_TAKEOVER:-0}" == "1" ]] && { echo "TAKEOVER"; return 0; }
-
-            # Panel auto-takeover
-            for _pd in /usr/local/psa /usr/local/cpanel /usr/local/directadmin \
-                       /usr/local/CyberCP /usr/local/hestia /usr/local/vesta \
-                       /usr/local/cwpsrv /usr/local/interworx; do
-                [[ -d "$_pd" ]] && { echo "TAKEOVER"; return 0; }
-            done
-
-            # Interactive prompt
-            if [[ -t 0 ]]; then
-                log_warn ""
-                log_warn "=========================================="
-                log_warn " CONFLICTING FIREWALLS DETECTED"
-                log_warn "=========================================="
-                log_warn "Found: $CONFLICTS"
-                log_warn ""
-                log_info "NFTBan requires exclusive firewall control."
-                log_info ""
-                log_info "  [1] AUTO   - NFTBan will disable and clean up conflicting firewalls"
-                log_info "  [2] MANUAL - You will remove them yourself (installation aborts)"
-                log_info ""
-                read -p "[NFTBan] Enter choice [1/2]: " _choice </dev/tty
-                case "$_choice" in
-                    1|auto|AUTO|a|A) echo "TAKEOVER"; return 0 ;;
-                esac
-            else
-                log_error "Non-interactive install detected."
-                log_error "Conflicting firewalls: $CONFLICTS"
-                log_error "Options:"
-                log_error "  1. Auto-takeover: NFTBAN_TAKEOVER=1 apt install -y ./nftban-*.deb"
-                log_error "  2. Manual removal:"
-                log_error "     - CSF: csf -x && apt remove csf lfd"
-                log_error "     - UFW: ufw disable && apt remove ufw"
-                log_error "     - firewalld: systemctl disable --now firewalld"
-                log_error "     - iptables: systemctl disable --now iptables"
-                log_error "Then reinstall NFTBan."
-            fi
-
-            echo "ABORT"
-            return 0
-        }
-
-        AUTHORITY_DECISION=$(_check_authority)
-        log_info "  Authority decision: $AUTHORITY_DECISION"
-
-        if [[ "$AUTHORITY_DECISION" == "ABORT" ]]; then
-            exit 1
-        fi
-
-        if [[ "$AUTHORITY_DECISION" == "UPDATE" ]]; then
-            log_info "  NFTBan has live hook authority — update mode (no takeover needed)"
-            # Clean residual config dirs from dead services (log only)
-            for _residue_dir in /etc/csf /etc/ufw; do
-                if [[ -d "$_residue_dir" ]] && ! systemctl is-active "$(basename "$_residue_dir").service" &>/dev/null 2>&1; then
-                    log_info "  Residue: $_residue_dir (service dead) — will clean in Phase 6"
-                fi
-            done
-        fi
-
-        # =====================================================================
-        # STEP 0.5: Link bundled yq v4 (mikefarah/yq) - REQUIRED
-        # =====================================================================
-        # WHY v4 IS REQUIRED:
-        #   - yq v3 (Python pip) is ~10x slower (0.17s vs 0.017s per call)
-        #   - nftban help makes 100+ yq calls, causing timeout with v3
-        #   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
-        # SUPPLY-CHAIN SAFE: yq is bundled in package with SHA256 verification at build time
-        log_info "Checking yq v4 (YAML processor)..."
-
-        # Check if system yq is already v4
-        if command -v yq &>/dev/null; then
-            YQ_VER=$(yq --version 2>/dev/null | head -1 || echo "")
-            if [[ "$YQ_VER" == *"mikefarah"* ]] || [[ "$YQ_VER" == *"version v4"* ]]; then
-                log_info "yq v4 found: $YQ_VER"
-            else
-                # System has yq v3, use bundled v4
-                if [[ -x /usr/lib/nftban/bin/yq ]]; then
-                    ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-                    log_info "yq v4 linked from bundled binary (replaced v3)"
-                fi
-            fi
-        else
-            # No system yq, link bundled
-            if [[ -x /usr/lib/nftban/bin/yq ]]; then
-                ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
-                log_info "yq v4 linked from bundled binary"
-            else
-                log_warn "WARNING: bundled yq not found - help command may be slow"
-            fi
-        fi
-
-        # NOTE: STEP 0.5 (duplicate conflict check) REMOVED
-        # Conflict detection is now handled by:
-        #   - STEP 0.4: Initial check with --takeover support
-        #   - STEP 7.5: nftban firewall validate --strict (comprehensive)
-
-        # =====================================================================
-        # STEP 1: Create System Groups
-        # =====================================================================
-        # NFTBan v1.0 uses 2-group model:
-        #   nftban: All operators (CLI + Web GUI)
-        #   nftban-auditor: Read-only audit access
-        log_info "Creating system groups..."
-
-        if ! getent group nftban > /dev/null 2>&1; then
+        # --- Create system groups and user (DEB-idiomatic: adduser/addgroup) ---
+        if ! getent group nftban >/dev/null 2>&1; then
             addgroup --system nftban
-            log_info "  Created group: nftban"
         fi
-
-        if ! getent group nftban-auditor > /dev/null 2>&1; then
+        if ! getent group nftban-auditor >/dev/null 2>&1; then
             addgroup --system nftban-auditor
-            log_info "  Created group: nftban-auditor"
         fi
-
-        # Create nftban-panel group (panel integration, limited reload access via polkit)
-        if ! getent group nftban-panel > /dev/null 2>&1; then
+        if ! getent group nftban-panel >/dev/null 2>&1; then
             addgroup --system nftban-panel
-            log_info "  Created group: nftban-panel"
         fi
-
-        # Create suricata group if not exists (needed for nftban-suricata-update.service)
-        if ! getent group suricata > /dev/null 2>&1; then
+        if ! getent group suricata >/dev/null 2>&1; then
             addgroup --system suricata
-            log_info "  Created group: suricata"
         fi
-
-        # Add root to nftban group for CLI access
+        if ! getent passwd nftban >/dev/null 2>&1; then
+            adduser --system --group --home /var/lib/nftban \
+                --no-create-home --disabled-login \
+                --gecos "NFTBan system user" nftban
+        fi
         if ! id -nG root 2>/dev/null | grep -qw nftban; then
             usermod -a -G nftban root 2>/dev/null || true
         fi
 
-        # =====================================================================
-        # STEP 2: Create System User
-        # =====================================================================
-        log_info "Creating system user..."
+        # --- Critical FHS dirs (Go installer needs state dir to exist) ---
+        mkdir -p /var/lib/nftban/state
+        mkdir -p /var/log/nftban
 
-        if ! getent passwd nftban > /dev/null 2>&1; then
-            adduser --system --group --home /var/lib/nftban \
-                --no-create-home --disabled-login \
-                --gecos "NFTBan system user" nftban
-            log_info "  Created user: nftban"
-        fi
-
-        # =====================================================================
-        # STEP 3: Create FHS Directory Structure
-        # =====================================================================
-        log_info "Creating FHS directories..."
-
-        # Configuration directories
-        mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
-        mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache,state/last-good}
-
-        # Variable data directories
-        mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
-        mkdir -p /var/lib/nftban/reports/{baseline,auditors}
-
-        # Log directories (must match FHS spec in nftban_fhs_spec.sh)
-        mkdir -p /var/log/nftban/{reports,watchdog,rbl,botguard,suricata}
-
-        # Cache and runtime
-        mkdir -p /var/cache/nftban/health
-        mkdir -p /run/nftban
-        mkdir -p /run/nftban-ui
-        # v1.26.1: Fix GUI auth socket group (match RPM postinst)
-        chown root:nftban /run/nftban-ui 2>/dev/null || true
-        chmod 0750 /run/nftban-ui 2>/dev/null || true
-
-        # Shared data
-        mkdir -p /usr/share/nftban/templates/{mail,reports}
-
-        # Prometheus textfile_collector directory (BUG-009 fix)
-        # Required by nftban-unified-exporter.service ReadWritePaths directive
-        if [[ ! -d /var/lib/node_exporter/textfile_collector ]]; then
-            mkdir -p /var/lib/node_exporter/textfile_collector
-            chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
-            chmod 755 /var/lib/node_exporter/textfile_collector
-            log_info "  Created: /var/lib/node_exporter/textfile_collector"
-        fi
-
-        # =====================================================================
-        # STEP 4: Set Permissions (FHS Compliant - Generated from fhs-spec.yaml)
-        # =====================================================================
-        log_info "Setting permissions via FHS spec..."
-
-        # Source generated FHS permissions script (single source of truth)
-        if [ -f /usr/lib/nftban/setup/fhs-permissions.sh ]; then
-            # shellcheck source=/dev/null
-            source /usr/lib/nftban/setup/fhs-permissions.sh
-            nftban_install_set_file_permissions
-            log_info "  File permissions set via FHS spec"
-        else
-            log_warn "FHS permissions script not found, using fallback"
-        fi
-
-        # Directory ownership (fhs-permissions.sh only handles files, not dirs)
-        # Must match FHS spec: nftban_fhs_spec.sh
-        chown nftban:nftban /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
-        chmod 0750 /var/log/nftban /var/log/nftban/{reports,watchdog,rbl,botguard} 2>/dev/null || true
-        # Suricata log dir: owner=suricata (if exists), group=nftban, mode=0770
-        if id suricata &>/dev/null; then
-            chown suricata:nftban /var/log/nftban/suricata 2>/dev/null || true
-        else
-            chown root:nftban /var/log/nftban/suricata 2>/dev/null || true
-        fi
-        chmod 0770 /var/log/nftban/suricata 2>/dev/null || true
-        chown nftban:nftban /var/lib/nftban 2>/dev/null || true
-        chmod 0750 /var/lib/nftban 2>/dev/null || true
-        chown root:nftban-auditor /var/lib/nftban/reports/auditors 2>/dev/null || true
-        chmod 0770 /var/lib/nftban/reports/auditors 2>/dev/null || true
-
-        # Auditor ACLs (read-only traversal for nftban-auditor group)
-        if command -v setfacl &>/dev/null && getent group nftban-auditor &>/dev/null; then
-            setfacl -m g:nftban-auditor:x /etc/nftban 2>/dev/null || true
-            setfacl -m g:nftban-auditor:x /var/log/nftban 2>/dev/null || true
-            setfacl -m g:nftban-auditor:x /var/lib/nftban 2>/dev/null || true
-            [ -d /var/lib/nftban/reports ] && setfacl -m g:nftban-auditor:x /var/lib/nftban/reports 2>/dev/null || true
-            [ -d /var/lib/nftban/reports/auditors ] && setfacl -m g:nftban-auditor:rx /var/lib/nftban/reports/auditors 2>/dev/null || true
-            [ -f /etc/nftban/nftban.conf ] && setfacl -m g:nftban-auditor:r /etc/nftban/nftban.conf 2>/dev/null || true
-            log_info "  Auditor ACLs configured"
-        fi
-
-        # Special cases not in FHS spec (group-writable for CLI management):
-        if [ -d /etc/nftban/suricata/rules ]; then
-            chmod 775 /etc/nftban/suricata/rules
-            for conf in disable.conf enable.conf categories.enabled local.rules; do
-                [ -f "/etc/nftban/suricata/rules/$conf" ] && chmod 664 "/etc/nftban/suricata/rules/$conf"
-            done
-        fi
-        [ -d /etc/nftban/suricata/state ] && chmod 770 /etc/nftban/suricata/state
-        [ -f /etc/nftban/suricata/suricata.yaml.overlay ] && chmod 664 /etc/nftban/suricata/suricata.yaml.overlay
-
-        # v1.59.0 SEC-1: Removed setcap on /usr/sbin/nft — granting CAP_NET_ADMIN
-        # to system nft binary is a privilege escalation vector (affects all users).
-        # nftban CLI runs as root, nftband runs as root service.
-
-        # =====================================================================
-        # STEP 5: Install Polkit Policies
-        # =====================================================================
-        log_info "Installing polkit policies..."
-
-        # Polkit directories
-        mkdir -p /usr/share/polkit-1/rules.d
-        mkdir -p /etc/polkit-1/rules.d
-
-        # Restart polkit to load new rules
-        systemctl restart polkit 2>/dev/null || true
-
-        # =====================================================================
-        # STEP 5.5: Auto-Enable Detected Control Panels (BUG-HIGH-002 fix)
-        # =====================================================================
-        # Prevents admin lockout by detecting installed panels and auto-enabling
-        # their ports BEFORE nftables starts. This creates the state file that
-        # the port loader uses to include panel ports.
-        log_info "Detecting installed control panels..."
-
-        DETECTED_PANEL="none"
-
-        # Inline panel detection (same logic as nftban_panel_detect)
-        if [[ -d /usr/local/directadmin ]]; then
-            DETECTED_PANEL="directadmin"
-        elif [[ -d /usr/local/cpanel ]]; then
-            DETECTED_PANEL="cpanel"
-        elif [[ -d /usr/local/psa ]]; then
-            DETECTED_PANEL="plesk"
-        elif [[ -d /usr/local/CyberCP ]]; then
-            DETECTED_PANEL="cyberpanel"
-        elif [[ -d /usr/local/hestia ]]; then
-            DETECTED_PANEL="hestia"
-        elif [[ -d /usr/local/vesta ]]; then
-            DETECTED_PANEL="vesta"
-        elif [[ -d /usr/local/cwpsrv ]]; then
-            DETECTED_PANEL="cwp"
-        elif [[ -d /usr/local/interworx ]]; then
-            DETECTED_PANEL="interworx"
-        fi
-
-        if [[ "$DETECTED_PANEL" != "none" ]]; then
-            log_info "  Detected control panel: ${DETECTED_PANEL^^}"
-
-            # Create panel state directory
-            mkdir -p /var/lib/nftban/panels
-
-            # Create state file with panel enabled
-            # This file is read by pkg/ports/panel_loader.go to include panel ports
-            {
-                echo "# NFTBan Panel State Configuration"
-                echo "# Format: panelname=enabled|disabled"
-                echo "# This file is automatically managed by 'nftban panel' commands"
-                echo "# Auto-generated during install on $(date -Iseconds)"
-                echo ""
-                echo "${DETECTED_PANEL}=enabled"
-            } > /var/lib/nftban/panels/enabled.conf
-
-            log_info "  Panel marked as enabled - ports will be loaded into firewall"
-
-            # Note: Panel-specific license server whitelisting is NOT auto-enabled
-            # Admin can enable via: nftban panel <name> enable (to configure licensing)
-        else
-            log_info "  No control panel detected - using generic configuration"
-        fi
-
-        # =====================================================================
-        # STEP 6: **SAFETY** Auto-Whitelist System IPs
-        # =====================================================================
-        # CRITICAL: This MUST happen BEFORE enabling any firewall services
-        # to prevent self-lockout during installation
-        log_info "Auto-whitelisting system IPs (lockout prevention)..."
-
-        WHITELIST_SYNC_OK=0
-        if command -v nftban >/dev/null 2>&1; then
-            # v1.19.22: ALWAYS use --protect-session for both install AND upgrade
-            # Rule: Any live nft reload/apply step needs session protection
-            # - Fresh install: nft reload happens in STEP 11, can lock out admin
-            # - Upgrade: nft reload happens in STEP 11, can lock out admin
-            # Protection must happen BEFORE reload, supports IPv4 and IPv6
-            # v1.49.0: timeout — during upgrade, daemon may not be running yet
-            if timeout 30s nftban whitelist-system sync --quick --protect-session 2>&1; then
-                WHITELIST_SYNC_OK=1
+        # --- yq v4 linking (CLI commands called by Go installer need yq) ---
+        if command -v yq >/dev/null 2>&1; then
+            YQ_VER=$(yq --version 2>/dev/null | head -1 || true)
+            if echo "$YQ_VER" | grep -qE "mikefarah|version v4" >/dev/null 2>&1; then
+                true  # yq v4 already available
             else
-                log_warn "Auto-whitelist sync failed - CHECK YOUR ACCESS!"
-            fi
-        else
-            log_warn "nftban command not found, skipping auto-whitelist"
-        fi
-
-        # =====================================================================
-        # STEP 7: Enforce Permissions (skip full health check for speed)
-        # =====================================================================
-        log_info "Enforcing permissions..."
-
-        if command -v nftban >/dev/null 2>&1; then
-            # Enforce correct permissions using the built-in permission system
-            # v1.49.0: timeout — during upgrade, daemon may not be running yet
-            timeout 30s nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
-            # Full health check runs on first timer trigger (nftban-health.timer)
-            # Saves ~10-20 seconds during install
-        fi
-
-        # v1.47.0 DEPLOY-006: Apply tmpfiles.d for /run/nftban ownership
-        if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
-            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf >/dev/null 2>&1 || true
-        fi
-
-        # =====================================================================
-        # STEP 7.4: Cleanup ghost nftables tables before preflight
-        # =====================================================================
-        # v1.50.1: Use centralized cleanup (idempotent, live-state-based).
-        # Handles all iptables-nft/firewalld/CSF ghosts from canonical list.
-        # NOTE: ip raw / ip6 raw are NFTBan-owned (SYNPROXY) — never removed.
-        log_info "Cleaning ghost nftables tables..."
-        if [[ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]]; then
-            # shellcheck source=/dev/null
-            source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
-            if declare -f nftban_cleanup_ghost_tables &>/dev/null; then
-                nftban_cleanup_ghost_tables 2>/dev/null || true
-                if declare -f nftban_validate_hook_authority &>/dev/null; then
-                    nftban_validate_hook_authority 2>/dev/null || true
+                if [ -x /usr/lib/nftban/bin/yq ]; then
+                    ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                    log_info "yq v4 linked from bundled binary"
                 fi
             fi
         else
-            # Fallback: inline cleanup if library not yet installed (fresh install)
-            # Synchronized with _NFTBAN_KNOWN_GHOST_TABLES in nftban_firewall_conflicts.sh
-            # v1.51.1: NEVER delete nftban_install_emergency — it protects SSH during install
-            for rogue_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter"; do
-                if nft list table $rogue_table &>/dev/null 2>&1; then
-                    log_info "  Removing ghost table: $rogue_table"
-                    nft delete table $rogue_table 2>/dev/null || true
-                fi
-            done
+            if [ -x /usr/lib/nftban/bin/yq ]; then
+                ln -sf /usr/lib/nftban/bin/yq /usr/bin/yq
+                log_info "yq v4 linked from bundled binary"
+            fi
         fi
 
-        # =====================================================================
-        # STEP 7.5: Strict Preflight Check - Gate Service Enablement
-        # =====================================================================
-        # This is the AUTHORITATIVE check that gates service enablement.
-        # If preflight fails, NFTBan installs but does NOT enforce.
-        # This allows package install to succeed while requiring admin action.
-        #
-        # v1.66.0: UPDATE mode skips pre-rebuild preflight. When updating our
-        # own rules, the old kernel state will ALWAYS fail the new validator
-        # (new invariants, anchors, template rules). The rebuild validates
-        # post-load. Preflight still runs for FRESH and TAKEOVER installs.
+        # --- Reload systemd so new unit files are visible ---
+        systemctl daemon-reload 2>/dev/null || true
 
-        PREFLIGHT_PASSED=1
-        PREFLIGHT_EXIT=0
-        PREFLIGHT_OUTPUT=""
+        # =================================================================
+        # GO INSTALLER
+        # =================================================================
 
-        if [[ "$AUTHORITY_DECISION" == "UPDATE" ]]; then
-            log_info "Update mode — skipping pre-rebuild preflight (will validate after rebuild)"
+        # DEB mode detection: $2 non-empty = upgrade, empty = fresh install
+        if [ -n "${2:-}" ]; then
+            INSTALL_MODE="upgrade"
         else
-            log_info "Running strict preflight check..."
+            INSTALL_MODE="install"
+        fi
 
-            # Use consolidated command: nftban firewall validate --strict
-            # Exit codes: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
-            if command -v nftban >/dev/null 2>&1; then
-                PREFLIGHT_OUTPUT=$(timeout 30s nftban firewall validate --strict 2>&1) || PREFLIGHT_EXIT=$?
+        if [ -x "$NFTBAN_INSTALLER" ]; then
+            log_info "Running nftban-installer --deb (mode=$INSTALL_MODE)..."
 
-                if [[ $PREFLIGHT_EXIT -ne 0 ]]; then
-                    PREFLIGHT_PASSED=0
+            "$NFTBAN_INSTALLER" --deb --mode="$INSTALL_MODE"
+            INSTALLER_EXIT=$?
 
-                    # v1.18.7: Parse actual output for accurate error message
-                    if echo "$PREFLIGHT_OUTPUT" | grep -q "CRITICAL:"; then
-                        PREFLIGHT_REASON=$(echo "$PREFLIGHT_OUTPUT" | grep "CRITICAL:" | head -1 | sed 's/.*CRITICAL: //')
-                    else
-                        # Fallback to exit code mapping
-                        case $PREFLIGHT_EXIT in
-                            10) PREFLIGHT_REASON="polkit missing (install polkitd or policykit-1)" ;;
-                            20) PREFLIGHT_REASON="Firewall authority conflict" ;;
-                            30) PREFLIGHT_REASON="NFTables hook collision" ;;
-                            *) PREFLIGHT_REASON="Validation failed (exit code: $PREFLIGHT_EXIT)" ;;
-                        esac
-                    fi
-                    PREFLIGHT_ACTION="nftban firewall validate --strict"
-
-                    log_error ""
-                    log_error "Strict preflight failed - refusing to enable enforcement"
-                    log_error "Reason: $PREFLIGHT_REASON"
-                    log_error "Fix: $PREFLIGHT_ACTION"
-                    log_error "NFTBan is installed but NOT enforcing."
-                    log_error "Fix the issue and run: dpkg-reconfigure nftban-core"
-                    log_error ""
-                else
-                    log_info "  Strict preflight passed - safe to enable enforcement"
-                fi
+            if [ $INSTALLER_EXIT -eq 0 ]; then
+                log_info "========================================"
+                log_info " NFTBan — COMMITTED"
+                log_info "========================================"
+            elif [ $INSTALLER_EXIT -eq 1 ]; then
+                log_info "========================================"
+                log_info " NFTBan — DEGRADED"
+                log_info "========================================"
+                log_info "Some post-install checks failed."
+                log_info "To fix: nftban-installer --repair"
+            elif [ $INSTALLER_EXIT -eq 3 ]; then
+                log_info "========================================"
+                log_info " NFTBan — ABORTED"
+                log_info "========================================"
+                log_info "Conflicting firewalls detected, takeover not approved."
+                log_info "To takeover: NFTBAN_TAKEOVER=1 dpkg --configure nftban-core"
             else
-                log_warn "nftban command not found - skipping strict preflight"
-            fi
-        fi
-
-        # =====================================================================
-        # STEP 8: Enable Timers and Services
-        # =====================================================================
-        # ONLY enable services if preflight passed
-        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
-            log_info "Enabling systemd timers and services..."
-
-        # Fresh install - enable services
-        if [ -z "$2" ]; then
-            # NFTBand daemon (SINGLE nftables writer - MUST start first)
-            # Socket activation: nftband.socket creates socket, service receives FD
-            # Use deb-systemd-helper first, fallback to systemctl if it fails
-            # v1.17.3 robustness: add retry and verification
-            for attempt in 1 2 3; do
-                if deb-systemd-helper enable nftband.socket >/dev/null 2>&1; then
-                    break
-                elif systemctl enable nftband.socket >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-            for attempt in 1 2 3; do
-                if deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
-                    break
-                elif systemctl enable nftband.service >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-
-            # Verify enable succeeded
-            if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
-                log_warn "nftband.service not enabled (run: systemctl enable nftband.service)"
-            fi
-
-            # Start socket and service explicitly
-            # BUG-002 fix: Socket activation alone is unreliable on fresh install
-            systemctl start nftband.socket >/dev/null 2>&1 || true
-            systemctl start nftband.service >/dev/null 2>&1 || true
-            log_info "  NFTBand socket and service started"
-
-            # Trigger sync to ensure daemon is operational
-            sleep 1
-            if timeout 10s nftban sync >/dev/null 2>&1; then
-                log_info "  NFTBand daemon verified via sync"
-            else
-                # Retry once after short delay
-                sleep 2
-                timeout 10s nftban sync >/dev/null 2>&1 || log_warn "NFTBand sync failed (non-critical)"
-            fi
-
-            # Install Suricata logrotate only if suricata user exists
-            if id suricata >/dev/null 2>&1; then
-                install -m 0644 /etc/nftban/templates/nftban-suricata.logrotate /etc/logrotate.d/nftban-suricata 2>/dev/null || true
-                log_info "Suricata logrotate installed"
-            else
-                rm -f /etc/logrotate.d/nftban-suricata 2>/dev/null || true
-            fi
-
-            # Core timers (maintenance tasks) - with fallback
-            for timer in nftban-maintenance.timer nftban-health.timer nftban-watchdog.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-unified-exporter.timer; do
-                if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then
-                    systemctl enable "$timer" >/dev/null 2>&1 || true
-                fi
-            done
-
-            # Core service (nftables management daemon)
-            if ! deb-systemd-helper enable nftban-core.service >/dev/null 2>&1; then
-                systemctl enable nftban-core.service >/dev/null 2>&1 || true
-            fi
-
-            # UI socket (if available)
-            if ! deb-systemd-helper enable nftban-ui-auth.socket >/dev/null 2>&1; then
-                systemctl enable nftban-ui-auth.socket >/dev/null 2>&1 || true
-            fi
-            systemctl start nftban-ui-auth.socket >/dev/null 2>&1 || true
-
-            # Start timers
-            systemctl start nftban-maintenance.timer >/dev/null 2>&1 || true
-            systemctl start nftban-health.timer >/dev/null 2>&1 || true
-            systemctl start nftban-watchdog.timer >/dev/null 2>&1 || true
-            systemctl start nftban-core-geoip.timer >/dev/null 2>&1 || true
-            systemctl start nftban-core-feeds.timer >/dev/null 2>&1 || true
-
-            # Start queue timer only if unit file exists (BUG-005 fix)
-            if systemctl list-unit-files nftban-queue.timer --no-legend 2>/dev/null | grep -q '^nftban-queue.timer'; then
-                systemctl start nftban-queue.timer >/dev/null 2>&1 || true
-                log_info "  Queue timer started"
-            else
-                log_warn "nftban-queue.timer not installed (optional)"
-            fi
-
-            log_info "  Fresh install - timers enabled and started"
-        fi
-
-        # Upgrade - ensure services are enabled and restart if running
-        # BUG-MED-001 fix: Older versions may not have enabled nftband.service
-        # v1.17.3 robustness: add retry and verification
-        if [ -n "$2" ]; then
-            # Ensure nftband.service is enabled (may be missing from older installs)
-            for attempt in 1 2 3; do
-                if deb-systemd-helper enable nftband.service >/dev/null 2>&1; then
-                    break
-                elif systemctl enable nftband.service >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-
-            # Verify enable succeeded
-            if ! systemctl is-enabled nftband.service >/dev/null 2>&1; then
-                log_warn "nftband.service not enabled (run: systemctl enable nftband.service)"
-            fi
-
-            # BUG-R48 FIX: Ensure critical timers are enabled on upgrades
-            # Older installs may not have enabled these timers, or they were manually disabled.
-            # This ensures metrics/maintenance/health checks work after upgrade.
-            log_info "  Ensuring critical timers are enabled..."
-            for timer in nftban-maintenance.timer nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer; do
-                if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then
-                    systemctl enable "$timer" >/dev/null 2>&1 || true
-                fi
-            done
-
-            deb-systemd-invoke try-restart nftband.service >/dev/null 2>&1 || true
-            deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
-            deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
-            deb-systemd-invoke try-restart nftban-ui.service >/dev/null 2>&1 || true
-            log_info "  Upgrade - services and timers enabled, services restarted"
-        fi
-
-        fi  # End of PREFLIGHT_PASSED check for service enablement
-
-        # =====================================================================
-        # STEP 9: Configure nftables and reload
-        # =====================================================================
-        # Skip if preflight failed
-        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
-            log_info "Configuring nftables service..."
-
-        # Source distro config library to get correct paths
-        if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
-            source /usr/lib/nftban/lib/nftban_distro_config.sh 2>/dev/null || true
-
-            # Get distro-specific nftables.conf path
-            nftban_distro_load_config 2>/dev/null || true
-            SYSTEM_NFT_CONF=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
-
-            if [ -n "${SYSTEM_NFT_CONF}" ] && [ -f "${SYSTEM_NFT_CONF}" ]; then
-                # Check if already configured
-                if ! grep -q "/etc/nftban/nftables.conf" "${SYSTEM_NFT_CONF}" 2>/dev/null; then
-                    echo "# NFTBan firewall configuration" >> "${SYSTEM_NFT_CONF}"
-                    echo "include \"/etc/nftban/nftables.conf\"" >> "${SYSTEM_NFT_CONF}"
-                    log_info "  Added NFTBan config to ${SYSTEM_NFT_CONF}"
-                fi
-            fi
-        fi
-
-        log_info "Reloading systemd daemon..."
-        systemctl daemon-reload
-
-        # =====================================================================
-        # STEP 10: Sync whitelist.d files to nftables sets
-        # =====================================================================
-        log_info "Syncing whitelist files to nftables..."
-        if timeout 15s nftban sync --quick >/dev/null 2>&1; then
-            log_info "  Whitelist sync completed"
-        else
-            sleep 0.5
-            timeout 15s nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
-        fi
-
-        # =====================================================================
-        # PHASE 3: PREPARE (files only, no firewall changes)
-        # =====================================================================
-        # v1.52.0: ALWAYS render nftables.conf from template.
-        # Template → sed → nft -c -f → SSH port validation → atomic mv
-        if [[ $NFTABLES_SAFE -eq 1 ]]; then
-            log_info "Phase 3: Preparing firewall config..."
-
-            _render_nftables_conf() {
-                local _ssh="$1" _ct_ssh="$2" _ct_http="$3" _ct_mail="$4"
-                local _tpl="/usr/lib/nftban/templates/nftables.conf.tpl"
-                local _out="/etc/nftban/nftables.conf"
-
-                if [[ ! -f "$_tpl" ]]; then
-                    log_error "Template not found: $_tpl"
-                    return 1
-                fi
-
-                local _tmp
-                _tmp=$(mktemp /etc/nftban/.nftables.rendered.XXXXXX) || return 1
-
-                sed -e "s/__SSH_PORT__/${_ssh}/g" \
-                    -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
-                    -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
-                    -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
-                    "$_tpl" > "$_tmp"
-
-                # Validation 1: nft syntax check
-                if ! nft -c -f "$_tmp" 2>/dev/null; then
-                    log_error "Rendered config failed nft validation"
-                    rm -f "$_tmp"; return 1
-                fi
-
-                # Validation 2: SSH port present in tcp_ports_in set (BOTH families)
-                local _v4_ok=false _v6_ok=false
-                if awk '/^table ip nftban/,/^}/' "$_tmp" | \
-                   awk '/set tcp_ports_in/,/}/' | grep -qP "elements\s*=.*\b${_ssh}\b"; then
-                    _v4_ok=true
-                fi
-                if awk '/^table ip6 nftban/,/^}/' "$_tmp" | \
-                   awk '/set tcp_ports_in/,/}/' | grep -qP "elements\s*=.*\b${_ssh}\b"; then
-                    _v6_ok=true
-                fi
-
-                if [[ "$_v4_ok" != "true" || "$_v6_ok" != "true" ]]; then
-                    log_error "SSH port ${_ssh} not found in tcp_ports_in set (v4=$_v4_ok v6=$_v6_ok)"
-                    rm -f "$_tmp"; return 1
-                fi
-
-                # Validation 3: No unrendered placeholders remain
-                if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$_tmp"; then
-                    log_error "Unrendered placeholders remain in config"
-                    rm -f "$_tmp"; return 1
-                fi
-
-                # Atomic replace
-                mv "$_tmp" "$_out"
-                chmod 640 "$_out"
-                chown root:nftban "$_out" 2>/dev/null || true
-                log_info "  Config rendered: SSH=${_ssh} CT=${_ct_ssh}/${_ct_http}/${_ct_mail}"
-                return 0
-            }
-
-            if _render_nftables_conf "$SSH_PORT_EFFECTIVE" "$_CT_SSH" "$_CT_HTTP" "$_CT_MAIL"; then
-                log_info "  Config validated and ready"
-            else
-                log_error "Config rendering failed — firewall activation aborted"
-                NFTABLES_SAFE=0
-            fi
-
-            # Persist SSH port to nftban.conf.local (BEFORE any firewall load)
-            if [[ $NFTABLES_SAFE -eq 1 && -n "$SSH_PORT_EFFECTIVE" ]]; then
-                _MAIN_LOCAL="/etc/nftban/nftban.conf.local"
-                [[ -f "$_MAIN_LOCAL" ]] || touch "$_MAIN_LOCAL"
-
-                # Ensure TCP_PORTS_IN includes SSH port
-                _CURRENT_PORTS=$(grep -E "^TCP_PORTS_IN=" "$_MAIN_LOCAL" 2>/dev/null | cut -d= -f2 || true)
-                if [[ -z "$_CURRENT_PORTS" ]]; then
-                    _BASE_PORTS=$(grep -E "^TCP_PORTS_IN=" /etc/nftban/nftban.conf 2>/dev/null | cut -d= -f2 || echo "22,80,443")
-                    if ! echo ",${_BASE_PORTS}," | grep -q ",${SSH_PORT_EFFECTIVE},"; then
-                        echo "TCP_PORTS_IN=${_BASE_PORTS},${SSH_PORT_EFFECTIVE}" >> "$_MAIN_LOCAL"
-                        log_info "  Added SSH port $SSH_PORT_EFFECTIVE to TCP_PORTS_IN"
-                    fi
-                elif ! echo ",${_CURRENT_PORTS}," | grep -q ",${SSH_PORT_EFFECTIVE},"; then
-                    sed -i "s|^TCP_PORTS_IN=.*|TCP_PORTS_IN=${_CURRENT_PORTS},${SSH_PORT_EFFECTIVE}|" "$_MAIN_LOCAL"
-                    log_info "  Added SSH port $SSH_PORT_EFFECTIVE to TCP_PORTS_IN"
-                fi
-
-                # Ensure SSH_PORT is set
-                if ! grep -q "^SSH_PORT=" "$_MAIN_LOCAL" 2>/dev/null; then
-                    echo "SSH_PORT=$SSH_PORT_EFFECTIVE" >> "$_MAIN_LOCAL"
-                else
-                    sed -i "s|^SSH_PORT=.*|SSH_PORT=${SSH_PORT_EFFECTIVE}|" "$_MAIN_LOCAL"
-                fi
-
-                # Persist to state file
-                mkdir -p /var/lib/nftban/state
-                echo "$SSH_PORT_EFFECTIVE" > /var/lib/nftban/state/ssh_port_active.state
-            fi
-        fi
-
-        # =====================================================================
-        # PHASE 4: SWITCH (firewall changes — point of no return)
-        # =====================================================================
-        if [[ $NFTABLES_SAFE -eq 1 ]]; then
-
-            if [[ "$AUTHORITY_DECISION" == "UPDATE" ]]; then
-                # UPDATE: NFTBan already authoritative — rebuild with new config
-                log_info "Phase 4: Update mode — rebuilding firewall with new config"
-
-                # Schema migration tracking
-                CURRENT_SCHEMA="2.1"
-                SCHEMA_FILE="/etc/nftban/.schema_version"
-                INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
-
-                if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
-                    log_info "  Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
-                fi
-
-                # v1.60.5: Always rebuild on update — Phase 3 rendered a new config with
-                # detected SSH port and CT limits. Previous code only rebuilt on schema change
-                # and used 'systemctl reload nftables' otherwise, which does NOT load the
-                # NFTBan-rendered config. This caused SSH port mismatches after upgrades
-                # (e.g. port 55000 missing from tcp_ports_in → lockout risk).
-                # v1.70.0: Rebuild failure is FATAL — no fallback to reload.
-                # Fallback reload preserves stale kernel schema, creating a code/kernel
-                # mismatch that corrupts all downstream trust: status, health, verification.
-                # If rebuild fails, the update has failed. Period.
-                if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
-                    echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
-                    timeout 15s nftban sync >/dev/null 2>&1 || true
-                    log_info "  Firewall rebuild complete."
-                else
-                    log_error "  Firewall rebuild FAILED during update"
-                    log_error "  Kernel may have stale schema — run manually: nftban firewall rebuild"
-                    NFTBAN_INSTALL_FAILED=1
-                fi
-
-            elif [[ "$AUTHORITY_DECISION" == "TAKEOVER" ]]; then
-                # TAKEOVER: Disable old firewall, activate NFTBan
-                log_info "Phase 4: Takeover — disabling conflicts and activating NFTBan..."
-
-                # Gate check: SSH port must be detected and config must be safe
-                if [[ "$SSH_PORT_DETECTED" == "false" || $NFTABLES_SAFE -ne 1 ]]; then
-                    log_error "TAKEOVER ABORTED: SSH port unknown or config unsafe"
-                    log_error "Old firewall preserved. SSH access should still work."
-                    log_error "Fix: Set SSH_PORT in /etc/nftban/nftban.conf.local and run: nftban firewall rebuild"
-                    NFTABLES_SAFE=0
-                else
-                    # --- Disable conflicting services ---
-                    if [[ "$CONFLICTS" == *"CSF"* ]]; then
-                        log_info "  Disabling CSF..."
-                        csf -x 2>/dev/null || true
-                        systemctl stop csf lfd 2>/dev/null || true
-                        systemctl disable csf lfd 2>/dev/null || true
-                        systemctl mask csf lfd 2>/dev/null || true
-                        # De-authorize: run uninstall script if exists
-                        [[ -x /etc/csf/uninstall.sh ]] && /etc/csf/uninstall.sh 2>/dev/null || true
-                        log_info "  CSF disabled + masked"
-                        log_info "  NOTE: Run 'apt remove csf lfd' to fully remove CSF packages"
-                    fi
-                    if [[ "$CONFLICTS" == *"UFW"* ]]; then
-                        log_info "  Disabling UFW..."
-                        ufw disable 2>/dev/null || true
-                        systemctl stop ufw 2>/dev/null || true
-                        systemctl disable ufw 2>/dev/null || true
-                        systemctl mask ufw 2>/dev/null || true
-                        log_info "  UFW disabled + masked"
-                    fi
-                    if [[ "$CONFLICTS" == *"firewalld"* ]]; then
-                        log_info "  Disabling firewalld..."
-                        systemctl stop firewalld 2>/dev/null || true
-                        systemctl disable firewalld 2>/dev/null || true
-                        systemctl mask firewalld 2>/dev/null || true
-                        log_info "  firewalld disabled + masked"
-                    fi
-                    if [[ "$CONFLICTS" == *"iptables"* ]]; then
-                        log_info "  Disabling iptables service..."
-                        systemctl stop iptables ip6tables 2>/dev/null || true
-                        systemctl disable iptables ip6tables 2>/dev/null || true
-                        systemctl mask iptables ip6tables 2>/dev/null || true
-                        log_info "  iptables disabled + masked"
-                    fi
-
-                    # --- Ghost table cleanup ---
-                    log_info "  Cleaning ghost nftables tables..."
-                    for ghost_table in "ip filter" "ip6 filter" "ip nat" "ip6 nat" "ip mangle" "ip6 mangle" "ip security" "ip6 security" "inet firewalld" "inet filter"; do
-                        if nft list table $ghost_table &>/dev/null 2>&1; then
-                            log_info "    Removed ghost table: $ghost_table"
-                            nft delete table $ghost_table 2>/dev/null || true
-                        fi
-                    done
-                    iptables -F 2>/dev/null || true
-                    iptables -X 2>/dev/null || true
-                    ip6tables -F 2>/dev/null || true
-                    ip6tables -X 2>/dev/null || true
-
-                    # --- Enable + start nftables (config already rendered in Phase 3) ---
-                    log_info "  Starting nftables with validated config..."
-                    systemctl enable nftables 2>/dev/null || true
-                    if ! systemctl start nftables 2>/dev/null; then
-                        log_error "CRITICAL: nftables start failed after disabling old firewall"
-                        # Recovery attempt: try safe config
-                        if [[ -f /etc/nftban/nftables-safe.conf ]]; then
-                            log_warn "  Attempting safe config fallback..."
-                            cp /etc/nftban/nftables.conf /etc/nftban/nftables.conf.failed 2>/dev/null || true
-                            cp /etc/nftban/nftables-safe.conf /etc/nftban/nftables.conf 2>/dev/null || true
-                            if systemctl start nftables 2>/dev/null; then
-                                log_warn "  Safe config loaded — limited protection active"
-                            else
-                                log_error "CRITICAL: System has NO active firewall. Fix manually."
-                            fi
-                        else
-                            log_error "CRITICAL: System has NO active firewall. Fix manually."
-                        fi
-                        NFTABLES_SAFE=0
-                    else
-                        log_info "  nftables started successfully"
-
-                        # Belt-and-suspenders: ensure SSH port is in live set
-                        if ! nft list set ip nftban tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT_EFFECTIVE"; then
-                            nft add element ip nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                            nft add element ip6 nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                            log_warn "  SSH port $SSH_PORT_EFFECTIVE reinforced into live set"
-                        fi
-                    fi
-
-                    # Schema migration
-                    if [[ $NFTABLES_SAFE -eq 1 ]]; then
-                        CURRENT_SCHEMA="2.1"
-                        SCHEMA_FILE="/etc/nftban/.schema_version"
-                        INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
-
-                        if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
-                            log_info "  Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
-                        fi
-                        # v1.70.0: Always rebuild on takeover — ensures kernel schema matches installed code.
-                        # Rebuild failure is FATAL — no fallback to reload (see v1.70.0 UPDATE mode comment).
-                        if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
-                            echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
-                            timeout 15s nftban sync >/dev/null 2>&1 || true
-                            log_info "  Firewall rebuild complete."
-                        else
-                            log_error "  Firewall rebuild FAILED during takeover"
-                            log_error "  Kernel may have stale schema — run manually: nftban firewall rebuild"
-                            NFTBAN_INSTALL_FAILED=1
-                        fi
-                    fi
-
-                    log_info "  Takeover complete. NFTBan is now THE firewall."
-                fi
-
-            elif [[ "$AUTHORITY_DECISION" == "FRESH" ]]; then
-                # FRESH: No conflicts, clean install
-                log_info "Phase 4: Fresh install — activating nftables..."
-                systemctl enable nftables 2>/dev/null || true
-                if ! systemctl start nftables 2>/dev/null; then
-                    log_error "nftables start failed"
-                    NFTABLES_SAFE=0
-                else
-                    log_info "  nftables started"
-
-                    # Belt-and-suspenders: ensure SSH port is in live set
-                    if ! nft list set ip nftban tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT_EFFECTIVE"; then
-                        nft add element ip nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                        nft add element ip6 nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                        log_warn "  SSH port $SSH_PORT_EFFECTIVE reinforced into live set"
-                    fi
-
-                    # Schema version tracking
-                    CURRENT_SCHEMA="2.1"
-                    SCHEMA_FILE="/etc/nftban/.schema_version"
-                    INSTALLED_SCHEMA=$(cat "$SCHEMA_FILE" 2>/dev/null || echo "1.0")
-
-                    if [[ "$INSTALLED_SCHEMA" != "$CURRENT_SCHEMA" ]]; then
-                        log_info "  Schema migration: $INSTALLED_SCHEMA -> $CURRENT_SCHEMA"
-                    fi
-                    # v1.70.0: Always rebuild on fresh install — ensures kernel schema matches installed code.
-                    # Rebuild failure is FATAL (see v1.70.0 UPDATE mode comment).
-                    if timeout 60s nftban firewall rebuild >/dev/null 2>&1; then
-                        echo "$CURRENT_SCHEMA" > "$SCHEMA_FILE"
-                        timeout 15s nftban sync >/dev/null 2>&1 || true
-                        log_info "  Firewall rebuild complete."
-                    else
-                        log_error "  Firewall rebuild FAILED during fresh install"
-                        log_error "  Kernel may have stale schema — run manually: nftban firewall rebuild"
-                        NFTBAN_INSTALL_FAILED=1
-                    fi
-                fi
-            fi
-
-        else
-            log_warn ""
-            log_warn "=========================================="
-            log_warn " NFTABLES NOT ACTIVATED (Safety Mode)"
-            log_warn "=========================================="
-            log_warn "Install completed but firewall is NOT active."
-            log_warn "SSH access is preserved. Fix issues above, then run:"
-            log_warn "  nftban firewall rebuild"
-            log_warn ""
-        fi
-
-        # =====================================================================
-        # PHASE 5: CONFIGURE (NFTBan services)
-        # =====================================================================
-
-        # =====================================================================
-        # STEP 12: GeoIP Database Download (with timeout for airgapped systems)
-        # =====================================================================
-        log_info "Downloading GeoIP database..."
-        if [[ -x /usr/lib/nftban/bin/nftban-core ]]; then
-            # Use timeout to prevent blocking on slow/no network (120s max)
-            # DB-IP Lite is ~3.5MB compressed — 15s was too short on slow networks
-            if timeout 120s /usr/lib/nftban/bin/nftban-core geoip update 2>&1; then
-                log_info "  GeoIP database downloaded successfully"
-            else
-                log_info "  GeoIP download skipped (timeout or no network)"
-                log_info "  Will auto-download on first timer run, or manual: nftban geoip update"
+                log_error "========================================"
+                log_error " NFTBan — FAILED"
+                log_error "========================================"
+                log_error "See log: /var/log/nftban/installer.log"
+                log_error "To retry: /usr/lib/nftban/bin/nftban-installer --repair"
+                log_error "Or: nftban firewall rebuild"
             fi
         else
-            log_warn "nftban-core not found, skipping GeoIP download"
+            log_error "Installer binary not found: $NFTBAN_INSTALLER"
+            log_error "Package may be corrupt. Try reinstalling."
+            log_info "Files have been installed but firewall is NOT active."
         fi
 
-        # =====================================================================
-        # STEP 13: Enable Login Monitoring (Default Protection)
-        # =====================================================================
-        log_info "Enabling login monitoring (SSH/FTP brute-force protection)..."
-        if command -v nftban >/dev/null 2>&1; then
-            if timeout 30s nftban login enable 2>/dev/null; then
-                log_info "  Login monitoring enabled successfully"
-            else
-                log_warn "  Login monitoring enable failed (run manually: nftban login enable)"
-            fi
-        fi
+        # --- Cache ownership fix (after installer) ---
+        find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+        find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
-        # =====================================================================
-        # STEP 13.5: Auto-enable panel ports (BUG-HIGH-002 fix)
-        # =====================================================================
-        # Detect hosting panels and auto-enable their management ports
-        # to prevent lockout during install on panel servers.
-        log_info "Detecting hosting panels..."
-
-        PANEL_DETECTED="none"
-        PANEL_PORTS=""
-        PANEL_NAME=""
-
-        # Detect panel type (same logic as nftban_panel_detect)
-        if [[ -d /usr/local/cpanel ]]; then
-            PANEL_DETECTED="cpanel"
-            PANEL_NAME="cPanel/WHM"
-            # Critical cPanel/WHM management ports (TCP inbound)
-            PANEL_PORTS="2082,2083,2086,2087"
-
-            # cPanel iptables-nft cleanup: Remove legacy xt_target rules that break nftables
-            # These rules use "xt target REDIRECT" which modern nftables cannot load
-            for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-                if [[ -f "$nft_conf" ]] && grep -q "xt target\|xtables compat" "$nft_conf" 2>/dev/null; then
-                    log_info "  cPanel: Cleaning iptables-nft legacy rules from $nft_conf"
-                    cp "$nft_conf" "${nft_conf}.cpanel.bak"
-                    cat > "$nft_conf" << 'NFTCONF'
-#!/usr/sbin/nft -f
-# nftables configuration - managed by NFTBan
-# cPanel legacy iptables-nft rules backed up to .cpanel.bak
-# These rules used xt_target REDIRECT which is incompatible with modern nftables
-
-flush ruleset
-
-# Load NFTBan firewall configuration
-include "/etc/nftban/nftables.conf"
-NFTCONF
-                    log_info "  cPanel: Legacy rules backed up, NFTBan config enabled"
-                fi
-            done
-        elif [[ -d /usr/local/directadmin ]]; then
-            PANEL_DETECTED="directadmin"
-            PANEL_NAME="DirectAdmin"
-            # DirectAdmin management port (TCP inbound)
-            PANEL_PORTS="2222"
-        elif [[ -d /usr/local/psa ]]; then
-            PANEL_DETECTED="plesk"
-            PANEL_NAME="Plesk"
-            # Plesk management ports (TCP inbound)
-            PANEL_PORTS="8443,8880"
-        elif [[ -d /usr/local/CyberCP ]]; then
-            PANEL_DETECTED="cyberpanel"
-            PANEL_NAME="CyberPanel"
-            # CyberPanel management ports (TCP inbound)
-            PANEL_PORTS="7080,8090"
-        elif [[ -d /usr/local/hestia ]]; then
-            PANEL_DETECTED="hestia"
-            PANEL_NAME="HestiaCP"
-            # HestiaCP management port (TCP inbound)
-            PANEL_PORTS="8083"
-        elif [[ -d /usr/local/vesta ]]; then
-            PANEL_DETECTED="vesta"
-            PANEL_NAME="VestaCP"
-            # VestaCP management port (TCP inbound)
-            PANEL_PORTS="8083"
-        elif [[ -d /usr/local/cwpsrv ]]; then
-            PANEL_DETECTED="cwp"
-            PANEL_NAME="CentOS Web Panel"
-            # CWP management ports (TCP inbound)
-            PANEL_PORTS="2030,2031"
-        elif [[ -d /usr/local/interworx ]]; then
-            PANEL_DETECTED="interworx"
-            PANEL_NAME="InterWorx"
-            # InterWorx management ports (TCP inbound)
-            PANEL_PORTS="2080,2443"
-        fi
-
-        if [[ "$PANEL_DETECTED" != "none" ]]; then
-            log_info "  Detected: $PANEL_NAME"
-            log_info "  Auto-enabling panel management ports: $PANEL_PORTS"
-
-            # Create ports.d directory if missing
-            mkdir -p /etc/nftban/ports.d
-            chmod 750 /etc/nftban/ports.d
-            chown root:nftban /etc/nftban/ports.d 2>/dev/null || true
-
-            # Use dedicated panel port config file (idempotent)
-            PANEL_PORT_FILE="/etc/nftban/ports.d/10-panel.conf"
-
-            # Only add if not already configured (idempotent)
-            if [[ ! -f "$PANEL_PORT_FILE" ]] || ! grep -q "^# Panel: $PANEL_NAME" "$PANEL_PORT_FILE" 2>/dev/null; then
-                {
-                    echo "# ============================================="
-                    echo "# NFTBan Auto-Detected Panel Ports"
-                    echo "# Generated during install: $(date '+%Y-%m-%d %H:%M:%S')"
-                    echo "# Panel: $PANEL_NAME"
-                    echo "# ============================================="
-                    echo "# Format: PORT/PROTOCOL/DIRECTION"
-                    echo "# T=TCP, U=UDP, B=Both | I=Input, O=Output, IO=Both"
-                    echo ""
-                    # Add each port as TCP inbound (panel management ports)
-                    IFS=',' read -ra PORT_ARRAY <<< "$PANEL_PORTS"
-                    for port in "${PORT_ARRAY[@]}"; do
-                        echo "# $PANEL_NAME port $port (TCP inbound)"
-                        echo "${port}/T/I"
-                    done
-                } > "$PANEL_PORT_FILE"
-
-                chmod 640 "$PANEL_PORT_FILE"
-                chown root:nftban "$PANEL_PORT_FILE" 2>/dev/null || true
-                log_info "  Created: $PANEL_PORT_FILE"
-                log_info "  Panel ports will be active after firewall sync"
-            else
-                log_info "  Panel ports already configured (skipping)"
-            fi
-        else
-            log_info "  No hosting panel detected (standalone server)"
-        fi
-
-        # =====================================================================
-        # STEP 14: Set immutable flags on security-critical files
-        # =====================================================================
-        log_info "Setting immutable flags on security files..."
-        for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
-            if [[ -f "$immutable_file" ]]; then
-                chmod 444 "$immutable_file" 2>/dev/null || true
-                chattr +i "$immutable_file" 2>/dev/null || true
-            fi
-        done
-        log_info "  Security files protected (immutable)"
-
-        # =====================================================================
-        # PHASE 6: VERIFY (post-install assertions)
-        # =====================================================================
-        if [[ $NFTABLES_SAFE -eq 1 ]] && [[ -n "$SSH_PORT_EFFECTIVE" ]]; then
-            log_info "Phase 6: Post-install verification..."
-
-            # Assert SSH port is in live nft set
-            if command -v nft &>/dev/null && nft list table ip nftban &>/dev/null 2>&1; then
-                if ! nft list set ip nftban tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT_EFFECTIVE"; then
-                    nft add element ip nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                    nft add element ip6 nftban tcp_ports_in "{ $SSH_PORT_EFFECTIVE }" 2>/dev/null || true
-                    log_error "CRITICAL: SSH port $SSH_PORT_EFFECTIVE was missing from live set — added"
-                fi
-            fi
-
-            # Assert nftables service is active
-            if ! systemctl is-active nftables &>/dev/null 2>&1; then
-                log_warn "nftables service is not active after install"
-            fi
-
-            # Write authority file (only after successful activation + verification)
-            if [[ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]]; then
-                # shellcheck source=/dev/null
-                source /usr/lib/nftban/core/nftban_firewall_conflicts.sh 2>/dev/null || true
-                if declare -f nftban_write_authority &>/dev/null; then
-                    nftban_write_authority "nftban"
-                fi
-            else
-                # Inline fallback
-                echo "nftban" > /etc/nftban/.firewall_authority 2>/dev/null || true
-                chmod 644 /etc/nftban/.firewall_authority 2>/dev/null || true
-            fi
-
-            # Cleanup leftover emergency table from pre-v1.52 installs
-            if nft list table inet nftban_install_emergency >/dev/null 2>&1; then
-                nft delete table inet nftban_install_emergency 2>/dev/null || true
-                log_info "  Cleaned up legacy emergency table"
-            fi
-
-            # Validate hook authority
-            if [[ -f /usr/lib/nftban/core/nftban_firewall_conflicts.sh ]]; then
-                if declare -f nftban_validate_hook_authority &>/dev/null; then
-                    nftban_validate_hook_authority 2>/dev/null || true
-                fi
-            fi
-
-            # Residue cleanup: config dirs from dead services
-            for _residue in /etc/csf /etc/ufw; do
-                if [[ -d "$_residue" ]]; then
-                    _svc_name=$(basename "$_residue")
-                    if ! systemctl is-active "${_svc_name}.service" &>/dev/null 2>&1 && \
-                       ! systemctl is-enabled "${_svc_name}.service" &>/dev/null 2>&1; then
-                        log_info "  Residue: $_residue (service dead+disabled) — safe to remove"
-                    fi
-                fi
-            done
-
-            log_info "  Verification complete"
-        fi
-
-        fi  # End of PREFLIGHT_PASSED check (STEP 9-14)
-
-        # =====================================================================
-        # Installation Complete
-        # =====================================================================
-        if [[ $PREFLIGHT_PASSED -eq 1 ]]; then
-            log_info ""
-            log_info "========================================"
-            log_info " NFTBan v${NFTBAN_VERSION} Installation Complete!"
-            log_info "========================================"
-            log_info ""
-            log_info "Quick Start:"
-            log_info "  nftban status              # System overview"
-            log_info "  nftban health              # Health check"
-            log_info "  nftban whitelist-system show  # View safety whitelist"
-            log_info ""
-            # BUG FIX (v1.19.22): Only claim success if sync actually worked
-            if [[ "${WHITELIST_SYNC_OK:-0}" -eq 1 ]]; then
-                log_info "Your IP has been auto-whitelisted to prevent lockout."
-            else
-                log_warn "⚠️  WHITELIST SYNC FAILED - Run: nftban whitelist-system sync"
-                log_warn "   Your IP may NOT be protected from being banned!"
-            fi
-            log_info ""
-        else
-            log_warn ""
-            log_warn "========================================"
-            log_warn " NFTBan v${NFTBAN_VERSION} Files Installed"
-            log_warn "========================================"
-            log_warn ""
-            log_warn "ENFORCEMENT DISABLED due to preflight failure."
-            log_warn ""
-            log_warn "To enable NFTBan after fixing conflicts:"
-            log_warn "  1. Fix the issue reported above"
-            log_warn "  2. Run: dpkg-reconfigure nftban-core"
-            log_warn ""
-        fi
         ;;
 esac
 
