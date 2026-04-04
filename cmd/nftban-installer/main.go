@@ -84,6 +84,11 @@ func main() {
 	sf.Mode = cfg.mode
 	sf.Version = version.Version
 
+	// Propagate --takeover flag to env so authority.Classify picks it up
+	if cfg.takeover {
+		os.Setenv("NFTBAN_TAKEOVER", "1")
+	}
+
 	exitCode := run(ctx, exec, sf, cfg, log)
 
 	// Write JSON update history (compatible with nftban update history --json)
@@ -215,38 +220,7 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 	return report(sf, log)
 }
 
-// Phase stubs — these will be implemented in Batch 2.
-// Each phase function updates the state file on success or failure.
-
-func phaseDetect(_ context.Context, _ executor.Executor, sf *state.StateFile, log *logging.Logger) error {
-	// TODO(batch2): implement detect phase (SSH, panel, conflicts, authority)
-	log.Info("detect phase: not yet implemented (stub)")
-	return sf.Transition(state.StateDetectComplete, state.PhaseDetect, "")
-}
-
-func phasePrepare(_ context.Context, _ executor.Executor, sf *state.StateFile, log *logging.Logger) error {
-	// TODO(batch2): implement prepare phase (stale cleanup, FHS, render, config persist)
-	log.Info("prepare phase: not yet implemented (stub)")
-	return sf.Transition(state.StatePrepareComplete, state.PhasePrepare, "")
-}
-
-func phaseSwitch(_ context.Context, _ executor.Executor, sf *state.StateFile, log *logging.Logger) error {
-	// TODO(batch2): implement switch phase (takeover, enable, rebuild, verify)
-	log.Info("switch phase: not yet implemented (stub)")
-	return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
-}
-
-func phaseConfigure(_ context.Context, _ executor.Executor, sf *state.StateFile, log *logging.Logger) error {
-	// TODO(batch2): implement configure phase (daemon, timers, panel, login, whitelist)
-	log.Info("configure phase: not yet implemented (stub)")
-	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
-}
-
-func phaseValidate(_ context.Context, _ executor.Executor, sf *state.StateFile, log *logging.Logger) error {
-	// TODO(batch2): implement validate phase (kernel assertions, authority file)
-	log.Info("validate phase: not yet implemented (stub)")
-	return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
-}
+// Phase implementations are in phases.go, wiring detect/render/switchop/services/validate.
 
 // report prints the final status and returns the process exit code.
 func report(sf *state.StateFile, log *logging.Logger) int {
