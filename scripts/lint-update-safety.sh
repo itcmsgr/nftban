@@ -62,7 +62,13 @@ for file in "$RPM_POSTINST" "$DEB_POSTINST"; do
     # Look for the dangerous pattern: rebuild fail block containing systemctl reload nftables
     # This catches both "systemctl reload nftables" and "systemctl reload nftables 2>/dev/null"
     # We scan for lines between "rebuild" fail blocks that contain "reload nftables"
-    if grep -n 'rebuild failed\|rebuild FAILED\|Firewall rebuild failed' "$file" 2>/dev/null | while IFS=: read -r lineno _content; do
+    rebuild_lines=$(grep -n 'rebuild failed\|rebuild FAILED\|Firewall rebuild failed' "$file" 2>/dev/null || true)
+    if [[ -z "$rebuild_lines" ]]; then
+        # No rebuild failure strings in this file — nothing to check
+        continue
+    fi
+
+    while IFS=: read -r lineno _content; do
         # Check the next 5 lines after a rebuild failure message for a reload fallback
         for offset in 1 2 3 4 5; do
             check_line=$(sed -n "$((lineno + offset))p" "$file" 2>/dev/null || true)
@@ -71,17 +77,10 @@ for file in "$RPM_POSTINST" "$DEB_POSTINST"; do
                 echo "  ${lineno}: ${_content}"
                 echo "  $((lineno + offset)): ${check_line}"
                 echo "  Fix: remove fallback reload — set NFTBAN_INSTALL_FAILED=1 instead"
-                exit 1  # signal violation from subshell
+                u1_violations=$((u1_violations + 1))
             fi
         done
-    done; then
-        # grep found matches but no violations in the loop
-        :
-    else
-        if [[ $? -eq 1 ]]; then
-            u1_violations=$((u1_violations + 1))
-        fi
-    fi
+    done <<< "$rebuild_lines"
 done
 
 if [[ $u1_violations -gt 0 ]]; then

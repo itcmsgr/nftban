@@ -12,7 +12,7 @@
 # meta:output="Compiled Go binaries in bin/"
 # meta:depends="go"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband"
+# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-installer"
 # meta:inventory.env_vars="CGO_ENABLED, GOOS, GOARCH"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -252,6 +252,27 @@ build_daemon() {
     return 0
 }
 
+build_installer() {
+    log "Building nftban-installer (RPM install finalizer)..."
+
+    cd "$SCRIPT_DIR"
+
+    # Installer is pure Go — no CGO needed
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+        go build -trimpath -o "$BIN_DIR/nftban-installer" \
+        -ldflags="$LDFLAGS" \
+        ./cmd/nftban-installer || {
+        error "Failed to build nftban-installer"
+        return 1
+    }
+
+    chmod +x "$BIN_DIR/nftban-installer"
+    ok "Built: $BIN_DIR/nftban-installer"
+
+    cd "$SCRIPT_DIR"
+    return 0
+}
+
 show_usage() {
     cat << EOF
 NFTBan Build Script
@@ -265,6 +286,7 @@ Components:
   gui       Build nftban-ui only
   ui-auth   Build nftban-ui-auth only
   daemon    Build nftband only
+  installer Build nftban-installer only
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -310,6 +332,9 @@ case "$COMPONENT" in
         build_daemon || exit 1
         echo ""
 
+        build_installer || exit 1
+        echo ""
+
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
@@ -330,6 +355,10 @@ case "$COMPONENT" in
 
     daemon)
         build_daemon || exit 1
+        ;;
+
+    installer)
+        build_installer || exit 1
         ;;
 
     help|-h|--help)
