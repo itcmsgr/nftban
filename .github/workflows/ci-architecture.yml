@@ -298,6 +298,10 @@ jobs:
       - name: Lint update safety (U1-U2)
         run: bash scripts/lint-update-safety.sh
 
+      # v1.72.0: RPM postinst source-leak regression test
+      - name: Test RPM postinst source leak (T1-T2)
+        run: bash scripts/test-rpm-postinst-source-leak.sh
+
       # v1.64.0: Anchor marker count in template
       - name: Validate anchor markers in template
         run: |
