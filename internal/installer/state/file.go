@@ -93,6 +93,7 @@ func (sf *StateFile) Path() string {
 
 // Transition validates and applies a state transition.
 // It updates the state, phase, and optional failure reason, then persists atomically.
+// For failure states, it always returns an error (the reason) so phase runners halt.
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
 	sf.State = newState
 	sf.PhaseReached = string(phase)
@@ -100,7 +101,14 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		sf.FailureReason = reason
 	}
 	sf.Timestamp = time.Now().UTC()
-	return sf.WriteAtomic()
+	if err := sf.WriteAtomic(); err != nil {
+		return err
+	}
+	// Failure states must return an error so the phase runner stops execution.
+	if newState.IsFailed() {
+		return fmt.Errorf("%s: %s", newState, reason)
+	}
+	return nil
 }
 
 // WriteAtomic writes the state file atomically (write to tmp, then rename).
