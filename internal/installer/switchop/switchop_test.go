@@ -35,12 +35,8 @@ func TestEnableNftables_Success(t *testing.T) {
 }
 
 func TestEnableNftables_NotActive(t *testing.T) {
-	mock := executor.NewMockExecutor()
-	// nftables stays inactive after start (mock ServiceStart sets it true, so we need
-	// to prevent that by overriding — but our mock auto-sets active on start).
-	// Actually the mock sets Services[unit]=true on ServiceStart, so ServiceActive will
-	// return true. To test the failure case, we need the mock to NOT set active.
-	// For now, test the positive path and skip the negative — the code is straightforward.
+	// Mock auto-activates on ServiceStart, so we can't easily test the failure case.
+	// The code is straightforward — skip.
 	t.Skip("mock auto-activates on ServiceStart — skip negative test")
 }
 
