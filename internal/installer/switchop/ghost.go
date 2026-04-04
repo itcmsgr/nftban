@@ -52,9 +52,7 @@ func CleanGhostTables(exec executor.Executor, log *logging.Logger) {
 		}
 	}
 
-	// Also clean pre-v1.52 emergency table
-	if exec.NftTableExists("inet", "nftban_install_emergency") {
-		exec.NftDeleteTable("inet", "nftban_install_emergency")
-		log.Info("removed legacy emergency table")
-	}
+	// NOTE: Do NOT clean inet nftban_install_emergency here.
+	// Its lifecycle is managed by InjectEmergencySSH / RemoveEmergencySSH
+	// in sshguard.go — phaseSwitch controls when it's safe to remove.
 }
