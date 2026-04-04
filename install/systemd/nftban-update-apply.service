@@ -1,0 +1,78 @@
+# =============================================================================
+# NFTBan v1.71.0 - Auto-Update Apply Service (Privileged, Gated)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-update-apply.service"
+# meta:type="systemd"
+# meta:version="1.71.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Privileged auto-update apply — gated by preflight + verify"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars="NFTBAN_UPDATE_AUTO_CONTEXT"
+# meta:inventory.config_files="/etc/nftban/conf.d/update.conf"
+# meta:inventory.systemd_units="nftban-update-apply.timer"
+# meta:inventory.network="github.com"
+# meta:inventory.privileges="root"
+#
+# Purpose: Apply cached update with preflight gates and post-verify
+#
+# Pipeline: preflight -> auto-apply -> verify
+# If preflight fails, apply never runs.
+# If verify fails, rollback is triggered (when NFTBAN_UPDATE_AUTO_CONTEXT=true).
+#
+# Requires: /var/cache/nftban/update_available.json (from check --cache)
+#
+# Exit codes:
+#   0 = Update applied and verified
+#   non-zero = Preflight blocked, apply failed, or verify failed
+#
+# Logs: journalctl -u nftban-update-apply.service
+# =============================================================================
+
+[Unit]
+Description=NFTBan Auto-Update Apply (Privileged, Gated)
+Documentation=man:nftban(8)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/cache/nftban/update_available.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+ExecStartPre=/usr/sbin/nftban update preflight
+ExecStart=/usr/sbin/nftban update auto-apply
+ExecStartPost=/usr/sbin/nftban update verify
+
+Environment=NFTBAN_UPDATE_AUTO_CONTEXT=true
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nftban /var/cache/nftban /var/log/nftban /etc/nftban /usr/lib/nftban /usr/sbin/nftban /run/nftban
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-update-apply
+
+# =============================================================================
+# RESOURCE LIMITS
+# =============================================================================
+TimeoutStartSec=600
+MemoryMax=512M
+CPUQuota=80%
+
+SuccessExitStatus=0

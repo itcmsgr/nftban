@@ -52,7 +52,8 @@ These are installed but disabled by default. Enable manually if needed.
 |-------|----------|---------|-------|
 | `nftban-snapshot.timer` | Hourly | State snapshots for rollback/forensics | Low overhead, useful for supportability |
 | `nftban-rbl-check.timer` | Every 12h | RBL/DNSBL reputation verification | Makes external DNS lookups |
-| `nftban-update.timer` | Weekly Sun 04:00 | Automatic package self-update | Requires `update.conf` configuration |
+| `nftban-update-check.timer` | Daily 03:30 | Update availability check (read-only) | Enabled by default, writes cache only |
+| `nftban-update-apply.timer` | Weekly Sun 04:00 | Auto-update apply (gated) | Admin opt-in via `nftban update auto enable` |
 
 ### PRO Timers (subscription only)
 
@@ -141,6 +142,8 @@ The following timer names are **invalid** and never existed:
 - ~~`nftban-geoip-update.timer`~~ — renamed to `nftban-core-geoip.timer`
 - ~~`nftban-metrics-exporter.timer`~~ — replaced by `nftban-unified-exporter.timer`
 - ~~`nftban-connector-exporter.timer`~~ — replaced by `nftban-unified-exporter.timer`
+- ~~`nftban-update.timer`~~ — split into `nftban-update-check.timer` + `nftban-update-apply.timer` (v1.71.0)
+- ~~`nftban-update.service`~~ — split into `nftban-update-check.service` + `nftban-update-apply.service` (v1.71.0)
 
 The unified exporter timer has `Conflicts=` directives against the legacy
 exporter timers to prevent accidental co-existence.

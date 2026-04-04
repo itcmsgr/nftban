@@ -462,6 +462,11 @@ install -D -m 0644 install/systemd/nftban-report-daily.service %{buildroot}/usr/
 install -D -m 0644 install/systemd/nftban-report-daily.timer %{buildroot}/usr/lib/systemd/system/nftban-report-daily.timer
 install -D -m 0644 install/systemd/nftban-community-stats.service %{buildroot}/usr/lib/systemd/system/nftban-community-stats.service
 install -D -m 0644 install/systemd/nftban-community-stats.timer %{buildroot}/usr/lib/systemd/system/nftban-community-stats.timer
+# v1.71.0: Split update units (check=unprivileged, apply=gated)
+install -D -m 0644 install/systemd/nftban-update-check.service %{buildroot}/usr/lib/systemd/system/nftban-update-check.service
+install -D -m 0644 install/systemd/nftban-update-check.timer %{buildroot}/usr/lib/systemd/system/nftban-update-check.timer
+install -D -m 0644 install/systemd/nftban-update-apply.service %{buildroot}/usr/lib/systemd/system/nftban-update-apply.service
+install -D -m 0644 install/systemd/nftban-update-apply.timer %{buildroot}/usr/lib/systemd/system/nftban-update-apply.timer
 
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
@@ -2196,7 +2201,9 @@ if [ \$1 -eq 0 ]; then
                 nftban-rollback.service nftban-rollback.timer nftban-snapshot.service nftban-snapshot.timer \
                 nftban-suricata-update.service nftban-suricata-update.timer nftban-suricata.service \
                 nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-inventory.timer \
-                nftban-pro-license.service nftban-pro-license.timer nftban-update.service nftban-update.timer \
+                nftban-pro-license.service nftban-pro-license.timer \
+                nftban-update-check.service nftban-update-check.timer \
+                nftban-update-apply.service nftban-update-apply.timer \
                 nftban-api.service nftban-firewall-init.service nftban-ui.service \
                 nftban-ui-auth.socket nftban-ui-auth.service; do
         systemctl stop "\$unit" 2>/dev/null || true
@@ -2922,7 +2929,8 @@ case "$1" in
             nftban-suricata.service nftban-suricata-stats.service \
             nftban-pro-inventory.timer nftban-pro-inventory.service \
             nftban-pro-license.timer nftban-pro-license.service \
-            nftban-update.timer nftban-update.service \
+            nftban-update-check.timer nftban-update-check.service \
+            nftban-update-apply.timer nftban-update-apply.service \
             nftban-api.service nftban-firewall-init.service \
             nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
             deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
@@ -3133,6 +3141,11 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-report-daily.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.timer" "${deb_root}/usr/lib/systemd/system/"
+    # v1.71.0: Split update units (check=unprivileged, apply=gated)
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-check.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-check.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.timer" "${deb_root}/usr/lib/systemd/system/"
     # v1.41.0: Community stats config default
     install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
