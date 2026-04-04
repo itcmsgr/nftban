@@ -40,7 +40,6 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, log *
 		if err := exec.ServiceMask(c.Service); err != nil {
 			log.Warn("mask %s: %v", c.Service, err)
 		}
-		log.CmdResult("disable "+c.Service, 0, "")
 	}
 
 	// Flush legacy iptables rules
