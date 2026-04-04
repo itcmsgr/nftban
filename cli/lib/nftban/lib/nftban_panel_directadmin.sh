@@ -179,21 +179,27 @@ EOF
             echo "     Run: nftban trust enable CLOUDFLARE"
             ;;
         ASK|ask|A|a|*)
-            echo "Do you want to enable CloudFlare IP whitelist? (REQUIRED for licensing)"
-            echo -n "Enable CloudFlare whitelist? [Y/n]: "
-            read -r response
-            case "$response" in
-                n|N|no|NO)
-                    enable_cloudflare="no"
-                    echo "  ⚠️  WARNING: CloudFlare whitelist NOT enabled!"
-                    echo "     DirectAdmin licensing may fail!"
-                    echo "     Enable later with: nftban trust enable CLOUDFLARE"
-                    ;;
-                *)
-                    enable_cloudflare="yes"
-                    echo "  ✓ CloudFlare whitelist will be enabled"
-                    ;;
-            esac
+            # Non-interactive (no TTY): default YES — DA licensing needs CloudFlare
+            if [[ ! -t 0 ]]; then
+                enable_cloudflare="yes"
+                echo "→ CloudFlare whitelist: AUTO-ENABLE (non-interactive mode)"
+            else
+                echo "Do you want to enable CloudFlare IP whitelist? (REQUIRED for licensing)"
+                echo -n "Enable CloudFlare whitelist? [Y/n]: "
+                read -r response
+                case "$response" in
+                    n|N|no|NO)
+                        enable_cloudflare="no"
+                        echo "  ⚠️  WARNING: CloudFlare whitelist NOT enabled!"
+                        echo "     DirectAdmin licensing may fail!"
+                        echo "     Enable later with: nftban trust enable CLOUDFLARE"
+                        ;;
+                    *)
+                        enable_cloudflare="yes"
+                        echo "  ✓ CloudFlare whitelist will be enabled"
+                        ;;
+                esac
+            fi
             ;;
     esac
     echo ""
@@ -201,7 +207,7 @@ EOF
     # Enable CloudFlare if requested
     if [[ "$enable_cloudflare" == "yes" ]]; then
         echo "Enabling CloudFlare IP whitelist..."
-        if nftban-core trust enable CLOUDFLARE 2>/dev/null && nftban-core trust update 2>/dev/null; then
+        if /usr/lib/nftban/bin/nftban-core trust enable CLOUDFLARE 2>/dev/null && /usr/lib/nftban/bin/nftban-core trust update 2>/dev/null; then
             echo "  ✓ CloudFlare whitelist enabled"
         else
             echo "  ⚠️ Failed to enable CloudFlare (non-critical, continuing...)"
@@ -292,7 +298,7 @@ EOF
     echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ DirectAdmin panel enabled successfully!"
@@ -378,7 +384,7 @@ nftban_panel_directadmin_disable() {
     echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ DirectAdmin panel disabled successfully!"
