@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - Installer Panel Detection
+// NFTBan v1.75.1 - Installer Panel Detection
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-detect-panel"
@@ -37,20 +37,32 @@ const (
 	PanelInterWorx   PanelType = "interworx"
 )
 
+// Panel directory paths (exported for use by switchop and services packages).
+const (
+	PathDirectAdmin = "/usr/local/directadmin"
+	PathCPanel      = "/usr/local/cpanel"
+	PathPlesk       = "/usr/local/psa"
+	PathCyberPanel  = "/usr/local/CyberCP"
+	PathHestia      = "/usr/local/hestia"
+	PathVesta       = "/usr/local/vesta"
+	PathCWP         = "/usr/local/cwpsrv"
+	PathInterWorx   = "/usr/local/interworx"
+)
+
 // panelChecks maps directory paths to panel types.
 // Order matches the shell %post detection priority (directadmin first).
 var panelChecks = []struct {
 	dir   string
 	panel PanelType
 }{
-	{"/usr/local/directadmin", PanelDirectAdmin},
-	{"/usr/local/cpanel", PanelCPanel},
-	{"/usr/local/psa", PanelPlesk},
-	{"/usr/local/CyberCP", PanelCyberPanel},
-	{"/usr/local/hestia", PanelHestia},
-	{"/usr/local/vesta", PanelVesta},
-	{"/usr/local/cwpsrv", PanelCWP},
-	{"/usr/local/interworx", PanelInterWorx},
+	{PathDirectAdmin, PanelDirectAdmin},
+	{PathCPanel, PanelCPanel},
+	{PathPlesk, PanelPlesk},
+	{PathCyberPanel, PanelCyberPanel},
+	{PathHestia, PanelHestia},
+	{PathVesta, PanelVesta},
+	{PathCWP, PanelCWP},
+	{PathInterWorx, PanelInterWorx},
 }
 
 // DetectPanel checks for installed control panels by directory existence.
