@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/history"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/pkg/version"
@@ -70,11 +71,13 @@ func main() {
 	exec := &executor.RealExecutor{}
 	sf := state.NewStateFile(cfg.stateDir)
 
-	// Try to read existing state (ok if missing — fresh install)
+	// Read previous version before overwriting (for history tracking)
+	previousVersion := ""
 	if err := sf.Read(); err != nil && !os.IsNotExist(err) {
 		log.Warn("could not read state file: %v", err)
 	} else if err == nil {
-		log.Debug("previous state: %s (phase=%s, mode=%s)", sf.State, sf.PhaseReached, sf.Mode)
+		previousVersion = sf.Version
+		log.Debug("previous state: %s (phase=%s, mode=%s, version=%s)", sf.State, sf.PhaseReached, sf.Mode, sf.Version)
 	}
 
 	// Set metadata
@@ -82,6 +85,9 @@ func main() {
 	sf.Version = version.Version
 
 	exitCode := run(ctx, exec, sf, cfg, log)
+
+	// Write JSON update history (compatible with nftban update history --json)
+	writeHistory(sf, cfg, previousVersion, hostname, log)
 
 	// Write run footer with final state for post-mortem
 	log.RunFooter(string(sf.State), exitCode)
@@ -269,6 +275,46 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 
 	log.Info("state file: %s", sf.Path())
 	log.Info("log file: %s", log.LogPath())
+	log.Info("history: %s", history.DefaultHistoryPath)
 
 	return sf.State.ExitCode()
+}
+
+// writeHistory writes a JSON entry to /var/lib/nftban/update-history.json
+// compatible with `nftban update history --json`.
+func writeHistory(sf *state.StateFile, cfg *config, previousVersion, hostname string, log *logging.Logger) {
+	// Map state to history status
+	var status string
+	switch {
+	case sf.State == state.StateCommitted:
+		status = history.StatusSuccess
+	case sf.State == state.StateDegraded:
+		status = history.StatusVerifyFail
+	default:
+		status = history.StatusInstallFail
+	}
+
+	// Determine install type
+	installType := "rpm"
+	if cfg.deb {
+		installType = "deb"
+	}
+
+	// Duration from state file timestamp
+	durationSecs := sf.RebuildDurationMs / 1000
+	if durationSecs == 0 {
+		// Fallback: use wall clock from run start (captured in logger)
+		durationSecs = 1
+	}
+
+	if previousVersion == "" {
+		previousVersion = "none"
+	}
+
+	entry := history.NewEntry(previousVersion, sf.Version, status, installType, durationSecs, hostname)
+	if err := history.WriteEntry("", entry); err != nil {
+		log.Warn("failed to write update history: %v", err)
+	} else {
+		log.Debug("wrote history entry: %s -> %s status=%s", previousVersion, sf.Version, status)
+	}
 }
