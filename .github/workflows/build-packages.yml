@@ -110,7 +110,7 @@ jobs:
       - name: Validate binaries are real ELF files
         run: |
           echo "Validating Go binaries..."
-          for binary in bin/nftban-core bin/nftband bin/nftban-ui bin/nftban-ui-auth; do
+          for binary in bin/nftban-core bin/nftband bin/nftban-ui bin/nftban-ui-auth bin/nftban-installer; do
             if [[ -f "$binary" ]]; then
               file_type=$(file -b "$binary")
               if [[ "$file_type" != *"ELF"* ]]; then
@@ -210,7 +210,7 @@ jobs:
               cd /tmp/rpm-check
               rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idmv 2>/dev/null
 
-              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth; do
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth usr/lib/nftban/bin/nftban-installer; do
                 if [[ -f "$binary" ]]; then
                   file_type=$(file -b "$binary")
                   if [[ "$file_type" != *"ELF"* ]]; then
@@ -318,7 +318,7 @@ jobs:
               ar x "$GITHUB_WORKSPACE/$deb"
               tar -xf data.tar.* 2>/dev/null || tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null
 
-              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth; do
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband usr/lib/nftban/bin/nftban-ui usr/lib/nftban/bin/nftban-ui-auth usr/lib/nftban/bin/nftban-installer; do
                 if [[ -f "$binary" ]]; then
                   file_type=$(file -b "$binary")
                   if [[ "$file_type" != *"ELF"* ]]; then
@@ -427,6 +427,10 @@ jobs:
             ls /usr/lib/systemd/system/nftban*.service >/dev/null 2>&1 \
               && echo "PASS" || { echo "FAIL"; exit 1; }
 
+            echo "=== Phase 2b: Installer Binary (G5 — HARD FAIL) ==="
+            echo -n "Installer binary exists: "
+            test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
+
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
               echo "[INFO] Postinst succeeded — full install in container"
@@ -440,6 +444,15 @@ jobs:
                 cat "$INSTALL_LOG"
                 exit 1
               fi
+            fi
+
+            echo "=== Phase 3b: Installer Log (G6 — SOFT) ==="
+            if [[ -f /var/log/nftban/installer.log ]]; then
+              tail -5 /var/log/nftban/installer.log || true
+              grep -q "\[RUN\]" /var/log/nftban/installer.log && echo "[PASS] RUN marker" || echo "[WARN] No RUN marker"
+              grep -q "state=" /var/log/nftban/installer.log && echo "[PASS] state marker" || echo "[WARN] No state marker"
+            else
+              echo "[EXPECTED] No installer.log (Docker has no systemd/nftables)"
             fi
 
             rm -f "$INSTALL_LOG"
@@ -530,6 +543,10 @@ jobs:
               || ls /usr/lib/systemd/system/nftban*.service >/dev/null 2>&1 \
               && echo "PASS" || { echo "FAIL"; exit 1; }
 
+            echo "=== Phase 2b: Installer Binary (G5 — HARD FAIL) ==="
+            echo -n "Installer binary exists: "
+            test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
+
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
               echo "[INFO] Postinst succeeded — full install in container"
@@ -543,6 +560,15 @@ jobs:
                 cat "$INSTALL_LOG"
                 exit 1
               fi
+            fi
+
+            echo "=== Phase 3b: Installer Log (G6 — SOFT) ==="
+            if [[ -f /var/log/nftban/installer.log ]]; then
+              tail -5 /var/log/nftban/installer.log || true
+              grep -q "\[RUN\]" /var/log/nftban/installer.log && echo "[PASS] RUN marker" || echo "[WARN] No RUN marker"
+              grep -q "state=" /var/log/nftban/installer.log && echo "[PASS] state marker" || echo "[WARN] No state marker"
+            else
+              echo "[EXPECTED] No installer.log (Docker has no systemd/nftables)"
             fi
 
             rm -f "$INSTALL_LOG"
@@ -621,7 +647,7 @@ jobs:
           # Get source binary hashes (the canonical reference)
           echo "=== Source Binary Hashes (Reference) ==="
           declare -A SOURCE_HASHES
-          for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+          for binary in nftband nftban-core nftban-ui nftban-ui-auth nftban-installer; do
             if [[ -f "source-binaries/$binary" ]]; then
               hash=$(sha256sum "source-binaries/$binary" | cut -d' ' -f1)
               SOURCE_HASHES[$binary]="$hash"
@@ -644,7 +670,7 @@ jobs:
             cd /tmp/rpm-extract
             rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idmv 2>/dev/null
 
-            for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+            for binary in nftband nftban-core nftban-ui nftban-ui-auth nftban-installer; do
               pkg_binary="usr/lib/nftban/bin/$binary"
               if [[ -f "$pkg_binary" ]]; then
                 pkg_hash=$(sha256sum "$pkg_binary" | cut -d' ' -f1)
@@ -678,7 +704,7 @@ jobs:
             ar x "$GITHUB_WORKSPACE/$deb"
             tar -xf data.tar.* 2>/dev/null || tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null || true
 
-            for binary in nftband nftban-core nftban-ui nftban-ui-auth; do
+            for binary in nftband nftban-core nftban-ui nftban-ui-auth nftban-installer; do
               pkg_binary="usr/lib/nftban/bin/$binary"
               if [[ -f "$pkg_binary" ]]; then
                 pkg_hash=$(sha256sum "$pkg_binary" | cut -d' ' -f1)
