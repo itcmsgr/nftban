@@ -484,7 +484,8 @@ nftban_system_status() {
             "nftban-rollback.timer"
             "nftban-pro-inventory.timer"
             "nftban-pro-license.timer"
-            "nftban-update.timer"
+            "nftban-update-check.timer"
+        "nftban-update-apply.timer"
         )
         for timer in "${timers[@]}"; do
             if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then
@@ -554,7 +555,8 @@ _nftban_timers_control() {
         "nftban-rollback.timer"
         "nftban-pro-inventory.timer"
         "nftban-pro-license.timer"
-        "nftban-update.timer"
+        "nftban-update-check.timer"
+        "nftban-update-apply.timer"
     )
 
     for timer in "${timers[@]}"; do
@@ -589,7 +591,8 @@ _nftban_timers_status() {
         "nftban-rollback.timer"
         "nftban-pro-inventory.timer"
         "nftban-pro-license.timer"
-        "nftban-update.timer"
+        "nftban-update-check.timer"
+        "nftban-update-apply.timer"
     )
 
     for timer in "${timers[@]}"; do

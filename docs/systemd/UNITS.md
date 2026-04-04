@@ -2,7 +2,7 @@
 
 **SINGLE SOURCE OF TRUTH** - Any unit not listed here is ILLEGAL to reference.
 
-## Timers (14)
+## Timers (15)
 
 | Timer | Schedule | Purpose |
 |-------|----------|---------|
@@ -18,10 +18,11 @@
 | `nftban-pro-license.timer` | Every 6h | License validation |
 | `nftban-core-geoip.timer` | Weekly Sun 2:30 | GeoIP database update |
 | `nftban-suricata-update.timer` | Weekly Sun 3:40 | Suricata rules update |
-| `nftban-update.timer` | Weekly Sun 4:00 | Package self-update |
+| `nftban-update-check.timer` | Daily 3:30 | Update availability check |
+| `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
 | `nftban-rollback.timer` | Manual | Emergency rollback |
 
-## Services (24)
+## Services (25)
 
 | Service | Type | Purpose |
 |---------|------|---------|
@@ -40,7 +41,8 @@
 | `nftban-core-feeds.service` | oneshot | Feed updates |
 | `nftban-core-geoip.service` | oneshot | GeoIP updates |
 | `nftban-rbl-check.service` | oneshot | RBL check |
-| `nftban-update.service` | oneshot | Self-update |
+| `nftban-update-check.service` | oneshot | Update check (unprivileged) |
+| `nftban-update-apply.service` | oneshot | Auto-update apply (gated) |
 | `nftban-suricata.service` | daemon | Suricata integration |
 | `nftban-suricata-stats.service` | daemon | Suricata stats |
 | `nftban-suricata-update.service` | oneshot | Suricata rule updates |
@@ -67,6 +69,8 @@ These names are INVALID - do not reference them anywhere:
 - ~~`nftban-sync.timer`~~ - never existed
 - ~~`nftban-login-monitor.timer`~~ - service only, no timer
 - ~~`nftban-core.service`~~ - renamed to `nftband.service`
+- ~~`nftban-update.timer`~~ - split into `nftban-update-check.timer` + `nftban-update-apply.timer` (v1.71.0)
+- ~~`nftban-update.service`~~ - split into `nftban-update-check.service` + `nftban-update-apply.service` (v1.71.0)
 
 ---
-*Last updated: 2026-02-28 | Version: 1.19.8*
+*Last updated: 2026-04-04 | Version: 1.71.0*

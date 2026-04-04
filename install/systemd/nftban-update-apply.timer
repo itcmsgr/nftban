@@ -1,0 +1,52 @@
+# =============================================================================
+# NFTBan v1.71.0 - Weekly Auto-Update Apply Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-update-apply.timer"
+# meta:type="systemd"
+# meta:tier="OPTIONAL"
+# meta:version="1.71.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Weekly auto-update apply timer — NOT enabled by default"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/update.conf"
+# meta:inventory.systemd_units="nftban-update-apply.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# Purpose: Schedule weekly auto-update apply
+#
+# NOT enabled by default. Admin enables via:
+#   nftban update auto enable --email admin@example.com
+#
+# Only fires if update_available.json exists (check must have found update).
+# Preflight runs first via ExecStartPre — if it fails, apply never runs.
+#
+# Schedule: Sunday 4:00 AM with 30-minute jitter
+# =============================================================================
+
+[Unit]
+Description=NFTBan Weekly Auto-Update Apply Timer
+Documentation=man:nftban(8)
+ConditionPathExists=/var/cache/nftban/update_available.json
+
+[Timer]
+# Run weekly on Sunday at 4:00 AM (low-traffic window)
+OnCalendar=Sun *-*-* 04:00:00
+
+# 30-minute jitter for fleet distribution
+RandomizedDelaySec=30m
+
+# Deterministic offset per host
+FixedRandomDelay=true
+
+# Catch up on missed runs after sleep/shutdown
+Persistent=true
+
+# Timer precision
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

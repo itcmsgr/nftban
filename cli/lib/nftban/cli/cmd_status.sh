@@ -1191,7 +1191,8 @@ _status_section_timers() {
         ["nftban-tunnel.timer"]="Tunnel suspicion scan"
         ["nftban-pro-inventory.timer"]="Pro inventory collection"
         ["nftban-pro-license.timer"]="Pro license check"
-        ["nftban-update.timer"]="Self-update check"
+        ["nftban-update-check.timer"]="Daily update check"
+        ["nftban-update-apply.timer"]="Weekly auto-update apply"
     )
 
     local timer_count=0
@@ -1775,7 +1776,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update.timer")
+    local timer_list=("nftban-health.timer" "nftban-core-feeds.timer" "nftban-core-geoip.timer" "nftban-maintenance.timer" "nftban-unified-exporter.timer" "nftban-queue.timer" "nftban-suricata-update.timer" "nftban-snapshot.timer" "nftban-rollback.timer" "nftban-rbl-check.timer" "nftban-tunnel.timer" "nftban-pro-inventory.timer" "nftban-pro-license.timer" "nftban-update-check.timer" "nftban-update-apply.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"
