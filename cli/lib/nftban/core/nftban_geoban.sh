@@ -1090,9 +1090,9 @@ nftban_geoban_status() {
 
     # Active countries count
     local banned_count
-    banned_count=$(ls -1 "${GEOBAN_FILES_DIR}"/50-ban-*.conf 2>/dev/null | wc -l)
+    banned_count=$(ls -1 "${GEOBAN_FILES_DIR}"/50-ban-*.conf 2>/dev/null | wc -l || true)
     local whitelist_count
-    whitelist_count=$(ls -1 "${GEOBAN_FILES_DIR}"/40-whitelist-*.conf 2>/dev/null | wc -l)
+    whitelist_count=$(ls -1 "${GEOBAN_FILES_DIR}"/40-whitelist-*.conf 2>/dev/null | wc -l || true)
 
     echo "📊 Active Countries:"
     echo "   Banned: ${banned_count}"
