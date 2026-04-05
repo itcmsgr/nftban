@@ -193,6 +193,11 @@ func TestDisableConflicts_CSFWithDirectAdmin(t *testing.T) {
 	optionsPath := "/usr/local/directadmin/custombuild/options.conf"
 	mock.Files[optionsPath] = []byte("csf=no\nfirewall=no\n")
 
+	// CSF artifacts that should be cleaned
+	mock.Files["/etc/cron.d/lfd-cron"] = []byte("0 0 * * * root /usr/sbin/csf --lfd restart")
+	mock.Files["/etc/cron.d/csf-cron"] = []byte("")
+	mock.Files["/usr/sbin/csf"] = []byte("#!/bin/bash")
+
 	conflicts := []detect.Conflict{
 		{Name: "CSF", Service: "csf.service", Active: true},
 		{Name: "CSF", Service: "lfd.service", Active: true},
@@ -204,16 +209,31 @@ func TestDisableConflicts_CSFWithDirectAdmin(t *testing.T) {
 	}
 
 	// Verify custombuild was called
-	found := false
+	foundBuild := false
+	// Verify CSF crons were removed
+	foundCronRM := false
+	// Verify CSF binary was disabled
+	foundBinMV := false
 	for _, cmd := range mock.Commands {
 		if cmd.Name == buildCmd && len(cmd.Args) == 3 &&
 			cmd.Args[0] == "set" && cmd.Args[1] == "csf" && cmd.Args[2] == "no" {
-			found = true
-			break
+			foundBuild = true
+		}
+		if cmd.Name == "rm" && len(cmd.Args) >= 2 && cmd.Args[1] == "/etc/cron.d/lfd-cron" {
+			foundCronRM = true
+		}
+		if cmd.Name == "mv" && len(cmd.Args) >= 2 && cmd.Args[0] == "/usr/sbin/csf" {
+			foundBinMV = true
 		}
 	}
-	if !found {
+	if !foundBuild {
 		t.Error("expected custombuild set csf no to be called")
+	}
+	if !foundCronRM {
+		t.Error("expected CSF cron removal (rm /etc/cron.d/lfd-cron)")
+	}
+	if !foundBinMV {
+		t.Error("expected CSF binary disable (mv /usr/sbin/csf)")
 	}
 }
 

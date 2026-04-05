@@ -266,7 +266,7 @@ _nftban_panel_check_cloudflare() {
     # Check if CLOUDFLARE is enabled in trust feeds
     # First try new trust command, fallback to legacy cloudflare command
     local status_output
-    status_output=$(nftban-core trust list 2>/dev/null) || true
+    status_output=$(/usr/lib/nftban/bin/nftban-core trust list 2>/dev/null) || true
     if echo "$status_output" | grep -q 'CLOUDFLARE.*enabled'; then
         return 0
     fi
@@ -445,7 +445,7 @@ _nftban_panel_simple_enable() {
     echo "Loading ${name} ports into firewall..."
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "${name} enabled successfully!"
@@ -526,7 +526,7 @@ _nftban_panel_simple_disable() {
     echo "Removing ${name} ports from firewall..."
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "${name} disabled successfully!"
