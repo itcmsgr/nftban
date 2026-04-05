@@ -43,6 +43,7 @@ readonly SCRIPT_VERSION="1.0.0"
 : "${NFTBAN_RUN_DIR:=/run/nftban}"
 : "${NFTBAN_LOG_DIR:=/var/log/nftban}"
 : "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
 
 # Load config (sets readonly paths)
 source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
