@@ -8,7 +8,7 @@
 # meta:name="cmd_firewall"
 # meta:type="cli"
 # meta:header="NFTBan Firewall Command"
-# meta:version="1.50.1"
+# meta:version="1.78.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -932,6 +932,108 @@ firewall_reload() {
 }
 
 # =============================================================================
+# REBUILD TRANSACTION HELPERS (v1.78.0)
+# =============================================================================
+# Safe rebuild with PRE/POST validation and rollback capability.
+# Exit codes: 0=PROTECTED, 1=DEGRADED, 2=FAILED (rolled back), 3=FATAL
+
+# Validator binary path
+_REBUILD_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+
+_rebuild_get_validator_state() {
+    # Call Go validator and return status (protected/degraded/down)
+    # Also outputs chain count for relative comparison
+    # Returns: "status:chain_count" e.g. "protected:16"
+    local json_output
+
+    if [[ ! -x "$_REBUILD_VALIDATOR_BIN" ]]; then
+        echo "down:0"
+        return
+    fi
+
+    json_output=$("$_REBUILD_VALIDATOR_BIN" --json 2>/dev/null) || true
+
+    if [[ -z "$json_output" ]]; then
+        echo "down:0"
+        return
+    fi
+
+    local status chain_count
+    if command -v jq >/dev/null 2>&1; then
+        status=$(echo "$json_output" | jq -r '.status' 2>/dev/null || echo "down")
+        chain_count=$(echo "$json_output" | jq -r '.chain_counts.total_chains' 2>/dev/null || echo "0")
+    else
+        status=$(echo "$json_output" | grep -oP '"status"\s*:\s*"\K[^"]+' || echo "down")
+        chain_count=$(echo "$json_output" | grep -oP '"total_chains"\s*:\s*\K[0-9]+' || echo "0")
+    fi
+
+    echo "${status}:${chain_count}"
+}
+
+_rebuild_snapshot_full() {
+    # Create full ruleset snapshot for rollback
+    # Args: $1 = snapshot directory
+    local snapshot_dir="$1"
+    mkdir -p "$snapshot_dir" || return 1
+
+    # Snapshot 1: Full nft ruleset (nft format for easy reload)
+    nft list ruleset > "$snapshot_dir/ruleset.nft" 2>/dev/null || true
+
+    # Snapshot 2: JSON format for inspection
+    nft -j list ruleset > "$snapshot_dir/ruleset.json" 2>/dev/null || true
+
+    # Snapshot 3: Validator state
+    if [[ -x "$_REBUILD_VALIDATOR_BIN" ]]; then
+        "$_REBUILD_VALIDATOR_BIN" --json > "$snapshot_dir/validator_state.json" 2>/dev/null || true
+    fi
+
+    # Snapshot 4: Individual sets (for granular restore)
+    mkdir -p "$snapshot_dir/sets"
+    for family in ip ip6; do
+        for set in whitelist blacklist blacklist_manual; do
+            local set_name="${set}_ipv${family#ip}"
+            [[ "$family" == "ip" ]] && set_name="${set}_ipv4"
+            [[ "$family" == "ip6" ]] && set_name="${set}_ipv6"
+            nft list set $family nftban "$set_name" > "$snapshot_dir/sets/${set_name}.nft" 2>/dev/null || true
+        done
+    done
+
+    echo "$snapshot_dir"
+}
+
+_rebuild_rollback() {
+    # Restore from snapshot
+    # Args: $1 = snapshot directory
+    local snapshot_dir="$1"
+    local ruleset_file="$snapshot_dir/ruleset.nft"
+
+    if [[ ! -f "$ruleset_file" ]]; then
+        echo "ERROR: Snapshot not found: $ruleset_file" >&2
+        return 1
+    fi
+
+    # v1.78.0: Skip pre-validation — snapshot came from working state.
+    # Syntax check (nft -c) fails when objects already exist in kernel.
+    # Instead, we flush then load, which is always valid for a captured ruleset.
+
+    echo "Flushing current ruleset..." >&2
+
+    # Flush all tables to ensure clean state
+    nft flush ruleset 2>/dev/null || true
+
+    echo "Loading snapshot..." >&2
+
+    if nft -f "$ruleset_file" 2>&1; then
+        echo "Rollback successful from: $snapshot_dir"
+        return 0
+    else
+        echo "ERROR: Rollback FAILED — firewall may be in inconsistent state!" >&2
+        echo "  Try manually: nft flush ruleset && nft -f $ruleset_file" >&2
+        return 1
+    fi
+}
+
+# =============================================================================
 # SUBCOMMAND: REBUILD
 # =============================================================================
 
@@ -939,6 +1041,7 @@ firewall_rebuild() {
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
     #
+    # v1.78.0: Safe transaction with PRE/POST validation and rollback
     # v1.47.0 DEPLOY-001: Atomic rebuild — validate BEFORE flushing
     # v1.47.0 DEPLOY-002: Detect .rpmnew files from RPM upgrades
     # v1.50.0: Template-based rebuild — render from .tpl, validate, atomic-write
@@ -974,13 +1077,26 @@ firewall_rebuild() {
 
     [[ "$quiet" == "false" ]] && echo "Rebuilding NFTBan firewall schema..."
 
-    # Step 1: Backup current IPs from sets (preserve bans/whitelist)
+    # v1.78.0: PRE-REBUILD VALIDATION — Capture state before changes
+    local pre_state pre_status pre_chains
+    [[ "$quiet" == "false" ]] && echo "  [PRE] Capturing pre-rebuild state..."
+    pre_state=$(_rebuild_get_validator_state)
+    pre_status="${pre_state%%:*}"
+    pre_chains="${pre_state##*:}"
+    [[ "$quiet" == "false" ]] && echo "    PRE state: $pre_status (chains: $pre_chains)"
+
+    # Step 0: Create full snapshot for rollback (v1.78.0)
     local backup_dir="/var/lib/nftban/backup"
     mkdir -p "$backup_dir" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
+    local snapshot_dir="$backup_dir/rebuild_$timestamp"
 
-    # v2.1: Only whitelist + blacklist sets exist (feeds/geoban merged into blacklist)
+    [[ "$quiet" == "false" ]] && echo "  [0/12] Creating full ruleset snapshot..."
+    _rebuild_snapshot_full "$snapshot_dir" >/dev/null 2>&1 || true
+    [[ "$quiet" == "false" ]] && echo "    Snapshot: $snapshot_dir"
+
+    # Step 1: Backup current IPs from sets (preserve bans/whitelist)
     [[ "$quiet" == "false" ]] && echo "  [1/12] Backing up current sets..."
     timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null > "$backup_dir/whitelist_ipv4_$timestamp.txt" || true
     timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null > "$backup_dir/blacklist_ipv4_$timestamp.txt" || true
@@ -1219,15 +1335,65 @@ firewall_rebuild() {
         [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config" || true
     fi
 
+    # v1.78.0: POST-REBUILD VALIDATION — Compare with PRE state
+    [[ "$quiet" == "false" ]] && echo ""
+    [[ "$quiet" == "false" ]] && echo "  [POST] Validating post-rebuild state..."
+    local post_state post_status post_chains
+    post_state=$(_rebuild_get_validator_state)
+    post_status="${post_state%%:*}"
+    post_chains="${post_state##*:}"
+    [[ "$quiet" == "false" ]] && echo "    POST state: $post_status (chains: $post_chains)"
+
+    # v1.78.0: CRITICAL SAFETY CHECK — Rollback if degraded from PROTECTED
+    if [[ "$pre_status" == "protected" && "$post_status" != "protected" ]]; then
+        echo "" >&2
+        echo "═══════════════════════════════════════════════════════════════════" >&2
+        echo "REBUILD FAILED: Post-rebuild validation returned $post_status" >&2
+        echo "  PRE state:  $pre_status (chains: $pre_chains)" >&2
+        echo "  POST state: $post_status (chains: $post_chains)" >&2
+        echo "" >&2
+        echo "Attempting rollback from snapshot..." >&2
+        echo "═══════════════════════════════════════════════════════════════════" >&2
+
+        if _rebuild_rollback "$snapshot_dir"; then
+            echo "Rollback successful — firewall restored to pre-rebuild state" >&2
+            return 2  # FAILED (rolled back)
+        else
+            echo "FATAL: Rollback FAILED — manual intervention required!" >&2
+            echo "  Snapshot location: $snapshot_dir" >&2
+            echo "  Try: nft -f $snapshot_dir/ruleset.nft" >&2
+            return 3  # FATAL (rollback failed)
+        fi
+    fi
+
+    # v1.78.0: Chain count regression check (relative comparison)
+    if [[ "$post_chains" -lt "$pre_chains" ]]; then
+        echo "" >&2
+        echo "WARNING: Chain count decreased (PRE: $pre_chains → POST: $post_chains)" >&2
+        echo "  Some helper chains may be missing. Run: nftban ddos enable" >&2
+    fi
+
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "Schema rebuilt successfully!"
-    [[ "$quiet" == "false" ]] && echo "Backup saved to: $backup_dir/*_$timestamp.txt"
+    [[ "$quiet" == "false" ]] && echo "Snapshot saved to: $snapshot_dir"
 
-    # Validate the new schema
+    # Final validation summary
     [[ "$quiet" == "false" ]] && echo ""
-    [[ "$quiet" == "false" ]] && firewall_validate --quiet && echo "Schema validation: PASSED" || echo "Schema validation: WARNING (check with nftban firewall validate)"
-
-    return 0
+    case "$post_status" in
+        protected)
+            [[ "$quiet" == "false" ]] && echo "Final status: PROTECTED (all checks passed)"
+            return 0
+            ;;
+        degraded)
+            [[ "$quiet" == "false" ]] && echo "Final status: DEGRADED (some checks failed)"
+            [[ "$quiet" == "false" ]] && echo "  Run 'nftban status' for details"
+            return 1
+            ;;
+        *)
+            [[ "$quiet" == "false" ]] && echo "Final status: $post_status"
+            return 1
+            ;;
+    esac
 }
 
 # =============================================================================

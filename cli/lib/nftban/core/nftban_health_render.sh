@@ -306,14 +306,66 @@ nftban_health_render_json() {
         exit_code=0
     fi
 
+    # v1.78.0: Read NFTBan version
+    local nftban_version
+    nftban_version=$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo "unknown")
+
     echo "{"
+    echo "  \"schema_version\": \"1.0.0\","
     echo "  \"timestamp\": \"$(date --iso-8601=seconds)\","
+    echo "  \"nftban_version\": \"$nftban_version\","
     echo "  \"overall_status\": \"$overall_status\","
     echo "  \"exit_code\": $exit_code,"
     echo "  \"summary\": {"
     echo "    \"errors\": $error_count,"
     echo "    \"warnings\": $warning_count"
     echo "  },"
+
+    # v1.78.0: Kernel validation data from Go validator
+    local _validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+    if [[ -x "$_validator_bin" ]]; then
+        local _kernel_json
+        _kernel_json=$("$_validator_bin" --json 2>/dev/null || echo '{}')
+        echo "  \"kernel\": $_kernel_json,"
+    else
+        echo "  \"kernel\": {\"status\": \"unavailable\", \"reason\": \"validator binary not found\"},"
+    fi
+
+    # v1.78.0: Services status from systemd
+    # Use subshell with || true to prevent pipefail from killing the script
+    local _nftband_status _nftables_status _queue_status
+    _nftband_status=$(systemctl is-active nftband.service 2>/dev/null || true)
+    _nftband_status="${_nftband_status%%$'\n'*}"  # Strip everything after first newline
+    [[ -z "$_nftband_status" ]] && _nftband_status="unknown"
+    _nftables_status=$(systemctl is-active nftables.service 2>/dev/null || true)
+    _nftables_status="${_nftables_status%%$'\n'*}"
+    [[ -z "$_nftables_status" ]] && _nftables_status="unknown"
+    _queue_status=$(systemctl is-active nftban-queue.service 2>/dev/null || true)
+    _queue_status="${_queue_status%%$'\n'*}"
+    [[ -z "$_queue_status" ]] && _queue_status="unknown"
+    echo "  \"services\": {"
+    echo "    \"nftband\": \"$_nftband_status\","
+    echo "    \"nftables\": \"$_nftables_status\","
+    echo "    \"queue\": \"$_queue_status\""
+    echo "  },"
+
+    # v1.78.0: Lifecycle data (last rebuild, rollback available)
+    local _last_rebuild="null"
+    local _rollback_available="false"
+    local _backup_dir="/var/lib/nftban/backup"
+    if [[ -d "$_backup_dir" ]]; then
+        local _latest_snapshot
+        _latest_snapshot=$(ls -1dt "$_backup_dir"/rebuild_* 2>/dev/null | head -1)
+        if [[ -n "$_latest_snapshot" && -f "$_latest_snapshot/ruleset.nft" ]]; then
+            _last_rebuild="\"$(basename "$_latest_snapshot" | sed 's/rebuild_//')\""
+            _rollback_available="true"
+        fi
+    fi
+    echo "  \"lifecycle\": {"
+    echo "    \"last_rebuild\": $_last_rebuild,"
+    echo "    \"rollback_available\": $_rollback_available"
+    echo "  },"
+
     echo "  \"checks\": {"
 
     # Output ALL check results (iterate over all keys in results array)

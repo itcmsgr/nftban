@@ -95,12 +95,13 @@ jobs:
           go build -trimpath -o bin/nftban-ui ./cmd/nftban-ui
           go build -trimpath -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
           go build -trimpath -o bin/nftband ./cmd/nftband
+          go build -trimpath -o bin/nftban-validate ./cmd/nftban-validate
 
       - name: Verify binaries
         run: |
           echo "=== Built binaries ==="
           ls -lh bin/
-          for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+          for binary in nftban-core nftband nftban-ui nftban-ui-auth nftban-validate; do
             file bin/$binary
             TYPE=$(file -b bin/$binary)
             if [[ ! "$TYPE" =~ ELF ]]; then

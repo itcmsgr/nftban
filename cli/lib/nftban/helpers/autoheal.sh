@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="autoheal"
 # meta:type="helper"
-# meta:version="1.39.0"
+# meta:version="1.78.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Automatically fixes common configuration issues using FHS spec"
 # meta:inventory.files=""
@@ -144,6 +144,29 @@ done
 log_info "Permission fixes complete ($fixed_perms items fixed)"
 
 # Additional file-level fixes not in FHS spec (which only covers directories)
+# =============================================================================
+# CRITICAL: Fix config file permissions (BUG-001)
+# =============================================================================
+# DEB packaging creates /etc/nftban/nftban.conf with group 'root'
+# but nftban user needs to read it for queue processor and other services.
+log_info "Fixing config file permissions..."
+if [ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]; then
+    conf_group=$(stat -c "%G" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || echo "root")
+    if [ "$conf_group" != "nftban" ]; then
+        chgrp nftban "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+        chmod 640 "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+        log_info "✅ Fixed ${NFTBAN_CONFIG_DIR}/nftban.conf (group root → nftban, mode 640)"
+    fi
+fi
+# Fix conf.d directory files (same issue)
+if [ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]; then
+    find "${NFTBAN_CONFIG_DIR}/conf.d" -type f -name "*.conf" \
+        ! -group nftban -exec chgrp nftban {} \; 2>/dev/null || true
+    find "${NFTBAN_CONFIG_DIR}/conf.d" -type f -name "*.conf" \
+        ! -perm 640 -exec chmod 640 {} \; 2>/dev/null || true
+    log_info "✅ Fixed ${NFTBAN_CONFIG_DIR}/conf.d/*.conf permissions"
+fi
+
 # Make all shell scripts executable
 find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 # Make binaries executable

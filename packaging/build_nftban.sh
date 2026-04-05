@@ -168,6 +168,7 @@ build_binaries() {
     local bin_dir="${PROJECT_ROOT}/bin"
     local nftban_core="${bin_dir}/nftban-core"
     local nftband="${bin_dir}/nftband"
+    local nftban_validate="${bin_dir}/nftban-validate"
     local nftban_installer="${bin_dir}/nftban-installer"
 
     # Debug: Show what we're looking for
@@ -181,18 +182,19 @@ build_binaries() {
 
     # Check if pre-built binaries exist (from CI)
     # Use -f (file exists) not -x (executable) - Docker volume mounts may lose +x
-    if [[ -f "$nftban_core" ]] && [[ -f "$nftband" ]] && [[ -f "$nftban_installer" ]]; then
+    if [[ -f "$nftban_core" ]] && [[ -f "$nftband" ]] && [[ -f "$nftban_validate" ]] && [[ -f "$nftban_installer" ]]; then
         log_info "Found pre-built binaries, validating..."
 
         # Ensure binaries are executable (might be lost in Docker volume mount)
-        chmod +x "$nftban_core" "$nftband" "$nftban_installer" 2>/dev/null || true
+        chmod +x "$nftban_core" "$nftband" "$nftban_validate" "$nftban_installer" 2>/dev/null || true
 
         # Validate pre-built binaries are valid ELF files
-        if validate_binary "$nftban_core" && validate_binary "$nftband" && validate_binary "$nftban_installer"; then
+        if validate_binary "$nftban_core" && validate_binary "$nftband" && validate_binary "$nftban_validate" && validate_binary "$nftban_installer"; then
             log_success "Using pre-built binaries from bin/ - skipping rebuild"
             # Record SHA256 hashes for debugging
             log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
             log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
+            log_info "nftban-validate SHA256: $(sha256sum "$nftban_validate" | cut -d' ' -f1)"
             log_info "nftban-installer SHA256: $(sha256sum "$nftban_installer" | cut -d' ' -f1)"
             return 0
         else
@@ -219,11 +221,13 @@ build_binaries() {
     # Validate built binaries
     validate_binary "$nftban_core" || return 1
     validate_binary "$nftband" || return 1
+    validate_binary "$nftban_validate" || return 1
     validate_binary "$nftban_installer" || return 1
 
     log_success "Binaries built successfully"
     log_info "nftban-core SHA256: $(sha256sum "$nftban_core" | cut -d' ' -f1)"
     log_info "nftband SHA256: $(sha256sum "$nftband" | cut -d' ' -f1)"
+    log_info "nftban-validate SHA256: $(sha256sum "$nftban_validate" | cut -d' ' -f1)"
     log_info "nftban-installer SHA256: $(sha256sum "$nftban_installer" | cut -d' ' -f1)"
 }
 
@@ -341,6 +345,7 @@ echo "\${YQ_SHA256}  yq_linux_amd64" | sha256sum -c - || { echo "yq checksum ver
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
+install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
 install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
@@ -1759,6 +1764,7 @@ build_deb() {
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-validate" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
