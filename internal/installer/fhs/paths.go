@@ -192,83 +192,88 @@ const (
 	NftbanCLI = "/usr/sbin/nftban"
 )
 
+// DirSpec describes a required directory with path, mode, and owner.
+type DirSpec struct {
+	Path  string
+	Mode  uint32
+	Owner string // "user:group" — empty means root:root
+}
+
 // Directories that must exist for NFTBan to operate correctly.
 // All dirs from the old shell postinst are included for full parity.
-var RequiredDirs = []struct {
-	Path string
-	Mode uint32
-}{
-	// /etc/nftban/
-	{EtcDir, 0750},
-	{ConfDir, 0750},
-	{EtcDir + "/distros", 0750},
-	{WhitelistDir, 0750},
-	{BlacklistDir, 0750},
-	{PortsDir, 0750},
-	{EtcDir + "/rules.d", 0750},
+// Owner is set during EnsureDirectories; SetPermissions enforces it later.
+var RequiredDirs = []DirSpec{
+	// /etc/nftban/ — root:nftban (config readable by nftban group)
+	{EtcDir, 0750, "root:nftban"},
+	{ConfDir, 0750, "root:nftban"},
+	{EtcDir + "/distros", 0750, "root:nftban"},
+	{WhitelistDir, 0750, "root:nftban"},
+	{BlacklistDir, 0750, "root:nftban"},
+	{PortsDir, 0750, "root:nftban"},
+	{EtcDir + "/rules.d", 0750, "root:nftban"},
 	// /etc/nftban/suricata/
-	{EtcDir + "/suricata", 0750},
-	{EtcDir + "/suricata/profiles", 0750},
-	{EtcDir + "/suricata/config", 0750},
-	{EtcDir + "/suricata/rules", 0750},
-	{EtcDir + "/suricata/cache", 0750},
-	{EtcDir + "/suricata/state", 0750},
-	{EtcDir + "/suricata/state/last-good", 0750},
-	// /var/lib/nftban/ (synced with install/systemd/tmpfiles.d/nftban.conf)
-	{DataDir, 0750},
-	{StateDir, 0750},
-	{FeedsDir, 0750},
-	{PanelsDir, 0750},
-	{DataDir + "/banned", 0750},
-	{DataDir + "/whitelist", 0750},
-	{DataDir + "/geoip", 0750},
-	{DataDir + "/reports", 0750},
-	{DataDir + "/reports/baseline", 0750},
-	{DataDir + "/reports/auditors", 0770},
-	{DataDir + "/reports/watchdog", 0750},
-	{DataDir + "/reports/archive", 0750},
-	{DataDir + "/config", 0750},
-	{DataDir + "/metrics", 0750},
-	{DataDir + "/snapshots", 0750},
-	{DataDir + "/exports", 0750},
-	{DataDir + "/stats", 0750},
-	{DataDir + "/stats/history", 0750},
-	{DataDir + "/stats/profiles", 0750},
-	{DataDir + "/queue", 0750},
-	{DataDir + "/queue/pending", 0750},
-	{DataDir + "/queue/work", 0750},
-	{DataDir + "/queue/dlq", 0750},
-	{DataDir + "/mailspool", 0750},
-	{DataDir + "/botguard", 0750},
-	{DataDir + "/tunnel", 0750},
-	{DataDir + "/analytics", 0750},
-	{DataDir + "/backup", 0750},
-	{DataDir + "/login", 0750},
-	{DataDir + "/portscan", 0750},
-	{DataDir + "/recorder", 0750},
-	{DataDir + "/staging", 0750},
-	{DataDir + "/suricata", 0750},
-	{DataDir + "/update-backups", 0750},
-	{DataDir + "/watchdog", 0750},
-	{DataDir + "/pro", 0750},
-	// /var/log/nftban/ (synced with install/systemd/tmpfiles.d/nftban.conf)
-	{LogDir, 0750},
-	{LogDir + "/reports", 0750},
-	{LogDir + "/watchdog", 0750},
-	{LogDir + "/rbl", 0750},
-	{LogDir + "/botguard", 0750},
-	{LogDir + "/suricata", 0750},
-	{LogDir + "/metrics", 0750},
-	// /var/cache/nftban/
-	{CacheDir, 0750},
-	{CacheDir + "/health", 0750},
-	// /run/
-	{RunDir, 0755},
-	{RunUIDir, 0750},
-	// /usr/share/nftban/
-	{ShareDir + "/templates", 0755},
-	{ShareDir + "/templates/mail", 0755},
-	{ShareDir + "/templates/reports", 0755},
-	// /var/lib/node_exporter/textfile_collector
-	{NodeExporterDir, 0755},
+	{EtcDir + "/suricata", 0750, "root:nftban"},
+	{EtcDir + "/suricata/profiles", 0750, "root:nftban"},
+	{EtcDir + "/suricata/config", 0750, "root:nftban"},
+	{EtcDir + "/suricata/rules", 0750, "root:nftban"},
+	{EtcDir + "/suricata/cache", 0750, "root:nftban"},
+	{EtcDir + "/suricata/state", 0750, "root:nftban"},
+	{EtcDir + "/suricata/state/last-good", 0750, "root:nftban"},
+	// /var/lib/nftban/ — nftban:nftban (synced with install/systemd/tmpfiles.d/nftban.conf)
+	{DataDir, 0750, "nftban:nftban"},
+	{StateDir, 0750, "nftban:nftban"},
+	{FeedsDir, 0750, "nftban:nftban"},
+	{PanelsDir, 0750, "nftban:nftban"},
+	{DataDir + "/banned", 0750, "nftban:nftban"},
+	{DataDir + "/whitelist", 0750, "nftban:nftban"},
+	{DataDir + "/geoip", 0750, "nftban:nftban"},
+	{DataDir + "/reports", 0750, "nftban:nftban"},
+	{DataDir + "/reports/baseline", 0750, "nftban:nftban"},
+	{DataDir + "/reports/auditors", 0770, "nftban:nftban"},
+	{DataDir + "/reports/watchdog", 0750, "nftban:nftban"},
+	{DataDir + "/reports/archive", 0750, "nftban:nftban"},
+	{DataDir + "/config", 0750, "nftban:nftban"},
+	{DataDir + "/metrics", 0750, "nftban:nftban"},
+	{DataDir + "/snapshots", 0750, "nftban:nftban"},
+	{DataDir + "/exports", 0750, "nftban:nftban"},
+	{DataDir + "/stats", 0750, "nftban:nftban"},
+	{DataDir + "/stats/history", 0750, "nftban:nftban"},
+	{DataDir + "/stats/profiles", 0750, "nftban:nftban"},
+	{DataDir + "/queue", 0750, "nftban:nftban"},
+	{DataDir + "/queue/pending", 0750, "nftban:nftban"},
+	{DataDir + "/queue/work", 0750, "nftban:nftban"},
+	{DataDir + "/queue/dlq", 0750, "nftban:nftban"},
+	{DataDir + "/mailspool", 0750, "nftban:nftban"},
+	{DataDir + "/botguard", 0750, "nftban:nftban"},
+	{DataDir + "/tunnel", 0750, "nftban:nftban"},
+	{DataDir + "/analytics", 0750, "nftban:nftban"},
+	{DataDir + "/backup", 0750, "nftban:nftban"},
+	{DataDir + "/login", 0750, "nftban:nftban"},
+	{DataDir + "/portscan", 0750, "nftban:nftban"},
+	{DataDir + "/recorder", 0750, "nftban:nftban"},
+	{DataDir + "/staging", 0750, "nftban:nftban"},
+	{DataDir + "/suricata", 0750, "nftban:nftban"},
+	{DataDir + "/update-backups", 0750, "nftban:nftban"},
+	{DataDir + "/watchdog", 0750, "nftban:nftban"},
+	{DataDir + "/pro", 0750, "nftban:nftban"},
+	// /var/log/nftban/ — nftban:nftban (synced with install/systemd/tmpfiles.d/nftban.conf)
+	{LogDir, 0750, "nftban:nftban"},
+	{LogDir + "/reports", 0750, "nftban:nftban"},
+	{LogDir + "/watchdog", 0750, "nftban:nftban"},
+	{LogDir + "/rbl", 0750, "nftban:nftban"},
+	{LogDir + "/botguard", 0750, "nftban:nftban"},
+	{LogDir + "/suricata", 0750, "nftban:nftban"},
+	{LogDir + "/metrics", 0750, "nftban:nftban"},
+	// /var/cache/nftban/ — nftban:nftban
+	{CacheDir, 0750, "nftban:nftban"},
+	{CacheDir + "/health", 0750, "nftban:nftban"},
+	// /run/nftban/ — nftban:nftban
+	{RunDir, 0755, "nftban:nftban"},
+	{RunUIDir, 0750, "nftban:nftban"},
+	// /usr/share/nftban/ — root:root (read-only templates)
+	{ShareDir + "/templates", 0755, ""},
+	{ShareDir + "/templates/mail", 0755, ""},
+	{ShareDir + "/templates/reports", 0755, ""},
+	// /var/lib/node_exporter/textfile_collector — nftban:nftban (exporter writes here)
+	{NodeExporterDir, 0755, "nftban:nftban"},
 }

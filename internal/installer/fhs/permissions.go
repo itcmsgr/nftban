@@ -24,11 +24,18 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
-// EnsureDirectories creates all required FHS directories.
+// EnsureDirectories creates all required FHS directories with correct ownership.
 func EnsureDirectories(exec executor.Executor, log *logging.Logger) {
 	for _, d := range RequiredDirs {
 		if err := exec.MkdirAll(d.Path, os.FileMode(d.Mode)); err != nil {
 			log.Warn("mkdir %s: %v", d.Path, err)
+			continue
+		}
+		if d.Owner != "" {
+			res := exec.Run("chown", d.Owner, d.Path)
+			if res.ExitCode != 0 {
+				log.Warn("chown %s %s: %s", d.Owner, d.Path, res.Stderr)
+			}
 		}
 	}
 	log.Debug("FHS directories verified (%d paths)", len(RequiredDirs))
@@ -74,13 +81,27 @@ func applyPermissions(exec executor.Executor, log *logging.Logger) {
 	// /usr/lib/nftban/bin — root:root 0755
 	exec.Run("chown", "-R", "root:root", BinDir)
 
-	// /var/lib/nftban — nftban:nftban 0640
+	// /var/lib/nftban — nftban:nftban 0750
 	exec.Run("chown", "-R", "nftban:nftban", DataDir)
 	exec.Run("chmod", "0750", DataDir)
 
-	// /var/log/nftban — nftban:nftban 0640
+	// /var/log/nftban — nftban:nftban 0750
 	exec.Run("chown", "-R", "nftban:nftban", LogDir)
 	exec.Run("chmod", "0750", LogDir)
+
+	// /var/cache/nftban — nftban:nftban 0750
+	exec.Run("chown", "-R", "nftban:nftban", CacheDir)
+	exec.Run("chmod", "0750", CacheDir)
+
+	// /run/nftban — nftban:nftban 0755
+	exec.Run("chown", "-R", "nftban:nftban", RunDir)
+	exec.Run("chmod", "0755", RunDir)
+
+	// /var/lib/node_exporter/textfile_collector — nftban:nftban 0755 (optional)
+	if exec.FileExists(NodeExporterDir) {
+		exec.Run("chown", "nftban:nftban", NodeExporterDir)
+		exec.Run("chmod", "0755", NodeExporterDir)
+	}
 
 	// /usr/sbin/nftban* — root:nftban 0750
 	exec.Run("chown", "root:nftban", NftbanCLI)
