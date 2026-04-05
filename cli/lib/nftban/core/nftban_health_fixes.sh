@@ -9,7 +9,7 @@
 # meta:name="nftban_health_fixes"
 # meta:type="lib"
 # meta:header="Health Fix Functions"
-# meta:version="1.39.0"
+# meta:version="1.78.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -168,6 +168,31 @@ nftban_health_fix_permissions() {
         fi
 
         echo "  ✓ FHS runtime directory ownership enforced"
+
+        # ======================================================================
+        # CONFIG FILE PERMISSIONS (BUG-001 fix)
+        # ======================================================================
+        # DEB packaging creates /etc/nftban/nftban.conf with group 'root'
+        # but nftban user needs to read it for queue processor, etc.
+        # FHS spec only covers directories, so we fix files explicitly here.
+        echo "  Enforcing config file permissions..."
+        if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+            local conf_group
+            conf_group=$(stat -c "%G" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || echo "root")
+            if [[ "$conf_group" != "nftban" ]]; then
+                chgrp nftban "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+                chmod 640 "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+                echo "  ✓ Fixed config file: ${NFTBAN_CONFIG_DIR}/nftban.conf (group root → nftban, mode 640)"
+            fi
+        fi
+        # Fix conf.d directory files (same issue)
+        if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
+            find "${NFTBAN_CONFIG_DIR}/conf.d" -type f -name "*.conf" \
+                ! -group nftban -exec chgrp nftban {} \; 2>/dev/null || true
+            find "${NFTBAN_CONFIG_DIR}/conf.d" -type f -name "*.conf" \
+                ! -perm 640 -exec chmod 640 {} \; 2>/dev/null || true
+        fi
+        echo "  ✓ Config file permissions enforced"
     fi
 
     # ==========================================================================
