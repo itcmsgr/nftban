@@ -32,6 +32,7 @@ const (
 )
 
 // PersistSSHPort writes the detected SSH port to conf.local and state file.
+// Also ensures TCP_PORTS_IN includes the SSH port (lockout prevention).
 func PersistSSHPort(exec executor.Executor, sshPort int, log *logging.Logger) {
 	portStr := strconv.Itoa(sshPort)
 
@@ -42,8 +43,86 @@ func PersistSSHPort(exec executor.Executor, sshPort int, log *logging.Logger) {
 		log.Debug("persisted SSH port %d to %s", sshPort, sshStateFile)
 	}
 
-	// Update conf.local (create or update SSH_PORT= line)
+	// Update conf.local: SSH_PORT=
 	updateConfLocal(exec, "SSH_PORT", portStr, log)
+
+	// Ensure TCP_PORTS_IN includes the SSH port (G2 parity with shell postinst).
+	// Without this, a non-22 SSH port could be excluded after `nftban config reload`.
+	ensureTCPPortsIncludes(exec, sshPort, log)
+}
+
+// ensureTCPPortsIncludes checks if the SSH port is in TCP_PORTS_IN and adds it if missing.
+func ensureTCPPortsIncludes(exec executor.Executor, sshPort int, log *logging.Logger) {
+	portStr := strconv.Itoa(sshPort)
+
+	// Read current conf.local (may not exist yet)
+	data, err := exec.ReadFile(confLocal)
+	if err != nil {
+		// No conf.local yet — updateConfLocal will create it
+		// The SSH port is already in the rendered nftables.conf template,
+		// but add TCP_PORTS_IN to conf.local for belt-and-suspenders
+		updateConfLocal(exec, "TCP_PORTS_IN", portStr, log)
+		log.Debug("added TCP_PORTS_IN=%s to conf.local (new file)", portStr)
+		return
+	}
+
+	// Check if TCP_PORTS_IN already contains the SSH port
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "TCP_PORTS_IN=") {
+			val := strings.TrimPrefix(line, "TCP_PORTS_IN=")
+			val = strings.Trim(val, "\"")
+			// Check if port is already listed (could be "22,80,443" or "22 80 443")
+			for _, p := range strings.FieldsFunc(val, func(r rune) bool { return r == ',' || r == ' ' }) {
+				if strings.TrimSpace(p) == portStr {
+					log.Debug("SSH port %d already in TCP_PORTS_IN", sshPort)
+					return
+				}
+			}
+			// Port not found — append it
+			var newVal string
+			if strings.Contains(val, ",") {
+				newVal = val + "," + portStr
+			} else if val == "" {
+				newVal = portStr
+			} else {
+				newVal = val + "," + portStr
+			}
+			updateConfLocal(exec, "TCP_PORTS_IN", newVal, log)
+			log.Info("added SSH port %d to TCP_PORTS_IN in conf.local", sshPort)
+			return
+		}
+	}
+
+	// No TCP_PORTS_IN line exists — read from main conf to get current value
+	mainData, err := exec.ReadFile("/etc/nftban/nftban.conf")
+	if err != nil {
+		// Can't read main conf — just set TCP_PORTS_IN to include SSH port
+		updateConfLocal(exec, "TCP_PORTS_IN", portStr, log)
+		return
+	}
+
+	for _, line := range strings.Split(string(mainData), "\n") {
+		if strings.HasPrefix(line, "TCP_PORTS_IN=") {
+			val := strings.TrimPrefix(line, "TCP_PORTS_IN=")
+			val = strings.Trim(val, "\"")
+			for _, p := range strings.FieldsFunc(val, func(r rune) bool { return r == ',' || r == ' ' }) {
+				if strings.TrimSpace(p) == portStr {
+					// Already in main conf — no override needed
+					return
+				}
+			}
+			// Not in main conf — add override
+			var newVal string
+			if val == "" {
+				newVal = portStr
+			} else {
+				newVal = val + "," + portStr
+			}
+			updateConfLocal(exec, "TCP_PORTS_IN", newVal, log)
+			log.Info("added SSH port %d to TCP_PORTS_IN override", sshPort)
+			return
+		}
+	}
 }
 
 // updateConfLocal creates or updates a key=value in nftban.conf.local.
