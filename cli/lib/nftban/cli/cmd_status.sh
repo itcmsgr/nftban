@@ -1100,13 +1100,18 @@ _status_section_health() {
         security_status="${security_issues} systemd issue(s)"
     fi
 
-    # Get posture status (SSH, sudo, config integrity)
+    # Get posture status + details (SSH, sudo, systemd, config integrity)
     local posture_status="OK"
+    local posture_details=""
     if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" 2>/dev/null || true
-        if declare -f nftban_posture_oneline &>/dev/null; then
-            posture_status=$(nftban_posture_oneline 2>/dev/null || echo "OK")
+        if declare -f _collect_posture_info &>/dev/null; then
+            declare -A _posture_data
+            _collect_posture_info _posture_data 2>/dev/null || true
+            posture_status="${_posture_data[POSTURE_STATUS]:-OK}"
+            posture_details="${_posture_data[POSTURE_DETAILS]:-}"
+            unset _posture_data
         fi
     fi
 
@@ -1125,12 +1130,21 @@ _status_section_health() {
         printf "  %-20s ✅ %s\n" "Security Posture...." "$combined_posture"
     else
         printf "  %-20s ⚠️  %s\n" "Security Posture...." "$combined_posture"
+        # Show what the advisories are so the user knows what to fix
+        if [[ -n "$posture_details" ]]; then
+            # Split semicolon-separated details into individual lines
+            local IFS=';'
+            for detail in $posture_details; do
+                detail="${detail# }"  # trim leading space
+                [[ -n "$detail" ]] && printf "      → %s\n" "$detail"
+            done
+            unset IFS
+        fi
     fi
 
     # Show hints if not OK (only in non-quiet mode)
-    if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]]; }; then
+    if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "OK" ]] || [[ "$combined_posture" != "OK" ]]; }; then
         echo "      → Details: nftban health check"
-        echo "      → Fix:     sudo nftban health fix all  (for root-only fixes)"
     fi
     echo ""
 }
