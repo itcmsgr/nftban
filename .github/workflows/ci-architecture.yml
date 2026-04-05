@@ -318,3 +318,7 @@ jobs:
           done
           echo ""
           echo "✓ Anchor marker check: PASS"
+
+      # v1.77.0: Registry parity lint — completion + man page match registry
+      - name: Lint registry parity (G15)
+        run: bash scripts/lint-registry-parity.sh

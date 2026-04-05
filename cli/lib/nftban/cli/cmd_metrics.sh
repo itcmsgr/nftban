@@ -226,13 +226,29 @@ nftban_metrics_disable() {
     # Update config - disable metrics via ENABLED flag in nftban.conf.local
     # User overrides go to .conf.local — package defaults (.conf) are never modified
     local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
-    touch "$local_conf"
-    chown root:nftban "$local_conf" 2>/dev/null || true
-    chmod 640 "$local_conf"
-    if grep -q "^NFTBAN_METRICS_ENABLED=" "$local_conf"; then
-        sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="false"/' "$local_conf" 2>/dev/null || true
+
+    # Source atomic file ops if not already loaded
+    if ! declare -F nftban_atomic_write >/dev/null 2>&1; then
+        # shellcheck source=../core/nftban_file_ops.sh
+        source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" 2>/dev/null || true
+    fi
+
+    local content
+    if [[ -f "$local_conf" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$local_conf"; then
+        content=$(sed 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="false"/' "$local_conf")
+    elif [[ -f "$local_conf" ]]; then
+        content=$(cat "$local_conf")
+        content="${content}"$'\n''NFTBAN_METRICS_ENABLED="false"'
     else
-        echo 'NFTBAN_METRICS_ENABLED="false"' >> "$local_conf"
+        content='NFTBAN_METRICS_ENABLED="false"'
+    fi
+
+    if declare -F nftban_atomic_write >/dev/null 2>&1; then
+        echo "$content" | nftban_atomic_write "$local_conf"
+    else
+        echo "$content" > "$local_conf"
+        chmod 640 "$local_conf" 2>/dev/null || true
+        chown root:nftban "$local_conf" 2>/dev/null || true
     fi
 
     echo ""
