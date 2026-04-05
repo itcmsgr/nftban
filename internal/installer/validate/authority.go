@@ -18,6 +18,8 @@
 package validate
 
 import (
+	"time"
+
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
@@ -45,5 +47,41 @@ func WriteAuthorityFiles(exec executor.Executor, decision authority.Decision, lo
 		log.Warn("write legacy authority %s: %v", legacyPath, err)
 	} else {
 		log.Debug("wrote firewall_authority=nftban to %s", legacyPath)
+	}
+}
+
+// SetImmutableFlags sets chattr +i on security-critical files (G8 parity).
+// Shell postinst set immutable on nftban.conf and nft_schema.sh to prevent
+// accidental or malicious modification.
+func SetImmutableFlags(exec executor.Executor, log *logging.Logger) {
+	if !exec.CommandExists("chattr") {
+		log.Debug("chattr not available — skipping immutable flags")
+		return
+	}
+
+	immutableFiles := []string{
+		fhs.MainConf,
+		"/usr/lib/nftban/lib/nft_schema.sh",
+	}
+
+	for _, path := range immutableFiles {
+		if exec.FileExists(path) {
+			res := exec.Run("chattr", "+i", path)
+			if res.ExitCode == 0 {
+				log.Debug("set immutable: %s", path)
+			} else {
+				log.Warn("chattr +i %s failed (exit %d) — non-fatal", path, res.ExitCode)
+			}
+		}
+	}
+}
+
+// RunPermissionsEnforce calls `nftban permissions enforce` for full FHS fix (G10 parity).
+func RunPermissionsEnforce(exec executor.Executor, log *logging.Logger) {
+	res := exec.RunTimeout(30*time.Second, fhs.NftbanCLI, "permissions", "enforce")
+	if res.ExitCode == 0 {
+		log.Debug("permissions enforce completed")
+	} else {
+		log.Warn("permissions enforce failed (exit %d) — non-fatal", res.ExitCode)
 	}
 }

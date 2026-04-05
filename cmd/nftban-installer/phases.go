@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.75.1 - nftban-installer - Phase Implementations
+// NFTBan v1.76.0 - nftban-installer - Phase Implementations
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban-installer-phases"
@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/authority"
+	"github.com/itcmsgr/nftban/internal/installer/deps"
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
@@ -112,9 +113,18 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 	return sf.Transition(state.StateDetectComplete, state.PhaseDetect, "")
 }
 
-// phasePrepare runs stale cleanup, FHS setup, template rendering, config persistence.
+// phasePrepare runs dep install, stale cleanup, FHS setup, template rendering, config persistence.
 func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// 0. Install missing dependencies (dpkg/rpm lock is released by now)
+	if pd.distro != nil {
+		if err := deps.InstallMissing(exec, pd.distro, log); err != nil {
+			log.Error("dependency install failed: %v", err)
+			return sf.Transition(state.StateFailedRender, state.PhasePrepare,
+				"missing critical dependencies: "+err.Error())
+		}
+	}
 
 	// 1. Clean stale files from prior versions
 	services.CleanStaleFiles(exec, log)
@@ -125,16 +135,19 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 	// 3. Set FHS permissions
 	fhs.SetPermissions(exec, log)
 
-	// 4. Set binary capabilities
+	// 4. Apply systemd-tmpfiles (creates /run/nftban with correct ownership)
+	services.ApplyTmpfiles(exec, log)
+
+	// 5. Set binary capabilities
 	fhs.SetCapabilities(exec, log)
 
-	// 5. Render nftables.conf (substitute SSH port + CT limits)
+	// 6. Render nftables.conf (substitute SSH port + CT limits)
 	if err := render.RenderNftablesConf(exec, pd.sshPort, pd.ctLimits, log); err != nil {
 		log.Error("nftables.conf render failed: %v", err)
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
 
-	// 6. Integrate NFTBan include into system nftables.conf
+	// 7. Integrate NFTBan include into system nftables.conf
 	if pd.distro != nil && pd.distro.NftConfPath != "" {
 		if err := render.IntegrateSystemConf(exec, pd.distro.NftConfPath, log); err != nil {
 			log.Warn("system conf integration: %v", err)
@@ -142,7 +155,7 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 		}
 	}
 
-	// 7. Persist SSH port to conf.local and state file
+	// 8. Persist SSH port to conf.local and state file
 	render.PersistSSHPort(exec, pd.sshPort, log)
 
 	log.PhaseEnd("Prepare")
@@ -234,19 +247,28 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// 5. Whitelist sync (loads whitelists and feeds)
 	services.SyncWhitelist(exec, log)
 
+	// 6. Restart polkit (picks up new/removed polkit rules)
+	services.RestartPolkit(exec, log)
+
 	log.PhaseEnd("Configure")
 	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
 }
 
-// phaseValidate runs post-install assertions and writes authority files.
+// phaseValidate runs post-install assertions, writes authority files, sets immutable flags.
 func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
 
 	// 1. Write authority files
 	validate.WriteAuthorityFiles(exec, pd.decision, log)
 
-	// 2. Run assertions
+	// 2. Run permissions enforce (G10 — full FHS permissions fix)
+	validate.RunPermissionsEnforce(exec, log)
+
+	// 3. Run assertions
 	results := validate.RunAssertions(exec, pd.sshPort, log)
+
+	// 4. Set immutable flags on security-critical files (G8)
+	validate.SetImmutableFlags(exec, log)
 
 	if validate.AllPassed(results) {
 		log.Info("all post-install assertions passed — COMMITTED")

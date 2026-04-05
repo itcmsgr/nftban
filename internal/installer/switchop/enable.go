@@ -94,7 +94,7 @@ func cleanXtCompat(exec executor.Executor, distro *detect.DistroInfo, log *loggi
 
 	// Replace with clean NFTBan include
 	cleanConf := `#!/usr/sbin/nft -f
-# NFTBan v1.75.1 - Clean nftables config (auto-fixed by installer)
+# NFTBan v1.76.0 - Clean nftables config (auto-fixed by installer)
 # Original backed up with .xt-backup.* extension
 # xt target rules removed to prevent nftables.service failure
 include "/etc/nftban/nftables.conf"
