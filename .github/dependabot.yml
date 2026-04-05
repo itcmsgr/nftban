@@ -12,23 +12,20 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "daily"  # Daily for faster CVE response
-    open-pull-requests-limit: 10
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "disabled"  # Prevent auto-rebase CI storms
     commit-message:
       prefix: "deps(go)"
     labels:
       - "dependencies"
       - "go"
-      - "security"
-    # Group minor/patch updates to reduce PR noise
+    # Group ALL updates to reduce PR noise
     groups:
-      go-minor-patch:
+      go-all:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    # Prioritize security updates
     reviewers:
       - "itcmsgr"
     assignees:
@@ -38,21 +35,20 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"  # Daily for CI security
-    open-pull-requests-limit: 10
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    rebase-strategy: "disabled"  # Prevent auto-rebase CI storms
     commit-message:
       prefix: "deps(actions)"
     labels:
       - "dependencies"
       - "github-actions"
-      - "security"
+    # Group ALL action updates into single PR
     groups:
-      actions-minor-patch:
+      actions-all:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
 
   # Docker base images
   - package-ecosystem: "docker"
