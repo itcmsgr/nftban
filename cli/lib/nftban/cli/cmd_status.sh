@@ -115,8 +115,10 @@ _status_check_binaries() {
 }
 
 # =============================================================================
-# PROTECTION STATE — Single Source of Truth (v1.66.0)
+# PROTECTION STATE — Go Validator Integration (v1.78.0)
 # =============================================================================
+# v1.78.0: Uses Go kernel validator as single source of truth.
+# Falls back to legacy shell detection if validator unavailable.
 # v1.66.0: 3-state model with kernel-first detection and reason codes.
 # Returns: PROTECTED | DEGRADED[:reason] | DOWN
 # Exit code contract:
@@ -125,8 +127,81 @@ _status_check_binaries() {
 #   2 = DOWN         — nothing protecting
 # NFTBAN_EXIT_COMPAT=v1 → DEGRADED returns 0 (one-release transition)
 
-_nftban_protection_state() {
-    # Determine protection state from live kernel + service checks.
+# Go validator binary path
+_NFTBAN_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+
+_nftban_protection_state_validator() {
+    # v1.78.0: Call Go kernel validator for authoritative protection state.
+    # Returns: PROTECTED | DEGRADED[:reason] | DOWN
+    # Falls back to legacy detection if validator unavailable.
+
+    if [[ ! -x "$_NFTBAN_VALIDATOR_BIN" ]]; then
+        # Validator not installed — use legacy detection
+        _nftban_protection_state_legacy
+        return
+    fi
+
+    # Call validator with JSON output
+    local _json _status _exit_code=0
+    _json=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null) || _exit_code=$?
+
+    if [[ -z "$_json" ]]; then
+        # Validator failed — fallback
+        _nftban_protection_state_legacy
+        return
+    fi
+
+    # Extract status from JSON
+    if command -v jq >/dev/null 2>&1; then
+        _status=$(echo "$_json" | jq -r '.status' 2>/dev/null)
+    else
+        # Parse without jq - look for "status":"protected" etc
+        _status=$(echo "$_json" | grep -oP '"status"\s*:\s*"\K[^"]+' || true)
+    fi
+
+    # Map validator status to legacy format with reason codes
+    case "$_status" in
+        protected)
+            # Additional service checks (not in kernel validator)
+            local _daemon_active=false _timers=0
+            systemctl is-active nftband.service >/dev/null 2>&1 && _daemon_active=true
+            _timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
+
+            if [[ "$_daemon_active" != "true" ]]; then
+                echo "DEGRADED:D-DAEMON"; return
+            fi
+            if [[ "$_timers" -eq 0 ]]; then
+                echo "DEGRADED:D-NOTIMERS"; return
+            fi
+            echo "PROTECTED"
+            ;;
+        degraded)
+            # Extract finding codes if available
+            local _first_code=""
+            if command -v jq >/dev/null 2>&1; then
+                _first_code=$(echo "$_json" | jq -r '.findings[0].code // empty' 2>/dev/null)
+            fi
+            case "$_first_code" in
+                VAL-ANCHOR-*) echo "DEGRADED:D-ANCHOR" ;;
+                VAL-CHAIN-*)  echo "DEGRADED:D-CHAIN" ;;
+                VAL-TABLE-*)  echo "DEGRADED:D-TABLE" ;;
+                *)            echo "DEGRADED:D-VALIDATOR" ;;
+            esac
+            ;;
+        down)
+            echo "DOWN"
+            ;;
+        *)
+            # Unknown status — fallback
+            _nftban_protection_state_legacy
+            ;;
+    esac
+}
+
+_nftban_protection_state_legacy() {
+    # DEPRECATED: Shell-based protection state detection (v1.66.0).
+    # Scheduled for removal in v1.80.0 — use Go validator instead.
+    # This code path is kept as fallback when Go validator is unavailable.
     # Returns: PROTECTED, DEGRADED:D-xxx, or DOWN
     local _nft_active=false _daemon_active=false _rules=0 _timers=0
 
@@ -219,6 +294,16 @@ _nftban_protection_state() {
     fi
 
     echo "PROTECTED"
+}
+
+_nftban_protection_state() {
+    # v1.78.0: Dispatcher — uses Go validator, falls back to legacy shell detection.
+    # NFTBAN_FORCE_LEGACY_STATE=1 forces legacy detection (for testing).
+    if [[ "${NFTBAN_FORCE_LEGACY_STATE:-0}" == "1" ]]; then
+        _nftban_protection_state_legacy
+        return
+    fi
+    _nftban_protection_state_validator
 }
 
 # =============================================================================

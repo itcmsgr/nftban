@@ -12,7 +12,7 @@
 # meta:output="Compiled Go binaries in bin/"
 # meta:depends="go"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-installer"
+# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-installer, nftban-validate"
 # meta:inventory.env_vars="CGO_ENABLED, GOOS, GOARCH"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -273,6 +273,27 @@ build_installer() {
     return 0
 }
 
+build_validator() {
+    log "Building nftban-validate (Kernel validator for CLI)..."
+
+    cd "$SCRIPT_DIR"
+
+    # Validator is pure Go — no CGO needed
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+        go build -trimpath -o "$BIN_DIR/nftban-validate" \
+        -ldflags="$LDFLAGS" \
+        ./cmd/nftban-validate || {
+        error "Failed to build nftban-validate"
+        return 1
+    }
+
+    chmod +x "$BIN_DIR/nftban-validate"
+    ok "Built: $BIN_DIR/nftban-validate"
+
+    cd "$SCRIPT_DIR"
+    return 0
+}
+
 show_usage() {
     cat << EOF
 NFTBan Build Script
@@ -287,6 +308,7 @@ Components:
   ui-auth   Build nftban-ui-auth only
   daemon    Build nftband only
   installer Build nftban-installer only
+  validator Build nftban-validate only
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -335,6 +357,9 @@ case "$COMPONENT" in
         build_installer || exit 1
         echo ""
 
+        build_validator || exit 1
+        echo ""
+
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
@@ -359,6 +384,10 @@ case "$COMPONENT" in
 
     installer)
         build_installer || exit 1
+        ;;
+
+    validator)
+        build_validator || exit 1
         ;;
 
     help|-h|--help)
