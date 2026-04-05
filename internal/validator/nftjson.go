@@ -69,15 +69,37 @@ type NftChain struct {
 	Handle   int    `json:"handle,omitempty"`
 }
 
+// NftSetType handles nft set type which can be string or []string (for concatenations).
+type NftSetType struct {
+	Types []string
+}
+
+// UnmarshalJSON handles both string and []string for nft set type field.
+func (t *NftSetType) UnmarshalJSON(data []byte) error {
+	// Try string first
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		t.Types = []string{s}
+		return nil
+	}
+	// Try []string for concatenated types
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		t.Types = arr
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal set type: %s", string(data))
+}
+
 // NftSet represents an nftables set.
 type NftSet struct {
-	Family  string   `json:"family"`
-	Table   string   `json:"table"`
-	Name    string   `json:"name"`
-	Type    string   `json:"type,omitempty"`
-	Flags   []string `json:"flags,omitempty"`
-	Timeout int      `json:"timeout,omitempty"`
-	Handle  int      `json:"handle,omitempty"`
+	Family  string     `json:"family"`
+	Table   string     `json:"table"`
+	Name    string     `json:"name"`
+	Type    NftSetType `json:"type,omitempty"`
+	Flags   []string   `json:"flags,omitempty"`
+	Timeout int        `json:"timeout,omitempty"`
+	Handle  int        `json:"handle,omitempty"`
 }
 
 // NftRule represents an nftables rule.
