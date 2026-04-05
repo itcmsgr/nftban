@@ -331,11 +331,11 @@ nftban_health_render_json() {
         echo "  \"kernel\": {\"status\": \"unavailable\", \"reason\": \"validator binary not found\"},"
     fi
 
-    # v1.78.0: Services status from systemd
+    # v1.78.0: Services status from systemd (head -1 for clean output)
     local _nftband_status _nftables_status _queue_status
-    _nftband_status=$(systemctl is-active nftband.service 2>/dev/null || echo "unknown")
-    _nftables_status=$(systemctl is-active nftables.service 2>/dev/null || echo "unknown")
-    _queue_status=$(systemctl is-active nftban-queue.service 2>/dev/null || echo "unknown")
+    _nftband_status=$(systemctl is-active nftband.service 2>/dev/null | head -1 || echo "unknown")
+    _nftables_status=$(systemctl is-active nftables.service 2>/dev/null | head -1 || echo "unknown")
+    _queue_status=$(systemctl is-active nftban-queue.service 2>/dev/null | head -1 || echo "unknown")
     echo "  \"services\": {"
     echo "    \"nftband\": \"$_nftband_status\","
     echo "    \"nftables\": \"$_nftables_status\","
