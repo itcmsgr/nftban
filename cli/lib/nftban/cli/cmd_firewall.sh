@@ -944,14 +944,14 @@ _rebuild_get_validator_state() {
     # Call Go validator and return status (protected/degraded/down)
     # Also outputs chain count for relative comparison
     # Returns: "status:chain_count" e.g. "protected:16"
-    local json_output exit_code=0
+    local json_output
 
     if [[ ! -x "$_REBUILD_VALIDATOR_BIN" ]]; then
         echo "down:0"
         return
     fi
 
-    json_output=$("$_REBUILD_VALIDATOR_BIN" --json 2>/dev/null) || exit_code=$?
+    json_output=$("$_REBUILD_VALIDATOR_BIN" --json 2>/dev/null) || true
 
     if [[ -z "$json_output" ]]; then
         echo "down:0"
