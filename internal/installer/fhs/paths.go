@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - Installer FHS Path Constants
+// NFTBan v1.76 - Installer FHS Path Constants
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-fhs-paths"
