@@ -633,24 +633,31 @@ _collect_posture_info() {
         fi
     fi
 
-    # 3. NFTBan systemd hardening (NoNewPrivileges, PrivateTmp)
+    # 3. NFTBan systemd hardening (NoNewPrivileges)
+    # Deduplicate across unit dirs — same basename may exist in /etc and /lib
     local systemd_hardened=0
     local systemd_total=0
+    declare -A _seen_units
     for unit_dir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
         [[ -d "$unit_dir" ]] || continue
         for svc in "$unit_dir"/nftban*.service; do
             [[ -f "$svc" ]] || continue
-            # v1.19.20 FIX
+            local _unit_name
+            _unit_name=$(basename "$svc")
+            # Skip duplicates (same unit in multiple dirs)
+            [[ -n "${_seen_units[$_unit_name]:-}" ]] && continue
+            _seen_units[$_unit_name]=1
+            # Skip template units (e.g. nftban-alert@.service)
+            [[ "$_unit_name" == *@.service ]] && continue
             ((systemd_total++)) || true
-            if grep -q "^NoNewPrivileges=true" "$svc" 2>/dev/null; then
-                # v1.19.20 FIX
+            # systemd accepts both "true" and "yes" for boolean directives
+            if grep -qE "^NoNewPrivileges\s*=\s*(true|yes)" "$svc" 2>/dev/null; then
                 ((systemd_hardened++)) || true
             fi
         done
-        [[ $systemd_total -gt 0 ]] && break  # Found services, stop searching
     done
+    unset _seen_units
     if [[ $systemd_total -gt 0 && $systemd_hardened -lt $systemd_total ]]; then
-        # v1.19.20 FIX
         ((warnings++)) || true
         posture_details+="Systemd: ${systemd_hardened}/${systemd_total} hardened; "
     fi

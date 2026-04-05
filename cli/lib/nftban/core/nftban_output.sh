@@ -333,12 +333,11 @@ nftban_banner_unified() {
             health_icon="🟠"
             ;;
         ERROR|errors|2|CRITICAL|3)
-            # Quick kernel check: does nftban table exist with rules?
+            # Quick service check: is nftables running?
+            # Avoids slow `nft -a list table` query — systemctl is instant.
             local _fw_active=false
-            if command -v nft >/dev/null 2>&1; then
-                local _rule_count
-                _rule_count=$(nft -a list table ip nftban 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-                [[ "${_rule_count:-0}" -gt 0 ]] && _fw_active=true
+            if systemctl is-active --quiet nftables.service 2>/dev/null; then
+                _fw_active=true
             fi
             if [[ "$_fw_active" == "true" ]]; then
                 health_icon="🟠"  # Firewall active — health issues are advisory
