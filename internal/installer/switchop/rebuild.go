@@ -47,5 +47,23 @@ func Rebuild(exec executor.Executor, log *logging.Logger) error {
 	}
 
 	log.Info("firewall rebuild completed successfully")
+
+	// Write schema version file (G7 parity with shell postinst).
+	// The shell postinst wrote: echo "$CURRENT_SCHEMA" > /etc/nftban/.schema_version
+	// We use the installed version as the schema identifier.
+	versionData, err := exec.ReadFile(fhs.VersionFile)
+	if err == nil {
+		version := string(versionData)
+		// Trim whitespace/newlines
+		for len(version) > 0 && (version[len(version)-1] == '\n' || version[len(version)-1] == '\r' || version[len(version)-1] == ' ') {
+			version = version[:len(version)-1]
+		}
+		if err := exec.WriteFileAtomic(fhs.SchemaVersionFile, []byte(version+"\n"), 0640); err != nil {
+			log.Warn("write schema version: %v", err)
+		} else {
+			log.Debug("wrote schema version %s to %s", version, fhs.SchemaVersionFile)
+		}
+	}
+
 	return nil
 }

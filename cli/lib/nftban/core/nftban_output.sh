@@ -321,6 +321,10 @@ nftban_banner_unified() {
     fi
 
     # Determine health icon
+    # v1.76.0: When health reports ERROR but firewall is actively protecting
+    # (nftban table exists with rules), downgrade from red to orange.
+    # Matches logic in cmd_status.sh:385-388 — health errors on a PROTECTED
+    # system are informational (optional features), not critical.
     case "$health_status" in
         OK|healthy|0)
             health_icon="🟢"
@@ -329,7 +333,18 @@ nftban_banner_unified() {
             health_icon="🟠"
             ;;
         ERROR|errors|2|CRITICAL|3)
-            health_icon="🔴"
+            # Quick kernel check: does nftban table exist with rules?
+            local _fw_active=false
+            if command -v nft >/dev/null 2>&1; then
+                local _rule_count
+                _rule_count=$(nft -a list table ip nftban 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+                [[ "${_rule_count:-0}" -gt 0 ]] && _fw_active=true
+            fi
+            if [[ "$_fw_active" == "true" ]]; then
+                health_icon="🟠"  # Firewall active — health issues are advisory
+            else
+                health_icon="🔴"  # Firewall not active — genuine problem
+            fi
             ;;
         UNKNOWN|*)
             health_icon="⚪"

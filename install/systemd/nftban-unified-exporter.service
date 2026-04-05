@@ -69,8 +69,8 @@ RestrictNamespaces=true
 # Network access for Zabbix/ES/Kafka exports + AF_NETLINK for nft queries
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
-# Filesystem access
-ReadWritePaths=/var/lib/node_exporter/textfile_collector
+# Filesystem access (- prefix = ignore if path does not exist)
+ReadWritePaths=-/var/lib/node_exporter/textfile_collector
 ReadWritePaths=/var/cache/nftban
 ReadWritePaths=/run/nftban
 ReadWritePaths=/var/log/nftban
