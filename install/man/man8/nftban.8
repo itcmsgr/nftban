@@ -1,6 +1,6 @@
 .\" NFTBan - nftables-based firewall management
 .\" Copyright (c) 2024-2026 Antonios Voulvoulis
-.TH NFTBAN 8 "March 2026" "NFTBan 1.60.3" "System Administration"
+.TH NFTBAN 8 "April 2026" "NFTBan 1.76.0" "System Administration"
 .SH NAME
 nftban \- open-source Linux IPS and nftables firewall manager
 .SH SYNOPSIS
@@ -83,11 +83,24 @@ Display status of all NFTBan-related services.
 .B firewall \fR[\fIsubcommand\fR]
 Manage nftables firewall: init, reload, status, check, reset, validate, stats.
 .TP
+.B firewall\-logs \fR[\fIsubcommand\fR]
+Firewall log analysis: show, tail, stats, search.
+.TP
 .B ban \fIIP\fR [\fIoptions\fR]
-Ban an IP address. Options: \fB\-\-timeout\fR, \fB\-\-reason\fR, \fB\-\-permanent\fR.
+Ban an IP address. Options: \fB\-\-timeout\fR, \fB\-\-reason\fR, \fB\-\-permanent\fR,
+\fB\-\-dry\-run\fR, \fB\-\-yes\fR, \fB\-\-async\fR, \fB\-\-wait\fR, \fB\-\-file\fR.
 .TP
 .B unban \fIIP\fR
 Remove ban on an IP address.
+.TP
+.B protect \fR[\fIIP\fR]
+Add IP to permanent protection (cannot be banned).
+.TP
+.B unprotect \fR[\fIIP\fR]
+Remove IP from permanent protection.
+.TP
+.B flush \fR[\fIsubcommand\fR]
+Emergency flush/reset of nftables sets. Use with caution.
 .TP
 .B list \fR[\fItype\fR]
 List IPs: banned, whitelist, or all. Use \fB\-\-json\fR for JSON output.
@@ -95,8 +108,14 @@ List IPs: banned, whitelist, or all. Use \fB\-\-json\fR for JSON output.
 .B search \fIIP\fR
 Search for an IP across all blocklists and show ban details.
 .TP
+.B blacklist \fR[\fIsubcommand\fR]
+Manage IP blacklist: add, remove, list, flush.
+.TP
 .B whitelist \fR[\fIsubcommand\fR]
 Manage IP whitelist: sync, show, whitelistme.
+.TP
+.B cleanup \fR[\fIoptions\fR]
+Manage and evict old permanent bans to free memory.
 .TP
 .B whitelist-system
 Auto-whitelist essential system IPs (gateway, DNS, server IPs).
@@ -104,10 +123,18 @@ Ensures critical infrastructure is never blocked.
 .SS "Protection Modules"
 .TP
 .B ddos \fR[\fIsubcommand\fR]
-DDoS protection: enable, disable, status, test.
+DDoS protection (L1): enable, disable, status, test.
+Provides L3/L4 traffic pressure mitigation with SYN flood protection.
 .TP
 .B portscan \fR[\fIsubcommand\fR]
 Port scan detection: enable, disable, status, check, history, test.
+.TP
+.B botguard \fR[\fIsubcommand\fR]
+HTTP bot detection (L2): enable, disable, status, config, stats.
+L3/L4 live and L7 batch analysis of HTTP bot behavior.
+.TP
+.B botscan \fR[\fIsubcommand\fR]
+Trigger on-demand bot scan analysis.
 .TP
 .B login \fR[\fIsubcommand\fR]
 Login monitoring: status, enable, disable, logs, test, run.
@@ -116,8 +143,15 @@ Login monitoring: status, enable, disable, logs, test, run.
 .br
 Use \fBenable all\fR for ssh+su+sudo, or \fBenable ssh\fR for specific types.
 .TP
+.B suricata \fR[\fIsubcommand\fR]
+Suricata IDS integration (L3): enable, disable, status, stats, rules, alerts, config.
+DPI/signature intelligence at L7. Requires Suricata package.
+.TP
 .B feeds \fR[\fIsubcommand\fR]
 Threat intelligence feeds: select, list, enable, disable, update, status.
+.TP
+.B rbl \fR[\fIsubcommand\fR]
+RBL (Real-time Blackhole List) monitoring: check, status, providers, config.
 .TP
 .B trust \fR[\fIsubcommand\fR]
 Trust feeds (whitelist CDN/cloud): list, enable, disable, update, load, status.
@@ -126,6 +160,9 @@ Supports Cloudflare, AWS, Google Cloud, Azure, Fastly, and more.
 .B country \fR[\fIsubcommand\fR]
 Country blocking: list, enable, disable, mode, status, apply.
 Block or allow traffic by ISO country code (CN, RU, etc.).
+.TP
+.B tunnel \fR[\fIsubcommand\fR]
+DNS tunnel suspicion detection: enable, disable, status, scores, history.
 .TP
 .B cloudflare \fR[\fIsubcommand\fR]
 Cloudflare IP management: enable, disable, update, status.
@@ -184,6 +221,30 @@ Systemd timer management: status, enable, disable.
 .B mail \fR[\fIsubcommand\fR]
 Email notifications: test, send, configure.
 Send reports and alerts via email.
+.TP
+.B benchmark \fR[\fIsubcommand\fR]
+Performance benchmarking of NFTBan components: run, results, compare.
+.TP
+.B scale \fR[\fIsubcommand\fR]
+Display nftables set scale levels and daemon counter status.
+.TP
+.B queue \fR[\fIsubcommand\fR]
+Task queue and dead-letter queue (DLQ) management: status, list, retry, flush.
+.TP
+.B snapshot \fR[\fIsubcommand\fR]
+Create and manage configuration and statistics snapshots: create, list, restore.
+.TP
+.B export \fR[\fIsubcommand\fR]
+Export data to external systems. Options: \fB\-\-format\fR (json/csv).
+.TP
+.B connector \fR[\fIsubcommand\fR]
+Generic connector export to external systems (Elasticsearch, Kafka, etc.): enable, disable, status.
+.TP
+.B zabbix \fR[\fIsubcommand\fR]
+Zabbix trapper export with multi-target support and LLD: enable, disable, status, send.
+.TP
+.B pro \fR[\fIsubcommand\fR]
+NFTBan Pro subscription management and remote metrics: enroll, status, send, disable.
 .SS "Configuration and Setup"
 .TP
 .B config \fR[\fIsubcommand\fR]
@@ -276,6 +337,21 @@ Example: \fBnftban panel directadmin enable\fR
 .B test
 Run CLI command validation tests.
 .SS "System Administration"
+.TP
+.B system \fR[\fIsubcommand\fR]
+System-level operations and diagnostics: info, check, audit.
+.TP
+.B preflight \fR[\fIoptions\fR]
+Pre-installation system checks and compatibility validation.
+Verifies OS, kernel, nftables version, and dependency requirements.
+.TP
+.B polkit \fR[\fIsubcommand\fR]
+Polkit authorization validation and group management: check, install, status.
+Manages the nftban-admin group for non-root firewall management.
+.TP
+.B rollback \fR[\fIoptions\fR]
+Restore previous NFTBan version from backup.
+Lists available backups and allows selection for rollback.
 .TP
 .B update \fR[\fIoptions\fR]
 Automated updates from git repository with backup and rollback support.

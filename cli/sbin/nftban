@@ -254,6 +254,8 @@ nftban_complete() {
         echo "tunnel"
         echo "benchmark"
         echo "export"
+        echo "rollback"
+        echo "scale"
         return 0
     fi
 
