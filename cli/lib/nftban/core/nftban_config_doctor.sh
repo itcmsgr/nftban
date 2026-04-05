@@ -771,6 +771,32 @@ _doctor_module_audit() {
                     l4_detail="SSH port excluded from SYNPROXY — correct"
                 fi
                 ;;
+            ddos_classic)
+                # L4-6: Rate-limit config↔kernel parity
+                # Verify configured SYN rate matches what nft actually enforces
+                local _cfg_syn_rate _kern_syn_rate
+                _cfg_syn_rate=$(_doctor_config_val "DDOS_CLASSIC_SYN_RATE")
+                [[ -z "$_cfg_syn_rate" ]] && _cfg_syn_rate="100/second"
+                # Extract rate from kernel JSON (look for meter rules with rate limit)
+                _kern_syn_rate=$(echo "$_DOCTOR_NFT_JSON" | jq -r '
+                    [.nftables[] | select(.rule?) | .rule |
+                     select(.chain == "ddos_protection" and .table == "nftban") |
+                     .expr[]? | select(.meter?) |
+                     .meter.stmt[]? | select(.limit?) |
+                     "\(.limit.rate)/\(.limit.per)"
+                    ] | first // empty
+                ' 2>/dev/null || echo "")
+                if [[ -n "$_kern_syn_rate" && "$_kern_syn_rate" != "$_cfg_syn_rate" ]]; then
+                    l4_effective=false
+                    l4_detail="Config SYN rate=$_cfg_syn_rate but kernel enforces $_kern_syn_rate — stale after config change"
+                    _doctor_finding "$_SEV_WARN" "module_l4_rate_limit_mismatch" \
+                        "$mod_name: SYN rate limit mismatch (config=$_cfg_syn_rate, kernel=$_kern_syn_rate) — run nftban rebuild" "nft+config" "$mod_name"
+                elif [[ -z "$_kern_syn_rate" ]]; then
+                    l4_detail="No SYN rate meter found in kernel (module may not be active)"
+                else
+                    l4_detail="SYN rate limit ${_cfg_syn_rate} matches kernel"
+                fi
+                ;;
             *)
                 l4_detail=""
                 ;;
@@ -1249,12 +1275,93 @@ _doctor_render_json() {
 }
 
 # =============================================================================
+# AUTO-FIX (--fix)
+# =============================================================================
+
+_doctor_auto_fix() {
+    # Require root for fixes
+    if [[ $EUID -ne 0 ]]; then
+        echo "WARNING: --fix requires root privileges, skipping auto-fix" >&2
+        return 0
+    fi
+
+    local fixed=0
+
+    # Fix 1: Remove dead overrides (keys in .conf.local not in schema)
+    local dead_keys
+    dead_keys=$(printf '%s\n' "${_DOCTOR_FINDINGS[@]}" | jq -r 'select(.type == "override_dead") | .message' 2>/dev/null || true)
+    if [[ -n "$dead_keys" ]]; then
+        while IFS= read -r msg; do
+            local key
+            key=$(echo "$msg" | grep -oP 'Dead override: \K[^ ]+' || true)
+            if [[ -n "$key" ]]; then
+                # Remove dead key from all .conf.local files
+                local conf_local
+                while IFS= read -r conf_local; do
+                    if grep -q "^${key}=" "$conf_local" 2>/dev/null; then
+                        sed -i "/^${key}=/d" "$conf_local"
+                        echo "  FIXED: removed dead override $key from $conf_local"
+                        ((fixed++)) || true
+                    fi
+                done < <(find "${NFTBAN_CONFIG_DIR:-/etc/nftban}" -name '*.conf.local' -type f 2>/dev/null)
+            fi
+        done <<< "$dead_keys"
+    fi
+
+    # Fix 2: Remove stale overrides (values same as defaults)
+    local stale_keys
+    stale_keys=$(printf '%s\n' "${_DOCTOR_FINDINGS[@]}" | jq -r 'select(.type == "override_stale") | .message' 2>/dev/null || true)
+    if [[ -n "$stale_keys" ]]; then
+        while IFS= read -r msg; do
+            local key
+            key=$(echo "$msg" | grep -oP 'Stale override: \K[^=]+' || true)
+            if [[ -n "$key" ]]; then
+                local conf_local
+                while IFS= read -r conf_local; do
+                    if grep -q "^${key}=" "$conf_local" 2>/dev/null; then
+                        sed -i "/^${key}=/d" "$conf_local"
+                        echo "  FIXED: removed stale override $key from $conf_local"
+                        ((fixed++)) || true
+                    fi
+                done < <(find "${NFTBAN_CONFIG_DIR:-/etc/nftban}" -name '*.conf.local' -type f 2>/dev/null)
+            fi
+        done <<< "$stale_keys"
+    fi
+
+    # Fix 3: Rebuild needed (module_missing, rate_limit_mismatch, drift_module_unapplied)
+    local needs_rebuild=false
+    if printf '%s\n' "${_DOCTOR_FINDINGS[@]}" | jq -e 'select(.type == "module_missing" or .type == "module_l4_rate_limit_mismatch" or .type == "drift_module_unapplied")' >/dev/null 2>&1; then
+        needs_rebuild=true
+    fi
+    if [[ "$needs_rebuild" == "true" ]]; then
+        echo "  ACTION: kernel/config drift detected — running nftban rebuild..."
+        if command -v nftban >/dev/null 2>&1; then
+            if nftban rebuild 2>&1; then
+                echo "  FIXED: nftban rebuild completed"
+                ((fixed++)) || true
+            else
+                echo "  FAILED: nftban rebuild returned error (manual fix required)"
+            fi
+        else
+            echo "  SKIPPED: nftban not in PATH (manual fix required: nftban rebuild)"
+        fi
+    fi
+
+    if [[ $fixed -eq 0 ]]; then
+        echo "  No auto-fixable issues found"
+    else
+        echo "  $fixed issue(s) auto-fixed"
+    fi
+}
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
 nftban_cmd_config_doctor() {
     local json_mode=0
     local brief_mode=0
+    local fix_mode=0
     local filter_module=""
     local filter_security=""
 
@@ -1262,6 +1369,7 @@ nftban_cmd_config_doctor() {
         case "$1" in
             --json) json_mode=1 ;;
             --brief) brief_mode=1 ;;
+            --fix) fix_mode=1 ;;
             --module)
                 shift
                 filter_module="${1:-}"
@@ -1279,6 +1387,7 @@ nftban_cmd_config_doctor() {
                 echo "OPTIONS:"
                 echo "  --json              JSON output (machine-readable)"
                 echo "  --brief             Single summary line"
+                echo "  --fix               Auto-fix fixable issues (requires root)"
                 echo "  --module <name>     Audit single module only"
                 echo "  --security          Show security gaps only"
                 echo ""
@@ -1299,6 +1408,11 @@ nftban_cmd_config_doctor() {
     _doctor_global_drift
     _doctor_all_modules
     _doctor_security_gaps
+
+    # Auto-fix phase (if requested)
+    if [[ $fix_mode -eq 1 ]]; then
+        _doctor_auto_fix
+    fi
 
     # Render output
     if [[ $json_mode -eq 1 ]]; then

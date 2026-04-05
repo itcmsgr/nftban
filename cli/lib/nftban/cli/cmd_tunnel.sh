@@ -228,13 +228,30 @@ _tunnel_cmd_enable() {
         return 1
     fi
 
-    # Persist to config
+    # Persist to config (atomic write)
     local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     mkdir -p "$(dirname "$local_conf")" || return 1
-    if grep -q "^NFTBAN_TUNNEL_ENABLED=" "$local_conf" 2>/dev/null; then
-        sed -i 's/^NFTBAN_TUNNEL_ENABLED=.*/NFTBAN_TUNNEL_ENABLED="YES"/' "$local_conf"
+
+    # Source atomic file ops if not already loaded
+    if ! declare -F nftban_atomic_write >/dev/null 2>&1; then
+        # shellcheck source=../core/nftban_file_ops.sh
+        source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" 2>/dev/null || true
+    fi
+
+    local content
+    if [[ -f "$local_conf" ]] && grep -q "^NFTBAN_TUNNEL_ENABLED=" "$local_conf" 2>/dev/null; then
+        content=$(sed 's/^NFTBAN_TUNNEL_ENABLED=.*/NFTBAN_TUNNEL_ENABLED="YES"/' "$local_conf")
+    elif [[ -f "$local_conf" ]]; then
+        content=$(cat "$local_conf")
+        content="${content}"$'\n''NFTBAN_TUNNEL_ENABLED="YES"'
     else
-        echo 'NFTBAN_TUNNEL_ENABLED="YES"' >> "$local_conf"
+        content='NFTBAN_TUNNEL_ENABLED="YES"'
+    fi
+
+    if declare -F nftban_atomic_write >/dev/null 2>&1; then
+        echo "$content" | nftban_atomic_write "$local_conf"
+    else
+        echo "$content" > "$local_conf"
     fi
 
     # Create state directory
@@ -267,13 +284,30 @@ _tunnel_cmd_disable() {
         return 1
     fi
 
-    # Persist to config
+    # Persist to config (atomic write)
     local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/tunnel/main.conf.local"
     mkdir -p "$(dirname "$local_conf")" || return 1
-    if grep -q "^NFTBAN_TUNNEL_ENABLED=" "$local_conf" 2>/dev/null; then
-        sed -i 's/^NFTBAN_TUNNEL_ENABLED=.*/NFTBAN_TUNNEL_ENABLED="NO"/' "$local_conf"
+
+    # Source atomic file ops if not already loaded
+    if ! declare -F nftban_atomic_write >/dev/null 2>&1; then
+        # shellcheck source=../core/nftban_file_ops.sh
+        source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" 2>/dev/null || true
+    fi
+
+    local content
+    if [[ -f "$local_conf" ]] && grep -q "^NFTBAN_TUNNEL_ENABLED=" "$local_conf" 2>/dev/null; then
+        content=$(sed 's/^NFTBAN_TUNNEL_ENABLED=.*/NFTBAN_TUNNEL_ENABLED="NO"/' "$local_conf")
+    elif [[ -f "$local_conf" ]]; then
+        content=$(cat "$local_conf")
+        content="${content}"$'\n''NFTBAN_TUNNEL_ENABLED="NO"'
     else
-        echo 'NFTBAN_TUNNEL_ENABLED="NO"' >> "$local_conf"
+        content='NFTBAN_TUNNEL_ENABLED="NO"'
+    fi
+
+    if declare -F nftban_atomic_write >/dev/null 2>&1; then
+        echo "$content" | nftban_atomic_write "$local_conf"
+    else
+        echo "$content" > "$local_conf"
     fi
 
     # Stop and disable timer
