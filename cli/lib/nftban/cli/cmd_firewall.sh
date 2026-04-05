@@ -1012,19 +1012,23 @@ _rebuild_rollback() {
         return 1
     fi
 
-    # Validate snapshot before applying
-    if ! nft -c -f "$ruleset_file" 2>/dev/null; then
-        echo "ERROR: Snapshot validation failed — cannot rollback" >&2
-        return 1
-    fi
+    # v1.78.0: Skip pre-validation — snapshot came from working state.
+    # Syntax check (nft -c) fails when objects already exist in kernel.
+    # Instead, we flush then load, which is always valid for a captured ruleset.
 
-    # Flush and restore
+    echo "Flushing current ruleset..." >&2
+
+    # Flush all tables to ensure clean state
     nft flush ruleset 2>/dev/null || true
-    if nft -f "$ruleset_file" 2>/dev/null; then
+
+    echo "Loading snapshot..." >&2
+
+    if nft -f "$ruleset_file" 2>&1; then
         echo "Rollback successful from: $snapshot_dir"
         return 0
     else
         echo "ERROR: Rollback FAILED — firewall may be in inconsistent state!" >&2
+        echo "  Try manually: nft flush ruleset && nft -f $ruleset_file" >&2
         return 1
     fi
 }
