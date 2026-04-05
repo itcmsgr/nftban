@@ -66,8 +66,6 @@ func TestInstallMissing_DEB_CallsAptGet(t *testing.T) {
 	mock.ExistingCommands["jq"] = true
 	mock.ExistingCommands["bc"] = true
 
-	distro := &detect.DistroInfo{ID: "ubuntu", VersionID: "24.04"}
-
 	// Temporarily remove them for the initial check, then re-add for post-check.
 	// The mock always returns the current state, so we need a trick:
 	// Just verify the command is called. Since they're already present,
