@@ -245,20 +245,26 @@ EOF
             echo "  ⚠️  WARNING: You must manually whitelist cPanel license servers!"
             ;;
         ASK|ask|A|a|*)
-            echo "Do you want to enable cPanel license server whitelist?"
-            echo -n "Enable license server whitelist? [Y/n]: "
-            read -r response
-            case "$response" in
-                n|N|no|NO)
-                    enable_license_whitelist="no"
-                    echo "  ⚠️  WARNING: License server whitelist NOT enabled!"
-                    echo "     cPanel licensing may fail!"
-                    ;;
-                *)
-                    enable_license_whitelist="yes"
-                    echo "  ✓ License server whitelist will be enabled"
-                    ;;
-            esac
+            # Non-interactive (no TTY): default YES — cPanel licensing needs whitelist
+            if [[ ! -t 0 ]]; then
+                enable_license_whitelist="yes"
+                echo "→ License server whitelist: AUTO-ENABLE (non-interactive mode)"
+            else
+                echo "Do you want to enable cPanel license server whitelist?"
+                echo -n "Enable license server whitelist? [Y/n]: "
+                read -r response
+                case "$response" in
+                    n|N|no|NO)
+                        enable_license_whitelist="no"
+                        echo "  ⚠️  WARNING: License server whitelist NOT enabled!"
+                        echo "     cPanel licensing may fail!"
+                        ;;
+                    *)
+                        enable_license_whitelist="yes"
+                        echo "  ✓ License server whitelist will be enabled"
+                        ;;
+                esac
+            fi
             ;;
     esac
     echo ""
@@ -312,7 +318,7 @@ EOF
     echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ cPanel/WHM panel enabled successfully!"
@@ -400,7 +406,7 @@ nftban_panel_cpanel_disable() {
     echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
     echo ""
 
-    if nftban-core sync; then
+    if /usr/lib/nftban/bin/nftban-core sync; then
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ cPanel/WHM panel disabled successfully!"
