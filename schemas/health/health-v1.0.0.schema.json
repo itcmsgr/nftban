@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nftban.io/schemas/health-v1.0.0.json",
+  "title": "NFTBan Health JSON Schema",
+  "description": "Schema for nftban health --json output (v1.0.0)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "nftban_version",
+    "overall_status",
+    "exit_code",
+    "summary",
+    "kernel",
+    "services",
+    "lifecycle",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Health JSON schema version (semver)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when health check ran"
+    },
+    "nftban_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.]+)?$",
+      "description": "NFTBan version (semver with optional prerelease)"
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": ["ok", "warning", "error", "critical"],
+      "description": "Aggregate health status"
+    },
+    "exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "CLI exit code (0=ok, 1=warning, 2=error, 3+=critical)"
+    },
+    "summary": {
+      "type": "object",
+      "required": ["errors", "warnings"],
+      "properties": {
+        "errors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of error-level findings"
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of warning-level findings"
+        }
+      },
+      "additionalProperties": false
+    },
+    "kernel": {
+      "$ref": "#/$defs/kernelSection"
+    },
+    "services": {
+      "type": "object",
+      "required": ["nftband", "nftables"],
+      "properties": {
+        "nftband": {
+          "$ref": "#/$defs/serviceStatus"
+        },
+        "nftables": {
+          "$ref": "#/$defs/serviceStatus"
+        },
+        "queue": {
+          "$ref": "#/$defs/serviceStatus"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/serviceStatus"
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["last_rebuild", "rollback_available"],
+      "properties": {
+        "last_rebuild": {
+          "type": ["string", "null"],
+          "description": "Timestamp of last rebuild (YYYYMMDD_HHMMSS) or null"
+        },
+        "rollback_available": {
+          "type": "boolean",
+          "description": "Whether a rollback snapshot exists"
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/checkResult"
+      },
+      "description": "Individual health check results"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Error messages (for backward compatibility)"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Warning messages (for backward compatibility)"
+    },
+    "extended": {
+      "type": "object",
+      "description": "Extended diagnostic information (optional)",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "serviceStatus": {
+      "type": "string",
+      "enum": ["active", "inactive", "failed", "unknown"],
+      "description": "Systemd service status"
+    },
+    "checkResult": {
+      "type": "object",
+      "required": ["status", "exit_code", "message"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "warning", "error", "critical"],
+          "description": "Check result status"
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "Check exit code"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable message (may be empty)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "kernelSection": {
+      "type": "object",
+      "required": ["status", "timestamp", "families", "findings", "summary", "module_truth", "chain_counts"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["protected", "degraded", "down"],
+          "description": "Overall kernel protection status"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When kernel state was sampled"
+        },
+        "families": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/familyStatus"
+          },
+          "minItems": 1,
+          "description": "Per-family (ip/ip6) status"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kernel validation findings"
+        },
+        "summary": {
+          "$ref": "#/$defs/kernelSummary"
+        },
+        "module_truth": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/moduleTruth"
+          },
+          "description": "Per-module kernel presence truth"
+        },
+        "chain_counts": {
+          "type": "object",
+          "required": ["total_chains"],
+          "properties": {
+            "ipv4_total": { "type": "integer", "minimum": 0 },
+            "ipv4_base": { "type": "integer", "minimum": 0 },
+            "ipv4_helper": { "type": "integer", "minimum": 0 },
+            "ipv6_total": { "type": "integer", "minimum": 0 },
+            "ipv6_base": { "type": "integer", "minimum": 0 },
+            "ipv6_helper": { "type": "integer", "minimum": 0 },
+            "total_chains": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "familyStatus": {
+      "type": "object",
+      "required": ["family", "status", "table_present", "chain_count", "set_count", "base_chains", "helper_chains", "anchors", "sets"],
+      "properties": {
+        "family": {
+          "type": "string",
+          "enum": ["ip", "ip6"],
+          "description": "nftables family"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["protected", "degraded", "down"],
+          "description": "Family protection status"
+        },
+        "table_present": {
+          "type": "boolean",
+          "description": "Whether nftban table exists"
+        },
+        "chain_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of chains in table"
+        },
+        "set_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of sets in table"
+        },
+        "base_chains": {
+          "$ref": "#/$defs/chainCheck"
+        },
+        "helper_chains": {
+          "$ref": "#/$defs/chainCheck"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchorCheck"
+        },
+        "sets": {
+          "$ref": "#/$defs/setCheck"
+        }
+      },
+      "additionalProperties": false
+    },
+    "chainCheck": {
+      "type": "object",
+      "required": ["required", "found", "missing", "all_found"],
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "found": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "all_found": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "anchorCheck": {
+      "type": "object",
+      "required": ["required_count", "found_count", "ordered", "anchors_found", "missing", "order_expected", "order_actual", "final_present"],
+      "properties": {
+        "required_count": { "type": "integer", "minimum": 0 },
+        "found_count": { "type": "integer", "minimum": 0 },
+        "ordered": { "type": "boolean" },
+        "anchors_found": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "order_expected": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "order_actual": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "final_present": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "setCheck": {
+      "type": "object",
+      "required": ["required", "found", "missing", "all_found"],
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "found": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "all_found": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "kernelSummary": {
+      "type": "object",
+      "required": ["total_findings", "critical_findings", "error_findings", "warn_findings", "checked_families", "protected_families", "degraded_families"],
+      "properties": {
+        "total_findings": { "type": "integer", "minimum": 0 },
+        "critical_findings": { "type": "integer", "minimum": 0 },
+        "error_findings": { "type": "integer", "minimum": 0 },
+        "warn_findings": { "type": "integer", "minimum": 0 },
+        "checked_families": { "type": "integer", "minimum": 0 },
+        "protected_families": { "type": "integer", "minimum": 0 },
+        "degraded_families": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "moduleTruth": {
+      "type": "object",
+      "required": ["enabled", "kernel_present", "details"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "kernel_present": { "type": "boolean" },
+        "details": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

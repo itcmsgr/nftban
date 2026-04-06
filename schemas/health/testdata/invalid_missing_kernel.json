@@ -1,0 +1,21 @@
+{
+  "_description": "INVALID: Missing required 'kernel' field",
+  "schema_version": "1.0.0",
+  "timestamp": "2026-04-06T19:00:00+00:00",
+  "nftban_version": "1.78.0",
+  "overall_status": "ok",
+  "exit_code": 0,
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "services": {
+    "nftband": "active",
+    "nftables": "active"
+  },
+  "lifecycle": {
+    "last_rebuild": null,
+    "rollback_available": false
+  },
+  "checks": {}
+}

@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2026-04-06T19:00:00+00:00",
+  "nftban_version": "1.78.0",
+  "overall_status": "ok",
+  "exit_code": 0,
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "kernel": {
+    "status": "protected",
+    "timestamp": "2026-04-06T19:00:00.000000000Z",
+    "families": [
+      {
+        "family": "ip",
+        "status": "protected",
+        "table_present": true,
+        "chain_count": 8,
+        "set_count": 19,
+        "base_chains": {
+          "required": ["input", "forward", "output"],
+          "found": ["input", "forward", "output"],
+          "missing": [],
+          "all_found": true
+        },
+        "helper_chains": {
+          "required": ["ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection", "portscan_detection"],
+          "found": ["ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection", "portscan_detection"],
+          "missing": [],
+          "all_found": true
+        },
+        "anchors": {
+          "required_count": 7,
+          "found_count": 7,
+          "ordered": true,
+          "anchors_found": ["ANCHOR_HYGIENE", "ANCHOR_TRUSTED", "ANCHOR_BAN", "ANCHOR_ESTABLISHED", "ANCHOR_DETECT", "ANCHOR_SERVICE", "ANCHOR_FINAL"],
+          "missing": [],
+          "order_expected": ["ANCHOR_HYGIENE", "ANCHOR_TRUSTED", "ANCHOR_BAN", "ANCHOR_ESTABLISHED", "ANCHOR_DETECT", "ANCHOR_SERVICE", "ANCHOR_FINAL"],
+          "order_actual": ["ANCHOR_HYGIENE", "ANCHOR_TRUSTED", "ANCHOR_BAN", "ANCHOR_ESTABLISHED", "ANCHOR_DETECT", "ANCHOR_SERVICE", "ANCHOR_FINAL"],
+          "final_present": true
+        },
+        "sets": {
+          "required": ["whitelist_ipv4", "blacklist_ipv4", "blacklist_manual_ipv4", "tcp_ports_in", "udp_ports_in"],
+          "found": ["whitelist_ipv4", "blacklist_ipv4", "blacklist_manual_ipv4", "tcp_ports_in", "udp_ports_in"],
+          "missing": [],
+          "all_found": true
+        }
+      }
+    ],
+    "findings": [],
+    "summary": {
+      "total_findings": 0,
+      "critical_findings": 0,
+      "error_findings": 0,
+      "warn_findings": 0,
+      "checked_families": 1,
+      "protected_families": 1,
+      "degraded_families": 0
+    },
+    "module_truth": {
+      "ddos": {
+        "enabled": true,
+        "kernel_present": true,
+        "details": "all helper chains present"
+      }
+    },
+    "chain_counts": {
+      "ipv4_total": 8,
+      "ipv4_base": 3,
+      "ipv4_helper": 5,
+      "ipv6_total": 0,
+      "ipv6_base": 0,
+      "ipv6_helper": 0,
+      "total_chains": 8
+    }
+  },
+  "services": {
+    "nftband": "active",
+    "nftables": "active",
+    "queue": "inactive"
+  },
+  "lifecycle": {
+    "last_rebuild": "20260406_190000",
+    "rollback_available": true
+  },
+  "checks": {
+    "daemon": {
+      "status": "ok",
+      "exit_code": 0,
+      "message": "nftband running"
+    }
+  }
+}

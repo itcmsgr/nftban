@@ -1,0 +1,76 @@
+{
+  "_description": "INVALID: family uses 'inet' instead of 'ip' or 'ip6'",
+  "schema_version": "1.0.0",
+  "timestamp": "2026-04-06T19:00:00+00:00",
+  "nftban_version": "1.78.0",
+  "overall_status": "ok",
+  "exit_code": 0,
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "kernel": {
+    "status": "protected",
+    "timestamp": "2026-04-06T19:00:00.000000000Z",
+    "families": [
+      {
+        "family": "inet",
+        "status": "protected",
+        "table_present": true,
+        "chain_count": 8,
+        "set_count": 19,
+        "base_chains": {
+          "required": [],
+          "found": [],
+          "missing": [],
+          "all_found": true
+        },
+        "helper_chains": {
+          "required": [],
+          "found": [],
+          "missing": [],
+          "all_found": true
+        },
+        "anchors": {
+          "required_count": 0,
+          "found_count": 0,
+          "ordered": true,
+          "anchors_found": [],
+          "missing": [],
+          "order_expected": [],
+          "order_actual": [],
+          "final_present": false
+        },
+        "sets": {
+          "required": [],
+          "found": [],
+          "missing": [],
+          "all_found": true
+        }
+      }
+    ],
+    "findings": [],
+    "summary": {
+      "total_findings": 0,
+      "critical_findings": 0,
+      "error_findings": 0,
+      "warn_findings": 0,
+      "checked_families": 1,
+      "protected_families": 1,
+      "degraded_families": 0
+    },
+    "module_truth": {},
+    "chain_counts": {
+      "total_chains": 8
+    }
+  },
+  "services": {
+    "nftband": "active",
+    "nftables": "active"
+  },
+  "lifecycle": {
+    "last_rebuild": null,
+    "rollback_available": false
+  },
+  "checks": {}
+}

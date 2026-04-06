@@ -122,6 +122,16 @@ type NftCounter struct {
 	Bytes   int64  `json:"bytes,omitempty"`
 }
 
+// ParseJSON parses JSON bytes into an NftRuleset structure.
+// Used for testing with fixture files.
+func ParseJSON(data []byte) (*NftRuleset, error) {
+	var ruleset NftRuleset
+	if err := json.Unmarshal(data, &ruleset); err != nil {
+		return nil, fmt.Errorf("failed to parse nft JSON: %w", err)
+	}
+	return &ruleset, nil
+}
+
 // LoadRulesetJSON executes nft -j list ruleset and parses the output.
 // This is a PURE function - it only reads kernel state, never modifies.
 func LoadRulesetJSON(ctx context.Context) (*NftRuleset, error) {

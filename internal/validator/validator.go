@@ -25,6 +25,69 @@ import (
 	"time"
 )
 
+// Validate performs validation on a pre-parsed RulesetDocument.
+// Used for testing with fixture data.
+func Validate(doc *RulesetDocument) *ValidationResult {
+	result := &ValidationResult{
+		Timestamp: time.Now(),
+		Findings:  make([]Finding, 0),
+		Families:  make([]FamilyResult, 0, 2),
+	}
+
+	if doc == nil {
+		result.Status = StatusDown
+		result.Findings = append(result.Findings, Finding{
+			Code:        CodeNftNoOutput,
+			Severity:    SeverityCritical,
+			Component:   "kernel",
+			Message:     "No ruleset provided",
+			Remediation: "Run: nftban firewall rebuild",
+		})
+		result.Summary = computeSummary(result)
+		return result
+	}
+
+	// Validate each family
+	ipv4Result := validateFamily(doc, "ip", result)
+	ipv6Result := validateFamily(doc, "ip6", result)
+
+	result.Families = append(result.Families, ipv4Result, ipv6Result)
+
+	// Check for both tables missing = DOWN
+	if !ipv4Result.TablePresent && !ipv6Result.TablePresent {
+		result.Status = StatusDown
+		result.Findings = append(result.Findings, Finding{
+			Code:        CodeTableBothMissing,
+			Severity:    SeverityCritical,
+			Component:   "kernel",
+			Message:     "Neither ip nor ip6 nftban table exists",
+			Remediation: "Run: nftban firewall rebuild",
+		})
+	}
+
+	// Compute chain counts
+	result.ChainCount = ChainCounts{
+		IPv4Total:  doc.CountChains("ip"),
+		IPv6Total:  doc.CountChains("ip6"),
+		IPv4Base:   countFoundChains(ipv4Result.BaseChains.Found),
+		IPv4Helper: countFoundChains(ipv4Result.HelperChains.Found),
+		IPv6Base:   countFoundChains(ipv6Result.BaseChains.Found),
+		IPv6Helper: countFoundChains(ipv6Result.HelperChains.Found),
+	}
+	result.ChainCount.TotalChains = result.ChainCount.IPv4Total + result.ChainCount.IPv6Total
+
+	// Derive module truth from kernel state
+	result.ModuleTruth = deriveModuleTruth(doc)
+
+	// Compute summary
+	result.Summary = computeSummary(result)
+
+	// Determine overall status
+	result.Status = evaluateOverallStatus(result)
+
+	return result
+}
+
 // ValidateKernel performs complete kernel state validation.
 // This is the main entrypoint for the validator.
 //

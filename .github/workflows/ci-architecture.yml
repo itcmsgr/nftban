@@ -19,6 +19,7 @@
 #   - Anchor marker count validation (v1.64.0)
 #   - Bash hazard lint H1-H2 (v1.66.3): nft -a flag + set -e traps
 #   - Update safety lint U1-U2 (v1.70.0): rebuild failure must be fatal
+#   - Health JSON schema validation G17 (v1.79.0): output contract enforcement
 # =============================================================================
 
 name: Architecture Policy
@@ -322,3 +323,16 @@ jobs:
       # v1.77.0: Registry parity lint — completion + man page match registry
       - name: Lint registry parity (G15)
         run: bash scripts/lint-registry-parity.sh
+
+      # =====================================================================
+      # v1.79.0: CI Gates (G16-G18)
+      # =====================================================================
+
+      # G17: Health JSON schema validation
+      - name: Validate health JSON schema (G17)
+        run: |
+          echo "=== G17: Health JSON Schema Validation ==="
+          pip install --quiet jsonschema
+          python3 scripts/validate-health-schema.py --test
+          echo ""
+          echo "✓ G17: Health JSON schema test fixtures: PASS"

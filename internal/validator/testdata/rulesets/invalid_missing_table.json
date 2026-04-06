@@ -1,0 +1,9 @@
+{
+  "_description": "INVALID: No ip nftban table present",
+  "_expected_status": "down",
+  "_expected_finding": "table 'ip nftban' not found",
+  "nftables": [
+    {"metainfo": {"version": "1.0.6", "json_schema_version": 1}},
+    {"table": {"family": "inet", "name": "filter", "handle": 1}}
+  ]
+}

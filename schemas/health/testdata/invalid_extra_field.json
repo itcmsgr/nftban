@@ -1,0 +1,41 @@
+{
+  "_description": "INVALID: Extra field 'internal_debug' not allowed at top level",
+  "schema_version": "1.0.0",
+  "timestamp": "2026-04-06T19:00:00+00:00",
+  "nftban_version": "1.78.0",
+  "overall_status": "ok",
+  "exit_code": 0,
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "kernel": {
+    "status": "protected",
+    "timestamp": "2026-04-06T19:00:00.000000000Z",
+    "families": [],
+    "findings": [],
+    "summary": {
+      "total_findings": 0,
+      "critical_findings": 0,
+      "error_findings": 0,
+      "warn_findings": 0,
+      "checked_families": 0,
+      "protected_families": 0,
+      "degraded_families": 0
+    },
+    "module_truth": {},
+    "chain_counts": {
+      "total_chains": 0
+    }
+  },
+  "services": {
+    "nftband": "active",
+    "nftables": "active"
+  },
+  "lifecycle": {
+    "last_rebuild": null,
+    "rollback_available": false
+  },
+  "checks": {},
+  "internal_debug": "should not be here"
+}

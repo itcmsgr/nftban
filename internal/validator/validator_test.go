@@ -17,6 +17,7 @@
 package validator
 
 import (
+	"os"
 	"testing"
 )
 
@@ -307,4 +308,165 @@ func TestModuleTruthMissing(t *testing.T) {
 	if truth.Portscan.Enabled {
 		t.Error("Portscan should be disabled when chain missing")
 	}
+}
+
+// =============================================================================
+// G16: Integration tests with fixture files
+// =============================================================================
+
+func TestValidateRulesetFixture_Protected(t *testing.T) {
+	// Load valid protected ruleset fixture
+	data, err := loadTestFixture("testdata/rulesets/valid_protected.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	if result.Status != StatusProtected {
+		t.Errorf("Expected status %q, got %q", StatusProtected, result.Status)
+		for _, f := range result.Findings {
+			t.Logf("  Finding: [%s] %s", f.Severity, f.Message)
+		}
+	}
+
+	// Should have both families protected
+	if len(result.Families) < 2 {
+		t.Errorf("Expected at least 2 families, got %d", len(result.Families))
+	}
+
+	for _, fam := range result.Families {
+		if fam.Status != StatusProtected {
+			t.Errorf("Family %s: expected protected, got %s", fam.Family, fam.Status)
+		}
+	}
+}
+
+func TestValidateRulesetFixture_MissingTable(t *testing.T) {
+	data, err := loadTestFixture("testdata/rulesets/invalid_missing_table.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	// Should be down when table is missing
+	if result.Status != StatusDown {
+		t.Errorf("Expected status %q, got %q", StatusDown, result.Status)
+	}
+}
+
+func TestValidateRulesetFixture_MissingChain(t *testing.T) {
+	data, err := loadTestFixture("testdata/rulesets/invalid_missing_chain.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	// Should be degraded when chain is missing
+	if result.Status != StatusDegraded && result.Status != StatusDown {
+		t.Errorf("Expected status degraded or down, got %q", result.Status)
+	}
+
+	// Should have finding about missing chain
+	found := false
+	for _, f := range result.Findings {
+		if f.Severity == SeverityError || f.Severity == SeverityCritical {
+			found = true
+			break
+		}
+	}
+	if !found && result.Status != StatusDown {
+		t.Error("Expected error finding for missing chain")
+	}
+}
+
+func TestValidateRulesetFixture_BadAnchorOrder(t *testing.T) {
+	data, err := loadTestFixture("testdata/rulesets/invalid_bad_anchor_order.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	// Should be degraded when anchors are out of order
+	if result.Status == StatusProtected {
+		t.Errorf("Expected status degraded, got protected (bad anchor order should fail)")
+	}
+}
+
+func TestValidateRulesetFixture_MissingSet(t *testing.T) {
+	data, err := loadTestFixture("testdata/rulesets/invalid_missing_set.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	// Should be degraded when required set is missing
+	if result.Status == StatusProtected {
+		t.Errorf("Expected status degraded, got protected (missing set should fail)")
+	}
+}
+
+func TestValidateRulesetFixture_EmptyRuleset(t *testing.T) {
+	data, err := loadTestFixture("testdata/rulesets/invalid_empty_ruleset.json")
+	if err != nil {
+		t.Fatalf("Failed to load fixture: %v", err)
+	}
+
+	raw, err := ParseJSON(data)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	doc := ParseRuleset(raw)
+	result := Validate(doc)
+
+	// Should be down when ruleset is empty
+	if result.Status != StatusDown {
+		t.Errorf("Expected status %q, got %q", StatusDown, result.Status)
+	}
+}
+
+// loadTestFixture loads a JSON fixture file from testdata
+func loadTestFixture(path string) ([]byte, error) {
+	// Use relative path from package
+	return os.ReadFile(path)
+}
+
+// Import os at the top
+func init() {
+	// Ensure testdata directory exists for tests
 }
