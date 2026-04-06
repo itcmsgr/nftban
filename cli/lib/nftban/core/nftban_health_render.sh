@@ -355,7 +355,8 @@ nftban_health_render_json() {
     local _backup_dir="/var/lib/nftban/backup"
     if [[ -d "$_backup_dir" ]]; then
         local _latest_snapshot
-        _latest_snapshot=$(ls -1dt "$_backup_dir"/rebuild_* 2>/dev/null | head -1)
+        # v1.78.1 fix: Add || true to prevent SIGPIPE (exit 141) when head closes early
+        _latest_snapshot=$(ls -1dt "$_backup_dir"/rebuild_* 2>/dev/null | head -1 || true)
         if [[ -n "$_latest_snapshot" && -f "$_latest_snapshot/ruleset.nft" ]]; then
             _last_rebuild="\"$(basename "$_latest_snapshot" | sed 's/rebuild_//')\""
             _rollback_available="true"
