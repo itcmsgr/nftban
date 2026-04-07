@@ -473,15 +473,20 @@ _nftban_portscan_extract_timestamp() {
 
 # Process log entries and detect portscans
 nftban_portscan_classic_process_logs() {
+    # BUGFIX v1.78.1: Self-initialize config before using variables
+    # Invariant: No module function may assume config is loaded by its caller
+    nftban_portscan_classic_load_config 2>/dev/null || true
+
     local log_source
     log_source=$(nftban_portscan_classic_find_log) || {
         _nftban_portscan_classic_log "ERROR" "No log source found (checked /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl)"
         return 1
     }
 
+    # All config variables use safe defaults for strict mode (set -u)
     local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
     local log_prefix_legacy="${PORTSCAN_CLASSIC_LOG_PREFIX_LEGACY:-nftban: portscan:}"
-    local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
+    local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW:-60}"
     local current_time
     # Use timestamp library if available, fallback to date
     if declare -f nftban_timestamp_unix &>/dev/null; then
