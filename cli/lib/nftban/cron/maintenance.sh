@@ -716,8 +716,21 @@ EOF
     # ==========================================================================
     log "INFO" "[7/10] Running portscan stealth aggregation..."
 
-    # Load portscan module for aggregation
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
+    # BUGFIX v1.78.1: Check if portscan module is enabled before running aggregation
+    # Load portscan config to check enabled status (main.conf.local overrides main.conf)
+    local _ps_enabled="false"
+    # shellcheck source=/dev/null
+    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" ]] && \
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null || true
+    # shellcheck source=/dev/null
+    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" ]] && \
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf.local" 2>/dev/null || true
+    _ps_enabled="${PORTSCAN_ENABLED:-false}"
+
+    if [[ "$_ps_enabled" != "true" ]]; then
+        log "INFO" "Portscan aggregation: Skipped (PORTSCAN_ENABLED=${_ps_enabled})"
+    elif [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" 2>/dev/null || true
 
         # Process kernel logs → emit micro-events for aggregation
