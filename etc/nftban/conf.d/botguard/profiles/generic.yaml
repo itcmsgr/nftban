@@ -1,0 +1,182 @@
+# =============================================================================
+# NFTBan v1.79.0 - BotGuard Generic Profile
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Universal baseline protection rules for all web applications
+#
+# This profile is ALWAYS ACTIVE and provides baseline protection that
+# applies to any web application. App-specific profiles (wordpress, joomla,
+# etc.) inherit from this and add specialized rules.
+#
+# NOTE: All rules are INACTIVE in v1.79 unless feature flags are enabled.
+# =============================================================================
+
+profile: generic
+version: "1.0.0"
+description: "Universal baseline protection for all web applications"
+always_active: true
+inherits: []
+
+rules:
+  # =========================================================================
+  # PROBE GROUP: Scanning and reconnaissance detection
+  # =========================================================================
+
+  - id: generic-probe-sensitive-files
+    profile: generic
+    group: probe
+    pattern: '\.(env|git|svn|htaccess|htpasswd|bak|backup|old|orig|sql|tar|gz|zip)$'
+    match_target: normalized_path
+    score: 30
+    action: score
+    description: "Probing for sensitive files"
+
+  - id: generic-probe-admin-paths
+    profile: generic
+    group: probe
+    pattern: '/(admin|administrator|manager|phpmyadmin|pma|mysql|db|database|backup)'
+    match_target: normalized_path
+    score: 20
+    action: score
+    description: "Probing common admin paths"
+
+  - id: generic-probe-shell-upload
+    profile: generic
+    group: probe
+    pattern: '\.(php|asp|aspx|jsp|cgi|pl|py|sh|bash|exe|dll)$'
+    match_target: normalized_path
+    methods: ["POST", "PUT"]
+    score: 40
+    action: score
+    description: "Potential shell upload attempt"
+
+  # =========================================================================
+  # EVASION GROUP: Path obfuscation and encoding tricks
+  # =========================================================================
+
+  - id: generic-evasion-double-encoding
+    profile: generic
+    group: evasion
+    pattern: '%25[0-9a-fA-F]{2}'
+    match_target: raw_target
+    score: 50
+    action: score
+    description: "Double URL encoding detected"
+
+  - id: generic-evasion-null-byte
+    profile: generic
+    group: evasion
+    pattern: '%00|\\x00'
+    match_target: raw_target
+    score: 60
+    action: score
+    description: "Null byte injection attempt"
+
+  - id: generic-evasion-path-traversal
+    profile: generic
+    group: evasion
+    pattern: '\.\.[\\/]|%2e%2e[\\/]|%252e%252e'
+    match_target: raw_target
+    score: 50
+    action: score
+    description: "Path traversal attempt"
+
+  - id: generic-evasion-unicode-abuse
+    profile: generic
+    group: evasion
+    pattern: '%u[0-9a-fA-F]{4}'
+    match_target: raw_target
+    score: 40
+    action: score
+    description: "Unicode encoding abuse"
+
+  # =========================================================================
+  # AUTH GROUP: Authentication endpoint protection
+  # =========================================================================
+
+  - id: generic-auth-login-bruteforce
+    profile: generic
+    group: auth
+    pattern: '/(login|signin|authenticate|auth|session)'
+    match_target: normalized_path
+    methods: ["POST"]
+    rate_limit: "5/minute"
+    burst: 10
+    score: 15
+    action: score
+    description: "Login endpoint rate protection"
+
+  - id: generic-auth-password-reset
+    profile: generic
+    group: auth
+    pattern: '/(forgot|reset|recover)[-_]?(password|pwd|pass)'
+    match_target: normalized_path
+    methods: ["POST"]
+    rate_limit: "3/minute"
+    burst: 5
+    score: 20
+    action: score
+    description: "Password reset rate protection"
+
+  # =========================================================================
+  # HEAVY GROUP: Resource-intensive endpoint protection
+  # =========================================================================
+
+  - id: generic-heavy-search
+    profile: generic
+    group: heavy
+    pattern: '/(search|query|find|lookup)'
+    match_target: normalized_path
+    rate_limit: "10/minute"
+    burst: 20
+    score: 10
+    action: score
+    description: "Search endpoint rate protection"
+
+  - id: generic-heavy-export
+    profile: generic
+    group: heavy
+    pattern: '/(export|download|report|generate)'
+    match_target: normalized_path
+    rate_limit: "3/minute"
+    burst: 5
+    score: 15
+    action: score
+    description: "Export endpoint rate protection"
+
+  # =========================================================================
+  # GENERIC GROUP: Catch-all patterns
+  # =========================================================================
+
+  - id: generic-404-burst
+    profile: generic
+    group: generic
+    pattern: ".*"
+    match_target: normalized_path
+    status_codes: [404]
+    rate_limit: "20/minute"
+    burst: 30
+    score: 5
+    action: score
+    description: "High 404 rate indicates scanning"
+
+  - id: generic-method-abuse
+    profile: generic
+    group: generic
+    pattern: ".*"
+    match_target: normalized_path
+    methods: ["TRACE", "TRACK", "OPTIONS"]
+    rate_limit: "5/minute"
+    burst: 10
+    score: 20
+    action: score
+    description: "Unusual HTTP method usage"
+
+# Paths that should never be scored by this profile
+safe_paths:
+  - '^/favicon\.ico$'
+  - '^/robots\.txt$'
+  - '^/sitemap\.xml$'
+  - '^/health/?$'
+  - '^/ping/?$'
+  - '^/status/?$'

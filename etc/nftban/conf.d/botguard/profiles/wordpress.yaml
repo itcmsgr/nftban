@@ -1,0 +1,191 @@
+# =============================================================================
+# NFTBan v1.79.0 - BotGuard WordPress Profile
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: WordPress-specific protection rules
+#
+# This profile provides rules for WordPress installations. It inherits from
+# the generic profile and adds WordPress-specific patterns.
+#
+# IMPORTANT: xmlrpc.php is NOT hardcoded as blocked. The rpc group defaults
+# to "monitor" mode, and operators can configure it via:
+#   HTTP_BOTGUARD_GROUP_RPC_MODE="protect"  # to enforce
+#   HTTP_BOTGUARD_GROUP_RPC_MODE="disabled" # to ignore
+#
+# NOTE: All rules are INACTIVE in v1.79 unless feature flags are enabled.
+# To activate: HTTP_BOTGUARD_ACTIVE_PROFILES="generic,wordpress"
+# =============================================================================
+
+profile: wordpress
+version: "1.0.0"
+description: "WordPress-specific protection rules"
+always_active: false
+inherits:
+  - generic
+
+rules:
+  # =========================================================================
+  # AUTH GROUP: WordPress login protection
+  # =========================================================================
+
+  - id: wp-auth-login
+    profile: wordpress
+    group: auth
+    pattern: '^/wp-login\.php'
+    match_target: normalized_path
+    methods: ["POST"]
+    rate_limit: "5/minute"
+    burst: 10
+    score: 20
+    action: score
+    description: "WordPress login rate protection"
+
+  - id: wp-auth-admin-ajax
+    profile: wordpress
+    group: auth
+    pattern: '^/wp-admin/admin-ajax\.php'
+    match_target: normalized_path
+    methods: ["POST"]
+    rate_limit: "30/minute"
+    burst: 50
+    score: 5
+    action: score
+    description: "WordPress AJAX rate protection"
+
+  # =========================================================================
+  # RPC GROUP: XML-RPC and REST API protection
+  # Default mode: monitor (scoring only, not blocking)
+  # =========================================================================
+
+  - id: wp-rpc-xmlrpc
+    profile: wordpress
+    group: rpc
+    pattern: '^/xmlrpc\.php'
+    match_target: normalized_path
+    methods: ["POST"]
+    rate_limit: "10/minute"
+    burst: 15
+    score: 25
+    action: score
+    description: "WordPress XML-RPC rate protection"
+
+  - id: wp-rpc-rest-api
+    profile: wordpress
+    group: rpc
+    pattern: '^/wp-json/'
+    match_target: normalized_path
+    rate_limit: "60/minute"
+    burst: 100
+    score: 5
+    action: score
+    description: "WordPress REST API rate protection"
+
+  # =========================================================================
+  # ENUM GROUP: User and content enumeration protection
+  # =========================================================================
+
+  - id: wp-enum-author
+    profile: wordpress
+    group: enum
+    pattern: '\?author=\d+'
+    match_target: query_string
+    rate_limit: "5/minute"
+    burst: 10
+    score: 30
+    action: score
+    description: "WordPress author enumeration"
+
+  - id: wp-enum-users-api
+    profile: wordpress
+    group: enum
+    pattern: '^/wp-json/wp/v2/users'
+    match_target: normalized_path
+    rate_limit: "3/minute"
+    burst: 5
+    score: 35
+    action: score
+    description: "WordPress users API enumeration"
+
+  - id: wp-enum-feed
+    profile: wordpress
+    group: enum
+    pattern: '^/(feed|rss|atom)'
+    match_target: normalized_path
+    rate_limit: "10/minute"
+    burst: 20
+    score: 5
+    action: score
+    description: "Feed enumeration rate limit"
+
+  # =========================================================================
+  # PROBE GROUP: WordPress-specific probing patterns
+  # =========================================================================
+
+  - id: wp-probe-config
+    profile: wordpress
+    group: probe
+    pattern: '^/wp-config\.php'
+    match_target: normalized_path
+    score: 60
+    action: score
+    description: "WordPress config file probe"
+
+  - id: wp-probe-debug-log
+    profile: wordpress
+    group: probe
+    pattern: '^/wp-content/debug\.log'
+    match_target: normalized_path
+    score: 50
+    action: score
+    description: "WordPress debug log probe"
+
+  - id: wp-probe-upgrade
+    profile: wordpress
+    group: probe
+    pattern: '^/wp-content/upgrade/'
+    match_target: normalized_path
+    score: 40
+    action: score
+    description: "WordPress upgrade directory probe"
+
+  - id: wp-probe-backup
+    profile: wordpress
+    group: probe
+    pattern: '^/wp-content/(backup|backups|bak)/'
+    match_target: normalized_path
+    score: 45
+    action: score
+    description: "WordPress backup directory probe"
+
+  # =========================================================================
+  # HEAVY GROUP: Resource-intensive WordPress operations
+  # =========================================================================
+
+  - id: wp-heavy-search
+    profile: wordpress
+    group: heavy
+    pattern: '\?s='
+    match_target: query_string
+    rate_limit: "10/minute"
+    burst: 20
+    score: 10
+    action: score
+    description: "WordPress search rate protection"
+
+  - id: wp-heavy-cron
+    profile: wordpress
+    group: heavy
+    pattern: '^/wp-cron\.php'
+    match_target: normalized_path
+    rate_limit: "5/minute"
+    burst: 10
+    score: 15
+    action: score
+    description: "WordPress cron abuse protection"
+
+# Paths that should never be scored
+safe_paths:
+  - '^/wp-content/uploads/.*\.(jpg|jpeg|png|gif|webp|svg|css|js|woff|woff2|ttf|eot)$'
+  - '^/wp-includes/.*\.(css|js)$'
+  - '^/wp-content/plugins/.*\.(css|js)$'
+  - '^/wp-content/themes/.*\.(css|js)$'
