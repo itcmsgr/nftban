@@ -292,7 +292,10 @@ nftban_banner() {
 
 nftban_banner_unified() {
     local mode="${1:-cli}"
-    local cache_file="${NFTBAN_CACHE_DIR}/health/health_status.cache"
+    # BUG-5: removed `cache_file` declaration — banner no longer reads the
+    # health cache file. Posture comes from validator JSON only (see below).
+    # The cache file is still written by nftban-health.timer for other
+    # consumers (nftban_get_cached_health) but is NOT a posture truth source.
 
     # Skip for non-interactive or JSON mode
     [[ "${NFTBAN_BANNER_MODE:-auto}" == "none" ]] && return 0
@@ -302,52 +305,39 @@ nftban_banner_unified() {
     local version
     version="$(nftban_get_version)"
 
-    # Get health indicator from cache
-    local health_icon="🟢"  # Default: healthy
-    local health_status="OK"
+    # BUG-5: Health indicator is a PURE PROJECTION of the validator JSON
+    # status field. INV-CONS-001: there is exactly one truth source for kernel
+    # protection state, and it is nftban-validate. The CLI must NOT compute
+    # posture from a parallel path — that is what caused srv1 to display 🟠
+    # while the validator reported PROTECTED.
+    #
+    # Resolution order:
+    #   1. nftban-validate --json (canonical)
+    #   2. ⚪ if validator unavailable (not a parallel computation; absence)
+    #
+    # The previous code paths that have been DELETED:
+    #   - reading /var/cache/nftban/health/health_status.cache (stale, parallel)
+    #   - the systemctl downgrade ("if firewall active, downgrade red to orange")
+    #     — the validator already accounts for kernel state authoritatively
+    #   - the protection.json override (feeds_skipped/geoban_skipped)
+    #     — that signal belongs in validator output, not in parallel CLI logic
+    local health_icon="⚪"
+    local health_status="unknown"
 
-    if [[ -f "$cache_file" ]]; then
-        local cache_age
-        cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null || echo "0") ))
-
-        # Cache valid for 2 days (172800 seconds)
-        if [[ $cache_age -lt 172800 ]]; then
-            health_status=$(cat "$cache_file" 2>/dev/null || echo "OK")
-        else
-            health_status="STALE"  # Cache expired
+    local _validator_bin="/usr/lib/nftban/bin/nftban-validate"
+    if [[ -x "$_validator_bin" ]] && command -v jq >/dev/null 2>&1; then
+        local _validator_json
+        _validator_json=$("$_validator_bin" --json 2>/dev/null || true)
+        if [[ -n "$_validator_json" ]]; then
+            health_status=$(echo "$_validator_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
         fi
-    else
-        health_status="UNKNOWN"  # No cache file
     fi
 
-    # Determine health icon
-    # v1.76.0: When health reports ERROR but firewall is actively protecting
-    # (nftban table exists with rules), downgrade from red to orange.
-    # Matches logic in cmd_status.sh:385-388 — health errors on a PROTECTED
-    # system are informational (optional features), not critical.
     case "$health_status" in
-        OK|healthy|0)
-            health_icon="🟢"
-            ;;
-        WARNING|warnings|1|STALE)
-            health_icon="🟠"
-            ;;
-        ERROR|errors|2|CRITICAL|3)
-            # Quick service check: is nftables running?
-            # Avoids slow `nft -a list table` query — systemctl is instant.
-            local _fw_active=false
-            if systemctl is-active --quiet nftables.service 2>/dev/null; then
-                _fw_active=true
-            fi
-            if [[ "$_fw_active" == "true" ]]; then
-                health_icon="🟠"  # Firewall active — health issues are advisory
-            else
-                health_icon="🔴"  # Firewall not active — genuine problem
-            fi
-            ;;
-        UNKNOWN|*)
-            health_icon="⚪"
-            ;;
+        protected|idle)  health_icon="🟢" ;;
+        degraded)        health_icon="🟠" ;;
+        down)            health_icon="🔴" ;;
+        unknown|*)       health_icon="⚪" ;;
     esac
 
     # Quick conflict detection (cached or inline)
@@ -371,7 +361,10 @@ nftban_banner_unified() {
         fi
     fi
 
-    # Memory protection indicator (shows when feeds/geoban skipped)
+    # Memory protection indicator (shows when feeds/geoban skipped).
+    # BUG-5: this indicator is purely informational; it must NOT override
+    # health_icon. The validator's degraded/down state is the only path that
+    # may change the health icon. INV-CONS-001 enforced.
     local protection_icon=""
     local protection_file="/var/lib/nftban/state/protection.json"
     if [[ -f "$protection_file" ]]; then
@@ -379,8 +372,10 @@ nftban_banner_unified() {
         feeds_skipped=$(jq -r '.feeds_skipped // false' "$protection_file" 2>/dev/null || echo "false")
         geoban_skipped=$(jq -r '.geoban_skipped // false' "$protection_file" 2>/dev/null || echo "false")
         if [[ "$feeds_skipped" == "true" || "$geoban_skipped" == "true" ]]; then
-            protection_icon=" 💾"  # Memory protection active
-            health_icon="🟠"  # Override to warning
+            protection_icon=" 💾"  # Memory protection active (informational)
+            # NOTE: health_icon is NOT overridden here. The validator JSON is
+            # the only source of posture truth. If memory protection should
+            # imply degraded state, the validator must report it.
         fi
     fi
 
