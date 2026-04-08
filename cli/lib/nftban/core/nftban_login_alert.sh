@@ -183,6 +183,41 @@ EOF
 # HELPER FUNCTIONS
 # =============================================================================
 
+# =============================================================================
+# v1.79.0 BUG-2 FIX: Split helpers for ban truth-domain separation
+# Invariant: A predicate must answer only one truth-domain question.
+# See: BUGFIX_v1.79_IDEMPOTENCY_PREDICATES.md
+# =============================================================================
+
+# Check persistent active-ban STATE FILE truth only (v1.79.0)
+# Returns: 0 if IP exists in active_bans.state, 1 otherwise
+nftban_is_ip_in_ban_state_file() {
+    local ip="$1"
+    local ban_state="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/active_bans.state"
+    [[ -f "$ban_state" ]] || return 1
+    grep -E "^${ip}[[:space:]]" "$ban_state" >/dev/null 2>&1
+}
+
+# Check live NFT BLACKLIST SET truth only (v1.79.0)
+# Returns: 0 if IP exists in nftables blacklist set, 1 otherwise
+nftban_is_ip_in_blacklist_set() {
+    local ip="$1"
+    if [[ "$ip" =~ : ]]; then
+        nft get element ip6 nftban blacklist_ipv6 "{ $ip }" &>/dev/null
+    else
+        nft get element ip nftban blacklist_ipv4 "{ $ip }" &>/dev/null
+    fi
+}
+
+# Composite helper: OR semantics for ban idempotency (v1.79.0)
+# Use for "already banned?" check where cross-domain answer is valid.
+# Returns TRUE if IP is banned in state file OR nft set (either domain)
+# This prevents duplicate ban commands during daemon restart window.
+nftban_is_ip_banned() {
+    local ip="$1"
+    nftban_is_ip_in_ban_state_file "$ip" || nftban_is_ip_in_blacklist_set "$ip"
+}
+
 nftban_login_alert_log() {
     # Log to file and optionally syslog
     local message="$1"
@@ -1046,9 +1081,11 @@ nftban_login_track_failed() {
                 # BAN THE IP (v1.0 replaces fail2ban)
                 local ban_reason="${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)"
 
-                # Ban deduplication: skip if IP is already banned (v1.19.0)
-                if nft get element ip nftban blacklist_ipv4 "{ $ip }" &>/dev/null || \
-                   nft get element ip6 nftban blacklist_ipv6 "{ $ip }" &>/dev/null; then
+                # Ban deduplication: skip if IP is already banned (v1.79.0 BUG-2 FIX)
+                # Uses composite helper to check BOTH state file AND nft set.
+                # This prevents duplicate ban commands during daemon restart window
+                # when nft sets are empty but state file still has the ban record.
+                if nftban_is_ip_banned "$ip"; then
                     nftban_login_alert_log "IP $ip already banned, skipping duplicate ban"
                 else
                     nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
@@ -1240,6 +1277,10 @@ export -f nftban_login_alert_check_email
 export -f nftban_login_alert_email_warning
 export -f nftban_login_write_bans_log
 export -f nftban_login_is_whitelisted
+# v1.79.0: Split helpers for ban truth-domain separation (BUG-2 fix)
+export -f nftban_is_ip_in_ban_state_file
+export -f nftban_is_ip_in_blacklist_set
+export -f nftban_is_ip_banned
 export -f nftban_login_get_geoip
 export -f nftban_login_digest_add
 export -f nftban_login_digest_clear
