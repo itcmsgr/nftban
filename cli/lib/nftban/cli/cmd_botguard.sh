@@ -157,6 +157,39 @@ ${key}=\"${value}\""
 }
 
 # =============================================================================
+# v1.79.0 BUG-3 FIX: Kernel truth helpers for set counts
+# Invariant INV-BOT-002: Status counters must match kernel truth.
+# See: BUGFIX_v1.79_IDEMPOTENCY_PREDICATES.md
+# =============================================================================
+
+# Count elements in an nftables set directly from kernel (v1.79.0)
+# Returns: integer count of elements in set
+# Usage: _botguard_kernel_set_count "ip nftban" "http_bot_suspect"
+_botguard_kernel_set_count() {
+    local table="$1"
+    local set_name="$2"
+
+    # Get set content and count actual IP elements
+    # nft list set output format: elements = { ip1 timeout ..., ip2 timeout ... }
+    # We count IPs directly, not "timeout" keywords (which was the bug)
+    local output
+    output=$(nft list set $table "$set_name" 2>/dev/null) || { echo "0"; return; }
+
+    # Extract elements section and count IPv4/IPv6 addresses
+    # Pattern: either IPv4 (192.0.2.1) or IPv6 (2001:db8::1)
+    local count
+    count=$(echo "$output" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-fA-F:]{2,39}' | wc -l)
+    echo "${count:-0}"
+}
+
+# Check if nftables set exists (v1.79.0)
+_botguard_kernel_set_exists() {
+    local table="$1"
+    local set_name="$2"
+    nft list set $table "$set_name" &>/dev/null
+}
+
+# =============================================================================
 # COMMANDS
 # =============================================================================
 
@@ -242,14 +275,57 @@ _nftban_botguard_status() {
     local suspect_rate
     suspect_rate=$(_botguard_config_get "HTTP_BOT_SUSPECT_RATE" "30/second")
 
-    # Check if suspect sets exist
-    local ipv4_suspects=0
-    local ipv6_suspects=0
-    if nft list set ip nftban http_bot_suspect &>/dev/null; then
-        ipv4_suspects=$(nft list set ip nftban http_bot_suspect 2>/dev/null | grep -c "timeout" || echo "0")
+    # v1.79.0 BUG-3 FIX: Read kernel sets directly for counts (INV-BOT-002)
+    # Previous code used "grep -c timeout" which could count wrong elements.
+    # Now we count actual IP elements from kernel truth.
+    local freshness_at
+    freshness_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local source="kernel"
+
+    # Count elements from kernel directly
+    local ipv4_suspects=0 ipv6_suspects=0
+    local ipv4_pending=0 ipv6_pending=0
+    local ipv4_allow=0 ipv6_allow=0
+    local ipv4_grey=0 ipv6_grey=0
+    local ipv4_ban=0 ipv6_ban=0
+    local ipv4_emergency=0 ipv6_emergency=0
+
+    # Check if sets exist and count elements from kernel
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_suspect"; then
+        ipv4_suspects=$(_botguard_kernel_set_count "ip nftban" "http_bot_suspect")
     fi
-    if nft list set ip6 nftban http_bot_suspect6 &>/dev/null; then
-        ipv6_suspects=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null | grep -c "timeout" || echo "0")
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_suspect6"; then
+        ipv6_suspects=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_suspect6")
+    fi
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_pending"; then
+        ipv4_pending=$(_botguard_kernel_set_count "ip nftban" "http_bot_pending")
+    fi
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_pending6"; then
+        ipv6_pending=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_pending6")
+    fi
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_allow"; then
+        ipv4_allow=$(_botguard_kernel_set_count "ip nftban" "http_bot_allow")
+    fi
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_allow6"; then
+        ipv6_allow=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_allow6")
+    fi
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_grey"; then
+        ipv4_grey=$(_botguard_kernel_set_count "ip nftban" "http_bot_grey")
+    fi
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_grey6"; then
+        ipv6_grey=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_grey6")
+    fi
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_ban"; then
+        ipv4_ban=$(_botguard_kernel_set_count "ip nftban" "http_bot_ban")
+    fi
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_ban6"; then
+        ipv6_ban=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_ban6")
+    fi
+    if _botguard_kernel_set_exists "ip nftban" "http_bot_emergency"; then
+        ipv4_emergency=$(_botguard_kernel_set_count "ip nftban" "http_bot_emergency")
+    fi
+    if _botguard_kernel_set_exists "ip6 nftban" "http_bot_emergency6"; then
+        ipv6_emergency=$(_botguard_kernel_set_count "ip6 nftban" "http_bot_emergency6")
     fi
 
     # Check daemon status via IPC
@@ -258,19 +334,41 @@ _nftban_botguard_status() {
         daemon_running="true"
     fi
 
+    # v1.79.0: Check if BotGuard chain exists (structural health)
+    local structural_present="false"
+    if nft list chain ip nftban http_bot_guard &>/dev/null; then
+        structural_present="true"
+    fi
+
     if [[ "$json_mode" == "true" ]]; then
-        printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","ipv4_suspects":%s,"ipv6_suspects":%s}\n' \
+        # v1.79.0: Enhanced JSON with kernel truth metadata
+        printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","source":"%s","freshness_at":"%s","structural_present":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
             "$enabled" "$daemon_running" "$loop_interval" "$pressure_interval" \
-            "$suspect_rate" "$ipv4_suspects" "$ipv6_suspects"
+            "$suspect_rate" "$source" "$freshness_at" "$structural_present" \
+            "$ipv4_suspects" "$ipv6_suspects" \
+            "$ipv4_pending" "$ipv6_pending" \
+            "$ipv4_allow" "$ipv6_allow" \
+            "$ipv4_grey" "$ipv6_grey" \
+            "$ipv4_ban" "$ipv6_ban" \
+            "$ipv4_emergency" "$ipv6_emergency"
     else
         echo "=== HTTP Bot Guard Status ==="
         echo ""
-        echo "  Enabled:            $enabled"
-        echo "  Daemon running:     $daemon_running"
+        echo "  Module:             $([[ "$enabled" == "true" ]] && echo "ENABLED" || echo "disabled")"
+        echo "  Daemon:             $([[ "$daemon_running" == "true" ]] && echo "RUNNING" || echo "stopped")"
+        echo "  Structure:          $([[ "$structural_present" == "true" ]] && echo "PRESENT" || echo "missing")"
         echo "  Loop interval:      ${loop_interval}s (${pressure_interval}s under pressure)"
         echo "  Suspect rate:       $suspect_rate"
-        echo "  IPv4 suspects:      $ipv4_suspects"
-        echo "  IPv6 suspects:      $ipv6_suspects"
+        echo ""
+        echo "  Kernel Sets (source: $source, $freshness_at):"
+        printf "    %-12s  %6s  %6s\n" "" "IPv4" "IPv6"
+        printf "    %-12s  %6s  %6s\n" "───────────" "──────" "──────"
+        printf "    %-12s  %6s  %6s\n" "suspect" "$ipv4_suspects" "$ipv6_suspects"
+        printf "    %-12s  %6s  %6s\n" "pending" "$ipv4_pending" "$ipv6_pending"
+        printf "    %-12s  %6s  %6s\n" "allow" "$ipv4_allow" "$ipv6_allow"
+        printf "    %-12s  %6s  %6s\n" "grey" "$ipv4_grey" "$ipv6_grey"
+        printf "    %-12s  %6s  %6s\n" "ban" "$ipv4_ban" "$ipv6_ban"
+        printf "    %-12s  %6s  %6s\n" "emergency" "$ipv4_emergency" "$ipv6_emergency"
         echo ""
         echo "  Config:             $_BOTGUARD_CONF"
         if [[ -f "$_BOTGUARD_CONF_LOCAL" ]]; then
@@ -658,6 +756,9 @@ export -f _nftban_botguard_config
 export -f _nftban_botguard_stats
 export -f _botguard_config_get
 export -f _botguard_config_set
+# v1.79.0: Kernel truth helpers (BUG-3 fix)
+export -f _botguard_kernel_set_count
+export -f _botguard_kernel_set_exists
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
