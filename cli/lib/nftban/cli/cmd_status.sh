@@ -950,8 +950,16 @@ _status_section_protection() {
     if [[ "$botguard_enabled" == "true" ]]; then
         if nft list set ip nftban http_bot_suspect &>/dev/null 2>&1; then
             local v4_suspects=0 v6_suspects=0
-            v4_suspects=$(nft list set ip nftban http_bot_suspect 2>/dev/null | grep -c "timeout" || echo "0")
-            v6_suspects=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null | grep -c "timeout" || echo "0")
+            # v1.80.0 FIX: Only count within "elements = { }" section
+            local _bg_out_v4 _bg_out_v6
+            _bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
+            _bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
+            if echo "$_bg_out_v4" | grep -q 'elements = {'; then
+                v4_suspects=$(echo "$_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+            fi
+            if echo "$_bg_out_v6" | grep -q 'elements = {'; then
+                v6_suspects=$(echo "$_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+            fi
             botguard_status="ACTIVE (${v4_suspects}v4+${v6_suspects}v6 suspects)"
         else
             botguard_status="ENABLED (sets not loaded)"
@@ -1857,8 +1865,16 @@ output_json() {
     fi
     local json_bg_v4=0 json_bg_v6=0
     if [[ "$json_botguard_enabled" == "true" ]]; then
-        json_bg_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null | grep -c "timeout" || echo "0")
-        json_bg_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null | grep -c "timeout" || echo "0")
+        # v1.80.0 FIX: Only count within "elements = { }" section
+        local _json_bg_out_v4 _json_bg_out_v6
+        _json_bg_out_v4=$(nft list set ip nftban http_bot_suspect 2>/dev/null)
+        _json_bg_out_v6=$(nft list set ip6 nftban http_bot_suspect6 2>/dev/null)
+        if echo "$_json_bg_out_v4" | grep -q 'elements = {'; then
+            json_bg_v4=$(echo "$_json_bg_out_v4" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+        fi
+        if echo "$_json_bg_out_v6" | grep -q 'elements = {'; then
+            json_bg_v6=$(echo "$_json_bg_out_v6" | sed -n '/elements = {/,/}/p' | grep -o ' timeout ' | wc -l)
+        fi
     fi
     echo "    \"botguard\": {\"enabled\": $json_botguard_enabled, \"ipv4_suspects\": $json_bg_v4, \"ipv6_suspects\": $json_bg_v6},"
 
