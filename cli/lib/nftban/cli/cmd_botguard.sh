@@ -162,23 +162,35 @@ ${key}=\"${value}\""
 # See: BUGFIX_v1.79_IDEMPOTENCY_PREDICATES.md
 # =============================================================================
 
-# Count elements in an nftables set directly from kernel (v1.79.0)
+# Count elements in an nftables set directly from kernel (v1.79.0 + v1.80.0 fix)
 # Returns: integer count of elements in set
 # Usage: _botguard_kernel_set_count "ip nftban" "http_bot_suspect"
+# v1.80.0: Fixed regex that matched metadata (size, flags) instead of actual IPs
 _botguard_kernel_set_count() {
     local table="$1"
     local set_name="$2"
 
-    # Get set content and count actual IP elements
-    # nft list set output format: elements = { ip1 timeout ..., ip2 timeout ... }
-    # We count IPs directly, not "timeout" keywords (which was the bug)
+    # Get set content
     local output
     output=$(nft list set $table "$set_name" 2>/dev/null) || { echo "0"; return; }
 
-    # Extract elements section and count IPv4/IPv6 addresses
-    # Pattern: either IPv4 (192.0.2.1) or IPv6 (2001:db8::1)
+    # v1.80.0 FIX: Only count elements within "elements = { ... }" section
+    # If no elements section exists, the set is empty
+    if ! echo "$output" | grep -q 'elements = {'; then
+        echo "0"
+        return
+    fi
+
+    # Extract elements section only, then count actual IPs
+    # Elements format: "elements = { ip1 timeout Xh, ip2 timeout Yh }"
+    # Each element has " timeout " after the IP (not at line start like "flags timeout")
+    local elements_section
+    elements_section=$(echo "$output" | sed -n '/elements = {/,/}/p')
+
+    # Count by matching " timeout " pattern - each element has exactly one
+    # This avoids matching "flags timeout" which appears in set definition
     local count
-    count=$(echo "$output" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-fA-F:]{2,39}' | wc -l)
+    count=$(echo "$elements_section" | grep -o ' timeout ' | wc -l)
     echo "${count:-0}"
 }
 
