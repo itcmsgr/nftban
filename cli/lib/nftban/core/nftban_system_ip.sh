@@ -154,25 +154,39 @@ nftban_get_interface_ips() {
 # =============================================================================
 # CHECK IF IP ALREADY WHITELISTED
 # =============================================================================
+# v1.79.0 BUG-1 FIX: Split file/nft predicates for truth-domain separation
+# Invariant: A predicate must answer only one truth-domain question.
+# See: BUGFIX_v1.79_IDEMPOTENCY_PREDICATES.md
+# =============================================================================
 
+# Check FILE truth only (v1.79.0)
+# Returns: 0 if IP exists in whitelist file, 1 otherwise
+nftban_is_ip_in_whitelist_file() {
+    local ip="$1"
+    [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]] || return 1
+    grep -E "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" >/dev/null 2>&1
+}
+
+# Check NFT SET truth only (v1.79.0)
+# Returns: 0 if IP exists in nftables whitelist set, 1 otherwise
+nftban_is_ip_in_whitelist_set() {
+    local ip="$1"
+    if [[ "$ip" =~ : ]]; then
+        nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null
+    else
+        nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null
+    fi
+}
+
+# Composite helper: OR semantics for idempotency (v1.79.0)
+# Use for status/query paths where cross-domain answer is valid.
+# For write/sync paths, use split helpers directly.
 nftban_is_ip_whitelisted() {
     local ip="$1"
-
-    # Check if IP exists in system whitelist FILE
-    [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]] || return 1
-    grep -qE "^${ip}([[:space:]]|/|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || return 1
-
-    # BUG FIX (v1.19.22): Also verify IP is in nft set (not just file)
-    # After reboot or nft flush, file may have IP but nft set is empty
-    if [[ "$ip" =~ : ]]; then
-        # IPv6 - check nft set
-        nft get element ip6 nftban whitelist_ipv6 "{ $ip }" &>/dev/null || return 1
-    else
-        # IPv4 - check nft set
-        nft get element ip nftban whitelist_ipv4 "{ $ip }" &>/dev/null || return 1
-    fi
-
-    return 0
+    # Returns TRUE if IP is in file OR nft set (either domain)
+    # This prevents skipping nft add when file has IP but set is empty (reboot)
+    # and prevents skipping file append when set has IP but file is missing
+    nftban_is_ip_in_whitelist_file "$ip" || nftban_is_ip_in_whitelist_set "$ip"
 }
 
 # =============================================================================
@@ -182,12 +196,13 @@ nftban_is_ip_whitelisted() {
 nftban_add_system_ip() {
     local ip="$1"
     local comment="$2"
+    local _file_added="false"
+    local _nft_added="false"
 
-    # Skip if already whitelisted
-    if nftban_is_ip_whitelisted "$ip"; then
-        echo "[SKIP] Already whitelisted: $ip"
-        return 0
-    fi
+    # v1.79.0 BUG-1 FIX: Use split helpers for truth-domain separation
+    # File append decision uses file-only check
+    # NFT add decision uses set-only check
+    # This prevents duplicates after reboot (file has IP but nft set empty)
 
     # Ensure whitelist file exists
     if [[ ! -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
@@ -199,41 +214,60 @@ nftban_add_system_ip() {
 HEADER
     fi
 
-    # Add IP using atomic append
-    if declare -f nftban_atomic_append >/dev/null 2>&1; then
-        echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" | \
-            nftban_atomic_append "$NFTBAN_WHITELIST_SYSTEM"
+    # DECISION 1: Should I append to file? (file-only truth)
+    if nftban_is_ip_in_whitelist_file "$ip"; then
+        _file_added="true"  # Already in file, no append needed
     else
-        # Fallback to regular append if atomic not available
-        echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        # Add IP using atomic append
+        if declare -f nftban_atomic_append >/dev/null 2>&1; then
+            echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" | \
+                nftban_atomic_append "$NFTBAN_WHITELIST_SYSTEM"
+        else
+            # Fallback to regular append if atomic not available
+            echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        fi
+        _file_added="true"
     fi
 
-    # Also add to nftables immediately via IPC (v1.18.0: IPC-only writes)
-    # v1.51.0 FIX: Check daemon is running before IPC — blocks forever if daemon
-    # stopped (e.g. during RPM upgrade). Fallback to direct nft add element.
-    # See: srv2 lockout 2026-03-28 (CSF disable + custom SSH port + IPC hang)
-    # v1.59.1 BUG-6: Log warning when both IPC and direct nft paths fail (was silently swallowed)
-    local _nft_added="false"
-    if declare -f nft_ipc_add_element &>/dev/null && systemctl is-active nftband.service &>/dev/null; then
-        if [[ "$ip" =~ : ]]; then
-            timeout 10s nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null && _nft_added="true"
-        else
-            timeout 10s nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null && _nft_added="true"
+    # DECISION 2: Should I add to nft set? (set-only truth)
+    if nftban_is_ip_in_whitelist_set "$ip"; then
+        _nft_added="true"  # Already in set, no add needed
+    else
+        # Add to nftables immediately via IPC (v1.18.0: IPC-only writes)
+        # v1.51.0 FIX: Check daemon is running before IPC — blocks forever if daemon
+        # stopped (e.g. during RPM upgrade). Fallback to direct nft add element.
+        # See: srv2 lockout 2026-03-28 (CSF disable + custom SSH port + IPC hang)
+        if declare -f nft_ipc_add_element &>/dev/null && systemctl is-active nftband.service &>/dev/null; then
+            if [[ "$ip" =~ : ]]; then
+                timeout 10s nft_ipc_add_element "ip6 nftban" "whitelist_ipv6" "$ip" 2>/dev/null && _nft_added="true"
+            else
+                timeout 10s nft_ipc_add_element "ip nftban" "whitelist_ipv4" "$ip" 2>/dev/null && _nft_added="true"
+            fi
         fi
-    fi
-    # Fallback: direct nft if IPC failed or daemon down
-    if [[ "$_nft_added" == "false" ]] && nft list tables 2>/dev/null | grep -q 'nftban'; then
-        if [[ "$ip" =~ : ]]; then
-            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null && _nft_added="true"
-        else
-            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null && _nft_added="true"
+        # Fallback: direct nft if IPC failed or daemon down
+        if [[ "$_nft_added" == "false" ]] && nft list tables 2>/dev/null | grep -q 'nftban'; then
+            if [[ "$ip" =~ : ]]; then
+                nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null && _nft_added="true"
+            else
+                nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null && _nft_added="true"
+            fi
         fi
-    fi
-    if [[ "$_nft_added" == "false" ]]; then
-        echo "[WARN] Failed to add $ip to nft set (config updated, nft pending next reload)" >&2
+        # v1.59.1 BUG-6: Log warning when both IPC and direct nft paths fail
+        if [[ "$_nft_added" == "false" ]]; then
+            echo "[WARN] Failed to add $ip to nft set (config updated, nft pending next reload)" >&2
+        fi
     fi
 
-    echo "[ADD] Whitelisted: $ip ($comment)"
+    # Report result
+    if [[ "$_file_added" == "true" ]] && nftban_is_ip_in_whitelist_file "$ip"; then
+        if nftban_is_ip_in_whitelist_set "$ip"; then
+            echo "[SKIP] Already whitelisted: $ip"
+        else
+            echo "[ADD] Whitelisted: $ip ($comment) [file only, nft pending]"
+        fi
+    else
+        echo "[ADD] Whitelisted: $ip ($comment)"
+    fi
 }
 
 # =============================================================================
@@ -604,6 +638,9 @@ EOF
 export -f nftban_get_public_ip
 export -f nftban_get_current_user_ip
 export -f nftban_get_interface_ips
+# v1.79.0: Split helpers for truth-domain separation (BUG-1 fix)
+export -f nftban_is_ip_in_whitelist_file
+export -f nftban_is_ip_in_whitelist_set
 export -f nftban_is_ip_whitelisted
 export -f nftban_add_system_ip
 export -f nftban_whitelist_system_sync
