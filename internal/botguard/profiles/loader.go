@@ -115,8 +115,9 @@ func (pl *ProfileLoader) loadProfile(name string) (*Profile, error) {
 	pl.mu.RUnlock()
 
 	// Load from disk
+	// profilesDir is a configured system path, name comes from validated config
 	path := filepath.Join(pl.profilesDir, name+".yaml")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- controlled path from config
 	if err != nil {
 		return nil, fmt.Errorf("read profile file: %w", err)
 	}

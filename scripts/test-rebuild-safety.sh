@@ -38,7 +38,8 @@ REBUILD_FILES=(
     "cli/lib/nftban/cli/cmd_rebuild.sh"
 )
 
-# Required safety patterns
+# Required safety patterns (documentation reference, checks use patterns inline)
+# shellcheck disable=SC2034
 SAFETY_PATTERNS=(
     # Pre-validation
     "nftban-validate"
