@@ -455,17 +455,27 @@ output_brief() {
     fi
 
     local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
-    local health_word="unknown"
+    local health_word=""
+    local _hs=""
     if [[ -r "$health_cache" ]]; then
-        local _hs
-        _hs=$(cat "$health_cache" 2>/dev/null) || _hs="UNKNOWN"
-        case "$_hs" in
-            OK) health_word="healthy" ;;
-            WARNING*) health_word="info" ;;
-            ERROR*|CRITICAL*) health_word="errors" ;;
-            *) health_word="unknown" ;;
+        _hs=$(cat "$health_cache" 2>/dev/null) || _hs=""
+    fi
+
+    # v1.80.0: UNKNOWN is forbidden - derive from protection state if cache unavailable
+    if [[ -z "$_hs" || "$_hs" == "UNKNOWN" ]]; then
+        case "$base_state" in
+            PROTECTED) _hs="OK" ;;
+            DEGRADED)  _hs="WARNING" ;;
+            DOWN|*)    _hs="ERROR" ;;
         esac
     fi
+
+    case "$_hs" in
+        OK) health_word="healthy" ;;
+        WARNING*) health_word="info" ;;
+        ERROR*|CRITICAL*) health_word="errors" ;;
+        *) health_word="healthy" ;; # Default to healthy if still unknown
+    esac
 
     # When PROTECTED, health issues are informational not errors
     if [[ "$base_state" == "PROTECTED" && "$health_word" == "errors" ]]; then
@@ -731,7 +741,8 @@ _status_section_protection() {
     elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
         ddos_status="NOT INSTALLED"
     elif [[ "$ddos_enabled" != "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
-        ddos_status="RULES LOADED (use 'nftban ddos enable' to activate)"
+        # v1.80.0: Truthful wording - structural present but not configured to run
+        ddos_status="PRESENT (disabled in config)"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
@@ -1082,14 +1093,24 @@ _status_section_health() {
     # Load health module
     # Read from health cache (written by nftban-health.timer)
     local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
-    local health_status="UNKNOWN"
+    local health_status=""
+    local _health_base_state="${protection_state%%:*}"
 
     if [[ -r "$health_cache" ]]; then
-        health_status=$(cat "$health_cache" 2>/dev/null) || health_status="UNKNOWN"
+        health_status=$(cat "$health_cache" 2>/dev/null) || health_status=""
+    fi
+
+    # v1.80.0: UNKNOWN is forbidden - derive from protection state if cache unavailable
+    # Deterministic mapping: protection_state → health_status
+    if [[ -z "$health_status" || "$health_status" == "UNKNOWN" ]]; then
+        case "$_health_base_state" in
+            PROTECTED) health_status="OK" ;;
+            DEGRADED)  health_status="WARNING" ;;
+            DOWN|*)    health_status="ERROR" ;;
+        esac
     fi
 
     # v1.66.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
-    local _health_base_state="${protection_state%%:*}"
     if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
         printf "  %-20s %s\n" "Overall Status......" "OK (info notices)"
     else
