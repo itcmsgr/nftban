@@ -51,7 +51,13 @@ REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd"
 # v2.1: fail2ban removed - use native login monitoring
 REQUIRED_FIELDS[packages]="nftables curl bash systemd mail golang"
 REQUIRED_FIELDS[services]="cron rsyslog nftables sshd"
-REQUIRED_FIELDS[paths]="nft systemctl journalctl"
+REQUIRED_FIELDS[paths]="nft systemctl journalctl auth_log maillog exim_log exim_reject_log dovecot_log pureftpd_log"
+
+# BUG-14: detection-source path keys
+# Universal: required on every distro family (above, in REQUIRED_FIELDS[paths])
+# RHEL-only: required on rhel family, must be 'n/a' literal on debian family
+REQUIRED_PATHS_RHEL_ONLY="directadmin_login_log directadmin_security_log"
+DEBIAN_NA_PATHS="directadmin_login_log directadmin_security_log"
 
 # =============================================================================
 # VALIDATION FUNCTIONS
@@ -316,9 +322,53 @@ validate_config() {
             elif [[ "$section" == "package_manager" ]]; then
                 validate_pkgmgr "$file"
                 validate_query_cmd "$file"
+            elif [[ "$section" == "paths" ]]; then
+                validate_bug14_paths "$file"
             fi
         fi
     done
+}
+
+# BUG-14: validate detection-source path keys per family
+validate_bug14_paths() {
+    local file="$1"
+    local family
+    family=$(get_value "$file" "distro" "family")
+
+    case "$family" in
+        rhel)
+            for key in $REQUIRED_PATHS_RHEL_ONLY; do
+                local v
+                v=$(get_value "$file" "paths" "$key")
+                if [[ -z "$v" ]]; then
+                    echo -e "${RED}    ✗ BUG-14: missing required RHEL key: $key${NC}"
+                    ((ERRORS++)) || true
+                elif [[ "$v" == "n/a" ]]; then
+                    echo -e "${RED}    ✗ BUG-14: $key must be a real path on RHEL family, got 'n/a'${NC}"
+                    ((ERRORS++)) || true
+                else
+                    echo -e "${GREEN}    ✓ BUG-14: $key = $v${NC}"
+                    ((PASSED++)) || true
+                fi
+            done
+            ;;
+        debian)
+            for key in $DEBIAN_NA_PATHS; do
+                local v
+                v=$(get_value "$file" "paths" "$key")
+                if [[ -z "$v" ]]; then
+                    echo -e "${RED}    ✗ BUG-14: missing required Debian key: $key (must be 'n/a')${NC}"
+                    ((ERRORS++)) || true
+                elif [[ "$v" != "n/a" ]]; then
+                    echo -e "${RED}    ✗ BUG-14: $key must be 'n/a' on Debian family, got '$v'${NC}"
+                    ((ERRORS++)) || true
+                else
+                    echo -e "${GREEN}    ✓ BUG-14: $key = n/a (correct for Debian family)${NC}"
+                    ((PASSED++)) || true
+                fi
+            done
+            ;;
+    esac
 }
 
 # =============================================================================
