@@ -25,6 +25,7 @@
 package distroconf
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -322,19 +323,87 @@ PRETTY_NAME="AlmaLinux 9.5 (Teal Serval)"
 	}
 }
 
-func TestMajorID(t *testing.T) {
+func TestSeriesOf(t *testing.T) {
 	cases := map[string]string{
-		"almalinux-9.7":     "almalinux-9",
-		"almalinux-9":       "almalinux-9",
-		"almalinux":         "almalinux",
-		"ubuntu-24.04":      "ubuntu-24",
-		"debian-12":         "debian-12",
-		"centos-stream-9.5": "centos-stream-9",
+		"9":     "9",
+		"9.7":   "9",
+		"24.04": "24",
+		"24.10": "24",
+		"12.5":  "12",
+		"10":    "10",
+		"":      "",
+		"abc":   "",
+		"43":    "43",
 	}
 	for in, want := range cases {
-		if got := majorID(in); got != want {
-			t.Errorf("majorID(%q): got %q, want %q", in, got, want)
+		if got := seriesOf(in); got != want {
+			t.Errorf("seriesOf(%q): got %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestFamilyOf(t *testing.T) {
+	cases := map[string]string{
+		"almalinux-9":      "almalinux",
+		"almalinux-10":     "almalinux",
+		"ubuntu-22":        "ubuntu",
+		"ubuntu-24":        "ubuntu",
+		"debian-12":        "debian",
+		"centos-stream-9":  "centos-stream",
+		"centos-stream-10": "centos-stream",
+		"fedora":           "", // no series suffix
+		"rocky-9":          "rocky",
+	}
+	for in, want := range cases {
+		if got := familyOf(in); got != want {
+			t.Errorf("familyOf(%q): got %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFindHighestSeriesConf(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"almalinux-8.conf",
+		"almalinux-9.conf",
+		"almalinux-10.conf",
+		"unrelated.conf",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("[paths]\n"), 0644); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+	}
+
+	got := findHighestSeriesConf(dir, "almalinux")
+	want := filepath.Join(dir, "almalinux-10.conf")
+	if got != want {
+		t.Errorf("findHighestSeriesConf: got %q, want %q", got, want)
+	}
+
+	if findHighestSeriesConf(dir, "ubuntu") != "" {
+		t.Errorf("expected empty for nonexistent family")
+	}
+}
+
+func TestLoadByID_ForwardFitNewSeries(t *testing.T) {
+	// Simulates a host running AlmaLinux 11.x when the newest shipped
+	// conf is almalinux-10.conf. Should fall back to almalinux-10.conf
+	// rather than failing.
+	dir := t.TempDir()
+	tenPath := filepath.Join(dir, "almalinux-10.conf")
+	if err := os.WriteFile(tenPath, []byte("[paths]\nauth_log = /var/log/secure\n[distro]\nfamily = rhel\n"), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "almalinux-9.conf"), []byte("[paths]\n[distro]\nfamily = rhel\n"), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	l, err := loadByID(dir, "almalinux-11")
+	if err != nil {
+		t.Fatalf("loadByID forward-fit: %v", err)
+	}
+	if l.ConfPath() != tenPath {
+		t.Errorf("forward-fit: got %q, want %q", l.ConfPath(), tenPath)
 	}
 }
 
