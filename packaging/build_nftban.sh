@@ -420,6 +420,10 @@ install -D -m 0644 etc/nftban/suricata/profiles/standard.yaml %{buildroot}/etc/n
 install -D -m 0644 etc/nftban/suricata/profiles/maximum.yaml %{buildroot}/etc/nftban/suricata/profiles/maximum.yaml
 install -D -m 0664 etc/nftban/suricata/config/profile.conf %{buildroot}/etc/nftban/suricata/config/profile.conf
 
+# BotGuard v2 profiles (v1.79.0 - disabled by default)
+install -D -m 0644 etc/nftban/conf.d/botguard/profiles/generic.yaml %{buildroot}/etc/nftban/conf.d/botguard/profiles/generic.yaml
+install -D -m 0644 etc/nftban/conf.d/botguard/profiles/wordpress.yaml %{buildroot}/etc/nftban/conf.d/botguard/profiles/wordpress.yaml
+
 # Distro configuration files (CRITICAL for distro-aware paths)
 mkdir -p %{buildroot}/etc/nftban/distros
 cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
@@ -536,6 +540,7 @@ find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildr
 # Config directories (must match %files section)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
+mkdir -p %{buildroot}/etc/nftban/conf.d/botguard/profiles
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports,botguard,community}
 # v1.41.0: Community stats config default
 install -m 0644 install/config/conf.d/community_stats.conf.default %{buildroot}/etc/nftban/conf.d/community_stats.conf.default
@@ -1149,6 +1154,8 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/main.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/allowed_crawlers.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/denied_crawlers.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/botguard/profiles
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/profiles/*.yaml
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
@@ -1741,6 +1748,8 @@ PRERM
 /etc/nftban/conf.d/botguard/main.conf
 /etc/nftban/conf.d/botguard/allowed_crawlers.conf
 /etc/nftban/conf.d/botguard/denied_crawlers.conf
+/etc/nftban/conf.d/botguard/profiles/generic.yaml
+/etc/nftban/conf.d/botguard/profiles/wordpress.yaml
 /etc/nftban/conf.d/tunnel/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
@@ -1759,7 +1768,7 @@ build_deb() {
 
     # Create directory structure
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel,community},log/nftban/botguard,cache/nftban},run/nftban}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard/profiles,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel,community},log/nftban/botguard,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -1865,6 +1874,10 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/standard.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/maximum.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0664 "${PROJECT_ROOT}/etc/nftban/suricata/config/profile.conf" "${deb_root}/etc/nftban/suricata/config/"
+
+    # BotGuard v2 profiles (v1.79.0 - disabled by default)
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/conf.d/botguard/profiles/generic.yaml" "${deb_root}/etc/nftban/conf.d/botguard/profiles/"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/conf.d/botguard/profiles/wordpress.yaml" "${deb_root}/etc/nftban/conf.d/botguard/profiles/"
 
     # Copy distro configuration files (CRITICAL for distro-aware paths)
     mkdir -p "${deb_root}/etc/nftban/distros"
