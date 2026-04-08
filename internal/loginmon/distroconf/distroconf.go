@@ -103,6 +103,8 @@ func Load(dir string) (*Loader, error) {
 // LoadFromFile loads a specific distro conf file. Used for tests and for the
 // case where the operator overrides distro detection via NFTBAN_DISTRO_CONF.
 func LoadFromFile(path string) (*Loader, error) {
+	// #nosec G304 -- path is controlled by loadByID (DefaultDir + detected distro id),
+	// or by tests passing fixture paths under testdata/. Not derived from external input.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -342,6 +344,8 @@ func (l *Loader) Resolve(key string) Resolution {
 // detectDistro reads /etc/os-release and returns "id-version_id".
 // Returns "" if neither field is present.
 func detectDistro(osReleasePath string) (string, error) {
+	// #nosec G304 -- only caller passes the package constant DefaultOSReleasePath
+	// (/etc/os-release). Path parameter exists for test injection only.
 	f, err := os.Open(osReleasePath)
 	if err != nil {
 		return "", fmt.Errorf("open %s: %w", osReleasePath, err)

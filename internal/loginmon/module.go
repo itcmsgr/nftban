@@ -789,6 +789,8 @@ func queryEximLogPath() (string, error) {
 	if err != nil {
 		return "", nil // not installed; not an error
 	}
+	// #nosec G204 -- exim path comes from PATH lookup, not user input.
+	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
 	cmd := exec.Command(exim, "-bP", "log_file_path")
 	out, err := cmd.Output()
 	if err != nil {
@@ -819,6 +821,8 @@ func queryPostfixMaillogPath() (string, error) {
 	if err != nil {
 		return "", nil // not installed; not an error
 	}
+	// #nosec G204 -- postconf path comes from PATH lookup, not user input.
+	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
 	cmd := exec.Command(postconf, "-h", "maillog_file")
 	out, err := cmd.Output()
 	if err != nil {
