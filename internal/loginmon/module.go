@@ -45,6 +45,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +56,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/loginmon/detector"
+	"github.com/itcmsgr/nftban/internal/loginmon/distroconf"
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
@@ -113,6 +115,11 @@ type Module struct {
 	suricataAvail    bool
 	detectedServices map[string]bool
 
+	// BUG-15: central distro config loader (single source of truth for log paths)
+	// Loaded once at Init(); nil means loader unavailable (parser falls through
+	// to authoritative tool query, then hard-coded fallback list).
+	distroConf *distroconf.Loader
+
 	// Log watchers
 	journalCmd *exec.Cmd
 	eveFile    *os.File
@@ -150,6 +157,19 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	// Load configuration
 	if err := m.loadConfig(); err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// BUG-15: load central distro config (single source of truth for log paths).
+	// Soft failure: if the loader can't be constructed, m.distroConf stays nil
+	// and parser path resolution falls through to authoritative tools and the
+	// hard-coded fallback lists. The doctor surfaces the loader failure as a
+	// warning, not an error.
+	if loader, err := distroconf.Load(distroconf.DefaultDir); err == nil {
+		m.distroConf = loader
+		log.Printf("[LOGINMON] distroconf loaded: distro=%s conf=%s family=%s",
+			loader.DistroID(), loader.ConfPath(), loader.Family())
+	} else {
+		log.Printf("[LOGINMON] distroconf unavailable: %v (parsers will fall through to authoritative tools and fallback)", err)
 	}
 
 	// Detect available services
@@ -642,37 +662,251 @@ var mailLogPaths = map[string][]string{
 	},
 }
 
-// startFileWatchers launches tail -F watchers for services
-// that log to their own files instead of journalctl.
-func (m *Module) startFileWatchers(ctx context.Context) {
-	// Panel services (DirectAdmin, cPanel, Plesk)
-	for service, paths := range panelLogPaths {
-		if !m.detectedServices[service] {
-			continue
+// resolveSourcePath implements the BUG-4/BUG-12/BUG-15 layered resolution
+// order for any parser source:
+//
+//  1. distroconf.Resolve(key)            ← central truth surface (BUG-15)
+//  2. authorityFn() (optional)           ← e.g. `exim -bP log_file_path`
+//  3. ordered hard-coded fallback list   ← last-resort safety net
+//  4. ""                                 ← MISSING (caller does not start watcher)
+//
+// Every successful resolution emits exactly one [LOGINMON] init line that
+// records the chosen path AND the resolution origin, satisfying Rule 1 of
+// the v1.79.2 truth foundation plan: no parser may bypass distroconf, and
+// every binding must be observable in journald.
+//
+// Returns ("", false) if all layers fail (MISSING). Returns ("", true) if
+// the distroconf marks the source as not-applicable on this distro (DISABLED;
+// caller skips silently with no warning).
+//
+// authorityFn may be nil for sources with no authoritative tool query
+// (e.g. dovecot, directadmin). authorityName is the human-readable label
+// used in the init log line ("exim -bP", "postconf -h maillog_file", "").
+func (m *Module) resolveSourcePath(
+	service, key string,
+	authorityFn func() (string, error),
+	authorityName string,
+	fallback []string,
+) (path string, naSkip bool) {
+	// Layer 1: distroconf
+	r := m.distroConf.Resolve(key) // safe on nil receiver — returns LoaderUnavailable
+	switch r.Outcome {
+	case distroconf.Resolved:
+		if _, err := os.Stat(r.Path); err == nil {
+			log.Printf("[LOGINMON] %s: %s=%s resolved_by=distroconf distro=%s",
+				service, key, r.Path, r.DistroID)
+			return r.Path, false
 		}
-		for _, logPath := range paths {
-			if _, err := os.Stat(logPath); err != nil {
-				continue
-			}
-			go m.runFileWatcher(ctx, service, logPath)
+		log.Printf("[LOGINMON] %s: distroconf path %s not on disk (%s); falling through",
+			service, r.Path, r.Reason)
+		// fall through to layer 2
+	case distroconf.NotApplicable:
+		log.Printf("[LOGINMON] %s: state=DISABLED reason=%s", service, r.Reason)
+		return "", true
+	case distroconf.Absent:
+		if authorityFn != nil {
+			log.Printf("[LOGINMON] %s: distroconf=absent (%s); trying authoritative tool", service, r.Reason)
+		} else {
+			log.Printf("[LOGINMON] %s: distroconf=absent (%s); trying fallback", service, r.Reason)
+		}
+	case distroconf.LoaderUnavailable:
+		if authorityFn != nil {
+			log.Printf("[LOGINMON] %s: distroconf=unavailable; trying authoritative tool", service)
+		} else {
+			log.Printf("[LOGINMON] %s: distroconf=unavailable; trying fallback", service)
 		}
 	}
 
-	// Mail services (Exim, Dovecot, Postfix) — log to files, not journalctl
-	watchedPaths := make(map[string]bool) // Deduplicate shared paths (e.g. /var/log/maillog)
-	for service, paths := range mailLogPaths {
+	// Layer 2: authoritative tool query (optional)
+	if authorityFn != nil {
+		if p, err := authorityFn(); err == nil && p != "" {
+			if _, err := os.Stat(p); err == nil {
+				log.Printf("[LOGINMON] %s: %s=%s resolved_by=authority(%s)", service, key, p, authorityName)
+				return p, false
+			}
+			log.Printf("[LOGINMON] %s: authority returned %s but file missing; falling through", service, p)
+		} else if err != nil {
+			log.Printf("[LOGINMON] %s: authority probe failed: %v", service, err)
+		}
+	}
+
+	// Layer 3: hard-coded fallback list (preserves legacy behavior)
+	for _, p := range fallback {
+		if _, err := os.Stat(p); err == nil {
+			log.Printf("[LOGINMON] %s: %s=%s resolved_by=fallback warning=hardcoded_probe", service, key, p)
+			return p, false
+		}
+	}
+
+	// Layer 4: MISSING
+	log.Printf("[LOGINMON] %s: state=MISSING reason=no candidate path resolved (distroconf, authority, fallback all failed)", service)
+	return "", false
+}
+
+// resolveEximLogPath is the BUG-4 entry point: layered resolution for exim_log
+// using `exim -bP log_file_path` as the authoritative tool.
+func (m *Module) resolveEximLogPath() (path string, naSkip bool) {
+	return m.resolveSourcePath("exim", "exim_log", queryEximLogPath, "exim -bP", mailLogPaths["exim"])
+}
+
+// resolvePostfixLogPath is the BUG-12 entry point: layered resolution for
+// maillog using `postconf -h maillog_file` as the authoritative tool.
+// Postfix and dovecot share the maillog key on most distros; deduplication
+// happens in startFileWatchers.
+func (m *Module) resolvePostfixLogPath() (path string, naSkip bool) {
+	return m.resolveSourcePath("postfix", "maillog", queryPostfixMaillogPath, "postconf -h maillog_file", mailLogPaths["postfix"])
+}
+
+// resolveDovecotLogPath is the dovecot entry point: layered resolution for
+// dovecot_log. Dovecot has no authoritative tool query (it does not expose
+// its log path via CLI), so layer 2 is skipped. Distroconf or fallback only.
+func (m *Module) resolveDovecotLogPath() (path string, naSkip bool) {
+	return m.resolveSourcePath("dovecot", "dovecot_log", nil, "", mailLogPaths["dovecot"])
+}
+
+// resolveDirectAdminLoginLogPath is the BUG-2 entry point (login.log half):
+// layered resolution for directadmin_login_log. No authoritative tool;
+// distroconf or fallback only. Returns DISABLED on Debian family (n/a literal).
+func (m *Module) resolveDirectAdminLoginLogPath() (path string, naSkip bool) {
+	return m.resolveSourcePath("directadmin", "directadmin_login_log", nil, "", panelLogPaths["directadmin"])
+}
+
+// resolveDirectAdminSecurityLogPath is the BUG-2 entry point (security.log half):
+// layered resolution for directadmin_security_log. This is the second DA source
+// added by the BUG-2 fix — DA's BFM logs failed logins here, and the existing
+// parser was missing it entirely. Returns DISABLED on Debian family.
+func (m *Module) resolveDirectAdminSecurityLogPath() (path string, naSkip bool) {
+	return m.resolveSourcePath("directadmin", "directadmin_security_log", nil, "",
+		[]string{"/var/log/directadmin/security.log"})
+}
+
+// queryEximLogPath runs `exim -bP log_file_path` and parses the output.
+// Returns the resolved path or an error. Empty path is returned without error
+// if the binary is missing (which is expected on hosts where exim is not
+// installed at all — caller should handle as Absent).
+func queryEximLogPath() (string, error) {
+	exim, err := exec.LookPath("exim")
+	if err != nil {
+		return "", nil // not installed; not an error
+	}
+	// #nosec G204 -- exim path comes from PATH lookup, not user input.
+	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
+	cmd := exec.Command(exim, "-bP", "log_file_path")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("exim -bP failed: %w", err)
+	}
+	// Output format: "log_file_path = /var/log/exim/main_%slog"
+	// or sometimes just "/var/log/exim/main_%slog" — handle both.
+	line := strings.TrimSpace(string(out))
+	if eq := strings.IndexByte(line, '='); eq >= 0 {
+		line = strings.TrimSpace(line[eq+1:])
+	}
+	// Exim's path may contain "%slog" which expands at runtime to mainlog/rejectlog/paniclog.
+	// We want the mainlog form for our parser.
+	line = strings.ReplaceAll(line, "%slog", "mainlog")
+	if line == "" {
+		return "", fmt.Errorf("exim -bP returned empty path")
+	}
+	return line, nil
+}
+
+// queryPostfixMaillogPath runs `postconf -h maillog_file` and parses the output.
+// Returns the resolved path or an error. Empty path is returned without error
+// if postconf is missing (caller should handle as Absent — most postfix
+// installations log via syslog and do not set maillog_file). An empty string
+// is also returned if the directive is unset, which is the common case.
+func queryPostfixMaillogPath() (string, error) {
+	postconf, err := exec.LookPath("postconf")
+	if err != nil {
+		return "", nil // not installed; not an error
+	}
+	// #nosec G204 -- postconf path comes from PATH lookup, not user input.
+	// Arguments are hard-coded constants. This is a system tool query, not user dispatch.
+	cmd := exec.Command(postconf, "-h", "maillog_file")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("postconf -h maillog_file failed: %w", err)
+	}
+	line := strings.TrimSpace(string(out))
+	// Empty result means maillog_file directive is unset — postfix is logging
+	// via syslog. Caller falls through to fallback paths.
+	return line, nil
+}
+
+// startFileWatchers launches tail -F watchers for services
+// that log to their own files instead of journalctl.
+//
+// All parser sources resolve their log paths through the layered resolver
+// (resolveSourcePath) per Rule 1 of the v1.79.2 truth foundation plan:
+// NO parser may bypass distroconf.
+//
+// Resolution order for every source:
+//
+//  1. distroconf.Resolve(<key>)         ← central truth surface
+//  2. authoritative tool (if defined)   ← e.g. exim -bP, postconf -h
+//  3. ordered hard-coded fallback list  ← legacy safety net
+//  4. ""                                ← MISSING (watcher not started)
+//
+// Every binding emits a [LOGINMON] init line in journald that records the
+// chosen path AND the resolution origin, so coverage is observable.
+func (m *Module) startFileWatchers(ctx context.Context) {
+	watchedPaths := make(map[string]bool) // dedup shared paths (e.g. dovecot+postfix on /var/log/maillog)
+
+	startWatcher := func(service, path string) {
+		if path == "" || watchedPaths[path] {
+			return
+		}
+		watchedPaths[path] = true
+		go m.runFileWatcher(ctx, service, path)
+	}
+
+	// === BUG-4: exim ===
+	if m.detectedServices["exim"] {
+		if p, na := m.resolveEximLogPath(); !na {
+			startWatcher("exim", p)
+		}
+	}
+
+	// === BUG-12: postfix ===
+	if m.detectedServices["postfix"] {
+		if p, na := m.resolvePostfixLogPath(); !na {
+			startWatcher("postfix", p)
+		}
+	}
+
+	// === dovecot ===
+	if m.detectedServices["dovecot"] {
+		if p, na := m.resolveDovecotLogPath(); !na {
+			startWatcher("dovecot", p)
+		}
+	}
+
+	// === BUG-2: directadmin (login.log + security.log, both via distroconf) ===
+	if m.detectedServices["directadmin"] {
+		if p, na := m.resolveDirectAdminLoginLogPath(); !na {
+			startWatcher("directadmin", p)
+		}
+		if p, na := m.resolveDirectAdminSecurityLogPath(); !na {
+			startWatcher("directadmin", p)
+		}
+	}
+
+	// === Other panel services (cPanel, Plesk) — still on legacy hard-coded list ===
+	// These have no distroconf keys yet; they remain on the legacy resolution
+	// path until added to the BUG-14 schema in a follow-up PR.
+	for service, paths := range panelLogPaths {
+		if service == "directadmin" {
+			continue // handled above via layered resolver
+		}
 		if !m.detectedServices[service] {
 			continue
 		}
 		for _, logPath := range paths {
-			if watchedPaths[logPath] {
-				continue // Already watching this file from another service
-			}
 			if _, err := os.Stat(logPath); err != nil {
 				continue
 			}
-			watchedPaths[logPath] = true
-			go m.runFileWatcher(ctx, service, logPath)
+			startWatcher(service, logPath)
 		}
 	}
 }

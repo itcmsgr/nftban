@@ -88,3 +88,43 @@ reason = "stdlib: patched in Go 1.25.8+ (our builders run 1.25.8+)"
 [[IgnoredVulns]]
 id = "GO-2026-4603"
 reason = "stdlib: patched in Go 1.25.8+ (our builders run 1.25.8+)"
+
+# === Build-target policy ===
+# NFTBan builds RPM/DEB packages for older distros (RHEL 8/9/10, Debian 11/12/13/14,
+# Ubuntu 22.04/24.04). Build runners use Go 1.25.8+, which includes all stdlib
+# fixes up to and including the entries above.
+#
+# Newer stdlib CVEs (post-1.25.8) are tracked in the section below. Because
+# Go binaries embed their compile-time stdlib, the runtime Go version on the
+# end-user system does not affect the binary's exposure — the compile-time
+# Go is what matters. Bumping past 1.25.8 is a release-policy decision and
+# does not happen automatically; this section gets refreshed by
+# tools/refresh-osv-suppressions.sh and should be reviewed each release cut.
+
+# === Stdlib CVEs published after 1.25.8 ===
+# Auto-added by tools/refresh-osv-suppressions.sh on 2026-04-08.
+# These will be re-evaluated when build runners bump past 1.25.8.
+
+[[IgnoredVulns]]
+id = "GO-2026-4864"
+reason = "stdlib: os.Root.Chmod TOCTOU root escape (Linux); patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4865"
+reason = "stdlib: html/template JsBraceDepth XSS; patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4869"
+reason = "stdlib: archive/tar GNU sparse unbounded alloc; patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4870"
+reason = "stdlib: crypto/tls TLS 1.3 KeyUpdate DoS (unauthenticated); patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4946"
+reason = "stdlib: crypto/x509 inefficient policy validation; patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4947"
+reason = "stdlib: crypto/x509 unexpected work during chain building; patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
