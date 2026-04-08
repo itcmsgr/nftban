@@ -647,6 +647,7 @@ var panelLogPaths = map[string][]string{
 // Zero journal entries for SYSLOG_FACILITY=4+10 from mail on all 4 servers.
 var mailLogPaths = map[string][]string{
 	"exim": {
+		"/var/log/exim_mainlog",  // cPanel (EL) — BUG-17: was missing
 		"/var/log/exim/mainlog",  // DirectAdmin (EL9)
 		"/var/log/exim4/mainlog", // Debian/Ubuntu
 	},

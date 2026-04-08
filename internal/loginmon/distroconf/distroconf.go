@@ -125,12 +125,32 @@ func LoadFromFile(path string) (*Loader, error) {
 }
 
 // loadByID assembles candidate paths in dir and tries each in order.
+//
+// Resolution order for an id like "almalinux-9.7":
+//
+//  1. almalinux-9.7.conf  (exact match — patch version)
+//  2. almalinux-9.conf    (major version — strip patch)  ← BUG-16 fix
+//  3. almalinux.conf      (family fallback — strip all version)
+//
+// This handles distros where /etc/os-release reports a patch version
+// (e.g. "9.7") but the distro confs are named by major version only
+// (e.g. almalinux-9.conf). Without the major-version candidate, lab4
+// (AlmaLinux 9.7) silently fell through to "loader unavailable" and
+// every parser had to use authoritative tools or fallback paths.
 func loadByID(dir, id string) (*Loader, error) {
 	candidates := []string{
-		filepath.Join(dir, id+".conf"),       // exact: almalinux-9.conf
-		filepath.Join(dir, baseID(id)+".conf"), // family fallback: almalinux.conf
+		filepath.Join(dir, id+".conf"),         // exact: almalinux-9.7.conf
+		filepath.Join(dir, majorID(id)+".conf"), // major: almalinux-9.conf  (BUG-16)
+		filepath.Join(dir, baseID(id)+".conf"),  // family: almalinux.conf
 	}
+	// Dedup adjacent identical candidates (e.g. when id has no patch version,
+	// majorID == id; when id has no version at all, all three collapse).
+	seen := make(map[string]bool, len(candidates))
 	for _, c := range candidates {
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
 		if _, err := os.Stat(c); err == nil {
 			return LoadFromFile(c)
 		}
@@ -138,7 +158,21 @@ func loadByID(dir, id string) (*Loader, error) {
 	return nil, fmt.Errorf("no distro conf for %q in %s (tried %v)", id, dir, candidates)
 }
 
-// baseID strips the "-VERSION" suffix: "almalinux-9" -> "almalinux".
+// majorID strips the patch version: "almalinux-9.7" -> "almalinux-9".
+// Returns id unchanged if there is no patch version (e.g. "almalinux-9").
+func majorID(id string) string {
+	dash := strings.IndexByte(id, '-')
+	if dash < 0 {
+		return id
+	}
+	dot := strings.IndexByte(id[dash+1:], '.')
+	if dot < 0 {
+		return id
+	}
+	return id[:dash+1+dot]
+}
+
+// baseID strips the version entirely: "almalinux-9.7" -> "almalinux".
 func baseID(id string) string {
 	if i := strings.IndexByte(id, '-'); i > 0 {
 		return id[:i]

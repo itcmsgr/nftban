@@ -322,6 +322,22 @@ PRETTY_NAME="AlmaLinux 9.5 (Teal Serval)"
 	}
 }
 
+func TestMajorID(t *testing.T) {
+	cases := map[string]string{
+		"almalinux-9.7":     "almalinux-9",
+		"almalinux-9":       "almalinux-9",
+		"almalinux":         "almalinux",
+		"ubuntu-24.04":      "ubuntu-24",
+		"debian-12":         "debian-12",
+		"centos-stream-9.5": "centos-stream-9",
+	}
+	for in, want := range cases {
+		if got := majorID(in); got != want {
+			t.Errorf("majorID(%q): got %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestNormalizeDistroID(t *testing.T) {
 	cases := map[string]string{
 		"alma":      "almalinux",
