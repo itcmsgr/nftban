@@ -124,26 +124,148 @@ func LoadFromFile(path string) (*Loader, error) {
 	}, nil
 }
 
-// loadByID assembles candidate paths in dir and tries each in order.
+// loadByID resolves a distro id to a conf file.
+//
+// Distro confs are named by SERIES (major version) only:
+//
+//   almalinux-9.conf      covers AlmaLinux 9.0, 9.1, ..., 9.99
+//   almalinux-10.conf     covers AlmaLinux 10.x
+//   ubuntu-22.conf        covers Ubuntu 22.04, 22.10, ...
+//   ubuntu-24.conf        covers Ubuntu 24.04, 24.10, ...
+//   debian-12.conf        covers Debian 12.x
+//   centos-stream-9.conf  covers CentOS Stream 9.x
+//
+// The id passed in is already stripped to its series form by detectDistro
+// (e.g. "9.7" -> "9", "24.04" -> "24"), so loadByID does only:
+//
+//   1. exact:        <id>.conf
+//   2. forward-fit:  highest <family>-*.conf overall (when host runs a series
+//                    newer than anything we ship — e.g. AlmaLinux 11 before we
+//                    ship almalinux-11.conf, falls back to almalinux-10.conf)
+//
+// No per-host stripping rules. No family-level wildcards. Patch versions are
+// invisible to the loader because detectDistro discards them.
 func loadByID(dir, id string) (*Loader, error) {
-	candidates := []string{
-		filepath.Join(dir, id+".conf"),       // exact: almalinux-9.conf
-		filepath.Join(dir, baseID(id)+".conf"), // family fallback: almalinux.conf
+	exact := filepath.Join(dir, id+".conf")
+	if _, err := os.Stat(exact); err == nil {
+		return LoadFromFile(exact)
 	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return LoadFromFile(c)
+
+	// Forward-fit: pick the highest <family>-*.conf available.
+	// family = everything before the last "-N" suffix in id.
+	family := familyOf(id)
+	tried := []string{exact}
+	if family != "" {
+		if newest := findHighestSeriesConf(dir, family); newest != "" {
+			tried = append(tried, newest)
+			if _, err := os.Stat(newest); err == nil {
+				return LoadFromFile(newest)
+			}
 		}
 	}
-	return nil, fmt.Errorf("no distro conf for %q in %s (tried %v)", id, dir, candidates)
+
+	return nil, fmt.Errorf("no distro conf for %q in %s (tried %v)", id, dir, tried)
 }
 
-// baseID strips the "-VERSION" suffix: "almalinux-9" -> "almalinux".
-func baseID(id string) string {
-	if i := strings.IndexByte(id, '-'); i > 0 {
-		return id[:i]
+// familyOf returns the family portion of an id like "almalinux-9" -> "almalinux"
+// or "centos-stream-9" -> "centos-stream". The split point is the last dash
+// whose right side is a positive integer (the series number).
+//
+// Returns "" if id has no series suffix (e.g. "fedora" alone).
+func familyOf(id string) string {
+	for i := len(id) - 1; i > 0; i-- {
+		if id[i] != '-' {
+			continue
+		}
+		tail := id[i+1:]
+		if isPositiveInt(tail) {
+			return id[:i]
+		}
 	}
-	return id
+	return ""
+}
+
+// findHighestSeriesConf scans dir for <family>-N.conf where N is a positive
+// integer and returns the path with the highest N. Returns "" if no matches.
+//
+// Used as the forward-fit fallback: when a host runs a series newer than
+// anything we ship, give it the newest known series as the closest match.
+func findHighestSeriesConf(dir, family string) string {
+	if family == "" {
+		return ""
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, family+"-*.conf"))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	bestPath := ""
+	bestN := -1
+	prefix := family + "-"
+	for _, m := range matches {
+		base := filepath.Base(m)
+		raw := strings.TrimSuffix(strings.TrimPrefix(base, prefix), ".conf")
+		if !isPositiveInt(raw) {
+			// Skip non-integer series (would catch e.g. malformed filenames).
+			continue
+		}
+		n := atoi(raw)
+		if n > bestN {
+			bestN = n
+			bestPath = m
+		}
+	}
+	return bestPath
+}
+
+// seriesOf strips a version string to its leading integer component.
+//
+//   "9"     -> "9"
+//   "9.7"   -> "9"
+//   "24.04" -> "24"
+//   "12.5"  -> "12"
+//   ""      -> ""
+//   "abc"   -> ""
+//
+// This is the canonical detect-time transform: the loader sees series-only
+// ids, never patch versions.
+func seriesOf(version string) string {
+	if version == "" {
+		return ""
+	}
+	end := 0
+	for end < len(version) && version[end] >= '0' && version[end] <= '9' {
+		end++
+	}
+	return version[:end]
+}
+
+// isPositiveInt reports whether s is a non-empty string of digits with at
+// least one non-zero digit (to reject "" and "0").
+func isPositiveInt(s string) bool {
+	if s == "" {
+		return false
+	}
+	hasNonZero := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return false
+		}
+		if c != '0' {
+			hasNonZero = true
+		}
+	}
+	return hasNonZero
+}
+
+// atoi parses a positive-integer string with no validation. Caller must
+// have verified the string is digits-only via isPositiveInt.
+func atoi(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		n = n*10 + int(s[i]-'0')
+	}
+	return n
 }
 
 // DistroID returns the detected distro identifier (e.g. "almalinux-9").
@@ -341,8 +463,30 @@ func (l *Loader) Resolve(key string) Resolution {
 	return r
 }
 
-// detectDistro reads /etc/os-release and returns "id-version_id".
-// Returns "" if neither field is present.
+// detectDistro reads /etc/os-release and returns the canonical distro id
+// in SERIES form: "<normalized_id>-<series>".
+//
+// The series is the leading integer of VERSION_ID:
+//
+//   AlmaLinux 9.7   -> "almalinux-9"
+//   AlmaLinux 10    -> "almalinux-10"
+//   Ubuntu 24.04    -> "ubuntu-24"
+//   Ubuntu 24.10    -> "ubuntu-24"     (same series)
+//   Debian 12.5     -> "debian-12"
+//   Rocky 9.4       -> "rocky-9"
+//   Fedora 43       -> "fedora-43"
+//   CentOS Stream 9 -> "centos-9"      (see note below)
+//
+// Patch versions are dropped at detection time. The loader never sees them.
+// This means a single conf file (e.g. almalinux-9.conf) covers the entire
+// series, and adding support for a new patch release is a no-op.
+//
+// Note on CentOS Stream: /etc/os-release on CentOS Stream reports ID="centos"
+// (not "centos-stream"), so detectDistro returns "centos-9" or "centos-10".
+// The centos-stream-*.conf variants in etc/nftban/distros/ are reachable only
+// when an operator explicitly overrides distro detection. This is acceptable
+// for v1.79.2 because plain CentOS and CentOS Stream share the same path
+// conventions for the keys we care about (auth_log, maillog, exim_log, etc.).
 func detectDistro(osReleasePath string) (string, error) {
 	// #nosec G304 -- only caller passes the package constant DefaultOSReleasePath
 	// (/etc/os-release). Path parameter exists for test injection only.
@@ -357,15 +501,16 @@ func detectDistro(osReleasePath string) (string, error) {
 		return "", err
 	}
 	id := parsed["ID"]
-	ver := parsed["VERSION_ID"]
 	if id == "" {
 		return "", fmt.Errorf("os-release: ID field missing")
 	}
 	id = normalizeDistroID(id)
-	if ver == "" {
+
+	series := seriesOf(parsed["VERSION_ID"])
+	if series == "" {
 		return id, nil
 	}
-	return id + "-" + ver, nil
+	return id + "-" + series, nil
 }
 
 // normalizeDistroID applies the same normalization rules as
