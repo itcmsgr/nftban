@@ -322,3 +322,19 @@ jobs:
       # v1.77.0: Registry parity lint — completion + man page match registry
       - name: Lint registry parity (G15)
         run: bash scripts/lint-registry-parity.sh
+
+      # =====================================================================
+      # v1.79.0: Truth and Rebuild Safety Gates (G16-G18)
+      # =====================================================================
+
+      # G16: Validator unit tests - already covered by secure-go.yml (go test ./...)
+      # The validator tests in internal/validator/validator_test.go run as part of
+      # the standard Go test suite. This comment documents the gate for traceability.
+
+      # G17: Health JSON schema validation
+      - name: Lint health JSON schema (G17)
+        run: bash scripts/lint-health-json-schema.sh
+
+      # G18: Rebuild safety simulation
+      - name: Test rebuild safety patterns (G18)
+        run: bash scripts/test-rebuild-safety.sh
