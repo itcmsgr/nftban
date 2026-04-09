@@ -11,6 +11,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.79.3] - 2026-04-09
+
+**BUG-19 hotfix.** DirectAdmin path keys are now universal across all distro
+families. The v1.79.2 schema incorrectly assumed DA only runs on RHEL and
+marked DA keys as `n/a` on Debian/Ubuntu. srv3 (Ubuntu 22 + DA) proved that
+wrong: pre-v1.79.2 srv3 emitted `directadmin_login_fail` events, post-v1.79.2
+the parser was disabled by the n/a literal.
+
+### Fixed
+
+- **BUG-19** — debian-11/12/13/14, ubuntu-22, ubuntu-24 confs now declare
+  `directadmin_login_log = /var/log/directadmin/login.log` and
+  `directadmin_security_log = /var/log/directadmin/security.log` (real paths,
+  not `n/a`).
+- `validate_distro_configs.sh` updated: DA path keys are required on every
+  family with a real path; the `n/a` literal is no longer accepted for DA keys.
+- `TestAllDistros_HaveAllRequiredKeys` updated to require real DA paths on
+  every distro conf, not just RHEL.
+
+### Affected hosts
+
+srv3 (Ubuntu 22 + DA) regains DirectAdmin parser binding after upgrade. Other
+hosts unchanged. lab2 (Plesk on Ubuntu, no DA) is unaffected because the
+parser only starts when the DA service is detected.
+
+### Verification
+
+`bash cli/lib/nftban/tests/validate_distro_configs.sh etc/nftban/distros` PASS.
+`go test ./internal/loginmon/distroconf/` PASS on lab4.
+
+### Refs
+
+- BUG-19 (lab4 + srv3 deploy regression of v1.79.2)
+- v1.79.2 (parent release)
+
+---
+
 ## [1.79.2] - 2026-04-08
 
 **Truth + coverage foundation.** Parser log paths resolve through a layered
