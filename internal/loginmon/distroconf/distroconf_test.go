@@ -140,31 +140,21 @@ func TestLoadFromFile_Debian12(t *testing.T) {
 
 	// Universal keys must be present with Debian paths.
 	cases := map[string]string{
-		"auth_log":        "/var/log/auth.log",
-		"maillog":         "/var/log/mail.log",
-		"exim_log":        "/var/log/exim4/mainlog",
-		"exim_reject_log": "/var/log/exim4/rejectlog",
-		"dovecot_log":     "/var/log/mail.log",
-		"pureftpd_log":    "/var/log/syslog",
+		"auth_log":                 "/var/log/auth.log",
+		"maillog":                  "/var/log/mail.log",
+		"exim_log":                 "/var/log/exim4/mainlog",
+		"exim_reject_log":          "/var/log/exim4/rejectlog",
+		"dovecot_log":              "/var/log/mail.log",
+		"pureftpd_log":             "/var/log/syslog",
+		"directadmin_login_log":    "/var/log/directadmin/login.log",
+		"directadmin_security_log": "/var/log/directadmin/security.log",
 	}
 	for k, want := range cases {
 		if got := l.Path(k); got != want {
 			t.Errorf("Path(%q): got %q, want %q", k, got, want)
 		}
-	}
-
-	// DA keys must be n/a on Debian family.
-	for _, k := range []string{"directadmin_login_log", "directadmin_security_log"} {
-		if !l.IsNA(k) {
-			t.Errorf("IsNA(%q): expected true on Debian, got false", k)
-		}
-		// Path() returns "" for n/a entries.
-		if l.Path(k) != "" {
-			t.Errorf("Path(%q) on n/a: got %q, want empty", k, l.Path(k))
-		}
-		// HasKey() must still return true.
-		if !l.HasKey(k) {
-			t.Errorf("HasKey(%q) on n/a: expected true (key is declared)", k)
+		if l.IsNA(k) {
+			t.Errorf("IsNA(%q): expected false (BUG-19 — DA is universal)", k)
 		}
 	}
 }
@@ -191,8 +181,27 @@ func TestResolve_Resolved(t *testing.T) {
 }
 
 func TestResolve_NotApplicable(t *testing.T) {
-	l, _ := LoadFromFile(filepath.Join(realConfDir, "debian-12.conf"))
-	r := l.Resolve("directadmin_login_log")
+	// BUG-19 (v1.79.3): no production distro conf uses n/a for any key.
+	// Use a temp fixture to test the NotApplicable outcome semantics
+	// independently of production conf state.
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "synthetic-1.conf")
+	content := `[distro]
+family = synthetic
+[paths]
+some_key = n/a
+real_key = /var/log/example
+`
+	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	l, err := LoadFromFile(confPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	r := l.Resolve("some_key")
 	if r.Outcome != NotApplicable {
 		t.Errorf("Outcome: got %v, want NotApplicable", r.Outcome)
 	}
@@ -201,6 +210,12 @@ func TestResolve_NotApplicable(t *testing.T) {
 	}
 	if !strings.Contains(r.Reason, "n/a") {
 		t.Errorf("Reason: %q should mention n/a", r.Reason)
+	}
+
+	// Sibling sanity: real_key should be Resolved.
+	r2 := l.Resolve("real_key")
+	if r2.Outcome != Resolved || r2.Path != "/var/log/example" {
+		t.Errorf("real_key: outcome=%v path=%q", r2.Outcome, r2.Path)
 	}
 }
 
@@ -272,27 +287,18 @@ func TestAllDistros_HaveAllRequiredKeys(t *testing.T) {
 				}
 			}
 
-			// DA keys: real path on RHEL, n/a on Debian.
-			fam := l.Family()
+			// BUG-19 (v1.79.3): DA path keys are universal — DirectAdmin
+			// supports both RHEL and Debian/Ubuntu. Real paths on every family.
 			for _, k := range rhelOnly {
 				if !l.HasKey(k) {
-					t.Errorf("missing required key: %s (family=%s)", k, fam)
+					t.Errorf("missing required DA key: %s", k)
 					continue
 				}
-				switch fam {
-				case "rhel":
-					if l.IsNA(k) {
-						t.Errorf("%s must be a real path on RHEL family, got n/a", k)
-					}
-					if l.Path(k) == "" {
-						t.Errorf("%s has empty value on RHEL family", k)
-					}
-				case "debian":
-					if !l.IsNA(k) {
-						t.Errorf("%s must be n/a on Debian family, got %q", k, l.Path(k))
-					}
-				default:
-					t.Errorf("unknown family: %q", fam)
+				if l.IsNA(k) {
+					t.Errorf("%s must be a real path (DA supports all families), got n/a", k)
+				}
+				if l.Path(k) == "" {
+					t.Errorf("%s has empty value", k)
 				}
 			}
 		})
