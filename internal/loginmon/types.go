@@ -128,6 +128,13 @@ type Config struct {
 	// Module control
 	Enabled bool // Whether the module is enabled (default: true)
 
+	// v1.80 Phase B: Go pipeline feature flag.
+	// When true, the Go pipeline runs DirectAdmin parser IN ADDITION to the
+	// legacy tail -F watcher. Both paths produce events; dedup prevents
+	// double-counting. When false (default), only the legacy path runs.
+	// Set via PIPELINE_ENABLED=true in main.conf.local.
+	PipelineEnabled bool
+
 	// ==========================================================================
 	// SCORER THRESHOLDS (configurable via /etc/nftban/conf.d/login/scorer.conf)
 	// ==========================================================================
