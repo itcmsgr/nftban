@@ -57,6 +57,10 @@ import (
 	"github.com/itcmsgr/nftban/internal/eventbus"
 	"github.com/itcmsgr/nftban/internal/loginmon/detector"
 	"github.com/itcmsgr/nftban/internal/loginmon/distroconf"
+	daparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/directadmin"
+	pipelineRuntime "github.com/itcmsgr/nftban/internal/loginmon/pipeline/runtime"
+	pipelineSource "github.com/itcmsgr/nftban/internal/loginmon/pipeline/source"
+	pipelineWatcher "github.com/itcmsgr/nftban/internal/loginmon/pipeline/watcher"
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
@@ -128,6 +132,9 @@ type Module struct {
 	// v1.48.0: File watchers for services that don't log to journalctl
 	// (DirectAdmin, cPanel, Plesk use their own log files)
 	fileWatcherCmds []*exec.Cmd
+
+	// v1.80 Phase B: Go pipeline (runs alongside legacy when PipelineEnabled=true)
+	pipeline *pipelineRuntime.Pipeline
 }
 
 // New creates a new login monitor module
@@ -182,7 +189,58 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 	m.mode = m.detectMode()
 
 	m.status.Enabled = m.config.Enabled
+
+	// v1.80 Phase B: initialize Go pipeline if feature flag is enabled.
+	// The pipeline runs ALONGSIDE the legacy detector — both produce events,
+	// and the pipeline's internal dedup prevents double-counting. The legacy
+	// path is still the primary; the pipeline is observe-only in Phase B.
+	if m.config.PipelineEnabled {
+		m.initPipeline()
+	}
+
 	return nil
+}
+
+// initPipeline creates and registers sources/watchers/parsers for the Go
+// pipeline. Only DirectAdmin is wired in Phase B.
+func (m *Module) initPipeline() {
+	m.pipeline = pipelineRuntime.NewPipeline(pipelineRuntime.PipelineOptions{})
+
+	// DirectAdmin login.log
+	if m.detectedServices["directadmin"] {
+		daLoginSrc := pipelineSource.NewFileSource(pipelineSource.FileSourceOptions{
+			Name:      "directadmin",
+			Service:   "directadmin_login",
+			DistroKey: "directadmin_login_log",
+			Loader:    m.distroConf,
+			Fallback:  panelLogPaths["directadmin"],
+		})
+
+		if daLoginSrc.Descriptor().State == pipelineSource.StateActive ||
+			daLoginSrc.Descriptor().State == pipelineSource.StateStale {
+			w := pipelineWatcher.NewPollingWatcher(pipelineWatcher.PollingWatcherOptions{
+				Source: "directadmin",
+				Path:   daLoginSrc.Descriptor().Path,
+			})
+			p := daparser.New()
+
+			if err := m.pipeline.Register(pipelineRuntime.Registration{
+				Source:  daLoginSrc,
+				Watcher: w,
+				Parser:  p,
+			}); err != nil {
+				log.Printf("[LOGINMON] pipeline: DA registration failed: %v", err)
+			} else {
+				log.Printf("[LOGINMON] pipeline: DA registered: path=%s resolved_by=%s",
+					daLoginSrc.Descriptor().Path, daLoginSrc.Descriptor().ResolvedBy)
+			}
+		} else {
+			log.Printf("[LOGINMON] pipeline: DA source state=%s, skipping registration",
+				daLoginSrc.Descriptor().State)
+		}
+	}
+
+	log.Printf("[LOGINMON] pipeline: initialized (PipelineEnabled=true)")
 }
 
 // Start begins the module's background work
@@ -214,6 +272,15 @@ func (m *Module) Start(ctx context.Context) error {
 	// v1.48.0: Start file watchers for panel services that don't log to journalctl
 	m.startFileWatchers(ctx)
 
+	// v1.80 Phase B: start Go pipeline (if initialized)
+	if m.pipeline != nil {
+		if err := m.pipeline.Start(ctx); err != nil {
+			log.Printf("[LOGINMON] pipeline: start failed: %v", err)
+		} else {
+			log.Printf("[LOGINMON] pipeline: started (dual-run mode)")
+		}
+	}
+
 	// Start score decay goroutine
 	go m.runScoreDecay(ctx)
 
@@ -227,6 +294,13 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Stop() error {
 	if m.cancel != nil {
 		m.cancel()
+	}
+
+	// v1.80: stop Go pipeline
+	if m.pipeline != nil {
+		if err := m.pipeline.Stop(); err != nil {
+			log.Printf("[LOGINMON] pipeline: stop error: %v", err)
+		}
 	}
 
 	// Clean up journal command if running
@@ -353,6 +427,8 @@ func (m *Module) parseShellConfig(content string) {
 		// Module settings
 		case "LOGIN_ENABLED":
 			m.config.Enabled = value == "true"
+		case "PIPELINE_ENABLED":
+			m.config.PipelineEnabled = value == "true"
 		case "LOGIN_MODE":
 			m.mode = Mode(value)
 		case "LOGIN_MAX_FAILED_ATTEMPTS":
