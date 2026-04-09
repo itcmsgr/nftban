@@ -58,6 +58,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/loginmon/detector"
 	"github.com/itcmsgr/nftban/internal/loginmon/distroconf"
 	daparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/directadmin"
+	eximparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/exim"
 	pipelineRuntime "github.com/itcmsgr/nftban/internal/loginmon/pipeline/runtime"
 	pipelineSource "github.com/itcmsgr/nftban/internal/loginmon/pipeline/source"
 	pipelineWatcher "github.com/itcmsgr/nftban/internal/loginmon/pipeline/watcher"
@@ -237,6 +238,40 @@ func (m *Module) initPipeline() {
 		} else {
 			log.Printf("[LOGINMON] pipeline: DA source state=%s, skipping registration",
 				daLoginSrc.Descriptor().State)
+		}
+	}
+
+	// Exim mainlog (Phase C)
+	if m.detectedServices["exim"] {
+		eximSrc := pipelineSource.NewFileSource(pipelineSource.FileSourceOptions{
+			Name:      "exim",
+			Service:   "exim_smtp",
+			DistroKey: "exim_log",
+			Loader:    m.distroConf,
+			Fallback:  mailLogPaths["exim"],
+		})
+
+		if eximSrc.Descriptor().State == pipelineSource.StateActive ||
+			eximSrc.Descriptor().State == pipelineSource.StateStale {
+			w := pipelineWatcher.NewPollingWatcher(pipelineWatcher.PollingWatcherOptions{
+				Source: "exim",
+				Path:   eximSrc.Descriptor().Path,
+			})
+			p := eximparser.New()
+
+			if err := m.pipeline.Register(pipelineRuntime.Registration{
+				Source:  eximSrc,
+				Watcher: w,
+				Parser:  p,
+			}); err != nil {
+				log.Printf("[LOGINMON] pipeline: Exim registration failed: %v", err)
+			} else {
+				log.Printf("[LOGINMON] pipeline: Exim registered: path=%s resolved_by=%s",
+					eximSrc.Descriptor().Path, eximSrc.Descriptor().ResolvedBy)
+			}
+		} else {
+			log.Printf("[LOGINMON] pipeline: Exim source state=%s, skipping",
+				eximSrc.Descriptor().State)
 		}
 	}
 
