@@ -51,13 +51,12 @@ REQUIRED_FIELDS[package_manager]="type install_cmd update_cmd"
 # v2.1: fail2ban removed - use native login monitoring
 REQUIRED_FIELDS[packages]="nftables curl bash systemd mail golang"
 REQUIRED_FIELDS[services]="cron rsyslog nftables sshd"
-REQUIRED_FIELDS[paths]="nft systemctl journalctl auth_log maillog exim_log exim_reject_log dovecot_log pureftpd_log"
+REQUIRED_FIELDS[paths]="nft systemctl journalctl auth_log maillog exim_log exim_reject_log dovecot_log pureftpd_log directadmin_login_log directadmin_security_log"
 
-# BUG-14: detection-source path keys
-# Universal: required on every distro family (above, in REQUIRED_FIELDS[paths])
-# RHEL-only: required on rhel family, must be 'n/a' literal on debian family
-REQUIRED_PATHS_RHEL_ONLY="directadmin_login_log directadmin_security_log"
-DEBIAN_NA_PATHS="directadmin_login_log directadmin_security_log"
+# BUG-19 (v1.79.3): DirectAdmin officially supports Debian and Ubuntu.
+# DA path keys are now UNIVERSAL — required on every distro family with a
+# real path. The v1.79.2 "n/a on Debian" assumption was wrong; srv3
+# (Ubuntu 22 + DA) proved it. The DEBIAN_NA_PATHS array is removed.
 
 # =============================================================================
 # VALIDATION FUNCTIONS
@@ -329,46 +328,25 @@ validate_config() {
     done
 }
 
-# BUG-14: validate detection-source path keys per family
+# BUG-14 + BUG-19: validate that DA path keys are real on EVERY distro family.
+# DirectAdmin supports both RHEL and Debian/Ubuntu, so DA keys must always be
+# real paths. The 'n/a' literal is no longer accepted for DA keys.
 validate_bug14_paths() {
     local file="$1"
-    local family
-    family=$(get_value "$file" "distro" "family")
-
-    case "$family" in
-        rhel)
-            for key in $REQUIRED_PATHS_RHEL_ONLY; do
-                local v
-                v=$(get_value "$file" "paths" "$key")
-                if [[ -z "$v" ]]; then
-                    echo -e "${RED}    ✗ BUG-14: missing required RHEL key: $key${NC}"
-                    ((ERRORS++)) || true
-                elif [[ "$v" == "n/a" ]]; then
-                    echo -e "${RED}    ✗ BUG-14: $key must be a real path on RHEL family, got 'n/a'${NC}"
-                    ((ERRORS++)) || true
-                else
-                    echo -e "${GREEN}    ✓ BUG-14: $key = $v${NC}"
-                    ((PASSED++)) || true
-                fi
-            done
-            ;;
-        debian)
-            for key in $DEBIAN_NA_PATHS; do
-                local v
-                v=$(get_value "$file" "paths" "$key")
-                if [[ -z "$v" ]]; then
-                    echo -e "${RED}    ✗ BUG-14: missing required Debian key: $key (must be 'n/a')${NC}"
-                    ((ERRORS++)) || true
-                elif [[ "$v" != "n/a" ]]; then
-                    echo -e "${RED}    ✗ BUG-14: $key must be 'n/a' on Debian family, got '$v'${NC}"
-                    ((ERRORS++)) || true
-                else
-                    echo -e "${GREEN}    ✓ BUG-14: $key = n/a (correct for Debian family)${NC}"
-                    ((PASSED++)) || true
-                fi
-            done
-            ;;
-    esac
+    for key in directadmin_login_log directadmin_security_log; do
+        local v
+        v=$(get_value "$file" "paths" "$key")
+        if [[ -z "$v" ]]; then
+            echo -e "${RED}    ✗ BUG-19: missing required key: $key${NC}"
+            ((ERRORS++)) || true
+        elif [[ "$v" == "n/a" ]]; then
+            echo -e "${RED}    ✗ BUG-19: $key must be a real path (DA supports all families), got 'n/a'${NC}"
+            ((ERRORS++)) || true
+        else
+            echo -e "${GREEN}    ✓ BUG-19: $key = $v${NC}"
+            ((PASSED++)) || true
+        fi
+    done
 }
 
 # =============================================================================
