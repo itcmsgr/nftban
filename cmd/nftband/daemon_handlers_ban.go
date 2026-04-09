@@ -240,7 +240,17 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		banSource = banlog.SourceSuricata
 	}
 	country := lookupCountry(ip)
-	_ = banlog.LogBanWithReason(ip, banSource, country, reason)
+	// BLC-1: determine ban class for lifecycle logging
+	banClass := banlog.ClassTemp
+	if banSource == banlog.SourceManual {
+		banClass = banlog.ClassManual
+	} else if permanent || timeout == 0 {
+		banClass = banlog.ClassPermanent
+	} else if timeout > 900 {
+		banClass = banlog.ClassEscalated
+	}
+	banID := banlog.GenerateBanID()
+	_ = banlog.LogBanFull(ip, banSource, country, reason, banID, timeout, banClass)
 
 	// Track permanent ban if requested (timeout=0 and permanent flag set)
 	if permanent && timeout == 0 {

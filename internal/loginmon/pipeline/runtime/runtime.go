@@ -39,6 +39,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/loginmon/pipeline/aggregate"
 	"github.com/itcmsgr/nftban/internal/loginmon/pipeline/dedup"
@@ -224,6 +225,22 @@ func (p *Pipeline) Stop() error {
 // goroutine. Cheap; downstream consumers should still cache for ~60s.
 func (p *Pipeline) Snapshot() aggregate.Snapshot {
 	return p.agg.Snapshot()
+}
+
+// RecordBan records a ban observed by the legacy scorer. This bridges the
+// existing ban path into the pipeline aggregator so the Effective-axis
+// ratio (bans/events) is computed against real data, not always 1.0.
+//
+// Phase E: called from module.go's EventBan subscriber when the pipeline
+// is enabled. The pipeline does NOT issue bans itself.
+func (p *Pipeline) RecordBan(source string, at time.Time) {
+	p.agg.RecordBan(source, at)
+}
+
+// EffectiveHealth evaluates the Effective-axis state machine against the
+// current aggregator snapshot and returns the host-level summary.
+func (p *Pipeline) EffectiveHealth() aggregate.HostEffective {
+	return aggregate.EvaluateHost(p.agg.Snapshot())
 }
 
 // runSource is the per-source goroutine. Reads lines from the watcher,
