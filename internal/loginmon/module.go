@@ -58,6 +58,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/loginmon/detector"
 	"github.com/itcmsgr/nftban/internal/loginmon/distroconf"
 	daparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/directadmin"
+	dovecotparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/dovecot"
 	eximparser "github.com/itcmsgr/nftban/internal/loginmon/pipeline/parser/exim"
 	pipelineRuntime "github.com/itcmsgr/nftban/internal/loginmon/pipeline/runtime"
 	pipelineSource "github.com/itcmsgr/nftban/internal/loginmon/pipeline/source"
@@ -272,6 +273,40 @@ func (m *Module) initPipeline() {
 		} else {
 			log.Printf("[LOGINMON] pipeline: Exim source state=%s, skipping",
 				eximSrc.Descriptor().State)
+		}
+	}
+
+	// Dovecot (Phase D)
+	if m.detectedServices["dovecot"] {
+		dovecotSrc := pipelineSource.NewFileSource(pipelineSource.FileSourceOptions{
+			Name:      "dovecot",
+			Service:   "dovecot_imap",
+			DistroKey: "dovecot_log",
+			Loader:    m.distroConf,
+			Fallback:  mailLogPaths["dovecot"],
+		})
+
+		if dovecotSrc.Descriptor().State == pipelineSource.StateActive ||
+			dovecotSrc.Descriptor().State == pipelineSource.StateStale {
+			w := pipelineWatcher.NewPollingWatcher(pipelineWatcher.PollingWatcherOptions{
+				Source: "dovecot",
+				Path:   dovecotSrc.Descriptor().Path,
+			})
+			p := dovecotparser.New()
+
+			if err := m.pipeline.Register(pipelineRuntime.Registration{
+				Source:  dovecotSrc,
+				Watcher: w,
+				Parser:  p,
+			}); err != nil {
+				log.Printf("[LOGINMON] pipeline: Dovecot registration failed: %v", err)
+			} else {
+				log.Printf("[LOGINMON] pipeline: Dovecot registered: path=%s resolved_by=%s",
+					dovecotSrc.Descriptor().Path, dovecotSrc.Descriptor().ResolvedBy)
+			}
+		} else {
+			log.Printf("[LOGINMON] pipeline: Dovecot source state=%s, skipping",
+				dovecotSrc.Descriptor().State)
 		}
 	}
 
