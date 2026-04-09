@@ -193,7 +193,14 @@ func (d *Daemon) Run() error {
 			// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
 			banID := banlog.GenerateBanID()
 			d.banIDMap.Store(e.IP, banID)
-			_ = banlog.LogBanWithID(e.IP, banSource, country, reason, banID)
+			// BLC-1: determine ban class from event data
+			banClass := banlog.ClassTemp
+			if timeout == 0 {
+				banClass = banlog.ClassPermanent
+			} else if timeout > 900 { // > 15m default = escalated
+				banClass = banlog.ClassEscalated
+			}
+			_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
 
 			// Check persistent offender escalation for temp bans
 			// If this IP has been temp-banned too many times, escalate to permanent

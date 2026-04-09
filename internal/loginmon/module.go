@@ -192,6 +192,24 @@ func (m *Module) Init(bus *eventbus.Bus) error {
 
 	m.status.Enabled = m.config.Enabled
 
+	// v1.80 Phase E: subscribe to ban events for the pipeline aggregator.
+	// When a ban is issued by the legacy scorer, the pipeline records it so
+	// the Effective-axis ratio (bans/events) is computed against real data.
+	// This subscription runs regardless of PipelineEnabled — the handler
+	// checks m.pipeline != nil before forwarding.
+	bus.Subscribe(eventbus.EventBan, func(e eventbus.Event) {
+		if m.pipeline == nil {
+			return
+		}
+		banSource := "unknown"
+		if s, ok := e.Data["service"].(string); ok {
+			banSource = s
+		} else if e.Source != "" {
+			banSource = e.Source
+		}
+		m.pipeline.RecordBan(banSource, time.Now())
+	})
+
 	// v1.80 Phase B: initialize Go pipeline if feature flag is enabled.
 	// The pipeline runs ALONGSIDE the legacy detector — both produce events,
 	// and the pipeline's internal dedup prevents double-counting. The legacy
@@ -313,6 +331,33 @@ func (m *Module) initPipeline() {
 	log.Printf("[LOGINMON] pipeline: initialized (PipelineEnabled=true)")
 }
 
+// startPipelineSnapshot runs a periodic goroutine that logs the pipeline's
+// aggregated snapshot to journald. This is the Phase E observability surface:
+// operators can see pipeline event counts and Effective-axis state without
+// any CLI/IPC changes. Runs every 5 minutes when pipeline is active.
+func (m *Module) startPipelineSnapshot(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if m.pipeline == nil {
+				return
+			}
+			health := m.pipeline.EffectiveHealth()
+			log.Printf("[PIPELINE] effective=%s sources=%d",
+				health.Worst.String(), len(health.Snapshots))
+			for _, s := range health.Snapshots {
+				log.Printf("[PIPELINE]   %s/%s: events=%d bans=%d ratio=%.1f%% unique_ips=%d state=%s",
+					s.Source, s.Window, s.EventsInWindow, s.BansInWindow,
+					s.Ratio*100, s.UniqueAttackers, s.State.String())
+			}
+		}
+	}
+}
+
 // Start begins the module's background work
 func (m *Module) Start(ctx context.Context) error {
 	ctx, m.cancel = context.WithCancel(ctx)
@@ -348,6 +393,8 @@ func (m *Module) Start(ctx context.Context) error {
 			log.Printf("[LOGINMON] pipeline: start failed: %v", err)
 		} else {
 			log.Printf("[LOGINMON] pipeline: started (dual-run mode)")
+			// Phase E: periodic snapshot logging for observability
+			go m.startPipelineSnapshot(ctx)
 		}
 	}
 
