@@ -64,6 +64,18 @@ const (
 	StatusUnbanned = "UNBANNED"
 )
 
+// BanClass identifies the type of ban for lifecycle tracking (BLC-2).
+//
+// BanClass is recorded in the ban log (field 10) and in the future
+// active_bans.json index (BLC-3). It is determined at ban-emission time
+// by the scorer or the CLI and must never be empty for BANNED entries.
+const (
+	ClassTemp      = "temp"      // auto-ban with kernel TTL (default 15m)
+	ClassEscalated = "escalated" // auto-ban with extended TTL (repeat offender)
+	ClassPermanent = "permanent" // auto-ban promoted to permanent (score≥100 or persistent)
+	ClassManual    = "manual"    // operator-issued via nftban ban CLI
+)
+
 var (
 	logMutex sync.Mutex
 )
@@ -102,20 +114,27 @@ func LogUnban(ip, source, country string) error {
 	return writeEntry(ip, source, country, StatusUnbanned)
 }
 
-// writeEntry writes a log entry to ban.log
+// writeEntry writes a log entry to ban.log (legacy compat — timeout=0, class empty)
 func writeEntry(ip, source, country, status string) error {
-	return writeEntryWithReason(ip, source, country, status, "")
+	return writeEntryFull(ip, source, country, status, "", "", 0, "")
 }
 
-// writeEntryWithReason writes a log entry to ban.log with optional reason for audit
+// writeEntryWithReason writes a log entry with reason (legacy compat)
 func writeEntryWithReason(ip, source, country, status, reason string) error {
-	return writeEntryWithReasonAndID(ip, source, country, status, reason, "")
+	return writeEntryFull(ip, source, country, status, reason, "", 0, "")
 }
 
-// writeEntryWithReasonAndID writes a log entry with optional reason and ban correlation ID
-// v1.41.0: Format is now 8 fields: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID
-// The 8th field is backward compatible — existing parsers using cut -d'|' -fN with N<=7 ignore it
+// writeEntryWithReasonAndID writes with reason + ban ID (legacy compat)
 func writeEntryWithReasonAndID(ip, source, country, status, reason, banID string) error {
+	return writeEntryFull(ip, source, country, status, reason, banID, 0, "")
+}
+
+// writeEntryFull writes a log entry with all 10 fields (BLC-1).
+// v1.80: Format is 10 fields: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS
+// Fields 9-10 are backward compatible — existing parsers using cut -d'|' -fN with N<=8 ignore them.
+// timeoutSec: original timeout in seconds at ban time (0 = permanent). Only meaningful for BANNED.
+// class: BanClass string (temp/escalated/permanent/manual). Empty for UNBANNED entries.
+func writeEntryFull(ip, source, country, status, reason, banID string, timeoutSec int, class string) error {
 	logMutex.Lock()
 	defer logMutex.Unlock()
 
@@ -150,7 +169,7 @@ func writeEntryWithReasonAndID(ip, source, country, status, reason, banID string
 	// Sanitize reason (remove pipe characters to preserve format)
 	reason = sanitizeReason(reason)
 
-	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s\n", date, timeStr, source, ip, country, status, reason, banID)
+	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%d|%s\n", date, timeStr, source, ip, country, status, reason, banID, timeoutSec, class)
 
 	if _, err := f.WriteString(logLine); err != nil {
 		return fmt.Errorf("failed to write to ban log: %w", err)
@@ -192,6 +211,17 @@ func LogBanWithReason(ip, source, country, reason string) error {
 // Format: DATE|TIME|SOURCE|IP|COUNTRY|UNBANNED|REASON
 func LogUnbanWithReason(ip, source, country, reason string) error {
 	return writeEntryWithReason(ip, source, country, StatusUnbanned, reason)
+}
+
+// LogBanFull writes a ban entry with all lifecycle fields (BLC-1).
+// This is the preferred function for new callers. It records timeout and class
+// so the ban log can answer lifecycle questions (when does this expire? what
+// kind of ban is it?).
+//
+// timeoutSec: original timeout in seconds at ban time. 0 = permanent.
+// class: one of ClassTemp, ClassEscalated, ClassPermanent, ClassManual.
+func LogBanFull(ip, source, country, reason, banID string, timeoutSec int, class string) error {
+	return writeEntryFull(ip, source, country, StatusBanned, reason, banID, timeoutSec, class)
 }
 
 // LogBanWithID writes a ban entry with a reason and correlation ID (v1.41.0)
