@@ -1906,6 +1906,232 @@ run_all_cli_tests() {
     log_info "Tested $cmd_count CLI commands"
 }
 
+# =============================================================================
+# RUNTIME ANOMALY TESTS (v1.80)
+# =============================================================================
+# Checks that go beyond "does the command work?" into "is the system behaving
+# sanely right now?" These detect:
+#   - kernel truth ↔ validator agreement
+#   - daemon stability (no restart loops)
+#   - maintenance stability (no failures)
+#   - pipeline health (snapshot continuity, if PIPELINE_ENABLED)
+#   - BotGuard kernel objects (if module enabled)
+#   - source binding truth (parsers bound to real paths)
+#   - log anomaly patterns (panic, fatal, unbound variable)
+#
+# These tests are read-only, lightweight, and operator-safe.
+# Added in v1.80 Phase E as part of the truth/observability work.
+
+run_runtime_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "RUNTIME ANOMALY CHECKS"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # --- 1. Validator kernel truth ---
+    log ""
+    log "─── Kernel Truth ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local validator_status
+    validator_status=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status' 2>/dev/null || echo "error")
+    if [[ "$validator_status" == "protected" ]]; then
+        log_pass "kernel truth — validator reports PROTECTED"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    elif [[ "$validator_status" == "degraded" ]]; then
+        log_warn "kernel truth — validator reports DEGRADED"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "kernel truth — validator reports $validator_status"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Check both families have FINAL anchor
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local final_count
+    final_count=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq '[.families[].anchors.final_present] | map(select(. == true)) | length' 2>/dev/null || echo "0")
+    if [[ "$final_count" == "2" ]]; then
+        log_pass "kernel truth — FINAL anchor present on both families"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "kernel truth — FINAL anchor missing on $((2 - final_count)) family/families"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # --- 2. Daemon stability ---
+    log ""
+    log "─── Daemon Stability ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if systemctl is-active --quiet nftband 2>/dev/null; then
+        log_pass "daemon — nftband is active"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "daemon — nftband is NOT active"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # Check for unexpected restarts in the last hour
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local restart_count
+    restart_count=$(journalctl -u nftband --since "1 hour ago" 2>/dev/null | grep -c "Started nftband"; true)
+    if [[ "$restart_count" -le 1 ]]; then
+        log_pass "daemon — $restart_count restart(s) in last hour (normal)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "daemon — $restart_count restarts in last hour (possible restart loop)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # --- 3. Maintenance stability ---
+    log ""
+    log "─── Maintenance Stability ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local maint_fail
+    maint_fail=$(journalctl -u nftban-maintenance.service --since "1 hour ago" 2>/dev/null | grep -cE "Failed|unbound"; true)
+    if [[ "$maint_fail" -eq 0 ]]; then
+        log_pass "maintenance — 0 failures in last hour"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "maintenance — $maint_fail failure(s) in last hour"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
+    # --- 4. Pipeline health (if enabled) ---
+    log ""
+    log "─── Pipeline Health ───"
+    local pipeline_enabled
+    pipeline_enabled=$(grep -q 'PIPELINE_ENABLED.*true' /etc/nftban/conf.d/login/main.conf.local 2>/dev/null && echo "true" || echo "false")
+
+    if [[ "$pipeline_enabled" == "true" ]]; then
+        # Check pipeline init lines exist in current boot
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        local pipeline_init
+        pipeline_init=$(journalctl -u nftband -b 2>/dev/null | grep -c "pipeline: initialized"; true)
+        if [[ "$pipeline_init" -ge 1 ]]; then
+            log_pass "pipeline — initialized ($pipeline_init init(s) this boot)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "pipeline — PIPELINE_ENABLED=true but no init lines found"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+
+        # Check snapshot continuity (should emit every 5 min)
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        local snapshot_count
+        snapshot_count=$(journalctl -u nftband --since "15 minutes ago" 2>/dev/null | grep -c "\[PIPELINE\] effective=" ; true)
+        if [[ "$snapshot_count" -ge 2 ]]; then
+            log_pass "pipeline — $snapshot_count snapshot(s) in last 15 min (expected ≥2)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        elif [[ "$snapshot_count" -ge 1 ]]; then
+            log_warn "pipeline — $snapshot_count snapshot in last 15 min (expected ≥2, may be recent restart)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "pipeline — 0 snapshots in last 15 min (pipeline may have stopped)"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+
+        # Check effective-axis state is sane (not FAILING without high volume)
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        local last_effective
+        last_effective=$(journalctl -u nftband --since "15 minutes ago" 2>/dev/null | grep "\[PIPELINE\] effective=" | tail -1 | grep -oE "effective=[A-Z]+" | cut -d= -f2 || echo "UNKNOWN")
+        if [[ "$last_effective" == "ACTIVE" || "$last_effective" == "DEGRADED" ]]; then
+            log_pass "pipeline — effective-axis state: $last_effective"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        elif [[ "$last_effective" == "FAILING" ]]; then
+            log_warn "pipeline — effective-axis state: FAILING (investigate)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_warn "pipeline — effective-axis state: $last_effective (no recent snapshot)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        fi
+    else
+        log "  Pipeline not enabled (PIPELINE_ENABLED != true) — skipping pipeline checks"
+    fi
+
+    # --- 5. BotGuard kernel objects (if module enabled) ---
+    log ""
+    log "─── BotGuard Objects ───"
+    local bg_enabled
+    bg_enabled=$(nftban botguard status 2>/dev/null | grep -c "Module:.*ENABLED" ; true)
+
+    if [[ "$bg_enabled" -ge 1 ]]; then
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        # Check set existence using direct nft exit code (PROBE-CORRECTNESS-RULE)
+        local bg_sets_ok=0
+        local bg_sets_missing=0
+        for setname in http_bot_suspect http_bot_pending http_bot_allow http_bot_grey http_bot_ban http_bot_emergency; do
+            if nft list set ip nftban "$setname" >/dev/null 2>&1; then
+                bg_sets_ok=$((bg_sets_ok + 1))
+            else
+                bg_sets_missing=$((bg_sets_missing + 1))
+            fi
+        done
+
+        if [[ "$bg_sets_missing" -eq 0 ]]; then
+            log_pass "botguard — all 6 IPv4 sets present ($bg_sets_ok/6)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "botguard — $bg_sets_missing of 6 IPv4 sets MISSING"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+
+        # Check jump rule
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
+        if nft list chain ip nftban input 2>/dev/null | grep "http_bot_guard" >/dev/null 2>&1; then
+            log_pass "botguard — jump rule present in input chain"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_fail "botguard — jump rule MISSING from input chain"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        log "  BotGuard not enabled — skipping BotGuard checks"
+    fi
+
+    # --- 6. Source binding truth ---
+    log ""
+    log "─── Source Binding ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local distroconf_loaded
+    distroconf_loaded=$(journalctl -u nftband -b 2>/dev/null | grep -c "distroconf loaded:"; true)
+    if [[ "$distroconf_loaded" -ge 1 ]]; then
+        log_pass "source binding — distroconf loaded ($distroconf_loaded init(s))"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_warn "source binding — no distroconf loaded line found (older binary or loader failed)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+
+    # Check for MISSING sources (sources that should exist but path didn't resolve)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local missing_sources
+    missing_sources=$(journalctl -u nftband -b 2>/dev/null | grep -c "state=MISSING"; true)
+    if [[ "$missing_sources" -eq 0 ]]; then
+        log_pass "source binding — 0 MISSING sources"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_warn "source binding — $missing_sources source(s) in MISSING state"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+
+    # --- 7. Log anomaly patterns ---
+    log ""
+    log "─── Log Anomalies ───"
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local panic_count fatal_count unbound_count
+    panic_count=$(journalctl -u nftband --since "1 hour ago" 2>/dev/null | grep -ci "panic"; true)
+    fatal_count=$(journalctl -u nftband --since "1 hour ago" 2>/dev/null | grep -ci "fatal"; true)
+    unbound_count=$(journalctl -u nftband --since "1 hour ago" -u nftban-maintenance.service 2>/dev/null | grep -ci "unbound variable"; true)
+
+    local anomaly_total=$((panic_count + fatal_count + unbound_count))
+    if [[ "$anomaly_total" -eq 0 ]]; then
+        log_pass "log anomalies — 0 panic/fatal/unbound in last hour"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "log anomalies — panic=$panic_count fatal=$fatal_count unbound=$unbound_count in last hour"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
 # Additional status commands (not in quick test)
 run_extended_status_tests() {
     log ""
@@ -2229,6 +2455,7 @@ main() {
             ;;
         full)
             run_core_tests
+            run_runtime_tests
             smoke_test_binary_integrity
             smoke_test_auditor_acls
             run_module_tests
@@ -2248,6 +2475,7 @@ main() {
         all)
             # Comprehensive: test ALL CLI commands
             run_core_tests
+            run_runtime_tests
             smoke_test_binary_integrity
             smoke_test_auditor_acls
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
