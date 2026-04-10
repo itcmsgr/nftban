@@ -702,8 +702,18 @@ nftban_community_build_payload() {
     os_name=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}" || echo "unknown")
     os_version=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}" || echo "unknown")
 
-    # NFTBan version
-    nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo "unknown")
+    # NFTBan version — fallback chain to avoid "unknown"
+    nftban_version=""
+    # 1. Canonical VERSION file
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
+    # 2. Root VERSION file
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /VERSION 2>/dev/null | tr -d '\n')
+    # 3. Package metadata (RPM)
+    [[ -z "$nftban_version" ]] && nftban_version=$(rpm -q --queryformat '%{VERSION}' nftban-core 2>/dev/null)
+    # 4. Package metadata (DEB)
+    [[ -z "$nftban_version" ]] && nftban_version=$(dpkg-query -W -f '${Version}' nftban-core 2>/dev/null | cut -d- -f1)
+    # 5. Last resort
+    [[ -z "$nftban_version" ]] && nftban_version="unknown"
 
     # Bucketed CPU (not exact — privacy-preserving)
     local cpu_count
@@ -738,8 +748,19 @@ nftban_community_build_payload() {
     modules=$(nftban status --brief 2>/dev/null | grep -oP 'modules:\K.*' || echo "")
     modules="${modules## }"
 
-    # Health status (just ok/warn/error)
+    # Health status (just ok/warn/error) — legacy field, retained for compat
     health=$(nftban health check --brief 2>/dev/null | head -1 || echo "unknown")
+
+    # Protection state — authoritative, from validator (kernel truth)
+    # INVARIANT: health_state is the KERNEL protection verdict, NOT the
+    # community enrollment state. These are separate axes:
+    #   health_state = PROTECTED | IDLE | DEGRADED | DOWN  (kernel truth)
+    #   community    = ENABLED | DISABLED | ERROR          (enrollment status)
+    # They MUST NOT be conflated or derived from each other.
+    local health_state
+    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
+    # Normalize to UPPERCASE (canonical — prevents PROTECTED vs protected mismatch)
+    health_state=$(echo "$health_state" | tr '[:lower:]' '[:upper:]')
 
     # Installation ID
     local install_id=""
@@ -747,19 +768,41 @@ nftban_community_build_payload() {
         install_id=$(grep -oP 'COMMUNITY_STATS_ID="\K[^"]+' "$NFTBAN_COMMUNITY_CONF" 2>/dev/null || true)
     fi
 
-    # Output JSON
+    # Architecture type
+    local arch
+    arch=$(uname -m 2>/dev/null || echo "unknown")
+
+    # Package type (deb or rpm)
+    local package_type="unknown"
+    if command -v dpkg >/dev/null 2>&1 && dpkg -l nftban-core >/dev/null 2>&1; then
+        package_type="deb"
+    elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then
+        package_type="rpm"
+    fi
+
+    # Server node_id — reuse existing anonymous stable ID (nftban_pro.sh)
+    local node_id
+    node_id=$(nftban_pro_get_server_id 2>/dev/null || echo "unknown")
+
+    # Output JSON — canonical payload structure
+    # INVARIANT: health_state is the kernel protection verdict from the validator.
+    # It is NOT the community enrollment state. See state-separation invariant.
     cat <<JSONEOF
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "node_id": "$node_id",
   "install_id": "$install_id",
   "nftban_version": "$nftban_version",
   "os": "$os_name",
   "os_version": "$os_version",
+  "arch": "$arch",
+  "package_type": "$package_type",
   "cpu_bucket": "$cpu_bucket",
   "ram_bucket": "$ram_bucket",
   "panel": "$panel",
   "modules": "$modules",
   "health": "$health",
+  "health_state": "$health_state",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSONEOF
@@ -809,6 +852,88 @@ nftban_community_submit() {
             ;;
     esac
 }
+
+# =============================================================================
+# INSTALL RESULT EVENT (Task 1 — default, minimal, fire-and-forget)
+# =============================================================================
+# Sends ONE anonymous install_result event after install or first validation.
+# Reuses existing server_id, existing curl pattern, existing API endpoint.
+#
+# INVARIANT: this is a MINIMAL signal. It does NOT require enrollment.
+# It does NOT send if the marker file already exists (one-time only).
+# It MUST NOT block the installer. Failure is silent.
+#
+# STATE SEPARATION: health_state here is the kernel protection verdict,
+# NOT the community enrollment state. These are independent axes.
+
+: "${NFTBAN_INSTALL_RESULT_MARKER:=${NFTBAN_PRO_DATA_DIR}/install_result_sent}"
+: "${NFTBAN_INSTALL_RESULT_URL:=https://pro.nftban.com/api/v1/install-result}"
+
+nftban_send_install_result() {
+    # Skip if already sent (one-time only)
+    if [[ -f "$NFTBAN_INSTALL_RESULT_MARKER" ]]; then
+        return 0
+    fi
+
+    # Ensure data directory exists
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" 2>/dev/null || return 0
+
+    # Collect minimal anonymous data — reusing existing functions
+    local node_id version distro arch package_type health_state
+
+    node_id=$(nftban_pro_ensure_server_id 2>/dev/null || echo "unknown")
+    # Version fallback chain (same as community payload)
+    local version=""
+    [[ -z "$version" ]] && version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$version" ]] && version=$(cat /VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$version" ]] && version=$(rpm -q --queryformat '%{VERSION}' nftban-core 2>/dev/null)
+    [[ -z "$version" ]] && version=$(dpkg-query -W -f '${Version}' nftban-core 2>/dev/null | cut -d- -f1)
+    [[ -z "$version" ]] && version="unknown"
+    distro=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}-${VERSION_ID:-}" || echo "unknown")
+    arch=$(uname -m 2>/dev/null || echo "unknown")
+
+    package_type="unknown"
+    if command -v dpkg >/dev/null 2>&1 && dpkg -l nftban-core >/dev/null 2>&1; then
+        package_type="deb"
+    elif command -v rpm >/dev/null 2>&1 && rpm -q nftban-core >/dev/null 2>&1; then
+        package_type="rpm"
+    fi
+
+    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
+    # Normalize to UPPERCASE (canonical — prevents PROTECTED vs protected mismatch)
+    health_state=$(echo "$health_state" | tr '[:lower:]' '[:upper:]')
+
+    # Build minimal payload — STRICTLY limited fields
+    local payload
+    payload=$(cat <<JSONEOF
+{
+  "event": "install_result",
+  "node_id": "$node_id",
+  "version": "$version",
+  "distro": "$distro",
+  "arch": "$arch",
+  "package_type": "$package_type",
+  "health_state": "$health_state",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSONEOF
+)
+
+    # Fire-and-forget — DO NOT block installer, DO NOT retry
+    # Reuses same curl pattern as nftban_community_submit
+    curl -s -o /dev/null \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        --connect-timeout 5 \
+        --max-time 10 \
+        "$NFTBAN_INSTALL_RESULT_URL" 2>/dev/null || true
+
+    # Mark as sent (even if curl failed — don't spam on repeated installs)
+    touch "$NFTBAN_INSTALL_RESULT_MARKER" 2>/dev/null || true
+}
+
+export -f nftban_send_install_result
 
 export -f nftban_pro_cmd_community
 export -f nftban_community_enable
