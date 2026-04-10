@@ -930,6 +930,11 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — DEGRADED"
         echo "[NFTBan] ========================================"
         echo "[NFTBan] Some post-install checks failed."
+        echo ""
+        echo "[NFTBan] Run:"
+        echo "[NFTBan]   nftban support"
+        echo "[NFTBan] to generate a diagnostic bundle for review."
+        echo ""
         echo "[NFTBan] To fix: nftban-installer --repair"
     elif [ \$INSTALLER_EXIT -eq 3 ]; then
         echo "[NFTBan] ========================================"
@@ -954,6 +959,16 @@ fi
 # Final cache ownership fix (must be after installer runs)
 find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
 find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
+
+# Send minimal anonymous install result (fire-and-forget, one-time)
+# Reuses nftban_pro.sh infrastructure. Failure is silent.
+# INVARIANT: this is a MINIMAL signal, NOT enrollment. See state-separation invariant.
+if [ -f "/usr/lib/nftban/lib/nftban_pro.sh" ]; then
+    (
+        source "/usr/lib/nftban/lib/nftban_pro.sh" 2>/dev/null || true
+        nftban_send_install_result 2>/dev/null || true
+    ) &
+fi
 
 # Ensure %post exits 0 (RPM treats non-zero as scriptlet failure)
 exit 0

@@ -236,6 +236,11 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		if sf.FailureReason != "" {
 			log.Result("[NFTBan] Issues: %s", sf.FailureReason)
 		}
+		log.Result("")
+		log.Result("[NFTBan] Run:")
+		log.Result("[NFTBan]   nftban support")
+		log.Result("[NFTBan] to generate a diagnostic bundle and optionally submit it for review.")
+		log.Result("")
 		log.Result("[NFTBan] To fix: nftban-installer --repair")
 	default:
 		log.Result("[NFTBan] Install/upgrade FAILED.")
