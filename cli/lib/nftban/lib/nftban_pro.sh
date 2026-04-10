@@ -702,8 +702,18 @@ nftban_community_build_payload() {
     os_name=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}" || echo "unknown")
     os_version=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}" || echo "unknown")
 
-    # NFTBan version
-    nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo "unknown")
+    # NFTBan version — fallback chain to avoid "unknown"
+    nftban_version=""
+    # 1. Canonical VERSION file
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
+    # 2. Root VERSION file
+    [[ -z "$nftban_version" ]] && nftban_version=$(cat /VERSION 2>/dev/null | tr -d '\n')
+    # 3. Package metadata (RPM)
+    [[ -z "$nftban_version" ]] && nftban_version=$(rpm -q --queryformat '%{VERSION}' nftban-core 2>/dev/null)
+    # 4. Package metadata (DEB)
+    [[ -z "$nftban_version" ]] && nftban_version=$(dpkg-query -W -f '${Version}' nftban-core 2>/dev/null | cut -d- -f1)
+    # 5. Last resort
+    [[ -z "$nftban_version" ]] && nftban_version="unknown"
 
     # Bucketed CPU (not exact — privacy-preserving)
     local cpu_count
@@ -748,7 +758,9 @@ nftban_community_build_payload() {
     #   community    = ENABLED | DISABLED | ERROR          (enrollment status)
     # They MUST NOT be conflated or derived from each other.
     local health_state
-    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
+    # Normalize to UPPERCASE (canonical — prevents PROTECTED vs protected mismatch)
+    health_state=$(echo "$health_state" | tr '[:lower:]' '[:upper:]')
 
     # Installation ID
     local install_id=""
@@ -870,7 +882,13 @@ nftban_send_install_result() {
     local node_id version distro arch package_type health_state
 
     node_id=$(nftban_pro_ensure_server_id 2>/dev/null || echo "unknown")
-    version=$(cat /usr/lib/nftban/VERSION 2>/dev/null || echo "unknown")
+    # Version fallback chain (same as community payload)
+    local version=""
+    [[ -z "$version" ]] && version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$version" ]] && version=$(cat /VERSION 2>/dev/null | tr -d '\n')
+    [[ -z "$version" ]] && version=$(rpm -q --queryformat '%{VERSION}' nftban-core 2>/dev/null)
+    [[ -z "$version" ]] && version=$(dpkg-query -W -f '${Version}' nftban-core 2>/dev/null | cut -d- -f1)
+    [[ -z "$version" ]] && version="unknown"
     distro=$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}-${VERSION_ID:-}" || echo "unknown")
     arch=$(uname -m 2>/dev/null || echo "unknown")
 
@@ -881,7 +899,9 @@ nftban_send_install_result() {
         package_type="rpm"
     fi
 
-    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+    health_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
+    # Normalize to UPPERCASE (canonical — prevents PROTECTED vs protected mismatch)
+    health_state=$(echo "$health_state" | tr '[:lower:]' '[:upper:]')
 
     # Build minimal payload — STRICTLY limited fields
     local payload
