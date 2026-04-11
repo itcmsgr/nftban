@@ -101,204 +101,215 @@ get_live_ruleset() {
 # =============================================================================
 
 validate_structure() {
-    # Validate nftables structure against spec
-    # Args: $1 = output_json (true/false)
-    # Returns: 0 if OK, 1 if errors found
+    # =========================================================================
+    # NOTE (v1.80, B80-1 — truth consolidation):
+    # This function is now a THIN SHIM over the Go validator (nftban-validate).
+    # It exists ONLY for backward compatibility with existing CLI callers:
+    #   - cli/lib/nftban/cli/cmd_validate.sh:103  (nftban validate)
+    #   - cli/lib/nftban/cli/cmd_firewall.sh:453+ (firewall reload/rebuild/reset
+    #                                             validation fallback paths)
     #
-    # PERFORMANCE: All validation checks use batch jq operations to avoid
-    # spawning jq processes inside loops (which can cause 10,000+ process
-    # spawns and 30+ second timeouts on large rulesets).
+    # It MUST NOT contain independent validation logic (no jq on nftables JSON,
+    # no nft list ruleset, no spec loading). The single source of truth is the
+    # Go validator binary at ${NFTBAN_LIB_DIR}/bin/nftban-validate — see
+    # internal/validator/validator.go and the v1.78.0 kernel truth alignment.
+    #
+    # Output contract (MUST match legacy shell format byte-for-byte for callers):
+    #   JSON: {status:"OK"|"WARNING"|"ERROR", errors:[], warnings:[], info:[]}
+    #   Text: "NFTBan Structure Validation" header + status + error/warning lists
+    #   Exit: 0 if status=="OK" or "WARNING", 1 if status=="ERROR"
+    #
+    # Full removal of this shell file (including the still-independent
+    # check_ip_or_port and get_firewall_stats below) is v1.81 scope — see
+    # V1.80_ROADMAP/MASTER_TODO.md B80-1 discussion dated 2026-04-11.
+    # =========================================================================
+    #
+    # Args: $1 = output_json (true/false)
+    # Returns: 0 if OK/WARNING, 1 if ERROR
 
     local output_json="${1:-false}"
-    local spec ruleset
-    local errors=() warnings=() info=()
+    local validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 
-    # Load spec
-    spec=$(load_spec) || return 1
-
-    # Get live ruleset
-    ruleset=$(get_live_ruleset) || return 1
-
-    # ==========================================================================
-    # BATCH CHECK: Required tables
-    # Single jq call checks all required tables at once, outputs missing ones
-    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
-    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
-    # ==========================================================================
-    local missing_tables
-    missing_tables=$(jq -r -n \
-        --slurpfile spec <(printf '%s' "$spec") \
-        --slurpfile ruleset <(printf '%s' "$ruleset") '
-        # First arg ($spec[0]) provides required tables, second ($ruleset[0]) provides live state
-        $spec[0].expected_structure.validation_checks.required_tables // [] |
-        . as $required |
-        # Build set of existing tables as "family name" strings
-        # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
-        # Output only tables that are required but not existing
-        $required[] | select(. as $r | $existing | index($r) | not)
-    ')
-
-    while IFS= read -r table; do
-        [[ -z "$table" ]] && continue
-        errors+=("CRITICAL: Missing required table: $table")
-    done <<< "$missing_tables"
-
-    # ==========================================================================
-    # BATCH CHECK: Priority safety (other firewall chains)
-    # Single jq call finds all chains that might bypass NFTBan, outputs as TSV
-    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
-    # too long" errors when ruleset exceeds shell argument limits (~128KB)
-    # v1.18.0: Changed to priority 0 (standard filter priority)
-    # ==========================================================================
-    local nftban_priority=0
-    local chain_issues
-    chain_issues=$(jq -r -n \
-        --argjson nftban_prio "$nftban_priority" \
-        --slurpfile ruleset <(printf '%s' "$ruleset") '
-        # Find all base chains on input/forward hooks (excluding nftban table)
-        # Skip chains with policy=accept — they are pass-through (e.g. Ubuntu/UFW default inet filter)
-        # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end) |
-        map(select(.chain? and .chain.table != "nftban" and
-                   (.chain.hook == "input" or .chain.hook == "forward") and
-                   (.chain.policy != "accept"))) |
-        # Output as tab-separated: family, table, name, hook, prio, severity
-        map([
-            .chain.family,
-            .chain.table,
-            .chain.name,
-            .chain.hook,
-            (.chain.prio // 0 | tostring),
-            (if (.chain.prio // 0) <= $nftban_prio then "critical" else "warning" end)
-        ] | join("\t")) |
-        .[]
-    ')
-
-    # Process chain issues (no jq in loop - uses tab-separated values)
-    while IFS=$'\t' read -r family table name hook prio severity; do
-        [[ -z "$family" ]] && continue
-        if [[ "$severity" == "critical" ]]; then
-            errors+=("CRITICAL: $family $table $name (priority $prio) runs before/with NFTBan (priority $nftban_priority) on $hook hook!")
+    # Guardrail: the Go validator binary MUST exist. If it doesn't, we fail
+    # closed with exit code 2 (distinct from generic validation failure so
+    # callers can distinguish "tool missing" from "tool ran but validation
+    # failed"). No independent fallback validation logic — that would
+    # re-create the exact drift risk B80-1 is closing.
+    #
+    # NOTE: this fail-closed path must work WITHOUT jq. We use printf with
+    # hand-escaped JSON because jq itself may be missing (the jq-missing
+    # fallback below handles the happy path; here we must report the error
+    # even on a broken-environment host).
+    if [[ ! -x "$validator_bin" ]]; then
+        local missing_msg="CRITICAL: Go validator binary not found at $validator_bin — reinstall nftban package"
+        if [[ "$output_json" == "true" ]]; then
+            # Hand-build JSON without jq: escape backslashes then double-quotes.
+            local _escaped
+            _escaped=$(printf '%s' "$missing_msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+            printf '{"status":"ERROR","errors":["%s"],"warnings":[],"info":[]}\n' "$_escaped"
         else
-            warnings+=("WARNING: Other firewall chain detected: $family $table $name (priority $prio) - NFTBan runs first (safe)")
+            echo "NFTBan Structure Validation"
+            echo "============================"
+            echo ""
+            echo "Status: ERROR"
+            echo ""
+            echo "❌ ERRORS (1):"
+            echo "  $missing_msg"
         fi
-    done <<< "$chain_issues"
-
-    # Informational: detect pass-through chains (policy accept) — harmless but worth noting
-    local passthrough_chains
-    passthrough_chains=$(jq -r -n \
-        --slurpfile ruleset <(printf '%s' "$ruleset") '
-        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end) |
-        map(select(.chain? and .chain.table != "nftban" and
-                   (.chain.hook == "input" or .chain.hook == "forward") and
-                   .chain.policy == "accept")) |
-        map("\(.chain.family) \(.chain.table) \(.chain.name) \(.chain.hook)") | .[]
-    ')
-    while IFS= read -r pt_chain; do
-        [[ -z "$pt_chain" ]] && continue
-        warnings+=("INFO: Pass-through chain detected: $pt_chain (policy accept — no impact on NFTBan)")
-    done <<< "$passthrough_chains"
-
-    # ==========================================================================
-    # BATCH CHECK: Required sets
-    # Single jq call checks all required sets at once, outputs missing ones
-    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
-    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
-    # ==========================================================================
-    local missing_sets
-    missing_sets=$(jq -r -n \
-        --slurpfile spec <(printf '%s' "$spec") \
-        --slurpfile ruleset <(printf '%s' "$ruleset") '
-        $spec[0].expected_structure.validation_checks.required_sets // [] |
-        . as $required |
-        # Build set of existing sets as "family table name" strings
-        # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
-        # Output only sets that are required but not existing
-        $required[] | select(. as $r | $existing | index($r) | not)
-    ')
-
-    while IFS= read -r set_path; do
-        [[ -z "$set_path" ]] && continue
-        warnings+=("WARNING: Missing required set: $set_path")
-    done <<< "$missing_sets"
-
-    # ==========================================================================
-    # BATCH CHECK: Chain policies
-    # Single jq call checks all policy requirements, outputs mismatches as TSV
-    # NOTE: Uses --slurpfile with process substitution to avoid "Argument list
-    # too long" errors when spec/ruleset exceed shell argument limits (~128KB)
-    # ==========================================================================
-    local policy_issues
-    policy_issues=$(jq -r -n \
-        --slurpfile spec <(printf '%s' "$spec") \
-        --slurpfile ruleset <(printf '%s' "$ruleset") '
-        # Build lookup of actual chain policies: key="family table chain", value=policy
-        # Handle both formats: {"nftables": [...]} or direct array [...]
-        (($ruleset[0].nftables // $ruleset[0]) | if type == "array" then . else [] end |
-            map(select(.chain? and .chain.policy?) |
-                {key: "\(.chain.family) \(.chain.table) \(.chain.name)", value: .chain.policy}) |
-            from_entries
-        ) as $actual_policies |
-        # Check each expected policy, output mismatches as tab-separated
-        ($spec[0].expected_structure.validation_checks.policy_checks // {}) |
-        to_entries |
-        map(
-            select($actual_policies[.key] != null and $actual_policies[.key] != .value) |
-            [.key, .value, $actual_policies[.key]] | join("\t")
-        ) |
-        .[]
-    ')
-
-    while IFS=$'\t' read -r chain_path expected_policy actual_policy; do
-        [[ -z "$chain_path" ]] && continue
-        errors+=("CRITICAL: Wrong policy on $chain_path: expected '$expected_policy', got '$actual_policy'")
-    done <<< "$policy_issues"
-
-    # Determine overall status
-    local status="OK"
-    if [[ ${#errors[@]} -gt 0 ]]; then
-        status="ERROR"
-    elif [[ ${#warnings[@]} -gt 0 ]]; then
-        status="WARNING"
+        return 2
     fi
 
-    # Output results
+    # Call the Go validator. Ignore its exit code — we translate status into
+    # shell schema via jq below, and derive the shell exit code from that.
+    local go_output
+    go_output=$("$validator_bin" --json 2>/dev/null) || true
+
+    if [[ -z "$go_output" ]]; then
+        local empty_msg="CRITICAL: Go validator returned empty output"
+        if [[ "$output_json" == "true" ]]; then
+            local _escaped
+            _escaped=$(printf '%s' "$empty_msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+            printf '{"status":"ERROR","errors":["%s"],"warnings":[],"info":[]}\n' "$_escaped"
+        else
+            echo "NFTBan Structure Validation"
+            echo "============================"
+            echo ""
+            echo "Status: ERROR"
+            echo ""
+            echo "❌ ERRORS (1):"
+            echo "  $empty_msg"
+        fi
+        return 1
+    fi
+
+    # --- jq-missing fallback ---
+    # When jq is not installed on this host (a broken-environment case —
+    # jq is a declared nftban dependency) we cannot do schema translation
+    # or preserve the full legacy output format, but we MUST preserve the
+    # exit-code contract so callers see the right behaviour.
+    #
+    # Conservative grep on the Go output: protected → 0, anything else → 1.
+    # Emit a minimal text banner so the caller is never silent.
+    if ! command -v jq >/dev/null 2>&1; then
+        if printf '%s' "$go_output" | grep -qi '"status"[[:space:]]*:[[:space:]]*"protected"'; then
+            if [[ "$output_json" == "true" ]]; then
+                printf '{"status":"OK","errors":[],"warnings":[],"info":[]}\n'
+            else
+                echo "NFTBan Structure Validation"
+                echo "============================"
+                echo ""
+                echo "Status: OK (jq unavailable — reduced reporting)"
+                echo ""
+                echo "✅ All validation checks passed!"
+            fi
+            return 0
+        else
+            if [[ "$output_json" == "true" ]]; then
+                printf '{"status":"ERROR","errors":["CRITICAL: validation failed (jq unavailable — reduced reporting; run %s for details)"],"warnings":[],"info":[]}\n' \
+                    "$validator_bin"
+            else
+                echo "NFTBan Structure Validation"
+                echo "============================"
+                echo ""
+                echo "Status: ERROR (jq unavailable — reduced reporting)"
+                echo ""
+                echo "❌ ERRORS (1):"
+                echo "  Validation failed. Run: $validator_bin for details."
+            fi
+            return 1
+        fi
+    fi
+
+    # Translate Go validator schema → legacy shell schema.
+    #
+    # Go schema (internal/validator/types.go):
+    #   {status:"protected"|"degraded"|"down", findings:[{severity,message,...}], ...}
+    #
+    # Shell schema (legacy contract this shim MUST preserve):
+    #   {status:"OK"|"WARNING"|"ERROR", errors:[], warnings:[], info:[]}
+    #
+    # Rules:
+    #   Go severity "critical" or "error" → shell errors[] with "CRITICAL: " prefix
+    #   Go severity "warn"                → shell warnings[] with "WARNING: " prefix
+    #   shell status derived from counts:
+    #     errors>0   → "ERROR"
+    #     warnings>0 → "WARNING"
+    #     else       → "OK"
+    local shell_json
+    shell_json=$(printf '%s' "$go_output" | jq '
+        . as $go |
+        (($go.findings // [])
+            | map(select(.severity == "critical" or .severity == "error"))
+            | map("CRITICAL: " + (.message // "unknown error"))) as $errors |
+        (($go.findings // [])
+            | map(select(.severity == "warn"))
+            | map("WARNING: " + (.message // "unknown warning"))) as $warnings |
+        (if ($errors | length) > 0 then "ERROR"
+         elif ($warnings | length) > 0 then "WARNING"
+         else "OK" end) as $shell_status |
+        {
+            status: $shell_status,
+            errors: $errors,
+            warnings: $warnings,
+            info: []
+        }
+    ')
+
+    if [[ -z "$shell_json" ]]; then
+        # jq failed to parse Go output — fail closed
+        local parse_msg="CRITICAL: Go validator output could not be parsed (jq failed)"
+        if [[ "$output_json" == "true" ]]; then
+            jq -n --arg m "$parse_msg" \
+                '{status:"ERROR",errors:[$m],warnings:[],info:[]}'
+        else
+            echo "NFTBan Structure Validation"
+            echo "============================"
+            echo ""
+            echo "Status: ERROR"
+            echo ""
+            echo "❌ ERRORS (1):"
+            echo "  $parse_msg"
+        fi
+        return 1
+    fi
+
+    # Extract status + counts in a single jq call (shim discipline: one jq
+    # per distinct rendering purpose, not one jq per field).
+    local status errors_count warnings_count
+    {
+        read -r status
+        read -r errors_count
+        read -r warnings_count
+    } < <(printf '%s' "$shell_json" | jq -r '.status, (.errors | length), (.warnings | length)')
+
     if [[ "$output_json" == "true" ]]; then
-        jq -n \
-            --arg status "$status" \
-            --argjson errors "$(printf '%s\n' "${errors[@]}" | jq -R . | jq -s .)" \
-            --argjson warnings "$(printf '%s\n' "${warnings[@]}" | jq -R . | jq -s .)" \
-            --argjson info "$(printf '%s\n' "${info[@]}" | jq -R . | jq -s .)" \
-            '{status: $status, errors: $errors, warnings: $warnings, info: $info}'
+        printf '%s\n' "$shell_json"
     else
-        # Human-readable output
         echo "NFTBan Structure Validation"
         echo "============================"
         echo ""
         echo "Status: $status"
         echo ""
 
-        if [[ ${#errors[@]} -gt 0 ]]; then
-            echo "❌ ERRORS (${#errors[@]}):"
-            printf '  %s\n' "${errors[@]}"
+        if [[ "$errors_count" -gt 0 ]]; then
+            echo "❌ ERRORS (${errors_count}):"
+            printf '%s' "$shell_json" | jq -r '.errors[] | "  " + .'
             echo ""
         fi
 
-        if [[ ${#warnings[@]} -gt 0 ]]; then
-            echo "⚠️  WARNINGS (${#warnings[@]}):"
-            printf '  %s\n' "${warnings[@]}"
+        if [[ "$warnings_count" -gt 0 ]]; then
+            echo "⚠️  WARNINGS (${warnings_count}):"
+            printf '%s' "$shell_json" | jq -r '.warnings[] | "  " + .'
             echo ""
         fi
 
-        if [[ ${#errors[@]} -eq 0 && ${#warnings[@]} -eq 0 ]]; then
+        if [[ "$errors_count" -eq 0 && "$warnings_count" -eq 0 ]]; then
             echo "✅ All validation checks passed!"
         fi
     fi
 
-    # v1.39.0: Return explicit exit code (avoid implicit test-as-return-value)
-    if [[ ${#errors[@]} -gt 0 ]]; then
+    # Exit code: 1 if any errors, 0 otherwise (matches legacy behaviour).
+    if [[ "$errors_count" -gt 0 ]]; then
         return 1
     fi
     return 0
