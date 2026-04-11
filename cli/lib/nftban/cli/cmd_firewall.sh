@@ -899,13 +899,11 @@ firewall_reload() {
         }
     fi
 
-    # Step 4c (v1.50.1): Re-apply botguard if enabled — reload destroys nft rules
-    local _botguard_enabled="false"
-    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
-    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
-        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    if [[ "$_botguard_enabled" == "true" ]]; then
+    # Step 4c (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled — reload
+    # destroys nft rules. Reuses cmd_botguard's enable path which calls
+    # nft_fragment_enable_module "botguard" (idempotent: recreates sets, chain,
+    # jump rule) and restarts nftband.
+    if _firewall_botguard_is_enabled; then
         [[ "$quiet" == "false" ]] && echo "Re-applying BotGuard rules..."
         nftban botguard enable --quiet 2>/dev/null || {
             [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard enable" || true
@@ -939,6 +937,34 @@ firewall_reload() {
 
 # Validator binary path
 _REBUILD_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+
+# v1.81.0 BOTGUARD-REBUILD-UX fix:
+# Returns 0 if BotGuard is enabled in config, 1 otherwise.
+#
+# This is a *gating* fix, not a sequencing fix. Step 10 of firewall_rebuild
+# (Re-apply BotGuard) was already correctly placed before POST-rebuild
+# validation. The bug was that all three module-restore sites
+# (firewall_reload, firewall_rebuild Step 10, firewall_reset Step 8) read the
+# wrong config key `BOTGUARD_ENABLED` instead of the canonical
+# `HTTP_BOTGUARD_ENABLED` used everywhere else in the codebase
+# (cmd_botguard.sh, cmd_status.sh, health checks, exporter, doctor,
+# config-schema). The grep returned empty, the local var fell through to
+# "false", the re-init silently no-op'd, BotGuard chains stayed missing,
+# and the existing PROTECTED→degraded rollback fired unnecessarily on srv1.
+#
+# This helper centralises the read of the canonical key so the wrong-key bug
+# cannot recur in any of the three call sites.
+_firewall_botguard_is_enabled() {
+    local conf_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard"
+    local val=""
+    if [[ -f "$conf_dir/main.conf.local" ]]; then
+        val=$(grep -oP '^HTTP_BOTGUARD_ENABLED="\K[^"]+' "$conf_dir/main.conf.local" 2>/dev/null || true)
+    fi
+    if [[ "$val" != "true" && -f "$conf_dir/main.conf" ]]; then
+        val=$(grep -oP '^HTTP_BOTGUARD_ENABLED="\K[^"]+' "$conf_dir/main.conf" 2>/dev/null || true)
+    fi
+    [[ "$val" == "true" ]]
+}
 
 _rebuild_get_validator_state() {
     # Call Go validator and return status (protected/degraded/down)
@@ -1290,14 +1316,13 @@ firewall_rebuild() {
         [[ "$quiet" == "false" ]] && echo "    Portscan: not enabled, skipped" || true
     fi
 
-    # Step 10 (v1.50.1): Re-apply botguard if enabled
+    # Step 10 (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled.
+    # Sequencing was already correct (this step runs before [POST] validation
+    # so the validator does not see a transient missing-helper-chain state).
+    # The v1.81.0 fix is to the *gating*: Step 10 was previously checked
+    # against the wrong config key and silently skipped on BotGuard hosts.
     [[ "$quiet" == "false" ]] && echo "  [10/12] Re-applying BotGuard..."
-    local _botguard_enabled="false"
-    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
-    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
-        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    if [[ "$_botguard_enabled" == "true" ]]; then
+    if _firewall_botguard_is_enabled; then
         nftban botguard enable --quiet 2>/dev/null || {
             [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable" || true
         }
@@ -1496,14 +1521,9 @@ firewall_reset() {
         nftban portscan enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed"
     fi
 
-    # Step 8 (v1.50.1): Re-apply botguard if enabled
+    # Step 8 (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled
     [[ "$quiet" == "false" ]] && echo "  [8/11] Re-applying BotGuard..."
-    local _botguard_enabled="false"
-    local _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf.local"
-    [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    [[ "$_botguard_enabled" != "true" ]] && _botguard_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard/main.conf" && \
-        [[ -f "$_botguard_conf" ]] && _botguard_enabled=$(grep -oP '^BOTGUARD_ENABLED="\K[^"]+' "$_botguard_conf" 2>/dev/null || echo "false")
-    if [[ "$_botguard_enabled" == "true" ]]; then
+    if _firewall_botguard_is_enabled; then
         nftban botguard enable --quiet 2>/dev/null || [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed"
     fi
 
