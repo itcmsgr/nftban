@@ -11,6 +11,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.79.4] - 2026-04-11
+
+**BOTGUARD-REBUILD-UX hotfix.** Fixes a gating bug in `nftban firewall
+rebuild`, `reload`, and `reset` that caused BotGuard-enabled hosts to
+unnecessarily trigger the post-rebuild rollback path. Stable-line hotfix
+off v1.79.3; contains no v1.80 feature work.
+
+### Fixed
+
+- **BOTGUARD-REBUILD-UX** — three module-restore sites in
+  `cli/lib/nftban/cli/cmd_firewall.sh` (`firewall_reload`,
+  `firewall_rebuild` Step 10, `firewall_reset` Step 8) read the wrong
+  config key `BOTGUARD_ENABLED` instead of the canonical
+  `HTTP_BOTGUARD_ENABLED` used everywhere else in the codebase
+  (cmd_botguard.sh, cmd_status.sh, health checks, exporter, doctor,
+  data/config-schema.json). The grep returned empty, the local fell
+  through to `"false"`, the existing `nftban botguard enable` re-init
+  path silently no-op'd, post-rebuild validation saw transient missing
+  helper chains, and the existing PROTECTED→degraded rollback fired
+  unnecessarily. srv1 was the only fleet host with
+  `HTTP_BOTGUARD_ENABLED=true` in production, so it was the only host
+  that surfaced the bug in the wild.
+
+### Added
+
+- `cli/lib/nftban/cli/cmd_firewall.sh` — new private helper
+  `_firewall_botguard_is_enabled` that centralises the canonical-key
+  read. The three duplicated inline grep blocks now route through this
+  helper, making future drift impossible.
+- `cli/lib/nftban/tests/test_botguard_rebuild_sequencing.sh` — 10 hermetic
+  unit assertions covering positive gating, negative gating, fall-through
+  semantics, legacy-key-ignored regression guard, and Step 10 ordering
+  invariant.
+- `cli/lib/nftban/tests/merge_gate_botguard_rebuild_log.sh` — runnable
+  merge-gate parser that reads a captured `nftban firewall rebuild` log
+  and asserts Step 10 fired, gating decision matches host config, final
+  status PROTECTED, no rollback. Two modes: default (BotGuard enabled)
+  and `--disabled` (no-regression).
+
+### Not changed
+
+- No sequencing change. Step 10 of `firewall_rebuild` was already
+  correctly placed before POST-rebuild validation.
+- No parser code.
+- No scoring logic.
+- No pipeline code (no Phase A–E content in this release).
+- No base firewall enforcement.
+- No BotGuard architecture change.
+- No new CLI surface.
+- No new config knob.
+- No config-resolution semantics change — existing `.local` fall-through
+  behaviour pinned by regression test.
+- Existing rollback safety net unchanged.
+
+### Verification
+
+Lab-host merge-gate runs (2026-04-11):
+
+| Host | Mode | Gate result |
+|---|---|---|
+| lab4 | `--disabled` | `MERGE GATE: PASS (disabled mode)` 5/5 |
+| lab2 | `--disabled` | `MERGE GATE: PASS (disabled mode)` 5/5 |
+| monitor | enabled (natural) | `MERGE GATE: PASS (enabled mode)` 6/6 |
+| srv1 | enabled (original failure host) | `MERGE GATE: PASS (enabled mode)` 6/6 |
+
+srv1 post-rebuild: chain count 18 → 18 (no drop), all 12 BotGuard sets
+present, jump rules active on both v4 and v6 input chains, validator
+returns `protected`. Unit test 10/10 green. CI on `3f4b626c` (main):
+46/46 checks SUCCESS.
+
+### Affected hosts
+
+srv1 (CentOS Stream 10 + DirectAdmin + OpenLiteSpeed + real-traffic
+BotGuard) is the only fleet host that surfaced the bug. This RPM gives
+srv1 a clean package upgrade path without pulling in v1.80 Phase A–E
+pipeline work, preserving srv1's CONTROL role in the pipeline
+decommission soak (ends 2026-04-23).
+
+### Refs
+
+- PR itcmsgr/nftban#368 (main branch commit 3f4b626c)
+- V1.80_ROADMAP/MASTER_TODO.md item `BOTGUARD-REBUILD-UX` (RESOLVED 2026-04-11)
+- V1.80_ROADMAP/PARSER_DECOMMISSION_GATES.md §5 (RESOLVED 2026-04-11)
+
+### Soak impact
+
+v1.79.1 soak and pipeline soak are both untouched. v1.79.4 is a
+stable-line hotfix deploy target for srv1 only.
+
+---
+
 ## [1.79.3] - 2026-04-09
 
 **BUG-19 hotfix.** DirectAdmin path keys are now universal across all distro
