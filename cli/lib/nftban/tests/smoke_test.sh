@@ -1957,6 +1957,46 @@ run_runtime_tests() {
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
+    # --- INV-CONS-001: CLI truth surface agrees with Go validator ---
+    # Added 2026-04-13 as part of B80-1 truth consolidation (see test
+    # tests/test_validate_structure_is_shim.sh for the static guard).
+    # The top-level `nftban status --json` output MUST agree with the Go
+    # validator on the protection state. Divergence is a consistency-axis
+    # violation (INV-CONS-001) and MUST be a smoke failure, not a warning.
+    #
+    # Extraction hierarchy (intended truth order):
+    #   .status          — canonical key name (not currently emitted)
+    #   .protection_state — alternate canonical key (not currently emitted)
+    #   .health          — alternate health key (not currently emitted)
+    #   .state           — ACTUAL key emitted by output_json() in cmd_status.sh
+    #                      as of 2026-04-13 (see cmd_status.sh:1562)
+    #
+    # The fall-through order is preserved so that if the shell key is later
+    # renamed to the canonical .status / .protection_state / .health, this
+    # test automatically picks up the rename without code change.
+    # Comparison is uppercase-normalized to handle case differences between
+    # the Go validator ("protected"/"degraded"/"down") and any future case
+    # convention change on the shell side.
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    local cli_status_json cli_state validator_state
+    cli_status_json=$(nftban status --json 2>/dev/null || echo "")
+    cli_state=$(printf '%s' "$cli_status_json" | jq -r '.status // .protection_state // .health // .state // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')
+    validator_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')
+
+    if [[ -z "$cli_state" ]]; then
+        log_fail "INV-CONS-001 — nftban status --json has no state key (.status/.protection_state/.health/.state all missing)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif [[ -z "$validator_state" ]]; then
+        log_fail "INV-CONS-001 — nftban-validate --json has no .status field"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif [[ "$cli_state" == "$validator_state" ]]; then
+        log_pass "INV-CONS-001 — nftban status ($cli_state) agrees with validator ($validator_state)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "INV-CONS-001 — nftban status=$cli_state, validator=$validator_state (DIVERGENCE)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
     # --- 2. Daemon stability ---
     log ""
     log "─── Daemon Stability ───"
