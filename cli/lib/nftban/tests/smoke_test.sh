@@ -1965,26 +1965,30 @@ run_runtime_tests() {
     # violation (INV-CONS-001) and MUST be a smoke failure, not a warning.
     #
     # Extraction hierarchy (intended truth order):
-    #   .status          — canonical key name (not currently emitted)
+    #   .status           — canonical key name (not currently emitted at top level)
     #   .protection_state — alternate canonical key (not currently emitted)
-    #   .health          — alternate health key (not currently emitted)
-    #   .state           — ACTUAL key emitted by output_json() in cmd_status.sh
-    #                      as of 2026-04-13 (see cmd_status.sh:1562)
+    #   .state            — ACTUAL key emitted by output_json() in cmd_status.sh
+    #                       as of 2026-04-13 (see cmd_status.sh:1562)
+    #
+    # NOTE: .health is deliberately EXCLUDED from this chain because
+    # cmd_status.sh emits .health as a NESTED OBJECT ({"status":"healthy",...}),
+    # not a string. Including it in the jq // chain would short-circuit to the
+    # object (truthy) before reaching .state, producing the wrong value.
     #
     # The fall-through order is preserved so that if the shell key is later
-    # renamed to the canonical .status / .protection_state / .health, this
-    # test automatically picks up the rename without code change.
+    # renamed to the canonical .status / .protection_state, this test
+    # automatically picks up the rename without code change.
     # Comparison is uppercase-normalized to handle case differences between
-    # the Go validator ("protected"/"degraded"/"down") and any future case
-    # convention change on the shell side.
+    # the Go validator ("protected"/"degraded"/"down") and the shell side
+    # ("PROTECTED"/"DEGRADED"/"DOWN").
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local cli_status_json cli_state validator_state
     cli_status_json=$(nftban status --json 2>/dev/null || echo "")
-    cli_state=$(printf '%s' "$cli_status_json" | jq -r '.status // .protection_state // .health // .state // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')
+    cli_state=$(printf '%s' "$cli_status_json" | jq -r '.status // .protection_state // .state // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')
     validator_state=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq -r '.status // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')
 
     if [[ -z "$cli_state" ]]; then
-        log_fail "INV-CONS-001 — nftban status --json has no state key (.status/.protection_state/.health/.state all missing)"
+        log_fail "INV-CONS-001 — nftban status --json has no state key (.status/.protection_state/.state all missing)"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     elif [[ -z "$validator_state" ]]; then
         log_fail "INV-CONS-001 — nftban-validate --json has no .status field"
