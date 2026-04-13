@@ -206,7 +206,7 @@ jobs:
 
       # ---- Trivy: filesystem vulnerability scanning ----
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # 0.34.1
+        uses: aquasecurity/trivy-action@264c9c5e188ea085e7377fd77abd17bfbd4e5926 # 0.34.1
         continue-on-error: true  # Don't fail workflow if Trivy has issues
         with:
           scan-type: 'fs'
