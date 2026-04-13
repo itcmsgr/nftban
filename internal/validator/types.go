@@ -43,13 +43,32 @@ const (
 
 // ValidationResult is the complete output of kernel validation.
 type ValidationResult struct {
-	Status      Status           `json:"status"`
-	Timestamp   time.Time        `json:"timestamp"`
-	Families    []FamilyResult   `json:"families"`
-	Findings    []Finding        `json:"findings"`
-	Summary     SummaryCounts    `json:"summary"`
-	ModuleTruth ModuleStatus     `json:"module_truth"`
-	ChainCount  ChainCounts      `json:"chain_counts"`
+	Status       Status           `json:"status"`
+	Timestamp    time.Time        `json:"timestamp"`
+	Families     []FamilyResult   `json:"families"`
+	Findings     []Finding        `json:"findings"`
+	Summary      SummaryCounts    `json:"summary"`
+	ModuleTruth  ModuleStatus     `json:"module_truth"`
+	ChainCount   ChainCounts      `json:"chain_counts"`
+	ServiceState ServiceState     `json:"service_state"` // B80-4
+}
+
+// RuntimeState represents a three-state service status.
+// Aligns with the v1.82 health model direction (RUNNING / STOPPED / ERROR).
+type RuntimeState string
+
+const (
+	RuntimeRunning RuntimeState = "RUNNING"
+	RuntimeStopped RuntimeState = "STOPPED"
+	RuntimeError   RuntimeState = "ERROR" // systemctl query itself failed
+)
+
+// ServiceState holds the live status of required system services.
+// B80-4: the validator MUST check these before declaring PROTECTED.
+// A system with correct kernel structure but a dead daemon is not protected.
+type ServiceState struct {
+	Nftband      RuntimeState `json:"nftband"`
+	NftbandDetail string      `json:"nftband_detail,omitempty"`
 }
 
 // FamilyResult holds validation results for a single address family (ip/ip6).
@@ -165,6 +184,9 @@ const (
 	// Module findings
 	CodeModuleDegraded = "VAL-MODULE-001"
 
+	// Service findings (B80-4)
+	CodeServiceDown = "VAL-SERVICE-001" // required service not active
+
 	// System findings
 	CodeNftFailed    = "VAL-SYSTEM-001"
 	CodeNftNoOutput  = "VAL-SYSTEM-002"
@@ -172,6 +194,11 @@ const (
 )
 
 // Required anchors in strict order.
+// AUTHORITY NOTE (B80-5): Anchors are a validator-defined invariant, NOT
+// derived from the shell schema. They represent the required rule-comment
+// sequence in the input chain. The canonical authority for chains/sets is
+// nft_schema.sh via schema_generated.go. The canonical authority for anchor
+// ordering is this list, maintained manually in this file.
 var RequiredAnchors = []string{
 	"ANCHOR_HYGIENE",
 	"ANCHOR_TRUSTED",
@@ -183,35 +210,17 @@ var RequiredAnchors = []string{
 }
 
 // Required base chains per family.
-var RequiredBaseChains = []string{
-	"input",
-	"forward",
-	"output",
-}
+// B80-5/6: sourced from schema_generated.go (canonical: cli/lib/nftban/lib/nft_schema.sh).
+var RequiredBaseChains = GeneratedRequiredBaseChains
 
-// Required helper chains per family.
-var RequiredHelperChains = []string{
-	"ddos_sanity",
-	"ddos_penalty",
-	"ddos_prefix",
-	"ddos_protection",
-	"portscan_detection",
-}
+// Required helper chains per family (6 total: 3 shell-declared + 3 DDoS fragment sub-chains).
+// B80-5/6: sourced from schema_generated.go (includes DDoS fragment sub-chains).
+var RequiredHelperChains = GeneratedRequiredHelperChains
 
 // Required sets for IPv4.
-var RequiredSetsIPv4 = []string{
-	"whitelist_ipv4",
-	"blacklist_ipv4",
-	"blacklist_manual_ipv4",
-	"tcp_ports_in",
-	"udp_ports_in",
-}
+// B80-5/6: sourced from schema_generated.go (core required sets only).
+var RequiredSetsIPv4 = GeneratedRequiredSetsIPv4
 
 // Required sets for IPv6.
-var RequiredSetsIPv6 = []string{
-	"whitelist_ipv6",
-	"blacklist_ipv6",
-	"blacklist_manual_ipv6",
-	"tcp_ports_in",
-	"udp_ports_in",
-}
+// B80-5/6: sourced from schema_generated.go (core required sets only).
+var RequiredSetsIPv6 = GeneratedRequiredSetsIPv6
