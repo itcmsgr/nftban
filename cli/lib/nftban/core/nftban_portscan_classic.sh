@@ -90,14 +90,16 @@ nftban_portscan_classic_load_config() {
 # LOGGING
 # =============================================================================
 
-# Log file for portscan classic mode
-# Note: Not readonly - needs to be configurable via conf.d/portscan/classic.conf
-PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
+# Module output log file for portscan classic mode debug/info messages.
+# IMPORTANT: This is the MODULE OUTPUT log, NOT the kernel input source.
+# The kernel input source is PORTSCAN_CLASSIC_LOG_FILE (set in classic.conf line 32).
+# These MUST be different variables — see portscan-log-collision bugfix.
+PORTSCAN_CLASSIC_MODULE_LOG="${PORTSCAN_CLASSIC_MODULE_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
 _nftban_portscan_classic_log() {
     local level="$1"
     local message="$2"
-    local log_file="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
+    local log_file="${PORTSCAN_CLASSIC_MODULE_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
     # Create log directory if needed
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 1
