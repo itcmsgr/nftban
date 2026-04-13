@@ -36,8 +36,12 @@ var GeneratedRequiredBaseChains = []string{
 	"output",
 }
 
-// GeneratedRequiredHelperChains merges shell NFTBAN_IPV4_HELPER_CHAINS + DDoS fragment sub-chains (ddos_sanity, ddos_penalty, ddos_prefix).
+// GeneratedRequiredHelperChains — helper chains universally required for base PROTECTED. Currently empty: all helper chains are module-scoped.
 var GeneratedRequiredHelperChains = []string{
+}
+
+// GeneratedAllHelperChains — all known helper chains (shell-declared + DDoS fragment sub-chains). Module-scoped: only required when their module is enabled.
+var GeneratedAllHelperChains = []string{
 	"ddos_penalty",
 	"ddos_prefix",
 	"ddos_protection",

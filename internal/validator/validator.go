@@ -226,24 +226,26 @@ func validateFamily(doc *RulesetDocument, family string, result *ValidationResul
 		}
 	}
 
-	// B80-3 (INV-S-008): Detect empty helper chains.
-	// A helper chain that exists but has zero rules is a no-op jump target —
-	// traffic enters, nothing happens, traffic exits. This silently defeats
-	// the protection the chain is supposed to provide. The chain is present
-	// so the "chain missing" check passes, but the protection is absent.
-	// This MUST report DEGRADED, not PROTECTED.
-	for _, found := range fr.HelperChains.Found {
-		ruleCount := doc.CountRulesInChain(family, "nftban", found)
-		if ruleCount == 0 {
-			fr.Status = StatusDegraded
-			result.Findings = append(result.Findings, Finding{
-				Code:      CodeChainEmpty,
-				Severity:  SeverityError,
-				Component: "chain",
-				Family:    family,
-				Message:   "Helper chain exists but has no rules: " + found + " (no-op jump target)",
-				Remediation: "Run: nftban ddos enable (or nftban portscan enable)",
-			})
+	// B80-3 (INV-S-008): Detect empty helper chains among ALL known helpers.
+	// Helper chains are module-scoped (not base-required), so a MISSING chain
+	// is fine (module disabled). But a chain that EXISTS with zero rules is a
+	// no-op jump target — traffic enters, nothing happens, traffic exits.
+	// That silently defeats the protection the module was supposed to provide.
+	// This MUST report DEGRADED via SeverityError.
+	for _, chain := range AllHelperChains {
+		if doc.ChainExists(family, "nftban", chain) {
+			ruleCount := doc.CountRulesInChain(family, "nftban", chain)
+			if ruleCount == 0 {
+				fr.Status = StatusDegraded
+				result.Findings = append(result.Findings, Finding{
+					Code:        CodeChainEmpty,
+					Severity:    SeverityError,
+					Component:   "chain",
+					Family:      family,
+					Message:     "Helper chain exists but has no rules: " + chain + " (no-op jump target)",
+					Remediation: "Run: nftban ddos enable (or nftban portscan enable)",
+				})
+			}
 		}
 	}
 
