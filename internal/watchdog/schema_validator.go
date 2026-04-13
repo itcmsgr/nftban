@@ -28,6 +28,7 @@ import (
 	"fmt"
 
 	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/internal/validator"
 )
 
 // SchemaResult holds the outcome of a schema validation run
@@ -53,52 +54,51 @@ type SchemaValidator struct {
 	expectedChains []string
 }
 
-// NewSchemaValidator creates a validator with the canonical nftban schema
+// NewSchemaValidator creates a validator with the canonical nftban schema.
+//
+// B80-7: All set and chain lists are now sourced from the generated schema
+// (internal/validator/schema_generated.go), which is itself generated from
+// the canonical cli/lib/nftban/lib/nft_schema.sh. This eliminates the
+// second-authority drift risk that existed when this file had its own
+// hardcoded lists.
 func NewSchemaValidator() *SchemaValidator {
-	// Required sets — must exist for correct operation
-	requiredIPv4 := []expectedSet{
-		{Name: "whitelist_ipv4"},
-		{Name: "blacklist_ipv4"},
-		{Name: "blacklist_manual_ipv4"},
-		{Name: "tcp_ports_in"},
-		{Name: "tcp_ports_out"},
-		{Name: "udp_ports_in"},
-		{Name: "udp_ports_out"},
+	// Build required sets from generated canonical lists
+	requiredIPv4 := make([]expectedSet, 0, len(validator.GeneratedRequiredSetsIPv4))
+	for _, name := range validator.GeneratedRequiredSetsIPv4 {
+		requiredIPv4 = append(requiredIPv4, expectedSet{Name: name})
 	}
 
-	// Botguard sets — always in base schema since v1.21.4, but optional warning
-	botguardIPv4 := []expectedSet{
-		{Name: "http_bot_suspect", Optional: true},
-		{Name: "http_bot_pending", Optional: true},
-		{Name: "http_bot_allow", Optional: true},
-		{Name: "http_bot_grey", Optional: true},
-		{Name: "http_bot_ban", Optional: true},
-		{Name: "http_bot_emergency", Optional: true},
+	requiredIPv6 := make([]expectedSet, 0, len(validator.GeneratedRequiredSetsIPv6))
+	for _, name := range validator.GeneratedRequiredSetsIPv6 {
+		requiredIPv6 = append(requiredIPv6, expectedSet{Name: name})
 	}
 
-	requiredIPv6 := []expectedSet{
-		{Name: "whitelist_ipv6"},
-		{Name: "blacklist_ipv6"},
-		{Name: "blacklist_manual_ipv6"},
-		{Name: "tcp_ports_in"},
-		{Name: "tcp_ports_out"},
-		{Name: "udp_ports_in"},
-		{Name: "udp_ports_out"},
+	// Optional (module) sets from the full generated universe minus required.
+	// These produce warnings, not errors, when missing.
+	requiredV4Set := make(map[string]bool, len(validator.GeneratedRequiredSetsIPv4))
+	for _, name := range validator.GeneratedRequiredSetsIPv4 {
+		requiredV4Set[name] = true
+	}
+	for _, name := range validator.GeneratedAllSetsIPv4 {
+		if !requiredV4Set[name] {
+			requiredIPv4 = append(requiredIPv4, expectedSet{Name: name, Optional: true})
+		}
 	}
 
-	botguardIPv6 := []expectedSet{
-		{Name: "http_bot_suspect6", Optional: true},
-		{Name: "http_bot_pending6", Optional: true},
-		{Name: "http_bot_allow6", Optional: true},
-		{Name: "http_bot_grey6", Optional: true},
-		{Name: "http_bot_ban6", Optional: true},
-		{Name: "http_bot_emergency6", Optional: true},
+	requiredV6Set := make(map[string]bool, len(validator.GeneratedRequiredSetsIPv6))
+	for _, name := range validator.GeneratedRequiredSetsIPv6 {
+		requiredV6Set[name] = true
+	}
+	for _, name := range validator.GeneratedAllSetsIPv6 {
+		if !requiredV6Set[name] {
+			requiredIPv6 = append(requiredIPv6, expectedSet{Name: name, Optional: true})
+		}
 	}
 
 	return &SchemaValidator{
-		ipv4Sets:       append(requiredIPv4, botguardIPv4...),
-		ipv6Sets:       append(requiredIPv6, botguardIPv6...),
-		expectedChains: []string{"input", "forward", "output"},
+		ipv4Sets:       requiredIPv4,
+		ipv6Sets:       requiredIPv6,
+		expectedChains: validator.GeneratedRequiredBaseChains,
 	}
 }
 

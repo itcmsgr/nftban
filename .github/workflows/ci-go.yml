@@ -68,6 +68,17 @@ jobs:
             exit 1
           }
 
+      # B80-8: Schema drift gate. Regenerate Go schema from canonical shell
+      # source and fail if the committed schema_generated.go differs.
+      - name: Verify Go schema matches canonical shell schema
+        run: |
+          ./scripts/generate-go-schema.sh
+          git diff --exit-code -- internal/validator/schema_generated.go || {
+            echo "::error::Schema drift detected. Run './scripts/generate-go-schema.sh' and commit the result."
+            echo "::error::Canonical source: cli/lib/nftban/lib/nft_schema.sh"
+            exit 1
+          }
+
       - name: Verify go mod tidy
         run: |
           go mod tidy
