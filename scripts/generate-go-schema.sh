@@ -78,20 +78,29 @@ extract_sorted_keys() {
 # Base chains (same for v4 and v6)
 base_chains=$(extract_sorted_keys NFTBAN_IPV4_CHAINS)
 
-# Helper chains from the shell schema
+# Helper chains from the shell schema. ALL shell-declared helper chains are
+# marked "optional" in nft_schema.sh — they only exist when their module is
+# enabled. No helper chain is universally required for base PROTECTED state.
+# Base protection = tables + base chains + required sets + anchors.
 shell_helper_chains=$(extract_sorted_keys NFTBAN_IPV4_HELPER_CHAINS)
 
-# DDoS fragment-created sub-chains. These are NOT in the shell schema's
-# helper chain array because they are created by nft_fragment.sh at enable
-# time, not by the base nftables.conf template. However, the validator MUST
-# require them when DDoS is enabled, because they are jump targets from the
-# input chain. We add them as a known extension.
+# DDoS fragment-created sub-chains. NOT in the shell schema's helper chain
+# array because they are created by nft_fragment.sh at enable time. These
+# are module-scoped (DDoS must be enabled) — they are NOT base-required.
 ddos_fragment_chains="ddos_penalty
 ddos_prefix
 ddos_sanity"
 
-# Merge shell helpers + DDoS fragment chains, deduplicate, sort
+# All known helper chains = shell-declared + DDoS fragments. All are
+# module-scoped/optional. The validator uses these for module-truth
+# derivation and informational reporting, NOT for base structural checks.
 all_helper_chains=$(printf '%s\n%s' "$shell_helper_chains" "$ddos_fragment_chains" | sort -u)
+
+# No helper chains are universally required. This empty list exists so
+# the Generated* naming pattern is consistent across chains and sets.
+# If a future product decision makes a helper chain mandatory for base
+# protection, add it here explicitly — do not auto-promote from shell schema.
+required_helper_chains=""
 
 # Required sets: the core sets that MUST exist for base protection.
 # BotGuard/module sets are optional (validator warns, not errors).
@@ -180,8 +189,12 @@ go_string_slice "GeneratedRequiredBaseChains" "$base_chains" \
     "GeneratedRequiredBaseChains from NFTBAN_IPV4_CHAINS keys." \
     >> "$OUTPUT_FILE"
 
-go_string_slice "GeneratedRequiredHelperChains" "$all_helper_chains" \
-    "GeneratedRequiredHelperChains merges shell NFTBAN_IPV4_HELPER_CHAINS + DDoS fragment sub-chains (ddos_sanity, ddos_penalty, ddos_prefix)." \
+go_string_slice "GeneratedRequiredHelperChains" "$required_helper_chains" \
+    "GeneratedRequiredHelperChains — helper chains universally required for base PROTECTED. Currently empty: all helper chains are module-scoped." \
+    >> "$OUTPUT_FILE"
+
+go_string_slice "GeneratedAllHelperChains" "$all_helper_chains" \
+    "GeneratedAllHelperChains — all known helper chains (shell-declared + DDoS fragment sub-chains). Module-scoped: only required when their module is enabled." \
     >> "$OUTPUT_FILE"
 
 go_string_slice "GeneratedRequiredSetsIPv4" "$required_sets_v4" \

@@ -213,9 +213,15 @@ var RequiredAnchors = []string{
 // B80-5/6: sourced from schema_generated.go (canonical: cli/lib/nftban/lib/nft_schema.sh).
 var RequiredBaseChains = GeneratedRequiredBaseChains
 
-// Required helper chains per family (6 total: 3 shell-declared + 3 DDoS fragment sub-chains).
-// B80-5/6: sourced from schema_generated.go (includes DDoS fragment sub-chains).
+// Required helper chains per family. Currently EMPTY — all helper chains are
+// module-scoped (only exist when their module is enabled). Base PROTECTED
+// does not require any helper chains. Module-level chain validation is
+// handled by deriveModuleTruth() which checks presence per-module.
 var RequiredHelperChains = GeneratedRequiredHelperChains
+
+// AllHelperChains lists all known helper chains for module-truth derivation
+// and informational reporting. Not used for base structural validation.
+var AllHelperChains = GeneratedAllHelperChains
 
 // Required sets for IPv4.
 // B80-5/6: sourced from schema_generated.go (core required sets only).
