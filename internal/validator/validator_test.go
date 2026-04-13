@@ -336,6 +336,23 @@ func TestEmptyHelperChain(t *testing.T) {
 			wantStatus: StatusDegraded,
 			wantCode:   CodeChainEmpty,
 		},
+		{
+			name: "module disabled (no helper chains at all) → PROTECTED",
+			objects: helperChainObjects(),
+			wantStatus: StatusProtected,
+			wantCode:   "",
+		},
+		{
+			name: "BotGuard disabled (only DDoS chains present with rules) → PROTECTED",
+			objects: helperChainObjects(
+				withRulesInChain("ddos_sanity", 3),
+				withRulesInChain("ddos_penalty", 2),
+				withRulesInChain("ddos_prefix", 1),
+				withRulesInChain("ddos_protection", 5),
+			),
+			wantStatus: StatusProtected,
+			wantCode:   "",
+		},
 	}
 
 	for _, tt := range tests {
