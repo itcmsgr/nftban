@@ -11,6 +11,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.80.0] - 2026-04-13
+
+**Structural truth-surface hardening.** Protection state now fails correctly
+for broken kernel structure, empty required chains, dead required runtime,
+schema drift, and duplicate schema authority. v1.80.0 does not change the
+effective detection/scoring model; effectiveness tuning remains future work.
+
+### Added
+
+- **B80-1** Single validator authority: `validate_structure()` in the shell
+  validator is now a thin shim over the Go `nftban-validate` binary. No
+  independent shell validation logic remains. Fail-closed with exit code 2
+  if the Go binary is missing. jq-missing fallback for broken environments.
+  (PR #369)
+- **B80-3** Empty-chain detection (`VAL-CHAIN-004`): a helper chain that
+  exists but has zero rules is a no-op jump target. The validator now
+  reports DEGRADED for this condition, not PROTECTED. (PR #371)
+- **B80-4** Service-state truth (`VAL-SERVICE-001`): the validator checks
+  whether `nftband` is running via `systemctl is-active`. Three-state
+  model: RUNNING / STOPPED / ERROR. Dead daemon with correct kernel
+  structure now reports DEGRADED, not PROTECTED. Transition states
+  (activating, deactivating, reloading) correctly map to STOPPED. (PR #372)
+- **B80-5** Schema codegen: `scripts/generate-go-schema.sh` reads the
+  canonical shell schema (`cli/lib/nftban/lib/nft_schema.sh`) and generates
+  `internal/validator/schema_generated.go` with sorted, deterministic Go
+  slices for base chains, helper chains (6 total: 3 shell-declared +
+  3 DDoS fragment sub-chains), required sets, and all known sets. (PR #372)
+- **B80-8** CI drift gate: the Go Build & Test workflow re-runs the schema
+  generator and fails if the committed `schema_generated.go` differs from
+  the canonical shell source. Schema drift is now unmergeable. (PR #373)
+- **INV-CONS-001** smoke assertion in `smoke_test.sh`: compares
+  `nftban status --json` state against `nftban-validate --json` status.
+  Divergence is a CI failure. (PR #369, fixed in PR #370)
+- **BotGuard rebuild gating fix** (`BOTGUARD-REBUILD-UX`): three
+  module-restore sites in `cmd_firewall.sh` read the wrong config key
+  `BOTGUARD_ENABLED` instead of the canonical `HTTP_BOTGUARD_ENABLED`.
+  Centralised into `_firewall_botguard_is_enabled` helper. (PR #368)
+
+### Changed
+
+- **B80-6** Validator structural lists (`RequiredBaseChains`,
+  `RequiredHelperChains`, `RequiredSetsIPv4`, `RequiredSetsIPv6`) are now
+  aliases to the generated schema vars. No parallel hardcoded string lists
+  remain in `types.go`. Anchors stay manually maintained (strict order
+  requirement, validator-only concept). (PR #372)
+- **B80-7** Watchdog `schema_validator.go` now imports
+  `internal/validator.Generated*` for all set and chain expectations.
+  No independent schema authority remains in the watchdog. (PR #373)
+
+### Closed
+
+- **B80-2** was already satisfied: `cmd_status.sh` already used the Go
+  validator binary exclusively at line 131.
+- **BUG-6** (srv1 NAT/proxy source attribution): CLOSED NOT-A-BUG.
+  Dovecot replay confirms `rip=` exposes real attacker IPs correctly.
+  `lip=10.1.0.5` is the local listener address, not a source-collapsing
+  proxy. Scoring effectiveness (34 failures / 0 bans from one IP) is
+  BUG-1 scope (Effective-axis), not BUG-6.
+
+### Not changed
+
+- No parser code changes
+- No scoring logic changes
+- No pipeline code changes
+- No detection-model changes
+- No BotGuard architecture changes
+- No DDoS changes
+- Anchor ordering stays manually maintained in `types.go`
+
+### Truth guarantee (v1.80.0)
+
+| Condition | Result |
+|---|---|
+| Kernel broken | not PROTECTED |
+| Required chain empty | not PROTECTED (VAL-CHAIN-004) |
+| Required runtime dead | not PROTECTED (VAL-SERVICE-001) |
+| Schema drift | CI blocks merge |
+| Validator authority | Go only (shell = shim) |
+| Watchdog authority | unified (imports Generated*) |
+
+### PRs (in merge order)
+
+| PR | Title |
+|---|---|
+| #368 | BotGuard rebuild gating fix |
+| #369 | B80-1 validator shim |
+| #370 | INV-CONS-001 smoke fix |
+| #371 | B80-3 empty-chain detection |
+| #372 | B80-4/5/6 service-state + schema codegen + wiring |
+| #373 | B80-7/8 watchdog unification + CI drift gate |
+
+### Refs
+
+- V1.80_ROADMAP/MASTER_TODO.md (v3.1, GO 2026-04-13)
+
+---
+
 ## [1.79.3] - 2026-04-09
 
 **BUG-19 hotfix.** DirectAdmin path keys are now universal across all distro
