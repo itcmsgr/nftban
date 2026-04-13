@@ -151,6 +151,7 @@ const (
 	CodeChainMissing       = "VAL-CHAIN-001"
 	CodeHelperChainMissing = "VAL-CHAIN-002"
 	CodeChainCountDrop     = "VAL-CHAIN-003"
+	CodeChainEmpty         = "VAL-CHAIN-004" // B80-3: chain exists but has no rules
 
 	// Anchor findings
 	CodeAnchorMissing  = "VAL-ANCHOR-001"
