@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.80.1] - 2026-04-13
+
+**Hotfix.** Fixes validator semantic issue from v1.80.0: module-scoped helper
+chains were treated as universally required for base PROTECTED. Disabled
+modules (BotGuard, Portscan, DDoS) caused false DEGRADED on hosts where
+those modules are intentionally off.
+
+### Fixed
+
+- Helper chains split into `GeneratedRequiredHelperChains` (empty) and
+  `GeneratedAllHelperChains` (6 module-scoped). No helper chain is
+  base-required for PROTECTED.
+- B80-3 empty-chain detection preserved: scans known helpers that EXIST in
+  kernel. Missing = module disabled (neutral). Existing with 0 rules =
+  broken module (DEGRADED).
+
+### Semantic contract
+
+- `base PROTECTED = tables + base chains + required sets + anchors + runtime`
+- `missing helper chain = module disabled (neutral)`
+- `existing empty helper chain = broken module (DEGRADED)`
+
+### Refs
+
+- PR #375
+
+---
+
 ## [1.80.0] - 2026-04-13
 
 **Structural truth-surface hardening.** Protection state now fails correctly
