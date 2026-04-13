@@ -289,6 +289,120 @@ func TestModuleTruth(t *testing.T) {
 	}
 }
 
+// B80-3 (INV-S-008): Empty helper chain detection.
+func TestEmptyHelperChain(t *testing.T) {
+	tests := []struct {
+		name       string
+		objects    []NftObject
+		wantStatus Status
+		wantCode   string
+	}{
+		{
+			name: "helper chain with rules → PROTECTED",
+			objects: helperChainObjects(
+				withRulesInChain("ddos_sanity", 3),
+				withRulesInChain("ddos_penalty", 2),
+				withRulesInChain("ddos_prefix", 1),
+				withRulesInChain("ddos_protection", 5),
+				withRulesInChain("portscan_detection", 2),
+			),
+			wantStatus: StatusProtected,
+			wantCode:   "",
+		},
+		{
+			name: "helper chain exists but empty → DEGRADED",
+			objects: helperChainObjects(
+				withRulesInChain("ddos_sanity", 3),
+				withRulesInChain("ddos_penalty", 2),
+				withRulesInChain("ddos_prefix", 1),
+				withRulesInChain("ddos_protection", 0),
+				withRulesInChain("portscan_detection", 2),
+			),
+			wantStatus: StatusDegraded,
+			wantCode:   CodeChainEmpty,
+		},
+		{
+			name: "multiple empty chains → multiple findings",
+			objects: helperChainObjects(
+				withRulesInChain("ddos_sanity", 0),
+				withRulesInChain("ddos_penalty", 0),
+				withRulesInChain("ddos_prefix", 1),
+				withRulesInChain("ddos_protection", 5),
+				withRulesInChain("portscan_detection", 0),
+			),
+			wantStatus: StatusDegraded,
+			wantCode:   CodeChainEmpty,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := &NftRuleset{Nftables: tt.objects}
+			doc := ParseRuleset(raw)
+			result := &ValidationResult{Findings: make([]Finding, 0)}
+			fr := validateFamily(doc, "ip", result)
+
+			if fr.Status != tt.wantStatus {
+				t.Errorf("status = %s, want %s", fr.Status, tt.wantStatus)
+			}
+
+			if tt.wantCode != "" {
+				found := false
+				for _, f := range result.Findings {
+					if f.Code == tt.wantCode {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected finding code %s not found in %d findings", tt.wantCode, len(result.Findings))
+					for _, f := range result.Findings {
+						t.Logf("  finding: %s %s %s", f.Code, f.Severity, f.Message)
+					}
+				}
+			}
+		})
+	}
+}
+
+func helperChainObjects(chainSpecs ...chainSpec) []NftObject {
+	objects := []NftObject{
+		{Table: &NftTable{Family: "ip", Name: "nftban"}},
+		{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "input", Type: "filter", Hook: "input", Policy: "drop"}},
+		{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "forward", Type: "filter", Hook: "forward", Policy: "drop"}},
+		{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "output", Type: "filter", Hook: "output", Policy: "accept"}},
+	}
+	for _, anchor := range RequiredAnchors {
+		objects = append(objects, NftObject{Rule: &NftRule{
+			Family: "ip", Table: "nftban", Chain: "input",
+			Comment: "NFTBAN_ANCHOR:" + anchor,
+		}})
+	}
+	for _, setName := range RequiredSetsIPv4 {
+		objects = append(objects, NftObject{Set: &NftSet{Family: "ip", Table: "nftban", Name: setName}})
+	}
+	for _, spec := range chainSpecs {
+		objects = append(objects, NftObject{Chain: &NftChain{
+			Family: "ip", Table: "nftban", Name: spec.name,
+		}})
+		for i := 0; i < spec.ruleCount; i++ {
+			objects = append(objects, NftObject{Rule: &NftRule{
+				Family: "ip", Table: "nftban", Chain: spec.name,
+			}})
+		}
+	}
+	return objects
+}
+
+type chainSpec struct {
+	name      string
+	ruleCount int
+}
+
+func withRulesInChain(name string, count int) chainSpec {
+	return chainSpec{name: name, ruleCount: count}
+}
+
 func TestModuleTruthMissing(t *testing.T) {
 	// Create mock doc WITHOUT DDoS chains
 	raw := &NftRuleset{

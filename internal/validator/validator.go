@@ -155,6 +155,27 @@ func validateFamily(doc *RulesetDocument, family string, result *ValidationResul
 		}
 	}
 
+	// B80-3 (INV-S-008): Detect empty helper chains.
+	// A helper chain that exists but has zero rules is a no-op jump target —
+	// traffic enters, nothing happens, traffic exits. This silently defeats
+	// the protection the chain is supposed to provide. The chain is present
+	// so the "chain missing" check passes, but the protection is absent.
+	// This MUST report DEGRADED, not PROTECTED.
+	for _, found := range fr.HelperChains.Found {
+		ruleCount := doc.CountRulesInChain(family, "nftban", found)
+		if ruleCount == 0 {
+			fr.Status = StatusDegraded
+			result.Findings = append(result.Findings, Finding{
+				Code:      CodeChainEmpty,
+				Severity:  SeverityError,
+				Component: "chain",
+				Family:    family,
+				Message:   "Helper chain exists but has no rules: " + found + " (no-op jump target)",
+				Remediation: "Run: nftban ddos enable (or nftban portscan enable)",
+			})
+		}
+	}
+
 	// Validate anchors
 	fr.Anchors = validateAnchors(doc, family, result)
 	if !fr.Anchors.Ordered || fr.Anchors.FoundCount < fr.Anchors.RequiredCount {

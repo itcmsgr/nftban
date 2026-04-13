@@ -295,6 +295,13 @@ func (d *RulesetDocument) CountChains(family string) int {
 	return count
 }
 
+// CountRulesInChain returns the number of rules in a specific chain.
+// Returns 0 if the chain has no rules or does not exist.
+func (d *RulesetDocument) CountRulesInChain(family, table, chain string) int {
+	key := family + ":" + table + ":" + chain
+	return len(d.rules[key])
+}
+
 // CountSets returns total set count for a family's nftban table.
 func (d *RulesetDocument) CountSets(family string) int {
 	prefix := family + ":nftban:"
