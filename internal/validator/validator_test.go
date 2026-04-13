@@ -304,6 +304,7 @@ func TestEmptyHelperChain(t *testing.T) {
 				withRulesInChain("ddos_penalty", 2),
 				withRulesInChain("ddos_prefix", 1),
 				withRulesInChain("ddos_protection", 5),
+				withRulesInChain("http_bot_guard", 4),
 				withRulesInChain("portscan_detection", 2),
 			),
 			wantStatus: StatusProtected,
@@ -316,6 +317,7 @@ func TestEmptyHelperChain(t *testing.T) {
 				withRulesInChain("ddos_penalty", 2),
 				withRulesInChain("ddos_prefix", 1),
 				withRulesInChain("ddos_protection", 0),
+				withRulesInChain("http_bot_guard", 4),
 				withRulesInChain("portscan_detection", 2),
 			),
 			wantStatus: StatusDegraded,
@@ -328,6 +330,7 @@ func TestEmptyHelperChain(t *testing.T) {
 				withRulesInChain("ddos_penalty", 0),
 				withRulesInChain("ddos_prefix", 1),
 				withRulesInChain("ddos_protection", 5),
+				withRulesInChain("http_bot_guard", 4),
 				withRulesInChain("portscan_detection", 0),
 			),
 			wantStatus: StatusDegraded,
@@ -420,5 +423,171 @@ func TestModuleTruthMissing(t *testing.T) {
 	}
 	if truth.Portscan.Enabled {
 		t.Error("Portscan should be disabled when chain missing")
+	}
+}
+
+// B80-4: Service-state checks.
+// The validator must report DEGRADED when nftband is not active,
+// even if kernel structure is perfect.
+
+// mockServiceChecker implements ServiceChecker for testing.
+type mockServiceChecker struct {
+	state  RuntimeState
+	detail string
+}
+
+func (m mockServiceChecker) CheckUnit(_ string) (RuntimeState, string) {
+	return m.state, m.detail
+}
+
+func TestServiceStateRunning(t *testing.T) {
+	SetServiceChecker(mockServiceChecker{state: RuntimeRunning, detail: "active"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	ss := checkServiceState()
+	if ss.Nftband != RuntimeRunning {
+		t.Errorf("expected RUNNING, got %s", ss.Nftband)
+	}
+}
+
+func TestServiceStateStopped(t *testing.T) {
+	SetServiceChecker(mockServiceChecker{state: RuntimeStopped, detail: "inactive"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	ss := checkServiceState()
+	if ss.Nftband != RuntimeStopped {
+		t.Errorf("expected STOPPED, got %s", ss.Nftband)
+	}
+}
+
+func TestServiceStateError(t *testing.T) {
+	// Covers the case where systemctl itself fails (e.g. D-Bus error).
+	SetServiceChecker(mockServiceChecker{state: RuntimeError, detail: "unknown"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	ss := checkServiceState()
+	if ss.Nftband != RuntimeError {
+		t.Errorf("expected ERROR, got %s", ss.Nftband)
+	}
+}
+
+func TestServiceStateActivating(t *testing.T) {
+	// ADJ-2: "activating" is a transition state during daemon startup.
+	// It must map to STOPPED (not ERROR) to avoid misleading findings
+	// during rebuild windows when the daemon restarts.
+	SetServiceChecker(mockServiceChecker{state: RuntimeStopped, detail: "activating"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	ss := checkServiceState()
+	if ss.Nftband != RuntimeStopped {
+		t.Errorf("expected STOPPED during activation, got %s", ss.Nftband)
+	}
+	if ss.NftbandDetail != "activating" {
+		t.Errorf("expected detail='activating', got '%s'", ss.NftbandDetail)
+	}
+}
+
+func TestServiceStoppedProducesFinding(t *testing.T) {
+	// Daemon stopped + clean families → VAL-SERVICE-001 + DEGRADED.
+	SetServiceChecker(mockServiceChecker{state: RuntimeStopped, detail: "inactive"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	ss := checkServiceState()
+	result.ServiceState = ss
+	if ss.Nftband != RuntimeRunning {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeServiceDown,
+			Severity: SeverityError,
+			Component: "service",
+			Message:  "nftband not running (state: " + string(ss.Nftband) + ")",
+		})
+	}
+
+	status := evaluateOverallStatus(result)
+	if status != StatusDegraded {
+		t.Errorf("expected DEGRADED when nftband stopped, got %s", status)
+	}
+
+	found := false
+	for _, f := range result.Findings {
+		if f.Code == CodeServiceDown {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected VAL-SERVICE-001 finding when nftband is stopped")
+	}
+}
+
+func TestServiceErrorProducesFinding(t *testing.T) {
+	// Systemctl query error + clean families → VAL-SERVICE-001 + DEGRADED.
+	SetServiceChecker(mockServiceChecker{state: RuntimeError, detail: "unknown"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	ss := checkServiceState()
+	result.ServiceState = ss
+	if ss.Nftband != RuntimeRunning {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeServiceDown,
+			Severity: SeverityError,
+			Component: "service",
+			Message:  "nftband query error (state: " + string(ss.Nftband) + ")",
+		})
+	}
+
+	status := evaluateOverallStatus(result)
+	if status != StatusDegraded {
+		t.Errorf("expected DEGRADED when service check errors, got %s", status)
+	}
+}
+
+func TestServiceRunningNoFinding(t *testing.T) {
+	// Daemon running + clean families → no finding → PROTECTED.
+	SetServiceChecker(mockServiceChecker{state: RuntimeRunning, detail: "active"})
+	defer SetServiceChecker(SystemdChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	ss := checkServiceState()
+	result.ServiceState = ss
+	if ss.Nftband != RuntimeRunning {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeServiceDown,
+			Severity: SeverityError,
+		})
+	}
+
+	status := evaluateOverallStatus(result)
+	if status != StatusProtected {
+		t.Errorf("expected PROTECTED when nftband running and families clean, got %s", status)
+	}
+
+	for _, f := range result.Findings {
+		if f.Code == CodeServiceDown {
+			t.Error("should NOT have VAL-SERVICE-001 finding when nftband is running")
+		}
 	}
 }

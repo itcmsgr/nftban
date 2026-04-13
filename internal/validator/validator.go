@@ -22,8 +22,57 @@ package validator
 
 import (
 	"context"
+	"os/exec"
+	"strings"
 	"time"
 )
+
+// ServiceChecker abstracts service-state queries so unit tests can mock
+// systemd without requiring a real init system. The default implementation
+// calls `systemctl is-active <unit>`.
+type ServiceChecker interface {
+	// CheckUnit returns (RuntimeState, detail string).
+	// RuntimeState: RUNNING / STOPPED / ERROR.
+	// detail: the raw systemctl output (e.g. "active", "inactive", "failed").
+	CheckUnit(unit string) (RuntimeState, string)
+}
+
+// SystemdChecker is the default production ServiceChecker.
+type SystemdChecker struct{}
+
+// CheckUnit queries systemd for the unit's active state.
+// This is a read-only query — zero side effects.
+func (SystemdChecker) CheckUnit(unit string) (RuntimeState, string) {
+	out, err := exec.Command("systemctl", "is-active", unit).Output()
+	detail := strings.TrimSpace(string(out))
+	if err != nil {
+		if detail == "" {
+			detail = "unknown"
+		}
+		// Distinguish known systemd states from exec errors.
+		// "activating"/"deactivating"/"reloading" are transition states —
+		// the daemon is not yet running, so they map to STOPPED (not ERROR).
+		// This prevents misleading ERROR findings during rebuild/startup.
+		if detail == "inactive" || detail == "failed" || detail == "dead" ||
+			detail == "activating" || detail == "deactivating" || detail == "reloading" {
+			return RuntimeStopped, detail
+		}
+		return RuntimeError, detail
+	}
+	if detail == "active" {
+		return RuntimeRunning, detail
+	}
+	return RuntimeStopped, detail
+}
+
+// defaultServiceChecker is set at package level and can be overridden
+// by tests via SetServiceChecker.
+var defaultServiceChecker ServiceChecker = SystemdChecker{}
+
+// SetServiceChecker replaces the service checker (for testing only).
+func SetServiceChecker(sc ServiceChecker) {
+	defaultServiceChecker = sc
+}
 
 // ValidateKernel performs complete kernel state validation.
 // This is the main entrypoint for the validator.
@@ -98,6 +147,28 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 
 	// Derive module truth from kernel state
 	result.ModuleTruth = deriveModuleTruth(doc)
+
+	// B80-4: Check required service state.
+	// A system with correct kernel structure but a dead daemon is not truly
+	// protected — the daemon manages runtime objects (BotGuard, LoginMon,
+	// scoring) that exist only while it runs. Kernel tables alone are not
+	// sufficient for full protection.
+	//
+	// We check nftband only (not nftables.service) because:
+	// - if nftables were down, LoadRulesetJSON above would already fail
+	//   or return an empty ruleset → StatusDown via the existing checks
+	// - nftband being down is a separate, subtler failure: kernel structure
+	//   looks correct but runtime detection/scoring is absent
+	result.ServiceState = checkServiceState()
+	if result.ServiceState.Nftband != RuntimeRunning {
+		result.Findings = append(result.Findings, Finding{
+			Code:        CodeServiceDown,
+			Severity:    SeverityError,
+			Component:   "service",
+			Message:     "nftband daemon is not running (state: " + string(result.ServiceState.Nftband) + ", detail: " + result.ServiceState.NftbandDetail + ")",
+			Remediation: "Run: systemctl start nftband",
+		})
+	}
 
 	// Compute summary
 	result.Summary = computeSummary(result)
@@ -400,6 +471,17 @@ func deriveModuleTruth(doc *RulesetDocument) ModuleStatus {
 	}
 
 	return ms
+}
+
+// checkServiceState queries the runtime state of required services.
+// B80-4: nftband must be RUNNING for full protection. STOPPED or ERROR
+// both produce findings that evaluateOverallStatus will catch.
+func checkServiceState() ServiceState {
+	ss := ServiceState{}
+	state, detail := defaultServiceChecker.CheckUnit("nftband")
+	ss.Nftband = state
+	ss.NftbandDetail = detail
+	return ss
 }
 
 // evaluateOverallStatus determines the final status from results.
