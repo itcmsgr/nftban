@@ -43,13 +43,32 @@ const (
 
 // ValidationResult is the complete output of kernel validation.
 type ValidationResult struct {
-	Status      Status           `json:"status"`
-	Timestamp   time.Time        `json:"timestamp"`
-	Families    []FamilyResult   `json:"families"`
-	Findings    []Finding        `json:"findings"`
-	Summary     SummaryCounts    `json:"summary"`
-	ModuleTruth ModuleStatus     `json:"module_truth"`
-	ChainCount  ChainCounts      `json:"chain_counts"`
+	Status       Status           `json:"status"`
+	Timestamp    time.Time        `json:"timestamp"`
+	Families     []FamilyResult   `json:"families"`
+	Findings     []Finding        `json:"findings"`
+	Summary      SummaryCounts    `json:"summary"`
+	ModuleTruth  ModuleStatus     `json:"module_truth"`
+	ChainCount   ChainCounts      `json:"chain_counts"`
+	ServiceState ServiceState     `json:"service_state"` // B80-4
+}
+
+// RuntimeState represents a three-state service status.
+// Aligns with the v1.82 health model direction (RUNNING / STOPPED / ERROR).
+type RuntimeState string
+
+const (
+	RuntimeRunning RuntimeState = "RUNNING"
+	RuntimeStopped RuntimeState = "STOPPED"
+	RuntimeError   RuntimeState = "ERROR" // systemctl query itself failed
+)
+
+// ServiceState holds the live status of required system services.
+// B80-4: the validator MUST check these before declaring PROTECTED.
+// A system with correct kernel structure but a dead daemon is not protected.
+type ServiceState struct {
+	Nftband      RuntimeState `json:"nftband"`
+	NftbandDetail string      `json:"nftband_detail,omitempty"`
 }
 
 // FamilyResult holds validation results for a single address family (ip/ip6).
@@ -164,6 +183,9 @@ const (
 
 	// Module findings
 	CodeModuleDegraded = "VAL-MODULE-001"
+
+	// Service findings (B80-4)
+	CodeServiceDown = "VAL-SERVICE-001" // required service not active
 
 	// System findings
 	CodeNftFailed    = "VAL-SYSTEM-001"
