@@ -7754,6 +7754,16 @@
       "config_file": "conf.d/portscan/classic.conf",
       "active_when": "portscan_classic"
     },
+    "PORTSCAN_CLASSIC_MODULE_LOG": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/log/nftban/portscan-classic.log",
+      "description": "P C M L (module output log, NOT kernel input source)",
+      "introduced_in": "1.81.0",
+      "category": "modules",
+      "config_file": "conf.d/portscan/classic.conf",
+      "active_when": "portscan_classic"
+    },
     "PORTSCAN_CLASSIC_LOG_LEVEL": {
       "type": "string",
       "$ref": "#/definitions/string",
