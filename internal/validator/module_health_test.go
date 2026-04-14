@@ -79,11 +79,15 @@ func TestBotGuardDisabled(t *testing.T) {
 	}
 }
 
-func TestBotGuardEnabledPresent(t *testing.T) {
+func TestBotGuardEnabledPresentIdle(t *testing.T) {
 	cleanup := setupTestConfig(t, map[string]string{
 		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
 	})
 	defer cleanup()
+	// Mock: all sets empty → idle (per BUG-3 lesson)
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 0 }
+	defer func() { countSetElementsFunc = old }()
 
 	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
@@ -99,9 +103,58 @@ func TestBotGuardEnabledPresent(t *testing.T) {
 	if h.Runtime != RuntimeRunning {
 		t.Errorf("runtime = %s, want RUNNING", h.Runtime)
 	}
-	// No set elements → idle (per BUG-3 lesson: empty sets = valid idle)
 	if h.Effective != EffectiveIdle {
-		t.Errorf("effective = %s, want idle", h.Effective)
+		t.Errorf("effective = %s, want idle (all sets empty)", h.Effective)
+	}
+}
+
+func TestBotGuardEnabledEnforcing(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
+	})
+	defer cleanup()
+	// Mock: ban set has elements → enforcing
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, name string) int {
+		if name == "http_bot_ban" {
+			return 3
+		}
+		return 0
+	}
+	defer func() { countSetElementsFunc = old }()
+
+	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
+	doc := buildDoc([]string{"http_bot_guard"}, bgSets)
+	h := evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	if h.Effective != EffectiveEnforcing {
+		t.Errorf("effective = %s, want enforcing (ban set > 0)", h.Effective)
+	}
+}
+
+func TestBotGuardEnabledObserving(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
+	})
+	defer cleanup()
+	// Mock: suspect set has elements, ban set empty → observing
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, name string) int {
+		if name == "http_bot_suspect" {
+			return 5
+		}
+		return 0
+	}
+	defer func() { countSetElementsFunc = old }()
+
+	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
+	doc := buildDoc([]string{"http_bot_guard"}, bgSets)
+	h := evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	if h.Effective != EffectiveObserving {
+		t.Errorf("effective = %s, want observing (suspect > 0, ban = 0)", h.Effective)
 	}
 }
 
@@ -349,29 +402,53 @@ func TestLoginMonEnabledDaemonStopped(t *testing.T) {
 // Blacklist truth table tests
 // =============================================================================
 
-func TestBlacklistBasic(t *testing.T) {
+func TestBlacklistManualIdle(t *testing.T) {
 	cleanup := setupTestConfig(t, map[string]string{
 		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
 	})
 	defer cleanup()
+	// Mock: manual set empty → idle
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 0 }
+	defer func() { countSetElementsFunc = old }()
 
 	sets := []string{"blacklist_ipv4", "blacklist_manual_ipv4"}
 	doc := buildDoc(nil, sets)
 	bh := evaluateBlacklist(doc)
 
-	// Manual: no elements → idle
 	if bh.Manual.State != "idle" {
-		t.Errorf("manual state = %s, want idle", bh.Manual.State)
+		t.Errorf("manual state = %s, want idle (0 elements)", bh.Manual.State)
 	}
-
-	// Feeds: no config dir → disabled
+	if bh.Manual.Entries != 0 {
+		t.Errorf("manual entries = %d, want 0", bh.Manual.Entries)
+	}
 	if bh.Feeds.State != "disabled" {
 		t.Errorf("feeds state = %s, want disabled", bh.Feeds.State)
 	}
-
-	// Geoban: disabled in config
 	if bh.Geoban.State != "disabled" {
 		t.Errorf("geoban state = %s, want disabled", bh.Geoban.State)
+	}
+}
+
+func TestBlacklistManualPrimed(t *testing.T) {
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
+	})
+	defer cleanup()
+	// Mock: manual set has 5 entries → primed
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 5 }
+	defer func() { countSetElementsFunc = old }()
+
+	sets := []string{"blacklist_ipv4", "blacklist_manual_ipv4"}
+	doc := buildDoc(nil, sets)
+	bh := evaluateBlacklist(doc)
+
+	if bh.Manual.State != "primed" {
+		t.Errorf("manual state = %s, want primed (5 elements)", bh.Manual.State)
+	}
+	if bh.Manual.Entries != 5 {
+		t.Errorf("manual entries = %d, want 5", bh.Manual.Entries)
 	}
 }
 

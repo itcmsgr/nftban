@@ -686,7 +686,7 @@ _collect_posture_info() {
     fi
 
     # Determine overall posture status
-    local posture_status="OK"
+    local posture_status="PROTECTED"
     local posture_class="ok"
     if [[ $warnings -gt 0 ]]; then
         posture_status="${warnings} advisory"

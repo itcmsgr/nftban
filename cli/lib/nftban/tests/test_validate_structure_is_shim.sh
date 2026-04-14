@@ -7,8 +7,8 @@
 # meta:type="test"
 # meta:version="1.80.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Pins the B80-1 invariant: validate_structure() in nftban_validator.sh MUST be a thin shim over nftban-validate and MUST NOT contain independent validation logic"
-# meta:inventory.files="cli/lib/nftban/core/nftban_validator.sh"
+# meta:description="Pins the B80-1 invariant: validate_structure() in nftban_ip_and_stats.sh MUST be a thin shim over nftban-validate and MUST NOT contain independent validation logic"
+# meta:inventory.files="cli/lib/nftban/core/nftban_ip_and_stats.sh"
 # meta:inventory.binaries="bash,awk,grep"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -47,7 +47,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-TARGET_FILE="$PROJECT_ROOT/cli/lib/nftban/core/nftban_validator.sh"
+TARGET_FILE="$PROJECT_ROOT/cli/lib/nftban/core/nftban_ip_and_stats.sh"
 
 if [[ ! -f "$TARGET_FILE" ]]; then
     echo "FATAL: target file not found at $TARGET_FILE" >&2
@@ -92,7 +92,7 @@ body_lines=$(printf '%s\n' "$body" | wc -l)
 
 echo "=========================================================="
 echo "B80-1 validate_structure shim regression guard"
-echo "  target: cli/lib/nftban/core/nftban_validator.sh"
+echo "  target: cli/lib/nftban/core/nftban_ip_and_stats.sh"
 echo "  body lines: $body_lines"
 echo "=========================================================="
 echo ""
@@ -234,9 +234,9 @@ echo "[3] Static guardrails on the file surface"
 
 # S1: the file still exists (B80-1 does NOT delete it — that's v1.81 scope)
 if [[ -f "$TARGET_FILE" ]]; then
-    assert "nftban_validator.sh still exists (deletion is v1.81 scope)" "yes"
+    assert "nftban_ip_and_stats.sh exists (relocated from nftban_validator.sh)" "yes"
 else
-    assert "nftban_validator.sh still exists (deletion is v1.81 scope)" "no"
+    assert "nftban_ip_and_stats.sh exists (relocated from nftban_validator.sh)" "no"
 fi
 
 # S2: the other two non-B80-1 functions are still defined (scope fence proof)

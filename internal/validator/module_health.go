@@ -22,7 +22,9 @@
 package validator
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -114,7 +116,7 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 	// Check enforcement sets (ban, grey, emergency)
 	enforcementSets := []string{"http_bot_ban", "http_bot_grey", "http_bot_emergency"}
 	for _, s := range enforcementSets {
-		if countSetElements(doc, "ip", s) > 0 {
+		if countSetElements("ip", s) > 0 {
 			h.Effective = EffectiveEnforcing
 			return h
 		}
@@ -123,7 +125,7 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 	// Check observation sets (suspect, pending)
 	observationSets := []string{"http_bot_suspect", "http_bot_pending"}
 	for _, s := range observationSets {
-		if countSetElements(doc, "ip", s) > 0 {
+		if countSetElements("ip", s) > 0 {
 			h.Effective = EffectiveObserving
 			return h
 		}
@@ -261,7 +263,7 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	bh := &BlacklistHealth{}
 
 	// Manual blacklist
-	manualElements := countSetElements(doc, "ip", "blacklist_manual_ipv4")
+	manualElements := countSetElements("ip", "blacklist_manual_ipv4")
 	// We don't have counter values from doc (counters are in the raw ruleset
 	// but not currently extracted to RulesetDocument). For now, use element
 	// count as the primary evidence.
@@ -377,21 +379,48 @@ func feedsExist() bool {
 
 // countSetElements returns the number of elements in a kernel set.
 //
-// countSetElements is a STUB — v1.81 KNOWN LIMITATION (CF-4).
+// countSetElementsFunc is the default implementation for set element queries.
+// Tests override this via the function variable (same pattern as
+// defaultServiceChecker in validator.go:70).
+var countSetElementsFunc = countSetElementsReal
+
+// countSetElements delegates to countSetElementsFunc for testability.
+func countSetElements(family, setName string) int {
+	return countSetElementsFunc(family, setName)
+}
+
+// countSetElementsReal queries the kernel for actual element count in a set.
+// v1.82 CF-4: replaces the v1.81 stub that always returned 0.
 //
-// nft -j list ruleset does NOT include set elements in its output (only set
-// metadata: name, type, flags). Actual element counting requires a separate
-// `nft -j list set <family> <table> <name>` command per set, which is
-// expensive and outside the current single-command validator model.
+// Uses `nft -j list set <family> <table> <name>` which returns the full
+// set including an "elem" array when elements exist. The "elem" key is
+// absent when the set is empty (returns 0 in that case).
 //
-// Consequence: BotGuard can never reach ENFORCING or OBSERVING states from
-// the validator (requires ban/suspect set population > 0). Manual blacklist
-// can never reach PRIMED (requires manual set population > 0). Both default
-// to IDLE, which is correct per vocabulary Rule 1 (zero = NEUTRAL).
-//
-// This is documented in the v1.81 release notes as a known limitation.
-// Real fix: v1.82 — add targeted per-set queries for enforcement-critical
-// sets (http_bot_ban, http_bot_suspect, blacklist_manual_ipv4).
-func countSetElements(_ *RulesetDocument, _, _ string) int {
+// This is called for enforcement-critical sets only (BotGuard ban/suspect,
+// manual blacklist). The cost is one nft command per set query.
+func countSetElementsReal(family, setName string) int {
+	table := "nftban"
+	out, err := exec.Command("nft", "-j", "list", "set", family, table, setName).Output()
+	if err != nil {
+		return 0
+	}
+
+	// Parse JSON: {"nftables": [{"metainfo":...}, {"set": {..., "elem": [...]}}]}
+	var result struct {
+		Nftables []struct {
+			Set *struct {
+				Elem []interface{} `json:"elem"`
+			} `json:"set,omitempty"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0
+	}
+
+	for _, obj := range result.Nftables {
+		if obj.Set != nil {
+			return len(obj.Set.Elem)
+		}
+	}
 	return 0
 }

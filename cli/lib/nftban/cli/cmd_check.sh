@@ -50,7 +50,8 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh" || return 1
 fi
-source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
+# v1.82: relocated to nftban_ip_and_stats.sh (nftban_validator.sh deleted)
+        source "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" || return 1
 
 # =============================================================================
 # COMMAND HANDLER
