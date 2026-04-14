@@ -260,6 +260,7 @@ const (
 	// Service findings (B80-4)
 	CodeServiceDown  = "VAL-SERVICE-001" // required service not active
 	CodeTimerNone    = "VAL-TIMER-001"   // v1.83: no nftban timers active
+	CodeTimerError   = "VAL-TIMER-002"   // v1.83: timer query failed
 
 	// Module-specific findings (M81-4)
 	CodeGeobanDBMissing = "VAL-GEOBAN-001" // geoip database missing/empty

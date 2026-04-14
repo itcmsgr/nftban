@@ -207,8 +207,17 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 
 	// v1.83: Check timer liveness — a system with zero active nftban timers
 	// is operationally incomplete (maintenance, watchdog, exports won't run).
-	result.ServiceState.TimerCount = checkTimerState()
-	if result.ServiceState.TimerCount == 0 {
+	timerCount, timerErr := checkTimerState()
+	result.ServiceState.TimerCount = timerCount
+	if timerErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Code:        CodeTimerError,
+			Severity:    SeverityWarn,
+			Component:   "service",
+			Message:     "timer liveness query failed: " + timerErr.Error(),
+			Remediation: "Check systemctl access and permissions",
+		})
+	} else if timerCount == 0 {
 		result.Findings = append(result.Findings, Finding{
 			Code:        CodeTimerNone,
 			Severity:    SeverityError,
@@ -545,13 +554,12 @@ func checkServiceState() ServiceState {
 	return ss
 }
 
-// checkTimerState returns the count of active nftban-* timers.
+// checkTimerState returns the count of active nftban-* timers and any query error.
 // v1.83: zero active timers means maintenance/watchdog/exports won't run,
 // which is an operationally degraded state even if kernel structure is correct.
-// On query error, returns 0 (fails safe — no timers assumed).
-func checkTimerState() int {
-	count, _ := defaultTimerChecker.CountActiveTimers()
-	return count
+// On query error, returns (0, err) so callers can distinguish real zero from failure.
+func checkTimerState() (int, error) {
+	return defaultTimerChecker.CountActiveTimers()
 }
 
 // evaluateOverallStatus determines the final status from results.
