@@ -341,7 +341,7 @@ func readConfigBool(localPath, basePath, key string) ConfigState {
 
 // readKeyFromFile reads a KEY="value" line from a shell config file.
 func readKeyFromFile(path, key string) string {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 — path is constructed from hardcoded ConfigDir + known config filenames, not user input
 	if err != nil {
 		return ""
 	}

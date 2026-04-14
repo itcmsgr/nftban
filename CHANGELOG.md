@@ -11,6 +11,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.81.0] - 2026-04-14
+
+**Metrics alignment and health semantics implementation.** Module-aware
+health output with frozen JSON schema, vocabulary-aligned states, and
+CLI/JSON truth discipline. Portscan classic detection bug fixed and
+verified live.
+
+### Added
+
+- **M81-4** Per-module health evaluation in Go validator. Each module
+  evaluated on 4 axes: config, structural, runtime, effective. Truth
+  tables from `HEALTH_METRIC_DERIVATION_v1.81.md` implemented in code.
+  Modules: BotGuard, DDoS, Portscan, LoginMon, Blacklist (unified:
+  manual + feeds + geoban). (PR #381)
+- **M81-6** Frozen JSON schema via mapper layer. `MapToHealthOutput()`
+  is the single projection point — internal state never serialized
+  directly. Schema version `1.81.0`. No nulls. Vocabulary-approved
+  values only. (PR #381)
+- DDoS effective axis reads real kernel named counters (`input_ct_ssh_drop`,
+  `input_ct_http_drop`, `input_ct_mail_drop`, `input_syn_rate_exceeded`,
+  `input_syn_prefix_drop`). Any > 0 = ENFORCING. (PR #381)
+- `StatusIdle` enum: overall status distinguishes PROTECTED (at least one
+  module active) from IDLE (all modules valid but no enforcement). Both
+  exit 0. (PR #381)
+- BotGuard dual-family structural evaluation per Rule 9 (per-family
+  aggregation). IPv6 checked only if ip6 nftban table exists. (PR #381)
+- Consistency block stub in JSON output (`kernel_vs_validator: "ok"`).
+  Full consistency checking is v1.82 scope. (PR #381)
+- `VAL-GEOBAN-001` finding emitted when geoip database missing/empty
+  and geoban is enabled. (PR #381)
+- `test_banned_phrases.sh`: M81-5 regression scanner detecting 7 banned
+  phrase patterns across CLI files. Informational for v1.81. (PR #381)
+
+### Fixed
+
+- **Portscan classic log-path collision** (CRITICAL). `PORTSCAN_CLASSIC_LOG_FILE`
+  was defined twice in `classic.conf` — line 32 (kernel input source) and
+  line 172 (module output log). The detector was grepping its own output
+  log and finding nothing. Renamed output variable to
+  `PORTSCAN_CLASSIC_MODULE_LOG`. Detection now verified live: lab2=160/4,
+  lab4=349/6, monitor=59/1 IPs tracked/blocked. Both background timer and
+  manual `nftban portscan check` fixed. (PR #377)
+- **CF-1** `service_state.nftband` now emits uppercase (`RUNNING`|`STOPPED`|
+  `ERROR`) matching JSON schema spec. Module runtime fields remain
+  lowercase. (PR #381)
+- **CF-2** Geoban DB missing emits `"stale"` (in allowed enum) instead of
+  `"degraded"` (not in enum). Emits `VAL-GEOBAN-001` finding. (PR #381)
+- **M81-5** CLI banned phrases: `"healthy"` replaced with `"protected"` in
+  health word mappings. `"threats_blocked_24h"` renamed to
+  `"enforcement_events_24h"` in status JSON. (PR #381)
+
+### Changed
+
+- `ToJSON()` now uses `MapToHealthOutput()` (frozen schema). Legacy
+  consumers use `ToJSONLegacy()` for backward compat. (PR #381)
+- `ExitCode()` returns 0 for both PROTECTED and IDLE. (PR #381)
+
+### Schema
+
+```json
+{
+  "schema_version": "1.81.0",
+  "status": "protected|idle|degraded|down",
+  "service_state": { "nftband": "RUNNING|STOPPED|ERROR" },
+  "modules": {
+    "botguard":  { "config", "structural", "runtime", "effective" },
+    "ddos":      { "config", "structural", "effective" },
+    "portscan":  { "config", "structural", "effective" },
+    "loginmon":  { "config", "structural", "runtime", "effective" },
+    "blacklist": { "manual", "feeds", "geoban" }
+  },
+  "consistency": { "kernel_vs_validator": "ok|mismatch" },
+  "findings": [...],
+  "chain_counts": {...},
+  "summary": {...}
+}
+```
+
+### Specs produced (M81-1 through M81-8)
+
+| Spec | Document |
+|---|---|
+| M81-1 Vocabulary | `NFTBAN_VOCABULARY_REFERENCE_v1.81.md` (v1.1) |
+| M81-2 Counter inventory | `METRICS_CATALOG_v1.81.md` |
+| M81-3 Module contracts | 5 module evidence contracts |
+| M81-4 Health derivation | `HEALTH_METRIC_DERIVATION_v1.81.md` |
+| M81-5 CLI output | `CLI_OUTPUT_SPEC_v1.81.md` |
+| M81-6 JSON schema | `JSON_SCHEMA_SPEC_v1.81.md` |
+| M81-7 Shadowing detection | `SHADOWING_DETECTION_SPEC_v1.81.md` |
+| M81-8 Glossary | `METRICS_GLOSSARY_AND_TROUBLESHOOTING_v1.81.md` |
+
+### Known limitations
+
+- **Set-element counting not implemented.** `countSetElements()` returns 0.
+  BotGuard ENFORCING/OBSERVING and blacklist PRIMED states are unreachable
+  from the validator. Fix target: v1.82 per-set queries.
+- **Portscan effective evidence is structural-only/idle.** No dedicated
+  kernel counter. Real enforcement evidence requires kernel log parsing.
+- **LoginMon effective evidence not yet integrated.** Journal query outside
+  validator's point-in-time snapshot model. Reports idle by default.
+- **Consistency axis is a stub** (`"ok"` always). Full cross-source
+  checking is v1.82 scope.
+- **Legacy shell CLI contains 24 banned-phrase instances** in health
+  subsystem files. Full CLI vocabulary enforcement is v1.82 scope.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #377 | Portscan classic log-path collision fix |
+| #381 | M81-4/5/6 health derivation + JSON schema + CLI cleanup + CF fixes |
+
+---
+
 ## [1.80.1] - 2026-04-13
 
 **Hotfix.** Fixes validator semantic issue from v1.80.0: module-scoped helper
