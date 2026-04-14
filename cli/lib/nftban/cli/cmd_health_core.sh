@@ -277,49 +277,9 @@ nftban_health_cmd_json() {
     return 0
 }
 
-# =============================================================================
-# COMMAND: report
-# =============================================================================
-
-nftban_health_cmd_report() {
-    # Generate health check report
-    # Args: $1 = format (optional: terminal|html|json)
-
-    local format="${1:-terminal}"
-
-    # Load health module
-    if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || {
-            echo "ERROR: Failed to load health check module" >&2
-            return 1
-        }
-    fi
-
-    # Run checks (ignore return value to avoid strict mode issues)
-    nftban_health_check_all || true
-
-    case "$format" in
-        terminal)
-            nftban_health_render_terminal
-            ;;
-        html)
-            echo "HTML report format not available." >&2
-            echo "Use: nftban health check    (terminal)" >&2
-            echo "Use: nftban health --json   (JSON output)" >&2
-            return 1
-            ;;
-        json)
-            # Redirect to the working --json command
-            nftban_health_cmd_json
-            return $?
-            ;;
-        *)
-            echo "ERROR: Invalid format: $format" >&2
-            echo "Valid formats: terminal, html, json" >&2
-            return 1
-            ;;
-    esac
-}
+# v1.83 DEAD-1: nftban_health_cmd_report() removed — unreachable since v1.39.0.
+# The CLI dispatcher in cmd_health.sh returns an error for "nftban health report"
+# with a message directing users to "nftban health json".
 
 # =============================================================================
 # COMMAND: fix
@@ -616,6 +576,6 @@ export -f nftban_health_cmd_check
 export -f nftban_health_cmd_brief
 export -f nftban_health_cmd_summary
 export -f nftban_health_cmd_json
-export -f nftban_health_cmd_report
+# v1.83: export removed — function deleted (DEAD-1)
 export -f nftban_health_cmd_fix
 export -f nftban_health_cmd_nagios
