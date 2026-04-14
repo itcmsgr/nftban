@@ -177,12 +177,13 @@ _nftban_portscan_verify_prefix() {
 # STATE TRACKING
 # =============================================================================
 
-# In-memory tracking arrays
-declare -gA _PORTSCAN_CLASSIC_IP_PORTS       # IP -> ports seen (space-separated)
-declare -gA _PORTSCAN_CLASSIC_IP_TIMESTAMPS  # IP -> timestamps (space-separated)
-declare -gA _PORTSCAN_CLASSIC_IP_TARGETS     # IP -> target IPs (space-separated)
-declare -gA _PORTSCAN_CLASSIC_IP_BLOCKED     # IP -> block timestamp
-declare -gA _PORTSCAN_CLASSIC_IP_BAN_COUNT   # IP -> number of times banned
+# In-memory tracking arrays (initialized empty to prevent unbound-variable
+# errors under set -u when accessed before nftban_portscan_classic_init_state)
+declare -gA _PORTSCAN_CLASSIC_IP_PORTS=()       # IP -> ports seen (space-separated)
+declare -gA _PORTSCAN_CLASSIC_IP_TIMESTAMPS=()  # IP -> timestamps (space-separated)
+declare -gA _PORTSCAN_CLASSIC_IP_TARGETS=()     # IP -> target IPs (space-separated)
+declare -gA _PORTSCAN_CLASSIC_IP_BLOCKED=()     # IP -> block timestamp
+declare -gA _PORTSCAN_CLASSIC_IP_BAN_COUNT=()   # IP -> number of times banned
 
 # Initialize state tracking
 nftban_portscan_classic_init_state() {
@@ -530,7 +531,9 @@ nftban_portscan_classic_process_logs() {
             # Record this connection for realtime detection
             nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | tail -1000)
+        # SIGPIPE fix: tail in a pipeline under pipefail can exit 141 when the
+        # reader (while loop) closes. Trap SIGPIPE to prevent fatal exit.
+        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | { tail -1000 || true; })
     else
         # grep returns 1 when no matches found - use || true to handle this
         _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
@@ -553,7 +556,8 @@ nftban_portscan_classic_process_logs() {
             # Record this connection for realtime detection
             nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-        done < <({ grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" "$log_source" 2>/dev/null || true; } | tail -1000)
+        # SIGPIPE fix: same as journalctl path above.
+        done < <({ grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" "$log_source" 2>/dev/null || true; } | { tail -1000 || true; })
     fi
 
     # Analyze and block if needed
