@@ -339,6 +339,32 @@ if systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
         else
             log_error "Failed to start nftband daemon"
         fi
+
+        # PKG-STATE-INCONSISTENT recovery (v1.81.1)
+        # If daemon still won't start AND we're on a DEB system, check if
+        # dpkg state is broken (half-configured, interrupted install).
+        # This handles the case where a package update left dpkg inconsistent.
+        # PKG-STATE-INCONSISTENT recovery (v1.81.1)
+        # If daemon still won't start AND we're on a DEB system, delegate
+        # to `nftban update repair` which handles dpkg --configure,
+        # dependency fixes, and post-repair validation.
+        if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
+            if command -v dpkg &>/dev/null; then
+                # Check both package names (nftban-core on RPM-origin, nftban on DEB)
+                _ah_pkg_state=$(dpkg-query -W -f='${Status}' nftban-core 2>/dev/null || \
+                                dpkg-query -W -f='${Status}' nftban 2>/dev/null || echo "unknown")
+                if [[ "$_ah_pkg_state" != *"install ok installed"* && "$_ah_pkg_state" != "unknown" ]]; then
+                    log_warn "PKG-STATE-INCONSISTENT: dpkg reports '$_ah_pkg_state' — delegating to update repair"
+                    if command -v nftban &>/dev/null; then
+                        nftban update repair 2>/dev/null && \
+                            log_info "AUTO-FIXED: PKG-STATE-INCONSISTENT repaired via update repair" || \
+                            log_error "PKG-STATE-INCONSISTENT: update repair failed — manual intervention required"
+                    else
+                        log_error "PKG-STATE-INCONSISTENT: nftban command not available for repair"
+                    fi
+                fi
+            fi
+        fi
     else
         log_info "✅ nftband daemon is running"
     fi

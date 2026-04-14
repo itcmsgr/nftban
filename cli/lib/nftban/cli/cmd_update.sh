@@ -447,22 +447,98 @@ _cmd_update_main() {
     esac
 
     if [[ $result -ne 0 ]]; then
-        local _update_duration=$(( SECONDS - _update_start_seconds ))
-        _update_log ERROR "=== Update failed: v${current_version} (${_update_duration}s) ==="
-        _update_write_history "$current_version" "$current_version" "install_fail" "$install_type" "$_update_duration"
-        # Write failure marker for circuit breaker
-        local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
-        mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
-        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
-        echo ""
-        _update_log ERROR "Update failed"
-        _update_log INFO "Run 'nftban update repair' to fix broken install state"
-        _update_log INFO "Run 'nftban update rollback' to restore previous version"
-        _update_log INFO "Run 'nftban update force' to force reinstall"
-        echo ""
-        echo "  Log: $UPDATE_LOG_FILE"
-        echo ""
-        return $result
+        # =====================================================================
+        # PKG-STATE-INCONSISTENT auto-recovery (v1.81.1)
+        # If a DEB install fails, attempt automatic repair before giving up.
+        # This handles half-configured dpkg state from interrupted installs,
+        # dependency failures, or accumulated hot-patch history.
+        #
+        # Recovery: dpkg --configure -a → verify package → restart daemon →
+        # validate. Only if all three pass, override the failure.
+        # =====================================================================
+        if [[ "$install_type" == "deb" ]] && command -v dpkg &>/dev/null; then
+            _update_log WARN "DEB install failed — attempting PKG-STATE-INCONSISTENT auto-recovery..."
+
+            local _repair_ok=true
+
+            # Step 1: dpkg configure
+            if dpkg --configure -a 2>&1 | while read -r _line; do
+                _update_log INFO "  dpkg: $_line"
+            done; then
+                _update_log OK "dpkg --configure -a completed"
+            else
+                _update_log WARN "dpkg --configure -a had issues"
+            fi
+
+            # Step 2: fix broken dependencies
+            apt-get install -f -y 2>&1 | while read -r _line; do
+                _update_log INFO "  apt-fix: $_line"
+            done || true
+
+            # Step 3: verify package installed at target version
+            # Check both package names (nftban-core on RPM-origin installs, nftban on DEB)
+            local _pkg_status
+            _pkg_status=$(dpkg-query -W -f='${Status}' nftban-core 2>/dev/null || \
+                          dpkg-query -W -f='${Status}' nftban 2>/dev/null || echo "unknown")
+            if [[ "$_pkg_status" == *"install ok installed"* ]]; then
+                _update_log OK "Package state: installed"
+            else
+                _update_log ERROR "Package state after repair: $_pkg_status"
+                _repair_ok=false
+            fi
+
+            # Step 4: restart daemon
+            if [[ "$_repair_ok" == "true" ]]; then
+                systemctl reset-failed nftband 2>/dev/null || true
+                if systemctl start nftband 2>/dev/null; then
+                    _update_log OK "Daemon restarted after repair"
+                else
+                    _update_log ERROR "Daemon failed to start after repair"
+                    _repair_ok=false
+                fi
+            fi
+
+            # Step 5: validate
+            if [[ "$_repair_ok" == "true" ]]; then
+                local _val_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+                if [[ -x "$_val_bin" ]]; then
+                    local _val_status
+                    _val_status=$("$_val_bin" --json 2>/dev/null | jq -r '.status' 2>/dev/null || echo "unknown")
+                    if [[ "$_val_status" == "protected" || "$_val_status" == "idle" ]]; then
+                        _update_log OK "Validator: $_val_status — auto-recovery succeeded"
+                        result=0  # override failure
+                    else
+                        _update_log ERROR "Validator: $_val_status after repair"
+                        _repair_ok=false
+                    fi
+                fi
+            fi
+
+            if [[ "$_repair_ok" != "true" ]]; then
+                _update_log ERROR "PKG-STATE-INCONSISTENT auto-recovery FAILED"
+                _update_log INFO "Run 'nftban update repair' for manual recovery"
+            fi
+        fi
+
+        # If still failed after auto-recovery attempt (or non-DEB)
+        if [[ $result -ne 0 ]]; then
+            local _update_duration=$(( SECONDS - _update_start_seconds ))
+            _update_log ERROR "=== Update failed: v${current_version} (${_update_duration}s) ==="
+            _update_write_history "$current_version" "$current_version" "install_fail" "$install_type" "$_update_duration"
+            # Write failure marker for circuit breaker
+            local _fail_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed"
+            mkdir -p "$(dirname "$_fail_marker")" 2>/dev/null || true
+            date -u '+%Y-%m-%dT%H:%M:%SZ' > "$_fail_marker" 2>/dev/null || true
+            echo ""
+            _update_log ERROR "Update failed"
+            _update_log INFO "Run 'nftban update repair' to fix broken install state"
+            _update_log INFO "Run 'nftban update rollback' to restore previous version"
+            _update_log INFO "Run 'nftban update force' to force reinstall"
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo ""
+            return $result
+        fi
     fi
 
     # Restart services to load new binaries
