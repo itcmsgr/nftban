@@ -142,7 +142,7 @@ func TestMapBlacklist(t *testing.T) {
 }
 
 func TestMapConsistency_DefaultOK(t *testing.T) {
-	c := mapConsistency()
+	c := mapConsistency("ok")
 	if c.KernelVsValidator != "ok" {
 		t.Errorf("kernel_vs_validator = %s, want ok", c.KernelVsValidator)
 	}
