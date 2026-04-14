@@ -136,7 +136,8 @@ _nftban_protection_state_validator() {
     # Falls back to legacy detection if validator unavailable.
 
     if [[ ! -x "$_NFTBAN_VALIDATOR_BIN" ]]; then
-        # Validator not installed — use legacy detection
+        # v1.83: Warn when Go validator is missing — legacy fallback is deprecated.
+        echo "WARNING: Go validator not found at $_NFTBAN_VALIDATOR_BIN — using legacy detection (deprecated, removal in v1.84)" >&2
         _nftban_protection_state_legacy
         return
     fi
@@ -146,17 +147,27 @@ _nftban_protection_state_validator() {
     _json=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null) || _exit_code=$?
 
     if [[ -z "$_json" ]]; then
-        # Validator failed — fallback
+        # v1.83: Warn when validator fails — legacy fallback is deprecated.
+        echo "WARNING: Go validator returned empty output — using legacy detection (deprecated)" >&2
         _nftban_protection_state_legacy
         return
     fi
 
-    # Extract status from JSON
+    # Extract status and schema version from JSON
+    local _status _schema_version
     if command -v jq >/dev/null 2>&1; then
         _status=$(echo "$_json" | jq -r '.status' 2>/dev/null)
+        _schema_version=$(echo "$_json" | jq -r '.schema_version // empty' 2>/dev/null)
     else
-        # Parse without jq - look for "status":"protected" etc
         _status=$(echo "$_json" | grep -oP '"status"\s*:\s*"\K[^"]+' || true)
+        _schema_version=$(echo "$_json" | grep -oP '"schema_version"\s*:\s*"\K[^"]+' || true)
+    fi
+
+    # v1.83: Schema version guard — warn if validator schema doesn't match expected.
+    # Prevents silent breakage if validator binary is from a different version.
+    local _expected_schema="1.83.0"
+    if [[ -n "$_schema_version" && "$_schema_version" != "$_expected_schema" ]]; then
+        echo "WARNING: validator schema $_schema_version does not match expected $_expected_schema — binary may be outdated" >&2
     fi
 
     # Map validator status to display format with reason codes.
