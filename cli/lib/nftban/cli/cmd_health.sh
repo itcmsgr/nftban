@@ -224,6 +224,11 @@ nftban_cmd_health() {
         posture|security)
             nftban_health_cmd_posture "$@"
             ;;
+        truth|axes)
+            # v1.82: Four-axis health table from Go validator (M81-4 output)
+            # This is the primary operator health surface backed by real data.
+            nftban_health_cmd_truth "$json_mode"
+            ;;
         help|-h|--help)
             nftban_health_cmd_help
             ;;
@@ -374,6 +379,98 @@ EOF
 # =============================================================================
 
 # Export main handler
+# =============================================================================
+# v1.82: Four-axis health truth table (M81-4 implementation)
+# =============================================================================
+# Reads the Go validator's frozen schema output and renders a per-module
+# health table using vocabulary-approved terms only. CLI is presentation
+# layer only — it MUST NOT compute health states independently.
+# =============================================================================
+
+nftban_health_cmd_truth() {
+    local json_mode="${1:-false}"
+    local validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+
+    if [[ ! -x "$validator_bin" ]]; then
+        echo "ERROR: Go validator binary not found at $validator_bin" >&2
+        return 1
+    fi
+
+    local output
+    output=$("$validator_bin" --json 2>/dev/null)
+    if [[ -z "$output" ]]; then
+        echo "ERROR: Go validator returned empty output" >&2
+        return 1
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        # JSON mode: pass through the frozen schema directly
+        echo "$output" | jq '{schema_version, status, service_state, modules, consistency}' 2>/dev/null
+        return $?
+    fi
+
+    # Text mode: render four-axis table
+    local status
+    status=$(echo "$output" | jq -r '.status' 2>/dev/null)
+    local nftband_state
+    nftband_state=$(echo "$output" | jq -r '.service_state.nftband' 2>/dev/null)
+    local consistency
+    consistency=$(echo "$output" | jq -r '.consistency.kernel_vs_validator' 2>/dev/null)
+
+    echo ""
+    echo "NFTBan Health — Four-Axis Truth Table"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    printf "  %-14s %s\n" "Overall:" "$(echo "$status" | tr '[:lower:]' '[:upper:]')"
+    printf "  %-14s %s\n" "Daemon:" "$nftband_state"
+    printf "  %-14s %s\n" "Consistency:" "$consistency"
+    echo ""
+    echo "  Module       Config     Structure  Runtime    Effective"
+    echo "  ───────────  ─────────  ─────────  ─────────  ─────────"
+
+    # Render each standard module
+    for mod in botguard ddos portscan loginmon; do
+        local config structural runtime effective
+        config=$(echo "$output" | jq -r ".modules.${mod}.config // \"-\"" 2>/dev/null)
+        structural=$(echo "$output" | jq -r ".modules.${mod}.structural // \"-\"" 2>/dev/null)
+        runtime=$(echo "$output" | jq -r ".modules.${mod}.runtime // \"-\"" 2>/dev/null)
+        effective=$(echo "$output" | jq -r ".modules.${mod}.effective // \"-\"" 2>/dev/null)
+
+        # Fix null rendering
+        [[ "$config" == "null" ]] && config="-"
+        [[ "$structural" == "null" ]] && structural="-"
+        [[ "$runtime" == "null" ]] && runtime="-"
+        [[ "$effective" == "null" ]] && effective="-"
+
+        printf "  %-11s  %-9s  %-9s  %-9s  %s\n" "$mod" "$config" "$structural" "$runtime" "$effective"
+    done
+
+    # Render blacklist (composite)
+    echo ""
+    echo "  Blacklist    State      Entries"
+    echo "  ───────────  ─────────  ───────"
+    for sub in manual feeds geoban; do
+        local state entries
+        state=$(echo "$output" | jq -r ".modules.blacklist.${sub}.state // \"-\"" 2>/dev/null)
+        entries=$(echo "$output" | jq -r ".modules.blacklist.${sub}.entries // 0" 2>/dev/null)
+        [[ "$state" == "null" ]] && state="-"
+        [[ "$entries" == "null" ]] && entries="0"
+        printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
+    done
+
+    # Render findings if any
+    local finding_count
+    finding_count=$(echo "$output" | jq '.findings | length' 2>/dev/null || echo "0")
+    if [[ "$finding_count" -gt 0 ]]; then
+        echo ""
+        echo "  Findings ($finding_count):"
+        echo "$output" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+    fi
+
+    echo ""
+}
+
+export -f nftban_health_cmd_truth
 export -f nftban_cmd_health
 
 # Export subcommand functions (loaded from modules)

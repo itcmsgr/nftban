@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
-# NFTBan v1.0.0 - NFTables Validator Core Library
+# NFTBan v1.82 - IP/Port Check + Firewall Stats
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="nftban_validator"
+# meta:name="nftban_ip_and_stats"
 # meta:type="core"
-# meta:version="1.47.0"
+# meta:version="1.82.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
+# meta:description="IP/port membership check and firewall statistics — extracted from nftban_validator.sh (B80-1 structural cleanup)"
 # meta:inventory.files=""
 # meta:inventory.binaries="nft,jq"
 # meta:inventory.env_vars=""
@@ -17,82 +16,32 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 # =============================================================================
+# These functions were previously in nftban_validator.sh alongside the
+# validate_structure() shim. They have no relationship to validation —
+# they are query/reporting functions. Extracted as part of v1.82 structural
+# cleanup to enable full deletion of nftban_validator.sh.
+# =============================================================================
 
 set -Eeuo pipefail
 
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-# NFTBAN_LIB_DIR is set by the calling script (cmd_validator.sh, etc.)
-# Don't set it here - just use it with fallback
-
-# Load strict mode library
-# shellcheck source=/usr/lib/nftban/lib/strict.sh
-if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/strict.sh" || return 1
-else
-    # Fallback to manual strict mode
-    set -Eeuo pipefail
-fi
-
-# Load version library
-# shellcheck source=/usr/lib/nftban/lib/version.sh
-if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" || return 1
-fi
-
-# Bootstrap NFTBAN_SHARE_DIR (may be readonly from nftban.conf)
-: "${NFTBAN_SHARE_DIR:=/usr/share/nftban}"
+# Prevent double-loading
+[[ -n "${NFTBAN_IP_AND_STATS_LOADED:-}" ]] && return 0
+readonly NFTBAN_IP_AND_STATS_LOADED=1
 
 # =============================================================================
-# SPEC FILE MANAGEMENT
-# =============================================================================
-
-load_spec() {
-    # Load NFTBan structure specification file
-    # Priority: user override > default spec
-    # Returns: Spec file contents (JSON)
-
-    local spec_file=""
-
-    # Priority: user override > default spec
-    if [[ -f "${NFTBAN_CONFIG_DIR}/spec.json" ]]; then
-        spec_file="${NFTBAN_CONFIG_DIR}/spec.json"
-    elif [[ -f "/usr/share/nftban/specs/structure_default.json" ]]; then
-        spec_file="/usr/share/nftban/specs/structure_default.json"
-    elif [[ -f "${NFTBAN_SHARE_DIR}/specs/structure_default.json" ]]; then
-        spec_file="${NFTBAN_SHARE_DIR}/specs/structure_default.json"
-    else
-        echo "ERROR: Cannot find spec file" >&2
-        return 1
-    fi
-
-    if ! jq -e . "$spec_file" >/dev/null 2>&1; then
-        echo "ERROR: Invalid JSON in spec file: $spec_file" >&2
-        return 1
-    fi
-
-    cat "$spec_file"
-}
-
-# =============================================================================
-# NFTABLES QUERY
+# KERNEL QUERY HELPER (used by check_ip_or_port + get_firewall_stats)
 # =============================================================================
 
 get_live_ruleset() {
     # Get live nftables ruleset as JSON
     # Returns: Full ruleset in JSON format
-
     local output
     output=$(nft -j list ruleset 2>&1)
     local rc=$?
-
     if [[ $rc -ne 0 ]]; then
         echo "{\"error\": \"Failed to get nftables ruleset: $output\"}" >&2
         return 1
     fi
-
     echo "$output"
 }
 
@@ -315,7 +264,6 @@ validate_structure() {
     return 0
 }
 
-# =============================================================================
 # IP/PORT CHECKING
 # =============================================================================
 

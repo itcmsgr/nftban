@@ -176,6 +176,12 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	// Collect any module-specific findings (e.g. VAL-GEOBAN-001)
 	result.Findings = append(result.Findings, moduleFindings...)
 
+	// v1.82 Step 3: Consistency axis — cross-source verification
+	consistencyResult := evaluateConsistency(result.Modules)
+	result.Findings = append(result.Findings, consistencyResult.Findings...)
+	// Store for mapper to use
+	result.ConsistencyOverall = consistencyResult.Overall
+
 	// Compute summary
 	result.Summary = computeSummary(result)
 

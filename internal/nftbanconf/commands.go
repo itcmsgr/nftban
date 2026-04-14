@@ -136,10 +136,9 @@ func (c *CommandPaths) NFTablesScript() string {
 	return c.CoreScript("nftban_nftables.sh")
 }
 
-// ValidatorScript returns path to nftban_validator.sh
-func (c *CommandPaths) ValidatorScript() string {
-	return c.CoreScript("nftban_validator.sh")
-}
+// ValidatorScript was removed in v1.82 — nftban_validator.sh deleted.
+// Functions relocated to nftban_ip_and_stats.sh.
+// Go code should use internal/validator package directly.
 
 // GeoIPDownloadScript returns path to geoip download script
 func (c *CommandPaths) GeoIPDownloadScript() string {

@@ -38,7 +38,7 @@ func MapToHealthOutput(r *ValidationResult) HealthOutput {
 			NftbandDetail: r.ServiceState.NftbandDetail,
 		},
 		Modules:     mapModules(r.Modules),
-		Consistency: mapConsistency(),
+		Consistency: mapConsistency(r.ConsistencyOverall),
 		Findings:    mapFindings(r.Findings),
 		ChainCounts: r.ChainCount,
 		Summary:     r.Summary,
@@ -137,15 +137,14 @@ func mapBlacklist(b *BlacklistHealth) *BlacklistJSON {
 	}
 }
 
-// mapConsistency returns the consistency block.
-// Stub for v1.81.0 — always returns "ok".
-// WARNING: This is a placeholder. It does NOT perform real consistency
-// checking. MUST NOT be used for validation decisions until v1.82 when
-// actual kernel-vs-cache and kernel-vs-CLI cross-checks are implemented.
-// Full consistency axis implementation is v1.82 scope.
-func mapConsistency() ConsistencyJSON {
+// mapConsistency returns the consistency block from real evaluation.
+// v1.82: replaces the v1.81 stub with actual cross-source verification.
+func mapConsistency(consistencyOverall string) ConsistencyJSON {
+	if consistencyOverall == "" {
+		consistencyOverall = "ok"
+	}
 	return ConsistencyJSON{
-		KernelVsValidator: "ok",
+		KernelVsValidator: consistencyOverall,
 	}
 }
 

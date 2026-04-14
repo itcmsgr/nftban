@@ -54,7 +54,8 @@ type ValidationResult struct {
 	ModuleTruth   ModuleStatus     `json:"module_truth"`
 	ChainCount    ChainCounts      `json:"chain_counts"`
 	ServiceState  ServiceState     `json:"service_state"`
-	Modules       ModuleHealthMap  `json:"modules"`       // M81-4
+	Modules              ModuleHealthMap  `json:"modules"`                // M81-4
+	ConsistencyOverall   string           `json:"consistency_overall"`    // v1.82: "ok" | "mismatch"
 }
 
 // SchemaVersionCurrent is the frozen schema version per M81-6.
@@ -259,6 +260,9 @@ const (
 
 	// Module-specific findings (M81-4)
 	CodeGeobanDBMissing = "VAL-GEOBAN-001" // geoip database missing/empty
+
+	// Consistency findings (v1.82)
+	CodeConsistencyMismatch = "VAL-CONS-001" // config/kernel disagreement
 
 	// System findings
 	CodeNftFailed    = "VAL-SYSTEM-001"
