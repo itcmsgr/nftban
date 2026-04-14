@@ -159,33 +159,32 @@ _nftban_protection_state_validator() {
         _status=$(echo "$_json" | grep -oP '"status"\s*:\s*"\K[^"]+' || true)
     fi
 
-    # Map validator status to legacy format with reason codes
+    # Map validator status to display format with reason codes.
+    # v1.83: The validator is the SOLE truth authority for protection state.
+    # Shell MUST NOT recompute or override the validator verdict.
+    # Daemon state (VAL-SERVICE-001) and timer liveness (VAL-TIMER-001)
+    # are both checked inside the Go validator — if they were failing,
+    # the validator would have returned "degraded", not "protected".
     case "$_status" in
         protected)
-            # Additional service checks (not in kernel validator)
-            local _daemon_active=false _timers=0
-            systemctl is-active nftband.service >/dev/null 2>&1 && _daemon_active=true
-            _timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
-
-            if [[ "$_daemon_active" != "true" ]]; then
-                echo "DEGRADED:D-DAEMON"; return
-            fi
-            if [[ "$_timers" -eq 0 ]]; then
-                echo "DEGRADED:D-NOTIMERS"; return
-            fi
+            echo "PROTECTED"
+            ;;
+        idle)
             echo "PROTECTED"
             ;;
         degraded)
-            # Extract finding codes if available
+            # Extract first finding code for reason display
             local _first_code=""
             if command -v jq >/dev/null 2>&1; then
                 _first_code=$(echo "$_json" | jq -r '.findings[0].code // empty' 2>/dev/null)
             fi
             case "$_first_code" in
-                VAL-ANCHOR-*) echo "DEGRADED:D-ANCHOR" ;;
-                VAL-CHAIN-*)  echo "DEGRADED:D-CHAIN" ;;
-                VAL-TABLE-*)  echo "DEGRADED:D-TABLE" ;;
-                *)            echo "DEGRADED:D-VALIDATOR" ;;
+                VAL-ANCHOR-*)  echo "DEGRADED:D-ANCHOR" ;;
+                VAL-CHAIN-*)   echo "DEGRADED:D-CHAIN" ;;
+                VAL-TABLE-*)   echo "DEGRADED:D-TABLE" ;;
+                VAL-SERVICE-*) echo "DEGRADED:D-DAEMON" ;;
+                VAL-TIMER-*)   echo "DEGRADED:D-NOTIMERS" ;;
+                *)             echo "DEGRADED:D-VALIDATOR" ;;
             esac
             ;;
         down)
