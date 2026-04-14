@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.81.1] - 2026-04-14
+
+**Hotfix.** Fixes two bugs in portscan classic that crash the maintenance
+timer every 6 minutes on any host with portscan enabled.
+
+### Fixed
+
+- **SIGPIPE (exit 141):** `tail -1000` in pipeline under `set -o pipefail`
+  in `nftban_portscan_classic_process_logs()`. When the while-read loop
+  closes, tail gets SIGPIPE. Fix: `{ tail -1000 || true; }` on both
+  journalctl and file-grep paths.
+- **Unbound variable:** 5 tracking arrays (`_PORTSCAN_CLASSIC_IP_PORTS` etc.)
+  declared with `declare -gA` but not initialized with `=()`. Under
+  `set -u`, `${#array[@]}` on a declared-but-unassigned array is fatal.
+  Fix: initialize all arrays at declaration.
+
+### Impact
+
+Without this fix, maintenance (SSH protection, whitelist sync, auto-heal)
+stops running on any host with portscan enabled. Both bugs are pre-existing
+— became visible after portscan classic detection was fixed in v1.81.0.
+
+### Verification
+
+Verified on monitor + lab2 + lab4. Maintenance completes step 7 (portscan
+stealth aggregation) without crash.
+
+### Refs
+
+- PR #382
+
+---
+
 ## [1.81.0] - 2026-04-14
 
 **Metrics alignment and health semantics implementation.** Module-aware
