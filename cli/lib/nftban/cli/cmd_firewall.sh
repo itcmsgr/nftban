@@ -438,11 +438,12 @@ firewall_validate() {
     done
 
     # Load core validator
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
+        # v1.82: relocated to nftban_ip_and_stats.sh (nftban_validator.sh deleted)
+        source "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" || return 1
     else
-        [[ "$quiet_mode" != "true" ]] && echo "ERROR: Cannot find nftban_validator.sh" >&2
+        [[ "$quiet_mode" != "true" ]] && echo "ERROR: Cannot find nftban_ip_and_stats.sh" >&2
         return $VALIDATE_ENV_ERROR
     fi
 
@@ -719,11 +720,12 @@ firewall_check() {
     fi
 
     # Load core validator
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
+        # v1.82: relocated to nftban_ip_and_stats.sh (nftban_validator.sh deleted)
+        source "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" || return 1
     else
-        echo "ERROR: Cannot find nftban_validator.sh" >&2
+        echo "ERROR: Cannot find nftban_ip_and_stats.sh" >&2
         return 1
     fi
 
@@ -765,11 +767,12 @@ firewall_stats() {
     done
 
     # Load core validator
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" ]]; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_validator.sh" || return 1
+        # v1.82: relocated to nftban_ip_and_stats.sh (nftban_validator.sh deleted)
+        source "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" || return 1
     else
-        echo "ERROR: Cannot find nftban_validator.sh" >&2
+        echo "ERROR: Cannot find nftban_ip_and_stats.sh" >&2
         return 1
     fi
 
