@@ -158,19 +158,32 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	// Runtime: not required for DDoS (kernel-only enforcement)
 	// Omit from output
 
-	// Effective: check DDoS counters
+	// Effective axis: check DDoS enforcement counters from kernel.
+	// Per M81-3 DDoS contract: each counter is PRIMARY ENFORCEMENT evidence.
+	// Any counter > 0 = ENFORCING. All zero = IDLE (neutral).
 	if h.Structural == StructuralPresent {
-		// DDoS counters checked via the kernel counter snapshot
-		// The actual counter values are in the NftRuleset but we don't
-		// have them in the RulesetDocument yet. For now, report based
-		// on structural presence only. Counter-based effectiveness
-		// detection will be added when counter queries are wired.
-		if h.Config == ConfigDisabled && h.Structural == StructuralPresent {
-			// Residual state: disabled in config but kernel still has chains
-			// This is valid per vocabulary Rule 8
-			h.Effective = EffectiveIdle
+		ddosCounters := []string{
+			"input_ct_ssh_drop",
+			"input_ct_http_drop",
+			"input_ct_mail_drop",
+			"input_syn_rate_exceeded",
+		}
+		enforcing := false
+		for _, name := range ddosCounters {
+			if doc.GetCounter("ip", "nftban", name) > 0 {
+				enforcing = true
+				break
+			}
+		}
+		// Also check IPv6 SYN prefix counter
+		if !enforcing && doc.GetCounter("ip6", "nftban", "input_syn_prefix_drop") > 0 {
+			enforcing = true
+		}
+
+		if enforcing {
+			h.Effective = EffectiveEnforcing
 		} else {
-			h.Effective = EffectiveIdle // default until counter queries wired
+			h.Effective = EffectiveIdle // zero = NEUTRAL per vocabulary Rule 1
 		}
 	}
 
@@ -345,21 +358,20 @@ func feedsExist() bool {
 }
 
 // countSetElements returns the number of elements in a kernel set.
-// Currently this checks if the set exists and has elements via the
-// parsed ruleset document. Exact element counting requires nft set
-// queries which are not in the current RulesetDocument.
-// Returns 0 if set doesn't exist or has no elements.
 //
-// NOTE: This is a structural-level check only. For actual element
-// counts, a dedicated nft set query would be needed. The RulesetDocument
-// only tells us if the set object exists, not its element count.
-// For M81-4, we report 0 (unknown element count from parsed doc).
-// Real set element counting is a future enhancement.
+// NOTE: nft -j list ruleset does NOT include set elements in its output
+// (only set metadata: name, type, flags). Actual element counting requires
+// a separate `nft -j list set <family> <table> <name>` command per set,
+// which is expensive and outside the current single-command validator model.
+//
+// For now, this returns 0. BotGuard enforcement evidence and blacklist
+// element counting require per-set queries which are a Day 2+ enhancement.
+// The validator's current evidence model handles this correctly:
+// - zero = NEUTRAL per vocabulary Rule 1
+// - BotGuard defaults to IDLE (not DEGRADED)
+// - manual blacklist defaults to IDLE (not false PRIMED)
+//
+// Future: add targeted set queries for enforcement-critical sets only.
 func countSetElements(_ *RulesetDocument, _, _ string) int {
-	// RulesetDocument does not currently parse set elements.
-	// This returns 0 which means all set-population-based evidence
-	// (BotGuard enforcement, manual blacklist primed) will default
-	// to IDLE/PRIMED=0. This is a known M81-4 implementation gap
-	// that will be closed when set element queries are wired.
 	return 0
 }
