@@ -80,9 +80,10 @@ func SetServiceChecker(sc ServiceChecker) {
 // CRITICAL: This function is PURE - it only reads, never modifies.
 func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	result := &ValidationResult{
-		Timestamp: time.Now(),
-		Findings:  make([]Finding, 0),
-		Families:  make([]FamilyResult, 0, 2),
+		SchemaVersion: SchemaVersionCurrent,
+		Timestamp:     time.Now(),
+		Findings:      make([]Finding, 0),
+		Families:      make([]FamilyResult, 0, 2),
 	}
 
 	// Load ruleset from kernel
@@ -169,6 +170,9 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 			Remediation: "Run: systemctl start nftband",
 		})
 	}
+
+	// M81-4: Per-module health evaluation
+	result.Modules = evaluateModuleHealth(doc, result.ServiceState)
 
 	// Compute summary
 	result.Summary = computeSummary(result)
@@ -522,11 +526,40 @@ func evaluateOverallStatus(result *ValidationResult) Status {
 		}
 	}
 
-	if allProtected {
-		return StatusProtected
+	if !allProtected {
+		return StatusDegraded
 	}
 
-	return StatusDegraded
+	// M81-4: Distinguish PROTECTED from IDLE based on module effective states.
+	// If any module is ENFORCING or OBSERVING → PROTECTED.
+	// If all enabled modules are IDLE → IDLE.
+	// Per derivation algorithm: WARN + active module = PROTECTED, WARN + all idle = IDLE.
+	hasActiveModule := false
+	if result.Modules.BotGuard != nil && result.Modules.BotGuard.Config == ConfigEnabled {
+		if result.Modules.BotGuard.Effective == EffectiveEnforcing || result.Modules.BotGuard.Effective == EffectiveObserving {
+			hasActiveModule = true
+		}
+	}
+	if result.Modules.DDoS != nil && result.Modules.DDoS.Config == ConfigEnabled {
+		if result.Modules.DDoS.Effective == EffectiveEnforcing {
+			hasActiveModule = true
+		}
+	}
+	if result.Modules.LoginMon != nil && result.Modules.LoginMon.Config == ConfigEnabled {
+		if result.Modules.LoginMon.Effective == EffectiveEnforcing || result.Modules.LoginMon.Effective == EffectiveObserving {
+			hasActiveModule = true
+		}
+	}
+	if result.Modules.Blacklist != nil {
+		if result.Modules.Blacklist.Manual.State == "enforcing" {
+			hasActiveModule = true
+		}
+	}
+
+	if hasActiveModule {
+		return StatusProtected
+	}
+	return StatusIdle
 }
 
 // computeSummary calculates summary counts.

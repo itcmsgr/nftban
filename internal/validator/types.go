@@ -23,8 +23,10 @@ import "time"
 type Status string
 
 const (
-	// StatusProtected means all validation checks passed.
+	// StatusProtected means all validation checks passed and at least one module active.
 	StatusProtected Status = "protected"
+	// StatusIdle means all axes pass but no relevant traffic observed. Exit 0.
+	StatusIdle Status = "idle"
 	// StatusDegraded means partial protection - some checks failed.
 	StatusDegraded Status = "degraded"
 	// StatusDown means no viable nftban protection detected.
@@ -43,14 +45,82 @@ const (
 
 // ValidationResult is the complete output of kernel validation.
 type ValidationResult struct {
-	Status       Status           `json:"status"`
-	Timestamp    time.Time        `json:"timestamp"`
-	Families     []FamilyResult   `json:"families"`
-	Findings     []Finding        `json:"findings"`
-	Summary      SummaryCounts    `json:"summary"`
-	ModuleTruth  ModuleStatus     `json:"module_truth"`
-	ChainCount   ChainCounts      `json:"chain_counts"`
-	ServiceState ServiceState     `json:"service_state"` // B80-4
+	SchemaVersion string           `json:"schema_version"`
+	Status        Status           `json:"status"`
+	Timestamp     time.Time        `json:"timestamp"`
+	Families      []FamilyResult   `json:"families"`
+	Findings      []Finding        `json:"findings"`
+	Summary       SummaryCounts    `json:"summary"`
+	ModuleTruth   ModuleStatus     `json:"module_truth"`
+	ChainCount    ChainCounts      `json:"chain_counts"`
+	ServiceState  ServiceState     `json:"service_state"`
+	Modules       ModuleHealthMap  `json:"modules"`       // M81-4
+}
+
+// SchemaVersionCurrent is the frozen schema version per M81-6.
+const SchemaVersionCurrent = "1.81.0"
+
+// =============================================================================
+// M81-4: Per-module health state types
+// =============================================================================
+// Each module is evaluated on: config, structural, runtime, effective axes.
+// State values use vocabulary-approved terms from NFTBAN_VOCABULARY_REFERENCE.
+
+// ConfigState represents operator intent from config files.
+type ConfigState string
+
+const (
+	ConfigEnabled  ConfigState = "enabled"
+	ConfigDisabled ConfigState = "disabled"
+)
+
+// StructuralState represents kernel object presence.
+type StructuralState string
+
+const (
+	StructuralPresent StructuralState = "present"
+	StructuralMissing StructuralState = "missing"
+)
+
+// EffectiveState represents the module's activity level based on evidence.
+type EffectiveState string
+
+const (
+	EffectiveEnforcing EffectiveState = "enforcing"
+	EffectiveObserving EffectiveState = "observing"
+	EffectiveIdle      EffectiveState = "idle"
+	EffectivePrimed    EffectiveState = "primed"
+)
+
+// ModuleHealth holds the 4-axis health evaluation for one module.
+type ModuleHealth struct {
+	Config     ConfigState     `json:"config"`
+	Structural StructuralState `json:"structural,omitempty"`
+	Runtime    RuntimeState    `json:"runtime,omitempty"`
+	Effective  EffectiveState  `json:"effective,omitempty"`
+}
+
+// BlacklistHealth holds the split blacklist state per M81-3 contract.
+type BlacklistHealth struct {
+	Manual BlacklistSubHealth `json:"manual"`
+	Feeds  BlacklistSubHealth `json:"feeds"`
+	Geoban BlacklistSubHealth `json:"geoban"`
+}
+
+// BlacklistSubHealth represents a blacklist sub-source state.
+type BlacklistSubHealth struct {
+	State   string `json:"state"`             // enforcing|primed|idle|loaded|stale|disabled
+	Entries int    `json:"entries,omitempty"`  // element count (manual/feeds)
+	Drops   int64  `json:"drops,omitempty"`   // counter value (manual only — attributable)
+}
+
+// ModuleHealthMap holds all per-module health evaluations.
+type ModuleHealthMap struct {
+	BotGuard  *ModuleHealth    `json:"botguard,omitempty"`
+	DDoS      *ModuleHealth    `json:"ddos,omitempty"`
+	Portscan  *ModuleHealth    `json:"portscan,omitempty"`
+	LoginMon  *ModuleHealth    `json:"loginmon,omitempty"`
+	Blacklist *BlacklistHealth `json:"blacklist,omitempty"`
 }
 
 // RuntimeState represents a three-state service status.
