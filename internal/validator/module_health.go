@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConfigDir is the base config directory. Overridable for testing.
@@ -146,13 +147,24 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	// Config axis
 	h.Config = readConfigBool("conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_ENABLED")
 
-	// Structural axis: 4 required chains
+	// Structural axis: 4 required chains in IPv4.
+	// GAP-D1: Also check IPv6 if ip6 table exists — DDoS chains should
+	// be present in both families for full dual-stack protection.
 	ddosChains := []string{"ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection"}
 	allPresent := true
 	for _, c := range ddosChains {
 		if !doc.ChainExists("ip", "nftban", c) {
 			allPresent = false
 			break
+		}
+	}
+	// Check IPv6 if table exists
+	if allPresent && doc.TableExists("ip6", "nftban") {
+		for _, c := range ddosChains {
+			if !doc.ChainExists("ip6", "nftban", c) {
+				allPresent = false
+				break
+			}
 		}
 	}
 	if allPresent {
@@ -205,8 +217,13 @@ func evaluatePortscan(doc *RulesetDocument) *ModuleHealth {
 
 	h.Config = readConfigBool("conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_ENABLED")
 
+	// GAP-P1: Check both IPv4 and IPv6 (if ip6 table exists).
 	if doc.ChainExists("ip", "nftban", "portscan_detection") {
-		h.Structural = StructuralPresent
+		if doc.TableExists("ip6", "nftban") && !doc.ChainExists("ip6", "nftban", "portscan_detection") {
+			h.Structural = StructuralMissing // IPv4 present but IPv6 missing
+		} else {
+			h.Structural = StructuralPresent
+		}
 	} else {
 		h.Structural = StructuralMissing
 	}
@@ -263,11 +280,17 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	bh := &BlacklistHealth{}
 
 	// Manual blacklist
+	// GAP-BL1 fix: Read dedicated counter to distinguish ENFORCING from PRIMED.
+	// input_blacklist_manual_drop is a dedicated counter for manual bans
+	// (shared with LoginMon + portscan bans that land in the same set).
+	// elements > 0 + drops > 0 = ENFORCING (traffic is being blocked)
+	// elements > 0 + drops = 0 = PRIMED (rules loaded, no matches yet)
+	// elements = 0 = IDLE
 	manualElements := countSetElements("ip", "blacklist_manual_ipv4")
-	// We don't have counter values from doc (counters are in the raw ruleset
-	// but not currently extracted to RulesetDocument). For now, use element
-	// count as the primary evidence.
-	if manualElements > 0 {
+	manualDrops := doc.GetCounter("ip", "nftban", "input_blacklist_manual_drop")
+	if manualElements > 0 && manualDrops > 0 {
+		bh.Manual = BlacklistSubHealth{State: "enforcing", Entries: manualElements, Drops: manualDrops}
+	} else if manualElements > 0 {
 		bh.Manual = BlacklistSubHealth{State: "primed", Entries: manualElements}
 	} else {
 		bh.Manual = BlacklistSubHealth{State: "idle", Entries: 0}
@@ -280,11 +303,16 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	if !feedsConfigured {
 		bh.Feeds = BlacklistSubHealth{State: "disabled"}
 	} else {
-		// Feed files exist → data pipeline is configured.
-		// We cannot distinguish feed-originated elements from geoban-originated
-		// in the shared blacklist_ipv4 set (per M81-3 shared counter rule).
-		// Report as LOADED if feeds are configured, regardless of set element count.
-		bh.Feeds = BlacklistSubHealth{State: "loaded"}
+		// Feed config exists → check data freshness.
+		// GAP-BL5: Check feed data directory for actual downloaded data.
+		// If no data files or all data > 7 days old → stale sync.
+		feedDataDir := "/var/lib/nftban/feeds"
+		feedFresh := feedDataIsFresh(feedDataDir, 7*24*time.Hour)
+		if feedFresh {
+			bh.Feeds = BlacklistSubHealth{State: "loaded"}
+		} else {
+			bh.Feeds = BlacklistSubHealth{State: "stale"}
+		}
 	}
 
 	// Geoban
@@ -309,8 +337,17 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 				Message:     "GeoIP database missing or empty — geoban enforcement unavailable",
 				Remediation: "Run: nftban geoban sync",
 			})
+		} else if time.Since(info.ModTime()) > 45*24*time.Hour {
+			// GAP-BL3: DB exists but older than 45 days → stale data
+			bh.Geoban = BlacklistSubHealth{State: "stale"}
+			moduleFindings = append(moduleFindings, Finding{
+				Code:        CodeGeobanDBMissing,
+				Severity:    SeverityWarn,
+				Component:   "module",
+				Message:     "GeoIP database older than 45 days — data may be inaccurate",
+				Remediation: "Run: nftban geoban sync",
+			})
 		} else {
-			// DB exists. Future: check mtime > 45 days → "stale".
 			bh.Geoban = BlacklistSubHealth{State: "loaded"}
 		}
 	}
@@ -360,6 +397,28 @@ func readKeyFromFile(path, key string) string {
 		}
 	}
 	return ""
+}
+
+// feedDataIsFresh checks if the feed data directory has files newer than maxAge.
+// GAP-BL5: detects stale feed sync (no data or old data = sync not working).
+func feedDataIsFresh(dir string, maxAge time.Duration) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false // no data directory = not fresh
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) < maxAge {
+			return true // at least one recent file
+		}
+	}
+	return false // no recent files
 }
 
 // feedsExist checks if any feed config files exist.
