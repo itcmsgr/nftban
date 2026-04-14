@@ -133,7 +133,7 @@ nftban_health_cmd_check() {
             # Status codes: 0=OK, 1=WARNING, 2=ERROR
             local _hc_tmp="${cache_dir}/health_status.cache.tmp"
             case "$result" in
-                0) echo "OK" > "$_hc_tmp" ;;
+                0) echo "PROTECTED" > "$_hc_tmp" ;;
                 1) echo "WARNING" > "$_hc_tmp" ;;
                 2) echo "ERROR" > "$_hc_tmp" ;;
                 *) echo "UNKNOWN" > "$_hc_tmp" ;;

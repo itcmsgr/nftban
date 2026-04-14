@@ -464,7 +464,7 @@ output_brief() {
     # v1.80.0: UNKNOWN is forbidden - derive from protection state if cache unavailable
     if [[ -z "$_hs" || "$_hs" == "UNKNOWN" ]]; then
         case "$base_state" in
-            PROTECTED) _hs="OK" ;;
+            PROTECTED) _hs="PROTECTED" ;;
             DEGRADED)  _hs="WARNING" ;;
             DOWN|*)    _hs="ERROR" ;;
         esac
@@ -1113,7 +1113,7 @@ _status_section_health() {
     # Deterministic mapping: protection_state → health_status
     if [[ -z "$health_status" || "$health_status" == "UNKNOWN" ]]; then
         case "$_health_base_state" in
-            PROTECTED) health_status="OK" ;;
+            PROTECTED) health_status="PROTECTED" ;;
             DEGRADED)  health_status="WARNING" ;;
             DOWN|*)    health_status="ERROR" ;;
         esac
@@ -1210,13 +1210,13 @@ _status_section_health() {
         fi
     done
 
-    local security_status="OK"
+    local security_status="PROTECTED"
     if [[ $security_issues -gt 0 ]]; then
         security_status="${security_issues} systemd issue(s)"
     fi
 
     # Get posture status + details (SSH, sudo, systemd, config integrity)
-    local posture_status="OK"
+    local posture_status="PROTECTED"
     local posture_details=""
     if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" ]]; then
         # shellcheck source=/dev/null
@@ -1231,17 +1231,17 @@ _status_section_health() {
     fi
 
     # Combine into single posture line
-    local combined_posture="OK"
-    if [[ "$security_status" != "OK" || "$posture_status" != "OK" ]]; then
+    local combined_posture="PROTECTED"
+    if [[ "$security_status" != "PROTECTED" || "$posture_status" != "PROTECTED" ]]; then
         combined_posture=""
-        [[ "$security_status" != "OK" ]] && combined_posture="$security_status"
-        if [[ "$posture_status" != "OK" ]]; then
+        [[ "$security_status" != "PROTECTED" ]] && combined_posture="$security_status"
+        if [[ "$posture_status" != "PROTECTED" ]]; then
             [[ -n "$combined_posture" ]] && combined_posture+=", "
             combined_posture+="$posture_status"
         fi
     fi
 
-    if [[ "$combined_posture" == "OK" ]]; then
+    if [[ "$combined_posture" == "PROTECTED" ]]; then
         printf "  %-20s ✅ %s\n" "Security Posture...." "$combined_posture"
     else
         printf "  %-20s ⚠️  %s\n" "Security Posture...." "$combined_posture"
@@ -1258,7 +1258,7 @@ _status_section_health() {
     fi
 
     # Show hints if not OK (only in non-quiet mode)
-    if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "OK" ]] || [[ "$combined_posture" != "OK" ]]; }; then
+    if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "PROTECTED" ]] || [[ "$combined_posture" != "PROTECTED" ]]; }; then
         echo "      → Details: nftban health check"
     fi
     echo ""
@@ -1443,7 +1443,7 @@ _status_section_requirements() {
     # Check DNS
     local dns_status="NOT WORKING"
     if host google.com >/dev/null 2>&1 || nslookup google.com >/dev/null 2>&1; then
-        dns_status="OK"
+        dns_status="AVAILABLE"
     fi
     printf "  %-20s %s\n" "DNS................." "$dns_status"
 
@@ -1560,6 +1560,8 @@ output_json() {
 
     echo "{"
     echo "  \"version\": \"${NFTBAN_VERSION:-unknown}\","
+    echo "  \"status\": \"$json_base_state\","
+    # v1.82: backward compat — emit old "state" key too, remove in v1.83
     echo "  \"state\": \"$json_base_state\","
     if [[ -n "$json_reason" ]]; then
         echo "  \"degraded_reason\": \"$json_reason\","

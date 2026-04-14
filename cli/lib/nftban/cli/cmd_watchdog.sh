@@ -204,7 +204,7 @@ nftban_watchdog_cmd_status() {
     local disk="${WATCHDOG_RESULTS[disk_used_percent]:-N/A}"
     local status="${WATCHDOG_RESULTS[overall_status]:-0}"
 
-    local status_text="OK"
+    local status_text="PROTECTED"
     [[ "$status" == "1" ]] && status_text="WARNING"
     [[ "$status" == "2" ]] && status_text="CRITICAL"
 
@@ -548,7 +548,7 @@ nftban_watchdog_cmd_enable() {
         fi
     else
         # PERF capability available
-        echo "  Metrics pipeline: $([ $pipeline_status -eq 2 ] && echo "OK" || echo "DEGRADED")"
+        echo "  Metrics pipeline: $([ $pipeline_status -eq 2 ] && echo "PROTECTED" || echo "DEGRADED")"
         echo ""
     fi
 

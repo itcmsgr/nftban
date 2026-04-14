@@ -399,7 +399,7 @@ nftban_health_cmd_rbl() {
     local last_check_file="$rbl_cache_dir/last_check"
 
     # Status tracking
-    local overall_status="OK"
+    local overall_status="PROTECTED"
     local status_color="\033[32m"  # Green
 
     # Check results
@@ -425,7 +425,7 @@ nftban_health_cmd_rbl() {
         timer_active="YES"
     elif systemctl is-enabled --quiet nftban-rbl-check.timer 2>/dev/null; then
         timer_active="ENABLED (not running)"
-        if [[ "$overall_status" == "OK" ]]; then
+        if [[ "$overall_status" == "PROTECTED" ]]; then
             overall_status="WARNING"
             status_color="\033[33m"  # Yellow
         fi
@@ -433,7 +433,7 @@ nftban_health_cmd_rbl() {
         timer_active="NO"
         if [[ "$rbl_enabled" == "YES" ]]; then
             # RBL enabled but timer not active = warning
-            if [[ "$overall_status" == "OK" ]]; then
+            if [[ "$overall_status" == "PROTECTED" ]]; then
                 overall_status="WARNING"
                 status_color="\033[33m"  # Yellow
             fi
@@ -507,7 +507,7 @@ nftban_health_cmd_rbl() {
     # If RBL is disabled, overall status should still be OK unless there's an error
     if [[ "$rbl_enabled" == "NO" && "$overall_status" == "WARNING" ]]; then
         # Reset to OK if RBL is disabled - warnings only matter when enabled
-        overall_status="OK"
+        overall_status="PROTECTED"
         status_color="\033[32m"  # Green
     fi
 
