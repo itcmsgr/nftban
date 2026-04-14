@@ -324,13 +324,18 @@ nftban_banner_unified() {
     local health_icon="⚪"
     local health_status="unknown"
 
-    local _validator_bin="/usr/lib/nftban/bin/nftban-validate"
-    if [[ -x "$_validator_bin" ]] && command -v jq >/dev/null 2>&1; then
-        local _validator_json
-        _validator_json=$("$_validator_bin" --json 2>/dev/null || true)
-        if [[ -n "$_validator_json" ]]; then
-            health_status=$(echo "$_validator_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+    # v1.83 Win-3: Reuse cached validator JSON if available (set by
+    # _nftban_protection_state_validator in cmd_status.sh). Falls back
+    # to calling the binary directly if cache is empty.
+    local _validator_json="${_NFTBAN_VALIDATOR_CACHE:-}"
+    if [[ -z "$_validator_json" ]]; then
+        local _validator_bin="/usr/lib/nftban/bin/nftban-validate"
+        if [[ -x "$_validator_bin" ]] && command -v jq >/dev/null 2>&1; then
+            _validator_json=$("$_validator_bin" --json 2>/dev/null || true)
         fi
+    fi
+    if [[ -n "$_validator_json" ]] && command -v jq >/dev/null 2>&1; then
+        health_status=$(echo "$_validator_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
     fi
 
     case "$health_status" in

@@ -322,10 +322,15 @@ nftban_health_render_json() {
     echo "  },"
 
     # v1.78.0: Kernel validation data from Go validator
-    local _validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
-    if [[ -x "$_validator_bin" ]]; then
-        local _kernel_json
-        _kernel_json=$("$_validator_bin" --json 2>/dev/null || echo '{}')
+    # v1.83 Win-3: Reuse cached validator JSON if available.
+    local _kernel_json="${_NFTBAN_VALIDATOR_CACHE:-}"
+    if [[ -z "$_kernel_json" ]]; then
+        local _validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+        if [[ -x "$_validator_bin" ]]; then
+            _kernel_json=$("$_validator_bin" --json 2>/dev/null || echo '{}')
+        fi
+    fi
+    if [[ -n "$_kernel_json" ]]; then
         echo "  \"kernel\": $_kernel_json,"
     else
         echo "  \"kernel\": {\"status\": \"unavailable\", \"reason\": \"validator binary not found\"},"

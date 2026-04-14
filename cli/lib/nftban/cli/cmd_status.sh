@@ -130,6 +130,12 @@ _status_check_binaries() {
 # Go validator binary path
 _NFTBAN_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 
+# v1.83 Win-3: Validator JSON cache. The validator is called once per
+# nftban status invocation. The result is cached here so downstream
+# functions (banner, health render) can reuse it without re-executing
+# the binary. This eliminates 2 of 3 validator calls per status run.
+_NFTBAN_VALIDATOR_CACHE=""
+
 _nftban_protection_state_validator() {
     # v1.78.0: Call Go kernel validator for authoritative protection state.
     # Returns: PROTECTED | DEGRADED[:reason] | DOWN
@@ -142,9 +148,13 @@ _nftban_protection_state_validator() {
         return
     fi
 
-    # Call validator with JSON output
+    # Call validator with JSON output (or reuse cache)
     local _json _status _exit_code=0
-    _json=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null) || _exit_code=$?
+    if [[ -n "$_NFTBAN_VALIDATOR_CACHE" ]]; then
+        _json="$_NFTBAN_VALIDATOR_CACHE"
+    else
+        _json=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null) || _exit_code=$?
+    fi
 
     if [[ -z "$_json" ]]; then
         # v1.83: Warn when validator fails — legacy fallback is deprecated.
@@ -152,6 +162,9 @@ _nftban_protection_state_validator() {
         _nftban_protection_state_legacy
         return
     fi
+
+    # v1.83 Win-3: Cache for downstream reuse (banner, health render)
+    _NFTBAN_VALIDATOR_CACHE="$_json"
 
     # Extract status and schema version from JSON
     local _status _schema_version
@@ -416,6 +429,12 @@ nftban_cmd_status() {
     if [[ $brief_mode -eq 1 ]]; then
         output_brief
         return $?
+    fi
+
+    # v1.83 Win-3: Pre-populate validator cache ONCE before any rendering.
+    # This eliminates 2 of 3 validator calls (banner + health render reuse cache).
+    if [[ -x "$_NFTBAN_VALIDATOR_BIN" && -z "$_NFTBAN_VALIDATOR_CACHE" ]]; then
+        _NFTBAN_VALIDATOR_CACHE=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null || true)
     fi
 
     # Show unified banner with health indicator (skip for JSON/quiet output)
