@@ -17,6 +17,7 @@
 package validator
 
 import (
+	"os/exec"
 	"testing"
 )
 
@@ -609,6 +610,121 @@ func TestServiceRunningNoFinding(t *testing.T) {
 	for _, f := range result.Findings {
 		if f.Code == CodeServiceDown {
 			t.Error("should NOT have VAL-SERVICE-001 finding when nftband is running")
+		}
+	}
+}
+
+// =============================================================================
+// v1.83: Timer liveness tests (VAL-TIMER-001)
+// =============================================================================
+
+// mockTimerChecker implements TimerChecker for testing.
+type mockTimerChecker struct {
+	count int
+	err   error
+}
+
+func (m mockTimerChecker) CountActiveTimers() (int, error) {
+	return m.count, m.err
+}
+
+func TestTimerStateWithActiveTimers(t *testing.T) {
+	SetTimerChecker(mockTimerChecker{count: 9, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count := checkTimerState()
+	if count != 9 {
+		t.Errorf("expected 9 active timers, got %d", count)
+	}
+}
+
+func TestTimerStateZeroTimers(t *testing.T) {
+	SetTimerChecker(mockTimerChecker{count: 0, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count := checkTimerState()
+	if count != 0 {
+		t.Errorf("expected 0 timers, got %d", count)
+	}
+}
+
+func TestTimerStateQueryError(t *testing.T) {
+	// On query error, checkTimerState returns 0 (fails safe).
+	SetTimerChecker(mockTimerChecker{count: 0, err: exec.ErrNotFound})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count := checkTimerState()
+	if count != 0 {
+		t.Errorf("expected 0 on error, got %d", count)
+	}
+}
+
+func TestTimerZeroProducesFinding(t *testing.T) {
+	// Zero timers should produce VAL-TIMER-001 finding (severity: error)
+	// which causes DEGRADED through the normal evaluateOverallStatus path.
+	SetTimerChecker(mockTimerChecker{count: 0, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	result.ServiceState.TimerCount = checkTimerState()
+	if result.ServiceState.TimerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerNone,
+			Severity: SeverityError,
+			Component: "service",
+			Message:  "no active nftban timers found",
+		})
+	}
+
+	status := evaluateOverallStatus(result)
+	if status != StatusDegraded {
+		t.Errorf("expected DEGRADED with zero timers, got %s", status)
+	}
+
+	found := false
+	for _, f := range result.Findings {
+		if f.Code == CodeTimerNone {
+			found = true
+			if f.Severity != SeverityError {
+				t.Errorf("VAL-TIMER-001 severity should be error, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected VAL-TIMER-001 finding when zero timers")
+	}
+}
+
+func TestTimerActiveNoFinding(t *testing.T) {
+	// Active timers should NOT produce VAL-TIMER-001.
+	SetTimerChecker(mockTimerChecker{count: 5, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	result.ServiceState.TimerCount = checkTimerState()
+	if result.ServiceState.TimerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerNone,
+			Severity: SeverityError,
+		})
+	}
+
+	for _, f := range result.Findings {
+		if f.Code == CodeTimerNone {
+			t.Error("should NOT have VAL-TIMER-001 when timers are active")
 		}
 	}
 }

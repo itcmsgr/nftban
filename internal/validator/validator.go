@@ -74,6 +74,40 @@ func SetServiceChecker(sc ServiceChecker) {
 	defaultServiceChecker = sc
 }
 
+// TimerChecker abstracts timer-count queries so unit tests can mock
+// systemd without requiring a real init system.
+type TimerChecker interface {
+	// CountActiveTimers returns the number of active nftban-* timers.
+	// On query error it returns (0, error).
+	CountActiveTimers() (int, error)
+}
+
+// SystemdTimerChecker is the default production TimerChecker.
+type SystemdTimerChecker struct{}
+
+// CountActiveTimers queries systemd for active nftban-* timers.
+// Read-only — zero side effects.
+func (SystemdTimerChecker) CountActiveTimers() (int, error) {
+	out, err := exec.Command("systemctl", "list-timers", "nftban-*", "--no-legend").Output()
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return 0, nil
+	}
+	return len(lines), nil
+}
+
+// defaultTimerChecker is set at package level and can be overridden
+// by tests via SetTimerChecker.
+var defaultTimerChecker TimerChecker = SystemdTimerChecker{}
+
+// SetTimerChecker replaces the timer checker (for testing only).
+func SetTimerChecker(tc TimerChecker) {
+	defaultTimerChecker = tc
+}
+
 // ValidateKernel performs complete kernel state validation.
 // This is the main entrypoint for the validator.
 //
@@ -168,6 +202,19 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 			Component:   "service",
 			Message:     "nftband daemon is not running (state: " + string(result.ServiceState.Nftband) + ", detail: " + result.ServiceState.NftbandDetail + ")",
 			Remediation: "Run: systemctl start nftband",
+		})
+	}
+
+	// v1.83: Check timer liveness — a system with zero active nftban timers
+	// is operationally incomplete (maintenance, watchdog, exports won't run).
+	result.ServiceState.TimerCount = checkTimerState()
+	if result.ServiceState.TimerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:        CodeTimerNone,
+			Severity:    SeverityError,
+			Component:   "service",
+			Message:     "no active nftban timers found — maintenance, watchdog, and exports will not run",
+			Remediation: "Run: systemctl enable --now nftban-maintenance.timer nftban-watchdog.timer",
 		})
 	}
 
@@ -496,6 +543,15 @@ func checkServiceState() ServiceState {
 	ss.Nftband = state
 	ss.NftbandDetail = detail
 	return ss
+}
+
+// checkTimerState returns the count of active nftban-* timers.
+// v1.83: zero active timers means maintenance/watchdog/exports won't run,
+// which is an operationally degraded state even if kernel structure is correct.
+// On query error, returns 0 (fails safe — no timers assumed).
+func checkTimerState() int {
+	count, _ := defaultTimerChecker.CountActiveTimers()
+	return count
 }
 
 // evaluateOverallStatus determines the final status from results.
