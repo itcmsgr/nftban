@@ -151,8 +151,10 @@ _nftban_prefetch_unit_states() {
     # systemctl is-active prints one line per unit (active/inactive/failed/etc).
     [[ "$_UNIT_STATE_LOADED" == "true" ]] && return 0
 
+    # v1.83: DEAD-4 removed duplicate "nftband" (nftband.service suffices)
+    # v1.83: DEAD-1 removed unused conflict units (fail2ban etc) — no callers
     local -a units=(
-        nftband.service nftband nftables.service
+        nftband.service nftables.service
         nftban-maintenance.timer nftban-watchdog.timer nftban-queue.timer
         nftban-botscan.timer nftban-health.timer
         nftban-core-feeds.timer nftban-core-geoip.timer
@@ -164,7 +166,6 @@ _nftban_prefetch_unit_states() {
         nftban-pro-license.timer nftban-pro-inventory.timer
         nftban-tunnel.timer
         suricata.service prometheus victoriametrics
-        fail2ban firewalld iptables ip6tables lfd
     )
 
     local output
@@ -388,38 +389,22 @@ _nftban_protection_state() {
 # =============================================================================
 
 _check_config_divergence() {
-    # Compare config-enabled modules with kernel state.
-    # Outputs divergent module names (one per line), empty if no divergence.
-    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-
-    # DDoS: config says enabled, kernel says no
-    local _ddos_conf="false"
-    if [[ -f "${config_dir}/conf.d/ddos/main.conf.local" ]]; then
-        _ddos_conf=$(grep -m1 '^DDOS_ENABLED=' "${config_dir}/conf.d/ddos/main.conf.local" 2>/dev/null | cut -d'"' -f2 || echo "")
-    fi
-    if [[ -z "$_ddos_conf" || "$_ddos_conf" == "false" ]] && [[ -f "${config_dir}/conf.d/ddos/main.conf" ]]; then
-        _ddos_conf=$(grep -m1 '^DDOS_ENABLED=' "${config_dir}/conf.d/ddos/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-    fi
-    if [[ "$_ddos_conf" == "true" ]]; then
-        local _ddos_rules=0
-        _ddos_rules=$(nft -a list chain ip nftban ddos_protection 2>/dev/null | grep -c "# handle" || true)
-        [[ "${_ddos_rules:-0}" -eq 0 ]] && echo "ddos" || true
+    # v1.83 DUP-2: Read config divergence from validator consistency axis.
+    # The Go validator (consistency.go) already checks config↔kernel agreement
+    # per module and emits VAL-CONS-001 findings. Shell must not re-derive this.
+    #
+    # Returns: module names with mismatch (one per line), empty if no divergence.
+    local _json="${_NFTBAN_VALIDATOR_CACHE:-}"
+    if [[ -z "$_json" ]]; then
+        return 0  # No validator data — cannot determine divergence
     fi
 
-    # Portscan: config says enabled, kernel says no
-    local _ps_conf="false"
-    if [[ -f "${config_dir}/conf.d/portscan/main.conf.local" ]]; then
-        _ps_conf=$(grep -m1 '^PORTSCAN_ENABLED=' "${config_dir}/conf.d/portscan/main.conf.local" 2>/dev/null | cut -d'"' -f2 || echo "")
-    fi
-    if [[ -z "$_ps_conf" || "$_ps_conf" == "false" ]] && [[ -f "${config_dir}/conf.d/portscan/main.conf" ]]; then
-        _ps_conf=$(grep -m1 '^PORTSCAN_ENABLED=' "${config_dir}/conf.d/portscan/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-    fi
-    if [[ "$_ps_conf" == "true" ]]; then
-        local _ps_rules=0
-        _ps_rules=$(nft -a list chain ip nftban portscan_detection 2>/dev/null | grep -c "# handle" || true)
-        [[ "${_ps_rules:-0}" -eq 0 ]] && echo "portscan" || true
+    if ! command -v jq >/dev/null 2>&1; then
+        return 0  # No jq — cannot parse
     fi
 
+    # Extract VAL-CONS-001 findings (config/kernel mismatch)
+    echo "$_json" | jq -r '.findings[] | select(.code == "VAL-CONS-001") | .component' 2>/dev/null || true
     return 0
 }
 
@@ -803,62 +788,46 @@ _status_section_protection() {
     fi
     printf "  %-20s %s\n" "Suricata IDS........" "$suricata_status"
 
-    # DDoS Protection (check config AND verify rules exist)
+    # DDoS Protection — v1.83 DUP-3: read from validator JSON, not config+kernel
     local ddos_status="DISABLED"
-    local ddos_main="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf"
-    local ddos_local="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local"
-    local ddos_enabled="false"
-
-    # Load ddos config (new directory structure)
-    [[ -f "$ddos_main" ]] && source "$ddos_main" 2>/dev/null || true
-    [[ -f "$ddos_local" ]] && source "$ddos_local" 2>/dev/null || true
-    ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-false}}"
-    # Normalize boolean (config may use YES/NO, true/false, 1/0, on/off)
-    [[ "${ddos_enabled,,}" =~ ^(yes|true|1|on)$ ]] && ddos_enabled="true" || ddos_enabled="false"
-
-    # Check if DDoS rules actually exist in nftables
-    local ddos_rules_exist="false"
-    if nft list chain ip nftban ddos_protection &>/dev/null 2>&1; then
-        ddos_rules_exist="true"
-    fi
-
-    if [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
-        ddos_status="ENABLED"
-    elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
-        ddos_status="NOT INSTALLED"
-    elif [[ "$ddos_enabled" != "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
-        # v1.80.0: Truthful wording - structural present but not configured to run
-        ddos_status="PRESENT (disabled in config)"
+    local _ddos_config _ddos_structural
+    if [[ -n "${_NFTBAN_VALIDATOR_CACHE:-}" ]] && command -v jq >/dev/null 2>&1; then
+        _ddos_config=$(echo "$_NFTBAN_VALIDATOR_CACHE" | jq -r '.modules.ddos.config // "disabled"' 2>/dev/null)
+        _ddos_structural=$(echo "$_NFTBAN_VALIDATOR_CACHE" | jq -r '.modules.ddos.structural // "-"' 2>/dev/null)
+        if [[ "$_ddos_config" == "enabled" && "$_ddos_structural" == "present" ]]; then
+            ddos_status="ENABLED"
+        elif [[ "$_ddos_config" == "enabled" && "$_ddos_structural" != "present" ]]; then
+            ddos_status="NOT INSTALLED"
+        elif [[ "$_ddos_config" == "disabled" && "$_ddos_structural" == "present" ]]; then
+            ddos_status="PRESENT (disabled in config)"
+        fi
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
-    # Port-scan Detection (check config directly to avoid recursion)
+    # Port-scan Detection — v1.83 DUP-3: read from validator JSON
     local portscan_status="DISABLED"
-    local portscan_main="${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf"
-    local portscan_local="${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local"
     local portscan_enabled="false"
-
-    # Load portscan config (new directory structure)
-    [[ -f "$portscan_main" ]] && source "$portscan_main" 2>/dev/null || true
-    [[ -f "$portscan_local" ]] && source "$portscan_local" 2>/dev/null || true
-    portscan_enabled="${PORTSCAN_ENABLED:-false}"
-    # Normalize boolean (config may use YES/NO, true/false, 1/0, on/off)
-    [[ "${portscan_enabled,,}" =~ ^(yes|true|1|on)$ ]] && portscan_enabled="true" || portscan_enabled="false"
-
-    if [[ "$portscan_enabled" == "true" ]]; then
-        if [[ "$suricata_eve_ok" == "true" ]]; then
-            portscan_status="ENABLED (Suricata mode)"
-        elif _unit_is_active suricata.service; then
-            portscan_status="ENABLED (Classic — Suricata EVE stale)"
-        else
-            portscan_status="ENABLED (Classic mode)"
+    if [[ -n "${_NFTBAN_VALIDATOR_CACHE:-}" ]] && command -v jq >/dev/null 2>&1; then
+        local _ps_config
+        _ps_config=$(echo "$_NFTBAN_VALIDATOR_CACHE" | jq -r '.modules.portscan.config // "disabled"' 2>/dev/null)
+        if [[ "$_ps_config" == "enabled" ]]; then
+            portscan_enabled="true"
+            if [[ "$suricata_eve_ok" == "true" ]]; then
+                portscan_status="ENABLED (Suricata mode)"
+            elif _unit_is_active suricata.service; then
+                portscan_status="ENABLED (Classic — Suricata EVE stale)"
+            else
+                portscan_status="ENABLED (Classic mode)"
+            fi
+        elif [[ "$suricata_eve_ok" == "true" ]]; then
+            portscan_status="AVAILABLE (not enabled)"
         fi
-    elif [[ "$suricata_eve_ok" == "true" ]]; then
-        portscan_status="AVAILABLE (not enabled)"
     fi
     printf "  %-20s %s\n" "Port Scan..........." "$portscan_status"
 
     # Protection module explanation (if not quiet mode)
+    local ddos_enabled="false"
+    [[ "${_ddos_config:-disabled}" == "enabled" ]] && ddos_enabled="true"
     if [[ $quiet_mode -eq 0 ]]; then
         local show_note=false
 
