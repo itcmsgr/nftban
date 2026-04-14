@@ -398,8 +398,15 @@ nftban_health_cmd_truth() {
     local validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 
     if [[ ! -x "$validator_bin" ]]; then
-        echo "ERROR: Go validator binary not found at $validator_bin" >&2
-        return 1
+        # v1.83: Warn and fall back to diagnostics if Go binary missing.
+        # Target: remove fallback in v1.84.
+        echo "WARNING: Go validator not found at $validator_bin — falling back to diagnostics (deprecated, removal in v1.84)" >&2
+        if [[ "$json_mode" == "true" ]]; then
+            nftban_health_cmd_json
+        else
+            nftban_health_cmd_check
+        fi
+        return
     fi
 
     local output
@@ -407,6 +414,14 @@ nftban_health_cmd_truth() {
     if [[ -z "$output" ]]; then
         echo "ERROR: Go validator returned empty output" >&2
         return 1
+    fi
+
+    # v1.83: Schema version guard
+    local _schema_version
+    _schema_version=$(echo "$output" | jq -r '.schema_version // empty' 2>/dev/null)
+    local _expected_schema="1.83.0"
+    if [[ -n "$_schema_version" && "$_schema_version" != "$_expected_schema" ]]; then
+        echo "WARNING: validator schema $_schema_version does not match expected $_expected_schema" >&2
     fi
 
     if [[ "$json_mode" == "true" ]]; then
