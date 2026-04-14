@@ -125,63 +125,71 @@ nftban_cmd_health() {
     fi
 
     case "$subcommand" in
-        check|detailed|""|--auto-heal|--quiet)
-            # Default detailed health check (full terminal output)
-            # Handle --auto-heal or --quiet as first arg (pass it back to check)
-            if [[ "$subcommand" == "--auto-heal" || "$subcommand" == "--quiet" ]]; then
-                set -- "$subcommand" "$@"
-            fi
+        # =================================================================
+        # v1.83: TRUTH PATH (default) — Go validator backed, read-only
+        # =================================================================
+        check|""|truth|axes)
+            # v1.83: Default is Go-backed protection truth (4-axis table).
+            # This is the primary operator health surface — fast, read-only,
+            # deterministic. No side effects, no environment scanning.
+            nftban_health_cmd_truth "$json_mode"
+            ;;
+
+        # =================================================================
+        # v1.83: DIAGNOSTICS PATH — shell environment checks
+        # =================================================================
+        diagnostics|detailed)
+            # v1.83: Extended environment/UX checks (legacy shell health).
+            # These are NOT protection truth — they check packaging,
+            # permissions, integrations, and optional features.
+            # --auto-heal: trigger fixes for detected issues (requires root)
+            # --quiet: minimal output (for cron/timer use)
             if [[ "$json_mode" == "true" ]]; then
                 nftban_health_cmd_json "$@"
             else
                 nftban_health_cmd_check "$@"
             fi
             ;;
-        --brief|brief)
-            # v1.24.0: One-line health output for CI/fleet/monitoring
-            nftban_health_cmd_brief "$@"
+        --auto-heal)
+            # Shorthand: nftban health --auto-heal → diagnostics --auto-heal
+            nftban_health_cmd_check "--auto-heal" "$@"
             ;;
-        --nagios|nagios)
-            # v1.43.0 P3-29: Nagios/monitoring plugin output format
-            nftban_health_cmd_nagios "$@"
+        --quiet)
+            # Shorthand: nftban health --quiet → diagnostics --quiet
+            nftban_health_cmd_check "--quiet" "$@"
             ;;
-        summary)
-            # One-line summary
-            nftban_health_cmd_summary "$@"
-            ;;
-        json|--json)
-            # JSON output (backward compatibility)
-            nftban_health_cmd_json "$@"
-            ;;
-        report)
-            # v1.39.0: Deprecated — use json instead
-            echo "REMOVED: 'nftban health report' was removed in v1.39.0" >&2
-            echo "Use: nftban health json" >&2
-            return 1
-            ;;
+
+        # =================================================================
+        # FIX PATH — side effects (auto-heal)
+        # =================================================================
         fix|enforce|--fix)
             nftban_health_cmd_fix "$@"
             ;;
-        services)
-            # v1.39.0: Removed deprecated subcommand
-            echo "REMOVED: 'nftban health services' was removed in v1.39.0" >&2
-            echo "Use: nftban services" >&2
-            return 1
+
+        # =================================================================
+        # MONITORING INTEGRATIONS
+        # =================================================================
+        --brief|brief)
+            nftban_health_cmd_brief "$@"
             ;;
-        modules)
-            # v1.39.0: Removed deprecated subcommand
-            echo "REMOVED: 'nftban health modules' was removed in v1.39.0" >&2
-            echo "Use: nftban module list" >&2
-            return 1
+        --nagios|nagios)
+            nftban_health_cmd_nagios "$@"
             ;;
+        summary)
+            nftban_health_cmd_summary "$@"
+            ;;
+        json|--json)
+            # v1.83: "nftban health json" outputs Go validator truth JSON
+            # (same as "nftban health --json" on the default truth path).
+            # For legacy shell diagnostics JSON, use: nftban health diagnostics --json
+            nftban_health_cmd_truth "true"
+            ;;
+
+        # =================================================================
+        # DIAGNOSTIC SUBCOMMANDS (environment checks, not truth)
+        # =================================================================
         binaries)
             nftban_health_cmd_binaries "$@"
-            ;;
-        permissions)
-            # v1.39.0: Removed deprecated subcommand
-            echo "REMOVED: 'nftban health permissions' was removed in v1.39.0" >&2
-            echo "Use: nftban fhs" >&2
-            return 1
             ;;
         geoip)
             nftban_health_cmd_geoip "$@"
@@ -211,7 +219,6 @@ nftban_cmd_health() {
             nftban_health_cmd_botguard "$@"
             ;;
         fhs)
-            # Redirect to top-level nftban fhs command
             if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh" ]]; then
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh"
@@ -224,11 +231,31 @@ nftban_cmd_health() {
         posture|security)
             nftban_health_cmd_posture "$@"
             ;;
-        truth|axes)
-            # v1.82: Four-axis health table from Go validator (M81-4 output)
-            # This is the primary operator health surface backed by real data.
-            nftban_health_cmd_truth "$json_mode"
+
+        # =================================================================
+        # REMOVED / REDIRECTED
+        # =================================================================
+        report)
+            echo "REMOVED: 'nftban health report' was removed in v1.39.0" >&2
+            echo "Use: nftban health json" >&2
+            return 1
             ;;
+        services)
+            echo "REMOVED: 'nftban health services' was removed in v1.39.0" >&2
+            echo "Use: nftban services" >&2
+            return 1
+            ;;
+        modules)
+            echo "REMOVED: 'nftban health modules' was removed in v1.39.0" >&2
+            echo "Use: nftban module list" >&2
+            return 1
+            ;;
+        permissions)
+            echo "REMOVED: 'nftban health permissions' was removed in v1.39.0" >&2
+            echo "Use: nftban fhs" >&2
+            return 1
+            ;;
+
         help|-h|--help)
             nftban_health_cmd_help
             ;;
@@ -251,64 +278,43 @@ nftban_health_cmd_help() {
     echo ""
 
     cat << 'EOF'
-nftban health - System health check and diagnostics
+nftban health - Protection truth and system diagnostics
 
 USAGE:
-    nftban health <command> [options]
+    nftban health [command] [options]
 
-COMMANDS:
-    check [--auto-heal] [--quiet]
-                            Run comprehensive health check (default)
-                            Full terminal output with all checks
+PROTECTION TRUTH (default):
+    (no args), check, truth
+                            Show protection state from Go validator (default)
+                            Four-axis truth table: config, structural, runtime, effective
+                            Fast, read-only, no side effects
+                            --json: output frozen schema JSON
+
+DIAGNOSTICS:
+    diagnostics [--auto-heal] [--quiet]
+                            Run extended environment checks (shell-based)
+                            Checks packaging, permissions, integrations, optional features
                             --auto-heal: Automatically fix detected issues (requires root)
                             --quiet: Minimal output (for cron/timer use)
-
-    summary                 Show one-line summary
-                            Output: "Health: OK" or "Health: WARNING (2 warnings)"
-
-    json                    Output JSON format
-                            Machine-readable health data
 
     fix, enforce [target]   Auto-fix common issues (requires root)
                             Targets: permissions, directories, services, all
 
     binaries                Check required binaries
-                            Verifies nft, systemctl, jq, curl, etc.
-
     geoip                   Check GeoIP system status
-                            Tests binary, database, performance
-
     pro                     Check NFTBan Pro subscription status
-                            Validates token, vmagent, server ID, timers
-
     registries              Check registry files validity
-                            Validates JSON/YAML syntax for:
-                            - commands.registry.yml (CLI commands)
-                            - config-registry.json (config files)
-                            - config-schema.json (config keys)
-                            - reports-registry.json (report types)
-                            Use --json for machine-readable output
-
     install, verify         Verify installation completeness
-                            Checks all required timers, services, binaries,
-                            directories, and config files
-                            --verbose: Show optional components
-
     conflicts [--fix]       Detect/remove conflicting firewalls
-                            Panel+distro aware detection
-                            --fix: Remove detected conflicts
-                            --yes: Auto-confirm (no prompts)
-                            Detects: fail2ban, ufw, firewalld, CSF
-
     config [--verbose]      Show module and config status
-                            Displays enabled modules, their services,
-                            and whether config reload is needed
-                            --verbose: Show config file paths
-
     posture, security       Check security posture (low noise)
-                            Smart limited scope, NOT an audit replacement
-                            Checks: SSH config, sudoers, systemd hardening,
-                            config integrity. For audits use lynis/oscap.
+    botguard                Check BotGuard module status
+
+MONITORING:
+    summary                 One-line health summary
+    brief                   One-line output for CI/fleet
+    nagios                  Nagios/monitoring plugin format
+    json                    Full JSON health output
 
     help                    Show this help message
 
