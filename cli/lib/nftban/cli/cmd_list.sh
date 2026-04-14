@@ -392,7 +392,7 @@ WHITELIST COMMANDS COMPARISON:
   nftban whitelist list          # Shows IPs from config files (persistent)
   nftban whitelist-system show   # Shows only system auto-detected IPs
 
-TIP: Use 'nftban list whitelist' to see what's currently protecting your IPs.
+TIP: Use 'nftban list whitelist' to see what's currently in the whitelist.
      Use 'nftban whitelist list' to see what's saved in configuration.
 
 EOF

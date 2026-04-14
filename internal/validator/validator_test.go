@@ -110,15 +110,16 @@ func TestEvaluateOverallStatus(t *testing.T) {
 		expected Status
 	}{
 		{
-			name: "all protected",
+			name: "all protected families no active modules → idle",
 			result: &ValidationResult{
 				Families: []FamilyResult{
 					{Status: StatusProtected},
 					{Status: StatusProtected},
 				},
 				Findings: []Finding{},
+				Modules:  ModuleHealthMap{},
 			},
-			expected: StatusProtected,
+			expected: StatusIdle,
 		},
 		{
 			name: "one family degraded",
@@ -576,7 +577,9 @@ func TestServiceErrorProducesFinding(t *testing.T) {
 }
 
 func TestServiceRunningNoFinding(t *testing.T) {
-	// Daemon running + clean families → no finding → PROTECTED.
+	// Daemon running + clean families + no active modules → IDLE (not PROTECTED).
+	// Per M81-4: PROTECTED requires at least one module ACTIVE/ENFORCING.
+	// With empty Modules map (no modules reporting), all are idle → IDLE.
 	SetServiceChecker(mockServiceChecker{state: RuntimeRunning, detail: "active"})
 	defer SetServiceChecker(SystemdChecker{})
 
@@ -586,6 +589,7 @@ func TestServiceRunningNoFinding(t *testing.T) {
 			{Status: StatusProtected},
 		},
 		Findings: make([]Finding, 0),
+		Modules:  ModuleHealthMap{},
 	}
 
 	ss := checkServiceState()
@@ -598,8 +602,8 @@ func TestServiceRunningNoFinding(t *testing.T) {
 	}
 
 	status := evaluateOverallStatus(result)
-	if status != StatusProtected {
-		t.Errorf("expected PROTECTED when nftband running and families clean, got %s", status)
+	if status != StatusIdle {
+		t.Errorf("expected IDLE when nftband running, families clean, no active modules, got %s", status)
 	}
 
 	for _, f := range result.Findings {

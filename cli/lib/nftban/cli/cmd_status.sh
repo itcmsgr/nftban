@@ -470,11 +470,12 @@ output_brief() {
         esac
     fi
 
+    # M81-5: "healthy" is a banned term. Use "protected" per vocabulary.
     case "$_hs" in
-        OK) health_word="healthy" ;;
+        OK) health_word="protected" ;;
         WARNING*) health_word="info" ;;
         ERROR*|CRITICAL*) health_word="errors" ;;
-        *) health_word="healthy" ;; # Default to healthy if still unknown
+        *) health_word="protected" ;; # Default to protected if still unknown
     esac
 
     # When PROTECTED, health issues are informational not errors
@@ -1636,14 +1637,16 @@ output_json() {
     # Return 0 or query feed config files for count
     echo "    \"feed_ips\": 0,"
 
-    # threats_blocked_24h: Bans in last 24 hours
-    local threats_24h=0
+    # M81-5/M81-6: renamed from threats_blocked_24h to enforcement_events_24h.
+    # "threats blocked" is a banned interpretation per vocabulary.
+    # This counter represents enforcement events (bans issued), not threats mitigated.
+    local enforcement_24h=0
     if command -v nftban_stats_count_bans >/dev/null 2>&1; then
         local since
         since=$(($(date +%s) - 86400))
-        threats_24h=$(nftban_stats_count_bans "$since" 2>/dev/null || echo 0)
+        enforcement_24h=$(nftban_stats_count_bans "$since" 2>/dev/null || echo 0)
     fi
-    echo "    \"threats_blocked_24h\": $threats_24h"
+    echo "    \"enforcement_events_24h\": $enforcement_24h"
     echo "  },"
 
     # Master control
@@ -1719,16 +1722,17 @@ output_json() {
         nftban_health_check_all 0 >/dev/null 2>&1 || health_exit=$?
     fi
 
+    # M81-5: "healthy" is a banned term. Use vocabulary-approved states.
     local health_status="unknown"
     case $health_exit in
-        0) health_status="healthy" ;;
+        0) health_status="protected" ;;
         1) health_status="warnings" ;;
         2) health_status="errors" ;;
     esac
 
     # v1.66.0: JSON health parity — when PROTECTED, health errors are informational
     if [[ "$json_base_state" == "PROTECTED" ]] && [[ "$health_status" == "errors" ]]; then
-        health_status="healthy"
+        health_status="protected"
     fi
 
     # Memory protection state for JSON

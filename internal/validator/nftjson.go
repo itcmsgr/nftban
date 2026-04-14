@@ -295,6 +295,15 @@ func (d *RulesetDocument) CountChains(family string) int {
 	return count
 }
 
+// GetCounter returns a named counter's packet count, or 0 if not found.
+func (d *RulesetDocument) GetCounter(family, table, name string) int64 {
+	key := family + ":" + table + ":" + name
+	if c, ok := d.counters[key]; ok {
+		return c.Packets
+	}
+	return 0
+}
+
 // CountRulesInChain returns the number of rules in a specific chain.
 // Returns 0 if the chain has no rules or does not exist.
 func (d *RulesetDocument) CountRulesInChain(family, table, chain string) int {
