@@ -1004,16 +1004,17 @@ nftban_portscan_aggregate() {
     local min_unique_ports="${PORTSCAN_AGG_MIN_UNIQUE_PORTS:-20}"
     local score_threshold="${PORTSCAN_AGG_SCORE_THRESHOLD:-25}"
 
-    # Read events from journald (preferred) or file
+    # Read events from journald (preferred) or file.
+    # v1.82: Added tail -10000 cap on journalctl output to prevent timeout
+    # on high-volume hosts (monitor: 1.4M+ journal entries caused SIGTERM).
     local events=""
     if command -v journalctl &>/dev/null; then
-        events=$(journalctl -t nftban-portscan-event --since "24 hours ago" --no-pager 2>/dev/null | grep "src=" || true)
+        events=$(journalctl -t nftban-portscan-event --since "24 hours ago" --no-pager 2>/dev/null | { grep "src=" || true; } | { tail -10000 || true; })
     fi
 
     # Fallback to file if journald empty
     if [[ -z "$events" ]] && [[ -f "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log" ]]; then
-        # Read last 10000 lines from log file (time filtering done downstream)
-        events=$(tail -10000 "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log" 2>/dev/null || true)
+        events=$({ tail -10000 "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log" 2>/dev/null || true; })
     fi
 
     if [[ -z "$events" ]]; then
