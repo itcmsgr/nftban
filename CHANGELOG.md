@@ -11,6 +11,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.82.0] - 2026-04-14
+
+**Truth-path consolidation, evidence fidelity, and operator health surface.**
+
+### Added
+
+- **`nftban health truth`** subcommand: four-axis health table backed by
+  Go validator's frozen schema. Text + JSON modes. CLI is presentation only.
+- **Consistency axis** real implementation: config vs kernel cross-source
+  verification. Emits `VAL-CONS-001` when enabled module has missing kernel
+  objects. Respects Rule 8 (disabled + present = valid residual).
+- **Per-set element queries** (CF-4): `countSetElements()` now runs real
+  `nft -j list set` queries. Unlocks BotGuard ENFORCING/OBSERVING and
+  blacklist PRIMED states with actual kernel evidence.
+- **PKG-STATE-INCONSISTENT** auto-recovery in update manager + autoheal.
+  DEB install failures auto-repair via dpkg configure + dependency fix.
+
+### Fixed
+
+- **nftban_validator.sh deleted** (structural cleanup). Functions relocated
+  to `nftban_ip_and_stats.sh`. Go `ValidatorScript()` removed. `load_spec`
+  and `get_live_ruleset` deleted (0 callers).
+- **Portscan aggregation performance**: `tail -5000` caps input before grep.
+  High-volume hosts (396K+ lines) now complete in ~14s instead of timeout.
+- **CLI vocabulary enforcement**: "OK" → "PROTECTED" in 18 health/posture
+  sites. DNS status uses "AVAILABLE" (non-health context). Posture source
+  aligned with consumer. Banned phrase count: 24 → 6 (all false positives).
+- **`.state` → `.status`** key rename in `nftban status --json`. Both keys
+  emitted during transition. Old key removed in v1.83.
+
+### Known limitations
+
+- Set-element counting adds ~6 nft exec calls per validation cycle
+- LoginMon effective evidence still journal-deferred
+- Portscan effective evidence still structural-only/idle
+- Consistency axis checks config↔kernel only (not cache/CLI yet)
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #384 | PKG-STATE-INCONSISTENT auto-recovery |
+| #385 | v1.82 steps 1-6 (structural + CF-4 + consistency + health + portscan perf + CLI) |
+
+---
+
 ## [1.81.1] - 2026-04-14
 
 **Hotfix.** Fixes two bugs in portscan classic that crash the maintenance
