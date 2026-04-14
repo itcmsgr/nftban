@@ -30,16 +30,28 @@ func RunValidation(ctx context.Context) (*ValidationResult, error) {
 	return ValidateKernel(ctx)
 }
 
-// ToJSON converts the validation result to JSON.
+// ToJSON converts the validation result to the frozen M81-6 JSON schema.
+// Uses MapToHealthOutput to enforce the schema contract — never serializes
+// the internal ValidationResult directly.
 func (r *ValidationResult) ToJSON() ([]byte, error) {
+	output := MapToHealthOutput(r)
+	return json.MarshalIndent(output, "", "  ")
+}
+
+// ToJSONLegacy serializes the raw ValidationResult for backward compat.
+// Used by rebuild safety checks that parse the old schema.
+// TODO(v1.82): migrate consumers to frozen schema then remove this.
+func (r *ValidationResult) ToJSONLegacy() ([]byte, error) {
 	return json.MarshalIndent(r, "", "  ")
 }
 
-// StatusString returns a human-readable status with emoji.
+// StatusString returns a human-readable status.
 func (r *ValidationResult) StatusString() string {
 	switch r.Status {
 	case StatusProtected:
 		return "PROTECTED"
+	case StatusIdle:
+		return "IDLE"
 	case StatusDegraded:
 		return "DEGRADED"
 	case StatusDown:
@@ -50,10 +62,11 @@ func (r *ValidationResult) StatusString() string {
 }
 
 // ExitCode returns the appropriate exit code for the status.
-// 0 = PROTECTED, 1 = DEGRADED, 2 = DOWN
+// 0 = PROTECTED or IDLE, 1 = DEGRADED, 2 = DOWN
+// Per M81-4: IDLE is exit 0 (not an error).
 func (r *ValidationResult) ExitCode() int {
 	switch r.Status {
-	case StatusProtected:
+	case StatusProtected, StatusIdle:
 		return 0
 	case StatusDegraded:
 		return 1
