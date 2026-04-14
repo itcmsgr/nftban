@@ -59,7 +59,8 @@ type ValidationResult struct {
 }
 
 // SchemaVersionCurrent is the frozen schema version per M81-6.
-const SchemaVersionCurrent = "1.81.0"
+// v1.83: bumped for timer_count addition to service_state.
+const SchemaVersionCurrent = "1.83.0"
 
 // =============================================================================
 // M81-4: Per-module health state types
@@ -138,8 +139,9 @@ const (
 // B80-4: the validator MUST check these before declaring PROTECTED.
 // A system with correct kernel structure but a dead daemon is not protected.
 type ServiceState struct {
-	Nftband      RuntimeState `json:"nftband"`
-	NftbandDetail string      `json:"nftband_detail,omitempty"`
+	Nftband       RuntimeState `json:"nftband"`
+	NftbandDetail string       `json:"nftband_detail,omitempty"`
+	TimerCount    int          `json:"timer_count"`    // v1.83: active nftban-* timer count
 }
 
 // FamilyResult holds validation results for a single address family (ip/ip6).
@@ -256,7 +258,9 @@ const (
 	CodeModuleDegraded = "VAL-MODULE-001"
 
 	// Service findings (B80-4)
-	CodeServiceDown = "VAL-SERVICE-001" // required service not active
+	CodeServiceDown  = "VAL-SERVICE-001" // required service not active
+	CodeTimerNone    = "VAL-TIMER-001"   // v1.83: no nftban timers active
+	CodeTimerError   = "VAL-TIMER-002"   // v1.83: timer query failed
 
 	// Module-specific findings (M81-4)
 	CodeGeobanDBMissing = "VAL-GEOBAN-001" // geoip database missing/empty

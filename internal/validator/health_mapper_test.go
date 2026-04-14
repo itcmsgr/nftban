@@ -29,8 +29,8 @@ func TestMapToHealthOutput_SchemaVersion(t *testing.T) {
 		Timestamp: time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC),
 	}
 	h := MapToHealthOutput(r)
-	if h.SchemaVersion != "1.81.0" {
-		t.Errorf("schema_version = %s, want 1.81.0", h.SchemaVersion)
+	if h.SchemaVersion != "1.83.0" {
+		t.Errorf("schema_version = %s, want 1.83.0", h.SchemaVersion)
 	}
 }
 
@@ -212,7 +212,7 @@ func TestFullOutput_ValidJSON(t *testing.T) {
 	jsonStr := string(data)
 
 	// Schema version present
-	if h.SchemaVersion != "1.81.0" {
+	if h.SchemaVersion != "1.83.0" {
 		t.Errorf("schema_version missing or wrong")
 	}
 

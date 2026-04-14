@@ -36,6 +36,7 @@ func MapToHealthOutput(r *ValidationResult) HealthOutput {
 		ServiceState: ServiceStateJSON{
 			Nftband:       string(r.ServiceState.Nftband), // UPPERCASE per spec §5: RUNNING|STOPPED|ERROR
 			NftbandDetail: r.ServiceState.NftbandDetail,
+			TimerCount:    r.ServiceState.TimerCount, // v1.83: active timer count
 		},
 		Modules:     mapModules(r.Modules),
 		Consistency: mapConsistency(r.ConsistencyOverall),
