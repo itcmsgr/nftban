@@ -108,15 +108,20 @@ nftban_cmd_health() {
     # Args: subcommand [options]
 
     local subcommand="${1:-check}"
-    local json_mode=false
-
-    # Check for --json flag in arguments
-    for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break || true
-    done
-
-    # Shift to get remaining args
     shift || true
+
+    # v1.83 F2 fix: scan for --json AFTER shift, so subcommand position
+    # is excluded. Then build a clean args array without --json so it
+    # is never leaked to downstream functions (F1 fix).
+    local json_mode=false
+    local -a clean_args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "--json" ]]; then
+            json_mode=true
+        else
+            clean_args+=("$arg")
+        fi
+    done
 
     # Load output module (for help banner)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
@@ -145,38 +150,38 @@ nftban_cmd_health() {
             # --auto-heal: trigger fixes for detected issues (requires root)
             # --quiet: minimal output (for cron/timer use)
             if [[ "$json_mode" == "true" ]]; then
-                nftban_health_cmd_json "$@"
+                nftban_health_cmd_json "${clean_args[@]}"
             else
-                nftban_health_cmd_check "$@"
+                nftban_health_cmd_check "${clean_args[@]}"
             fi
             ;;
         --auto-heal)
             # Shorthand: nftban health --auto-heal → diagnostics --auto-heal
-            nftban_health_cmd_check "--auto-heal" "$@"
+            nftban_health_cmd_check "--auto-heal" "${clean_args[@]}"
             ;;
         --quiet)
             # Shorthand: nftban health --quiet → diagnostics --quiet
-            nftban_health_cmd_check "--quiet" "$@"
+            nftban_health_cmd_check "--quiet" "${clean_args[@]}"
             ;;
 
         # =================================================================
         # FIX PATH — side effects (auto-heal)
         # =================================================================
         fix|enforce|--fix)
-            nftban_health_cmd_fix "$@"
+            nftban_health_cmd_fix "${clean_args[@]}"
             ;;
 
         # =================================================================
         # MONITORING INTEGRATIONS
         # =================================================================
         --brief|brief)
-            nftban_health_cmd_brief "$@"
+            nftban_health_cmd_brief "${clean_args[@]}"
             ;;
         --nagios|nagios)
-            nftban_health_cmd_nagios "$@"
+            nftban_health_cmd_nagios "${clean_args[@]}"
             ;;
         summary)
-            nftban_health_cmd_summary "$@"
+            nftban_health_cmd_summary "${clean_args[@]}"
             ;;
         json|--json)
             # v1.83: "nftban health json" outputs Go validator truth JSON
@@ -189,47 +194,47 @@ nftban_cmd_health() {
         # DIAGNOSTIC SUBCOMMANDS (environment checks, not truth)
         # =================================================================
         binaries)
-            nftban_health_cmd_binaries "$@"
+            nftban_health_cmd_binaries "${clean_args[@]}"
             ;;
         geoip)
-            nftban_health_cmd_geoip "$@"
+            nftban_health_cmd_geoip "${clean_args[@]}"
             ;;
         pro)
-            nftban_health_cmd_pro "$@"
+            nftban_health_cmd_pro "${clean_args[@]}"
             ;;
         registries|registry)
-            nftban_health_cmd_registries "$@"
+            nftban_health_cmd_registries "${clean_args[@]}"
             ;;
         gui|ui)
-            nftban_health_cmd_gui "$@"
+            nftban_health_cmd_gui "${clean_args[@]}"
             ;;
         install|verify)
-            nftban_health_cmd_install "$@"
+            nftban_health_cmd_install "${clean_args[@]}"
             ;;
         conflicts)
-            nftban_health_cmd_conflicts "$@"
+            nftban_health_cmd_conflicts "${clean_args[@]}"
             ;;
         config)
-            nftban_health_cmd_config "$@"
+            nftban_health_cmd_config "${clean_args[@]}"
             ;;
         rbl)
-            nftban_health_cmd_rbl "$@"
+            nftban_health_cmd_rbl "${clean_args[@]}"
             ;;
         botguard)
-            nftban_health_cmd_botguard "$@"
+            nftban_health_cmd_botguard "${clean_args[@]}"
             ;;
         fhs)
             if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh" ]]; then
                 # shellcheck source=/dev/null
                 source "${NFTBAN_LIB_DIR}/cli/cmd_fhs.sh"
-                nftban_cmd_fhs "$@"
+                nftban_cmd_fhs "${clean_args[@]}"
             else
                 echo "ERROR: cmd_fhs.sh not found" >&2
                 return 1
             fi
             ;;
         posture|security)
-            nftban_health_cmd_posture "$@"
+            nftban_health_cmd_posture "${clean_args[@]}"
             ;;
 
         # =================================================================

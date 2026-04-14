@@ -1170,12 +1170,19 @@ EOF
 nftban_cmd_login() {
     # Main login CLI handler
     local subcommand="${1:-status}"
-    local json_mode=false
     shift || true
 
-    # Check for --json flag
+    # v1.83 F3 fix: scan for --json and build clean args array.
+    # --json is consumed by the dispatcher and must not leak to
+    # downstream functions that don't understand it.
+    local json_mode=false
+    local -a clean_args=()
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break || true
+        if [[ "$arg" == "--json" ]]; then
+            json_mode=true
+        else
+            clean_args+=("$arg")
+        fi
     done
 
     # Load output module (for help banner)
@@ -1195,16 +1202,16 @@ nftban_cmd_login() {
             nftban_login_cmd_config "$json_mode"
             ;;
         install)
-            nftban_login_cmd_install "$@"
+            nftban_login_cmd_install "${clean_args[@]}"
             ;;
         enable)
-            nftban_login_cmd_enable "$@"
+            nftban_login_cmd_enable "${clean_args[@]}"
             ;;
         disable)
-            nftban_login_cmd_disable "$@"
+            nftban_login_cmd_disable "${clean_args[@]}"
             ;;
         restart)
-            nftban_login_cmd_restart "$@"
+            nftban_login_cmd_restart "${clean_args[@]}"
             ;;
         health-fix)
             echo "NOTE: Login health checks are now part of the main autoheal system."
@@ -1213,19 +1220,19 @@ nftban_cmd_login() {
             echo ""
             ;;
         logs)
-            nftban_login_cmd_logs "$@"
+            nftban_login_cmd_logs "${clean_args[@]}"
             ;;
         test)
-            nftban_login_cmd_test "$@"
+            nftban_login_cmd_test "${clean_args[@]}"
             ;;
         run)
-            nftban_login_cmd_run "$@"
+            nftban_login_cmd_run "${clean_args[@]}"
             ;;
         mode)
-            nftban_login_cmd_mode "$@"
+            nftban_login_cmd_mode "${clean_args[@]}"
             ;;
         digest)
-            nftban_login_cmd_digest "$@"
+            nftban_login_cmd_digest "${clean_args[@]}"
             ;;
         help|--help|-h)
             nftban_login_cmd_help
