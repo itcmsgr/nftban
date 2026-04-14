@@ -173,6 +173,8 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 
 	// M81-4: Per-module health evaluation
 	result.Modules = evaluateModuleHealth(doc, result.ServiceState)
+	// Collect any module-specific findings (e.g. VAL-GEOBAN-001)
+	result.Findings = append(result.Findings, moduleFindings...)
 
 	// Compute summary
 	result.Summary = computeSummary(result)

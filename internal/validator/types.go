@@ -257,6 +257,9 @@ const (
 	// Service findings (B80-4)
 	CodeServiceDown = "VAL-SERVICE-001" // required service not active
 
+	// Module-specific findings (M81-4)
+	CodeGeobanDBMissing = "VAL-GEOBAN-001" // geoip database missing/empty
+
 	// System findings
 	CodeNftFailed    = "VAL-SYSTEM-001"
 	CodeNftNoOutput  = "VAL-SYSTEM-002"

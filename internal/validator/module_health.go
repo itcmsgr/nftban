@@ -32,7 +32,11 @@ var ConfigDir = "/etc/nftban"
 
 // evaluateModuleHealth evaluates all modules and returns the health map.
 // Called from ValidateKernel after structural + runtime checks.
+// evaluateModuleHealth evaluates all modules and returns the health map.
+// Also populates moduleFindings with any module-specific findings.
+// The caller MUST append moduleFindings to result.Findings after this call.
 func evaluateModuleHealth(doc *RulesetDocument, svcState ServiceState) ModuleHealthMap {
+	moduleFindings = nil // reset for this evaluation cycle
 	m := ModuleHealthMap{}
 
 	m.BotGuard = evaluateBotGuard(doc, svcState)
@@ -249,6 +253,10 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 // Blacklist — unified: manual + feeds + geoban
 // =============================================================================
 
+// ModuleFindings collects findings from module health evaluation.
+// These are appended to the main ValidationResult.Findings by the caller.
+var moduleFindings []Finding
+
 func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	bh := &BlacklistHealth{}
 
@@ -285,10 +293,20 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 		// Check if geoip database exists.
 		// Per M81-3 contract: enabled + DB missing = DEGRADED (not just stale).
 		// Stale = DB exists but older than 45 days (future: check mtime).
+		// Per CF-2 resolution: geoban DB missing uses "stale" (in allowed enum)
+		// and emits a finding for visibility. "degraded" is not in the blacklist
+		// sub-state enum (enforcing|primed|idle|loaded|stale|disabled).
 		dbPath := "/var/cache/nftban/geoban/dbip-country-lite.mmdb"
 		info, err := os.Stat(dbPath)
 		if err != nil || info.Size() == 0 {
-			bh.Geoban = BlacklistSubHealth{State: "degraded"} // missing or empty = DEGRADED
+			bh.Geoban = BlacklistSubHealth{State: "stale"} // missing DB = stale data
+			moduleFindings = append(moduleFindings, Finding{
+				Code:        CodeGeobanDBMissing,
+				Severity:    SeverityWarn,
+				Component:   "module",
+				Message:     "GeoIP database missing or empty — geoban enforcement unavailable",
+				Remediation: "Run: nftban geoban sync",
+			})
 		} else {
 			// DB exists. Future: check mtime > 45 days → "stale".
 			bh.Geoban = BlacklistSubHealth{State: "loaded"}
@@ -359,19 +377,21 @@ func feedsExist() bool {
 
 // countSetElements returns the number of elements in a kernel set.
 //
-// NOTE: nft -j list ruleset does NOT include set elements in its output
-// (only set metadata: name, type, flags). Actual element counting requires
-// a separate `nft -j list set <family> <table> <name>` command per set,
-// which is expensive and outside the current single-command validator model.
+// countSetElements is a STUB — v1.81 KNOWN LIMITATION (CF-4).
 //
-// For now, this returns 0. BotGuard enforcement evidence and blacklist
-// element counting require per-set queries which are a Day 2+ enhancement.
-// The validator's current evidence model handles this correctly:
-// - zero = NEUTRAL per vocabulary Rule 1
-// - BotGuard defaults to IDLE (not DEGRADED)
-// - manual blacklist defaults to IDLE (not false PRIMED)
+// nft -j list ruleset does NOT include set elements in its output (only set
+// metadata: name, type, flags). Actual element counting requires a separate
+// `nft -j list set <family> <table> <name>` command per set, which is
+// expensive and outside the current single-command validator model.
 //
-// Future: add targeted set queries for enforcement-critical sets only.
+// Consequence: BotGuard can never reach ENFORCING or OBSERVING states from
+// the validator (requires ban/suspect set population > 0). Manual blacklist
+// can never reach PRIMED (requires manual set population > 0). Both default
+// to IDLE, which is correct per vocabulary Rule 1 (zero = NEUTRAL).
+//
+// This is documented in the v1.81 release notes as a known limitation.
+// Real fix: v1.82 — add targeted per-set queries for enforcement-critical
+// sets (http_bot_ban, http_bot_suspect, blacklist_manual_ipv4).
 func countSetElements(_ *RulesetDocument, _, _ string) int {
 	return 0
 }

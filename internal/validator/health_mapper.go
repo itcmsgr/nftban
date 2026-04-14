@@ -34,7 +34,7 @@ func MapToHealthOutput(r *ValidationResult) HealthOutput {
 		Status:        string(r.Status),
 		Timestamp:     r.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
 		ServiceState: ServiceStateJSON{
-			Nftband:       normalizeRuntime(r.ServiceState.Nftband), // lowercase in JSON
+			Nftband:       string(r.ServiceState.Nftband), // UPPERCASE per spec §5: RUNNING|STOPPED|ERROR
 			NftbandDetail: r.ServiceState.NftbandDetail,
 		},
 		Modules:     mapModules(r.Modules),
