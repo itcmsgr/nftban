@@ -40,10 +40,11 @@ type HealthOutput struct {
 	Summary       SummaryCounts       `json:"summary"`
 }
 
-// ServiceStateJSON is the JSON representation of daemon state.
+// ServiceStateJSON is the JSON representation of daemon and timer state.
 type ServiceStateJSON struct {
 	Nftband       string `json:"nftband"`                  // RUNNING|STOPPED|ERROR
 	NftbandDetail string `json:"nftband_detail,omitempty"` // raw systemctl output
+	TimerCount    int    `json:"timer_count"`              // v1.83: active nftban-* timer count
 }
 
 // ModulesJSON holds all per-module health in JSON output form.

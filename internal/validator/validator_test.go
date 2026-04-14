@@ -17,6 +17,7 @@
 package validator
 
 import (
+	"os/exec"
 	"testing"
 )
 
@@ -609,6 +610,199 @@ func TestServiceRunningNoFinding(t *testing.T) {
 	for _, f := range result.Findings {
 		if f.Code == CodeServiceDown {
 			t.Error("should NOT have VAL-SERVICE-001 finding when nftband is running")
+		}
+	}
+}
+
+// =============================================================================
+// v1.83: Timer liveness tests (VAL-TIMER-001)
+// =============================================================================
+
+// mockTimerChecker implements TimerChecker for testing.
+type mockTimerChecker struct {
+	count int
+	err   error
+}
+
+func (m mockTimerChecker) CountActiveTimers() (int, error) {
+	return m.count, m.err
+}
+
+func TestTimerStateWithActiveTimers(t *testing.T) {
+	SetTimerChecker(mockTimerChecker{count: 9, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count, err := checkTimerState()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if count != 9 {
+		t.Errorf("expected 9 active timers, got %d", count)
+	}
+}
+
+func TestTimerStateZeroTimers(t *testing.T) {
+	SetTimerChecker(mockTimerChecker{count: 0, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count, err := checkTimerState()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 timers, got %d", count)
+	}
+}
+
+func TestTimerStateQueryError(t *testing.T) {
+	// On query error, checkTimerState returns (0, err).
+	SetTimerChecker(mockTimerChecker{count: 0, err: exec.ErrNotFound})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	count, err := checkTimerState()
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if count != 0 {
+		t.Errorf("expected 0 on error, got %d", count)
+	}
+}
+
+func TestTimerZeroProducesFinding(t *testing.T) {
+	// Zero timers should produce VAL-TIMER-001 finding (severity: error)
+	// which causes DEGRADED through the normal evaluateOverallStatus path.
+	SetTimerChecker(mockTimerChecker{count: 0, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	timerCount, timerErr := checkTimerState()
+	result.ServiceState.TimerCount = timerCount
+	if timerErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerError,
+			Severity: SeverityWarn,
+		})
+	} else if timerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:      CodeTimerNone,
+			Severity:  SeverityError,
+			Component: "service",
+			Message:   "no active nftban timers found",
+		})
+	}
+
+	status := evaluateOverallStatus(result)
+	if status != StatusDegraded {
+		t.Errorf("expected DEGRADED with zero timers, got %s", status)
+	}
+
+	found := false
+	for _, f := range result.Findings {
+		if f.Code == CodeTimerNone {
+			found = true
+			if f.Severity != SeverityError {
+				t.Errorf("VAL-TIMER-001 severity should be error, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected VAL-TIMER-001 finding when zero timers")
+	}
+}
+
+func TestTimerQueryErrorProducesFinding(t *testing.T) {
+	// Query error should produce VAL-TIMER-002 (warn), NOT VAL-TIMER-001 (error).
+	// Distinguishes "no timers" from "couldn't check".
+	SetTimerChecker(mockTimerChecker{count: 0, err: exec.ErrNotFound})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	timerCount, timerErr := checkTimerState()
+	result.ServiceState.TimerCount = timerCount
+	if timerErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Code:      CodeTimerError,
+			Severity:  SeverityWarn,
+			Component: "service",
+			Message:   "timer liveness query failed: " + timerErr.Error(),
+		})
+	} else if timerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerNone,
+			Severity: SeverityError,
+		})
+	}
+
+	// Should get VAL-TIMER-002 (warn), NOT VAL-TIMER-001 (error)
+	foundError := false
+	foundWarn := false
+	for _, f := range result.Findings {
+		if f.Code == CodeTimerNone {
+			foundError = true
+		}
+		if f.Code == CodeTimerError {
+			foundWarn = true
+			if f.Severity != SeverityWarn {
+				t.Errorf("VAL-TIMER-002 severity should be warn, got %s", f.Severity)
+			}
+		}
+	}
+	if foundError {
+		t.Error("should NOT emit VAL-TIMER-001 on query error — that's VAL-TIMER-002 territory")
+	}
+	if !foundWarn {
+		t.Error("expected VAL-TIMER-002 finding on query error")
+	}
+
+	// Warn finding should NOT cause DEGRADED (only error/critical do)
+	status := evaluateOverallStatus(result)
+	if status == StatusDegraded {
+		t.Error("query error (warn) should not cause DEGRADED — only real zero timers should")
+	}
+}
+
+func TestTimerActiveNoFinding(t *testing.T) {
+	// Active timers should NOT produce VAL-TIMER-001 or VAL-TIMER-002.
+	SetTimerChecker(mockTimerChecker{count: 5, err: nil})
+	defer SetTimerChecker(SystemdTimerChecker{})
+
+	result := &ValidationResult{
+		Families: []FamilyResult{
+			{Status: StatusProtected},
+		},
+		Findings: make([]Finding, 0),
+	}
+
+	timerCount, timerErr := checkTimerState()
+	result.ServiceState.TimerCount = timerCount
+	if timerErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerError,
+			Severity: SeverityWarn,
+		})
+	} else if timerCount == 0 {
+		result.Findings = append(result.Findings, Finding{
+			Code:     CodeTimerNone,
+			Severity: SeverityError,
+		})
+	}
+
+	for _, f := range result.Findings {
+		if f.Code == CodeTimerNone || f.Code == CodeTimerError {
+			t.Errorf("should NOT have timer finding when timers are active, got %s", f.Code)
 		}
 	}
 }
