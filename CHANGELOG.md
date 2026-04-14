@@ -11,6 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.83.1] - 2026-04-15
+
+**Validator evidence fidelity hotfix.**
+
+Go validator only. No CLI contract, schema, or architecture changes.
+
+### Fixed
+
+- **GAP-BL1** (HIGH): Manual blacklist effective state now derived from
+  `input_blacklist_manual_drop` kernel counter. ENFORCING when elements > 0
+  AND drops > 0. Previously always PRIMED regardless of enforcement activity.
+- **GAP-D1**: DDoS structural evaluation now checks IPv6 chains when `ip6
+  nftban` table exists. All 4 DDoS chains must be present in both families.
+- **GAP-P1**: Portscan structural evaluation now checks IPv6 chain when
+  `ip6 nftban` table exists.
+- **GAP-BL3**: GeoIP database freshness check. Files older than 45 days
+  report `"stale"` with finding instead of `"loaded"`.
+- **GAP-BL5**: Feed data freshness check. No recent data files (> 7 days)
+  reports `"stale"` instead of `"loaded"`.
+
+### Not included (v1.84)
+
+- GAP-B4/L2: BotGuard/LoginMon journal runtime checks (requires new exec
+  pattern)
+- Legacy fallback removal
+- CI gates
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #397 | fix(validator): close 5 module contract gaps (GAP-BL1/D1/P1/BL3/BL5) |
+
+---
+
 ## [1.83.0] - 2026-04-14
 
 **Truth authority consolidation and operator-path performance.**
