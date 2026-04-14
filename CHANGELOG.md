@@ -11,6 +11,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.83.0] - 2026-04-14
+
+**Truth authority consolidation and operator-path performance.**
+
+v1.83 enforces the Go validator as the sole truth authority for protection
+state. The shell CLI layer no longer independently derives health, module
+state, or config-kernel consistency. All primary operator commands now
+consume validator JSON instead of recomputing facts from config files and
+kernel queries.
+
+### Added
+
+- **VAL-TIMER-001 / VAL-TIMER-002**: Timer liveness check in Go validator.
+  Zero active `nftban-*` timers → DEGRADED. Query failure → warn (not
+  DEGRADED). Eliminates shell `D-NOTIMERS` override.
+- **`nftban health diagnostics`** subcommand: legacy shell environment
+  checks (51 checks) moved under explicit diagnostics path.
+- **Schema version guard**: CLI warns when validator binary schema version
+  doesn't match expected `1.83.0`. Prevents silent breakage after partial
+  upgrades.
+- **Legacy fallback warning**: stderr WARNING when Go validator binary is
+  missing. Deprecated path, scheduled for removal in v1.84.
+- **Systemctl batch prefetch**: single `systemctl is-active` call for all
+  known units at status startup. Results cached in associative array.
+
+### Changed
+
+- **`nftban health` default** is now Go validator truth (four-axis table).
+  Was: 51-check shell scan (5.4s, 1500 subprocesses).
+  Now: Go validator read (0.2s, single binary call).
+- **`nftban health --json`** now outputs Go validator frozen schema JSON
+  (schema 1.83.0). Legacy shell diagnostics JSON via `nftban health
+  diagnostics --json`.
+- **Shell truth override removed**: `_nftban_protection_state_validator()`
+  no longer re-checks daemon/timer state after validator says "protected".
+  Validator findings (VAL-SERVICE-001, VAL-TIMER-001) control DEGRADED
+  through the normal path.
+- **Module display sections** (DDoS, Portscan) in `nftban status` now
+  read `.modules.*.config` and `.modules.*.structural` from cached
+  validator JSON instead of sourcing config files and running `nft list`.
+- **Config divergence** detection reads VAL-CONS-001 findings from
+  validator instead of independently parsing config and querying kernel.
+- **JSON schema version** bumped to `1.83.0` (`service_state.timer_count`
+  field added).
+
+### Fixed
+
+- **Argument leak** (F1-F3): `--json` flag no longer leaks to downstream
+  functions in health and login dispatchers. `nftban health --auto-heal
+  --json` no longer errors.
+- **Portscan aggregate timeout** (PR #387): `tail -10000` cap on
+  `journalctl` query in `nftban_portscan_aggregate()`. Prevents
+  maintenance timeout on high-volume hosts (1.4M+ journal entries).
+
+### Removed
+
+- `nftban_health_cmd_report()` — orphaned since v1.39.0 (DEAD-1).
+- Duplicate `nftband` entry and 5 unused conflict units from systemctl
+  prefetch array (DEAD-4).
+- Shell config-file parsing and `nft list chain` calls in DDoS/Portscan
+  status display sections (DUP-2/DUP-3).
+- 71 lines of authority-violating shell logic.
+
+### Performance
+
+| Command | v1.82 | v1.83 | Change |
+|---|---|---|---|
+| `nftban health` | 5.4s | 0.2s | 27x faster |
+| `nftban status` | 3.6s | 0.8s | 4.5x faster |
+| Subprocesses (status) | 367 | ~160 | 56% fewer |
+| systemctl calls (status) | 88 | ~25 | 72% fewer |
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #387 | fix(portscan): cap aggregate journal query to prevent maintenance timeout |
+| #388 | feat(validator): add timer liveness check VAL-TIMER-001 |
+| #389 | fix(status): remove shell truth override — validator is sole authority |
+| #390 | feat(health): split into truth vs diagnostics |
+| #391 | feat(cli): legacy fallback warning + schema version guard |
+| #392 | fix(cli): close argument leak in health and login dispatchers (F1-F3) |
+| #393 | perf(status): cache validator JSON — eliminate redundant binary calls |
+| #394 | perf(status): batch systemctl queries — 1 call replaces ~35 |
+| #395 | refactor(cli): Day 4+5 cleanup — validator authority + dead code |
+
+---
+
 ## [1.82.0] - 2026-04-14
 
 **Truth-path consolidation, evidence fidelity, and operator health surface.**
