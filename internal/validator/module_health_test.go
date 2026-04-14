@@ -452,6 +452,65 @@ func TestBlacklistManualPrimed(t *testing.T) {
 	}
 }
 
+func TestBlacklistManualEnforcing(t *testing.T) {
+	// GAP-BL1: elements > 0 + drops > 0 = ENFORCING
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
+	})
+	defer cleanup()
+	// Mock: manual set has 3 entries
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 3 }
+	defer func() { countSetElementsFunc = old }()
+
+	// Build doc with manual drop counter > 0
+	objects := []NftObject{
+		{Table: &NftTable{Family: "ip", Name: "nftban"}},
+		{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_ipv4"}},
+		{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_manual_ipv4"}},
+		{Counter: &NftCounter{Family: "ip", Table: "nftban", Name: "input_blacklist_manual_drop", Packets: 42}},
+	}
+	raw := &NftRuleset{Nftables: objects}
+	doc := ParseRuleset(raw)
+
+	bh := evaluateBlacklist(doc)
+	if bh.Manual.State != "enforcing" {
+		t.Errorf("manual state = %s, want enforcing (elements > 0, drops > 0)", bh.Manual.State)
+	}
+	if bh.Manual.Entries != 3 {
+		t.Errorf("manual entries = %d, want 3", bh.Manual.Entries)
+	}
+	if bh.Manual.Drops != 42 {
+		t.Errorf("manual drops = %d, want 42", bh.Manual.Drops)
+	}
+}
+
+func TestBlacklistManualPrimedZeroDrops(t *testing.T) {
+	// elements > 0 but drops = 0 → PRIMED (not ENFORCING)
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
+	})
+	defer cleanup()
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 2 }
+	defer func() { countSetElementsFunc = old }()
+
+	// Counter exists but zero packets
+	objects := []NftObject{
+		{Table: &NftTable{Family: "ip", Name: "nftban"}},
+		{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_ipv4"}},
+		{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_manual_ipv4"}},
+		{Counter: &NftCounter{Family: "ip", Table: "nftban", Name: "input_blacklist_manual_drop", Packets: 0}},
+	}
+	raw := &NftRuleset{Nftables: objects}
+	doc := ParseRuleset(raw)
+
+	bh := evaluateBlacklist(doc)
+	if bh.Manual.State != "primed" {
+		t.Errorf("manual state = %s, want primed (elements > 0, drops = 0)", bh.Manual.State)
+	}
+}
+
 // =============================================================================
 // Config helper tests
 // =============================================================================
