@@ -531,9 +531,10 @@ nftban_portscan_classic_process_logs() {
             # Record this connection for realtime detection
             nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-        # SIGPIPE fix: tail in a pipeline under pipefail can exit 141 when the
-        # reader (while loop) closes. Trap SIGPIPE to prevent fatal exit.
-        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | { tail -1000 || true; })
+        # v1.82 Step 5: Added tail -5000 safety cap on journalctl output
+        # (--since already bounds, but high-volume hosts may still produce
+        # huge output within the time window). SIGPIPE fix preserved.
+        done < <({ journalctl -k --since "${time_window} seconds ago" --no-pager 2>/dev/null | { tail -5000 || true; } | grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" || true; } | { tail -1000 || true; })
     else
         # grep returns 1 when no matches found - use || true to handle this
         _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
@@ -556,8 +557,14 @@ nftban_portscan_classic_process_logs() {
             # Record this connection for realtime detection
             nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-        # SIGPIPE fix: same as journalctl path above.
-        done < <({ grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" "$log_source" 2>/dev/null || true; } | { tail -1000 || true; })
+        # v1.82 Step 5: Performance fix for high-volume log files.
+        # Previously: grep entire file then tail -1000 (scans 300K+ lines).
+        # Now: tail -5000 first (bound input), then grep (filter matches),
+        # then tail -1000 (limit output). This caps processing regardless
+        # of total file size. 5000 raw lines ≈ covers several minutes of
+        # high-volume portscan logging with margin.
+        # SIGPIPE fix: { cmd || true; } prevents pipefail exit 141.
+        done < <({ tail -5000 "$log_source" 2>/dev/null || true; } | { grep -E -- "${log_prefix_escaped}|${log_prefix_legacy_escaped}" 2>/dev/null || true; } | { tail -1000 || true; })
     fi
 
     # Analyze and block if needed
