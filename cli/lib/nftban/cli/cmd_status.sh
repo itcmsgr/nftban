@@ -136,6 +136,60 @@ _NFTBAN_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 # the binary. This eliminates 2 of 3 validator calls per status run.
 _NFTBAN_VALIDATOR_CACHE=""
 
+# =============================================================================
+# v1.83 Win-2: Batch systemctl queries
+# =============================================================================
+# nftban status makes ~75 individual systemctl calls. This prefetch runs
+# ONE systemctl is-active call for all known units and caches the results
+# in an associative array. Lookup is then a bash array read (zero subprocesses).
+
+declare -gA _UNIT_STATE=()
+_UNIT_STATE_LOADED=false
+
+_nftban_prefetch_unit_states() {
+    # Batch-query all known units in one systemctl call.
+    # systemctl is-active prints one line per unit (active/inactive/failed/etc).
+    [[ "$_UNIT_STATE_LOADED" == "true" ]] && return 0
+
+    local -a units=(
+        nftband.service nftband nftables.service
+        nftban-maintenance.timer nftban-watchdog.timer nftban-queue.timer
+        nftban-botscan.timer nftban-health.timer
+        nftban-core-feeds.timer nftban-core-geoip.timer
+        nftban-update-check.timer nftban-update-apply.timer
+        nftban-unified-exporter.timer nftban-unified-exporter.service
+        nftban-ui.service nftban-ui.timer nftban-ui
+        nftban-suricata.service nftban-suricata.timer nftban-suricata-update.timer
+        nftban-snapshot.timer nftban-rollback.timer nftban-rbl-check.timer
+        nftban-pro-license.timer nftban-pro-inventory.timer
+        nftban-tunnel.timer
+        suricata.service prometheus victoriametrics
+        fail2ban firewalld iptables ip6tables lfd
+    )
+
+    local output
+    output=$(systemctl is-active "${units[@]}" 2>/dev/null || true)
+
+    local i=0
+    while IFS= read -r state; do
+        if [[ $i -lt ${#units[@]} ]]; then
+            _UNIT_STATE["${units[$i]}"]="$state"
+        fi
+        i=$((i + 1))
+    done <<< "$output"
+
+    _UNIT_STATE_LOADED=true
+}
+
+# Lookup: returns 0 if unit is active, 1 otherwise.
+# Drop-in replacement for: systemctl is-active <unit> >/dev/null 2>&1
+_unit_is_active() {
+    local unit="$1"
+    # Prefetch on first call (lazy init)
+    [[ "$_UNIT_STATE_LOADED" != "true" ]] && _nftban_prefetch_unit_states
+    [[ "${_UNIT_STATE[$unit]:-inactive}" == "active" ]]
+}
+
 _nftban_protection_state_validator() {
     # v1.78.0: Call Go kernel validator for authoritative protection state.
     # Returns: PROTECTED | DEGRADED[:reason] | DOWN
@@ -228,8 +282,8 @@ _nftban_protection_state_legacy() {
     # Returns: PROTECTED, DEGRADED:D-xxx, or DOWN
     local _nft_active=false _daemon_active=false _rules=0 _timers=0
 
-    systemctl is-active nftables.service >/dev/null 2>&1 && _nft_active=true
-    systemctl is-active nftband.service >/dev/null 2>&1 && _daemon_active=true
+    _unit_is_active nftables.service && _nft_active=true
+    _unit_is_active nftband.service && _daemon_active=true
     if command -v nft >/dev/null 2>&1; then
         _rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
         _rules="${_rules:-0}"
@@ -300,7 +354,7 @@ _nftban_protection_state_legacy() {
     [[ "${_ps_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
 
     # Suricata: service check (correct — it's an external service)
-    systemctl is-active nftban-suricata >/dev/null 2>&1 && ((_modules_active++)) || true
+    _unit_is_active nftban-suricata.service && ((_modules_active++)) || true
 
     # Login monitor: runs inside nftband — check config + daemon
     if [[ "$_daemon_active" == "true" ]]; then
@@ -432,10 +486,12 @@ nftban_cmd_status() {
     fi
 
     # v1.83 Win-3: Pre-populate validator cache ONCE before any rendering.
-    # This eliminates 2 of 3 validator calls (banner + health render reuse cache).
     if [[ -x "$_NFTBAN_VALIDATOR_BIN" && -z "$_NFTBAN_VALIDATOR_CACHE" ]]; then
         _NFTBAN_VALIDATOR_CACHE=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null || true)
     fi
+
+    # v1.83 Win-2: Batch-prefetch all systemctl unit states in one call.
+    _nftban_prefetch_unit_states
 
     # Show unified banner with health indicator (skip for JSON/quiet output)
     if [[ $json_mode -eq 0 ]] && [[ $quiet_mode -eq 0 ]]; then
@@ -583,7 +639,7 @@ _status_section_firewall() {
     # Use service control library with graceful fallback
     if declare -f nftban_service_is_active &>/dev/null; then
         nftban_service_is_active nftables.service && nft_status="ACTIVE"
-    elif systemctl is-active nftables.service >/dev/null 2>&1; then
+    elif _unit_is_active nftables.service; then
         nft_status="ACTIVE"
     fi
     printf "  %-20s %s\n" "nftables............" "$nft_status"
@@ -685,7 +741,7 @@ _status_section_protection() {
         local _suricata_active=false
         if declare -f nftban_service_is_active &>/dev/null; then
             nftban_service_is_active suricata.service && _suricata_active=true
-        elif systemctl is-active suricata.service >/dev/null 2>&1; then
+        elif _unit_is_active suricata.service; then
             _suricata_active=true
         fi
 
@@ -733,7 +789,7 @@ _status_section_protection() {
 
                 if [[ "${rules_loaded:-0}" -eq 0 ]]; then
                     suricata_status="BROKEN (0 rules loaded!)"
-                elif systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
+                elif _unit_is_active nftban-suricata.service; then
                     suricata_status="ACTIVE (IDS + Banning, ${rules_loaded} rules)"
                 else
                     suricata_status="ACTIVE (IDS only, ${rules_loaded} rules)"
@@ -792,7 +848,7 @@ _status_section_protection() {
     if [[ "$portscan_enabled" == "true" ]]; then
         if [[ "$suricata_eve_ok" == "true" ]]; then
             portscan_status="ENABLED (Suricata mode)"
-        elif systemctl is-active suricata.service >/dev/null 2>&1; then
+        elif _unit_is_active suricata.service; then
             portscan_status="ENABLED (Classic — Suricata EVE stale)"
         else
             portscan_status="ENABLED (Classic mode)"
@@ -817,7 +873,7 @@ _status_section_protection() {
             if [[ "$portscan_enabled" == "true" ]]; then
                 if [[ "$suricata_eve_ok" == "true" ]]; then
                     echo "    Port Scan: Using Suricata IDS (deep packet inspection)"
-                elif systemctl is-active suricata.service >/dev/null 2>&1; then
+                elif _unit_is_active suricata.service; then
                     echo "    Port Scan: Classic mode (Suricata running but EVE stale)"
                 else
                     echo "    Port Scan: Classic mode (nftables log monitoring)"
@@ -872,7 +928,7 @@ _status_section_protection() {
     # v1.56.0 FIX: Check both LOGIN_ENABLED (Go daemon config) and
     #   NFTBAN_LOGIN_ALERT_ENABLED (bash alert config) — `nftban login enable` writes LOGIN_ENABLED
     local login_mon_status="DISABLED"
-    if systemctl is-active --quiet nftband.service 2>/dev/null; then
+    if _unit_is_active nftband.service; then
         local _lm_en="false"
         # Check Go daemon loginmon config (LOGIN_ENABLED — written by `nftban login enable`)
         local _lm_go_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
@@ -1038,8 +1094,8 @@ _status_section_protection() {
     local prometheus_service victoriametrics_service
     prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
     victoriametrics_service=$(nftban_distro_get_service victoriametrics 2>/dev/null || echo "victoriametrics")
-    systemctl is-active "$prometheus_service" >/dev/null 2>&1 && prom_running=true
-    systemctl is-active "$victoriametrics_service" >/dev/null 2>&1 && vm_running=true
+    _unit_is_active "$prometheus_service" && prom_running=true
+    _unit_is_active "$victoriametrics_service" && vm_running=true
     if [[ "$prom_running" == "true" ]]; then
         metrics_db_status="Prometheus (running)"
     elif [[ "$vm_running" == "true" ]]; then
@@ -1051,8 +1107,8 @@ _status_section_protection() {
 
     # Metrics Exporter
     local metrics_exp_status="NOT INSTALLED"
-    if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1 || \
-       systemctl is-active nftban-unified-exporter.service >/dev/null 2>&1; then
+    if _unit_is_active nftban-unified-exporter.timer || \
+       _unit_is_active nftban-unified-exporter.service; then
         metrics_exp_status="ACTIVE"
     elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter"; then
         metrics_exp_status="INACTIVE"
@@ -1068,7 +1124,7 @@ _status_section_protection() {
     [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" =~ ^([Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|1|[Oo][Nn])$ ]]; then
-        if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1; then
+        if _unit_is_active nftban-unified-exporter.timer; then
             zabbix_status="ACTIVE (${NFTBAN_ZABBIX_SERVER:-unconfigured})"
         else
             zabbix_status="ENABLED (timer inactive)"
@@ -1097,7 +1153,7 @@ _status_section_protection() {
         [[ "${NFTBAN_CONNECTOR_SYSLOG_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
         [[ "${NFTBAN_CONNECTOR_WEBHOOK_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
 
-        if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1; then
+        if _unit_is_active nftban-unified-exporter.timer; then
             connector_status="ACTIVE ($connector_count connectors)"
         else
             connector_status="ENABLED ($connector_count connectors, timer inactive)"
@@ -1109,7 +1165,7 @@ _status_section_protection() {
 
     # GUI
     local gui_status="NOT INSTALLED"
-    if systemctl is-active nftban-ui >/dev/null 2>&1; then
+    if _unit_is_active nftban-ui; then
         gui_status="ACTIVE"
     elif systemctl list-unit-files 2>/dev/null | grep -q nftban-ui; then
         gui_status="INACTIVE"
@@ -1363,7 +1419,7 @@ _status_section_timers() {
             local status_text="INACTIVE"
             local next_run=""
 
-            if systemctl is-active "$timer" >/dev/null 2>&1; then
+            if _unit_is_active "$timer"; then
                 timer_active=$((timer_active + 1))
 
                 # Get time left until next trigger
@@ -1601,7 +1657,7 @@ output_json() {
 
     # Firewall
     local nft_active=false
-    systemctl is-active nftables.service >/dev/null 2>&1 && nft_active=true
+    _unit_is_active nftables.service && nft_active=true
 
     echo "  \"firewall\": {"
     echo "    \"nftables_active\": $nft_active,"
@@ -1705,7 +1761,7 @@ output_json() {
             return
         fi
 
-        if systemctl is-active "$unit" >/dev/null 2>&1; then
+        if _unit_is_active "$unit"; then
             status="active"
             pid=$(systemctl show "$unit" --property=MainPID --value 2>/dev/null || echo "")
             # pid=0 means no main process, treat as null
@@ -1865,8 +1921,8 @@ output_json() {
 
     # Suricata
     local suricata_enabled=false suricata_banning=false
-    systemctl is-active suricata.service >/dev/null 2>&1 && suricata_enabled=true
-    systemctl is-active nftban-suricata.service >/dev/null 2>&1 && suricata_banning=true
+    _unit_is_active suricata.service && suricata_enabled=true
+    _unit_is_active nftban-suricata.service && suricata_banning=true
     echo "    \"suricata\": {\"enabled\": $suricata_enabled, \"banning\": $suricata_banning},"
 
     # Login monitoring (nftband loginmon module, replaces deprecated login-monitor service)
@@ -1953,7 +2009,7 @@ output_json() {
         local timer_name="${timer%.timer}"
         timer_name="${timer_name#nftban-}"
         local timer_active=false
-        systemctl is-active "$timer" >/dev/null 2>&1 && timer_active=true
+        _unit_is_active "$timer" && timer_active=true
         [[ -n "$timer_json" ]] && timer_json+=","
         timer_json+="\"$timer_name\": $timer_active"
     done
@@ -1995,10 +2051,10 @@ check_service_clean() {
     fi
 
     # Check if active
-    if ! systemctl is-active "$unit" >/dev/null 2>&1; then
+    if ! _unit_is_active "$unit"; then
         # For timer-triggered services, check if the corresponding timer is active
         local timer_unit="${unit%.service}.timer"
-        if systemctl is-active "$timer_unit" >/dev/null 2>&1; then
+        if _unit_is_active "$timer_unit"; then
             printf "  %s TIMER (scheduled)\n" "$padded_name"
             return 0
         fi
