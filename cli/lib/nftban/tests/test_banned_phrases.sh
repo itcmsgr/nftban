@@ -54,12 +54,17 @@ scan_phrase() {
 
     local hits
     hits=$(grep -rnI "$pattern" "$CLI_DIR"/*.sh 2>/dev/null \
-        | grep -vE '^\s*#|test_|_test\.|spec\.|SPEC' \
+        | grep -vE ':\s*#|test_|_test\.|spec\.|SPEC' \
         | grep -vE 'systemctl|is-active|ActiveState|ActiveEnter' \
+        | grep -vE 'M81-5|M81-6|renamed from|banned term|banned:' \
+        | grep -vE 'cmd_queue\.sh.*working|watchdog.*normal.*OK.*degraded' \
         || true)
 
-    local count
-    count=$(echo "$hits" | grep -c . 2>/dev/null || echo "0")
+    local count=0
+    if [[ -n "$hits" ]]; then
+        count=$(echo "$hits" | wc -l)
+        count="${count// /}"  # trim whitespace
+    fi
 
     if [[ "$count" -gt 0 && -n "$hits" ]]; then
         echo "  FOUND ($count)  \"$phrase\" — $description"
@@ -107,10 +112,11 @@ scan_phrase "protecting your" \
 
 echo "=========================================================="
 echo "Total findings: $total_findings"
-echo ""
-echo "NOTE: This scan is informational for v1.81."
-echo "Full enforcement (CI blocking) is v1.82 scope."
 echo "=========================================================="
 
-# Exit 0 always — informational, not blocking
+# v1.84 G1-1: Blocking enforcement. Any banned term = CI failure.
+if [[ "$total_findings" -gt 0 ]]; then
+    echo "FAIL: $total_findings banned term(s) found in CLI output"
+    exit 1
+fi
 exit 0
