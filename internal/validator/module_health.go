@@ -278,16 +278,34 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// Base blacklist sets are always present (required by base schema).
 	h.Structural = StructuralPresent
 
-	// Runtime: daemon required
+	// Runtime: daemon required.
+	// A1-3: Refine with journal evidence — check for module registration
+	// AND source binding. LoginMon runtime is meaningful only when sources
+	// are actually bound (path resolution succeeded).
 	if svcState.Nftband == RuntimeRunning {
 		h.Runtime = RuntimeRunning
+		// Check for LoginMon module start + source binding
+		evidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"module_start: loginmon", "resolved_by="},
+			Since:    15 * time.Minute,
+		})
+		if evidence.ErrKind == ErrNone && !evidence.Found {
+			// Daemon running but no recent LoginMon startup/binding evidence.
+			moduleFindings = append(moduleFindings, Finding{
+				Code:      CodeLoginMonNoEvidence,
+				Severity:  SeverityInfo,
+				Component: "module",
+				Message:   "no recent LoginMon runtime evidence in journal (last 15m)",
+			})
+		}
 	} else {
 		h.Runtime = svcState.Nftband
 	}
 
-	// Effective: would need journal query for login_failed/banned events.
-	// The validator is a point-in-time snapshot tool — journal queries are
-	// outside its current scope. Default to idle.
+	// Effective: LoginMon enforcement is through shared blacklist sets.
+	// Journal-based evidence (login_failed/banned events) could prove
+	// activity but counter attribution is not possible (shared set).
+	// Default to idle from validator perspective.
 	h.Effective = EffectiveIdle
 
 	return h

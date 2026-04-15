@@ -504,6 +504,8 @@ func TestLoginMonEnabledRunning(t *testing.T) {
 		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
 	})
 	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{"module_start: loginmon"}})
+	defer SetJournalReader(SystemdJournalReader{})
 
 	h := evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
 
@@ -525,6 +527,81 @@ func TestLoginMonEnabledDaemonStopped(t *testing.T) {
 
 	if h.Runtime != RuntimeStopped {
 		t.Errorf("runtime = %s, want STOPPED", h.Runtime)
+	}
+}
+
+// =============================================================================
+// A1-3: LoginMon journal evidence tests
+// =============================================================================
+
+func TestLoginMonJournalEvidencePresent(t *testing.T) {
+	// Source binding evidence present → no finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"[LOGINMON] ssh: /var/log/secure resolved_by=distroconf",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 when binding evidence present")
+		}
+	}
+}
+
+func TestLoginMonJournalNoEvidence(t *testing.T) {
+	// Running but no LoginMon evidence → info finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"some unrelated daemon output",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	found := false
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			found = true
+			if f.Severity != SeverityInfo {
+				t.Errorf("expected info severity, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected VAL-LOGINMON-001 when no journal evidence")
+	}
+}
+
+func TestLoginMonJournalUnavailable(t *testing.T) {
+	// Journal error → no finding, runtime still RUNNING
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{errKind: ErrTimeout, err: errors.New("timeout")})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	h := evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	if h.Runtime != RuntimeRunning {
+		t.Errorf("runtime = %s, want RUNNING on journal timeout", h.Runtime)
+	}
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 on journal error")
+		}
 	}
 }
 
