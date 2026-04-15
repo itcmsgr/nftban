@@ -383,7 +383,9 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 		// Per CF-2 resolution: geoban DB missing uses "stale" (in allowed enum)
 		// and emits a finding for visibility. "degraded" is not in the blacklist
 		// sub-state enum (enforcing|primed|idle|loaded|stale|disabled).
-		dbPath := "/var/cache/nftban/geoban/dbip-country-lite.mmdb"
+		// Canonical path: ${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb
+		// Downloaded by nftban-core-geoip.timer → nftban geoip sync
+		dbPath := "/var/lib/nftban/geoip/dbip-country-lite.mmdb"
 		info, err := os.Stat(dbPath)
 		if err != nil || info.Size() == 0 {
 			bh.Geoban = BlacklistSubHealth{State: "stale"} // missing DB = stale data
