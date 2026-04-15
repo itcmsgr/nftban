@@ -504,7 +504,10 @@ func TestLoginMonEnabledRunning(t *testing.T) {
 		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
 	})
 	defer cleanup()
-	SetJournalReader(mockJournalReader{lines: []string{"module_start: loginmon"}})
+	SetJournalReader(mockJournalReader{lines: []string{
+		"module_start: loginmon",
+		"[LOGINMON] ssh: resolved_by=distroconf",
+	}})
 	defer SetJournalReader(SystemdJournalReader{})
 
 	h := evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
@@ -535,12 +538,14 @@ func TestLoginMonEnabledDaemonStopped(t *testing.T) {
 // =============================================================================
 
 func TestLoginMonJournalEvidencePresent(t *testing.T) {
-	// Source binding evidence present → no finding
+	// Both registration AND binding evidence present → no finding
 	cleanup := setupTestConfig(t, map[string]string{
 		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
 	})
 	defer cleanup()
+	// Mock must contain both patterns (AND semantics)
 	SetJournalReader(mockJournalReader{lines: []string{
+		"module_start: loginmon",
 		"[LOGINMON] ssh: /var/log/secure resolved_by=distroconf",
 	}})
 	defer SetJournalReader(SystemdJournalReader{})
@@ -550,8 +555,34 @@ func TestLoginMonJournalEvidencePresent(t *testing.T) {
 
 	for _, f := range moduleFindings {
 		if f.Code == CodeLoginMonNoEvidence {
-			t.Error("should NOT emit VAL-LOGINMON-001 when binding evidence present")
+			t.Error("should NOT emit VAL-LOGINMON-001 when both registration and binding evidence present")
 		}
+	}
+}
+
+func TestLoginMonJournalOnlyRegistration(t *testing.T) {
+	// Registration present but no source binding → finding emitted (AND semantics)
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"module_start: loginmon",
+		"some other output",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	found := false
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected VAL-LOGINMON-001 when registration present but binding missing (AND)")
 	}
 }
 
