@@ -1074,7 +1074,7 @@ _status_section_health() {
 
     # v1.66.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
     if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
-        printf "  %-20s %s\n" "Overall Status......" "OK (info notices)"
+        printf "  %-20s %s\n" "Overall Status......" "PROTECTED (info notices)"
     else
         printf "  %-20s %s\n" "Overall Status......" "$health_status"
     fi
@@ -1514,8 +1514,7 @@ output_json() {
     echo "{"
     echo "  \"version\": \"${NFTBAN_VERSION:-unknown}\","
     echo "  \"status\": \"$json_base_state\","
-    # v1.82: backward compat — emit old "state" key too, remove in v1.83
-    echo "  \"state\": \"$json_base_state\","
+    # v1.86 B86-3: "state" backward-compat key removed (was scheduled for v1.83)
     if [[ -n "$json_reason" ]]; then
         echo "  \"degraded_reason\": \"$json_reason\","
     fi
