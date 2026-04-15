@@ -11,6 +11,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.85.0] - 2026-04-15
+
+**Module completeness & integration safety.**
+
+Makes it impossible to add a module partially — completeness is now enforced
+by CI, not assumed by convention.
+
+### Added
+
+- **Module classification system**: every config-present module classified as
+  CORE / ADVISORY / MONITORING / EXTERNAL. No unclassified modules allowed.
+  Botscan classified as BotGuard sub-function (L7 batch). Tunnel = ADVISORY,
+  RBL = MONITORING, Suricata = EXTERNAL (deferred).
+- **CI gate G8-1**: Module completeness — every CORE module must have
+  evaluator + ModuleHealthMap field + JSON field. Blocking.
+- **CI gate G8-2**: Module classification — every config directory must be
+  classified. No untracked modules. Blocking.
+- **CI gate G8-3**: IPv6 parity — detects IPv4-only evaluator checks.
+  Tests for DDoS, Portscan, BotGuard asymmetry. Blocking.
+- **CI gate G8-4**: Cross-surface smoke — compares validator JSON module
+  list with health JSON module list. Wired into ci-architecture.yml.
+- **TestPortscanEnabledMissing**: structural missing degraded scenario.
+
+### Changed
+
+- **Blacklist evaluator**: now counts both IPv4 and IPv6 manual elements
+  and counters (GAP-185-9). Previously IPv4-only.
+- **ModuleHealthMap**: confirmed as single canonical module inventory.
+
+### Deprecated
+
+- **ModuleTruth** (`ModuleStatus` type + `deriveModuleTruth()`): marked
+  deprecated. Removal planned for v1.86. Not used in status derivation.
+  Still emitted for legacy compatibility in text-mode validator output.
+
+### Not included
+
+- Suricata validator integration (EXTERNAL, deferred to v1.87+)
+- New module registry (completeness enforced via cross-check of existing
+  authorities, not a new subsystem)
+- ModuleTruth removal (v1.86)
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #407 | feat(validator): M85-1/2/3 — module classification + IPv6 parity + completeness gates |
+| #408 | feat(ci): G8-4 smoke test + CI wiring + per-module coverage |
+
+---
+
 ## [1.84.0] - 2026-04-15
 
 **Unified truth architecture — Go validator is sole authority.**
