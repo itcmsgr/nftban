@@ -11,6 +11,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.87.0] - 2026-04-15
+
+**Metrics Phase 1 — kernel evidence & correlation foundation.**
+
+First production-safe metrics evidence layer. Collect once → render many.
+Evidence reports what the kernel is doing; validator interprets what it means.
+
+### Added
+
+- **Named counter collector** (M87-2): structured evidence from all nftables
+  named counters. Context-bound, Prometheus preserved as side-effect.
+- **Set element collector** (M87-3): per-set element counts with three-state
+  semantics (present/absent/unknown). JSON parsing, not text parsing.
+- **Chain presence collector** (M87-4): chain presence per family with
+  family-level failure → all chains unknown.
+- **Validator snapshot bridge** (M87-5): read-only bridge to nftban-validate
+  JSON. Status required, missing → unknown.
+- **Correlation engine** (M87-6): pure function comparing kernel evidence
+  against validator interpretation. Conservative: unknown inputs → unknown
+  output. 5 result values: match/mismatch/warning/expected_limitation/unknown.
+- **EvidenceSnapshot model** (M87-7): canonical Phase 1 structure with
+  separated Kernel/Validator/Correlation planes.
+- **Human renderer** (M87-8): operator-first text output distinguishing
+  unavailable vs zero evidence.
+- **`nftban metrics evidence`** / **`evidence-json`** CLI (M87-9).
+- **Schema validation tests + golden fixture** (M87-10): 13 schema tests
+  locking JSON contract, nil vs empty counters, omitempty, enum safety.
+- **Evidence contract doc** (M87-11): 12-section specification defining
+  evidence semantics, collector contracts, correlation rules.
+
+### Fixed
+
+- **MG-9** (M87-1): Firewall exporter queried `inet filter` instead of
+  `ip nftban`. Fixed to correct table.
+
+### Evidence Contract
+
+- Evidence is NOT a truth object — validator remains sole authority
+- Three states: present / absent / unknown (never guessed)
+- Correlation is diagnostic only — cannot affect exit codes or status
+- Zero counters are neutral, not failure
+- Shared counters are family-level only; no source attribution
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #418 | fix(exporter): query ip nftban not inet filter (MG-9) |
+| #421 | feat(metrics): v1.87 complete evidence layer (M87-2 through M87-10) |
+
+---
+
 ## [1.86.0] - 2026-04-15
 
 **Contract finalization — single truth model, no ambiguity.**
