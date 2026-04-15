@@ -19,11 +19,13 @@
 package metrics
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -109,31 +111,110 @@ func CollectRuleCounters() {
 	ruleCounterMu.Lock()
 	defer ruleCounterMu.Unlock()
 
+	// Note: context.Background() is intentional here — this is the legacy
+	// sampler-driven Prometheus path, not the new evidence CLI path.
+	// Timeout is bounded per-family (2s) inside collectNamedCountersStructured.
 	for _, family := range []string{"ip", "ip6"} {
-		// v1.41.0: Try named counters first (simpler, more efficient)
-		if !collectNamedCounters(family) {
+		counters, err := collectNamedCountersStructured(context.Background(), family)
+		if err == nil && len(counters) > 0 {
+			updatePrometheusFromNamedCounters(family, counters)
+		} else {
 			// Fallback to anonymous counter extraction (pre-v1.41.0 schemas)
 			collectFamilyCounters(family)
 		}
 	}
 }
 
-// collectNamedCounters extracts named counter values via `nft -j list counters`.
-// Returns true if at least one named counter was found (schema has named counters).
-func collectNamedCounters(family string) bool {
-	cmd := exec.Command("nft", "-j", "list", "counters", family, "nftban")
-	output, err := cmd.Output()
+// CollectNamedCounters returns all named counters as structured evidence data.
+// v1.87 M87-2: This is the canonical evidence collection function.
+// Collect once → render many (JSON, human, Prometheus).
+//
+// Semantics:
+// - Empty Counters map = valid (no counters found, not an error)
+// - Non-nil error = collection failed (command error, parse error)
+// - Zero-valued counters are preserved (neutral, not failure)
+func CollectNamedCounters(ctx context.Context) (*NamedCountersResult, error) {
+	ruleCounterMu.Lock()
+	defer ruleCounterMu.Unlock()
+
+	result := &NamedCountersResult{
+		CollectedAt: time.Now(),
+		Counters:    make(map[string]CounterValue),
+	}
+
+	var lastErr error
+	familiesSucceeded := 0
+
+	for _, family := range []string{"ip", "ip6"} {
+		counters, err := collectNamedCountersStructured(ctx, family)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		familiesSucceeded++
+		for name, val := range counters {
+			key := family + ":" + name
+			result.Counters[key] = val
+		}
+	}
+
+	// Both families failed → return error (contract: non-nil error = collection failed)
+	// At least one succeeded → return result, nil (may be partial)
+	if familiesSucceeded == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+
+	return result, nil
+}
+
+// collectNamedCountersStructured executes nft and parses the result.
+// Does NOT update Prometheus — caller decides.
+func collectNamedCountersStructured(ctx context.Context, family string) (map[string]CounterValue, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	output, err := nftListCounters(ctx, family)
 	if err != nil {
-		return false // Table or counters not available
+		return nil, err
 	}
 
+	return parseNamedCountersJSON(output)
+}
+
+// nftListCounters runs nft -j list counters for a specific family.
+func nftListCounters(ctx context.Context, family string) ([]byte, error) {
+	switch family {
+	case "ip":
+		return exec.CommandContext(ctx, "nft", "-j", "list", "counters", "ip", "nftban").Output() // #nosec G204
+	case "ip6":
+		return exec.CommandContext(ctx, "nft", "-j", "list", "counters", "ip6", "nftban").Output() // #nosec G204
+	default:
+		return nil, nil
+	}
+}
+
+// nftListTable runs nft -j list table for a specific family.
+func nftListTable(family string) ([]byte, error) {
+	switch family {
+	case "ip":
+		return exec.Command("nft", "-j", "list", "table", "ip", "nftban").Output() // #nosec G204
+	case "ip6":
+		return exec.Command("nft", "-j", "list", "table", "ip6", "nftban").Output() // #nosec G204
+	default:
+		return nil, nil
+	}
+}
+
+// parseNamedCountersJSON is the pure parsing logic, testable without exec.
+// Returns counter names as bare names (without family prefix).
+// Caller adds the family prefix when building NamedCountersResult keys.
+func parseNamedCountersJSON(data []byte) (map[string]CounterValue, error) {
 	var nft nftJSON
-	if err := json.Unmarshal(output, &nft); err != nil {
-		log.Printf("[METRICS] Failed to parse named counters JSON for %s nftban: %v", family, err)
-		return false
+	if err := json.Unmarshal(data, &nft); err != nil {
+		return nil, err
 	}
 
-	found := 0
+	counters := make(map[string]CounterValue)
 	for _, raw := range nft.NFTables {
 		var wrapper nftNamedCounterWrapper
 		if err := json.Unmarshal(raw, &wrapper); err != nil || wrapper.Counter == nil {
@@ -145,19 +226,28 @@ func collectNamedCounters(family string) bool {
 			continue
 		}
 
-		nftNamedCounterPackets.WithLabelValues(family, c.Name).Set(float64(c.Packets))
-		nftNamedCounterBytes.WithLabelValues(family, c.Name).Set(float64(c.Bytes))
-		found++
+		counters[c.Name] = CounterValue{
+			Packets: int64(c.Packets),
+			Bytes:   int64(c.Bytes),
+		}
 	}
 
-	return found > 0
+	return counters, nil
+}
+
+// updatePrometheusFromNamedCounters writes structured counter data to Prometheus gauges.
+// Preserves existing Prometheus exporter behavior.
+func updatePrometheusFromNamedCounters(family string, counters map[string]CounterValue) {
+	for name, val := range counters {
+		nftNamedCounterPackets.WithLabelValues(family, name).Set(float64(val.Packets))
+		nftNamedCounterBytes.WithLabelValues(family, name).Set(float64(val.Bytes))
+	}
 }
 
 // collectFamilyCounters collects rule counters for a single nftables family
 // using anonymous counter extraction (pre-v1.41.0 fallback)
 func collectFamilyCounters(family string) {
-	cmd := exec.Command("nft", "-j", "list", "table", family, "nftban")
-	output, err := cmd.Output()
+	output, err := nftListTable(family)
 	if err != nil {
 		// Table may not exist for this family — not an error
 		return

@@ -22,6 +22,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -29,10 +30,17 @@ import (
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
-// cmdMetrics handles the metrics export command
+// cmdMetrics handles the metrics command family
 func cmdMetrics(action string, cfg *nftbanconf.Config) error {
-	if action != "export" {
-		return fmt.Errorf("unknown metrics action: %s (use 'export')", action)
+	switch action {
+	case "evidence", "snapshot":
+		return cmdMetricsEvidence()
+	case "evidence-json", "snapshot-json":
+		return cmdMetricsEvidenceJSON()
+	case "export":
+		// existing Prometheus textfile export — falls through below
+	default:
+		return fmt.Errorf("unknown metrics action: %s (use 'export', 'evidence', or 'evidence-json')", action)
 	}
 
 	// Get output file from environment or use default
@@ -77,5 +85,30 @@ func cmdMetrics(action string, cfg *nftbanconf.Config) error {
 	}
 
 	fmt.Printf("Metrics exported successfully to %s\n", outputFile)
+	return nil
+}
+
+// v1.87 M87-9: Evidence snapshot commands
+func cmdMetricsEvidence() error {
+	ctx := context.Background()
+	snap, err := metrics.CollectEvidenceSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to collect evidence: %w", err)
+	}
+	metrics.RenderHuman(snap, os.Stdout)
+	return nil
+}
+
+func cmdMetricsEvidenceJSON() error {
+	ctx := context.Background()
+	snap, err := metrics.CollectEvidenceSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to collect evidence: %w", err)
+	}
+	data, err := metrics.RenderJSON(snap)
+	if err != nil {
+		return fmt.Errorf("failed to render JSON: %w", err)
+	}
+	fmt.Println(string(data))
 	return nil
 }

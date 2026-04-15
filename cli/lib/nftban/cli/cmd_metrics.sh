@@ -371,6 +371,14 @@ nftban_cmd_metrics() {
     echo ""
 
     case "$subcommand" in
+        evidence)
+            # v1.87: Kernel evidence snapshot (human-readable)
+            "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" metrics evidence
+            ;;
+        evidence-json)
+            # v1.87: Kernel evidence snapshot (canonical JSON)
+            "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" metrics evidence-json
+            ;;
         enable)
             nftban_metrics_enable "$@"
             ;;
@@ -387,9 +395,11 @@ nftban_cmd_metrics() {
             nftban_print_pipeline_report $json_flag
             ;;
         help|--help|-h)
-            echo "Usage: nftban metrics {enable|disable|status|pipeline} [options]"
+            echo "Usage: nftban metrics {evidence|evidence-json|enable|disable|status|pipeline} [options]"
             echo ""
             echo "Commands:"
+            echo "  evidence        Show kernel evidence snapshot (operator-first)"
+            echo "  evidence-json   Show kernel evidence snapshot (canonical JSON)"
             echo "  enable          Enable Prometheus metrics collection"
             echo "  disable         Disable metrics collection"
             echo "  status          Show metrics services status"
