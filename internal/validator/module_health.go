@@ -284,18 +284,28 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// are actually bound (path resolution succeeded).
 	if svcState.Nftband == RuntimeRunning {
 		h.Runtime = RuntimeRunning
-		// Check for LoginMon module start + source binding
-		evidence := queryJournal(context.Background(), JournalQuery{
-			Patterns: []string{"module_start: loginmon", "resolved_by="},
+		// Check for LoginMon module registration AND source binding.
+		// Both must be present — module_start alone proves the module loaded,
+		// but sources must be bound for LoginMon to actually process events.
+		// Two separate queries with AND semantics (not OR).
+		regEvidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"module_start: loginmon"},
 			Since:    15 * time.Minute,
 		})
-		if evidence.ErrKind == ErrNone && !evidence.Found {
-			// Daemon running but no recent LoginMon startup/binding evidence.
+		bindEvidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"resolved_by="},
+			Since:    15 * time.Minute,
+		})
+		// Only emit finding when both queries succeeded (no error) and
+		// at least one required evidence is missing.
+		regOK := regEvidence.ErrKind == ErrNone
+		bindOK := bindEvidence.ErrKind == ErrNone
+		if regOK && bindOK && (!regEvidence.Found || !bindEvidence.Found) {
 			moduleFindings = append(moduleFindings, Finding{
 				Code:      CodeLoginMonNoEvidence,
 				Severity:  SeverityInfo,
 				Component: "module",
-				Message:   "no recent LoginMon runtime evidence in journal (last 15m)",
+				Message:   "no recent LoginMon runtime + source-binding evidence in journal (last 15m)",
 			})
 		}
 	} else {

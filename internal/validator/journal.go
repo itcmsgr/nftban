@@ -15,10 +15,9 @@
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
 //
-// A1-1: Dark code — not wired into any module evaluator yet.
-// This reader provides bounded, fail-safe journal queries for
-// daemon-dependent modules (BotGuard, LoginMon) that need runtime
-// evidence beyond systemctl is-active.
+// A1-1: Bounded journal evidence reader, consumed by BotGuard (A1-2)
+// and LoginMon (A1-3) module evaluators for runtime evidence beyond
+// systemctl is-active.
 //
 // Design contract:
 // - Bounded: time window (-15m) + line count (-n 200), no full scan
