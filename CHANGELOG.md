@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.85.1] - 2026-04-15
+
+**GeoIP database path fix.**
+
+### Fixed
+
+- **GeoIP database path mismatch**: Validator checked
+  `/var/cache/nftban/geoban/dbip-country-lite.mmdb` but the canonical
+  path is `/var/lib/nftban/geoip/dbip-country-lite.mmdb`. Caused
+  `VAL-GEOBAN-001` on all hosts even though the DB existed, the timer
+  was active, and GEOBAN_ENABLED=true. Geoban now correctly reports
+  `"loaded"` across all hosts and distros.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #410 | fix(validator): correct GeoIP database path — /var/lib not /var/cache |
+
+---
+
 ## [1.85.0] - 2026-04-15
 
 **Module completeness & integration safety.**
