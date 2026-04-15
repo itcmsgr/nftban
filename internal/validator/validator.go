@@ -488,6 +488,9 @@ func validateSets(doc *RulesetDocument, family string, required []string, result
 }
 
 // deriveModuleTruth determines module status from kernel presence.
+// Deprecated: v1.85 — use evaluateModuleHealth() and ModuleHealthMap instead.
+// This function populates the legacy ModuleStatus (5 modules) which overlaps
+// with ModuleHealthMap (5 modules). Will be removed in v1.86.
 func deriveModuleTruth(doc *RulesetDocument) ModuleStatus {
 	ms := ModuleStatus{}
 
