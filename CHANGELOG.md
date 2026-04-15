@@ -11,6 +11,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.84.0] - 2026-04-15
+
+**Unified truth architecture — Go validator is sole authority.**
+
+First release where all user-facing truth paths resolve through a single
+authority (Go validator), shell-era validation is fully retired, and
+system invariants are enforced in CI.
+
+### Added
+
+- **Bounded journal evidence reader** (A1-1): safe, bounded journal
+  queries for daemon-dependent modules. 2s timeout, 15m window, 200
+  line cap, newest-first, pattern matching in Go.
+- **BotGuard runtime evidence** (A1-2): journal check for module
+  registration (`module_start: botguard`, `[botguard] loaded`).
+  Emits `VAL-BOTGUARD-001` (info) when no recent evidence found.
+- **LoginMon source-binding evidence** (A1-3): journal check for
+  module registration AND source binding (`resolved_by=`). Both must
+  be present (AND semantics). Emits `VAL-LOGINMON-001` (info).
+- **CI gate G1-1**: Banned phrase test now blocking — prevents
+  vocabulary regression permanently.
+- **CI gate G2-1**: Truth consistency test — verifies validator status
+  matches health status (INV-CONS-001).
+- **CI gate G2-3**: Schema version guard — Go source schema must match
+  CLI expected schema on every PR.
+- **CI gate G7-3**: Exit code consistency — verifies 0=PROTECTED/IDLE,
+  1=DEGRADED, 2=DOWN contract.
+
+### Changed
+
+- **Shell authority retired** (M84-2): `_nftban_protection_state_legacy()`
+  deleted. Missing Go validator binary now means DOWN (no fallback).
+  `NFTBAN_FORCE_LEGACY_STATE` override removed.
+- **`nftban firewall validate`**: now Go-only. Shell `validate_structure`
+  removed from authority path. Single structural truth source.
+- **Post-update validation** (V6): uses Go validator. Structural
+  degradation blocks update; non-structural degradation warns only.
+- **Health anchor integrity**: uses Go validator findings instead of
+  shell invariant checker with 19 INV-* checks.
+- **README**: complete rewrite with truth hierarchy, evidence model,
+  validator scope, core invariants.
+
+### Removed
+
+- `nftban_invariant_validator.sh` (607 lines) — shell invariant
+  validator with 19 INV-S/INV-O/INV-F checks. All covered by Go.
+- `_nftban_protection_state_legacy()` (97 lines) — shell fallback.
+- `NFTBAN_FORCE_LEGACY_STATE` environment override.
+- Banned terms: "HEALTHY", "healthy", "Healthy" from all user-visible
+  CLI output. "OK=healthy" → "OK=protected" in watchdog legend.
+- Stale "legacy fallback" comments across 4 files.
+- "[LEGACY]" tag → "[COMPAT]" in template warning.
+
+### Performance
+
+| Metric | Before | After |
+|---|---|---|
+| Shell truth-derivation paths | 6 call sites | **0** |
+| Shell invariant validator lines | 607 | **0** |
+| Legacy fallback paths | 4 | **0** |
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #399 | docs: rewrite README — truth model, evidence model, validator scope |
+| #400 | feat(validator): add bounded journal evidence reader (A1-1) |
+| #401 | feat(validator): BotGuard + LoginMon journal evidence (A1-2/A1-3) |
+| #402 | fix(validator): LoginMon AND semantics + comment drift |
+| #403 | feat(cli): shell authority retirement — Go validator sole truth path (M84-2) |
+| #404 | refactor(cli): M84-3 presentation cleanup — vocabulary alignment |
+| #405 | feat(ci): M84-4 contract freeze — 4 CI gates for system invariants |
+
+---
+
 ## [1.83.1] - 2026-04-15
 
 **Validator evidence fidelity hotfix.**
