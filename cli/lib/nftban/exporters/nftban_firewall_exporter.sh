@@ -120,19 +120,21 @@ collect_nftables_counters() {
     local forward_packets=0
     local output_packets=0
 
-    # Try to get counter stats if available
-    if nft list chain inet filter input 2>/dev/null | grep -q 'counter'; then
-        input_packets=$(nft list chain inet filter input 2>/dev/null | \
+    # v1.87 M87-1: Query ip nftban (correct table), not inet filter (wrong table).
+    # inet filter is a distro/iptables-nft table that may not exist and is NOT
+    # part of NFTBan. This was bug MG-9.
+    if nft list chain ip nftban input 2>/dev/null | grep -q 'counter'; then
+        input_packets=$(nft list chain ip nftban input 2>/dev/null | \
             grep -oP 'packets \K\d+' | head -1 || echo 0)
     fi
 
-    if nft list chain inet filter forward 2>/dev/null | grep -q 'counter'; then
-        forward_packets=$(nft list chain inet filter forward 2>/dev/null | \
+    if nft list chain ip nftban forward 2>/dev/null | grep -q 'counter'; then
+        forward_packets=$(nft list chain ip nftban forward 2>/dev/null | \
             grep -oP 'packets \K\d+' | head -1 || echo 0)
     fi
 
-    if nft list chain inet filter output 2>/dev/null | grep -q 'counter'; then
-        output_packets=$(nft list chain inet filter output 2>/dev/null | \
+    if nft list chain ip nftban output 2>/dev/null | grep -q 'counter'; then
+        output_packets=$(nft list chain ip nftban output 2>/dev/null | \
             grep -oP 'packets \K\d+' | head -1 || echo 0)
     fi
 
