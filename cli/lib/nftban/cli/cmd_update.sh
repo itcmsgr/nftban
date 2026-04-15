@@ -581,31 +581,44 @@ _cmd_update_main() {
     fi
 
     # V6: Invariant validation — kernel schema matches installed code expectations
-    # v1.70.0: This is the governing invariant. If the installed code's structural
-    # expectations don't match the live kernel schema, the update is not trustworthy.
-    local _inv_validator="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
-    if [[ -f "$_inv_validator" ]]; then
-        # Source the validator if not already loaded
-        if ! declare -f nftban_validate_invariants >/dev/null 2>&1; then
-            # shellcheck source=/dev/null
-            source "$_inv_validator" 2>/dev/null || true
-        fi
-        if declare -f nftban_validate_invariants >/dev/null 2>&1; then
-            local _inv_exit=0
-            nftban_validate_invariants >/dev/null 2>&1 || _inv_exit=$?
-            if [[ $_inv_exit -eq 0 ]]; then
-                _update_log OK "Invariant validation: PASS (all structural invariants hold)"
-            elif [[ $_inv_exit -eq 1 ]]; then
-                _update_log WARN "Invariant validation: WARNING (non-critical invariant issues)"
-            else
-                _update_log ERROR "Invariant validation: FAIL (kernel schema does not match installed code)"
-                _verify_fail=1
-            fi
+    # v1.84 A2-3: Use Go validator instead of shell invariant validator.
+    local _go_validator="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+    if [[ -x "$_go_validator" ]]; then
+        local _go_json _go_exit=0
+        _go_json=$("$_go_validator" --json 2>/dev/null) || _go_exit=$?
+        if [[ $_go_exit -eq 0 && -n "$_go_json" ]]; then
+            local _go_status
+            _go_status=$(echo "$_go_json" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+            case "$_go_status" in
+                protected|idle)
+                    _update_log OK "Invariant validation: PASS (Go validator — status: $_go_status)"
+                    ;;
+                degraded)
+                    # Check if degradation is structural (blocks update) or non-structural (warning only).
+                    # Structural findings (VAL-TABLE, VAL-CHAIN, VAL-ANCHOR) = FAIL.
+                    # Non-structural (VAL-GEOBAN, VAL-TIMER, VAL-BOTGUARD, VAL-LOGINMON) = WARNING.
+                    local _has_structural=false
+                    if echo "$_go_json" | jq -e '.findings[] | select(.code | test("VAL-TABLE|VAL-CHAIN|VAL-ANCHOR|VAL-SET|VAL-SERVICE"))' >/dev/null 2>&1; then
+                        _has_structural=true
+                    fi
+                    if [[ "$_has_structural" == "true" ]]; then
+                        _update_log ERROR "Invariant validation: FAIL (Go validator — structural degradation)"
+                        _verify_fail=1
+                    else
+                        _update_log WARN "Invariant validation: WARNING (Go validator — non-structural degradation)"
+                    fi
+                    ;;
+                *)
+                    _update_log ERROR "Invariant validation: FAIL (Go validator — status: $_go_status)"
+                    _verify_fail=1
+                    ;;
+            esac
         else
-            _update_log WARN "Invariant validator not available (skipped)"
+            _update_log ERROR "Invariant validation: FAIL (Go validator returned empty output or error)"
+            _verify_fail=1
         fi
     else
-        _update_log WARN "Invariant validator not found: $_inv_validator (skipped)"
+        _update_log WARN "Go validator not found at $_go_validator (post-update validation skipped)"
     fi
 
     # Handle verification failure

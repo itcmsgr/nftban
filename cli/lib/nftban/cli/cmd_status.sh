@@ -192,14 +192,14 @@ _unit_is_active() {
 }
 
 _nftban_protection_state_validator() {
-    # v1.78.0: Call Go kernel validator for authoritative protection state.
+    # v1.84: Go validator is the sole authority for protection state.
     # Returns: PROTECTED | DEGRADED[:reason] | DOWN
-    # Falls back to legacy detection if validator unavailable.
+    # Missing or failed validator = DOWN (no fallback).
 
     if [[ ! -x "$_NFTBAN_VALIDATOR_BIN" ]]; then
-        # v1.83: Warn when Go validator is missing — legacy fallback is deprecated.
-        echo "WARNING: Go validator not found at $_NFTBAN_VALIDATOR_BIN — using legacy detection (deprecated, removal in v1.84)" >&2
-        _nftban_protection_state_legacy
+        # v1.84 A2-1: Go validator is required. No legacy fallback.
+        echo "ERROR: Go validator not found at $_NFTBAN_VALIDATOR_BIN" >&2
+        echo "DOWN"
         return
     fi
 
@@ -212,9 +212,9 @@ _nftban_protection_state_validator() {
     fi
 
     if [[ -z "$_json" ]]; then
-        # v1.83: Warn when validator fails — legacy fallback is deprecated.
-        echo "WARNING: Go validator returned empty output — using legacy detection (deprecated)" >&2
-        _nftban_protection_state_legacy
+        # v1.84 A2-1: Validator failure = DOWN. No legacy fallback.
+        echo "ERROR: Go validator returned empty output" >&2
+        echo "DOWN"
         return
     fi
 
@@ -270,117 +270,17 @@ _nftban_protection_state_validator() {
             echo "DOWN"
             ;;
         *)
-            # Unknown status — fallback
-            _nftban_protection_state_legacy
+            # v1.84 A2-1: Unknown validator status = DOWN. No legacy fallback.
+            echo "DOWN"
             ;;
     esac
 }
 
-_nftban_protection_state_legacy() {
-    # DEPRECATED: Shell-based protection state detection (v1.66.0).
-    # Scheduled for removal in v1.80.0 — use Go validator instead.
-    # This code path is kept as fallback when Go validator is unavailable.
-    # Returns: PROTECTED, DEGRADED:D-xxx, or DOWN
-    local _nft_active=false _daemon_active=false _rules=0 _timers=0
-
-    _unit_is_active nftables.service && _nft_active=true
-    _unit_is_active nftband.service && _daemon_active=true
-    if command -v nft >/dev/null 2>&1; then
-        _rules=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
-        _rules="${_rules:-0}"
-    fi
-    _timers=$(systemctl list-timers 'nftban-*' --no-legend 2>/dev/null | wc -l || echo 0)
-
-    # DOWN: kernel disabled, nftables not active, or no rules loaded
-    if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        echo "DOWN"; return
-    fi
-    if [[ "$_nft_active" != "true" ]] || [[ "$_rules" -eq 0 ]]; then
-        echo "DOWN"; return
-    fi
-
-    # nftables is active with rules — check for DEGRADED conditions
-
-    # D-DAEMON: nftband not running
-    if [[ "$_daemon_active" != "true" ]]; then
-        echo "DEGRADED:D-DAEMON"; return
-    fi
-
-    # D-ANCHOR: invariant validator returned ERROR (structural problem)
-    local _anchor_ok=true
-    local _inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
-    if [[ -f "$_inv_lib" ]]; then
-        local _inv_exit=0
-        (
-            # Subshell to avoid polluting caller's namespace
-            # v1.70.0: Disable ERR trap — inherited via set -E, would fire inside
-            # the validator on individual invariant failures before the function
-            # can return its composite exit code.
-            trap - ERR
-            set +e
-            # shellcheck source=/dev/null
-            source "$_inv_lib" 2>/dev/null || exit 0
-            if type nftban_validate_invariants &>/dev/null; then
-                nftban_validate_invariants >/dev/null 2>&1
-                exit $?
-            fi
-            exit 0
-        ) || _inv_exit=$?
-        # exit 2 = ERROR (structural problem) → DEGRADED
-        # exit 1 = WARNING (SSH port, empty whitelist) → still ok
-        [[ $_inv_exit -ge 2 ]] && _anchor_ok=false || true
-    fi
-    if [[ "$_anchor_ok" == "false" ]]; then
-        echo "DEGRADED:D-ANCHOR"; return
-    fi
-
-    # D-NOTIMERS: no nftban timers active
-    if [[ "$_timers" -eq 0 ]]; then
-        echo "DEGRADED:D-NOTIMERS"; return
-    fi
-
-    # v1.66.0: Kernel-first module detection — probe nft chains, not config files
-    local _modules_active=0
-
-    # DDoS: check kernel chain has rules
-    local _ddos_rules=0
-    _ddos_rules=$(nft -a list chain ip nftban ddos_protection 2>/dev/null \
-        | grep -c "# handle" || true)
-    [[ "${_ddos_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
-
-    # Portscan: check kernel chain has rules
-    local _ps_rules=0
-    _ps_rules=$(nft -a list chain ip nftban portscan_detection 2>/dev/null \
-        | grep -c "# handle" || true)
-    [[ "${_ps_rules:-0}" -gt 0 ]] && ((_modules_active++)) || true
-
-    # Suricata: service check (correct — it's an external service)
-    _unit_is_active nftban-suricata.service && ((_modules_active++)) || true
-
-    # Login monitor: runs inside nftband — check config + daemon
-    if [[ "$_daemon_active" == "true" ]]; then
-        local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
-        local _lm_enabled="false"
-        [[ -f "${_lm_conf}.local" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_enabled" != "true" ]] && [[ -f "$_lm_conf" ]] && _lm_enabled=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "$_lm_conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
-        [[ "$_lm_enabled" == "true" ]] && ((_modules_active++)) || true
-    fi
-
-    # D-NOMODULE: no detection modules in kernel
-    if [[ "$_modules_active" -eq 0 ]]; then
-        echo "DEGRADED:D-NOMODULE"; return
-    fi
-
-    echo "PROTECTED"
-}
+# v1.84 A2-1: _nftban_protection_state_legacy() deleted.
+# Go validator is the sole truth authority. No shell fallback.
 
 _nftban_protection_state() {
-    # v1.78.0: Dispatcher — uses Go validator, falls back to legacy shell detection.
-    # NFTBAN_FORCE_LEGACY_STATE=1 forces legacy detection (for testing).
-    if [[ "${NFTBAN_FORCE_LEGACY_STATE:-0}" == "1" ]]; then
-        _nftban_protection_state_legacy
-        return
-    fi
+    # v1.84: Direct call — no legacy fallback, no force-legacy override.
     _nftban_protection_state_validator
 }
 
