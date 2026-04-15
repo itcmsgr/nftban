@@ -350,3 +350,11 @@ jobs:
       # G2-3: Schema version guard — Go source matches CLI expectations
       - name: Schema version guard (G2-3)
         run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
+
+      # =====================================================================
+      # v1.85 M85-3: Module Completeness Gates
+      # =====================================================================
+      # G8-1/G8-2/G8-3 run as Go tests (already in ci-go.yml via go test ./...)
+      # G8-4 is a runtime smoke test — skips gracefully in CI (no validator binary)
+      - name: Module smoke test (G8-4)
+        run: bash cli/lib/nftban/tests/test_module_smoke.sh
