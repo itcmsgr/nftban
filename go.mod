@@ -14,7 +14,7 @@ require (
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/procfs v0.20.1
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
