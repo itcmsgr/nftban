@@ -177,7 +177,10 @@ nftban_stats_cmd_brief() {
     fi
 
     # Dropped packets from counters
-    dropped=$(nft list counters table ip nftban 2>/dev/null | grep -oP 'packets\s+\K[0-9]+' | paste -sd+ | bc 2>/dev/null || echo 0)
+    # v1.87.2: Use global JSON `nft -j list counters` + jq filter.
+    # The filtered form `nft list counters table <family> <table>` is broken on v1.0.x-v1.1.x.
+    # Only sum drop/block counters — not accepts, loopbacks, or anchors.
+    dropped=$(nft -j list counters 2>/dev/null | jq '[.nftables[] | select(.counter) | select(.counter.table == "nftban") | select(.counter.name | test("_drop$|_exceeded$")) | .counter.packets] | add // 0' 2>/dev/null || echo 0)
 
     # Today's bans from log
     local today
