@@ -482,6 +482,21 @@ func TestPortscanEnabledPresent(t *testing.T) {
 	}
 }
 
+func TestPortscanEnabledMissing(t *testing.T) {
+	// Enabled but chain missing → StructuralMissing (degraded scenario)
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/portscan/main.conf": `PORTSCAN_ENABLED="true"`,
+	})
+	defer cleanup()
+
+	doc := buildDoc(nil, nil) // no chains
+	h := evaluatePortscan(doc)
+
+	if h.Structural != StructuralMissing {
+		t.Errorf("structural = %s, want missing (chain absent)", h.Structural)
+	}
+}
+
 // =============================================================================
 // LoginMon truth table tests
 // =============================================================================
