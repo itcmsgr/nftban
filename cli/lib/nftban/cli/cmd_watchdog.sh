@@ -1054,7 +1054,7 @@ nftban_watchdog_cmd_trends() {
         # Formatted output
         echo "Recent Watchdog Trends (last $last_count entries)"
         echo "═══════════════════════════════════════════════════════════════"
-        echo "STATUS: OK=healthy  WARN=degraded  CRIT=critical"
+        echo "STATUS: OK=protected  WARN=degraded  CRIT=down"
         echo ""
         printf "%-25s  %-8s  %5s  %5s  %5s  %7s\n" "TIMESTAMP" "STATUS" "CPU%" "MEM%" "IO%" "ACTIONS"
         echo "───────────────────────────────────────────────────────────────"

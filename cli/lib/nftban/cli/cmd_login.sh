@@ -812,7 +812,7 @@ CONF
         return 1
     elif [[ $issues_found -eq 0 ]]; then
         echo ""
-        echo "✅ Login monitor is healthy"
+        echo "✅ Login monitor: OK (no issues)"
     fi
 
     return 0

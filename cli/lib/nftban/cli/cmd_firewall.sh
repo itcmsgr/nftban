@@ -459,7 +459,7 @@ firewall_validate() {
         if [[ -n "$_val_json" ]] && command -v jq >/dev/null 2>&1; then
             local _val_status
             _val_status=$(echo "$_val_json" | jq -r '.status' 2>/dev/null)
-            echo "Structural Validation: $(echo "$_val_status" | tr '[:lower:]' '[:upper:]')"
+            echo "Validator Status: $(echo "$_val_status" | tr '[:lower:]' '[:upper:]')"
             echo "$_val_json" | jq -r '.findings[] | "  [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null || true
         elif [[ -n "$_val_json" ]]; then
             echo "$_val_json"
@@ -1146,7 +1146,7 @@ firewall_rebuild() {
         # Legacy migration: template not installed yet (pre-v1.50.0 package)
         if [[ -f "$nftban_conf" ]]; then
             if grep -qE '__SSH_PORT__|__CT_LIMIT_' "$nftban_conf" 2>/dev/null; then
-                echo "WARNING: [LEGACY] Using live config as template source — run 'dnf reinstall nftban' to install template" >&2
+                echo "WARNING: [COMPAT] Using live config as template source — run 'dnf reinstall nftban' to install template" >&2
                 source_file="$nftban_conf"
             else
                 # Pre-v1.49.0 hardcoded config, no placeholders → load directly

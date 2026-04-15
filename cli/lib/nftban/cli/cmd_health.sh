@@ -144,7 +144,7 @@ nftban_cmd_health() {
         # v1.83: DIAGNOSTICS PATH — shell environment checks
         # =================================================================
         diagnostics|detailed)
-            # v1.83: Extended environment/UX checks (legacy shell health).
+            # v1.84: Extended environment/UX diagnostic checks.
             # These are NOT protection truth — they check packaging,
             # permissions, integrations, and optional features.
             # --auto-heal: trigger fixes for detected issues (requires root)
@@ -184,9 +184,8 @@ nftban_cmd_health() {
             nftban_health_cmd_summary "${clean_args[@]}"
             ;;
         json|--json)
-            # v1.83: "nftban health json" outputs Go validator truth JSON
-            # (same as "nftban health --json" on the default truth path).
-            # For legacy shell diagnostics JSON, use: nftban health diagnostics --json
+            # v1.84: "nftban health json" outputs Go validator truth JSON.
+            # For diagnostics JSON, use: nftban health diagnostics --json
             nftban_health_cmd_truth "true"
             ;;
 
