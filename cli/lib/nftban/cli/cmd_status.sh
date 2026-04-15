@@ -117,9 +117,8 @@ _status_check_binaries() {
 # =============================================================================
 # PROTECTION STATE — Go Validator Integration (v1.78.0)
 # =============================================================================
-# v1.78.0: Uses Go kernel validator as single source of truth.
-# Falls back to legacy shell detection if validator unavailable.
-# v1.66.0: 3-state model with kernel-first detection and reason codes.
+# v1.84: Go validator is the sole authority for protection state.
+# No legacy fallback. Missing validator = DOWN.
 # Returns: PROTECTED | DEGRADED[:reason] | DOWN
 # Exit code contract:
 #   0 = PROTECTED    — everything works
@@ -405,7 +404,7 @@ nftban_cmd_status() {
 
 output_brief() {
     # v1.66.0: One-line status output for CI/fleet/monitoring
-    # Format: PROTECTED | v1.66.0 | 26 banned | 9 whitelisted | healthy
+    # Format: PROTECTED | v1.84.0 | 26 banned | 9 whitelisted | protected
     # Exit codes: 0=PROTECTED, 1=DEGRADED, 2=DOWN
 
     local protection_state_raw

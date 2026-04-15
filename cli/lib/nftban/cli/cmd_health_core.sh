@@ -102,7 +102,7 @@ nftban_health_cmd_check() {
     local error_count="${NFTBAN_HEALTH_ERROR_COUNT:-0}"
     local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
-    # Standardized exit codes: 0=OK/WARNING, 1=WARNING(strict), 2=ERROR
+    # Diagnostics exit codes: 0=OK, 1=WARNING(strict), 2=ERROR
     # v1.37.1: Warnings about OPTIONAL features (Web GUI, metrics, etc.)
     # must NOT cause non-zero exit. Only real errors (broken firewall,
     # missing binaries, failed checks) should fail.
@@ -161,9 +161,9 @@ nftban_health_cmd_check() {
 # =============================================================================
 
 nftban_health_cmd_brief() {
-    # v1.24.0: One-line health output for CI/fleet/monitoring
-    # Output: HEALTHY | 26 checks passed | 4 info
-    # Returns: 0=healthy (including warnings), 1=warning(strict), 2=errors
+    # v1.24.0: One-line diagnostics output for CI/fleet/monitoring
+    # Output: OK | 26 checks passed | 4 info
+    # Returns: 0=OK (including warnings), 1=warning(strict), 2=errors
     # v1.39.0: Supports --strict flag (warnings → exit 1)
 
     local strict_mode=0
@@ -211,12 +211,12 @@ nftban_health_cmd_brief() {
         if [[ -z "$reasons" ]]; then
             reasons="optional-features"
         fi
-        echo "HEALTHY | ${ok_count} checks passed | ${info_count} info (${reasons})"
+        echo "OK | ${ok_count} checks passed | ${info_count} info (${reasons})"
         # v1.39.0: --strict makes warnings fail
         [[ $strict_mode -eq 1 ]] && return 1
         return 0
     else
-        echo "HEALTHY | ${total_checks} checks passed | 0 info"
+        echo "OK | ${total_checks} checks passed | 0 info"
         return 0
     fi
 }

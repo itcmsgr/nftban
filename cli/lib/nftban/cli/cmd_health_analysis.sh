@@ -952,7 +952,7 @@ nftban_health_cmd_botguard() {
         echo "  Result: ⚠️  $warnings warning(s)"
         return 1
     else
-        echo "  Result: ✅ Healthy"
+        echo "  Result: ✅ OK"
         return 0
     fi
 }
