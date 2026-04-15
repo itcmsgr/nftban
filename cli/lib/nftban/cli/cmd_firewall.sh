@@ -437,42 +437,37 @@ firewall_validate() {
         esac
     done
 
-    # Load core validator
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" ]]; then
-        # shellcheck source=/dev/null
-        # v1.82: relocated to nftban_ip_and_stats.sh (nftban_validator.sh deleted)
-        source "${NFTBAN_LIB_DIR}/core/nftban_ip_and_stats.sh" || return 1
-    else
-        [[ "$quiet_mode" != "true" ]] && echo "ERROR: Cannot find nftban_ip_and_stats.sh" >&2
+    # v1.84 A2-2: Go validator is the sole structural authority.
+    # Shell validate_structure removed — no dual-authority path.
+    local _go_validator="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+    if [[ ! -x "$_go_validator" ]]; then
+        [[ "$quiet_mode" != "true" ]] && echo "ERROR: Go validator not found at $_go_validator" >&2
         return $VALIDATE_ENV_ERROR
     fi
 
     local validation_result=$VALIDATE_OK
+    local go_exit=0
 
-    # Run structure validation (quiet mode suppresses all output)
     if [[ "$quiet_mode" == "true" ]]; then
-        validate_structure "false" >/dev/null 2>&1 || validation_result=$VALIDATE_STRUCTURE_ERROR
+        "$_go_validator" --json >/dev/null 2>&1 || go_exit=$?
     elif [[ "$output_json" == "true" ]]; then
-        validate_structure "true" || validation_result=$VALIDATE_STRUCTURE_ERROR
+        "$_go_validator" --json || go_exit=$?
     else
-        validate_structure "false" || validation_result=$VALIDATE_STRUCTURE_ERROR
+        # Human-readable: render Go validator JSON as text
+        local _val_json
+        _val_json=$("$_go_validator" --json 2>/dev/null) || go_exit=$?
+        if [[ -n "$_val_json" ]] && command -v jq >/dev/null 2>&1; then
+            local _val_status
+            _val_status=$(echo "$_val_json" | jq -r '.status' 2>/dev/null)
+            echo "Structural Validation: $(echo "$_val_status" | tr '[:lower:]' '[:upper:]')"
+            echo "$_val_json" | jq -r '.findings[] | "  [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null || true
+        elif [[ -n "$_val_json" ]]; then
+            echo "$_val_json"
+        fi
     fi
 
-    # Run invariant validation (anchor structure, order, safety)
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_invariant_validator.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_invariant_validator.sh" || true
-        local inv_exit=0
-        if [[ "$quiet_mode" == "true" ]]; then
-            nftban_validate_invariants >/dev/null 2>&1 || inv_exit=$?
-        elif [[ "$output_json" == "true" ]]; then
-            nftban_validate_invariants --json || inv_exit=$?
-        else
-            nftban_validate_invariants || inv_exit=$?
-        fi
-        if [[ $inv_exit -ge 2 && $validation_result -eq $VALIDATE_OK ]]; then
-            validation_result=$VALIDATE_STRUCTURE_ERROR
-        fi
+    if [[ $go_exit -ne 0 ]]; then
+        validation_result=$VALIDATE_STRUCTURE_ERROR
     fi
 
     # If strict mode, run additional checks

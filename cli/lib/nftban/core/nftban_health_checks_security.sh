@@ -1202,49 +1202,30 @@ nftban_health_check_anchor_integrity() {
     local status=$HEALTH_OK
     local issues=()
 
-    # Delegate to the invariant validator (single source of truth for anchor checks)
-    local inv_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_invariant_validator.sh"
-    if [[ -f "$inv_lib" ]]; then
-        # shellcheck source=/dev/null
-        source "$inv_lib" 2>/dev/null || true
-        if type nftban_validate_invariants &>/dev/null; then
-            nftban_validate_invariants >/dev/null 2>&1 || true
-
-            # Extract all invariant results (v1.64.0: expanded from 8 to all 19)
-            local id entry inv_status
-            for id in INV-S-001 INV-S-002 INV-S-003 INV-S-004 INV-S-005 INV-S-006 INV-S-007 INV-S-008 \
-                      INV-O-001 INV-O-002 INV-O-003 INV-O-004 INV-O-005 INV-O-006 INV-O-007 INV-O-008 \
-                      INV-F-001 INV-F-002 INV-F-003; do
-                entry="${NFTBAN_INVARIANT_RESULTS[$id]:-}"
-                [[ -z "$entry" ]] && continue
-                inv_status="${entry%%|*}"
-                if [[ "$inv_status" == "ERROR" ]]; then
-                    issues+=("${id}: ${entry#*|}")
-                    status=$HEALTH_ERROR
-                elif [[ "$inv_status" == "WARNING" && "$status" -lt "$HEALTH_WARNING" ]]; then
-                    issues+=("${id}: ${entry#*|}")
-                    status=$HEALTH_WARNING
-                fi
-            done
+    # v1.84 A2-4: Use Go validator for anchor/structural integrity checks.
+    # Replaces shell invariant validator with Go validator findings.
+    local _go_validator="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
+    if [[ -x "$_go_validator" ]] && command -v jq >/dev/null 2>&1; then
+        local _val_json
+        _val_json=$("$_go_validator" --json 2>/dev/null || true)
+        if [[ -n "$_val_json" ]]; then
+            local _val_status
+            _val_status=$(echo "$_val_json" | jq -r '.status' 2>/dev/null)
+            if [[ "$_val_status" == "degraded" || "$_val_status" == "down" ]]; then
+                status=$HEALTH_ERROR
+                # Extract structural findings
+                local _finding
+                while IFS= read -r _finding; do
+                    [[ -n "$_finding" ]] && issues+=("$_finding")
+                done < <(echo "$_val_json" | jq -r '.findings[] | "\(.code): \(.message)"' 2>/dev/null)
+            fi
+        else
+            issues+=("Go validator returned empty output")
+            status=$HEALTH_ERROR
         fi
     else
-        # Fallback: basic anchor count check if invariant validator not available
-        local expected_anchors=(HYGIENE TRUSTED BAN ESTABLISHED DETECT SERVICE FINAL)
-        local family chain_output anchor count
-        for family in ip ip6; do
-            chain_output=$(nft -a list chain ${family} nftban input 2>/dev/null) || {
-                issues+=("Cannot list ${family} nftban input chain")
-                status=$HEALTH_ERROR
-                continue
-            }
-            for anchor in "${expected_anchors[@]}"; do
-                count=$(echo "$chain_output" | grep -c "NFTBAN_ANCHOR:ANCHOR_${anchor}" || true)
-                if [[ "$count" -ne 1 ]]; then
-                    issues+=("ANCHOR_${anchor} in ${family}: count=${count} (expected 1)")
-                    status=$HEALTH_ERROR
-                fi
-            done
-        done
+        issues+=("Go validator not found — anchor integrity check unavailable")
+        status=$HEALTH_WARNING
     fi
 
     if [[ ${#issues[@]} -gt 0 ]]; then
