@@ -22,6 +22,7 @@
 package validator
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -100,9 +101,33 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 		h.Structural = StructuralMissing
 	}
 
-	// Runtime axis: daemon required for BotGuard
+	// Runtime axis: daemon required for BotGuard.
+	// A1-2: Refine with journal evidence — daemon running is necessary but
+	// not sufficient. Check journal for BotGuard module registration.
+	// If daemon is running but no BotGuard startup evidence in journal,
+	// runtime is still RUNNING (daemon is up), but we emit an informational
+	// finding. This does NOT downgrade runtime — it adds visibility.
 	if svcState.Nftband == RuntimeRunning {
 		h.Runtime = RuntimeRunning
+		// Check for BotGuard module registration in recent journal
+		evidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"module_start: botguard", "[botguard] loaded"},
+			Since:    15 * time.Minute,
+		})
+		if evidence.ErrKind == ErrNone && !evidence.Found {
+			// Daemon running but no recent BotGuard startup evidence.
+			// This may indicate the module hasn't restarted recently (normal)
+			// or the module failed to register (abnormal). Not a downgrade.
+			// Only emit finding if structural objects exist (module should be active).
+			if h.Structural == StructuralPresent {
+				moduleFindings = append(moduleFindings, Finding{
+					Code:      CodeBotGuardNoEvidence,
+					Severity:  SeverityInfo,
+					Component: "module",
+					Message:   "no recent BotGuard runtime evidence in journal (last 15m)",
+				})
+			}
+		}
 	} else {
 		h.Runtime = svcState.Nftband
 	}
@@ -253,16 +278,34 @@ func evaluateLoginMon(svcState ServiceState) *ModuleHealth {
 	// Base blacklist sets are always present (required by base schema).
 	h.Structural = StructuralPresent
 
-	// Runtime: daemon required
+	// Runtime: daemon required.
+	// A1-3: Refine with journal evidence — check for module registration
+	// AND source binding. LoginMon runtime is meaningful only when sources
+	// are actually bound (path resolution succeeded).
 	if svcState.Nftband == RuntimeRunning {
 		h.Runtime = RuntimeRunning
+		// Check for LoginMon module start + source binding
+		evidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"module_start: loginmon", "resolved_by="},
+			Since:    15 * time.Minute,
+		})
+		if evidence.ErrKind == ErrNone && !evidence.Found {
+			// Daemon running but no recent LoginMon startup/binding evidence.
+			moduleFindings = append(moduleFindings, Finding{
+				Code:      CodeLoginMonNoEvidence,
+				Severity:  SeverityInfo,
+				Component: "module",
+				Message:   "no recent LoginMon runtime evidence in journal (last 15m)",
+			})
+		}
 	} else {
 		h.Runtime = svcState.Nftband
 	}
 
-	// Effective: would need journal query for login_failed/banned events.
-	// The validator is a point-in-time snapshot tool — journal queries are
-	// outside its current scope. Default to idle.
+	// Effective: LoginMon enforcement is through shared blacklist sets.
+	// Journal-based evidence (login_failed/banned events) could prove
+	// activity but counter attribution is not possible (shared set).
+	// Default to idle from validator perspective.
 	h.Effective = EffectiveIdle
 
 	return h

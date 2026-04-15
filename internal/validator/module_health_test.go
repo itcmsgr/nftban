@@ -18,6 +18,7 @@
 package validator
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,6 +89,9 @@ func TestBotGuardEnabledPresentIdle(t *testing.T) {
 	old := countSetElementsFunc
 	countSetElementsFunc = func(_, _ string) int { return 0 }
 	defer func() { countSetElementsFunc = old }()
+	// Mock journal: BotGuard startup evidence present
+	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
+	defer SetJournalReader(SystemdJournalReader{})
 
 	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
@@ -122,6 +126,8 @@ func TestBotGuardEnabledEnforcing(t *testing.T) {
 		return 0
 	}
 	defer func() { countSetElementsFunc = old }()
+	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
+	defer SetJournalReader(SystemdJournalReader{})
 
 	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
@@ -147,6 +153,8 @@ func TestBotGuardEnabledObserving(t *testing.T) {
 		return 0
 	}
 	defer func() { countSetElementsFunc = old }()
+	SetJournalReader(mockJournalReader{lines: []string{"module_start: botguard"}})
+	defer SetJournalReader(SystemdJournalReader{})
 
 	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
@@ -189,6 +197,128 @@ func TestBotGuardEnabledDaemonStopped(t *testing.T) {
 
 	if h.Runtime != RuntimeStopped {
 		t.Errorf("runtime = %s, want STOPPED", h.Runtime)
+	}
+}
+
+// =============================================================================
+// A1-2: BotGuard journal evidence tests
+// =============================================================================
+
+func TestBotGuardJournalEvidencePresent(t *testing.T) {
+	// Case 1: enabled host with real startup evidence → no finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
+	})
+	defer cleanup()
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 0 }
+	defer func() { countSetElementsFunc = old }()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"module_start: botguard",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil // reset
+	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
+	doc := buildDoc([]string{"http_bot_guard"}, bgSets)
+	evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	for _, f := range moduleFindings {
+		if f.Code == CodeBotGuardNoEvidence {
+			t.Error("should NOT emit VAL-BOTGUARD-001 when journal evidence is present")
+		}
+	}
+}
+
+func TestBotGuardJournalNoEvidence(t *testing.T) {
+	// Case 2: enabled + running + structural present but no journal evidence → info finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
+	})
+	defer cleanup()
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 0 }
+	defer func() { countSetElementsFunc = old }()
+	// Journal has output but no BotGuard lines
+	SetJournalReader(mockJournalReader{lines: []string{
+		"some other daemon output",
+		"loginmon started",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
+	doc := buildDoc([]string{"http_bot_guard"}, bgSets)
+	evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	found := false
+	for _, f := range moduleFindings {
+		if f.Code == CodeBotGuardNoEvidence {
+			found = true
+			if f.Severity != SeverityInfo {
+				t.Errorf("expected info severity, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected VAL-BOTGUARD-001 when no journal evidence")
+	}
+}
+
+func TestBotGuardJournalUnavailable(t *testing.T) {
+	// Case 3: journal unavailable → no finding (evidence unavailable ≠ failure)
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf.local": `HTTP_BOTGUARD_ENABLED="true"`,
+	})
+	defer cleanup()
+	old := countSetElementsFunc
+	countSetElementsFunc = func(_, _ string) int { return 0 }
+	defer func() { countSetElementsFunc = old }()
+	// Journal exec fails
+	SetJournalReader(mockJournalReader{errKind: ErrExec, err: errors.New("exec failed")})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	bgSets := []string{"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+		"http_bot_grey", "http_bot_ban", "http_bot_emergency"}
+	doc := buildDoc([]string{"http_bot_guard"}, bgSets)
+	h := evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	// Runtime must still be RUNNING (daemon is up, journal failure ≠ daemon failure)
+	if h.Runtime != RuntimeRunning {
+		t.Errorf("runtime = %s, want RUNNING even when journal unavailable", h.Runtime)
+	}
+	// No VAL-BOTGUARD-001 because error path skips the finding
+	for _, f := range moduleFindings {
+		if f.Code == CodeBotGuardNoEvidence {
+			t.Error("should NOT emit VAL-BOTGUARD-001 on journal error (evidence unavailable ≠ no evidence)")
+		}
+	}
+}
+
+func TestBotGuardDisabledNoJournalQuery(t *testing.T) {
+	// Case 4: disabled → no journal query, no finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/botguard/main.conf": `HTTP_BOTGUARD_ENABLED="false"`,
+	})
+	defer cleanup()
+	// This should never be reached — but if it is, fail loudly
+	SetJournalReader(mockJournalReader{errKind: ErrExec, err: errors.New("should not be called")})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	doc := buildDoc(nil, nil)
+	h := evaluateBotGuard(doc, ServiceState{Nftband: RuntimeRunning})
+
+	if h.Config != ConfigDisabled {
+		t.Errorf("config = %s, want disabled", h.Config)
+	}
+	for _, f := range moduleFindings {
+		if f.Code == CodeBotGuardNoEvidence {
+			t.Error("disabled module must not emit journal evidence findings")
+		}
 	}
 }
 
@@ -374,6 +504,8 @@ func TestLoginMonEnabledRunning(t *testing.T) {
 		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
 	})
 	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{"module_start: loginmon"}})
+	defer SetJournalReader(SystemdJournalReader{})
 
 	h := evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
 
@@ -395,6 +527,81 @@ func TestLoginMonEnabledDaemonStopped(t *testing.T) {
 
 	if h.Runtime != RuntimeStopped {
 		t.Errorf("runtime = %s, want STOPPED", h.Runtime)
+	}
+}
+
+// =============================================================================
+// A1-3: LoginMon journal evidence tests
+// =============================================================================
+
+func TestLoginMonJournalEvidencePresent(t *testing.T) {
+	// Source binding evidence present → no finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"[LOGINMON] ssh: /var/log/secure resolved_by=distroconf",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 when binding evidence present")
+		}
+	}
+}
+
+func TestLoginMonJournalNoEvidence(t *testing.T) {
+	// Running but no LoginMon evidence → info finding
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{lines: []string{
+		"some unrelated daemon output",
+	}})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	found := false
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			found = true
+			if f.Severity != SeverityInfo {
+				t.Errorf("expected info severity, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected VAL-LOGINMON-001 when no journal evidence")
+	}
+}
+
+func TestLoginMonJournalUnavailable(t *testing.T) {
+	// Journal error → no finding, runtime still RUNNING
+	cleanup := setupTestConfig(t, map[string]string{
+		"conf.d/login_alert.conf.local": `NFTBAN_LOGIN_ALERT_ENABLED="true"`,
+	})
+	defer cleanup()
+	SetJournalReader(mockJournalReader{errKind: ErrTimeout, err: errors.New("timeout")})
+	defer SetJournalReader(SystemdJournalReader{})
+
+	moduleFindings = nil
+	h := evaluateLoginMon(ServiceState{Nftband: RuntimeRunning})
+
+	if h.Runtime != RuntimeRunning {
+		t.Errorf("runtime = %s, want RUNNING on journal timeout", h.Runtime)
+	}
+	for _, f := range moduleFindings {
+		if f.Code == CodeLoginMonNoEvidence {
+			t.Error("should NOT emit VAL-LOGINMON-001 on journal error")
+		}
 	}
 }
 
