@@ -673,7 +673,7 @@ func TestBlacklistManualPrimed(t *testing.T) {
 		"conf.d/geoban/main.conf": `GEOBAN_ENABLED="false"`,
 	})
 	defer cleanup()
-	// Mock: manual set has 5 entries → primed
+	// Mock: manual set has 5 entries per family → 10 total (IPv4+IPv6)
 	old := countSetElementsFunc
 	countSetElementsFunc = func(_, _ string) int { return 5 }
 	defer func() { countSetElementsFunc = old }()
@@ -683,10 +683,10 @@ func TestBlacklistManualPrimed(t *testing.T) {
 	bh := evaluateBlacklist(doc)
 
 	if bh.Manual.State != "primed" {
-		t.Errorf("manual state = %s, want primed (5 elements)", bh.Manual.State)
+		t.Errorf("manual state = %s, want primed", bh.Manual.State)
 	}
-	if bh.Manual.Entries != 5 {
-		t.Errorf("manual entries = %d, want 5", bh.Manual.Entries)
+	if bh.Manual.Entries != 10 {
+		t.Errorf("manual entries = %d, want 10 (5 ipv4 + 5 ipv6)", bh.Manual.Entries)
 	}
 }
 
@@ -715,10 +715,11 @@ func TestBlacklistManualEnforcing(t *testing.T) {
 	if bh.Manual.State != "enforcing" {
 		t.Errorf("manual state = %s, want enforcing (elements > 0, drops > 0)", bh.Manual.State)
 	}
-	if bh.Manual.Entries != 3 {
-		t.Errorf("manual entries = %d, want 3", bh.Manual.Entries)
+	if bh.Manual.Entries != 6 {
+		t.Errorf("manual entries = %d, want 6 (3 ipv4 + 3 ipv6)", bh.Manual.Entries)
 	}
 	if bh.Manual.Drops != 42 {
+		// Counter is only in the test fixture for ip family; ip6 counter = 0
 		t.Errorf("manual drops = %d, want 42", bh.Manual.Drops)
 	}
 }

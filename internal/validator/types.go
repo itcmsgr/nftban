@@ -63,6 +63,49 @@ type ValidationResult struct {
 const SchemaVersionCurrent = "1.83.0"
 
 // =============================================================================
+// v1.85: Module Classification
+// =============================================================================
+// Every config-present module MUST be classified. No unclassified modules allowed.
+// CORE modules appear in evaluator + JSON + tests.
+// Non-CORE modules are explicitly excluded from validator scope.
+
+// ModuleClass defines a module's role in the system.
+type ModuleClass string
+
+const (
+	ModuleCore     ModuleClass = "core"     // Enforces in kernel, evaluated by validator
+	ModuleAdvisory ModuleClass = "advisory" // Non-blocking, no kernel enforcement
+	ModuleMonitor  ModuleClass = "monitor"  // Observes but does not enforce
+	ModuleExternal ModuleClass = "external" // Third-party integration, deferred
+)
+
+// ModuleClassification maps every config-present module to its class.
+// This is the completeness contract: if a module has a config directory,
+// it MUST appear here. CI gate G8-2 enforces this.
+var ModuleClassification = map[string]ModuleClass{
+	// CORE — evaluated by validator, 4-axis health, in JSON output
+	"ddos":     ModuleCore,
+	"botguard": ModuleCore, // includes botscan (L7 batch sub-function)
+	"portscan": ModuleCore,
+	"loginmon": ModuleCore, // config dir: login, login_alert
+	"geoban":   ModuleCore, // sub-state of blacklist composite
+
+	// ADVISORY — non-blocking, no kernel enforcement
+	"tunnel": ModuleAdvisory, // DNS tunnel suspicion (scoring only)
+
+	// MONITORING — observes, does not enforce
+	"rbl": ModuleMonitor, // RBL/DNSBL monitoring
+
+	// EXTERNAL — third-party integration, deferred from validator scope
+	"suricata": ModuleExternal,
+
+	// Sub-functions (classified under parent, not separate modules)
+	"botscan": ModuleCore, // sub-function of BotGuard (L7 batch scanning)
+	"geoip":   ModuleCore, // infrastructure for geoban (DB management)
+	"panels":  ModuleCore, // panel detection (infrastructure, not a module)
+}
+
+// =============================================================================
 // M81-4: Per-module health state types
 // =============================================================================
 // Each module is evaluated on: config, structural, runtime, effective axes.
@@ -186,6 +229,11 @@ type SetCheck struct {
 }
 
 // ModuleStatus holds runtime truth about protection modules.
+// Deprecated: v1.85 — use ModuleHealthMap (M81-4) as the canonical module
+// inventory. ModuleStatus predates M81-4, covers a different module set,
+// and creates a dual-inventory ambiguity. Whitelist and ServiceAdmission
+// are structural concerns checked in per-family validation, not health modules.
+// This type will be removed in v1.86. Do not add new fields.
 type ModuleStatus struct {
 	DDoS             ModuleInfo `json:"ddos"`
 	Portscan         ModuleInfo `json:"portscan"`
