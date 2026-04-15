@@ -1945,15 +1945,18 @@ run_runtime_tests() {
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
-    # Check both families have FINAL anchor
+    # Check both families have FINAL anchor via direct kernel query.
+    # Note: validator --json uses HealthOutput schema which does not include
+    # per-family anchor details. Check kernel directly.
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
-    local final_count
-    final_count=$(/usr/lib/nftban/bin/nftban-validate --json 2>/dev/null | jq '[.families[].anchors.final_present] | map(select(. == true)) | length' 2>/dev/null || echo "0")
-    if [[ "$final_count" == "2" ]]; then
+    local _final_ipv4=false _final_ipv6=false
+    nft list chain ip nftban input 2>/dev/null | grep -q "ANCHOR_FINAL" && _final_ipv4=true
+    nft list chain ip6 nftban input 2>/dev/null | grep -q "ANCHOR_FINAL" && _final_ipv6=true
+    if [[ "$_final_ipv4" == "true" && "$_final_ipv6" == "true" ]]; then
         log_pass "kernel truth — FINAL anchor present on both families"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_fail "kernel truth — FINAL anchor missing on $((2 - final_count)) family/families"
+        log_fail "kernel truth — FINAL anchor missing (ipv4=$_final_ipv4 ipv6=$_final_ipv6)"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
