@@ -339,8 +339,12 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 	// elements > 0 + drops > 0 = ENFORCING (traffic is being blocked)
 	// elements > 0 + drops = 0 = PRIMED (rules loaded, no matches yet)
 	// elements = 0 = IDLE
+	// v1.85 GAP-185-9: Count both IPv4 and IPv6 manual blacklist elements.
 	manualElements := countSetElements("ip", "blacklist_manual_ipv4")
+	manualElements += countSetElements("ip6", "blacklist_manual_ipv6")
+	// Counter: check both families
 	manualDrops := doc.GetCounter("ip", "nftban", "input_blacklist_manual_drop")
+	manualDrops += doc.GetCounter("ip6", "nftban", "input_blacklist_manual_drop")
 	if manualElements > 0 && manualDrops > 0 {
 		bh.Manual = BlacklistSubHealth{State: "enforcing", Entries: manualElements, Drops: manualDrops}
 	} else if manualElements > 0 {
