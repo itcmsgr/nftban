@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.87.1] - 2026-04-15
+
+**CLI runtime bug fixes + host-side smoke gate.**
+
+### Fixed
+
+- **`nftban status` bash error**: `_unit_is_active()` crashed with "bad
+  array subscript" when called with empty unit name. Dynamic variables
+  like `$prometheus_service` expanded to empty on hosts without that
+  component. Fix: return inactive for empty input, no bash error.
+- **Smoke test FINAL anchor**: was checking `.families[].anchors.final_present`
+  in validator JSON, but `HealthOutput` schema does not include families.
+  Fix: check kernel directly via `nft list chain` + grep `ANCHOR_FINAL`.
+
+### Added
+
+- **`test_cli_runtime.sh`**: host-side CLI runtime smoke gate. Runs 27
+  primary CLI commands and catches bash runtime errors (bad array subscript,
+  unbound variable, syntax error). Does not check exit code semantics.
+  Verified: 27/27 pass on AlmaLinux 9 + Ubuntu.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #423 | fix(cli): runtime bug fixes + CLI smoke gate |
+
+---
+
 ## [1.87.0] - 2026-04-15
 
 **Metrics Phase 1 — kernel evidence & correlation foundation.**
