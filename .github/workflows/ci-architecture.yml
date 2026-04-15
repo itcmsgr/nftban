@@ -358,3 +358,33 @@ jobs:
       # G8-4 is a runtime smoke test — skips gracefully in CI (no validator binary)
       - name: Module smoke test (G8-4)
         run: bash cli/lib/nftban/tests/test_module_smoke.sh
+
+      # =====================================================================
+      # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
+      # =====================================================================
+      # These greps prevent reintroduction of deleted legacy constructs.
+      # If any match, the contract has been violated and CI must fail.
+
+      - name: No ModuleTruth reintroduction (B86-1 guard)
+        run: |
+          echo "Checking for legacy ModuleTruth references..."
+          if grep -rn "ModuleTruth\|deriveModuleTruth\|ModuleStatus\|ModuleInfo\|module_truth" \
+              internal/validator/*.go \
+              --include="*.go" \
+              | grep -v "B86-1.*deleted\|B86-1.*removed\|_test.go.*deleted"; then
+            echo "::error::Legacy ModuleTruth reference found — B86-1 contract violated"
+            exit 1
+          fi
+          echo "OK: no legacy ModuleTruth references"
+
+      - name: No legacy fallback reintroduction (M84-2 guard)
+        run: |
+          echo "Checking for legacy fallback references..."
+          if grep -rn "protection_state_legacy\|FORCE_LEGACY_STATE\|nftban_invariant_validator" \
+              cli/lib/nftban/cli/*.sh \
+              internal/validator/*.go \
+              | grep -v "deleted\|removed\|B86\|M84\|v1.84\|v1.86"; then
+            echo "::error::Legacy fallback reference found — M84-2 contract violated"
+            exit 1
+          fi
+          echo "OK: no legacy fallback references"
