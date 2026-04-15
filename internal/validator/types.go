@@ -62,46 +62,57 @@ type ValidationResult struct {
 const SchemaVersionCurrent = "1.83.0"
 
 // =============================================================================
-// v1.85: Module Classification
+// =============================================================================
+// v1.86: Module Classification (B86-2 clarity)
 // =============================================================================
 // Every config-present module MUST be classified. No unclassified modules allowed.
-// CORE modules appear in evaluator + JSON + tests.
-// Non-CORE modules are explicitly excluded from validator scope.
+//
+// Classification taxonomy:
+//   CORE_MODULE  — user-visible protection module with its own evaluator + JSON + tests
+//   CORE_INFRA   — required internal support; no dedicated evaluator, served by parent
+//   ADVISORY     — non-blocking, no kernel enforcement, no validator claim
+//   MONITOR      — runtime observation only, no direct protection claim
+//   EXTERNAL     — third-party integration, outside validator scope
 
 // ModuleClass defines a module's role in the system.
 type ModuleClass string
 
 const (
-	ModuleCore     ModuleClass = "core"     // Enforces in kernel, evaluated by validator
-	ModuleAdvisory ModuleClass = "advisory" // Non-blocking, no kernel enforcement
-	ModuleMonitor  ModuleClass = "monitor"  // Observes but does not enforce
-	ModuleExternal ModuleClass = "external" // Third-party integration, deferred
+	ModuleCoreModule ModuleClass = "core_module" // Protection module: evaluator + JSON + tests required
+	ModuleCoreInfra  ModuleClass = "core_infra"  // Internal support: served by parent evaluator
+	ModuleAdvisory   ModuleClass = "advisory"    // Non-blocking, no kernel enforcement
+	ModuleMonitor    ModuleClass = "monitor"     // Observes but does not enforce
+	ModuleExternal   ModuleClass = "external"    // Third-party integration, deferred
 )
 
 // ModuleClassification maps every config-present module to its class.
 // This is the completeness contract: if a module has a config directory,
 // it MUST appear here. CI gate G8-2 enforces this.
+//
+// CORE_MODULE entries MUST have: evaluator + ModuleHealthMap field + JSON + tests.
+// CORE_INFRA entries are served by a parent module's evaluator.
+// ADVISORY/MONITOR/EXTERNAL entries MUST NOT appear in evaluator or JSON.
 var ModuleClassification = map[string]ModuleClass{
-	// CORE — evaluated by validator, 4-axis health, in JSON output
-	"ddos":     ModuleCore,
-	"botguard": ModuleCore, // includes botscan (L7 batch sub-function)
-	"portscan": ModuleCore,
-	"loginmon": ModuleCore, // config dir: login, login_alert
-	"geoban":   ModuleCore, // sub-state of blacklist composite
+	// CORE_MODULE — protection modules with dedicated evaluators
+	"ddos":     ModuleCoreModule, // evaluateDDoS()
+	"botguard": ModuleCoreModule, // evaluateBotGuard()
+	"portscan": ModuleCoreModule, // evaluatePortscan()
+	"loginmon": ModuleCoreModule, // evaluateLoginMon() (config dir: login, login_alert)
+	"geoban":   ModuleCoreModule, // sub-state of evaluateBlacklist()
+
+	// CORE_INFRA — internal support, served by parent evaluators
+	"botscan": ModuleCoreInfra, // BotGuard sub-function (L7 batch scanning)
+	"geoip":   ModuleCoreInfra, // GeoIP database management (serves geoban)
+	"panels":  ModuleCoreInfra, // Panel detection (installer infrastructure)
 
 	// ADVISORY — non-blocking, no kernel enforcement
 	"tunnel": ModuleAdvisory, // DNS tunnel suspicion (scoring only)
 
-	// MONITORING — observes, does not enforce
+	// MONITOR — observes, does not enforce
 	"rbl": ModuleMonitor, // RBL/DNSBL monitoring
 
 	// EXTERNAL — third-party integration, deferred from validator scope
 	"suricata": ModuleExternal,
-
-	// Sub-functions (classified under parent, not separate modules)
-	"botscan": ModuleCore, // sub-function of BotGuard (L7 batch scanning)
-	"geoip":   ModuleCore, // infrastructure for geoban (DB management)
-	"panels":  ModuleCore, // panel detection (infrastructure, not a module)
 }
 
 // =============================================================================

@@ -115,8 +115,8 @@ func TestNoUnclassifiedModules(t *testing.T) {
 
 func TestClassificationValues(t *testing.T) {
 	validClasses := map[ModuleClass]bool{
-		ModuleCore: true, ModuleAdvisory: true,
-		ModuleMonitor: true, ModuleExternal: true,
+		ModuleCoreModule: true, ModuleCoreInfra: true,
+		ModuleAdvisory: true, ModuleMonitor: true, ModuleExternal: true,
 	}
 	for mod, class := range ModuleClassification {
 		if !validClasses[class] {
@@ -126,30 +126,20 @@ func TestClassificationValues(t *testing.T) {
 }
 
 func TestCoreModulesHaveEvaluators(t *testing.T) {
-	// CORE modules that have dedicated evaluator functions.
-	// This verifies at compile time that the evaluator functions exist.
-	// Note: botscan, geoip, geoban, panels are sub-functions classified
-	// as CORE but served by parent evaluators (BotGuard, Blacklist).
+	// v1.86 B86-2: Only CORE_MODULE entries require dedicated evaluators.
+	// CORE_INFRA entries are served by parent evaluators.
 	coreWithEvaluators := map[string]bool{
 		"ddos": true, "botguard": true, "portscan": true,
-		"loginmon": true,
-		// Blacklist is composite (evaluateBlacklist covers geoban sub-state)
+		"loginmon": true, "geoban": true,
+		// geoban is served by evaluateBlacklist() as a sub-state
 	}
 
 	for mod, class := range ModuleClassification {
-		if class != ModuleCore {
-			continue
-		}
-		// Sub-functions served by parent evaluators
-		if mod == "botscan" || mod == "geoip" || mod == "geoban" || mod == "panels" {
-			continue
-		}
-		if mod == "loginmon" {
-			// loginmon has evaluateLoginMon()
-			continue
+		if class != ModuleCoreModule {
+			continue // CORE_INFRA, ADVISORY, MONITOR, EXTERNAL skip
 		}
 		if !coreWithEvaluators[mod] {
-			t.Errorf("G8-1: CORE module %q has no known evaluator function", mod)
+			t.Errorf("G8-1: CORE_MODULE %q has no known evaluator function", mod)
 		}
 	}
 }
