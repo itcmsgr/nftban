@@ -111,17 +111,21 @@ func CollectRuleCounters() {
 	ruleCounterMu.Lock()
 	defer ruleCounterMu.Unlock()
 
-	// Note: context.Background() is intentional here — this is the legacy
-	// sampler-driven Prometheus path, not the new evidence CLI path.
-	// Timeout is bounded per-family (2s) inside collectNamedCountersStructured.
+	// v1.87.2: Single global nft call for named counters.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	output, err := nftListAllCountersJSON(ctx)
+
 	for _, family := range []string{"ip", "ip6"} {
-		counters, err := collectNamedCountersStructured(context.Background(), family)
-		if err == nil && len(counters) > 0 {
-			updatePrometheusFromNamedCounters(family, counters)
-		} else {
-			// Fallback to anonymous counter extraction (pre-v1.41.0 schemas)
-			collectFamilyCounters(family)
+		if err == nil {
+			counters, parseErr := parseNamedCountersJSONFiltered(output, family)
+			if parseErr == nil && len(counters) > 0 {
+				updatePrometheusFromNamedCounters(family, counters)
+				continue
+			}
 		}
+		// Fallback to anonymous counter extraction (pre-v1.41.0 schemas)
+		collectFamilyCounters(family)
 	}
 }
 
@@ -142,55 +146,81 @@ func CollectNamedCounters(ctx context.Context) (*NamedCountersResult, error) {
 		Counters:    make(map[string]CounterValue),
 	}
 
-	var lastErr error
-	familiesSucceeded := 0
+	// v1.87.2: Single global nft call, filter both families in code.
+	// The per-family form `nft list counters <family> <table>` is broken
+	// on fleet nftables versions (v1.0.2-v1.1.1).
+	ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	output, err := nftListAllCountersJSON(ctx2)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, family := range []string{"ip", "ip6"} {
-		counters, err := collectNamedCountersStructured(ctx, family)
+		counters, err := parseNamedCountersJSONFiltered(output, family)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, err
 		}
-		familiesSucceeded++
 		for name, val := range counters {
 			key := family + ":" + name
 			result.Counters[key] = val
 		}
 	}
 
-	// Both families failed → return error (contract: non-nil error = collection failed)
-	// At least one succeeded → return result, nil (may be partial)
-	if familiesSucceeded == 0 && lastErr != nil {
-		return nil, lastErr
-	}
-
 	return result, nil
 }
 
-// collectNamedCountersStructured executes nft and parses the result.
-// Does NOT update Prometheus — caller decides.
+// collectNamedCountersStructured fetches global counters and filters by family.
+// v1.87.2: Uses global `nft -j list counters` because the filtered form
+// `nft list counters <family> <table>` is broken on nftables v1.0.x-v1.1.x.
 func collectNamedCountersStructured(ctx context.Context, family string) (map[string]CounterValue, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	output, err := nftListCounters(ctx, family)
+	output, err := nftListAllCountersJSON(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return parseNamedCountersJSON(output)
+	return parseNamedCountersJSONFiltered(output, family)
 }
 
-// nftListCounters runs nft -j list counters for a specific family.
-func nftListCounters(ctx context.Context, family string) ([]byte, error) {
-	switch family {
-	case "ip":
-		return exec.CommandContext(ctx, "nft", "-j", "list", "counters", "ip", "nftban").Output() // #nosec G204
-	case "ip6":
-		return exec.CommandContext(ctx, "nft", "-j", "list", "counters", "ip6", "nftban").Output() // #nosec G204
-	default:
-		return nil, nil
+// parseNamedCountersJSONFiltered parses global counter JSON and filters
+// by family and table=="nftban". This replaces the broken per-family query.
+func parseNamedCountersJSONFiltered(data []byte, family string) (map[string]CounterValue, error) {
+	var nft nftJSON
+	if err := json.Unmarshal(data, &nft); err != nil {
+		return nil, err
 	}
+
+	counters := make(map[string]CounterValue)
+	for _, raw := range nft.NFTables {
+		var wrapper nftNamedCounterWrapper
+		if err := json.Unmarshal(raw, &wrapper); err != nil || wrapper.Counter == nil {
+			continue
+		}
+
+		c := wrapper.Counter
+		if c.Table != "nftban" || c.Family != family || c.Name == "" {
+			continue
+		}
+
+		counters[c.Name] = CounterValue{
+			Packets: int64(c.Packets),
+			Bytes:   int64(c.Bytes),
+		}
+	}
+
+	return counters, nil
+}
+
+// nftListAllCountersJSON runs nft -j list counters (global, no family/table filter).
+// v1.87.2: The filtered form `nft list counters <family> <table>` is NOT supported
+// on fleet nftables versions (v1.0.2-v1.1.1). Global listing works everywhere.
+// Filtering by family and table happens in parseNamedCountersJSON().
+func nftListAllCountersJSON(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "nft", "-j", "list", "counters").Output() // #nosec G204
 }
 
 // nftListTable runs nft -j list table for a specific family.
