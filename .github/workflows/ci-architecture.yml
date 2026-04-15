@@ -338,3 +338,15 @@ jobs:
       # G18: Rebuild safety simulation
       - name: Test rebuild safety patterns (G18)
         run: bash scripts/test-rebuild-safety.sh
+
+      # =====================================================================
+      # v1.84 M84-4: Contract Freeze Gates
+      # =====================================================================
+
+      # G1-1: Vocabulary enforcement — no banned terms in CLI output
+      - name: Banned phrase scan (G1-1)
+        run: bash cli/lib/nftban/tests/test_banned_phrases.sh
+
+      # G2-3: Schema version guard — Go source matches CLI expectations
+      - name: Schema version guard (G2-3)
+        run: bash cli/lib/nftban/tests/test_schema_version_guard.sh
