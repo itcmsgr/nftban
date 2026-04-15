@@ -184,7 +184,9 @@ _nftban_prefetch_unit_states() {
 # Lookup: returns 0 if unit is active, 1 otherwise.
 # Drop-in replacement for: systemctl is-active <unit> >/dev/null 2>&1
 _unit_is_active() {
-    local unit="$1"
+    local unit="${1:-}"
+    # Empty unit name = inactive (not a bash error)
+    [[ -z "$unit" ]] && return 1
     # Prefetch on first call (lazy init)
     [[ "$_UNIT_STATE_LOADED" != "true" ]] && _nftban_prefetch_unit_states
     [[ "${_UNIT_STATE[$unit]:-inactive}" == "active" ]]
