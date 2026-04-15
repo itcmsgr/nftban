@@ -11,6 +11,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.86.0] - 2026-04-15
+
+**Contract finalization — single truth model, no ambiguity.**
+
+### Removed
+
+- **ModuleTruth completely deleted** (B86-1): ModuleStatus type,
+  ModuleInfo type, deriveModuleTruth(), boolToStatus(), enabledStr(),
+  module_truth JSON field. Zero legacy references remain. ModuleHealthMap
+  is the only canonical module inventory. -130 lines.
+- **Deprecated `.state` JSON key** (B86-3): Only `.status` remains in
+  `nftban status --json`. Was scheduled for removal since v1.82.
+
+### Changed
+
+- **Classification clarity** (B86-2): Split CORE into CORE_MODULE
+  (protection modules with dedicated evaluators) and CORE_INFRA
+  (internal support served by parent evaluators). 5 CORE_MODULE +
+  3 CORE_INFRA. Eliminates ambiguity about what needs an evaluator.
+- **PrintSummary()** (B86-1): Now renders 4-axis module health from
+  ModuleHealthMap instead of the deleted ModuleTruth.
+- **"OK (info notices)"** → **"PROTECTED (info notices)"** (B86-3).
+
+### Added
+
+- **CI legacy regression blockers** (B86-4): grep-based CI checks
+  prevent reintroduction of ModuleTruth or legacy fallback constructs.
+  Any match = CI failure.
+- **docs/CONTRACT_RULES.md** (B86-5): 20 numbered contract rules
+  defining truth authority, module inventory, classification taxonomy,
+  evidence rules, CLI output rules, and forbidden constructs. Single-page
+  contributor reference for the 1.x contract.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #410 | fix(validator): correct GeoIP database path |
+| #412 | feat(validator): B86-1 — remove ModuleTruth completely |
+| #413 | refactor(validator): B86-2 — classification clarity |
+| #414 | refactor(cli): B86-3 — CLI/JSON alignment |
+| #415 | feat(ci): B86-4 — CI contract consolidation |
+| #416 | docs: B86-5 — contract rules freeze |
+
+---
+
 ## [1.85.1] - 2026-04-15
 
 **GeoIP database path fix.**
