@@ -171,21 +171,6 @@ func CollectNamedCounters(ctx context.Context) (*NamedCountersResult, error) {
 	return result, nil
 }
 
-// collectNamedCountersStructured fetches global counters and filters by family.
-// v1.87.2: Uses global `nft -j list counters` because the filtered form
-// `nft list counters <family> <table>` is broken on nftables v1.0.x-v1.1.x.
-func collectNamedCountersStructured(ctx context.Context, family string) (map[string]CounterValue, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	output, err := nftListAllCountersJSON(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return parseNamedCountersJSONFiltered(output, family)
-}
-
 // parseNamedCountersJSONFiltered parses global counter JSON and filters
 // by family and table=="nftban". This replaces the broken per-family query.
 func parseNamedCountersJSONFiltered(data []byte, family string) (map[string]CounterValue, error) {
