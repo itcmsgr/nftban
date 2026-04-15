@@ -73,7 +73,7 @@ func listChains(ctx context.Context, family string) (map[string]bool, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	output, err := nftListChains(ctx, family)
+	output, err := nftListTableText(ctx, family)
 	if err != nil {
 		return nil, true // collection failed
 	}
@@ -91,13 +91,16 @@ func listChains(ctx context.Context, family string) (map[string]bool, bool) {
 	return result, false
 }
 
-// nftListChains runs nft list chains for a specific family.
-func nftListChains(ctx context.Context, family string) ([]byte, error) {
+// nftListTableText runs nft list table <family> nftban (text mode).
+// v1.87.2: The filtered plural form `nft list chains <family> <table>` is NOT
+// supported on fleet nftables v1.0.x-v1.1.x. The singular `list table` form
+// returns the full table including chain definitions, which we parse for names.
+func nftListTableText(ctx context.Context, family string) ([]byte, error) {
 	switch family {
 	case "ip":
-		return exec.CommandContext(ctx, "nft", "list", "chains", "ip", "nftban").Output() // #nosec G204
+		return exec.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output() // #nosec G204
 	case "ip6":
-		return exec.CommandContext(ctx, "nft", "list", "chains", "ip6", "nftban").Output() // #nosec G204
+		return exec.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output() // #nosec G204
 	default:
 		return nil, nil
 	}

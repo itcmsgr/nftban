@@ -117,6 +117,61 @@ func TestParse_EmptyNameExcluded(t *testing.T) {
 }
 
 // =============================================================================
+// A2. v1.87.2 — Global counter JSON with family filtering
+// =============================================================================
+
+func TestParseFiltered_MixedFamilies(t *testing.T) {
+	// Global nft -j list counters returns BOTH families.
+	// parseNamedCountersJSONFiltered must filter by requested family.
+	fixture := `{"nftables": [
+		{"metainfo": {"version": "1.0.9"}},
+		{"counter": {"family": "ip", "table": "nftban", "name": "input_ct_ssh_drop", "packets": 42, "bytes": 1234}},
+		{"counter": {"family": "ip6", "table": "nftban", "name": "input_ct_ssh_drop", "packets": 7, "bytes": 350}},
+		{"counter": {"family": "ip", "table": "nftban", "name": "input_syn_rate_exceeded", "packets": 100, "bytes": 5000}},
+		{"counter": {"family": "ip6", "table": "nftban", "name": "input_syn_prefix_drop", "packets": 3, "bytes": 150}}
+	]}`
+
+	// Filter for ip only
+	ipCounters, err := parseNamedCountersJSONFiltered([]byte(fixture), "ip")
+	if err != nil {
+		t.Fatalf("ip filter error: %v", err)
+	}
+	if len(ipCounters) != 2 {
+		t.Errorf("expected 2 ip counters, got %d", len(ipCounters))
+	}
+	if ipCounters["input_ct_ssh_drop"].Packets != 42 {
+		t.Errorf("ip ssh_drop packets = %d, want 42", ipCounters["input_ct_ssh_drop"].Packets)
+	}
+
+	// Filter for ip6 only
+	ip6Counters, err := parseNamedCountersJSONFiltered([]byte(fixture), "ip6")
+	if err != nil {
+		t.Fatalf("ip6 filter error: %v", err)
+	}
+	if len(ip6Counters) != 2 {
+		t.Errorf("expected 2 ip6 counters, got %d", len(ip6Counters))
+	}
+	if ip6Counters["input_syn_prefix_drop"].Packets != 3 {
+		t.Errorf("ip6 syn_prefix_drop packets = %d, want 3", ip6Counters["input_syn_prefix_drop"].Packets)
+	}
+}
+
+func TestParseFiltered_ForeignTableExcluded(t *testing.T) {
+	fixture := `{"nftables": [
+		{"counter": {"family": "ip", "table": "nftban", "name": "input_drop", "packets": 10, "bytes": 100}},
+		{"counter": {"family": "ip", "table": "filter", "name": "foreign", "packets": 999, "bytes": 9999}}
+	]}`
+
+	counters, err := parseNamedCountersJSONFiltered([]byte(fixture), "ip")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(counters) != 1 {
+		t.Errorf("expected 1 counter (foreign excluded), got %d", len(counters))
+	}
+}
+
+// =============================================================================
 // B. Public key contract tests — verify family-prefixed stable keys
 // =============================================================================
 
