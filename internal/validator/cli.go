@@ -123,13 +123,28 @@ func (r *ValidationResult) PrintSummary() {
 	fmt.Printf("  Total: %d\n", r.ChainCount.TotalChains)
 	fmt.Println()
 
-	// Module truth
-	fmt.Printf("Module Status:\n")
-	fmt.Printf("  DDoS: %s\n", enabledStr(r.ModuleTruth.DDoS.Enabled))
-	fmt.Printf("  Portscan: %s\n", enabledStr(r.ModuleTruth.Portscan.Enabled))
-	fmt.Printf("  Blacklist: %s\n", enabledStr(r.ModuleTruth.Blacklist.Enabled))
-	fmt.Printf("  Whitelist: %s\n", enabledStr(r.ModuleTruth.Whitelist.Enabled))
-	fmt.Printf("  Service: %s\n", enabledStr(r.ModuleTruth.ServiceAdmission.Enabled))
+	// v1.86 B86-1: Module health from ModuleHealthMap (canonical inventory)
+	fmt.Printf("Module Health:\n")
+	if r.Modules.DDoS != nil {
+		fmt.Printf("  DDoS: config=%s structural=%s effective=%s\n",
+			r.Modules.DDoS.Config, r.Modules.DDoS.Structural, r.Modules.DDoS.Effective)
+	}
+	if r.Modules.BotGuard != nil {
+		fmt.Printf("  BotGuard: config=%s structural=%s effective=%s\n",
+			r.Modules.BotGuard.Config, r.Modules.BotGuard.Structural, r.Modules.BotGuard.Effective)
+	}
+	if r.Modules.Portscan != nil {
+		fmt.Printf("  Portscan: config=%s structural=%s effective=%s\n",
+			r.Modules.Portscan.Config, r.Modules.Portscan.Structural, r.Modules.Portscan.Effective)
+	}
+	if r.Modules.LoginMon != nil {
+		fmt.Printf("  LoginMon: config=%s runtime=%s effective=%s\n",
+			r.Modules.LoginMon.Config, r.Modules.LoginMon.Runtime, r.Modules.LoginMon.Effective)
+	}
+	if r.Modules.Blacklist != nil {
+		fmt.Printf("  Blacklist: manual=%s feeds=%s geoban=%s\n",
+			r.Modules.Blacklist.Manual.State, r.Modules.Blacklist.Feeds.State, r.Modules.Blacklist.Geoban.State)
+	}
 	fmt.Println()
 
 	// Findings
@@ -142,13 +157,6 @@ func (r *ValidationResult) PrintSummary() {
 	} else {
 		fmt.Printf("Findings: none\n")
 	}
-}
-
-func enabledStr(b bool) string {
-	if b {
-		return "ENABLED"
-	}
-	return "disabled"
 }
 
 // CompareChainCounts compares pre and post chain counts for rebuild safety.

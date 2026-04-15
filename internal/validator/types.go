@@ -51,7 +51,6 @@ type ValidationResult struct {
 	Families      []FamilyResult   `json:"families"`
 	Findings      []Finding        `json:"findings"`
 	Summary       SummaryCounts    `json:"summary"`
-	ModuleTruth   ModuleStatus     `json:"module_truth"`
 	ChainCount    ChainCounts      `json:"chain_counts"`
 	ServiceState  ServiceState     `json:"service_state"`
 	Modules              ModuleHealthMap  `json:"modules"`                // M81-4
@@ -228,26 +227,8 @@ type SetCheck struct {
 	AllFound bool     `json:"all_found"`
 }
 
-// ModuleStatus holds runtime truth about protection modules.
-// Deprecated: v1.85 — use ModuleHealthMap (M81-4) as the canonical module
-// inventory. ModuleStatus predates M81-4, covers a different module set,
-// and creates a dual-inventory ambiguity. Whitelist and ServiceAdmission
-// are structural concerns checked in per-family validation, not health modules.
-// This type will be removed in v1.86. Do not add new fields.
-type ModuleStatus struct {
-	DDoS             ModuleInfo `json:"ddos"`
-	Portscan         ModuleInfo `json:"portscan"`
-	Blacklist        ModuleInfo `json:"blacklist"`
-	Whitelist        ModuleInfo `json:"whitelist"`
-	ServiceAdmission ModuleInfo `json:"service_admission"`
-}
-
-// ModuleInfo holds information about a single module.
-type ModuleInfo struct {
-	Enabled       bool   `json:"enabled"`
-	KernelPresent bool   `json:"kernel_present"`
-	Details       string `json:"details,omitempty"`
-}
+// v1.86 B86-1: ModuleStatus and ModuleInfo deleted.
+// ModuleHealthMap (M81-4) is the only canonical module inventory.
 
 // ChainCounts for relative comparison (rebuild safety).
 type ChainCounts struct {
@@ -347,7 +328,7 @@ var RequiredBaseChains = GeneratedRequiredBaseChains
 // Required helper chains per family. Currently EMPTY — all helper chains are
 // module-scoped (only exist when their module is enabled). Base PROTECTED
 // does not require any helper chains. Module-level chain validation is
-// handled by deriveModuleTruth() which checks presence per-module.
+// handled by per-module evaluators in module_health.go.
 var RequiredHelperChains = GeneratedRequiredHelperChains
 
 // AllHelperChains lists all known helper chains for module-truth derivation
