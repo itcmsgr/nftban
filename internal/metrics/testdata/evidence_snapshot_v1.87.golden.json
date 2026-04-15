@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.87.0",
+  "collected_at": "2026-04-15T12:00:00Z",
+  "truth_authority": "kernel",
+  "kernel": {
+    "counters": {
+      "ip:input_blacklist_manual_drop": {
+        "packets": 14,
+        "bytes": 700
+      },
+      "ip:input_ct_ssh_drop": {
+        "packets": 42,
+        "bytes": 1234
+      },
+      "ip:input_syn_rate_exceeded": {
+        "packets": 2166,
+        "bytes": 105678
+      }
+    },
+    "sets": {
+      "ip6:blacklist_ipv6": {
+        "exists": true,
+        "count": 847
+      },
+      "ip:blacklist_manual_ipv4": {
+        "exists": true,
+        "count": 3
+      },
+      "ip:http_bot_ban": {
+        "exists": true,
+        "count": 5
+      },
+      "ip:http_bot_suspect": {
+        "exists": true,
+        "count": 0
+      }
+    },
+    "chains": {
+      "ip6:input": {
+        "exists": true
+      },
+      "ip:ddos_protection": {
+        "exists": true
+      },
+      "ip:input": {
+        "exists": true
+      },
+      "ip:portscan_detection": {
+        "exists": true
+      }
+    }
+  },
+  "validator": {
+    "status": "protected",
+    "modules": {
+      "botguard": "observing",
+      "ddos": "enforcing",
+      "portscan": "idle"
+    },
+    "findings": [
+      "VAL-GEOBAN-001"
+    ]
+  },
+  "correlation": {
+    "blacklist_manual": "match",
+    "botguard": "match",
+    "ddos": "match",
+    "loginmon": "expected_limitation",
+    "portscan": "expected_limitation"
+  }
+}
