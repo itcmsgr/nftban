@@ -253,43 +253,8 @@ func TestFinalGuard(t *testing.T) {
 	}
 }
 
-func TestModuleTruth(t *testing.T) {
-	// Create mock doc with DDoS chains
-	raw := &NftRuleset{
-		Nftables: []NftObject{
-			{Table: &NftTable{Family: "ip", Name: "nftban"}},
-			{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "ddos_sanity"}},
-			{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "ddos_penalty"}},
-			{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "ddos_prefix"}},
-			{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "ddos_protection"}},
-			{Chain: &NftChain{Family: "ip", Table: "nftban", Name: "portscan_detection"}},
-			{Set: &NftSet{Family: "ip", Table: "nftban", Name: "whitelist_ipv4"}},
-			{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_ipv4"}},
-			{Set: &NftSet{Family: "ip", Table: "nftban", Name: "blacklist_manual_ipv4"}},
-			{Set: &NftSet{Family: "ip", Table: "nftban", Name: "tcp_ports_in"}},
-			{Set: &NftSet{Family: "ip", Table: "nftban", Name: "udp_ports_in"}},
-		},
-	}
-	doc := ParseRuleset(raw)
-
-	truth := deriveModuleTruth(doc)
-
-	if !truth.DDoS.Enabled {
-		t.Error("DDoS should be enabled when all helper chains present")
-	}
-	if !truth.Portscan.Enabled {
-		t.Error("Portscan should be enabled when chain present")
-	}
-	if !truth.Blacklist.Enabled {
-		t.Error("Blacklist should be enabled when sets present")
-	}
-	if !truth.Whitelist.Enabled {
-		t.Error("Whitelist should be enabled when set present")
-	}
-	if !truth.ServiceAdmission.Enabled {
-		t.Error("ServiceAdmission should be enabled when port sets present")
-	}
-}
+// v1.86 B86-1: TestModuleTruth deleted — ModuleTruth removed.
+// Module health tests are in module_health_test.go (ModuleHealthMap-based).
 
 // B80-3 (INV-S-008): Empty helper chain detection.
 func TestEmptyHelperChain(t *testing.T) {
@@ -425,25 +390,7 @@ func withRulesInChain(name string, count int) chainSpec {
 	return chainSpec{name: name, ruleCount: count}
 }
 
-func TestModuleTruthMissing(t *testing.T) {
-	// Create mock doc WITHOUT DDoS chains
-	raw := &NftRuleset{
-		Nftables: []NftObject{
-			{Table: &NftTable{Family: "ip", Name: "nftban"}},
-			// No helper chains
-		},
-	}
-	doc := ParseRuleset(raw)
-
-	truth := deriveModuleTruth(doc)
-
-	if truth.DDoS.Enabled {
-		t.Error("DDoS should be disabled when helper chains missing")
-	}
-	if truth.Portscan.Enabled {
-		t.Error("Portscan should be disabled when chain missing")
-	}
-}
+// v1.86 B86-1: TestModuleTruthMissing deleted — ModuleTruth removed.
 
 // B80-4: Service-state checks.
 // The validator must report DEGRADED when nftband is not active,

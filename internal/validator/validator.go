@@ -181,8 +181,6 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	result.ChainCount.TotalChains = result.ChainCount.IPv4Total + result.ChainCount.IPv6Total
 
 	// Derive module truth from kernel state
-	result.ModuleTruth = deriveModuleTruth(doc)
-
 	// B80-4: Check required service state.
 	// A system with correct kernel structure but a dead daemon is not truly
 	// protected — the daemon manages runtime objects (BotGuard, LoginMon,
@@ -487,64 +485,7 @@ func validateSets(doc *RulesetDocument, family string, required []string, result
 	return check
 }
 
-// deriveModuleTruth determines module status from kernel presence.
-// Deprecated: v1.85 — use evaluateModuleHealth() and ModuleHealthMap instead.
-// This function populates the legacy ModuleStatus (5 modules) which overlaps
-// with ModuleHealthMap (5 modules). Will be removed in v1.86.
-func deriveModuleTruth(doc *RulesetDocument) ModuleStatus {
-	ms := ModuleStatus{}
-
-	// DDoS: enabled if all helper chains exist
-	ddosChains := []string{"ddos_sanity", "ddos_penalty", "ddos_prefix", "ddos_protection"}
-	ddosPresent := true
-	for _, chain := range ddosChains {
-		if !doc.ChainExists("ip", "nftban", chain) {
-			ddosPresent = false
-			break
-		}
-	}
-	ms.DDoS = ModuleInfo{
-		Enabled:       ddosPresent,
-		KernelPresent: ddosPresent,
-		Details:       boolToStatus(ddosPresent, "all helper chains present", "helper chains missing"),
-	}
-
-	// Portscan: enabled if chain exists
-	portscanPresent := doc.ChainExists("ip", "nftban", "portscan_detection")
-	ms.Portscan = ModuleInfo{
-		Enabled:       portscanPresent,
-		KernelPresent: portscanPresent,
-		Details:       boolToStatus(portscanPresent, "chain present", "chain missing"),
-	}
-
-	// Blacklist: enabled if sets exist
-	blacklistPresent := doc.SetExists("ip", "nftban", "blacklist_ipv4") &&
-		doc.SetExists("ip", "nftban", "blacklist_manual_ipv4")
-	ms.Blacklist = ModuleInfo{
-		Enabled:       blacklistPresent,
-		KernelPresent: blacklistPresent,
-		Details:       boolToStatus(blacklistPresent, "sets present", "sets missing"),
-	}
-
-	// Whitelist: enabled if set exists
-	whitelistPresent := doc.SetExists("ip", "nftban", "whitelist_ipv4")
-	ms.Whitelist = ModuleInfo{
-		Enabled:       whitelistPresent,
-		KernelPresent: whitelistPresent,
-		Details:       boolToStatus(whitelistPresent, "set present", "set missing"),
-	}
-
-	// Service admission: enabled if port sets exist
-	servicePresent := doc.SetExists("ip", "nftban", "tcp_ports_in") &&
-		doc.SetExists("ip", "nftban", "udp_ports_in")
-	ms.ServiceAdmission = ModuleInfo{
-		Enabled:       servicePresent,
-		KernelPresent: servicePresent,
-		Details:       boolToStatus(servicePresent, "port sets present", "port sets missing"),
-	}
-
-	return ms
-}
+// v1.86 B86-1: deriveModuleTruth() deleted. ModuleHealthMap is the only module inventory.
 
 // checkServiceState queries the runtime state of required services.
 // B80-4: nftband must be RUNNING for full protection. STOPPED or ERROR
@@ -669,11 +610,4 @@ func computeSummary(result *ValidationResult) SummaryCounts {
 
 func countFoundChains(found []string) int {
 	return len(found)
-}
-
-func boolToStatus(b bool, trueMsg, falseMsg string) string {
-	if b {
-		return trueMsg
-	}
-	return falseMsg
 }
