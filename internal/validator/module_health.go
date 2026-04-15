@@ -22,6 +22,7 @@
 package validator
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -100,9 +101,33 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 		h.Structural = StructuralMissing
 	}
 
-	// Runtime axis: daemon required for BotGuard
+	// Runtime axis: daemon required for BotGuard.
+	// A1-2: Refine with journal evidence — daemon running is necessary but
+	// not sufficient. Check journal for BotGuard module registration.
+	// If daemon is running but no BotGuard startup evidence in journal,
+	// runtime is still RUNNING (daemon is up), but we emit an informational
+	// finding. This does NOT downgrade runtime — it adds visibility.
 	if svcState.Nftband == RuntimeRunning {
 		h.Runtime = RuntimeRunning
+		// Check for BotGuard module registration in recent journal
+		evidence := queryJournal(context.Background(), JournalQuery{
+			Patterns: []string{"module_start: botguard", "[botguard] loaded"},
+			Since:    15 * time.Minute,
+		})
+		if evidence.ErrKind == ErrNone && !evidence.Found {
+			// Daemon running but no recent BotGuard startup evidence.
+			// This may indicate the module hasn't restarted recently (normal)
+			// or the module failed to register (abnormal). Not a downgrade.
+			// Only emit finding if structural objects exist (module should be active).
+			if h.Structural == StructuralPresent {
+				moduleFindings = append(moduleFindings, Finding{
+					Code:      CodeBotGuardNoEvidence,
+					Severity:  SeverityInfo,
+					Component: "module",
+					Message:   "no recent BotGuard runtime evidence in journal (last 15m)",
+				})
+			}
+		}
 	} else {
 		h.Runtime = svcState.Nftband
 	}

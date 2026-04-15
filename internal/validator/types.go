@@ -263,7 +263,8 @@ const (
 	CodeTimerError   = "VAL-TIMER-002"   // v1.83: timer query failed
 
 	// Module-specific findings (M81-4)
-	CodeGeobanDBMissing = "VAL-GEOBAN-001" // geoip database missing/empty
+	CodeGeobanDBMissing     = "VAL-GEOBAN-001"   // geoip database missing/empty
+	CodeBotGuardNoEvidence  = "VAL-BOTGUARD-001" // v1.84: no recent BotGuard runtime evidence
 
 	// Consistency findings (v1.82)
 	CodeConsistencyMismatch = "VAL-CONS-001" // config/kernel disagreement
