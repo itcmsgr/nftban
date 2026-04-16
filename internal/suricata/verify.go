@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -79,7 +80,7 @@ func Verify() *VerifyResult {
 	// 4. EVE JSON valid (read last line, parse)
 	r.check("eve_json_valid", func() (string, string) {
 		for _, p := range evePaths {
-			data, err := os.ReadFile(p) // #nosec G304 — paths are hardcoded EVE log locations
+			data, err := os.ReadFile(filepath.Clean(p)) // #nosec G304 -- hardcoded EVE log paths
 			if err != nil {
 				continue
 			}
