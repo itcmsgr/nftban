@@ -72,6 +72,7 @@ jobs:
 
       - name: Auto-commit STATUS.md (main branch only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         run: |
           if ! git diff --quiet -- STATUS.md; then
             git config user.name "github-actions[bot]"
@@ -79,5 +80,5 @@ jobs:
             git add STATUS.md
             git commit -m "chore: update STATUS.md [skip ci]"
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-            git push "${REPO_URL}" HEAD:main
+            git push "${REPO_URL}" HEAD:main || echo "::warning::STATUS.md auto-commit skipped (branch protection requires PR)"
           fi
