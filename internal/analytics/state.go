@@ -336,7 +336,6 @@ func extractServiceFromSource(source string) string {
 	case "manual":
 		return "manual"
 	default:
-		// Legacy fail2ban jail names
 		return source
 	}
 }

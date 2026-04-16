@@ -55,7 +55,6 @@ const (
 	SourceDDoS      = "ddos"
 	SourceFeeds     = "feeds"
 	SourceSuricata  = "suricata"
-	SourceFail2ban  = "fail2ban" // Legacy compatibility
 )
 
 // Status constants
@@ -193,8 +192,6 @@ func normalizeSource(source string) string {
 		return SourceFeeds
 	case "suricata", "ids":
 		return SourceSuricata
-	case "fail2ban":
-		return SourceFail2ban
 	default:
 		// Keep original for unknown sources
 		return source
