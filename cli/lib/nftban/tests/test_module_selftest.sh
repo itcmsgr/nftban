@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.85 — G8-4: Cross-Surface Module Smoke Test
+# NFTBan v1.85 — G8-4: Cross-Surface Module Selftest Test
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name="test_module_smoke"
+# meta:name="test_module_selftest"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-15"
 # meta:description="Verify validator and health CLI agree on module inventory"
-# meta:inventory.files="cli/lib/nftban/tests/test_module_smoke.sh"
+# meta:inventory.files="cli/lib/nftban/tests/test_module_selftest.sh"
 # meta:inventory.binaries="nftban-validate,jq"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -16,7 +16,7 @@
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
-# G8-4: Cross-surface smoke gate.
+# G8-4: Cross-surface selftest gate.
 # Compares module lists from nftban-validate --json and nftban health --json.
 # Module lists must match exactly. Any drift = FAIL.
 #
@@ -42,7 +42,7 @@ check() {
 }
 
 echo "=========================================================="
-echo "G8-4: Cross-Surface Module Smoke Test"
+echo "G8-4: Cross-Surface Module Selftest Test"
 echo "=========================================================="
 
 # Skip if validator not installed
@@ -121,7 +121,7 @@ echo "Results: $PASS passed, $FAIL failed"
 echo "=========================================================="
 
 if [[ $FAIL -gt 0 ]]; then
-    echo "FAIL: Cross-surface module smoke failed"
+    echo "FAIL: Cross-surface module selftest failed"
     exit 1
 fi
 exit 0
