@@ -226,11 +226,10 @@ func (s *State) RecordBan(ip, country, city, source, reason string, t time.Time)
 			Country:  country,
 			City:     city,
 			BannedAt: t,
-			Jail:     source,   // Legacy compatibility
-			Source:   source,   // New: suricata, login-monitor, manual, feeds
-			Service:  service,  // New: Dynamic service extracted from reason
+			Source:   source,
+			Service:  service,
 			Reason:   reason,
-			Duration: 0,        // TODO: Add duration parameter if needed
+			Duration: 0,
 		}
 		s.ipOrigins[ip] = origin
 		origin.lruElement = s.ipOriginsLRU.PushFront(ip)
