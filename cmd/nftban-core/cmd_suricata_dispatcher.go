@@ -79,11 +79,9 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		return cmdSuricataSetAction(cfg, filterName, actionArg)
 
 	// v1.92: Removed scope-creep commands: profile-*, scan*, rules-*, sid-*,
-	// custom-*, recommend*. See V192_EXECUTION_PLAN.md Phase 2.
-	case "stats-daemon":
-		return cmdSuricataStatsDaemon()
+	// custom-*, recommend*, stats-daemon. See V192_EXECUTION_PLAN.md Phase 2.
 
 	default:
-		return fmt.Errorf("unknown suricata action: %s\nUsage: nftban-core suricata [status|filters|daemon|enable|disable|set-threshold|set-action|stats-daemon]", action)
+		return fmt.Errorf("unknown suricata action: %s\nUsage: nftban-core suricata [status|filters|daemon|enable|disable|set-threshold|set-action]", action)
 	}
 }
