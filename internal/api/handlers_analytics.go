@@ -280,8 +280,6 @@ func RecentActivityHandler(w http.ResponseWriter, r *http.Request) {
 				activity.Type = "Port scan"
 			case "ddos":
 				activity.Type = "DDoS blocked"
-			case "fail2ban":
-				activity.Type = "Fail2Ban"
 			case "feeds", "feed":
 				activity.Type = "Feed update"
 			case "manual":
