@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 # =============================================================================
-# NFTBan v1.0.0 - Smoke Test Suite
+# NFTBan v1.0.0 - Self-Test Suite
 # =============================================================================
-# meta:name="smoke_test"
+# meta:name="selftest"
 # meta:type="test"
 # meta:version="1.56.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -26,10 +26,10 @@
 # 5. Reports any failures
 #
 # **Usage**
-#   ./smoke_test.sh              # Run all tests
-#   ./smoke_test.sh --quick      # Quick test (core commands only)
-#   ./smoke_test.sh --lifecycle  # Ban lifecycle tests only
-#   ./smoke_test.sh --check      # Just check trace log for orphans
+#   ./selftest.sh              # Run all tests
+#   ./selftest.sh --quick      # Quick test (core commands only)
+#   ./selftest.sh --lifecycle  # Ban lifecycle tests only
+#   ./selftest.sh --check      # Just check trace log for orphans
 # =============================================================================
 
 set -Eeuo pipefail
@@ -39,7 +39,7 @@ set -Eeuo pipefail
 # =============================================================================
 
 # shellcheck disable=SC2034  # Reserved for future logging
-readonly SCRIPT_NAME="smoke_test"
+readonly SCRIPT_NAME="selftest"
 readonly SCRIPT_VERSION="1.0.0"
 DEFAULT_TIMEOUT=30            # seconds per command (default)
 QUICK_TIMEOUT=15              # seconds for quick tests
@@ -48,7 +48,7 @@ readonly TRACE_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log"
 SMOKE_LOG="$(mktemp /tmp/nftban_smoke_XXXXXX.log)"
 readonly SMOKE_LOG
 # shellcheck disable=SC2034  # Reserved for future trace tracking
-readonly SMOKE_TRACE_PREFIX="smoke_test"
+readonly SMOKE_TRACE_PREFIX="selftest"
 
 # Colors
 readonly RED='\033[0;31m'
@@ -116,7 +116,7 @@ _smoke_cleanup() {
     # Print completion marker (always, even on failure)
     echo ""
     echo "═══════════════════════════════════════════════════════════════════"
-    echo "═══ SMOKE_TEST_COMPLETE: ${smoke_status} ═══"
+    echo "═══ SELFTEST_COMPLETE: ${smoke_status} ═══"
     echo "═══ Duration: ${duration_sec}s | Exit: ${exit_code} | $(date -Is) ═══"
     echo "═══════════════════════════════════════════════════════════════════"
 
@@ -130,7 +130,7 @@ _smoke_cleanup() {
 banner() {
     cat <<'BANNER'
 ╔══════════════════════════════════════════════════════════════╗
-║  🔬 NFTBan Smoke Test Suite v1.0                             ║
+║  🔬 NFTBan Self-Test Suite v1.0                             ║
 ║  Quick CLI health check with trace analysis                  ║
 ╚══════════════════════════════════════════════════════════════╝
 BANNER
@@ -160,7 +160,7 @@ disable_trace() {
     export NFTBAN_DEBUG_TRACE="false"
 }
 
-# Check for orphaned traces from this smoke test run
+# Check for orphaned traces from this self-test run
 check_orphans() {
     log ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -202,8 +202,8 @@ check_orphans() {
 # =============================================================================
 
 # Run a command with timeout and check results
-# Usage: smoke_test_cmd <name> <command>
-smoke_test_cmd() {
+# Usage: selftest_cmd <name> <command>
+selftest_cmd() {
     local name="$1"
     shift
     local cmd="$*"
@@ -318,9 +318,9 @@ run_core_tests() {
     log "CORE COMMANDS"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "version" "nftban version"
-    smoke_test_cmd "help" "nftban help"
-    smoke_test_cmd "status" "nftban status --quiet 2>/dev/null || nftban status"
+    selftest_cmd "version" "nftban version"
+    selftest_cmd "help" "nftban help"
+    selftest_cmd "status" "nftban status --quiet 2>/dev/null || nftban status"
 
     # Daemon memory health check
     run_daemon_memory_test
@@ -380,12 +380,12 @@ run_module_tests() {
     log "MODULE STATUS"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "firewall stats" "nftban firewall stats"
-    smoke_test_cmd "login status" "nftban login status"
-    smoke_test_cmd "portscan status" "nftban portscan status"
-    smoke_test_cmd "ddos status" "nftban ddos status"
-    smoke_test_cmd "feeds status" "nftban feeds status"
-    smoke_test_cmd "whitelist list" "nftban whitelist list"
+    selftest_cmd "firewall stats" "nftban firewall stats"
+    selftest_cmd "login status" "nftban login status"
+    selftest_cmd "portscan status" "nftban portscan status"
+    selftest_cmd "ddos status" "nftban ddos status"
+    selftest_cmd "feeds status" "nftban feeds status"
+    selftest_cmd "whitelist list" "nftban whitelist list"
 }
 
 # Stats and reporting
@@ -395,9 +395,9 @@ run_stats_tests() {
     log "STATS & REPORTING"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "stats summary" "nftban stats summary"
-    smoke_test_cmd "stats dashboard" "nftban stats dashboard"
-    smoke_test_cmd "health summary" "nftban health summary"
+    selftest_cmd "stats summary" "nftban stats summary"
+    selftest_cmd "stats dashboard" "nftban stats dashboard"
+    selftest_cmd "health summary" "nftban health summary"
 }
 
 # Search and list operations
@@ -407,9 +407,9 @@ run_search_tests() {
     log "SEARCH & LIST"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "search IP" "nftban search 8.8.8.8 --no-interactive 2>/dev/null || echo 'Not found (OK)'"
-    smoke_test_cmd "port list" "nftban port list"
-    smoke_test_cmd "feeds list" "nftban feeds list"
+    selftest_cmd "search IP" "nftban search 8.8.8.8 --no-interactive 2>/dev/null || echo 'Not found (OK)'"
+    selftest_cmd "port list" "nftban port list"
+    selftest_cmd "feeds list" "nftban feeds list"
 }
 
 # Help commands (should never fail)
@@ -419,12 +419,12 @@ run_help_tests() {
     log "HELP COMMANDS (sample)"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "ban --help" "nftban ban --help"
-    smoke_test_cmd "unban --help" "nftban unban --help"
-    smoke_test_cmd "firewall --help" "nftban firewall --help"
-    smoke_test_cmd "protect --help" "nftban protect --help"
-    smoke_test_cmd "unprotect --help" "nftban unprotect --help"
-    smoke_test_cmd "cleanup --help" "nftban cleanup --help"
+    selftest_cmd "ban --help" "nftban ban --help"
+    selftest_cmd "unban --help" "nftban unban --help"
+    selftest_cmd "firewall --help" "nftban firewall --help"
+    selftest_cmd "protect --help" "nftban protect --help"
+    selftest_cmd "unprotect --help" "nftban unprotect --help"
+    selftest_cmd "cleanup --help" "nftban cleanup --help"
 }
 
 # =============================================================================
@@ -439,19 +439,19 @@ run_protection_tests() {
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Test protect help
-    smoke_test_cmd "protect help" "nftban protect --help"
+    selftest_cmd "protect help" "nftban protect --help"
 
     # Test unprotect help
-    smoke_test_cmd "unprotect help" "nftban unprotect --help"
+    selftest_cmd "unprotect help" "nftban unprotect --help"
 
     # Test cleanup --stats returns valid JSON with required fields
-    smoke_test_cmd "cleanup --stats JSON" "nftban cleanup --stats --json | jq -e '.data.total != null and .data.protected != null and .data.evictable != null'"
+    selftest_cmd "cleanup --stats JSON" "nftban cleanup --stats --json | jq -e '.data.total != null and .data.protected != null and .data.evictable != null'"
 
     # Test cleanup --dry-run returns valid JSON with ips array
-    smoke_test_cmd "cleanup --dry-run JSON" "nftban cleanup --dry-run --json | jq -e '.data.ips | type == \"array\"'"
+    selftest_cmd "cleanup --dry-run JSON" "nftban cleanup --dry-run --json | jq -e '.data.ips | type == \"array\"'"
 
     # Test cleanup help
-    smoke_test_cmd "cleanup help" "nftban cleanup --help"
+    selftest_cmd "cleanup help" "nftban cleanup --help"
 }
 
 # =============================================================================
@@ -582,13 +582,13 @@ run_lifecycle_tests() {
 
     # IPv4 ban → unban (v1.38.0: BUG-007 — use blacklist_manual_* after set separation)
     smoke_lifecycle "IPv4 ban/unban" \
-        "nftban ban ${test_ban_v4} --reason smoke_test --yes" \
+        "nftban ban ${test_ban_v4} --reason selftest --yes" \
         "nftban unban ${test_ban_v4}" \
         "${table_v4}" "blacklist_manual_ipv4" "${test_ban_v4}"
 
     # IPv6 ban → unban
     smoke_lifecycle "IPv6 ban/unban" \
-        "nftban ban ${test_ban_v6} --reason smoke_test --yes" \
+        "nftban ban ${test_ban_v6} --reason selftest --yes" \
         "nftban unban ${test_ban_v6}" \
         "${table_v6}" "blacklist_manual_ipv6" "${test_ban_v6}"
 
@@ -619,7 +619,7 @@ run_lifecycle_tests() {
     nftban whitelist add "$conflict_ip" &>/dev/null || true
     # Try to ban (should fail with warning)
     local ban_output
-    ban_output=$(nftban ban "$conflict_ip" --reason smoke_test 2>&1) || true
+    ban_output=$(nftban ban "$conflict_ip" --reason selftest 2>&1) || true
     if echo "$ban_output" | grep -qiE "whitelist|cannot ban|warning"; then
         log_pass "Ban correctly rejected whitelisted IP with warning"
         TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -636,7 +636,7 @@ run_lifecycle_tests() {
     log ""
     log "TEST: Whitelist banned IP should remove from blacklist"
     # First ban the IP
-    nftban ban "$conflict_ip2" --reason smoke_test &>/dev/null || true
+    nftban ban "$conflict_ip2" --reason selftest &>/dev/null || true
     sleep 1
     # Then whitelist (should remove from blacklist)
     nftban whitelist add "$conflict_ip2" &>/dev/null || true
@@ -881,7 +881,7 @@ run_port_allow_lifecycle_tests() {
 # Validates that Go binaries are real ELF files (not corrupted or dummy files).
 # Checks file type and minimum size to detect build/install issues.
 
-smoke_test_binary_integrity() {
+selftest_binary_integrity() {
     log ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log "BINARY INTEGRITY"
@@ -954,7 +954,7 @@ smoke_test_binary_integrity() {
 # Verifies that nftban-auditor group has correct ACL access to logs and reports.
 # This ensures the auditor role can read security logs without write access.
 
-smoke_test_auditor_acls() {
+selftest_auditor_acls() {
     log ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log "AUDITOR ACL VERIFICATION"
@@ -1899,7 +1899,7 @@ run_all_cli_tests() {
         cmd_name=$(basename "$cmd_file" .sh | sed 's/cmd_//' | sed 's/_/-/g')
 
         # Test help command (should never fail if script is valid)
-        smoke_test_cmd "$cmd_name help" "nftban $cmd_name help 2>/dev/null || nftban $cmd_name --help 2>/dev/null || echo 'No help available'"
+        selftest_cmd "$cmd_name help" "nftban $cmd_name help 2>/dev/null || nftban $cmd_name --help 2>/dev/null || echo 'No help available'"
     done
 
     log ""
@@ -2186,14 +2186,14 @@ run_extended_status_tests() {
     log "EXTENDED STATUS CHECKS"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "module status" "nftban module summary"
-    smoke_test_cmd "services status" "nftban services status"
-    smoke_test_cmd "health summary" "nftban health summary"
-    smoke_test_cmd "timers status" "nftban timers status 2>/dev/null || nftban timers list"
-    smoke_test_cmd "fhs check" "nftban fhs check 2>/dev/null || nftban fhs status"
-    smoke_test_cmd "geoip status" "nftban geoip status 2>/dev/null || echo 'GeoIP not configured'"
-    smoke_test_cmd "cloudflare status" "nftban cloudflare status 2>/dev/null || echo 'Cloudflare not configured'"
-    smoke_test_cmd "nftables status" "nftban nftables status 2>/dev/null || nftban nftables list"
+    selftest_cmd "module status" "nftban module summary"
+    selftest_cmd "services status" "nftban services status"
+    selftest_cmd "health summary" "nftban health summary"
+    selftest_cmd "timers status" "nftban timers status 2>/dev/null || nftban timers list"
+    selftest_cmd "fhs check" "nftban fhs check 2>/dev/null || nftban fhs status"
+    selftest_cmd "geoip status" "nftban geoip status 2>/dev/null || echo 'GeoIP not configured'"
+    selftest_cmd "cloudflare status" "nftban cloudflare status 2>/dev/null || echo 'Cloudflare not configured'"
+    selftest_cmd "nftables status" "nftban nftables status 2>/dev/null || nftban nftables list"
 }
 
 # =============================================================================
@@ -2249,7 +2249,7 @@ generate_report() {
 # =============================================================================
 
 send_email_report() {
-    # Send smoke test results via email
+    # Send self-test results via email
     # Uses nftban mail infrastructure for delivery
     local recipient="$1"
 
@@ -2277,12 +2277,12 @@ send_email_report() {
     # Build subject line
     local hostname
     hostname=$(hostname -f 2>/dev/null || hostname)
-    local subject="${status_emoji} NFTBan Smoke Test ${status_text} - ${hostname} (${pass_rate}% pass rate)"
+    local subject="${status_emoji} NFTBan Self-Test ${status_text} - ${hostname} (${pass_rate}% pass rate)"
 
     # Build plain text body (strip ANSI colors from log)
     local body
     body=$(cat <<BODY
-NFTBan Smoke Test Report
+NFTBan Self-Test Report
 ========================
 Host: ${hostname}
 Date: $(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -2302,7 +2302,7 @@ Status:        ${status_text}
 Log File: ${SMOKE_LOG}
 
 ---
-NFTBan Smoke Test Suite v${SCRIPT_VERSION}
+NFTBan Self-Test Suite v${SCRIPT_VERSION}
 Open-source Linux IPS and nftables firewall manager
 https://nftban.com
 BODY
@@ -2356,7 +2356,7 @@ BODY
 
 usage() {
     cat <<EOF
-NFTBan Smoke Test Suite v${SCRIPT_VERSION}
+NFTBan Self-Test Suite v${SCRIPT_VERSION}
 
 Usage: $0 [OPTIONS]
 
@@ -2384,7 +2384,7 @@ Validation Tests (included in full/all):
   - Geoban IPv4/IPv6: verifies country CIDRs loaded in blacklist sets
 
 Examples:
-  $0                              # Run full smoke test (~32 commands)
+  $0                              # Run full self-test (~32 commands)
   $0 --quick                      # Quick core test (3 commands)
   $0 --all                        # Test ALL 43+ CLI commands + lifecycle
   $0 --lifecycle                  # Ban lifecycle tests only
@@ -2472,7 +2472,7 @@ main() {
         exit $?
     fi
 
-    # Run smoke tests
+    # Run self-tests
     banner
     log ""
 
@@ -2482,7 +2482,7 @@ main() {
 
     # Clear start marker with ISO timestamp
     log "═══════════════════════════════════════════════════════════════════"
-    log "═══ SMOKE_TEST_START: $(date -Is) ═══"
+    log "═══ SELFTEST_START: $(date -Is) ═══"
     log "═══════════════════════════════════════════════════════════════════"
     log "Mode: $mode"
     log "Log:  $SMOKE_LOG"
@@ -2503,8 +2503,8 @@ main() {
         full)
             run_core_tests
             run_runtime_tests
-            smoke_test_binary_integrity
-            smoke_test_auditor_acls
+            selftest_binary_integrity
+            selftest_auditor_acls
             run_module_tests
             run_stats_tests
             run_search_tests
@@ -2523,8 +2523,8 @@ main() {
             # Comprehensive: test ALL CLI commands
             run_core_tests
             run_runtime_tests
-            smoke_test_binary_integrity
-            smoke_test_auditor_acls
+            selftest_binary_integrity
+            selftest_auditor_acls
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
             run_protection_tests
