@@ -46,8 +46,9 @@ type EvidenceSnapshot struct {
 		Chains   map[string]ChainInfo    `json:"chains"`
 	} `json:"kernel"`
 
-	// v1.88: External evidence plane (journal-based)
-	External *JournalEvidenceResult `json:"external,omitempty"`
+	// v1.88: External evidence plane
+	External  *JournalEvidenceResult `json:"external,omitempty"`
+	Freshness *DataFreshnessResult   `json:"freshness,omitempty"`
 
 	Validator *ValidatorSnapshot   `json:"validator"`
 	Correlation map[string]string  `json:"correlation"`
@@ -78,8 +79,9 @@ func CollectEvidenceSnapshot(ctx context.Context) (*EvidenceSnapshot, error) {
 	snap.Kernel.Sets = CollectSetElements(ctx)
 	snap.Kernel.Chains = CollectChainPresence(ctx)
 
-	// External evidence plane (journal)
+	// External evidence plane (journal + data freshness)
 	snap.External = CollectJournalEvidence(ctx)
+	snap.Freshness = CollectDataFreshness()
 
 	// Validator plane
 	snap.Validator = CollectValidatorSnapshot(ctx)
@@ -211,6 +213,31 @@ func RenderHuman(snap *EvidenceSnapshot, w io.Writer) {
 		fmt.Fprintf(w, "Journal Evidence\n")
 		fmt.Fprintf(w, "────────────────────────────────────────\n")
 		fmt.Fprintf(w, "  (journal evidence unavailable)\n")
+		fmt.Fprintf(w, "\n")
+	}
+
+	// M88-3/4: Data pipeline freshness
+	if snap.Freshness != nil {
+		fmt.Fprintf(w, "Data Pipeline Freshness\n")
+		fmt.Fprintf(w, "────────────────────────────────────────\n")
+		if snap.Freshness.FeedAge != "" {
+			fresh := "stale"
+			if snap.Freshness.FeedFresh {
+				fresh = "fresh"
+			}
+			fmt.Fprintf(w, "  Feed data:         %s (%s old)\n", fresh, snap.Freshness.FeedAge)
+		} else {
+			fmt.Fprintf(w, "  Feed data:         no data files\n")
+		}
+		if snap.Freshness.GeoIPAge != "" {
+			fresh := "stale"
+			if snap.Freshness.GeoIPFresh {
+				fresh = "fresh"
+			}
+			fmt.Fprintf(w, "  GeoIP database:    %s (%s old)\n", fresh, snap.Freshness.GeoIPAge)
+		} else {
+			fmt.Fprintf(w, "  GeoIP database:    not found\n")
+		}
 		fmt.Fprintf(w, "\n")
 	}
 

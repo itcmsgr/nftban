@@ -24,7 +24,10 @@ package metrics
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -35,6 +38,15 @@ type JournalEvidenceResult struct {
 	LoginMonBans   int    `json:"loginmon_bans"`            // ban event count in window
 	LoginMonEvents int    `json:"loginmon_events"`          // login_failed event count in window
 	Unknown        bool   `json:"unknown,omitempty"`        // collection failed
+}
+
+// DataFreshnessResult holds freshness checks for data pipeline artifacts.
+type DataFreshnessResult struct {
+	FeedFresh    bool   `json:"feed_fresh"`              // feed data files < 7 days old
+	FeedAge      string `json:"feed_age,omitempty"`      // human-readable age of newest feed
+	GeoIPFresh   bool   `json:"geoip_fresh"`             // GeoIP DB < 45 days old
+	GeoIPAge     string `json:"geoip_age,omitempty"`     // human-readable age
+	Unknown      bool   `json:"unknown,omitempty"`        // collection failed
 }
 
 // CollectJournalEvidence queries nftband journal for LoginMon activity.
@@ -71,3 +83,58 @@ func CollectJournalEvidence(ctx context.Context) *JournalEvidenceResult {
 	result.LoginMonActive = result.LoginMonBans > 0 || result.LoginMonEvents > 0
 	return result
 }
+
+// CollectDataFreshness checks feed and GeoIP data pipeline freshness.
+// M88-3: Feed data files in /var/lib/nftban/feeds/ — fresh if any file < 7 days
+// M88-4: GeoIP DB at /var/lib/nftban/geoip/dbip-country-lite.mmdb — fresh if < 45 days
+func CollectDataFreshness() *DataFreshnessResult {
+	result := &DataFreshnessResult{}
+
+	// M88-3: Feed freshness
+	feedDir := "/var/lib/nftban/feeds"
+	var newestFeed time.Time
+	entries, err := os.ReadDir(feedDir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(newestFeed) {
+				newestFeed = info.ModTime()
+			}
+		}
+		if !newestFeed.IsZero() {
+			age := time.Since(newestFeed)
+			result.FeedFresh = age < 7*24*time.Hour
+			result.FeedAge = formatAge(age)
+		}
+	}
+
+	// M88-4: GeoIP freshness
+	geoDBPath := "/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+	info, err := os.Stat(geoDBPath)
+	if err == nil && info.Size() > 0 {
+		age := time.Since(info.ModTime())
+		result.GeoIPFresh = age < 45*24*time.Hour
+		result.GeoIPAge = formatAge(age)
+	}
+
+	return result
+}
+
+func formatAge(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	if days == 0 {
+		hours := int(d.Hours())
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dd", days)
+}
+
+// feedDataDir and geoDBPath could be made configurable via env vars if needed.
+// For now, using canonical FHS paths proven by fleet audit.
+var _ = filepath.Join // suppress unused import
