@@ -111,7 +111,7 @@ nftban_cmd_selftest() {
 nftban_selftest_run() {
     # Use central path from config
     local tests_dir="${NFTBAN_TESTS_DIR:-/usr/lib/nftban/tests}"
-    local test_script="${tests_dir}/smoke_test.sh"
+    local test_script="${tests_dir}/selftest.sh"
 
     if [[ ! -f "$test_script" ]]; then
         echo "ERROR: Smoke test script not found at: $test_script" >&2
