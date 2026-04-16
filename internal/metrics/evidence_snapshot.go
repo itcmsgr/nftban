@@ -1,10 +1,10 @@
 // =============================================================================
-// NFTBan v1.88 - Evidence Snapshot Builder + Renderers
+// NFTBan v1.89 - Evidence Snapshot Builder + Renderers
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_snapshot"
 // meta:type="package"
-// meta:version="1.88.0"
+// meta:version="1.89.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-15"
 // meta:description="Builds and renders Phase 1 evidence snapshots"
@@ -15,6 +15,10 @@
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
+//
+// v1.89 INV-M-001/002: Evidence layer makes ZERO direct nft calls.
+// All kernel data (counters, sets, chains) comes from the validator,
+// which is the sole kernel-query authority.
 //
 // Collect once → render many.
 // Metrics report evidence; validator reports interpretation.
@@ -28,6 +32,8 @@ import (
 	"io"
 	"sort"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/validator"
 )
 
 // EvidenceSnapshot is the canonical Phase 1 metrics model.
@@ -58,6 +64,11 @@ const EvidenceSchemaVersion = "1.88.0"
 
 // CollectEvidenceSnapshot gathers all Phase 1 evidence.
 // Single entry point: collect once, render many.
+//
+// v1.89 INV-M-001/002: All kernel data from validator — ZERO direct nft calls.
+// The validator runs nft -j list ruleset (once) + per-set element queries.
+// Evidence extracts counters, chains, and set element counts from the
+// validator's result. Journal and data freshness are independent sources.
 func CollectEvidenceSnapshot(ctx context.Context) (*EvidenceSnapshot, error) {
 	snap := &EvidenceSnapshot{
 		SchemaVersion:  EvidenceSchemaVersion,
@@ -65,31 +76,133 @@ func CollectEvidenceSnapshot(ctx context.Context) (*EvidenceSnapshot, error) {
 		TruthAuthority: "kernel",
 	}
 
-	// Kernel plane
-	// Counter collection failure → nil (not empty map).
-	// nil signals "unknown/unavailable" to correlation and renderer.
-	// Empty map signals "collected successfully, no active counters."
-	counters, err := CollectNamedCounters(ctx)
-	if err != nil {
-		snap.Kernel.Counters = nil // collection failed — unknown
+	// v1.89: Call validator directly — sole kernel-query authority.
+	valResult, err := validator.ValidateKernel(ctx)
+	if err != nil || valResult == nil {
+		// Validator failed — entire kernel plane is unknown.
+		// nil signals "unknown/unavailable" to correlation and renderer.
+		snap.Kernel.Counters = nil
+		snap.Kernel.Sets = nil
+		snap.Kernel.Chains = nil
+		snap.Validator = &ValidatorSnapshot{Status: "unavailable", Unknown: true}
 	} else {
-		snap.Kernel.Counters = counters.Counters
+		// Extract kernel facts from validator's parsed data.
+		snap.Kernel.Counters = extractCountersFromDoc(valResult.Doc)
+		snap.Kernel.Sets = extractSetsFromCounts(valResult.Doc, valResult.SetElementCounts)
+		snap.Kernel.Chains = extractChainsFromDoc(valResult.Doc)
+
+		// Build validator snapshot from health result.
+		snap.Validator = buildValidatorSnapshot(valResult)
 	}
 
-	snap.Kernel.Sets = CollectSetElements(ctx)
-	snap.Kernel.Chains = CollectChainPresence(ctx)
-
-	// External evidence plane (journal + data freshness)
+	// External evidence plane (journal + data freshness) — independent sources.
 	snap.External = CollectJournalEvidence(ctx)
 	snap.Freshness = CollectDataFreshness()
-
-	// Validator plane
-	snap.Validator = CollectValidatorSnapshot(ctx)
 
 	// Correlation plane
 	snap.Correlation = CorrelateEvidence(snap.Kernel.Counters, snap.Kernel.Sets, snap.Validator, snap.External)
 
 	return snap, nil
+}
+
+// =============================================================================
+// v1.89: Extraction functions — read from validator, never query kernel.
+// =============================================================================
+
+// extractCountersFromDoc reads named counters from the validator's parsed
+// RulesetDocument. Returns nil if the document is nil (collection failed).
+// Returns an empty map if no counters exist (valid state, not failure).
+func extractCountersFromDoc(doc *validator.RulesetDocument) map[string]CounterValue {
+	if doc == nil {
+		return nil
+	}
+	counters := make(map[string]CounterValue)
+	for _, family := range []string{"ip", "ip6"} {
+		allCounters := doc.GetAllCounters(family, "nftban")
+		for name, c := range allCounters {
+			key := family + ":" + name
+			counters[key] = CounterValue{Packets: c.Packets, Bytes: c.Bytes}
+		}
+	}
+	return counters
+}
+
+// extractSetsFromCounts converts validator's set element counts to evidence
+// SetInfo structs. Uses both the RulesetDocument (for set existence from the
+// schema) and SetElementCounts (for element counts from per-set queries).
+//
+// Three-state semantics preserved:
+//   doc.SetExists=true + count available → Exists=true, Count=N
+//   doc.SetExists=false → Exists=false (confirmed absent)
+//   doc=nil → Unknown (validator failed)
+func extractSetsFromCounts(doc *validator.RulesetDocument, counts map[string]int) map[string]SetInfo {
+	if doc == nil || counts == nil {
+		return nil
+	}
+	sets := make(map[string]SetInfo)
+	for family, setNames := range Phase1Sets {
+		for _, name := range setNames {
+			key := family + ":" + name
+			if doc.SetExists(family, "nftban", name) {
+				count := counts[key] // 0 if not queried (valid: empty set)
+				sets[key] = SetInfo{Exists: true, Count: count}
+			} else {
+				sets[key] = SetInfo{Exists: false}
+			}
+		}
+	}
+	return sets
+}
+
+// extractChainsFromDoc reads chain presence from the validator's parsed
+// RulesetDocument. Checks Phase1Chains in both ip and ip6 families.
+func extractChainsFromDoc(doc *validator.RulesetDocument) map[string]ChainInfo {
+	if doc == nil {
+		return nil
+	}
+	chains := make(map[string]ChainInfo)
+	for _, family := range []string{"ip", "ip6"} {
+		for _, chain := range Phase1Chains {
+			key := family + ":" + chain
+			chains[key] = ChainInfo{
+				Exists: doc.ChainExists(family, "nftban", chain),
+			}
+		}
+	}
+	return chains
+}
+
+// buildValidatorSnapshot converts a ValidationResult into the evidence
+// ValidatorSnapshot model. This replaces the external binary call + JSON parse.
+func buildValidatorSnapshot(r *validator.ValidationResult) *ValidatorSnapshot {
+	snap := &ValidatorSnapshot{
+		Status:  string(r.Status),
+		Modules: make(map[string]string),
+	}
+
+	if r.Modules.DDoS != nil {
+		snap.Modules["ddos"] = string(r.Modules.DDoS.Effective)
+	}
+	if r.Modules.BotGuard != nil {
+		snap.Modules["botguard"] = string(r.Modules.BotGuard.Effective)
+	}
+	if r.Modules.Portscan != nil {
+		snap.Modules["portscan"] = string(r.Modules.Portscan.Effective)
+	}
+	if r.Modules.LoginMon != nil {
+		snap.Modules["loginmon"] = string(r.Modules.LoginMon.Effective)
+	}
+	if r.Modules.Blacklist != nil {
+		snap.Modules["blacklist_manual"] = r.Modules.Blacklist.Manual.State
+		snap.Modules["blacklist_feeds"] = r.Modules.Blacklist.Feeds.State
+		snap.Modules["blacklist_geoban"] = r.Modules.Blacklist.Geoban.State
+	}
+
+	for _, f := range r.Findings {
+		snap.Findings = append(snap.Findings, f.Code)
+	}
+
+	return snap
 }
 
 // =============================================================================

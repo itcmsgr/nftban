@@ -103,44 +103,78 @@ var (
 	})
 
 	// ==========================================================================
-	// Go Runtime Metrics
+	// Go Runtime Metrics (v1.89: renamed go_* → runtime_* per INV-M-007)
 	// ==========================================================================
 
-	goGoroutines = promauto.NewGauge(prometheus.GaugeOpts{
+	runtimeGoroutines = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
-		Name:      "go_goroutines",
-		Help:      "Number of goroutines",
+		Name:      "runtime_goroutines",
+		Help:      "Number of goroutines in nftband process",
 	})
 
-	goGCCPUFraction = promauto.NewGauge(prometheus.GaugeOpts{
+	runtimeGCCPUFraction = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
-		Name:      "go_gc_cpu_fraction",
+		Name:      "runtime_gc_cpu_fraction",
 		Help:      "Fraction of CPU time spent in GC",
 	})
 
-	goGCPauseSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+	runtimeGCPauseSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "nftban",
-		Name:      "go_gc_pause_seconds",
+		Name:      "runtime_gc_pause_seconds",
 		Help:      "GC pause duration histogram",
 		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 15), // 100us to ~3s
 	})
 
-	goHeapAllocBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	runtimeHeapAllocBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
-		Name:      "go_heap_alloc_bytes",
+		Name:      "runtime_heap_alloc_bytes",
 		Help:      "Heap allocation in bytes",
 	})
 
-	goHeapInuseBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	runtimeHeapInuseBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
-		Name:      "go_heap_inuse_bytes",
+		Name:      "runtime_heap_inuse_bytes",
 		Help:      "Heap in-use in bytes",
 	})
 
-	goHeapReleasedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	runtimeHeapReleasedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "runtime_heap_released_bytes",
+		Help:      "Heap memory released to OS in bytes",
+	})
+
+	// v1.89 INV-M-007: Deprecated aliases (old names). Removed in v1.90.
+	// Both old and new names emit the same value per collection tick.
+	deprecatedGoGoroutines = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "go_goroutines",
+		Help:      "DEPRECATED: use nftban_runtime_goroutines. Removed in v1.90.",
+	})
+	deprecatedGoGCCPUFraction = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "go_gc_cpu_fraction",
+		Help:      "DEPRECATED: use nftban_runtime_gc_cpu_fraction. Removed in v1.90.",
+	})
+	deprecatedGoGCPauseSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Name:      "go_gc_pause_seconds",
+		Help:      "DEPRECATED: use nftban_runtime_gc_pause_seconds. Removed in v1.90.",
+		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 15),
+	})
+	deprecatedGoHeapAllocBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "go_heap_alloc_bytes",
+		Help:      "DEPRECATED: use nftban_runtime_heap_alloc_bytes. Removed in v1.90.",
+	})
+	deprecatedGoHeapInuseBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "go_heap_inuse_bytes",
+		Help:      "DEPRECATED: use nftban_runtime_heap_inuse_bytes. Removed in v1.90.",
+	})
+	deprecatedGoHeapReleasedBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "go_heap_released_bytes",
-		Help:      "Heap memory released to OS in bytes",
+		Help:      "DEPRECATED: use nftban_runtime_heap_released_bytes. Removed in v1.90.",
 	})
 
 	// ==========================================================================
@@ -165,22 +199,40 @@ var (
 		Help:      "Conntrack utilization (used/max)",
 	})
 
-	softnetDropsTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	// v1.89: Removed _total suffix from gauges (Prometheus convention: _total = counters only)
+	softnetDrops = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "softnet_drops",
+		Help:      "Softnet drops across all CPUs (point-in-time gauge)",
+	})
+
+	softnetTimeSqueeze = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "softnet_time_squeeze",
+		Help:      "Softnet time squeeze events (point-in-time gauge)",
+	})
+
+	nicRXDropped = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "nic_rx_dropped",
+		Help:      "NIC RX dropped packets (point-in-time gauge)",
+	})
+
+	// v1.89 INV-M-007: Deprecated aliases (old _total names). Removed in v1.90.
+	deprecatedSoftnetDropsTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "softnet_drops_total",
-		Help:      "Total softnet drops across all CPUs",
+		Help:      "DEPRECATED: use nftban_softnet_drops. Removed in v1.90.",
 	})
-
-	softnetTimeSqueezeTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	deprecatedSoftnetTimeSqueezeTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "softnet_time_squeeze_total",
-		Help:      "Total softnet time squeeze events",
+		Help:      "DEPRECATED: use nftban_softnet_time_squeeze. Removed in v1.90.",
 	})
-
-	nicRXDroppedTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	deprecatedNicRXDroppedTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "nic_rx_dropped_total",
-		Help:      "Total NIC RX dropped packets",
+		Help:      "DEPRECATED: use nftban_nic_rx_dropped. Removed in v1.90.",
 	})
 
 	// ==========================================================================
@@ -297,25 +349,42 @@ func (m *MetricsExporter) Update(snapshot *Snapshot, state *PressureState) {
 	procFDOpen.Set(float64(snapshot.Process.FDs))
 	procThreads.Set(float64(snapshot.Process.Threads))
 
-	// Go runtime metrics
-	goGoroutines.Set(float64(snapshot.Runtime.Goroutines))
-	goGCCPUFraction.Set(snapshot.Runtime.GCCPUFraction)
-	goHeapAllocBytes.Set(float64(snapshot.Runtime.HeapAlloc))
-	goHeapInuseBytes.Set(float64(snapshot.Runtime.HeapInuse))
-	goHeapReleasedBytes.Set(float64(snapshot.Runtime.HeapReleased))
+	// Go runtime metrics (v1.89: new canonical names + deprecated aliases)
+	runtimeGoroutines.Set(float64(snapshot.Runtime.Goroutines))
+	deprecatedGoGoroutines.Set(float64(snapshot.Runtime.Goroutines))
 
-	// Record GC pause if there was one
+	runtimeGCCPUFraction.Set(snapshot.Runtime.GCCPUFraction)
+	deprecatedGoGCCPUFraction.Set(snapshot.Runtime.GCCPUFraction)
+
+	runtimeHeapAllocBytes.Set(float64(snapshot.Runtime.HeapAlloc))
+	deprecatedGoHeapAllocBytes.Set(float64(snapshot.Runtime.HeapAlloc))
+
+	runtimeHeapInuseBytes.Set(float64(snapshot.Runtime.HeapInuse))
+	deprecatedGoHeapInuseBytes.Set(float64(snapshot.Runtime.HeapInuse))
+
+	runtimeHeapReleasedBytes.Set(float64(snapshot.Runtime.HeapReleased))
+	deprecatedGoHeapReleasedBytes.Set(float64(snapshot.Runtime.HeapReleased))
+
+	// Record GC pause if there was one (both new + deprecated histogram)
 	if snapshot.Runtime.GCPauseNs > 0 {
-		goGCPauseSeconds.Observe(float64(snapshot.Runtime.GCPauseNs) / 1e9)
+		pauseSec := float64(snapshot.Runtime.GCPauseNs) / 1e9
+		runtimeGCPauseSeconds.Observe(pauseSec)
+		deprecatedGoGCPauseSeconds.Observe(pauseSec)
 	}
 
-	// Kernel metrics
+	// Kernel metrics (v1.89: softnet/nic gauges renamed — removed _total suffix)
 	conntrackUsed.Set(float64(snapshot.Kernel.ConntrackCount))
 	conntrackMax.Set(float64(snapshot.Kernel.ConntrackMax))
 	conntrackUtilization.Set(snapshot.Kernel.ConntrackUtilization)
-	softnetDropsTotal.Set(float64(snapshot.Kernel.SoftnetDrops))
-	softnetTimeSqueezeTotal.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
-	nicRXDroppedTotal.Set(float64(snapshot.Kernel.NICDrops))
+
+	softnetDrops.Set(float64(snapshot.Kernel.SoftnetDrops))
+	deprecatedSoftnetDropsTotal.Set(float64(snapshot.Kernel.SoftnetDrops))
+
+	softnetTimeSqueeze.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
+	deprecatedSoftnetTimeSqueezeTotal.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
+
+	nicRXDropped.Set(float64(snapshot.Kernel.NICDrops))
+	deprecatedNicRXDroppedTotal.Set(float64(snapshot.Kernel.NICDrops))
 
 	// nftables metrics
 	nftRulesTotal.Set(float64(snapshot.NFTables.RulesTotal))

@@ -55,6 +55,11 @@ type ValidationResult struct {
 	ServiceState  ServiceState     `json:"service_state"`
 	Modules              ModuleHealthMap  `json:"modules"`                // M81-4
 	ConsistencyOverall   string           `json:"consistency_overall"`    // v1.82: "ok" | "mismatch"
+
+	// v1.89 INV-M-001/002: Expose kernel state for evidence layer.
+	// These fields are internal — not serialized to the frozen JSON schema.
+	Doc              *RulesetDocument `json:"-"` // parsed kernel ruleset (counters, chains, sets)
+	SetElementCounts map[string]int   `json:"-"` // "family:set" → element count
 }
 
 // SchemaVersionCurrent is the frozen schema version per M81-6.
