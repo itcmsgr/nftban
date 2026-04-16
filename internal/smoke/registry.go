@@ -26,13 +26,17 @@ import "time"
 type SmokeTest struct {
 	ID            string
 	Name          string
-	Category      string   // truth, daemon, config, metrics
+	Category      string   // truth, daemon, config, metrics, modules, deep
+	Module        string   // "", "ddos", "portscan", "botguard", "loginmon"
 	Command       []string // command + args to execute
 	AllowedExit   []int    // exit codes that count as PASS (e.g. [0,1,2])
 	Timeout       time.Duration
 	Prerequisites []Prerequisite
 	FatalPatterns []string              // stderr/stdout patterns that force FAIL
-	Assert        func(TestOutput) bool // custom assertion on output (optional)
+	Assert        func(TestOutput) bool // v1.94 simple assertion (kept for compat)
+	Assertions    []Assertion           // v1.95 structured assertions
+	DeepOnly      bool                  // only run with --deep flag
+	CIEnabled     bool                  // included in G20 CI gate
 	Notes         string
 }
 
@@ -66,9 +70,17 @@ var DefaultFatalPatterns = []string{
 	"nil pointer dereference",
 }
 
-// DefaultRegistry returns the Phase 1 smoke test set.
-// Small, high-value, contract-safe. No module-deep or counter assertions.
+// DefaultRegistry returns the full smoke test set (Phase 1 + Phase 2).
+// Phase 1: truth, daemon, config, metrics (always run)
+// Phase 2: modules (gated on prerequisites, SKIP if disabled)
 func DefaultRegistry() []SmokeTest {
+	base := baseTests()
+	modules := ModuleTests()
+	return append(base, modules...)
+}
+
+// baseTests returns the Phase 1 core tests.
+func baseTests() []SmokeTest {
 	return []SmokeTest{
 		// === TRUTH (validator-backed) ===
 		{
