@@ -1292,7 +1292,31 @@ firewall_rebuild() {
     [[ "$quiet" == "false" && "$restored_count" -eq 0 ]] && echo "    No blacklist entries to restore"
 
     # Step 8 (v1.50.1): Re-apply DDoS protection if enabled
+    # Preflight: module re-enable requires daemon IPC. If daemon is down
+    # (e.g. start-limit-hit from update cycles), attempt recovery first.
+    # Without this, module commands fail silently and POST validation sees
+    # missing chains → DEGRADED → installer treats as FAILED.
     [[ "$quiet" == "false" ]] && echo "  [8/12] Re-applying protection modules..."
+    if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
+        [[ "$quiet" == "false" ]] && echo "    Daemon not running — attempting recovery..."
+        # Clear start-limit-hit then try to start
+        if command -v nftban_service_clear_failed &>/dev/null; then
+            nftban_service_clear_failed "nftband.service" 2>/dev/null || true
+            nftban_service_clear_failed "nftband.socket" 2>/dev/null || true
+        else
+            systemctl reset-failed nftband.service 2>/dev/null || true
+            systemctl reset-failed nftband.socket 2>/dev/null || true
+        fi
+        systemctl start nftband.service 2>/dev/null || true
+        sleep 2
+        if systemctl is-active --quiet nftband.service 2>/dev/null; then
+            [[ "$quiet" == "false" ]] && echo "    Daemon recovered — proceeding with module re-enable"
+        else
+            echo "    WARNING: Daemon still down — module re-enable will fail." >&2
+            echo "    Module chains will be absent. POST validation may report DEGRADED." >&2
+            echo "    After install: systemctl reset-failed nftband && systemctl start nftband" >&2
+        fi
+    fi
     local _ddos_enabled="false"
     local _ddos_local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf.local"
     if [[ -f "$_ddos_local_conf" ]]; then

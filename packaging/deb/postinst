@@ -140,8 +140,13 @@ case "$1" in
         if [ -x "$NFTBAN_INSTALLER" ]; then
             log_info "Running nftban-installer --deb (mode=$INSTALL_MODE)..."
 
-            "$NFTBAN_INSTALLER" --deb --mode="$INSTALL_MODE"
-            INSTALLER_EXIT=$?
+            # Run installer and capture exit code. The || true prevents set -e
+            # from aborting the postinst on non-zero exit. Without this, set -e
+            # kills the script before INSTALLER_EXIT is assigned, making the
+            # if/elif error handling below dead code and causing dpkg to mark
+            # the package as broken (iF) even for DEGRADED (exit 1) results.
+            INSTALLER_EXIT=0
+            "$NFTBAN_INSTALLER" --deb --mode="$INSTALL_MODE" || INSTALLER_EXIT=$?
 
             if [ $INSTALLER_EXIT -eq 0 ]; then
                 log_info "========================================"
