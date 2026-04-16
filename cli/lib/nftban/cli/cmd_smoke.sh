@@ -44,6 +44,19 @@ readonly CMD_SMOKE_LOADED=1
 # =============================================================================
 
 nftban_cmd_smoke() {
+    # v1.95 compatibility shim: old destructive subcommands moved to selftest
+    case "${1:-}" in
+        run|test|quick|all|detailed|lifecycle|verify|config|configs|check|orphans|stats|trace)
+            echo "NOTE: 'nftban smoke $1' was moved to 'nftban selftest' in v1.95." >&2
+            echo "" >&2
+            echo "  nftban smoke    = non-destructive system verification (CI-safe)" >&2
+            echo "  nftban selftest = extended validation with controlled state changes" >&2
+            echo "" >&2
+            echo "Run instead:  nftban selftest $*" >&2
+            return 1
+            ;;
+    esac
+
     local core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
 
     if [[ ! -x "$core_bin" ]]; then
