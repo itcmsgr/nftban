@@ -388,3 +388,48 @@ jobs:
             exit 1
           fi
           echo "OK: no legacy fallback references"
+
+      # =====================================================================
+      # SURICATA INVARIANT GATES (v1.92 — GS-001..GS-014)
+      # Source: V192_FINAL_ARCHITECTURE_DECISION.md
+      # =====================================================================
+
+      - name: "GS-003: Suricata ban_handler uses IPC only"
+        run: |
+          echo "Checking ban_handler.go for direct nft calls..."
+          if grep -n 'exec\.Command.*"nft"' internal/suricata/ban_handler.go 2>/dev/null; then
+            echo "::error::ban_handler.go contains direct nft command — INV-S-004 violation"
+            exit 1
+          fi
+          echo "OK: ban_handler uses IPC only"
+
+      - name: "GS-004: No scope creep reintroduction"
+        run: |
+          echo "Checking deleted packages don't exist..."
+          FAIL=0
+          for dir in internal/suricata/customrules internal/suricata/recommendations internal/suricata/scanner; do
+            if [ -d "$dir" ]; then
+              echo "::error::$dir exists — scope creep reintroduction"
+              FAIL=1
+            fi
+          done
+          [ $FAIL -eq 0 ] || exit 1
+          echo "OK: no scope creep directories"
+
+      - name: "GS-008: Inline exception disabled by default"
+        run: |
+          echo "Checking inline default config..."
+          if grep -q 'INLINE_EXCEPTION_ENABLED="true"' etc/nftban/modules/inline_exceptions.conf 2>/dev/null; then
+            echo "::error::Inline exception enabled in default config — INV-S-009 violation"
+            exit 1
+          fi
+          echo "OK: inline exception disabled by default"
+
+      - name: "GS-014: Rule engine cannot trigger inline"
+        run: |
+          echo "Checking rule engine for inline references..."
+          if grep -rn 'nfqueue\|inline.*drop\|InlineException' internal/suricata/policy.go 2>/dev/null; then
+            echo "::error::Rule engine/policy references inline enforcement — INV-S-012 violation"
+            exit 1
+          fi
+          echo "OK: rule engine isolated from inline"
