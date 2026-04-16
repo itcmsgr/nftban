@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.87 - Named Counter Evidence Tests (M87-2)
+// NFTBan v1.88 - Named Counter Evidence Tests (M87-2)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_counters_test"
