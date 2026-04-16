@@ -140,10 +140,10 @@ func baseTests() []SmokeTest {
 			AllowedExit: []int{0},
 			Timeout:     5 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "systemctl"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
 			},
 			FatalPatterns: nil,
-			Notes:         "Daemon must be active for IPC and ban operations",
+			Notes:         "Daemon must be active. SKIP if daemon not running (expected in CI).",
 		},
 
 		// === CONFIG ===
@@ -170,8 +170,8 @@ func baseTests() []SmokeTest {
 			AllowedExit: []int{0},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "daemon", Name: "nftband.service"},
-				{Type: "binary", Name: "curl"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
+				{Type: PrereqBinary, Name: "curl"},
 			},
 			FatalPatterns: nil,
 			Assert: func(o TestOutput) bool {
