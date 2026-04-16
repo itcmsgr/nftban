@@ -18,10 +18,10 @@ _nftban() {
     # FIREWALL: firewall ban unban list check search whitelist whitelist-system profile panel permissions
     # PROTECTION: ddos portscan login feeds trust country cloudflare geoban geoip
     # MONITORING: gui metrics stats report fhs module services timers mail
-    # DEBUG: debug smoke emulate setup menu
+    # DEBUG: debug smoke selftest emulate setup menu
 
     # H28 fix: 'cloudflare' is a legacy alias for 'trust' — still listed for discovery
-    local commands="status health validate config sync version help firewall firewall-logs ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark rollback scale"
+    local commands="status health validate config sync version help firewall firewall-logs ban unban protect unprotect cleanup list check search blacklist whitelist whitelist-system profile panel permissions polkit ddos portscan botscan botguard login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke selftest emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix preflight export tunnel benchmark rollback scale"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -75,7 +75,8 @@ _nftban() {
 
     # Debug & Testing
     local debug_cmds="status enable disable trace logs dump --json help"
-    local smoke_cmds="--verbose --json help"
+    local smoke_cmds="--json --group --module --deep help"
+    local selftest_cmds="run quick all lifecycle verify config check stats trace help"
     local emulate_cmds="--proto --port --direction --json help"
     local setup_cmds="install uninstall configure wizard help"
     local menu_cmds="help"
@@ -262,6 +263,9 @@ _nftban() {
                     ;;
                 smoke)
                     COMPREPLY=($(compgen -W "${smoke_cmds}" -- "${cur}"))
+                    ;;
+                selftest)
+                    COMPREPLY=($(compgen -W "${selftest_cmds}" -- "${cur}"))
                     ;;
                 emulate)
                     # Emulate expects an IP address first
