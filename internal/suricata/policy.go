@@ -22,6 +22,7 @@ package suricata
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -144,7 +145,7 @@ func (p *Policy) GetBanDuration(action string) time.Duration {
 
 // loadConfFile reads a bash-style KEY="value" config file.
 func loadConfFile(path string, handler func(key, val string)) {
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path)) // #nosec G304 -- paths from /etc/nftban/modules/ (trusted config dir)
 	if err != nil {
 		return // file doesn't exist — use defaults
 	}
