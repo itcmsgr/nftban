@@ -61,7 +61,7 @@ jobs:
 
       - name: Open PR with refreshed suppressions
         if: steps.refresh.outputs.no_changes == 'false'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: |
             chore(security): refresh OSV stdlib suppress list
