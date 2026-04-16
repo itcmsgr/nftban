@@ -51,7 +51,21 @@ nftban_cmd_smoke() {
     fi
     echo ""
 
+    # v1.94+: Go-based registry-driven smoke (flags pass through to nftban-core)
     case "$subcommand" in
+        --json|--group=*|--module=*|--deep)
+            # Go smoke: pass all args through to nftban-core smoke
+            local core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+            if [[ -x "$core_bin" ]]; then
+                "$core_bin" smoke "$subcommand" "$@"
+                return $?
+            else
+                echo "ERROR: nftban-core binary not found at $core_bin" >&2
+                return 1
+            fi
+            ;;
+
+        # Legacy shell smoke subcommands
         run|test)
             nftban_smoke_run "$@"
             ;;
@@ -59,19 +73,15 @@ nftban_cmd_smoke() {
             nftban_smoke_run --quick "$@"
             ;;
         all|detailed)
-            # Comprehensive test of ALL 43 CLI commands
             nftban_smoke_run --all "$@"
             ;;
         lifecycle)
-            # Ban/unban + whitelist lifecycle tests only
             nftban_smoke_run --lifecycle "$@"
             ;;
         verify)
-            # Smart validation: verify counts match expectations
             nftban_smoke_verify "$@"
             ;;
         config|configs)
-            # Verify config file integrity (CI/build validation)
             nftban_smoke_verify_configs "$@"
             ;;
         check|orphans)
