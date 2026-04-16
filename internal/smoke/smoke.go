@@ -169,7 +169,9 @@ func runCommand(args []string, timeout time.Duration) TestOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //lint:ignore G204 commands from trusted smoke registry, not user input
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// #nosec G204 -- command path and args come from the trusted internal smoke registry, not user input
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
