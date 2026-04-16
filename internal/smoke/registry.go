@@ -107,13 +107,14 @@ func baseTests() []SmokeTest {
 			AllowedExit: []int{0, 1, 2},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "nftban"},
+				{Type: PrereqBinary, Name: "nftban"},
+				{Type: PrereqValidatorBin, Name: "nftban-validate"},
 			},
 			FatalPatterns: DefaultFatalPatterns,
 			Assert: func(o TestOutput) bool {
 				return len(o.Stdout) > 2 && o.Stdout[0] == '{'
 			},
-			Notes: "Health must return valid JSON",
+			Notes: "Health delegates to Go validator. Without validator, falls back to shell diagnostics with undocumented exit codes.",
 		},
 		{
 			ID:          "T3",
@@ -123,10 +124,11 @@ func baseTests() []SmokeTest {
 			AllowedExit: []int{0, 1, 2},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "nftban"},
+				{Type: PrereqBinary, Name: "nftban"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
 			},
 			FatalPatterns: DefaultFatalPatterns,
-			Notes:         "Status command must not crash",
+			Notes: "Status queries live system state. Without daemon, exit codes are environment-dependent.",
 		},
 
 		// === DAEMON ===
