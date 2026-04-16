@@ -495,6 +495,33 @@ func feedsExist() bool {
 	return false
 }
 
+// collectEvidenceSetElements queries element counts for all evidence-relevant sets.
+// v1.89 INV-M-001: Validator is the sole kernel-query authority.
+// Evidence layer reads from ValidationResult.SetElementCounts instead of
+// making its own nft -j list set calls.
+func collectEvidenceSetElements() map[string]int {
+	result := make(map[string]int)
+	evidenceSets := map[string][]string{
+		"ip": {
+			"blacklist_manual_ipv4", "blacklist_ipv4",
+			"http_bot_suspect", "http_bot_pending", "http_bot_allow",
+			"http_bot_grey", "http_bot_ban", "http_bot_emergency",
+		},
+		"ip6": {
+			"blacklist_manual_ipv6", "blacklist_ipv6",
+			"http_bot_suspect6", "http_bot_pending6", "http_bot_allow6",
+			"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
+		},
+	}
+	for family, sets := range evidenceSets {
+		for _, name := range sets {
+			key := family + ":" + name
+			result[key] = countSetElements(family, name)
+		}
+	}
+	return result
+}
+
 // countSetElements returns the number of elements in a kernel set.
 //
 // countSetElementsFunc is the default implementation for set element queries.

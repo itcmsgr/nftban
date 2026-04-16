@@ -180,6 +180,10 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	}
 	result.ChainCount.TotalChains = result.ChainCount.IPv4Total + result.ChainCount.IPv6Total
 
+	// v1.89 INV-M-001/002: Expose parsed kernel document for evidence layer.
+	// Evidence extracts counters + chains from this instead of making nft calls.
+	result.Doc = doc
+
 	// Derive module truth from kernel state
 	// B80-4: Check required service state.
 	// A system with correct kernel structure but a dead daemon is not truly
@@ -229,6 +233,10 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	result.Modules = evaluateModuleHealth(doc, result.ServiceState)
 	// Collect any module-specific findings (e.g. VAL-GEOBAN-001)
 	result.Findings = append(result.Findings, moduleFindings...)
+
+	// v1.89 INV-M-001: Collect set element counts for evidence layer.
+	// Validator is the sole kernel-query authority — evidence reads from here.
+	result.SetElementCounts = collectEvidenceSetElements()
 
 	// v1.82 Step 3: Consistency axis — cross-source verification
 	consistencyResult := evaluateConsistency(result.Modules)

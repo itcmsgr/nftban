@@ -208,6 +208,21 @@ These invariants are enforced by validation logic and CI gates.
 
 ---
 
+## Metrics and Observability
+
+The daemon exposes runtime metrics on `http://127.0.0.1:9580/metrics`
+(localhost only, Prometheus text exposition format). This is the canonical
+runtime metrics surface. As of v1.89, the evidence layer reads all kernel
+data from the validator — no duplicate nft queries.
+
+The watchdog subsystem provides adaptive resource control. It monitors
+process, Go runtime, and kernel metrics, and adjusts operating mode
+(NORMAL → DEGRADED → SURVIVAL) based on memory and CPU pressure.
+Server profile detection (Small/Medium/Large) automatically tunes memory
+budgets and CIDR limits based on available RAM.
+
+---
+
 ## Go Module Notice
 
 NFTBan is a **system-level firewall product**, not a general-purpose Go library.

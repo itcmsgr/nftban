@@ -399,6 +399,19 @@ func (d *Daemon) initWatchdog() error {
 			d.stats.SetWatchdogState(status, string(state.Mode), cpuScore, memScore, ioScore)
 			d.stats.SetDaemonMode(string(state.Mode))
 		}
+
+		// v1.89 INV-M-008: Wire memory pressure → Prometheus gauges (call site 2 of 2).
+		pressureLevel := safety.GetMemoryPressureLevel()
+		metrics.SetMemoryPressureLevel(int(pressureLevel))
+		budget := safety.GetMemoryBudget()
+		metrics.SetMemoryBudgetBytes(budget)
+		if budget > 0 {
+			usedPct := float64(snapshot.Process.RSS) / float64(budget) * 100
+			if usedPct > 100 {
+				usedPct = 100
+			}
+			metrics.SetMemoryUsedPercent(usedPct)
+		}
 	})
 
 	d.watchdog = wd
