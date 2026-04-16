@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="web_paths"
+# meta:type="config"
+# meta:version="1.93.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-16"
+# meta:description="Event Rule Engine — web path probe detection rules"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# NFTBan Event Rule Engine — Web Path Probes
+# ===========================================
+# Detects common web path probing patterns.
+# Operates on normalized events only — no payload inspection.
+
+name: web_paths
+rules:
+  - id: WP-001
+    name: "xmlrpc.php burst"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          contains: "/xmlrpc.php"
+    threshold:
+      count: 10
+      window: 60s
+      per: src_ip
+    score: 30
+    action: ban_short
+
+  - id: WP-002
+    name: "wp-login brute force"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          contains: "/wp-login.php"
+        method:
+          exact: "POST"
+    threshold:
+      count: 20
+      window: 120s
+      per: src_ip
+    score: 50
+    action: ban_long
+
+  - id: WP-003
+    name: "wp-admin probe"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          prefix: "/wp-admin"
+    threshold:
+      count: 15
+      window: 60s
+      per: src_ip
+    score: 25
+    action: ban_short
+
+  - id: WP-004
+    name: "phpmyadmin probe"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          contains: "phpmyadmin"
+    threshold:
+      count: 5
+      window: 60s
+      per: src_ip
+    score: 40
+    action: ban_short
+
+  - id: WP-005
+    name: "env file probe"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          contains: ".env"
+    threshold:
+      count: 3
+      window: 60s
+      per: src_ip
+    score: 50
+    action: ban_long
+
+  - id: WP-006
+    name: "git directory probe"
+    match:
+      event_type: http_probe
+      metadata:
+        uri:
+          contains: "/.git/"
+    threshold:
+      count: 3
+      window: 60s
+      per: src_ip
+    score: 50
+    action: ban_long
