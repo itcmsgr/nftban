@@ -1586,6 +1586,7 @@ nftban_health_fix_daemon_memory() {
         # Log the event
         logger -t nftban-health "Memory leak detected: RSS=${current_mb}MB, Growth=${mb_per_hour}MB/h, Pressure=${memory_pressure}%. Restarting nftband."
 
+        nftban_service_clear_failed "nftband.service" 2>/dev/null || true
         if systemctl restart nftband 2>/dev/null; then
             sleep 2
             local new_pid new_rss

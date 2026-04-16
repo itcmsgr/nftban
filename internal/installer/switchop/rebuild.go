@@ -30,23 +30,37 @@ import (
 const rebuildTimeout = 60 * time.Second
 
 // Rebuild runs "nftban firewall rebuild" and returns an error if it fails.
-// No retry, no fallback. Failure is FATAL (v1.70.0 invariant: rebuild failure
-// must not be silently converted to reload).
+// Shell rebuild exit code contract (authoritative — do not redefine):
+//   0 = PROTECTED (all checks passed)
+//   1 = DEGRADED  (firewall operational, some module checks failed)
+//   2 = FAILED    (rollback happened)
+//   3 = FATAL     (rollback also failed)
+//
+// Exit 1 (DEGRADED) is expected during upgrade: module-scoped chains
+// require the daemon to be running, which may not be the case yet.
+// Only exit 2+ is treated as a fatal rebuild failure.
 func Rebuild(exec executor.Executor, log *logging.Logger) error {
 	log.Info("running nftban firewall rebuild (timeout=%s)", rebuildTimeout)
 
 	res := exec.RunTimeout(rebuildTimeout, fhs.NftbanCLI, "firewall", "rebuild")
 	log.CmdResult("nftban firewall rebuild", res.ExitCode, res.Stderr)
 
-	if res.ExitCode != 0 {
-		// Write install-failed marker for runtime CLI
+	if res.ExitCode == 1 {
+		// DEGRADED: firewall base schema is loaded but module chains may be
+		// missing (daemon was down during module re-enable). This is recoverable
+		// — module chains will be re-created when daemon starts with modules enabled.
+		log.Warn("firewall rebuild DEGRADED (exit 1): %s", res.Stderr)
+		log.Warn("module chains may be absent — will be created on daemon start")
+		// Continue — do not fail the install for a degraded rebuild
+	} else if res.ExitCode >= 2 {
+		// FAILED or FATAL: real rebuild failure, rollback may have happened
 		if err := exec.WriteFileAtomic(fhs.InstallFailedMarker, []byte("NFTBAN_INSTALL_FAILED=1\n"), 0644); err != nil {
 			log.Warn("failed to write install-failed marker: %v", err)
 		}
 		return fmt.Errorf("nftban firewall rebuild failed (exit %d): %s", res.ExitCode, res.Stderr)
 	}
 
-	log.Info("firewall rebuild completed successfully")
+	log.Info("firewall rebuild completed (exit %d)", res.ExitCode)
 
 	// Write schema version file (G7 parity with shell postinst).
 	// The shell postinst wrote: echo "$CURRENT_SCHEMA" > /etc/nftban/.schema_version

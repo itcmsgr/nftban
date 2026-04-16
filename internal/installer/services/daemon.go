@@ -37,6 +37,13 @@ func StartDaemon(exec executor.Executor, log *logging.Logger) {
 		log.Warn("daemon-reload: %v", err)
 	}
 
+	// Clear start-limit-hit before attempting start. During update/install
+	// cycles the daemon may have been stopped/started repeatedly, exhausting
+	// systemd's StartLimitBurst. Without reset-failed, all start attempts
+	// will fail with "start request repeated too quickly."
+	_ = exec.Run("systemctl", "reset-failed", "nftband.service")
+	_ = exec.Run("systemctl", "reset-failed", "nftband.socket")
+
 	// Enable socket (primary activation method)
 	if err := exec.ServiceEnable("nftband.socket"); err != nil {
 		log.Warn("enable nftband.socket: %v", err)
