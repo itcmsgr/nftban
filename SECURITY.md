@@ -1,5 +1,23 @@
 # Security Policy
 
+## Integrity & Build Verification
+
+NFTBan enforces security through a kernel-first validation model and automated
+CI/CD pipelines.
+
+→ **Full audit surface:** [Integrity & Build Status (STATUS.md)](STATUS.md)
+
+This includes:
+- CI pipeline results (build, security, compliance)
+- Contract gate enforcement
+- Supply chain verification (SLSA Level 3)
+- Runtime verification commands
+
+This page describes vulnerability reporting and security policy.
+STATUS.md provides machine-verifiable system integrity.
+
+---
+
 ## About NFTBan
 
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables. Security is foundational to the architecture, featuring capability-based privilege separation, systemd sandboxing, Unix socket IPC, and strict input validation at all layers.

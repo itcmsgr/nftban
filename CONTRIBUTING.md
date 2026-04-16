@@ -1,6 +1,24 @@
 # Contributing to NFTBan
 
-Thank you for your interest in contributing to NFTBAN! This document provides guidelines for contributing.
+Thank you for your interest in contributing to NFTBan! This document provides guidelines for contributing.
+
+## System Integrity Model
+
+NFTBan enforces correctness through:
+
+- [STATUS.md](STATUS.md) — CI/CD audit surface (build, security, contract gates)
+- [docs/DESIGN_PRINCIPLES.md](docs/DESIGN_PRINCIPLES.md) — engineering contract
+
+All contributions must preserve:
+
+- Kernel-first authority
+- Validator-derived truth
+- Evidence-based protection
+- CI-enforced invariants
+
+Changes that violate these principles must not be merged.
+
+---
 
 ## About the Project
 
