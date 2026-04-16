@@ -38,7 +38,6 @@ type IPOrigin struct {
 	Country  string    `json:"country"`
 	City     string    `json:"city,omitempty"`
 	BannedAt time.Time `json:"banned_at"`
-	Jail     string    `json:"jail,omitempty"`    // Legacy: fail2ban jail name
 	Source   string    `json:"source,omitempty"`  // suricata, login-monitor, manual, feeds
 	Service  string    `json:"service,omitempty"` // ssh, http, wordpress, malware, etc.
 	Reason   string    `json:"reason,omitempty"`
@@ -56,7 +55,6 @@ type DailySummary struct {
 	TopCountries   []CountryStats          `json:"top_countries"`
 	BySource       map[string]int          `json:"by_source"`   // suricata, login-monitor, manual, feeds
 	ByService      map[string]int          `json:"by_service"`  // Dynamic from filters.conf
-	ByJail         map[string]int          `json:"by_jail"`     // Legacy fail2ban compatibility
 	GeneratedAt    time.Time               `json:"generated_at"`
 }
 

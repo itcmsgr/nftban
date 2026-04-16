@@ -257,9 +257,9 @@ func (c *Collector) writeNFTablesMetrics(f *os.File) error {
 		ruleCount = 0
 	}
 
-	fmt.Fprintf(f, "# HELP nftban_nftables_rules_total Total number of nftables rules\n")
-	fmt.Fprintf(f, "# TYPE nftban_nftables_rules_total gauge\n")
-	fmt.Fprintf(f, "nftban_nftables_rules_total %d\n\n", ruleCount)
+	fmt.Fprintf(f, "# HELP nftban_nft_rules_total Total number of nftables rules\n")
+	fmt.Fprintf(f, "# TYPE nftban_nft_rules_total gauge\n")
+	fmt.Fprintf(f, "nftban_nft_rules_total %d\n\n", ruleCount)
 
 	return nil
 }
