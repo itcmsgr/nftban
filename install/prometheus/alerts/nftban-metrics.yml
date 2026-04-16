@@ -49,7 +49,7 @@ groups:
 
       # Alert if metrics are stale
       - alert: NFTBanMetricsStale
-        expr: (time() - nftban_last_update_timestamp) > 300
+        expr: (time() - nftban_exporter_last_success_timestamp) > 300
         for: 5m
         labels:
           severity: warning
@@ -131,7 +131,7 @@ groups:
         annotations:
           summary: "Rapid increase in IP blocks"
           description: "Blocking rate is {{ $value | humanize }} IPs/second on {{ $labels.instance }}. Possible attack in progress."
-          action: "Review recent bans with 'nftban firewall list-blocked --recent' and check fail2ban logs"
+          action: "Review recent bans with 'nftban firewall list-blocked --recent' and check nftban bans.log"
 
       # Alert if blocks in last 24h is unusually high
       - alert: NFTBanHighDailyBans
@@ -144,7 +144,7 @@ groups:
         annotations:
           summary: "High number of bans in last 24 hours"
           description: "{{ $value }} IPs banned in last 24h on {{ $labels.instance }}. Higher than usual activity."
-          action: "Review ban patterns and consider adjusting fail2ban thresholds"
+          action: "Review ban patterns and consider adjusting detection thresholds"
 
   # NFTBan System Resources
   - name: nftban_system
@@ -152,7 +152,7 @@ groups:
     rules:
       # Alert if nftables rule count is very high
       - alert: NFTBanHighRuleCount
-        expr: nftban_nftables_rules_count > 10000
+        expr: nftban_nftables_rules_total > 10000
         for: 10m
         labels:
           severity: warning
@@ -163,18 +163,6 @@ groups:
           description: "nftables has {{ $value }} rules on {{ $labels.instance }}. Performance may be impacted."
           action: "Review and optimize nftables rules, consider cleanup"
 
-      # Alert if no fail2ban jails are active
-      - alert: NFTBanNoActiveJails
-        expr: nftban_fail2ban_jails_active == 0
-        for: 10m
-        labels:
-          severity: warning
-          component: firewall
-          service: fail2ban
-        annotations:
-          summary: "No active fail2ban jails"
-          description: "fail2ban has no active jails on {{ $labels.instance }}. Automatic blocking may not be working."
-          action: "Check systemctl status fail2ban and fail2ban-client status"
 
   # Geographic Anomalies
   - name: nftban_geographic
@@ -182,7 +170,7 @@ groups:
     rules:
       # Alert if blocks from single country exceed threshold
       - alert: NFTBanHighCountryBlocks
-        expr: nftban_blocks_by_country > 1000
+        expr: nftban_bans_by_country_total > 1000
         for: 30m
         labels:
           severity: info
