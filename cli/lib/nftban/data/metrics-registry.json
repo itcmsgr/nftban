@@ -654,7 +654,7 @@
       "labels": {
         "component": {
           "type": "enum",
-          "values": ["nftables", "polkit", "ssh", "fail2ban"],
+          "values": ["nftables", "polkit", "ssh"],
           "description": "System component"
         }
       },
