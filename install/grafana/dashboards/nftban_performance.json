@@ -153,7 +153,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_nftables_rules_count",
+          "expr": "nftban_nftables_rules_total",
           "legendFormat": "Rules Count",
           "range": true,
           "refId": "A"
@@ -321,13 +321,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_fail2ban_jails_active",
+          "expr": "vector(0)",
           "legendFormat": "Active Jails",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "fail2ban Active Jails",
+      "title": "Deprecated Panel (removed)",
       "type": "stat"
     },
     {
@@ -391,7 +391,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "time() - nftban_last_update_timestamp",
+          "expr": "time() - nftban_exporter_last_success_timestamp",
           "legendFormat": "Seconds Since Update",
           "range": true,
           "refId": "A"
@@ -484,7 +484,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_nftables_rules_count",
+          "expr": "nftban_nftables_rules_total",
           "legendFormat": "Rules Count",
           "range": true,
           "refId": "A"
@@ -577,13 +577,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_fail2ban_jails_active",
+          "expr": "vector(0)",
           "legendFormat": "Active Jails",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Active fail2ban Jails Over Time",
+      "title": "Deprecated Panel (removed)",
       "type": "timeseries"
     }
   ],
