@@ -1,10 +1,10 @@
 // =============================================================================
-// NFTBan v1.87 - Evidence Types (Phase 1 Canonical Model)
+// NFTBan v1.88 - Evidence Types (Phase 1 Canonical Model)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_types"
 // meta:type="package"
-// meta:version="1.87.0"
+// meta:version="1.88.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-15"
 // meta:description="Canonical evidence types for metrics Phase 1"

@@ -1,10 +1,10 @@
 // =============================================================================
-// NFTBan v1.87 - Evidence Snapshot Builder + Renderers (M87-7/8)
+// NFTBan v1.88 - Evidence Snapshot Builder + Renderers
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_snapshot"
 // meta:type="package"
-// meta:version="1.87.0"
+// meta:version="1.88.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-15"
 // meta:description="Builds and renders Phase 1 evidence snapshots"
@@ -46,11 +46,14 @@ type EvidenceSnapshot struct {
 		Chains   map[string]ChainInfo    `json:"chains"`
 	} `json:"kernel"`
 
+	// v1.88: External evidence plane (journal-based)
+	External *JournalEvidenceResult `json:"external,omitempty"`
+
 	Validator *ValidatorSnapshot   `json:"validator"`
 	Correlation map[string]string  `json:"correlation"`
 }
 
-const EvidenceSchemaVersion = "1.87.0"
+const EvidenceSchemaVersion = "1.88.0"
 
 // CollectEvidenceSnapshot gathers all Phase 1 evidence.
 // Single entry point: collect once, render many.
@@ -75,11 +78,14 @@ func CollectEvidenceSnapshot(ctx context.Context) (*EvidenceSnapshot, error) {
 	snap.Kernel.Sets = CollectSetElements(ctx)
 	snap.Kernel.Chains = CollectChainPresence(ctx)
 
+	// External evidence plane (journal)
+	snap.External = CollectJournalEvidence(ctx)
+
 	// Validator plane
 	snap.Validator = CollectValidatorSnapshot(ctx)
 
 	// Correlation plane
-	snap.Correlation = CorrelateEvidence(snap.Kernel.Counters, snap.Kernel.Sets, snap.Validator)
+	snap.Correlation = CorrelateEvidence(snap.Kernel.Counters, snap.Kernel.Sets, snap.Validator, snap.External)
 
 	return snap, nil
 }
@@ -134,6 +140,34 @@ func RenderHuman(snap *EvidenceSnapshot, w io.Writer) {
 		if !anyEnforcement {
 			fmt.Fprintf(w, "  (no enforcement counters active)\n")
 		}
+
+		// M88-1: Total processed packets (all counters summed)
+		var totalPackets int64
+		for _, cv := range snap.Kernel.Counters {
+			totalPackets += cv.Packets
+		}
+		fmt.Fprintf(w, "\n")
+		fmt.Fprintf(w, "  Total counted packets: %d\n", totalPackets)
+		fmt.Fprintf(w, "  (sum of all nftables counters: accepts, drops, and flow markers)\n")
+
+		// M88-6: Anchor flow (7 anchors)
+		anchorKeys := []string{
+			"ip:anchor_hygiene", "ip:anchor_trusted", "ip:anchor_ban",
+			"ip:anchor_established", "ip:anchor_detect", "ip:anchor_service", "ip:anchor_final",
+		}
+		anyAnchor := false
+		for _, key := range anchorKeys {
+			if cv, ok := snap.Kernel.Counters[key]; ok {
+				if !anyAnchor {
+					fmt.Fprintf(w, "\n")
+					fmt.Fprintf(w, "Anchor Flow (pipeline stage transitions, not enforcement)\n")
+					fmt.Fprintf(w, "────────────────────────────────────────\n")
+					anyAnchor = true
+				}
+				name := key[3:] // strip "ip:" prefix
+				fmt.Fprintf(w, "  %-38s %d packets\n", name, cv.Packets)
+			}
+		}
 	}
 	fmt.Fprintf(w, "\n")
 
@@ -160,6 +194,25 @@ func RenderHuman(snap *EvidenceSnapshot, w io.Writer) {
 		fmt.Fprintf(w, "  (not present)\n")
 	}
 	fmt.Fprintf(w, "\n")
+
+	// v1.88: Journal evidence (LoginMon activity)
+	if snap.External != nil && !snap.External.Unknown {
+		fmt.Fprintf(w, "Journal Evidence (15m window)\n")
+		fmt.Fprintf(w, "────────────────────────────────────────\n")
+		fmt.Fprintf(w, "  LoginMon active:   %v\n", snap.External.LoginMonActive)
+		if snap.External.LoginMonBans > 0 {
+			fmt.Fprintf(w, "  LoginMon bans:     %d\n", snap.External.LoginMonBans)
+		}
+		if snap.External.LoginMonEvents > 0 {
+			fmt.Fprintf(w, "  LoginMon events:   %d\n", snap.External.LoginMonEvents)
+		}
+		fmt.Fprintf(w, "\n")
+	} else if snap.External != nil && snap.External.Unknown {
+		fmt.Fprintf(w, "Journal Evidence\n")
+		fmt.Fprintf(w, "────────────────────────────────────────\n")
+		fmt.Fprintf(w, "  (journal evidence unavailable)\n")
+		fmt.Fprintf(w, "\n")
+	}
 
 	// Correlation
 	fmt.Fprintf(w, "Correlation\n")
@@ -191,5 +244,7 @@ func RenderHuman(snap *EvidenceSnapshot, w io.Writer) {
 	fmt.Fprintf(w, "  - Zero counters are neutral, not failure.\n")
 	fmt.Fprintf(w, "  - Shared counters are family-level only; no source attribution.\n")
 	fmt.Fprintf(w, "  - Portscan has no dedicated enforcement counter.\n")
+	fmt.Fprintf(w, "  - LoginMon uses shared blacklist sets; journal evidence supplements.\n")
+	fmt.Fprintf(w, "  - Anchor counters track pipeline flow stages, not enforcement.\n")
 	fmt.Fprintf(w, "  - Correlation is diagnostic only — does not determine protection state.\n")
 }

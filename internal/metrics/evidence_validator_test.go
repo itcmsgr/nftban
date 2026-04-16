@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.87 - Validator Snapshot Bridge Tests (M87-5)
+// NFTBan v1.88 - Validator Snapshot Bridge Tests (M87-5)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_validator_test"

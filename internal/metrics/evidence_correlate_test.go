@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.87 - Correlation Engine Tests (M87-6)
+// NFTBan v1.88 - Correlation Engine Tests (M87-6)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_correlate_test"
@@ -20,7 +20,7 @@ package metrics
 import "testing"
 
 func TestCorrelate_ValidatorUnavailable(t *testing.T) {
-	results := CorrelateEvidence(nil, nil, nil)
+	results := CorrelateEvidence(nil, nil, nil, nil)
 	for mod, result := range results {
 		if result != CorrelationUnknown {
 			t.Errorf("module %s: expected unknown when validator nil, got %s", mod, result)
@@ -30,7 +30,7 @@ func TestCorrelate_ValidatorUnavailable(t *testing.T) {
 
 func TestCorrelate_ValidatorUnknown(t *testing.T) {
 	val := &ValidatorSnapshot{Status: "unavailable", Unknown: true}
-	results := CorrelateEvidence(nil, nil, val)
+	results := CorrelateEvidence(nil, nil, val, nil)
 	for mod, result := range results {
 		if result != CorrelationUnknown {
 			t.Errorf("module %s: expected unknown when validator Unknown=true, got %s", mod, result)
@@ -46,7 +46,7 @@ func TestCorrelate_DDoS_CounterPositive_Enforcing(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"ddos": "enforcing"},
 	}
-	results := CorrelateEvidence(counters, nil, val)
+	results := CorrelateEvidence(counters, nil, val, nil)
 	if results["ddos"] != CorrelationMatch {
 		t.Errorf("ddos: counter>0 + enforcing should be match, got %s", results["ddos"])
 	}
@@ -59,7 +59,7 @@ func TestCorrelate_DDoS_CounterPositive_Idle(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"ddos": "idle"},
 	}
-	results := CorrelateEvidence(counters, nil, val)
+	results := CorrelateEvidence(counters, nil, val, nil)
 	if results["ddos"] != CorrelationMismatch {
 		t.Errorf("ddos: counter>0 + idle should be mismatch, got %s", results["ddos"])
 	}
@@ -72,7 +72,7 @@ func TestCorrelate_DDoS_ZeroCounters_Idle(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"ddos": "idle"},
 	}
-	results := CorrelateEvidence(counters, nil, val)
+	results := CorrelateEvidence(counters, nil, val, nil)
 	if results["ddos"] != CorrelationMatch {
 		t.Errorf("ddos: zero counters + idle should be match, got %s", results["ddos"])
 	}
@@ -82,7 +82,7 @@ func TestCorrelate_DDoS_NilCounters(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"ddos": "enforcing"},
 	}
-	results := CorrelateEvidence(nil, nil, val)
+	results := CorrelateEvidence(nil, nil, val, nil)
 	if results["ddos"] != CorrelationUnknown {
 		t.Errorf("ddos: nil counters should be unknown, got %s", results["ddos"])
 	}
@@ -96,7 +96,7 @@ func TestCorrelate_BotGuard_SetsPopulated_Enforcing(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"botguard": "enforcing"},
 	}
-	results := CorrelateEvidence(nil, sets, val)
+	results := CorrelateEvidence(nil, sets, val, nil)
 	if results["botguard"] != CorrelationMatch {
 		t.Errorf("botguard: populated + enforcing should be match, got %s", results["botguard"])
 	}
@@ -109,7 +109,7 @@ func TestCorrelate_BotGuard_SetsPopulated_Idle(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"botguard": "idle"},
 	}
-	results := CorrelateEvidence(nil, sets, val)
+	results := CorrelateEvidence(nil, sets, val, nil)
 	if results["botguard"] != CorrelationMismatch {
 		t.Errorf("botguard: populated + idle should be mismatch, got %s", results["botguard"])
 	}
@@ -122,7 +122,7 @@ func TestCorrelate_BotGuard_UnknownSets(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"botguard": "enforcing"},
 	}
-	results := CorrelateEvidence(nil, sets, val)
+	results := CorrelateEvidence(nil, sets, val, nil)
 	// Unknown sets → correlation is unknown (not match, not mismatch)
 	if results["botguard"] != CorrelationUnknown {
 		t.Errorf("botguard: unknown sets should be unknown, got %s", results["botguard"])
@@ -139,7 +139,7 @@ func TestCorrelate_BlacklistManual_UnknownSets(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"blacklist_manual": "enforcing"},
 	}
-	results := CorrelateEvidence(counters, sets, val)
+	results := CorrelateEvidence(counters, sets, val, nil)
 	if results["blacklist_manual"] != CorrelationUnknown {
 		t.Errorf("blacklist_manual: unknown sets should be unknown, got %s", results["blacklist_manual"])
 	}
@@ -150,20 +150,55 @@ func TestCorrelate_Portscan(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"portscan": "idle"},
 	}
-	results := CorrelateEvidence(nil, nil, val)
+	results := CorrelateEvidence(nil, nil, val, nil)
 	if results["portscan"] != CorrelationExpectedLimitation {
 		t.Errorf("portscan should always be expected_limitation, got %s", results["portscan"])
 	}
 }
 
 // LoginMon — always expected_limitation in Phase 1
-func TestCorrelate_LoginMon(t *testing.T) {
+func TestCorrelate_LoginMon_NoJournal(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"loginmon": "idle"},
 	}
-	results := CorrelateEvidence(nil, nil, val)
-	if results["loginmon"] != CorrelationExpectedLimitation {
-		t.Errorf("loginmon should always be expected_limitation in Phase 1, got %s", results["loginmon"])
+	results := CorrelateEvidence(nil, nil, val, nil)
+	if results["loginmon"] != CorrelationUnknown {
+		t.Errorf("loginmon with nil journal should be unknown, got %s", results["loginmon"])
+	}
+}
+
+func TestCorrelate_LoginMon_BansAndIdle(t *testing.T) {
+	val := &ValidatorSnapshot{
+		Modules: map[string]string{"loginmon": "idle"},
+	}
+	journal := &JournalEvidenceResult{LoginMonActive: true, LoginMonBans: 3}
+	results := CorrelateEvidence(nil, nil, val, journal)
+	// Bans happening but validator says idle — shared counter limitation
+	if results["loginmon"] != CorrelationWarning {
+		t.Errorf("loginmon bans + idle should be warning, got %s", results["loginmon"])
+	}
+}
+
+func TestCorrelate_LoginMon_EventsOnly(t *testing.T) {
+	val := &ValidatorSnapshot{
+		Modules: map[string]string{"loginmon": "idle"},
+	}
+	journal := &JournalEvidenceResult{LoginMonActive: true, LoginMonEvents: 5, LoginMonBans: 0}
+	results := CorrelateEvidence(nil, nil, val, journal)
+	// Events but no bans — partial evidence, attribution indirect → warning
+	if results["loginmon"] != CorrelationWarning {
+		t.Errorf("loginmon events-only should be warning (partial evidence), got %s", results["loginmon"])
+	}
+}
+
+func TestCorrelate_LoginMon_Quiet(t *testing.T) {
+	val := &ValidatorSnapshot{
+		Modules: map[string]string{"loginmon": "idle"},
+	}
+	journal := &JournalEvidenceResult{LoginMonActive: false}
+	results := CorrelateEvidence(nil, nil, val, journal)
+	if results["loginmon"] != CorrelationMatch {
+		t.Errorf("loginmon quiet + idle should be match, got %s", results["loginmon"])
 	}
 }
 
@@ -178,7 +213,7 @@ func TestCorrelate_BlacklistManual_Enforcing(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"blacklist_manual": "enforcing"},
 	}
-	results := CorrelateEvidence(counters, sets, val)
+	results := CorrelateEvidence(counters, sets, val, nil)
 	if results["blacklist_manual"] != CorrelationMatch {
 		t.Errorf("blacklist_manual: elements+drops+enforcing should be match, got %s", results["blacklist_manual"])
 	}
@@ -194,7 +229,7 @@ func TestCorrelate_BlacklistManual_DropsButPrimed(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"blacklist_manual": "primed"},
 	}
-	results := CorrelateEvidence(counters, sets, val)
+	results := CorrelateEvidence(counters, sets, val, nil)
 	if results["blacklist_manual"] != CorrelationWarning {
 		t.Errorf("blacklist_manual: drops+primed should be warning, got %s", results["blacklist_manual"])
 	}
@@ -208,7 +243,7 @@ func TestCorrelate_BlacklistManual_Idle(t *testing.T) {
 	val := &ValidatorSnapshot{
 		Modules: map[string]string{"blacklist_manual": "idle"},
 	}
-	results := CorrelateEvidence(counters, sets, val)
+	results := CorrelateEvidence(counters, sets, val, nil)
 	if results["blacklist_manual"] != CorrelationMatch {
 		t.Errorf("blacklist_manual: empty+idle should be match, got %s", results["blacklist_manual"])
 	}
@@ -224,6 +259,7 @@ func TestCorrelate_AllModulesPresent(t *testing.T) {
 		map[string]CounterValue{},
 		map[string]SetInfo{},
 		val,
+		nil,
 	)
 
 	required := []string{"ddos", "botguard", "portscan", "loginmon", "blacklist_manual"}

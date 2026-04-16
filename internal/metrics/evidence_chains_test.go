@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.87 - Chain Presence Evidence Tests (M87-4)
+// NFTBan v1.88 - Chain Presence Evidence Tests (M87-4)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_chains_test"

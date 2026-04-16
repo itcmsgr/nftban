@@ -1,10 +1,10 @@
 // =============================================================================
-// NFTBan v1.87 - Correlation Engine (M87-6)
+// NFTBan v1.88 - Correlation Engine (M87-6)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_correlate"
 // meta:type="package"
-// meta:version="1.87.0"
+// meta:version="1.88.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-15"
 // meta:description="Evidence correlation engine for metrics Phase 1"
@@ -50,6 +50,7 @@ func CorrelateEvidence(
 	counters map[string]CounterValue,
 	sets map[string]SetInfo,
 	validator *ValidatorSnapshot,
+	journal *JournalEvidenceResult,
 ) map[string]string {
 	results := make(map[string]string)
 
@@ -66,7 +67,7 @@ func CorrelateEvidence(
 	results["ddos"] = correlateDDoS(counters, validator)
 	results["botguard"] = correlateBotGuard(sets, validator)
 	results["portscan"] = correlatePortscan(validator)
-	results["loginmon"] = correlateLoginMon()
+	results["loginmon"] = correlateLoginMon(journal, validator)
 	results["blacklist_manual"] = correlateBlacklistManual(counters, sets, validator)
 
 	return results
@@ -151,11 +152,33 @@ func correlatePortscan(_ *ValidatorSnapshot) string {
 	return CorrelationExpectedLimitation
 }
 
-// correlateLoginMon: no Phase 1 journal evidence collection.
-func correlateLoginMon() string {
-	// LoginMon enforcement is through shared blacklist sets.
-	// Journal evidence not collected in Phase 1.
-	return CorrelationExpectedLimitation
+// correlateLoginMon: v1.88 uses journal evidence for LoginMon activity.
+// LoginMon uses shared blacklist sets, so counter evidence is not attributable.
+// Journal evidence (ban/login_failed events) is the primary signal.
+func correlateLoginMon(journal *JournalEvidenceResult, val *ValidatorSnapshot) string {
+	if journal == nil || journal.Unknown {
+		return CorrelationUnknown
+	}
+
+	valState := val.Modules["loginmon"]
+
+	switch {
+	case journal.LoginMonActive && journal.LoginMonBans > 0 && valState == "idle":
+		// Bans happening but validator says idle — shared counter limitation
+		return CorrelationWarning
+	case journal.LoginMonActive && journal.LoginMonBans > 0:
+		// Bans happening and validator is not idle — evidence agrees
+		return CorrelationMatch
+	case !journal.LoginMonActive && (valState == "idle" || valState == ""):
+		// No activity, validator idle — evidence agrees
+		return CorrelationMatch
+	case journal.LoginMonActive && journal.LoginMonBans == 0:
+		// Events detected but no bans — observing, not enforcing.
+		// Evidence is partial (events ≠ enforcement), attribution indirect.
+		return CorrelationWarning
+	default:
+		return CorrelationUnknown
+	}
 }
 
 // correlateBlacklistManual: elements + drops vs validator state.

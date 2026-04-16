@@ -1,10 +1,10 @@
 // =============================================================================
-// NFTBan v1.87 - Chain Presence Evidence Collector (M87-4)
+// NFTBan v1.88 - Chain Presence Evidence Collector (M87-4)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_chains"
 // meta:type="package"
-// meta:version="1.87.0"
+// meta:version="1.88.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-15"
 // meta:description="Collects chain presence for Phase 1 evidence"
