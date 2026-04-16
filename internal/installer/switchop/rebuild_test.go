@@ -38,13 +38,31 @@ func TestRebuild_Success(t *testing.T) {
 	}
 }
 
-func TestRebuild_Failure(t *testing.T) {
+func TestRebuild_Degraded(t *testing.T) {
+	// Exit 1 = DEGRADED: firewall operational but module checks failed.
+	// This is expected during upgrade and must NOT return an error.
 	mock := executor.NewMockExecutor()
-	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{ExitCode: 1, Stderr: "rebuild failed"}
+	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{ExitCode: 1, Stderr: "DEGRADED"}
+
+	err := Rebuild(mock, newTestLogger())
+	if err != nil {
+		t.Fatalf("exit 1 (DEGRADED) should not return error, got: %v", err)
+	}
+
+	// Verify install-failed marker was NOT written for degraded
+	if mock.FileExists("/run/nftban/install_failed") {
+		t.Error("install_failed marker should not be written for DEGRADED")
+	}
+}
+
+func TestRebuild_Failure(t *testing.T) {
+	// Exit 2 = FAILED: rebuild failed, rollback happened.
+	mock := executor.NewMockExecutor()
+	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{ExitCode: 2, Stderr: "rebuild failed"}
 
 	err := Rebuild(mock, newTestLogger())
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("exit 2 (FAILED) should return error, got nil")
 	}
 
 	// Verify install-failed marker was written
