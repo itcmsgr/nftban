@@ -177,8 +177,8 @@ export_prometheus() {
 # TYPE nftban_feeds_enabled gauge
 # HELP nftban_feeds_loaded Number of successfully loaded feeds
 # TYPE nftban_feeds_loaded gauge
-# HELP nftban_memory_rss_bytes Daemon RSS memory in bytes
-# TYPE nftban_memory_rss_bytes gauge
+# HELP nftban_proc_rss_bytes Daemon RSS memory in bytes
+# TYPE nftban_proc_rss_bytes gauge
 # HELP nftban_export_attempts_total Number of export attempts by target
 # TYPE nftban_export_attempts_total counter
 # HELP nftban_export_success_total Number of successful exports by target

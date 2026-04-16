@@ -152,7 +152,7 @@ groups:
     rules:
       # Alert if nftables rule count is very high
       - alert: NFTBanHighRuleCount
-        expr: nftban_nftables_rules_total > 10000
+        expr: nftban_nft_rules_total > 10000
         for: 10m
         labels:
           severity: warning

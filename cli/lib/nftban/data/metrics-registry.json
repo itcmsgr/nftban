@@ -883,7 +883,7 @@
       "go_var": "nftablesActiveGauge",
       "description": "NFTables service status (1=active, 0=inactive)"
     },
-    "nftban_conntrack_entries": {
+    "nftban_conntrack_used": {
       "type": "gauge",
       "unit": "",
       "category": "connections",
@@ -1479,7 +1479,7 @@
       "category": "nftables",
       "phase": 3
     },
-    "nftban_nftables_rules_total": {
+    "nftban_nft_rules_total": {
       "type": "gauge",
       "help": "Total nftables rules",
       "labels": [],
@@ -1842,7 +1842,7 @@
       "added_version": "1.4.0",
       "phase": 1
     },
-    "nftban_memory_rss_bytes": {
+    "nftban_proc_rss_bytes": {
       "type": "gauge",
       "unit": "bytes",
       "category": "runtime",
@@ -2216,12 +2216,12 @@
       "added_version": "1.4.0",
       "phase": 1
     },
-    "nftban_watchdog_cpu_score": {
+    "nftban_pressure_score": {
       "type": "gauge",
       "unit": "percent",
       "category": "watchdog",
       "source": "shell_prometheus",
-      "description": "Watchdog CPU pressure score (0-100)",
+      "description": "Watchdog pressure score (0-100), label dim=cpu|mem|io|net",
       "labels": {},
       "added_version": "1.4.0",
       "phase": 1
@@ -2995,15 +2995,15 @@
       "nftban_daemon_up": "nftban.daemon.up",
       "nftban_daemon_uptime_seconds": "nftban.uptime",
       "nftban_watchdog_up": "nftban.watchdog.up",
-      "nftban_watchdog_cpu_score": "nftban.watchdog.cpu.score",
-      "nftban_watchdog_mem_score": "nftban.watchdog.mem.score",
-      "nftban_watchdog_io_score": "nftban.watchdog.io.score",
+      "nftban_pressure_score{dim=cpu}": "nftban.watchdog.cpu.score",
+      "nftban_pressure_score{dim=mem}": "nftban.watchdog.mem.score",
+      "nftban_pressure_score{dim=io}": "nftban.watchdog.io.score",
       "nftban_blocks_total": "nftban.blocks.total",
       "nftban_bans_last_24h": "nftban.bans.last.24h",
       "nftban_bans_last_1h": "nftban.bans.last.1h",
       "nftban_throughput_bans_per_minute": "nftban.throughput.bans.per.minute",
       "nftban_runtime_goroutines": "nftban.goroutines",
-      "nftban_conntrack_entries": "nftban.conntrack.entries",
+      "nftban_conntrack_used": "nftban.conntrack.entries",
       "nftban_conntrack_max": "nftban.conntrack.max",
       "nftban_conntrack_utilization": "nftban.conntrack.utilization",
       "nftban_softnet_drops_total": "nftban.softnet.drops.total",
@@ -3046,8 +3046,8 @@
       "nftban_modules_active": "nftban.modules.active",
       "nftban_modules_failed": "nftban.modules.failed",
       "nftban_watchdog_status": "nftban.watchdog.status",
-      "nftban_watchdog_mode": "nftban.watchdog.mode",
-      "nftban_watchdog_net_score": "nftban.watchdog.net_score",
+      "nftban_operating_mode": "nftban.watchdog.mode",
+      "nftban_pressure_score{dim=net}": "nftban.watchdog.net_score",
       "nftban_watchdog_actions_taken": "nftban.watchdog.actions_taken",
       "nftban_watchdog_last_action": "nftban.watchdog.last_action",
       "nftban_watchdog_mode_changes": "nftban.watchdog.mode_changes",
