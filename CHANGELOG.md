@@ -11,6 +11,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.89.0] - 2026-04-16
+
+**Metrics reduction — duplicate queries eliminated, naming corrected, safety metrics wired.**
+
+### Changed
+
+- **Evidence layer refactored** (INV-M-002): evidence snapshot now calls
+  `validator.ValidateKernel()` directly instead of making 19 redundant
+  nft CLI calls. Counters, chains, and set element counts extracted from
+  the validator's parsed kernel data. Evidence layer makes ZERO direct
+  nft calls.
+- **Watchdog metric renames** (INV-M-007): 6 `nftban_go_*` metrics renamed
+  to `nftban_runtime_*` to avoid collision with Go's standard collector.
+  Old names registered as deprecated aliases (removed in v1.90).
+- **Gauge naming fix** (INV-M-007): 3 gauges incorrectly using `_total`
+  suffix renamed (`softnet_drops_total` → `softnet_drops`, etc.).
+  Old names registered as deprecated aliases (removed in v1.90).
+- **Safety metrics wired** (INV-M-008): `SetMemoryPressureLevel()`,
+  `SetProtectionActive()`, `SetProtectionFeedsSkipped()`,
+  `SetProtectionGeobanSkipped()`, `SetMemoryBudgetBytes()`,
+  `SetMemoryUsedPercent()` now called from exactly 2 call sites
+  (sync handler + watchdog callback). Previously defined but never called.
+- Sampler (`sampler.go`) marked DEPRECATED (INV-M-006). No new code may
+  import `GetSampler()`. Existing callers grandfathered until v1.90.
+- `nftban_exporter_gui_cache.sh` and `nftban_exporter_json_compat.sh`
+  marked TRANSITIONAL with removal timeline.
+
+### Removed
+
+- **3 legacy shell exporters** deleted: `nftban_firewall_exporter.sh`,
+  `nftban_geoban_exporter.sh`, `nftban_portscan_exporter.sh`. All metrics
+  covered by unified exporter and Go daemon.
+
+### Deprecated metric aliases (remove in v1.90)
+
+| Old Name | New Name |
+|----------|----------|
+| `nftban_go_goroutines` | `nftban_runtime_goroutines` |
+| `nftban_go_gc_cpu_fraction` | `nftban_runtime_gc_cpu_fraction` |
+| `nftban_go_gc_pause_seconds` | `nftban_runtime_gc_pause_seconds` |
+| `nftban_go_heap_alloc_bytes` | `nftban_runtime_heap_alloc_bytes` |
+| `nftban_go_heap_inuse_bytes` | `nftban_runtime_heap_inuse_bytes` |
+| `nftban_go_heap_released_bytes` | `nftban_runtime_heap_released_bytes` |
+| `nftban_softnet_drops_total` | `nftban_softnet_drops` |
+| `nftban_softnet_time_squeeze_total` | `nftban_softnet_time_squeeze` |
+| `nftban_nic_rx_dropped_total` | `nftban_nic_rx_dropped` |
+
+### Global invariants enforced
+
+| # | Invariant | Status |
+|---|-----------|--------|
+| INV-M-001 | Kernel read once via validator | Enforced |
+| INV-M-002 | Evidence layer ZERO nft calls | Enforced |
+| INV-M-003 | Each metric has ONE owner | Enforced |
+| INV-M-004 | /metrics stable and available | Unchanged |
+| INV-M-005 | Shell exporters don't dup daemon | Unchanged |
+| INV-M-006 | Sampler deprecated | Enforced |
+| INV-M-007 | Renames include compat aliases | 9 aliases registered |
+| INV-M-008 | Watchdog = sole pressure writer | 2 call sites only |
+
+---
+
 ## [1.88.0] - 2026-04-16
 
 **Metrics Phase 2 — journal evidence, data freshness, observability docs.**

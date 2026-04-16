@@ -46,6 +46,10 @@ var ValidatorBinPath = "/usr/lib/nftban/bin/nftban-validate"
 // CollectValidatorSnapshot calls nftban-validate --json and extracts
 // status, module states, and finding codes.
 // Returns ValidatorSnapshot with Unknown=true on any failure.
+//
+// DEPRECATED (v1.89): CollectEvidenceSnapshot now calls validator.ValidateKernel()
+// directly and uses buildValidatorSnapshot() for richer extraction. This function
+// is retained for any standalone callers but is no longer on the evidence hot path.
 func CollectValidatorSnapshot(ctx context.Context) *ValidatorSnapshot {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

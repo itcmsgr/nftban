@@ -418,6 +418,13 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		_ = safety.ClearProtectionState()
 	}
 
+	// v1.89 INV-M-008: Wire safety metrics → Prometheus gauges (call site 1 of 2).
+	// These setters were defined in nftban.go but never called from sync.
+	metrics.SetProtectionActive(feedsSkipped || geobanSkipped)
+	metrics.SetProtectionFeedsSkipped(feedsSkipped)
+	metrics.SetProtectionGeobanSkipped(geobanSkipped)
+	metrics.SetMemoryPressureLevel(int(safety.GetMemoryPressureLevel()))
+
 	// Build response with protection status
 	respData := map[string]any{
 		"whitelist_ipv4_added":   result.WhitelistIPv4.IPsAdded,

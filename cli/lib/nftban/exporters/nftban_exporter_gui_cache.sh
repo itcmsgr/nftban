@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# TRANSITIONAL: sourced by unified exporter (collect.sh:1646). Scheduled for
+# removal after nftban-ui migrates to daemon API. See V190_HANDOFF_PLAN.md.
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban_exporter_gui_cache"
 # meta:type="exporter"
