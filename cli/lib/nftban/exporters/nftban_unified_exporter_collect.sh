@@ -449,7 +449,7 @@ collect_all_metrics() {
             fds=${fds//[[:space:]]/}  # strip whitespace from wc -l
             threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
 
-            metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
+            metrics+="nftban_proc_rss_bytes $rss $timestamp\n"
             metrics+="nftban_open_fds $fds $timestamp\n"
             metrics+="nftban_threads $threads $timestamp\n"
 
@@ -474,7 +474,7 @@ collect_all_metrics() {
             fi
             # Fallback: use thread count as approximation if goroutines not available
             [[ "$goroutines" == "0" || -z "$goroutines" ]] && goroutines=$threads
-            metrics+="nftban_goroutines $goroutines $timestamp\n"
+            metrics+="nftban_runtime_goroutines $goroutines $timestamp\n"
 
             # --- Memory Leak Detection Metrics ---
             # Calculate memory growth rate (MB/hour) for leak detection
@@ -591,7 +591,7 @@ collect_all_metrics() {
             fi
             metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
 
-            # nftban_nftables_rules_total - count rules in nftban table
+            # nftban_nft_rules_total - count rules in nftban table
             local nft_rules_total=0
             local table_output
             table_output=$(nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null || echo "")
@@ -600,7 +600,7 @@ collect_all_metrics() {
                 nft_rules_total=$(echo "$table_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null | tr -d '[:space:]') || true
                 [[ -z "$nft_rules_total" || ! "$nft_rules_total" =~ ^[0-9]+$ ]] && nft_rules_total=0
             fi
-            metrics+="nftban_nftables_rules_total $nft_rules_total $timestamp\n"
+            metrics+="nftban_nft_rules_total $nft_rules_total $timestamp\n"
 
             # nftban_nftables_sets_total - count sets in nftban table
             local nft_sets_total=0
@@ -856,17 +856,20 @@ collect_all_metrics() {
                     net_score=$(jq -r '.net_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
                     watchdog_mode=$(jq -r '.mode // "NORMAL"' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "NORMAL")
 
-                    metrics+="nftban_watchdog_cpu_score $cpu_score $timestamp\n"
-                    metrics+="nftban_watchdog_mem_score $mem_score $timestamp\n"
-                    metrics+="nftban_watchdog_io_score $io_score $timestamp\n"
-                    metrics+="nftban_watchdog_net_score $net_score $timestamp\n"
-                    # Mode as numeric: 0=NORMAL, 1=DEGRADED, 2=SURVIVAL
-                    local mode_num=0
+                    metrics+="nftban_pressure_score{dim=\"cpu\"} $cpu_score $timestamp\n"
+                    metrics+="nftban_pressure_score{dim=\"mem\"} $mem_score $timestamp\n"
+                    metrics+="nftban_pressure_score{dim=\"io\"} $io_score $timestamp\n"
+                    metrics+="nftban_pressure_score{dim=\"net\"} $net_score $timestamp\n"
+                    # Mode as one-hot vector matching daemon nftban_operating_mode{mode=X}
+                    local mode_normal=0 mode_degraded=0 mode_survival=0
                     case "$watchdog_mode" in
-                        DEGRADED) mode_num=1 ;;
-                        SURVIVAL) mode_num=2 ;;
+                        NORMAL)   mode_normal=1 ;;
+                        DEGRADED) mode_degraded=1 ;;
+                        SURVIVAL) mode_survival=1 ;;
                     esac
-                    metrics+="nftban_watchdog_mode $mode_num $timestamp\n"
+                    metrics+="nftban_operating_mode{mode=\"normal\"} $mode_normal $timestamp\n"
+                    metrics+="nftban_operating_mode{mode=\"degraded\"} $mode_degraded $timestamp\n"
+                    metrics+="nftban_operating_mode{mode=\"survival\"} $mode_survival $timestamp\n"
                 fi
                 metrics+="nftban_watchdog_up 1 $timestamp\n"
             else
@@ -908,7 +911,7 @@ collect_all_metrics() {
                         metrics+="nftban_daemon_uptime_seconds $d_uptime $timestamp\n"
                         metrics+="nftban_daemon_memory_heap_mb $d_heap $timestamp\n"
                         metrics+="nftban_daemon_memory_sys_mb $d_sys $timestamp\n"
-                        metrics+="nftban_daemon_goroutines $d_goroutines $timestamp\n"
+                        metrics+="nftban_runtime_goroutines $d_goroutines $timestamp\n"
                         metrics+="nftban_daemon_gc_cycles_total $d_gc_cycles $timestamp\n"
                         metrics+="nftban_daemon_gc_pause_ms $d_gc_pause $timestamp\n"
 
@@ -1266,7 +1269,7 @@ collect_all_metrics() {
             if [[ $conntrack_max -gt 0 ]]; then
                 conntrack_utilization=$(awk -v e="$conntrack_entries" -v m="$conntrack_max" 'BEGIN {printf "%.2f", (e/m)*100}')
             fi
-            metrics+="nftban_conntrack_entries $conntrack_entries $timestamp\n"
+            metrics+="nftban_conntrack_used $conntrack_entries $timestamp\n"
             metrics+="nftban_conntrack_max $conntrack_max $timestamp\n"
             metrics+="nftban_conntrack_utilization $conntrack_utilization $timestamp\n"
         fi
