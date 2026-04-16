@@ -190,6 +190,17 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 		{state.PhaseValidate, "Validate", phaseValidate},
 	}
 
+	// Always run Detect first — later phases depend on distro/panel/conflict
+	// detection results (e.g. Switch needs pd.distro for xt-compat cleanup).
+	// Without this, repair from SWITCH/CONFIGURE/VALIDATE would crash on nil
+	// distro because Detect was skipped.
+	if startPhase != state.PhaseDetect {
+		log.Phase("Detect")
+		if err := phaseDetect(ctx, exec, sf, log); err != nil {
+			log.Warn("detect during repair: %v (continuing)", err)
+		}
+	}
+
 	started := false
 	lastName := ""
 	for _, p := range phases {
