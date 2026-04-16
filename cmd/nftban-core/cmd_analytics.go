@@ -329,9 +329,6 @@ func cmdAnalyticsIP() error {
 		fmt.Printf("City:         %s\n", origin.City)
 	}
 	fmt.Printf("Banned At:    %s\n", origin.BannedAt.Format("2006-01-02 15:04:05"))
-	if origin.Jail != "" {
-		fmt.Printf("Jail:         %s\n", origin.Jail)
-	}
 	if origin.Reason != "" {
 		fmt.Printf("Reason:       %s\n", origin.Reason)
 	}
