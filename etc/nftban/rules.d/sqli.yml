@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="sqli"
+# meta:type="config"
+# meta:version="1.93.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-16"
+# meta:description="Event Rule Engine — SQLi indicator detection rules"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# NFTBan Event Rule Engine — SQLi Indicators
+# =============================================
+# Detects SQL injection indicators from normalized fields.
+# NOT payload inspection — matches on event category and metadata
+# set by upstream detectors (BotGuard, Suricata adapter).
+
+name: sqli
+rules:
+  - id: SQL-001
+    name: "SQLi indicator from IDS"
+    match:
+      event_type: ids_alert
+      category: sqli
+    threshold:
+      count: 3
+      window: 300s
+      per: src_ip
+    score: 80
+    action: ban_long
+
+  - id: SQL-002
+    name: "SQLi indicator from web"
+    match:
+      event_type: http_attack
+      category: sqli
+    threshold:
+      count: 2
+      window: 120s
+      per: src_ip
+    score: 70
+    action: ban_long
