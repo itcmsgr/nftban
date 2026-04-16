@@ -304,6 +304,32 @@ func (d *RulesetDocument) GetCounter(family, table, name string) int64 {
 	return 0
 }
 
+// GetCounterFull returns a named counter with both packets and bytes.
+// Returns nil if the counter does not exist.
+// v1.89: Added for evidence layer extraction (INV-M-002).
+func (d *RulesetDocument) GetCounterFull(family, table, name string) *NftCounter {
+	key := family + ":" + table + ":" + name
+	if c, ok := d.counters[key]; ok {
+		return c
+	}
+	return nil
+}
+
+// GetAllCounters returns all named counters for a family and table.
+// Keys are counter names (without family/table prefix).
+// v1.89: Added for evidence layer extraction (INV-M-002).
+func (d *RulesetDocument) GetAllCounters(family, table string) map[string]*NftCounter {
+	prefix := family + ":" + table + ":"
+	result := make(map[string]*NftCounter)
+	for key, c := range d.counters {
+		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+			name := key[len(prefix):]
+			result[name] = c
+		}
+	}
+	return result
+}
+
 // CountRulesInChain returns the number of rules in a specific chain.
 // Returns 0 if the chain has no rules or does not exist.
 func (d *RulesetDocument) CountRulesInChain(family, table, chain string) int {
