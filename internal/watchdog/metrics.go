@@ -143,39 +143,11 @@ var (
 		Help:      "Heap memory released to OS in bytes",
 	})
 
-	// v1.89 INV-M-007: Deprecated aliases (old names). Removed in v1.90.
-	// Both old and new names emit the same value per collection tick.
-	deprecatedGoGoroutines = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "go_goroutines",
-		Help:      "DEPRECATED: use nftban_runtime_goroutines. Removed in v1.90.",
-	})
-	deprecatedGoGCCPUFraction = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "go_gc_cpu_fraction",
-		Help:      "DEPRECATED: use nftban_runtime_gc_cpu_fraction. Removed in v1.90.",
-	})
-	deprecatedGoGCPauseSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "nftban",
-		Name:      "go_gc_pause_seconds",
-		Help:      "DEPRECATED: use nftban_runtime_gc_pause_seconds. Removed in v1.90.",
-		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 15),
-	})
-	deprecatedGoHeapAllocBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "go_heap_alloc_bytes",
-		Help:      "DEPRECATED: use nftban_runtime_heap_alloc_bytes. Removed in v1.90.",
-	})
-	deprecatedGoHeapInuseBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "go_heap_inuse_bytes",
-		Help:      "DEPRECATED: use nftban_runtime_heap_inuse_bytes. Removed in v1.90.",
-	})
-	deprecatedGoHeapReleasedBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "go_heap_released_bytes",
-		Help:      "DEPRECATED: use nftban_runtime_heap_released_bytes. Removed in v1.90.",
-	})
+	// v1.90: Deprecated aliases removed (INV-M-007 completed).
+	// Old names: nftban_go_goroutines, nftban_go_gc_cpu_fraction,
+	// nftban_go_gc_pause_seconds, nftban_go_heap_alloc_bytes,
+	// nftban_go_heap_inuse_bytes, nftban_go_heap_released_bytes
+	// New canonical names: nftban_runtime_* (see above)
 
 	// ==========================================================================
 	// Kernel/Netfilter Metrics
@@ -218,22 +190,11 @@ var (
 		Help:      "NIC RX dropped packets (point-in-time gauge)",
 	})
 
-	// v1.89 INV-M-007: Deprecated aliases (old _total names). Removed in v1.90.
-	deprecatedSoftnetDropsTotal = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "softnet_drops_total",
-		Help:      "DEPRECATED: use nftban_softnet_drops. Removed in v1.90.",
-	})
-	deprecatedSoftnetTimeSqueezeTotal = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "softnet_time_squeeze_total",
-		Help:      "DEPRECATED: use nftban_softnet_time_squeeze. Removed in v1.90.",
-	})
-	deprecatedNicRXDroppedTotal = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "nftban",
-		Name:      "nic_rx_dropped_total",
-		Help:      "DEPRECATED: use nftban_nic_rx_dropped. Removed in v1.90.",
-	})
+	// v1.90: Deprecated aliases removed (INV-M-007 completed).
+	// Old names: nftban_softnet_drops_total, nftban_softnet_time_squeeze_total,
+	// nftban_nic_rx_dropped_total
+	// New canonical names: nftban_softnet_drops, nftban_softnet_time_squeeze,
+	// nftban_nic_rx_dropped (see above)
 
 	// ==========================================================================
 	// nftables Metrics
@@ -349,42 +310,27 @@ func (m *MetricsExporter) Update(snapshot *Snapshot, state *PressureState) {
 	procFDOpen.Set(float64(snapshot.Process.FDs))
 	procThreads.Set(float64(snapshot.Process.Threads))
 
-	// Go runtime metrics (v1.89: new canonical names + deprecated aliases)
+	// Go runtime metrics (v1.90: deprecated aliases removed, canonical names only)
 	runtimeGoroutines.Set(float64(snapshot.Runtime.Goroutines))
-	deprecatedGoGoroutines.Set(float64(snapshot.Runtime.Goroutines))
-
 	runtimeGCCPUFraction.Set(snapshot.Runtime.GCCPUFraction)
-	deprecatedGoGCCPUFraction.Set(snapshot.Runtime.GCCPUFraction)
-
 	runtimeHeapAllocBytes.Set(float64(snapshot.Runtime.HeapAlloc))
-	deprecatedGoHeapAllocBytes.Set(float64(snapshot.Runtime.HeapAlloc))
-
 	runtimeHeapInuseBytes.Set(float64(snapshot.Runtime.HeapInuse))
-	deprecatedGoHeapInuseBytes.Set(float64(snapshot.Runtime.HeapInuse))
-
 	runtimeHeapReleasedBytes.Set(float64(snapshot.Runtime.HeapReleased))
-	deprecatedGoHeapReleasedBytes.Set(float64(snapshot.Runtime.HeapReleased))
 
-	// Record GC pause if there was one (both new + deprecated histogram)
+	// Record GC pause if there was one
 	if snapshot.Runtime.GCPauseNs > 0 {
 		pauseSec := float64(snapshot.Runtime.GCPauseNs) / 1e9
 		runtimeGCPauseSeconds.Observe(pauseSec)
-		deprecatedGoGCPauseSeconds.Observe(pauseSec)
 	}
 
-	// Kernel metrics (v1.89: softnet/nic gauges renamed — removed _total suffix)
+	// Kernel metrics (canonical names only — _total suffix aliases removed in v1.90)
 	conntrackUsed.Set(float64(snapshot.Kernel.ConntrackCount))
 	conntrackMax.Set(float64(snapshot.Kernel.ConntrackMax))
 	conntrackUtilization.Set(snapshot.Kernel.ConntrackUtilization)
 
 	softnetDrops.Set(float64(snapshot.Kernel.SoftnetDrops))
-	deprecatedSoftnetDropsTotal.Set(float64(snapshot.Kernel.SoftnetDrops))
-
 	softnetTimeSqueeze.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
-	deprecatedSoftnetTimeSqueezeTotal.Set(float64(snapshot.Kernel.SoftnetTimeSqueeze))
-
 	nicRXDropped.Set(float64(snapshot.Kernel.NICDrops))
-	deprecatedNicRXDroppedTotal.Set(float64(snapshot.Kernel.NICDrops))
 
 	// nftables metrics
 	nftRulesTotal.Set(float64(snapshot.NFTables.RulesTotal))
