@@ -161,7 +161,7 @@ func runCommand(args []string, timeout time.Duration) TestOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // commands from trusted registry
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //lint:ignore G204 commands from trusted smoke registry, not user input
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
