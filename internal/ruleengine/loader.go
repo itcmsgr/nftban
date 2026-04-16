@@ -118,11 +118,7 @@ func loadRuleFile(path string) ([]Rule, error) {
 		if len(rs.Match.Metadata) > 0 {
 			r.Match.Metadata = make(map[string]FieldMatch)
 			for k, v := range rs.Match.Metadata {
-				r.Match.Metadata[k] = FieldMatch{
-					Exact:    v.Exact,
-					Contains: v.Contains,
-					Prefix:   v.Prefix,
-				}
+				r.Match.Metadata[k] = FieldMatch(v)
 			}
 		}
 
