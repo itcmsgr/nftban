@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.87 - Evidence Snapshot Schema Tests (M87-10)
+// NFTBan v1.88 - Evidence Snapshot Schema Tests (M87-10)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="evidence_snapshot_schema_test"
@@ -64,7 +64,7 @@ func buildFullSnapshotFixture() *EvidenceSnapshot {
 		"ddos":             CorrelationMatch,
 		"botguard":         CorrelationMatch,
 		"portscan":         CorrelationExpectedLimitation,
-		"loginmon":         CorrelationExpectedLimitation,
+		"loginmon":         CorrelationMatch, // v1.88: journal-backed evidence
 		"blacklist_manual": CorrelationMatch,
 	}
 	return snap
@@ -129,14 +129,14 @@ func TestSchema_TopLevelFields(t *testing.T) {
 // =============================================================================
 
 func TestSchema_VersionLock(t *testing.T) {
-	if EvidenceSchemaVersion != "1.87.0" {
-		t.Errorf("EvidenceSchemaVersion = %s, want 1.87.0", EvidenceSchemaVersion)
+	if EvidenceSchemaVersion != "1.88.0" {
+		t.Errorf("EvidenceSchemaVersion = %s, want 1.88.0", EvidenceSchemaVersion)
 	}
 
 	snap := buildFullSnapshotFixture()
 	data, _ := json.Marshal(snap)
-	if !strings.Contains(string(data), `"schema_version":"1.87.0"`) {
-		t.Error("JSON must contain schema_version: 1.87.0")
+	if !strings.Contains(string(data), `"schema_version":"1.88.0"`) {
+		t.Error("JSON must contain schema_version: 1.88.0")
 	}
 }
 
@@ -285,7 +285,7 @@ func TestSchema_GoldenSnapshot(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	goldenPath := filepath.Join("testdata", "evidence_snapshot_v1.87.golden.json")
+	goldenPath := filepath.Join("testdata", "evidence_snapshot_v1.88.golden.json")
 
 	// If golden file doesn't exist, create it (first run only)
 	if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
