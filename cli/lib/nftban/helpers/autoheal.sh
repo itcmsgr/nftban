@@ -314,6 +314,7 @@ log_info "Checking nftband daemon status..."
 if systemctl list-unit-files nftband.socket &>/dev/null 2>&1; then
     if ! systemctl is-active --quiet nftband.socket 2>/dev/null; then
         log_warn "nftband.socket not active - attempting to start..."
+        nftban_service_clear_failed "nftband.socket" 2>/dev/null || true
         if systemctl start nftband.socket 2>/dev/null; then
             log_info "AUTO-FIXED: Started nftband.socket"
         else
@@ -329,6 +330,7 @@ if systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
     if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
         log_warn "nftband daemon not running - feeds and bans will not work!"
         log_warn "Attempting to start nftband.service..."
+        nftban_service_clear_failed "nftband.service" 2>/dev/null || true
         if systemctl start nftband.service 2>/dev/null; then
             sleep 2
             if systemctl is-active --quiet nftband.service 2>/dev/null; then

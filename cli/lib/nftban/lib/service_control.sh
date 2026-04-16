@@ -786,6 +786,37 @@ nftban_disable_all() {
     return 0
 }
 
+# Clear systemd start-limit-hit state before starting a service.
+# When a service crashes repeatedly, systemd stops retrying and marks
+# it as failed with 'start-limit-hit'. A subsequent 'systemctl start'
+# will fail silently. This function clears that state first.
+# Usage: nftban_service_clear_failed "nftband.service"
+nftban_service_clear_failed() {
+    local unit="$1"
+    local state
+    state=$(systemctl show -p ActiveState --value "$unit" 2>/dev/null) || return 0
+    if [[ "$state" == "failed" ]]; then
+        systemctl reset-failed "$unit" 2>/dev/null || true
+    fi
+}
+
+# Safe daemon restart: clear start-limit-hit then restart.
+# This is the ONLY correct way to restart nftband after a crash loop.
+# Usage: nftban_daemon_restart
+nftban_daemon_restart() {
+    nftban_service_clear_failed "nftband.service"
+    nftban_service_clear_failed "nftband.socket"
+    systemctl restart nftband.service
+}
+
+# Safe daemon start: clear start-limit-hit then start.
+# Usage: nftban_daemon_start
+nftban_daemon_start() {
+    nftban_service_clear_failed "nftband.service"
+    nftban_service_clear_failed "nftband.socket"
+    systemctl start nftband.service
+}
+
 # Start a specific service if enabled
 # Usage: nftban_service_start "suricata"
 nftban_service_start() {
@@ -813,10 +844,10 @@ nftban_service_start() {
             # v1.48.0: Login monitoring handled by nftband daemon loginmon module
             echo "Login monitoring is part of the nftband daemon (loginmon module)"
             echo "Starting nftband daemon..."
-            systemctl start nftband.service
+            nftban_daemon_start
             ;;
         nftban|nftband)
-            systemctl start nftband.service
+            nftban_daemon_start
             ;;
         *)
             echo "Unknown service: $service" >&2
@@ -990,6 +1021,9 @@ export -f nftban_service_is_enabled
 export -f nftban_service_auto_start
 export -f nftban_enable_all
 export -f nftban_disable_all
+export -f nftban_service_clear_failed
+export -f nftban_daemon_restart
+export -f nftban_daemon_start
 export -f nftban_service_start
 export -f nftban_service_stop
 export -f nftban_services_status
