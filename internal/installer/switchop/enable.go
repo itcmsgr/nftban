@@ -31,7 +31,9 @@ import (
 // Runs cleanXtCompat() first to remove stale xt target rules that would
 // prevent nftables from starting (common on CSF/cPanel servers).
 func EnableNftables(exec executor.Executor, distro *detect.DistroInfo, log *logging.Logger) error {
-	cleanXtCompat(exec, distro, log)
+	if distro != nil {
+		cleanXtCompat(exec, distro, log)
+	}
 
 	if err := exec.ServiceEnable("nftables"); err != nil {
 		log.Warn("enable nftables: %v", err)

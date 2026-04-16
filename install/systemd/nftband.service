@@ -51,8 +51,11 @@ After=network.target nftables.service nftban-firewall-init.service
 Wants=nftables.service
 
 # Restart rate limiting (must be in [Unit], not [Service])
-StartLimitBurst=5
-StartLimitIntervalSec=300
+# v1.90.1: Increased from 5/300s to 10/600s — socket activation and
+# update/install cycles can exhaust a tight limit. If the daemon
+# genuinely crashes 10 times in 10 minutes, there is a real problem.
+StartLimitBurst=10
+StartLimitIntervalSec=600
 
 # Alert on failure (v1.43.0: moved from [Service] — OnFailure is a Unit-level directive)
 OnFailure=nftban-alert@%n.service

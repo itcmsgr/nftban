@@ -99,8 +99,9 @@ nftban_health_check_daemon() {
             daemon_issues+=("nftband.socket not active")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
 
-            # Auto-heal: Start socket
+            # Auto-heal: Start socket (clear start-limit-hit first)
             if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                nftban_service_clear_failed "nftband.socket" 2>/dev/null || true
                 if systemctl start nftband.socket 2>/dev/null; then
                     daemon_issues+=("AUTO-FIXED: Started nftband.socket")
                 else
@@ -123,8 +124,9 @@ nftban_health_check_daemon() {
             daemon_issues+=("CRITICAL: nftband daemon not running - feeds and bans will not work!")
             status=$HEALTH_ERROR
 
-            # Auto-heal: Start daemon
+            # Auto-heal: Start daemon (clear start-limit-hit first)
             if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                nftban_service_clear_failed "nftband.service" 2>/dev/null || true
                 if systemctl start nftband.service 2>/dev/null; then
                     sleep 2
                     if _health_service_active "nftband.service"; then
