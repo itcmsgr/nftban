@@ -198,6 +198,10 @@ PROM_HEADER
         # Skip Zabbix string metrics (containing |STRING| prefix)
         if (index($2, "|STRING|") == 1) next
 
+        # Skip dot-notation metrics (Zabbix format, invalid Prometheus names)
+        # Valid Prometheus: [a-zA-Z_:][a-zA-Z0-9_:]*
+        if (index($1, ".") > 0) next
+
         if (NF >= 2) {
             # Handle metrics with labels
             if ($1 ~ /{.*}/) {
