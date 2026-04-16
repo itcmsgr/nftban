@@ -145,7 +145,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_blocks_permanent",
+          "expr": "nftban_blacklist_ipv4_perm",
           "legendFormat": "Permanent Blocks",
           "range": true,
           "refId": "A"
@@ -207,7 +207,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_blocks_temporary",
+          "expr": "nftban_blacklist_ipv4_temp",
           "legendFormat": "Temporary Blocks",
           "range": true,
           "refId": "A"
@@ -311,7 +311,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_blocks_permanent",
+          "expr": "nftban_blacklist_ipv4_perm",
           "legendFormat": "Permanent",
           "range": true,
           "refId": "B"
@@ -322,7 +322,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_blocks_temporary",
+          "expr": "nftban_blacklist_ipv4_temp",
           "legendFormat": "Temporary",
           "range": true,
           "refId": "C"
@@ -415,7 +415,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (country) (nftban_blocks_by_country)",
+          "expr": "sum by (country) (nftban_bans_by_country_total)",
           "format": "table",
           "legendFormat": "__auto",
           "range": true,
@@ -521,7 +521,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (country) (nftban_blocks_by_country)",
+          "expr": "sum by (country) (nftban_bans_by_country_total)",
           "legendFormat": "{{country}}",
           "range": true,
           "refId": "A"

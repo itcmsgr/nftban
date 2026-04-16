@@ -205,7 +205,7 @@ _build_legacy_dynamic() {
             (.kernel.conntrack_entries // 0),
             (.kernel.conntrack_max // 0),
             (.kernel.conntrack_utilization_percent // 0),
-            (.kernel.softnet_drops_total // 0),
+            (.kernel.softnet_drops // 0),
             (.kernel.softnet_drops_rate_per_minute // 0),
             # server version (62)
             (.server.nftban_version // "unknown"),

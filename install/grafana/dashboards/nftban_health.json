@@ -213,13 +213,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_health_status{component=\"fail2ban\"}",
-          "legendFormat": "fail2ban",
+          "expr": "nftban_health_status{component=\"nftban\"}",
+          "legendFormat": "nftban",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "fail2ban Status",
+      "title": "nftban Status",
       "type": "stat"
     },
     {
@@ -555,8 +555,8 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "nftban_health_status{component=\"fail2ban\"}",
-          "legendFormat": "fail2ban",
+          "expr": "nftban_health_status{component=\"nftban\"}",
+          "legendFormat": "nftban",
           "range": true,
           "refId": "B"
         },

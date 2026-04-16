@@ -1028,7 +1028,7 @@ collect_all_metrics() {
                 # Column 2 (0-indexed: col 1) is dropped packets, values are in hex
                 softnet_drops_total=$(awk '{sum += strtonum("0x" $2)} END {print sum}' /proc/net/softnet_stat 2>/dev/null || echo "0")
             fi
-            metrics+="nftban_softnet_drops_total $softnet_drops_total $timestamp\n"
+            metrics+="nftban_softnet_drops $softnet_drops_total $timestamp\n"
 
             # Calculate rate from previous value
             local softnet_state="${NFTBAN_RUN_DIR}/softnet_state.dat"
@@ -1612,7 +1612,7 @@ collect_all_metrics() {
     "conntrack_entries": ${conntrack_entries:-0},
     "conntrack_max": ${conntrack_max:-0},
     "conntrack_utilization_percent": ${conntrack_utilization:-0},
-    "softnet_drops_total": ${softnet_drops_total:-0},
+    "softnet_drops": ${softnet_drops_total:-0},
     "softnet_drops_rate_per_minute": ${softnet_drops_rate:-0}
   },
   "eventbus": {
