@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.87.2] - 2026-04-16
+
+**nft command compatibility hotfix.**
+
+### Fixed
+
+- **3 broken nft command patterns** across 8 locations (Go + shell).
+  The `list <plural> <family> <table>` syntax is NOT supported on fleet
+  nftables versions (v1.0.2 through v1.1.1):
+  - `nft list counters <family> <table>` → use global `nft -j list counters`
+  - `nft list chains <family> <table>` → use `nft list table <family> <table>`
+  - `nft list sets <family> <table>` → use `nft list table <family> <table>`
+- **Counter evidence now working** on all fleet hosts. Previously showed
+  "counter evidence unavailable" on every host due to broken command.
+- **cmd_stats.sh dropped count**: now sums only `_drop` and `_exceeded`
+  counters (was incorrectly summing all counters including accepts).
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #427 | fix(nft): command compatibility hotfix — 3 broken patterns |
+
+---
+
 ## [1.87.1] - 2026-04-15
 
 **CLI runtime bug fixes + host-side smoke gate.**
