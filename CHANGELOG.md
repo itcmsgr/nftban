@@ -11,6 +11,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.88.0] - 2026-04-16
+
+**Metrics Phase 2 — journal evidence, data freshness, observability docs.**
+
+### Added
+
+- **Total processed packets** (M88-1): sum of all nftables counters
+  (accepts + drops + flow markers). Labeled explicitly to prevent
+  misinterpretation.
+- **Journal evidence for LoginMon** (M88-2): bounded 15m/500-line
+  journal query for ban and login_failed events. LoginMon promoted
+  from `expected_limitation` to evidence-backed correlation.
+- **Feed data freshness** (M88-3): checks newest file in
+  `/var/lib/nftban/feeds/`, fresh if < 7 days.
+- **GeoIP DB freshness** (M88-4): checks mmdb mtime, fresh if < 45 days.
+- **Anchor flow counters** (M88-6): 7 pipeline stage counters displayed
+  as "pipeline stage transitions, not enforcement."
+- **Evidence contract doc** (M88-9): `docs/EVIDENCE_CONTRACT.md` — defines
+  evidence states, counter/set/chain/journal semantics, correlation
+  rules, and nft compatibility reference.
+- **Build status page** (M88-10): `docs/BUILD_STATUS.md` — 26 CI workflows,
+  contract gates (G1-G8 + B86 + M84 + M87/M88), host runtime gate,
+  health policy.
+
+### Changed
+
+- **LoginMon correlation**: promoted from `expected_limitation` to
+  evidence-backed. Bans + validator agrees = match. Bans + idle = warning.
+  Events only = warning. No journal = unknown.
+- **Evidence schema**: bumped to 1.88.0. Added `external` (journal) and
+  `freshness` (data pipeline) planes.
+- All evidence file metadata updated to v1.88.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| #429 | feat(metrics): v1.88 Metrics Phase 2 |
+
+---
+
 ## [1.87.2] - 2026-04-16
 
 **nft command compatibility hotfix.**
