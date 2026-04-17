@@ -1,0 +1,46 @@
+# =============================================================================
+# NFTBan v1.96.0 - Rebuild Recovery Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-rebuild-recovery.timer"
+# meta:type="systemd"
+# meta:version="1.96.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-17"
+# meta:description="Timer for deferred rebuild recovery — fires once after boot"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-rebuild-recovery.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# Contract: V196_REBUILD_RECOVERY_CONTRACT.md §10 PR-04
+#
+# Behavior:
+#   - Fires ONCE, 60 seconds after boot
+#   - NOT recurring — fires only once per boot cycle
+#   - Service checks marker and exits immediately if nothing to do
+#   - No boot loop risk: service is oneshot, timer is non-repeating
+# =============================================================================
+
+[Unit]
+Description=NFTBan Rebuild Recovery Timer (Deferred)
+Documentation=man:nftban(8)
+
+[Timer]
+# Fire once, 60s after boot — gives daemon time to start
+OnBootSec=60
+
+# NOT recurring — Persistent=false means no catch-up on missed triggers
+Persistent=false
+
+# Randomize slightly to avoid thundering herd on multi-host fleet
+RandomizedDelaySec=10
+
+[Install]
+WantedBy=timers.target
