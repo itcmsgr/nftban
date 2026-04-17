@@ -3000,14 +3000,46 @@ debug:
     - "nftban debug trace"
 
 smoke:
+  category: diagnostics
+  description: "Registry-driven non-destructive smoke tests for system integrity"
+  risk: none
+  audience: [cli, ci]
+  capability: diagnostics
+  mutates: false
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text, json]
+  has_json: true
+  options:
+    --json:
+      type: bool
+      description: "Output results as JSON"
+    --group:
+      type: string
+      description: "Run only tests in GROUP (truth|daemon|config|metrics|modules|deep|all)"
+    --module:
+      type: string
+      description: "Run only tests for MODULE (ddos|portscan|botguard|loginmon)"
+    --deep:
+      type: bool
+      description: "Include deep checks (heavier assertions, still non-destructive)"
+  examples:
+    - "nftban smoke"
+    - "nftban smoke --json"
+    - "nftban smoke --group=truth"
+    - "nftban smoke --module=ddos"
+    - "nftban smoke --deep"
+
+selftest:
   category: developer_sysadmin
-  description: "Smoke tests for system validation with optional email reporting"
+  description: "Extended system validation — includes controlled state changes — may perform controlled mutation tests"
   risk: core
   audience: [cli]
   capability: debug_internal
-  mutates: false
+  mutates: true
   supports_dry_run: false
-  requires_root: false
+  requires_root: true
   panel_expose: false
   output_modes: [text]
   has_json: false
@@ -3015,39 +3047,20 @@ smoke:
     --quick:
       aliases: ["-q"]
       type: bool
-      description: "Run quick test (3 core commands: version, help, status)"
-    --full:
-      aliases: ["-f"]
-      type: bool
-      description: "Run standard test suite (default) - ~43 tests"
+      description: "Run quick test (3 core commands only)"
     --all:
-      aliases: ["-a", "--detailed"]
+      aliases: ["-a"]
       type: bool
-      description: "Run ALL CLI commands test (67+ tests) - comprehensive"
+      description: "Run ALL CLI commands + lifecycle tests"
     --lifecycle:
       aliases: ["-l"]
       type: bool
-      description: "Run ban lifecycle tests only (12 tests)"
-    --check:
-      aliases: ["-c"]
-      type: bool
-      description: "Check trace log for orphaned traces (stuck scripts)"
-    --stats:
-      aliases: ["-s"]
-      type: bool
-      description: "Show trace statistics"
-    --email:
-      aliases: ["-e"]
-      type: string
-      description: "Send test results via email to specified address"
-      pattern: "--email <address>"
+      description: "Run ban lifecycle tests only"
   examples:
-    - "nftban smoke"
-    - "nftban smoke --quick"
-    - "nftban smoke --all"
-    - "nftban smoke --lifecycle"
-    - "nftban smoke --email admin@example.com"
-    - "nftban smoke --quick --email ops@company.com"
+    - "nftban selftest"
+    - "nftban selftest --quick"
+    - "nftban selftest --all"
+    - "nftban selftest --lifecycle"
 
 snapshot:
   category: developer_sysadmin

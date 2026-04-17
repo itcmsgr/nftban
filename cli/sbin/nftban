@@ -229,6 +229,7 @@ nftban_complete() {
         # DEBUG & TESTING
         echo "debug"
         echo "smoke"
+        echo "selftest"
         # ADDITIONAL
         echo "list"
         echo "test"

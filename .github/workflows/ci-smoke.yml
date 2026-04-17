@@ -98,3 +98,29 @@ jobs:
 
       - name: Smoke test — fhs verify
         run: nftban fhs verify 2>&1 | head -20 || true
+
+      - name: "G20 Smoke Gate — registry-driven smoke"
+        run: |
+          # Run Go registry-driven smoke. CI environment will SKIP daemon/module
+          # checks (no systemd, no live daemon) — that's correct behavior.
+          # FAIL on: runtime errors, contract violations, malformed output.
+          SMOKE_OUTPUT=$(bin/nftban-core smoke --json 2>&1) || true
+          echo "$SMOKE_OUTPUT"
+
+          # Validate JSON parseable
+          if ! echo "$SMOKE_OUTPUT" | jq empty 2>/dev/null; then
+            echo "::error::G20 Smoke Gate: smoke --json output is not valid JSON"
+            exit 1
+          fi
+
+          # Check for FAIL or INTERNAL_ERROR
+          FAIL_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.fail // 0')
+          if [ "$FAIL_COUNT" != "0" ]; then
+            echo "::error::G20 Smoke Gate: $FAIL_COUNT test(s) FAILED"
+            echo "$SMOKE_OUTPUT" | jq '.tests[] | select(.status == "FAIL")'
+            exit 1
+          fi
+
+          PASS_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.pass // 0')
+          SKIP_COUNT=$(echo "$SMOKE_OUTPUT" | jq -r '.summary.skip // 0')
+          echo "G20 Smoke Gate: PASS ($PASS_COUNT pass, $SKIP_COUNT skip, 0 fail)"

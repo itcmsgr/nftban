@@ -21,7 +21,6 @@ package smoke
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -59,9 +58,16 @@ type SummaryCounts struct {
 	Skip int `json:"skip"`
 }
 
-// RunSmoke executes all registered tests, optionally filtered by group.
+// RunOptions controls smoke execution filtering.
+type RunOptions struct {
+	Group  string // truth, daemon, config, metrics, modules, deep, all
+	Module string // filter by specific module (ddos, portscan, etc.)
+	Deep   bool   // include DeepOnly tests
+}
+
+// RunSmoke executes all registered tests, filtered by options.
 // Returns a Summary with PASS/FAIL/SKIP per test.
-func RunSmoke(version string, group string) Summary {
+func RunSmoke(version string, opts RunOptions) Summary {
 	registry := DefaultRegistry()
 
 	s := Summary{
@@ -70,7 +76,16 @@ func RunSmoke(version string, group string) Summary {
 	}
 
 	for _, test := range registry {
-		if group != "" && group != "all" && test.Category != group {
+		// Filter by group
+		if opts.Group != "" && opts.Group != "all" && test.Category != opts.Group {
+			continue
+		}
+		// Filter by module
+		if opts.Module != "" && test.Module != opts.Module {
+			continue
+		}
+		// Skip deep-only tests unless --deep
+		if test.DeepOnly && !opts.Deep {
 			continue
 		}
 
@@ -98,13 +113,12 @@ func executeTest(t SmokeTest) TestResult {
 		Category: t.Category,
 	}
 
-	// Check prerequisites
-	for _, p := range t.Prerequisites {
-		if !checkPrerequisite(p) {
-			result.Status = StatusSkip
-			result.Detail = "prerequisite not met: " + p.Type + ":" + p.Name
-			return result
-		}
+	// Check prerequisites using Phase 2 evaluators
+	met, unmet := CheckAllPrerequisites(t.Prerequisites)
+	if !met {
+		result.Status = StatusSkip
+		result.Detail = "prerequisite not met: " + unmet
+		return result
 	}
 
 	// Execute command with timeout
@@ -126,31 +140,25 @@ func executeTest(t SmokeTest) TestResult {
 		return result
 	}
 
-	// Run custom assertion
+	// Run v1.94 simple assertion (backward compat)
 	if t.Assert != nil && !t.Assert(output) {
 		result.Status = StatusFail
 		result.Detail = "assertion failed"
 		return result
 	}
 
+	// Run v1.95 structured assertions
+	if len(t.Assertions) > 0 {
+		_, failed, firstFail := RunAssertions(t.Assertions, output)
+		if failed > 0 {
+			result.Status = StatusFail
+			result.Detail = "assertion failed: " + firstFail
+			return result
+		}
+	}
+
 	result.Status = StatusPass
 	return result
-}
-
-func checkPrerequisite(p Prerequisite) bool {
-	switch p.Type {
-	case "binary":
-		_, err := exec.LookPath(p.Name)
-		return err == nil
-	case "file":
-		_, err := os.Stat(p.Name)
-		return err == nil
-	case "daemon":
-		out, err := exec.Command("systemctl", "is-active", p.Name).Output()
-		return err == nil && strings.TrimSpace(string(out)) == "active"
-	default:
-		return true
-	}
 }
 
 func runCommand(args []string, timeout time.Duration) TestOutput {
@@ -161,7 +169,9 @@ func runCommand(args []string, timeout time.Duration) TestOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //lint:ignore G204 commands from trusted smoke registry, not user input
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// #nosec G204 -- command path and args come from the trusted internal smoke registry, not user input
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

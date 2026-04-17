@@ -276,7 +276,7 @@ if [[ $ERRORS -eq 0 ]]; then
     echo ""
     echo "Next steps:"
     echo "  nftban status"
-    echo "  nftban smoke quick"
+    echo "  nftban selftest --quick"
     exit 0
 else
     echo -e "${RED}FAILED: $ERRORS errors found${NC}"
