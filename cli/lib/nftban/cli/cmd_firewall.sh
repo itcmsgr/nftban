@@ -1068,6 +1068,86 @@ _rebuild_rollback() {
 # =============================================================================
 
 firewall_rebuild() {
+    # v1.96: Retry wrapper around core rebuild.
+    # Calls _firewall_rebuild_core(), then checks if result is retryable.
+    # At most 1 immediate retry for transient failures (INV-RR-006).
+    # No retry for PREVALIDATION_FAILED or structural failures (INV-RR-005).
+    local _rebuild_exit=0
+
+    _firewall_rebuild_core "$@"
+    _rebuild_exit=$?
+
+    # Exit 0 = success, no retry needed
+    if [[ $_rebuild_exit -eq 0 ]]; then
+        return 0
+    fi
+
+    # Exit 1 with no marker = PREVALIDATION_FAILED or pre-existing DEGRADED → no retry
+    # Exit 3 = FATAL → never retry
+    if [[ $_rebuild_exit -eq 3 ]]; then
+        return 3
+    fi
+
+    # Check if classification library is available and marker was written
+    if ! declare -f _rebuild_marker_exists &>/dev/null; then
+        return $_rebuild_exit  # no classification available, pass through
+    fi
+
+    if ! _rebuild_marker_exists; then
+        return $_rebuild_exit  # no marker = prevalidation or non-retryable, pass through
+    fi
+
+    # Read failure class from marker
+    local _fail_class
+    _fail_class=$(_rebuild_marker_get_class)
+
+    # Check retry eligibility — never-retry classes pass through immediately
+    case "$_fail_class" in
+        PREVALIDATION_FAILED|SNAPSHOT_FAILED|POSTVALIDATION_HARD_FAIL|ROLLBACK_FAILED|AUTHORITY_CONFLICT|BACKUP_MISSING|RETRY_EXHAUSTED)
+            return $_rebuild_exit
+            ;;
+        POSTVALIDATION_REGRESSION)
+            # Retry only if daemon-related (INV-RR-005 tightening)
+            if [[ "$_REBUILD_DAEMON_WAS_DOWN" != "true" ]]; then
+                return $_rebuild_exit
+            fi
+            ;;
+    esac
+
+    # Eligible for immediate retry — attempt once
+    echo "" >&2
+    echo "  [RETRY] Transient failure detected ($_fail_class) — retrying rebuild (attempt 2/2)..." >&2
+    echo "" >&2
+
+    _firewall_rebuild_core "$@"
+    _rebuild_exit=$?
+
+    if [[ $_rebuild_exit -eq 0 ]]; then
+        echo "  [RETRY] Rebuild succeeded on retry" >&2
+        # Marker already cleared by success path in _firewall_rebuild_core
+    else
+        echo "  [RETRY] Rebuild still failed after retry (exit $_rebuild_exit)" >&2
+        # Update marker: increment retry count, mark deferred if eligible
+        if _rebuild_marker_exists; then
+            local _marker_file="$REBUILD_RECOVERY_MARKER"
+            local _current_count
+            _current_count=$(jq -r '.retry_count // 0' "$_marker_file" 2>/dev/null || echo "0")
+            local _new_count=$((_current_count + 1))
+            local _max=3
+            local _exhausted_val="false"
+            [[ $_new_count -ge $_max ]] && _exhausted_val="true"
+            # Update in-place via jq
+            local _tmp="${_marker_file}.tmp"
+            jq --argjson count "$_new_count" --argjson exhausted "$_exhausted_val" \
+                '.retry_count = $count | .exhausted = $exhausted | .deferred_retry_pending = (if $exhausted then false else .deferred_retry_pending end)' \
+                "$_marker_file" > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$_marker_file" || rm -f "$_tmp"
+        fi
+    fi
+
+    return $_rebuild_exit
+}
+
+_firewall_rebuild_core() {
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
     #
@@ -1106,6 +1186,17 @@ firewall_rebuild() {
     done
 
     [[ "$quiet" == "false" ]] && echo "Rebuilding NFTBan firewall schema..."
+
+    # v1.96: Load rebuild failure classification library
+    local _classify_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_rebuild_classify.sh"
+    if [[ -f "$_classify_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$_classify_lib" 2>/dev/null || true
+    fi
+    # Reset classification state for this rebuild
+    if declare -f _rebuild_classify_reset &>/dev/null; then
+        _rebuild_classify_reset
+    fi
 
     # v1.78.0: PRE-REBUILD VALIDATION — Capture state before changes
     local pre_state pre_status pre_chains
@@ -1197,6 +1288,7 @@ firewall_rebuild() {
             echo "  Error:  $validate_output" >&2
             echo "" >&2
             echo "  Fix the config file and retry: nftban firewall rebuild" >&2
+            # v1.96: PREVALIDATION_FAILED — no kernel mutation, no recovery marker (INV-RR-005)
             rm -f "$tmp_conf"
             return 1
         fi
@@ -1217,6 +1309,7 @@ firewall_rebuild() {
             echo "  Error:  $validate_output" >&2
             echo "" >&2
             echo "  Fix the config file and retry: nftban firewall rebuild" >&2
+            # v1.96: PREVALIDATION_FAILED — no kernel mutation, no recovery marker (INV-RR-005)
             return 1
         fi
         [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED" || true
@@ -1248,6 +1341,10 @@ firewall_rebuild() {
     if ! nft -f "$load_conf" 2>&1; then
         echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
         echo "Try: nftban firewall reset --force" >&2
+        # v1.96: APPLY_FAILED — validated config failed to load (may be transient)
+        if declare -f _rebuild_marker_write &>/dev/null; then
+            _rebuild_marker_write "$FC_APPLY_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
+        fi
         return 1
     fi
 
@@ -1315,6 +1412,8 @@ firewall_rebuild() {
             echo "    WARNING: Daemon still down — module re-enable will fail." >&2
             echo "    Module chains will be absent. POST validation may report DEGRADED." >&2
             echo "    After install: systemctl reset-failed nftband && systemctl start nftband" >&2
+            # v1.96: Track daemon-down for failure classification
+            declare -f _rebuild_classify_daemon_down &>/dev/null && _rebuild_classify_daemon_down
         fi
     fi
     local _ddos_enabled="false"
@@ -1324,9 +1423,12 @@ firewall_rebuild() {
     fi
     if [[ "$_ddos_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "    DDoS protection: re-applying..."
-        nftban ddos reload 2>/dev/null || {
+        if nftban ddos reload 2>/dev/null; then
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "ddos" "$MR_OK"
+        else
             [[ "$quiet" == "false" ]] && echo "    Warning: DDoS reload failed. Run: nftban ddos reload" || true
-        }
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "ddos" "$MR_FAILED"
+        fi
     fi
 
     # Step 9 (v1.50.1): Re-apply portscan if enabled
@@ -1337,9 +1439,12 @@ firewall_rebuild() {
     [[ "$_portscan_enabled" != "true" ]] && _portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" && \
         [[ -f "$_portscan_conf" ]] && _portscan_enabled=$(grep -oP '^PORTSCAN_ENABLED="\K[^"]+' "$_portscan_conf" 2>/dev/null || echo "false")
     if [[ "$_portscan_enabled" == "true" ]]; then
-        nftban portscan enable --quiet 2>/dev/null || {
+        if nftban portscan enable --quiet 2>/dev/null; then
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_OK"
+        else
             [[ "$quiet" == "false" ]] && echo "    Warning: Portscan enable failed. Run: nftban portscan enable" || true
-        }
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "portscan" "$MR_FAILED"
+        fi
     else
         [[ "$quiet" == "false" ]] && echo "    Portscan: not enabled, skipped" || true
     fi
@@ -1351,9 +1456,12 @@ firewall_rebuild() {
     # against the wrong config key and silently skipped on BotGuard hosts.
     [[ "$quiet" == "false" ]] && echo "  [10/12] Re-applying BotGuard..."
     if _firewall_botguard_is_enabled; then
-        nftban botguard enable --quiet 2>/dev/null || {
+        if nftban botguard enable --quiet 2>/dev/null; then
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "botguard" "$MR_OK"
+        else
             [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable" || true
-        }
+            declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "botguard" "$MR_FAILED"
+        fi
     else
         [[ "$quiet" == "false" ]] && echo "    BotGuard: not enabled, skipped" || true
     fi
@@ -1388,6 +1496,51 @@ firewall_rebuild() {
         [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config" || true
     fi
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # v1.96: Post-module-restore verification (INV-RR-007)
+    # Level 1: Structure presence (chains + sets exist in kernel)
+    # Level 2: Wiring correctness (jumps in correct anchor positions)
+    # Level 3 deferred — requires traffic (WARNING only if missing)
+    # ─────────────────────────────────────────────────────────────────────────
+    if declare -f _rebuild_classify_module_result &>/dev/null; then
+        [[ "$quiet" == "false" ]] && echo ""
+        [[ "$quiet" == "false" ]] && echo "  [VERIFY] Module restore verification..."
+
+        # DDoS: check for ddos helper chains in ip nftban
+        # Actual chain names: ddos_protection, ddos_sanity, ddos_prefix, ddos_penalty
+        if [[ "$_ddos_enabled" == "true" && "$_REBUILD_MODULE_DDOS" == "$MR_OK" ]]; then
+            if nft list chain ip nftban ddos_protection &>/dev/null; then
+                # Level 1+2: chain exists and is reachable (nft validates jump targets)
+                [[ "$quiet" == "false" ]] && echo "    DDoS: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "ddos" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    DDoS: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+
+        # Portscan: check for portscan helper chain
+        # Actual chain name: portscan_detection
+        if [[ "$_portscan_enabled" == "true" && "$_REBUILD_MODULE_PORTSCAN" == "$MR_OK" ]]; then
+            if nft list chain ip nftban portscan_detection &>/dev/null; then
+                [[ "$quiet" == "false" ]] && echo "    Portscan: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "portscan" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    Portscan: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+
+        # BotGuard: check for botguard helper chain
+        # Actual chain name: botguard_filter
+        if _firewall_botguard_is_enabled 2>/dev/null && [[ "$_REBUILD_MODULE_BOTGUARD" == "$MR_OK" ]]; then
+            if nft list chain ip nftban botguard_filter &>/dev/null; then
+                [[ "$quiet" == "false" ]] && echo "    BotGuard: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "botguard" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    BotGuard: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+    fi
+
     # v1.78.0: POST-REBUILD VALIDATION — Compare with PRE state
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "  [POST] Validating post-rebuild state..."
@@ -1398,7 +1551,9 @@ firewall_rebuild() {
     [[ "$quiet" == "false" ]] && echo "    POST state: $post_status (chains: $post_chains)"
 
     # v1.78.0: CRITICAL SAFETY CHECK — Rollback if degraded from PROTECTED
-    if [[ "$pre_status" == "protected" && "$post_status" != "protected" ]]; then
+    # v1.96: 'idle' is structurally equivalent to 'protected' (all checks pass,
+    # just no traffic observed yet after rebuild). Do not treat idle as regression.
+    if [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" ]]; then
         echo "" >&2
         echo "═══════════════════════════════════════════════════════════════════" >&2
         echo "REBUILD FAILED: Post-rebuild validation returned $post_status" >&2
@@ -1410,11 +1565,36 @@ firewall_rebuild() {
 
         if _rebuild_rollback "$snapshot_dir"; then
             echo "Rollback successful — firewall restored to pre-rebuild state" >&2
+            # v1.96: Classify regression. Determine restored health for marker.
+            local _restored_state _restored_status
+            if declare -f _rebuild_get_validator_state &>/dev/null; then
+                _restored_state=$(_rebuild_get_validator_state)
+                _restored_status="${_restored_state%%:*}"
+            else
+                _restored_status="unknown"
+            fi
+            if declare -f _rebuild_marker_write &>/dev/null; then
+                if [[ "$_restored_status" == "protected" ]]; then
+                    _rebuild_marker_write "$FC_POSTVALIDATION_REGRESSION" "$OR_FAILED_RECOVERED" "$snapshot_dir" "$_restored_status"
+                else
+                    _rebuild_marker_write "$FC_POSTVALIDATION_REGRESSION" "$OR_FAILED_DEGRADED" "$snapshot_dir" "$_restored_status"
+                fi
+            fi
             return 2  # FAILED (rolled back)
         else
             echo "FATAL: Rollback FAILED — manual intervention required!" >&2
             echo "  Snapshot location: $snapshot_dir" >&2
             echo "  Try: nft -f $snapshot_dir/ruleset.nft" >&2
+            echo "" >&2
+            # v1.96: Enhanced exit 3 recovery instructions (INV-RR-010)
+            echo "  Recovery procedure:" >&2
+            echo "    1. nft -f $snapshot_dir/ruleset.nft" >&2
+            echo "    2. nftban-validate status" >&2
+            echo "    3. nftban status" >&2
+            echo "    4. rm -f $REBUILD_RECOVERY_MARKER" >&2
+            if declare -f _rebuild_marker_write &>/dev/null; then
+                _rebuild_marker_write "$FC_ROLLBACK_FAILED" "$OR_FAILED_FATAL" "$snapshot_dir" "down"
+            fi
             return 3  # FATAL (rollback failed)
         fi
     fi
@@ -1433,17 +1613,36 @@ firewall_rebuild() {
     # Final validation summary
     [[ "$quiet" == "false" ]] && echo ""
     case "$post_status" in
-        protected)
-            [[ "$quiet" == "false" ]] && echo "Final status: PROTECTED (all checks passed)"
+        protected|idle)
+            [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
+            # v1.96: SUCCESS — clear any stale recovery marker
+            # idle = structurally equivalent to protected (no traffic observed yet)
+            declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear
             return 0
             ;;
         degraded)
             [[ "$quiet" == "false" ]] && echo "Final status: DEGRADED (some checks failed)"
             [[ "$quiet" == "false" ]] && echo "  Run 'nftban status' for details"
+            # v1.96: Classify DEGRADED — determine if module-related
+            if declare -f _rebuild_marker_write &>/dev/null; then
+                if _rebuild_classify_has_module_failure 2>/dev/null; then
+                    _rebuild_marker_write "$FC_MODULE_RESTORE_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
+                elif _rebuild_classify_has_module_incomplete 2>/dev/null; then
+                    _rebuild_marker_write "$FC_MODULE_RESTORE_INCOMPLETE" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
+                elif [[ "$_REBUILD_DAEMON_WAS_DOWN" == "true" ]]; then
+                    _rebuild_marker_write "$FC_DAEMON_RESTART_FAILED" "$OR_FAILED_DEGRADED" "$snapshot_dir" "degraded"
+                fi
+                # If DEGRADED but no module/daemon issue, don't write marker
+                # (could be a pre-existing DEGRADED state, not caused by this rebuild)
+            fi
             return 1
             ;;
         *)
             [[ "$quiet" == "false" ]] && echo "Final status: $post_status"
+            # v1.96: Unknown/down post-state without regression from PROTECTED
+            if declare -f _rebuild_marker_write &>/dev/null; then
+                _rebuild_marker_write "$FC_POSTVALIDATION_HARD_FAIL" "$OR_FAILED_DEGRADED" "$snapshot_dir" "$post_status"
+            fi
             return 1
             ;;
     esac

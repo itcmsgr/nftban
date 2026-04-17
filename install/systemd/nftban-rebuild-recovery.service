@@ -1,0 +1,80 @@
+# =============================================================================
+# NFTBan v1.96.0 - Rebuild Recovery Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-rebuild-recovery.service"
+# meta:type="systemd"
+# meta:version="1.96.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-17"
+# meta:description="Deferred rebuild recovery for transient failures"
+# meta:input="Recovery marker at /var/lib/nftban/state/rebuild_recovery.json"
+# meta:output="Systemd unit"
+# meta:depends="nftban-rebuild-classify"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-rebuild-recovery.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# Contract: V196_REBUILD_RECOVERY_CONTRACT.md §10 PR-04
+# INV-RR-006: Retry count is finite and persisted
+#
+# Behavior:
+#   - Reads recovery marker from /var/lib/nftban/state/rebuild_recovery.json
+#   - If marker absent or exhausted: exits immediately (exit 0)
+#   - If failure class is non-retryable: exits immediately (exit 0)
+#   - If eligible: runs one rebuild attempt, updates marker
+#   - Clears marker on success
+#   - Marks exhausted after cap reached
+#   - NEVER loops — oneshot, fires at most once per timer trigger
+# =============================================================================
+
+[Unit]
+Description=NFTBan Rebuild Recovery (Deferred Retry)
+Documentation=man:nftban(8)
+After=network.target nftables.service nftband.service
+Wants=nftband.service
+
+# Only run if daemon is available (module restore needs it)
+Requires=nftband.socket
+
+[Service]
+Type=oneshot
+
+# Must run as root for nftables operations
+User=root
+
+ExecStart=/usr/lib/nftban/core/nftban_rebuild_recovery.sh
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-rebuild-recovery
+
+# Timeouts
+TimeoutStartSec=120
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+# Security hardening (aligned with nftban-health-fix.service pattern)
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+PrivateDevices=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
