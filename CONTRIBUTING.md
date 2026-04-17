@@ -66,7 +66,7 @@ Please read our [Code of Conduct](.github/CODE_OF_CONDUCT.md) before contributin
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make your changes
-4. Run tests: `nftban smoke`
+4. Run smoke tests: `nftban smoke` (non-destructive) or `nftban selftest` (lab/deep validation)
 5. Commit with clear messages
 6. Push and create a PR
 
@@ -312,8 +312,11 @@ wip
 ### Running Tests
 
 ```bash
-# Quick smoke test
+# Non-destructive smoke (safe for CI, routine checks)
 nftban smoke
+
+# Extended system validation (includes controlled state changes — ban/unban lifecycle, whitelist tests)
+nftban selftest
 
 # Full test suite
 ./tests/test_all_commands.sh
@@ -327,7 +330,7 @@ go test ./...
 
 ### Test Before PR
 
-1. All commands work: `nftban smoke`
+1. Smoke tests pass: `nftban smoke` (non-destructive, CI-safe)
 2. ShellCheck passes (warnings OK)
 3. Go builds without errors
 4. No regressions in existing functionality

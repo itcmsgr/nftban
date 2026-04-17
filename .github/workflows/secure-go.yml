@@ -95,7 +95,7 @@ jobs:
         run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
 
       - name: Run gosec (SARIF)
-        run: $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./... || true
+        run: $(go env GOPATH)/bin/gosec -nosec -fmt sarif -out gosec.sarif ./... || true
 
       - name: Fix gosec SARIF relationships
         run: |

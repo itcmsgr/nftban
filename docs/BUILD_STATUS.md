@@ -87,7 +87,7 @@ These require a deployed system and are not part of PR CI:
 |------|-----------------|------|
 | G2-1 | Truth consistency: validator status = health status | test_truth_consistency.sh |
 | G7-3 | Exit code contract: 0=PROTECTED, 1=DEGRADED, 2=DOWN | test_exit_code_consistency.sh |
-| G8-4 | Module list: validator JSON = health JSON | test_module_smoke.sh |
+| G8-4 | Module list: validator JSON = health JSON | test_module_selftest.sh |
 
 ---
 

@@ -26,13 +26,17 @@ import "time"
 type SmokeTest struct {
 	ID            string
 	Name          string
-	Category      string   // truth, daemon, config, metrics
+	Category      string   // truth, daemon, config, metrics, modules, deep
+	Module        string   // "", "ddos", "portscan", "botguard", "loginmon"
 	Command       []string // command + args to execute
 	AllowedExit   []int    // exit codes that count as PASS (e.g. [0,1,2])
 	Timeout       time.Duration
 	Prerequisites []Prerequisite
 	FatalPatterns []string              // stderr/stdout patterns that force FAIL
-	Assert        func(TestOutput) bool // custom assertion on output (optional)
+	Assert        func(TestOutput) bool // v1.94 simple assertion (kept for compat)
+	Assertions    []Assertion           // v1.95 structured assertions
+	DeepOnly      bool                  // only run with --deep flag
+	CIEnabled     bool                  // included in G20 CI gate
 	Notes         string
 }
 
@@ -66,9 +70,17 @@ var DefaultFatalPatterns = []string{
 	"nil pointer dereference",
 }
 
-// DefaultRegistry returns the Phase 1 smoke test set.
-// Small, high-value, contract-safe. No module-deep or counter assertions.
+// DefaultRegistry returns the full smoke test set (Phase 1 + Phase 2).
+// Phase 1: truth, daemon, config, metrics (always run)
+// Phase 2: modules (gated on prerequisites, SKIP if disabled)
 func DefaultRegistry() []SmokeTest {
+	base := baseTests()
+	modules := ModuleTests()
+	return append(base, modules...)
+}
+
+// baseTests returns the Phase 1 core tests.
+func baseTests() []SmokeTest {
 	return []SmokeTest{
 		// === TRUTH (validator-backed) ===
 		{
@@ -95,13 +107,14 @@ func DefaultRegistry() []SmokeTest {
 			AllowedExit: []int{0, 1, 2},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "nftban"},
+				{Type: PrereqBinary, Name: "nftban"},
+				{Type: PrereqValidatorBin, Name: "nftban-validate"},
 			},
 			FatalPatterns: DefaultFatalPatterns,
 			Assert: func(o TestOutput) bool {
 				return len(o.Stdout) > 2 && o.Stdout[0] == '{'
 			},
-			Notes: "Health must return valid JSON",
+			Notes: "Health delegates to Go validator. Without validator, falls back to shell diagnostics with undocumented exit codes.",
 		},
 		{
 			ID:          "T3",
@@ -111,10 +124,11 @@ func DefaultRegistry() []SmokeTest {
 			AllowedExit: []int{0, 1, 2},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "nftban"},
+				{Type: PrereqBinary, Name: "nftban"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
 			},
 			FatalPatterns: DefaultFatalPatterns,
-			Notes:         "Status command must not crash",
+			Notes: "Status queries live system state. Without daemon, exit codes are environment-dependent.",
 		},
 
 		// === DAEMON ===
@@ -126,10 +140,10 @@ func DefaultRegistry() []SmokeTest {
 			AllowedExit: []int{0},
 			Timeout:     5 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "systemctl"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
 			},
 			FatalPatterns: nil,
-			Notes:         "Daemon must be active for IPC and ban operations",
+			Notes:         "Daemon must be active. SKIP if daemon not running (expected in CI).",
 		},
 
 		// === CONFIG ===
@@ -156,8 +170,8 @@ func DefaultRegistry() []SmokeTest {
 			AllowedExit: []int{0},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "daemon", Name: "nftband.service"},
-				{Type: "binary", Name: "curl"},
+				{Type: PrereqDaemonRunning, Name: "nftband.service"},
+				{Type: PrereqBinary, Name: "curl"},
 			},
 			FatalPatterns: nil,
 			Assert: func(o TestOutput) bool {
