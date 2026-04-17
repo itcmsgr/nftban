@@ -118,6 +118,6 @@ func (l *Logger) emit(event EventType, data any) {
 		return
 	}
 
-	l.w.Write(out)    //nolint:errcheck
-	l.w.Write([]byte("\n")) //nolint:errcheck
+	_, _ = l.w.Write(out)
+	_, _ = l.w.Write([]byte("\n"))
 }
