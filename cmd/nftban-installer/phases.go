@@ -289,14 +289,17 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 	// v1.98 INV-I-010: Some assertions failed → try safe auto-fix ONCE
 	failed := validate.FailedNames(results)
 	log.Warn("VALIDATE_1: %d assertions failed: %s", len(failed), strings.Join(failed, ", "))
-	log.Info("attempting safe auto-fix (one-shot, INV-I-012)...")
+	log.Info("attempting bounded safe auto-fix (permissions enforce only, INV-I-011/012)...")
 
-	// Run health fix (root-level permissions/ownership correction)
-	fixRes := exec.RunTimeout(60*time.Second, fhs.NftbanCLI, "health", "fix", "all")
+	// Run ONLY permissions enforce — bounded, safe, idempotent (INV-I-011).
+	// This fixes ownership/mode on NFTBan-managed paths only.
+	// Does NOT run 'health fix all' which would cross authority boundaries
+	// (disabling UFW/firewalld/fail2ban, triggering rebuild, GeoIP download, etc.)
+	fixRes := exec.RunTimeout(30*time.Second, fhs.NftbanCLI, "permissions", "enforce")
 	if fixRes.ExitCode == 0 {
-		log.Info("safe auto-fix completed — re-validating (INV-I-013)")
+		log.Info("permissions enforce completed — re-validating (INV-I-013)")
 	} else {
-		log.Warn("safe auto-fix returned exit %d — re-validating anyway", fixRes.ExitCode)
+		log.Warn("permissions enforce returned exit %d — re-validating anyway", fixRes.ExitCode)
 	}
 
 	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
