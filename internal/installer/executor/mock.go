@@ -66,6 +66,9 @@ type MockExecutor struct {
 
 	// ExistingCommands maps "name" -> exists.
 	ExistingCommands map[string]bool
+
+	// callbacks maps "name:args" -> function to call when command is executed.
+	callbacks map[string]func()
 }
 
 // RecordedCommand tracks a command that was executed.
@@ -109,6 +112,14 @@ func (m *MockExecutor) lookupResult(name string, args ...string) (Result, bool) 
 
 func (m *MockExecutor) Run(name string, args ...string) Result {
 	m.recordCommand(name, args...)
+	// Fire callback if registered
+	key := name + ":" + strings.Join(args, ":")
+	m.mu.Lock()
+	cb, hasCb := m.callbacks[key]
+	m.mu.Unlock()
+	if hasCb && cb != nil {
+		cb()
+	}
 	if r, ok := m.lookupResult(name, args...); ok {
 		return r
 	}
@@ -281,4 +292,78 @@ func (m *MockExecutor) Getenv(key string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.Env[key]
+}
+
+// ─── v1.98 test helpers ─────────────────────────────────────────────────────
+
+// OnCommand registers a callback that fires when a specific command is executed.
+// Use for simulating side-effects (e.g., fixing a service state after permissions enforce).
+func (m *MockExecutor) OnCommand(fn func(), name string, args ...string) {
+	key := name + ":" + strings.Join(args, ":")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.callbacks == nil {
+		m.callbacks = make(map[string]func())
+	}
+	m.callbacks[key] = fn
+}
+
+// CommandCalled returns true if a command matching the given name and args prefix was recorded.
+func (m *MockExecutor) CommandCalled(nameAndArgs ...string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, cmd := range m.Commands {
+		if matchCommand(cmd, nameAndArgs) {
+			return true
+		}
+	}
+	return false
+}
+
+// CommandCallCount returns how many times a command matching the given prefix was recorded.
+func (m *MockExecutor) CommandCallCount(nameAndArgs ...string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, cmd := range m.Commands {
+		if matchCommand(cmd, nameAndArgs) {
+			count++
+		}
+	}
+	return count
+}
+
+func matchCommand(cmd RecordedCommand, prefix []string) bool {
+	if len(prefix) == 0 {
+		return false
+	}
+	// Match command name (may be full path)
+	if !strings.HasSuffix(cmd.Name, prefix[0]) && cmd.Name != prefix[0] {
+		// Also check if it's an arg match (e.g., "nftban" "permissions" "enforce")
+		allParts := append([]string{cmd.Name}, cmd.Args...)
+		return containsSubsequence(allParts, prefix)
+	}
+	if len(prefix) == 1 {
+		return true
+	}
+	return containsSubsequence(cmd.Args, prefix[1:])
+}
+
+func containsSubsequence(haystack, needle []string) bool {
+	if len(needle) > len(haystack) {
+		return false
+	}
+	for i := 0; i <= len(haystack)-len(needle); i++ {
+		match := true
+		for j, n := range needle {
+			if haystack[i+j] != n {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
