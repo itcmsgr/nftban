@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
@@ -255,6 +256,15 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 }
 
 // phaseValidate runs post-install assertions, writes authority files, sets immutable flags.
+//
+// v1.98 flow (INV-I-010 through INV-I-013):
+//   1. Write authority files
+//   2. Run permissions enforce (safe auto-fix for FHS drift)
+//   3. Run assertions (VALIDATE_1)
+//   4. If assertions fail → try health fix once (safe auto-fix)
+//   5. Re-run assertions (VALIDATE_2) — only post-fix result counts
+//   6. Set immutable flags
+//   7. Final result from VALIDATE_2 (or VALIDATE_1 if no fix needed)
 func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
 
@@ -264,7 +274,7 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 	// 2. Run permissions enforce (G10 — full FHS permissions fix)
 	validate.RunPermissionsEnforce(exec, log)
 
-	// 3. Run assertions
+	// 3. Run assertions (VALIDATE_1)
 	results := validate.RunAssertions(exec, pd.sshPort, log)
 
 	// 4. Set immutable flags on security-critical files (G8)
@@ -272,14 +282,35 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 
 	if validate.AllPassed(results) {
 		log.Info("all post-install assertions passed — COMMITTED")
-		// Clean up install-failed marker if present
 		_ = exec.Remove(fhs.InstallFailedMarker)
 		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
 	}
 
-	// Some assertions failed → DEGRADED
+	// v1.98 INV-I-010: Some assertions failed → try safe auto-fix ONCE
 	failed := validate.FailedNames(results)
-	reason := "failed assertions: " + strings.Join(failed, ", ")
-	log.Warn("some assertions failed — DEGRADED: %s", reason)
+	log.Warn("VALIDATE_1: %d assertions failed: %s", len(failed), strings.Join(failed, ", "))
+	log.Info("attempting safe auto-fix (one-shot, INV-I-012)...")
+
+	// Run health fix (root-level permissions/ownership correction)
+	fixRes := exec.RunTimeout(60*time.Second, fhs.NftbanCLI, "health", "fix", "all")
+	if fixRes.ExitCode == 0 {
+		log.Info("safe auto-fix completed — re-validating (INV-I-013)")
+	} else {
+		log.Warn("safe auto-fix returned exit %d — re-validating anyway", fixRes.ExitCode)
+	}
+
+	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
+	results2 := validate.RunAssertions(exec, pd.sshPort, log)
+
+	if validate.AllPassed(results2) {
+		log.Info("VALIDATE_2: all assertions passed after safe auto-fix — COMMITTED")
+		_ = exec.Remove(fhs.InstallFailedMarker)
+		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
+	}
+
+	// Still failing after auto-fix → DEGRADED (INV-I-008)
+	failed2 := validate.FailedNames(results2)
+	reason := "failed assertions after safe auto-fix: " + strings.Join(failed2, ", ")
+	log.Warn("VALIDATE_2: %d assertions still failed — DEGRADED: %s", len(failed2), reason)
 	return sf.Transition(state.StateDegraded, state.PhaseValidate, reason)
 }
