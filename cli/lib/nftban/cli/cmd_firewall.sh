@@ -1068,6 +1068,86 @@ _rebuild_rollback() {
 # =============================================================================
 
 firewall_rebuild() {
+    # v1.96: Retry wrapper around core rebuild.
+    # Calls _firewall_rebuild_core(), then checks if result is retryable.
+    # At most 1 immediate retry for transient failures (INV-RR-006).
+    # No retry for PREVALIDATION_FAILED or structural failures (INV-RR-005).
+    local _rebuild_exit=0
+
+    _firewall_rebuild_core "$@"
+    _rebuild_exit=$?
+
+    # Exit 0 = success, no retry needed
+    if [[ $_rebuild_exit -eq 0 ]]; then
+        return 0
+    fi
+
+    # Exit 1 with no marker = PREVALIDATION_FAILED or pre-existing DEGRADED → no retry
+    # Exit 3 = FATAL → never retry
+    if [[ $_rebuild_exit -eq 3 ]]; then
+        return 3
+    fi
+
+    # Check if classification library is available and marker was written
+    if ! declare -f _rebuild_marker_exists &>/dev/null; then
+        return $_rebuild_exit  # no classification available, pass through
+    fi
+
+    if ! _rebuild_marker_exists; then
+        return $_rebuild_exit  # no marker = prevalidation or non-retryable, pass through
+    fi
+
+    # Read failure class from marker
+    local _fail_class
+    _fail_class=$(_rebuild_marker_get_class)
+
+    # Check retry eligibility — never-retry classes pass through immediately
+    case "$_fail_class" in
+        PREVALIDATION_FAILED|SNAPSHOT_FAILED|POSTVALIDATION_HARD_FAIL|ROLLBACK_FAILED|AUTHORITY_CONFLICT|BACKUP_MISSING|RETRY_EXHAUSTED)
+            return $_rebuild_exit
+            ;;
+        POSTVALIDATION_REGRESSION)
+            # Retry only if daemon-related (INV-RR-005 tightening)
+            if [[ "$_REBUILD_DAEMON_WAS_DOWN" != "true" ]]; then
+                return $_rebuild_exit
+            fi
+            ;;
+    esac
+
+    # Eligible for immediate retry — attempt once
+    echo "" >&2
+    echo "  [RETRY] Transient failure detected ($_fail_class) — retrying rebuild (attempt 2/2)..." >&2
+    echo "" >&2
+
+    _firewall_rebuild_core "$@"
+    _rebuild_exit=$?
+
+    if [[ $_rebuild_exit -eq 0 ]]; then
+        echo "  [RETRY] Rebuild succeeded on retry" >&2
+        # Marker already cleared by success path in _firewall_rebuild_core
+    else
+        echo "  [RETRY] Rebuild still failed after retry (exit $_rebuild_exit)" >&2
+        # Update marker: increment retry count, mark deferred if eligible
+        if _rebuild_marker_exists; then
+            local _marker_file="$REBUILD_RECOVERY_MARKER"
+            local _current_count
+            _current_count=$(jq -r '.retry_count // 0' "$_marker_file" 2>/dev/null || echo "0")
+            local _new_count=$((_current_count + 1))
+            local _max=3
+            local _exhausted_val="false"
+            [[ $_new_count -ge $_max ]] && _exhausted_val="true"
+            # Update in-place via jq
+            local _tmp="${_marker_file}.tmp"
+            jq --argjson count "$_new_count" --argjson exhausted "$_exhausted_val" \
+                '.retry_count = $count | .exhausted = $exhausted | .deferred_retry_pending = (if $exhausted then false else .deferred_retry_pending end)' \
+                "$_marker_file" > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$_marker_file" || rm -f "$_tmp"
+        fi
+    fi
+
+    return $_rebuild_exit
+}
+
+_firewall_rebuild_core() {
     # Rebuild nftables schema from scratch (keeps existing IPs in sets)
     # This is the correct way to fix corrupted schema
     #
