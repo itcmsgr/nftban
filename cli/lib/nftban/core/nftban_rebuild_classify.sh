@@ -29,32 +29,53 @@ set -Eeuo pipefail
 _NFTBAN_REBUILD_CLASSIFY_LOADED=1
 
 # Recovery marker path
+# shellcheck disable=SC2034  # Constants used by sourcing scripts (cmd_firewall.sh)
 readonly REBUILD_RECOVERY_MARKER="/var/lib/nftban/state/rebuild_recovery.json"
 
 # Failure classes (match Go enum in internal/rebuild/types.go)
+# shellcheck disable=SC2034
 readonly FC_PREVALIDATION_FAILED="PREVALIDATION_FAILED"
+# shellcheck disable=SC2034
 readonly FC_SNAPSHOT_FAILED="SNAPSHOT_FAILED"
+# shellcheck disable=SC2034
 readonly FC_APPLY_FAILED="APPLY_FAILED"
+# shellcheck disable=SC2034
 readonly FC_POSTVALIDATION_REGRESSION="POSTVALIDATION_REGRESSION"
+# shellcheck disable=SC2034
 readonly FC_POSTVALIDATION_HARD_FAIL="POSTVALIDATION_HARD_FAIL"
+# shellcheck disable=SC2034
 readonly FC_DAEMON_RESTART_FAILED="DAEMON_RESTART_FAILED"
+# shellcheck disable=SC2034
 readonly FC_MODULE_RESTORE_FAILED="MODULE_RESTORE_FAILED"
+# shellcheck disable=SC2034
 readonly FC_MODULE_RESTORE_INCOMPLETE="MODULE_RESTORE_INCOMPLETE"
+# shellcheck disable=SC2034
 readonly FC_ROLLBACK_FAILED="ROLLBACK_FAILED"
+# shellcheck disable=SC2034
 readonly FC_AUTHORITY_CONFLICT="AUTHORITY_CONFLICT"
+# shellcheck disable=SC2034
 readonly FC_BACKUP_MISSING="BACKUP_MISSING"
+# shellcheck disable=SC2034
 readonly FC_RETRY_EXHAUSTED="RETRY_EXHAUSTED"
 
 # Operation results (match Go enum)
+# shellcheck disable=SC2034
 readonly OR_SUCCESS="SUCCESS"
+# shellcheck disable=SC2034
 readonly OR_FAILED_RECOVERED="FAILED_RECOVERED"
+# shellcheck disable=SC2034
 readonly OR_FAILED_DEGRADED="FAILED_DEGRADED"
+# shellcheck disable=SC2034
 readonly OR_FAILED_FATAL="FAILED_FATAL"
 
 # Module restore results
+# shellcheck disable=SC2034
 readonly MR_OK="RESTORE_OK"
+# shellcheck disable=SC2034
 readonly MR_FAILED="RESTORE_FAILED"
+# shellcheck disable=SC2034
 readonly MR_INCOMPLETE="RESTORE_INCOMPLETE"
+# shellcheck disable=SC2034
 readonly MR_SKIPPED="RESTORE_SKIPPED"
 
 # Per-rebuild tracking variables
