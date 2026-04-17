@@ -111,6 +111,10 @@ polkit.addRule(function (action, subject) {
             "nftban-rollback.service",
             "nftban-rollback.timer",
 
+            // NFTBan Rebuild Recovery (v1.96 — deferred retry)
+            "nftban-rebuild-recovery.service",
+            "nftban-rebuild-recovery.timer",
+
             // NFTBan Suricata Integration (wrapper units)
             "nftban-suricata.service",
             "nftban-suricata-update.service",
