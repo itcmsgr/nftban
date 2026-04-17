@@ -245,6 +245,8 @@ func main() {
 		}
 	case "smoke":
 		os.Exit(cmdSmoke(os.Args[2:]))
+	case "lifecycle":
+		os.Exit(cmdLifecycle(os.Args[2:]))
 	case "version":
 		fmt.Printf("nftban-core %s (git %s, build %s)\n", version.FullVersion(), GitCommit, BuildDate)
 	case "help", "--help", "-h":
