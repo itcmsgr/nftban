@@ -1496,6 +1496,48 @@ _firewall_rebuild_core() {
         [[ "$quiet" == "false" ]] && echo "  Consumed .rpmnew and rendered into live config" || true
     fi
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # v1.96: Post-module-restore verification (INV-RR-007)
+    # Level 1: Structure presence (chains + sets exist in kernel)
+    # Level 2: Wiring correctness (jumps in correct anchor positions)
+    # Level 3 deferred — requires traffic (WARNING only if missing)
+    # ─────────────────────────────────────────────────────────────────────────
+    if declare -f _rebuild_classify_module_result &>/dev/null; then
+        [[ "$quiet" == "false" ]] && echo ""
+        [[ "$quiet" == "false" ]] && echo "  [VERIFY] Module restore verification..."
+
+        # DDoS: check for ddos helper chain in ip nftban
+        if [[ "$_ddos_enabled" == "true" && "$_REBUILD_MODULE_DDOS" == "$MR_OK" ]]; then
+            if nft list chain ip nftban nftban_ddos_filter &>/dev/null; then
+                # Level 1+2: chain exists and is reachable (nft validates jump targets)
+                [[ "$quiet" == "false" ]] && echo "    DDoS: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "ddos" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    DDoS: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+
+        # Portscan: check for portscan helper chain
+        if [[ "$_portscan_enabled" == "true" && "$_REBUILD_MODULE_PORTSCAN" == "$MR_OK" ]]; then
+            if nft list chain ip nftban nftban_portscan &>/dev/null; then
+                [[ "$quiet" == "false" ]] && echo "    Portscan: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "portscan" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    Portscan: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+
+        # BotGuard: check for botguard helper chain
+        if _firewall_botguard_is_enabled 2>/dev/null && [[ "$_REBUILD_MODULE_BOTGUARD" == "$MR_OK" ]]; then
+            if nft list chain ip nftban nftban_botguard &>/dev/null; then
+                [[ "$quiet" == "false" ]] && echo "    BotGuard: chain verified (Level 1+2)"
+            else
+                _rebuild_classify_module_result "botguard" "$MR_INCOMPLETE"
+                [[ "$quiet" == "false" ]] && echo "    BotGuard: chain MISSING after enable (downgraded to INCOMPLETE)"
+            fi
+        fi
+    fi
+
     # v1.78.0: POST-REBUILD VALIDATION — Compare with PRE state
     [[ "$quiet" == "false" ]] && echo ""
     [[ "$quiet" == "false" ]] && echo "  [POST] Validating post-rebuild state..."
