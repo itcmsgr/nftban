@@ -193,6 +193,14 @@ nftban_health_fix_permissions() {
                 ! -perm 640 -exec chmod 640 {} \; 2>/dev/null || true
         fi
         echo "  ✓ Config file permissions enforced"
+
+        # ======================================================================
+        # CLI BINARY PERMISSIONS (DEB-PERM-001)
+        # ======================================================================
+        # Handled by nftban_permissions_enforce_all() → perms_enforce_sbin()
+        # which uses $PERMS_SBIN (from NFTBAN_SBIN_DIR or distro config).
+        # Legacy fallback below also covers this via nftban_fhs_load_spec.
+        # See: nftban_permissions.sh:230 (perms_enforce_sbin)
     fi
 
     # ==========================================================================

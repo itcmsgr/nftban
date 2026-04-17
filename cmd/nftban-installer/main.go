@@ -131,6 +131,9 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 
 // runInstall runs all phases in order for a fresh install or upgrade.
 func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
+	// v1.98: Initialize lifecycle bridge (observational only — INV-I-004)
+	lb := newLifecycleBridge(cfg.mode, log)
+
 	phases := []struct {
 		phase state.Phase
 		name  string
@@ -148,6 +151,7 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 		if ctx.Err() != nil {
 			log.Error("installer timed out or cancelled during phase %s", p.name)
 			sf.Transition(state.StateFailedRebuild, p.phase, "timeout")
+			lb.observeResult(sf) // v1.98: record failure
 			return report(sf, log)
 		}
 
@@ -155,10 +159,26 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 		if err := p.fn(ctx, exec, sf, log); err != nil {
 			log.Error("phase %s failed: %v", p.name, err)
 			log.PhaseEnd(p.name)
-			// State file already updated by the phase function
+
+			// v1.98: Emit lifecycle observations for the phase that completed before failure
+			if p.phase == state.PhaseDetect {
+				lb.observeDetect(&globalPhaseData, sf)
+				lb.observePlan(&globalPhaseData)
+			}
+			lb.observeResult(sf) // record failure outcome
 			return report(sf, log)
 		}
+
+		// v1.98: Lifecycle observations at phase boundaries
+		switch p.phase {
+		case state.PhaseDetect:
+			lb.observeDetect(&globalPhaseData, sf)
+			lb.observePlan(&globalPhaseData)
+		}
 	}
+
+	// v1.98: Record final lifecycle result
+	lb.observeResult(sf)
 
 	log.PhaseEnd("Validate")
 	return report(sf, log)
