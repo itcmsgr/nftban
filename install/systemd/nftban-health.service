@@ -41,12 +41,14 @@ Group=nftban
 #       to avoid chicken-and-egg: health check can't run if /run/nftban perms broken
 ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --auto-heal --cache-status
 
-# v1.98: Trigger root-level safe auto-fix if health check found permission issues.
-# The health check runs as nftban and can fix services/nftables but NOT file permissions.
-# nftban-health-fix.service runs as root and can fix ownership/mode drift.
-# Only runs if health-fix.service is not already running. Fails silently if not needed.
-# INV-I-010: One-shot safe auto-fix trigger from check → fix.
-ExecStartPost=-/usr/bin/systemctl start --no-block nftban-health-fix.service
+# NOTE: Root-level permission fixes (nftban-health-fix.service) are NOT
+# auto-triggered from the periodic health check. The fix-all service runs
+# 9 steps including firewall conflict removal, rebuild, and GeoIP download
+# which violates bounded auto-fix scope (INV-I-011).
+# Root permission fixes run only during:
+#   1. Install/update (phaseValidate → permissions enforce)
+#   2. Manual operator invocation (systemctl start nftban-health-fix)
+# Future: introduce a bounded 'nftban health fix safe' target if needed.
 
 # CAP_NET_ADMIN required for nft list/add operations (health checks + auto-heal)
 AmbientCapabilities=CAP_NET_ADMIN
