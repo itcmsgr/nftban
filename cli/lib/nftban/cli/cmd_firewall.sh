@@ -1506,9 +1506,10 @@ _firewall_rebuild_core() {
         [[ "$quiet" == "false" ]] && echo ""
         [[ "$quiet" == "false" ]] && echo "  [VERIFY] Module restore verification..."
 
-        # DDoS: check for ddos helper chain in ip nftban
+        # DDoS: check for ddos helper chains in ip nftban
+        # Actual chain names: ddos_protection, ddos_sanity, ddos_prefix, ddos_penalty
         if [[ "$_ddos_enabled" == "true" && "$_REBUILD_MODULE_DDOS" == "$MR_OK" ]]; then
-            if nft list chain ip nftban nftban_ddos_filter &>/dev/null; then
+            if nft list chain ip nftban ddos_protection &>/dev/null; then
                 # Level 1+2: chain exists and is reachable (nft validates jump targets)
                 [[ "$quiet" == "false" ]] && echo "    DDoS: chain verified (Level 1+2)"
             else
@@ -1518,8 +1519,9 @@ _firewall_rebuild_core() {
         fi
 
         # Portscan: check for portscan helper chain
+        # Actual chain name: portscan_detection
         if [[ "$_portscan_enabled" == "true" && "$_REBUILD_MODULE_PORTSCAN" == "$MR_OK" ]]; then
-            if nft list chain ip nftban nftban_portscan &>/dev/null; then
+            if nft list chain ip nftban portscan_detection &>/dev/null; then
                 [[ "$quiet" == "false" ]] && echo "    Portscan: chain verified (Level 1+2)"
             else
                 _rebuild_classify_module_result "portscan" "$MR_INCOMPLETE"
@@ -1528,8 +1530,9 @@ _firewall_rebuild_core() {
         fi
 
         # BotGuard: check for botguard helper chain
+        # Actual chain name: botguard_filter
         if _firewall_botguard_is_enabled 2>/dev/null && [[ "$_REBUILD_MODULE_BOTGUARD" == "$MR_OK" ]]; then
-            if nft list chain ip nftban nftban_botguard &>/dev/null; then
+            if nft list chain ip nftban botguard_filter &>/dev/null; then
                 [[ "$quiet" == "false" ]] && echo "    BotGuard: chain verified (Level 1+2)"
             else
                 _rebuild_classify_module_result "botguard" "$MR_INCOMPLETE"
@@ -1548,7 +1551,9 @@ _firewall_rebuild_core() {
     [[ "$quiet" == "false" ]] && echo "    POST state: $post_status (chains: $post_chains)"
 
     # v1.78.0: CRITICAL SAFETY CHECK — Rollback if degraded from PROTECTED
-    if [[ "$pre_status" == "protected" && "$post_status" != "protected" ]]; then
+    # v1.96: 'idle' is structurally equivalent to 'protected' (all checks pass,
+    # just no traffic observed yet after rebuild). Do not treat idle as regression.
+    if [[ "$pre_status" == "protected" && "$post_status" != "protected" && "$post_status" != "idle" ]]; then
         echo "" >&2
         echo "═══════════════════════════════════════════════════════════════════" >&2
         echo "REBUILD FAILED: Post-rebuild validation returned $post_status" >&2
@@ -1608,9 +1613,10 @@ _firewall_rebuild_core() {
     # Final validation summary
     [[ "$quiet" == "false" ]] && echo ""
     case "$post_status" in
-        protected)
-            [[ "$quiet" == "false" ]] && echo "Final status: PROTECTED (all checks passed)"
+        protected|idle)
+            [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
             # v1.96: SUCCESS — clear any stale recovery marker
+            # idle = structurally equivalent to protected (no traffic observed yet)
             declare -f _rebuild_marker_clear &>/dev/null && _rebuild_marker_clear
             return 0
             ;;
