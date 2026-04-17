@@ -21,12 +21,16 @@ package smoke
 
 import (
 	"bufio"
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/constants"
 )
 
 // Prerequisite types
@@ -46,8 +50,14 @@ const (
 // Returns true if met, false if not (test should SKIP).
 func CheckPrerequisite(p Prerequisite) bool {
 	switch p.Type {
-	case PrereqBinary, PrereqValidatorBin, PrereqNFTBinary:
+	case PrereqBinary, PrereqNFTBinary:
 		_, err := exec.LookPath(p.Name)
+		return err == nil
+
+	case PrereqValidatorBin:
+		// Validator binary is at a fixed path (not in PATH).
+		// Check file existence instead of LookPath.
+		_, err := os.Stat(p.Name)
 		return err == nil
 
 	case PrereqFile:
@@ -87,31 +97,122 @@ func CheckAllPrerequisites(prereqs []Prerequisite) (bool, string) {
 	return true, ""
 }
 
+// =============================================================================
+// Module-enabled detection — validator-backed with config fallback
+// =============================================================================
+// Primary: ask validator (single source of truth for module config state).
+// Fallback: parse config files directly (only when validator binary is missing).
+// This ensures smoke prerequisites agree with `nftban health --json` exactly.
+
+var (
+	validatorModuleStates    map[string]string
+	validatorModuleStatesErr error
+	validatorModuleOnce      sync.Once
+)
+
+// loadModuleStatesFromValidator calls the validator binary once and caches
+// the module config states. Called at most once via sync.Once.
+func loadModuleStatesFromValidator() {
+	out, err := exec.Command(constants.ValidatorBinPath, "--json").Output() //lint:ignore G204 fixed binary path from constants
+	if err != nil {
+		validatorModuleStatesErr = err
+		return
+	}
+
+	var result struct {
+		Modules map[string]struct {
+			Config string `json:"config"`
+		} `json:"modules"`
+	}
+
+	if err := json.Unmarshal(out, &result); err != nil {
+		validatorModuleStatesErr = err
+		return
+	}
+
+	validatorModuleStates = make(map[string]string, len(result.Modules))
+	for k, v := range result.Modules {
+		validatorModuleStates[k] = v.Config
+	}
+}
+
+// normalizeModuleName maps CLI module names to validator module names.
+func normalizeModuleName(module string) string {
+	switch module {
+	case "login":
+		return "loginmon"
+	default:
+		return module
+	}
+}
+
 func isModuleEnabled(module string) bool {
-	// Check main module config files
-	paths := []string{
-		"/etc/nftban/conf.d/" + module + "/main.conf.local",
-		"/etc/nftban/conf.d/" + module + "/main.conf",
-		"/etc/nftban/modules/" + module + ".conf.local",
-		"/etc/nftban/modules/" + module + ".conf",
+	validatorModuleOnce.Do(loadModuleStatesFromValidator)
+
+	if validatorModuleStatesErr != nil {
+		// Validator unavailable — fall back to config file parsing
+		return isModuleEnabledFromConfig(module)
 	}
 
-	enableKeys := map[string]string{
-		"ddos":     "DDOS_ENABLED",
-		"portscan": "PORTSCAN_ENABLED",
-		"botguard": "BOTGUARD_ENABLED",
-		"loginmon": "LOGINMON_ENABLED",
-		"login":    "LOGINMON_ENABLED",
-		"suricata": "SURICATA_ENABLED",
-	}
-
-	key, ok := enableKeys[module]
+	moduleKey := normalizeModuleName(module)
+	state, ok := validatorModuleStates[moduleKey]
 	if !ok {
 		return false
 	}
+	return state == "enabled"
+}
 
-	for _, p := range paths {
-		val := readConfigValue(p, key)
+// isModuleEnabledFromConfig is the fallback when validator binary is missing.
+// Config keys and paths MUST match validator/module_health.go exactly.
+// Source of truth: internal/validator/module_health.go
+type moduleConfig struct {
+	key   string   // config key name (e.g. "HTTP_BOTGUARD_ENABLED")
+	paths []string // config file paths, .local first (higher priority)
+}
+
+var moduleConfigs = map[string]moduleConfig{
+	// module_health.go:173
+	"ddos": {key: "DDOS_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/ddos/main.conf.local",
+		"/etc/nftban/conf.d/ddos/main.conf",
+	}},
+	// module_health.go:243
+	"portscan": {key: "PORTSCAN_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/portscan/main.conf.local",
+		"/etc/nftban/conf.d/portscan/main.conf",
+	}},
+	// module_health.go:63
+	"botguard": {key: "HTTP_BOTGUARD_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/botguard/main.conf.local",
+		"/etc/nftban/conf.d/botguard/main.conf",
+	}},
+	// module_health.go:271
+	"loginmon": {key: "NFTBAN_LOGIN_ALERT_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/login_alert.conf.local",
+		"/etc/nftban/conf.d/login_alert.conf",
+	}},
+	"login": {key: "NFTBAN_LOGIN_ALERT_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/login_alert.conf.local",
+		"/etc/nftban/conf.d/login_alert.conf",
+	}},
+	"suricata": {key: "SURICATA_ENABLED", paths: []string{
+		"/etc/nftban/conf.d/suricata/main.conf.local",
+		"/etc/nftban/conf.d/suricata/main.conf",
+	}},
+}
+
+func isModuleEnabledFromConfig(module string) bool {
+	cfg, ok := moduleConfigs[normalizeModuleName(module)]
+	if !ok {
+		// Also try the original name (covers direct matches like "ddos")
+		cfg, ok = moduleConfigs[module]
+		if !ok {
+			return false
+		}
+	}
+
+	for _, p := range cfg.paths {
+		val := readConfigValue(p, cfg.key)
 		if val == "true" {
 			return true
 		}
