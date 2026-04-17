@@ -9,7 +9,7 @@
 // meta:description="CLI flag definitions and environment variable overrides"
 // meta:inventory.files="cmd/nftban-installer/flags.go"
 // meta:inventory.binaries=""
-// meta:inventory.env_vars="NFTBAN_TAKEOVER, NFTBAN_INSTALLER_LOG"
+// meta:inventory.env_vars="NFTBAN_TAKEOVER, NFTBAN_INSTALLER_LOG, NFTBAN_LIFECYCLE"
 // meta:inventory.config_files=""
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
@@ -41,6 +41,7 @@ type config struct {
 	stateDir    string // override state directory
 	logPath     string // override log file path
 	showVersion bool   // print version and exit
+	lifecycle   bool   // v1.98: use canonized lifecycle flow (feature flag)
 }
 
 func parseFlags() *config {
@@ -69,6 +70,9 @@ func parseFlags() *config {
 	if envLog := os.Getenv("NFTBAN_INSTALLER_LOG"); envLog != "" {
 		cfg.logPath = envLog
 	}
+	// v1.98 Phase 2: Canonized lifecycle feature flag
+	// Default: ON. Set NFTBAN_LIFECYCLE=0 to use legacy path.
+	cfg.lifecycle = os.Getenv("NFTBAN_LIFECYCLE") != "0"
 
 	// Validate
 	if !cfg.showVersion && !cfg.repair {

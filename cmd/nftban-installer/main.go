@@ -131,8 +131,14 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 
 // runInstall runs all phases in order for a fresh install or upgrade.
 func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
-	// v1.98: Initialize lifecycle bridge (observational only — INV-I-004)
-	lb := newLifecycleBridge(cfg.mode, log)
+	// v1.98 Phase 2: Feature flag controls lifecycle bridge activation
+	var lb *lifecycleBridge
+	if cfg.lifecycle {
+		log.Info("lifecycle_mode=canonized (NFTBAN_LIFECYCLE=on)")
+		lb = newLifecycleBridge(cfg.mode, log)
+	} else {
+		log.Info("lifecycle_mode=legacy (NFTBAN_LIFECYCLE=0)")
+	}
 
 	phases := []struct {
 		phase state.Phase
@@ -151,7 +157,9 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 		if ctx.Err() != nil {
 			log.Error("installer timed out or cancelled during phase %s", p.name)
 			sf.Transition(state.StateFailedRebuild, p.phase, "timeout")
-			lb.observeResult(sf) // v1.98: record failure
+			if lb != nil {
+				lb.observeResult(sf)
+			}
 			return report(sf, log)
 		}
 
@@ -160,25 +168,30 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 			log.Error("phase %s failed: %v", p.name, err)
 			log.PhaseEnd(p.name)
 
-			// v1.98: Emit lifecycle observations for the phase that completed before failure
-			if p.phase == state.PhaseDetect {
-				lb.observeDetect(&globalPhaseData, sf)
-				lb.observePlan(&globalPhaseData)
+			if lb != nil {
+				if p.phase == state.PhaseDetect {
+					lb.observeDetect(&globalPhaseData, sf)
+					lb.observePlan(&globalPhaseData)
+				}
+				lb.observeResult(sf)
 			}
-			lb.observeResult(sf) // record failure outcome
 			return report(sf, log)
 		}
 
-		// v1.98: Lifecycle observations at phase boundaries
-		switch p.phase {
-		case state.PhaseDetect:
-			lb.observeDetect(&globalPhaseData, sf)
-			lb.observePlan(&globalPhaseData)
+		// Lifecycle observations at phase boundaries (only when flag is on)
+		if lb != nil {
+			switch p.phase {
+			case state.PhaseDetect:
+				lb.observeDetect(&globalPhaseData, sf)
+				lb.observePlan(&globalPhaseData)
+			}
 		}
 	}
 
-	// v1.98: Record final lifecycle result
-	lb.observeResult(sf)
+	// Record final lifecycle result (only when flag is on)
+	if lb != nil {
+		lb.observeResult(sf)
+	}
 
 	log.PhaseEnd("Validate")
 	return report(sf, log)
