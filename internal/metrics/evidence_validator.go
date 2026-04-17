@@ -27,6 +27,8 @@ import (
 	"encoding/json"
 	"os/exec"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/constants"
 )
 
 // ValidatorSnapshot holds extracted validator state for metrics enrichment.
@@ -39,9 +41,9 @@ type ValidatorSnapshot struct {
 	Unknown  bool              `json:"unknown,omitempty"` // true if collection failed
 }
 
-// ValidatorBinPath is the default validator binary path.
-// Configurable for testing; production uses package default.
-var ValidatorBinPath = "/usr/lib/nftban/bin/nftban-validate"
+// ValidatorBinPath is the validator binary path.
+// Uses the canonical constant from internal/constants. Configurable for testing.
+var ValidatorBinPath = constants.ValidatorBinPath
 
 // CollectValidatorSnapshot calls nftban-validate --json and extracts
 // status, module states, and finding codes.

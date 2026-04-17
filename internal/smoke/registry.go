@@ -19,7 +19,11 @@
 
 package smoke
 
-import "time"
+import (
+	"time"
+
+	"github.com/itcmsgr/nftban/internal/constants"
+)
 
 // SmokeTest defines a single registered smoke probe.
 // All test execution is driven by this metadata — no ad hoc logic outside the registry.
@@ -87,11 +91,11 @@ func baseTests() []SmokeTest {
 			ID:          "T1",
 			Name:        "validator JSON",
 			Category:    "truth",
-			Command:     []string{"nftban-validate", "--json"},
+			Command:     []string{constants.ValidatorBinPath, "--json"},
 			AllowedExit: []int{0, 1, 2},
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
-				{Type: "binary", Name: "nftban-validate"},
+				{Type: PrereqValidatorBin, Name: constants.ValidatorBinPath},
 			},
 			FatalPatterns: DefaultFatalPatterns,
 			Assert: func(o TestOutput) bool {
@@ -108,7 +112,7 @@ func baseTests() []SmokeTest {
 			Timeout:     10 * time.Second,
 			Prerequisites: []Prerequisite{
 				{Type: PrereqBinary, Name: "nftban"},
-				{Type: PrereqValidatorBin, Name: "nftban-validate"},
+				{Type: PrereqValidatorBin, Name: constants.ValidatorBinPath},
 			},
 			FatalPatterns: DefaultFatalPatterns,
 			Assert: func(o TestOutput) bool {
