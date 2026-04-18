@@ -1,0 +1,38 @@
+# =============================================================================
+# NFTBan v1.98.1 - Soak Validation Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-soak.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-18"
+# meta:description="Soak validation: read-only checks + one bounded rebuild"
+# meta:input="None"
+# meta:output="JSON log at /var/log/nftban/soak/"
+# meta:depends="nftban-soak-check.sh"
+# meta:inventory.files="/usr/local/sbin/nftban-soak-check.sh,/var/log/nftban/soak/"
+# meta:inventory.binaries="/usr/sbin/nftban,/usr/sbin/nft"
+# meta:inventory.env_vars="PATH"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftband.service,nftables.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan soak validation (read-only checks + one bounded rebuild)
+Documentation=https://github.com/itcmsgr/nftban
+After=nftband.service nftables.service
+Wants=nftband.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nftban-soak-check.sh
+User=root
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=300
+StandardOutput=append:/var/log/nftban/soak/cron.log
+StandardError=append:/var/log/nftban/soak/cron.log
