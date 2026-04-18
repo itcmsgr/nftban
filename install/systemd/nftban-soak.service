@@ -27,12 +27,46 @@ Wants=nftband.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/nftban-soak-check.sh
+ExecStart=/usr/lib/nftban/scripts/nftban-soak-check.sh
 User=root
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+Group=root
+Environment=PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+# Scheduling niceness (soak is low-priority validation, not operational)
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 TimeoutStartSec=300
+
+# Logging
 StandardOutput=append:/var/log/nftban/soak/cron.log
 StandardError=append:/var/log/nftban/soak/cron.log
+SyslogIdentifier=nftban-soak
+
+# =============================================================================
+# SECURITY HARDENING (aligned with nftban-maintenance.service pattern)
+# Root is required to invoke `nftban firewall rebuild` and read validator
+# output. Sandboxing narrows the blast radius to exactly what soak needs.
+# =============================================================================
+NoNewPrivileges=yes
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Write surface: only the paths soak actually needs to touch.
+# /var/log/nftban: cron.log append + per-run JSON writes
+# /var/lib/nftban: state read (rebuild_recovery.json marker check)
+# /run/nftban:     future locking if introduced
+# /etc/nftban:     nftban CLI reads config files via /etc/nftban
+ReadWritePaths=/var/log/nftban /var/lib/nftban /run/nftban
+
+# Resource limits (soak should never consume meaningful system resources)
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=20
