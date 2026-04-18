@@ -348,8 +348,10 @@ install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
 install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
 install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
-install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
-install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
+# NB-5: privileged binaries ship 0750 (root:nftban), not 0755 (root:root).
+# Canonical ownership set declaratively via %attr() in %files below.
+install -D -m 0750 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
+install -D -m 0750 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
 
 # Helper scripts (queue processor, rollback, alerts, etc.)
@@ -1092,8 +1094,10 @@ if [ \$1 -eq 0 ]; then
 fi
 
 %files
-/usr/sbin/nftban
-/usr/sbin/nftban-ui
+# NB-5: canonical ownership root:nftban 0750 set at package-install time.
+# nftban group is created in %pre (line ~860), so attrs resolve cleanly here.
+%attr(0750,root,nftban) /usr/sbin/nftban
+%attr(0750,root,nftban) /usr/sbin/nftban-ui
 /usr/libexec/nftban-ui-auth
 /usr/lib/nftban/bin
 /usr/lib/nftban/sbin
@@ -1795,8 +1799,10 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-validate" "${deb_root}/usr/lib/nftban/bin/"
-    install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
-    install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
+    # NB-5: privileged binaries ship 0750 in .deb payload; postinst converges
+    # ownership to root:nftban after the group is created.
+    install -m 0750 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
+    install -m 0750 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-installer" "${deb_root}/usr/lib/nftban/bin/"
 
