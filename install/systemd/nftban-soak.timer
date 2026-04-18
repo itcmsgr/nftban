@@ -1,0 +1,36 @@
+# =============================================================================
+# NFTBan v1.98.1 - Soak Validation Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-soak.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-18"
+# meta:description="Fires nftban-soak.service every 2h at :17, staggered off HH:00 cron storm"
+# meta:input="None"
+# meta:output="Triggers nftban-soak.service"
+# meta:depends="nftban-soak.service"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-soak.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan soak validation timer (staggered off HH:00 cron storm)
+Documentation=https://github.com/itcmsgr/nftban
+
+[Timer]
+# Fires every 2 hours at :17 past the hour (off cPanel HH:00 job storm).
+OnCalendar=0/2:17
+# Further spread 0-300s across a fleet to avoid synchronized fires.
+RandomizedDelaySec=300
+# Catch up a missed firing after boot / downtime.
+Persistent=true
+Unit=nftban-soak.service
+
+[Install]
+WantedBy=timers.target
