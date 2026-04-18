@@ -57,14 +57,18 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK is required: the script invokes `nft list set` / `nft list ruleset`
+# directly (not through nftband IPC), and libmnl opens AF_NETLINK sockets to
+# read kernel state. Without it, nft fails with EAFNOSUPPORT and ssh_port /
+# rebuild / validator checks FAIL with false negatives.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
-# Write surface: only the paths soak actually needs to touch.
-# /var/log/nftban: cron.log append + per-run JSON writes
-# /var/lib/nftban: state read (rebuild_recovery.json marker check)
-# /run/nftban:     future locking if introduced
-# /etc/nftban:     nftban CLI reads config files via /etc/nftban
-ReadWritePaths=/var/log/nftban /var/lib/nftban /run/nftban
+# Write surface: matches nftban-maintenance.service pattern. `nftban firewall
+# rebuild` writes .nftables.conf.tmp + rendered nftables.conf to /etc/nftban,
+# caches state under /var/cache/nftban, and records state in /var/lib/nftban.
+# Ports.d + whitelist.d stay writable for SSH-safety-critical paths consistent
+# with the maintenance model. Shrinking below this breaks rebuild.
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
 # Resource limits (soak should never consume meaningful system resources)
 MemoryMax=128M
