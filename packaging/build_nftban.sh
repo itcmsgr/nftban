@@ -481,6 +481,9 @@ install -D -m 0644 install/systemd/nftban-update-check.service %{buildroot}/usr/
 install -D -m 0644 install/systemd/nftban-update-check.timer %{buildroot}/usr/lib/systemd/system/nftban-update-check.timer
 install -D -m 0644 install/systemd/nftban-update-apply.service %{buildroot}/usr/lib/systemd/system/nftban-update-apply.service
 install -D -m 0644 install/systemd/nftban-update-apply.timer %{buildroot}/usr/lib/systemd/system/nftban-update-apply.timer
+# v1.98.1: Soak validation timer (opt-in, staggered off HH:00)
+install -D -m 0644 install/systemd/nftban-soak.service %{buildroot}/usr/lib/systemd/system/nftban-soak.service
+install -D -m 0644 install/systemd/nftban-soak.timer %{buildroot}/usr/lib/systemd/system/nftban-soak.timer
 
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
@@ -529,6 +532,8 @@ mkdir -p %{buildroot}/usr/lib/nftban/scripts
 install -m 0755 scripts/generate-help.sh %{buildroot}/usr/lib/nftban/scripts/generate-help.sh
 install -m 0755 scripts/generate-wiki-operator.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-operator.sh
 install -m 0755 scripts/generate-wiki-auditor.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-auditor.sh
+# v1.98.1: Soak validation script (invoked by nftban-soak.service)
+install -m 0755 scripts/nftban-soak-check.sh %{buildroot}/usr/lib/nftban/scripts/nftban-soak-check.sh
 
 # Documentation moved to wiki (v1.0.20+)
 # See: https://github.com/itcmsgr/nftban/wiki
@@ -1129,6 +1134,7 @@ fi
 /usr/lib/nftban/scripts/generate-help.sh
 /usr/lib/nftban/scripts/generate-wiki-operator.sh
 /usr/lib/nftban/scripts/generate-wiki-auditor.sh
+/usr/lib/nftban/scripts/nftban-soak-check.sh
 # Config directories - root:nftban so services can read configs
 %dir %attr(750,root,nftban) /etc/nftban
 %dir %attr(750,root,nftban) /etc/nftban/conf.d
@@ -1951,6 +1957,9 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-check.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.timer" "${deb_root}/usr/lib/systemd/system/"
+    # v1.98.1: Soak validation timer (opt-in, staggered off HH:00)
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-soak.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-soak.timer" "${deb_root}/usr/lib/systemd/system/"
     # v1.41.0: Community stats config default
     install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
@@ -1995,6 +2004,8 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-help.sh" "${deb_root}/usr/lib/nftban/scripts/"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-operator.sh" "${deb_root}/usr/lib/nftban/scripts/"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-auditor.sh" "${deb_root}/usr/lib/nftban/scripts/"
+    # v1.98.1: Soak validation script (invoked by nftban-soak.service)
+    install -m 0755 "${PROJECT_ROOT}/scripts/nftban-soak-check.sh" "${deb_root}/usr/lib/nftban/scripts/"
 
     # Documentation moved to wiki (v1.0.20+)
     # See: https://github.com/itcmsgr/nftban/wiki
