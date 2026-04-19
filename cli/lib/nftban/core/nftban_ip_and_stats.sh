@@ -108,10 +108,22 @@ validate_structure() {
         return 2
     fi
 
-    # Call the Go validator. Ignore its exit code — we translate status into
-    # shell schema via jq below, and derive the shell exit code from that.
-    local go_output
-    go_output=$("$validator_bin" --json 2>/dev/null) || true
+    # Call the Go validator. Capture its exit code — we derive shell exit
+    # from (a) Go status, (b) error-severity finding count, and (c) the
+    # validator binary's own exit code. Any of those indicating failure
+    # must propagate as non-zero.
+    #
+    # R-1 (issue #469): prior behaviour derived exit ONLY from jq-mapped
+    # error count, so a Go `status: down` with no critical/error findings
+    # (or an unexpected jq result) produced exit 0 — the "misleading
+    # success" class this release is fixing.
+    #
+    # BASH GOTCHA: `if ! var=$(cmd); then rc=$?; fi` sets $?=0 inside the
+    # then-block (assignment exit 0, not cmd exit). The `|| rc=$?` idiom
+    # correctly captures cmd's exit code without firing the ERR trap.
+    local go_output=""
+    local go_rc=0
+    go_output="$("$validator_bin" --json 2>/dev/null)" || go_rc=$?
 
     if [[ -z "$go_output" ]]; then
         local empty_msg="CRITICAL: Go validator returned empty output"
@@ -257,10 +269,25 @@ validate_structure() {
         fi
     fi
 
-    # Exit code: 1 if any errors, 0 otherwise (matches legacy behaviour).
+    # R-1 (issue #469): exit code is the MAX of three failure signals:
+    #   - shell errors_count > 0      (jq-mapped critical/error findings)
+    #   - Go validator rc > 0         (validator binary itself reported failure)
+    #   - Go status ∈ {down,degraded} (authoritative Go state, in case no
+    #                                  finding carries critical/error severity)
+    # Any of these → non-zero exit. All clear → 0.
+    local go_status
+    go_status=$(printf '%s' "$go_output" | jq -r '.status // empty' 2>/dev/null)
+
     if [[ "$errors_count" -gt 0 ]]; then
         return 1
     fi
+    if (( go_rc != 0 )); then
+        return "$go_rc"
+    fi
+    case "$go_status" in
+        down)     return 2 ;;
+        degraded) return 1 ;;
+    esac
     return 0
 }
 

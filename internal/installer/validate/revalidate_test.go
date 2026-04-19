@@ -44,6 +44,9 @@ func healthyMock() *executor.MockExecutor {
 	mock.RunResults["nft:list:chain:ip:nftban:input"] = executor.Result{ExitCode: 0}
 	mock.NftSets["ip:nftban:tcp_ports_in"] = "elements = { 22, 80, 443 }"
 	mock.Files["/var/lib/nftban/state/install_state"] = []byte("COMMITTED")
+	// v1.98.2 R-3: RunAssertions now includes payload_inventory_ok — seed the
+	// canonical destinations so the happy-path mock remains "all passing".
+	seedCompletePayloadInventory(mock)
 	return mock
 }
 

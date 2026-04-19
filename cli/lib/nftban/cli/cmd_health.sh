@@ -413,11 +413,54 @@ nftban_health_cmd_truth() {
         return
     fi
 
-    local output
-    output=$("$validator_bin" --json 2>/dev/null)
-    if [[ -z "$output" ]]; then
-        echo "ERROR: Go validator returned empty output" >&2
-        return 1
+    # R-2 (issue #470): capture validator exit code without triggering the
+    # ERR trap under `set -Eeuo pipefail`. A bare `output=$(...)` assignment
+    # propagates the command's non-zero exit to the trap, which kills the
+    # health CLI at the exact moment an operator needs it.
+    #
+    # BASH GOTCHA: `if ! var=$(cmd); then rc=$?; fi` captures $?=0 because
+    # the assignment's own exit code is 0 (assignment succeeded), not cmd's.
+    # The `cmd || rc=$?` idiom below correctly captures cmd's exit code
+    # without firing the ERR trap (|| suppresses trap on left operand).
+    local output=""
+    local validator_rc=0
+    local validator_err_file
+    validator_err_file="$(mktemp)"
+    output="$("$validator_bin" --json 2>"$validator_err_file")" || validator_rc=$?
+    local validator_err=""
+    [[ -s "$validator_err_file" ]] && validator_err="$(cat "$validator_err_file")"
+    rm -f "$validator_err_file"
+
+    if (( validator_rc != 0 )) || [[ -z "$output" ]]; then
+        local summary_err="${validator_err:0:500}"
+        if [[ "$json_mode" == "true" ]]; then
+            jq -n \
+                --arg bin "$validator_bin" \
+                --argjson rc "$validator_rc" \
+                --arg err "$summary_err" \
+                '{
+                    schema_version: "1.83.0",
+                    status: "down",
+                    truth: "failed",
+                    validator: { binary: $bin, exit_code: $rc, stderr: $err }
+                }'
+        else
+            echo ""
+            echo "NFTBan Health — Four-Axis Truth Table"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+            printf "  %-14s %s\n" "Overall:" "DOWN"
+            printf "  %-14s %s\n" "Truth:" "FAILED (validator exit $validator_rc)"
+            printf "  %-14s %s\n" "Validator:" "$validator_bin"
+            if [[ -n "$summary_err" ]]; then
+                echo ""
+                echo "  Validator stderr:"
+                # bounded, indented excerpt
+                printf '%s\n' "$summary_err" | sed 's/^/    /'
+            fi
+            echo ""
+        fi
+        return 2
     fi
 
     # v1.83: Schema version guard
