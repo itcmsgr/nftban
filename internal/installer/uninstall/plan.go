@@ -96,6 +96,21 @@ type Plan struct {
 	// phases would perform mutation if this PR's scope were expanded.
 	// PR-22 ships NONE of these — the list is informational.
 	PhasesThatWouldMutate []string `json:"phases_that_would_mutate,omitempty"`
+
+	// ScopeBoundary is the scope-lock disclaimer, carried as a
+	// first-class field so JSON consumers see the same "no mutation
+	// performed" guarantee the human text render carries. Addresses
+	// the audit concern about text/JSON renderer drift: if the field
+	// were only in Render(), machine tooling that consumed JSON could
+	// miss the fact that --mode=uninstall did nothing.
+	ScopeBoundary string `json:"scope_boundary"`
+
+	// NoMutationPerformed is a machine-consumable flag that mirrors
+	// ScopeBoundary. For PR-22 it is always true by construction —
+	// no code path in the orchestrator performs mutation. Later PRs
+	// that add mutation must explicitly flip this to false when
+	// mutation actually occurs.
+	NoMutationPerformed bool `json:"no_mutation_performed"`
 }
 
 // PlanSchemaVersion is the current plan wire contract.
@@ -116,6 +131,12 @@ func BuildPlan(mode Mode, auth *ClassifyResult, prior *ProbeResult, restoreReque
 		RestoreRequested:  restoreRequested,
 		PriorState:        prior.State,
 		RestoreAuthorized: restoreRequested && prior.State == PriorRecordUsable,
+		// Scope boundary is carried in the struct so JSON + text both see
+		// it. No text/JSON drift (audit D.5).
+		ScopeBoundary: "PR-22 scope: detect + plan only. No mutation code " +
+			"exists in this release. Running this command does NOT " +
+			"uninstall nftban. Later PRs (PR-23..PR-26) add mutation.",
+		NoMutationPerformed: true,
 	}
 
 	// TargetAuthority — per Q2=C (frozen), default is None; restore is

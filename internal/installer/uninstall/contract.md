@@ -164,6 +164,32 @@ introduced.
 
 ---
 
+## Audit C regression note — auto-elevation to dry-run MUST be revisited in PR-23
+
+PR-22's `--mode=uninstall` without `--dry-run` auto-elevates to
+`--dry-run` with a loud stderr banner. This is acceptable ONLY because
+no mutation code exists in PR-22 — the auto-elevation is the safe
+default in the absence of mutation.
+
+**The moment PR-23 lands the Switch phase (authority release), this
+auto-elevation MUST be removed or changed to REFUSE rather than silently
+elevate.** Leaving it in place past PR-22 would teach operators that
+`--mode=uninstall` is "safe by default," then PR-23 would change that
+meaning without an audit prompt — a UX-drift attack on the contract
+surface.
+
+PR-23 acceptance criterion: either
+- the auto-elevation block in `cmd/nftban-installer/flags.go` is deleted
+  (so `--mode=uninstall` mutates unless `--dry-run` is explicit), OR
+- the auto-elevation is replaced with an explicit REFUSAL that requires
+  the operator to choose between `--dry-run` and `--confirm-mutation`
+  (no silent default behaviour in either direction)
+
+This audit note lives in the contract doc so the PR-23 reviewer has a
+pre-written reminder that isn't buried in a branch commit log.
+
+---
+
 ## Stop condition
 
 If any PR-22 commit requires:

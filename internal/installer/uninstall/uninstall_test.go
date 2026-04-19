@@ -126,6 +126,44 @@ func TestClassify_NoteOnPartialNFTBan(t *testing.T) {
 	}
 }
 
+// Audit D.1 regression guard: partial nftban presence MUST prefer
+// ambiguous/degraded over a false "no authority" claim. The reviewer's
+// concern: later PRs will build mutation decisions on top of this
+// detector, so any overstatement here poisons the whole chain.
+func TestClassify_PartialNFTBan_WithExternal_IsAmbiguous(t *testing.T) {
+	// ip nftban table present + daemon DOWN + UFW active = the classic
+	// half-installed / mid-transition state. Classifier must not silently
+	// claim "external is authoritative" because the nftban table is
+	// still sitting in the kernel.
+	mock := executor.NewMockExecutor()
+	mock.NftTables["ip:nftban"] = true   // table still in kernel
+	mock.Services["nftband.service"] = false // daemon inactive
+	mock.Services["ufw"] = true               // external present
+
+	res := Classify(mock, newTestLogger())
+	if res.State == AuthorityExternal {
+		t.Errorf("partial-nftban + external MUST NOT claim external authority outright; nftban table in kernel means state is ambiguous. got %q", res.State)
+	}
+	// The notes should surface BOTH the partial-nftban issue AND the
+	// external-firewall presence so the operator has full context.
+	haveNftbanNote := false
+	haveExternalNote := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "nftband.service inactive") {
+			haveNftbanNote = true
+		}
+		if strings.Contains(n, "ufw") || strings.Contains(n, "external") {
+			haveExternalNote = true
+		}
+	}
+	if !haveNftbanNote {
+		t.Error("partial-nftban note missing — operator cannot see the half-installed state")
+	}
+	if !haveExternalNote {
+		t.Error("external-firewall note missing — operator cannot see the ambient firewall")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Probe — 3-state prior-authority record detector
 // ---------------------------------------------------------------------------
@@ -285,6 +323,67 @@ func TestBuildPlan_Restore_IncompleteRecord_NotAuthorized(t *testing.T) {
 	}
 	if !found {
 		t.Error("plan must warn when restore requested but record is incomplete")
+	}
+}
+
+// Audit F — the critical semantic edge case for PR-22: with
+// --restore-prior-authority set AND PriorRecordIncomplete, the plan
+// must satisfy ALL THREE properties:
+//
+//  1. does NOT promise restoration (TargetAuthority is not the prior
+//     firewall type)
+//  2. does NOT silently downgrade to AuthorityNone without the operator
+//     seeing why (warning + RestoreRequested=true must both surface)
+//  3. explicitly reports restore requested but NOT authorized from
+//     available evidence
+//
+// This is the exact contract surface that PR-24 will inherit. Muddy
+// semantics here = poisoned contract downstream.
+func TestBuildPlan_Restore_IncompleteRecord_SemanticEdge_Audit_F(t *testing.T) {
+	prior := &ProbeResult{State: PriorRecordIncomplete}
+	p := BuildPlan(ModeRemove, happyClassify(), prior, true)
+
+	// Property 1: no restoration promise.
+	if p.TargetAuthority != AuthorityNone {
+		t.Errorf("TargetAuthority = %q; incomplete record must NOT promise restoration (Q4=B + audit F)", p.TargetAuthority)
+	}
+
+	// Property 2a: restore request is visible (not silent).
+	if !p.RestoreRequested {
+		t.Error("RestoreRequested must remain true so the operator SEES their request was heard — not silently dropped")
+	}
+	// Property 2b: not-authorized is also visible.
+	if p.RestoreAuthorized {
+		t.Error("RestoreAuthorized must be false because the record cannot be trusted")
+	}
+
+	// Property 3: warnings explicitly pair "requested" with "not authorized
+	// from available evidence". A reader of the plan alone (without
+	// reading the code) must see that the request exists but failed
+	// authorization, NOT infer silently.
+	var explicitWarning string
+	for _, w := range p.Warnings {
+		if strings.Contains(w, "restore") && strings.Contains(w, "incomplete") {
+			explicitWarning = w
+		}
+	}
+	if explicitWarning == "" {
+		t.Errorf("plan must have an explicit warning tying 'restore requested' to 'record incomplete'; got warnings: %v", p.Warnings)
+	}
+
+	// Rendered output must also carry all three properties in human form
+	// so operator audit at read-time catches the edge.
+	var buf bytes.Buffer
+	p.Render(&buf)
+	rendered := buf.String()
+	for _, needle := range []string{
+		"Restore requested           : yes",
+		"Restore authorized          : no",
+		"Prior-authority record      : record_incomplete",
+	} {
+		if !strings.Contains(rendered, needle) {
+			t.Errorf("render output missing semantic-edge line %q — operator must see the full picture:\n%s", needle, rendered)
+		}
 	}
 }
 

@@ -88,6 +88,11 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 	nftbanTable := exec.NftTableExists("ip", "nftban")
 	nftbandActive := exec.ServiceActive("nftband.service")
 	nftbanPresent := nftbanTable && nftbandActive
+	// "partial" means one side of nftban is present but not the other —
+	// table without daemon, or daemon without table. Either way the
+	// host is in a mid-install / mid-uninstall / crashed state. The
+	// classifier must not overstate certainty on top of that (audit D.1).
+	nftbanPartial := (nftbanTable || nftbandActive) && !nftbanPresent
 
 	ext := detectExternalAuthority(exec)
 	res.External = ext
@@ -103,10 +108,18 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		res.State = AuthorityAmbiguous
 		res.Notes = append(res.Notes,
 			"both nftban (table + daemon) and external firewall ("+ext+") observable; uninstall plan cannot assume who owns the firewall")
-	case !nftbanPresent && extPresent:
+	case nftbanPartial && extPresent:
+		// Partial-nftban + external: a later PR's mutation logic would
+		// be wrong to silently remove nftban artifacts AND silently let
+		// external take over, because the operator may have expected
+		// one of the other paths. Surface the ambiguity.
+		res.State = AuthorityAmbiguous
+		res.Notes = append(res.Notes,
+			"partial nftban state (table OR daemon present, not both) AND external firewall ("+ext+") observable; host is in an indeterminate transition — operator must resolve before any mutation")
+	case !nftbanPresent && !nftbanPartial && extPresent:
 		res.State = AuthorityExternal
 		res.Notes = append(res.Notes,
-			"no nftban authority (missing table or inactive daemon); external firewall ("+ext+") appears authoritative")
+			"no nftban authority (no table AND no daemon); external firewall ("+ext+") appears authoritative")
 	case !nftbanPresent && !extPresent:
 		// Distinguish "nothing authoritative" from "detection failed".
 		// If both probes returned a negative answer from live exec

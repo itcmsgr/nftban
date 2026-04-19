@@ -108,11 +108,30 @@ func parseFlags() *config {
 	if !cfg.showVersion && !cfg.repair {
 		if cfg.mode == "uninstall" {
 			// v1.100 PR-22: uninstall mode is accepted; current release
-			// is detect + dry-run plan only. --dry-run is implied but
-			// explicitly accepted. Mutation phases land in PR-23+.
+			// is detect + dry-run plan only. Mutation phases land in
+			// PR-23+.
+			//
+			// Audit C regression guard: when PR-23+ adds real mutation,
+			// this auto-elevation block MUST be removed or changed to
+			// REFUSE rather than silently elevate. Leaving it in place
+			// would teach operators that --mode=uninstall is "safe by
+			// default" — then PR-23 would change that meaning without
+			// an audit prompt. Tracked in the PR-22 contract doc:
+			// internal/installer/uninstall/contract.md (audit C regression
+			// note).
 			if !cfg.dryRun {
-				fmt.Fprintln(os.Stderr, "warning: --mode=uninstall currently ships detect + dry-run plan only (PR-22)")
-				fmt.Fprintln(os.Stderr, "         enabling --dry-run implicitly; no mutation will occur")
+				fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════════════╗")
+				fmt.Fprintln(os.Stderr, "║  --mode=uninstall: NO MUTATION WILL OCCUR (v1.100 PR-22 scope)       ║")
+				fmt.Fprintln(os.Stderr, "║                                                                      ║")
+				fmt.Fprintln(os.Stderr, "║  PR-22 ships detect + dry-run plan only. This invocation is being   ║")
+				fmt.Fprintln(os.Stderr, "║  auto-elevated to --dry-run. Nothing will be removed, no authority  ║")
+				fmt.Fprintln(os.Stderr, "║  released, no service disabled, no file deleted.                    ║")
+				fmt.Fprintln(os.Stderr, "║                                                                      ║")
+				fmt.Fprintln(os.Stderr, "║  When PR-23+ adds mutation, this auto-elevation will be removed.    ║")
+				fmt.Fprintln(os.Stderr, "║  At that point, --mode=uninstall will mutate unless --dry-run is    ║")
+				fmt.Fprintln(os.Stderr, "║  explicitly passed. Do not build operational habits around this     ║")
+				fmt.Fprintln(os.Stderr, "║  PR-22 safety-by-default behaviour.                                 ║")
+				fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════════════╝")
 				cfg.dryRun = true
 			}
 			return cfg
