@@ -112,7 +112,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          sudo install -d /usr/lib/nftban /var/lib/nftban/state /etc/nftban
+          sudo install -d /usr/lib/nftban /var/lib/nftban/state /etc/nftban /etc/ssh
           # Current version on disk.
           sudo cp VERSION /usr/lib/nftban/VERSION
           # Seed a terminal state marker so the stale-in-progress warning
@@ -120,11 +120,16 @@ jobs:
           echo "COMMITTED" | sudo tee /var/lib/nftban/state/install_state >/dev/null
           # Create an ip nftban table so the authority preflight (P-1) passes.
           sudo nft add table ip nftban || true
-          # Fake a systemd unit being "active" by pre-seeding a stub we
-          # can control. Actually simpler: the preflight accepts
-          # nftband.service as inactive → critical fail. For the dry-run
-          # happy-path test below we invoke with explicit acceptance that
-          # service_nftband_active may fail. We handle both outcomes.
+          # CI containers do not run sshd. Provide a minimal sshd_config so
+          # phaseDetect's SSH-port detector finds a value (the real upgrade
+          # flow always has one of the 4 SSH sources available on a host
+          # that nftban was previously installed on).
+          if [[ ! -f /etc/ssh/sshd_config ]]; then
+            echo "Port 22" | sudo tee /etc/ssh/sshd_config >/dev/null
+          fi
+          # phaseDetect does not require nftband to be running for dry-run,
+          # only preflight does — and preflight reports the failure as one
+          # of the five checks rather than aborting phaseDetect.
 
       # ------------------------------------------------------------------
       # G3-U3 — --dry-run correctness: no mutation, plan rendered, valid
