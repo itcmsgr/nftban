@@ -47,6 +47,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
@@ -66,8 +67,23 @@ const (
 
 	// Validator gate. Read-only; governs apply's exit contract per
 	// G3-U8 ("validator result GOVERNS lifecycle outcome").
-	validatorCmd  = "nftban-validate"
+	//
+	// Absolute path via constants.ValidatorBinPath — /usr/lib/nftban/bin
+	// is NOT in default $PATH on Ubuntu or AlmaLinux, so a bare name
+	// ("nftban-validate") fails to resolve. Found by the post-PR-20
+	// parity gate FC-1 on 2026-04-19. constants.ValidatorBinPath is the
+	// single authority for this path (four pre-existing consumers in
+	// internal/metrics + internal/smoke); this PR aligns the two
+	// previously bare-name Go call sites (here + cmd_lifecycle.go) with
+	// that single authority rather than introducing a second one.
 	validatorArg1 = "--json"
+)
+
+var (
+	// validatorCmd is a var, not const, because it references the
+	// constants package. Kept parallel to rebuildCmd (still a const
+	// string because nftban IS on $PATH at /usr/sbin/nftban).
+	validatorCmd = constants.ValidatorBinPath
 )
 
 // runUpdateApply is the update-mode apply orchestrator. Invoked when

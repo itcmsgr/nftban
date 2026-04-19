@@ -171,7 +171,7 @@ func TestUpdateApplyLog_TrailerFiresOnEveryBranch(t *testing.T) {
 			m.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 2}
 		}},
 		{"validator-fail", func(m *executor.MockExecutor) {
-			m.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 2}
+			m.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 2}
 		}},
 	}
 	for _, b := range branches {

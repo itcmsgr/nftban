@@ -65,7 +65,7 @@ func TestApplyContract_ForbiddenListsWellFormed(t *testing.T) {
 func TestApplyAudit_CommandsHappyPath(t *testing.T) {
 	cmds := []string{
 		"nftban firewall rebuild",
-		"nftban-validate --json",
+		"/usr/lib/nftban/bin/nftban-validate --json",
 		"nft list table ip nftban",
 	}
 	v := AuditRecordedCommands(cmds)

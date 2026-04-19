@@ -192,6 +192,12 @@ const (
 	NftbanCLI = "/usr/sbin/nftban"
 )
 
+// NOTE: the validator binary path is NOT defined here. It already has a
+// canonical home at internal/constants/paths.go::ValidatorBinPath with
+// four existing consumers (metrics + smoke). Adding a second constant
+// here would create duplicate authority plumbing — post-PR-20 parity
+// gate FC-1 (2026-04-19) fix uses constants.ValidatorBinPath instead.
+
 // DirSpec describes a required directory with path, mode, and owner.
 type DirSpec struct {
 	Path  string
