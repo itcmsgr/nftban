@@ -34,6 +34,16 @@ const (
 	StateFailedRebuild    InstallState = "FAILED_REBUILD"
 	StateFailedNoFirewall InstallState = "FAILED_NO_FIREWALL"
 	StateFailedTakeover   InstallState = "FAILED_TAKEOVER"
+
+	// StateUninstallPlanning is the terminal state for v1.100 PR-22's
+	// detect + dry-run plan orchestrator. The planner reaches this
+	// state after classifying current authority, probing the optional
+	// prior-authority record, and rendering the release plan — without
+	// invoking any mutation phase. Later v1.100 PRs (PR-23/25) add the
+	// mutation-carrying uninstall states; PR-22 deliberately ships only
+	// the planning state so the scope-boundary block in plan output
+	// remains literally true: no phase beyond Planning exists yet.
+	StateUninstallPlanning InstallState = "UNINSTALL_PLANNING"
 )
 
 // Phase represents a named installer phase.

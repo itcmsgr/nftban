@@ -45,6 +45,12 @@ type config struct {
 	lifecycle   bool   // v1.98: use canonized lifecycle flow (feature flag)
 	source      bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
 	sourceDir   string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
+	// v1.100 PR-22: uninstall scaffold flags. All plan-only in PR-22 —
+	// no mutation code consumes these; they only influence the rendered
+	// release plan.
+	purge                     bool // --purge: stronger uninstall mode (preserves .conf.local by default)
+	forceDeleteOperatorConfig bool // --force-delete-operator-config: with --purge, also delete .conf.local
+	restorePriorAuthority     bool // --restore-prior-authority: opt into restoring pre-install external firewall (requires recorded prior state)
 }
 
 func parseFlags() *config {
@@ -68,6 +74,10 @@ func parseFlags() *config {
 	// from a repo/tarball tree, and safety-whitelist seeding during Prepare/Configure.
 	flag.BoolVar(&cfg.source, "source", false, "Source install from repo/tarball (stages payload from --source-dir). Mutually exclusive with --rpm and --deb.")
 	flag.StringVar(&cfg.sourceDir, "source-dir", "", "Source tree root (repo clone or extracted tarball). Falls back to $NFTBAN_SOURCE_DIR then binary-relative discovery.")
+	// v1.100 PR-22 uninstall flags (plan-only; no mutation in PR-22).
+	flag.BoolVar(&cfg.purge, "purge", false, "Uninstall in purge mode (stronger deletion; preserves .conf.local unless --force-delete-operator-config is also set). Plan-only in PR-22.")
+	flag.BoolVar(&cfg.forceDeleteOperatorConfig, "force-delete-operator-config", false, "With --purge, also delete .conf.local. Explicit destructive-intent flag. Plan-only in PR-22.")
+	flag.BoolVar(&cfg.restorePriorAuthority, "restore-prior-authority", false, "Restore pre-install external firewall authority. Requires recorded prior-authority record. Plan-only in PR-22.")
 
 	flag.Parse()
 
@@ -96,6 +106,36 @@ func parseFlags() *config {
 
 	// Validate
 	if !cfg.showVersion && !cfg.repair {
+		if cfg.mode == "uninstall" {
+			// v1.100 PR-22: uninstall mode is accepted; current release
+			// is detect + dry-run plan only. Mutation phases land in
+			// PR-23+.
+			//
+			// Audit C regression guard: when PR-23+ adds real mutation,
+			// this auto-elevation block MUST be removed or changed to
+			// REFUSE rather than silently elevate. Leaving it in place
+			// would teach operators that --mode=uninstall is "safe by
+			// default" — then PR-23 would change that meaning without
+			// an audit prompt. Tracked in the PR-22 contract doc:
+			// internal/installer/uninstall/contract.md (audit C regression
+			// note).
+			if !cfg.dryRun {
+				fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════════════╗")
+				fmt.Fprintln(os.Stderr, "║  --mode=uninstall: NO MUTATION WILL OCCUR (v1.100 PR-22 scope)       ║")
+				fmt.Fprintln(os.Stderr, "║                                                                      ║")
+				fmt.Fprintln(os.Stderr, "║  PR-22 ships detect + dry-run plan only. This invocation is being   ║")
+				fmt.Fprintln(os.Stderr, "║  auto-elevated to --dry-run. Nothing will be removed, no authority  ║")
+				fmt.Fprintln(os.Stderr, "║  released, no service disabled, no file deleted.                    ║")
+				fmt.Fprintln(os.Stderr, "║                                                                      ║")
+				fmt.Fprintln(os.Stderr, "║  When PR-23+ adds mutation, this auto-elevation will be removed.    ║")
+				fmt.Fprintln(os.Stderr, "║  At that point, --mode=uninstall will mutate unless --dry-run is    ║")
+				fmt.Fprintln(os.Stderr, "║  explicitly passed. Do not build operational habits around this     ║")
+				fmt.Fprintln(os.Stderr, "║  PR-22 safety-by-default behaviour.                                 ║")
+				fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════════════╝")
+				cfg.dryRun = true
+			}
+			return cfg
+		}
 		if cfg.mode != "install" && cfg.mode != "upgrade" {
 			fmt.Fprintf(os.Stderr, "error: --mode must be 'install' or 'upgrade' (got %q)\n", cfg.mode)
 			fmt.Fprintf(os.Stderr, "usage: nftban-installer --mode=install|upgrade [flags]\n")
