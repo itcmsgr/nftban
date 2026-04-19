@@ -29,10 +29,13 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/payload"
 	"github.com/itcmsgr/nftban/internal/installer/render"
+	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/services"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
+	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
 )
 
@@ -124,6 +127,33 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 // phasePrepare runs dep install, stale cleanup, FHS setup, template rendering, config persistence.
 func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// v1.98.x PR-14-pre (G-14-A + G-14-B..G): Source-install path.
+	//
+	// Package installs (RPM/DEB) extract users/groups and files via package
+	// payload; cfg.source is false and this block is skipped entirely.
+	//
+	// Source installs (cfg.source=true) must create users/groups before any
+	// ownership-dependent step and stage payload before fhs.EnsureDirectories
+	// and fhs.SetPermissions run (those enforce FHS rules on already-present
+	// files).
+	if pd.source {
+		// 0a. Users/groups (must run before deps install and before any chown
+		// targeting nftban:nftban).
+		if err := users.Ensure(exec, pd.distro, log); err != nil {
+			log.Error("user/group creation failed: %v", err)
+			return sf.Transition(state.StateFailedRender, state.PhasePrepare,
+				"user/group creation failed: "+err.Error())
+		}
+
+		// 0b. Payload staging from source tree to FHS destinations. Idempotent,
+		// respects .conf.local (invariant #9) and %config(noreplace) semantics.
+		if err := payload.StageAll(exec, pd.sourceDir, pd.distro, log); err != nil {
+			log.Error("source payload staging failed: %v", err)
+			return sf.Transition(state.StateFailedRender, state.PhasePrepare,
+				"source payload staging failed: "+err.Error())
+		}
+	}
 
 	// 0. Install missing dependencies (dpkg/rpm lock is released by now)
 	if pd.distro != nil {
@@ -251,6 +281,18 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 
 	// 4. Enable login monitoring
 	services.EnableLogin(exec, log)
+
+	// v1.98.x PR-14-pre (G-14-H): Safety whitelist seed for source install.
+	// Must run BEFORE SyncWhitelist so the file exists before the sync reads
+	// it. Package installs skip this block (pd.source=false) because their
+	// 99-manual.conf comes through the package payload (%config(noreplace)).
+	// Non-fatal: SSH safety backstop (switchop.InjectEmergencySSH) runs in
+	// phaseSwitch independently.
+	if pd.source {
+		if err := safety.SeedManualWhitelist(exec, log); err != nil {
+			log.Warn("safety whitelist seed failed (non-fatal): %v", err)
+		}
+	}
 
 	// 5. Whitelist sync (loads whitelists and feeds)
 	services.SyncWhitelist(exec, log)
