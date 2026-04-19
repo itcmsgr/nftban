@@ -115,8 +115,13 @@ jobs:
               'exec\.Run\("dnf"[^)]*remove' \
               'exec\.WriteFileAtomic\(' \
               'os\.Remove\(' \
-              'os\.RemoveAll\(' \
-              'conf\.local'; do
+              'os\.RemoveAll\('; do
+            # Note: ".conf.local" is NOT in this list — the contract
+            # language in plan.go + contract.md LEGITIMATELY mentions
+            # .conf.local when describing the §4.4 artifact policy.
+            # The mutation danger is write/delete operations, which
+            # the os.Remove + WriteFileAtomic patterns above already
+            # cover regardless of which file they target.
             if grep -nE "$pat" $files 2>/dev/null; then
               echo "::error::G3-UN-NO-MUTATION FAIL: forbidden pattern '$pat' in PR-22 uninstall scope"
               fail=1

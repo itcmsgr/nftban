@@ -407,7 +407,9 @@ func TestRender_HasMandatoryFieldsAndScopeBoundary(t *testing.T) {
 		"Phases that would mutate (NOT IMPLEMENTED in PR-22):",
 		"Scope boundary:",
 		"Running this command does NOT uninstall nftban",
-		"later PRs in the v1.100 track must land first",
+		// Render wraps the sentence across lines; match a substring that
+		// fits within a single printed line.
+		"PRs in the v1.100 track must land first",
 	}
 	for _, needle := range mustHave {
 		if !strings.Contains(out, needle) {
