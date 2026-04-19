@@ -63,12 +63,14 @@ cli/              <- Repo organization: "Bash CLI component" (vs pkg/ for Go)
 
 ## Install Script Reference
 
-From `install_binaries.sh`:
-```bash
-cp -r "$SCRIPT_DIR/cli/lib/nftban/lib/"* "$LIB_DIR/lib/"
-cp -r "$SCRIPT_DIR/cli/lib/nftban/cli/"* "$LIB_DIR/cli/"
-cp -r "$SCRIPT_DIR/cli/lib/nftban/core/"* "$LIB_DIR/core/"
-# ... etc
-```
+Source-install payload staging is implemented in the Go installer at
+`internal/installer/payload/` (PR-14-pre, PR #462). The destination
+contract (source path → FHS destination, mode, overwrite policy) lives
+in a single data-driven entry table in
+`internal/installer/payload/payload.go` `buildEntries()`.
 
-Where `$LIB_DIR=/usr/lib/nftban`
+For package installs (RPM/DEB) the same destinations are populated by
+the package payload; see `packaging/build_nftban.sh` `%install` and the
+DEB `deb_root` install blocks.
+
+Where `$LIB_DIR=/usr/lib/nftban`.

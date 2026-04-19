@@ -226,9 +226,10 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		{srcRel: "packaging/polkit-1/rules.d", srcGlob: "*.rules", dstGlob: polkitDst, mode: 0644, policy: policyAlways, isDir: true, optional: true},
 
 		// -----------------------------------------------------------------
-		// G-14-G: Logrotate (resolves pre-existing source-install drift —
-		// uses canonical shipped config instead of install_services.sh's
-		// auto-generated wildcard config).
+		// G-14-G: Logrotate — uses the canonical shipped config. Resolves the
+		// pre-existing source-install drift where a legacy wildcard logrotate
+		// config was auto-generated at install time (see
+		// LOG_ROTATION_DOCS_CODE_ALIGNMENT.md).
 		// -----------------------------------------------------------------
 		{srcRel: "install/config/nftban.logrotate", dstGlob: "/etc/logrotate.d/nftban", mode: 0644, policy: policyAlways},
 		{srcRel: "install/config/nftban-suricata.logrotate", dstGlob: "/etc/nftban/templates/nftban-suricata.logrotate", mode: 0644, policy: policyAlways, optional: true},
