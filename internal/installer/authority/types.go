@@ -21,16 +21,28 @@ package authority
 type Decision string
 
 const (
-	// Update means NFTBan already owns the firewall (table + chain exist).
+	// Update means NFTBan already owns the firewall (table + chain + daemon).
+	// PR-22B tightened this predicate — a table or chain without an active
+	// nftband.service is NOT Update; it is Ambiguous.
 	Update Decision = "UPDATE"
 
 	// Fresh means no conflicting firewalls — clean slate.
 	Fresh Decision = "FRESH"
 
 	// Takeover means conflicts exist but takeover is approved
-	// (via env var, panel auto-approve, or user confirmation).
+	// (via env var, --takeover flag, or panel auto-approve when explicitly
+	// enabled by --panel-auto-takeover).
 	Takeover Decision = "TAKEOVER"
 
 	// Abort means conflicts exist and takeover is not approved.
 	Abort Decision = "ABORT"
+
+	// Ambiguous means the host is in a half-installed / crashed state —
+	// an ip nftban table exists in the kernel but the daemon is not
+	// active, OR the detection is inconclusive. PR-22B added this state
+	// on the install side to close the audit finding that orphan-table
+	// hosts silently classified as Update and skipped the emergency SSH
+	// injection path. phaseSwitch must treat Ambiguous with the same
+	// pre-switch safety as Takeover — never silent-continue.
+	Ambiguous Decision = "AMBIGUOUS"
 )

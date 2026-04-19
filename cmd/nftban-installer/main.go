@@ -70,6 +70,12 @@ func main() {
 
 	exec := &executor.RealExecutor{}
 	sf := state.NewStateFile(cfg.stateDir)
+	// PR-22B: wire the dry-run flag into the state-file layer so that
+	// Transition() is in-memory-only for every dry-run path, regardless
+	// of which orchestrator invoked it. This closes the audit finding
+	// that shared phase functions (phaseDetect in particular) persisted
+	// install_state during update dry-run.
+	sf.DryRun = cfg.dryRun
 
 	// Read previous version before overwriting (for history tracking)
 	previousVersion := ""
@@ -95,18 +101,26 @@ func main() {
 	// never reach the gated code in phasePrepare/phaseConfigure.
 	globalPhaseData.source = cfg.source
 	globalPhaseData.sourceDir = cfg.sourceDir
+	// PR-22B: propagate panel-auto-takeover to phase data so phaseDetect's
+	// authority classifier honours the operator's explicit opt-in. Default
+	// false — panel presence alone no longer implicitly approves takeover.
+	globalPhaseData.panelAutoApprove = cfg.panelAutoTakeover
 
 	exitCode := run(ctx, exec, sf, cfg, log)
 
 	// Write JSON update history (compatible with nftban update history --json).
 	//
-	// PR-22A boundary repair (audit finding A.3): uninstall-mode dry-run
-	// is strictly observational and must not create install/update history
-	// entries. Before this guard, a successful uninstall dry-run would
-	// reach historyStatusForState(StateUninstallPlanning), fall through to
-	// the default case, and be recorded as "install_fail" — poisoning the
-	// audit trail and any dashboard that alerts on install_fail.
-	if cfg.mode != "uninstall" {
+	// PR-22B boundary repair: history writes are gated on an explicit
+	// allowlist of apply-terminal states AND the absence of --dry-run.
+	// This replaces the earlier mode-name heuristic with a structural
+	// predicate — dry-runs, intermediate states, and planning-terminal
+	// states (e.g. StateUninstallPlanning) never produce history entries.
+	//
+	// Audit finding F (history / audit-trail truth): update dry-runs used
+	// to be recorded as install_fail because StateDetectComplete has no
+	// "success" mapping; now they are not recorded at all. Automation that
+	// consumes update-history.json is no longer polluted by preview runs.
+	if !cfg.dryRun && state.IsApplyTerminal(sf.State) {
 		writeHistory(sf, cfg, previousVersion, hostname, log)
 	}
 
@@ -178,7 +192,7 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 	var lb *lifecycleBridge
 	if cfg.lifecycle {
 		log.Info("lifecycle_mode=canonized (NFTBAN_LIFECYCLE=on)")
-		lb = newLifecycleBridge(cfg.mode, log)
+		lb = newLifecycleBridge(cfg.mode, cfg.dryRun, log)
 	} else {
 		log.Info("lifecycle_mode=legacy (NFTBAN_LIFECYCLE=0)")
 	}

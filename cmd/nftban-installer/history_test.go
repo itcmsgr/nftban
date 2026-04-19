@@ -34,6 +34,51 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/state"
 )
 
+// PR-22B regression guard: the guard that gates writeHistory at main.go
+// uses (!cfg.dryRun) && state.IsApplyTerminal(sf.State). These tests
+// verify each half of the predicate produces the expected skip/write
+// decision. We test the predicate directly rather than invoking
+// writeHistory because that function writes to /var/lib/nftban/ — the
+// gate must refuse to reach it for non-apply-terminal states.
+func TestHistoryWriteGate_DryRunAlwaysSkips(t *testing.T) {
+	// Apply-terminal state + dry-run → must still skip.
+	dryRun := true
+	s := state.StateCommitted
+	if shouldWrite := !dryRun && s.IsApplyTerminal(); shouldWrite {
+		t.Errorf("dry-run + Committed must NOT write history; gate produced write=true")
+	}
+}
+
+func TestHistoryWriteGate_NonApplyTerminalAlwaysSkips(t *testing.T) {
+	cases := []state.InstallState{
+		state.StateDetectComplete,
+		state.StatePrepareComplete,
+		state.StateSwitchComplete,
+		state.StateServicesComplete,
+		state.StateUninstallPlanning,
+		state.StateFilesInstalled,
+	}
+	for _, s := range cases {
+		if shouldWrite := !false && s.IsApplyTerminal(); shouldWrite {
+			t.Errorf("non-apply-terminal state %s must NOT write history; gate produced write=true", s)
+		}
+	}
+}
+
+func TestHistoryWriteGate_ApplyTerminalNonDryRunWrites(t *testing.T) {
+	cases := []state.InstallState{
+		state.StateCommitted,
+		state.StateDegraded,
+		state.StateFailedRebuild,
+		state.StateFailedAbort,
+	}
+	for _, s := range cases {
+		if shouldWrite := !false && s.IsApplyTerminal(); !shouldWrite {
+			t.Errorf("apply-terminal state %s in non-dry-run must write history; gate produced write=false", s)
+		}
+	}
+}
+
 // historyStatusForState ───────────────────────────────────────────────────
 
 func TestHistoryStatusForState_Committed_IsSuccess(t *testing.T) {
