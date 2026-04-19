@@ -116,11 +116,22 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		res.State = AuthorityAmbiguous
 		res.Notes = append(res.Notes,
 			"partial nftban state (table OR daemon present, not both) AND external firewall ("+ext+") observable; host is in an indeterminate transition — operator must resolve before any mutation")
+	case nftbanPartial && !extPresent:
+		// PR-22A audit fix (INV-U-AMBIG-PARTIAL): partial nftban WITHOUT
+		// external must NOT collapse to AuthorityNone. The kernel still
+		// holds an ip nftban table OR the daemon is still up — calling
+		// that "no authority" would let a later PR's release logic skip
+		// kernel cleanup of an orphan table. Classify as Ambiguous so
+		// PR-23/24 must explicitly acknowledge the transition state
+		// before taking any action.
+		res.State = AuthorityAmbiguous
+		res.Notes = append(res.Notes,
+			"partial nftban state (table OR daemon present, not both) AND no external firewall observable; kernel still holds nftban artifacts — host is in an indeterminate transition, operator must resolve before any mutation")
 	case !nftbanPresent && !nftbanPartial && extPresent:
 		res.State = AuthorityExternal
 		res.Notes = append(res.Notes,
 			"no nftban authority (no table AND no daemon); external firewall ("+ext+") appears authoritative")
-	case !nftbanPresent && !extPresent:
+	case !nftbanPresent && !nftbanPartial && !extPresent:
 		// Distinguish "nothing authoritative" from "detection failed".
 		// If both probes returned a negative answer from live exec
 		// calls, that's a real NONE. If probes failed to execute at
