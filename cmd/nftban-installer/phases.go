@@ -29,22 +29,32 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/payload"
 	"github.com/itcmsgr/nftban/internal/installer/render"
+	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/services"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
+	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
 )
 
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)
 // Stored on the config struct or passed via state file fields.
 type phaseData struct {
-	sshPort    int
-	panel      detect.PanelType
-	conflicts  []detect.Conflict
-	decision   authority.Decision
-	distro     *detect.DistroInfo
-	ctLimits   detect.CTLimits
+	sshPort   int
+	panel     detect.PanelType
+	conflicts []detect.Conflict
+	decision  authority.Decision
+	distro    *detect.DistroInfo
+	ctLimits  detect.CTLimits
+	// v1.98.x PR-14-pre: source-install fields. Populated from cfg in main()
+	// before phases run. When source is true, Prepare and Configure take
+	// additional branches for user/group creation, payload staging from
+	// sourceDir, and safety-whitelist seeding. Package installs leave these
+	// as zero-value and never reach the gated code.
+	source    bool
+	sourceDir string
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -118,6 +128,23 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
 
+	// v1.98.x PR-14-pre (G-14-A): Source-install user/group creation.
+	//
+	// Runs first because everything downstream (fhs.EnsureDirectories,
+	// fhs.SetPermissions, payload staging, chown to nftban:nftban) depends
+	// on the nftban user and group existing.
+	//
+	// Package installs (RPM/DEB) create users/groups in %pre / postinst
+	// before this phase runs, so pd.source=false here and this block is
+	// skipped entirely.
+	if pd.source {
+		if err := users.Ensure(exec, pd.distro, log); err != nil {
+			log.Error("user/group creation failed: %v", err)
+			return sf.Transition(state.StateFailedRender, state.PhasePrepare,
+				"user/group creation failed: "+err.Error())
+		}
+	}
+
 	// 0. Install missing dependencies (dpkg/rpm lock is released by now)
 	if pd.distro != nil {
 		if err := deps.InstallMissing(exec, pd.distro, log); err != nil {
@@ -132,6 +159,23 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 
 	// 2. Ensure FHS directories exist
 	fhs.EnsureDirectories(exec, log)
+
+	// v1.98.x PR-14-pre (G-14-B..G): Source-install payload staging.
+	//
+	// Must run AFTER fhs.EnsureDirectories (destination parent dirs like
+	// /usr/lib/nftban/*, /etc/nftban/* must exist before WriteFileAtomic
+	// can land files there). Must run BEFORE fhs.SetPermissions (so
+	// enforcement has files to chown/chmod).
+	//
+	// Idempotent: copyIfChanged skips unchanged files, %config(noreplace)
+	// entries preserve operator-edited configs, .conf.local never touched.
+	if pd.source {
+		if err := payload.StageAll(exec, pd.sourceDir, pd.distro, log); err != nil {
+			log.Error("source payload staging failed: %v", err)
+			return sf.Transition(state.StateFailedRender, state.PhasePrepare,
+				"source payload staging failed: "+err.Error())
+		}
+	}
 
 	// 3. Set FHS permissions
 	fhs.SetPermissions(exec, log)
@@ -244,6 +288,18 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 
 	// 4. Enable login monitoring
 	services.EnableLogin(exec, log)
+
+	// v1.98.x PR-14-pre (G-14-H): Safety whitelist seed for source install.
+	// Must run BEFORE SyncWhitelist so the file exists before the sync reads
+	// it. Package installs skip this block (pd.source=false) because their
+	// 99-manual.conf comes through the package payload (%config(noreplace)).
+	// Non-fatal: SSH safety backstop (switchop.InjectEmergencySSH) runs in
+	// phaseSwitch independently.
+	if pd.source {
+		if err := safety.SeedManualWhitelist(exec, log); err != nil {
+			log.Warn("safety whitelist seed failed (non-fatal): %v", err)
+		}
+	}
 
 	// 5. Whitelist sync (loads whitelists and feeds)
 	services.SyncWhitelist(exec, log)

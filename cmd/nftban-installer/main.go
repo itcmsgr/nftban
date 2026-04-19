@@ -89,6 +89,13 @@ func main() {
 		os.Setenv("NFTBAN_TAKEOVER", "1")
 	}
 
+	// v1.98.x PR-14-pre: propagate source-install mode to phase data so
+	// Prepare/Configure can branch into the source-install path when gated.
+	// Package installs (cfg.source == false) leave these as zero-value and
+	// never reach the gated code in phasePrepare/phaseConfigure.
+	globalPhaseData.source = cfg.source
+	globalPhaseData.sourceDir = cfg.sourceDir
+
 	exitCode := run(ctx, exec, sf, cfg, log)
 
 	// Write JSON update history (compatible with nftban update history --json)
