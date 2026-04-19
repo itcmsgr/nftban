@@ -101,6 +101,17 @@ case "$1" in
             usermod -a -G nftban root 2>/dev/null || true
         fi
 
+        # --- NB-5: Canonical ownership for privileged binaries (DEB-PERM-001) ---
+        # Must run AFTER nftban group is created. DEB payload ships 0750
+        # root:root; postinst converges to root:nftban 0750 so the runtime
+        # permissions module does not repeatedly correct drift.
+        for _bin in /usr/sbin/nftban /usr/sbin/nftban-ui; do
+            if [ -f "$_bin" ]; then
+                chown root:nftban "$_bin" 2>/dev/null || true
+                chmod 0750 "$_bin" 2>/dev/null || true
+            fi
+        done
+
         # --- Critical FHS dirs (Go installer needs state dir to exist) ---
         mkdir -p /var/lib/nftban/state
         mkdir -p /var/log/nftban

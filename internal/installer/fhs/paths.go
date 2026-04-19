@@ -264,6 +264,7 @@ var RequiredDirs = []DirSpec{
 	{LogDir + "/botguard", 0750, "nftban:nftban"},
 	{LogDir + "/suricata", 0750, "nftban:nftban"},
 	{LogDir + "/metrics", 0750, "nftban:nftban"},
+	{LogDir + "/soak", 0750, "nftban:nftban"},
 	// /var/cache/nftban/ — nftban:nftban
 	{CacheDir, 0750, "nftban:nftban"},
 	{CacheDir + "/health", 0750, "nftban:nftban"},
