@@ -192,6 +192,10 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// -----------------------------------------------------------------
 		// Template configs with %config(noreplace) semantics.
 		{srcRel: "install/config/nftban.conf", dstGlob: "/etc/nftban/nftban.conf", mode: 0640, policy: policyConfigNoReplace},
+		// nftables.conf is a template with __SSH_PORT__ / __CT_LIMIT_*__
+		// placeholders. render.RenderNftablesConf (Prepare step 6) reads
+		// this, substitutes, and writes back. Must be staged before render.
+		{srcRel: "install/nftables/nftables.conf", dstGlob: "/etc/nftban/nftables.conf", mode: 0640, policy: policyConfigNoReplace},
 		{srcRel: "install/config/conf.d", srcGlob: "*.conf", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyConfigNoReplace, isDir: true},
 
 		// Default reference templates (.default files — always overwrite).
