@@ -559,11 +559,8 @@ nftban_selftest_verify_configs() {
         else
             ((++failed))
         fi
-        if _verify_install_configs_sources "$project_root"; then
-            ((++passed))
-        else
-            ((++failed))
-        fi
+        # PR-14: legacy config-source verification removed. Source-install
+        # payload staging is canonical now (Go installer --source, PR #462).
         if _verify_build_script_sources "$project_root"; then
             ((++passed))
         else
@@ -716,54 +713,6 @@ _verify_conffiles_sources() {
 
     echo ""
     printf "  Checked: %d entries, Errors: %d\n" "$checked" "$errors"
-
-    [[ $errors -eq 0 ]]
-}
-
-_verify_install_configs_sources() {
-    local project_root="$1"
-    local install_configs="${project_root}/install_configs.sh"
-
-    echo "CHECK: install_configs.sh Source Verification"
-    echo "───────────────────────────────────────────────────────────────"
-
-    if [[ ! -f "$install_configs" ]]; then
-        echo "  ⚠️  SKIP: install_configs.sh not found: $install_configs"
-        return 0
-    fi
-
-    local errors=0
-    local checked=0
-    local line=""
-    local relative_path=""
-    local source_path=""
-
-    # Extract _install_config_file calls and check sources exist
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip function definition line and comments
-        [[ "$line" == _install_config_file\(\)* ]] && continue
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-        # Match: _install_config_file "$SCRIPT_DIR/path/to/file" ...
-        # Extract the path after $SCRIPT_DIR/
-        if [[ "$line" == *'_install_config_file "$SCRIPT_DIR/'* ]]; then
-            # Extract path between $SCRIPT_DIR/ and the next "
-            relative_path="${line#*\$SCRIPT_DIR/}"
-            relative_path="${relative_path%%\"*}"
-            source_path="${project_root}/${relative_path}"
-
-            ((checked++)) || true
-            if [[ -f "$source_path" ]]; then
-                printf "     ✅ %s\n" "$relative_path"
-            else
-                printf "     ❌ MISSING: %s\n" "$relative_path"
-                ((errors++)) || true
-            fi
-        fi
-    done < "$install_configs"
-
-    echo ""
-    printf "  Checked: %d files, Errors: %d\n" "$checked" "$errors"
 
     [[ $errors -eq 0 ]]
 }

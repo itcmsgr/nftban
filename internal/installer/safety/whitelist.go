@@ -19,16 +19,15 @@
 // Why this package exists:
 //
 // Package installs (RPM/DEB) ship the 99-manual.conf template as a
-// %config(noreplace) / conffile entry. On fresh installs, the template is
-// dropped unchanged (header comments only) and is populated later by the
-// operator or by the legacy install_services.sh install_safety_whitelist()
-// helper when source-installed.
+// %config(noreplace) / conffile entry. On fresh installs the template is
+// dropped unchanged (header comments only) and later populated either by
+// the operator or by a legacy shell helper that ran pre-canonization.
 //
 // Source install via --source has no shell helper. This package runs during
-// phaseConfigure (gated behind pd.source) to seed the same IPs that
-// install_safety_whitelist does: interface IPs + SSH-client IP. The
-// authoritative SSH-port safety path stays separate — switchop.InjectEmergencySSH
-// handles port-level protection in phaseSwitch; this package only touches the
+// phaseConfigure (gated behind pd.source) to seed the same IPs the legacy
+// flow used to: interface IPs + SSH-client IP. The authoritative SSH-port
+// safety path stays separate — switchop.InjectEmergencySSH handles
+// port-level protection in phaseSwitch; this package only touches the
 // IP-level whitelist file.
 //
 // Operator content is authoritative: if 99-manual.conf already exists with
