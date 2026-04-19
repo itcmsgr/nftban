@@ -23,7 +23,10 @@ set -Eeuo pipefail
 
 # Read version from VERSION file (single source of truth)
 _nftban_read_version() {
-    local version_file
+    # Initialize to empty so `set -u` at line-39 [[ -f "$version_file" ]]
+    # does not crash when none of the lookup paths match (which would otherwise
+    # break every CLI subcommand — version.sh is sourced by all of them).
+    local version_file=""
     # Try multiple possible locations (package path first, then source tree)
     for path in \
         "/usr/lib/nftban/VERSION" \
@@ -36,7 +39,7 @@ _nftban_read_version() {
         fi
     done
 
-    if [[ -f "$version_file" ]]; then
+    if [[ -n "$version_file" && -f "$version_file" ]]; then
         cat "$version_file" | tr -d '[:space:]'
     else
         echo "unknown"  # Fallback if VERSION file not found
