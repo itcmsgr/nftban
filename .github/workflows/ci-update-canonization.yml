@@ -118,7 +118,12 @@ jobs:
           # Seed a terminal state marker so the stale-in-progress warning
           # does not fire in the happy path.
           echo "COMMITTED" | sudo tee /var/lib/nftban/state/install_state >/dev/null
-          # Create an ip nftban table so the authority preflight (P-1) passes.
+          # Simulate a host where nftban is already authoritative:
+          #  - Disable UFW (real install took authority long ago)
+          #  - Flush iptables-nft ghost tables (filter/nat/mangle)
+          #  - Create ip nftban so authority preflight P-1 passes
+          sudo systemctl disable --now ufw 2>/dev/null || true
+          sudo nft flush ruleset || true
           sudo nft add table ip nftban || true
           # CI containers do not run sshd, and the Ubuntu runner's default
           # sshd_config has Port commented out, so the SSH-port detector
