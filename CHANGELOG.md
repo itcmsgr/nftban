@@ -11,6 +11,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100 PR-22A + PR-22B repair cycle
+
+### Changed
+
+- **v1.100 lifecycle truth repair** (PRs #480, #481, #482). Observational
+  paths (install refused, update and uninstall dry-run) are now
+  structurally honest. `StateFile.DryRun` suppresses state-file writes;
+  `writeHistory` gated on `!cfg.dryRun && state.IsApplyTerminal(sf.State)`;
+  `authority.IsNftbanAuthoritative` is the canonical predicate used by
+  both `authority.Classify` and `update.Preflight`. New `Ambiguous`
+  authority decision for orphan-table / daemon-down hosts routes through
+  the emergency-SSH injection path. `--panel-auto-takeover` flag
+  (default off) replaces the previous implicit panel auto-approve.
+  Flag validation now rejects `--mode=install --dry-run`,
+  `--repair --dry-run`, `--takeover --dry-run`, `--rpm --deb`, and
+  `--force-delete-operator-config` without `--purge`.
+
+### Data-integrity note
+
+- **Lifecycle-bridge authority mapping (v1.98 — v1.99)** — the
+  `observePlan` and `mapAuthority` switches in
+  `cmd/nftban-installer/lifecycle_bridge.go` compared uppercase
+  `authority.Decision` values (e.g. `"TAKEOVER"`) against lowercase
+  string literals. The switches silently hit their `default` arms on
+  every real run, so lifecycle consumers saw `ActionPreserveAuthority`
+  and `AuthorityNone` regardless of the installer's actual decision.
+  Fixed in PR-22B (#482) — switches now pin to `authority.Decision`
+  constants; `Ambiguous` maps to a new `lifecycle.AuthorityUnknown`
+  owner.
+
+  **Impact on historical records**: any lifecycle telemetry,
+  dashboards, or audit-trail consumers that ingested
+  `lifecycle.RunResult` JSON between v1.98 and the merge of PR-22B
+  will show `PreserveAuthority` / `AuthorityNone` on every install and
+  update run regardless of what actually happened on the host. This
+  does NOT affect install_state, update-history.json, or kernel
+  behavior — only the lifecycle bridge's external reporting surface.
+  Forensic interpretation of pre-PR-22B lifecycle output should treat
+  the authority decision as "unknown" rather than "preserve."
+
 ## [1.98.2] - 2026-04-19
 
 **Runtime correctness patch — exit-code truth, health resilience, installer payload truth.**

@@ -202,3 +202,57 @@ If any PR-22 commit requires:
 → **STOP PR-22.** Push the work to PR-23 or later. PR-22's scope lock
 is the point of the contract seed — bending it collapses the evidence
 chain for the whole v1.100 track.
+
+---
+
+## Standing lifecycle-truth rule (from PR-22B merge)
+
+**No new lifecycle code may bypass the shared authority predicate, the
+history-write gate, or the dry-run contract.**
+
+Concretely, every new or modified lifecycle code path must:
+
+1. use `authority.IsNftbanAuthoritative(exec)` — not re-implement the
+   predicate or proxy it via `NftTableExists` alone
+2. respect the `!cfg.dryRun && state.IsApplyTerminal(sf.State)` history
+   gate — no back-door direct writes to `update-history.json`
+3. respect `StateFile.DryRun` — no direct writes to `install_state` or
+   any path under `/var/lib/nftban/` or `/etc/nftban/` during dry-run
+4. route `authority.Ambiguous` through emergency-SSH injection before
+   any mutation — never silent-continue, never collapse to Fresh/None
+5. surface `--panel-auto-takeover` explicitly if it needs panel consent
+   — no implicit panel auto-approve path
+
+CI gates (PR-22A + PR-22B): `G3-UN-NO-MUTATION`, `G3-UN-PLAN-RENDERS`,
+`G3-UN-HISTORY-PURITY`, `G3-U3` hard-assertions, `G3-U5..U10` extended
+grep, `G3-IN-REFUSE-DRY-RUN`, `G3-IN-FLAG-COMBOS`. Any lifecycle PR
+that bypasses the rule above is expected to fail at least one of
+these gates; if it doesn't, the gate needs extension, not the rule.
+
+---
+
+## Pre-PR-23 blockers (tracked follow-up PRs)
+
+PR-23 (uninstall mutation: Switch phase + authority release) must NOT
+start until all six items below have landed and been verified by a
+narrow-scope audit. Each is its own PR with an explicit micro-contract
+and one falsifiable proof test per PR-22B merge discipline.
+
+| # | PR | Purpose | Blocking because |
+|---|---|---|---|
+| 1 | Prior-authority record hardening | Add `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go` | PR-24 restore enforcement cannot trust under-defined `RecordUsable` |
+| 2 | External-firewall detection unification | One shared function + one precedence order used by install/update/uninstall | Detection drift between modules will cause disagreement under takeover/restore |
+| 3 | Kernel/service snapshot CI gate | `nft list tables` + `systemctl is-active` diff before/after every dry-run path | Filesystem snapshot alone cannot prove process-level purity |
+| 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands |
+| 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+| 6 | Payload integrity minimum checks | Minimum-size / header-presence for `nftban.conf`, `nftables.conf` | Presence-only validation lets a truncated file pass |
+
+Phase 3 gating: once items 1–6 are merged and CI green, a focused
+verification audit runs with ONLY these questions:
+
+1. Is dry-run still pure across install / update / uninstall?
+2. Is there any history / state drift?
+3. Is the authority predicate still consistent across callers?
+
+No exploratory scope in that audit. PR-23 starts only after it returns
+clean.
