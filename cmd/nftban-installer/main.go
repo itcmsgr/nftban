@@ -141,6 +141,18 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.mode == "upgrade" && cfg.dryRun {
 		return runUpdateDryRun(ctx, exec, sf, cfg, log)
 	}
+	// v1.99 PR-18 (G3-U5..U10): update apply orchestration. Thin sequencer
+	// over rebuild + validator (see apply_contract.md). INV-U-001/002/003
+	// enforced; no custom apply/recovery/authority logic introduced.
+	//
+	// Narrow gate: only operator-initiated `nftban update` routes here.
+	// Package-manager post-upgrade hooks always pass --rpm or --deb
+	// (see packaging/deb/postinst + packaging/build_nftban.sh RPM spec)
+	// and continue through runInstall as today. PR-21 will unify the
+	// paths once the shell rebuild is migrated.
+	if cfg.mode == "upgrade" && !cfg.rpm && !cfg.deb {
+		return runUpdateApply(ctx, exec, sf, cfg, log)
+	}
 	return runInstall(ctx, exec, sf, cfg, log)
 }
 
