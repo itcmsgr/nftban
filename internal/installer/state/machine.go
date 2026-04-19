@@ -75,6 +75,40 @@ const (
 	ExitFatal     = 4
 )
 
+// IsApplyTerminal reports whether a state represents the terminal
+// outcome of a real apply operation (install or upgrade). Only these
+// states should produce an entry in update-history.json — preview /
+// planning / dry-run states must not.
+//
+// Explicit allowlist, not a default catch-all. PR-22B introduced this
+// after the previous audit found that any non-Committed/Degraded state
+// was silently mapped to "install_fail" in history — including
+// dry-run-terminal states that never attempted mutation.
+//
+// Consumers that need to distinguish "apply succeeded / apply failed /
+// apply was never attempted" must base the decision on IsApplyTerminal
+// and NOT on the string value of the state.
+func (s InstallState) IsApplyTerminal() bool {
+	switch s {
+	case StateCommitted,
+		StateDegraded,
+		StateFailedSSH,
+		StateFailedAbort,
+		StateFailedRender,
+		StateFailedRebuild,
+		StateFailedNoFirewall,
+		StateFailedTakeover:
+		return true
+	}
+	return false
+}
+
+// IsApplyTerminal is a package-level alias for the (InstallState)
+// IsApplyTerminal method, kept so consumers that hold the state as a
+// plain value can call it symmetrically with the other helpers in this
+// file.
+func IsApplyTerminal(s InstallState) bool { return s.IsApplyTerminal() }
+
 // IsFailed returns true if the state represents a failure.
 func (s InstallState) IsFailed() bool {
 	switch s {

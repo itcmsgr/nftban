@@ -1,0 +1,181 @@
+# =============================================================================
+# NFTBan — CI: Install Canonization Gate (v1.100 PR-22B slice)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Purpose:
+#   G3-IN-REFUSE-DRY-RUN — `--mode=install --dry-run` must REFUSE with a
+#                          clear error and a non-zero exit code. PR-22B
+#                          does not add install preview capability; it
+#                          removes false dry-run semantics by refusing
+#                          unsupported install dry-run invocations.
+#
+#   G3-IN-FLAG-COMBOS    — operator-error flag combinations are rejected
+#                          up front rather than silently accepted.
+#
+# Audit basis: extended audit §4.A ("install dry-run is dishonest today")
+# and §4.H ("CLI flag semantics").
+#
+# =============================================================================
+
+name: Install Canonization Gate
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'cmd/nftban-installer/**'
+      - 'internal/installer/state/**'
+      - '.github/workflows/ci-install-canonization.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-install-canonization-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  install-canonization:
+    name: Install Canonization (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-24.04
+            runner: ubuntu-24.04
+            container: ''
+          - label: almalinux-9
+            runner: ubuntu-24.04
+            container: almalinux:9
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install system dependencies (DEB)
+        if: matrix.label == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nftables
+
+      - name: Install system dependencies (RPM)
+        if: matrix.label == 'almalinux-9'
+        run: |
+          dnf -y install epel-release
+          dnf -y install nftables git tar gzip procps-ng findutils sudo golang
+
+      - name: Set up Go (DEB only)
+        if: matrix.label == 'ubuntu-24.04'
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      - name: Build nftban-installer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p bin
+          go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
+          test -x bin/nftban-installer
+
+      - name: Prepare minimal host state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d /var/lib/nftban/state
+
+      # ------------------------------------------------------------------
+      # G3-IN-REFUSE-DRY-RUN — --mode=install --dry-run must refuse.
+      # Pre-PR-22B behaviour was to silently execute all five install
+      # phases, mutating the host. The fix refuses explicitly and exits
+      # non-zero; the message must reference PR-22B so operators find
+      # the context when grep'ing the error.
+      # ------------------------------------------------------------------
+      - name: G3-IN-REFUSE-DRY-RUN — install dry-run is refused
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Seed a history file so the audit can also assert no pollution
+          # even if the binary accidentally executed any code path.
+          sudo mkdir -p /var/lib/nftban
+          echo '{"schema_version":"1.0","entries":[]}' | sudo tee /var/lib/nftban/update-history.json >/dev/null
+          before_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
+
+          set +e
+          out=$(sudo ./bin/nftban-installer --mode=install --dry-run \
+                --state-dir=/var/lib/nftban/state 2>&1)
+          rc=$?
+          set -e
+          echo "rc=$rc"
+          echo "$out"
+
+          if [[ "$rc" -eq 0 ]]; then
+            echo "::error::G3-IN-REFUSE-DRY-RUN FAIL: install dry-run exited 0 — it must REFUSE, not silently proceed"
+            exit 1
+          fi
+          # Must contain an explicit refusal phrase so operators see why.
+          if ! echo "$out" | grep -qE "install.*--dry-run is not implemented"; then
+            echo "::error::G3-IN-REFUSE-DRY-RUN FAIL: output did not explain the refusal"
+            exit 1
+          fi
+          # No history pollution from the refused run.
+          after_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
+          if [[ "$before_hist" != "$after_hist" ]]; then
+            echo "::error::G3-IN-REFUSE-DRY-RUN FAIL: history file changed on a refused run"
+            exit 1
+          fi
+          echo "G3-IN-REFUSE-DRY-RUN PASS — install dry-run refused cleanly, no pollution"
+
+      # ------------------------------------------------------------------
+      # G3-IN-FLAG-COMBOS — reject operator-error flag combinations.
+      # ------------------------------------------------------------------
+      - name: G3-IN-FLAG-COMBOS — invalid flag combos refused
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          check_refuse() {
+            local tag="$1"; shift
+            set +e
+            out=$(sudo ./bin/nftban-installer "$@" --state-dir=/var/lib/nftban/state 2>&1)
+            rc=$?
+            set -e
+            if [[ "$rc" -eq 0 ]]; then
+              echo "::error::G3-IN-FLAG-COMBOS FAIL [$tag]: should have refused, exited 0"
+              echo "$out"
+              return 1
+            fi
+            echo "[$tag] refused (rc=$rc)"
+          }
+          check_refuse "takeover+dryrun" --mode=upgrade --takeover --dry-run
+          check_refuse "rpm+deb" --mode=upgrade --rpm --deb
+          check_refuse "fdoc-without-purge" --mode=uninstall --force-delete-operator-config
+          echo "G3-IN-FLAG-COMBOS PASS — invalid combinations rejected"
+
+      # ------------------------------------------------------------------
+      # Go unit tests for install-scope behaviour: flag validation,
+      # writeHistory gating, IsApplyTerminal allowlist, StateFile DryRun.
+      # ------------------------------------------------------------------
+      - name: Unit tests — install-scope repair (PR-22B)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -v ./internal/installer/state/... ./internal/installer/authority/... ./cmd/nftban-installer/...
+
+  summary:
+    name: Install Canonization summary
+    needs: install-canonization
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          if [[ "${{ needs.install-canonization.result }}" != "success" ]]; then
+            echo "::error::Install Canonization Gate FAILED — see matrix job output"
+            exit 1
+          fi
+          echo "Install Canonization Gate PASSED on all matrix targets"

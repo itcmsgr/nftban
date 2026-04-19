@@ -71,6 +71,19 @@ type StateFile struct {
 	ServicesEnabled   string
 	ServicesFailed    string
 
+	// DryRun, when true, makes Transition update in-memory fields only
+	// and skip the atomic file write. PR-22B introduced this so that
+	// dry-run paths sharing phase functions with real install/upgrade
+	// (e.g. phaseDetect reused by runUpdateDryRun) do not persist
+	// install_state during observational runs.
+	//
+	// Callers that need to force a real persistence during a dry-run
+	// (none exist today, but reserved for future audit artifacts) can
+	// set this to false temporarily and call Transition, but that is
+	// discouraged — the expected contract is DryRun=cfg.dryRun at the
+	// start of the run and never toggled.
+	DryRun bool
+
 	stateDir string
 }
 
@@ -94,6 +107,11 @@ func (sf *StateFile) Path() string {
 // Transition validates and applies a state transition.
 // It updates the state, phase, and optional failure reason, then persists atomically.
 // For failure states, it always returns an error (the reason) so phase runners halt.
+//
+// When sf.DryRun is true, the in-memory fields are updated but the
+// filesystem is NOT written. This allows dry-run orchestrators to reuse
+// phase functions that call Transition without tripping the
+// observational-path Stop Condition (PR-22B boundary repair).
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
 	sf.State = newState
 	sf.PhaseReached = string(phase)
@@ -101,8 +119,10 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		sf.FailureReason = reason
 	}
 	sf.Timestamp = time.Now().UTC()
-	if err := sf.WriteAtomic(); err != nil {
-		return err
+	if !sf.DryRun {
+		if err := sf.WriteAtomic(); err != nil {
+			return err
+		}
 	}
 	// Failure states must return an error so the phase runner stops execution.
 	if newState.IsFailed() {

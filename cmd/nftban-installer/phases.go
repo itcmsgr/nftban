@@ -55,6 +55,10 @@ type phaseData struct {
 	// as zero-value and never reach the gated code.
 	source    bool
 	sourceDir string
+	// v1.100 PR-22B: panel auto-takeover opt-in. Propagated from
+	// cfg.panelAutoTakeover in main() before phases run. Default false —
+	// panel detection alone no longer auto-approves takeover.
+	panelAutoApprove bool
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -110,7 +114,7 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 	// 6. Authority classification
 	// Read takeover flag from environment or config
 	forceApprove := exec.Getenv("NFTBAN_TAKEOVER") == "1"
-	pd.decision = authority.Classify(exec, pd.conflicts, pd.panel, forceApprove, log)
+	pd.decision = authority.Classify(exec, pd.conflicts, pd.panel, forceApprove, pd.panelAutoApprove, log)
 	sf.Authority = string(pd.decision)
 	log.Detect("authority", "decision", string(pd.decision))
 	log.StateChange(string(sf.State), string(state.StateDetectComplete), "authority="+string(pd.decision))
@@ -217,9 +221,16 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 	pd := &globalPhaseData
 	emergencyInjected := false
 
-	// 1. TAKEOVER / FRESH: inject emergency SSH table BEFORE any destructive action.
+	// 1. TAKEOVER / FRESH / AMBIGUOUS: inject emergency SSH table BEFORE any destructive action.
 	// On UPDATE, nftban tables already exist with SSH in sets — no emergency needed.
-	if pd.decision == authority.Takeover || pd.decision == authority.Fresh {
+	//
+	// PR-22B audit fix: AMBIGUOUS (orphan table, daemon-down, etc.) is
+	// added to this branch. A host in ambiguous state cannot be trusted
+	// to already carry a SSH-safe nftban load, so the emergency-SSH
+	// injection must run before rebuild. Omitting Ambiguous here would
+	// silently continue with whatever stale kernel state the prior run
+	// left — the exact regression class the audit flagged.
+	if pd.decision == authority.Takeover || pd.decision == authority.Fresh || pd.decision == authority.Ambiguous {
 		if err := switchop.InjectEmergencySSH(exec, pd.sshPort, log); err != nil {
 			log.Error("cannot inject emergency SSH table: %v", err)
 			return sf.Transition(state.StateFailedNoFirewall, state.PhaseSwitch,
@@ -228,7 +239,10 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 		emergencyInjected = true
 	}
 
-	// 2. TAKEOVER: disable conflicting firewalls (emergency table protects SSH)
+	// 2. TAKEOVER: disable conflicting firewalls (emergency table protects SSH).
+	// Ambiguous intentionally does NOT disable conflicts — the audit logic says
+	// we can't prove who owns the firewall, so a conflict-disable could
+	// strip the host of its actual active authority.
 	if pd.decision == authority.Takeover {
 		if err := switchop.DisableConflicts(exec, pd.conflicts, pd.panel, log); err != nil {
 			// Emergency table LEFT IN PLACE — SSH still safe
