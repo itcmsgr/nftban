@@ -49,23 +49,21 @@ import (
 //
 //   The original PR-22 orchestrator persisted two artifacts under
 //   /var/lib/nftban/ during a dry-run that the CLI banner described as
-//   "no mutation":
+//   "no mutation": a JSON plan artifact under the state directory, and
+//   an installer-state transition to the planning state. Both tripped
+//   the PR-22 contract Stop Condition: "writing to anywhere under
+//   /etc/nftban/ or /var/lib/nftban/ → STOP PR-22."
 //
-//     1. os.WriteFile(<stateDir>/uninstall_plan.json, …)
-//     2. sf.Transition(StateUninstallPlanning, …) — writes install_state
+//   PR-22A removes both. The plan is rendered to stdout for the operator
+//   and callers that capture stdout can consume the JSON form via the
+//   exported Plan.JSON method. No filesystem persistence occurs during
+//   the dry-run. Operators who need a machine-consumable plan can
+//   capture stdout; the dry-run remains strictly observational, as PR-22
+//   originally promised.
 //
-//   Both tripped the PR-22 contract Stop Condition: "writing to anywhere
-//   under /etc/nftban/ or /var/lib/nftban/ → STOP PR-22."
-//
-//   PR-22A removes both. The plan is rendered to stdout (human) and,
-//   optionally, JSON to stderr below the render (machine). No filesystem
-//   persistence occurs during the dry-run. Operators who need a
-//   machine-consumable plan can capture stdout; the dry-run remains
-//   strictly observational, as PR-22 originally promised.
-//
-//   Install-state persistence during dry-run is deliberately removed
+//   Installer-state persistence during dry-run is deliberately removed
 //   (Option B in the repair contract). A read-only planning run has no
-//   reason to mutate the installer state file.
+//   reason to change the installer state file.
 
 // runUninstallDryRun orchestrates the PR-22 detect + plan-render flow.
 //
