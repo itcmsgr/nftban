@@ -722,6 +722,14 @@
         "created_by": "tmpfiles"
       },
       {
+        "path": "/var/log/nftban/soak",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Soak validation per-run JSON + cron.log (v1.98.1)",
+        "created_by": "tmpfiles"
+      },
+      {
         "path": "/var/log/nftban/suricata",
         "mode": "0770",
         "owner": "suricata",
