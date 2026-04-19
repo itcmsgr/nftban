@@ -1090,8 +1090,10 @@ nftban_login_track_failed() {
                 else
                     nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
 
-                    # Use NFTBAN_BIN from central config (set during install by install_configs.sh)
-                    # Config is single source of truth - no runtime detection
+                    # Use NFTBAN_BIN from central config (set during install
+                    # by the installer's Configure phase — RPM/DEB scriptlets
+                    # or the Go installer's --source payload staging).
+                    # Config is single source of truth - no runtime detection.
                     local nftban_cmd="${NFTBAN_BIN:-/usr/sbin/nftban}"
 
                     # Pre-flight checks with clear error messages
