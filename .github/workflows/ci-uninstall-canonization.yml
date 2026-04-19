@@ -1,0 +1,241 @@
+# =============================================================================
+# NFTBan — CI: Uninstall Canonization Gate (v1.100 PR-22 slice)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Enforce v1.100 PR-22 scope lock:
+#   G3-UN-PLAN-RENDERS   — dry-run output contains mandatory contract
+#                          language (headers + fields + scope-boundary block)
+#   G3-UN-NO-MUTATION    — structural grep on the uninstall package +
+#                          dispatcher rejecting any mutation-flavored call
+#
+# Future sub-gates (G3-UN-5..17 + G3-UN-VERIFY) land in PR-23..PR-26.
+# PR-22 ships only these two gates because that is the entire claim
+# surface of the PR.
+#
+# Authorization basis: V1100_LIFECYCLE_COMPLETION_CONTRACT.md §13 frozen
+# 2026-04-19.
+# =============================================================================
+
+name: Uninstall Canonization Gate
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'cmd/nftban-installer/**'
+      - 'internal/installer/uninstall/**'
+      - 'internal/installer/state/**'
+      - '.github/workflows/ci-uninstall-canonization.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-uninstall-canonization-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  uninstall-canonization:
+    name: Uninstall Canonization (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-24.04
+            runner: ubuntu-24.04
+            container: ''
+          - label: almalinux-9
+            runner: ubuntu-24.04
+            container: almalinux:9
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install system dependencies (DEB)
+        if: matrix.label == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nftables jq
+
+      - name: Install system dependencies (RPM)
+        if: matrix.label == 'almalinux-9'
+        run: |
+          dnf -y install epel-release
+          dnf -y install nftables jq git tar gzip procps-ng findutils sudo golang
+
+      - name: Set up Go (DEB only)
+        if: matrix.label == 'ubuntu-24.04'
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      # ------------------------------------------------------------------
+      # G3-UN-NO-MUTATION — structural grep on the uninstall package +
+      # dispatcher rejecting mutation-flavored Go calls. This is the PR-22
+      # scope-lock enforcement: if any commit introduces kernel mutation,
+      # service lifecycle, filesystem writes under protected paths, or
+      # external-firewall touches into the uninstall code, CI fails BEFORE
+      # the unit tests even run.
+      # ------------------------------------------------------------------
+      - name: G3-UN-NO-MUTATION — structural audit of uninstall package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Narrow search scope to PR-22's claim surface.
+          files=$(find \
+            internal/installer/uninstall \
+            cmd/nftban-installer/uninstall_dryrun.go \
+            -type f -name '*.go' 2>/dev/null || true)
+          if [[ -z "$files" ]]; then
+            echo "::error::G3-UN-NO-MUTATION: uninstall scope files not found"
+            exit 1
+          fi
+          fail=0
+          for pat in \
+              'exec\.Run\("nft"[^)]*add' \
+              'exec\.Run\("nft"[^)]*flush' \
+              'exec\.Run\("nft"[^)]*delete' \
+              'exec\.Run\("systemctl"[^)]*stop' \
+              'exec\.Run\("systemctl"[^)]*start' \
+              'exec\.Run\("systemctl"[^)]*restart' \
+              'exec\.Run\("systemctl"[^)]*reload' \
+              'exec\.Run\("systemctl"[^)]*enable' \
+              'exec\.Run\("systemctl"[^)]*disable' \
+              'exec\.Run\("systemctl"[^)]*mask' \
+              'exec\.Run\("systemctl"[^)]*unmask' \
+              'exec\.Run\("ufw"' \
+              'exec\.Run\("iptables"[^-]' \
+              'exec\.Run\("csf"' \
+              'exec\.Run\("apt-get"[^)]*remove' \
+              'exec\.Run\("dnf"[^)]*remove' \
+              'exec\.WriteFileAtomic\(' \
+              'os\.Remove\(' \
+              'os\.RemoveAll\(' \
+              'conf\.local'; do
+            if grep -nE "$pat" $files 2>/dev/null; then
+              echo "::error::G3-UN-NO-MUTATION FAIL: forbidden pattern '$pat' in PR-22 uninstall scope"
+              fail=1
+            fi
+          done
+          if (( fail > 0 )); then
+            echo "::error::PR-22 contract violation — uninstall code contains mutation-flavored calls"
+            exit 1
+          fi
+          echo "G3-UN-NO-MUTATION PASS — no mutation-flavored call detected in PR-22 scope"
+
+      # ------------------------------------------------------------------
+      # Unit tests — exercise BuildPlan rendering + classifier + probe.
+      # The structural no-mutation grep above already ran, so if Go code
+      # somehow bypassed the grep (unlikely), unit tests are the second
+      # line of defence.
+      # ------------------------------------------------------------------
+      - name: Unit tests — internal/installer/uninstall
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -v ./internal/installer/uninstall/...
+
+      # ------------------------------------------------------------------
+      # Build the installer binary so we can exercise end-to-end.
+      # ------------------------------------------------------------------
+      - name: Build nftban-installer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p bin
+          go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
+          test -x bin/nftban-installer
+
+      - name: Prepare minimal host state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d /var/lib/nftban/state
+
+      # ------------------------------------------------------------------
+      # G3-UN-PLAN-RENDERS — end-to-end dry-run produces the mandatory
+      # contract-language output. The unit tests already verified the
+      # Render function in isolation; this confirms the dispatcher path
+      # wires it up correctly.
+      # ------------------------------------------------------------------
+      - name: G3-UN-PLAN-RENDERS — dry-run emits contract language
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          sudo ./bin/nftban-installer --mode=uninstall --dry-run \
+              --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-dryrun.out
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "dry-run exit code: $rc"
+          if [[ "$rc" -ne 0 ]]; then
+            echo "::error::uninstall dry-run must exit 0 even on a host with no firewall authority"
+            exit 1
+          fi
+          # Mandatory contract-language elements — each one corresponds
+          # to a row PR-22 promised to render.
+          for needle in \
+              "NFTBan Uninstall — Plan" \
+              "Requested mode" \
+              "Artifact policy" \
+              "Current authority" \
+              "Target authority" \
+              "Restore requested" \
+              "Restore authorized" \
+              "Prior-authority record" \
+              "Phases that would mutate (NOT IMPLEMENTED in PR-22):" \
+              "Scope boundary:" \
+              "Running this command does NOT uninstall nftban"; do
+            if ! grep -q "$needle" /tmp/uninstall-dryrun.out; then
+              echo "::error::G3-UN-PLAN-RENDERS FAIL: missing mandatory contract-language element: $needle"
+              exit 1
+            fi
+          done
+          echo "G3-UN-PLAN-RENDERS PASS — all mandatory contract-language elements present"
+
+      # ------------------------------------------------------------------
+      # G3-UN-PLAN-RENDERS negative path — invoking --mode=uninstall
+      # WITHOUT --dry-run must still not mutate. The flags validator
+      # forces --dry-run on in PR-22; this confirms that elevation works.
+      # ------------------------------------------------------------------
+      - name: G3-UN-PLAN-RENDERS — no-mutation even without explicit dry-run
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Snapshot nothing should change outside /var/lib/nftban/state.
+          before=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          set +e
+          sudo ./bin/nftban-installer --mode=uninstall \
+              --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-implicit.out
+          rc=${PIPESTATUS[0]}
+          set -e
+          after=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          if [[ "$before" != "$after" ]]; then
+            echo "::error::PR-22 contract violation — --mode=uninstall touched files outside /var/lib/nftban/state"
+            diff <(echo "$before") <(echo "$after") || true
+            exit 1
+          fi
+          if [[ "$rc" -ne 0 ]]; then
+            echo "::error::--mode=uninstall (no explicit dry-run) must exit 0 in PR-22 scope"
+            exit 1
+          fi
+          echo "G3-UN-PLAN-RENDERS no-mutation PASS — no files changed under protected paths"
+
+  summary:
+    name: Uninstall Canonization summary
+    needs: uninstall-canonization
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          if [[ "${{ needs.uninstall-canonization.result }}" != "success" ]]; then
+            echo "::error::Uninstall Canonization Gate FAILED — see matrix job output"
+            exit 1
+          fi
+          echo "Uninstall Canonization Gate PASSED on all matrix targets"
