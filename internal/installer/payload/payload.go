@@ -197,6 +197,8 @@ func VerifyInventory(exec executor.Executor) (ok bool, missing []string) {
 }
 
 func dirIsEmpty(dir string) (bool, error) {
+	// #nosec G304 -- dir is always one of the canonical FHS paths declared in
+	// VerifyInventory. Not user-controlled; no path-traversal surface.
 	f, err := os.Open(dir)
 	if err != nil {
 		return false, err

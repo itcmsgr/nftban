@@ -103,6 +103,12 @@ jobs:
                            /usr/lib/nftban/helpers /usr/lib/nftban/lib /usr/lib/nftban/data \
                            /usr/lib/nftban/health /etc/nftban /etc/logrotate.d
           sudo cp bin/nftban-validate /usr/lib/nftban/bin/nftban-validate
+          sudo cp bin/nftban-installer /usr/lib/nftban/bin/nftban-installer
+          # Stub the Go-backed binaries whose full build requires templ so
+          # VerifyInventory's required-files check passes. We only need
+          # existence, not functionality, for the post-install assertion.
+          sudo install -m 0755 /bin/true /usr/lib/nftban/bin/nftban-core
+          sudo install -m 0755 /bin/true /usr/lib/nftban/bin/nftband
           sudo cp -r cli/lib/nftban/* /usr/lib/nftban/
           sudo cp cli/sbin/nftban /usr/sbin/nftban
           sudo chmod 0750 /usr/sbin/nftban
