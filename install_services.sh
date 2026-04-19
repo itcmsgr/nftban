@@ -399,6 +399,15 @@ install_systemd() {
         ok "Watchdog timer units -> $systemd_dir"
     fi
 
+    # Soak validation timer (v1.98.1 — opt-in, NOT auto-enabled on source install)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-soak.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-soak.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-soak.timer" "$systemd_dir/"
+        mkdir -p /usr/lib/nftban/scripts
+        install -m 0755 "$SCRIPT_DIR/scripts/nftban-soak-check.sh" /usr/lib/nftban/scripts/nftban-soak-check.sh
+        ok "Soak validation units -> $systemd_dir (enable with: systemctl enable --now nftban-soak.timer)"
+    fi
+
     # Pro subscription services
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-pro-license.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-pro-license.service" "$systemd_dir/"

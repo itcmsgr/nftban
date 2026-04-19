@@ -1,0 +1,84 @@
+# =============================================================================
+# NFTBan v1.98.1 - Soak Validation Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-soak.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-04-18"
+# meta:description="Soak validation: read-only checks + one bounded rebuild"
+# meta:input="None"
+# meta:output="JSON log at /var/log/nftban/soak/"
+# meta:depends="nftban-soak-check.sh"
+# meta:inventory.files="/usr/local/sbin/nftban-soak-check.sh,/var/log/nftban/soak/"
+# meta:inventory.binaries="/usr/sbin/nftban,/usr/sbin/nft"
+# meta:inventory.env_vars="PATH"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftband.service,nftables.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan soak validation (read-only checks + one bounded rebuild)
+Documentation=https://github.com/itcmsgr/nftban
+After=nftband.service nftables.service
+Wants=nftband.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/nftban/scripts/nftban-soak-check.sh
+User=root
+Group=root
+Environment=PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+# Scheduling niceness (soak is low-priority validation, not operational)
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Soak script wall-clock varies significantly by host load: ~15s on quiet hosts,
+# up to ~2min on busier production panels (Plesk/Imunify with large journals).
+# Under the CPUQuota below, wall-clock roughly doubles. 600s accommodates the
+# slowest observed run with >2x margin, still bounded.
+TimeoutStartSec=600
+
+# Logging
+StandardOutput=append:/var/log/nftban/soak/cron.log
+StandardError=append:/var/log/nftban/soak/cron.log
+SyslogIdentifier=nftban-soak
+
+# =============================================================================
+# SECURITY HARDENING (aligned with nftban-maintenance.service pattern)
+# Root is required to invoke `nftban firewall rebuild` and read validator
+# output. Sandboxing narrows the blast radius to exactly what soak needs.
+# =============================================================================
+NoNewPrivileges=yes
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# AF_NETLINK is required: the script invokes `nft list set` / `nft list ruleset`
+# directly (not through nftband IPC), and libmnl opens AF_NETLINK sockets to
+# read kernel state. Without it, nft fails with EAFNOSUPPORT and ssh_port /
+# rebuild / validator checks FAIL with false negatives.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# Write surface: matches nftban-maintenance.service pattern. `nftban firewall
+# rebuild` writes .nftables.conf.tmp + rendered nftables.conf to /etc/nftban,
+# caches state under /var/cache/nftban, and records state in /var/lib/nftban.
+# Ports.d + whitelist.d stay writable for SSH-safety-critical paths consistent
+# with the maintenance model. Shrinking below this breaks rebuild.
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
+
+# Resource limits — aligned with nftban-maintenance.service proven pattern.
+# CPUQuota=25% throttled busier hosts (Plesk/Imunify) past the 300s timeout;
+# 50% matches maintenance.service and gives realistic headroom while still
+# preventing soak from monopolizing a core. Memory stays tighter than
+# maintenance (soak is a read-heavy script, not a daemon).
+MemoryMax=128M
+CPUQuota=50%
+TasksMax=20
