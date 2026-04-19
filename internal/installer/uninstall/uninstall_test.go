@@ -21,10 +21,21 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
+
+// ptrBool / ptrTime — tiny helpers for writing PR-P2-1 record fixtures
+// that need pointer fields (nil-vs-explicit distinction).
+func ptrBool(v bool) *bool         { return &v }
+func ptrTime(v time.Time) *time.Time { return &v }
+
+// sampleRecordedAt is a fixed, known-good timestamp for fixture records.
+// Using a package-level constant keeps fixtures reproducible and makes
+// the "missing recorded_at" test distinct from the "zero time" path.
+var sampleRecordedAt = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func newTestLogger() *logging.Logger {
 	return logging.New("/dev/null", false)
@@ -227,13 +238,23 @@ func TestProbe_NoRecord(t *testing.T) {
 	}
 }
 
-func TestProbe_RecordUsable(t *testing.T) {
+// A complete PR-P2-1 record. All subsequent "missing X" tests derive
+// from this by removing exactly one field — keeps failure attribution
+// unambiguous.
+const fullRecordJSON = `{` +
+	`"schema_version":"1.100.0",` +
+	`"firewall_type":"ufw",` +
+	`"recorded_at":"2026-01-01T00:00:00Z",` +
+	`"installer_version":"1.100.0",` +
+	`"active_at_install":true}`
+
+func TestProbe_RecordUsableActive(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"ufw","active_at_install":true}`)
+	mock.Files[PriorAuthorityPath] = []byte(fullRecordJSON)
 
 	res := Probe(mock, newTestLogger())
-	if res.State != PriorRecordUsable {
-		t.Errorf("State = %q; want %q", res.State, PriorRecordUsable)
+	if res.State != PriorRecordUsableActive {
+		t.Errorf("State = %q; want %q", res.State, PriorRecordUsableActive)
 	}
 	if res.Record == nil {
 		t.Fatal("Record must be populated for Usable state")
@@ -241,45 +262,147 @@ func TestProbe_RecordUsable(t *testing.T) {
 	if res.Record.FirewallType != "ufw" {
 		t.Errorf("FirewallType = %q; want ufw", res.Record.FirewallType)
 	}
+	if res.Record.ActiveAtInstall == nil || !*res.Record.ActiveAtInstall {
+		t.Error("ActiveAtInstall must be explicitly true for UsableActive")
+	}
 }
 
-func TestProbe_RecordIncomplete_MalformedJSON(t *testing.T) {
+// PR-P2-1: active_at_install=false is explicitly distinguished from
+// missing. Both paths are "usable" but they mean different things.
+func TestProbe_RecordUsableInactive(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Files[PriorAuthorityPath] = []byte(`{` +
+		`"schema_version":"1.100.0",` +
+		`"firewall_type":"csf",` +
+		`"recorded_at":"2026-01-01T00:00:00Z",` +
+		`"installer_version":"1.100.0",` +
+		`"active_at_install":false}`)
+
+	res := Probe(mock, newTestLogger())
+	if res.State != PriorRecordUsableInactive {
+		t.Errorf("State = %q; want %q (active_at_install=false is usable-but-inactive)", res.State, PriorRecordUsableInactive)
+	}
+	if res.Record == nil || res.Record.ActiveAtInstall == nil {
+		t.Fatal("Record.ActiveAtInstall must be non-nil for UsableInactive (explicit false)")
+	}
+	if *res.Record.ActiveAtInstall {
+		t.Error("ActiveAtInstall must be explicitly false for UsableInactive")
+	}
+}
+
+func TestProbe_RecordMalformed_BadJSON(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Files[PriorAuthorityPath] = []byte(`{not valid json`)
 
 	res := Probe(mock, newTestLogger())
-	if res.State != PriorRecordIncomplete {
-		t.Errorf("State = %q; want %q (malformed JSON)", res.State, PriorRecordIncomplete)
+	if res.State != PriorRecordMalformed {
+		t.Errorf("State = %q; want %q (PR-P2-1 distinguishes malformed JSON from incomplete)", res.State, PriorRecordMalformed)
 	}
 }
 
 func TestProbe_RecordIncomplete_MissingFirewallType(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","active_at_install":true}`)
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","recorded_at":"2026-01-01T00:00:00Z","installer_version":"1.100.0","active_at_install":true}`)
 
 	res := Probe(mock, newTestLogger())
 	if res.State != PriorRecordIncomplete {
 		t.Errorf("State = %q; want %q (missing firewall_type)", res.State, PriorRecordIncomplete)
 	}
+	if res.IncompleteReason != IncompleteReasonMissingFirewallType {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonMissingFirewallType)
+	}
 }
 
 func TestProbe_RecordIncomplete_UnknownFirewallType(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"pf","active_at_install":true}`)
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"pf","recorded_at":"2026-01-01T00:00:00Z","installer_version":"1.100.0","active_at_install":true}`)
 
 	res := Probe(mock, newTestLogger())
 	if res.State != PriorRecordIncomplete {
 		t.Errorf("State = %q; want %q (unknown firewall_type)", res.State, PriorRecordIncomplete)
 	}
+	if res.IncompleteReason != IncompleteReasonUnknownFirewallType {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonUnknownFirewallType)
+	}
 }
 
 func TestProbe_RecordIncomplete_SchemaMismatch(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"0.9.0","firewall_type":"ufw","active_at_install":true}`)
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"0.9.0","firewall_type":"ufw","recorded_at":"2026-01-01T00:00:00Z","installer_version":"1.100.0","active_at_install":true}`)
 
 	res := Probe(mock, newTestLogger())
 	if res.State != PriorRecordIncomplete {
 		t.Errorf("State = %q; want %q (schema mismatch — no migration in v1.100)", res.State, PriorRecordIncomplete)
+	}
+	if res.IncompleteReason != IncompleteReasonSchemaMismatch {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonSchemaMismatch)
+	}
+}
+
+// PR-P2-1 new required field: recorded_at.
+func TestProbe_RecordIncomplete_MissingRecordedAt(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"ufw","installer_version":"1.100.0","active_at_install":true}`)
+
+	res := Probe(mock, newTestLogger())
+	if res.State != PriorRecordIncomplete {
+		t.Errorf("State = %q; want %q (PR-P2-1 requires recorded_at)", res.State, PriorRecordIncomplete)
+	}
+	if res.IncompleteReason != IncompleteReasonMissingRecordedAt {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonMissingRecordedAt)
+	}
+}
+
+// PR-P2-1 new required field: installer_version.
+func TestProbe_RecordIncomplete_MissingInstallerVersion(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"ufw","recorded_at":"2026-01-01T00:00:00Z","active_at_install":true}`)
+
+	res := Probe(mock, newTestLogger())
+	if res.State != PriorRecordIncomplete {
+		t.Errorf("State = %q; want %q (PR-P2-1 requires installer_version)", res.State, PriorRecordIncomplete)
+	}
+	if res.IncompleteReason != IncompleteReasonMissingInstallerVersion {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonMissingInstallerVersion)
+	}
+}
+
+// PR-P2-1: active_at_install MUST be explicitly present. A record that
+// omits the field entirely is Incomplete — distinguishing "writer
+// committed to false" from "writer forgot to commit."
+func TestProbe_RecordIncomplete_MissingActiveAtInstall(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"ufw","recorded_at":"2026-01-01T00:00:00Z","installer_version":"1.100.0"}`)
+
+	res := Probe(mock, newTestLogger())
+	if res.State != PriorRecordIncomplete {
+		t.Errorf("State = %q; want %q (PR-P2-1 requires explicit active_at_install)", res.State, PriorRecordIncomplete)
+	}
+	if res.IncompleteReason != IncompleteReasonMissingActiveAtInstall {
+		t.Errorf("IncompleteReason = %q; want %q", res.IncompleteReason, IncompleteReasonMissingActiveAtInstall)
+	}
+}
+
+// PR-P2-1 backward-safety: records written by pre-P2-1 installers that
+// lack recorded_at + installer_version + explicit active_at_install
+// MUST be reclassified as Incomplete. Migration-style silent upgrade
+// is forbidden.
+func TestProbe_OldStyleRecord_DegradesToIncomplete(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// Exact shape that pre-P2-1 tests used: schema + firewall + active.
+	mock.Files[PriorAuthorityPath] = []byte(`{"schema_version":"1.100.0","firewall_type":"ufw","active_at_install":true}`)
+
+	res := Probe(mock, newTestLogger())
+	if res.State == PriorRecordUsableActive || res.State == PriorRecordUsableInactive {
+		t.Errorf("PR-P2-1 safety regression: old-style record silently upgraded to %q — must be Incomplete", res.State)
+	}
+	if res.State != PriorRecordIncomplete {
+		t.Errorf("State = %q; want %q (old record must degrade safely)", res.State, PriorRecordIncomplete)
+	}
+	// The first missing field encountered by Probe is recorded_at, so
+	// that is the expected reason.
+	if res.IncompleteReason != IncompleteReasonMissingRecordedAt {
+		t.Errorf("IncompleteReason = %q; want %q (first missing field)", res.IncompleteReason, IncompleteReasonMissingRecordedAt)
 	}
 }
 
@@ -297,8 +420,31 @@ func noPriorProbe() *ProbeResult {
 
 func usablePriorProbe() *ProbeResult {
 	return &ProbeResult{
-		State:  PriorRecordUsable,
-		Record: &PriorRecord{SchemaVersion: PlanSchemaVersion, FirewallType: "ufw", ActiveAtInstall: true},
+		State: PriorRecordUsableActive,
+		Record: &PriorRecord{
+			SchemaVersion:    PlanSchemaVersion,
+			FirewallType:     "ufw",
+			RecordedAt:       ptrTime(sampleRecordedAt),
+			InstallerVersion: "1.100.0",
+			ActiveAtInstall:  ptrBool(true),
+		},
+	}
+}
+
+// usableInactivePriorProbe is the PR-P2-1 companion: all fields present
+// but active_at_install is explicitly false. BuildPlan should still
+// authorize restore (IsUsable returns true) but render/warnings must
+// surface the active=false distinction.
+func usableInactivePriorProbe() *ProbeResult {
+	return &ProbeResult{
+		State: PriorRecordUsableInactive,
+		Record: &PriorRecord{
+			SchemaVersion:    PlanSchemaVersion,
+			FirewallType:     "csf",
+			RecordedAt:       ptrTime(sampleRecordedAt),
+			InstallerVersion: "1.100.0",
+			ActiveAtInstall:  ptrBool(false),
+		},
 	}
 }
 
@@ -336,6 +482,33 @@ func TestBuildPlan_Restore_UsableRecord_Authorized(t *testing.T) {
 	}
 	if p.TargetAuthority != CurrentAuthority("ufw") {
 		t.Errorf("TargetAuthority = %q; want ufw (restored prior)", p.TargetAuthority)
+	}
+	// PR-P2-1: UsableActive must surface active=true in the plan.
+	if p.PriorActiveAtInstall == nil || !*p.PriorActiveAtInstall {
+		t.Errorf("PriorActiveAtInstall must be explicit true for UsableActive prior")
+	}
+}
+
+// PR-P2-1: UsableInactive is still authorized (record is usable) but
+// the plan must surface the active=false distinction AND warn the
+// operator that restoration would re-enable a firewall that was not
+// active at install time.
+func TestBuildPlan_Restore_UsableInactive_AuthorizedButWarned(t *testing.T) {
+	p := BuildPlan(ModeRemove, happyClassify(), usableInactivePriorProbe(), true)
+	if !p.RestoreAuthorized {
+		t.Error("restore must be authorized for UsableInactive — inactive is still a usable record")
+	}
+	if p.PriorActiveAtInstall == nil || *p.PriorActiveAtInstall {
+		t.Errorf("PriorActiveAtInstall must be explicit false for UsableInactive prior")
+	}
+	var haveInactiveWarning bool
+	for _, w := range p.Warnings {
+		if strings.Contains(w, "NOT active at install time") {
+			haveInactiveWarning = true
+		}
+	}
+	if !haveInactiveWarning {
+		t.Errorf("plan must warn that restoration re-enables a non-active firewall; got warnings: %v", p.Warnings)
 	}
 }
 
@@ -491,7 +664,8 @@ func TestPlan_JSON_RoundTrip_KeyFields(t *testing.T) {
 		`"requested_mode": "purge"`,
 		`"restore_requested": true`,
 		`"restore_authorized": true`,
-		`"prior_state": "record_usable"`,
+		`"prior_state": "record_usable_active"`,
+		`"prior_active_at_install": true`,
 		`"phases_that_would_mutate"`,
 	} {
 		if !strings.Contains(out, needle) {

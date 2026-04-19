@@ -1,12 +1,12 @@
 // =============================================================================
-// NFTBan v1.100 PR-22 — Prior-Authority Record Detector (Read-Only)
+// NFTBan v1.100 PR-P2-1 — Prior-Authority Record Detector (Read-Only)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-uninstall-prior"
 // meta:type="lib"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-19"
-// meta:description="3-state prior-authority record detection for uninstall planning"
+// meta:description="5-state prior-authority record detection for uninstall planning"
 // meta:inventory.files="internal/installer/uninstall/prior.go"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -16,30 +16,35 @@
 // meta:inventory.privileges="root"
 // =============================================================================
 //
-// PR-22 scope lock: READ-ONLY. This file probes whether a prior-authority
-// artifact exists and, if so, whether its contents are usable for a
-// future --restore-prior-authority decision. It does NOT write any
-// prior-authority record (write-path is install-side, tracked for
-// PR-23 or a companion install-mode PR per V1100 contract §9 Q9).
+// PR-22 scope lock (preserved): READ-ONLY. Probes whether a prior-authority
+// artifact exists and whether its contents are usable for a future
+// --restore-prior-authority decision. Never writes, never deletes.
 //
-// The 3 states are the PR-22-scoped answer to "can a future restore
-// plan trust this data":
+// PR-P2-1 strengthening: PR-24 restore-enforcement cannot trust
+// under-defined records. This file hardens the schema and parsing
+// semantics so "usable" has a stricter meaning:
 //
-//   NoRecord            — no artifact on disk
-//   RecordUsable        — artifact parseable + has the required fields
-//   RecordIncomplete    — artifact exists but missing fields / malformed /
-//                         unrecognized firewall type
+//   NoRecord              — no artifact on disk
+//   RecordMalformed       — artifact exists but JSON does not parse
+//   RecordIncomplete      — JSON parses but required fields are missing,
+//                           unknown, or semantically unusable
+//   RecordUsableActive    — all requirements met AND the prior firewall
+//                           was active at install time
+//   RecordUsableInactive  — all requirements met AND the prior firewall
+//                           was explicitly recorded as NOT active at
+//                           install time
 //
-// PR-22 reports the state; PR-24 enforces "refuse --restore when
-// RecordIncomplete". Keeping the split means the plan renderer can
-// surface ambiguity to the operator instead of silently deciding for
-// them.
+// Backward-safety rule (PR-P2-1): older records from before this tightening
+// that lack recorded_at / installer_version / active_at_install are
+// reclassified as RecordIncomplete by design. This is intentional safety
+// tightening so PR-24 restore logic never trusts under-defined evidence.
 //
 // =============================================================================
 package uninstall
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
@@ -50,9 +55,35 @@ import (
 type PriorRecordState string
 
 const (
-	PriorNoRecord         PriorRecordState = "no_record"
-	PriorRecordUsable     PriorRecordState = "record_usable"
-	PriorRecordIncomplete PriorRecordState = "record_incomplete"
+	PriorNoRecord             PriorRecordState = "no_record"
+	PriorRecordMalformed      PriorRecordState = "record_malformed"
+	PriorRecordIncomplete     PriorRecordState = "record_incomplete"
+	PriorRecordUsableActive   PriorRecordState = "record_usable_active"
+	PriorRecordUsableInactive PriorRecordState = "record_usable_inactive"
+)
+
+// IsUsable reports whether a record-state represents a record that
+// PR-24 may consider authorizing restoration from. The active/inactive
+// distinction is exposed separately so the plan can surface the
+// semantic difference; both are usable-at-this-layer.
+func (s PriorRecordState) IsUsable() bool {
+	return s == PriorRecordUsableActive || s == PriorRecordUsableInactive
+}
+
+// IncompleteReason is a typed enum describing exactly why a record was
+// classified as RecordIncomplete. Machine-consumable so downstream
+// tooling does not have to substring-match human notes.
+type IncompleteReason string
+
+const (
+	IncompleteReasonNone                    IncompleteReason = ""
+	IncompleteReasonUnreadable              IncompleteReason = "unreadable"
+	IncompleteReasonSchemaMismatch          IncompleteReason = "schema_mismatch"
+	IncompleteReasonMissingFirewallType     IncompleteReason = "missing_firewall_type"
+	IncompleteReasonUnknownFirewallType     IncompleteReason = "unknown_firewall_type"
+	IncompleteReasonMissingRecordedAt       IncompleteReason = "missing_recorded_at"
+	IncompleteReasonMissingInstallerVersion IncompleteReason = "missing_installer_version"
+	IncompleteReasonMissingActiveAtInstall  IncompleteReason = "missing_active_at_install"
 )
 
 // PriorAuthorityPath is the canonical on-disk location for the
@@ -64,45 +95,58 @@ const PriorAuthorityPath = "/var/lib/nftban/state/prior_authority.json"
 // authority snapshot. PR-22 consumes this to classify usability; it
 // does NOT construct, write, or mutate this struct.
 //
-// The set of required fields is intentionally minimal (per V1100
-// contract §13 Q9 answer: "narrow snapshot, not a registry"):
+// PR-P2-1 required fields for PriorRecordUsable* classification:
 //
-//   FirewallType   — "ufw" / "firewalld" / "iptables" / "csf"
-//   ActiveAtInstall — was the prior firewall actively holding authority
-//   SchemaVersion  — freezes on-disk contract; reader must match
+//   SchemaVersion     — freezes on-disk contract; reader must match
+//   FirewallType      — "ufw" / "firewalld" / "iptables" / "csf"
+//   RecordedAt        — timestamp when the record was written; enables
+//                       freshness judgement in future tooling
+//   InstallerVersion  — version of the installer that wrote the record;
+//                       enables per-version quirk handling
+//   ActiveAtInstall   — explicit tri-state pointer. nil = field absent
+//                       (record is incomplete); &true = prior firewall
+//                       was active; &false = prior firewall was explicitly
+//                       recorded as NOT active
 //
-// Any extra fields can be added later without breaking backward
-// compatibility because the reader uses json.Unmarshal which tolerates
-// unknown fields.
+// json.Unmarshal tolerates unknown fields, so future additive fields
+// do not break older readers. PR-P2-1 does NOT add signature/checksum
+// infrastructure — that remains out of scope.
 type PriorRecord struct {
-	SchemaVersion   string `json:"schema_version"`
-	FirewallType    string `json:"firewall_type"`
-	ActiveAtInstall bool   `json:"active_at_install"`
+	SchemaVersion    string     `json:"schema_version"`
+	FirewallType     string     `json:"firewall_type"`
+	RecordedAt       *time.Time `json:"recorded_at,omitempty"`
+	InstallerVersion string     `json:"installer_version,omitempty"`
+	ActiveAtInstall  *bool      `json:"active_at_install,omitempty"`
 }
 
 // PriorRecordSchemaVersion is the currently-expected on-disk contract.
-// A record with a different schema_version is RecordIncomplete (PR-22
-// does not attempt migration; Q8 answer = A = no migration unless
-// demonstrated break).
+// A record with a different schema_version is RecordIncomplete.
 const PriorRecordSchemaVersion = "1.100.0"
 
-// ProbeResult is the full classification + parsed record (nil when the
-// classification is NoRecord or RecordIncomplete with no parseable
-// JSON). Plan renderers consume this rather than re-probing.
+// ProbeResult is the full classification + parsed record + typed
+// incomplete reason. Plan renderers consume this rather than re-probing.
 type ProbeResult struct {
-	State  PriorRecordState `json:"state"`
-	Record *PriorRecord     `json:"record,omitempty"`
-	Notes  []string         `json:"notes,omitempty"`
+	State            PriorRecordState `json:"state"`
+	Record           *PriorRecord     `json:"record,omitempty"`
+	IncompleteReason IncompleteReason `json:"incomplete_reason,omitempty"`
+	Notes            []string         `json:"notes,omitempty"`
 }
 
 // Probe classifies the on-disk prior-authority record. READ-ONLY.
 //
-// Inputs (all read-only):
-//   - exec.FileExists(PriorAuthorityPath)
-//   - exec.ReadFile(PriorAuthorityPath)
-//   - json.Unmarshal + field check
+// Decision order (first match wins; fall-through means "acceptable so far"):
 //
-// Never writes. Never deletes. Never mutates.
+//  1. File absent                      → NoRecord
+//  2. File present but unreadable      → Incomplete (Unreadable)
+//  3. File readable but bad JSON       → Malformed
+//  4. JSON parses but schema mismatch  → Incomplete (SchemaMismatch)
+//  5. Required fields missing/invalid  → Incomplete (specific reason)
+//  6. All required fields present AND
+//       ActiveAtInstall=&true          → UsableActive
+//       ActiveAtInstall=&false         → UsableInactive
+//
+// Read-only at every step: exec.FileExists + exec.ReadFile +
+// json.Unmarshal + field check. No writes, no deletes, no mutation.
 func Probe(exec executor.Executor, log *logging.Logger) *ProbeResult {
 	res := &ProbeResult{}
 
@@ -117,6 +161,7 @@ func Probe(exec executor.Executor, log *logging.Logger) *ProbeResult {
 	data, err := exec.ReadFile(PriorAuthorityPath)
 	if err != nil {
 		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonUnreadable
 		res.Notes = append(res.Notes,
 			"prior-authority record present but unreadable: "+err.Error())
 		log.Warn("uninstall/prior: record unreadable: %v", err)
@@ -125,16 +170,17 @@ func Probe(exec executor.Executor, log *logging.Logger) *ProbeResult {
 
 	var rec PriorRecord
 	if err := json.Unmarshal(data, &rec); err != nil {
-		res.State = PriorRecordIncomplete
+		res.State = PriorRecordMalformed
 		res.Notes = append(res.Notes,
 			"prior-authority record present but not valid JSON: "+err.Error())
 		log.Warn("uninstall/prior: record not parseable: %v", err)
 		return res
 	}
 
-	// Schema version check — mismatched schema is Incomplete (Q8 = A)
+	// Schema version check
 	if rec.SchemaVersion != PriorRecordSchemaVersion {
 		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonSchemaMismatch
 		res.Notes = append(res.Notes,
 			"prior-authority record schema_version="+rec.SchemaVersion+
 				" does not match expected "+PriorRecordSchemaVersion+
@@ -143,16 +189,20 @@ func Probe(exec executor.Executor, log *logging.Logger) *ProbeResult {
 		return res
 	}
 
-	// Required fields check
+	// Required field: FirewallType present
 	if rec.FirewallType == "" {
 		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonMissingFirewallType
 		res.Notes = append(res.Notes,
 			"prior-authority record missing firewall_type — not usable for restore")
 		res.Record = &rec
 		return res
 	}
+
+	// Required field: FirewallType known
 	if !knownFirewallType(rec.FirewallType) {
 		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonUnknownFirewallType
 		res.Notes = append(res.Notes,
 			"prior-authority record firewall_type="+rec.FirewallType+
 				" is not one of the known types (ufw / firewalld / iptables / csf)")
@@ -160,12 +210,68 @@ func Probe(exec executor.Executor, log *logging.Logger) *ProbeResult {
 		return res
 	}
 
-	res.State = PriorRecordUsable
+	// PR-P2-1 required field: RecordedAt present AND parseable.
+	//
+	// Older records that pre-date PR-P2-1 omit this field entirely and
+	// are deliberately reclassified as Incomplete here — the safety
+	// tightening that unblocks PR-24 restore-enforcement.
+	if rec.RecordedAt == nil || rec.RecordedAt.IsZero() {
+		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonMissingRecordedAt
+		res.Notes = append(res.Notes,
+			"prior-authority record missing recorded_at — older pre-PR-P2-1 record "+
+				"or record written without a timestamp; not usable for restore")
+		res.Record = &rec
+		return res
+	}
+
+	// PR-P2-1 required field: InstallerVersion present.
+	if rec.InstallerVersion == "" {
+		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonMissingInstallerVersion
+		res.Notes = append(res.Notes,
+			"prior-authority record missing installer_version — not usable for restore")
+		res.Record = &rec
+		return res
+	}
+
+	// PR-P2-1 required field: ActiveAtInstall EXPLICITLY present.
+	//
+	// The *bool pointer is intentional: a record that silently omits
+	// this field cannot be distinguished from one that explicitly set
+	// it to false. Requiring the pointer to be non-nil means the
+	// installer writer committed to a value, and PR-24 can trust that
+	// commitment when deciding whether restore means "re-enable a
+	// firewall that was running" or "enable a firewall that was not
+	// running at install time" (which is a very different operation).
+	if rec.ActiveAtInstall == nil {
+		res.State = PriorRecordIncomplete
+		res.IncompleteReason = IncompleteReasonMissingActiveAtInstall
+		res.Notes = append(res.Notes,
+			"prior-authority record missing active_at_install — the record did not "+
+				"commit to whether the prior firewall was active at install time, "+
+				"so restore would be unsafe")
+		res.Record = &rec
+		return res
+	}
+
+	// All requirements met. Split by active state so the plan renderer
+	// can surface the semantic difference without re-reading Record.
 	res.Record = &rec
-	res.Notes = append(res.Notes,
-		"prior-authority record parseable; firewall_type="+rec.FirewallType+
-			" active_at_install="+boolYN(rec.ActiveAtInstall))
-	log.Debug("uninstall/prior: usable record firewall_type=%s", rec.FirewallType)
+	if *rec.ActiveAtInstall {
+		res.State = PriorRecordUsableActive
+		res.Notes = append(res.Notes,
+			"prior-authority record parseable; firewall_type="+rec.FirewallType+
+				" active_at_install=yes (prior firewall was running at install time)")
+		log.Debug("uninstall/prior: usable-active record firewall_type=%s", rec.FirewallType)
+	} else {
+		res.State = PriorRecordUsableInactive
+		res.Notes = append(res.Notes,
+			"prior-authority record parseable; firewall_type="+rec.FirewallType+
+				" active_at_install=no (prior firewall was NOT running at install time; "+
+				"restore would re-enable a firewall that was not active)")
+		log.Debug("uninstall/prior: usable-inactive record firewall_type=%s", rec.FirewallType)
+	}
 	return res
 }
 
@@ -175,11 +281,4 @@ func knownFirewallType(t string) bool {
 		return true
 	}
 	return false
-}
-
-func boolYN(b bool) string {
-	if b {
-		return "yes"
-	}
-	return "no"
 }
