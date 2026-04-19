@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -79,6 +80,18 @@ func copyIfChanged(exec executor.Executor, srcContent []byte, dst string, mode o
 		if err == nil && bytes.Equal(existing, srcContent) {
 			log.Debug("payload: unchanged %s (%d bytes)", dst, len(srcContent))
 			return false, nil
+		}
+	}
+
+	// Defensive MkdirAll: fhs.EnsureDirectories covers the canonical FHS registry
+	// but not every payload-destination subdirectory (e.g. /usr/lib/nftban/cli,
+	// /usr/lib/nftban/sbin, /etc/nftban/templates). Creating the parent here
+	// keeps payload staging self-sufficient. 0755 is a safe default for system
+	// directories; fhs.SetPermissions runs after payload and corrects ownership
+	// per the canonical registry where entries exist.
+	if parent := filepath.Dir(dst); parent != "" && parent != "/" {
+		if err := exec.MkdirAll(parent, 0755); err != nil {
+			return false, fmt.Errorf("mkdir %s: %w", parent, err)
 		}
 	}
 
