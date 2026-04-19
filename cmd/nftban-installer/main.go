@@ -133,6 +133,13 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.repair {
 		return runRepair(ctx, exec, sf, log)
 	}
+	// v1.100 PR-22 (uninstall scaffold): uninstall-mode short-circuits
+	// to authority classify + prior-record probe + plan render. No
+	// mutation code exists in this release; mutation phases land in
+	// PR-23+. flags.go forces --dry-run for --mode=uninstall in PR-22.
+	if cfg.mode == "uninstall" {
+		return runUninstallDryRun(ctx, exec, sf, cfg, log)
+	}
 	// v1.99 PR-16 (G3-U1/U2/U3/U4): update-mode dry-run short-circuits to
 	// preflight + version-detect + plan render. No mutation — all apply
 	// logic is deferred to PR-18 and reuses the rebuild pipeline per
