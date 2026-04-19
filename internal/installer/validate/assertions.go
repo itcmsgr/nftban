@@ -24,6 +24,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/payload"
 )
 
 // AssertionResult holds the outcome of a single assertion.
@@ -46,6 +47,7 @@ func RunAssertions(exec executor.Executor, sshPort int, log *logging.Logger) []A
 	results = append(results, assertNoEmergencyTable(exec, log))
 	results = append(results, assertDaemonActive(exec, log))
 	results = append(results, assertInstallStateFile(exec, log))
+	results = append(results, assertPayloadInventory(exec, log))
 
 	passed := 0
 	for _, r := range results {
@@ -172,6 +174,24 @@ func assertInstallStateFile(exec executor.Executor, log *logging.Logger) Asserti
 		log.Warn("ASSERT state_file_exists: FAIL")
 	} else {
 		log.Debug("ASSERT state_file_exists: PASS")
+	}
+	return r
+}
+
+// assertPayloadInventory (v1.98.2 R-3, issue #463): material install
+// completeness check. Every install (source OR package) must produce the
+// canonical set of destinations defined in payload.VerifyInventory. Missing
+// entries indicate either a broken payload stage or a tampered install —
+// both must surface as a failed assertion rather than a clean COMMITTED.
+func assertPayloadInventory(exec executor.Executor, log *logging.Logger) AssertionResult {
+	ok, missing := payload.VerifyInventory(exec)
+	r := AssertionResult{Name: "payload_inventory_ok", Passed: ok}
+	if !ok {
+		r.Detail = "missing required payload: " + strings.Join(missing, ", ")
+		log.Warn("ASSERT payload_inventory_ok: FAIL — missing %d: %s",
+			len(missing), strings.Join(missing, ", "))
+	} else {
+		log.Debug("ASSERT payload_inventory_ok: PASS")
 	}
 	return r
 }

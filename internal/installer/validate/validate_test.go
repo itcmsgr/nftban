@@ -29,6 +29,36 @@ func newTestLogger() *logging.Logger {
 	return logging.New("/dev/null", false)
 }
 
+// seedCompletePayloadInventory populates the mock with every destination
+// required by payload.VerifyInventory so assertPayloadInventory passes.
+// Tests that want to exercise the inventory failure path can simply omit
+// this helper or delete specific entries after calling it.
+func seedCompletePayloadInventory(mock *executor.MockExecutor) {
+	mock.Files["/usr/sbin/nftban"] = []byte("x")
+	mock.Files["/usr/lib/nftban/bin/nftban-core"] = []byte("x")
+	mock.Files["/usr/lib/nftban/bin/nftband"] = []byte("x")
+	mock.Files["/usr/lib/nftban/bin/nftban-validate"] = []byte("x")
+	mock.Files["/usr/lib/nftban/bin/nftban-installer"] = []byte("x")
+	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.98.2\n")
+	mock.Files["/etc/nftban/nftban.conf"] = []byte("x")
+	mock.Files["/etc/nftban/nftables.conf"] = []byte("x")
+	mock.Files["/etc/logrotate.d/nftban"] = []byte("x")
+	// Shell dirs must exist AND contain at least one file — mock.FileExists
+	// checks Files+Dirs; dirIsEmpty in payload.VerifyInventory opens the
+	// real FS, so we use a tmpdir-backed approach in tests that care about
+	// emptiness. For happy-path tests the Dirs marker is sufficient.
+	for _, d := range []string{
+		"/usr/lib/nftban/cli",
+		"/usr/lib/nftban/core",
+		"/usr/lib/nftban/lib",
+		"/usr/lib/nftban/helpers",
+		"/usr/lib/nftban/data",
+		"/usr/lib/nftban/health",
+	} {
+		mock.Dirs[d] = true
+	}
+}
+
 func TestRunAssertions_AllPass(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Services["nftables"] = true
@@ -38,12 +68,49 @@ func TestRunAssertions_AllPass(t *testing.T) {
 	mock.RunResults["nft:list:chain:ip:nftban:input"] = executor.Result{ExitCode: 0}
 	mock.NftSets["ip:nftban:tcp_ports_in"] = "elements = { 22, 80, 443 }"
 	mock.Files["/var/lib/nftban/state/install_state"] = []byte("COMMITTED")
+	seedCompletePayloadInventory(mock)
 
 	results := RunAssertions(mock, 22, newTestLogger())
 
 	if !AllPassed(results) {
 		failed := FailedNames(results)
 		t.Errorf("expected all assertions to pass, failed: %v", failed)
+	}
+}
+
+// TestRunAssertions_PayloadInventoryMissing (R-3, issue #463): when a
+// required canonical destination is absent (e.g. VERSION file missed by
+// payload staging), the assertion suite must surface a FAIL — this is
+// the pattern that would have caught the v1.98.1 P0.
+func TestRunAssertions_PayloadInventoryMissing(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.Services["nftables"] = true
+	mock.Services["nftband.service"] = true
+	mock.NftTables["ip:nftban"] = true
+	mock.NftTables["ip6:nftban"] = true
+	mock.RunResults["nft:list:chain:ip:nftban:input"] = executor.Result{ExitCode: 0}
+	mock.NftSets["ip:nftban:tcp_ports_in"] = "elements = { 22 }"
+	mock.Files["/var/lib/nftban/state/install_state"] = []byte("COMMITTED")
+	seedCompletePayloadInventory(mock)
+	// Simulate the v1.98.1 bug: VERSION file is missing from staged payload.
+	delete(mock.Files, "/usr/lib/nftban/VERSION")
+
+	results := RunAssertions(mock, 22, newTestLogger())
+
+	if AllPassed(results) {
+		t.Fatal("expected payload_inventory_ok to fail when VERSION is missing")
+	}
+	var inventoryFailed bool
+	for _, r := range results {
+		if r.Name == "payload_inventory_ok" && !r.Passed {
+			inventoryFailed = true
+			if r.Detail == "" {
+				t.Error("expected Detail to describe missing paths")
+			}
+		}
+	}
+	if !inventoryFailed {
+		t.Errorf("payload_inventory_ok assertion was not present or not failed, got: %v", FailedNames(results))
 	}
 }
 

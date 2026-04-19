@@ -42,9 +42,12 @@
 package payload
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
@@ -73,7 +76,10 @@ func StageAll(exec executor.Executor, srcDir string, distro *detect.DistroInfo, 
 	log.Info("payload: staging from %s", srcDir)
 
 	entries := buildEntries(distro)
-	var wrote, skipped, failed int
+
+	type catTally struct{ wrote, skipped, failed int }
+	catTotals := map[string]*catTally{}
+	var wrote, skipped, failed, requiredFailed int
 
 	for _, e := range entries {
 		if e.uiRemoveInV2 {
@@ -83,15 +89,124 @@ func StageAll(exec executor.Executor, srcDir string, distro *detect.DistroInfo, 
 		wrote += ew
 		skipped += es
 		failed += ef
+
+		cat := e.category
+		if cat == "" {
+			cat = "other"
+		}
+		t, ok := catTotals[cat]
+		if !ok {
+			t = &catTally{}
+			catTotals[cat] = t
+		}
+		t.wrote += ew
+		t.skipped += es
+		t.failed += ef
+
+		if ef > 0 && !e.optional {
+			requiredFailed += ef
+		}
 	}
 
+	// R-3 (issue #463): emit INFO-level category summary so installer log
+	// review does not require debug verbosity.
+	cats := make([]string, 0, len(catTotals))
+	for c := range catTotals {
+		cats = append(cats, c)
+	}
+	sort.Strings(cats)
+	for _, c := range cats {
+		t := catTotals[c]
+		log.Info("payload: category=%-12s wrote=%-4d skipped=%-4d failed=%d",
+			c, t.wrote, t.skipped, t.failed)
+	}
 	log.Info("payload: staging complete — wrote=%d skipped=%d failed=%d", wrote, skipped, failed)
-	if failed > 0 {
-		// Failures are non-fatal during staging — log count for visibility
-		// but let phaseValidate catch any downstream breakage.
-		log.Warn("payload: %d file(s) failed to stage (non-fatal, see earlier log entries)", failed)
+
+	// R-3 (issue #463): required-artifact failures are surfaced at WARN
+	// level so log review catches them. The hard escalation happens in
+	// phaseValidate via the payload_inventory_ok assertion, which checks
+	// end-state destinations rather than mid-stage counters. End-state
+	// checks survive scenarios where an operator pre-staged files or
+	// where retry semantics fill gaps.
+	if requiredFailed > 0 {
+		log.Warn("payload: %d required file(s) failed to stage — payload_inventory_ok will catch material gaps", requiredFailed)
+	}
+	if failed > requiredFailed {
+		log.Warn("payload: %d optional file(s) also failed to stage (non-fatal)", failed-requiredFailed)
 	}
 	return nil
+}
+
+// VerifyInventory asserts that every canonical required destination is
+// materially present after install. Called by the post-install assertion
+// suite (validate.assertPayloadInventory). It does not checksum every
+// staged file — it proves material install completeness per v1.98.2 R-3.
+//
+// Scope: destinations that every install (source OR package) must produce.
+// Optional/distro-conditional artifacts (man, polkit, completions) are
+// intentionally excluded.
+func VerifyInventory(exec executor.Executor) (ok bool, missing []string) {
+	required := []string{
+		// Canonical privileged CLI + installer
+		"/usr/sbin/nftban",
+		"/usr/lib/nftban/bin/nftban-core",
+		"/usr/lib/nftban/bin/nftband",
+		"/usr/lib/nftban/bin/nftban-validate",
+		"/usr/lib/nftban/bin/nftban-installer",
+
+		// Version file — every CLI subcommand sources version.sh which
+		// reads this. Absence crashes every shell entry point (v1.98.1 P0).
+		"/usr/lib/nftban/VERSION",
+
+		// Operator-facing config + firewall template
+		"/etc/nftban/nftban.conf",
+		"/etc/nftban/nftables.conf",
+
+		// Canonical logrotate (addresses source-install drift)
+		"/etc/logrotate.d/nftban",
+	}
+
+	for _, p := range required {
+		if !exec.FileExists(p) {
+			missing = append(missing, p)
+		}
+	}
+
+	// Also assert that the key shell payload roots exist AND are non-empty.
+	// A present-but-empty directory would silently break the CLI without a
+	// file-level signal.
+	shellDirs := []string{
+		"/usr/lib/nftban/cli",
+		"/usr/lib/nftban/core",
+		"/usr/lib/nftban/lib",
+		"/usr/lib/nftban/helpers",
+		"/usr/lib/nftban/data",
+		"/usr/lib/nftban/health",
+	}
+	for _, d := range shellDirs {
+		if !exec.FileExists(d) {
+			missing = append(missing, d+" (dir)")
+			continue
+		}
+		if empty, err := dirIsEmpty(d); err == nil && empty {
+			missing = append(missing, d+" (empty)")
+		}
+	}
+
+	return len(missing) == 0, missing
+}
+
+func dirIsEmpty(dir string) (bool, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	return len(names) == 0, nil
 }
 
 // entry describes one source-to-destination staging rule.
@@ -130,6 +245,10 @@ type entry struct {
 	//
 	// REMOVE-IN-V2.0.0: UI decommission (PR-D4)
 	uiRemoveInV2 bool
+
+	// category groups entries for the INFO-level staging summary
+	// (v1.98.2 R-3). Empty defaults to "other" at tally time.
+	category string
 }
 
 // buildEntries constructs the full payload destination table.
@@ -149,88 +268,88 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// -----------------------------------------------------------------
 		// G-14-B: Go binaries + CLI sbin entries
 		// -----------------------------------------------------------------
-		{srcRel: "bin/nftban-core", dstGlob: "/usr/lib/nftban/bin/nftban-core", mode: 0755, policy: policyAlways},
-		{srcRel: "bin/nftband", dstGlob: "/usr/lib/nftban/bin/nftband", mode: 0755, policy: policyAlways},
-		{srcRel: "bin/nftban-validate", dstGlob: "/usr/lib/nftban/bin/nftban-validate", mode: 0755, policy: policyAlways},
-		{srcRel: "bin/nftban-installer", dstGlob: "/usr/lib/nftban/bin/nftban-installer", mode: 0755, policy: policyAlways},
+		{category: "binaries", srcRel: "bin/nftban-core", dstGlob: "/usr/lib/nftban/bin/nftban-core", mode: 0755, policy: policyAlways},
+		{category: "binaries", srcRel: "bin/nftband", dstGlob: "/usr/lib/nftban/bin/nftband", mode: 0755, policy: policyAlways},
+		{category: "binaries", srcRel: "bin/nftban-validate", dstGlob: "/usr/lib/nftban/bin/nftban-validate", mode: 0755, policy: policyAlways},
+		{category: "binaries", srcRel: "bin/nftban-installer", dstGlob: "/usr/lib/nftban/bin/nftban-installer", mode: 0755, policy: policyAlways},
 
 		// Canonical privileged CLI binary (NB-5 perms).
-		{srcRel: "cli/sbin/nftban", dstGlob: "/usr/sbin/nftban", mode: 0750, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban", dstGlob: "/usr/sbin/nftban", mode: 0750, policy: policyAlways},
 
 		// Auxiliary CLI helpers.
-		{srcRel: "cli/sbin/nftban-apply", dstGlob: "/usr/lib/nftban/sbin/nftban-apply", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-confirm", dstGlob: "/usr/lib/nftban/sbin/nftban-confirm", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-panelctl", dstGlob: "/usr/lib/nftban/sbin/nftban-panelctl", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-queue-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-queue-processor", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-rollback", dstGlob: "/usr/lib/nftban/sbin/nftban-rollback", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-service-alert", dstGlob: "/usr/lib/nftban/sbin/nftban-service-alert", mode: 0755, policy: policyAlways},
-		{srcRel: "cli/sbin/nftban-botscan-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-botscan-processor", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-apply", dstGlob: "/usr/lib/nftban/sbin/nftban-apply", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-confirm", dstGlob: "/usr/lib/nftban/sbin/nftban-confirm", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-panelctl", dstGlob: "/usr/lib/nftban/sbin/nftban-panelctl", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-queue-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-queue-processor", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-rollback", dstGlob: "/usr/lib/nftban/sbin/nftban-rollback", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-service-alert", dstGlob: "/usr/lib/nftban/sbin/nftban-service-alert", mode: 0755, policy: policyAlways},
+		{category: "cli-bin", srcRel: "cli/sbin/nftban-botscan-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-botscan-processor", mode: 0755, policy: policyAlways},
 
 		// -----------------------------------------------------------------
 		// REMOVE-IN-V2.0.0: UI decommission (PR-D4)
 		// -----------------------------------------------------------------
-		{srcRel: "bin/nftban-ui", dstGlob: "/usr/sbin/nftban-ui", mode: 0750, policy: policyAlways, uiRemoveInV2: true, optional: true},
-		{srcRel: "bin/nftban-ui-auth", dstGlob: "/usr/libexec/nftban-ui-auth", mode: 0755, policy: policyAlways, uiRemoveInV2: true, optional: true},
+		{category: "ui", srcRel: "bin/nftban-ui", dstGlob: "/usr/sbin/nftban-ui", mode: 0750, policy: policyAlways, uiRemoveInV2: true, optional: true},
+		{category: "ui", srcRel: "bin/nftban-ui-auth", dstGlob: "/usr/libexec/nftban-ui-auth", mode: 0755, policy: policyAlways, uiRemoveInV2: true, optional: true},
 		// END-REMOVE-IN-V2.0.0
 
 		// -----------------------------------------------------------------
 		// G-14-C: Shell payload under /usr/lib/nftban/
 		// -----------------------------------------------------------------
-		{srcRel: "cli/lib/nftban/cli", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/cli", mode: 0755, policy: policyAlways, isDir: true},
-		{srcRel: "cli/lib/nftban/core", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/core", mode: 0755, policy: policyAlways, isDir: true},
-		{srcRel: "cli/lib/nftban/helpers", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/helpers", mode: 0755, policy: policyAlways, isDir: true},
-		{srcRel: "cli/lib/nftban/lib", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/lib", mode: 0755, policy: policyAlways, isDir: true},
-		{srcRel: "cli/lib/nftban/data", srcGlob: "*", dstGlob: "/usr/lib/nftban/data", mode: 0644, policy: policyAlways, isDir: true},
-		{srcRel: "cli/lib/nftban/health", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/health", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/cli", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/cli", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/core", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/core", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/helpers", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/helpers", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/lib", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/lib", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "data", srcRel: "cli/lib/nftban/data", srcGlob: "*", dstGlob: "/usr/lib/nftban/data", mode: 0644, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/health", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/health", mode: 0755, policy: policyAlways, isDir: true},
 
 		// Shipped nftables template (always overwrite — installer-managed,
 		// never operator-edited here).
-		{srcRel: "cli/lib/nftban/templates/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
+		{category: "templates", srcRel: "cli/lib/nftban/templates/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
 
 		// VERSION file — consumed by cli/lib/nftban/lib/version.sh which is
 		// sourced by every CLI subcommand. Package installs stage it via
 		// packaging/build_nftban.sh (RPM %install line ~368, DEB ~1837);
 		// source install missed it, causing every CLI invocation to crash
 		// with "unbound variable" at version.sh:39.
-		{srcRel: "VERSION", dstGlob: "/usr/lib/nftban/VERSION", mode: 0644, policy: policyAlways},
+		{category: "version", srcRel: "VERSION", dstGlob: "/usr/lib/nftban/VERSION", mode: 0644, policy: policyAlways},
 
 		// -----------------------------------------------------------------
 		// G-14-D: Configs (/etc/nftban/*)
 		// -----------------------------------------------------------------
 		// Template configs with %config(noreplace) semantics.
-		{srcRel: "install/config/nftban.conf", dstGlob: "/etc/nftban/nftban.conf", mode: 0640, policy: policyConfigNoReplace},
+		{category: "configs", srcRel: "install/config/nftban.conf", dstGlob: "/etc/nftban/nftban.conf", mode: 0640, policy: policyConfigNoReplace},
 		// nftables.conf is a template with __SSH_PORT__ / __CT_LIMIT_*__
 		// placeholders. render.RenderNftablesConf (Prepare step 6) reads
 		// this, substitutes, and writes back. Must be staged before render.
-		{srcRel: "install/nftables/nftables.conf", dstGlob: "/etc/nftban/nftables.conf", mode: 0640, policy: policyConfigNoReplace},
-		{srcRel: "install/config/conf.d", srcGlob: "*.conf", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyConfigNoReplace, isDir: true},
+		{category: "configs", srcRel: "install/nftables/nftables.conf", dstGlob: "/etc/nftban/nftables.conf", mode: 0640, policy: policyConfigNoReplace},
+		{category: "configs", srcRel: "install/config/conf.d", srcGlob: "*.conf", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyConfigNoReplace, isDir: true},
 
 		// Default reference templates (.default files — always overwrite).
-		{srcRel: "install/config/conf.d", srcGlob: "*.conf.default", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyAlways, isDir: true},
+		{category: "configs", srcRel: "install/config/conf.d", srcGlob: "*.conf.default", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyAlways, isDir: true},
 
 		// Distro-aware path registry (always overwrite — installer-owned).
-		{srcRel: "etc/nftban/distros", srcGlob: "*.conf", dstGlob: "/etc/nftban/distros", mode: 0640, policy: policyAlways, isDir: true},
+		{category: "configs", srcRel: "etc/nftban/distros", srcGlob: "*.conf", dstGlob: "/etc/nftban/distros", mode: 0640, policy: policyAlways, isDir: true},
 
 		// Manual whitelist/blacklist templates (%config(noreplace)).
 		// safety.SeedManualWhitelist runs in phaseConfigure after these land.
-		{srcRel: "etc/nftban/whitelist.d/99-manual.conf", dstGlob: "/etc/nftban/whitelist.d/99-manual.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
-		{srcRel: "etc/nftban/blacklist.d/99-manual.conf", dstGlob: "/etc/nftban/blacklist.d/99-manual.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "configs", srcRel: "etc/nftban/whitelist.d/99-manual.conf", dstGlob: "/etc/nftban/whitelist.d/99-manual.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "configs", srcRel: "etc/nftban/blacklist.d/99-manual.conf", dstGlob: "/etc/nftban/blacklist.d/99-manual.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
 
 		// Commands registry.
-		{srcRel: "commands.registry.yml", dstGlob: "/etc/nftban/commands.registry.yml", mode: 0644, policy: policyConfigNoReplace, optional: true},
+		{category: "configs", srcRel: "commands.registry.yml", dstGlob: "/etc/nftban/commands.registry.yml", mode: 0644, policy: policyConfigNoReplace, optional: true},
 
 		// -----------------------------------------------------------------
 		// G-14-E: Systemd units + tmpfiles.d
 		// -----------------------------------------------------------------
-		{srcRel: "install/systemd", srcGlob: "*.service", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
-		{srcRel: "install/systemd", srcGlob: "*.timer", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
-		{srcRel: "install/systemd", srcGlob: "*.socket", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
-		{srcRel: "install/systemd/tmpfiles.d/nftban.conf", dstGlob: "/usr/lib/tmpfiles.d/nftban.conf", mode: 0644, policy: policyAlways},
+		{category: "systemd", srcRel: "install/systemd", srcGlob: "*.service", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
+		{category: "systemd", srcRel: "install/systemd", srcGlob: "*.timer", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
+		{category: "systemd", srcRel: "install/systemd", srcGlob: "*.socket", dstGlob: "/usr/lib/systemd/system", mode: 0644, policy: policyAlways, isDir: true},
+		{category: "systemd", srcRel: "install/systemd/tmpfiles.d/nftban.conf", dstGlob: "/usr/lib/tmpfiles.d/nftban.conf", mode: 0644, policy: policyAlways},
 
 		// -----------------------------------------------------------------
 		// G-14-F: Polkit rules (distro-conditional destination)
 		// -----------------------------------------------------------------
-		{srcRel: "packaging/polkit-1/rules.d", srcGlob: "*.rules", dstGlob: polkitDst, mode: 0644, policy: policyAlways, isDir: true, optional: true},
+		{category: "polkit", srcRel: "packaging/polkit-1/rules.d", srcGlob: "*.rules", dstGlob: polkitDst, mode: 0644, policy: policyAlways, isDir: true, optional: true},
 
 		// -----------------------------------------------------------------
 		// G-14-G: Logrotate — uses the canonical shipped config. Resolves the
@@ -238,14 +357,14 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// config was auto-generated at install time (see
 		// LOG_ROTATION_DOCS_CODE_ALIGNMENT.md).
 		// -----------------------------------------------------------------
-		{srcRel: "install/config/nftban.logrotate", dstGlob: "/etc/logrotate.d/nftban", mode: 0644, policy: policyAlways},
-		{srcRel: "install/config/nftban-suricata.logrotate", dstGlob: "/etc/nftban/templates/nftban-suricata.logrotate", mode: 0644, policy: policyAlways, optional: true},
+		{category: "logrotate", srcRel: "install/config/nftban.logrotate", dstGlob: "/etc/logrotate.d/nftban", mode: 0644, policy: policyAlways},
+		{category: "logrotate", srcRel: "install/config/nftban-suricata.logrotate", dstGlob: "/etc/nftban/templates/nftban-suricata.logrotate", mode: 0644, policy: policyAlways, optional: true},
 
 		// -----------------------------------------------------------------
 		// Other shipped artifacts: bash completion, man page (optional)
 		// -----------------------------------------------------------------
-		{srcRel: "install/bash-completion/nftban", dstGlob: "/usr/share/bash-completion/completions/nftban", mode: 0644, policy: policyAlways, optional: true},
-		{srcRel: "install/man/nftban.8", dstGlob: "/usr/share/man/man8/nftban.8", mode: 0644, policy: policyAlways, optional: true},
+		{category: "docs", srcRel: "install/bash-completion/nftban", dstGlob: "/usr/share/bash-completion/completions/nftban", mode: 0644, policy: policyAlways, optional: true},
+		{category: "docs", srcRel: "install/man/nftban.8", dstGlob: "/usr/share/man/man8/nftban.8", mode: 0644, policy: policyAlways, optional: true},
 	}
 }
 

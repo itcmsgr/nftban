@@ -11,6 +11,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.98.2] - 2026-04-19
+
+**Runtime correctness patch — exit-code truth, health resilience, installer payload truth.**
+
+Narrow patch release closing the three correctness follow-ups surfaced by
+the v1.98.1 operational audit. No new modules, no lifecycle or API surface
+changes. Positioned as runtime correctness + monitoring/scriptability fix
++ installer truth hardening.
+
+### Fixed
+
+- **R-1 — `nftban validate` exit code** (issue #469). The CLI shim derived
+  exit only from the jq-mapped error-severity finding count; a Go
+  `status: down` that lacked critical-severity findings silently yielded
+  exit 0 — the exact "misleading success" class the project warns against.
+  Exit is now the max of three signals: error-count, validator binary rc,
+  and `.status ∈ {down, degraded}`. Contract:
+  - `protected` / `idle` → 0
+  - `degraded` → 1
+  - `down` → 2
+  - validator binary crashed / unreachable → 3
+- **R-2 — `nftban health check` bash trap crash** (issue #470).
+  `nftban_health_cmd_truth()` captured validator output via
+  `output=$("$validator_bin" --json …)` under `set -Eeuo pipefail`; a
+  non-zero validator exit propagated to the ERR trap and killed the CLI
+  at the exact moment operators reach for it. Now wrapped in an
+  if/assignment with explicit rc capture, stderr excerpt, and a bounded
+  DOWN diagnostic (non-zero exit, scriptable, no trap).
+- **R-3 — installer payload truth** (issue #463). Payload staging now
+  tallies per category (binaries, shell, configs, systemd, polkit,
+  logrotate, docs, version) and emits an INFO-level category summary in
+  the installer log. Required-artifact failures are surfaced at WARN
+  with a pointer to the downstream assertion.
+
+### Added
+
+- **`payload_inventory_ok` assertion** (R-3): material completeness
+  check in `validate.RunAssertions`. Verifies canonical destinations
+  exist post-install — `/usr/sbin/nftban`, `/usr/lib/nftban/VERSION`,
+  `/etc/nftban/nftables.conf`, `/etc/logrotate.d/nftban`, plus the
+  non-empty shell payload roots under `/usr/lib/nftban/`. Failure
+  blocks `COMMITTED` via the existing VALIDATE_1 → FIX → VALIDATE_2
+  flow. This is the assertion that would have caught the missing
+  VERSION file before v1.98.1 tag.
+- **G-CI-1 Runtime Truth Gate** (`.github/workflows/ci-runtime-truth.yml`).
+  Matrix: Ubuntu 24.04 + AlmaLinux 9. Seven sub-gates:
+  G1 validate exit truth | G2 health failure handling |
+  G3 payload inventory truth | G4 payload summary logging |
+  G5 source-install parity | G6 idempotency |
+  G7 package non-regression (delegated to `build-packages.yml`).
+  Blocking on merge.
+
+### Changed
+
+- `nftban validate --help` exit-status section now documents the
+  four-code contract (0/1/2/3) instead of the previous two-code stub.
+
+### Risks surfaced in patch notes
+
+- Exit-code semantics: scripts that relied on buggy `validate` exit 0
+  under failure will now see non-zero. This is a correctness fix,
+  called out explicitly.
+- Inventory assertion scope: only *required* artifacts checked —
+  optional / distro-conditional entries (man pages, polkit on distros
+  without it, UI binaries marked `uiRemoveInV2`) are exempt to avoid
+  breaking legitimate installs.
+
+### PRs
+
+| PR | Title |
+|---|---|
+| TBD | release: v1.98.2 — runtime correctness patch |
+
+---
+
 ## [1.98.1] - 2026-04-19
 
 **Install canonization closure — 7-distro G2 parity + runtime detection validation.**
