@@ -287,8 +287,13 @@ jobs:
               'exec\.Run\("nft"[^)]*flush' \
               'exec\.Run\("nft"[^)]*delete' \
               'exec\.Run\("systemctl"[^)]*stop' \
+              'exec\.Run\("systemctl"[^)]*start' \
+              'exec\.Run\("systemctl"[^)]*restart' \
+              'exec\.Run\("systemctl"[^)]*reload' \
+              'exec\.Run\("systemctl"[^)]*enable' \
               'exec\.Run\("systemctl"[^)]*disable' \
               'exec\.Run\("systemctl"[^)]*mask' \
+              'exec\.Run\("systemctl"[^)]*unmask' \
               'exec\.Run\("ufw"' \
               'exec\.Run\("iptables"' \
               'exec\.Run\("apt-get"[^)]*remove' \

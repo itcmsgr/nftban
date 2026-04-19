@@ -72,6 +72,20 @@ const (
 // runUpdateApply is the update-mode apply orchestrator. Invoked when
 // cfg.mode == "upgrade" and dry-run is NOT set.
 //
+// Sequence (each phase short-circuits on failure; later phases only run
+// when earlier ones pass):
+//
+//	1. update.Preflight            (read-only)
+//	2. nftban firewall rebuild     (canonical mutation path)
+//	3. nftban-validate --json      (truth gate)
+//	4. postStateInspection         (read-only, success-path only)
+//
+// Post-state inspection runs only on the success path because the earlier
+// failure branches already returned with a precise failure state; emitting
+// "post-state" evidence in a failure context would dilute the failure
+// signal and is not required by G3-U9 (which judges convergence on
+// successful apply).
+//
 // Exit-code contract (explicit, no merging):
 //
 //	state.ExitCommitted (0) — preflight + rebuild + validator all passed
@@ -146,11 +160,17 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 		// gate. Apply must fail cleanly so monitoring can distinguish
 		// "rebuild worked and post-state is sane" from "rebuild worked
 		// but kernel ended up in a bad state".
+		//
+		// Blocker #1 fix (code review): persisted lifecycle state is
+		// derived from validator's exit code, not hard-coded. This
+		// keeps State.ExitCode() and the returned process exit aligned
+		// and preserves the truth-gate discipline: a stronger validator
+		// failure is NOT collapsed into a weaker persisted state.
 		log.Error("update apply: validator REJECTED post-update state (exit=%d) — apply failed despite rebuild success", valRes.ExitCode)
 		if valRes.Stderr != "" {
 			log.Error("  validator stderr: %s", truncate(valRes.Stderr, 500))
 		}
-		_ = sf.Transition(state.StateDegraded, state.PhaseValidate,
+		_ = sf.Transition(stateForValidatorExit(valRes.ExitCode), state.PhaseValidate,
 			"post-update validator rejected state")
 		fmt.Fprintf(os.Stderr, "update apply: validator rejected post-update state (exit %d)\n", valRes.ExitCode)
 		return valRes.ExitCode
@@ -185,12 +205,37 @@ func postStateInspection(exec executor.Executor, log *logging.Logger) {
 	}
 }
 
-// truncate returns s clipped to n runes with an ellipsis. Used for bounded
-// stderr snippets in error logs — must not be verbose enough to dump
-// validator secrets or environment.
+// stateForValidatorExit maps the validator binary's process exit code to
+// the InstallState this apply run should persist. Local and narrow by
+// design (PR-18 review blocker #1):
+//
+//	rc == 0       — validator passed; caller uses StateCommitted directly
+//	rc == 1       — DEGRADED (post-state valid enough to classify as degraded)
+//	rc >= 2       — FAILED_REBUILD (apply produced a post-update state
+//	                that cannot be accepted as protected and cannot be
+//	                trusted as merely degraded)
+//
+// Depends only on the validator PROCESS EXIT CODE. Does NOT parse the
+// validator's JSON body — that would be the exact success-coercion
+// regression the truth-gate discipline forbids.
+//
+// This helper intentionally does not introduce a new InstallState enum
+// value. Any future expansion of the state taxonomy is out of PR-18 scope.
+func stateForValidatorExit(rc int) state.InstallState {
+	if rc == 1 {
+		return state.StateDegraded
+	}
+	return state.StateFailedRebuild
+}
+
+// truncate returns s clipped to n runes with an ellipsis appended. Used
+// for bounded stderr snippets in error logs — must not be verbose enough
+// to dump validator secrets or environment. Operates on runes (not bytes)
+// so multi-byte UTF-8 characters don't get cut in half.
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(r[:n]) + "…"
 }

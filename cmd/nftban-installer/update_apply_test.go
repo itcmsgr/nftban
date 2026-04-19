@@ -100,7 +100,7 @@ func writtenPaths(mock *executor.MockExecutor) []string {
 func TestUpdateApply_HappyPath_Exits0(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyApplyHost(mock)
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -125,7 +125,7 @@ func TestUpdateApply_PreflightFail_DoesNotInvokeRebuild(t *testing.T) {
 	// Break P-1 (authority_nftban): remove ip nftban table.
 	delete(mock.NftTables, "ip:nftban")
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -150,7 +150,7 @@ func TestUpdateApply_RebuildFail_DoesNotInvokeValidator(t *testing.T) {
 		Stderr:   "rebuild failed",
 	}
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -180,7 +180,7 @@ func TestUpdateApply_ValidatorFail_OverridesRebuildSuccess(t *testing.T) {
 		Stderr:   "post-state rejected",
 	}
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -199,6 +199,13 @@ func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 		setup func(*executor.MockExecutor)
 	}{
 		{"happy", func(m *executor.MockExecutor) {}},
+		{"preflight-fail", func(m *executor.MockExecutor) {
+			// Blocker #2 (code review): T5 must audit this branch too —
+			// a non-whitelisted command or forbidden write slipping into
+			// the preflight-fail path was previously uncaught by the
+			// mechanical contract layer.
+			delete(m.NftTables, "ip:nftban")
+		}},
 		{"rebuild-fail", func(m *executor.MockExecutor) {
 			m.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 2}
 		}},
@@ -212,7 +219,7 @@ func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 			mock := executor.NewMockExecutor()
 			seedHappyApplyHost(mock)
 			b.setup(mock)
-			cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+			cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 			sf := state.NewStateFile(cfg.stateDir)
 
 			_ = runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -241,7 +248,7 @@ func TestUpdateApply_RebuildFail_NoRetryNoRecovery(t *testing.T) {
 		Stderr:   "synthetic rebuild failure",
 	}
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	_ = runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -285,7 +292,7 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
 	}
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
@@ -294,6 +301,72 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 	}
 	if rc != 2 {
 		t.Errorf("rc = %d; must equal validator's exit (2) — no reinterpretation", rc)
+	}
+}
+
+// T9 — blocker #1 mapping: validator rc=1 → StateDegraded.
+// Verifies stateForValidatorExit(1) matches the persisted transition
+// AND that State.ExitCode() aligns with the returned process exit
+// (state↔process truth must not contradict).
+func TestUpdateApply_ValidatorExit1_TransitionsToStateDegraded(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedHappyApplyHost(mock)
+	mock.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 1}
+
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
+	sf := state.NewStateFile(cfg.stateDir)
+
+	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
+	if rc != 1 {
+		t.Errorf("process exit = %d; want 1 (validator's exit)", rc)
+	}
+	if sf.State != state.StateDegraded {
+		t.Errorf("persisted state = %s; want StateDegraded for validator rc=1", sf.State)
+	}
+	if got := sf.State.ExitCode(); got != rc {
+		t.Errorf("state.ExitCode() = %d but process exit = %d — state↔exit contradiction", got, rc)
+	}
+}
+
+// T10 — blocker #1 mapping: validator rc=2 → StateFailedRebuild.
+// Verifies the stronger validator failure is NOT collapsed into the
+// weaker StateDegraded.
+func TestUpdateApply_ValidatorExit2_TransitionsToStateFailedRebuild(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedHappyApplyHost(mock)
+	mock.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 2}
+
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
+	sf := state.NewStateFile(cfg.stateDir)
+
+	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
+	if rc != 2 {
+		t.Errorf("process exit = %d; want 2 (validator's exit)", rc)
+	}
+	if sf.State != state.StateFailedRebuild {
+		t.Errorf("persisted state = %s; want StateFailedRebuild for validator rc=2 (truth-gate discipline)", sf.State)
+	}
+	if got := sf.State.ExitCode(); got != rc {
+		t.Errorf("state.ExitCode() = %d but process exit = %d — state↔exit contradiction", got, rc)
+	}
+}
+
+// T11 — stateForValidatorExit pure helper, exhaustive small-range check.
+func TestStateForValidatorExit_Mapping(t *testing.T) {
+	cases := []struct {
+		rc   int
+		want state.InstallState
+	}{
+		{1, state.StateDegraded},
+		{2, state.StateFailedRebuild},
+		{3, state.StateFailedRebuild},   // validator binary crash → failed-rebuild class
+		{127, state.StateFailedRebuild}, // command-not-found → failed-rebuild class
+	}
+	for _, c := range cases {
+		got := stateForValidatorExit(c.rc)
+		if got != c.want {
+			t.Errorf("stateForValidatorExit(%d) = %s; want %s", c.rc, got, c.want)
+		}
 	}
 }
 
@@ -306,7 +379,7 @@ func TestUpdateApply_NeverTouchesConfLocal(t *testing.T) {
 	preContent := []byte("OPERATOR_EDITED=1\n")
 	mock.Files["/etc/nftban/nftban.conf.local"] = append([]byte{}, preContent...)
 
-	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
 
 	_ = runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
