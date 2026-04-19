@@ -69,25 +69,30 @@ func runUpdateDryRun(ctx context.Context, exec executor.Executor, sf *state.Stat
 	}
 	log.PhaseEnd("Detect")
 
-	// 2. Update-specific preflight (P-1 through P-5).
+	// 2. Install origin — declared flag wins; fall back to package-manager
+	// probe (PR-17) so package installs that don't re-pass --rpm/--deb
+	// still get a correct plan.
+	origin := detectInstallOrigin(cfg)
+	if origin == "" {
+		origin = update.DetectInstallOrigin(exec, log)
+	}
+
+	// 3. Update-specific preflight (P-1..P-7 — PR-16 + PR-17).
 	log.Phase("Preflight")
-	pre := update.Preflight(exec, log)
+	pre := update.Preflight(exec, log, origin)
 	log.PhaseEnd("Preflight")
 
-	// 3. Version detection. sourceDir is empty in the package-install case;
-	// the update package treats that as non-fatal for PR-16 (package-install
-	// target detection lands in PR-17).
-	current, target, err := update.DetectVersions(exec, cfg.sourceDir, log)
+	// 4. Version detection — source tree wins; package manager is the
+	// fallback for package-install hosts (PR-17).
+	current, target, err := update.DetectVersions(exec, cfg.sourceDir, origin, log)
 	if err != nil {
 		log.Error("update dry-run: version detection failed: %v", err)
 		return state.ExitFailed
 	}
 
-	// 4. Install origin — drives which apply path PR-18 will use.
-	origin := detectInstallOrigin(cfg)
-
-	// 5. Assemble + render plan.
+	// 5. Assemble plan + attach PR-17 recovery metadata (planning-only).
 	plan := update.BuildPlan(pre, current, target, origin)
+	plan.AttachRecovery(update.BuildRecoveryPlan(exec))
 	plan.Render(os.Stdout)
 
 	// 6. Write a copy of the plan JSON to the state dir for audit/history

@@ -228,22 +228,47 @@ jobs:
           echo "G3-U2 PASS — current=$CURRENT target=$TARGET"
 
       # ------------------------------------------------------------------
-      # G3-U4 — preflight enforcement: all five checks must appear in the
-      # plan's Preflight block. We don't require every check to pass —
-      # CI environments don't have nftband running — but every check
-      # MUST be evaluated and reported.
+      # G3-U4 — preflight enforcement: all seven checks must appear in the
+      # plan's Preflight block (PR-16 P-1..P-5 + PR-17 P-6..P-7). We don't
+      # require every check to pass — CI environments don't have nftband
+      # running — but every check MUST be evaluated and reported.
       # ------------------------------------------------------------------
-      - name: G3-U4 — preflight reports all 5 checks
+      - name: G3-U4 — preflight reports all 7 checks
         shell: bash
         run: |
           set -Eeuo pipefail
-          for name in authority_nftban service_nftband_active artifact_version_file dependency_nft state_no_stale_in_progress; do
+          for name in \
+              authority_nftban \
+              service_nftband_active \
+              artifact_version_file \
+              dependency_nft \
+              state_no_stale_in_progress \
+              rebuild_recovery_available \
+              install_origin_coherent; do
             grep -q "$name" /tmp/dryrun.out || {
               echo "::error::G3-U4 FAIL: preflight check '$name' missing from plan"
               exit 1
             }
           done
-          echo "G3-U4 PASS — all 5 preflight checks reported"
+          echo "G3-U4 PASS — all 7 preflight checks reported"
+
+      # ------------------------------------------------------------------
+      # G3-U4-deepen (PR-17) — recovery planning metadata must be rendered
+      # so apply (PR-18) has explicit input about rollback reachability.
+      # ------------------------------------------------------------------
+      - name: G3-U4-deepen — recovery plan metadata rendered
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q "Recovery plan" /tmp/dryrun.out || {
+            echo "::error::G3-U4-deepen FAIL: plan has no Recovery block"
+            exit 1
+          }
+          grep -q "Mechanism" /tmp/dryrun.out || {
+            echo "::error::G3-U4-deepen FAIL: Recovery block missing Mechanism"
+            exit 1
+          }
+          echo "G3-U4-deepen PASS — recovery planning metadata present"
 
   summary:
     name: Update Canonization summary

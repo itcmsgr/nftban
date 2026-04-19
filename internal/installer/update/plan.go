@@ -77,6 +77,29 @@ type Plan struct {
 	// this abstract ("reuse rebuild pipeline"); PR-18 fills in concrete
 	// steps.
 	Actions []string `json:"actions,omitempty"`
+
+	// Recovery carries planning-only metadata about the rollback route that
+	// PR-18's apply step will rely on. PR-17 populates this but does NOT
+	// execute any recovery — that's PR-18 scope per INV-U-002.
+	Recovery *RecoveryPlan `json:"recovery,omitempty"`
+}
+
+// RecoveryPlan is PR-17 metadata describing the rollback path apply will
+// follow on failure. It is DESCRIPTIVE only; no state mutation in PR-17.
+type RecoveryPlan struct {
+	// Available reports whether a rollback to the prior known-good state
+	// is possible without operator intervention.
+	Available bool `json:"available"`
+
+	// Mechanism is the rollback mechanism that would be used — currently
+	// "rebuild" (validate-in-namespace + flush+load + v1.96 recovery), the
+	// only canonized recovery surface today.
+	Mechanism string `json:"mechanism"`
+
+	// Notes carries human-oriented context that helps an operator reason
+	// about recovery without digging into code (e.g. "prior state file
+	// present and terminal", "no prior install_state — fresh recovery").
+	Notes []string `json:"notes,omitempty"`
 }
 
 // PlanSchemaVersion is the current wire contract for Plan. Consumers should
@@ -84,21 +107,40 @@ type Plan struct {
 const PlanSchemaVersion = "1.99.0"
 
 // DetectVersions reads the current installed version from the FHS VERSION
-// file and the target version from the source-tree VERSION (for source
-// installs) or from the package metadata path.
+// file and the target version from:
 //
-// For PR-16 we support source-install detection; package-install target
-// detection is handled in PR-17.
-func DetectVersions(exec executor.Executor, sourceDir string, log *logging.Logger) (current, target string, err error) {
+//   - <sourceDir>/VERSION when sourceDir is non-empty (source installs)
+//   - the package manager (rpm -q / dpkg -s) when origin is "rpm"/"deb"
+//     and sourceDir is empty (PR-17 scope)
+//
+// Missing target is non-fatal — the plan carries a warning downstream.
+// Missing current IS fatal — we must know where we are before planning
+// any transition (INV-U-002 rollbackability).
+func DetectVersions(exec executor.Executor, sourceDir, origin string, log *logging.Logger) (current, target string, err error) {
 	current = readCurrentVersion(exec, log)
 
-	// Source install: target VERSION lives at <sourceDir>/VERSION.
+	// Priority 1: source tree VERSION (takes precedence over package query
+	// so a caller can test with a source tree even on a package-install host).
 	if sourceDir != "" {
 		tPath := filepath.Join(sourceDir, "VERSION")
 		if data, rErr := exec.ReadFile(tPath); rErr == nil {
 			target = strings.TrimSpace(string(data))
+			log.Debug("update: target version from source tree %s = %s", tPath, target)
 		} else {
 			log.Debug("update: source VERSION not readable at %s: %v", tPath, rErr)
+		}
+	}
+
+	// Priority 2 (PR-17): package manager query. Only consulted when source
+	// detection did not yield a result. We pass in `origin` rather than
+	// auto-detecting inside this function so the caller stays authoritative
+	// about the install-origin decision.
+	if target == "" && (origin == "rpm" || origin == "deb") {
+		if t, qErr := DetectPackageTarget(exec, origin, log); qErr != nil {
+			log.Warn("update: package target query failed: %v", qErr)
+		} else if t != "" {
+			target = t
+			log.Debug("update: target version from package manager (%s) = %s", origin, target)
 		}
 	}
 
@@ -106,10 +148,7 @@ func DetectVersions(exec executor.Executor, sourceDir string, log *logging.Logge
 		return current, target, fmt.Errorf("update: cannot detect current version (no VERSION file)")
 	}
 	if target == "" {
-		// PR-16: target detection for package installs lands in PR-17.
-		// For now, missing target is non-fatal — the plan records it and
-		// the preflight flags it as a warning.
-		log.Info("update: target version not yet detected (package-install detection lands in PR-17)")
+		log.Info("update: target version not detected (no source tree + no package ownership)")
 	}
 	return current, target, nil
 }
@@ -172,6 +211,20 @@ func (p *Plan) Render(w io.Writer) {
 		fmt.Fprintln(w, "")
 	}
 
+	if p.Recovery != nil {
+		fmt.Fprintln(w, "  Recovery plan (metadata only — apply lands in PR-18):")
+		availMark := "available"
+		if !p.Recovery.Available {
+			availMark = "NOT available — operator intervention may be required"
+		}
+		fmt.Fprintf(w, "    Rollback    : %s\n", availMark)
+		fmt.Fprintf(w, "    Mechanism   : %s\n", displayString(p.Recovery.Mechanism))
+		for _, n := range p.Recovery.Notes {
+			fmt.Fprintf(w, "      · %s\n", n)
+		}
+		fmt.Fprintln(w, "")
+	}
+
 	if len(p.Actions) > 0 {
 		fmt.Fprintln(w, "  Actions (dry-run — no mutation):")
 		for _, a := range p.Actions {
@@ -209,9 +262,20 @@ func BuildPlan(pre *PreflightResult, current, target, origin string) *Plan {
 	}
 	if target == "" {
 		p.Warnings = append(p.Warnings,
-			"target version not detected (package-install target detection lands in PR-17)")
+			"target version not detected (no source tree + no package ownership)")
+	}
+	if origin == "" {
+		p.Warnings = append(p.Warnings,
+			"install origin not detected — pass --source, --rpm, or --deb to disambiguate")
 	}
 	return p
+}
+
+// AttachRecovery decorates the plan with the PR-17 recovery metadata.
+// Separate from BuildPlan so callers without an exec handle (tests) can
+// still build a plan without synthesizing recovery state.
+func (p *Plan) AttachRecovery(r *RecoveryPlan) {
+	p.Recovery = r
 }
 
 // displayVersion returns a placeholder for empty versions so the rendered
