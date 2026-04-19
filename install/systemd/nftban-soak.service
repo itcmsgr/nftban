@@ -36,7 +36,11 @@ Environment=PATH=/sbin:/bin:/usr/sbin:/usr/bin
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
-TimeoutStartSec=300
+# Soak script wall-clock varies significantly by host load: ~15s on quiet hosts,
+# up to ~2min on busier production panels (Plesk/Imunify with large journals).
+# Under the CPUQuota below, wall-clock roughly doubles. 600s accommodates the
+# slowest observed run with >2x margin, still bounded.
+TimeoutStartSec=600
 
 # Logging
 StandardOutput=append:/var/log/nftban/soak/cron.log
@@ -70,7 +74,11 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 # with the maintenance model. Shrinking below this breaks rebuild.
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
-# Resource limits (soak should never consume meaningful system resources)
+# Resource limits — aligned with nftban-maintenance.service proven pattern.
+# CPUQuota=25% throttled busier hosts (Plesk/Imunify) past the 300s timeout;
+# 50% matches maintenance.service and gives realistic headroom while still
+# preventing soak from monopolizing a core. Memory stays tighter than
+# maintenance (soak is a read-heavy script, not a daemon).
 MemoryMax=128M
-CPUQuota=25%
+CPUQuota=50%
 TasksMax=20
