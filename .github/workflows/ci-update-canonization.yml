@@ -120,13 +120,12 @@ jobs:
           echo "COMMITTED" | sudo tee /var/lib/nftban/state/install_state >/dev/null
           # Create an ip nftban table so the authority preflight (P-1) passes.
           sudo nft add table ip nftban || true
-          # CI containers do not run sshd. Provide a minimal sshd_config so
-          # phaseDetect's SSH-port detector finds a value (the real upgrade
-          # flow always has one of the 4 SSH sources available on a host
-          # that nftban was previously installed on).
-          if [[ ! -f /etc/ssh/sshd_config ]]; then
-            echo "Port 22" | sudo tee /etc/ssh/sshd_config >/dev/null
-          fi
+          # CI containers do not run sshd, and the Ubuntu runner's default
+          # sshd_config has Port commented out, so the SSH-port detector
+          # falls through all 4 sources. Seed the state-file source
+          # directly — source 3 in the detection chain, which is exactly
+          # what a post-install upgrade host would have.
+          echo "22" | sudo tee /var/lib/nftban/state/ssh_port_active.state >/dev/null
           # phaseDetect does not require nftband to be running for dry-run,
           # only preflight does — and preflight reports the failure as one
           # of the five checks rather than aborting phaseDetect.
