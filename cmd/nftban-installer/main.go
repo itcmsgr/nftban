@@ -98,8 +98,17 @@ func main() {
 
 	exitCode := run(ctx, exec, sf, cfg, log)
 
-	// Write JSON update history (compatible with nftban update history --json)
-	writeHistory(sf, cfg, previousVersion, hostname, log)
+	// Write JSON update history (compatible with nftban update history --json).
+	//
+	// PR-22A boundary repair (audit finding A.3): uninstall-mode dry-run
+	// is strictly observational and must not create install/update history
+	// entries. Before this guard, a successful uninstall dry-run would
+	// reach historyStatusForState(StateUninstallPlanning), fall through to
+	// the default case, and be recorded as "install_fail" — poisoning the
+	// audit trail and any dashboard that alerts on install_fail.
+	if cfg.mode != "uninstall" {
+		writeHistory(sf, cfg, previousVersion, hostname, log)
+	}
 
 	// Write run footer with final state for post-mortem
 	log.RunFooter(string(sf.State), exitCode)

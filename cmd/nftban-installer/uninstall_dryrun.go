@@ -45,6 +45,26 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
 
+// PR-22A boundary repair (audit finding A):
+//
+//   The original PR-22 orchestrator persisted two artifacts under
+//   /var/lib/nftban/ during a dry-run that the CLI banner described as
+//   "no mutation": a JSON plan artifact under the state directory, and
+//   an installer-state transition to the planning state. Both tripped
+//   the PR-22 contract Stop Condition: "writing to anywhere under
+//   /etc/nftban/ or /var/lib/nftban/ → STOP PR-22."
+//
+//   PR-22A removes both. The plan is rendered to stdout for the operator
+//   and callers that capture stdout can consume the JSON form via the
+//   exported Plan.JSON method. No filesystem persistence occurs during
+//   the dry-run. Operators who need a machine-consumable plan can
+//   capture stdout; the dry-run remains strictly observational, as PR-22
+//   originally promised.
+//
+//   Installer-state persistence during dry-run is deliberately removed
+//   (Option B in the repair contract). A read-only planning run has no
+//   reason to change the installer state file.
+
 // runUninstallDryRun orchestrates the PR-22 detect + plan-render flow.
 //
 // Exit codes:
@@ -86,26 +106,19 @@ func runUninstallDryRun(_ context.Context, exec executor.Executor, sf *state.Sta
 	plan := uninstall.BuildPlan(mode, auth, prior, restoreRequested)
 	log.PhaseEnd("Plan")
 
-	// 5. Render to stdout (operator-visible) and persist JSON to state
-	// dir for audit trail. Persisting is NOT mutation of install state;
-	// it is a plan artifact under the installer's own state dir.
+	// 5. Render to stdout (operator-visible). No filesystem persistence —
+	// the dry-run is strictly observational per PR-22 contract Stop
+	// Condition. Machine consumers can capture stdout; see also Note A
+	// above for the PR-22A audit rationale.
 	plan.Render(os.Stdout)
 
-	if data, err := plan.JSON(); err == nil {
-		dst := cfg.stateDir + "/uninstall_plan.json"
-		if werr := os.WriteFile(dst, data, 0600); werr != nil { //lint:ignore G306 plan audit artifact under state dir
-			log.Warn("uninstall dry-run: could not persist plan to %s: %v", dst, werr)
-		} else {
-			log.Info("uninstall dry-run: plan written to %s", dst)
-		}
-	}
-
-	// 6. Transition to the planning terminal state so the state file
-	// reflects what happened, and exit 0. No further phases exist.
-	_ = sf.Transition(state.StateUninstallPlanning, state.PhaseDetect,
-		"uninstall plan computed; no mutation (PR-22 scope)")
-
-	// 7. Emit the literal scope-boundary log marker per PR-22 contract.
+	// 6. Emit the literal scope-boundary log marker per PR-22 contract.
+	// The state file is NOT transitioned here: a read-only plan computes
+	// no state change, and persisting StateUninstallPlanning during a
+	// dry-run would trip the same Stop Condition the orchestrator
+	// exists to respect. sf is retained in the signature for symmetry
+	// with install/update orchestrators and for PR-23 takeover.
+	_ = sf
 	log.Info("uninstall dry-run complete — PR-22 scope boundary: NO mutation phase exists in this release")
 	fmt.Fprintln(os.Stderr, "uninstall dry-run: plan rendered; no mutation (PR-22 scope)")
 	return state.ExitCommitted
