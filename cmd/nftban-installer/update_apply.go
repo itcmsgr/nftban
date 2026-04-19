@@ -45,6 +45,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
@@ -98,7 +99,11 @@ const (
 // If rebuild passes but validator fails, runUpdateApply returns the
 // validator's non-zero code. No coercion. No masking. The two phase
 // failures are ALWAYS distinguishable by exit code + log phase marker.
-func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
+func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) (rc int) {
+	// PR-20 G3-U15/U17: track run metadata for the end-of-run trailer.
+	meta := newRunMeta("upgrade")
+	defer meta.emitTrailer(log, &rc, sf)
+
 	log.Info("update apply starting (mode=upgrade, dry-run=false)")
 
 	// 1. Preflight — read-only, identical to dry-run surface.
@@ -107,9 +112,29 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 		origin = update.DetectInstallOrigin(exec, log)
 	}
 
+	// PR-20 G3-U15: emit the intended transition BEFORE any mutation so
+	// operators see from→to in the log even if a later phase fails.
+	// DetectVersions uses only whitelisted probes (VERSION file + rpm/dpkg
+	// query) — no new contract surface.
+	current, target, _ := update.DetectVersions(exec, cfg.sourceDir, origin, log)
+	meta.from = current
+	meta.to = target
+	log.Info("update apply: %s → %s (origin=%s)",
+		displayVer(current), displayVer(target), displayOrigin(origin))
+
+	// PR-20 G3-U16: observability-only idempotency marker. Apply still
+	// invokes rebuild in the no-op case — rebuild owns the authoritative
+	// "is this a no-op" decision (v1.96 atomic switch produces identical
+	// kernel state for identical input).
+	if current != "" && target != "" && current == target {
+		log.Info("update apply: already up-to-date (current == target == %s) — rebuild will no-op", current)
+	}
+
+	meta.beginPhase("Preflight")
 	log.Phase("Preflight")
 	pre := update.Preflight(exec, log, origin)
 	log.PhaseEnd("Preflight")
+	meta.endPhase(log, "Preflight", pre.Passed)
 
 	if !pre.Passed {
 		log.Error("update apply: preflight FAILED — apply blocked before rebuild invocation")
@@ -134,9 +159,11 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// 2. Canonical rebuild entrypoint — the ONLY mutation path.
 	// Recovery, rollback, authority enforcement, config rendering: all
 	// owned by firewall_rebuild (v1.96 pipeline). PR-18 owns NONE of them.
+	meta.beginPhase("Rebuild")
 	log.Phase("Rebuild")
 	rebuildRes := exec.Run(rebuildCmd, rebuildArg1, rebuildArg2)
 	log.PhaseEnd("Rebuild")
+	meta.endPhase(log, "Rebuild", rebuildRes.ExitCode == 0)
 
 	if rebuildRes.ExitCode != 0 {
 		// Rebuild failed. Its own recovery/rollback path already ran
@@ -157,9 +184,11 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 	// 3. Validator gate — truth gate per G3-U8.
 	// A rebuild that succeeds but produces a kernel state the validator
 	// rejects is a FAILED apply. No success coercion — validator wins.
+	meta.beginPhase("Validate")
 	log.Phase("Validate")
 	valRes := exec.Run(validatorCmd, validatorArg1)
 	log.PhaseEnd("Validate")
+	meta.endPhase(log, "Validate", valRes.ExitCode == 0)
 
 	if valRes.ExitCode != 0 {
 		// Rebuild SUCCEEDED but validator rejected the post-state. This
@@ -250,6 +279,91 @@ func stateForValidatorExit(rc int) state.InstallState {
 		return state.StateDegraded
 	}
 	return state.StateFailedRebuild
+}
+
+// runMeta carries observability state for a single runUpdateApply call.
+// Populated as phases progress; emitted as a one-line trailer at function
+// return via defer. Pure observability — never inspected to make control
+// decisions (PR-20 contract).
+type runMeta struct {
+	mode          string
+	from          string
+	to            string
+	start         time.Time
+	currentPhase  string
+	phaseStart    time.Time
+	phasesPassed  int
+	phasesFailed  int
+}
+
+func newRunMeta(mode string) *runMeta {
+	return &runMeta{mode: mode, start: time.Now()}
+}
+
+func (m *runMeta) beginPhase(name string) {
+	m.currentPhase = name
+	m.phaseStart = time.Now()
+}
+
+func (m *runMeta) endPhase(log *logging.Logger, name string, passed bool) {
+	d := time.Since(m.phaseStart)
+	log.Info("  phase %s duration_ms=%d result=%s",
+		name, d.Milliseconds(), passedStr(passed))
+	if passed {
+		m.phasesPassed++
+	} else {
+		m.phasesFailed++
+	}
+	m.currentPhase = ""
+}
+
+// emitTrailer writes a single machine-parseable key=value summary line
+// at function return. Safe to call regardless of early exit — every
+// field has a defined zero value.
+func (m *runMeta) emitTrailer(log *logging.Logger, rc *int, sf *state.StateFile) {
+	d := time.Since(m.start)
+	finalState := "UNSET"
+	if sf != nil {
+		finalState = string(sf.State)
+	}
+	exitCode := 0
+	if rc != nil {
+		exitCode = *rc
+	}
+	log.Info("update apply trailer: mode=%s from=%s to=%s phases_passed=%d phases_failed=%d duration_ms=%d exit=%d final_state=%s",
+		m.mode,
+		displayVer(m.from),
+		displayVer(m.to),
+		m.phasesPassed,
+		m.phasesFailed,
+		d.Milliseconds(),
+		exitCode,
+		finalState,
+	)
+}
+
+// displayVer returns a placeholder for empty version strings so log lines
+// never contain blank fields.
+func displayVer(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return v
+}
+
+// displayOrigin returns a placeholder for empty origin strings.
+func displayOrigin(o string) string {
+	if o == "" {
+		return "unknown"
+	}
+	return o
+}
+
+func passedStr(p bool) string {
+	if p {
+		return "pass"
+	}
+	return "fail"
 }
 
 // truncate returns s clipped to n runes with an ellipsis appended. Used
