@@ -417,13 +417,16 @@ nftban_health_cmd_truth() {
     # ERR trap under `set -Eeuo pipefail`. A bare `output=$(...)` assignment
     # propagates the command's non-zero exit to the trap, which kills the
     # health CLI at the exact moment an operator needs it.
+    #
+    # BASH GOTCHA: `if ! var=$(cmd); then rc=$?; fi` captures $?=0 because
+    # the assignment's own exit code is 0 (assignment succeeded), not cmd's.
+    # The `cmd || rc=$?` idiom below correctly captures cmd's exit code
+    # without firing the ERR trap (|| suppresses trap on left operand).
     local output=""
     local validator_rc=0
     local validator_err_file
     validator_err_file="$(mktemp)"
-    if ! output="$("$validator_bin" --json 2>"$validator_err_file")"; then
-        validator_rc=$?
-    fi
+    output="$("$validator_bin" --json 2>"$validator_err_file")" || validator_rc=$?
     local validator_err=""
     [[ -s "$validator_err_file" ]] && validator_err="$(cat "$validator_err_file")"
     rm -f "$validator_err_file"

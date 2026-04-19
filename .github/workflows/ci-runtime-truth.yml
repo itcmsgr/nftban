@@ -71,8 +71,9 @@ jobs:
         if: matrix.label == 'almalinux-9'
         run: |
           dnf -y install epel-release
-          dnf -y install nftables jq systemd util-linux coreutils git tar gzip which procps-ng findutils sudo
-          # Install Go for building
+          # Note: coreutils-single is preinstalled; omit coreutils to avoid
+          # a file-conflict error on almalinux:9 minimal image.
+          dnf -y install nftables jq systemd util-linux git tar gzip which procps-ng findutils sudo
           dnf -y install golang
 
       - name: Set up Go (DEB only — RPM uses dnf-installed)
@@ -191,27 +192,20 @@ jobs:
       # ------------------------------------------------------------------
       # G4: payload summary logging (category totals visible at INFO)
       # ------------------------------------------------------------------
-      - name: G4 — payload summary is visible in installer INFO log
+      - name: G4 — payload summary log format present in source
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Source install writes installer log to /var/log/nftban/installer.log
-          # Fall back to stdout capture if persistent log not available in CI.
-          sudo install -d /var/log/nftban
-          LOG=$(sudo ./install.sh --dry-run 2>&1 || true)
-          if echo "$LOG" | grep -q 'payload: category='; then
-            echo "G4 PASS — category summary present"
-            echo "$LOG" | grep 'payload: category=' || true
-          else
-            # dry-run may short-circuit before stage; fall back to asserting
-            # the log line exists in the Go source as a structural guarantee.
-            if grep -q 'payload: category=' internal/installer/payload/payload.go; then
-              echo "G4 PASS (structural) — log format declared in payload.go"
-            else
-              echo "::error::G4 FAIL: no category summary format found"
-              exit 1
-            fi
+          # Structural check: the category-totals line must exist in the
+          # Go source as a declared log format. Invoking a real source
+          # install in CI would require a writable sandbox we don't have
+          # in a container job — the unit test suite covers the dynamic
+          # code path. Here we just lock in the log format contract.
+          if ! grep -q 'payload: category=' internal/installer/payload/payload.go; then
+            echo "::error::G4 FAIL: payload category-summary log format missing"
+            exit 1
           fi
+          echo "G4 PASS (structural) — log format declared in payload.go"
 
       # ------------------------------------------------------------------
       # G5: source-install parity representative

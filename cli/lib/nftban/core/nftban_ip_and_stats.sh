@@ -117,11 +117,13 @@ validate_structure() {
     # error count, so a Go `status: down` with no critical/error findings
     # (or an unexpected jq result) produced exit 0 — the "misleading
     # success" class this release is fixing.
-    local go_output
+    #
+    # BASH GOTCHA: `if ! var=$(cmd); then rc=$?; fi` sets $?=0 inside the
+    # then-block (assignment exit 0, not cmd exit). The `|| rc=$?` idiom
+    # correctly captures cmd's exit code without firing the ERR trap.
+    local go_output=""
     local go_rc=0
-    if ! go_output="$("$validator_bin" --json 2>/dev/null)"; then
-        go_rc=$?
-    fi
+    go_output="$("$validator_bin" --json 2>/dev/null)" || go_rc=$?
 
     if [[ -z "$go_output" ]]; then
         local empty_msg="CRITICAL: Go validator returned empty output"
