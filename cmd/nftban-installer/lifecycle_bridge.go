@@ -28,6 +28,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/lifecycle"
@@ -40,18 +41,24 @@ import (
 type lifecycleBridge struct {
 	logger *lifecycle.Logger
 	mode   lifecycle.Mode
+	// dryRun is the operator's actual --dry-run flag value. PR-22B
+	// replaced the previously hard-coded DryRun:false in observeResult
+	// with this wired-through value so lifecycle consumers see the real
+	// run shape instead of an implicit false.
+	dryRun bool
 }
 
 // newLifecycleBridge creates a bridge that writes lifecycle events to stderr.
-func newLifecycleBridge(installerMode string, log *logging.Logger) *lifecycleBridge {
+func newLifecycleBridge(installerMode string, dryRun bool, log *logging.Logger) *lifecycleBridge {
 	mode := mapInstallerMode(installerMode)
 
 	lb := &lifecycleBridge{
 		logger: lifecycle.NewLogger(os.Stderr, mode, false),
 		mode:   mode,
+		dryRun: dryRun,
 	}
 
-	log.Info("lifecycle bridge initialized (mode=%s, observational only)", mode)
+	log.Info("lifecycle bridge initialized (mode=%s, dry_run=%v, observational only)", mode, dryRun)
 	return lb
 }
 
@@ -73,17 +80,29 @@ func (lb *lifecycleBridge) observeDetect(pd *phaseData, sf *state.StateFile) {
 }
 
 // observePlan records the PLAN stage from authority decision.
+//
+// PR-22B fix: the previous switch compared pd.decision (authority.Decision,
+// UPPERCASE values like "TAKEOVER") against lowercase string literals, so
+// the switch silently hit the default case in every run — meaning every
+// lifecycle consumer saw "PreserveAuthority" regardless of what the
+// installer actually decided. This is the exact class of lifecycle truth
+// drift the audit flagged. Now pinned to the authority package constants.
 func (lb *lifecycleBridge) observePlan(pd *phaseData) {
 	var actions []lifecycle.Action
 	switch pd.decision {
-	case "takeover":
+	case authority.Takeover, authority.Fresh:
 		actions = []lifecycle.Action{lifecycle.ActionTakeAuthority}
-	case "fresh":
-		actions = []lifecycle.Action{lifecycle.ActionTakeAuthority}
-	case "update":
+	case authority.Update:
 		actions = []lifecycle.Action{lifecycle.ActionPreserveAuthority}
-	case "abort":
+	case authority.Abort:
 		actions = []lifecycle.Action{lifecycle.ActionAbort}
+	case authority.Ambiguous:
+		// PR-22B: Ambiguous hosts cannot be assumed preserving OR taking —
+		// the plan action that best reflects reality is "take authority"
+		// (nftban will claim the firewall via rebuild) plus a conservative
+		// emergency-SSH injection, but downstream lifecycle consumers
+		// should see it as a Takeover-class action, not Preserve.
+		actions = []lifecycle.Action{lifecycle.ActionTakeAuthority}
 	default:
 		actions = []lifecycle.Action{lifecycle.ActionPreserveAuthority}
 	}
@@ -99,11 +118,16 @@ func (lb *lifecycleBridge) observePlan(pd *phaseData) {
 }
 
 // observeResult records the FINAL stage from installer outcome.
+//
+// PR-22B fix: DryRun is now wired from the operator's actual flag (see
+// newLifecycleBridge). Previously hard-coded to false, which meant every
+// lifecycle consumer saw the same misleading "real run" signal regardless
+// of how the installer was invoked.
 func (lb *lifecycleBridge) observeResult(sf *state.StateFile) {
 	result := lifecycle.RunResult{
 		SchemaVersion: lifecycle.OutputSchemaVersion,
 		Mode:          lb.mode,
-		DryRun:        false,
+		DryRun:        lb.dryRun,
 		Timestamp:     time.Now(),
 	}
 
@@ -149,16 +173,26 @@ func mapInstallerMode(mode string) lifecycle.Mode {
 }
 
 // mapAuthority converts installer authority decision to lifecycle owner.
+//
+// PR-22B fix: input values are authority.Decision strings ("TAKEOVER",
+// "FRESH", "UPDATE", "ABORT", "AMBIGUOUS" — all uppercase). Previously
+// compared against lowercase string literals, so the switch always hit
+// the default case. Now pinned to authority constants.
 func mapAuthority(decision string) lifecycle.AuthorityOwner {
-	switch decision {
-	case "takeover":
+	switch authority.Decision(decision) {
+	case authority.Takeover:
 		return lifecycle.AuthorityExternal // was external, taking over
-	case "fresh":
+	case authority.Fresh:
 		return lifecycle.AuthorityNone
-	case "update":
+	case authority.Update:
 		return lifecycle.AuthorityNFTBan
-	case "abort":
+	case authority.Abort:
 		return lifecycle.AuthorityExternal
+	case authority.Ambiguous:
+		// Ambiguous: the host's kernel state is inconsistent. Report it as
+		// "unknown" to lifecycle consumers rather than silently collapsing
+		// to nftban or external ownership.
+		return lifecycle.AuthorityUnknown
 	default:
 		return lifecycle.AuthorityNone
 	}

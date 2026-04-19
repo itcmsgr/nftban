@@ -499,3 +499,101 @@ func TestPlan_JSON_RoundTrip_KeyFields(t *testing.T) {
 		}
 	}
 }
+
+// PR-22B audit item 11 (render ↔ JSON equivalence): prove that core
+// facts surface in BOTH human text and JSON. A future drift (render
+// grows a line with no JSON backing, or JSON grows a field that's never
+// rendered) fails here.
+func TestPlan_RenderAndJSON_ExposeSameCoreFacts(t *testing.T) {
+	grid := []struct {
+		name         string
+		mode         Mode
+		restore      bool
+		priorState   PriorRecordState
+		authState    CurrentAuthority
+		wantInRender []string
+		wantInJSON   []string
+	}{
+		{
+			name:       "remove/no-restore/no-record/nftban",
+			mode:       ModeRemove,
+			restore:    false,
+			priorState: PriorNoRecord,
+			authState:  AuthorityNFTBan,
+			wantInRender: []string{
+				"Requested mode              : remove",
+				"Current authority           : nftban",
+				"Restore requested           : no",
+				"Restore authorized          : no",
+				"Prior-authority record      : no_record",
+			},
+			wantInJSON: []string{
+				`"requested_mode": "remove"`,
+				`"current_authority": "nftban"`,
+				`"restore_requested": false`,
+				`"restore_authorized": false`,
+				`"prior_state": "no_record"`,
+				`"no_mutation_performed": true`,
+			},
+		},
+		{
+			name:       "purge/restore-requested/record-incomplete/ambiguous",
+			mode:       ModePurge,
+			restore:    true,
+			priorState: PriorRecordIncomplete,
+			authState:  AuthorityAmbiguous,
+			wantInRender: []string{
+				"Requested mode              : purge",
+				"Current authority           : ambiguous",
+				"Restore requested           : yes",
+				"Restore authorized          : no",
+				"Prior-authority record      : record_incomplete",
+			},
+			wantInJSON: []string{
+				`"requested_mode": "purge"`,
+				`"current_authority": "ambiguous"`,
+				`"restore_requested": true`,
+				`"restore_authorized": false`,
+				`"prior_state": "record_incomplete"`,
+			},
+		},
+	}
+	for _, tc := range grid {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := &ClassifyResult{State: tc.authState}
+			prior := &ProbeResult{State: tc.priorState}
+			p := BuildPlan(tc.mode, auth, prior, tc.restore)
+
+			var buf bytes.Buffer
+			p.Render(&buf)
+			rendered := buf.String()
+			for _, needle := range tc.wantInRender {
+				if !strings.Contains(rendered, needle) {
+					t.Errorf("render missing %q:\n%s", needle, rendered)
+				}
+			}
+
+			data, err := p.JSON()
+			if err != nil {
+				t.Fatalf("JSON: %v", err)
+			}
+			jsonOut := string(data)
+			for _, needle := range tc.wantInJSON {
+				if !strings.Contains(jsonOut, needle) {
+					t.Errorf("JSON missing %q:\n%s", needle, jsonOut)
+				}
+			}
+
+			// Scope-boundary invariant must appear in BOTH forms.
+			if !strings.Contains(rendered, "Scope boundary:") {
+				t.Errorf("render missing scope-boundary block")
+			}
+			if !strings.Contains(jsonOut, `"scope_boundary"`) {
+				t.Errorf("JSON missing scope_boundary field")
+			}
+			if !strings.Contains(jsonOut, `"no_mutation_performed": true`) {
+				t.Errorf("JSON missing no_mutation_performed=true invariant")
+			}
+		})
+	}
+}

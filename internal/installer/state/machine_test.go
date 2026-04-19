@@ -218,3 +218,81 @@ func TestStateFile_Transition(t *testing.T) {
 		t.Errorf("Persisted State = %s, want FAILED_REBUILD", sf2.State)
 	}
 }
+
+// PR-22B: DryRun=true must not create any files under stateDir. This
+// test falsifies the boundary claim at the state layer — any regression
+// that reintroduces a write during dry-run fails here before it can
+// reach an orchestrator.
+func TestStateFile_Transition_DryRunDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	sf := NewStateFile(dir)
+	sf.DryRun = true
+	sf.Mode = "upgrade"
+	sf.Version = "1.100.0"
+
+	if err := sf.Transition(StateDetectComplete, PhaseDetect, ""); err != nil {
+		t.Fatalf("Transition under DryRun: %v", err)
+	}
+	if sf.State != StateDetectComplete {
+		t.Errorf("in-memory State = %s, want DETECT_COMPLETE", sf.State)
+	}
+	// No file should have been created in stateDir.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("DryRun Transition created files in stateDir: %v", names)
+	}
+
+	// A failure state under DryRun must still return the error (so phase
+	// runners halt) but must NOT persist.
+	if err := sf.Transition(StateFailedRebuild, PhaseSwitch, "simulated"); err == nil {
+		t.Error("Transition to failure under DryRun must still return error to halt runners")
+	}
+	entries2, _ := os.ReadDir(dir)
+	if len(entries2) != 0 {
+		t.Errorf("DryRun failure Transition persisted state")
+	}
+}
+
+// PR-22B: IsApplyTerminal is an explicit allowlist, not a catch-all.
+// Every state must be either apply-terminal or not-apply-terminal; there
+// are no unlisted "edge" states.
+func TestInstallState_IsApplyTerminal(t *testing.T) {
+	applyTerminal := []InstallState{
+		StateCommitted,
+		StateDegraded,
+		StateFailedSSH,
+		StateFailedAbort,
+		StateFailedRender,
+		StateFailedRebuild,
+		StateFailedNoFirewall,
+		StateFailedTakeover,
+	}
+	notApplyTerminal := []InstallState{
+		StateFilesInstalled,
+		StateDetectComplete,
+		StatePrepareComplete,
+		StateSwitchComplete,
+		StateServicesComplete,
+		StateUninstallPlanning,
+	}
+	for _, s := range applyTerminal {
+		if !s.IsApplyTerminal() {
+			t.Errorf("%s should be apply-terminal (completed apply outcome)", s)
+		}
+		if !IsApplyTerminal(s) {
+			t.Errorf("IsApplyTerminal(%s) disagrees with method form", s)
+		}
+	}
+	for _, s := range notApplyTerminal {
+		if s.IsApplyTerminal() {
+			t.Errorf("%s must NOT be apply-terminal (not a real apply outcome)", s)
+		}
+	}
+}

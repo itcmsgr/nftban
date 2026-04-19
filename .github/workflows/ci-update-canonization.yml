@@ -151,8 +151,21 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Snapshot state dir before the run.
+          # PR-22B: snapshot ALL protected paths, including the
+          # update-history.json truth surface. The previous version of
+          # this gate whitelisted /var/lib/nftban/state/update_plan.json
+          # and swallowed diff output behind "|| true" — exactly the
+          # shape the audit flagged as "falsely reassuring CI."
           before=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
+
+          # Seed a known update-history.json so the post-run comparison
+          # can falsify "no history pollution." Without the seed, an
+          # empty → empty diff hides the bug.
+          sudo mkdir -p /var/lib/nftban
+          echo '{"schema_version":"1.0","entries":[]}' | sudo tee /var/lib/nftban/update-history.json >/dev/null
+
+          before_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
+          before_state=$(sudo test -f /var/lib/nftban/state/install_state && sudo sha256sum /var/lib/nftban/state/install_state | awk '{print $1}' || echo "missing")
 
           set +e
           sudo ./bin/nftban-installer --mode=upgrade --dry-run \
@@ -171,14 +184,25 @@ jobs:
           # constraint verified in the output, not buried in source).
           grep -q "INV-U-001" /tmp/dryrun.out
 
-          # Snapshot again; the only acceptable mutation is the audit
-          # write of update_plan.json under the state dir (documented).
+          # PR-22B hard assertions — no soft "|| true". Any deviation is a
+          # contract failure that must fail the gate.
           after=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
+          after_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
+          after_state=$(sudo test -f /var/lib/nftban/state/install_state && sudo sha256sum /var/lib/nftban/state/install_state | awk '{print $1}' || echo "missing")
 
-          # Accept: appearance of update_plan.json under state dir only.
-          diff <(echo "$before") <(echo "$after") \
-              | grep -v '/var/lib/nftban/state/update_plan.json' \
-              | grep -v '^---' | grep -v '^[<>] *$' || true
+          if [[ "$before_hist" != "$after_hist" ]]; then
+            echo "::error::G3-U3 FAIL: update-history.json modified by dry-run (before=$before_hist after=$after_hist) — audit finding F regression"
+            exit 1
+          fi
+          if [[ "$before_state" != "$after_state" ]]; then
+            echo "::error::G3-U3 FAIL: install_state modified by dry-run (before=$before_state after=$after_state) — sf.DryRun must suppress Transition persistence"
+            exit 1
+          fi
+          if [[ "$before" != "$after" ]]; then
+            echo "::error::G3-U3 FAIL: filesystem under /var/lib/nftban or /etc/nftban changed during dry-run"
+            diff <(echo "$before") <(echo "$after") || true
+            exit 1
+          fi
 
           # Hard assertion: no file under /etc/nftban/** was modified.
           if ! diff -q <(echo "$before" | grep '^/etc/nftban/') \
@@ -191,7 +215,7 @@ jobs:
           # if preflight fails. Never 2/3/4 for a well-formed run on a
           # host that doesn't have a real daemon.
           case "$rc" in
-            0|1) echo "G3-U3 PASS — exit=$rc (preflight result reflected correctly)" ;;
+            0|1) echo "G3-U3 PASS — exit=$rc (preflight result reflected correctly); history + state + fs all unchanged" ;;
             *) echo "::error::G3-U3 FAIL: unexpected exit code $rc"; exit 1 ;;
           esac
 
@@ -282,39 +306,58 @@ jobs:
       # for forbidden patterns before any runtime test. Fails fast if
       # apply ever gains a direct mutation surface.
       # ------------------------------------------------------------------
-      - name: G3-U5..U10 — structural call-path audit of update_apply.go
+      - name: G3-U5..U10 — structural call-path audit of update scope
         shell: bash
         run: |
           set -Eeuo pipefail
-          src=cmd/nftban-installer/update_apply.go
-          echo "Auditing $src for forbidden patterns..."
+          # PR-22B: widen audit scope from update_apply.go only to the
+          # full update reach set. The audit found dry-run writes that
+          # the narrower scope missed (update_dryrun.go, phaseDetect
+          # reuse in phases.go). Shared dispatchers in main.go are also
+          # checked for direct writes, but are allowed to call the
+          # history writer via the writeHistory helper (guarded by
+          # IsApplyTerminal).
+          srcs=(
+            cmd/nftban-installer/update_apply.go
+            cmd/nftban-installer/update_dryrun.go
+          )
+          echo "Auditing ${srcs[*]} for forbidden patterns..."
           fail=0
-          for pat in \
-              'exec\.Run\("nft"[^)]*add' \
-              'exec\.Run\("nft"[^)]*flush' \
-              'exec\.Run\("nft"[^)]*delete' \
-              'exec\.Run\("systemctl"[^)]*stop' \
-              'exec\.Run\("systemctl"[^)]*start' \
-              'exec\.Run\("systemctl"[^)]*restart' \
-              'exec\.Run\("systemctl"[^)]*reload' \
-              'exec\.Run\("systemctl"[^)]*enable' \
-              'exec\.Run\("systemctl"[^)]*disable' \
-              'exec\.Run\("systemctl"[^)]*mask' \
-              'exec\.Run\("systemctl"[^)]*unmask' \
-              'exec\.Run\("ufw"' \
-              'exec\.Run\("iptables"' \
-              'exec\.Run\("apt-get"[^)]*remove' \
-              'exec\.Run\("dnf"[^)]*remove' \
-              'exec\.WriteFileAtomic\(.*"/etc/nftban/' \
-              'exec\.WriteFileAtomic\(.*"/usr/lib/nftban/' \
-              '\.conf\.local'; do
-            if grep -nE "$pat" "$src" 2>/dev/null; then
-              echo "::error::G3-U5..U10 FAIL: forbidden pattern '$pat' in $src"
-              fail=1
-            fi
+          for src in "${srcs[@]}"; do
+            for pat in \
+                'exec\.Run\("nft"[^)]*add' \
+                'exec\.Run\("nft"[^)]*flush' \
+                'exec\.Run\("nft"[^)]*delete' \
+                'exec\.Run\("nft"[^)]*create' \
+                'exec\.Run\("systemctl"[^)]*stop' \
+                'exec\.Run\("systemctl"[^)]*start' \
+                'exec\.Run\("systemctl"[^)]*restart' \
+                'exec\.Run\("systemctl"[^)]*reload' \
+                'exec\.Run\("systemctl"[^)]*enable' \
+                'exec\.Run\("systemctl"[^)]*disable' \
+                'exec\.Run\("systemctl"[^)]*mask' \
+                'exec\.Run\("systemctl"[^)]*unmask' \
+                'exec\.Run\("ufw"' \
+                'exec\.Run\("iptables"[^-]' \
+                'exec\.Run\("apt-get"[^)]*remove' \
+                'exec\.Run\("apt-get"[^)]*purge' \
+                'exec\.Run\("dnf"[^)]*remove' \
+                'exec\.Run\("dnf"[^)]*erase' \
+                'exec\.WriteFileAtomic\(.*"/etc/nftban/' \
+                'exec\.WriteFileAtomic\(.*"/usr/lib/nftban/' \
+                'os\.WriteFile\(' \
+                'os\.Create\(' \
+                'os\.MkdirAll\(' \
+                'os\.Rename\(' \
+                '\.conf\.local'; do
+              if grep -nE "$pat" "$src" 2>/dev/null; then
+                echo "::error::G3-U5..U10 FAIL: forbidden pattern '$pat' in $src"
+                fail=1
+              fi
+            done
           done
           if (( fail > 0 )); then
-            echo "::error::Structural audit failed — update_apply.go contains forbidden call pattern"
+            echo "::error::Structural audit failed — update scope contains forbidden call pattern"
             exit 1
           fi
           echo "G3-U5..U10 structural audit PASS"

@@ -117,6 +117,12 @@ const (
 	// AuthorityNone means no managed firewall authority exists.
 	// Health should normally be DOWN when owner is NONE.
 	AuthorityNone AuthorityOwner = "NONE"
+
+	// AuthorityUnknown means the detection layer could not produce a
+	// consistent ownership read. Introduced in PR-22B so the bridge
+	// between installer and lifecycle can report Ambiguous host state
+	// without silently collapsing it to NFTBAN / EXTERNAL / NONE.
+	AuthorityUnknown AuthorityOwner = "UNKNOWN"
 )
 
 // LifecycleHealth represents the health dimension of authority.

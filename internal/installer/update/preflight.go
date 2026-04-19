@@ -37,6 +37,7 @@
 package update
 
 import (
+	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
@@ -67,19 +68,19 @@ type PreflightResult struct {
 func Preflight(exec executor.Executor, log *logging.Logger, origin string) *PreflightResult {
 	res := &PreflightResult{Passed: true}
 
-	// P-1 authority — the existing authority.Detect would give us a full
-	// picture, but for the preflight scope we just need to know whether
-	// nftban currently owns the firewall. We proxy via the presence of
-	// the ip nftban table: if it exists, nftban is authoritative.
+	// P-1 authority — PR-22B uses the canonical predicate from the
+	// authority package. Requires table + chain + active daemon — a
+	// weaker check (table-only) used to let a half-installed host pass
+	// preflight and then behave inconsistently under apply.
 	{
-		ok := exec.NftTableExists("ip", "nftban")
+		ok := authority.IsNftbanAuthoritative(exec)
 		c := PreflightCheck{
 			Name:     "authority_nftban",
 			Passed:   ok,
 			Severity: "critical",
 		}
 		if !ok {
-			c.Detail = "ip nftban table absent — nftban does not own firewall authority (INV-U-003)"
+			c.Detail = "nftban not authoritative (requires ip nftban table + input chain + active nftband.service) — INV-U-003"
 			res.Passed = false
 		}
 		res.Checks = append(res.Checks, c)

@@ -95,15 +95,12 @@ func runUpdateDryRun(ctx context.Context, exec executor.Executor, sf *state.Stat
 	plan.AttachRecovery(update.BuildRecoveryPlan(exec))
 	plan.Render(os.Stdout)
 
-	// 6. Write a copy of the plan JSON to the state dir for audit/history
-	// traceability. Not a hard requirement for PR-16 but closes G3-U12
-	// (update history integrity) early.
-	dst := cfg.stateDir + "/update_plan.json"
-	if werr := plan.WriteJSONToFile(dst); werr != nil {
-		log.Warn("update dry-run: could not persist plan to %s: %v", dst, werr)
-	} else {
-		log.Info("update dry-run: plan written to %s", dst)
-	}
+	// 6. Plan persistence was removed in PR-22B. Operators that need a
+	// machine-consumable plan can capture stdout or use plan.ToJSON(); the
+	// dry-run is strictly observational per the audit's "dry-run must be
+	// truly observational" rule. Install-state persistence during this
+	// run is handled by sf.DryRun at the StateFile layer (set in main.go)
+	// — phaseDetect's Transition calls are in-memory-only.
 
 	// 7. Exit contract.
 	if !pre.Passed {
