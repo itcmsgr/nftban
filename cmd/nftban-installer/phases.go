@@ -39,12 +39,19 @@ import (
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)
 // Stored on the config struct or passed via state file fields.
 type phaseData struct {
-	sshPort    int
-	panel      detect.PanelType
-	conflicts  []detect.Conflict
-	decision   authority.Decision
-	distro     *detect.DistroInfo
-	ctLimits   detect.CTLimits
+	sshPort   int
+	panel     detect.PanelType
+	conflicts []detect.Conflict
+	decision  authority.Decision
+	distro    *detect.DistroInfo
+	ctLimits  detect.CTLimits
+	// v1.98.x PR-14-pre: source-install fields. Populated from cfg in main()
+	// before phases run. When source is true, Prepare and Configure take
+	// additional branches for user/group creation, payload staging from
+	// sourceDir, and safety-whitelist seeding. Package installs leave these
+	// as zero-value and never reach the gated code.
+	source    bool
+	sourceDir string
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
