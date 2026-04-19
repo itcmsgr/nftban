@@ -29,11 +29,6 @@ func newTestLogger() *logging.Logger {
 	return logging.New("", false)
 }
 
-// onlyHeaderContent returns what the seeded file looks like when no IPs are
-// detected — header + "no system IPs auto-detected" line. Used as a sentinel
-// for "file was just seeded, not populated by operator."
-const onlyHeaderContent = manualWhitelistHeader + "# No system IPs auto-detected. Add entries manually as needed.\n"
-
 func TestSeedManualWhitelist_CreatesFileWhenAbsent(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	// File does not exist
@@ -189,5 +184,3 @@ func TestHasOperatorContent(t *testing.T) {
 	}
 }
 
-// avoid unused import when the test helper isn't used directly
-var _ = newTestLogger
