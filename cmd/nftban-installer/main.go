@@ -332,28 +332,30 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 
 // writeHistory writes a JSON entry to /var/lib/nftban/update-history.json
 // compatible with `nftban update history --json`.
+//
+// PR-19 G3-U12 (history integrity): only StateCommitted is reported as
+// success. Any other state — including non-terminal intermediate states
+// from a timeout / signal mid-apply — maps to install_fail or
+// verify_fail, never success. No coercion.
+//
+// PR-19 G3-U13 (source/package coherence): installType now has a
+// "source" case. Source installs are no longer silently mislabeled as
+// "rpm". Detection order: explicit --deb flag → "deb", explicit --source
+// flag → "source", otherwise "rpm" (matches the RPM post-install hook
+// default).
 func writeHistory(sf *state.StateFile, cfg *config, previousVersion, hostname string, log *logging.Logger) {
-	// Map state to history status
-	var status string
-	switch {
-	case sf.State == state.StateCommitted:
-		status = history.StatusSuccess
-	case sf.State == state.StateDegraded:
-		status = history.StatusVerifyFail
-	default:
-		status = history.StatusInstallFail
-	}
+	// Map state to history status — no success coercion for non-terminal
+	// or non-committed states.
+	status := historyStatusForState(sf.State)
 
-	// Determine install type
-	installType := "rpm"
-	if cfg.deb {
-		installType = "deb"
-	}
+	// Determine install type — source installs must not be silently
+	// mislabeled as rpm/deb (G3-U13).
+	installType := historyInstallType(cfg)
 
-	// Duration from state file timestamp
+	// Duration from state file timestamp.
 	durationSecs := sf.RebuildDurationMs / 1000
 	if durationSecs == 0 {
-		// Fallback: use wall clock from run start (captured in logger)
+		// Fallback: use wall clock from run start (captured in logger).
 		durationSecs = 1
 	}
 
@@ -365,6 +367,53 @@ func writeHistory(sf *state.StateFile, cfg *config, previousVersion, hostname st
 	if err := history.WriteEntry("", entry); err != nil {
 		log.Warn("failed to write update history: %v", err)
 	} else {
-		log.Debug("wrote history entry: %s -> %s status=%s", previousVersion, sf.Version, status)
+		log.Debug("wrote history entry: %s -> %s status=%s type=%s", previousVersion, sf.Version, status, installType)
+	}
+}
+
+// historyStatusForState maps an InstallState to the history status string
+// without coercing non-committed states into success. Extracted from
+// writeHistory so the mapping is unit-testable in isolation.
+//
+//	StateCommitted        → "success"
+//	StateDegraded         → "verify_fail"
+//	everything else       → "install_fail"  (including non-terminal
+//	                                          intermediate states, which
+//	                                          indicate the run was
+//	                                          interrupted and never
+//	                                          reached a terminal state)
+func historyStatusForState(s state.InstallState) string {
+	switch s {
+	case state.StateCommitted:
+		return history.StatusSuccess
+	case state.StateDegraded:
+		return history.StatusVerifyFail
+	default:
+		return history.StatusInstallFail
+	}
+}
+
+// historyInstallType returns the install origin label for the history
+// record. Priority: explicit --source > explicit --deb > explicit --rpm
+// > default "rpm" (historical default for the RPM post-install hook).
+//
+// PR-19 G3-U13 fix: source installs were previously mislabeled as "rpm"
+// because the switch only considered --deb and fell through to the
+// hard-coded default.
+func historyInstallType(cfg *config) string {
+	switch {
+	case cfg.source:
+		return "source"
+	case cfg.deb:
+		return "deb"
+	case cfg.rpm:
+		return "rpm"
+	default:
+		// No package-manager flag passed — caller is either the RPM
+		// post-install hook without the --rpm flag (legacy) or an
+		// operator-initiated apply. Default to "rpm" preserves the
+		// historical legacy behaviour; the history consumer can treat
+		// this as "origin unknown" if stricter attribution is needed.
+		return "rpm"
 	}
 }
