@@ -11,6 +11,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.98.1] - 2026-04-19
+
+**Install canonization closure — 7-distro G2 parity + runtime detection validation.**
+
+Closes the v1.98.x install canonization track. `install.sh` is now a 13-line
+bootstrap; all payload staging, user/group creation, and manual-whitelist
+seeding live in the Go installer under an explicit `--source` gate. Source
+install produces the same end-state as package install across 7 distros.
+Detection pipeline proven end-to-end (SSH abuse → kernel-side ban) on both
+DEB and RPM lab victims.
+
+### Added
+
+- **Go source-install support** (G-14-A..I, PR #462):
+  - `internal/installer/users/Ensure()` — creates `nftban`, `nftban-auditor`,
+    `nftban-panel`, `suricata` groups + `nftban` user with distro-family
+    dispatch (`adduser`/`addgroup` on Debian, `useradd`/`groupadd` on RHEL).
+    Idempotent — safe on re-run.
+  - `internal/installer/payload/StageAll()` — data-driven payload stager
+    (30 entries) honouring `policyAlways` vs `policyConfigNoReplace`
+    (RPM `%config(noreplace)` / DEB conffile semantics). `.conf.local`
+    files are never overwritten (invariant #9).
+  - `internal/installer/payload/copyIfChanged()` — defensive
+    `MkdirAll(filepath.Dir(dst), 0755)` for subdirs outside the FHS
+    registry (fixes payload failures on `/usr/lib/nftban/cli`, `/core`).
+  - `internal/installer/safety/SeedManualWhitelist()` — seeds operator IPs
+    into `/etc/nftban/whitelist.d/manual.local` with IP autodetection.
+  - `--source` + `--source-dir` flags on `nftban-installer` with mutex
+    validation against `--rpm` / `--deb`.
+- **soak observation tooling** (PR #461):
+  - `scripts/nftban-soak-check.sh` with `retry_on_127` helper and
+    bounded JSON output.
+  - `nftban-soak.service` + `.timer` (`OnCalendar=0/2:17`,
+    `RandomizedDelaySec=300`) — replaces cron-storm-prone HH:00 cron entry.
+    Sandbox: `ProtectSystem=strict`, `RestrictAddressFamilies=AF_UNIX
+    AF_INET AF_INET6 AF_NETLINK`, `CPUQuota=50%`, `MemoryMax=128M`.
+  - logrotate entry for `/var/log/nftban/soak/cron.log`.
+  - tmpfiles.d entry for `/var/log/nftban/soak` (source: `build/fhs-spec.yaml`).
+
+### Changed
+
+- **`install.sh` reduced to 13-line bootstrap** (PR #464, −388 lines):
+  verifies root + Linux, locates `nftban-installer` (staged or
+  `/usr/lib/nftban/bin/`), exports `NFTBAN_SOURCE_DIR`, `exec`s the Go
+  installer with `--source --mode=install`. Zero business logic in shell.
+- **NB-5 packaging perm fix**: `/usr/sbin/nftban*` binaries installed at
+  `root:nftban 0750`. DEB `postinst` convergence block runs after the
+  `nftban` group is created; RPM spec uses `install -D -m 0750` +
+  `%attr(0750,root,nftban)`.
+
+### Fixed
+
+- **version.sh unbound-var crash** (PR #468, P0): `_nftban_read_version()`
+  declared `local version_file` without initialization; under
+  `set -Eeuo pipefail` the `[[ -f "$version_file" ]]` probe crashed when
+  no lookup path matched. Since `version.sh` is sourced first by every
+  CLI entry point, every subcommand crashed on source installs where
+  `/usr/lib/nftban/VERSION` was missing. Fix: initialize `local
+  version_file=""` and add `-n` guard before `cat`.
+- **VERSION staging gap** (PR #468): `VERSION` file was not in the
+  payload entry table — source installs produced a working daemon but
+  broken CLI. Added `{srcRel: "VERSION", dstGlob: "/usr/lib/nftban/VERSION",
+  mode: 0644, policy: policyAlways}` entry.
+- **`install.sh` +x bit regression** (PR #466): PR #464 shipped at mode
+  0644 (Write tool default). Restored with `git update-index --chmod=+x`.
+
+### Removed
+
+- **3 legacy install scripts deleted** (PR #465, −1,592 LOC):
+  `install_binaries.sh` (398), `install_configs.sh` (537),
+  `install_services.sh` (657). All functionality moved into Go.
+
+### Tracked follow-ups (non-blocking for v1.98.1)
+
+| # | Item | Severity | Tracking |
+|---|------|----------|----------|
+| FU-1 | `payload.StageAll` should escalate non-zero `failed` to phase error + `payload_inventory_ok` assertion | Medium | Issue #463 |
+| FU-2 | `deps.InstallMissing` should `apt-get update` before `apt-get install` | Low | Issue #467 |
+| FU-3 | `/usr/sbin/nftban-ui` ownership drift (`root:root 750` vs spec `root:nftban 0750`) | Cosmetic | v2.0.0 PR-D4 UI decommission |
+| FU-4 | Lab `/tmp` noexec — affects manual `./install.sh` from `/tmp` | Environmental | documented |
+
+### Operational audit evidence
+
+- **7-distro G2 parity**: Ubuntu 22.04/24.04, Debian 12/13, AlmaLinux 9,
+  Rocky 9.7, CentOS Stream 10 — 6 clean COMMITTED (287/3/0
+  wrote/skip/fail, 8/8 assertions), 1 authority-safety invariant PASS
+  (UFW abort on Ubuntu 22.04, invariant #6 working as designed).
+- **CLI shell surface**: 34/34 commands × `help` across DEB + RPM,
+  0 crashes, 0 version.sh regressions.
+- **Detection pipeline**: SSH abuse → `[BAN] Successfully banned
+  46.225.157.122 (timeout=900s, source=loginmon)` in <4 seconds on both
+  Ubuntu24-DEB and AlmaLinux9-RPM. Kernel blacklist set populated.
+- Evidence bundle: `/tmp/v1.98.1-audit/` (installation/, runtime/,
+  binaries/, session-logs/).
+
+### Closure chain
+
+| Commit | PR | Title |
+|--------|-----|-------|
+| fe07942c | #468 | fix: stage VERSION + version.sh unbound-var hardening |
+| 43722b21 | #466 | fix: restore install.sh +x bit (PR #464 regression) |
+| ec0abe40 | #465 | feat: delete legacy install scripts (−1,592 LOC) |
+| 58d671d9 | #464 | feat: install.sh bootstrap (401→13 body lines) |
+| 2f1a994c | #462 | feat: Go-side source-install support (G-14-A..I) |
+| (earlier) | #461 | tooling: soak + NB-5 packaging |
+
+---
+
 ## [1.89.0] - 2026-04-16
 
 **Metrics reduction — duplicate queries eliminated, naming corrected, safety metrics wired.**
