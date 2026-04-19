@@ -198,10 +198,9 @@ func VerifyInventory(exec executor.Executor) (ok bool, missing []string) {
 
 // dirIsEmpty reports whether dir exists and contains no regular entries.
 // dir is always one of the canonical FHS paths declared in VerifyInventory —
-// no user-controlled input reaches this function and there is no
-// path-traversal surface, so the gosec G304 warning is a false positive.
+// no user-controlled input reaches this function.
 func dirIsEmpty(dir string) (bool, error) {
-	f, err := os.Open(dir) // #nosec G304 -- canonical FHS path from VerifyInventory
+	f, err := os.Open(filepath.Clean(dir)) // #nosec G304 -- canonical FHS path from VerifyInventory
 	if err != nil {
 		return false, err
 	}
