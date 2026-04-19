@@ -46,7 +46,7 @@ func TestPreflight_AllPass(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyPreflight(mock)
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if !res.Passed {
 		t.Errorf("expected preflight to pass, got failing checks:")
 		for _, c := range res.Checks {
@@ -55,9 +55,9 @@ func TestPreflight_AllPass(t *testing.T) {
 			}
 		}
 	}
-	// All 5 checks should be present regardless of outcome.
-	if len(res.Checks) != 5 {
-		t.Errorf("expected 5 preflight checks, got %d", len(res.Checks))
+	// All 7 checks (PR-16 P-1..P-5 + PR-17 P-6..P-7) should be present.
+	if len(res.Checks) != 7 {
+		t.Errorf("expected 7 preflight checks, got %d", len(res.Checks))
 	}
 }
 
@@ -69,7 +69,7 @@ func TestPreflight_NoAuthority_Fails(t *testing.T) {
 	seedHappyPreflight(mock)
 	delete(mock.NftTables, "ip:nftban")
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if res.Passed {
 		t.Error("preflight should fail when nftban does not own authority")
 	}
@@ -83,7 +83,7 @@ func TestPreflight_DaemonDown_Fails(t *testing.T) {
 	seedHappyPreflight(mock)
 	mock.Services["nftband.service"] = false
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if res.Passed {
 		t.Error("preflight should fail when nftband is down")
 	}
@@ -97,7 +97,7 @@ func TestPreflight_MissingVERSION_Fails(t *testing.T) {
 	seedHappyPreflight(mock)
 	delete(mock.Files, "/usr/lib/nftban/VERSION")
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if res.Passed {
 		t.Error("preflight should fail when VERSION is missing")
 	}
@@ -111,7 +111,7 @@ func TestPreflight_MissingNft_Fails(t *testing.T) {
 	seedHappyPreflight(mock)
 	mock.RunResults["sh:-c:command -v nft >/dev/null 2>&1"] = executor.Result{ExitCode: 127}
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if res.Passed {
 		t.Error("preflight should fail when nft is missing")
 	}
@@ -127,7 +127,7 @@ func TestPreflight_StaleInProgress_IsWarning(t *testing.T) {
 	seedHappyPreflight(mock)
 	mock.Files["/var/lib/nftban/state/install_state"] = []byte("PREPARE_COMPLETE\n")
 
-	res := Preflight(mock, newTestLogger())
+	res := Preflight(mock, newTestLogger(), "")
 	if !res.Passed {
 		t.Error("preflight should still pass when only a warning-severity check fails")
 	}
@@ -152,7 +152,7 @@ func TestDetectVersions_HappyPath(t *testing.T) {
 	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.98.2\n")
 	mock.Files["/tmp/srcdir/VERSION"] = []byte("1.99.0\n")
 
-	current, target, err := DetectVersions(mock, "/tmp/srcdir", newTestLogger())
+	current, target, err := DetectVersions(mock, "/tmp/srcdir", "", newTestLogger())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestDetectVersions_MissingCurrent_Errors(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	// Deliberately no /usr/lib/nftban/VERSION seeded.
 
-	_, _, err := DetectVersions(mock, "", newTestLogger())
+	_, _, err := DetectVersions(mock, "", "", newTestLogger())
 	if err == nil {
 		t.Error("expected error when VERSION file is missing")
 	}
@@ -178,7 +178,7 @@ func TestDetectVersions_MissingTarget_IsNonFatal(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.98.2\n")
 
-	current, target, err := DetectVersions(mock, "", newTestLogger())
+	current, target, err := DetectVersions(mock, "", "", newTestLogger())
 	if err != nil {
 		t.Fatalf("missing target should be non-fatal for PR-16, got: %v", err)
 	}

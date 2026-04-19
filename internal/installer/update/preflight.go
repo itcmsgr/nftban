@@ -61,7 +61,10 @@ type PreflightResult struct {
 // Called by phaseDetect when cfg.mode == "upgrade".
 //
 // The function is READ-ONLY. It must never mutate host state.
-func Preflight(exec executor.Executor, log *logging.Logger) *PreflightResult {
+//
+// origin is the operator-declared install origin ("rpm", "deb", "source",
+// or ""). PR-17 uses it for the new P-7 coherence check.
+func Preflight(exec executor.Executor, log *logging.Logger, origin string) *PreflightResult {
 	res := &PreflightResult{Passed: true}
 
 	// P-1 authority — the existing authority.Detect would give us a full
@@ -150,7 +153,114 @@ func Preflight(exec executor.Executor, log *logging.Logger) *PreflightResult {
 		logCheck(log, c)
 	}
 
+	// P-6 (PR-17) rebuild recovery available — the planning-only check
+	// that tells apply (PR-18) whether a clean rollback is reachable.
+	// We do NOT execute recovery here; we just report whether the
+	// prerequisites exist: terminal prior state + ip nftban table + nft
+	// binary. If any is missing, apply must treat rollback as
+	// operator-assisted rather than automatic (INV-U-002).
+	{
+		ok := rebuildRecoveryAvailable(exec)
+		c := PreflightCheck{
+			Name:     "rebuild_recovery_available",
+			Passed:   ok,
+			Severity: "warning",
+		}
+		if !ok {
+			c.Detail = "rebuild recovery may require operator intervention on failure — review before apply"
+		}
+		res.Checks = append(res.Checks, c)
+		logCheck(log, c)
+	}
+
+	// P-7 (PR-17) install origin coherent — the declared --rpm / --deb /
+	// --source flag must match the host's actual install origin. A
+	// mismatch (e.g. --rpm on a DEB host) is a hard warning: apply would
+	// route through the wrong delivery model. PR-17 detects this early.
+	{
+		declared := origin
+		detected := DetectInstallOrigin(exec, log)
+		coherent := declared == "" || detected == "" || declared == detected
+		c := PreflightCheck{
+			Name:     "install_origin_coherent",
+			Passed:   coherent,
+			Severity: "warning",
+		}
+		if !coherent {
+			c.Detail = "declared origin (" + declared + ") does not match detected origin (" + detected + ")"
+		}
+		res.Checks = append(res.Checks, c)
+		logCheck(log, c)
+	}
+
 	return res
+}
+
+// rebuildRecoveryAvailable reports whether the prerequisites for automatic
+// rollback via rebuild recovery are present:
+//
+//   - the prior install_state is terminal (COMMITTED / DEGRADED / FAILED_*)
+//   - ip nftban table exists (authority held)
+//   - nft binary is present (handled by P-4; we still check here so this
+//     predicate is self-contained for callers outside the full preflight)
+//
+// PR-17 scope: this is metadata only. PR-18 will wire it into the apply
+// path via INV-U-002.
+func rebuildRecoveryAvailable(exec executor.Executor) bool {
+	if !exec.NftTableExists("ip", "nftban") {
+		return false
+	}
+	if r := exec.Run("sh", "-c", "command -v nft >/dev/null 2>&1"); r.ExitCode != 0 {
+		return false
+	}
+	// Prior state must be readable OR absent (absent = fresh recovery is
+	// fine). If present but non-terminal (in-progress), recovery is not
+	// clean.
+	const p = "/var/lib/nftban/state/install_state"
+	if !exec.FileExists(p) {
+		return true
+	}
+	data, err := exec.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	s := trim(string(data))
+	if s == "" {
+		return true
+	}
+	// Same terminal-state list as isStaleInProgress but inverted.
+	switch s {
+	case "COMMITTED", "DEGRADED",
+		"FAILED_SSH_UNKNOWN", "FAILED_AUTHORITY_ABORT", "FAILED_RENDER",
+		"FAILED_REBUILD", "FAILED_NO_FIREWALL", "FAILED_TAKEOVER":
+		return true
+	}
+	return false
+}
+
+// BuildRecoveryPlan derives the PR-17 recovery metadata from exec state.
+// Planning-only: no mutation, no recovery execution.
+func BuildRecoveryPlan(exec executor.Executor) *RecoveryPlan {
+	r := &RecoveryPlan{
+		Mechanism: "rebuild",
+	}
+	r.Available = rebuildRecoveryAvailable(exec)
+	const p = "/var/lib/nftban/state/install_state"
+	if !exec.FileExists(p) {
+		r.Notes = append(r.Notes,
+			"no prior install_state — a fresh recovery is clean (no rollback target)")
+	} else {
+		data, err := exec.ReadFile(p)
+		if err == nil {
+			r.Notes = append(r.Notes,
+				"prior install_state = "+trim(string(data)))
+		}
+	}
+	if !r.Available {
+		r.Notes = append(r.Notes,
+			"preconditions for automatic rollback unmet — apply will require operator assist on failure")
+	}
+	return r
 }
 
 // isStaleInProgress returns true if install_state exists AND is not a
