@@ -9,7 +9,7 @@
 // meta:description="CLI flag definitions and environment variable overrides"
 // meta:inventory.files="cmd/nftban-installer/flags.go"
 // meta:inventory.binaries=""
-// meta:inventory.env_vars="NFTBAN_TAKEOVER, NFTBAN_INSTALLER_LOG, NFTBAN_LIFECYCLE"
+// meta:inventory.env_vars="NFTBAN_TAKEOVER, NFTBAN_INSTALLER_LOG, NFTBAN_LIFECYCLE, NFTBAN_SOURCE_DIR"
 // meta:inventory.config_files=""
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
@@ -42,6 +43,8 @@ type config struct {
 	logPath     string // override log file path
 	showVersion bool   // print version and exit
 	lifecycle   bool   // v1.98: use canonized lifecycle flow (feature flag)
+	source      bool   // v1.98.x PR-14-pre: source install (stage payload + users from repo tree)
+	sourceDir   string // v1.98.x PR-14-pre: source tree root for --source (resolved in parseFlags)
 }
 
 func parseFlags() *config {
@@ -60,6 +63,11 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.stateDir, "state-dir", state.DefaultStateDir, "State directory path")
 	flag.StringVar(&cfg.logPath, "log", logging.DefaultLogPath, "Log file path")
 	flag.BoolVar(&cfg.showVersion, "version", false, "Print version and exit")
+	// v1.98.x PR-14-pre: source-install support (gated behind --source; mutually
+	// exclusive with --rpm / --deb). Enables user/group creation, payload staging
+	// from a repo/tarball tree, and safety-whitelist seeding during Prepare/Configure.
+	flag.BoolVar(&cfg.source, "source", false, "Source install from repo/tarball (stages payload from --source-dir). Mutually exclusive with --rpm and --deb.")
+	flag.StringVar(&cfg.sourceDir, "source-dir", "", "Source tree root (repo clone or extracted tarball). Falls back to $NFTBAN_SOURCE_DIR then binary-relative discovery.")
 
 	flag.Parse()
 
@@ -74,6 +82,18 @@ func parseFlags() *config {
 	// Default: ON. Set NFTBAN_LIFECYCLE=0 to use legacy path.
 	cfg.lifecycle = os.Getenv("NFTBAN_LIFECYCLE") != "0"
 
+	// v1.98.x PR-14-pre: Source-tree root resolution.
+	// Priority: --source-dir > NFTBAN_SOURCE_DIR > binary-relative fallback.
+	if cfg.source && cfg.sourceDir == "" {
+		cfg.sourceDir = os.Getenv("NFTBAN_SOURCE_DIR")
+	}
+	if cfg.source && cfg.sourceDir == "" {
+		// Derive from binary location: .../<srcdir>/bin/nftban-installer => sourceDir = <srcdir>
+		if exe, err := os.Executable(); err == nil {
+			cfg.sourceDir = filepath.Dir(filepath.Dir(exe))
+		}
+	}
+
 	// Validate
 	if !cfg.showVersion && !cfg.repair {
 		if cfg.mode != "install" && cfg.mode != "upgrade" {
@@ -82,6 +102,18 @@ func parseFlags() *config {
 			fmt.Fprintf(os.Stderr, "       nftban-installer --repair [flags]\n")
 			os.Exit(state.ExitFatal)
 		}
+	}
+
+	// --source is mutually exclusive with packaging-origin flags.
+	if cfg.source && (cfg.rpm || cfg.deb) {
+		fmt.Fprintln(os.Stderr, "error: --source cannot be combined with --rpm or --deb")
+		os.Exit(state.ExitFatal)
+	}
+
+	// --source requires a resolvable source directory.
+	if cfg.source && cfg.sourceDir == "" {
+		fmt.Fprintln(os.Stderr, "error: --source requires --source-dir, $NFTBAN_SOURCE_DIR, or a discoverable binary location")
+		os.Exit(state.ExitFatal)
 	}
 
 	return cfg
