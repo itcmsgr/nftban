@@ -228,6 +228,75 @@ func TestUpdateApply_CallPathPurity_AllBranches(t *testing.T) {
 	}
 }
 
+// T7 — G3-U7 recovery delegation: on rebuild failure, apply must NOT
+// issue any additional mutation commands. Recovery belongs to rebuild
+// (firewall_rebuild in cli/lib/nftban/cli/cmd_firewall.sh calls into
+// nftban_rebuild_recovery.sh itself). Apply must be a silent
+// propagator of rebuild's exit code.
+func TestUpdateApply_RebuildFail_NoRetryNoRecovery(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedHappyApplyHost(mock)
+	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{
+		ExitCode: 2,
+		Stderr:   "synthetic rebuild failure",
+	}
+
+	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	sf := state.NewStateFile(cfg.stateDir)
+
+	_ = runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
+
+	// Count how many times rebuild was invoked — must be EXACTLY 1.
+	var rebuildCount int
+	for _, c := range mock.Commands {
+		if c.Name == "nftban" && len(c.Args) >= 2 && c.Args[0] == "firewall" && c.Args[1] == "rebuild" {
+			rebuildCount++
+		}
+	}
+	if rebuildCount != 1 {
+		t.Errorf("rebuild invoked %d times; apply must NOT retry (firewall_rebuild owns retry per v1.96)", rebuildCount)
+	}
+
+	// No recovery-flavored commands (apply doesn't OWN recovery).
+	for _, c := range mock.Commands {
+		cmd := c.Name + " " + strings.Join(c.Args, " ")
+		for _, forbidden := range []string{
+			"firewall restore", "firewall reset", "health fix",
+			"rebuild-recovery", "restore-snapshot",
+		} {
+			if strings.Contains(cmd, forbidden) {
+				t.Errorf("apply invoked recovery-flavored command %q — must delegate to rebuild", cmd)
+			}
+		}
+	}
+}
+
+// T8 — G3-U8 truth-gate discipline: apply must trust validator's EXIT
+// CODE and must NOT parse validator JSON to derive a different outcome.
+// This locks behaviour against a common regression class where a later
+// change "helpfully" inspects the JSON body and overrides the exit.
+func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedHappyApplyHost(mock)
+	// Exit says FAIL (2), but JSON says "protected". Apply must honour
+	// the exit code, not the body.
+	mock.RunResults["nftban-validate:--json"] = executor.Result{
+		ExitCode: 2,
+		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
+	}
+
+	cfg := &config{mode: "upgrade", stateDir: "/var/lib/nftban/state"}
+	sf := state.NewStateFile(cfg.stateDir)
+
+	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
+	if rc == state.ExitCommitted {
+		t.Error("apply must not coerce exit=2 into success even when JSON body says 'protected'")
+	}
+	if rc != 2 {
+		t.Errorf("rc = %d; must equal validator's exit (2) — no reinterpretation", rc)
+	}
+}
+
 // T6 — G3-U5 .conf.local byte-preservation.
 // Apply must never write to any *.conf.local path, regardless of outcome.
 func TestUpdateApply_NeverTouchesConfLocal(t *testing.T) {

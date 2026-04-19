@@ -270,6 +270,57 @@ jobs:
           }
           echo "G3-U4-deepen PASS — recovery planning metadata present"
 
+      # ------------------------------------------------------------------
+      # PR-18 — structural call-path audit. Scans the runUpdateApply source
+      # for forbidden patterns before any runtime test. Fails fast if
+      # apply ever gains a direct mutation surface.
+      # ------------------------------------------------------------------
+      - name: G3-U5..U10 — structural call-path audit of update_apply.go
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          src=cmd/nftban-installer/update_apply.go
+          echo "Auditing $src for forbidden patterns..."
+          fail=0
+          for pat in \
+              'exec\.Run\("nft"[^)]*add' \
+              'exec\.Run\("nft"[^)]*flush' \
+              'exec\.Run\("nft"[^)]*delete' \
+              'exec\.Run\("systemctl"[^)]*stop' \
+              'exec\.Run\("systemctl"[^)]*disable' \
+              'exec\.Run\("systemctl"[^)]*mask' \
+              'exec\.Run\("ufw"' \
+              'exec\.Run\("iptables"' \
+              'exec\.Run\("apt-get"[^)]*remove' \
+              'exec\.Run\("dnf"[^)]*remove' \
+              'exec\.WriteFileAtomic\(.*"/etc/nftban/' \
+              'exec\.WriteFileAtomic\(.*"/usr/lib/nftban/' \
+              '\.conf\.local'; do
+            if grep -nE "$pat" "$src" 2>/dev/null; then
+              echo "::error::G3-U5..U10 FAIL: forbidden pattern '$pat' in $src"
+              fail=1
+            fi
+          done
+          if (( fail > 0 )); then
+            echo "::error::Structural audit failed — update_apply.go contains forbidden call pattern"
+            exit 1
+          fi
+          echo "G3-U5..U10 structural audit PASS"
+
+      # ------------------------------------------------------------------
+      # PR-18 — unit tests enforce the contract mechanically.
+      # apply_contract_test.go self-tests the whitelist + audit harness.
+      # update_apply_test.go pipes every runUpdateApply trace through
+      # AuditRecordedCommands + AuditWrittenFiles (happy, rebuild-fail,
+      # validator-fail, no-retry, no-reinterpretation, conf.local
+      # byte-preservation).
+      # ------------------------------------------------------------------
+      - name: G3-U5..U10 — unit tests for runUpdateApply call-path purity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -v ./internal/installer/update/... ./cmd/nftban-installer/...
+
   summary:
     name: Update Canonization summary
     needs: update-canonization
