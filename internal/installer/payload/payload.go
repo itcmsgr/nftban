@@ -187,6 +187,13 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// never operator-edited here).
 		{srcRel: "cli/lib/nftban/templates/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
 
+		// VERSION file — consumed by cli/lib/nftban/lib/version.sh which is
+		// sourced by every CLI subcommand. Package installs stage it via
+		// packaging/build_nftban.sh (RPM %install line ~368, DEB ~1837);
+		// source install missed it, causing every CLI invocation to crash
+		// with "unbound variable" at version.sh:39.
+		{srcRel: "VERSION", dstGlob: "/usr/lib/nftban/VERSION", mode: 0644, policy: policyAlways},
+
 		// -----------------------------------------------------------------
 		// G-14-D: Configs (/etc/nftban/*)
 		// -----------------------------------------------------------------
