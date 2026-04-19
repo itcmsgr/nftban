@@ -119,9 +119,16 @@ func runUpdateApply(_ context.Context, exec executor.Executor, sf *state.StateFi
 			}
 		}
 		fmt.Fprintln(os.Stderr, "update apply: preflight failed — see log for details")
-		_ = sf.Transition(state.StateFailedAbort, state.PhasePrepare,
+		// PR-19 G3-U11: state↔exit agreement. Persist the state derived
+		// from preflight severity and return the SAME state's ExitCode().
+		// Previously this branch transitioned to StateFailedAbort (which
+		// maps to ExitAborted=3) but returned hard-coded ExitDegraded=1
+		// — a silent truth split of the same class PR-18 fixed for the
+		// validator-fail branch.
+		st := stateForPreflightFailure(pre)
+		_ = sf.Transition(st, state.PhasePrepare,
 			"update preflight failed before rebuild")
-		return state.ExitDegraded
+		return st.ExitCode()
 	}
 
 	// 2. Canonical rebuild entrypoint — the ONLY mutation path.
@@ -203,6 +210,23 @@ func postStateInspection(exec executor.Executor, log *logging.Logger) {
 	} else {
 		log.Info("post-state: nftband.service NOT active (may be expected on this host)")
 	}
+}
+
+// stateForPreflightFailure maps a failing preflight result to the
+// InstallState this apply run should persist. Keeps state↔exit aligned
+// by construction — the returned state's ExitCode() equals the process
+// exit runUpdateApply returns on this branch.
+//
+// Today: any critical preflight failure maps to StateFailedNoFirewall
+// (ExitCode == ExitFailed == 2). This is honest: preflight exists to
+// gate apply on "nftban is functionally present and authoritative" —
+// a critical preflight failure means at least one of those conditions
+// is not met. PR-19 intentionally avoids building a mini policy engine
+// that varies the state per check; the signature accepts the full
+// preflight result so a future PR can deepen mapping without changing
+// callers.
+func stateForPreflightFailure(_ *update.PreflightResult) state.InstallState {
+	return state.StateFailedNoFirewall
 }
 
 // stateForValidatorExit maps the validator binary's process exit code to

@@ -118,7 +118,8 @@ func TestUpdateApply_HappyPath_Exits0(t *testing.T) {
 	}
 }
 
-// T2 — Preflight failure blocks rebuild invocation.
+// T2 — Preflight failure blocks rebuild invocation AND maintains
+// state↔exit agreement (PR-19 G3-U11 regression guard).
 func TestUpdateApply_PreflightFail_DoesNotInvokeRebuild(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyApplyHost(mock)
@@ -131,6 +132,14 @@ func TestUpdateApply_PreflightFail_DoesNotInvokeRebuild(t *testing.T) {
 	rc := runUpdateApply(context.Background(), mock, sf, cfg, newApplyTestLogger())
 	if rc == state.ExitCommitted {
 		t.Error("preflight-fail path must not return ExitCommitted")
+	}
+
+	// PR-19 G3-U11: persisted state's derived exit must equal returned rc.
+	if got := sf.State.ExitCode(); got != rc {
+		t.Errorf("state↔exit contradiction: state.ExitCode() = %d, rc = %d", got, rc)
+	}
+	if sf.State != state.StateFailedNoFirewall {
+		t.Errorf("persisted state = %s; want StateFailedNoFirewall for preflight-fail", sf.State)
 	}
 
 	// Rebuild must never have been invoked.
