@@ -18,93 +18,40 @@
 //
 // Closes audit R4: the original PR-22 test suite verified shapes
 // (classifier states, probe states, plan render) but never exercised
-// the orchestrator runUninstallDryRun itself. The audit found three
-// writes under /var/lib/nftban/ during a "no-mutation" dry-run that
-// unit tests could not have caught.
+// the orchestrator runUninstallDryRun itself.
 //
-// This test calls runUninstallDryRun directly with a MockExecutor and
-// a real temp directory, and asserts:
+// PR-22B follow-up (audit N-2): migrated from a local forbidden-pattern
+// list to the shared audit.PurityHarness so future mutation patterns
+// added to one list propagate to all three lifecycle modes' tests.
 //
-//   1. zero executor writes (WriteFileAtomic)
-//   2. zero directory creates through the executor
-//   3. zero forbidden exec commands (nft add/delete/flush, systemctl
-//      lifecycle verbs, ufw/firewall-cmd/iptables-restore, package
-//      manager removal)
-//   4. zero files created on disk under the temp state dir
-//
-// If any future change reintroduces a write path, this test fails
-// before the binary ever ships.
 // =============================================================================
 package main
 
 import (
 	"context"
-	"os"
-	"strings"
 	"testing"
 
+	"github.com/itcmsgr/nftban/internal/installer/audit"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 )
 
-// forbiddenCommandPatterns lists command fragments that must NEVER appear
-// in the recorded command trace of a PR-22 uninstall dry-run. Each entry
-// is matched as a substring against "name + args" joined with spaces.
-//
-// This list mirrors the CI G3-UN-NO-MUTATION grep patterns but operates
-// at runtime rather than source-grep time — so a dynamically-constructed
-// argument (which grep would miss) is still caught.
-var forbiddenCommandPatterns = []string{
-	"nft add",
-	"nft delete",
-	"nft flush",
-	"nft create",
-	"systemctl start",
-	"systemctl stop",
-	"systemctl restart",
-	"systemctl reload",
-	"systemctl enable",
-	"systemctl disable",
-	"systemctl mask",
-	"systemctl unmask",
-	"ufw ",
-	"firewall-cmd",
-	"iptables-restore",
-	"ip6tables-restore",
-	"apt-get remove",
-	"apt-get purge",
-	"dnf remove",
-	"dnf erase",
-	"rpm -e",
-	"dpkg --remove",
-	"dpkg --purge",
-	"userdel",
-	"groupdel",
-}
-
-// readOnlyCommandPrefixes are the command names legitimately issued by
-// PR-22's read-only classification + probe code. Any other command is
-// either a bug or scope creep.
-var readOnlyCommandPrefixes = []string{
-	"iptables-save",
-	"ip6tables-save",
-	"nft list",
-	"systemctl is-active",
-}
-
 // TestRunUninstallDryRun_Purity_NoMutation is the R4 falsifiable guard.
 //
-// It exercises runUninstallDryRun with a MockExecutor and a fresh temp
-// directory as stateDir, then asserts that no mutation of any kind
-// occurred through the executor interface or the filesystem.
+// Calls runUninstallDryRun with a MockExecutor + real temp directory as
+// stateDir, then asserts via audit.PurityHarness that:
+//
+//  1. zero executor writes (WriteFileAtomic)
+//  2. zero executor MkdirAll calls
+//  3. zero mutation-flavored commands (nft add/flush/delete, systemctl
+//     lifecycle verbs, ufw/firewall-cmd/iptables-restore, package-manager
+//     removal, userdel/groupdel)
+//  4. zero files on disk under temp stateDir — catches direct os.*
+//     filesystem writes that bypass the executor
 func TestRunUninstallDryRun_Purity_NoMutation(t *testing.T) {
 	tmp := t.TempDir()
 
-	// MockExecutor with no nftban authority and no external firewall —
-	// the simplest "host" the dry-run encounters. Classify should return
-	// AuthorityNone; plan should render; zero mutation commands should
-	// be issued.
 	mock := executor.NewMockExecutor()
 	mock.RunResults["iptables-save"] = executor.Result{
 		ExitCode: 0,
@@ -112,6 +59,7 @@ func TestRunUninstallDryRun_Purity_NoMutation(t *testing.T) {
 	}
 
 	sf := state.NewStateFile(tmp)
+	sf.DryRun = true
 	log := logging.New("/dev/null", false)
 
 	cfg := &config{
@@ -125,67 +73,12 @@ func TestRunUninstallDryRun_Purity_NoMutation(t *testing.T) {
 		t.Fatalf("runUninstallDryRun rc = %d; want %d (ExitCommitted)", rc, state.ExitCommitted)
 	}
 
-	// (1) Executor-level writes: must be zero.
-	if n := len(mock.WrittenFiles); n != 0 {
-		t.Errorf("WriteFileAtomic called %d times; want 0. files: %v", n, writtenFilePaths(mock.WrittenFiles))
-	}
-
-	// (2) Executor-level directory creates: must be zero.
-	if n := len(mock.Dirs); n != 0 {
-		t.Errorf("MkdirAll called %d times; want 0. dirs: %v", n, dirPaths(mock.Dirs))
-	}
-
-	// (3) Command trace: forbidden patterns must not appear.
-	for _, cmd := range mock.Commands {
-		joined := cmd.Name + " " + strings.Join(cmd.Args, " ")
-		for _, forbid := range forbiddenCommandPatterns {
-			if strings.Contains(joined, forbid) {
-				t.Errorf("forbidden mutation command detected: %q (matched pattern %q)", joined, forbid)
-			}
-		}
-	}
-
-	// (3b) Command trace: every command issued must match a read-only
-	// prefix. A command outside that set is either a bug or scope creep.
-	for _, cmd := range mock.Commands {
-		name := cmd.Name
-		matched := false
-		for _, allow := range readOnlyCommandPrefixes {
-			// Match by exact name or by "name + first arg".
-			if name == allow || strings.HasPrefix(allow, name+" ") ||
-				(len(cmd.Args) > 0 && name+" "+cmd.Args[0] == allow) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			t.Errorf("unexpected command in dry-run trace (not in read-only whitelist): name=%q args=%v", name, cmd.Args)
-		}
-	}
-
-	// (4) Filesystem: the temp state dir must be empty. This catches any
-	// direct os.WriteFile / os.Create call that bypasses the executor —
-	// exactly the class of bug PR-22A exists to repair.
-	//
-	// Note: the dir itself was created by t.TempDir(); we assert it has
-	// zero entries after the dry-run.
-	entries, err := os.ReadDir(tmp)
-	if err != nil {
-		t.Fatalf("could not read temp state dir: %v", err)
-	}
-	if len(entries) != 0 {
-		var names []string
-		for _, e := range entries {
-			names = append(names, e.Name())
-		}
-		t.Errorf("temp state dir must be empty after dry-run; found: %v", names)
-	}
+	audit.NewPurityHarness(mock, tmp).AssertAllPurity(t)
 }
 
 // TestRunUninstallDryRun_Purity_WithAmbiguousHost covers the repaired
 // classifier path: partial nftban (table only) with no external must
-// route through the new AuthorityAmbiguous branch, and the run must
-// still be observationally pure.
+// route through AuthorityAmbiguous, and the run must still be pure.
 func TestRunUninstallDryRun_Purity_WithAmbiguousHost(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -199,6 +92,7 @@ func TestRunUninstallDryRun_Purity_WithAmbiguousHost(t *testing.T) {
 	}
 
 	sf := state.NewStateFile(tmp)
+	sf.DryRun = true
 	log := logging.New("/dev/null", false)
 	cfg := &config{mode: "uninstall", dryRun: true, stateDir: tmp}
 
@@ -207,32 +101,5 @@ func TestRunUninstallDryRun_Purity_WithAmbiguousHost(t *testing.T) {
 		t.Fatalf("dry-run rc = %d; want ExitCommitted even for Ambiguous host", rc)
 	}
 
-	if len(mock.WrittenFiles) != 0 {
-		t.Errorf("Ambiguous host path wrote files via executor: %v", writtenFilePaths(mock.WrittenFiles))
-	}
-
-	entries, _ := os.ReadDir(tmp)
-	if len(entries) != 0 {
-		var names []string
-		for _, e := range entries {
-			names = append(names, e.Name())
-		}
-		t.Errorf("Ambiguous host path wrote files to state dir: %v", names)
-	}
-}
-
-func writtenFilePaths(m map[string][]byte) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
-
-func dirPaths(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
+	audit.NewPurityHarness(mock, tmp).AssertAllPurity(t)
 }

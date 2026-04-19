@@ -120,6 +120,21 @@ func parseFlags() *config {
 	}
 
 	// Validate
+	//
+	// PR-22B audit finding N-1: --repair --dry-run must be refused. The
+	// previous validation block was skipped entirely for repair mode,
+	// so --dry-run was silently accepted even though phaseSwitch's nft
+	// and systemctl calls still mutate. sf.DryRun=true suppresses only
+	// state-file writes, not kernel/service mutation. Refuse rather
+	// than silently proceed.
+	if cfg.repair && cfg.dryRun {
+		fmt.Fprintln(os.Stderr, "error: --repair --dry-run is not implemented in this release")
+		fmt.Fprintln(os.Stderr, "       repair mode runs the full phase pipeline, which mutates kernel and service state.")
+		fmt.Fprintln(os.Stderr, "       an honest repair dry-run is out of scope for v1.100 PR-22B.")
+		fmt.Fprintln(os.Stderr, "       run --repair without --dry-run, or use --mode=upgrade --dry-run to preview an upgrade.")
+		os.Exit(state.ExitFatal)
+	}
+
 	if !cfg.showVersion && !cfg.repair {
 		if cfg.mode == "uninstall" {
 			// PR-22B: flag combos that are only meaningful for uninstall

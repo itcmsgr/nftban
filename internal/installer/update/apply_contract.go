@@ -65,6 +65,11 @@ var ApplyWhitelist = map[string]bool{
 	"nft list table ip6 nftban":           true,
 	"systemctl is-active nftband.service": true,
 	"systemctl is-active nftables":        true,
+
+	// v1.100 PR-22B: authority.IsNftbanAuthoritative tightened its
+	// predicate to also probe the input chain. Read-only; the probe is
+	// part of preflight P-1 and runs on every apply entry point.
+	"nft list chain ip nftban input": true,
 }
 
 // ApplyForbiddenSubstring names a class of calls that must never appear

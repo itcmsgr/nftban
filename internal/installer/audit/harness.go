@@ -25,23 +25,12 @@
 //   - zero mutation-flavored commands in the executor trace
 //   - zero new files in the caller-supplied state directory
 //
-// The harness is intentionally narrow. It does NOT run orchestrators
-// itself — it is an assertion kit. Callers run their own dry-run under
-// a MockExecutor and then pipe the results through the harness.
+// Check* methods return []string violation messages (empty when clean);
+// Assert* methods call them and report via t.Errorf. Self-tests can
+// exercise Check* directly without needing to implement testing.TB
+// (which has an unexported method and cannot be satisfied outside the
+// testing package).
 //
-// Usage:
-//
-//	mock := executor.NewMockExecutor()
-//	stateDir := t.TempDir()
-//	// ... run the observational orchestrator ...
-//	h := audit.NewPurityHarness(mock, stateDir)
-//	h.AssertNoExecutorWrites(t)
-//	h.AssertNoMutationCommands(t)
-//	h.AssertNoStateDirEntries(t)
-//
-// Any new mode (install-refuse, update-dry-run, uninstall-dry-run,
-// future modes) should use the same harness so the assertion shape does
-// not drift.
 // =============================================================================
 package audit
 
@@ -53,13 +42,13 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 )
 
-// ForbiddenCommandPatterns is the shared deny-list used by
-// AssertNoMutationCommands. Substring-matched against the joined form
+// ForbiddenCommandPatterns is the shared deny-list used by the
+// mutation-command check. Substring-matched against the joined form
 // of "command-name arg1 arg2 …".
 //
-// The list mirrors the CI G3-UN-NO-MUTATION / G3-U5..U10 grep patterns
-// but operates at runtime — a command constructed dynamically (which
-// source grep cannot see) is still caught here.
+// Mirrors the CI structural-grep patterns but operates at runtime — a
+// dynamically-constructed argument (which source grep cannot see) is
+// still caught here.
 var ForbiddenCommandPatterns = []string{
 	// nftables mutation
 	"nft add",
@@ -106,66 +95,90 @@ func NewPurityHarness(exec *executor.MockExecutor, stateDir string) *PurityHarne
 	return &PurityHarness{Exec: exec, StateDir: stateDir}
 }
 
-// AssertNoExecutorWrites fails the test if the mock recorded any call to
-// WriteFileAtomic (recorded as entries in Exec.WrittenFiles).
-func (h *PurityHarness) AssertNoExecutorWrites(t testing.TB) {
-	t.Helper()
-	if n := len(h.Exec.WrittenFiles); n != 0 {
-		var names []string
-		for k := range h.Exec.WrittenFiles {
-			names = append(names, k)
-		}
-		t.Errorf("observational path made %d executor writes (contract: zero): %v", n, names)
+// CheckExecutorWrites returns one violation message per executor write
+// recorded (zero when clean).
+func (h *PurityHarness) CheckExecutorWrites() []string {
+	var out []string
+	for path := range h.Exec.WrittenFiles {
+		out = append(out, "executor.WriteFileAtomic("+path+")")
 	}
+	return out
 }
 
-// AssertNoDirectoryCreations fails the test if the mock recorded any
-// MkdirAll.
-func (h *PurityHarness) AssertNoDirectoryCreations(t testing.TB) {
-	t.Helper()
-	if n := len(h.Exec.Dirs); n != 0 {
-		var names []string
-		for k := range h.Exec.Dirs {
-			names = append(names, k)
-		}
-		t.Errorf("observational path made %d executor MkdirAll calls (contract: zero): %v", n, names)
+// CheckDirectoryCreations returns one violation message per executor
+// MkdirAll recorded (zero when clean).
+func (h *PurityHarness) CheckDirectoryCreations() []string {
+	var out []string
+	for path := range h.Exec.Dirs {
+		out = append(out, "executor.MkdirAll("+path+")")
 	}
+	return out
 }
 
-// AssertNoMutationCommands fails the test if any recorded command
-// matches one of the forbidden substrings.
-func (h *PurityHarness) AssertNoMutationCommands(t testing.TB) {
-	t.Helper()
+// CheckMutationCommands returns one violation per forbidden command in
+// the recorded trace (zero when clean).
+func (h *PurityHarness) CheckMutationCommands() []string {
+	var out []string
 	for _, cmd := range h.Exec.Commands {
 		joined := cmd.Name + " " + strings.Join(cmd.Args, " ")
 		for _, forbid := range ForbiddenCommandPatterns {
 			if strings.Contains(joined, forbid) {
-				t.Errorf("forbidden mutation command %q (matched pattern %q) in observational-path trace", joined, forbid)
+				out = append(out, "forbidden command "+joined+" (pattern "+forbid+")")
 			}
 		}
 	}
+	return out
 }
 
-// AssertNoStateDirEntries fails the test if any files or directories
-// exist under the harness-owned state directory. This catches direct
+// CheckStateDirEntries returns one violation per file/dir in the
+// harness-owned state directory (zero when clean). Catches direct
 // os.WriteFile / os.MkdirAll calls that bypass the mock executor —
 // exactly the class that escaped PR-22's original review.
-func (h *PurityHarness) AssertNoStateDirEntries(t testing.TB) {
-	t.Helper()
+func (h *PurityHarness) CheckStateDirEntries() []string {
 	entries, err := os.ReadDir(h.StateDir)
 	if err != nil {
-		// Non-existent state dir is fine for a purely observational run.
 		if os.IsNotExist(err) {
-			return
+			return nil
 		}
-		t.Fatalf("read state dir %s: %v", h.StateDir, err)
+		return []string{"read state dir " + h.StateDir + ": " + err.Error()}
 	}
-	if len(entries) != 0 {
-		var names []string
-		for _, e := range entries {
-			names = append(names, e.Name())
-		}
-		t.Errorf("observational path created files in state dir %s: %v", h.StateDir, names)
+	var out []string
+	for _, e := range entries {
+		out = append(out, "state-dir entry: "+e.Name())
+	}
+	return out
+}
+
+// AssertNoExecutorWrites fails the test for each executor write.
+func (h *PurityHarness) AssertNoExecutorWrites(t testing.TB) {
+	t.Helper()
+	for _, v := range h.CheckExecutorWrites() {
+		t.Errorf("observational path: %s", v)
+	}
+}
+
+// AssertNoDirectoryCreations fails the test for each MkdirAll.
+func (h *PurityHarness) AssertNoDirectoryCreations(t testing.TB) {
+	t.Helper()
+	for _, v := range h.CheckDirectoryCreations() {
+		t.Errorf("observational path: %s", v)
+	}
+}
+
+// AssertNoMutationCommands fails the test for each forbidden command.
+func (h *PurityHarness) AssertNoMutationCommands(t testing.TB) {
+	t.Helper()
+	for _, v := range h.CheckMutationCommands() {
+		t.Errorf("observational path: %s", v)
+	}
+}
+
+// AssertNoStateDirEntries fails the test for each entry in the state
+// directory.
+func (h *PurityHarness) AssertNoStateDirEntries(t testing.TB) {
+	t.Helper()
+	for _, v := range h.CheckStateDirEntries() {
+		t.Errorf("observational path: %s", v)
 	}
 }
 

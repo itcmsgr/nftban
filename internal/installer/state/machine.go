@@ -103,9 +103,10 @@ func (s InstallState) IsApplyTerminal() bool {
 	return false
 }
 
-// IsApplyTerminal is a non-method alias for IsApplyTerminal so consumers
-// that have the state as a variable rather than a method receiver can
-// call it symmetrically with the other helpers in this file.
+// IsApplyTerminal is a package-level alias for the (InstallState)
+// IsApplyTerminal method, kept so consumers that hold the state as a
+// plain value can call it symmetrically with the other helpers in this
+// file.
 func IsApplyTerminal(s InstallState) bool { return s.IsApplyTerminal() }
 
 // IsFailed returns true if the state represents a failure.
