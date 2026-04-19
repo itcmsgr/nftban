@@ -54,7 +54,10 @@ var ApplyWhitelist = map[string]bool{
 	"nftban firewall rebuild": true,
 
 	// Validator gate — read-only; blocks success on failure.
-	"nftban-validate --json": true,
+	// Absolute path because /usr/lib/nftban/bin is NOT in default $PATH
+	// on Ubuntu or AlmaLinux. Parity gate FC-1 (2026-04-19) caught the
+	// bare-name form failing with "executable file not found in $PATH".
+	"/usr/lib/nftban/bin/nftban-validate --json": true,
 
 	// Post-state kernel/service inspection — read-only. Whitelisted
 	// explicitly so a reviewer sees every boundary.
