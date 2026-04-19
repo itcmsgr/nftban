@@ -93,7 +93,7 @@ func runUninstallDryRun(_ context.Context, exec executor.Executor, sf *state.Sta
 
 	if data, err := plan.JSON(); err == nil {
 		dst := cfg.stateDir + "/uninstall_plan.json"
-		if werr := os.WriteFile(dst, data, 0600); werr != nil { //nolint:gosec
+		if werr := os.WriteFile(dst, data, 0600); werr != nil { //lint:ignore G306 plan audit artifact under state dir
 			log.Warn("uninstall dry-run: could not persist plan to %s: %v", dst, werr)
 		} else {
 			log.Info("uninstall dry-run: plan written to %s", dst)
