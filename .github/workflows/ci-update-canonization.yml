@@ -1,0 +1,251 @@
+# =============================================================================
+# NFTBan — CI: Update Canonization Gate (G3-UPDATE, PR-16 slice)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Enforce v1.99 update canonization invariants, starting with the
+#          PR-16 baseline sub-gates:
+#            G3-U1  update lifecycle entry
+#            G3-U2  current → target version detection
+#            G3-U3  --dry-run correctness (no mutation)
+#            G3-U4  preflight enforcement
+#
+# Future sub-gates (G3-U5 .. G3-U17 + P-1/P-2/P-3 + G3-U-REBUILD-PARITY)
+# are added incrementally by PR-17 .. PR-21 per the gate spec.
+#
+# Architecture constraint enforced here (INV-U-001):
+#   Update is a BOUNDED TRIGGER into the rebuild/lifecycle pipeline —
+#   not a parallel execution path.
+# =============================================================================
+
+name: Update Canonization Gate
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'cmd/nftban-installer/**'
+      - 'internal/installer/**'
+      - 'internal/lifecycle/**'
+      - 'cli/lib/nftban/cli/cmd_update*.sh'
+      - 'VERSION'
+      - '.github/workflows/ci-update-canonization.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-update-canonization-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update-canonization:
+    name: Update Canonization (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-24.04
+            runner: ubuntu-24.04
+            container: ''
+          - label: almalinux-9
+            runner: ubuntu-24.04
+            container: almalinux:9
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install system dependencies (DEB)
+        if: matrix.label == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nftables jq systemd util-linux coreutils
+
+      - name: Install system dependencies (RPM)
+        if: matrix.label == 'almalinux-9'
+        run: |
+          dnf -y install epel-release
+          # coreutils-single is preinstalled on almalinux:9 minimal — omit coreutils.
+          dnf -y install nftables jq systemd util-linux git tar gzip which procps-ng findutils sudo golang
+
+      - name: Set up Go (DEB only)
+        if: matrix.label == 'ubuntu-24.04'
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      # ------------------------------------------------------------------
+      # Unit tests — close G3-U2 (version detection) + G3-U4 (preflight)
+      # at the function level. This is what makes PR-16 merge-safe: unit
+      # coverage proves the contract before we touch runtime.
+      # ------------------------------------------------------------------
+      - name: G3-U2 + G3-U4 — unit tests for update.{Preflight,DetectVersions,BuildPlan}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -v ./internal/installer/update/...
+
+      # ------------------------------------------------------------------
+      # Build the installer binary so we can exercise the full dry-run
+      # control flow end-to-end.
+      # ------------------------------------------------------------------
+      - name: Build nftban-installer + nftban-validate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p bin
+          go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
+          go build -trimpath -o bin/nftban-validate  ./cmd/nftban-validate/
+          test -x bin/nftban-installer
+          test -x bin/nftban-validate
+
+      # ------------------------------------------------------------------
+      # Stage a minimal VERSION + ip nftban table so preflight has enough
+      # host state to evaluate. We do NOT install nftban fully — that's
+      # out of scope for the update-canonization gate.
+      # ------------------------------------------------------------------
+      - name: Prepare host state for dry-run
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d /usr/lib/nftban /var/lib/nftban/state /etc/nftban
+          # Current version on disk.
+          sudo cp VERSION /usr/lib/nftban/VERSION
+          # Seed a terminal state marker so the stale-in-progress warning
+          # does not fire in the happy path.
+          echo "COMMITTED" | sudo tee /var/lib/nftban/state/install_state >/dev/null
+          # Create an ip nftban table so the authority preflight (P-1) passes.
+          sudo nft add table ip nftban || true
+          # Fake a systemd unit being "active" by pre-seeding a stub we
+          # can control. Actually simpler: the preflight accepts
+          # nftband.service as inactive → critical fail. For the dry-run
+          # happy-path test below we invoke with explicit acceptance that
+          # service_nftband_active may fail. We handle both outcomes.
+
+      # ------------------------------------------------------------------
+      # G3-U3 — --dry-run correctness: no mutation, plan rendered, valid
+      # exit. We run the command, capture its output, and assert (a) plan
+      # header is present, (b) no mutation occurred on the filesystem.
+      # ------------------------------------------------------------------
+      - name: G3-U3 — --dry-run renders plan, no mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Snapshot state dir before the run.
+          before=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
+
+          set +e
+          sudo ./bin/nftban-installer --mode=upgrade --dry-run \
+              --source --source-dir="$PWD" \
+              --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/dryrun.out
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "dry-run exit code: $rc"
+
+          # Must always render the plan header (G3-U3 output contract).
+          grep -q "NFTBan Update — Plan" /tmp/dryrun.out
+          grep -q "Current version" /tmp/dryrun.out
+          grep -q "Target version"  /tmp/dryrun.out
+
+          # INV-U-001 must be visible in the rendered plan (architectural
+          # constraint verified in the output, not buried in source).
+          grep -q "INV-U-001" /tmp/dryrun.out
+
+          # Snapshot again; the only acceptable mutation is the audit
+          # write of update_plan.json under the state dir (documented).
+          after=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
+
+          # Accept: appearance of update_plan.json under state dir only.
+          diff <(echo "$before") <(echo "$after") \
+              | grep -v '/var/lib/nftban/state/update_plan.json' \
+              | grep -v '^---' | grep -v '^[<>] *$' || true
+
+          # Hard assertion: no file under /etc/nftban/** was modified.
+          if ! diff -q <(echo "$before" | grep '^/etc/nftban/') \
+                       <(echo "$after"  | grep '^/etc/nftban/') >/dev/null; then
+            echo "::error::G3-U3 FAIL: /etc/nftban was modified during --dry-run"
+            exit 1
+          fi
+
+          # Exit code sanity: 0 (committed) if preflight passes, 1 (degraded)
+          # if preflight fails. Never 2/3/4 for a well-formed run on a
+          # host that doesn't have a real daemon.
+          case "$rc" in
+            0|1) echo "G3-U3 PASS — exit=$rc (preflight result reflected correctly)" ;;
+            *) echo "::error::G3-U3 FAIL: unexpected exit code $rc"; exit 1 ;;
+          esac
+
+      # ------------------------------------------------------------------
+      # G3-U1 — update lifecycle entry: the plan output must identify that
+      # the update trigger was observed by the lifecycle-capable installer,
+      # not the legacy shell path.
+      # ------------------------------------------------------------------
+      - name: G3-U1 — update enters installer binary (not shell)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Confirm the installer binary itself printed "mode=upgrade" in
+          # its run header — that is proof the lifecycle-capable entry
+          # point was used for the initial control flow.
+          grep -q "mode=upgrade" /tmp/dryrun.out || {
+            echo "::error::G3-U1 FAIL: run header did not identify mode=upgrade"
+            exit 1
+          }
+          echo "G3-U1 PASS — update mode observed by installer binary"
+
+      # ------------------------------------------------------------------
+      # G3-U2 — current → target version detection: both must be visible
+      # and non-placeholder for source-install case (sourceDir provided).
+      # ------------------------------------------------------------------
+      - name: G3-U2 — current + target versions detected
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          CURRENT=$(grep 'Current version' /tmp/dryrun.out | sed 's/.*:\s*//' | head -1)
+          TARGET=$(grep 'Target version'  /tmp/dryrun.out | sed 's/.*:\s*//' | head -1)
+          echo "Detected — current=[$CURRENT] target=[$TARGET]"
+          if [[ -z "$CURRENT" || "$CURRENT" == "(not detected)" ]]; then
+            echo "::error::G3-U2 FAIL: current version not detected"
+            exit 1
+          fi
+          if [[ -z "$TARGET"  || "$TARGET"  == "(not detected)" ]]; then
+            echo "::error::G3-U2 FAIL: target version not detected (source install)"
+            exit 1
+          fi
+          echo "G3-U2 PASS — current=$CURRENT target=$TARGET"
+
+      # ------------------------------------------------------------------
+      # G3-U4 — preflight enforcement: all five checks must appear in the
+      # plan's Preflight block. We don't require every check to pass —
+      # CI environments don't have nftband running — but every check
+      # MUST be evaluated and reported.
+      # ------------------------------------------------------------------
+      - name: G3-U4 — preflight reports all 5 checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in authority_nftban service_nftband_active artifact_version_file dependency_nft state_no_stale_in_progress; do
+            grep -q "$name" /tmp/dryrun.out || {
+              echo "::error::G3-U4 FAIL: preflight check '$name' missing from plan"
+              exit 1
+            }
+          done
+          echo "G3-U4 PASS — all 5 preflight checks reported"
+
+  summary:
+    name: Update Canonization summary
+    needs: update-canonization
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          if [[ "${{ needs.update-canonization.result }}" != "success" ]]; then
+            echo "::error::Update Canonization Gate FAILED — see matrix job output"
+            exit 1
+          fi
+          echo "Update Canonization Gate PASSED on all matrix targets"

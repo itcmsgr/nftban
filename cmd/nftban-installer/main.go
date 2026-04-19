@@ -133,6 +133,14 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.repair {
 		return runRepair(ctx, exec, sf, log)
 	}
+	// v1.99 PR-16 (G3-U1/U2/U3/U4): update-mode dry-run short-circuits to
+	// preflight + version-detect + plan render. No mutation — all apply
+	// logic is deferred to PR-18 and reuses the rebuild pipeline per
+	// INV-U-001. Install-mode dry-run falls through to the existing path
+	// (behaviour preserved).
+	if cfg.mode == "upgrade" && cfg.dryRun {
+		return runUpdateDryRun(ctx, exec, sf, cfg, log)
+	}
 	return runInstall(ctx, exec, sf, cfg, log)
 }
 
