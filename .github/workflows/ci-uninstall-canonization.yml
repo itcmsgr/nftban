@@ -96,10 +96,15 @@ jobs:
             exit 1
           fi
           fail=0
+          # PR-22A audit fix: the original grep missed os.WriteFile /
+          # os.Create / os.MkdirAll / os.Rename, which is exactly how
+          # the uninstall_plan.json write slipped past PR-22 review.
+          # Direct os.* filesystem writers are now enumerated here.
           for pat in \
               'exec\.Run\("nft"[^)]*add' \
               'exec\.Run\("nft"[^)]*flush' \
               'exec\.Run\("nft"[^)]*delete' \
+              'exec\.Run\("nft"[^)]*create' \
               'exec\.Run\("systemctl"[^)]*stop' \
               'exec\.Run\("systemctl"[^)]*start' \
               'exec\.Run\("systemctl"[^)]*restart' \
@@ -112,16 +117,29 @@ jobs:
               'exec\.Run\("iptables"[^-]' \
               'exec\.Run\("csf"' \
               'exec\.Run\("apt-get"[^)]*remove' \
+              'exec\.Run\("apt-get"[^)]*purge' \
               'exec\.Run\("dnf"[^)]*remove' \
+              'exec\.Run\("dnf"[^)]*erase' \
               'exec\.WriteFileAtomic\(' \
+              'os\.WriteFile\(' \
+              'os\.Create\(' \
+              'os\.MkdirAll\(' \
+              'os\.Mkdir\(' \
+              'os\.Rename\(' \
               'os\.Remove\(' \
-              'os\.RemoveAll\('; do
+              'os\.RemoveAll\(' \
+              'sf\.Transition\('; do
             # Note: ".conf.local" is NOT in this list — the contract
             # language in plan.go + contract.md LEGITIMATELY mentions
             # .conf.local when describing the §4.4 artifact policy.
             # The mutation danger is write/delete operations, which
-            # the os.Remove + WriteFileAtomic patterns above already
-            # cover regardless of which file they target.
+            # the os.*/exec.WriteFileAtomic patterns above cover
+            # regardless of which file they target.
+            #
+            # sf.Transition is forbidden in PR-22 scope because it
+            # persists install_state under /var/lib/nftban/state. PR-22
+            # is observational only — no state transitions during
+            # dry-run.
             if grep -nE "$pat" $files 2>/dev/null; then
               echo "::error::G3-UN-NO-MUTATION FAIL: forbidden pattern '$pat' in PR-22 uninstall scope"
               fail=1
@@ -144,6 +162,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           go test -v ./internal/installer/uninstall/...
+
+      # PR-22A boundary repair: the orchestrator-level purity test lives
+      # in cmd/nftban-installer/uninstall_dryrun_test.go. It falsifies
+      # the "no mutation" claim directly by calling runUninstallDryRun
+      # with a MockExecutor + real tempdir and asserting zero writes,
+      # zero directory creates, and zero mutation-flavored commands.
+      - name: Unit tests — runUninstallDryRun purity (R4)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -v -run 'TestRunUninstallDryRun_' ./cmd/nftban-installer/...
 
       # ------------------------------------------------------------------
       # Build the installer binary so we can exercise end-to-end.
@@ -172,6 +201,12 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # PR-22A boundary repair: snapshot /var/lib/nftban/ truth
+          # surfaces BEFORE the dry-run. After the dry-run, the snapshot
+          # must be byte-identical. Any difference is a PR-22 contract
+          # Stop Condition violation.
+          before_varlib=$(find /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          before_etcnftban=$(find /etc/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           set +e
           sudo ./bin/nftban-installer --mode=uninstall --dry-run \
               --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-dryrun.out
@@ -182,6 +217,19 @@ jobs:
             echo "::error::uninstall dry-run must exit 0 even on a host with no firewall authority"
             exit 1
           fi
+          after_varlib=$(find /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          after_etcnftban=$(find /etc/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          if [[ "$before_varlib" != "$after_varlib" ]]; then
+            echo "::error::PR-22 Stop Condition violated — uninstall dry-run modified /var/lib/nftban/"
+            diff <(echo "$before_varlib") <(echo "$after_varlib") || true
+            exit 1
+          fi
+          if [[ "$before_etcnftban" != "$after_etcnftban" ]]; then
+            echo "::error::PR-22 Stop Condition violated — uninstall dry-run modified /etc/nftban/"
+            diff <(echo "$before_etcnftban") <(echo "$after_etcnftban") || true
+            exit 1
+          fi
+          echo "G3-UN-NO-WRITES PASS — /var/lib/nftban and /etc/nftban unchanged after dry-run"
           # Mandatory contract-language elements — each one corresponds
           # to a row PR-22 promised to render.
           for needle in \
@@ -212,16 +260,20 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Snapshot nothing should change outside /var/lib/nftban/state.
-          before=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          # PR-22A boundary repair: the earlier gate only snapshot
+          # /etc/nftban + /usr/lib/nftban + /usr/sbin/nftban*. It did
+          # NOT cover /var/lib/nftban/ — the exact directory that leaked
+          # three writes in PR #480. The snapshot now includes all
+          # three protected trees. No exceptions.
+          before=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           set +e
           sudo ./bin/nftban-installer --mode=uninstall \
               --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-implicit.out
           rc=${PIPESTATUS[0]}
           set -e
-          after=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          after=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           if [[ "$before" != "$after" ]]; then
-            echo "::error::PR-22 contract violation — --mode=uninstall touched files outside /var/lib/nftban/state"
+            echo "::error::PR-22 contract violation — --mode=uninstall touched protected filesystem"
             diff <(echo "$before") <(echo "$after") || true
             exit 1
           fi
@@ -229,7 +281,34 @@ jobs:
             echo "::error::--mode=uninstall (no explicit dry-run) must exit 0 in PR-22 scope"
             exit 1
           fi
-          echo "G3-UN-PLAN-RENDERS no-mutation PASS — no files changed under protected paths"
+          echo "G3-UN-PLAN-RENDERS no-mutation PASS — no files changed under /etc/nftban, /usr/lib/nftban, /usr/sbin/nftban*, /var/lib/nftban"
+
+      # ------------------------------------------------------------------
+      # G3-UN-HISTORY-PURITY — regression guard for audit finding A.3.
+      # Seeds a realistic update-history.json, runs the dry-run twice
+      # (explicit + implicit), then asserts the history file is byte-
+      # identical. Before PR-22A, each dry-run appended an install_fail
+      # entry here.
+      # ------------------------------------------------------------------
+      - name: G3-UN-HISTORY-PURITY — history file unchanged by dry-run
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          hist=/var/lib/nftban/update-history.json
+          sudo mkdir -p /var/lib/nftban
+          echo '{"schema_version":"1.0","entries":[{"from":"1.99.0","to":"1.100.0","status":"success","type":"rpm","duration":1,"hostname":"ci","timestamp":"2026-04-19T00:00:00Z"}]}' | sudo tee "$hist" >/dev/null
+          before_hash=$(sha256sum "$hist" | awk '{print $1}')
+          sudo ./bin/nftban-installer --mode=uninstall --dry-run --state-dir=/var/lib/nftban/state >/dev/null 2>&1 || true
+          sudo ./bin/nftban-installer --mode=uninstall --state-dir=/var/lib/nftban/state >/dev/null 2>&1 || true
+          after_hash=$(sha256sum "$hist" | awk '{print $1}')
+          if [[ "$before_hash" != "$after_hash" ]]; then
+            echo "::error::G3-UN-HISTORY-PURITY FAIL — uninstall dry-run modified update-history.json"
+            echo "before: $before_hash"
+            echo "after:  $after_hash"
+            cat "$hist"
+            exit 1
+          fi
+          echo "G3-UN-HISTORY-PURITY PASS — update-history.json byte-identical after 2 dry-runs"
 
   summary:
     name: Uninstall Canonization summary
