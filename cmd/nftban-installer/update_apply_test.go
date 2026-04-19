@@ -72,7 +72,7 @@ func seedHappyApplyHost(mock *executor.MockExecutor) {
 	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 0, Stdout: "rebuild ok"}
 
 	// Validator gate — success with a plausible JSON body.
-	mock.RunResults["nftban-validate:--json"] = executor.Result{
+	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 0,
 		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
 	}
@@ -168,9 +168,10 @@ func TestUpdateApply_RebuildFail_DoesNotInvokeValidator(t *testing.T) {
 	}
 
 	// Validator must never have been invoked — apply must not try to
-	// "confirm" a failed rebuild.
+	// "confirm" a failed rebuild. (Check by the absolute path we use now
+	// so this regression guard survives the validator-path fix.)
 	for _, c := range mock.Commands {
-		if c.Name == "nftban-validate" {
+		if c.Name == "/usr/lib/nftban/bin/nftban-validate" {
 			t.Error("validator invoked after rebuild failure — contract violated")
 		}
 	}
@@ -184,7 +185,7 @@ func TestUpdateApply_ValidatorFail_OverridesRebuildSuccess(t *testing.T) {
 	seedHappyApplyHost(mock)
 	// Rebuild succeeds, but validator rejects post-state.
 	mock.RunResults["nftban:firewall:rebuild"] = executor.Result{ExitCode: 0}
-	mock.RunResults["nftban-validate:--json"] = executor.Result{
+	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 2, // validator exits 2 when state is "down"
 		Stderr:   "post-state rejected",
 	}
@@ -296,7 +297,7 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 	seedHappyApplyHost(mock)
 	// Exit says FAIL (2), but JSON says "protected". Apply must honour
 	// the exit code, not the body.
-	mock.RunResults["nftban-validate:--json"] = executor.Result{
+	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{
 		ExitCode: 2,
 		Stdout:   `{"schema_version":"1.83.0","status":"protected"}`,
 	}
@@ -320,7 +321,7 @@ func TestUpdateApply_DoesNotReinterpretValidatorOutput(t *testing.T) {
 func TestUpdateApply_ValidatorExit1_TransitionsToStateDegraded(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyApplyHost(mock)
-	mock.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 1}
+	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 1}
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)
@@ -343,7 +344,7 @@ func TestUpdateApply_ValidatorExit1_TransitionsToStateDegraded(t *testing.T) {
 func TestUpdateApply_ValidatorExit2_TransitionsToStateFailedRebuild(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	seedHappyApplyHost(mock)
-	mock.RunResults["nftban-validate:--json"] = executor.Result{ExitCode: 2}
+	mock.RunResults["/usr/lib/nftban/bin/nftban-validate:--json"] = executor.Result{ExitCode: 2}
 
 	cfg := &config{mode: "upgrade", stateDir: t.TempDir()}
 	sf := state.NewStateFile(cfg.stateDir)

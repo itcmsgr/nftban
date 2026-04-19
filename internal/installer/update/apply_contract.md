@@ -28,7 +28,9 @@ runUpdateApply  (new — orchestration only)
      │             ├── nftban_rebuild_recovery.sh  (existing — recovery)
      │             └── rebuild/marker.go            (existing — classification)
      │
-     ├── exec.Run("nftban-validate")   (existing — validator gate)
+     ├── exec.Run("/usr/lib/nftban/bin/nftban-validate", "--json")   (validator gate)
+     │    ↑ absolute path via fhs.NftbanValidateBin — /usr/lib/nftban/bin
+     │      is NOT in default $PATH. Parity gate FC-1 (2026-04-19).
      │
      └── sf.Transition(...)            (existing — lifecycle state machine)
 ```

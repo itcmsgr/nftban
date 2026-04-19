@@ -112,9 +112,16 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          sudo install -d /usr/lib/nftban /var/lib/nftban/state /etc/nftban /etc/ssh
+          sudo install -d /usr/lib/nftban/bin /var/lib/nftban/state /etc/nftban /etc/ssh
           # Current version on disk.
           sudo cp VERSION /usr/lib/nftban/VERSION
+          # Stage the validator binary at its FHS home so runUpdateApply
+          # can invoke it (fhs.NftbanValidateBin absolute path — NOT on
+          # default $PATH). This was caught by the G3-U-REBUILD-PARITY
+          # gate FC-1 on 2026-04-19 and fixed in the Go apply path.
+          # Staging here future-proofs against any non-dry-run CI step
+          # that exercises the real validator invocation.
+          sudo install -m 0755 bin/nftban-validate /usr/lib/nftban/bin/nftban-validate
           # Seed a terminal state marker so the stale-in-progress warning
           # does not fire in the happy path.
           echo "COMMITTED" | sudo tee /var/lib/nftban/state/install_state >/dev/null

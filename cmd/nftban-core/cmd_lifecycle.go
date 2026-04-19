@@ -29,6 +29,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/itcmsgr/nftban/internal/constants"
+
 	"github.com/itcmsgr/nftban/internal/lifecycle"
 	"github.com/itcmsgr/nftban/internal/rebuild"
 )
@@ -154,7 +156,7 @@ func detectAuthority() lifecycle.AuthorityState {
 
 	// Check if nftban tables exist in kernel
 	// Use nft list tables to detect presence (read-only, no mutation)
-	if fileExists("/usr/lib/nftban/bin/nftban-validate") || fileExists("/usr/sbin/nftban") {
+	if fileExists(constants.ValidatorBinPath) || fileExists("/usr/sbin/nftban") {
 		// NFTBan is installed — check if it owns the firewall
 		auth.Owner = lifecycle.AuthorityNFTBan
 
@@ -232,8 +234,12 @@ func nftTablesExist() bool {
 }
 
 func getValidatorHealth() string {
-	// Try nftban-validate if available
-	out, err := runCmdOutput("nftban-validate", "status", "--quiet")
+	// Absolute path via constants.ValidatorBinPath — /usr/lib/nftban/bin
+	// is NOT in default $PATH. Parity gate FC-1 (2026-04-19) found the
+	// bare-name bug in the installer's update_apply.go; aligning this
+	// site with the same single authority closes the defect class
+	// repo-wide on the Go surface.
+	out, err := runCmdOutput(constants.ValidatorBinPath, "status", "--quiet")
 	if err != nil {
 		return "down"
 	}
