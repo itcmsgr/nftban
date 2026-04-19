@@ -361,13 +361,30 @@ jobs:
         run: |
           set -Eeuo pipefail
           src=cmd/nftban-installer/main.go
-          # Forbidden: a StatusSuccess literal appearing outside the
-          # StateCommitted case arm.
-          if grep -nE 'StatusSuccess' "$src" | grep -vE 'StateCommitted|historyStatusForState'; then
-            echo "::error::G3-U12 FAIL: StatusSuccess referenced outside StateCommitted — history integrity risk"
+          # Every "return history.StatusSuccess" must be on a line where
+          # the previous non-empty line is "case state.StateCommitted:".
+          # This catches future changes that move StatusSuccess to a
+          # different case arm.
+          lines=$(grep -n 'history\.StatusSuccess' "$src" | wc -l)
+          if [[ "$lines" -eq 0 ]]; then
+            echo "::error::G3-U12 FAIL: no history.StatusSuccess reference found at all"
             exit 1
           fi
-          echo "G3-U12 PASS — no success coercion outside StateCommitted"
+          # For each line N containing StatusSuccess, confirm line N-1
+          # contains "case state.StateCommitted:" (after trimming).
+          fail=0
+          while IFS=: read -r lineno _; do
+            prev=$((lineno - 1))
+            prevline=$(sed -n "${prev}p" "$src")
+            if ! echo "$prevline" | grep -qE 'case\s+state\.StateCommitted'; then
+              echo "::error::G3-U12 FAIL: history.StatusSuccess at line $lineno not preceded by 'case state.StateCommitted:' — prev line: $prevline"
+              fail=1
+            fi
+          done < <(grep -n 'history\.StatusSuccess' "$src")
+          if (( fail > 0 )); then
+            exit 1
+          fi
+          echo "G3-U12 PASS — every history.StatusSuccess is gated by case state.StateCommitted"
 
       # ------------------------------------------------------------------
       # PR-19 G3-U13 — source/package coherence. Unit test
