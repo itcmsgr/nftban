@@ -108,7 +108,7 @@ func NewPurityHarness(exec *executor.MockExecutor, stateDir string) *PurityHarne
 
 // AssertNoExecutorWrites fails the test if the mock recorded any call to
 // WriteFileAtomic (recorded as entries in Exec.WrittenFiles).
-func (h *PurityHarness) AssertNoExecutorWrites(t *testing.T) {
+func (h *PurityHarness) AssertNoExecutorWrites(t testing.TB) {
 	t.Helper()
 	if n := len(h.Exec.WrittenFiles); n != 0 {
 		var names []string
@@ -121,7 +121,7 @@ func (h *PurityHarness) AssertNoExecutorWrites(t *testing.T) {
 
 // AssertNoDirectoryCreations fails the test if the mock recorded any
 // MkdirAll.
-func (h *PurityHarness) AssertNoDirectoryCreations(t *testing.T) {
+func (h *PurityHarness) AssertNoDirectoryCreations(t testing.TB) {
 	t.Helper()
 	if n := len(h.Exec.Dirs); n != 0 {
 		var names []string
@@ -134,7 +134,7 @@ func (h *PurityHarness) AssertNoDirectoryCreations(t *testing.T) {
 
 // AssertNoMutationCommands fails the test if any recorded command
 // matches one of the forbidden substrings.
-func (h *PurityHarness) AssertNoMutationCommands(t *testing.T) {
+func (h *PurityHarness) AssertNoMutationCommands(t testing.TB) {
 	t.Helper()
 	for _, cmd := range h.Exec.Commands {
 		joined := cmd.Name + " " + strings.Join(cmd.Args, " ")
@@ -150,7 +150,7 @@ func (h *PurityHarness) AssertNoMutationCommands(t *testing.T) {
 // exist under the harness-owned state directory. This catches direct
 // os.WriteFile / os.MkdirAll calls that bypass the mock executor —
 // exactly the class that escaped PR-22's original review.
-func (h *PurityHarness) AssertNoStateDirEntries(t *testing.T) {
+func (h *PurityHarness) AssertNoStateDirEntries(t testing.TB) {
 	t.Helper()
 	entries, err := os.ReadDir(h.StateDir)
 	if err != nil {
@@ -170,7 +170,7 @@ func (h *PurityHarness) AssertNoStateDirEntries(t *testing.T) {
 }
 
 // AssertAllPurity runs every assertion in one call — the common case.
-func (h *PurityHarness) AssertAllPurity(t *testing.T) {
+func (h *PurityHarness) AssertAllPurity(t testing.TB) {
 	t.Helper()
 	h.AssertNoExecutorWrites(t)
 	h.AssertNoDirectoryCreations(t)

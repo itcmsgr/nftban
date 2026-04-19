@@ -156,14 +156,14 @@ jobs:
           # this gate whitelisted /var/lib/nftban/state/update_plan.json
           # and swallowed diff output behind "|| true" — exactly the
           # shape the audit flagged as "falsely reassuring CI."
-          before=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
 
-          # Seed a known update-history.json so the post-run comparison
-          # can falsify "no history pollution." Without the seed, an
-          # empty → empty diff hides the bug.
+          # Seed a known update-history.json FIRST, BEFORE taking the
+          # snapshot, so both before and after include the file. Without
+          # the seed, an empty-to-empty diff hides history pollution.
           sudo mkdir -p /var/lib/nftban
           echo '{"schema_version":"1.0","entries":[]}' | sudo tee /var/lib/nftban/update-history.json >/dev/null
 
+          before=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s\n' 2>/dev/null | sort)
           before_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
           before_state=$(sudo test -f /var/lib/nftban/state/install_state && sudo sha256sum /var/lib/nftban/state/install_state | awk '{print $1}' || echo "missing")
 
@@ -185,8 +185,9 @@ jobs:
           grep -q "INV-U-001" /tmp/dryrun.out
 
           # PR-22B hard assertions — no soft "|| true". Any deviation is a
-          # contract failure that must fail the gate.
-          after=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s %T@\n' 2>/dev/null | sort)
+          # contract failure that must fail the gate. Size-only snapshot
+          # (no mtime) so touch-style no-op reopens don't trigger.
+          after=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s\n' 2>/dev/null | sort)
           after_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
           after_state=$(sudo test -f /var/lib/nftban/state/install_state && sudo sha256sum /var/lib/nftban/state/install_state | awk '{print $1}' || echo "missing")
 

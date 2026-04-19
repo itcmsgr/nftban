@@ -16,10 +16,11 @@
 // meta:inventory.privileges="none"
 // =============================================================================
 //
-// These tests confirm that the harness fails (via t.Errorf / t.Fatalf)
-// on each of the contract violations it exists to detect, and passes
-// when the contract is respected. Use a recording *testing.T substitute
-// to observe failure behaviour without failing this test itself.
+// These tests confirm the harness fires (via t.Errorf) on each of the
+// contract violations it exists to detect, and passes when the contract
+// is respected. The trick: testing.TB cannot be implemented outside the
+// testing package (it has an unexported method), so we use t.Run's
+// return value to observe whether an inner subtest failed.
 //
 // =============================================================================
 package audit
@@ -32,27 +33,31 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 )
 
-// recordingT implements enough of testing.TB to let us observe the
-// number of Errorf / Fatalf calls an assertion made without marking the
-// real test as failed.
-type recordingT struct {
-	testing.TB
-	errors int
-	fatals int
+// expectInnerFail runs the given assertion inside a subtest and reports
+// whether the inner subtest failed (which is what we want, for each
+// "harness must catch X" test). If the inner test PASSED, this helper
+// marks the outer test failed — meaning the harness missed a violation.
+func expectInnerFail(t *testing.T, name string, assertion func(tb testing.TB)) {
+	t.Helper()
+	innerPassed := t.Run(name, func(innerT *testing.T) {
+		assertion(innerT)
+	})
+	if innerPassed {
+		t.Errorf("%s: harness assertion did NOT fail as expected — contract violation went undetected", name)
+	}
 }
-
-func (r *recordingT) Errorf(format string, args ...interface{}) { r.errors++ }
-func (r *recordingT) Fatalf(format string, args ...interface{}) { r.fatals++ }
-func (r *recordingT) Helper()                                   {}
 
 func TestHarness_CleanRunPasses(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	dir := t.TempDir()
 	h := NewPurityHarness(mock, dir)
-	rec := &recordingT{}
-	h.AssertAllPurity(rec)
-	if rec.errors != 0 || rec.fatals != 0 {
-		t.Errorf("clean run flagged %d errors / %d fatals", rec.errors, rec.fatals)
+
+	// Clean run must not fail any assertion.
+	innerPassed := t.Run("clean", func(innerT *testing.T) {
+		h.AssertAllPurity(innerT)
+	})
+	if !innerPassed {
+		t.Error("harness flagged a clean run as violating — false positive")
 	}
 }
 
@@ -60,33 +65,27 @@ func TestHarness_CatchesExecutorWrites(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	_ = mock.WriteFileAtomic("/var/lib/nftban/state/install_state", []byte("x"), 0600)
 	h := NewPurityHarness(mock, t.TempDir())
-	rec := &recordingT{}
-	h.AssertNoExecutorWrites(rec)
-	if rec.errors == 0 {
-		t.Error("harness must flag executor WriteFileAtomic call")
-	}
+	expectInnerFail(t, "executor-write", func(tb testing.TB) {
+		h.AssertNoExecutorWrites(tb)
+	})
 }
 
 func TestHarness_CatchesMkdirAll(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	_ = mock.MkdirAll("/var/lib/nftban/state", 0750)
 	h := NewPurityHarness(mock, t.TempDir())
-	rec := &recordingT{}
-	h.AssertNoDirectoryCreations(rec)
-	if rec.errors == 0 {
-		t.Error("harness must flag executor MkdirAll call")
-	}
+	expectInnerFail(t, "mkdirall", func(tb testing.TB) {
+		h.AssertNoDirectoryCreations(tb)
+	})
 }
 
 func TestHarness_CatchesForbiddenCommand(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Run("nft", "add", "rule", "ip", "nftban", "input", "accept")
 	h := NewPurityHarness(mock, t.TempDir())
-	rec := &recordingT{}
-	h.AssertNoMutationCommands(rec)
-	if rec.errors == 0 {
-		t.Error("harness must flag 'nft add' command")
-	}
+	expectInnerFail(t, "forbidden-cmd", func(tb testing.TB) {
+		h.AssertNoMutationCommands(tb)
+	})
 }
 
 func TestHarness_CatchesDirectFilesystemWrite(t *testing.T) {
@@ -100,9 +99,7 @@ func TestHarness_CatchesDirectFilesystemWrite(t *testing.T) {
 
 	mock := executor.NewMockExecutor()
 	h := NewPurityHarness(mock, dir)
-	rec := &recordingT{}
-	h.AssertNoStateDirEntries(rec)
-	if rec.errors == 0 {
-		t.Error("harness must flag direct filesystem write under state dir")
-	}
+	expectInnerFail(t, "direct-fs-write", func(tb testing.TB) {
+		h.AssertNoStateDirEntries(tb)
+	})
 }
