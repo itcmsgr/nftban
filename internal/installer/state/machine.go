@@ -74,6 +74,52 @@ const (
 	// resolve. IsApplyTerminal() returns true; ExitCode() maps to
 	// ExitFailed (2).
 	StateUninstallFailedRelease InstallState = "UNINSTALL_FAILED_RELEASE"
+
+	// PR-24 authority restoration policy-engine states.
+	//
+	// These are produced ONLY by the pure decision engine in
+	// internal/installer/restore. The engine performs no kernel,
+	// service, or filesystem mutation; these states therefore represent
+	// a policy outcome, not an apply outcome.
+	//
+	// StateRestoreRefused is the terminal state produced when the
+	// lattice returns REFUSE. It is terminal, NOT failed (refusal is
+	// not failure — it is a correct policy outcome), and deliberately
+	// excluded from IsApplyTerminal so it does not flow through
+	// update-history.json under the install-centric schema. ExitCode()
+	// returns ExitRefused (5).
+	StateRestoreRefused InstallState = "RESTORE_REFUSED"
+
+	// StateRestoreIntentRequired is the terminal state produced when
+	// the lattice returns REQUIRE_EXPLICIT_INTENT. Same discipline as
+	// StateRestoreRefused: terminal, not failed, not apply-terminal,
+	// not recorded in history. ExitCode() returns ExitIntentRequired
+	// (6), distinct from refusal so operators and automation can tell
+	// "engine said no" from "engine needs you to clarify".
+	StateRestoreIntentRequired InstallState = "RESTORE_INTENT_REQUIRED"
+
+	// StateRestoreDecided is the NON-TERMINAL policy-handoff marker
+	// produced when the lattice returns PROCEED. Locked semantics per
+	// contract seed §7 (merged as PR #493):
+	//
+	//   1. Policy-only: records that the decision engine said PROCEED.
+	//   2. Non-terminal for apply semantics: IsApplyTerminal() and
+	//      IsTerminal() both return false.
+	//   3. Excluded from update-history.json: Option A discipline
+	//      continues; main.go already gates history on cfg.mode !=
+	//      "uninstall" AND state.IsApplyTerminal(). This state will
+	//      eventually gain its own mode-guard if --mode=restore ever
+	//      writes history; for now, IsApplyTerminal=false closes the
+	//      write path defensively.
+	//   4. Not evidence that restoration happened: no kernel, service,
+	//      or filesystem change is implied. PR-25+ execution would
+	//      change state further; in PR-24, PROCEED is a handoff
+	//      outcome only.
+	//
+	// ExitCode() returns ExitCommitted (0) — the operator got the
+	// decision they asked for, and the process exit code reflects
+	// decision success, not execution success.
+	StateRestoreDecided InstallState = "RESTORE_DECIDED"
 )
 
 // Phase represents a named installer phase.
@@ -92,17 +138,21 @@ const (
 //
 // Contract (frozen):
 //
-//	0 = COMMITTED  — all phases passed, firewall running and verified
-//	1 = DEGRADED   — firewall running but some validation checks failed
-//	2 = FAILED     — a critical phase failed, firewall may not be running
-//	3 = ABORTED    — conflicting firewalls detected, no --takeover flag
-//	4 = FATAL      — unrecoverable error (binary not found, permission denied)
+//	0 = COMMITTED        — all phases passed, firewall running and verified
+//	1 = DEGRADED         — firewall running but some validation checks failed
+//	2 = FAILED           — a critical phase failed, firewall may not be running
+//	3 = ABORTED          — conflicting firewalls detected, no --takeover flag
+//	4 = FATAL            — unrecoverable error (binary not found, permission denied)
+//	5 = REFUSED          — PR-24 restore policy engine: policy forbids restoration
+//	6 = INTENT_REQUIRED  — PR-24 restore policy engine: operator must clarify intent
 const (
-	ExitCommitted = 0
-	ExitDegraded  = 1
-	ExitFailed    = 2
-	ExitAborted   = 3
-	ExitFatal     = 4
+	ExitCommitted      = 0
+	ExitDegraded       = 1
+	ExitFailed         = 2
+	ExitAborted        = 3
+	ExitFatal          = 4
+	ExitRefused        = 5
+	ExitIntentRequired = 6
 )
 
 // IsApplyTerminal reports whether a state represents the terminal
@@ -139,6 +189,11 @@ func (s InstallState) IsApplyTerminal() bool {
 		StateUninstallFailedRelease:
 		return true
 	}
+	// PR-24 restore policy-engine states are DELIBERATELY excluded.
+	// StateRestoreRefused and StateRestoreIntentRequired are terminal
+	// policy outcomes with no mutation; StateRestoreDecided is a
+	// non-terminal handoff marker. None of them represent an apply
+	// outcome and none should enter update-history.json.
 	return false
 }
 
@@ -149,6 +204,10 @@ func (s InstallState) IsApplyTerminal() bool {
 func IsApplyTerminal(s InstallState) bool { return s.IsApplyTerminal() }
 
 // IsFailed returns true if the state represents a failure.
+//
+// PR-24: restore policy-engine terminal states (StateRestoreRefused,
+// StateRestoreIntentRequired) are NOT failures — refusal and
+// intent-required are correct policy outcomes, not error conditions.
 func (s InstallState) IsFailed() bool {
 	switch s {
 	case StateFailedSSH, StateFailedAbort, StateFailedRender,
@@ -161,8 +220,18 @@ func (s InstallState) IsFailed() bool {
 }
 
 // IsTerminal returns true if the state is a final state (no further transitions).
+//
+// PR-24: StateRestoreRefused and StateRestoreIntentRequired are
+// terminal; StateRestoreDecided is NOT (it is a policy-handoff marker,
+// per contract seed §7).
 func (s InstallState) IsTerminal() bool {
-	return s == StateCommitted || s == StateDegraded || s.IsFailed()
+	if s == StateCommitted || s == StateDegraded || s.IsFailed() {
+		return true
+	}
+	if s == StateRestoreRefused || s == StateRestoreIntentRequired {
+		return true
+	}
+	return false
 }
 
 // ExitCode returns the process exit code for this state.
@@ -176,6 +245,17 @@ func (s InstallState) ExitCode() int {
 	// semantics are kept distinct via the writeHistory mode guard.
 	case StateUninstallReleased:
 		return ExitCommitted
+	// PR-24: StateRestoreDecided is the PROCEED handoff. Decision
+	// succeeded; exit 0.
+	case StateRestoreDecided:
+		return ExitCommitted
+	// PR-24: distinct exit codes per seed §8 — operators and automation
+	// must distinguish "engine said no" from "engine said clarify" from
+	// "engine failed".
+	case StateRestoreRefused:
+		return ExitRefused
+	case StateRestoreIntentRequired:
+		return ExitIntentRequired
 	case StateDegraded:
 		return ExitDegraded
 	case StateFailedAbort:

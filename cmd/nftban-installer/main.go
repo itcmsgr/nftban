@@ -121,7 +121,15 @@ func main() {
 	// is an explicit pre-PR-24 (or parallel) follow-up item; until
 	// that lands, uninstall events are forensically visible only in
 	// the installer log, and update-history.json stays clean of them.
-	if !cfg.dryRun && cfg.mode != "uninstall" && state.IsApplyTerminal(sf.State) {
+	//
+	// PR-24 extension: --mode=restore is ALSO excluded. The three
+	// restore states (RESTORE_DECIDED / RESTORE_REFUSED /
+	// RESTORE_INTENT_REQUIRED) all return IsApplyTerminal=false per
+	// contract seed §7, so the existing allowlist gate already blocks
+	// history writes for this mode. The explicit mode check here is
+	// belt-and-braces defense in case a future edit inadvertently
+	// marks a restore state apply-terminal.
+	if !cfg.dryRun && cfg.mode != "uninstall" && cfg.mode != "restore" && state.IsApplyTerminal(sf.State) {
 		writeHistory(sf, cfg, previousVersion, hostname, log)
 	}
 
@@ -170,6 +178,12 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 			return runUninstallApply(ctx, exec, sf, cfg, log)
 		}
 		return runUninstallDryRun(ctx, exec, sf, cfg, log)
+	}
+	// v1.100 PR-24 restore-policy-engine dispatch. Pure decision only;
+	// performs NO kernel / service / filesystem mutation. flags.go
+	// validates that --mode=restore is not combined with mutation flags.
+	if cfg.mode == "restore" {
+		return runRestoreDecide(ctx, exec, sf, cfg, log)
 	}
 	// v1.99 PR-16 (G3-U1/U2/U3/U4): update-mode dry-run short-circuits to
 	// preflight + version-detect + plan render. No mutation — all apply
