@@ -285,18 +285,106 @@ discipline.
 | 3 | Kernel/service snapshot CI gate | PR #487 / (tracked post-merge) | `G3-KS-SNAPSHOT` added to all 3 canonization workflows; `scripts/ci-snapshot-kernel-service.sh` helper; hard-asserts kernel nft tables + firewall-adjacent service states byte-identical after every dry-run path |
 | 4 | Exec-trace CI gate | PR #488 / (tracked post-merge) | `G3-EXEC-TRACE` added to all 3 canonization workflows; `scripts/ci-exec-trace-assert.sh` wraps dry-runs under `strace -f -e trace=execve`; fails if any forbidden mutator (nft add/flush/delete, systemctl lifecycle verbs, ufw/firewall-cmd/iptables-restore, package-manager removal, userdel/groupdel) is spawned |
 | 5 | Auto-elevate shim removal gate | PR #489 / (tracked post-merge) | `G3-UN-SHIM-LOCK` CI rule in uninstall workflow: fails if the auto-elevate shim in `flags.go` and any mutation pattern in `internal/installer/uninstall/*.go` coexist; see §"G3-UN-SHIM-LOCK" below for the decision table |
-| 6 | Payload integrity minimum checks | (this PR) | `payload.VerifyConfigIntegrity` — minimum-size + required-token check for `/etc/nftban/nftban.conf` and `/etc/nftables.conf`; wired into `validate.assertConfigIntegrity`; scope-locked two-file set + token-only signals (no checksums/signatures/semantic parsing) |
+| 6 | Payload integrity minimum checks | PR #490 / `6d420b3b` | `payload.VerifyConfigIntegrity` — minimum-size + required-token check for `/etc/nftban/nftban.conf` and `/etc/nftban/nftables.conf`; wired into `validate.assertConfigIntegrity`; scope-locked two-file set + token-only signals (no checksums/signatures/semantic parsing) |
 
 ### All pre-PR-23 blockers landed
 
-No remaining items. PR-23 (uninstall mutation phase 1: authority release
-core) is unblocked pending the final verification audit per Phase 3
-gating — four focused questions only:
+Phase 2 complete. Final verification audit (4 questions: dry-run purity,
+no history/state drift, single-source authority predicate, CI catches
+prior-audit regressions) cleared on PR-22B+Phase-2 stack.
 
-1. Is dry-run still pure across install / update / uninstall?
-2. Any history / state drift?
-3. Is the authority predicate still consistent across all callers?
-4. Do CI gates catch the exact regressions the prior audits found?
+---
+
+## PR-23 authority release — landed contract
+
+PR-23 implements the first bounded uninstall mutation path: **authority
+release core only**. No filesystem deletion, no external firewall
+restoration, no purge matrix — those remain deferred to later PRs.
+
+### Consent model (replaces the PR-22 auto-elevate shim)
+
+`--mode=uninstall` now requires **exactly one** of:
+
+| Flag | Behavior |
+|---|---|
+| `--dry-run` | Observational plan (unchanged from PR-22) |
+| `--confirm-mutation` | Authority release core (PR-23 new path) |
+
+Neither → refused. Both → refused. The G3-UN-SHIM-LOCK CI gate
+(landed PR-P2-5) prevented PR-23 from landing while the auto-elevate
+shim was still in `flags.go`.
+
+### Preflight refusal table
+
+| `Classify.State` | `Classify.Ambiguity` | Apply behavior |
+|---|---|---|
+| `AuthorityNFTBan` | `AmbiguityNone` | Proceed |
+| `AuthorityAmbiguous` | `AmbiguityOrphanNFTBan` | **Proceed** (recoverable — clean up orphan nftban via emergency-SSH path) |
+| `AuthorityAmbiguous` | `AmbiguityConflictExternal` | Refuse — operator must resolve |
+| `AuthorityExternal` | — | Refuse — nothing to release |
+| `AuthorityNone` | — | Refuse — nothing to release |
+
+### Mutation sequence (10 ordered steps)
+
+All in `internal/installer/uninstall/apply.go`:
+
+1. Inject emergency SSH (`inet nftban_install_emergency`)
+2. Stop `nftband.service`
+3. Flush `ip nftban` table
+4. Flush `ip6 nftban` table (skip if absent)
+5. Delete `ip nftban` table
+6. Delete `ip6 nftban` table (skip if absent)
+7. Disable `nftband.service`
+8. Mask `nftband.service`
+9. Validate end-state (kernel released + service neutralized + emergency SSH **still present**)
+10. Remove emergency SSH (warn-only on failure — over-permissive SSH is safer than lockout)
+
+### Failure mapping
+
+| Step failed | Kernel state | Terminal state |
+|---|---|---|
+| 1 (inject emergency) | untouched | `StateFailedNoFirewall` |
+| 2 (stop) | log warn, continue (already-stopped is OK) | — |
+| 3–6 (flush/delete) | partial cleanup; emergency up | `StateUninstallFailedRelease` |
+| 7–8 (disable/mask) | kernel released, service lingers | `StateDegraded` |
+| 9 (validation) | end-state mismatch | `StateUninstallFailedRelease` |
+| 10 (remove emergency) | released, emergency lingers | `StateUninstallReleased` + warn log |
+| all pass | `AuthorityNone` | `StateUninstallReleased` |
+
+### History representation (Option A locked 2026-04-20)
+
+Uninstall events are **intentionally excluded** from
+`/var/lib/nftban/update-history.json`. The current history schema has
+install-centric statuses (`success` / `install_fail` / `verify_fail`)
+that cannot truthfully represent uninstall outcomes. `main.go`'s
+`writeHistory` guard now reads:
+
+```go
+if !cfg.dryRun && cfg.mode != "uninstall" && state.IsApplyTerminal(sf.State) {
+    writeHistory(...)
+}
+```
+
+The forensic trail for uninstall events is `/var/log/nftban/installer.log`.
+
+A dedicated uninstall-history schema is tracked as an explicit
+follow-up item below (post-PR-23, pre-PR-24 preferred).
+
+### Follow-up items (post-PR-23, not blocking PR-24 unless noted)
+
+1. **Uninstall history representation (schema decision)** — define a
+   truthful uninstall-event record. Options already surveyed:
+   new file (`uninstall-history.json`), schema extension with new
+   status values + type field, separate CLI (`nftban uninstall history`).
+   Preferred before or with PR-24; not a PR-24 blocker but a truthfulness
+   gap until resolved.
+
+2. **Step 9 validation failure-path mock harness** — the PR-23 unit test
+   `TestApply_ValidationFail_Step9_IP4TableStillPresent` is currently
+   marked `t.Skip` because `MockExecutor.NftDeleteTable` unconditionally
+   mutates the table map. A deeper mock hook for post-delete state
+   override would unblock the test; covered by real-host evidence for
+   now.
 
 ### G3-UN-SHIM-LOCK (PR-P2-5) — how the gate decides
 
