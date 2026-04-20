@@ -283,6 +283,7 @@ discipline.
 | 1 | Prior-authority record hardening | PR #484 / `3b834033` | Added `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go`; 5-state classification |
 | 2 | External-firewall detection unification | PR #486 / `49d98fc1` | `internal/installer/extfw` canonical detector; Option A CSF config-file signal shared across install/update/uninstall; multi-active → `Ambiguous` (no silent collapse); cross-caller consistency test locked as regression guard |
 | 3 | Kernel/service snapshot CI gate | PR #487 / (tracked post-merge) | `G3-KS-SNAPSHOT` added to all 3 canonization workflows; `scripts/ci-snapshot-kernel-service.sh` helper; hard-asserts kernel nft tables + firewall-adjacent service states byte-identical after every dry-run path |
+| 4 | Exec-trace CI gate | PR #488 / (tracked post-merge) | `G3-EXEC-TRACE` added to all 3 canonization workflows; `scripts/ci-exec-trace-assert.sh` wraps dry-runs under `strace -f -e trace=execve`; fails if any forbidden mutator (nft add/flush/delete, systemctl lifecycle verbs, ufw/firewall-cmd/iptables-restore, package-manager removal, userdel/groupdel) is spawned |
 
 ### Behavioral / semantic blockers (code contract changes)
 
@@ -294,8 +295,48 @@ discipline.
 
 | # | PR | Scope | Blocking because |
 |---|---|---|---|
-| 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands that source grep cannot see |
-| 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists when any mutation code lands in `internal/installer/uninstall/` | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+| 5 | Auto-elevate shim removal gate | `G3-UN-SHIM-LOCK` CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists when any mutation code lands in `internal/installer/uninstall/` | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+
+### G3-UN-SHIM-LOCK (PR-P2-5) — how the gate decides
+
+The gate lives in `ci-uninstall-canonization.yml` and runs before the
+structural-audit + unit tests so reviewers see the coupling first. It
+performs two independent detections and applies one rule:
+
+- **Shim detection.** Grep `cmd/nftban-installer/flags.go` for either
+  of two stable signature strings introduced by PR-22's uninstall
+  auto-elevate block: `"auto-elevated to --dry-run"` or
+  `"NO MUTATION WILL OCCUR (v1.100 PR-22 scope)"`. Presence of either
+  sets `shim_present=1`.
+
+- **Mutation detection.** Grep `internal/installer/uninstall/*.go`
+  plus `cmd/nftban-installer/uninstall_dryrun.go` (Go files only,
+  excluding `_test.go`) for any forbidden mutation-flavored pattern:
+  `nft` mutation verbs, `systemctl` lifecycle verbs, `Service*`
+  executor methods, external-firewall binaries, `os.*` filesystem
+  writers, `sf.Transition(`. Match of any one sets `mutation_present=1`.
+
+Rule table:
+
+| `shim_present` | `mutation_present` | Result |
+|:-:|:-:|---|
+| 1 | 1 | **FAIL** — shim + mutation cannot coexist |
+| 1 | 0 | PASS — PR-22/P2-x scaffold state |
+| 0 | 1 | PASS — post-PR-23, shim correctly removed |
+| 0 | 0 | PASS — trivially clean |
+
+The gate is **pure detection** — it does NOT remove the shim, does
+NOT add mutation code, and does NOT change CLI behavior. It only
+ensures that when PR-23 (or any later PR) adds uninstall mutation,
+the shim is removed in the SAME PR and both land together.
+
+Two acceptable shim remediations at PR-23 time:
+
+1. **Delete** the auto-elevate block entirely (so `--mode=uninstall`
+   mutates unless `--dry-run` is explicit)
+2. **Convert** to an explicit refusal requiring the operator to choose
+   between `--dry-run` and `--confirm-mutation` (no silent default
+   behaviour in either direction)
 
 ### Later v1.100 work (preferred order, not dogmatic)
 
