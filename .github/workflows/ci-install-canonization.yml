@@ -106,6 +106,11 @@ jobs:
           echo '{"schema_version":"1.0","entries":[]}' | sudo tee /var/lib/nftban/update-history.json >/dev/null
           before_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
 
+          # PR-P2-3 (G3-KS-SNAPSHOT): capture kernel nft tables + firewall-
+          # adjacent service states BEFORE the refuse-dry-run invocation
+          # so we can hard-assert they are byte-identical afterward.
+          before_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
+
           set +e
           out=$(sudo ./bin/nftban-installer --mode=install --dry-run \
                 --state-dir=/var/lib/nftban/state 2>&1)
@@ -129,7 +134,17 @@ jobs:
             echo "::error::G3-IN-REFUSE-DRY-RUN FAIL: history file changed on a refused run"
             exit 1
           fi
-          echo "G3-IN-REFUSE-DRY-RUN PASS — install dry-run refused cleanly, no pollution"
+
+          # PR-P2-3 (G3-KS-SNAPSHOT): kernel + service state must be
+          # byte-identical after a refused run. Hard assertion — no
+          # `|| true` on the diff check.
+          after_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
+          if [[ "$before_ks" != "$after_ks" ]]; then
+            echo "::error::G3-KS-SNAPSHOT FAIL: kernel or service state changed during install --dry-run refusal"
+            diff <(echo "$before_ks") <(echo "$after_ks") || true
+            exit 1
+          fi
+          echo "G3-IN-REFUSE-DRY-RUN PASS — install dry-run refused cleanly, no pollution, kernel+service unchanged"
 
       # ------------------------------------------------------------------
       # G3-IN-FLAG-COMBOS — reject operator-error flag combinations.
