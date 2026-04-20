@@ -61,7 +61,7 @@ func TestClassify_NFTBan(t *testing.T) {
 
 func TestClassify_External_UFW(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.Services["ufw"] = true
+	mock.Services["ufw.service"] = true
 
 	res := Classify(mock, newTestLogger())
 	if res.State != AuthorityExternal {
@@ -103,7 +103,7 @@ func TestClassify_Ambiguous_NFTBanPlusUFW(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.NftTables["ip:nftban"] = true
 	mock.Services["nftband.service"] = true
-	mock.Services["ufw"] = true
+	mock.Services["ufw.service"] = true
 
 	res := Classify(mock, newTestLogger())
 	if res.State != AuthorityAmbiguous {
@@ -149,7 +149,7 @@ func TestClassify_PartialNFTBan_WithExternal_IsAmbiguous(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.NftTables["ip:nftban"] = true   // table still in kernel
 	mock.Services["nftband.service"] = false // daemon inactive
-	mock.Services["ufw"] = true               // external present
+	mock.Services["ufw.service"] = true               // external present
 
 	res := Classify(mock, newTestLogger())
 	if res.State == AuthorityExternal {

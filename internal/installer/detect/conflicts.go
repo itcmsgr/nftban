@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan v1.73 - Installer Conflict Detection
+// NFTBan v1.73 - Installer Conflict Detection (PR-P2-2: thin adapter over extfw)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-detect-conflicts"
@@ -15,120 +15,89 @@
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
 // =============================================================================
+//
+// PR-P2-2 unification note:
+//
+//   This file used to own its own detection surface (service probes +
+//   ghost-nft-table parsing). As of PR-P2-2 it is a thin adapter over
+//   internal/installer/extfw.Detect(), which is the single source of
+//   truth for external-firewall detection across the install, update,
+//   and uninstall lifecycle paths.
+//
+//   The Conflict struct and DetectConflicts()/ConflictNames() API are
+//   preserved for backward compatibility with existing consumers
+//   (phaseDetect, switchop.DisableConflicts, etc.). Internally, every
+//   signal comes from extfw.Detect.
+//
+// Option A resolution (2026-04-20): /etc/csf/csf.conf is a valid CSF
+// signal. Install side now honors it — same as uninstall — so the two
+// lifecycle surfaces cannot disagree about whether CSF is present.
+//
+// =============================================================================
 package detect
 
 import (
-	"strings"
-
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/extfw"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
-// Conflict represents a detected conflicting firewall.
+// Conflict represents a detected conflicting firewall. One observation
+// (service / ghost table / config file) maps to one Conflict. A single
+// firewall may produce multiple Conflicts — CSF with both csf.service
+// and lfd.service active emits two Conflict entries so the takeover
+// path can stop+disable+mask each unit independently.
 type Conflict struct {
 	Name    string // e.g., "CSF", "UFW", "firewalld", "iptables", "iptables-nft"
-	Service string // systemd unit name (may be empty for ghost table conflicts)
-	Active  bool   // true if service is currently running or table exists
+	Service string // systemd unit name; empty for non-service observations
+	Active  bool   // always true — if it was observed, it's active
 }
 
-// conflictServices are the systemd units checked for active conflicts.
-var conflictServices = []struct {
-	name    string // conflict display name
-	service string // systemd unit
-}{
-	{"CSF", "csf.service"},
-	{"CSF", "lfd.service"},
-	{"UFW", "ufw.service"},
-	{"firewalld", "firewalld.service"},
-	{"iptables", "iptables.service"},
-}
-
-// nftbanOwnedTables are nft tables that belong to NFTBan (not conflicts).
-var nftbanOwnedTables = map[string]bool{
-	"ip nftban":                       true,
-	"ip6 nftban":                      true,
-	"ip raw":                          true,
-	"ip6 raw":                         true,
-	"inet nftban_install_emergency":   true,
-}
-
-// DetectConflicts checks for active conflicting firewalls via systemd services
-// and ghost nftables tables. Returns a deduplicated slice of conflicts.
+// DetectConflicts returns the conflict list for the current host.
+// Read-only; delegates to extfw.Detect for the underlying signals.
 func DetectConflicts(exec executor.Executor, log *logging.Logger) []Conflict {
-	seen := make(map[string]bool)
+	res := extfw.Detect(exec, log)
+
 	var conflicts []Conflict
-
-	// Check systemd services.
-	// Dedup by service (not name) — CSF has two services (csf.service + lfd.service)
-	// and both must be stopped+disabled+masked.
-	for _, svc := range conflictServices {
-		if exec.ServiceActive(svc.service) {
-			if !seen[svc.service] {
-				seen[svc.service] = true
-				conflicts = append(conflicts, Conflict{
-					Name:    svc.name,
-					Service: svc.service,
-					Active:  true,
-				})
-				log.Detect("conflict", svc.name, "active ("+svc.service+")")
-			}
+	// De-dup by (Name + Service) so that ghost-table + service for the
+	// same firewall don't emit duplicate entries with empty Service.
+	// Two CSF service observations (csf + lfd) remain distinct because
+	// their Service fields differ.
+	seen := make(map[string]bool)
+	for _, obs := range res.Observations {
+		key := obs.DisplayName() + "|" + obs.Unit
+		if seen[key] {
+			continue
 		}
+		seen[key] = true
+		conflicts = append(conflicts, Conflict{
+			Name:    obs.DisplayName(),
+			Service: obs.Unit,
+			Active:  true,
+		})
 	}
 
-	// Check for ghost nft tables (non-NFTBan tables with hooks)
-	if exec.CommandExists("nft") {
-		res := exec.Run("nft", "list", "tables")
-		if res.ExitCode == 0 {
-			for _, line := range strings.Split(res.Stdout, "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-				// Remove "table " prefix to get "family name"
-				tableName := strings.TrimPrefix(line, "table ")
-
-				// Skip NFTBan-owned tables
-				if nftbanOwnedTables[tableName] {
-					continue
-				}
-
-				// Classify ghost tables
-				if strings.Contains(tableName, "firewalld") {
-					if !seen["firewalld"] {
-						seen["firewalld"] = true
-						conflicts = append(conflicts, Conflict{
-							Name:   "firewalld",
-							Active: true,
-						})
-						log.Detect("conflict", "firewalld", "ghost table: "+tableName)
-					}
-				} else if strings.Contains(tableName, "filter") ||
-					strings.Contains(tableName, "nat") ||
-					strings.Contains(tableName, "mangle") {
-					if !seen["iptables-nft"] {
-						seen["iptables-nft"] = true
-						conflicts = append(conflicts, Conflict{
-							Name:   "iptables-nft",
-							Active: true,
-						})
-						log.Detect("conflict", "iptables-nft", "ghost table: "+tableName)
-					}
-				}
-			}
-		}
-	}
-
+	// Logging mirrors the pre-PR-P2-2 shape so CI gates and operator
+	// output don't regress.
 	if len(conflicts) == 0 {
 		log.Detect("conflict", "result", "none")
 	} else {
 		names := ConflictNames(conflicts)
-		log.Detect("conflict", "result", strings.Join(names, ", "))
+		log.Detect("conflict", "result", joinNames(names))
+		for _, c := range conflicts {
+			source := "service"
+			if c.Service == "" {
+				source = "ghost/file"
+			}
+			log.Detect("conflict", c.Name, source+" ("+c.Service+")")
+		}
 	}
 
 	return conflicts
 }
 
-// ConflictNames returns a deduplicated list of conflict names.
+// ConflictNames returns a deduplicated list of conflict names,
+// preserving the order they appeared in the input slice.
 func ConflictNames(conflicts []Conflict) []string {
 	seen := make(map[string]bool)
 	var names []string
@@ -139,4 +108,15 @@ func ConflictNames(conflicts []Conflict) []string {
 		}
 	}
 	return names
+}
+
+func joinNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	out := names[0]
+	for _, n := range names[1:] {
+		out += ", " + n
+	}
+	return out
 }
