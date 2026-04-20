@@ -41,8 +41,23 @@ func seedAuthoritativeHost(m *executor.MockExecutor) {
 	m.NftTables["ip:nftban"] = true
 	m.NftTables["ip6:nftban"] = true
 	m.Services["nftband.service"] = true
-	// Emergency SSH table initially absent (Apply injects it).
-	// nft commands default to ExitCode:0 unless we override below.
+	hookEmergencySSHInject(m)
+}
+
+// hookEmergencySSHInject registers a mock callback that mirrors what
+// `nft -f <rules>` does on a real host during switchop.InjectEmergencySSH:
+// it creates the inet nftban_install_emergency table in the kernel.
+// Without this hook, Run("nft", "-f", ...) returns exit 0 but the mock's
+// NftTables map is never touched, so step-9 validation correctly reports
+// "emergency SSH unexpectedly missing" (production behaviour is right;
+// the test mock lacks kernel fidelity).
+//
+// Paired with MockExecutor.NftDeleteTable which DOES remove the table
+// when switchop.RemoveEmergencySSH runs at step 10.
+func hookEmergencySSHInject(m *executor.MockExecutor) {
+	m.OnCommand(func() {
+		m.NftTables["inet:nftban_install_emergency"] = true
+	}, "nft", "-f", "/tmp/.nftban-emergency-ssh.nft")
 }
 
 // TestApply_HappyPath_KernelAndServiceReleased is the end-to-end
@@ -231,6 +246,7 @@ func TestApply_OrphanNFTBan_NoExternal_RunsFullSequence(t *testing.T) {
 	// Orphan: table present, daemon DOWN. No external firewall.
 	m.NftTables["ip:nftban"] = true
 	m.Services["nftband.service"] = false
+	hookEmergencySSHInject(m)
 
 	r := Apply(m, &ApplyConfig{SSHPort: 22}, newTestLogger())
 
@@ -269,6 +285,7 @@ func TestApply_IPv6Absent_SkipsGracefully(t *testing.T) {
 	m.NftTables["ip:nftban"] = true
 	// No ip6 entry — table absent.
 	m.Services["nftband.service"] = true
+	hookEmergencySSHInject(m)
 
 	r := Apply(m, &ApplyConfig{SSHPort: 22}, newTestLogger())
 
