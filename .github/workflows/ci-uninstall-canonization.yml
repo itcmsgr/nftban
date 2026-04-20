@@ -194,15 +194,29 @@ jobs:
             echo "G3-UN-SHIM-LOCK PASS — neither shim nor uninstall mutation present"
           fi
 
-      - name: G3-UN-NO-MUTATION — structural audit of uninstall package
+      - name: G3-UN-NO-MUTATION — structural audit of uninstall observational scope
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Narrow search scope to PR-22's claim surface.
+          # Narrow search scope to the OBSERVATIONAL uninstall surface.
+          #
+          # PR-23 introduced the one legitimate uninstall mutation path
+          # (internal/installer/uninstall/apply.go — the authority
+          # release orchestrator). That file is explicitly excluded
+          # from this grep scope because it MUST contain the kernel +
+          # service mutation calls the release sequence performs.
+          #
+          # G3-UN-SHIM-LOCK (separate gate in this workflow) is the
+          # invariant that ensures apply.go's mutation cannot coexist
+          # with the auto-elevate shim. G3-EXEC-TRACE (all 3 workflows)
+          # catches forbidden mutators at the dry-run path's syscall
+          # layer. Together those three gates cover the "no mutation
+          # during dry-run + mutation only in the sanctioned apply
+          # file" contract.
           files=$(find \
             internal/installer/uninstall \
             cmd/nftban-installer/uninstall_dryrun.go \
-            -type f -name '*.go' 2>/dev/null || true)
+            -type f -name '*.go' 2>/dev/null | grep -vE '/apply\.go$' || true)
           if [[ -z "$files" ]]; then
             echo "::error::G3-UN-NO-MUTATION: uninstall scope files not found"
             exit 1

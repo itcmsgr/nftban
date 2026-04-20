@@ -44,6 +44,36 @@ const (
 	// the planning state so the scope-boundary block in plan output
 	// remains literally true: no phase beyond Planning exists yet.
 	StateUninstallPlanning InstallState = "UNINSTALL_PLANNING"
+
+	// StateUninstallReleased is the terminal success state for v1.100
+	// PR-23's uninstall mutation (authority release core). Reached
+	// after:
+	//   - kernel nftban tables flushed + deleted
+	//   - nftband.service stopped, disabled, masked
+	//   - end-state validation passed (no nftban authority remaining)
+	//   - emergency SSH table cleanly removed
+	//
+	// IsApplyTerminal() returns true for this state so downstream
+	// lifecycle consumers see it as a completed apply outcome.
+	// ExitCode() maps to ExitCommitted (0) — the operator asked for
+	// uninstall and got it. However, the uninstall-history
+	// representation is intentionally SKIPPED for this state in PR-23
+	// (Option A locked 2026-04-20): update-history.json cannot
+	// truthfully represent uninstall success under its install-centric
+	// schema, and the separate-schema work is explicitly deferred to a
+	// later PR. writeHistory is gated on cfg.mode != "uninstall" in
+	// main.go, so this state does NOT produce a history entry.
+	StateUninstallReleased InstallState = "UNINSTALL_RELEASED"
+
+	// StateUninstallFailedRelease is the terminal failure state for
+	// PR-23 when mutation started but did not complete cleanly. The
+	// emergency SSH table may still be present (over-permissive SSH
+	// is the deliberate fallback — losing SSH on a failure is a worse
+	// outcome than a temporary permissive rule). Operator must
+	// investigate kernel + service state and either retry or manually
+	// resolve. IsApplyTerminal() returns true; ExitCode() maps to
+	// ExitFailed (2).
+	StateUninstallFailedRelease InstallState = "UNINSTALL_FAILED_RELEASE"
 )
 
 // Phase represents a named installer phase.
@@ -97,7 +127,16 @@ func (s InstallState) IsApplyTerminal() bool {
 		StateFailedRender,
 		StateFailedRebuild,
 		StateFailedNoFirewall,
-		StateFailedTakeover:
+		StateFailedTakeover,
+		// PR-23: uninstall terminal states represent completed apply
+		// outcomes too. IsApplyTerminal participates in the
+		// history-write gate, but the uninstall-history Option A lock
+		// means main.go's writeHistory call additionally excludes
+		// cfg.mode=="uninstall" — so these states here are marked
+		// apply-terminal for lifecycle-bridge consumers without
+		// triggering install-centric history representation.
+		StateUninstallReleased,
+		StateUninstallFailedRelease:
 		return true
 	}
 	return false
@@ -113,7 +152,9 @@ func IsApplyTerminal(s InstallState) bool { return s.IsApplyTerminal() }
 func (s InstallState) IsFailed() bool {
 	switch s {
 	case StateFailedSSH, StateFailedAbort, StateFailedRender,
-		StateFailedRebuild, StateFailedNoFirewall, StateFailedTakeover:
+		StateFailedRebuild, StateFailedNoFirewall, StateFailedTakeover,
+		// PR-23 uninstall failure terminal.
+		StateUninstallFailedRelease:
 		return true
 	}
 	return false
@@ -128,6 +169,12 @@ func (s InstallState) IsTerminal() bool {
 func (s InstallState) ExitCode() int {
 	switch s {
 	case StateCommitted:
+		return ExitCommitted
+	// PR-23: uninstall success maps to ExitCommitted too. The operator
+	// asked for uninstall and got it; the process exit code reflects
+	// operation success, not install-specific success. Install-history
+	// semantics are kept distinct via the writeHistory mode guard.
+	case StateUninstallReleased:
 		return ExitCommitted
 	case StateDegraded:
 		return ExitDegraded

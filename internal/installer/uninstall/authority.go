@@ -61,12 +61,52 @@ const (
 	AuthorityAmbiguous CurrentAuthority = "ambiguous"
 )
 
+// AmbiguityKind sub-classifies AuthorityAmbiguous so consumers that
+// must decide whether ambiguity is recoverable (proceed with caution)
+// or blocking (refuse and ask operator to resolve) can do so without
+// re-deriving the host signal — the single source of truth for that
+// decision lives here, at the classifier layer.
+//
+// PR-23 introduced this split because Apply (authority release) has
+// legitimate cleanup work for orphan nftban artifacts even when the
+// classifier cannot confirm pure AuthorityNFTBan. Blanket-refusing
+// Ambiguous would leave operators stuck with no sanctioned cleanup
+// path for half-installed hosts.
+type AmbiguityKind string
+
+const (
+	// AmbiguityNone is the sentinel for non-ambiguous classifications
+	// (AuthorityNFTBan / AuthorityExternal / AuthorityNone). Ambiguity
+	// MUST be AmbiguityNone for any State != AuthorityAmbiguous.
+	AmbiguityNone AmbiguityKind = ""
+
+	// AmbiguityOrphanNFTBan means the host has nftban kernel / service
+	// artifacts that are NOT all present together (partial state), AND
+	// no external firewall is observable. Recoverable: Apply may
+	// proceed via the emergency-SSH-injected release path to clean up
+	// the orphan artifacts. PR-22A first added this distinction; PR-23
+	// operationalises it.
+	AmbiguityOrphanNFTBan AmbiguityKind = "orphan_nftban"
+
+	// AmbiguityConflictExternal means the host has either (a) both
+	// nftban AND an external firewall observable, or (b) multiple
+	// external firewalls active simultaneously. Blocking: Apply MUST
+	// refuse until the operator resolves authority ownership. Silent
+	// takeover from this state is exactly the regression class the
+	// audits have been hardening against.
+	AmbiguityConflictExternal AmbiguityKind = "conflict_external"
+)
+
 // ClassifyResult is the full read-only observation returned by Classify.
 // Plan renderers consume this rather than re-probing.
 type ClassifyResult struct {
 	State    CurrentAuthority `json:"state"`
 	External string           `json:"external,omitempty"` // ufw / firewalld / iptables / csf / ""
-	Notes    []string         `json:"notes,omitempty"`    // human-readable rationale for the classification
+	// Ambiguity sub-classifies AuthorityAmbiguous so consumers can
+	// decide recoverable-vs-blocking without re-deriving host signals.
+	// AmbiguityNone for all non-Ambiguous states (invariant).
+	Ambiguity AmbiguityKind `json:"ambiguity,omitempty"`
+	Notes     []string      `json:"notes,omitempty"` // human-readable rationale for the classification
 }
 
 // Classify inspects the current host state and returns the 4-state
@@ -129,6 +169,7 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 			"ip nftban table + nftband.service both present; no external firewall observed")
 	case nftbanPresent && extPresent:
 		res.State = AuthorityAmbiguous
+		res.Ambiguity = AmbiguityConflictExternal
 		res.Notes = append(res.Notes,
 			"both nftban (table + daemon) and external firewall ("+ext+") observable; uninstall plan cannot assume who owns the firewall")
 	case nftbanPartial && extPresent:
@@ -137,6 +178,7 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		// external take over, because the operator may have expected
 		// one of the other paths. Surface the ambiguity.
 		res.State = AuthorityAmbiguous
+		res.Ambiguity = AmbiguityConflictExternal
 		res.Notes = append(res.Notes,
 			"partial nftban state (table OR daemon present, not both) AND external firewall ("+ext+") observable; host is in an indeterminate transition — operator must resolve before any mutation")
 	case nftbanPartial && !extPresent:
@@ -144,10 +186,13 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		// external must NOT collapse to AuthorityNone. The kernel still
 		// holds an ip nftban table OR the daemon is still up — calling
 		// that "no authority" would let a later PR's release logic skip
-		// kernel cleanup of an orphan table. Classify as Ambiguous so
-		// PR-23/24 must explicitly acknowledge the transition state
-		// before taking any action.
+		// kernel cleanup of an orphan table.
+		//
+		// PR-23 sub-classifies this as AmbiguityOrphanNFTBan so Apply
+		// can recognize it as a RECOVERABLE ambiguity and proceed via
+		// the emergency-SSH-injected cleanup path.
 		res.State = AuthorityAmbiguous
+		res.Ambiguity = AmbiguityOrphanNFTBan
 		res.Notes = append(res.Notes,
 			"partial nftban state (table OR daemon present, not both) AND no external firewall observable; kernel still holds nftban artifacts — host is in an indeterminate transition, operator must resolve before any mutation")
 	case !nftbanPresent && !nftbanPartial && extAmbiguous:
@@ -156,6 +201,7 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		// cannot be safely uninstalled/restored without operator
 		// intervention. Do NOT silently pick one via precedence.
 		res.State = AuthorityAmbiguous
+		res.Ambiguity = AmbiguityConflictExternal
 		res.Notes = append(res.Notes,
 			"no nftban authority, but multiple external firewalls appear active simultaneously ("+ext+"); operator must resolve which one owns authority before any mutation")
 	case !nftbanPresent && !nftbanPartial && extPresent:
@@ -169,6 +215,9 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		// all, that's ambiguity.
 		if exec == nil {
 			res.State = AuthorityAmbiguous
+			// Detection failure = operator cannot act on the host;
+			// treat as blocking so Apply refuses rather than guessing.
+			res.Ambiguity = AmbiguityConflictExternal
 			res.Notes = append(res.Notes, "executor unavailable; classification inconclusive")
 		} else {
 			res.State = AuthorityNone

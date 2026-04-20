@@ -58,6 +58,16 @@ type config struct {
 	// behind an explicit default-off flag. Operators that relied on the
 	// prior behaviour must now pass --panel-auto-takeover.
 	panelAutoTakeover bool // --panel-auto-takeover: allow panel presence to auto-approve takeover (default OFF)
+	// v1.100 PR-23: --confirm-mutation replaces the PR-22 auto-elevate
+	// shim. --mode=uninstall now requires exactly one of:
+	//   --dry-run          (observational plan)
+	//   --confirm-mutation (authority release core)
+	// Passing neither is refused; passing both is refused. This
+	// eliminates the "safe by default" UX drift that the PR-22 scaffold
+	// had to temporarily tolerate. The G3-UN-SHIM-LOCK CI gate catches
+	// any regression that reintroduces an auto-elevate path while the
+	// mutation code is present.
+	confirmMutation bool // --confirm-mutation: authorize uninstall authority release (PR-23)
 }
 
 func parseFlags() *config {
@@ -87,6 +97,8 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.restorePriorAuthority, "restore-prior-authority", false, "Restore pre-install external firewall authority. Requires recorded prior-authority record. Plan-only in PR-22.")
 	// v1.100 PR-22B: explicit panel-auto-takeover gate (see config field doc).
 	flag.BoolVar(&cfg.panelAutoTakeover, "panel-auto-takeover", false, "Allow control-panel presence to auto-approve takeover of conflicting firewalls. Default OFF. Set explicitly to preserve pre-PR-22B behaviour.")
+	// v1.100 PR-23: --confirm-mutation — explicit uninstall mutation entry.
+	flag.BoolVar(&cfg.confirmMutation, "confirm-mutation", false, "Authorize uninstall authority release (real kernel + service mutation). Required for --mode=uninstall without --dry-run. Mutually exclusive with --dry-run.")
 
 	flag.Parse()
 
@@ -146,32 +158,29 @@ func parseFlags() *config {
 				fmt.Fprintln(os.Stderr, "       it has no effect on remove mode and cannot be passed alone.")
 				os.Exit(state.ExitFatal)
 			}
-			// v1.100 PR-22: uninstall mode is accepted; current release
-			// is detect + dry-run plan only. Mutation phases land in
-			// PR-23+.
+			// v1.100 PR-23: auto-elevate shim REMOVED. The operator must
+			// explicitly choose between:
 			//
-			// Audit C regression guard: when PR-23+ adds real mutation,
-			// this auto-elevation block MUST be removed or changed to
-			// REFUSE rather than silently elevate. Leaving it in place
-			// would teach operators that --mode=uninstall is "safe by
-			// default" — then PR-23 would change that meaning without
-			// an audit prompt. Tracked in the PR-22 contract doc:
-			// internal/installer/uninstall/contract.md (audit C regression
-			// note).
-			if !cfg.dryRun {
-				fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════════════╗")
-				fmt.Fprintln(os.Stderr, "║  --mode=uninstall: NO MUTATION WILL OCCUR (v1.100 PR-22 scope)       ║")
-				fmt.Fprintln(os.Stderr, "║                                                                      ║")
-				fmt.Fprintln(os.Stderr, "║  PR-22 ships detect + dry-run plan only. This invocation is being   ║")
-				fmt.Fprintln(os.Stderr, "║  auto-elevated to --dry-run. Nothing will be removed, no authority  ║")
-				fmt.Fprintln(os.Stderr, "║  released, no service disabled, no file deleted.                    ║")
-				fmt.Fprintln(os.Stderr, "║                                                                      ║")
-				fmt.Fprintln(os.Stderr, "║  When PR-23+ adds mutation, this auto-elevation will be removed.    ║")
-				fmt.Fprintln(os.Stderr, "║  At that point, --mode=uninstall will mutate unless --dry-run is    ║")
-				fmt.Fprintln(os.Stderr, "║  explicitly passed. Do not build operational habits around this     ║")
-				fmt.Fprintln(os.Stderr, "║  PR-22 safety-by-default behaviour.                                 ║")
-				fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════════════╝")
-				cfg.dryRun = true
+			//   --dry-run          : observational plan (zero mutation)
+			//   --confirm-mutation : authority release core (real kernel
+			//                        + service mutation)
+			//
+			// Passing neither is refused. Passing both is refused. This
+			// replaces the PR-22 scaffold-era "safe by default" UX with
+			// explicit consent, closing the audit-C regression seam. The
+			// G3-UN-SHIM-LOCK CI gate verifies no auto-elevate path
+			// coexists with uninstall mutation code.
+			if !cfg.dryRun && !cfg.confirmMutation {
+				fmt.Fprintln(os.Stderr, "error: --mode=uninstall requires exactly one of --dry-run OR --confirm-mutation")
+				fmt.Fprintln(os.Stderr, "       --dry-run          : render the release plan, make no changes")
+				fmt.Fprintln(os.Stderr, "       --confirm-mutation : release nftban authority (real kernel + service mutation)")
+				fmt.Fprintln(os.Stderr, "       explicit consent is required — silent default behaviour was removed in PR-23.")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.dryRun && cfg.confirmMutation {
+				fmt.Fprintln(os.Stderr, "error: --dry-run and --confirm-mutation are mutually exclusive")
+				fmt.Fprintln(os.Stderr, "       one asks for a plan; the other authorises mutation. Pick one.")
+				os.Exit(state.ExitFatal)
 			}
 			return cfg
 		}
@@ -214,6 +223,14 @@ func parseFlags() *config {
 	// would silently pick one and ignore the other.
 	if cfg.rpm && cfg.deb {
 		fmt.Fprintln(os.Stderr, "error: --rpm and --deb cannot both be set")
+		os.Exit(state.ExitFatal)
+	}
+
+	// PR-23: --confirm-mutation has no meaning outside --mode=uninstall.
+	// Reject explicitly so operators don't get a silent no-op or a
+	// nonsense interaction with install/upgrade takeover semantics.
+	if cfg.confirmMutation && cfg.mode != "uninstall" {
+		fmt.Fprintln(os.Stderr, "error: --confirm-mutation is only valid with --mode=uninstall")
 		os.Exit(state.ExitFatal)
 	}
 
