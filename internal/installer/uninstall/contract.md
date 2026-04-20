@@ -281,12 +281,12 @@ discipline.
 | # | PR | Merge commit | Purpose |
 |---|---|---|---|
 | 1 | Prior-authority record hardening | PR #484 / `3b834033` | Added `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go`; 5-state classification |
+| 2 | External-firewall detection unification | PR #486 / `49d98fc1` | `internal/installer/extfw` canonical detector; Option A CSF config-file signal shared across install/update/uninstall; multi-active → `Ambiguous` (no silent collapse); cross-caller consistency test locked as regression guard |
 
 ### Behavioral / semantic blockers (code contract changes)
 
 | # | PR | Scope | Blocking because |
 |---|---|---|---|
-| 2 | External-firewall detection unification | One shared `DetectExternalAuthority` function + one precedence order (ufw → firewalld → iptables → csf) used by install-side `authority/classify.go`, uninstall-side `uninstall/authority.go`, and any future consumer | Detection drift between modules will cause install/uninstall/restore to disagree about what external authority exists |
 | 6 | Payload integrity minimum checks | Minimum-size + required-header/token check for `/etc/nftban/nftban.conf` and `/etc/nftban/nftables.conf`; wire into existing `payload.VerifyInventory` | Presence-only validation lets a truncated-or-empty critical config pass |
 
 ### Assurance / gate blockers (CI and scope-lock enforcement)

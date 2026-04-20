@@ -207,6 +207,13 @@ jobs:
           # Stop Condition violation.
           before_varlib=$(find /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           before_etcnftban=$(find /etc/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          # PR-P2-3 (G3-KS-SNAPSHOT): capture kernel nft tables +
+          # firewall-adjacent service states BEFORE the dry-run so we
+          # can hard-assert they remain byte-identical afterward.
+          # Filesystem snapshot alone (above) misses a regression that
+          # mutates kernel tables or service states without touching
+          # tracked files — exactly the class of drift this gate closes.
+          before_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
           set +e
           sudo ./bin/nftban-installer --mode=uninstall --dry-run \
               --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-dryrun.out
@@ -219,6 +226,7 @@ jobs:
           fi
           after_varlib=$(find /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           after_etcnftban=$(find /etc/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
+          after_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
           if [[ "$before_varlib" != "$after_varlib" ]]; then
             echo "::error::PR-22 Stop Condition violated — uninstall dry-run modified /var/lib/nftban/"
             diff <(echo "$before_varlib") <(echo "$after_varlib") || true
@@ -229,7 +237,13 @@ jobs:
             diff <(echo "$before_etcnftban") <(echo "$after_etcnftban") || true
             exit 1
           fi
-          echo "G3-UN-NO-WRITES PASS — /var/lib/nftban and /etc/nftban unchanged after dry-run"
+          # PR-P2-3 hard assertion — no `|| true` on the diff check.
+          if [[ "$before_ks" != "$after_ks" ]]; then
+            echo "::error::G3-KS-SNAPSHOT FAIL: kernel or service state changed during uninstall --dry-run"
+            diff <(echo "$before_ks") <(echo "$after_ks") || true
+            exit 1
+          fi
+          echo "G3-UN-NO-WRITES PASS — /var/lib/nftban, /etc/nftban, kernel, and service state all unchanged after dry-run"
           # Mandatory contract-language elements — each one corresponds
           # to a row PR-22 promised to render.
           for needle in \
