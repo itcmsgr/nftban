@@ -265,21 +265,49 @@ these gates; if it doesn't, the gate needs extension, not the rule.
 
 ---
 
-## Pre-PR-23 blockers (tracked follow-up PRs)
+## Pre-PR-23 blockers
 
-PR-23 (uninstall mutation: Switch phase + authority release) must NOT
-start until all six items below have landed and been verified by a
-narrow-scope audit. Each is its own PR with an explicit micro-contract
-and one falsifiable proof test per PR-22B merge discipline.
+Blocker #1 is already landed in PR #484 (prior-authority record
+hardening). Remaining blockers before PR-23 are #2–#6 below. PR-23
+starts only after all remaining pre-PR-23 blockers merge and a narrow
+verification audit returns green.
 
-| # | PR | Purpose | Blocking because |
+Each remaining blocker is its own bounded PR with an explicit
+micro-contract and one falsifiable proof test per PR-22B merge
+discipline.
+
+### Landed
+
+| # | PR | Merge commit | Purpose |
 |---|---|---|---|
-| 1 | Prior-authority record hardening | Add `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go` | PR-24 restore enforcement cannot trust under-defined `RecordUsable` |
-| 2 | External-firewall detection unification | One shared function + one precedence order used by install/update/uninstall | Detection drift between modules will cause disagreement under takeover/restore |
-| 3 | Kernel/service snapshot CI gate | `nft list tables` + `systemctl is-active` diff before/after every dry-run path | Filesystem snapshot alone cannot prove process-level purity |
-| 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands |
-| 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
-| 6 | Payload integrity minimum checks | Minimum-size / header-presence for `nftban.conf`, `nftables.conf` | Presence-only validation lets a truncated file pass |
+| 1 | Prior-authority record hardening | PR #484 / `3b834033` | Added `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go`; 5-state classification |
+
+### Behavioral / semantic blockers (code contract changes)
+
+| # | PR | Scope | Blocking because |
+|---|---|---|---|
+| 2 | External-firewall detection unification | One shared `DetectExternalAuthority` function + one precedence order (ufw → firewalld → iptables → csf) used by install-side `authority/classify.go`, uninstall-side `uninstall/authority.go`, and any future consumer | Detection drift between modules will cause install/uninstall/restore to disagree about what external authority exists |
+| 6 | Payload integrity minimum checks | Minimum-size + required-header/token check for `/etc/nftban/nftban.conf` and `/etc/nftban/nftables.conf`; wire into existing `payload.VerifyInventory` | Presence-only validation lets a truncated-or-empty critical config pass |
+
+### Assurance / gate blockers (CI and scope-lock enforcement)
+
+| # | PR | Scope | Blocking because |
+|---|---|---|---|
+| 3 | Kernel/service snapshot CI gate | Before/after `nft list tables` + `systemctl is-active` diff around every dry-run path; hard-assert equal | Filesystem snapshot alone cannot prove process/kernel purity |
+| 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands that source grep cannot see |
+| 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists when any mutation code lands in `internal/installer/uninstall/` | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+
+### Later v1.100 work (preferred order, not dogmatic)
+
+After PR-23 lands:
+
+- **PR-24** — restore enforcement (consumes PR-P2-1's hardened records + `--panel-auto-takeover` gate)
+- **PR-25** — artifact removal semantics (remove vs purge vs purge+force-delete-operator-config)
+- **PR-26** — uninstall post-verification gate
+
+PR-24/25/26 ordering may be revisited — restore enforcement may expose
+facts that affect artifact-removal semantics, so treat this sequence
+as preferred, not frozen.
 
 Phase 3 gating: once items 1–6 are merged and CI green, a focused
 verification audit runs with ONLY these questions:
