@@ -60,13 +60,13 @@ jobs:
         if: matrix.label == 'ubuntu-24.04'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nftables jq
+          sudo apt-get install -y nftables jq strace
 
       - name: Install system dependencies (RPM)
         if: matrix.label == 'almalinux-9'
         run: |
           dnf -y install epel-release
-          dnf -y install nftables jq git tar gzip procps-ng findutils sudo golang
+          dnf -y install nftables jq git tar gzip procps-ng findutils sudo golang strace
 
       - name: Set up Go (DEB only)
         if: matrix.label == 'ubuntu-24.04'
@@ -214,8 +214,14 @@ jobs:
           # mutates kernel tables or service states without touching
           # tracked files — exactly the class of drift this gate closes.
           before_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
+          # PR-P2-4 (G3-EXEC-TRACE): wrap the dry-run under strace.
+          # Uninstall is the most scope-sensitive mode — verifying that
+          # no mutation process ever spawns during dry-run is the
+          # strongest proof that PR-23's future mutation code will be
+          # the ONLY mutation surface.
           set +e
-          sudo ./bin/nftban-installer --mode=uninstall --dry-run \
+          sudo bash scripts/ci-exec-trace-assert.sh \
+              ./bin/nftban-installer --mode=uninstall --dry-run \
               --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-dryrun.out
           rc=${PIPESTATUS[0]}
           set -e

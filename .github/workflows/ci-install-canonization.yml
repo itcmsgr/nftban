@@ -61,13 +61,13 @@ jobs:
         if: matrix.label == 'ubuntu-24.04'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nftables
+          sudo apt-get install -y nftables strace
 
       - name: Install system dependencies (RPM)
         if: matrix.label == 'almalinux-9'
         run: |
           dnf -y install epel-release
-          dnf -y install nftables git tar gzip procps-ng findutils sudo golang
+          dnf -y install nftables git tar gzip procps-ng findutils sudo golang strace
 
       - name: Set up Go (DEB only)
         if: matrix.label == 'ubuntu-24.04'
@@ -111,8 +111,14 @@ jobs:
           # so we can hard-assert they are byte-identical afterward.
           before_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
 
+          # PR-P2-4 (G3-EXEC-TRACE): wrap the refuse-dry-run under strace
+          # so we can assert the binary did NOT spawn any forbidden
+          # mutation process (nft add/flush/delete, systemctl lifecycle
+          # verbs, external firewall binaries, package-manager removal,
+          # user/group deletion) before it exits with its refusal.
           set +e
-          out=$(sudo ./bin/nftban-installer --mode=install --dry-run \
+          out=$(sudo bash scripts/ci-exec-trace-assert.sh \
+                ./bin/nftban-installer --mode=install --dry-run \
                 --state-dir=/var/lib/nftban/state 2>&1)
           rc=$?
           set -e
