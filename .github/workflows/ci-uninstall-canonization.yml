@@ -82,6 +82,118 @@ jobs:
       # external-firewall touches into the uninstall code, CI fails BEFORE
       # the unit tests even run.
       # ------------------------------------------------------------------
+      # ------------------------------------------------------------------
+      # G3-UN-SHIM-LOCK (PR-P2-5) — lifecycle transition safety lock.
+      #
+      # The `flags.go` auto-elevate shim silently forces --dry-run when
+      # `--mode=uninstall` is invoked without an explicit --dry-run.
+      # This is correct ONLY during PR-22's scaffold era, when no
+      # mutation code exists in the uninstall package. The moment
+      # real mutation code lands (PR-23 Switch phase / authority
+      # release), the shim MUST be removed or converted to an explicit
+      # refusal. Leaving both in place teaches operators "--mode=
+      # uninstall is safe by default" right up until a silent semantic
+      # flip to mutation — the exact UX-drift attack the contract
+      # warns against.
+      #
+      # This gate fires BEFORE tests so any reviewer sees the coupling
+      # immediately. The rule:
+      #
+      #   shim_present  ∧  mutation_present  →  FAIL
+      #   shim_present  ∧ ¬mutation_present  →  PASS (PR-22 scaffold state)
+      #  ¬shim_present  ∧  mutation_present  →  PASS (post-PR-23, shim removed)
+      #  ¬shim_present  ∧ ¬mutation_present  →  PASS (trivial)
+      #
+      # Contract: internal/installer/uninstall/contract.md
+      #           §"Audit C regression note" and §"Pre-PR-23 blockers"
+      # ------------------------------------------------------------------
+      - name: G3-UN-SHIM-LOCK — auto-elevate shim may not coexist with uninstall mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          # Part 1 — shim presence signature. Two independent markers,
+          # both introduced by PR-22's flags.go block. Presence of
+          # EITHER is sufficient — this ensures trivial renames don't
+          # accidentally hide the shim from the gate.
+          shim_present=0
+          if grep -qE 'auto-elevated to --dry-run' cmd/nftban-installer/flags.go 2>/dev/null; then
+            shim_present=1
+          fi
+          if grep -qE 'NO MUTATION WILL OCCUR \(v1\.100 PR-22 scope\)' cmd/nftban-installer/flags.go 2>/dev/null; then
+            shim_present=1
+          fi
+
+          # Part 2 — mutation presence in the uninstall scope. Scope is
+          # the uninstall package + the uninstall dispatcher, Go files
+          # only, excluding tests (which may contain mutation strings
+          # as fixtures).
+          mutation_scope_files=$(find \
+            internal/installer/uninstall \
+            cmd/nftban-installer/uninstall_dryrun.go \
+            -type f -name '*.go' 2>/dev/null | grep -vE '_test\.go$' || true)
+
+          # Mutation-flavored patterns. Each targets a specific kernel /
+          # service / filesystem / external-firewall write path. Match
+          # any = mutation code has landed.
+          mutation_patterns=(
+              'exec\.Run\("nft"[^)]*add'
+              'exec\.Run\("nft"[^)]*create'
+              'exec\.Run\("nft"[^)]*delete'
+              'exec\.Run\("nft"[^)]*flush'
+              'exec\.Run\("systemctl"[^)]*stop'
+              'exec\.Run\("systemctl"[^)]*start'
+              'exec\.Run\("systemctl"[^)]*restart'
+              'exec\.Run\("systemctl"[^)]*reload'
+              'exec\.Run\("systemctl"[^)]*enable'
+              'exec\.Run\("systemctl"[^)]*disable'
+              'exec\.Run\("systemctl"[^)]*mask'
+              'exec\.Run\("systemctl"[^)]*unmask'
+              'exec\.ServiceStop\('
+              'exec\.ServiceStart\('
+              'exec\.ServiceEnable\('
+              'exec\.ServiceDisable\('
+              'exec\.ServiceMask\('
+              'exec\.ServiceUnmask\('
+              'exec\.Run\("ufw"'
+              'exec\.Run\("firewall-cmd"'
+              'exec\.Run\("iptables-restore"'
+              'exec\.WriteFileAtomic\('
+              'os\.WriteFile\('
+              'os\.Create\('
+              'os\.Remove\('
+              'os\.RemoveAll\('
+              'os\.MkdirAll\('
+              'os\.Rename\('
+              'sf\.Transition\('
+          )
+          mutation_present=0
+          if [[ -n "$mutation_scope_files" ]]; then
+            for pat in "${mutation_patterns[@]}"; do
+              if grep -nE "$pat" $mutation_scope_files 2>/dev/null; then
+                mutation_present=1
+              fi
+            done
+          fi
+
+          echo "G3-UN-SHIM-LOCK state: shim_present=$shim_present mutation_present=$mutation_present"
+
+          # Gate rule: the coupling is the failure.
+          if [[ "$shim_present" -eq 1 && "$mutation_present" -eq 1 ]]; then
+            echo "::error::G3-UN-SHIM-LOCK FAIL: uninstall mutation code present AND auto-elevate shim still exists in cmd/nftban-installer/flags.go"
+            echo "::error::The shim must be REMOVED or CONVERTED TO REFUSAL before any mutation code lands in internal/installer/uninstall/."
+            echo "::error::See internal/installer/uninstall/contract.md §'Audit C regression note' for the two acceptable remediations."
+            exit 1
+          fi
+
+          if [[ "$mutation_present" -eq 1 ]]; then
+            echo "G3-UN-SHIM-LOCK PASS — uninstall mutation has landed AND shim was correctly removed (post-PR-23 state)"
+          elif [[ "$shim_present" -eq 1 ]]; then
+            echo "G3-UN-SHIM-LOCK PASS — no uninstall mutation yet; auto-elevate shim allowed during PR-22/P2-x scaffold era"
+          else
+            echo "G3-UN-SHIM-LOCK PASS — neither shim nor uninstall mutation present"
+          fi
+
       - name: G3-UN-NO-MUTATION — structural audit of uninstall package
         shell: bash
         run: |
