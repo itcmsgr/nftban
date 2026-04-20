@@ -25,6 +25,7 @@ package uninstall
 
 import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/extfw"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
@@ -74,10 +75,10 @@ type ClassifyResult struct {
 // Detection inputs (all read-only):
 //   - exec.NftTableExists("ip", "nftban")  — is nftban authoritative
 //   - exec.ServiceActive("nftband.service") — is the daemon up
-//   - exec.ServiceActive("ufw")             — is UFW up
-//   - exec.ServiceActive("firewalld.service") — is firewalld up
-//   - exec.Run("iptables-save")             — are iptables rules present
-//   - exec.FileExists("/etc/csf/csf.conf")  — is CSF installed
+//   - extfw.Detect(exec, log)               — unified external-firewall
+//     detection (see internal/installer/extfw — single source of truth
+//     for UFW / firewalld / iptables / CSF probing across install,
+//     update, and uninstall lifecycle paths; PR-P2-2)
 //
 // The classifier does NOT: invoke nft add/flush/delete, run systemctl
 // stop/disable, read any config file beyond the FileExists probe, or
@@ -94,10 +95,32 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 	// classifier must not overstate certainty on top of that (audit D.1).
 	nftbanPartial := (nftbanTable || nftbandActive) && !nftbanPresent
 
-	ext := detectExternalAuthority(exec)
+	// PR-P2-2: route external-firewall detection through the unified
+	// extfw.Detect — single source of truth shared with install-side
+	// and update-side consumers.
+	extRes := extfw.Detect(exec, log)
+	var ext string
+	extPresent := false
+	extAmbiguous := false
+	switch {
+	case extRes.Ambiguous:
+		// Multiple distinct external firewalls active simultaneously —
+		// do NOT silently collapse via precedence. Surface the list so
+		// the plan can show it to the operator.
+		extAmbiguous = true
+		extPresent = true
+		names := make([]string, 0, len(extRes.Active))
+		for _, n := range extRes.Active {
+			names = append(names, string(n))
+		}
+		ext = joinStrings(names, "+")
+	case extRes.Authoritative != extfw.NameNone:
+		ext = string(extRes.Authoritative)
+		extPresent = true
+	default:
+		ext = ""
+	}
 	res.External = ext
-
-	extPresent := ext != ""
 
 	switch {
 	case nftbanPresent && !extPresent:
@@ -127,6 +150,14 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 		res.State = AuthorityAmbiguous
 		res.Notes = append(res.Notes,
 			"partial nftban state (table OR daemon present, not both) AND no external firewall observable; kernel still holds nftban artifacts — host is in an indeterminate transition, operator must resolve before any mutation")
+	case !nftbanPresent && !nftbanPartial && extAmbiguous:
+		// PR-P2-2: multiple distinct external firewalls are active.
+		// The host has an internally-inconsistent takeover state and
+		// cannot be safely uninstalled/restored without operator
+		// intervention. Do NOT silently pick one via precedence.
+		res.State = AuthorityAmbiguous
+		res.Notes = append(res.Notes,
+			"no nftban authority, but multiple external firewalls appear active simultaneously ("+ext+"); operator must resolve which one owns authority before any mutation")
 	case !nftbanPresent && !nftbanPartial && extPresent:
 		res.State = AuthorityExternal
 		res.Notes = append(res.Notes,
@@ -159,70 +190,16 @@ func Classify(exec executor.Executor, log *logging.Logger) *ClassifyResult {
 	return res
 }
 
-// detectExternalAuthority returns the name of the external firewall
-// that currently appears authoritative, or "" if none detected.
-// Order is deterministic — first positive wins.
-func detectExternalAuthority(exec executor.Executor) string {
-	// UFW (Debian/Ubuntu) — check service active + status output non-empty.
-	if exec.ServiceActive("ufw") {
-		return "ufw"
+// joinStrings concatenates parts with sep. Local helper used to render
+// the multi-external-active name list; stdlib strings.Join would
+// require an import that's not otherwise needed in this file.
+func joinStrings(parts []string, sep string) string {
+	if len(parts) == 0 {
+		return ""
 	}
-	// firewalld (RHEL family)
-	if exec.ServiceActive("firewalld.service") || exec.ServiceActive("firewalld") {
-		return "firewalld"
+	out := parts[0]
+	for _, p := range parts[1:] {
+		out += sep + p
 	}
-	// iptables direct — active rules without nftban-owned tables imply
-	// iptables is the authority. We check iptables-legacy and iptables-nft
-	// ghost tables (the pattern already used by detect.DetectConflicts).
-	if hasActiveIptables(exec) {
-		return "iptables"
-	}
-	// CSF — detect by config file presence (CSF is a shell-wrapper around
-	// iptables, so its "service" is not always systemd-managed)
-	if exec.FileExists("/etc/csf/csf.conf") {
-		return "csf"
-	}
-	return ""
-}
-
-// hasActiveIptables reports whether non-nftban iptables rules appear
-// present. READ-ONLY: uses `iptables-save` / `ip6tables-save` to count
-// rule lines. No mutation.
-func hasActiveIptables(exec executor.Executor) bool {
-	// A practical heuristic: if iptables-save produces more than the
-	// empty "# Generated by" preamble (≤ 5 lines), something is holding
-	// rules. Nftban itself does not use legacy iptables, so any rules
-	// here indicate external authority.
-	r := exec.Run("iptables-save")
-	if r.ExitCode != 0 {
-		return false
-	}
-	return countNonCommentLines(r.Stdout) >= 3
-}
-
-// countNonCommentLines returns the number of lines in s that are neither
-// empty nor iptables/ip6tables comments.
-func countNonCommentLines(s string) int {
-	var n int
-	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == '\n' {
-			line := s[start:i]
-			start = i + 1
-			// trim left whitespace
-			j := 0
-			for j < len(line) && (line[j] == ' ' || line[j] == '\t') {
-				j++
-			}
-			if j >= len(line) {
-				continue
-			}
-			if line[j] == '#' || line[j] == '*' || line[j] == ':' {
-				// skip iptables-save preamble lines
-				continue
-			}
-			n++
-		}
-	}
-	return n
+	return out
 }
