@@ -282,6 +282,7 @@ discipline.
 |---|---|---|---|
 | 1 | Prior-authority record hardening | PR #484 / `3b834033` | Added `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go`; 5-state classification |
 | 2 | External-firewall detection unification | PR #486 / `49d98fc1` | `internal/installer/extfw` canonical detector; Option A CSF config-file signal shared across install/update/uninstall; multi-active → `Ambiguous` (no silent collapse); cross-caller consistency test locked as regression guard |
+| 3 | Kernel/service snapshot CI gate | PR #487 / (tracked post-merge) | `G3-KS-SNAPSHOT` added to all 3 canonization workflows; `scripts/ci-snapshot-kernel-service.sh` helper; hard-asserts kernel nft tables + firewall-adjacent service states byte-identical after every dry-run path |
 
 ### Behavioral / semantic blockers (code contract changes)
 
@@ -293,7 +294,6 @@ discipline.
 
 | # | PR | Scope | Blocking because |
 |---|---|---|---|
-| 3 | Kernel/service snapshot CI gate | Before/after `nft list tables` + `systemctl is-active` diff around every dry-run path; hard-assert equal | Filesystem snapshot alone cannot prove process/kernel purity |
 | 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands that source grep cannot see |
 | 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists when any mutation code lands in `internal/installer/uninstall/` | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
 
