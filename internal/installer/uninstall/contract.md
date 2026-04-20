@@ -85,6 +85,40 @@ PR-23). PR-22 only reads — it does not write any prior-authority
 artifact (that's install-side expansion per v1.100 Q9, tracked for
 PR-23 or a companion install-mode PR).
 
+### PR-P2-1 hardening (landed pre-PR-23)
+
+The 3-state classification above was tightened to 5 states so PR-24
+restore-enforcement has a stricter foundation:
+
+| State | Meaning |
+|---|---|
+| `NoRecord` | no artifact on disk |
+| `RecordMalformed` | artifact exists but JSON does not parse |
+| `RecordIncomplete` | JSON parses but required fields missing, unknown, or semantically unusable |
+| `RecordUsableActive` | all required fields present AND prior firewall was active at install time |
+| `RecordUsableInactive` | all required fields present AND prior firewall was explicitly NOT active at install time |
+
+"Usable" now requires:
+
+- JSON parses
+- schema version matches
+- firewall type is one of the known types
+- `recorded_at` timestamp present
+- `installer_version` present
+- `active_at_install` explicitly committed (pointer non-nil, not just
+  Go's zero-value false)
+
+**Usable does not imply "restore/re-enable now."** It means the record
+itself is trustworthy — PR-24 will still define its own restoration
+authorization rules on top of that.
+
+**Backward-safety note:** older records from before PR-P2-1 that lack
+`recorded_at` / `installer_version` / explicit `active_at_install` are
+intentionally reclassified as `RecordIncomplete` by the new Probe logic.
+This is safety tightening, not a functional regression. Records
+produced by the install-side writer that lands alongside PR-23 will
+carry all required fields.
+
 ---
 
 ## Plan output — contract-language rendering
