@@ -55,8 +55,21 @@ type Conflict struct {
 
 // DetectConflicts returns the conflict list for the current host.
 // Read-only; delegates to extfw.Detect for the underlying signals.
+//
+// PR-P2-2A: only observations whose Name is in the canonical Active
+// list become Conflicts. Observations from informational-only signals
+// (e.g. iptables ghost-table alone, which does NOT corroborate to a
+// real iptables presence under the Path B rule) are recorded in
+// res.Observations for transparency but excluded from the Conflict
+// list because they do not classify external authority.
 func DetectConflicts(exec executor.Executor, log *logging.Logger) []Conflict {
 	res := extfw.Detect(exec, log)
+
+	// Build the set of Names that extfw classified as active.
+	activeNames := make(map[extfw.Name]bool, len(res.Active))
+	for _, n := range res.Active {
+		activeNames[n] = true
+	}
 
 	var conflicts []Conflict
 	// De-dup by (Name + Service) so that ghost-table + service for the
@@ -65,6 +78,13 @@ func DetectConflicts(exec executor.Executor, log *logging.Logger) []Conflict {
 	// their Service fields differ.
 	seen := make(map[string]bool)
 	for _, obs := range res.Observations {
+		// PR-P2-2A: skip observations whose Name is not in the
+		// classified Active set. This prevents ghost-table-alone
+		// iptables observations from leaking into the Conflict list
+		// on stock Ubuntu hosts.
+		if !activeNames[obs.Name] {
+			continue
+		}
 		key := obs.DisplayName() + "|" + obs.Unit
 		if seen[key] {
 			continue
