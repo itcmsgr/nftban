@@ -148,6 +148,42 @@ func parseFlags() *config {
 	}
 
 	if !cfg.showVersion && !cfg.repair {
+		// v1.100 PR-24: --mode=restore — authority restoration policy
+		// decision engine (pure, no mutation). Validation rules here
+		// exist to keep the invocation surface tight per seed §2: the
+		// engine consumes --restore-prior-authority / --panel-auto-
+		// takeover as decision inputs; other execution-oriented flags
+		// are rejected because they are meaningless (and risk misleading
+		// the operator).
+		if cfg.mode == "restore" {
+			if cfg.confirmMutation {
+				fmt.Fprintln(os.Stderr, "error: --confirm-mutation is not valid with --mode=restore")
+				fmt.Fprintln(os.Stderr, "       --mode=restore invokes the PR-24 decision engine; it performs NO mutation.")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.dryRun {
+				fmt.Fprintln(os.Stderr, "error: --dry-run is not valid with --mode=restore")
+				fmt.Fprintln(os.Stderr, "       --mode=restore is ALWAYS pure policy decision — no mutation path exists.")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.takeover {
+				fmt.Fprintln(os.Stderr, "error: --takeover is not valid with --mode=restore")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.force {
+				fmt.Fprintln(os.Stderr, "error: --force is not valid with --mode=restore")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.rpm || cfg.deb || cfg.source {
+				fmt.Fprintln(os.Stderr, "error: package-origin flags (--rpm/--deb/--source) are not valid with --mode=restore")
+				os.Exit(state.ExitFatal)
+			}
+			if cfg.purge || cfg.forceDeleteOperatorConfig {
+				fmt.Fprintln(os.Stderr, "error: uninstall mode flags (--purge/--force-delete-operator-config) are not valid with --mode=restore")
+				os.Exit(state.ExitFatal)
+			}
+			return cfg
+		}
 		if cfg.mode == "uninstall" {
 			// PR-22B: flag combos that are only meaningful for uninstall
 			// are validated here, because the uninstall block early-returns
@@ -185,8 +221,8 @@ func parseFlags() *config {
 			return cfg
 		}
 		if cfg.mode != "install" && cfg.mode != "upgrade" {
-			fmt.Fprintf(os.Stderr, "error: --mode must be 'install' or 'upgrade' (got %q)\n", cfg.mode)
-			fmt.Fprintf(os.Stderr, "usage: nftban-installer --mode=install|upgrade [flags]\n")
+			fmt.Fprintf(os.Stderr, "error: --mode must be 'install', 'upgrade', 'uninstall', or 'restore' (got %q)\n", cfg.mode)
+			fmt.Fprintf(os.Stderr, "usage: nftban-installer --mode=install|upgrade|uninstall|restore [flags]\n")
 			fmt.Fprintf(os.Stderr, "       nftban-installer --repair [flags]\n")
 			os.Exit(state.ExitFatal)
 		}
