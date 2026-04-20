@@ -166,6 +166,10 @@ jobs:
           before=$(find /var/lib/nftban /etc/nftban -type f -printf '%p %s\n' 2>/dev/null | sort)
           before_hist=$(sudo sha256sum /var/lib/nftban/update-history.json | awk '{print $1}')
           before_state=$(sudo test -f /var/lib/nftban/state/install_state && sudo sha256sum /var/lib/nftban/state/install_state | awk '{print $1}' || echo "missing")
+          # PR-P2-3 (G3-KS-SNAPSHOT): capture kernel nft tables + firewall-
+          # adjacent service states for a hard before/after assertion
+          # around the update dry-run.
+          before_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
 
           set +e
           sudo ./bin/nftban-installer --mode=upgrade --dry-run \
@@ -209,6 +213,18 @@ jobs:
           if ! diff -q <(echo "$before" | grep '^/etc/nftban/') \
                        <(echo "$after"  | grep '^/etc/nftban/') >/dev/null; then
             echo "::error::G3-U3 FAIL: /etc/nftban was modified during --dry-run"
+            exit 1
+          fi
+
+          # PR-P2-3 (G3-KS-SNAPSHOT): kernel + service state must be
+          # byte-identical. The pre-PR-P2-3 gate snapshot covered only
+          # filesystem truth; a future regression that mutates nftables
+          # tables or service states without touching tracked files
+          # would have slipped past.
+          after_ks=$(bash scripts/ci-snapshot-kernel-service.sh)
+          if [[ "$before_ks" != "$after_ks" ]]; then
+            echo "::error::G3-KS-SNAPSHOT FAIL: kernel or service state changed during update --dry-run"
+            diff <(echo "$before_ks") <(echo "$after_ks") || true
             exit 1
           fi
 
