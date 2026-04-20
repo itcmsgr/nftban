@@ -351,3 +351,212 @@ func TestStageAll_OperatorConfigPreserved(t *testing.T) {
 		t.Errorf("operator-edited nftban.conf was overwritten (noreplace policy violated)")
 	}
 }
+
+// =============================================================================
+// PR-P2-6 — VerifyConfigIntegrity tests
+// =============================================================================
+
+// validNftbanConf returns a byte slice that satisfies every
+// VerifyConfigIntegrity constraint for /etc/nftban/nftban.conf.
+// Tests that want to break a single constraint start from this and
+// mutate exactly one dimension.
+func validNftbanConf() []byte {
+	// 512 bytes of realistic content with the SPDX-License-Identifier
+	// token — comfortably above the 256-byte minimum.
+	body := "# =============================================================================\n"
+	body += "# NFTBan - Main Configuration File\n"
+	body += "# =============================================================================\n"
+	body += "# SPDX-License-Identifier: MPL-2.0\n"
+	body += "# Purpose: operator configuration\n"
+	body += "# Some amount of pretend configuration follows so this file is\n"
+	body += "# comfortably above the integrity minimum-size floor. A real\n"
+	body += "# nftban.conf is tens of kilobytes; this stub represents the\n"
+	body += "# smallest operator-edited variant we still want to pass.\n"
+	for len(body) < 512 {
+		body += "# filler line to exceed the integrity minimum-size floor\n"
+	}
+	return []byte(body)
+}
+
+// validNftablesConf returns a byte slice that satisfies every
+// VerifyConfigIntegrity constraint for /etc/nftables.conf.
+func validNftablesConf() []byte {
+	body := "#!/usr/sbin/nft -f\n"
+	body += "# NFTBan firewall ruleset\n"
+	body += "# SPDX-License-Identifier: MPL-2.0\n"
+	body += "table ip nftban {\n"
+	body += "    chain input {\n"
+	body += "        type filter hook input priority 0; policy drop;\n"
+	body += "    }\n"
+	body += "}\n"
+	body += "table ip6 nftban {\n"
+	body += "    chain input {\n"
+	body += "        type filter hook input priority 0; policy drop;\n"
+	body += "    }\n"
+	body += "}\n"
+	for len(body) < 1024 {
+		body += "# filler so the rendered file exceeds the integrity floor\n"
+	}
+	return []byte(body)
+}
+
+// seedIntegrityHappyPath populates a mock with both critical configs
+// in their happy-path shape. Used as the base for every integrity test.
+func seedIntegrityHappyPath(mock *executor.MockExecutor) {
+	mock.Files["/etc/nftban/nftban.conf"] = validNftbanConf()
+	mock.Files["/etc/nftables.conf"] = validNftablesConf()
+}
+
+func TestVerifyConfigIntegrity_HappyPath(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	ok, issues := VerifyConfigIntegrity(mock)
+	if !ok {
+		t.Errorf("happy path should pass; got issues: %+v", issues)
+	}
+	if len(issues) != 0 {
+		t.Errorf("happy path must produce zero issues; got %d", len(issues))
+	}
+}
+
+func TestVerifyConfigIntegrity_MissingNftbanConf(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	delete(mock.Files, "/etc/nftban/nftban.conf")
+
+	ok, issues := VerifyConfigIntegrity(mock)
+	if ok {
+		t.Fatal("missing nftban.conf must fail integrity check")
+	}
+	var sawMissing bool
+	for _, i := range issues {
+		if i.Path == "/etc/nftban/nftban.conf" && strings.Contains(i.Reason, "missing") {
+			sawMissing = true
+		}
+	}
+	if !sawMissing {
+		t.Errorf("expected 'missing' reason for nftban.conf; got %+v", issues)
+	}
+}
+
+func TestVerifyConfigIntegrity_UndersizedNftbanConf(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	// Stub shorter than the 256-byte minimum — simulates a truncated
+	// file or an empty-stub regression.
+	mock.Files["/etc/nftban/nftban.conf"] = []byte("# SPDX-License-Identifier: MPL-2.0\n")
+
+	ok, issues := VerifyConfigIntegrity(mock)
+	if ok {
+		t.Fatal("undersized nftban.conf must fail integrity check")
+	}
+	var sawUndersized bool
+	for _, i := range issues {
+		if i.Path == "/etc/nftban/nftban.conf" && strings.Contains(i.Reason, "undersized") {
+			sawUndersized = true
+		}
+	}
+	if !sawUndersized {
+		t.Errorf("expected 'undersized' reason for nftban.conf; got %+v", issues)
+	}
+}
+
+func TestVerifyConfigIntegrity_NftbanConfMissingLicenseToken(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	// Large enough but stripped of the SPDX header — simulates operator
+	// edit that removed license / shipped config overwritten by
+	// something unrelated.
+	body := make([]byte, 600)
+	for i := range body {
+		body[i] = '#'
+	}
+	mock.Files["/etc/nftban/nftban.conf"] = body
+
+	ok, issues := VerifyConfigIntegrity(mock)
+	if ok {
+		t.Fatal("nftban.conf without SPDX header must fail integrity check")
+	}
+	var sawMissingToken bool
+	for _, i := range issues {
+		if i.Path == "/etc/nftban/nftban.conf" && strings.Contains(i.Reason, "SPDX-License-Identifier") {
+			sawMissingToken = true
+		}
+	}
+	if !sawMissingToken {
+		t.Errorf("expected missing-SPDX token reason for nftban.conf; got %+v", issues)
+	}
+}
+
+func TestVerifyConfigIntegrity_NftablesConfMissingShebang(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	// Replace shebang with a comment — file is still large, still has
+	// the table declaration, but missing the functional shebang that
+	// nftables.service needs to ExecStart it.
+	body := strings.Replace(string(validNftablesConf()), "#!/usr/sbin/nft -f", "# NOT A SHEBANG", 1)
+	mock.Files["/etc/nftables.conf"] = []byte(body)
+
+	ok, issues := VerifyConfigIntegrity(mock)
+	if ok {
+		t.Fatal("nftables.conf without shebang must fail integrity check")
+	}
+	var sawMissingToken bool
+	for _, i := range issues {
+		if i.Path == "/etc/nftables.conf" && strings.Contains(i.Reason, "#!/usr/sbin/nft") {
+			sawMissingToken = true
+		}
+	}
+	if !sawMissingToken {
+		t.Errorf("expected missing-shebang reason for nftables.conf; got %+v", issues)
+	}
+}
+
+func TestVerifyConfigIntegrity_NftablesConfMissingTableDecl(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	seedIntegrityHappyPath(mock)
+	// Strip the nftban table declaration — file is large + has shebang
+	// but is functionally meaningless (no nftban-owned ruleset).
+	body := strings.ReplaceAll(string(validNftablesConf()), "table ip nftban", "table ip other")
+	mock.Files["/etc/nftables.conf"] = []byte(body)
+
+	ok, issues := VerifyConfigIntegrity(mock)
+	if ok {
+		t.Fatal("nftables.conf without 'table ip nftban' must fail integrity check")
+	}
+	var sawMissingToken bool
+	for _, i := range issues {
+		if i.Path == "/etc/nftables.conf" && strings.Contains(i.Reason, "table ip nftban") {
+			sawMissingToken = true
+		}
+	}
+	if !sawMissingToken {
+		t.Errorf("expected missing-table-decl reason for nftables.conf; got %+v", issues)
+	}
+}
+
+// PR-P2-6 scope-lock regression guard: the integrity check set MUST be
+// exactly two files (nftban.conf + nftables.conf). Adding a third file
+// requires an explicit contract update — this test is the falsifiable
+// record that the set is frozen.
+func TestCriticalConfigs_FrozenTwoFileSet(t *testing.T) {
+	if len(criticalConfigs) != 2 {
+		t.Errorf("criticalConfigs must be frozen at 2 entries (nftban.conf + nftables.conf); got %d — a contract update is required to extend the set", len(criticalConfigs))
+	}
+	wantPaths := map[string]bool{
+		"/etc/nftban/nftban.conf": false,
+		"/etc/nftables.conf":      false,
+	}
+	for _, cc := range criticalConfigs {
+		if _, ok := wantPaths[cc.Path]; !ok {
+			t.Errorf("unexpected path in criticalConfigs: %q (scope-lock violation)", cc.Path)
+			continue
+		}
+		wantPaths[cc.Path] = true
+	}
+	for path, seen := range wantPaths {
+		if !seen {
+			t.Errorf("expected %s in criticalConfigs; not found", path)
+		}
+	}
+}

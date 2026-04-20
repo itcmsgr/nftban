@@ -48,6 +48,7 @@ func RunAssertions(exec executor.Executor, sshPort int, log *logging.Logger) []A
 	results = append(results, assertDaemonActive(exec, log))
 	results = append(results, assertInstallStateFile(exec, log))
 	results = append(results, assertPayloadInventory(exec, log))
+	results = append(results, assertConfigIntegrity(exec, log))
 
 	passed := 0
 	for _, r := range results {
@@ -192,6 +193,35 @@ func assertPayloadInventory(exec executor.Executor, log *logging.Logger) Asserti
 			len(missing), strings.Join(missing, ", "))
 	} else {
 		log.Debug("ASSERT payload_inventory_ok: PASS")
+	}
+	return r
+}
+
+// assertConfigIntegrity (v1.100 PR-P2-6): minimum-sanity integrity check
+// on the critical config files that the rest of the install depends on.
+//
+// Complements assertPayloadInventory:
+//   - inventory checks presence — "the file exists"
+//   - integrity checks minimum viability — "the file is not empty /
+//     truncated and still carries its required header tokens"
+//
+// Scope lock (per PR-P2-6 contract): minimum-size + required-token only.
+// No checksum, no signature, no semantic parse. The fixed two-file set
+// (nftban.conf + nftables.conf) lives in payload.criticalConfigs; adding
+// a file or a signal type requires an explicit contract update.
+func assertConfigIntegrity(exec executor.Executor, log *logging.Logger) AssertionResult {
+	ok, issues := payload.VerifyConfigIntegrity(exec)
+	r := AssertionResult{Name: "config_integrity_ok", Passed: ok}
+	if !ok {
+		parts := make([]string, 0, len(issues))
+		for _, i := range issues {
+			parts = append(parts, i.Path+": "+i.Reason)
+		}
+		r.Detail = "config integrity issues: " + strings.Join(parts, "; ")
+		log.Warn("ASSERT config_integrity_ok: FAIL — %d issue(s): %s",
+			len(issues), strings.Join(parts, "; "))
+	} else {
+		log.Debug("ASSERT config_integrity_ok: PASS")
 	}
 	return r
 }
