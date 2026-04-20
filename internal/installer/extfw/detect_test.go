@@ -93,22 +93,20 @@ func TestDetect_Firewalld_Alone_BothSignals(t *testing.T) {
 	}
 }
 
-func TestDetect_Iptables_AllThreeSignals(t *testing.T) {
-	// Service signal
+// TestDetect_Iptables_CorroboratedSignals covers the two signals that
+// independently classify iptables authority: service active, and
+// iptables-save live rules. Per PR-P2-2A, ghost-table alone is NOT
+// one of them — see TestDetect_Iptables_GhostTableAlone_NotClassified
+// for the regression guard.
+func TestDetect_Iptables_CorroboratedSignals(t *testing.T) {
+	// Signal 1: iptables.service active.
 	m := cleanMock()
 	m.Services["iptables.service"] = true
 	if res := Detect(m, newTestLogger()); res.Authoritative != NameIptables {
 		t.Errorf("service: Authoritative = %q; want iptables", res.Authoritative)
 	}
 
-	// Ghost-table signal (filter table, common iptables-nft case)
-	m2 := cleanMock()
-	m2.RunResults["nft:list:tables"] = executor.Result{ExitCode: 0, Stdout: "table ip filter\n"}
-	if res := Detect(m2, newTestLogger()); res.Authoritative != NameIptables {
-		t.Errorf("ghost-table: Authoritative = %q; want iptables", res.Authoritative)
-	}
-
-	// Active-rules signal (iptables-save)
+	// Signal 3: iptables-save live rules.
 	m3 := cleanMock()
 	m3.RunResults["iptables-save:"] = executor.Result{
 		ExitCode: 0,
@@ -116,6 +114,79 @@ func TestDetect_Iptables_AllThreeSignals(t *testing.T) {
 	}
 	if res := Detect(m3, newTestLogger()); res.Authoritative != NameIptables {
 		t.Errorf("iptables-save: Authoritative = %q; want iptables", res.Authoritative)
+	}
+
+	// Ghost table + corroborating service → still classified.
+	m4 := cleanMock()
+	m4.RunResults["nft:list:tables"] = executor.Result{ExitCode: 0, Stdout: "table ip filter\n"}
+	m4.Services["iptables.service"] = true
+	if res := Detect(m4, newTestLogger()); res.Authoritative != NameIptables {
+		t.Errorf("ghost + service: Authoritative = %q; want iptables (service corroborates)", res.Authoritative)
+	}
+}
+
+// TestDetect_Iptables_GhostTableAlone_NotClassified — PR-P2-2A
+// regression guard. A `inet filter` / `ip filter` / `ip nat` / `ip
+// mangle` ghost nft table by itself must NOT classify iptables
+// authority. This is the stock Ubuntu nftables baseline (shipped
+// empty-accept-policy `table inet filter` by the `nftables` package)
+// and was false-positiving pre-correction, blocking uninstall on
+// every clean Ubuntu host.
+func TestDetect_Iptables_GhostTableAlone_NotClassified(t *testing.T) {
+	tests := []struct {
+		name  string
+		stdin string
+	}{
+		// The exact shape from lab2's stock Ubuntu 24.04 nftables install.
+		{"inet_filter_ubuntu_baseline", "table inet filter\n"},
+		{"ip_filter", "table ip filter\n"},
+		{"ip_nat", "table ip nat\n"},
+		{"ip_mangle", "table ip mangle\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := cleanMock()
+			m.RunResults["nft:list:tables"] = executor.Result{
+				ExitCode: 0,
+				Stdout:   tc.stdin,
+			}
+			// Critically: no iptables.service, no iptables-save rules.
+
+			res := Detect(m, newTestLogger())
+			if res.Authoritative == NameIptables {
+				t.Errorf("ghost-table-only (%s): Authoritative = %q; must NOT classify iptables without corroboration", tc.name, res.Authoritative)
+			}
+			for _, n := range res.Active {
+				if n == NameIptables {
+					t.Errorf("ghost-table-only (%s): NameIptables appeared in Active list without service/rule corroboration", tc.name)
+				}
+			}
+			// The observation itself should still be recorded (for
+			// plan-render transparency) — just not counted as authority.
+			var sawGhostObs bool
+			for _, o := range res.Observations {
+				if o.Name == NameIptables && o.Source == SourceGhostTable {
+					sawGhostObs = true
+				}
+			}
+			if !sawGhostObs {
+				t.Errorf("ghost-table-only (%s): observation should still be recorded for transparency, got none", tc.name)
+			}
+		})
+	}
+}
+
+// TestDetect_Iptables_GhostTable_PlusService_Classifies — inverse of
+// the regression guard: when the ghost table IS corroborated by a
+// live signal, classification proceeds as before.
+func TestDetect_Iptables_GhostTable_PlusService_Classifies(t *testing.T) {
+	m := cleanMock()
+	m.RunResults["nft:list:tables"] = executor.Result{ExitCode: 0, Stdout: "table ip filter\n"}
+	m.Services["iptables.service"] = true
+
+	res := Detect(m, newTestLogger())
+	if res.Authoritative != NameIptables {
+		t.Errorf("ghost + service: Authoritative = %q; want iptables", res.Authoritative)
 	}
 }
 

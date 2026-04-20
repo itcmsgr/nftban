@@ -42,9 +42,12 @@
 //   UFW:       ufw.service active
 //   Firewalld: firewalld.service active, OR a ghost nft table whose
 //              name contains "firewalld"
-//   Iptables:  iptables.service active, OR iptables-save reports ≥3
-//              non-comment rule lines, OR a ghost nft table named
-//              filter/nat/mangle
+//   Iptables:  iptables.service active OR iptables-save reports ≥3
+//              non-comment rule lines. A ghost nft table named
+//              filter/nat/mangle is RECORDED as an observation but
+//              does NOT classify iptables authority alone — it must
+//              be corroborated by service or live rules. See
+//              PR-P2-2A rationale in the iptables block below.
 //   CSF:       csf.service active, OR lfd.service active, OR
 //              /etc/csf/csf.conf present on disk
 //
@@ -201,16 +204,43 @@ func Detect(exec executor.Executor, log *logging.Logger) *DetectionResult {
 	}
 
 	// ── Iptables ───────────────────────────────────────────────────────
-	// Signal 1: iptables.service is active.
+	//
+	// PR-P2-2A (2026-04-20): iptables ghost-table signal alone is NOT
+	// sufficient to classify external iptables authority. Stock Ubuntu
+	// nftables packages ship a benign `table inet filter` with empty
+	// accept-policy chains — it satisfied the pre-PR-P2-2A rule
+	// (base ∈ {filter,nat,mangle}) and caused AuthorityAmbiguous on
+	// every Ubuntu host with nftban installed. Surfaced by real-host
+	// evidence on lab2.
+	//
+	// Post-PR-P2-2A rule: ghost-table is recorded as an observation
+	// (for transparency in logs / plan rendering) but does NOT
+	// contribute to the "is iptables active?" decision unless a
+	// corroborating signal also fires:
+	//   - iptables.service is active, OR
+	//   - iptables-save reports live rules (≥3 non-comment lines)
+	//
+	// Paths: ghost-table-alone → informational, not counted.
+	//         service OR rules → counted (with ghost-table observation
+	//                              kept in the audit trail for context).
+	var (
+		iptablesService bool
+		iptablesRules   bool
+		iptablesGhost   bool
+	)
+
+	// Collect signal 1: iptables.service is active.
 	if exec.ServiceActive("iptables.service") {
 		res.Observations = append(res.Observations, Observation{
 			Name: NameIptables, Source: SourceService, Unit: "iptables.service",
 			Detail: "iptables.service active",
 		})
-		seen[NameIptables] = true
+		iptablesService = true
 	}
-	// Signal 2: ghost nft table named filter/nat/mangle (iptables-nft
-	// compatibility tables).
+	// Collect signal 2: ghost nft table named filter/nat/mangle
+	// (iptables-nft compatibility tables). Recorded as an observation
+	// even when it turns out to be stock-nftables noise — so plan
+	// rendering can still surface "we saw this, but did not count it."
 	for _, t := range listGhostNftTables(exec) {
 		base := strings.TrimPrefix(t, "ip ")
 		base = strings.TrimPrefix(base, "ip6 ")
@@ -220,22 +250,34 @@ func Detect(exec executor.Executor, log *logging.Logger) *DetectionResult {
 		if base == "filter" || base == "nat" || base == "mangle" {
 			res.Observations = append(res.Observations, Observation{
 				Name: NameIptables, Source: SourceGhostTable,
-				Detail: "ghost nft table: " + t,
+				Detail: "ghost nft table: " + t + " (informational — alone is not sufficient to classify iptables authority)",
 			})
-			seen[NameIptables] = true
+			iptablesGhost = true
 		}
 	}
-	// Signal 3: iptables-save reports ≥3 non-comment rule lines.
-	// Preserved from the uninstall-side heuristic — nftban itself
-	// does not use legacy iptables, so live rules imply external
-	// authority.
+	// Collect signal 3: iptables-save reports ≥3 non-comment rule lines.
+	// Preserved from the uninstall-side heuristic — nftban itself does
+	// not use legacy iptables, so live rules imply external authority.
 	if hasActiveIptablesRules(exec) {
 		res.Observations = append(res.Observations, Observation{
 			Name: NameIptables, Source: SourceIptablesRules,
 			Detail: "iptables-save: ≥3 non-comment rule lines present",
 		})
+		iptablesRules = true
+	}
+	// Apply the corroboration rule.
+	//
+	// Ghost-table contributes IFF another signal corroborates. This
+	// avoids false-positive on stock nftables baselines (see above)
+	// while keeping the legitimate iptables-nft detection path intact
+	// for hosts that actually have service + ghost tables together.
+	if iptablesService || iptablesRules {
 		seen[NameIptables] = true
 	}
+	// Silence "declared and not used" — iptablesGhost is read above
+	// only to register the observation; its role as a contributor is
+	// intentionally gated on corroboration.
+	_ = iptablesGhost
 
 	// ── CSF ────────────────────────────────────────────────────────────
 	// Signal 1: csf.service active.
