@@ -29,6 +29,28 @@ func newTestLogger() *logging.Logger {
 	return logging.New("/dev/null", false)
 }
 
+// seedNftbanConfContent returns a byte slice that satisfies PR-P2-6
+// config_integrity_ok checks for nftban.conf: >= 256 bytes AND contains
+// the SPDX-License-Identifier token.
+func seedNftbanConfContent() []byte {
+	body := "# SPDX-License-Identifier: MPL-2.0\n# NFTBan operator config\n"
+	for len(body) < 400 {
+		body += "# filler line\n"
+	}
+	return []byte(body)
+}
+
+// seedNftablesConfContent returns a byte slice that satisfies PR-P2-6
+// config_integrity_ok checks for nftables.conf: >= 512 bytes AND
+// contains both "#!/usr/sbin/nft" and "table ip nftban".
+func seedNftablesConfContent() []byte {
+	body := "#!/usr/sbin/nft -f\n# SPDX-License-Identifier: MPL-2.0\ntable ip nftban { }\n"
+	for len(body) < 700 {
+		body += "# filler line\n"
+	}
+	return []byte(body)
+}
+
 // seedCompletePayloadInventory populates the mock with every destination
 // required by payload.VerifyInventory so assertPayloadInventory passes.
 // Tests that want to exercise the inventory failure path can simply omit
@@ -40,8 +62,10 @@ func seedCompletePayloadInventory(mock *executor.MockExecutor) {
 	mock.Files["/usr/lib/nftban/bin/nftban-validate"] = []byte("x")
 	mock.Files["/usr/lib/nftban/bin/nftban-installer"] = []byte("x")
 	mock.Files["/usr/lib/nftban/VERSION"] = []byte("1.98.2\n")
-	mock.Files["/etc/nftban/nftban.conf"] = []byte("x")
-	mock.Files["/etc/nftban/nftables.conf"] = []byte("x")
+	// PR-P2-6: content must also satisfy config_integrity_ok — minimum
+	// size + required-header tokens. Build fixtures above the floor.
+	mock.Files["/etc/nftban/nftban.conf"] = seedNftbanConfContent()
+	mock.Files["/etc/nftban/nftables.conf"] = seedNftablesConfContent()
 	mock.Files["/etc/logrotate.d/nftban"] = []byte("x")
 	// Shell dirs must exist AND contain at least one file — mock.FileExists
 	// checks Files+Dirs; dirIsEmpty in payload.VerifyInventory opens the
