@@ -78,14 +78,37 @@ type Plan struct {
 	RestoreRequested bool `json:"restore_requested"`
 
 	// RestoreAuthorized is true only when RestoreRequested AND
-	// PriorState == PriorRecordUsable. This is the PR-22 classifier
-	// output; PR-24 enforces it.
+	// PriorState.IsUsable() returns true (both UsableActive and
+	// UsableInactive qualify — active/inactive is a separate semantic
+	// dimension surfaced via PriorActiveAtInstall). PR-24 enforces
+	// this gate.
 	RestoreAuthorized bool `json:"restore_authorized"`
 
-	// PriorState is the 3-state probe result for the prior-authority
-	// record. Populated regardless of RestoreRequested so the operator
-	// always sees the underlying ambiguity.
+	// PriorState is the 5-state probe result for the prior-authority
+	// record (PR-P2-1 hardened). Populated regardless of RestoreRequested
+	// so the operator always sees the underlying ambiguity.
 	PriorState PriorRecordState `json:"prior_state"`
+
+	// PriorIncompleteReason is populated when PriorState ==
+	// RecordIncomplete and gives a machine-consumable reason code so
+	// downstream tooling doesn't have to substring-match human notes.
+	// Empty string when the state is not Incomplete.
+	PriorIncompleteReason IncompleteReason `json:"prior_incomplete_reason,omitempty"`
+
+	// PriorActiveAtInstall surfaces the active-at-install-time
+	// distinction when the record is usable. Three values:
+	//
+	//   *true  — the prior firewall was actively holding authority at
+	//            install time; restore = re-enable a firewall that was
+	//            running
+	//   *false — the prior firewall was present but NOT active at install
+	//            time; restore = enable a firewall that was NOT running
+	//            (a different operation; operator should see this)
+	//   nil    — unknown (usable state not reached)
+	//
+	// PR-24 uses this to decide whether restoration needs a second
+	// confirmation prompt.
+	PriorActiveAtInstall *bool `json:"prior_active_at_install,omitempty"`
 
 	// Warnings is the operator-visible list of concerns that do NOT
 	// abort the plan but should be surfaced. Example: "restore flag
@@ -123,20 +146,30 @@ const PlanSchemaVersion = "1.100.0"
 // --restore-prior-authority flag at call time.
 func BuildPlan(mode Mode, auth *ClassifyResult, prior *ProbeResult, restoreRequested bool) *Plan {
 	p := &Plan{
-		SchemaVersion:     PlanSchemaVersion,
-		RequestedMode:     mode,
-		ArtifactPolicy:    artifactPolicyFor(mode),
-		CurrentAuthority:  auth.State,
-		DetectedExternal:  auth.External,
-		RestoreRequested:  restoreRequested,
-		PriorState:        prior.State,
-		RestoreAuthorized: restoreRequested && prior.State == PriorRecordUsable,
+		SchemaVersion:         PlanSchemaVersion,
+		RequestedMode:         mode,
+		ArtifactPolicy:        artifactPolicyFor(mode),
+		CurrentAuthority:      auth.State,
+		DetectedExternal:      auth.External,
+		RestoreRequested:      restoreRequested,
+		PriorState:            prior.State,
+		PriorIncompleteReason: prior.IncompleteReason,
+		RestoreAuthorized:     restoreRequested && prior.State.IsUsable(),
 		// Scope boundary is carried in the struct so JSON + text both see
 		// it. No text/JSON drift (audit D.5).
 		ScopeBoundary: "PR-22 scope: detect + plan only. No mutation code " +
 			"exists in this release. Running this command does NOT " +
 			"uninstall nftban. Later PRs (PR-23..PR-26) add mutation.",
 		NoMutationPerformed: true,
+	}
+
+	// PR-P2-1: surface the active-at-install distinction when the
+	// record is usable. Populated only when the record parsed and was
+	// classified as UsableActive/UsableInactive — otherwise nil so
+	// downstream consumers see "unknown," not a defaulted false.
+	if prior.State.IsUsable() && prior.Record != nil && prior.Record.ActiveAtInstall != nil {
+		v := *prior.Record.ActiveAtInstall
+		p.PriorActiveAtInstall = &v
 	}
 
 	// TargetAuthority — per Q2=C (frozen), default is None; restore is
@@ -154,9 +187,21 @@ func BuildPlan(mode Mode, auth *ClassifyResult, prior *ProbeResult, restoreReque
 		p.Warnings = append(p.Warnings,
 			"--restore-prior-authority requested but no prior-authority record exists — PR-24 will refuse this combination")
 	}
+	if restoreRequested && prior.State == PriorRecordMalformed {
+		p.Warnings = append(p.Warnings,
+			"--restore-prior-authority requested but prior-authority record is malformed (JSON parse failed) — PR-24 will refuse this combination")
+	}
 	if restoreRequested && prior.State == PriorRecordIncomplete {
 		p.Warnings = append(p.Warnings,
-			"--restore-prior-authority requested but prior-authority record is incomplete/unparseable — PR-24 will refuse this combination")
+			"--restore-prior-authority requested but prior-authority record is incomplete — PR-24 will refuse this combination")
+	}
+	// PR-P2-1: restoring an inactive prior is a semantically different
+	// operation (you're starting a firewall that was NOT running). Flag
+	// it even when restore is authorized so the operator sees the
+	// distinction before PR-24 runs.
+	if restoreRequested && prior.State == PriorRecordUsableInactive {
+		p.Warnings = append(p.Warnings,
+			"--restore-prior-authority requested; prior-authority record is usable but records the prior firewall as NOT active at install time — restoration would re-enable a firewall the operator was not running")
 	}
 	if auth.State == AuthorityAmbiguous {
 		p.Warnings = append(p.Warnings,
@@ -220,6 +265,20 @@ func (p *Plan) Render(w io.Writer) {
 	fmt.Fprintf(w, "  Restore requested           : %s\n", yesNo(p.RestoreRequested))
 	fmt.Fprintf(w, "  Restore authorized          : %s\n", yesNo(p.RestoreAuthorized))
 	fmt.Fprintf(w, "  Prior-authority record      : %s\n", p.PriorState)
+	// PR-P2-1: surface the active-at-install distinction when the
+	// record is usable. Operator must see the semantic difference
+	// between "restore a running firewall" and "enable a firewall that
+	// was not running." Unknown states (non-usable record) intentionally
+	// skip this line rather than display a defaulted value.
+	switch {
+	case p.PriorActiveAtInstall != nil && *p.PriorActiveAtInstall:
+		fmt.Fprintln(w, "  Prior firewall at install   : active (was running when nftban installed)")
+	case p.PriorActiveAtInstall != nil && !*p.PriorActiveAtInstall:
+		fmt.Fprintln(w, "  Prior firewall at install   : inactive (was NOT running when nftban installed)")
+	}
+	if p.PriorIncompleteReason != "" {
+		fmt.Fprintf(w, "  Prior-record issue          : %s\n", p.PriorIncompleteReason)
+	}
 	fmt.Fprintln(w, "")
 
 	if len(p.Warnings) > 0 {
