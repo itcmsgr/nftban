@@ -194,15 +194,29 @@ jobs:
             echo "G3-UN-SHIM-LOCK PASS — neither shim nor uninstall mutation present"
           fi
 
-      - name: G3-UN-NO-MUTATION — structural audit of uninstall package
+      - name: G3-UN-NO-MUTATION — structural audit of uninstall observational scope
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Narrow search scope to PR-22's claim surface.
+          # Narrow search scope to the OBSERVATIONAL uninstall surface.
+          #
+          # PR-23 introduced the one legitimate uninstall mutation path
+          # (internal/installer/uninstall/apply.go — the authority
+          # release orchestrator). That file is explicitly excluded
+          # from this grep scope because it MUST contain the kernel +
+          # service mutation calls the release sequence performs.
+          #
+          # G3-UN-SHIM-LOCK (separate gate in this workflow) is the
+          # invariant that ensures apply.go's mutation cannot coexist
+          # with the auto-elevate shim. G3-EXEC-TRACE (all 3 workflows)
+          # catches forbidden mutators at the dry-run path's syscall
+          # layer. Together those three gates cover the "no mutation
+          # during dry-run + mutation only in the sanctioned apply
+          # file" contract.
           files=$(find \
             internal/installer/uninstall \
             cmd/nftban-installer/uninstall_dryrun.go \
-            -type f -name '*.go' 2>/dev/null || true)
+            -type f -name '*.go' 2>/dev/null | grep -vE '/apply\.go$' || true)
           if [[ -z "$files" ]]; then
             echo "::error::G3-UN-NO-MUTATION: uninstall scope files not found"
             exit 1
@@ -384,36 +398,65 @@ jobs:
           echo "G3-UN-PLAN-RENDERS PASS — all mandatory contract-language elements present"
 
       # ------------------------------------------------------------------
-      # G3-UN-PLAN-RENDERS negative path — invoking --mode=uninstall
-      # WITHOUT --dry-run must still not mutate. The flags validator
-      # forces --dry-run on in PR-22; this confirms that elevation works.
+      # G3-UN-CONSENT-REQUIRED (PR-23) — --mode=uninstall with NEITHER
+      # --dry-run NOR --confirm-mutation must REFUSE explicitly (exit
+      # non-zero) and touch NOTHING. This replaces the PR-22-era
+      # "auto-elevate" gate: the shim was removed in PR-23, and the
+      # correct post-PR-23 behaviour for this bare invocation is a
+      # hard refusal.
       # ------------------------------------------------------------------
-      - name: G3-UN-PLAN-RENDERS — no-mutation even without explicit dry-run
+      - name: G3-UN-CONSENT-REQUIRED — --mode=uninstall without consent flag refuses
         shell: bash
         run: |
           set -Eeuo pipefail
-          # PR-22A boundary repair: the earlier gate only snapshot
-          # /etc/nftban + /usr/lib/nftban + /usr/sbin/nftban*. It did
-          # NOT cover /var/lib/nftban/ — the exact directory that leaked
-          # three writes in PR #480. The snapshot now includes all
-          # three protected trees. No exceptions.
           before=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           set +e
-          sudo ./bin/nftban-installer --mode=uninstall \
-              --state-dir=/var/lib/nftban/state 2>&1 | tee /tmp/uninstall-implicit.out
-          rc=${PIPESTATUS[0]}
+          out=$(sudo ./bin/nftban-installer --mode=uninstall \
+              --state-dir=/var/lib/nftban/state 2>&1)
+          rc=$?
           set -e
+          echo "$out"
           after=$(find /etc/nftban /usr/lib/nftban /usr/sbin/nftban* /var/lib/nftban -type f 2>/dev/null | sort | xargs -r sha256sum 2>/dev/null | sort || true)
           if [[ "$before" != "$after" ]]; then
-            echo "::error::PR-22 contract violation — --mode=uninstall touched protected filesystem"
+            echo "::error::G3-UN-CONSENT-REQUIRED FAIL — refused run touched protected filesystem"
             diff <(echo "$before") <(echo "$after") || true
             exit 1
           fi
-          if [[ "$rc" -ne 0 ]]; then
-            echo "::error::--mode=uninstall (no explicit dry-run) must exit 0 in PR-22 scope"
+          if [[ "$rc" -eq 0 ]]; then
+            echo "::error::G3-UN-CONSENT-REQUIRED FAIL — bare --mode=uninstall exited 0, must REFUSE"
             exit 1
           fi
-          echo "G3-UN-PLAN-RENDERS no-mutation PASS — no files changed under /etc/nftban, /usr/lib/nftban, /usr/sbin/nftban*, /var/lib/nftban"
+          if ! echo "$out" | grep -qE "requires exactly one of --dry-run OR --confirm-mutation"; then
+            echo "::error::G3-UN-CONSENT-REQUIRED FAIL — refusal message did not mention the two-flag choice"
+            exit 1
+          fi
+          echo "G3-UN-CONSENT-REQUIRED PASS — bare --mode=uninstall refused cleanly, no filesystem changes"
+
+      # ------------------------------------------------------------------
+      # G3-UN-CONSENT-BOTH-FLAGS (PR-23) — --mode=uninstall with BOTH
+      # --dry-run AND --confirm-mutation must also refuse. The two
+      # flags are semantically incompatible; accepting both would be
+      # a silent contract drift.
+      # ------------------------------------------------------------------
+      - name: G3-UN-CONSENT-BOTH-FLAGS — --dry-run + --confirm-mutation refuses
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          out=$(sudo ./bin/nftban-installer --mode=uninstall --dry-run --confirm-mutation \
+              --state-dir=/var/lib/nftban/state 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [[ "$rc" -eq 0 ]]; then
+            echo "::error::G3-UN-CONSENT-BOTH-FLAGS FAIL — passing both flags exited 0, must REFUSE"
+            exit 1
+          fi
+          if ! echo "$out" | grep -qE "mutually exclusive"; then
+            echo "::error::G3-UN-CONSENT-BOTH-FLAGS FAIL — refusal message did not mention mutual exclusion"
+            exit 1
+          fi
+          echo "G3-UN-CONSENT-BOTH-FLAGS PASS — both-flag combination refused"
 
       # ------------------------------------------------------------------
       # G3-UN-HISTORY-PURITY — regression guard for audit finding A.3.

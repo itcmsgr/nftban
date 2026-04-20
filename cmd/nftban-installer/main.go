@@ -112,15 +112,16 @@ func main() {
 	//
 	// PR-22B boundary repair: history writes are gated on an explicit
 	// allowlist of apply-terminal states AND the absence of --dry-run.
-	// This replaces the earlier mode-name heuristic with a structural
-	// predicate — dry-runs, intermediate states, and planning-terminal
-	// states (e.g. StateUninstallPlanning) never produce history entries.
 	//
-	// Audit finding F (history / audit-trail truth): update dry-runs used
-	// to be recorded as install_fail because StateDetectComplete has no
-	// "success" mapping; now they are not recorded at all. Automation that
-	// consumes update-history.json is no longer polluted by preview runs.
-	if !cfg.dryRun && state.IsApplyTerminal(sf.State) {
+	// PR-23 extension (Option A locked 2026-04-20): uninstall mode is
+	// ALSO excluded. update-history.json has an install-centric status
+	// vocabulary (success / install_fail / verify_fail) that cannot
+	// truthfully represent uninstall success without misrepresenting
+	// it as an install-success. A dedicated uninstall-history schema
+	// is an explicit pre-PR-24 (or parallel) follow-up item; until
+	// that lands, uninstall events are forensically visible only in
+	// the installer log, and update-history.json stays clean of them.
+	if !cfg.dryRun && cfg.mode != "uninstall" && state.IsApplyTerminal(sf.State) {
 		writeHistory(sf, cfg, previousVersion, hostname, log)
 	}
 
@@ -156,11 +157,18 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.repair {
 		return runRepair(ctx, exec, sf, log)
 	}
-	// v1.100 PR-22 (uninstall scaffold): uninstall-mode short-circuits
-	// to authority classify + prior-record probe + plan render. No
-	// mutation code exists in this release; mutation phases land in
-	// PR-23+. flags.go forces --dry-run for --mode=uninstall in PR-22.
+	// v1.100 PR-22 / PR-23 uninstall dispatch.
+	//
+	// flags.go validation (PR-23) guarantees exactly ONE of dryRun
+	// or confirmMutation is true for --mode=uninstall, so this two-
+	// branch routing is exhaustive:
+	//
+	//   --mode=uninstall --dry-run          → observational plan
+	//   --mode=uninstall --confirm-mutation → authority release (PR-23)
 	if cfg.mode == "uninstall" {
+		if cfg.confirmMutation {
+			return runUninstallApply(ctx, exec, sf, cfg, log)
+		}
 		return runUninstallDryRun(ctx, exec, sf, cfg, log)
 	}
 	// v1.99 PR-16 (G3-U1/U2/U3/U4): update-mode dry-run short-circuits to

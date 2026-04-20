@@ -112,6 +112,10 @@ func TestClassify_Ambiguous_NFTBanPlusUFW(t *testing.T) {
 	if res.External != "ufw" {
 		t.Errorf("External = %q; want ufw", res.External)
 	}
+	// PR-23: this pattern is BLOCKING ambiguity — Apply must refuse.
+	if res.Ambiguity != AmbiguityConflictExternal {
+		t.Errorf("Ambiguity = %q; want %q (blocking — external conflict)", res.Ambiguity, AmbiguityConflictExternal)
+	}
 }
 
 func TestClassify_NoteOnPartialNFTBan(t *testing.T) {
@@ -173,6 +177,10 @@ func TestClassify_PartialNFTBan_WithExternal_IsAmbiguous(t *testing.T) {
 	if !haveExternalNote {
 		t.Error("external-firewall note missing — operator cannot see the ambient firewall")
 	}
+	// PR-23: partial + external is BLOCKING (not recoverable by Apply).
+	if res.Ambiguity != AmbiguityConflictExternal {
+		t.Errorf("Ambiguity = %q; want %q (partial+external is blocking)", res.Ambiguity, AmbiguityConflictExternal)
+	}
 }
 
 // PR-22A audit fix: partial nftban WITHOUT external must classify as
@@ -204,6 +212,12 @@ func TestClassify_PartialNFTBan_NoExternal_IsAmbiguous(t *testing.T) {
 	if !haveAmbigNote {
 		t.Errorf("ambiguous-state note missing — operator must see why classification is ambiguous; got notes: %v", res.Notes)
 	}
+	// PR-23: orphan-nftban-without-external is RECOVERABLE ambiguity —
+	// Apply may proceed via the emergency-SSH-injected cleanup path.
+	// This assertion is the contract that unblocks PR-23's Apply.
+	if res.Ambiguity != AmbiguityOrphanNFTBan {
+		t.Errorf("Ambiguity = %q; want %q (orphan — recoverable)", res.Ambiguity, AmbiguityOrphanNFTBan)
+	}
 }
 
 // Symmetric case for the other partial shape: daemon up without the
@@ -219,6 +233,37 @@ func TestClassify_DaemonUpNoTable_NoExternal_IsAmbiguous(t *testing.T) {
 	res := Classify(mock, newTestLogger())
 	if res.State != AuthorityAmbiguous {
 		t.Errorf("daemon-up-no-table + no external MUST classify as Ambiguous. got %q", res.State)
+	}
+	// Same recoverable class as the table-only variant.
+	if res.Ambiguity != AmbiguityOrphanNFTBan {
+		t.Errorf("Ambiguity = %q; want %q (orphan — recoverable)", res.Ambiguity, AmbiguityOrphanNFTBan)
+	}
+}
+
+// PR-23: invariant — non-ambiguous states must have Ambiguity==None.
+// Prevents drift where a classifier refactor accidentally stamps a
+// sub-class on a pure-state result.
+func TestClassify_Invariant_NonAmbiguousHasNoAmbiguityKind(t *testing.T) {
+	// Pure AuthorityNFTBan
+	m1 := executor.NewMockExecutor()
+	m1.NftTables["ip:nftban"] = true
+	m1.Services["nftband.service"] = true
+	if r := Classify(m1, newTestLogger()); r.Ambiguity != AmbiguityNone {
+		t.Errorf("NFTBan: Ambiguity = %q; want AmbiguityNone", r.Ambiguity)
+	}
+	// Pure AuthorityExternal (ufw only)
+	m2 := executor.NewMockExecutor()
+	m2.Services["ufw.service"] = true
+	if r := Classify(m2, newTestLogger()); r.Ambiguity != AmbiguityNone {
+		t.Errorf("External: Ambiguity = %q; want AmbiguityNone", r.Ambiguity)
+	}
+	// Pure AuthorityNone
+	m3 := executor.NewMockExecutor()
+	m3.RunResults["iptables-save"] = executor.Result{
+		ExitCode: 0, Stdout: "# Generated\n*filter\n:INPUT ACCEPT\nCOMMIT\n",
+	}
+	if r := Classify(m3, newTestLogger()); r.Ambiguity != AmbiguityNone {
+		t.Errorf("None: Ambiguity = %q; want AmbiguityNone", r.Ambiguity)
 	}
 }
 

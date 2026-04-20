@@ -80,6 +80,9 @@ func TestInstallState_ExitCode(t *testing.T) {
 		{StateFailedNoFirewall, ExitFailed},
 		{StateFailedAbort, ExitAborted},
 		{StateFailedSSH, ExitFailed},
+		// PR-23 uninstall terminals
+		{StateUninstallReleased, ExitCommitted},     // uninstall succeeded → process exit success
+		{StateUninstallFailedRelease, ExitFailed},   // uninstall failed mid-flight → process exit failure
 	}
 	for _, tt := range tests {
 		if got := tt.state.ExitCode(); got != tt.want {
@@ -273,6 +276,11 @@ func TestInstallState_IsApplyTerminal(t *testing.T) {
 		StateFailedRebuild,
 		StateFailedNoFirewall,
 		StateFailedTakeover,
+		// PR-23 uninstall terminals — apply-terminal for lifecycle
+		// bookkeeping; history-write is gated separately by mode in
+		// main.go so these don't pollute install-history.json.
+		StateUninstallReleased,
+		StateUninstallFailedRelease,
 	}
 	notApplyTerminal := []InstallState{
 		StateFilesInstalled,
@@ -280,6 +288,9 @@ func TestInstallState_IsApplyTerminal(t *testing.T) {
 		StatePrepareComplete,
 		StateSwitchComplete,
 		StateServicesComplete,
+		// StateUninstallPlanning is the dry-run-only terminal; it
+		// remains non-apply-terminal even after PR-23 because
+		// dry-runs never produce history entries.
 		StateUninstallPlanning,
 	}
 	for _, s := range applyTerminal {
