@@ -238,7 +238,7 @@ var criticalConfigs = []criticalConfig{
 		},
 	},
 	{
-		Path:    "/etc/nftables.conf",
+		Path:    "/etc/nftban/nftables.conf",
 		MinSize: 512, // Shipped template renders to ~830 lines (~25KB)
 		// after SSH-port / CT-limit substitutions; 512 bytes is a
 		// conservative floor that catches render-output truncation or

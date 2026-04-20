@@ -379,7 +379,7 @@ func validNftbanConf() []byte {
 }
 
 // validNftablesConf returns a byte slice that satisfies every
-// VerifyConfigIntegrity constraint for /etc/nftables.conf.
+// VerifyConfigIntegrity constraint for /etc/nftban/nftables.conf.
 func validNftablesConf() []byte {
 	body := "#!/usr/sbin/nft -f\n"
 	body += "# NFTBan firewall ruleset\n"
@@ -404,7 +404,7 @@ func validNftablesConf() []byte {
 // in their happy-path shape. Used as the base for every integrity test.
 func seedIntegrityHappyPath(mock *executor.MockExecutor) {
 	mock.Files["/etc/nftban/nftban.conf"] = validNftbanConf()
-	mock.Files["/etc/nftables.conf"] = validNftablesConf()
+	mock.Files["/etc/nftban/nftables.conf"] = validNftablesConf()
 }
 
 func TestVerifyConfigIntegrity_HappyPath(t *testing.T) {
@@ -495,7 +495,7 @@ func TestVerifyConfigIntegrity_NftablesConfMissingShebang(t *testing.T) {
 	// the table declaration, but missing the functional shebang that
 	// nftables.service needs to ExecStart it.
 	body := strings.Replace(string(validNftablesConf()), "#!/usr/sbin/nft -f", "# NOT A SHEBANG", 1)
-	mock.Files["/etc/nftables.conf"] = []byte(body)
+	mock.Files["/etc/nftban/nftables.conf"] = []byte(body)
 
 	ok, issues := VerifyConfigIntegrity(mock)
 	if ok {
@@ -503,7 +503,7 @@ func TestVerifyConfigIntegrity_NftablesConfMissingShebang(t *testing.T) {
 	}
 	var sawMissingToken bool
 	for _, i := range issues {
-		if i.Path == "/etc/nftables.conf" && strings.Contains(i.Reason, "#!/usr/sbin/nft") {
+		if i.Path == "/etc/nftban/nftables.conf" && strings.Contains(i.Reason, "#!/usr/sbin/nft") {
 			sawMissingToken = true
 		}
 	}
@@ -518,7 +518,7 @@ func TestVerifyConfigIntegrity_NftablesConfMissingTableDecl(t *testing.T) {
 	// Strip the nftban table declaration — file is large + has shebang
 	// but is functionally meaningless (no nftban-owned ruleset).
 	body := strings.ReplaceAll(string(validNftablesConf()), "table ip nftban", "table ip other")
-	mock.Files["/etc/nftables.conf"] = []byte(body)
+	mock.Files["/etc/nftban/nftables.conf"] = []byte(body)
 
 	ok, issues := VerifyConfigIntegrity(mock)
 	if ok {
@@ -526,7 +526,7 @@ func TestVerifyConfigIntegrity_NftablesConfMissingTableDecl(t *testing.T) {
 	}
 	var sawMissingToken bool
 	for _, i := range issues {
-		if i.Path == "/etc/nftables.conf" && strings.Contains(i.Reason, "table ip nftban") {
+		if i.Path == "/etc/nftban/nftables.conf" && strings.Contains(i.Reason, "table ip nftban") {
 			sawMissingToken = true
 		}
 	}
@@ -545,7 +545,7 @@ func TestCriticalConfigs_FrozenTwoFileSet(t *testing.T) {
 	}
 	wantPaths := map[string]bool{
 		"/etc/nftban/nftban.conf": false,
-		"/etc/nftables.conf":      false,
+		"/etc/nftban/nftables.conf":      false,
 	}
 	for _, cc := range criticalConfigs {
 		if _, ok := wantPaths[cc.Path]; !ok {
