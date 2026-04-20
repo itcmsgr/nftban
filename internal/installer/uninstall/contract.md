@@ -284,18 +284,19 @@ discipline.
 | 2 | External-firewall detection unification | PR #486 / `49d98fc1` | `internal/installer/extfw` canonical detector; Option A CSF config-file signal shared across install/update/uninstall; multi-active → `Ambiguous` (no silent collapse); cross-caller consistency test locked as regression guard |
 | 3 | Kernel/service snapshot CI gate | PR #487 / (tracked post-merge) | `G3-KS-SNAPSHOT` added to all 3 canonization workflows; `scripts/ci-snapshot-kernel-service.sh` helper; hard-asserts kernel nft tables + firewall-adjacent service states byte-identical after every dry-run path |
 | 4 | Exec-trace CI gate | PR #488 / (tracked post-merge) | `G3-EXEC-TRACE` added to all 3 canonization workflows; `scripts/ci-exec-trace-assert.sh` wraps dry-runs under `strace -f -e trace=execve`; fails if any forbidden mutator (nft add/flush/delete, systemctl lifecycle verbs, ufw/firewall-cmd/iptables-restore, package-manager removal, userdel/groupdel) is spawned |
+| 5 | Auto-elevate shim removal gate | PR #489 / (tracked post-merge) | `G3-UN-SHIM-LOCK` CI rule in uninstall workflow: fails if the auto-elevate shim in `flags.go` and any mutation pattern in `internal/installer/uninstall/*.go` coexist; see §"G3-UN-SHIM-LOCK" below for the decision table |
+| 6 | Payload integrity minimum checks | (this PR) | `payload.VerifyConfigIntegrity` — minimum-size + required-token check for `/etc/nftban/nftban.conf` and `/etc/nftables.conf`; wired into `validate.assertConfigIntegrity`; scope-locked two-file set + token-only signals (no checksums/signatures/semantic parsing) |
 
-### Behavioral / semantic blockers (code contract changes)
+### All pre-PR-23 blockers landed
 
-| # | PR | Scope | Blocking because |
-|---|---|---|---|
-| 6 | Payload integrity minimum checks | Minimum-size + required-header/token check for `/etc/nftban/nftban.conf` and `/etc/nftban/nftables.conf`; wire into existing `payload.VerifyInventory` | Presence-only validation lets a truncated-or-empty critical config pass |
+No remaining items. PR-23 (uninstall mutation phase 1: authority release
+core) is unblocked pending the final verification audit per Phase 3
+gating — four focused questions only:
 
-### Assurance / gate blockers (CI and scope-lock enforcement)
-
-| # | PR | Scope | Blocking because |
-|---|---|---|---|
-| 5 | Auto-elevate shim removal gate | `G3-UN-SHIM-LOCK` CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists when any mutation code lands in `internal/installer/uninstall/` | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+1. Is dry-run still pure across install / update / uninstall?
+2. Any history / state drift?
+3. Is the authority predicate still consistent across all callers?
+4. Do CI gates catch the exact regressions the prior audits found?
 
 ### G3-UN-SHIM-LOCK (PR-P2-5) — how the gate decides
 

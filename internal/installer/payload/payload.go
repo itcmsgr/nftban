@@ -196,6 +196,116 @@ func VerifyInventory(exec executor.Executor) (ok bool, missing []string) {
 	return len(missing) == 0, missing
 }
 
+// ConfigIntegrityIssue describes one minimum-sanity failure on a
+// critical config file. PR-P2-6 scope: minimum-size + required-header/
+// token check only — not a full integrity/checksum framework.
+type ConfigIntegrityIssue struct {
+	Path   string
+	Reason string
+}
+
+// criticalConfig describes one file that VerifyConfigIntegrity probes.
+// Each entry is intentionally bounded — this is a sanity guard, not a
+// validation system.
+type criticalConfig struct {
+	// Path is the on-disk location to probe.
+	Path string
+	// MinSize is the minimum byte count the file MUST have. Set to a
+	// conservative floor so legitimate operator edits pass but
+	// trivially-broken files (empty / truncated / stub) fail.
+	MinSize int
+	// RequiredTokens are plain substrings — EVERY one must appear in
+	// the file. Tokens are chosen to be the most stable parts of the
+	// shipped template so normal operator editing does not break them.
+	RequiredTokens []string
+}
+
+// criticalConfigs is the frozen PR-P2-6 sanity check set. Adding a
+// new entry requires a contract update — the set is deliberately
+// minimal (nftban.conf + nftables.conf), per the PR-P2-6 contract
+// seed's explicit "do not expand into validation framework" rule.
+var criticalConfigs = []criticalConfig{
+	{
+		Path:    "/etc/nftban/nftban.conf",
+		MinSize: 256, // Shipped template is ~450 lines (~15KB); 256
+		// bytes is a conservative floor that catches empty / 2-line
+		// stub / truncated-to-preamble regressions without false-
+		// positive on aggressively-edited operator configs.
+		RequiredTokens: []string{
+			// License header is present in every shipped config file
+			// and no responsible operator edit would strip it.
+			"SPDX-License-Identifier",
+		},
+	},
+	{
+		Path:    "/etc/nftban/nftables.conf",
+		MinSize: 512, // Shipped template renders to ~830 lines (~25KB)
+		// after SSH-port / CT-limit substitutions; 512 bytes is a
+		// conservative floor that catches render-output truncation or
+		// accidental overwrite with a placeholder.
+		RequiredTokens: []string{
+			// Shebang is functionally required — without it the file
+			// cannot be executed by nftables.service's ExecStart.
+			"#!/usr/sbin/nft",
+			// At least one nftban-owned table declaration must be
+			// present, otherwise the firewall ruleset is meaningless.
+			"table ip nftban",
+		},
+	},
+}
+
+// VerifyConfigIntegrity runs the PR-P2-6 sanity checks on the set of
+// critical config files. Each file must exist, meet a minimum byte
+// count, and contain every required token/header. Returns a list of
+// every failing check so the caller can surface all issues at once
+// rather than first-fails-wins.
+//
+// Scope lock (PR-P2-6, 2026-04-20):
+//   - Presence + minimum size + required-substring only
+//   - No checksums, no signatures, no semantic config parsing
+//   - Fixed list of two critical files (nftban.conf + nftables.conf)
+//
+// Adding a new file or a new signal beyond min-size/required-token
+// requires an explicit contract update; this function deliberately
+// does NOT grow into a validation framework.
+func VerifyConfigIntegrity(exec executor.Executor) (ok bool, issues []ConfigIntegrityIssue) {
+	for _, cc := range criticalConfigs {
+		if !exec.FileExists(cc.Path) {
+			issues = append(issues, ConfigIntegrityIssue{
+				Path: cc.Path, Reason: "file missing (presence check failed)",
+			})
+			continue
+		}
+		data, err := exec.ReadFile(cc.Path)
+		if err != nil {
+			issues = append(issues, ConfigIntegrityIssue{
+				Path: cc.Path, Reason: "unreadable: " + err.Error(),
+			})
+			continue
+		}
+		if len(data) < cc.MinSize {
+			issues = append(issues, ConfigIntegrityIssue{
+				Path: cc.Path,
+				Reason: fmt.Sprintf("undersized: %d bytes < minimum %d (file appears truncated or stub)",
+					len(data), cc.MinSize),
+			})
+			// Size failure is sufficient to declare the file broken;
+			// skip token checks on a truncated file to avoid noise.
+			continue
+		}
+		text := string(data)
+		for _, tok := range cc.RequiredTokens {
+			if !strings.Contains(text, tok) {
+				issues = append(issues, ConfigIntegrityIssue{
+					Path:   cc.Path,
+					Reason: "missing required token/header: " + tok,
+				})
+			}
+		}
+	}
+	return len(issues) == 0, issues
+}
+
 // dirIsEmpty reports whether dir exists and contains no regular entries.
 // dir is always one of the canonical FHS paths declared in VerifyInventory —
 // no user-controlled input reaches this function.
