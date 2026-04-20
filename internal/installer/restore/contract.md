@@ -156,6 +156,8 @@ Rationale for `NoRecord + --restore`: `--restore` carries an implicit target (th
 
 ### Group 4 — `AmbiguityOrphanNFTBan`
 
+Group 4 sub-rules are evaluated top-down: 4.1 and 4.2 match on prior state for flags {`none`, `--restore`}; 4.3 matches `--panel-auto-takeover` regardless of prior.
+
 #### 4.1 Strong prior (`Complete` + `ActiveAtInstall=true`)
 
 | Flags | Output |
@@ -183,7 +185,7 @@ Panel-auto must never fire over nftban residue, regardless of recoverability.
 
 ### Group 5 — Panel context
 
-Panel context is **inert by default**. Panel-auto-takeover is handled inline in Group 3 as a specialized `AuthorityNone` proceed case. It is not a standalone override.
+Panel context is **inert by default**. Panel-auto-takeover is handled inline in Groups 3 and 4 — as a specialized proceed case under `AuthorityNone`, and as an absolute refusal under `AmbiguityOrphanNFTBan`. It is not a standalone override.
 
 ## 7. State-machine integration
 
@@ -336,3 +338,8 @@ Four new gates in the `G4-RESTORE-*` namespace:
   1. `§10` filesystem purity enforcement clarified: static source scan for write APIs + exec-trace for external processes. No syscall-level enforcement claim.
   2. `§7` / `§8` `StateRestoreDecided` explicitly constrained as policy-only / non-terminal-for-apply / excluded-from-history / not-evidence-of-restoration.
   3. `§3` / `§15` staleness window locked at 365 days fixed; configurability deferred.
+- **2026-04-20 v1 (auditor wording)** — two non-semantic wording clarifications before merge, per auditor review of PR #493:
+  1. `§6` Group 5 wording updated: panel-auto handling spans Groups 3 and 4 (proceed under `AuthorityNone`; refuse under `AmbiguityOrphanNFTBan`), not only Group 3.
+  2. `§6` Group 4 precedence clarifier added: 4.1 / 4.2 match on prior state for flags {`none`, `--restore`}; 4.3 matches `--panel-auto-takeover` regardless of prior.
+
+  Neither edit changes lattice behavior (§5 precedence already produces the correct outcome).
