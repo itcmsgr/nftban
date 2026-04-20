@@ -272,14 +272,14 @@ start until all six items below have landed and been verified by a
 narrow-scope audit. Each is its own PR with an explicit micro-contract
 and one falsifiable proof test per PR-22B merge discipline.
 
-| # | PR | Purpose | Blocking because |
-|---|---|---|---|
-| 1 | Prior-authority record hardening | Add `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go` | PR-24 restore enforcement cannot trust under-defined `RecordUsable` |
-| 2 | External-firewall detection unification | One shared function + one precedence order used by install/update/uninstall | Detection drift between modules will cause disagreement under takeover/restore |
-| 3 | Kernel/service snapshot CI gate | `nft list tables` + `systemctl is-active` diff before/after every dry-run path | Filesystem snapshot alone cannot prove process-level purity |
-| 4 | Exec-trace CI gate | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands |
-| 5 | Auto-elevate shim removal gate | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
-| 6 | Payload integrity minimum checks | Minimum-size / header-presence for `nftban.conf`, `nftables.conf` | Presence-only validation lets a truncated file pass |
+| # | PR | Status | Purpose | Blocking because |
+|---|---|---|---|---|
+| 1 | Prior-authority record hardening | **✅ LANDED** (PR #484, `3b834033`) | ~~Add `recorded_at`, `installer_version`, explicit `active_at_install=false` handling to `prior.go`~~ | ~~PR-24 restore enforcement cannot trust under-defined `RecordUsable`~~ |
+| 2 | External-firewall detection unification | pending | One shared function + one precedence order used by install/update/uninstall | Detection drift between modules will cause disagreement under takeover/restore |
+| 3 | Kernel/service snapshot CI gate | pending | `nft list tables` + `systemctl is-active` diff before/after every dry-run path | Filesystem snapshot alone cannot prove process-level purity |
+| 4 | Exec-trace CI gate | pending | `strace -f -e trace=execve` (or equivalent) around dry-run paths; assert no forbidden mutators spawned | Strictest purity guarantee; catches dynamically-constructed commands |
+| 5 | Auto-elevate shim removal gate | pending | CI rule: PR-23-class changes blocked while the shim block in `flags.go` still exists | Prevents scaffold-era UX semantics leaking into mutation-era behavior |
+| 6 | Payload integrity minimum checks | pending | Minimum-size / header-presence for `nftban.conf`, `nftables.conf` | Presence-only validation lets a truncated file pass |
 
 Phase 3 gating: once items 1–6 are merged and CI green, a focused
 verification audit runs with ONLY these questions:
