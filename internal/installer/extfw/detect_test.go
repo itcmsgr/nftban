@@ -39,7 +39,7 @@ func emptyIptablesSave() executor.Result {
 // kind." Tests that want to add a single firewall build on this base.
 func cleanMock() *executor.MockExecutor {
 	m := executor.NewMockExecutor()
-	m.RunResults["iptables-save"] = emptyIptablesSave()
+	m.RunResults["iptables-save:"] = emptyIptablesSave()
 	m.ExistingCommands["nft"] = true
 	m.RunResults["nft:list:tables"] = executor.Result{ExitCode: 0, Stdout: ""}
 	return m
@@ -110,7 +110,7 @@ func TestDetect_Iptables_AllThreeSignals(t *testing.T) {
 
 	// Active-rules signal (iptables-save)
 	m3 := cleanMock()
-	m3.RunResults["iptables-save"] = executor.Result{
+	m3.RunResults["iptables-save:"] = executor.Result{
 		ExitCode: 0,
 		Stdout:   "# Generated\n*filter\n:INPUT ACCEPT\n-A INPUT -j ACCEPT\n-A INPUT -p tcp --dport 22 -j ACCEPT\n-A INPUT -p tcp --dport 80 -j ACCEPT\nCOMMIT\n",
 	}

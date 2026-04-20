@@ -53,7 +53,7 @@ type hostFixture struct {
 var cleanBase = func(m *executor.MockExecutor) {
 	m.ExistingCommands["nft"] = true
 	m.RunResults["nft:list:tables"] = executor.Result{ExitCode: 0, Stdout: ""}
-	m.RunResults["iptables-save"] = executor.Result{
+	m.RunResults["iptables-save:"] = executor.Result{
 		ExitCode: 0,
 		Stdout:   "# Generated\n*filter\n:INPUT ACCEPT\nCOMMIT\n",
 	}
@@ -88,7 +88,7 @@ func fixtures() []hostFixture {
 			name: "iptables-save rules present",
 			setup: func(m *executor.MockExecutor) {
 				cleanBase(m)
-				m.RunResults["iptables-save"] = executor.Result{
+				m.RunResults["iptables-save:"] = executor.Result{
 					ExitCode: 0,
 					Stdout:   "# Generated\n*filter\n:INPUT ACCEPT\n-A INPUT -j ACCEPT\n-A INPUT -p tcp --dport 22 -j ACCEPT\n-A INPUT -p tcp --dport 80 -j ACCEPT\nCOMMIT\n",
 				}
