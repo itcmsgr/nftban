@@ -1,0 +1,267 @@
+# =============================================================================
+# NFTBan — CI: Restore Canonization Gate (v1.100 PR-24 slice)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Enforce v1.100 PR-24 scope lock on the authority restoration
+# policy decision engine. PR-24 is POLICY ONLY — no execution.
+#
+#   G4-RESTORE-DECISION-CORRECTNESS — fixture rule-path coverage
+#                                     (every rule declared in engine.go
+#                                     must have a fixture, every fixture
+#                                     must point to a declared rule)
+#   G4-RESTORE-REFUSAL-INTEGRITY    — non-PROCEED outputs spawn zero
+#                                     external processes and reach zero
+#                                     execution branches
+#   G4-RESTORE-NO-IMPLICIT-EXEC     — static scan of the restore package
+#                                     for kernel / service / filesystem
+#                                     mutation symbols
+#   G4-RESTORE-DETERMINISM          — back-to-back fixture runs yield
+#                                     identical output, rule, and reason
+#
+# Contract: internal/installer/restore/contract.md (merged 2026-04-20)
+# =============================================================================
+
+name: Restore Canonization Gate
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'cmd/nftban-installer/**'
+      - 'internal/installer/restore/**'
+      - 'internal/installer/state/**'
+      - 'internal/installer/uninstall/**'
+      - '.github/workflows/ci-restore-canonization.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-restore-canonization-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  restore-canonization:
+    name: Restore Canonization (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-24.04
+            runner: ubuntu-24.04
+            container: ''
+          - label: almalinux-9
+            runner: ubuntu-24.04
+            container: almalinux:9
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install system dependencies (DEB)
+        if: matrix.label == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+
+      - name: Install system dependencies (RPM)
+        if: matrix.label == 'almalinux-9'
+        run: |
+          dnf -y install epel-release
+          dnf -y install jq git tar gzip procps-ng findutils sudo golang
+
+      - name: Set up Go (DEB only)
+        if: matrix.label == 'ubuntu-24.04'
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      # ------------------------------------------------------------------
+      # G4-RESTORE-NO-IMPLICIT-EXEC — static scan of the restore package
+      # for any symbol that could cause kernel / service / filesystem
+      # mutation. Per contract seed §10, the restore package must contain
+      # zero such symbols. Fires BEFORE tests so a reviewer sees the
+      # scope violation immediately.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-NO-IMPLICIT-EXEC — static scan of restore package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          # Scope: restore package, non-test Go files only. Test files
+          # may reference these symbols as fixtures / negative-test
+          # coverage, which is legitimate.
+          files=$(find internal/installer/restore -type f -name '*.go' 2>/dev/null | grep -vE '_test\.go$' || true)
+          if [[ -z "$files" ]]; then
+            echo "::error::G4-RESTORE-NO-IMPLICIT-EXEC: restore package files not found"
+            exit 1
+          fi
+
+          # Forbidden symbols per contract seed §10 "Forbidden surfaces"
+          # and §12 G4-RESTORE-NO-IMPLICIT-EXEC assertion.
+          forbidden_patterns=(
+              # Process spawn paths
+              'exec\.Run\('
+              'exec\.RunWithStderr\('
+              'exec\.CommandContext\b'
+              '"os/exec"'
+              # Direct mutation commands by name
+              'exec\.Run\("nft"'
+              'exec\.Run\("iptables"'
+              'exec\.Run\("ip6tables"'
+              'exec\.Run\("systemctl"'
+              'exec\.Run\("ufw"'
+              'exec\.Run\("firewall-cmd"'
+              # Service lifecycle helpers
+              'exec\.ServiceStop\('
+              'exec\.ServiceStart\('
+              'exec\.ServiceRestart\('
+              'exec\.ServiceEnable\('
+              'exec\.ServiceDisable\('
+              'exec\.ServiceMask\('
+              'exec\.ServiceUnmask\('
+              # Filesystem write APIs
+              'exec\.WriteFileAtomic\('
+              'os\.Create\('
+              'os\.WriteFile\('
+              'os\.OpenFile\('
+              'os\.Rename\('
+              'os\.Remove\('
+              'os\.RemoveAll\('
+              'os\.MkdirAll\('
+              'os\.Mkdir\('
+              'ioutil\.WriteFile\('
+              # Rebuild / restoration execution helpers
+              'rebuild\.Run\('
+              'rebuild\.Apply\('
+              'switchop\.'
+              'services\.Enable'
+              'services\.Disable'
+              'services\.Mask'
+              'services\.Unmask'
+          )
+
+          fail=0
+          for pat in "${forbidden_patterns[@]}"; do
+            if grep -nE "$pat" $files 2>/dev/null; then
+              echo "::error::G4-RESTORE-NO-IMPLICIT-EXEC: forbidden symbol '$pat' found in restore package"
+              fail=1
+            fi
+          done
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "::error::PR-24 scope violation — restore package must be pure decision; no kernel / service / filesystem mutation symbols permitted."
+            echo "::error::See internal/installer/restore/contract.md §10 for the full forbidden list."
+            exit 1
+          fi
+
+          echo "G4-RESTORE-NO-IMPLICIT-EXEC PASS — restore package is symbolically pure"
+
+      # ------------------------------------------------------------------
+      # G4-RESTORE-DECISION-CORRECTNESS — rule-path coverage.
+      #
+      # The restore engine test TestRuleCoverage_EveryRuleExercised
+      # asserts: every Rule* constant declared in engine.go MUST be hit
+      # by at least one fixture. A new rule without a fixture, or a
+      # fixture referencing a non-declared rule, fails this test.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-DECISION-CORRECTNESS — rule-path coverage
+        shell: bash
+        env:
+          TMPDIR: /var/tmp
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /var/tmp
+          go test -v -count=1 -run 'TestDecide_FixtureMatrix|TestRuleCoverage_EveryRuleExercised|TestDecide_OutputClosedEnum|TestDecide_LockedAmendment|TestDecide_HardStopsDominateAnyFlag|TestDecide_OrphanPanelAutoRefused' ./internal/installer/restore/...
+
+      # ------------------------------------------------------------------
+      # G4-RESTORE-REFUSAL-INTEGRITY — non-PROCEED outputs reach no
+      # execution branch.
+      #
+      # Implementation: the Decide() function is pure (no executor
+      # argument). Any execution path would require the dispatcher to
+      # invoke additional code after the Decide call. This gate asserts
+      # structurally that the restore package has no executor dependency
+      # AND that the dispatcher does not call into mutation-capable
+      # packages. Combined with G4-RESTORE-NO-IMPLICIT-EXEC, this closes
+      # the refusal-integrity claim.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-REFUSAL-INTEGRITY — no executor dependency in restore package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          non_test_files=$(find internal/installer/restore -type f -name '*.go' 2>/dev/null | grep -vE '_test\.go$' || true)
+          if [[ -z "$non_test_files" ]]; then
+            echo "::error::G4-RESTORE-REFUSAL-INTEGRITY: restore package files not found"
+            exit 1
+          fi
+
+          # The restore package must not import the executor package in
+          # non-test code. If it did, the engine could grow a side-effect
+          # path. Fixtures / tests may reference it for simulation
+          # purposes, so test files are excluded from this check.
+          if grep -nE '"github.com/itcmsgr/nftban/internal/installer/executor"' $non_test_files 2>/dev/null; then
+            echo "::error::G4-RESTORE-REFUSAL-INTEGRITY: restore package imports executor — Decide must remain pure"
+            exit 1
+          fi
+
+          # The dispatcher (restore_decide.go) uses the executor to
+          # gather inputs (Classify / Probe / DetectPanel) — that is
+          # permitted. But after the Decide() call returns a non-PROCEED
+          # output, the dispatcher must not call any mutation helper.
+          # This check enforces structural layering: mutation helpers
+          # are imported only by uninstall_apply.go, never by
+          # restore_decide.go.
+          if grep -nE '"github.com/itcmsgr/nftban/internal/installer/switchop"|"github.com/itcmsgr/nftban/internal/installer/services"' cmd/nftban-installer/restore_decide.go 2>/dev/null; then
+            echo "::error::G4-RESTORE-REFUSAL-INTEGRITY: restore dispatcher imports mutation-capable package"
+            exit 1
+          fi
+
+          echo "G4-RESTORE-REFUSAL-INTEGRITY PASS — restore engine is pure + dispatcher is layering-clean"
+
+      # ------------------------------------------------------------------
+      # G4-RESTORE-DETERMINISM — same inputs → same outputs across runs.
+      # TestDecide_Determinism runs every fixture twice via reflect.DeepEqual.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-DETERMINISM — repeated evaluation equality
+        shell: bash
+        env:
+          TMPDIR: /var/tmp
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /var/tmp
+          go test -v -count=1 -run 'TestDecide_Determinism' ./internal/installer/restore/...
+          # Run a second time from scratch and diff nothing — the
+          # test itself asserts determinism within one run; this
+          # outer loop asserts determinism ACROSS runs (no cached
+          # state, no env reliance).
+          go test -v -count=1 -run 'TestDecide_Determinism' ./internal/installer/restore/... 2>&1 | tee /tmp/run1.log
+          go test -v -count=1 -run 'TestDecide_Determinism' ./internal/installer/restore/... 2>&1 | tee /tmp/run2.log
+          # Strip timing lines (ok line carries elapsed seconds) and diff.
+          grep -vE '^ok\s|^FAIL\s' /tmp/run1.log > /tmp/run1.norm
+          grep -vE '^ok\s|^FAIL\s' /tmp/run2.log > /tmp/run2.norm
+          if ! diff -q /tmp/run1.norm /tmp/run2.norm >/dev/null; then
+            echo "::error::G4-RESTORE-DETERMINISM: test output differs across runs"
+            diff /tmp/run1.norm /tmp/run2.norm || true
+            exit 1
+          fi
+          echo "G4-RESTORE-DETERMINISM PASS — identical across two independent runs"
+
+  restore-canonization-summary:
+    name: Restore Canonization summary
+    runs-on: ubuntu-24.04
+    needs: [restore-canonization]
+    if: always()
+    steps:
+      - name: Summarize
+        run: |
+          if [[ "${{ needs.restore-canonization.result }}" != "success" ]]; then
+            echo "::error::Restore Canonization FAILED"
+            exit 1
+          fi
+          echo "Restore Canonization: all G4 gates passed across matrix"
