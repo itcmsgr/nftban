@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1b.B GOTH PR-D4 stage 2 (source-tree delete)
+
+### Removed
+
+- **`cmd/nftban-ui/`** (entire directory): the GOTH-stack web server source tree. 9 files, ~6,947 LOC. Includes `main.go`, the 5 handler files, and the dev-mode shell scripts.
+- **`cmd/nftban-ui-auth/`** (entire directory): the PAM-backed authentication daemon source tree. 1 file, 249 LOC.
+- **`internal/ui/`** (entire package): the templ-rendered UI surface — layout, types, ui-registry.json, plus the `pages/` and `components/` subtrees. 34 files, ~23,894 LOC.
+
+### Notes
+
+This is a **narrow source delete** (3 directories with zero non-self Go consumers). The orphaned-but-still-compiling packages — `internal/api`, `internal/middleware`, `internal/auth`, `internal/session`, `internal/authproto` — are intentionally **not** removed in this release. They will be deleted in v1.100.1b.C alongside the cross-cutting reference cleanup in `cli/lib/`, `internal/installer/`, and `internal/nftbanconf/`.
+
+Build still passes (`go build ./...`) after this delete because the orphaned packages still compile internally; the static dependency graph between them is intact even though they have zero callers.
+
+Lifecycle completion work (PR-25 restore execution, PR-26 verification gate, PR-27-30 maintenance) remains explicitly **open** and is not affected by this release.
+
+---
+
 ## [Unreleased] - v1.100.1b.A GOTH PR-D4 stage 1 (stop shipping nftban-ui + nftban-ui-auth)
 
 ### Changed (operator-impacting)
