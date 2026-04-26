@@ -4,7 +4,7 @@
 # NFTBan v1.0.0 - Search CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Search for IP/Port across all ban lists, feeds, jails, and whitelists
+# Purpose: Search for IP/Port across all ban lists, feeds, filters, and whitelists
 #
 # meta:name="cmd_search"
 # meta:type="cli"

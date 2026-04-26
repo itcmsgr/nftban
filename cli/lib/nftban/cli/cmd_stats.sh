@@ -658,7 +658,8 @@ nftban_stats_cmd_dashboard() {
                     },
                     top_ips: $top_ips,
                     top_countries: $top_countries,
-                    top_jails: $top_jails
+                    top_jails: $top_jails,
+                    top_filters: $top_jails
                 }')
         else
             # Fallback without jq
@@ -666,7 +667,7 @@ nftban_stats_cmd_dashboard() {
             [[ "$portscan_enabled" == "true" ]] && portscan_enabled_json="true"
             local ddos_enabled_json="false"
             [[ "$ddos_enabled" == "true" ]] && ddos_enabled_json="true"
-            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$portscan_enabled_json},\"ddos\":{\"packets_dropped\":$ddos_packets_dropped,\"bytes_dropped\":$ddos_bytes_dropped,\"blocked_24h\":$ddos_blocked_24h,\"blocked_total\":$ddos_blocked_total,\"enabled\":$ddos_enabled_json},\"shared_state\":{\"feeds_active\":$feeds_active,\"feeds_ips\":$feeds_ips,\"rules_total\":$rules_total},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_jails\":$top_jails}"
+            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$portscan_enabled_json},\"ddos\":{\"packets_dropped\":$ddos_packets_dropped,\"bytes_dropped\":$ddos_bytes_dropped,\"blocked_24h\":$ddos_blocked_24h,\"blocked_total\":$ddos_blocked_total,\"enabled\":$ddos_enabled_json},\"shared_state\":{\"feeds_active\":$feeds_active,\"feeds_ips\":$feeds_ips,\"rules_total\":$rules_total},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_jails\":$top_jails,\"top_filters\":$top_jails}"
         fi
 
         json_output "true" "$data"
