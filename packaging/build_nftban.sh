@@ -25,8 +25,12 @@
 # Packages created:
 #   - nftban-core     - Core binaries (nftban-core, nftban CLI)
 #   - nftban-libs     - Shell libraries
-#   - nftban-ui       - Web GUI
 #   - nftban-all      - Meta-package (depends on all above)
+#
+# v1.100.1b.A (GOTH PR-D4 stage 1): nftban-ui Web GUI no longer
+# packaged. nftban-ui + nftban-ui-auth binaries + service files
+# excluded from RPM and DEB outputs. Transitional handling for
+# upgrade-from-prior-installs is provided via postinst/post triggers.
 # =============================================================================
 
 set -Eeuo pipefail
@@ -351,8 +355,7 @@ install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 # NB-5: privileged binaries ship 0750 (root:nftban), not 0755 (root:root).
 # Canonical ownership set declaratively via %attr() in %files below.
 install -D -m 0750 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
-install -D -m 0750 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
-install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
+# v1.100.1b.A: nftban-ui + nftban-ui-auth binaries no longer installed.
 
 # Helper scripts (queue processor, rollback, alerts, etc.)
 mkdir -p %{buildroot}/usr/lib/nftban/sbin
@@ -459,9 +462,7 @@ install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/u
 install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
 install -D -m 0644 install/systemd/nftban-suricata.service %{buildroot}/usr/lib/systemd/system/nftban-suricata.service
 install -D -m 0644 install/systemd/nftban-suricata-stats.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-stats.service
-install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/systemd/system/nftban-ui.service
-install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
-install -D -m 0644 install/systemd/nftban-ui-auth.socket %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.socket
+# v1.100.1b.A: nftban-ui + nftban-ui-auth service/socket files no longer installed.
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
 install -D -m 0644 install/systemd/nftban-queue.timer %{buildroot}/usr/lib/systemd/system/nftban-queue.timer
 install -D -m 0644 install/systemd/nftban-botscan.service %{buildroot}/usr/lib/systemd/system/nftban-botscan.service
@@ -1006,11 +1007,21 @@ if [ \$1 -eq 0 ]; then
                 nftban-pro-license.service nftban-pro-license.timer \
                 nftban-update-check.service nftban-update-check.timer \
                 nftban-update-apply.service nftban-update-apply.timer \
-                nftban-api.service nftban-firewall-init.service nftban-ui.service \
-                nftban-ui-auth.socket nftban-ui-auth.service; do
+                nftban-api.service nftban-firewall-init.service \
+                nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
+        # v1.100.1b.A transitional: nftban-ui.* units may exist from a prior
+        # install. Stop + disable + mask + remove their unit files so they
+        # don't try to restart after upgrade.
         systemctl stop "\$unit" 2>/dev/null || true
         systemctl disable "\$unit" 2>/dev/null || true
+        case "\$unit" in
+            nftban-ui*.service|nftban-ui*.socket)
+                systemctl mask "\$unit" 2>/dev/null || true
+                rm -f "/usr/lib/systemd/system/\$unit" 2>/dev/null || true
+                ;;
+        esac
     done
+    systemctl daemon-reload 2>/dev/null || true
 fi
 
 %postun
@@ -1097,8 +1108,7 @@ fi
 # NB-5: canonical ownership root:nftban 0750 set at package-install time.
 # nftban group is created in %pre (line ~860), so attrs resolve cleanly here.
 %attr(0750,root,nftban) /usr/sbin/nftban
-%attr(0750,root,nftban) /usr/sbin/nftban-ui
-/usr/libexec/nftban-ui-auth
+# v1.100.1b.A: /usr/sbin/nftban-ui + /usr/libexec/nftban-ui-auth removed.
 /usr/lib/nftban/bin
 /usr/lib/nftban/sbin
 /usr/lib/nftban/VERSION
@@ -1740,8 +1750,18 @@ case "$1" in
             nftban-update-apply.timer nftban-update-apply.service \
             nftban-api.service nftban-firewall-init.service \
             nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
+            # v1.100.1b.A transitional: nftban-ui.* units may exist from a prior
+            # install; stop + disable + mask + remove their unit files.
             deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
+            case "$unit" in
+                nftban-ui*.service|nftban-ui*.socket)
+                    systemctl disable "$unit" 2>/dev/null || true
+                    systemctl mask "$unit" 2>/dev/null || true
+                    rm -f "/lib/systemd/system/$unit" 2>/dev/null || true
+                    ;;
+            esac
         done
+        systemctl daemon-reload 2>/dev/null || true
         ;;
 esac
 exit 0
@@ -1802,8 +1822,8 @@ build_deb() {
     # NB-5: privileged binaries ship 0750 in .deb payload; postinst converges
     # ownership to root:nftban after the group is created.
     install -m 0750 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
-    install -m 0750 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
-    install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
+    # v1.100.1b.A: nftban-ui + nftban-ui-auth binaries no longer installed
+    # in DEB payload (GOTH PR-D4 stage 1).
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-installer" "${deb_root}/usr/lib/nftban/bin/"
 
     # Download yq at BUILD time (supply-chain safe - not at install time)
@@ -1939,8 +1959,9 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-stats.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
+    # v1.100.1b.A: nftban-ui.service + nftban-ui-auth.service + nftban-ui-auth.socket
+    # no longer installed in DEB payload (GOTH PR-D4 stage 1). Transitional postinst
+    # cleans up any prior install via deb_root postinst handlers.
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-botscan.service" "${deb_root}/usr/lib/systemd/system/"
@@ -1950,7 +1971,7 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.socket" "${deb_root}/usr/lib/systemd/system/"
+    # v1.100.1b.A: nftban-ui-auth.socket no longer installed.
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
     # v1.41.0: Report timer + community stats
