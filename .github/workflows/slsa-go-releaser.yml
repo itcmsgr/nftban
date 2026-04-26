@@ -14,11 +14,11 @@
 #
 # Builds:
 #   - nftban-core (main CLI for firewall operations)
-#   - nftban-ui (web GUI server)
 #
-# NOTE: nftban-ui-auth is excluded - requires PAM headers (libpam-dev) which
-# are not available in SLSA's hermetic build environment. It's built via
-# the regular release.yml workflow instead.
+# NOTE (v1.100.1b.A): nftban-ui + nftban-ui-auth removed from shipped
+# artifact set per GOTH PR-D4 stage 1. SLSA build coverage now scoped
+# to nftban-core only. Source trees for the UI surface remain in repo
+# but are not built or published.
 #
 # COORDINATION: This workflow runs AFTER Release Packages completes to avoid
 # race conditions when uploading assets to the same GitHub release.
@@ -91,30 +91,12 @@ jobs:
       upload-tag-name: ${{ needs.get-tag.outputs.tag }}
 
   # ============================================================================
-  # Job 2: Build nftban-ui with SLSA provenance
+  # Job 2: Assemble all artifacts and upload to release
   # ============================================================================
-  build-nftban-ui:
-    name: Build nftban-ui (SLSA3)
-    needs: get-tag
-    permissions:
-      id-token: write
-      contents: write
-      actions: read
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
-    with:
-      go-version: "1.25"
-      config-file: .github/slsa/nftban-ui.yml
-      evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
-      # Upload provenance directly to release (fixes workflow_run trigger skip)
-      upload-tag-name: ${{ needs.get-tag.outputs.tag }}
-
-  # ============================================================================
-  # Job 3: Assemble all artifacts and upload to release
-  # ============================================================================
-  # NOTE: nftban-ui-auth excluded - requires PAM headers not available in SLSA
+  # NOTE (v1.100.1b.A): nftban-ui + nftban-ui-auth removed — GOTH PR-D4 stage 1.
   assemble-release:
     name: Assemble Release Artifacts
-    needs: [get-tag, build-nftban-core, build-nftban-ui]
+    needs: [get-tag, build-nftban-core]
     runs-on: ubuntu-latest
     # Run for workflow_run (after Release Packages) but not for manual dispatch
     if: ${{ github.event_name == 'workflow_run' }}
@@ -134,17 +116,9 @@ jobs:
           name: ${{ needs.build-nftban-core.outputs.go-provenance-name }}
           path: dist/
 
-      - name: Download nftban-ui artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ needs.build-nftban-ui.outputs.go-binary-name }}
-          path: dist/
-
-      - name: Download nftban-ui provenance
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ needs.build-nftban-ui.outputs.go-provenance-name }}
-          path: dist/
+      # nftban-ui artifact + provenance downloads removed in v1.100.1b.A
+      # (GOTH PR-D4 stage 1 — stop shipping). nftban-ui no longer built
+      # by SLSA pipeline.
 
       - name: List artifacts
         run: ls -la dist/
