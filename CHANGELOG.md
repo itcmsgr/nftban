@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1b.C1 GOTH orphan-package delete
+
+### Removed
+
+- **`internal/api/`** (35 files, ~9,435 LOC): GOTH HTTP handlers — orphaned after 1.100.1b.B deleted `cmd/nftban-ui` (the only consumer of these handlers).
+- **`internal/middleware/`** (3 files, ~932 LOC): GOTH HTTP middleware (auth, rate limiter) — orphaned after `internal/api` lost its consumer.
+- **`internal/auth/`** (2 files, ~457 LOC): PAM authentication wrapper — orphaned after `internal/api` and `internal/middleware` lost their consumers.
+- **`internal/session/`** (1 file, ~219 LOC): in-memory session store — orphaned after the same cascade.
+- **`internal/authproto/`** (1 file, ~53 LOC): PAM protocol types — orphaned after `internal/auth` lost its consumer.
+
+### Notes
+
+These 5 packages formed a closed dependency subgraph after 1.100.1b.B: every cross-edge was internal to the set, and zero non-self packages imported any of them. The single outside reference in `cmd/nftband/daemon_http.go:82` was a TODO comment, not an import.
+
+Out of scope for C1 (deferred to **C2**):
+- `internal/nftbanconf/` UIService/UIAuthService field removals
+- `cli/lib/cmd_*.sh` nftban-ui carveouts + dead `cli/cmd_ui.sh` delete
+- `internal/installer/` UI socket-enable + payload + paths carveouts
+- `packaging/` (`rpm/nftban-ui.spec`, `deb/rules`, `build_nftban.sh`) carveouts
+
+Workflow comment cleanup, doc cleanup, and changelog narrative cleanup remain deferred to **1.100.1b.D**.
+
+Lifecycle completion lane (PR-25 restore execution, PR-26 verification gate, PR-27-30 maintenance) remains explicitly **OPEN** and is not affected by this release.
+
+---
+
 ## [Unreleased] - v1.100.1b.B GOTH PR-D4 stage 2 (source-tree delete)
 
 ### Removed
