@@ -67,16 +67,6 @@ func (c *CommandPaths) CoreBin() string {
 	return c.cfg.CoreBin
 }
 
-// UIBin returns path to nftban-ui Go binary
-func (c *CommandPaths) UIBin() string {
-	return c.cfg.UIBin
-}
-
-// AuthBin returns path to nftban-ui-auth helper
-func (c *CommandPaths) AuthBin() string {
-	return c.cfg.AuthBin
-}
-
 // =============================================================================
 // Library Scripts - Bash modules in NFTBAN_LIB_DIR
 // =============================================================================
@@ -428,8 +418,6 @@ func (c *CommandPaths) DebugString() string {
   Binaries:
     Bin:      %s
     CoreBin:  %s
-    UIBin:    %s
-    AuthBin:  %s
   Directories:
     LibDir:    %s
     ConfigDir: %s
@@ -446,7 +434,7 @@ func (c *CommandPaths) DebugString() string {
     Portscan:  %v
     DDoS:      %v
     Login:     %v`,
-		c.cfg.Bin, c.cfg.CoreBin, c.cfg.UIBin, c.cfg.AuthBin,
+		c.cfg.Bin, c.cfg.CoreBin,
 		c.cfg.LibDir, c.cfg.ConfigDir, c.cfg.DataDir, c.cfg.LogDir, c.cfg.CacheDir, c.cfg.RunDir,
 		c.cfg.MetricsEnabled, c.cfg.MetricsBackend,
 		c.cfg.GeoIPEnabled, c.cfg.FeedsEnabled, c.cfg.SuricataEnabled,
