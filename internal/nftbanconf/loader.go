@@ -54,8 +54,6 @@ type Config struct {
 	// Binary paths (from nftban.conf PATHS section)
 	Bin      string // NFTBAN_BIN - main CLI
 	CoreBin  string // NFTBAN_CORE_BIN - Go core binary
-	UIBin    string // NFTBAN_UI_BIN - Web UI binary
-	AuthBin  string // NFTBAN_AUTH_BIN - Auth helper
 
 	// Directory paths
 	LibDir    string // NFTBAN_LIB_DIR
@@ -329,10 +327,6 @@ func loadFromFile(path string) (*Config, error) {
 			cfg.Bin = value
 		case "NFTBAN_CORE_BIN":
 			cfg.CoreBin = value
-		case "NFTBAN_UI_BIN":
-			cfg.UIBin = value
-		case "NFTBAN_AUTH_BIN":
-			cfg.AuthBin = value
 
 		// Directory paths
 		case "NFTBAN_LIB_DIR":
@@ -461,10 +455,6 @@ func overlayFromFile(cfg *Config, path string) {
 			cfg.Bin = value
 		case "NFTBAN_CORE_BIN":
 			cfg.CoreBin = value
-		case "NFTBAN_UI_BIN":
-			cfg.UIBin = value
-		case "NFTBAN_AUTH_BIN":
-			cfg.AuthBin = value
 		case "NFTBAN_LIB_DIR":
 			cfg.LibDir = value
 		case "NFTBAN_CONFIG_DIR":
@@ -554,8 +544,6 @@ func defaultConfig() *Config {
 		// Binary paths
 		Bin:     "/usr/sbin/nftban",
 		CoreBin: "/usr/lib/nftban/bin/nftban-core",
-		UIBin:   "/usr/sbin/nftban-ui",
-		AuthBin: "/usr/libexec/nftban-ui-auth",
 
 		// Directory paths
 		LibDir:    "/usr/lib/nftban",

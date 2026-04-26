@@ -11,6 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1b.C2 GOTH cross-cutting prune
+
+### Removed (operator-impacting)
+
+- **`nftban gui` subcommand**: retired entirely. The web GUI was decommissioned in 1.100.1b.A; the CLI command that managed it (build/install/enable/disable/restart/status/port) is now removed. `nftban menu` (curses TUI) is unaffected.
+- **`nftban health gui` subcommand**: retired entirely. Validated the GOTH ui-registry.json which was deleted in 1.100.1b.B.
+- **`nftban-ui.service` references** in `nftban status` SERVICES section + JSON output: removed.
+- **Web GUI line** in main `nftban` status overview: removed.
+
+### Removed (files)
+
+- `cli/lib/nftban/cli/cmd_gui.sh` — managed the retired nftban-ui binary
+- `cli/lib/nftban/health/check_gui.sh` — validated the retired GOTH ui-registry.json
+- `cli/cmd_ui.sh` — dead since GOTH (never wired into dispatcher)
+- `packaging/rpm/nftban-ui.spec` — RPM spec for the retired nftban-ui package
+- `packaging/deb/rules` — debhelper rules file for the retired nftban-ui Debian package
+
+### Removed (Go surface)
+
+- `internal/nftbanconf`: `UIService`, `UIAuthService`, `UIBin`, `AuthBin`, `UIAuth` (sockets), `UI`/`UIAuth` (PIDFiles) and their accessors/defaults/parsers
+- `internal/installer/services/daemon.go`: nftban-ui-auth.socket enable+start block
+- `internal/installer/fhs/paths.go`: `RunUIDir` constant + matching FHSDirectory entry
+- `internal/installer/payload`: 2 UI staging entries + `uiRemoveInV2` struct field/handler/test
+
+### Removed (dependencies)
+
+- RPM: `Requires: pam` (was only needed by nftban-ui-auth)
+- DEB: `Depends: libpam0g` (same)
+
+### Notes
+
+C2 is the cross-cutting cleanup pass after 1.100.1b.B (source delete) and 1.100.1b.C1 (orphan-package delete). Files that existed solely for the retired GOTH/UI surface were deleted; mixed-responsibility files were carved surgically.
+
+Out of scope for C2 (deferred to **1.100.1b.D**):
+- Documentation narrative cleanup (CHANGELOG history, ARCHITECTURE.md, REPRODUCIBLE_BUILDS.md, docs/systemd/UNITS.md/TIMERS.md)
+- Workflow comment cleanup (.github/workflows/*.yml — comments only document v1.100.1b.A's removal)
+- Broader cli/lib/ cleanup beyond the locked cmd_*.sh + health-check scope (e.g., `core/nftban_health.sh`, `core/nftban_health_checks_integrations.sh`, `core/nftban_fhs_spec.sh`, `data/fhs_directories.json`, `data/config-schema.json`, `data/reports-registry.json`, `helpers/autoheal.sh`, `exporters/nftban_exporter_gui_cache.sh`)
+
+Lifecycle completion lane (PR-25 restore execution, PR-26 verification gate, PR-27-30 maintenance) remains explicitly **OPEN** and is not affected by this release.
+
+---
+
 ## [Unreleased] - v1.100.1b.C1 GOTH orphan-package delete
 
 ### Removed

@@ -202,9 +202,6 @@ nftban_health_cmd_brief() {
         # v1.38.0: Show specific warning reasons instead of generic "info"
         local reasons=""
         # Detect common optional-feature warnings
-        if ! command -v nftban-ui &>/dev/null && ! [[ -f /usr/lib/nftban/bin/nftban-ui ]]; then
-            reasons="${reasons:+$reasons, }gui-not-installed"
-        fi
         if ! systemctl is-active --quiet nftban-prometheus-exporter.timer 2>/dev/null; then
             reasons="${reasons:+$reasons, }metrics-inactive"
         fi

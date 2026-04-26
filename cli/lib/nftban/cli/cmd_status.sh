@@ -159,7 +159,6 @@ _nftban_prefetch_unit_states() {
         nftban-core-feeds.timer nftban-core-geoip.timer
         nftban-update-check.timer nftban-update-apply.timer
         nftban-unified-exporter.timer nftban-unified-exporter.service
-        nftban-ui.service nftban-ui.timer nftban-ui
         nftban-suricata.service nftban-suricata.timer nftban-suricata-update.timer
         nftban-snapshot.timer nftban-rollback.timer nftban-rbl-check.timer
         nftban-pro-license.timer nftban-pro-inventory.timer
@@ -601,7 +600,6 @@ _status_section_services() {
     check_service_clean "nftables" "nftables.service"
     check_service_clean "nftband" "nftband.service"
     check_service_clean "suricata" "suricata.service"
-    check_service_clean "nftban-ui" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     # v1.23.0: login-monitor removed (replaced by nftband loginmon module)
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
@@ -1032,15 +1030,6 @@ _status_section_protection() {
         connector_status="DISABLED"
     fi
     printf "  %-20s %s\n" "Connectors.........." "$connector_status"
-
-    # GUI
-    local gui_status="NOT INSTALLED"
-    if _unit_is_active nftban-ui; then
-        gui_status="ACTIVE"
-    elif systemctl list-unit-files 2>/dev/null | grep -q nftban-ui; then
-        gui_status="INACTIVE"
-    fi
-    printf "  %-20s %s\n" "GUI................." "$gui_status"
     echo ""
 }
 
@@ -1665,7 +1654,6 @@ output_json() {
     echo "    \"nftables\": $(_json_service_info nftables.service),"
     echo "    \"suricata\": $(_json_service_info suricata.service),"
     echo "    \"nftban_core\": $(_json_service_info "${NFTBAN_SERVICE_CORE:-nftban-core.service}"),"
-    echo "    \"nftban_api\": $(_json_service_info "${NFTBAN_SERVICE_UI:-nftban-ui.service}"),"
     echo "    \"nftban_suricata\": $(_json_service_info "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"),"
     # v1.23.0: login_monitor removed (replaced by nftband loginmon module)
     echo "    \"metrics_exporter\": $(_json_service_info "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}")"

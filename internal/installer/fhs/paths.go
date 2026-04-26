@@ -119,9 +119,6 @@ const (
 const (
 	// RunDir is the runtime directory (cleared on reboot).
 	RunDir = "/run/nftban"
-
-	// RunUIDir is the UI socket directory.
-	RunUIDir = "/run/nftban-ui"
 )
 
 // --- Cache ---
@@ -276,7 +273,6 @@ var RequiredDirs = []DirSpec{
 	{CacheDir + "/health", 0750, "nftban:nftban"},
 	// /run/nftban/ — nftban:nftban
 	{RunDir, 0755, "nftban:nftban"},
-	{RunUIDir, 0750, "nftban:nftban"},
 	// /usr/share/nftban/ — root:root (read-only templates)
 	{ShareDir + "/templates", 0755, ""},
 	{ShareDir + "/templates/mail", 0755, ""},

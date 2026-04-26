@@ -34,8 +34,6 @@ type ServiceNames struct {
 	// Main services
 	MainService      string // nftban.service
 	CoreService      string // nftban-core.service (Go daemon)
-	UIService        string // nftban-ui.service
-	UIAuthService    string // nftban-ui-auth.service
 	DaemonService    string // nftband.service (unified daemon)
 
 	// Timers
@@ -64,8 +62,6 @@ var defaultServices = &ServiceNames{
 	// Main services - nftband.service is the unified daemon
 	MainService:      "nftband.service",
 	CoreService:      "nftband.service",
-	UIService:        "nftban-ui.service",
-	UIAuthService:    "nftban-ui-auth.service",
 	DaemonService:    "nftband.service",
 
 	// Timers - use canonical names from UNITS.md
@@ -100,8 +96,6 @@ func AllNFTBanServices() []string {
 	return []string{
 		defaultServices.MainService,
 		defaultServices.CoreService,
-		defaultServices.UIService,
-		defaultServices.UIAuthService,
 		defaultServices.DaemonService,
 		defaultServices.PortscanService,
 		defaultServices.DDoSService,
@@ -137,7 +131,6 @@ func ExternalServices() []string {
 type SocketPaths struct {
 	CLI       string // /run/nftban/nftban.sock - CLI communication
 	Daemon    string // /run/nftban/nftband.sock - daemon socket
-	UIAuth    string // /run/nftban-ui/auth.sock - PAM auth socket
 	Metrics   string // /run/nftban/metrics.sock - metrics socket
 }
 
@@ -152,7 +145,6 @@ func GetSockets() *SocketPaths {
 	return &SocketPaths{
 		CLI:     runDir + "/nftban.sock",
 		Daemon:  runDir + "/nftband.sock",
-		UIAuth:  "/run/nftban-ui/auth.sock",
 		Metrics: runDir + "/metrics.sock",
 	}
 }
@@ -161,8 +153,6 @@ func GetSockets() *SocketPaths {
 type PIDFiles struct {
 	Main    string // nftban main process
 	Daemon  string // nftband daemon
-	UI      string // nftban-ui web server
-	UIAuth  string // nftban-ui-auth daemon
 }
 
 // GetPIDFiles returns PID file paths from central config
@@ -176,8 +166,6 @@ func GetPIDFiles() *PIDFiles {
 	return &PIDFiles{
 		Main:   runDir + "/nftban.pid",
 		Daemon: runDir + "/nftband.pid",
-		UI:     runDir + "/nftban-ui.pid",
-		UIAuth: "/run/nftban-ui/auth.pid",
 	}
 }
 
