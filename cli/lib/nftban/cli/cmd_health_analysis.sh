@@ -765,46 +765,6 @@ nftban_health_cmd_posture() {
 }
 
 # =============================================================================
-# COMMAND: gui
-# =============================================================================
-
-nftban_health_cmd_gui() {
-    # Validate GOTH GUI components against ui-registry.json
-    # Args: [--json]
-    # Usage: nftban health gui [--json]
-
-    local json_mode=""
-    for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode="--json" || true
-    done
-
-    echo "NFTBan GUI Registry Validation"
-    echo "==============================="
-    echo ""
-
-    # Find the GUI check script
-    local gui_check_script="${NFTBAN_LIB_DIR}/health/check_gui.sh"
-
-    # Also check in development location
-    local dev_check_script
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    dev_check_script="${script_dir}/../health/check_gui.sh"
-
-    if [[ -f "$gui_check_script" ]]; then
-        bash "$gui_check_script" $json_mode
-        return $?
-    elif [[ -f "$dev_check_script" ]]; then
-        bash "$dev_check_script" $json_mode
-        return $?
-    else
-        echo "❌ GUI check script not found"
-        echo "  Expected: $gui_check_script"
-        return 1
-    fi
-}
-
-# =============================================================================
 # HTTP BOT GUARD HEALTH CHECK (v1.21.0)
 # =============================================================================
 
@@ -966,4 +926,3 @@ export -f nftban_health_cmd_config
 export -f nftban_health_cmd_rbl
 export -f nftban_health_cmd_botguard
 export -f nftban_health_cmd_posture
-export -f nftban_health_cmd_gui

@@ -24,7 +24,7 @@
 //
 // Scope: gaps G-14-B through G-14-G per V198_PR14_PRE_SOURCE_INSTALL_SPEC.md:
 //   G-14-B: Go binaries (nftban-core, nftband, nftban-validate, nftban-installer,
-//           /usr/sbin/nftban, /usr/sbin/nftban-ui, /usr/libexec/nftban-ui-auth)
+//           /usr/sbin/nftban)
 //   G-14-C: Shell scripts (cli/lib/nftban/{cli,core,helpers,lib,data,health}/*)
 //   G-14-D: Configs (/etc/nftban/*, patterns.d, templates)
 //   G-14-E: Systemd units + tmpfiles.d
@@ -33,9 +33,6 @@
 //
 // Gating: StageAll is invoked from phasePrepare ONLY when pd.source == true.
 // The cfg.source == false path (RPM/DEB) never reaches this code.
-//
-// UI staging: nftban-ui + nftban-ui-auth + PAM config are included but marked
-// with REMOVE-IN-V2.0.0 comments. v2.0.0 PR-D4 removes these mechanically.
 //
 // =============================================================================
 
@@ -82,9 +79,6 @@ func StageAll(exec executor.Executor, srcDir string, distro *detect.DistroInfo, 
 	var wrote, skipped, failed, requiredFailed int
 
 	for _, e := range entries {
-		if e.uiRemoveInV2 {
-			log.Debug("payload: staging UI-related entry (REMOVE-IN-V2.0.0): %s", e.dstGlob)
-		}
 		ew, es, ef := stageEntry(exec, srcDir, e, log)
 		wrote += ew
 		skipped += es
@@ -353,12 +347,6 @@ type entry struct {
 	// page files that are not always shipped).
 	optional bool
 
-	// uiRemoveInV2 marks UI-related entries that must be removed in v2.0.0
-	// as part of PR-D4. CI can grep for this marker pre-decommission.
-	//
-	// REMOVE-IN-V2.0.0: UI decommission (PR-D4)
-	uiRemoveInV2 bool
-
 	// category groups entries for the INFO-level staging summary
 	// (v1.98.2 R-3). Empty defaults to "other" at tally time.
 	category string
@@ -397,13 +385,6 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-rollback", dstGlob: "/usr/lib/nftban/sbin/nftban-rollback", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-service-alert", dstGlob: "/usr/lib/nftban/sbin/nftban-service-alert", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-botscan-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-botscan-processor", mode: 0755, policy: policyAlways},
-
-		// -----------------------------------------------------------------
-		// REMOVE-IN-V2.0.0: UI decommission (PR-D4)
-		// -----------------------------------------------------------------
-		{category: "ui", srcRel: "bin/nftban-ui", dstGlob: "/usr/sbin/nftban-ui", mode: 0750, policy: policyAlways, uiRemoveInV2: true, optional: true},
-		{category: "ui", srcRel: "bin/nftban-ui-auth", dstGlob: "/usr/libexec/nftban-ui-auth", mode: 0755, policy: policyAlways, uiRemoveInV2: true, optional: true},
-		// END-REMOVE-IN-V2.0.0
 
 		// -----------------------------------------------------------------
 		// G-14-C: Shell payload under /usr/lib/nftban/

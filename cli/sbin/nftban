@@ -225,7 +225,6 @@ nftban_complete() {
         echo "zabbix"
         # UI
         echo "menu"
-        echo "gui"
         # DEBUG & TESTING
         echo "debug"
         echo "smoke"
@@ -324,11 +323,6 @@ nftban_complete() {
                 echo "config"
                 echo "refresh"
                 echo "help"
-                ;;
-            gui)
-                echo "enable"
-                echo "disable"
-                echo "status"
                 ;;
             emulate|explain|verify)
                 echo "--proto"
@@ -1042,7 +1036,6 @@ main() {
             systemctl is-active nftban-suricata         >"${_tmpdir}/suri_nftban" 2>/dev/null &
             systemctl is-active suricata                >"${_tmpdir}/suri_native" 2>/dev/null &
             systemctl is-active nftban-watchdog.timer   >"${_tmpdir}/watchdog_active" 2>/dev/null &
-            systemctl is-active nftban-ui               >"${_tmpdir}/gui" 2>/dev/null &
             wait
 
             # DDoS
@@ -1086,19 +1079,11 @@ main() {
             local wd_st="Disabled"
             grep -q "^active" "${_tmpdir}/watchdog_active" 2>/dev/null && wd_st="Active"
 
-            # Web GUI
-            local gui_st="Disabled"
-            if grep -q "^active" "${_tmpdir}/gui" 2>/dev/null; then
-                local gui_port
-                gui_port=$(grep "^PORT=" /etc/nftban/ui.conf 2>/dev/null | cut -d= -f2 || echo "3940")
-                gui_st="Port ${gui_port:-3940}"
-            fi
-
             rm -rf "${_tmpdir}" 2>/dev/null || true
 
             printf "  %-14s %-12s  %-14s %s\n" "DDoS:" "$ddos_st" "Portscan:" "$ps_st"
             printf "  %-14s %-12s  %-14s %s\n" "Login Mon:" "$login_st" "Suricata:" "$suri_st"
-            printf "  %-14s %-12s  %-14s %s\n" "Watchdog:" "$wd_st" "Web GUI:" "$gui_st"
+            printf "  %-14s %-12s\n" "Watchdog:" "$wd_st"
 
             echo ""
             echo "  nftban status          Detailed status"

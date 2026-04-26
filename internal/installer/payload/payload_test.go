@@ -212,20 +212,6 @@ func TestBuildEntries_AllConfNoReplaceEntriesAreTemplateConfigs(t *testing.T) {
 	}
 }
 
-func TestBuildEntries_UIRemoveInV2MarkersPresent(t *testing.T) {
-	entries := buildEntries(&detect.DistroInfo{ID: "ubuntu"})
-	var uiCount int
-	for _, e := range entries {
-		if e.uiRemoveInV2 {
-			uiCount++
-		}
-	}
-	// Expected: nftban-ui binary + nftban-ui-auth libexec (2 UI binaries).
-	if uiCount < 2 {
-		t.Errorf("expected at least 2 UI entries marked REMOVE-IN-V2.0.0, got %d", uiCount)
-	}
-}
-
 func TestIsDebianFamily(t *testing.T) {
 	cases := map[string]bool{
 		"debian":    true,

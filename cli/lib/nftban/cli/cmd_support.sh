@@ -449,8 +449,7 @@ _collect_binaries() {
         # Binary locations
         echo "=== Binary Locations ==="
         for bin_path in /usr/sbin/nftban /usr/lib/nftban/bin/nftban-core \
-                        /usr/lib/nftban/bin/nftband /usr/sbin/nftban-ui \
-                        /usr/libexec/nftban-ui-auth; do
+                        /usr/lib/nftban/bin/nftband; do
             if [[ -f "$bin_path" ]]; then
                 echo "$bin_path: $(ls -la "$bin_path" 2>&1)"
             else
@@ -461,10 +460,8 @@ _collect_binaries() {
 
         # Go binary versions
         echo "=== Go Binary Versions ==="
-        for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+        for binary in nftban-core nftband; do
             local bin_path="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/$binary"
-            [[ "$binary" == "nftban-ui" ]] && bin_path="/usr/sbin/nftban-ui"
-            [[ "$binary" == "nftban-ui-auth" ]] && bin_path="/usr/libexec/nftban-ui-auth"
 
             if [[ -x "$bin_path" ]]; then
                 echo "$binary: $("$bin_path" --version 2>&1 | head -1 || echo 'version failed')"

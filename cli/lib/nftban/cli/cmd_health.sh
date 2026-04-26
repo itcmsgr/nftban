@@ -204,9 +204,6 @@ nftban_cmd_health() {
         registries|registry)
             nftban_health_cmd_registries "${clean_args[@]}"
             ;;
-        gui|ui)
-            nftban_health_cmd_gui "${clean_args[@]}"
-            ;;
         install|verify)
             nftban_health_cmd_install "${clean_args[@]}"
             ;;
@@ -556,6 +553,5 @@ export -f nftban_health_cmd_botguard
 export -f nftban_health_cmd_posture
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_config
-export -f nftban_health_cmd_gui
 export -f nftban_health_cmd_install
 export -f nftban_health_cmd_help
