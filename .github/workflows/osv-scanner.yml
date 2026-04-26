@@ -50,9 +50,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install build dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y libpam0g-dev
-
       - name: Install OSV-Scanner
         run: |
           curl -sSfL https://github.com/google/osv-scanner/releases/download/v2.3.3/osv-scanner_linux_amd64 -o osv-scanner
@@ -62,7 +59,6 @@ jobs:
       - name: Run OSV-Scanner
         run: |
           # Scan go.mod in lockfile mode
-          # Go + libpam0g-dev installed so govulncheck call analysis can compile
           # Config: osv-scanner.toml suppresses stdlib CVEs (patched by Go toolchain)
           # Exit 0 = clean, Exit 1 = vulnerabilities found, Exit 128 = scan error
           ./osv-scanner scan --config=osv-scanner.toml --lockfile=go.mod \

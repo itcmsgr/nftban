@@ -45,14 +45,8 @@ jobs:
       - name: Install linters & tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck shfmt yamllint jq devscripts nftables libpam0g-dev
+          sudo apt-get install -y shellcheck shfmt yamllint jq devscripts nftables
           npm i -g markdownlint-cli2@0.17.2
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Generate templ files
-        run: $(go env GOPATH)/bin/templ generate
 
       - name: Run health check
         run: .github/ci/health_check.sh

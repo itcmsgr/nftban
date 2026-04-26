@@ -15,11 +15,6 @@
 # Builds:
 #   - nftban-core (main CLI for firewall operations)
 #
-# NOTE (v1.100.1b.A): nftban-ui + nftban-ui-auth removed from shipped
-# artifact set per GOTH PR-D4 stage 1. SLSA build coverage now scoped
-# to nftban-core only. Source trees for the UI surface remain in repo
-# but are not built or published.
-#
 # COORDINATION: This workflow runs AFTER Release Packages completes to avoid
 # race conditions when uploading assets to the same GitHub release.
 # =============================================================================
@@ -93,7 +88,6 @@ jobs:
   # ============================================================================
   # Job 2: Assemble all artifacts and upload to release
   # ============================================================================
-  # NOTE (v1.100.1b.A): nftban-ui + nftban-ui-auth removed — GOTH PR-D4 stage 1.
   assemble-release:
     name: Assemble Release Artifacts
     needs: [get-tag, build-nftban-core]
@@ -115,10 +109,6 @@ jobs:
         with:
           name: ${{ needs.build-nftban-core.outputs.go-provenance-name }}
           path: dist/
-
-      # nftban-ui artifact + provenance downloads removed in v1.100.1b.A
-      # (GOTH PR-D4 stage 1 — stop shipping). nftban-ui no longer built
-      # by SLSA pipeline.
 
       - name: List artifacts
         run: ls -la dist/

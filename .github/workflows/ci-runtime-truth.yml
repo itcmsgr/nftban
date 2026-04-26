@@ -87,11 +87,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p bin
-          # templ generation is required for nftban-core but not for validate/installer.
-          # For this gate we only need the binaries on the critical path.
+          # For this gate we only need the binaries on the critical path
+          # (validator + installer). nftban-core/nftband are stubbed below
+          # to keep this job CGO-free.
           go build -trimpath -o bin/nftban-validate ./cmd/nftban-validate/
           go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
-          # Minimal nftban-core stub is provided if templ is absent — skip.
           test -x bin/nftban-validate
           test -x bin/nftban-installer
 
@@ -104,7 +104,7 @@ jobs:
                            /usr/lib/nftban/health /etc/nftban /etc/logrotate.d
           sudo cp bin/nftban-validate /usr/lib/nftban/bin/nftban-validate
           sudo cp bin/nftban-installer /usr/lib/nftban/bin/nftban-installer
-          # Stub the Go-backed binaries whose full build requires templ so
+          # Stub the CGO-required binaries (nftban-core + nftband) so
           # VerifyInventory's required-files check passes. We only need
           # existence, not functionality, for the post-install assertion.
           sudo install -m 0755 /bin/true /usr/lib/nftban/bin/nftban-core

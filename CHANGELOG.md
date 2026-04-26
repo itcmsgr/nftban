@@ -11,6 +11,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1b.D GOTH docs/repo cleanup (closes the removal track)
+
+Final phase of the GOTH/UI removal sequence (A → B → C1 → C2 → **D**). Cleans up the runtime-touching code paths and JSON registries that referenced the retired Web GUI surface, plus obsolete CI workflow steps that no longer have any consumer.
+
+Wiki narrative cleanup was published separately to `nftban.wiki` (commit `39ab975`).
+
+### Removed (operator-impacting)
+
+- **`nftban health gui` health check**: deprecated function `nftban_health_check_gui()` removed entirely from `cli/lib/nftban/core/nftban_health_checks_integrations.sh` along with its dispatcher call site in `nftban_health.sh`. The health check inspected the retired `nftban-ui` binary, service, auth socket, and socket-directory permissions — all of which are gone.
+- **`nftban-ui.service` health snapshot row**: dropped from `nftban_health.sh` `optional_services[]` and `optional_bins[]` arrays. `nftban health` no longer reports a stale "Web GUI not installed" row.
+
+### Removed (files)
+
+- `cli/lib/nftban/exporters/nftban_exporter_gui_cache.sh` — generated UI-only cache files (`traffic_history.json`, `dropped_by_country.json`, `dropped_by_port.json`) that the retired Web GUI consumed. The single sourcing site in `nftban_unified_exporter_collect.sh` is also removed.
+
+### Removed (JSON registries)
+
+- `cli/lib/nftban/data/fhs_directories.json`: dropped `/run/nftban-ui` directory entry.
+- `cli/lib/nftban/data/config-schema.json`: dropped `NFTBAN_UI_BIN`, `NFTBAN_AUTH_BIN`, `NFTBAN_SERVICE_UI` schema entries.
+- `cli/lib/nftban/data/reports-registry.json`: dropped `api` channel entry (depended on `nftban-ui.service`).
+
+### Removed (FHS spec + security check)
+
+- `cli/lib/nftban/core/nftban_fhs_spec.sh`: dropped `/run/nftban-ui` `NFTBAN_FHS_DIRECTORIES` entry.
+- `cli/lib/nftban/core/nftban_health_checks_security.sh`: dropped `nftban-ui.service` from systemd-analyze key-services list.
+
+### Removed (CI workflows — obsolete templ + libpam steps)
+
+After C1+C2 removed all `.templ` files, `_templ.go` generated files, `msteinert/pam/v2` imports, and PAM-using packages, the templ-install and `libpam0g-dev` apt-install steps in CI workflows are pure dead steps (verified: zero `.templ` / `_templ.go` / `"C"` / `msteinert/pam` references remain in tree).
+
+Removed steps from:
+- `.github/workflows/ci-go.yml` — templ install/generate/verify + libpam0g-dev install
+- `.github/workflows/build-packages.yml` — templ install + libpam0g-dev install
+- `.github/workflows/ci-smoke.yml` — templ install/generate + libpam0g-dev (kept nftables, jq)
+- `.github/workflows/codeql.yml` — templ install/generate + libpam0g-dev install
+- `.github/workflows/secure-go.yml` — templ install/generate + libpam0g-dev install
+- `.github/workflows/osv-scanner.yml` — libpam0g-dev install
+- `.github/workflows/project-health.yml` — templ install/generate + libpam0g-dev (kept shellcheck, shfmt, yamllint, jq, devscripts, nftables)
+- `.github/workflows/release.yml` — libpam0g-dev install
+- Decommission comments in `release.yml`, `slsa-go-releaser.yml`, `ci-runtime-truth.yml`
+
+CGO build flags are preserved (still required for nftban-core/nftband transitively).
+
+### Notes
+
+This release closes the GOTH/UI removal track. From this point forward, no shipped binary, no built artifact, no health check, no JSON registry entry, no CI build step, and no wiki page references the retired Web GUI surface in active form. Historical references survive only in the dedicated `archive/` wiki pages and the CHANGELOG entries for stages A → D.
+
+Out of scope (lifecycle completion lane — explicitly **OPEN**):
+- PR-25 restore execution
+- PR-26 verification gate
+- PR-27 logrotate unified config
+- PR-28 missing log rotation
+- PR-29 GeoIP validator freshness
+- PR-30 timer alignment
+
+---
+
 ## [Unreleased] - v1.100.1b.C2 GOTH cross-cutting prune
 
 ### Removed (operator-impacting)
