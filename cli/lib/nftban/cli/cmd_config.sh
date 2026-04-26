@@ -289,7 +289,6 @@ declare -A _CONFIG_MODULE_SERVICE=(
     ["login"]="nftban-login-monitor"
     ["geoban"]="nftband"
     ["suricata"]="nftban-suricata"
-    ["ui"]="nftban-ui"
     ["daemon"]="nftband"
 )
 
@@ -297,7 +296,6 @@ declare -A _CONFIG_MODULE_SERVICE=(
 declare -a _CONFIG_SIGHUP_SERVICES=(
     "nftband"
     "nftban-login-monitor"
-    "nftban-ui"
     "nftban-suricata"
 )
 

@@ -90,9 +90,8 @@ fi
 # =============================================================================
 # SHARED STATE API HELPER - NO CLI OVERHEAD
 # =============================================================================
-# Tries to get basic stats from nftban-ui API first (shared state from watchdog).
-# Falls back to nft CLI calls only if API unavailable.
-# This eliminates CLI overhead when watchdog is running.
+# Optional shared-state API short-circuit (returns fast if a daemon-side
+# basic-stats endpoint is reachable). Falls back to nft CLI calls otherwise.
 # =============================================================================
 
 # nftban_stats_get_basic_from_api attempts to fetch basic stats from the API
@@ -148,7 +147,6 @@ nftban_stats_get_counts_optimized() {
     fi
 
     # Fall back to CLI (slower - direct nft calls)
-    # This path is only used when nftban-ui is not running
     return 1
 }
 

@@ -87,7 +87,6 @@ check_file "/usr/lib/nftban/cli/cmd_metrics.sh"           # NEW: Metrics command
 # ==============================================================================
 echo ""
 echo "Checking Updated Files (2025-11-28)..."
-check_file "/usr/lib/nftban/cli/cmd_gui.sh"               # Modified: Port 3940 + auto-open
 check_file "/usr/lib/nftban/cli/cmd_whitelist_system.sh"  # Modified: Removed deprecated
 check_file "/usr/lib/nftban/core/nftban_system_ip.sh"     # Modified: meta:depends
 check_file "/usr/lib/nftban/cli/cmd_search.sh"            # Modified: meta:depends
