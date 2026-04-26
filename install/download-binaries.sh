@@ -9,7 +9,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Download and verify NFTBan Go binaries from GitHub releases"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftband, nftban-ui, nftban-ui-auth"
+# meta:inventory.binaries="nftban-core, nftband"
 # meta:inventory.env_vars="DOWNLOAD_DIR, INSTALL_DIR, SKIP_INSTALL"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -329,14 +329,10 @@ download_all() {
     # Download main binaries
     download_binary "nftban-core" "$arch" "$version"
     download_binary "nftband" "$arch" "$version"
-    download_binary "nftban-ui" "$arch" "$version"
 
-    # nftban-ui-auth is amd64 only (CGO)
-    if [[ "$arch" == "amd64" ]]; then
-        download_binary "nftban-ui-auth" "$arch" "$version"
-    else
-        warn "nftban-ui-auth not available for $arch (requires CGO)"
-    fi
+    # v1.100.1b.A: nftban-ui + nftban-ui-auth no longer published as
+    # release assets (GOTH PR-D4 stage 1 — stop shipping). Removed
+    # from download list.
 
     # Download SHA256SUMS
     log "Downloading SHA256SUMS..."
@@ -348,7 +344,7 @@ verify_all() {
     local arch="$2"
     local method="$3"
 
-    local binaries=("nftban-core-linux-${arch}" "nftband-linux-${arch}" "nftban-ui-linux-${arch}" "nftban-ui-auth-linux-${arch}")
+    local binaries=("nftban-core-linux-${arch}" "nftband-linux-${arch}")
 
     local verified=0
     local skipped=0
@@ -413,19 +409,10 @@ install_binaries() {
         ok "Installed: $INSTALL_DIR/nftband"
     fi
 
-    # Install nftban-ui
-    if [[ -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" ]]; then
-        cp -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" /usr/sbin/nftban-ui
-        chmod 755 /usr/sbin/nftban-ui
-        ok "Installed: /usr/sbin/nftban-ui"
-    fi
-
-    # Install nftban-ui-auth
-    if [[ -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-${arch}" ]]; then
-        cp -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-${arch}" /usr/libexec/nftban-ui-auth
-        chmod 755 /usr/libexec/nftban-ui-auth
-        ok "Installed: /usr/libexec/nftban-ui-auth"
-    fi
+    # v1.100.1b.A: nftban-ui + nftban-ui-auth installation steps removed
+    # (GOTH PR-D4 stage 1 — stop shipping). Old installs that have these
+    # binaries should be cleaned up by the package's prerm transitional
+    # handler when the next package is installed via apt/dnf.
 
     ok "Binaries installed successfully"
 }
@@ -551,7 +538,7 @@ fi
 if [[ "$VERIFY_METHOD" == "slsa" ]]; then
     # Check if any provenance file exists
     _has_provenance=0
-    for _binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+    for _binary in nftban-core nftband; do
         if [[ -f "$DOWNLOAD_DIR/${_binary}-linux-${ARCH}.intoto.jsonl" ]]; then
             _has_provenance=1
             break
