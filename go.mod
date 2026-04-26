@@ -5,9 +5,7 @@ go 1.25.0
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/nftables v0.3.0
-	github.com/gorilla/mux v1.8.1
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.23.2
