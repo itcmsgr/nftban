@@ -8,11 +8,11 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
 # meta:description="Build all NFTBan Go binaries in one place"
-# meta:input="component (all, core, gui, ui-auth, daemon, api)"
+# meta:input="component (all, core, daemon, installer, validator)"
 # meta:output="Compiled Go binaries in bin/"
 # meta:depends="go"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-installer, nftban-validate"
+# meta:inventory.binaries="nftban-core, nftband, nftban-installer, nftban-validate"
 # meta:inventory.env_vars="CGO_ENABLED, GOOS, GOARCH"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -20,7 +20,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 # Usage: ./build.sh [component]
-#        component: all (default), gui, auth, or specific binary name
+#        component: all (default) or specific binary name (core, daemon, installer, validator)
 # =============================================================================
 
 set -Eeuo pipefail
@@ -82,15 +82,8 @@ check_prerequisites() {
         ok "GCC $(gcc --version | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
     fi
 
-    # Check PAM headers (needed for nftban-ui-auth)
-    if [[ ! -f /usr/include/security/pam_appl.h ]]; then
-        warn "PAM development headers not found (needed for nftban-ui-auth)"
-        echo "  Install (Debian/Ubuntu): apt install libpam0g-dev"
-        echo "  Install (RHEL/Fedora):   dnf install pam-devel"
-        echo "  Build will skip nftban-ui-auth if missing"
-    else
-        ok "PAM headers"
-    fi
+    # PAM headers check removed in v1.100.1b.A — nftban-ui-auth is no
+    # longer built or shipped (GOTH PR-D4 stage 1).
 
     if [[ $missing -eq 1 ]]; then
         echo ""
@@ -137,8 +130,8 @@ fix_dependencies() {
 # Fix dependencies for all Go modules
 log "Checking Go module dependencies..."
 fix_dependencies "$SCRIPT_DIR/cmd/nftban-core"
-fix_dependencies "$SCRIPT_DIR/cmd/nftban-ui"
-fix_dependencies "$SCRIPT_DIR/cmd/nftban-ui-auth"
+# nftban-ui + nftban-ui-auth dep checks removed in v1.100.1b.A
+# (GOTH PR-D4 stage 1 — no longer built or shipped).
 ok "Dependencies checked"
 echo ""
 
@@ -167,70 +160,11 @@ build_core() {
 }
 
 
-generate_templ() {
-    log "Generating templ files..."
-
-    # Check if templ is installed
-    if ! command -v templ &>/dev/null; then
-        log "Installing templ..."
-        go install github.com/a-h/templ/cmd/templ@v0.3.977 || {
-            error "Failed to install templ"
-            return 1
-        }
-    fi
-
-    cd "$SCRIPT_DIR"
-    templ generate || {
-        error "Failed to generate templ files"
-        return 1
-    }
-    ok "Templ files generated"
-    return 0
-}
-
-build_gui() {
-    log "Building nftban-ui (Web GUI)..."
-
-    # Generate templ files first
-    generate_templ || return 1
-
-    cd "$SCRIPT_DIR/cmd/nftban-ui"
-
-    CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
-        go build -trimpath -o "$BIN_DIR/nftban-ui" \
-        -ldflags="$LDFLAGS" \
-        . || {
-        error "Failed to build nftban-ui"
-        return 1
-    }
-
-    chmod +x "$BIN_DIR/nftban-ui"
-    ok "Built: $BIN_DIR/nftban-ui"
-
-    cd "$SCRIPT_DIR"
-    return 0
-}
-
-
-build_ui_auth() {
-    log "Building nftban-ui-auth (PAM authentication daemon)..."
-
-    cd "$SCRIPT_DIR/cmd/nftban-ui-auth"
-
-    CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH \
-        go build -trimpath -o "$BIN_DIR/nftban-ui-auth" \
-        -ldflags="$LDFLAGS" \
-        . || {
-        error "Failed to build nftban-ui-auth"
-        return 1
-    }
-
-    chmod +x "$BIN_DIR/nftban-ui-auth"
-    ok "Built: $BIN_DIR/nftban-ui-auth"
-
-    cd "$SCRIPT_DIR"
-    return 0
-}
+# build_gui / build_ui_auth / generate_templ removed in v1.100.1b.A
+# (GOTH PR-D4 stage 1 — nftban-ui + nftban-ui-auth no longer built or
+# shipped). Source trees under cmd/nftban-ui/, cmd/nftban-ui-auth/,
+# internal/ui/ remain in repo and will be removed in a later
+# stabilization release (1.100.1b.B).
 
 build_daemon() {
     log "Building nftband (IPC daemon for nft operations)..."
@@ -304,11 +238,11 @@ Usage:
 Components:
   all       Build all Go binaries (default)
   core      Build nftban-core only
-  gui       Build nftban-ui only
-  ui-auth   Build nftban-ui-auth only
   daemon    Build nftband only
   installer Build nftban-installer only
   validator Build nftban-validate only
+
+  (gui + ui-auth removed in v1.100.1b.A — GOTH PR-D4 stage 1)
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -319,7 +253,6 @@ Examples:
   $0              # Build everything
   $0 all          # Build everything
   $0 core         # Build core binary only
-  $0 gui          # Build GUI only
   $0 daemon       # Build IPC daemon only
 
 Output:
@@ -345,11 +278,7 @@ case "$COMPONENT" in
         build_core || exit 1
         echo ""
 
-        build_gui || exit 1
-        echo ""
-
-        build_ui_auth || exit 1
-        echo ""
+        # build_gui + build_ui_auth removed in v1.100.1b.A.
 
         build_daemon || exit 1
         echo ""
@@ -370,12 +299,9 @@ case "$COMPONENT" in
         build_core || exit 1
         ;;
 
-    gui)
-        build_gui || exit 1
-        ;;
-
-    ui-auth)
-        build_ui_auth || exit 1
+    gui|ui-auth)
+        error "nftban-ui and nftban-ui-auth are no longer built or shipped (v1.100.1b.A — GOTH PR-D4 stage 1)."
+        exit 1
         ;;
 
     daemon)
