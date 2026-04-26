@@ -86,19 +86,4 @@ func StartDaemon(exec executor.Executor, log *logging.Logger) {
 	if err := exec.ServiceEnable("nftban-core.service"); err != nil {
 		log.Debug("enable nftban-core.service: %v (may not exist)", err)
 	}
-
-	// Enable nftban-ui-auth.socket (web UI auth — G6)
-	for _, unit := range []string{"/etc/systemd/system/nftban-ui-auth.socket", "/usr/lib/systemd/system/nftban-ui-auth.socket"} {
-		if exec.FileExists(unit) {
-			if err := exec.ServiceEnable("nftban-ui-auth.socket"); err != nil {
-				log.Warn("enable nftban-ui-auth.socket: %v", err)
-			}
-			if err := exec.ServiceStart("nftban-ui-auth.socket"); err != nil {
-				log.Warn("start nftban-ui-auth.socket: %v", err)
-			} else {
-				log.Debug("nftban-ui-auth.socket enabled and started")
-			}
-			break
-		}
-	}
 }
