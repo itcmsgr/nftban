@@ -12445,14 +12445,6 @@
       "module": "core",
       "default": "3600\""
     },
-    "NFTBAN_AUTH_BIN": {
-      "type": "string",
-      "description": "Nftban auth bin",
-      "introduced_in": "1.43.0",
-      "module": "core",
-      "default": "/usr/libexec/nftban-ui-auth",
-      "$ref": "#/definitions/path"
-    },
     "NFTBAN_BANDWIDTH_CACHE_TTL": {
       "type": "string",
       "description": "Nftban bandwidth cache ttl",
@@ -13644,13 +13636,6 @@
       "module": "core",
       "default": "nftban-suricata.service"
     },
-    "NFTBAN_SERVICE_UI": {
-      "type": "string",
-      "description": "Nftban service ui",
-      "introduced_in": "1.43.0",
-      "module": "core",
-      "default": "nftban-ui.service"
-    },
     "NFTBAN_SERVICE_WATCHDOG": {
       "type": "string",
       "description": "Nftban service watchdog",
@@ -14092,14 +14077,6 @@
       "module": "tunnel",
       "default": "20",
       "$ref": "#/definitions/positive_integer"
-    },
-    "NFTBAN_UI_BIN": {
-      "type": "string",
-      "description": "Nftban ui bin",
-      "introduced_in": "1.43.0",
-      "module": "core",
-      "default": "/usr/sbin/nftban-ui",
-      "$ref": "#/definitions/path"
     },
     "NFTBAN_UPDATE_AUTO_ENABLED": {
       "type": "string",
