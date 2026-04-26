@@ -187,7 +187,11 @@ install_yq_v4() {
     fi
 }
 
-# Check and install PAM (REQUIRED for nftban-ui-auth)
+# Check and install PAM
+# v1.100.1b.A note: PAM was previously required for nftban-ui-auth.
+# nftban-ui-auth no longer ships (GOTH PR-D4 stage 1), so PAM is now
+# OPTIONAL. The function remains for compatibility but is not invoked
+# from the main prerequisite-check flow.
 check_pam() {
     log "Checking PAM (Pluggable Authentication Modules)..."
 

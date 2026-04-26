@@ -11,6 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1b.A GOTH PR-D4 stage 1 (stop shipping nftban-ui + nftban-ui-auth)
+
+### Changed (operator-impacting)
+
+- **`nftban-ui` (Web GUI server) and `nftban-ui-auth` (PAM auth daemon) are no longer shipped.** New releases under v1.100.1b.A and later do not include these binaries, their systemd units, or their SLSA provenance artifacts.
+- **Existing installs receive automatic cleanup on upgrade.** Transitional postinst/prerm hooks (DEB) and `%pre` scriptlet (RPM) stop, disable, mask, and remove any prior `nftban-ui.service`, `nftban-ui-auth.service`, `nftban-ui-auth.socket` units, plus the `/usr/sbin/nftban-ui` and `/usr/libexec/nftban-ui-auth` binaries and `/run/nftban-ui` runtime directory.
+- **PAM development headers are no longer a build requirement** for the standard `nftban` package (only `nftban-ui-auth` consumed PAM, and it is no longer built).
+
+### Removed from build / packaging / release pipeline
+
+- `.github/workflows/ci-go.yml`: nftban-ui + nftban-ui-auth build/verify entries removed.
+- `.github/workflows/build-packages.yml`: nftban-ui + nftban-ui-auth removed from binary inventory loops.
+- `.github/workflows/slsa-go-releaser.yml`: `build-nftban-ui` job removed; assemble-release no longer downloads nftban-ui artifacts.
+- `.github/slsa/nftban-ui.yml` and `.github/slsa/nftban-ui-auth.yml`: deleted.
+- `.github/workflows/release.yml`: nftban-ui + nftban-ui-auth removed from binary copy step, asset-replacement list, expected-package list, expected-asset list, SHA256SUMS.build binary list, draft-release upload list, and SLSA download retry loop.
+- `build.sh`: `build_gui`, `build_ui_auth`, `generate_templ` functions removed; `gui` and `ui-auth` subcommands now error with explanation; PAM headers prerequisite check removed; `nftban-ui` and `nftban-ui-auth` removed from `go mod tidy` loop.
+- `packaging/build_nftban.sh`: RPM `%install` no longer installs the binaries or systemd unit files; RPM `%files` no longer references them; DEB build helper drops the equivalent installs. RPM `%pre` and DEB prerm now also disable + mask + remove orphaned unit files transitionally.
+- `packaging/deb/postinst`: `/usr/sbin/nftban-ui` removed from chown/chmod loop.
+- `packaging/deb/prerm`: extended transitional cleanup (disable + mask + remove unit files + delete orphaned binaries).
+- `install/download-binaries.sh`: nftban-ui + nftban-ui-auth removed from fetch, install, verify, and SLSA-provenance check loops.
+- `install/verify_installation.sh`: optional checks for `/usr/sbin/nftban-ui`, `nftban-ui.service`, `nftban-ui-auth.socket` removed.
+
+### Notes
+
+- Source trees under `cmd/nftban-ui/`, `cmd/nftban-ui-auth/`, `internal/ui/`, `internal/auth/`, `internal/session/`, `internal/authproto/` are **intentionally retained** in the repo at this stage. They will be removed in a separate later release (v1.100.1b.B). They still compile via `go build ./...` and their unit tests still run, but the binaries are no longer published.
+- Cross-cutting shell + Go references to the UI surface (87 in `cli/lib/`, 13 in `internal/installer/`, 14 in `internal/nftbanconf/`, 6 in `internal/api/`) are **also intentionally retained** at this stage. They will be cleaned up in v1.100.1b.C.
+- Documentation references (`docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/REPRODUCIBLE_BUILDS.md`, `SECURITY.md`, `docs/systemd/UNITS.md`, `docs/systemd/TIMERS.md`) are not edited in this release; deferred to v1.100.1b.D.
+- Lifecycle completion work (PR-25 restore execution, PR-26 verification gate, PR-27-30 maintenance) remains explicitly **open** and is not affected by this release.
+
+### Why a transitional approach
+
+A hard removal would orphan running services on prior-version hosts (operators with active `nftban-ui.service` would get it left behind after upgrade). The transitional approach disables, masks, and removes the unit files via the package's own upgrade hooks, so the post-upgrade state is clean even though the new package no longer carries those artifacts.
+
+---
+
 ## [Unreleased] - v1.100.1a CLI jail surgical rename
 
 ### Changed

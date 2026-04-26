@@ -35,6 +35,20 @@ case "$1" in
             nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
             deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
         done
+        # v1.100.1b.A transitional: nftban-ui.* are no longer shipped.
+        # On upgrade from a prior install that DID have these units,
+        # additionally disable + mask + remove the unit files so they
+        # cannot be re-enabled accidentally.
+        for unit in nftban-ui.service nftban-ui-auth.service nftban-ui-auth.socket; do
+            systemctl disable "$unit" 2>/dev/null || true
+            systemctl mask "$unit" 2>/dev/null || true
+            rm -f "/lib/systemd/system/$unit" 2>/dev/null || true
+            rm -f "/usr/lib/systemd/system/$unit" 2>/dev/null || true
+        done
+        # Remove any orphaned binaries from prior installs.
+        rm -f /usr/sbin/nftban-ui /usr/libexec/nftban-ui-auth 2>/dev/null || true
+        rm -rf /run/nftban-ui 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
         ;;
 esac
 

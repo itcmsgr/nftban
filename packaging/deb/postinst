@@ -105,7 +105,10 @@ case "$1" in
         # Must run AFTER nftban group is created. DEB payload ships 0750
         # root:root; postinst converges to root:nftban 0750 so the runtime
         # permissions module does not repeatedly correct drift.
-        for _bin in /usr/sbin/nftban /usr/sbin/nftban-ui; do
+        # v1.100.1b.A: nftban-ui no longer ships, but the loop tolerates absence.
+        # Old installs may still have /usr/sbin/nftban-ui from a prior package;
+        # the prerm/postrm cleanup paths handle removal of those orphaned files.
+        for _bin in /usr/sbin/nftban; do
             if [ -f "$_bin" ]; then
                 chown root:nftban "$_bin" 2>/dev/null || true
                 chmod 0750 "$_bin" 2>/dev/null || true

@@ -98,7 +98,7 @@ check_file "/usr/lib/nftban/cli/cmd_search.sh"            # Modified: meta:depen
 echo ""
 echo "Checking Go Binaries..."
 check_file "/usr/lib/nftban/bin/nftban-core"
-check_file "/usr/sbin/nftban-ui" false  # Optional (GUI mode)
+# v1.100.1b.A: nftban-ui no longer shipped — check removed.
 
 # ==============================================================================
 # Configuration Files
@@ -116,8 +116,9 @@ echo ""
 echo "Checking Systemd Services..."
 check_file "/usr/lib/systemd/system/nftban-unified-exporter.service"
 check_file "/usr/lib/systemd/system/nftban-unified-exporter.timer"
-check_file "/usr/lib/systemd/system/nftban-ui.service" false          # Optional
-check_file "/usr/lib/systemd/system/nftban-ui-auth.socket" false      # Optional
+# v1.100.1b.A: nftban-ui.service + nftban-ui-auth.socket no longer
+# shipped — checks removed. Transitional postinst removes any
+# orphaned units from prior installs.
 
 # ==============================================================================
 # Library Files
