@@ -18,7 +18,7 @@
 FROM golang:1.25-alpine AS builder
 
 # hadolint ignore=DL3018
-RUN apk add --no-cache git make bash linux-pam-dev gcc musl-dev
+RUN apk add --no-cache git make bash gcc musl-dev
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -26,13 +26,10 @@ RUN go mod download
 
 COPY . .
 
-# Install templ and generate files, then build all binaries
-RUN go install github.com/a-h/templ/cmd/templ@v0.3.977 && \
-    templ generate && \
-    mkdir -p /out && \
+# Build all binaries
+RUN mkdir -p /out && \
     CGO_ENABLED=1 GOOS=linux go build -o /out/nftban-core ./cmd/nftban-core && \
-    CGO_ENABLED=1 GOOS=linux go build -o /out/nftband ./cmd/nftband && \
-    CGO_ENABLED=0 GOOS=linux go build -o /out/nftban-ui ./cmd/nftban-ui
+    CGO_ENABLED=1 GOOS=linux go build -o /out/nftband ./cmd/nftband
 
 # Stage 2: Minimal runtime image
 # Pinned to SHA for OpenSSF Scorecard compliance
@@ -44,8 +41,7 @@ RUN apk add --no-cache \
     nftables \
     jq \
     curl \
-    ca-certificates \
-    linux-pam && \
+    ca-certificates && \
     addgroup -S nftban && \
     adduser -S -G nftban nftban && \
     mkdir -p /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban && \
@@ -54,7 +50,6 @@ RUN apk add --no-cache \
 # Copy binaries from builder
 COPY --from=builder /out/nftban-core /usr/bin/
 COPY --from=builder /out/nftband /usr/bin/
-COPY --from=builder /out/nftban-ui /usr/bin/
 
 # Copy CLI scripts
 COPY cli/sbin/nftban /usr/sbin/nftban
