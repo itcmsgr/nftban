@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.1a CLI jail surgical rename
+
+### Changed
+
+- **`nftban stats --json` dual-key alias**: output now emits both
+  `top_jails` and `top_filters` keys with the same value. `top_jails`
+  is **deprecated** and will be removed in a later release; downstream
+  consumers should migrate to `top_filters`. One-cycle deprecation per
+  the locked surgical-rename scope (`top_jails` is the only operator-
+  parseable surface affected; internal variable + function names
+  unchanged in this release).
+- **`cli/lib/nftban/cli/cmd_search.sh`** purpose comment: replaced
+  "jails" → "filters". Comment-only change, no behavior impact.
+- **`etc/nftban/conf.d/login/services.conf`** comment narration at
+  9 sites: `[nftban-XXXX] jail` → `[nftban-XXXX] filter`. Comment-
+  only edit; env var convention (`LOGIN_SERVICE_<SERVICE>_<SETTING>`)
+  unchanged.
+
+### Notes
+
+- Internal struct/type renames (`escalation.BanEntry.Jail` field,
+  `nftban_stats_top_jails` function name, etc.) are intentionally
+  **out of scope** of this surgical rename. They will be addressed
+  in a separate later PR if needed.
+- Lifecycle completion work (PR-25 restore execution, PR-26 verification
+  gate, PR-27-30 maintenance) remains explicitly **open** and is not
+  affected by this rename.
+
+---
+
 ## [Unreleased] - v1.100 PR-22A + PR-22B repair cycle
 
 ### Changed
