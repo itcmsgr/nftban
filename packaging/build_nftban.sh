@@ -287,7 +287,6 @@ Requires:       jq
 Requires:       curl
 Requires:       tar
 Requires:       gzip
-Requires:       pam
 Requires:       bc
 Requires:       gawk
 Requires:       socat
@@ -1362,7 +1361,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g, bc, gawk, socat, acl, polkitd | policykit-1
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, polkitd | policykit-1
 Recommends: dnsutils, mailutils, netmask, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
