@@ -366,10 +366,11 @@ jobs:
           # Copy all DEB packages
           find all-packages -name "*.deb" -exec cp {} dist/packages/ \;
 
-          # Copy raw Go binaries that SLSA can't build (require CGO/PAM)
-          # NOTE: nftban-core and nftban-ui are built by SLSA workflow with provenance
+          # Copy raw Go binaries that SLSA can't build (require CGO)
+          # NOTE: nftban-core is built by SLSA workflow with provenance.
+          # nftban-ui + nftban-ui-auth removed in v1.100.1b.A (GOTH PR-D4 stage 1).
           if [ -d "all-packages" ]; then
-            for binary in nftband nftban-ui-auth; do
+            for binary in nftband; do
               if [ -f "all-packages/${binary}" ]; then
                 cp "all-packages/${binary}" "dist/packages/${binary}-linux-amd64"
                 chmod +x "dist/packages/${binary}-linux-amd64"
@@ -397,7 +398,6 @@ jobs:
             "nftban-debian12-amd64.deb"
             "nftban-debian13-amd64.deb"
             "nftband-linux-amd64"
-            "nftban-ui-auth-linux-amd64"
             "SHA256SUMS"
             "SHA256SUMS.build"
             "MANIFEST.txt"
@@ -416,9 +416,7 @@ jobs:
             "${ASSETS_TO_REPLACE[@]}"
             "RELEASE_NOTES.md"
             "nftban-core-linux-amd64"
-            "nftban-ui-linux-amd64"
             "nftban-core-linux-amd64.intoto.jsonl"
-            "nftban-ui-linux-amd64.intoto.jsonl"
           )
 
           CURRENT_ASSETS=$(gh release view "$VERSION" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
@@ -440,7 +438,7 @@ jobs:
           # Generate checksums for all packages and binaries
           shopt -s nullglob
           packages=(*.rpm *.deb)
-          binaries=(nftban-core-linux-amd64 nftband-linux-amd64 nftban-ui-linux-amd64 nftban-ui-auth-linux-amd64)
+          binaries=(nftban-core-linux-amd64 nftband-linux-amd64)
 
           # Combine all files that exist
           all_files=()
@@ -645,14 +643,14 @@ jobs:
         # - Include SHA256SUMS.build as ground truth reference
         # - verify-release job will: download with retry, verify checksums,
         #   generate final SHA256SUMS, then publish the release
-        # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
+        # NOTE: nftban-core is uploaded by SLSA workflow with provenance.
+        # nftban-ui + nftban-ui-auth removed in v1.100.1b.A (GOTH PR-D4 stage 1).
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
           files: |
             dist/packages/*.rpm
             dist/packages/*.deb
             dist/packages/nftband-linux-amd64
-            dist/packages/nftban-ui-auth-linux-amd64
             dist/packages/SHA256SUMS.build
             dist/packages/MANIFEST.txt
             dist/packages/VERIFY.txt
@@ -710,7 +708,6 @@ jobs:
             "nftban-ubuntu22.04-amd64.deb"
             "nftban-ubuntu24.04-amd64.deb"
             "nftband-linux-amd64"
-            "nftban-ui-auth-linux-amd64"
             "SHA256SUMS.build"
           )
 
@@ -748,13 +745,10 @@ jobs:
               echo ""
               echo "::error::Failed to download all assets after $MAX_ATTEMPTS attempts"
               echo "Missing assets: ${MISSING[*]}"
-              # Allow missing optional assets (nftban-ui-auth may not exist)
-              REQUIRED_MISSING=0
+              # All listed assets are required after v1.100.1b.A (no optional UI binaries left).
+              REQUIRED_MISSING="${#MISSING[@]}"
               for m in "${MISSING[@]}"; do
-                case "$m" in
-                  nftban-ui-auth-linux-amd64) echo "  WARN: $m is optional (SLSA-built)" ;;
-                  *) echo "  FATAL: $m is required!"; REQUIRED_MISSING=$((REQUIRED_MISSING + 1)) ;;
-                esac
+                echo "  FATAL: $m is required!"
               done
               if [ "$REQUIRED_MISSING" -gt 0 ]; then
                 exit 1
@@ -768,7 +762,7 @@ jobs:
 
           # Also try SLSA-built binaries (optional — uploaded by separate workflow)
           cd "$GITHUB_WORKSPACE"
-          for slsa_asset in "nftban-core-linux-amd64" "nftban-ui-linux-amd64"; do
+          for slsa_asset in "nftban-core-linux-amd64"; do
             gh release download "$VERSION" -p "$slsa_asset" -D /tmp/release-verify --clobber 2>/dev/null && \
               echo "Downloaded SLSA asset: $slsa_asset" || true
           done
