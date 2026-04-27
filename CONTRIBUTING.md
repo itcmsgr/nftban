@@ -223,7 +223,7 @@ Any AI (Claude, etc.) must obey:
 
 All contributions **must** comply with these authoritative standards:
 
-### 1. HEADER_SPEC.md (File Headers)
+### 1. File Headers
 
 Every source file must have a compliant header with:
 - **SPDX-License-Identifier: MPL-2.0** (exactly one per file)
@@ -239,7 +239,7 @@ Every source file must have a compliant header with:
   meta:inventory.privileges=""
   ```
 
-See [HEADER_SPEC.md](HEADER_SPEC.md) for complete specification.
+This section is the authoritative header spec. CI enforces it via `tools/validate-headers.sh`.
 
 ### 2. Coding Standards
 
