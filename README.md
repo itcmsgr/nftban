@@ -2,7 +2,7 @@
 
 **Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.95.0-blue)](https://github.com/itcmsgr/nftban/releases)
+[![Version](https://img.shields.io/github/v/tag/itcmsgr/nftban?label=version&sort=semver&color=blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](https://go.dev/)
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
