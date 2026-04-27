@@ -268,8 +268,12 @@ func runRestoreExecutionFromProceed(
 	log.Info("restore execute: target resolved kind=%s firewallType=%s panel=%s",
 		target.Kind(), target.FirewallType(), target.Panel())
 
-	// Step B — Construct deps. Stubs in commit 4; real impls in 4B.
-	deps := newRestoreDeps(exec, log)
+	// Step B — Construct deps. 4B-3-pre extended the factory to
+	// carry priorRec + panel forward to the mutation dep. Both
+	// values come from the PR-24 path the planner already used —
+	// the dispatcher does NOT re-probe or re-detect them, per
+	// INV-PR25-AUTHORITY-IMMUTABILITY (§17.3) + §33 E.7.
+	deps := newRestoreDeps(exec, log, priorRec, panel)
 
 	// Step C — Execute the §23 six-step sequence.
 	execRes := restore.Execute(ctx, target, deps)

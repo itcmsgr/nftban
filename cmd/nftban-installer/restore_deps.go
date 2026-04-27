@@ -408,9 +408,38 @@ func (s *productionSafetyNetDep) RemoveEmergencySSH(_ context.Context) error {
 }
 
 // productionMutationDep implements restore.MutationDep.
+//
+// 4B-3-pre extended this struct with read-only evidence fields
+// (priorRec, panel) plumbed from the dispatcher. 4B-3-csf will
+// consume them for the §31 A.1–A.7 evidence gates (E.1, E.2, E.7).
+//
+// Fields are populated at dep construction time via
+// newProductionRestoreDepsWithEvidence and are read-only thereafter
+// — INV-PR25-AUTHORITY-IMMUTABILITY (§17.3) requires that no
+// mid-flight mutation re-resolves authority or evidence.
+//
+// 4B-4 will add a safety-net-safe predicate field naturally pointing
+// at the inline-verify dep's IsSafetyNetRemovalSafe method
+// (§32 step 7 / §31 A.7 precondition (c)). Adding it now would
+// reference 4B-2's still-stubbed inline-verify, so the predicate is
+// intentionally deferred.
 type productionMutationDep struct {
-	exec executor.Executor //nolint:unused
-	log  *logging.Logger   //nolint:unused
+	exec executor.Executor //nolint:unused // commit 4B-3-csf will use this
+	log  *logging.Logger   //nolint:unused // commit 4B-3-csf will use this
+
+	// priorRec is the prior-authority record from PR-24's Probe step,
+	// passed forward by the dispatcher. May be nil — the planner
+	// reaches PROCEED on some paths (G3.3 NoRecord+PanelAuto) without
+	// a record. The mutation dep MUST treat nil as "evidence E.1 / E.2
+	// absent" rather than re-probing.
+	priorRec *uninstall.PriorRecord //nolint:unused // commit 4B-3-csf will use this
+
+	// panel is the panel type detected by PR-24's DetectPanel call,
+	// passed forward by the dispatcher. May be detect.PanelNone for
+	// non-PanelNative paths. The mutation dep MUST NOT call
+	// detect.DetectPanel — INV-PR25-AUTHORITY-IMMUTABILITY (§17.3)
+	// + §33 E.7 forbid re-validation.
+	panel detect.PanelType //nolint:unused // commit 4B-3-csf will use this
 }
 
 func (m *productionMutationDep) MutateToTarget(_ context.Context, firewallType string) error {
@@ -453,16 +482,47 @@ func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (b
 // =============================================================================
 
 // newProductionRestoreDeps returns the four-tuple of production deps
-// wired around the given executor + logger.
+// wired around the given executor + logger, with NO evidence
+// (priorRec=nil, panel=PanelNone). Used in commit 4 baseline only;
+// 4B-3-pre introduces newProductionRestoreDepsWithEvidence which
+// the dispatcher uses for the real flow.
 //
 // Commit progression:
 //   - 4B-1: Preflight dep is real (read-only presence check)
 //   - 4B-2: SafetyNet dep is real (emergency-SSH allow via switchop)
-//   - 4B-3: Mutation dep — STILL STUB, lands in 4B-3
-//   - 4B-4: InlineVerify dep — STILL STUB, lands in 4B-4
+//   - 4B-3-pre: Mutation dep gains read-only evidence fields
+//               (priorRec, panel). Method is STILL STUB.
+//   - 4B-3-csf: Mutation dep becomes real for firewallType=="csf"
+//               using the evidence wired by 4B-3-pre. Other targets
+//               typed-unsupported.
+//   - 4B-4: InlineVerify dep is real.
 //
 // Tests swap the package-level newRestoreDeps var to inject fakes.
 func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) restore.ExecuteDeps {
+	return newProductionRestoreDepsWithEvidence(exec, log, nil, detect.PanelNone)
+}
+
+// newProductionRestoreDepsWithEvidence is the evidence-aware
+// production deps factory. The dispatcher uses this on the PROCEED
+// path so the mutation dep receives the same priorRec + panel that
+// the planner consumed, without re-probing or re-detecting.
+//
+// Per §33 E.7 + INV-PR25-AUTHORITY-IMMUTABILITY (§17.3): the dep
+// MUST NOT re-derive these values; they are read-only inputs for
+// 4B-3-csf's §31 A.1–A.7 evidence gates.
+//
+// 4B-3-pre wires only priorRec + panel. The §32 step 7 / §31 A.7
+// precondition (c) safety-net-safe predicate naturally points at the
+// inline-verify dep's IsSafetyNetRemovalSafe method, which in 4B-2
+// remains a stub; wiring it now would reference unimplemented
+// behavior. Predicate landing is deferred to 4B-4 alongside the real
+// inline-verify implementation.
+func newProductionRestoreDepsWithEvidence(
+	exec executor.Executor,
+	log *logging.Logger,
+	priorRec *uninstall.PriorRecord,
+	panel detect.PanelType,
+) restore.ExecuteDeps {
 	return restore.ExecuteDeps{
 		Preflight: &productionPreflightDep{exec: exec, log: log},
 		SafetyNet: &productionSafetyNetDep{
@@ -476,16 +536,30 @@ func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) resto
 				return detect.SSHPort(exec, log)
 			},
 		},
-		Mutation:     &productionMutationDep{exec: exec, log: log},
+		Mutation: &productionMutationDep{
+			exec:     exec,
+			log:      log,
+			priorRec: priorRec,
+			panel:    panel,
+		},
 		InlineVerify: &productionInlineVerifyDep{exec: exec, log: log},
 	}
 }
 
+// restoreDepsFactory is the function shape the dispatcher calls to
+// build deps. 4B-3-pre tightens the signature to require evidence;
+// the dispatcher already has priorRec + panel from the PR-24 path.
+type restoreDepsFactory func(
+	exec executor.Executor,
+	log *logging.Logger,
+	priorRec *uninstall.PriorRecord,
+	panel detect.PanelType,
+) restore.ExecuteDeps
+
 // newRestoreDeps is the dispatcher's deps-factory hook. Production
-// callers reach the stubs above; tests overwrite this var with a
-// fixture factory before calling runRestoreDecide. This is the only
-// approved test-time injection point for commit 4.
+// callers reach newProductionRestoreDepsWithEvidence; tests overwrite
+// this var with a fixture factory.
 //
 // Restoring this to its zero (production) value at end of test is the
-// caller's responsibility (defer pattern).
-var newRestoreDeps = newProductionRestoreDeps
+// caller's responsibility (defer / t.Cleanup pattern).
+var newRestoreDeps restoreDepsFactory = newProductionRestoreDepsWithEvidence

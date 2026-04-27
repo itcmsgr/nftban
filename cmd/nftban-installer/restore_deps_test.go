@@ -103,13 +103,14 @@ func TestNewProductionRestoreDeps_AllFourFieldsSet(t *testing.T) {
 // =============================================================================
 
 func TestNewRestoreDeps_DefaultIsProductionFactory(t *testing.T) {
-	// We compare reflect-pointer addresses to confirm newRestoreDeps
-	// is initialized to newProductionRestoreDeps. (Function values
-	// are not directly comparable in Go beyond nil; use reflect.)
+	// 4B-3-pre changed the default to newProductionRestoreDepsWithEvidence
+	// (the evidence-aware factory the dispatcher uses). Confirm via
+	// reflect-pointer comparison; tests may have leaked a swap if
+	// this fails.
 	got := reflect.ValueOf(newRestoreDeps).Pointer()
-	want := reflect.ValueOf(newProductionRestoreDeps).Pointer()
+	want := reflect.ValueOf(newProductionRestoreDepsWithEvidence).Pointer()
 	if got != want {
-		t.Errorf("newRestoreDeps default does not point at newProductionRestoreDeps; tests may have leaked a swap")
+		t.Errorf("newRestoreDeps default does not point at newProductionRestoreDepsWithEvidence; tests may have leaked a swap")
 	}
 }
 

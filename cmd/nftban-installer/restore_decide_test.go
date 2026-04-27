@@ -330,10 +330,22 @@ func (f *fakeDispatcherDeps) IsSafetyNetRemovalSafe(_ context.Context) (bool, er
 
 // withFakeDeps temporarily swaps newRestoreDeps to return a fake
 // instance. Tests defer the restore.
+//
+// 4B-3-pre: the factory signature now carries priorRec + panel.
+// The fake-deps swap ignores those values because the
+// fakeDispatcherDeps test double doesn't read evidence — it just
+// records calls and returns canned outcomes. Tests that need to
+// assert evidence-passthrough use withFakeDepsRecordingEvidence
+// (defined below).
 func withFakeDeps(t *testing.T, fake *fakeDispatcherDeps) {
 	t.Helper()
 	saved := newRestoreDeps
-	newRestoreDeps = func(_ executor.Executor, _ *logging.Logger) restore.ExecuteDeps {
+	newRestoreDeps = func(
+		_ executor.Executor,
+		_ *logging.Logger,
+		_ *uninstall.PriorRecord,
+		_ detect.PanelType,
+	) restore.ExecuteDeps {
 		return restore.ExecuteDeps{
 			Preflight:    fake,
 			SafetyNet:    fake,
@@ -542,4 +554,365 @@ func readSelfRestoreDecide() (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// =============================================================================
+// =============================================================================
+// 4B-3-pre — evidence-plumbing tests
+// =============================================================================
+// =============================================================================
+//
+// These tests pin that the dispatcher passes priorRec + panel forward
+// to the deps factory. Mutation dep remains a stub in this commit
+// (real CSF mutation lands in 4B-3-csf), so the tests assert ONLY the
+// plumbing path — the factory-call signature and the recorded values
+// — not any new mutation behavior.
+
+// recordingFactoryCall captures one call to the deps factory so tests
+// can assert exactly which evidence reached it.
+type recordingFactoryCall struct {
+	exec     executor.Executor
+	log      *logging.Logger
+	priorRec *uninstall.PriorRecord
+	panel    detect.PanelType
+}
+
+// withFakeDepsRecordingEvidence swaps newRestoreDeps with a factory
+// that captures every call's evidence into the returned slice. The
+// returned fake deps still drive Execute to controlled outcomes, so
+// the test can both run end-to-end AND assert plumbing.
+func withFakeDepsRecordingEvidence(t *testing.T, fake *fakeDispatcherDeps) *[]recordingFactoryCall {
+	t.Helper()
+	saved := newRestoreDeps
+	calls := make([]recordingFactoryCall, 0, 1)
+	newRestoreDeps = func(
+		exec executor.Executor,
+		log *logging.Logger,
+		priorRec *uninstall.PriorRecord,
+		panel detect.PanelType,
+	) restore.ExecuteDeps {
+		calls = append(calls, recordingFactoryCall{
+			exec:     exec,
+			log:      log,
+			priorRec: priorRec,
+			panel:    panel,
+		})
+		return restore.ExecuteDeps{
+			Preflight:    fake,
+			SafetyNet:    fake,
+			Mutation:     fake,
+			InlineVerify: fake,
+		}
+	}
+	t.Cleanup(func() { newRestoreDeps = saved })
+	return &calls
+}
+
+// =============================================================================
+// 1. Dispatcher passes probe.Record to deps factory (E.1, E.2 plumbing)
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_4B3pre_PassesPriorRecToFactory(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    true,
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	calls := withFakeDepsRecordingEvidence(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procRecordedPriorFixture()
+	// Augment the fixture record with ActiveAtInstall to verify the
+	// full PriorRecord (not just FirewallType) is plumbed through.
+	active := true
+	rec.ActiveAtInstall = &active
+
+	_ = runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+
+	if len(*calls) != 1 {
+		t.Fatalf("factory called %d times; want exactly 1", len(*calls))
+	}
+	got := (*calls)[0]
+	if got.priorRec == nil {
+		t.Fatalf("factory got priorRec=nil; want non-nil (RecordedPrior path)")
+	}
+	if got.priorRec.FirewallType != "ufw" {
+		t.Errorf("factory got priorRec.FirewallType=%q; want %q", got.priorRec.FirewallType, "ufw")
+	}
+	if got.priorRec.ActiveAtInstall == nil || *got.priorRec.ActiveAtInstall != true {
+		t.Errorf("factory got ActiveAtInstall=%v; want *bool(true)", got.priorRec.ActiveAtInstall)
+	}
+}
+
+// =============================================================================
+// 2. Dispatcher passes panel to deps factory (E.7 plumbing)
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_4B3pre_PassesPanelToFactory(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    true,
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	calls := withFakeDepsRecordingEvidence(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procPanelNativeDirectAdminFixture()
+
+	_ = runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+
+	if len(*calls) != 1 {
+		t.Fatalf("factory called %d times; want exactly 1", len(*calls))
+	}
+	got := (*calls)[0]
+	if got.panel != detect.PanelDirectAdmin {
+		t.Errorf("factory got panel=%q; want %q", got.panel, detect.PanelDirectAdmin)
+	}
+}
+
+// =============================================================================
+// 3. Dispatcher passes nil priorRec on the NoRecord+PanelAuto path
+//    (test that nil flows correctly — fixture has rec=nil)
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_4B3pre_PassesNilPriorRecForNoRecordPath(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    true,
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	calls := withFakeDepsRecordingEvidence(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	// G3.3/NoRecord+PanelAuto fixture intentionally returns rec=nil.
+	dr, in, rec, panel := procPanelNativeDirectAdminFixture()
+	if rec != nil {
+		t.Fatalf("fixture sanity: NoRecord path should produce rec=nil")
+	}
+
+	_ = runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+
+	if len(*calls) != 1 {
+		t.Fatalf("factory called %d times; want exactly 1", len(*calls))
+	}
+	got := (*calls)[0]
+	if got.priorRec != nil {
+		t.Errorf("factory got priorRec=%+v; want nil (NoRecord path)", got.priorRec)
+	}
+	if got.panel != detect.PanelDirectAdmin {
+		t.Errorf("factory got panel=%q; want %q", got.panel, detect.PanelDirectAdmin)
+	}
+}
+
+// =============================================================================
+// 4. Dispatcher does NOT re-call DetectPanel/Probe/Classify after
+//    planner returns. Source-level pin: searching restore_decide.go's
+//    PROCEED branch must not contain those calls AFTER the helper
+//    function entry.
+// =============================================================================
+
+func TestDispatcher_4B3pre_NoLiveReDetectionInExecuteHelper(t *testing.T) {
+	body, err := readSelfRestoreDecide()
+	if err != nil {
+		t.Fatalf("read restore_decide.go: %v", err)
+	}
+	// runRestoreExecutionFromProceed body must not call any of the
+	// PR-24 input-derivation primitives — the dispatcher already
+	// produced those values before reaching this helper.
+	helperStart := strings.Index(body, "func runRestoreExecutionFromProceed")
+	if helperStart < 0 {
+		t.Fatalf("could not find runRestoreExecutionFromProceed in source")
+	}
+	helperBody := body[helperStart:]
+	for _, pat := range []string{
+		"detect.DetectPanel(",
+		"uninstall.Probe(",
+		"uninstall.Classify(",
+		"restore.Decide(",
+	} {
+		if strings.Contains(helperBody, pat) {
+			t.Errorf("runRestoreExecutionFromProceed body references forbidden pattern %q (re-detection after planner)", pat)
+		}
+	}
+}
+
+// =============================================================================
+// 5. REFUSE / REQUIRE_EXPLICIT_INTENT paths still do NOT construct
+//    execution deps. The factory swap must record zero calls on those
+//    branches.
+// =============================================================================
+
+func TestDispatcher_4B3pre_NonProceedDoesNotConstructDeps(t *testing.T) {
+	// We can't drive the dispatcher's full classify/probe/detect path
+	// in a unit test (would need a heavy executor fake), so this test
+	// verifies the structural contract: runRestoreExecutionFromProceed
+	// is the ONLY function that calls newRestoreDeps. The
+	// TestDispatcher_NonProceedArms_DoNotCallExecutionHelper test
+	// already pins that the REFUSE/INTENT cases don't call the
+	// helper. Combined: REFUSE/INTENT → no helper call → no factory
+	// call → no deps constructed.
+	body, err := readSelfRestoreDecide()
+	if err != nil {
+		t.Fatalf("read restore_decide.go: %v", err)
+	}
+	// newRestoreDeps must appear at most once as a call expression.
+	// (Counting includes the body of runRestoreExecutionFromProceed.)
+	count := strings.Count(body, "newRestoreDeps(")
+	if count != 1 {
+		t.Errorf("newRestoreDeps( call expression count = %d; want exactly 1 (only inside runRestoreExecutionFromProceed)", count)
+	}
+}
+
+// =============================================================================
+// 6. Mutation stub still returns ErrRestoreExecutionUnavailable
+//    even with the new evidence fields populated.
+// =============================================================================
+
+func TestProductionMutationDep_4B3pre_StubStillRefuses(t *testing.T) {
+	priorRec := &uninstall.PriorRecord{
+		SchemaVersion: uninstall.PriorRecordSchemaVersion,
+		FirewallType:  "csf",
+	}
+	d := &productionMutationDep{
+		exec:     nil,
+		log:      nil,
+		priorRec: priorRec,
+		panel:    detect.PanelDirectAdmin,
+	}
+	err := d.MutateToTarget(context.Background(), "csf")
+	if !errors.Is(err, ErrRestoreExecutionUnavailable) {
+		t.Errorf("4B-3-pre mutation stub did not refuse with ErrRestoreExecutionUnavailable: %v", err)
+	}
+}
+
+// =============================================================================
+// 7. PROCEED + real preflight + real safety-net + stub mutation =
+//    StateRestoreFailedExecution at Stage=mutate. Same end-state as
+//    before 4B-3-pre, but now the factory call carries evidence.
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_4B3pre_PROCEEDStillFailsAtMutate(t *testing.T) {
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	// stubExecutorForPreflightFirewall provides preflight + sshd_config
+	// so preflight passes and safety-net inserts. Stub mutation refuses.
+	exec := stubExecutorForPreflightFirewall("csf")
+
+	dr, in, rec, panel := procPanelNativeDirectAdminFixture()
+	_ = runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	if sf.State != state.StateRestoreFailedExecution {
+		t.Errorf("State = %q; want StateRestoreFailedExecution (stub mutation)", sf.State)
+	}
+}
+
+// =============================================================================
+// 8. main.go untouched (file-scan).
+// =============================================================================
+
+func TestDispatcher_4B3pre_MainGoUntouched(t *testing.T) {
+	body, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	src := string(body)
+	// The PR-25 §19.2 layer 4 invariant: main.go:132 writeHistory gate
+	// excludes cfg.mode == "restore". Any change to main.go in 4B-3-pre
+	// would be a contract violation. We pin the gate's exact text.
+	mustContain := `cfg.mode != "uninstall" && cfg.mode != "restore"`
+	if !strings.Contains(src, mustContain) {
+		t.Errorf("main.go:132 writeHistory gate altered; expected substring %q", mustContain)
+	}
+}
+
+// =============================================================================
+// 9. flags.go untouched (file-scan): no new --execute-restore or
+//    similar flags introduced by 4B-3-pre.
+// =============================================================================
+
+func TestDispatcher_4B3pre_FlagsGoUntouched(t *testing.T) {
+	body, err := os.ReadFile("flags.go")
+	if err != nil {
+		t.Fatalf("read flags.go: %v", err)
+	}
+	src := string(body)
+	// 4B-3-pre forbids any new restore-execution flag.
+	for _, pat := range []string{
+		"--execute-restore",
+		"--unsafe-stub-restore",
+		"executeRestore",
+		"unsafeStubRestore",
+	} {
+		if strings.Contains(src, pat) {
+			t.Errorf("flags.go references forbidden pattern %q (no new flags in 4B-3-pre)", pat)
+		}
+	}
+}
+
+// =============================================================================
+// 10. No history writes — pinned by main.go gate (test 8) and by no
+//     new writeHistory call in restore_decide.go (test below).
+// =============================================================================
+
+func TestDispatcher_4B3pre_NoHistoryWriteInDispatcher(t *testing.T) {
+	body, err := readSelfRestoreDecide()
+	if err != nil {
+		t.Fatalf("read restore_decide.go: %v", err)
+	}
+	if strings.Contains(body, "writeHistory(") {
+		t.Errorf("restore_decide.go contains writeHistory( call; restore mode must not write history (§19.2 layer 4)")
+	}
+}
+
+// =============================================================================
+// 11. No context.Value plumbing — ensure 4B-3-pre did not use the
+//     context-key indirection path.
+// =============================================================================
+
+func TestDispatcher_4B3pre_NoContextValuePlumbing(t *testing.T) {
+	for _, path := range []string{"restore_decide.go", "restore_deps.go"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		src := string(body)
+		for _, pat := range []string{
+			"context.WithValue(",
+			"ctx.Value(",
+		} {
+			if strings.Contains(src, pat) {
+				t.Errorf("%s uses %q (context.Value plumbing forbidden in 4B-3-pre)", path, pat)
+			}
+		}
+	}
+}
+
+// =============================================================================
+// 12. No setter-method plumbing — ensure 4B-3-pre did not add a
+//     setter-after-factory step.
+// =============================================================================
+
+func TestProductionMutationDep_4B3pre_NoSetterMethods(t *testing.T) {
+	body, err := os.ReadFile("restore_deps.go")
+	if err != nil {
+		t.Fatalf("read restore_deps.go: %v", err)
+	}
+	src := string(body)
+	// Setter methods of the form (s *productionMutationDep) Set* would
+	// indicate the rejected option (γ) plumbing. None should exist.
+	for _, pat := range []string{
+		"productionMutationDep) SetPrior",
+		"productionMutationDep) SetPanel",
+		"productionMutationDep) SetEvidence",
+	} {
+		if strings.Contains(src, pat) {
+			t.Errorf("restore_deps.go has setter %q (option γ plumbing forbidden in 4B-3-pre)", pat)
+		}
+	}
 }
