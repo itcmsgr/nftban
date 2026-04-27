@@ -169,11 +169,15 @@ func TestRunRestoreExecutionFromProceed_StubDeps_RecordedPrior_PersistsFailedExe
 	if exit != state.ExitRestoreFailedExecution {
 		t.Errorf("exit = %d; want %d", exit, state.ExitRestoreFailedExecution)
 	}
-	// FailureReason must surface the typed stub sentinel from the
-	// safety-net insert path.
-	if !strings.Contains(sf.FailureReason, ErrRestoreExecutionUnavailable.Error()) &&
-		!strings.Contains(sf.FailureReason, "execution dependency not implemented") {
-		t.Errorf("FailureReason does not surface ErrRestoreExecutionUnavailable: %q", sf.FailureReason)
+	// 4B-3-csf: ufw is a known §18.2 firewall but Amendment 1
+	// authorizes csf only. The mutation dep returns
+	// ErrCSFRestoreOnlyAuthorized (typed unsupported sentinel) which
+	// the dispatcher persists in FailureReason. Same end-state
+	// (FailedExecution) as the 4B-1/4B-2 era — only the reason text
+	// changed when csf became real for real-csf inputs.
+	if !strings.Contains(sf.FailureReason, "amendment 1 authorizes csf only") &&
+		!strings.Contains(sf.FailureReason, ErrCSFRestoreOnlyAuthorized.Error()) {
+		t.Errorf("FailureReason does not surface ErrCSFRestoreOnlyAuthorized: %q", sf.FailureReason)
 	}
 }
 
@@ -770,11 +774,15 @@ func TestDispatcher_4B3pre_NonProceedDoesNotConstructDeps(t *testing.T) {
 }
 
 // =============================================================================
-// 6. Mutation stub still returns ErrRestoreExecutionUnavailable
-//    even with the new evidence fields populated.
+// 6. Mutation dispatch with evidence populated. 4B-3-pre wired
+//    priorRec + panel through; 4B-3-csf made the csf branch real and
+//    typed-supported. With a nil executor (the original 4B-3-pre
+//    stub-style invocation), the csf branch refuses with the typed
+//    nil-executor sentinel — proving the dispatch landed on
+//    mutateToCSFTarget rather than the unknown/unsupported branches.
 // =============================================================================
 
-func TestProductionMutationDep_4B3pre_StubStillRefuses(t *testing.T) {
+func TestProductionMutationDep_4B3pre_DispatchesCSFWithEvidence(t *testing.T) {
 	priorRec := &uninstall.PriorRecord{
 		SchemaVersion: uninstall.PriorRecordSchemaVersion,
 		FirewallType:  "csf",
@@ -786,8 +794,8 @@ func TestProductionMutationDep_4B3pre_StubStillRefuses(t *testing.T) {
 		panel:    detect.PanelDirectAdmin,
 	}
 	err := d.MutateToTarget(context.Background(), "csf")
-	if !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("4B-3-pre mutation stub did not refuse with ErrRestoreExecutionUnavailable: %v", err)
+	if !errors.Is(err, ErrCSFRestoreNilExecutor) {
+		t.Errorf("csf dispatch did not reach mutateToCSFTarget; err = %v; want ErrCSFRestoreNilExecutor", err)
 	}
 }
 

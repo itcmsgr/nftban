@@ -35,18 +35,44 @@ import (
 )
 
 // =============================================================================
-// 1. Stub methods that REMAIN stubs in 4B-2 — Mutation and
-//    InlineVerify deps. Real impls land in 4B-3 / 4B-4.
+// 1. Stub methods that REMAIN stubs after 4B-3-csf — only InlineVerify.
+//    Real impls for inline-verify land in 4B-4.
 //
 //    Note: 4B-1 made productionPreflightDep real (read-only).
 //    Note: 4B-2 made productionSafetyNetDep real (emergency-SSH).
-//          Their tests are below in dedicated sections.
+//    Note: 4B-3-csf made productionMutationDep real for csf (typed
+//          unsupported for the other §18.2 firewalls; typed unknown
+//          for anything outside §18.2). Tests for that live in
+//          restore_deps_csf_test.go.
+//
+// The narrowed assertion below pins the dispatch shape of the
+// mutation dep: a non-csf known firewall returns
+// ErrCSFRestoreOnlyAuthorized, and an unknown firewall returns
+// ErrRestoreMutationUnknownFirewall. csf-specific behavior is in
+// restore_deps_csf_test.go.
 // =============================================================================
 
-func TestProductionMutationDep_ReturnsUnavailable(t *testing.T) {
-	d := &productionMutationDep{}
-	if err := d.MutateToTarget(context.Background(), "csf"); !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("MutateToTarget err = %v; want ErrRestoreExecutionUnavailable", err)
+func TestProductionMutationDep_NonCSFKnown_ReturnsTypedUnsupported(t *testing.T) {
+	for _, fwt := range []string{"ufw", "firewalld", "iptables"} {
+		t.Run(fwt, func(t *testing.T) {
+			d := &productionMutationDep{}
+			err := d.MutateToTarget(context.Background(), fwt)
+			if !errors.Is(err, ErrCSFRestoreOnlyAuthorized) {
+				t.Errorf("MutateToTarget(%q) err = %v; want ErrCSFRestoreOnlyAuthorized", fwt, err)
+			}
+		})
+	}
+}
+
+func TestProductionMutationDep_UnknownFirewall_ReturnsTypedUnknown(t *testing.T) {
+	for _, fwt := range []string{"", "shorewall", "pf", "nftables", "CSF", "csf "} {
+		t.Run(fmt.Sprintf("fwt=%q", fwt), func(t *testing.T) {
+			d := &productionMutationDep{}
+			err := d.MutateToTarget(context.Background(), fwt)
+			if !errors.Is(err, ErrRestoreMutationUnknownFirewall) {
+				t.Errorf("MutateToTarget(%q) err = %v; want ErrRestoreMutationUnknownFirewall", fwt, err)
+			}
+		})
 	}
 }
 

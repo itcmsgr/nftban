@@ -410,43 +410,83 @@ func (s *productionSafetyNetDep) RemoveEmergencySSH(_ context.Context) error {
 // productionMutationDep implements restore.MutationDep.
 //
 // 4B-3-pre extended this struct with read-only evidence fields
-// (priorRec, panel) plumbed from the dispatcher. 4B-3-csf will
-// consume them for the §31 A.1–A.7 evidence gates (E.1, E.2, E.7).
+// (priorRec, panel) plumbed from the dispatcher. 4B-3-csf consumes
+// them for the §31 A.1–A.7 evidence gates (E.1, E.2, E.7) on the
+// CSF restore path.
 //
 // Fields are populated at dep construction time via
 // newProductionRestoreDepsWithEvidence and are read-only thereafter
 // — INV-PR25-AUTHORITY-IMMUTABILITY (§17.3) requires that no
 // mid-flight mutation re-resolves authority or evidence.
 //
-// 4B-4 will add a safety-net-safe predicate field naturally pointing
-// at the inline-verify dep's IsSafetyNetRemovalSafe method
-// (§32 step 7 / §31 A.7 precondition (c)). Adding it now would
-// reference 4B-2's still-stubbed inline-verify, so the predicate is
-// intentionally deferred.
+// 4B-4 will wire safetyNetRemovalSafeFn to the inline-verify dep's
+// IsSafetyNetRemovalSafe method (§32 step 7 / §31 A.7 precondition
+// (c)). In 4B-3-csf the field is left nil by the production factory
+// — A.7 (nftban kernel release) refuses with
+// ErrCSFRestoreNftReleaseUnsafe. Tests inject a closure to exercise
+// the available/true branch.
 type productionMutationDep struct {
-	exec executor.Executor //nolint:unused // commit 4B-3-csf will use this
-	log  *logging.Logger   //nolint:unused // commit 4B-3-csf will use this
+	exec executor.Executor
+	log  *logging.Logger
 
 	// priorRec is the prior-authority record from PR-24's Probe step,
 	// passed forward by the dispatcher. May be nil — the planner
 	// reaches PROCEED on some paths (G3.3 NoRecord+PanelAuto) without
 	// a record. The mutation dep MUST treat nil as "evidence E.1 / E.2
 	// absent" rather than re-probing.
-	priorRec *uninstall.PriorRecord //nolint:unused // commit 4B-3-csf will use this
+	priorRec *uninstall.PriorRecord
 
 	// panel is the panel type detected by PR-24's DetectPanel call,
 	// passed forward by the dispatcher. May be detect.PanelNone for
 	// non-PanelNative paths. The mutation dep MUST NOT call
 	// detect.DetectPanel — INV-PR25-AUTHORITY-IMMUTABILITY (§17.3)
 	// + §33 E.7 forbid re-validation.
-	panel detect.PanelType //nolint:unused // commit 4B-3-csf will use this
+	panel detect.PanelType
+
+	// safetyNetRemovalSafeFn is the §32 step 7 / §31 A.7 precondition
+	// (c) gate: returns true iff SSH connectivity is observable on the
+	// post-mutation ruleset OUTSIDE the emergency rule. 4B-3-csf
+	// leaves this nil (the production factory does not set it); 4B-4
+	// will wire it to the inline-verify dep's IsSafetyNetRemovalSafe
+	// method. Tests can inject a closure to exercise A.7.
+	//
+	// When nil OR returns (false, _) OR returns (_, err): A.7 refuses
+	// with ErrCSFRestoreNftReleaseUnsafe and the safety net is
+	// retained per §32.1.
+	safetyNetRemovalSafeFn func(context.Context) (bool, error)
 }
 
-func (m *productionMutationDep) MutateToTarget(_ context.Context, firewallType string) error {
-	if m.log != nil {
-		m.log.Info("restore exec stub: MutateToTarget(%q) refusing — commit 4 stub", firewallType)
+// MutateToTarget dispatches on firewallType per Amendment 1 §30:
+//
+//   - "csf"        → mutateToCSFTarget (real implementation, §31 A.1-A.7)
+//   - "ufw" / "firewalld" / "iptables"
+//                  → ErrCSFRestoreOnlyAuthorized (§30.2 — known §18.2
+//                    members, but Amendment 1 authorizes csf only)
+//   - anything else → ErrRestoreMutationUnknownFirewall (defensive guard;
+//                    planner should already have rejected)
+//
+// Per the contract, this function is invoked only after restore.Execute
+// has called Preflight + InsertSafetyNet. The safety net is in place
+// throughout this call.
+func (m *productionMutationDep) MutateToTarget(ctx context.Context, firewallType string) error {
+	switch firewallType {
+	case "csf":
+		if m.log != nil {
+			m.log.Info("restore mutation: dispatching csf path (Amendment 1 §31)")
+		}
+		return mutateToCSFTarget(ctx, m)
+	default:
+		if knownNonCSFFirewalls[firewallType] {
+			if m.log != nil {
+				m.log.Info("restore mutation: refusing %q — known firewall but Amendment 1 authorizes csf only", firewallType)
+			}
+			return ErrCSFRestoreOnlyAuthorized
+		}
+		if m.log != nil {
+			m.log.Error("restore mutation: refusing unknown firewallType=%q (not in §18.2 known set)", firewallType)
+		}
+		return ErrRestoreMutationUnknownFirewall
 	}
-	return ErrRestoreExecutionUnavailable
 }
 
 // productionInlineVerifyDep implements restore.InlineVerifyDep.
