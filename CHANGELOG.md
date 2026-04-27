@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.3c Repo hygiene Phase A slice 1c (H-04)
+
+Closes audit finding **H-04**: 3 internal-path comments referencing files under `/home/commonfolder/...` that are not part of the public repo. Particularly notable: the polkit rules file ships to every install, so the reference was visible on every operator host.
+
+### Changed
+
+- `cli/lib/nftban/lib/nftban_distro_config.sh:296` — drop `# See: /home/commonfolder/POLKIT-PATH-AUDIT-REPORT.md`. Reword the surrounding comment to merge the description into one sentence.
+- `packaging/polkit-1/rules.d/30-nftban-panel.rules:243` — drop `// - /home/commonfolder/NFTBAN_PANEL_INTEGRATION_PLAN.md`. Adjacent "Panel Integration Phase 1" reference preserved.
+- `tests/review/05_feeds_test.sh:28` — replace path with neutral phrasing "internal code-review checklist (05_FEEDS)".
+
+All 3 sites verified live in current tree before edit (per locked rule "first verify the 3 H-04 sites still apply, then fix only confirmed live ones").
+
+### Out of scope (deferred)
+
+- H-05 / H-07 / H-08 / H-09 / H-16 / H-19 — separate Phase A slices.
+- Larger Phase A items (H-06 / H-11..H-19) — separate planning.
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN**.
+
+---
+
 ## [Unreleased] - v1.100.3b Repo hygiene Phase A slice 1b (H-01 / H-02 / H-03)
 
 Mechanical dev-machine path cleanup across 6 files. Closes audit findings **H-01**, **H-02**, and **H-03**: hardcoded `/home/gituser/github/...nftban-v1.0-dev` and `/home/gituser/github/nftban-dev` defaults that leak the maintainer's filesystem layout and break non-author runs.

@@ -240,7 +240,6 @@ polkit.addRule(function (action, subject) {
 // - commands.registry.yml: Defines panel_expose field
 //
 // Related Documentation:
-// - /home/commonfolder/NFTBAN_PANEL_INTEGRATION_PLAN.md
 // - Panel Integration Phase 1: Foundation (v1.0.19)
 //
 // =============================================================================

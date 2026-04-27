@@ -24,8 +24,8 @@
 # meta:updated_date="2026-02-27"
 # =============================================================================
 #
-# Validates the feeds module against the code review checklist in
-# /home/commonfolder/NFTBANREVIEW/05_FEEDS/INSTRUCTIONS.md
+# Validates the feeds module against the internal code-review checklist
+# (05_FEEDS).
 #
 # Checks performed (static analysis only, no network or runtime):
 #   1. Feed downloads use HTTPS (no plain HTTP URLs)
