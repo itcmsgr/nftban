@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.3a Repo hygiene Phase A slice 1a (H-10)
+
+Smallest possible doc-only fix from the repo hygiene audit. Closes audit finding **H-10**: broken `[HEADER_SPEC.md]` link in `CONTRIBUTING.md:242` (file does not exist at repo root) and matching dangling reference in `tools/validate-headers.sh`.
+
+### Changed
+
+- `CONTRIBUTING.md`: section heading retitled from "HEADER_SPEC.md (File Headers)" to "File Headers". Removed the broken `[HEADER_SPEC.md](HEADER_SPEC.md)` link. Added a sentence noting that the inline section is itself the authoritative spec and that CI enforces it via `tools/validate-headers.sh`.
+- `tools/validate-headers.sh`: error message no longer references the non-existent `HEADER_SPEC.md`. Pointer text now says "CONTRIBUTING.md, section 'File Headers' (authoritative spec)". Header comment updated to match.
+
+### Out of scope (deferred to slice 1b)
+
+- H-01 / H-02 / H-03 — dev-path cleanup. Separate micro-PR.
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN**.
+
+---
+
 ## [Unreleased] - v1.100.2 SF-1 health CLI fix (released-host case)
 
 Post-soak correctness fix derived directly from the PR-24 7-day passive soak. Side finding **SF-1** was logged on Day 6 (2026-04-26) on the released/no-tables host (lab4): `nftban health` printed a spurious `ERROR: Script failed` block on top of its own DOWN-status output.

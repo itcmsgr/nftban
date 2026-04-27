@@ -20,7 +20,8 @@
 set -Eeuo pipefail
 
 # Validate SPDX + meta quoting + required inventory keys + bash set flags.
-# Fails commit if any tracked file violates HEADER_SPEC.
+# Fails commit if any tracked file violates the file-header spec
+# defined in CONTRIBUTING.md section 'File Headers'.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
@@ -170,11 +171,11 @@ done
 if [[ "$fail" -ne 0 ]]; then
   echo
   echo "=========================================="
-  echo "Commit blocked: HEADER_SPEC / coding standards validation failed."
+  echo "Commit blocked: header / coding standards validation failed."
   echo "Fix headers/metadata or inventory lines, then re-stage and commit."
   echo
   echo "References:"
-  echo "  - HEADER_SPEC.md"
+  echo "  - CONTRIBUTING.md, section 'File Headers' (authoritative spec)"
   echo "  - https://nftban.com/coding-standards.html"
   echo "=========================================="
   exit 1
