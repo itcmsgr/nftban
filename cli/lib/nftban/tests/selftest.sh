@@ -1870,9 +1870,12 @@ run_all_cli_tests() {
 
     local cli_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli"
 
-    # Fallback for dev environment
+    # Fallback for dev environment: resolve repo-relative cli/lib path
+    # from the script's own location so this works on any clone.
     if [[ ! -d "$cli_dir" ]]; then
-        cli_dir="/home/gituser/github/nftban-v1.0-dev/cli/lib/nftban/cli"
+        local _self_dir
+        _self_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+        cli_dir="${_self_dir}/../cli"
     fi
 
     if [[ ! -d "$cli_dir" ]]; then

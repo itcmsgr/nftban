@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.3b Repo hygiene Phase A slice 1b (H-01 / H-02 / H-03)
+
+Mechanical dev-machine path cleanup across 6 files. Closes audit findings **H-01**, **H-02**, and **H-03**: hardcoded `/home/gituser/github/...nftban-v1.0-dev` and `/home/gituser/github/nftban-dev` defaults that leak the maintainer's filesystem layout and break non-author runs.
+
+### Changed
+
+- `scripts/export_cli_inventory.sh:35` (H-01) — replace hardcoded `/home/gituser/...` dev fallback with repo-relative resolution via `readlink -f "$0"` + `../cli/lib/nftban/cli`.
+- `scripts/validate_cli_help.sh:32` (H-01) — same pattern.
+- `cli/lib/nftban/tests/selftest.sh:1875` (H-01) — same pattern, using `BASH_SOURCE[0]`.
+- `cli/lib/nftban/core/nftban_health_checks_config.sh:386` (H-02) — drop `/home/gituser/github/nftban-dev` from the auto-heal completion-source search list. Use `/usr/share/nftban/src` (canonical install-time source location) and add `${NFTBAN_DEV_SRC_DIR:-}` as opt-in env var for maintainers running out of a repo clone.
+- `cli/lib/nftban/core/nftban_health_checks_services.sh:520` (H-02) — same pattern for the timer auto-install path.
+- `tools/expand-config-schema.sh:22-23` (H-03) — make `INPUT_SKELETON` (positional `$1`) required via `:?` syntax (no public default for the internal skeleton path); resolve `OUTPUT_SCHEMA` (positional `$2`) repo-relative from the script's own location.
+
+### Verification
+
+Locked gate `git grep -nE "/home/gituser|/home/commonfolder|nftban-v1.0-dev" -- ':(exclude).claude/*'` produces only intentionally-deferred hits:
+
+- 3 × H-04 sites (locked to slice 1c): `cli/lib/nftban/lib/nftban_distro_config.sh:296`, `packaging/polkit-1/rules.d/30-nftban-panel.rules:243`, `tests/review/05_feeds_test.sh:28`.
+- 1 × `scripts/test_server_cleanup.sh:121` (`/root/nftban-v1.0-dev` in a one-shot dev cleanup script, not in the audit's H-list — handled separately).
+
+### Out of scope (deferred)
+
+- H-04 / H-05 / H-07 / H-08 / H-09 / H-16 / H-19 — separate Phase A slices.
+- Larger Phase A items (H-06 / H-11 / H-12 / H-13 / H-14 / H-15 / H-17 / H-18) — separate planning.
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN**.
+
+---
+
 ## [Unreleased] - v1.100.3a Repo hygiene Phase A slice 1a (H-10)
 
 Smallest possible doc-only fix from the repo hygiene audit. Closes audit finding **H-10**: broken `[HEADER_SPEC.md]` link in `CONTRIBUTING.md:242` (file does not exist at repo root) and matching dangling reference in `tools/validate-headers.sh`.

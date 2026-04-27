@@ -30,9 +30,11 @@ set -Eeuo pipefail
 CLI_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli"
 FORMAT="${1:-table}"
 
-# Fallback for development environment
+# Fallback for development environment: resolve repo-relative cli/lib path
+# from the script's own location so this works on any clone.
 if [[ ! -d "$CLI_DIR" ]]; then
-    CLI_DIR="/home/gituser/github/nftban-v1.0-dev/cli/lib/nftban/cli"
+    _self_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+    CLI_DIR="${_self_dir}/../cli/lib/nftban/cli"
 fi
 
 if [[ ! -d "$CLI_DIR" ]]; then

@@ -381,9 +381,14 @@ nftban_health_check_bash_completion() {
         if [[ ! -f "$nftban_completion" ]]; then
             # Try to auto-install if auto-heal enabled
             if [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
-                # Try to find source file
+                # Try to find source file. /usr/share/nftban/src is the
+                # canonical install-time source location; NFTBAN_DEV_SRC_DIR
+                # is an opt-in env var for maintainers running out of a
+                # repo clone.
                 local completion_src=""
-                for dir in "/home/gituser/github/nftban-dev" "/usr/src/nftban" "/opt/nftban"; do
+                local _search_dirs=("/usr/share/nftban/src" "/usr/src/nftban" "/opt/nftban")
+                [[ -n "${NFTBAN_DEV_SRC_DIR:-}" ]] && _search_dirs=("${NFTBAN_DEV_SRC_DIR}" "${_search_dirs[@]}")
+                for dir in "${_search_dirs[@]}"; do
                     if [[ -f "$dir/install/bash-completion/nftban" ]]; then
                         completion_src="$dir/install/bash-completion/nftban"
                         break
