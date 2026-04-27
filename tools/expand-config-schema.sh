@@ -19,8 +19,12 @@
 
 set -Eeuo pipefail
 
-INPUT_SKELETON="${1:-/home/commonfolder/NFTBAN_RECONFIGURATION_JAN_2026/data/registry-skeleton.json}"
-OUTPUT_SCHEMA="${2:-/home/gituser/github/nftban/cli/lib/nftban/data/config-schema.json}"
+# H-03: skeleton path has no public default — caller must pass it. Output
+# defaults to the canonical repo-relative location, resolved from this
+# script's own directory so the tool works on any clone.
+_self_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+INPUT_SKELETON="${1:?usage: $0 <skeleton.json> [output-schema.json]}"
+OUTPUT_SCHEMA="${2:-${_self_dir}/../cli/lib/nftban/data/config-schema.json}"
 
 echo "Expanding config schema from: $INPUT_SKELETON"
 echo "Output to: $OUTPUT_SCHEMA"
