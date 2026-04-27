@@ -746,13 +746,6 @@ directories:
       created_by: tmpfiles
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict"
 
-    - path: /run/nftban-ui
-      mode: "0755"
-      owner: root
-      group: nftban
-      description: "GUI/API runtime socket directory"
-      created_by: tmpfiles
-
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
   # ---------------------------------------------------------------------------
