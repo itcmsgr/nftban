@@ -3,7 +3,7 @@
 > **Policy:** Main branch is always green. Failed CI blocks merge.
 > No manual overrides for truth-critical checks. Evidence over claims.
 
-**Current version:** v1.89.0
+**Version (this commit):** v1.98.2 — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
 **Truth model:** Kernel → Validator → CLI
 **Enforcement:** [Design Principles](docs/DESIGN_PRINCIPLES.md)
 

@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.3e Repo hygiene Phase A slice 1e (H-07 + H-08)
+
+Closes audit findings **H-07** (STATUS.md version drift) and **H-08** (README.md badge version drift). Both displayed visible-version strings that no longer matched `/VERSION` (1.98.2). STATUS.md claimed v1.89.0 (-9 minor versions); README badge pinned 1.95.0 (-3 patches).
+
+### Changed
+
+- `README.md:5` — replace static shield.io `version-1.95.0-blue` badge with auto-updating GitHub-tag form `https://img.shields.io/github/v/tag/itcmsgr/nftban?label=version&sort=semver&color=blue`. The badge now resolves to the latest semver tag at render time; future releases self-correct without a manual edit.
+- `STATUS.md:6` — replace `**Current version:** v1.89.0` with `**Version (this commit):** v1.98.2 — sourced from [\`/VERSION\`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases] or the README badge.` This makes the source-of-truth explicit and clarifies the static-per-commit nature so future drift is harder.
+
+### Out of scope (locked)
+
+- No version bump. No tag decision.
+- No CI gate / `bump-version.sh` automation. The badge is now self-updating; STATUS.md remains a manual touch-up at release time.
+- No broader README cleanup.
+- H-09 / H-16 / H-19 — separate slices (or deferred entirely).
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN**.
+
+---
+
 ## [Unreleased] - v1.100.3d Repo hygiene Phase A slice 1d (H-05)
 
 Closes audit finding **H-05**: 3 internal-roadmap references in tracked code/docs that are not resolvable by a public reader.
