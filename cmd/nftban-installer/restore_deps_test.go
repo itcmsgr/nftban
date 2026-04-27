@@ -35,21 +35,14 @@ import (
 )
 
 // =============================================================================
-// 1. Stub methods that REMAIN stubs after 4B-3-csf — only InlineVerify.
-//    Real impls for inline-verify land in 4B-4.
-//
-//    Note: 4B-1 made productionPreflightDep real (read-only).
-//    Note: 4B-2 made productionSafetyNetDep real (emergency-SSH).
-//    Note: 4B-3-csf made productionMutationDep real for csf (typed
-//          unsupported for the other §18.2 firewalls; typed unknown
-//          for anything outside §18.2). Tests for that live in
-//          restore_deps_csf_test.go.
-//
-// The narrowed assertion below pins the dispatch shape of the
-// mutation dep: a non-csf known firewall returns
-// ErrCSFRestoreOnlyAuthorized, and an unknown firewall returns
-// ErrRestoreMutationUnknownFirewall. csf-specific behavior is in
-// restore_deps_csf_test.go.
+// 1. Mutation-dep dispatch tests. As of 4B-4 all four deps are real;
+//    these tests pin the dispatch shape of the mutation dep at the
+//    file boundary:
+//      - non-csf §18.2 known firewall → ErrCSFRestoreOnlyAuthorized
+//      - unknown firewall              → ErrRestoreMutationUnknownFirewall
+//    csf-specific behavior lives in restore_deps_csf_test.go.
+//    InlineVerify-specific behavior lives in
+//    restore_deps_inlineverify_test.go.
 // =============================================================================
 
 func TestProductionMutationDep_NonCSFKnown_ReturnsTypedUnsupported(t *testing.T) {
@@ -79,28 +72,36 @@ func TestProductionMutationDep_UnknownFirewall_ReturnsTypedUnknown(t *testing.T)
 func TestProductionInlineVerifyDep_AllThreeMethodsReturnUnavailable(t *testing.T) {
 	d := &productionInlineVerifyDep{}
 
+	// 4B-4 made every method real. With a nil executor each method
+	// must refuse cleanly with ErrInlineVerifyNilExecutor — this pins
+	// the defensive guard, not stub behaviour. Per-behaviour tests for
+	// the real impl live in restore_deps_inlineverify_test.go.
 	active, err := d.IsTargetFirewallActive(context.Background(), "ufw")
 	if active {
-		t.Errorf("IsTargetFirewallActive returned active=true; stub must refuse")
+		t.Errorf("IsTargetFirewallActive returned active=true with nil exec")
 	}
-	if !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("IsTargetFirewallActive err = %v; want ErrRestoreExecutionUnavailable", err)
+	if !errors.Is(err, ErrInlineVerifyNilExecutor) && !errors.Is(err, ErrInlineVerifyOnlyCSFAuthorized) {
+		// ufw is non-csf known: dispatch refuses with OnlyCSFAuthorized
+		// before consulting the executor; if the dep ever short-circuits
+		// on nil-exec first, that's also acceptable. Either path keeps
+		// the dep non-mutating.
+		t.Errorf("IsTargetFirewallActive err = %v; want OnlyCSFAuthorized or NilExecutor", err)
 	}
 
 	auth, err := d.CurrentAuthorityClass(context.Background())
 	if string(auth) != "" {
-		t.Errorf("CurrentAuthorityClass returned %q; stub must return empty", auth)
+		t.Errorf("CurrentAuthorityClass returned %q with nil exec; want empty", auth)
 	}
-	if !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("CurrentAuthorityClass err = %v; want ErrRestoreExecutionUnavailable", err)
+	if !errors.Is(err, ErrInlineVerifyNilExecutor) {
+		t.Errorf("CurrentAuthorityClass err = %v; want ErrInlineVerifyNilExecutor", err)
 	}
 
 	safe, err := d.IsSafetyNetRemovalSafe(context.Background())
 	if safe {
-		t.Errorf("IsSafetyNetRemovalSafe returned safe=true; stub must refuse")
+		t.Errorf("IsSafetyNetRemovalSafe returned safe=true with nil exec")
 	}
-	if !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("IsSafetyNetRemovalSafe err = %v; want ErrRestoreExecutionUnavailable", err)
+	if !errors.Is(err, ErrInlineVerifyNilExecutor) {
+		t.Errorf("IsSafetyNetRemovalSafe err = %v; want ErrInlineVerifyNilExecutor", err)
 	}
 }
 
@@ -155,25 +156,6 @@ func TestNewProductionRestoreDeps_InterfaceCompliance(t *testing.T) {
 }
 
 // =============================================================================
-// 5. ErrRestoreExecutionUnavailable carries an explicit "not implemented
-//    in this commit" message so logs and operator output make the
-//    placeholder nature obvious.
-// =============================================================================
-
-func TestErrRestoreExecutionUnavailable_MessageIsExplicit(t *testing.T) {
-	msg := ErrRestoreExecutionUnavailable.Error()
-	required := []string{
-		"execution dependency",
-		"not implemented",
-	}
-	for _, sub := range required {
-		if !strings.Contains(msg, sub) {
-			t.Errorf("ErrRestoreExecutionUnavailable message %q missing substring %q", msg, sub)
-		}
-	}
-}
-
-// =============================================================================
 // 6. No mutation surface in restore_deps.go — file-scan.
 //
 // 4B-1 made productionPreflightDep real (read-only via CommandExists +
@@ -191,6 +173,19 @@ func TestRestoreDeps_NoMutationSurface_FileScan(t *testing.T) {
 	// substring includes the open paren so it does NOT false-match
 	// the Executor method exec.CommandExists() which 4B-1 uses for
 	// read-only preflight.
+	// 4B-4 update: uninstall.Classify is removed from this forbidden
+	// list because §21.1.2 explicitly authorizes the inline-verify
+	// dep to call Classify as a verification step. uninstall.Probe and
+	// detect.DetectPanel remain forbidden — re-probing prior records
+	// or re-detecting the panel would violate
+	// INV-PR25-AUTHORITY-IMMUTABILITY (§17.3) / §33 E.7. restore.Decide
+	// is also forbidden: the decision is the planner's, never re-run.
+	//
+	// Mutation primitives are kept on the forbidden list. Per the
+	// commit-by-commit split, the actual mutation lives in
+	// restore_deps_csf.go (csf branch only) and the inline-verify
+	// dep is read-only; this file (the dispatcher's deps shell) must
+	// stay free of mutation calls.
 	forbidden := []string{
 		"os/exec",
 		"exec.Command(",
@@ -201,15 +196,15 @@ func TestRestoreDeps_NoMutationSurface_FileScan(t *testing.T) {
 		"syscall.",
 		`"nft "`,
 		`"systemctl `,
-		// Live re-detection — preflight + stubs must not classify or
-		// probe anything outside their narrow remit.
+		// Live re-detection that would violate INV-PR25-AUTHORITY-IMMUTABILITY:
 		"uninstall.Probe(",
-		"uninstall.Classify(",
 		"detect.DetectPanel(",
+		"restore.Decide(",
+		"restore.PlanFromDecision(",
 		// History writes
 		"writeHistory(",
-		// Mutation primitives — preflight is read-only; safety-net /
-		// mutation / inline-verify are still stubs in 4B-1
+		// Mutation primitives — restore_deps.go itself stays free of
+		// these; they live in restore_deps_csf.go (csf only).
 		"ServiceStart(",
 		"ServiceStop(",
 		"ServiceEnable(",

@@ -853,23 +853,22 @@ func TestCSFMutate_4B3csf_NoNolintUnusedOnMutationFields(t *testing.T) {
 }
 
 // =============================================================================
-// 4B-3-csf — Test #18: PR-25 §28 evidence cannot be claimed yet.
-//                    The amendment-1 audit notes this; we pin a
-//                    structural marker so the build fails if anyone
-//                    flips A.7 without wiring the predicate.
+// 4B-3-csf — Test #18 (flipped by 4B-4): predicate is now WIRED in the
+//                    production factory. Before 4B-4 this test asserted
+//                    safetyNetRemovalSafeFn==nil (PR-25 non-shipping
+//                    pin); 4B-4 inverted the assertion to safetyNet
+//                    RemovalSafeFn!=nil. Test name kept stable so
+//                    auditor history can grep the flip.
 // =============================================================================
 
 func TestCSFMutate_4B3csf_PR25NonShipping_PredicateUnwiredByDefault(t *testing.T) {
-	// The default production factory (newProductionRestoreDepsWithEvidence)
-	// must NOT set safetyNetRemovalSafeFn — 4B-3-csf intentionally
-	// leaves it unwired so A.7 always refuses on real hosts.
 	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone)
 	mut, ok := deps.Mutation.(*productionMutationDep)
 	if !ok {
 		t.Fatalf("Mutation is not *productionMutationDep")
 	}
-	if mut.safetyNetRemovalSafeFn != nil {
-		t.Errorf("4B-3-csf production factory wired safetyNetRemovalSafeFn — 4B-4 must land that wiring")
+	if mut.safetyNetRemovalSafeFn == nil {
+		t.Errorf("4B-4 production factory did NOT wire safetyNetRemovalSafeFn — A.7 would refuse universally")
 	}
 }
 

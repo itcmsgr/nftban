@@ -1,49 +1,38 @@
 // SPDX-License-Identifier: MPL-2.0
 // =============================================================================
-// NFTBan v1.100 PR-25 — Restore Execute Stub Deps (commit 4 only)
+// NFTBan v1.100 PR-25 — Restore Execute Production Deps
 // =============================================================================
 // meta:name="nftban-installer-restore-deps"
 // meta:type="cmd"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-27"
-// meta:description="Stub implementations of the four restore.Execute dep interfaces. Each method returns ErrRestoreExecutionUnavailable. Real production deps are deferred to commit 4B; this commit only proves dispatcher integration."
-// meta:depends="github.com/itcmsgr/nftban/internal/installer/executor,github.com/itcmsgr/nftban/internal/installer/logging,github.com/itcmsgr/nftban/internal/installer/restore,github.com/itcmsgr/nftban/internal/installer/uninstall"
+// meta:description="Production implementations of restore.ExecuteDeps. Preflight (4B-1, read-only presence), SafetyNet (4B-2, emergency-SSH via switchop), Mutation (4B-3-csf, csf inverse-of-install per Amendment 1), InlineVerify (4B-4, three §21.1 assertions). The mutation dep's safetyNetRemovalSafeFn is wired to the inline-verify dep so A.7 nftban release runs only when post-mutation SSH is observable outside the emergency table."
+// meta:depends="github.com/itcmsgr/nftban/internal/installer/detect,github.com/itcmsgr/nftban/internal/installer/executor,github.com/itcmsgr/nftban/internal/installer/logging,github.com/itcmsgr/nftban/internal/installer/restore,github.com/itcmsgr/nftban/internal/installer/switchop,github.com/itcmsgr/nftban/internal/installer/uninstall"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files=""
-// meta:inventory.systemd_units=""
+// meta:inventory.systemd_units="csf.service,nftband.service"
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
 // =============================================================================
 //
-// Scope (commit 4 only):
+// Commit progression (recorded for traceability):
 //
-//   This file ships the dependency-injection seam that the dispatcher
-//   uses to satisfy restore.ExecuteDeps. Every method on every
-//   production*Dep struct is a STUB that returns
-//   ErrRestoreExecutionUnavailable. No kernel call. No service call.
-//   No filesystem mutation. No `nft`. No `systemctl`.
+//   - 4   :       dispatcher integration with stub deps
+//   - 4B-1:       productionPreflightDep real (read-only presence check)
+//   - 4B-2:       productionSafetyNetDep real (emergency-SSH allow via switchop)
+//   - 4B-3-pre:   productionMutationDep gains read-only evidence fields
+//                 (priorRec, panel) plumbed by the dispatcher
+//   - 4B-3-csf:   productionMutationDep real for firewallType=="csf" using the
+//                 plumbed evidence; non-csf typed-unsupported; A.7 gated on
+//                 a safetyNetRemovalSafeFn predicate that 4B-3-csf left nil
+//   - 4B-4:       productionInlineVerifyDep real (three §21.1 assertions);
+//                 productionMutationDep.safetyNetRemovalSafeFn wired in the
+//                 production factory to call inlineVerify.IsSafetyNetRemovalSafe
 //
-//   Commit 4's purpose is to prove that the dispatcher can:
-//
-//     - call PlanFromDecision on PROCEED
-//     - construct ExecuteDeps from the executor
-//     - call restore.Execute with those deps
-//     - persist whatever terminal state Execute returns
-//     - never write update-history success on the restore mode
-//
-//   Real production deps (real `nft` insert/remove of emergency-SSH,
-//   real service start/stop, real classify, etc.) are commit-4B
-//   scope. Until they land, the stub Preflight refuses with
-//   ErrRestoreExecutionUnavailable, Execute short-circuits to
-//   StateRestoreFailedExecution at Stage="preflight", and the
-//   dispatcher persists that terminal truthfully.
-//
-//   This is NOT a real-host restore execution. PR-25 §28 evidence
-//   work CANNOT cite commit 4 as proof that restoration mutated a
-//   host. The first commit that produces such evidence is the one
-//   that replaces these stubs (commit 4B).
+// As of 4B-4, all four deps are production-real. PR-25 is code-complete
+// pending §28 lab2/lab4 real-host evidence (commit 5).
 //
 // =============================================================================
 
@@ -62,19 +51,8 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
 
-// ErrRestoreExecutionUnavailable is the typed sentinel returned by
-// every stub-dep method in this commit. It is distinct from the
-// restore-package sentinels (ErrUnmappedPanel, ErrSafetyNetNilDep,
-// etc.) so callers can tell "no real implementation exists yet" apart
-// from "real implementation refused for a contract reason".
-//
-// Tests assert that this error reaches the persisted terminal — i.e.
-// commit 4's PROCEED-path execution always lands at
-// StateRestoreFailedExecution with this error in the chain.
-var ErrRestoreExecutionUnavailable = errors.New("restore: execution dependency not implemented in this commit (commit 4 = dispatcher integration only; real deps land in commit 4B)")
-
 // =============================================================================
-// Production*Dep stubs — every method returns ErrRestoreExecutionUnavailable.
+// Production deps — all four are real as of commit 4B-4.
 // =============================================================================
 
 // productionPreflightDep implements restore.PreflightDep with a
@@ -165,9 +143,7 @@ var preflightKnownFirewalls = map[string]preflightFirewallPresence{
 	},
 }
 
-// Sentinel errors returned by productionPreflightDep. Distinct from
-// ErrRestoreExecutionUnavailable so consumers can tell "the binary
-// isn't installed" apart from "the dep isn't implemented yet".
+// Sentinel errors returned by productionPreflightDep.
 var (
 	// ErrPreflightUnknownFirewall is returned when firewallType is
 	// not a member of preflightKnownFirewalls. The planner should
@@ -489,31 +465,214 @@ func (m *productionMutationDep) MutateToTarget(ctx context.Context, firewallType
 	}
 }
 
-// productionInlineVerifyDep implements restore.InlineVerifyDep.
+// =============================================================================
+// productionInlineVerifyDep — real implementation (commit 4B-4)
+// =============================================================================
+//
+// Implements the three §21.1 minimum-sufficient assertions:
+//
+//   1. IsTargetFirewallActive — read-only ServiceActive query.
+//   2. CurrentAuthorityClass  — fresh uninstall.Classify call (allowed
+//                                 by §21.1 as a verification step; the
+//                                 result is consumed by InlineVerify
+//                                 ONLY — never fed back into the planner
+//                                 or used to re-resolve TargetAuthority,
+//                                 per INV-PR25-AUTHORITY-IMMUTABILITY).
+//   3. IsSafetyNetRemovalSafe — read-only kernel/service evidence check
+//                                 that SSH protection exists outside
+//                                 the emergency table.
+//
+// The dep mutates nothing. It does NOT call uninstall.Probe,
+// detect.DetectPanel, or restore.Decide. Its CLI use is bounded to the
+// existing executor abstraction.
+//
+// Amendment 1 §30 scope: only csf is authorized for restore. Methods
+// that take a firewallType argument therefore accept "csf" only —
+// other §18.2 firewalls return ErrInlineVerifyOnlyCSFAuthorized;
+// firewalls outside the §18.2 known set return
+// ErrInlineVerifyUnknownFirewall.
 type productionInlineVerifyDep struct {
-	exec executor.Executor //nolint:unused
-	log  *logging.Logger   //nolint:unused
+	exec executor.Executor
+	log  *logging.Logger
 }
 
+// inlineVerifyKnownFirewallServices is the §18.2 known-set, mapped to
+// the canonical service unit each firewall manages. Mirrors
+// preflightKnownFirewalls but holds only the unit name (the inline
+// verify check is run-state, not file-presence).
+var inlineVerifyKnownFirewallServices = map[string]string{
+	"ufw":       "ufw.service",
+	"firewalld": "firewalld.service",
+	"iptables":  "iptables.service",
+	"csf":       "csf.service",
+}
+
+// inlineVerifyExternalFirewallServices is the union of canonical
+// firewall service units that, if active, demonstrate SSH protection
+// outside the nftban emergency table. Used by IsSafetyNetRemovalSafe.
+//
+// nftband.service is intentionally NOT in this list: by the time
+// IsSafetyNetRemovalSafe runs, the §32 ordering has already stopped
+// nftband (step 6) and released the nftban authority is being decided
+// at step 7 — so checking for nftband would tautologically refuse.
+//
+// netfilter-persistent.service is included because Debian/Ubuntu hosts
+// rely on it to load iptables rules on boot; it is the runtime
+// equivalent of iptables.service.
+var inlineVerifyExternalFirewallServices = []string{
+	"csf.service",
+	"ufw.service",
+	"firewalld.service",
+	"iptables.service",
+	"netfilter-persistent.service",
+}
+
+// Sentinel errors for the productionInlineVerifyDep.
+var (
+	// ErrInlineVerifyNilExecutor is returned when the dep was
+	// constructed without an executor.
+	ErrInlineVerifyNilExecutor = errors.New("restore inline-verify: executor is nil")
+
+	// ErrInlineVerifyOnlyCSFAuthorized is the typed unsupported sentinel
+	// for the §18.2 known firewalls other than csf. Mirror of
+	// ErrCSFRestoreOnlyAuthorized on the mutation side — Amendment 1
+	// authorizes csf only.
+	ErrInlineVerifyOnlyCSFAuthorized = errors.New("restore inline-verify: amendment 1 authorizes csf only; this firewallType is in the §18.2 known set but inline verify is not yet authorized for it")
+
+	// ErrInlineVerifyUnknownFirewall is returned when firewallType is
+	// outside the §18.2 known set.
+	ErrInlineVerifyUnknownFirewall = errors.New("restore inline-verify: firewallType is not in the §18.2 known set")
+
+	// ErrInlineVerifyClassifyFailed is returned when uninstall.Classify
+	// returned a nil result. Defensive guard — the production
+	// implementation always returns a non-nil result, but the dep
+	// guards in case future refactors break the invariant.
+	ErrInlineVerifyClassifyFailed = errors.New("restore inline-verify: uninstall.Classify returned nil result")
+
+	// ErrInlineVerifySSHPortUnknown is returned when detect.SSHPort
+	// cannot resolve a port from any of its 4 sources. Per §21.1.3
+	// "SSH connectivity remains observable" — if the port itself is
+	// not observable, the predicate refuses (no fallback to assumption).
+	ErrInlineVerifySSHPortUnknown = errors.New("restore inline-verify: SSH port could not be determined; safety-net removal is not safe")
+
+	// ErrInlineVerifyInvalidSSHPort is returned when the resolved port
+	// is outside the legal TCP port range. Defensive guard.
+	ErrInlineVerifyInvalidSSHPort = errors.New("restore inline-verify: SSH port outside legal TCP range (1-65535)")
+)
+
+// IsTargetFirewallActive — §21.1 assertion 1.
+//
+// Maps firewallType to its canonical service unit and returns
+// ServiceActive(unit). Read-only. No process spawn beyond the
+// underlying systemctl is-active query the executor's ServiceActive
+// performs internally.
+//
+// Amendment 1 scope: csf only. ufw / firewalld / iptables return
+// ErrInlineVerifyOnlyCSFAuthorized. Unknown firewallType returns
+// ErrInlineVerifyUnknownFirewall. Both refusals are non-mutating.
 func (v *productionInlineVerifyDep) IsTargetFirewallActive(_ context.Context, firewallType string) (bool, error) {
-	if v.log != nil {
-		v.log.Info("restore exec stub: IsTargetFirewallActive(%q) refusing — commit 4 stub", firewallType)
+	if v.exec == nil {
+		return false, ErrInlineVerifyNilExecutor
 	}
-	return false, ErrRestoreExecutionUnavailable
+	if firewallType == "csf" {
+		active := v.exec.ServiceActive("csf.service")
+		if v.log != nil {
+			v.log.Info("restore inline-verify: assertion-1 ServiceActive(csf.service)=%v", active)
+		}
+		return active, nil
+	}
+	if _, ok := inlineVerifyKnownFirewallServices[firewallType]; ok {
+		if v.log != nil {
+			v.log.Info("restore inline-verify: refusing %q — known firewall but Amendment 1 authorizes csf only", firewallType)
+		}
+		return false, ErrInlineVerifyOnlyCSFAuthorized
+	}
+	if v.log != nil {
+		v.log.Error("restore inline-verify: refusing unknown firewallType=%q (not in §18.2 known set)", firewallType)
+	}
+	return false, ErrInlineVerifyUnknownFirewall
 }
 
+// CurrentAuthorityClass — §21.1 assertion 2.
+//
+// Calls uninstall.Classify and returns its CurrentAuthority. The
+// classifier itself is read-only (per its contract — only
+// NftTableExists, ServiceActive, and FileExists probes). The result
+// is consumed by InlineVerify ONLY: it is not fed back into the
+// planner, not used to re-derive TargetAuthority, not compared
+// against the original PR-24 decision. INV-PR25-AUTHORITY-IMMUTABILITY
+// is preserved because the planner's TargetAuthority is already
+// frozen by the time this method runs.
+//
+// uninstall.Probe, detect.DetectPanel, and restore.Decide are NOT
+// called here.
 func (v *productionInlineVerifyDep) CurrentAuthorityClass(_ context.Context) (uninstall.CurrentAuthority, error) {
-	if v.log != nil {
-		v.log.Info("restore exec stub: CurrentAuthorityClass refusing — commit 4 stub")
+	if v.exec == nil {
+		return "", ErrInlineVerifyNilExecutor
 	}
-	return uninstall.CurrentAuthority(""), ErrRestoreExecutionUnavailable
+	res := uninstall.Classify(v.exec, v.log)
+	if res == nil {
+		return "", ErrInlineVerifyClassifyFailed
+	}
+	if v.log != nil {
+		v.log.Info("restore inline-verify: assertion-2 CurrentAuthorityClass=%s ambiguity=%s",
+			res.State, res.Ambiguity)
+	}
+	return res.State, nil
 }
 
+// IsSafetyNetRemovalSafe — §21.1 assertion 3.
+//
+// Returns true iff:
+//
+//   1. detect.SSHPort succeeds — proves sshd is observable on the
+//      host (typically via `ss -tlnp` listener parse). Without an
+//      observable port, the predicate refuses; there is NO fallback
+//      to a hardcoded port.
+//
+//   2. At least one external (non-nftban, non-emergency) firewall
+//      service is currently active — proves SSH protection is being
+//      provided by something other than the nftban_install_emergency
+//      table. If only the emergency table is in place,
+//      inlineVerifyExternalFirewallServices is empty-active and the
+//      predicate refuses.
+//
+// All evidence comes from the executor abstraction (ServiceActive +
+// the Run-based ss / sshd_config probes inside detect.SSHPort). No
+// nft-list parsing, no CLI-truth dependency, no kernel mutation.
 func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (bool, error) {
-	if v.log != nil {
-		v.log.Info("restore exec stub: IsSafetyNetRemovalSafe refusing — commit 4 stub")
+	if v.exec == nil {
+		return false, ErrInlineVerifyNilExecutor
 	}
-	return false, ErrRestoreExecutionUnavailable
+
+	port, err := detect.SSHPort(v.exec, v.log)
+	if err != nil {
+		if v.log != nil {
+			v.log.Warn("restore inline-verify: assertion-3 refused — SSH port unknown: %v", err)
+		}
+		return false, fmt.Errorf("%w: %v", ErrInlineVerifySSHPortUnknown, err)
+	}
+	if port < 1 || port > 65535 {
+		if v.log != nil {
+			v.log.Warn("restore inline-verify: assertion-3 refused — SSH port out of range: %d", port)
+		}
+		return false, fmt.Errorf("%w: got %d", ErrInlineVerifyInvalidSSHPort, port)
+	}
+
+	for _, unit := range inlineVerifyExternalFirewallServices {
+		if v.exec.ServiceActive(unit) {
+			if v.log != nil {
+				v.log.Info("restore inline-verify: assertion-3 ok — %s is active (sshd port %d observable)",
+					unit, port)
+			}
+			return true, nil
+		}
+	}
+
+	if v.log != nil {
+		v.log.Warn("restore inline-verify: assertion-3 refused — no external firewall service active; only the emergency table protects sshd port %d", port)
+	}
+	return false, nil
 }
 
 // =============================================================================
@@ -551,18 +710,25 @@ func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) resto
 // MUST NOT re-derive these values; they are read-only inputs for
 // 4B-3-csf's §31 A.1–A.7 evidence gates.
 //
-// 4B-3-pre wires only priorRec + panel. The §32 step 7 / §31 A.7
-// precondition (c) safety-net-safe predicate naturally points at the
-// inline-verify dep's IsSafetyNetRemovalSafe method, which in 4B-2
-// remains a stub; wiring it now would reference unimplemented
-// behavior. Predicate landing is deferred to 4B-4 alongside the real
-// inline-verify implementation.
+// 4B-4 wires the §32 step 7 / §31 A.7 precondition (c) safety-net-safe
+// predicate. The mutation dep's safetyNetRemovalSafeFn closure points
+// at the inline-verify dep's IsSafetyNetRemovalSafe method — meaning
+// A.7 (nftban kernel release) now actually executes when the
+// inline-verify says safe-to-remove. Before 4B-4 the predicate was
+// nil and A.7 always refused; this commit closes that gate.
+//
+// Wiring order: InlineVerify is constructed first so the closure has
+// a non-nil reference to capture. The same instance is then passed
+// in ExecuteDeps.InlineVerify, so Execute step 4's verification call
+// hits the same dep that the mutation dep's closure consults at A.7.
 func newProductionRestoreDepsWithEvidence(
 	exec executor.Executor,
 	log *logging.Logger,
 	priorRec *uninstall.PriorRecord,
 	panel detect.PanelType,
 ) restore.ExecuteDeps {
+	inlineVerify := &productionInlineVerifyDep{exec: exec, log: log}
+
 	return restore.ExecuteDeps{
 		Preflight: &productionPreflightDep{exec: exec, log: log},
 		SafetyNet: &productionSafetyNetDep{
@@ -581,8 +747,14 @@ func newProductionRestoreDepsWithEvidence(
 			log:      log,
 			priorRec: priorRec,
 			panel:    panel,
+			// 4B-4 wiring: A.7 now consults the inline-verify dep's
+			// IsSafetyNetRemovalSafe assertion. ctx flows through; no
+			// state captured beyond the inlineVerify reference.
+			safetyNetRemovalSafeFn: func(ctx context.Context) (bool, error) {
+				return inlineVerify.IsSafetyNetRemovalSafe(ctx)
+			},
 		},
-		InlineVerify: &productionInlineVerifyDep{exec: exec, log: log},
+		InlineVerify: inlineVerify,
 	}
 }
 
