@@ -1641,14 +1641,5 @@ EOF
     chmod 644 "$json_cache"
 
     log_debug "Collected $(echo -e "$metrics" | wc -l) metrics → $json_cache"
-
-    # =========================================================================
-    # GUI CACHE FILES - Generate additional JSON files for GUI charts
-    # These files enable the GOTH GUI to display historical and analytical data
-    # Split from this file (BUG-L24: large file refactoring)
-    # =========================================================================
-    # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/exporters/nftban_exporter_gui_cache.sh" || return 1
-    generate_gui_cache_files "$timestamp" "$collection_groups"
 }
 

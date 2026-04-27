@@ -59,9 +59,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
-
       - name: Build binaries
         run: |
           chmod +x build.sh
@@ -368,7 +365,6 @@ jobs:
 
           # Copy raw Go binaries that SLSA can't build (require CGO)
           # NOTE: nftban-core is built by SLSA workflow with provenance.
-          # nftban-ui + nftban-ui-auth removed in v1.100.1b.A (GOTH PR-D4 stage 1).
           if [ -d "all-packages" ]; then
             for binary in nftband; do
               if [ -f "all-packages/${binary}" ]; then
@@ -644,7 +640,6 @@ jobs:
         # - verify-release job will: download with retry, verify checksums,
         #   generate final SHA256SUMS, then publish the release
         # NOTE: nftban-core is uploaded by SLSA workflow with provenance.
-        # nftban-ui + nftban-ui-auth removed in v1.100.1b.A (GOTH PR-D4 stage 1).
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
           files: |

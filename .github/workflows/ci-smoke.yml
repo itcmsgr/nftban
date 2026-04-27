@@ -43,13 +43,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y nftables jq libpam0g-dev
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Generate templ files
-        run: $(go env GOPATH)/bin/templ generate
+          sudo apt-get install -y nftables jq
 
       - name: Build CLI binary
         run: go build -trimpath -o bin/nftban-core ./cmd/nftban-core/
