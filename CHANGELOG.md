@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.3d Repo hygiene Phase A slice 1d (H-05)
+
+Closes audit finding **H-05**: 3 internal-roadmap references in tracked code/docs that are not resolvable by a public reader.
+
+### Changed
+
+- `CHANGELOG.md` (v1.80.0 release block) — drop the trailing "Refs:" subsection that pointed at the internal `V1.80_ROADMAP/MASTER_TODO.md` file. The release block content above (PR list with #371/#372/#373) remains the canonical record.
+- `cli/lib/nftban/core/nftban_ip_and_stats.sh:73` — remove sentence pointing at `V1.80_ROADMAP/MASTER_TODO.md B80-1 discussion dated 2026-04-11`. Replace with `(B80-1)` so the planning tag survives without the unresolvable file path.
+- `internal/loginmon/pipeline/doc.go:75` — remove `(see DEC-1..9 in MASTER_TODO.md)` parenthetical from package doc. Surrounding sentence preserved.
+
+All 3 sites verified live in current tree before edit (per locked rule "first verify, then fix only confirmed live ones").
+
+### Verification
+
+`git grep -nE "V1\.80_ROADMAP|MASTER_TODO\b" -- ':(exclude).claude/*'` → **empty output** after this PR.
+
+### Out of scope (deferred)
+
+- H-07 / H-08 — version-sync (README badge, STATUS.md). No version-sync work in this slice (locked).
+- H-09 / H-16 / H-19 — separate Phase A slices.
+- Larger Phase A items (H-06 / H-11..H-19) — separate planning.
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN**.
+
+---
+
 ## [Unreleased] - v1.100.3c Repo hygiene Phase A slice 1c (H-04)
 
 Closes audit finding **H-04**: 3 internal-path comments referencing files under `/home/commonfolder/...` that are not part of the public repo. Particularly notable: the polkit rules file ships to every install, so the reference was visible on every operator host.
@@ -1377,10 +1403,6 @@ effective detection/scoring model; effectiveness tuning remains future work.
 | #371 | B80-3 empty-chain detection |
 | #372 | B80-4/5/6 service-state + schema codegen + wiring |
 | #373 | B80-7/8 watchdog unification + CI drift gate |
-
-### Refs
-
-- V1.80_ROADMAP/MASTER_TODO.md (v3.1, GO 2026-04-13)
 
 ---
 
