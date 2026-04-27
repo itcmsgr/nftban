@@ -629,6 +629,199 @@ Evidence plan is code-phase work; this section names the hosts only.
 
 ---
 
+# PART III — AMENDMENT 1: CSF restore mutation authorization
+
+> **Authority gap discovered 2026-04-28.** The original §§16–29 PR-25 contract assumed "restore target firewall" was a small run-state mutation (start the target's service). Inspection during PR-25 commit 4B-3 revealed that install-time `switchop.DisableConflicts` (`internal/installer/switchop/takeover.go:32`) performs **persistent, file-level mutations** when nftban takes over from CSF on a DirectAdmin host:
+>
+> 1. `ServiceStop("csf.service")` + `ServiceDisable` + `ServiceMask`
+> 2. Flush `iptables`/`ip6tables` filter/nat/mangle (legacy firewall reset)
+> 3. Remove `/etc/cron.d/lfd-cron`, `/etc/cron.d/csf-cron`
+> 4. Rename `/usr/sbin/csf` → `/usr/sbin/csf.disabled`
+> 5. DirectAdmin custombuild: `build set csf no` (write `csf=no` to options.conf)
+>
+> A real CSF restore must reverse the operations nftban actually performed. §§16–29 forbid every operation needed for that reversal (no enable/disable, no unit-file edits, no file writes, no broad cleanup). Without an explicit authority extension, PR-25 csf restore is impossible — any partial implementation would leave the host in a broken state (csf service started but binary renamed = ExecStart failure).
+>
+> **This amendment is CSF-only.** It does NOT authorize inverse-of-install for ufw/firewalld/iptables. Those remain typed-unsupported until separately amended.
+
+## 30. Amendment scope and applicability
+
+### 30.1 In scope
+
+This amendment authorizes a constrained set of inverse-of-install mutations on the **CSF restore path only**. The amendment activates when, and ONLY when, all four conditions hold:
+
+1. PR-24 returned `OutputProceed`.
+2. The PR-25 planner resolved `TargetAuthority` such that `Kind == TargetAuthorityKindRecordedPrior` AND `FirewallType() == "csf"`,
+   **OR** `Kind == TargetAuthorityKindPanelNative` AND `Panel() == detect.PanelDirectAdmin` (which §20 maps to `"csf"`).
+3. The PR-25 dispatcher has actually constructed an `ExecuteDeps` and entered `Execute`.
+4. The mutation step (§23.3 / §32 below) is the active phase.
+
+### 30.2 Out of scope
+
+Explicitly **NOT** authorized by this amendment:
+
+- Any non-CSF firewall (`ufw` / `firewalld` / `iptables` / others). They remain typed-unsupported until separately amended.
+- Any panel other than `PanelDirectAdmin` (per §20.1, `PanelDirectAdmin` is the only panel mapped in commit 3A; the amendment cannot operate on unmapped panels).
+- Any restoration path that does NOT pass through PR-24 PROCEED (the contract entry point is unchanged).
+- Operations beyond §31's enumerated list. **No "while we're at it" cleanup.**
+
+### 30.3 Locked invariants that this amendment does NOT modify
+
+The following original §§17–29 invariants apply unchanged:
+
+- **INV-PR25-AUTHORITY-IMMUTABILITY** (§17.3): TargetAuthority resolved by the planner is read-only across execution.
+- **§19.2 layer 4**: `main.go:132` writeHistory gate excludes `cfg.mode == "restore"` — the amendment does NOT relax this.
+- **§19.4** exit codes for the four §22 terminals are unchanged.
+- **§20.3** no-fallback rule remains in force; the amendment introduces NO new fallback.
+- **§21.3** safety-net retention on verify-fail is unchanged.
+- **§23 ordering** is extended (see §32) but not reordered.
+
+## 31. Authorized inverse-of-install mutations (CSF-only)
+
+Each authorized mutation MUST be gated on its specific evidence precondition. Mutation runs ONLY if its precondition holds. No precondition → no mutation; the higher-level `MutateToTarget` returns a typed sentinel error.
+
+### 31.1 Mutation table
+
+| ID | Mutation | Evidence required (must ALL hold) | Action if precondition fails |
+|---|---|---|---|
+| **A.1** | `ServiceUnmask("csf.service")` | (a) prior record present AND `FirewallType == "csf"`; OR (b) `csf.service` is currently in `masked` state AND a CSF binary exists at `/usr/sbin/csf` OR `/usr/sbin/csf.disabled`. | Skip A.1 (csf not masked → nothing to unmask). |
+| **A.2** | `ServiceEnable("csf.service")` | Same as A.1, plus: A.1 was either skipped (already unmasked) or returned nil. | Skip A.2 (skipping is safe; later ServiceStart still works on a one-shot basis). |
+| **A.3** | Restore CSF binary: rename `/usr/sbin/csf.disabled` → `/usr/sbin/csf` (atomic) | (a) `FileExists("/usr/sbin/csf.disabled") == true`; AND (b) `FileExists("/usr/sbin/csf") == false` (target slot empty); AND (c) prior record present with `FirewallType == "csf"` OR PanelDirectAdmin path active. | Skip A.3 if .disabled is absent. **Refuse the entire restore** if both /usr/sbin/csf and /usr/sbin/csf.disabled are present (ambiguous state — operator must resolve). |
+| **A.4** | Restore CSF cron files: re-create `/etc/cron.d/csf-cron` AND `/etc/cron.d/lfd-cron` from a manifest backup. | (a) `FileExists("<backup-path>/csf-cron") == true` AND same for lfd-cron; AND (b) target paths in `/etc/cron.d/` are absent; AND (c) prior record evidence as in A.1. | Skip A.4 — log warning that cron files are not restored automatically. Operator must restore manually. (Failing soft on cron is acceptable because csf can run without cron; LFD just won't auto-restart.) |
+| **A.5** | `ServiceStart("csf.service")` | A.1, A.2, A.3, A.4 each either skipped (precondition false) OR returned nil. | Mutation fails. Caller (`Execute`) lands at `StateRestoreFailedExecution`, safety-net retained. |
+| **A.6** | `ServiceStop("nftband.service")` | A.5 returned nil (csf is now started). | Skip A.6 if nftband is already inactive (idempotent). Mutation fails if nftband is active and stop fails — `StateRestoreFailedExecution`, safety-net retained. |
+| **A.7** | Release nftban kernel authority: `NftDeleteTable("ip", "nftban")` AND `NftDeleteTable("ip6", "nftban")`. | (a) A.5 returned nil; AND (b) `ServiceActive("csf.service") == true` (verified at execution time, not just A.5's return); AND (c) the SSH protection check (§32 step 7) confirms SSH still reachable outside the emergency rule. | **Refuse to release nftban tables**. Mutation fails with `ErrCSFRestoreNftReleaseUnsafe`. Safety-net retained. The host is left with both csf and nftban tables present — non-success but non-destructive. Operator must decide. |
+
+### 31.2 Mutation NOT authorized by this amendment
+
+- DirectAdmin custombuild restore (`build set csf yes`) — DirectAdmin's own update path can re-arm csf. Reversing nftban's `build set csf no` is DirectAdmin operator territory, not nftban restore territory. Out of scope.
+- Re-arming `/usr/sbin/lfd` if it was disabled (lfd is csf's companion daemon; if csf install-time disable renamed lfd, we don't have explicit evidence here). **If 4B-3-csf inspection finds DisableConflicts also renamed lfd, this amendment must be re-extended before adding A.4-bis.** Until that inspection: lfd restore is NOT authorized.
+- Restoring iptables/ip6tables rules that DisableConflicts flushed. Those rules came from CSF's runtime (csf rebuilds them via `csf -r` / `csf -ra` on start). After A.5 starts csf, csf will repopulate iptables. nftban does NOT manually restore the flushed rules.
+- Any operation on services other than `csf.service`, `lfd.service` (read-only check), `nftband.service`.
+- Any nftban table operation other than the precise `NftDeleteTable("ip", "nftban")` + `NftDeleteTable("ip6", "nftban")` pair in step A.7. No flush, no element edit, no rule add.
+
+## 32. Required ordering — extends §23
+
+The §23 six-step sequence is extended for the CSF path as follows. Each step is numbered to make the inverse-of-install nature explicit. Ordering is normative — no reordering.
+
+1. **Preflight** (§23.1, §31.1 evidence collection). The mutation dep collects evidence for A.1–A.7 BEFORE any mutation. If A.3 finds the ambiguous-binary state, refuse here (non-mutating).
+2. **Safety-net insertion** (§23.2; emergency-SSH allow rule per 4B-2).
+3. **CSF prerequisite restoration** (§31.1 A.1–A.4 in order, gated by their preconditions). Skip-on-precondition-false is normal; refusal on hard failure of A.3-ambiguous is fatal.
+4. **CSF service start** (§31.1 A.5).
+5. **CSF post-start verification (cheap)**: `ServiceActive("csf.service")` returns true. If false → mutation fails, no further action.
+6. **nftband stop** (§31.1 A.6).
+7. **SSH-still-protected check**: ensure SSH connectivity is observable on the post-mutation ruleset OUTSIDE the emergency rule (i.e., csf has loaded its own SSH-allow rule). This is a precondition for step 8 AND for §21.1's third assertion (safety-net removal safe).
+8. **nftban kernel release** (§31.1 A.7) — only if step 7 passed.
+9. **Inline verification** (§23.4 / §21.1) — three assertions evaluated against the post-mutation state. Must include verification that csf is the current authority class.
+10. **Safety-net removal** (§23.5 / §21.3) — only if step 9's verification confirms safe.
+11. **Terminal state selection** (§23.6 / §22).
+
+### 32.1 Failure-mode safety-net retention
+
+| Step that fails | Terminal state | Safety net |
+|---|---|---|
+| Step 1 ambiguous-binary | `StateRestoreFailedExecution` | NOT inserted (refusal pre-§23.2) |
+| Step 1 evidence-incomplete | `StateRestoreFailedExecution` | NOT inserted |
+| Step 3 (any A.1-A.4) | `StateRestoreFailedExecution` | RETAINED (already inserted at step 2) |
+| Step 4 / A.5 | `StateRestoreFailedExecution` | RETAINED |
+| Step 5 | `StateRestoreFailedExecution` | RETAINED |
+| Step 6 / A.6 | `StateRestoreFailedExecution` | RETAINED |
+| Step 7 | `StateRestoreFailedExecution` | RETAINED — host is csf-active but SSH unverified; operator must inspect |
+| Step 8 / A.7 | `StateRestoreFailedExecution` (with `ErrCSFRestoreNftReleaseUnsafe`) | RETAINED |
+| Step 9 | `StateRestoreFailedVerification` (per §22) | RETAINED per §21.3 |
+| Step 10 | `StateRestoreFailedVerification` per §22 candidate path | RETAINED (post-removal verify caught a silent failure) |
+| Step 11 happy path | `StateRestoreExecuted` | REMOVED |
+
+## 33. Required evidence preconditions — consolidated
+
+These are the gating conditions per §31.1, restated as a single discoverable list for the implementation.
+
+| Evidence id | What it proves | How the implementation reads it |
+|---|---|---|
+| **E.1 prior-record FirewallType** | nftban took over from a previously-installed csf | `priorRec != nil && priorRec.FirewallType == "csf"`. priorRec is the same `*uninstall.PriorRecord` the planner consumed; the dispatcher passes it forward to the mutation dep. |
+| **E.2 prior-record ActiveAtInstall** | csf was active when nftban installed (so install-time `DisableConflicts` actually ran) | `priorRec.ActiveAtInstall != nil && *priorRec.ActiveAtInstall == true`. If nil, fail closed (treat as "evidence absent"). |
+| **E.3 csf binary state** | One of: original-active, install-time-disabled, ambiguous | Inspect `/usr/sbin/csf` and `/usr/sbin/csf.disabled` via `FileExists`. Three states: only-csf (ok), only-csf.disabled (proven disabled), both-present (ambiguous → refuse), neither (csf uninstalled → refuse — restore impossible). |
+| **E.4 csf service state** | One of: original-loaded, install-time-masked, absent | Use existing executor surface to read service status. If `csf.service` not listable → refuse (csf uninstalled). |
+| **E.5 cron backup manifest** | nftban's install-time removal kept a backup copy | `FileExists` against the backup-path the installer's `disarmCSFArtifacts` is required to produce. **PREREQUISITE NOTE:** if the installer does not currently write a cron backup, A.4 is unimplementable until the install-time path is amended to produce it. The amendment notes this dependency; 4B-3-csf must verify it exists before relying on E.5. |
+| **E.6 SSH reachability outside emergency rule** | post-mutation csf rules permit SSH | Inline-verify dep's third assertion (§21.1.3). Cannot skip — A.7 (nftban release) is gated on this. |
+| **E.7 panel evidence (PanelNative path)** | DirectAdmin is the live panel | The same `panel detect.PanelType` value the planner used to resolve via §20. Re-validation forbidden — INV-PR25-AUTHORITY-IMMUTABILITY. |
+
+## 34. Forbidden behaviors (CSF-specific) — extends §25
+
+In addition to the §25 consolidated list, the following are forbidden on the CSF restore path:
+
+- **No guessed restore.** A.1–A.7 each refuse when their precondition fails; never proceed on incomplete evidence.
+- **No broad cron restoration** — only `/etc/cron.d/csf-cron` and `/etc/cron.d/lfd-cron`, only from manifest backup. No other cron files touched. No other `/etc/cron.d/*`.
+- **No DirectAdmin custombuild rewrite.** `build set csf yes` is NOT authorized — DirectAdmin operator territory.
+- **No iptables rule re-population.** csf manages its own iptables. nftban does not restore the flushed iptables ruleset.
+- **No fallback** — A.3 ambiguous binary state must refuse, not pick one. A.5 csf service start failure must refuse, not retry-with-different-args.
+- **No service operations beyond the three named units** (`csf.service`, `lfd.service` read-only, `nftband.service`). No daemon-reload after individual changes (only at the end of step 3 if necessary, and only once).
+- **No nftban table flush.** A.7 uses `NftDeleteTable` (the entire authoritative table at once) — no per-rule flush, no per-set element changes.
+- **No retry loops.** Each authorized mutation runs at most once per Execute call. Idempotency comes from preconditions, not from retry.
+- **No log of secrets.** The amendment introduces no new log-output requirements; existing PR-25 logging applies.
+
+## 35. New tests and §28 evidence requirements
+
+### 35.1 Unit tests required for 4B-3-csf implementation
+
+Each authorized mutation A.1–A.7 must have at minimum:
+
+1. **Happy-path test** — precondition holds, mutation succeeds, mock state reflects the change.
+2. **Precondition-false test** — mutation skipped or refused per §31.1's "Action if precondition fails" column.
+3. **Ambiguous-state test (A.3 specifically)** — both binary paths present → refuse the entire restore at preflight (step 1).
+4. **Idempotency test** — mutation re-run with the post-success state produces no further mutation (or refuses cleanly).
+5. **No out-of-target test** — mock executor traces show ZERO calls outside the §31 authorized set + §32 ordering.
+
+### 35.2 Integration tests required
+
+1. **Full Execute with all-evidence-present, all-mutations-needed**: walks steps 1→11; verifies exact ordering; verifies `StateRestoreExecuted` reached.
+2. **Full Execute with partial evidence (e.g., csf already unmasked, .disabled absent)**: walks the steps that still apply; skips A.1/A.3; succeeds.
+3. **Full Execute with ambiguous binary**: refuses at step 1.
+4. **Full Execute with SSH unreachable post-mutation**: A.7 refuses with `ErrCSFRestoreNftReleaseUnsafe`.
+5. **Full Execute with verify-fail at step 9**: `StateRestoreFailedVerification`, safety-net retained.
+
+### 35.3 §28 real-host evidence
+
+After 4B-3-csf code lands and unit/integration tests pass, real-host §28 evidence is captured on lab2 (DEB / Ubuntu 24.04 / DirectAdmin) AND lab4 (RPM / AlmaLinux 9 / cPanel).
+
+Required evidence per host:
+
+1. **Pre-condition setup**: install nftban (run install-time `DisableConflicts`, recording exact mutations to disk).
+2. **Restore invocation**: `nftban-installer --mode=restore --panel-auto-takeover` (reaches PROCEED via G3.3 or G3.1+PanelAuto or G4.3).
+3. **Exec-trace capture**: full strace / audit-log of the dispatcher's child processes during Execute. Evidence MUST show ONLY commands within the §31 authorized set + §32 ordering.
+4. **Final-state verification**:
+   - `csf.service` is `active`.
+   - `nftban` ip + ip6 tables are absent.
+   - `nftban_install_emergency` table is absent (safety-net cleaned up).
+   - SSH connectivity verified by an out-of-band check (separate session not relying on the safety-net rule).
+   - `update-history.json` does NOT contain a new success entry for this restore (per §19.2 layer 4 + main.go:132 mode-gate).
+
+### 35.4 §28 evidence is merge-blocking
+
+Per §28 of the original PR-25 contract, real-host evidence is merge-blocking. This amendment inherits that gate. PR-25 cannot ship without 35.3 evidence captured AND audited.
+
+## 36. Reviewer checklist for 4B-3-csf code phase
+
+When 4B-3-csf opens for review, the reviewer must confirm each of the following:
+
+- [ ] §30 applicability gate: code path is reachable ONLY for the four §30.1 conditions (PROCEED + RecordedPrior+csf OR PanelDirectAdmin+csf + Execute step 3+).
+- [ ] §31 mutation set: code performs ONLY A.1–A.7. File-scan + behavior tests confirm zero out-of-set operations.
+- [ ] §31.1 evidence gates: each of A.1–A.7 reads its precondition before acting; precondition-false → skip or typed-refuse; never proceed on incomplete evidence.
+- [ ] A.3 ambiguous binary: refuses the entire restore at preflight; never picks one binary over the other.
+- [ ] §32 ordering: 11-step sequence implemented in exact order; tests pin the order.
+- [ ] §32.1 safety-net retention: failure-mode table is reflected in code; retains safety net at every relevant failure step.
+- [ ] §33 evidence preconditions: implementation reads each E.1–E.7 from the correct source; never re-derives, never refreshes after the planner.
+- [ ] §33 E.5 dependency: if the installer doesn't yet write a cron-backup manifest, A.4 is documented as unimplementable; A.4 returns "skip with operator-warning" until the installer-side prerequisite lands.
+- [ ] §34 forbidden behaviors: no guessed restore, no broad cron restoration, no DirectAdmin custombuild rewrite, no iptables re-population, no fallback, no service ops beyond the three named units, no nftban flush.
+- [ ] §35.1 unit tests: every A.1–A.7 has happy / precondition-false / idempotency / no-out-of-target coverage.
+- [ ] §35.2 integration tests: 5 scenarios (all-evidence, partial-evidence, ambiguous-binary, SSH-unreachable, verify-fail).
+- [ ] §35.3 §28 evidence: lab2 + lab4 runs captured, exec-trace audited, final-state verified.
+- [ ] §35.4 evidence is in-tree (commit message or evidence file) before merge.
+- [ ] No expansion to non-CSF firewalls. ufw/firewalld/iptables remain typed-unsupported.
+- [ ] No expansion to non-DirectAdmin panels.
+- [ ] §19.2 layer 4 verified: `main.go:132` writeHistory gate untouched.
+
+---
+
 ## Amendment history
 
 - **2026-04-20 v1 (seed)** — first committed seed. Lattice v2 + three locked corrections:
@@ -642,3 +835,5 @@ Evidence plan is code-phase work; this section names the hosts only.
   Neither edit changes lattice behavior (§5 precedence already produces the correct outcome).
 
 - **2026-04-27 v2 (PR-25 contract append)** — appends Part II (§§16–29: PR-25 execution contract). Faithful normalization of the locked Q1–Q5 design decisions (recorded 2026-04-20 during PR-24 freeze Day 0) following the locked "no expansion beyond Q1–Q5" rule. Sections §1–§15 are untouched. Verified live-code anchors at `internal/installer/uninstall/prior.go:278-284` (knownFirewallType set), `cmd/nftban-installer/main.go:132` (writeHistory gate), `internal/installer/state/machine.go:149-155` (existing exit-code constants). Doc-only commit; no code changes in this PR. Code phase opens in a separate PR after this one merges.
+
+- **2026-04-28 v3 (Amendment 1: CSF restore mutation authorization)** — appends Part III (§§30–36). Authority gap discovered during PR-25 commit 4B-3 inspection: install-time `switchop.DisableConflicts` performs persistent, file-level mutations (service mask, binary rename, cron removal) that cannot be reversed under the §§17–29 forbidden-behaviors list. This amendment authorizes a narrow set of CSF-specific inverse-of-install mutations (A.1–A.7) gated on prior-record / on-disk evidence, with extended §23 ordering (11 steps), evidence-precondition table, failure-mode safety-net retention table, CSF-specific forbidden behaviors, unit + integration test requirements, and §28 real-host evidence requirements (lab2 DEB / lab4 RPM, exec-trace clean of out-of-target processes). Amendment is **CSF-only**; ufw / firewalld / iptables remain typed-unsupported until separately amended. Sections §§16–29 are untouched. `main.go:132` writeHistory gate (§19.2 layer 4) untouched. Doc-only commit; no production code changes — 4B-3-csf code phase opens after this amendment is reviewed and merged.
