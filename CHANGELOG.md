@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.2 SF-1 health CLI fix (released-host case)
+
+Post-soak correctness fix derived directly from the PR-24 7-day passive soak. Side finding **SF-1** was logged on Day 6 (2026-04-26) on the released/no-tables host (lab4): `nftban health` printed a spurious `ERROR: Script failed` block on top of its own DOWN-status output.
+
+### Root cause
+
+The `nftban_health_cmd_truth` function correctly returns exit code 2 when the Go validator can't verify the kernel state on a released host (no nftban tables present). It also renders a clean DOWN status table before returning. However, three separate call sites under `set -Eeuo pipefail` did not protect the bare invocation from the ERR trap:
+
+- `cli/lib/nftban/cli/cmd_health.sh:140` — case branch in `nftban_cmd_health` calling `nftban_health_cmd_truth "$json_mode"`
+- `cli/lib/nftban/cli/cmd_health.sh:189` — second case branch (`json|--json` subcommand)
+- `cli/sbin/nftban:917` — main() dispatch invoking `"nftban_cmd_${func_cmd}" "$@"` followed by a `return $?` that never reached because the trap had already fired
+- `cli/sbin/nftban:1261` — top-level `main "$@"` where the script's set -e fires when main returns non-zero
+
+When the validator exited 2, each unprotected level fired the ERR trap (defined in `lib/strict.sh`) which printed `ERROR: Script failed` to stderr on top of the legitimate DOWN table — confusing operators and contradicting the in-table message.
+
+### Fix
+
+Added the `cmd || return $?` (or `|| exit $?` at top level) idiom at all 4 sites. The pattern was already documented inside `nftban_health_cmd_truth` itself (lines 413-421) for the same reason on the inner validator call. The exit code semantics are preserved: a released host now exits 2 cleanly, matching the rendered `DOWN` status, with no spurious trap output.
+
+### Verification
+
+Local bash simulation reproduces the broken behaviour with the old pattern (TRAP-FIRED printed) and confirms the new pattern propagates exit 2 with no trap output.
+
+### Out of scope for 1.100.2 (per locked instruction)
+
+- Lifecycle execution surfaces remain untouched (`internal/installer/restore/*`, `internal/installer/state/file.go`, `cmd/nftban-installer/uninstall_apply.go`, etc.)
+- SF-2 (stale `FAILURE_REASON` retained in state file after `COMMITTED`) — separate cleanup
+- Repo hygiene Phase A — separate (1.100.3+)
+- Lifecycle completion lane (PR-25..PR-30) — explicitly **OPEN**
+
+---
+
 ## [Unreleased] - v1.100.1b.D GOTH docs/repo cleanup (closes the removal track)
 
 Final phase of the GOTH/UI removal sequence (A → B → C1 → C2 → **D**). Cleans up the runtime-touching code paths and JSON registries that referenced the retired Web GUI surface, plus obsolete CI workflow steps that no longer have any consumer.

@@ -137,7 +137,13 @@ nftban_cmd_health() {
             # v1.83: Default is Go-backed protection truth (4-axis table).
             # This is the primary operator health surface — fast, read-only,
             # deterministic. No side effects, no environment scanning.
-            nftban_health_cmd_truth "$json_mode"
+            #
+            # SF-1 (v1.100.2): the truth path returns 2 on a released/no-tables
+            # host (validator exits 2, function returns 2 after rendering a
+            # DOWN table). The `|| return $?` idiom keeps that exit code as
+            # the dispatcher's exit while suppressing the ERR trap that would
+            # otherwise print "ERROR: Script failed" on top of the table.
+            nftban_health_cmd_truth "$json_mode" || return $?
             ;;
 
         # =================================================================
@@ -186,7 +192,8 @@ nftban_cmd_health() {
         json|--json)
             # v1.84: "nftban health json" outputs Go validator truth JSON.
             # For diagnostics JSON, use: nftban health diagnostics --json
-            nftban_health_cmd_truth "true"
+            # SF-1 (v1.100.2): see check/truth/axes branch above.
+            nftban_health_cmd_truth "true" || return $?
             ;;
 
         # =================================================================

@@ -914,8 +914,13 @@ main() {
         # Some modules define nftban_cmd_X, others just use case statements
         if declare -f "nftban_cmd_${func_cmd}" >/dev/null 2>&1; then
             shift
-            "nftban_cmd_${func_cmd}" "$@"
-            return $?
+            # SF-1 (v1.100.2): use `|| return $?` so a legitimate non-zero
+            # exit from a command module (e.g. `nftban health` returning 2
+            # for DOWN on a released host) is propagated cleanly to the
+            # caller instead of triggering the ERR trap, which would print
+            # "ERROR: Script failed" on top of the command's own output.
+            "nftban_cmd_${func_cmd}" "$@" || return $?
+            return 0
         else
             # Module handles args directly (like cmd_whitelist_system.sh)
             return 0
@@ -1253,4 +1258,8 @@ main() {
 }
 
 # Execute
-main "$@"
+# SF-1 (v1.100.2): `|| exit $?` so a legitimate non-zero exit from a
+# command (e.g. `nftban health` returning 2 for DOWN on a released
+# host) propagates as the script's exit code without triggering the
+# ERR trap that would print "ERROR: Script failed".
+main "$@" || exit $?
