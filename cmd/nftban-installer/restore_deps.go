@@ -52,10 +52,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/restore"
+	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
 
@@ -238,24 +241,170 @@ func (p *productionPreflightDep) PreflightTarget(_ context.Context, firewallType
 	return true, nil
 }
 
-// productionSafetyNetDep implements restore.SafetyNetDep.
+// productionSafetyNetDep implements restore.SafetyNetDep with the
+// emergency-SSH allow rule from internal/installer/switchop. The
+// rule is the SAME safety net used by the install transition path:
+//
+//   - Dedicated `inet` table named "nftban_install_emergency" (covers
+//     IPv4 AND IPv6 in a single table — explicit dual-stack support).
+//   - Single chain `input` with hook input, priority -1 (evaluated
+//     before nftban chains at priority 0).
+//   - Single rule `tcp dport <ssh_port> accept`.
+//   - Policy `accept` (fail-open — safety net, not security boundary).
+//
+// SSH port is determined via detect.SSHPort, which uses the §38
+// approved priority chain (ss listener → sshd_config → state file →
+// nftban.conf.local). If no source yields a port, Insert refuses with
+// ErrSafetyNetSSHPortUnknown — there is NO fallback to port 22 or
+// any other hardcoded default.
+//
+// Per PR-25 contract §23.2 / §23.5 / §21.3:
+//
+//   - Insert mutates kernel ONLY for the emergency-SSH allow rule.
+//   - Remove deletes ONLY the emergency table (which contains only
+//     the safety-net rule). nftban / nftban6 production tables are
+//     untouched in both Insert and Remove.
+//   - Insert is idempotent: a stale emergency table from a prior
+//     run is deleted-then-recreated. Production tables are not
+//     consulted.
+//   - No service start/stop/enable/disable/mask.
+//   - No file writes outside /tmp/.nftban-emergency-ssh.nft (used by
+//     switchop and removed via defer in the same call).
+//
+// Verified by behavior tests using MockExecutor.
 type productionSafetyNetDep struct {
-	exec executor.Executor //nolint:unused
-	log  *logging.Logger   //nolint:unused
+	exec executor.Executor
+	log  *logging.Logger
+
+	// sshPortFn returns the SSH port to protect with the safety net.
+	// In production, set by newProductionRestoreDeps to a closure that
+	// calls detect.SSHPort(exec, log). Tests inject a fixed-port
+	// closure to avoid mocking the full detect chain.
+	//
+	// If sshPortFn is nil, InsertEmergencySSH refuses with
+	// ErrSafetyNetSSHPortUnknown.
+	sshPortFn func() (int, error)
 }
 
+// emergencySafetyNetTable mirrors the unexported emergencyTable
+// const in internal/installer/switchop/sshguard.go:30. Documented
+// here so a future change to switchop's name forces matching update
+// (catch via TestSafetyNetDep_4B2_Insert_TableNameMatchesSwitchop).
+const emergencySafetyNetTable = "nftban_install_emergency"
+
+// Sentinel errors specific to the production safety-net dep.
+var (
+	// ErrSafetyNetNilExecutorProd is returned when the dep was
+	// constructed without an executor.
+	ErrSafetyNetNilExecutorProd = errors.New("restore safety-net: executor is nil")
+
+	// ErrSafetyNetSSHPortUnknown is returned when sshPortFn returns
+	// an error or is nil. PR-25 contract: NO fallback to a hardcoded
+	// SSH port. If the source-of-truth chain cannot determine the
+	// port, the safety net refuses to mutate the kernel.
+	ErrSafetyNetSSHPortUnknown = errors.New("restore safety-net: SSH port could not be determined; no fallback")
+
+	// ErrSafetyNetInvalidSSHPort is returned when the resolved port
+	// is outside the legal TCP port range.
+	ErrSafetyNetInvalidSSHPort = errors.New("restore safety-net: SSH port outside legal TCP range (1-65535)")
+
+	// ErrSafetyNetSwitchopFailed wraps a non-nil error returned by
+	// switchop.InjectEmergencySSH.
+	ErrSafetyNetSwitchopFailed = errors.New("restore safety-net: switchop.InjectEmergencySSH failed")
+
+	// ErrSafetyNetRemoveCallFailed is returned when the post-removal
+	// verify check finds the emergency table still present.
+	ErrSafetyNetRemoveCallFailed = errors.New("restore safety-net: emergency table still present after removal")
+)
+
+// InsertEmergencySSH inserts the emergency-SSH allow rule into the
+// kernel. Calls switchop.InjectEmergencySSH after resolving the SSH
+// port via sshPortFn.
+//
+// Mutations performed (all via switchop.InjectEmergencySSH):
+//
+//   - If a stale emergency-table is present, the emergency table
+//     itself (and ONLY that table) is removed (idempotent reset).
+//     No production tables are touched.
+//   - The emergency-rule config is written via the executor's
+//     atomic-file API to a /tmp path.
+//   - The kernel loads the rule via the executor's nft loader.
+//   - The /tmp file is removed via defer.
+//
+// Mutations NOT performed:
+//
+//   - No edit to nftban / nftban6 production tables.
+//   - No service start/stop/enable/disable/mask.
+//   - No edit to blacklist / whitelist sets.
+//   - No DaemonReload.
+//   - No file writes outside /tmp/.nftban-emergency-ssh.nft.
 func (s *productionSafetyNetDep) InsertEmergencySSH(_ context.Context) error {
-	if s.log != nil {
-		s.log.Info("restore exec stub: InsertEmergencySSH refusing — commit 4 stub")
+	if s.exec == nil {
+		return ErrSafetyNetNilExecutorProd
 	}
-	return ErrRestoreExecutionUnavailable
+	if s.sshPortFn == nil {
+		return ErrSafetyNetSSHPortUnknown
+	}
+
+	sshPort, err := s.sshPortFn()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSafetyNetSSHPortUnknown, err)
+	}
+	if sshPort < 1 || sshPort > 65535 {
+		return fmt.Errorf("%w: got %d", ErrSafetyNetInvalidSSHPort, sshPort)
+	}
+
+	if s.log != nil {
+		s.log.Info("restore safety-net: injecting emergency SSH allow rule (port %d)", sshPort)
+	}
+
+	if err := switchop.InjectEmergencySSH(s.exec, sshPort, s.log); err != nil {
+		return fmt.Errorf("%w: %v", ErrSafetyNetSwitchopFailed, err)
+	}
+	return nil
 }
 
+// RemoveEmergencySSH removes the emergency-SSH allow rule by deleting
+// the entire emergency table (which contains nothing else). Idempotent:
+// no-op if the table is already gone.
+//
+// Mutations performed:
+//
+//   - The emergency-table itself (and ONLY that table) is deleted
+//     via switchop.RemoveEmergencySSH if present.
+//
+// Mutations NOT performed:
+//
+//   - No touch to nftban / nftban6 / any other table.
+//   - No service operations.
+//   - No file operations.
+//
+// Returns ErrSafetyNetRemoveCallFailed if the post-removal
+// NftTableExists check still reports the table present (i.e. the
+// underlying delete did not take effect).
 func (s *productionSafetyNetDep) RemoveEmergencySSH(_ context.Context) error {
-	if s.log != nil {
-		s.log.Info("restore exec stub: RemoveEmergencySSH refusing — commit 4 stub")
+	if s.exec == nil {
+		return ErrSafetyNetNilExecutorProd
 	}
-	return ErrRestoreExecutionUnavailable
+
+	// Idempotent: if not present, nothing to do.
+	if !s.exec.NftTableExists("inet", emergencySafetyNetTable) {
+		if s.log != nil {
+			s.log.Info("restore safety-net: emergency table absent; nothing to remove")
+		}
+		return nil
+	}
+
+	switchop.RemoveEmergencySSH(s.exec, s.log)
+
+	// Verify-after-removal: switchop.RemoveEmergencySSH is fire-and-
+	// forget (logs warnings, doesn't return error). We re-check that
+	// the table is actually gone so the dep returns a typed error if
+	// removal silently failed.
+	if s.exec.NftTableExists("inet", emergencySafetyNetTable) {
+		return ErrSafetyNetRemoveCallFailed
+	}
+	return nil
 }
 
 // productionMutationDep implements restore.MutationDep.
@@ -303,13 +452,30 @@ func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (b
 // tests to swap in fakes via the package-level newRestoreDeps var.
 // =============================================================================
 
-// newProductionRestoreDeps returns the four-tuple of production stub
-// deps wired around the given executor + logger. Commit 4's dispatcher
-// uses this. Tests swap newRestoreDeps (below) to inject fakes.
+// newProductionRestoreDeps returns the four-tuple of production deps
+// wired around the given executor + logger.
+//
+// Commit progression:
+//   - 4B-1: Preflight dep is real (read-only presence check)
+//   - 4B-2: SafetyNet dep is real (emergency-SSH allow via switchop)
+//   - 4B-3: Mutation dep — STILL STUB, lands in 4B-3
+//   - 4B-4: InlineVerify dep — STILL STUB, lands in 4B-4
+//
+// Tests swap the package-level newRestoreDeps var to inject fakes.
 func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) restore.ExecuteDeps {
 	return restore.ExecuteDeps{
-		Preflight:    &productionPreflightDep{exec: exec, log: log},
-		SafetyNet:    &productionSafetyNetDep{exec: exec, log: log},
+		Preflight: &productionPreflightDep{exec: exec, log: log},
+		SafetyNet: &productionSafetyNetDep{
+			exec: exec,
+			log:  log,
+			sshPortFn: func() (int, error) {
+				// detect.SSHPort is the §38 source-of-truth chain.
+				// Returns error if no source yields a port; we
+				// surface that error so the safety-net refuses to
+				// mutate without a valid port.
+				return detect.SSHPort(exec, log)
+			},
+		},
 		Mutation:     &productionMutationDep{exec: exec, log: log},
 		InlineVerify: &productionInlineVerifyDep{exec: exec, log: log},
 	}

@@ -110,12 +110,17 @@ func procPanelNativeUnmappedFixture() (restore.DecisionResult, restore.DecisionI
 // stubExecutorForPreflightFirewall builds a MockExecutor with the
 // canonical binary + a canonical unit file present for the given
 // firewallType, so the (now real) productionPreflightDep returns
-// ok=true and Execute proceeds to the next (still-stub) step.
+// ok=true and Execute proceeds.
 //
-// Used by stub-deps integration tests after 4B-1 made preflight real.
-// Without this, the stub-deps tests would refuse at preflight with
-// ErrPreflight* sentinels instead of reaching the safety-net /
-// mutation stubs that return ErrRestoreExecutionUnavailable.
+// 4B-2 update: also seeds a minimal /etc/ssh/sshd_config with
+// "Port 22" so the (now real) productionSafetyNetDep's SSH-port
+// detection succeeds via the sshd_config source. Without this,
+// safety-net Insert would refuse with ErrSafetyNetSSHPortUnknown
+// before reaching the still-stub mutation step.
+//
+// After 4B-2, dispatcher stub-tests reach Stage=mutate (still stub)
+// and refuse with ErrRestoreExecutionUnavailable from the mutation
+// dep. After 4B-3, they will reach Stage=verify, etc.
 func stubExecutorForPreflightFirewall(fwt string) executor.Executor {
 	mock := executor.NewMockExecutor()
 	switch fwt {
@@ -132,6 +137,9 @@ func stubExecutorForPreflightFirewall(fwt string) executor.Executor {
 		mock.ExistingCommands["csf"] = true
 		mock.Files["/etc/systemd/system/csf.service"] = []byte{}
 	}
+	// 4B-2: sshd_config so detect.SSHPort can resolve via Source 2.
+	// (Source 1 'ss' returns no-listener output by default in mock.)
+	mock.Files["/etc/ssh/sshd_config"] = []byte("Port 22\n")
 	return mock
 }
 

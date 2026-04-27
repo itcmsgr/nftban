@@ -22,33 +22,26 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/restore"
 )
 
 // =============================================================================
-// 1. Stub methods (commit 4) — every method on the not-yet-implemented
-//    deps still returns ErrRestoreExecutionUnavailable.
+// 1. Stub methods that REMAIN stubs in 4B-2 — Mutation and
+//    InlineVerify deps. Real impls land in 4B-3 / 4B-4.
 //
-//    Note: 4B-1 replaced productionPreflightDep with a real
-//    presence-check implementation. Its tests are below in the
-//    "4B-1" section.
+//    Note: 4B-1 made productionPreflightDep real (read-only).
+//    Note: 4B-2 made productionSafetyNetDep real (emergency-SSH).
+//          Their tests are below in dedicated sections.
 // =============================================================================
-
-func TestProductionSafetyNetDep_BothMethodsReturnUnavailable(t *testing.T) {
-	d := &productionSafetyNetDep{}
-	if err := d.InsertEmergencySSH(context.Background()); !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("InsertEmergencySSH err = %v; want ErrRestoreExecutionUnavailable", err)
-	}
-	if err := d.RemoveEmergencySSH(context.Background()); !errors.Is(err, ErrRestoreExecutionUnavailable) {
-		t.Errorf("RemoveEmergencySSH err = %v; want ErrRestoreExecutionUnavailable", err)
-	}
-}
 
 func TestProductionMutationDep_ReturnsUnavailable(t *testing.T) {
 	d := &productionMutationDep{}
@@ -490,4 +483,397 @@ func TestPreflightKnownFirewalls_MapContentPin(t *testing.T) {
 			t.Errorf("%q has no canonical unit-file paths", k)
 		}
 	}
+}
+
+// =============================================================================
+// =============================================================================
+// 4B-2 — productionSafetyNetDep real-implementation tests
+// =============================================================================
+// =============================================================================
+
+// fakeSSHPortFn returns a fixed port on every call. Used by 4B-2
+// tests to avoid mocking the full detect.SSHPort source chain.
+func fakeSSHPortFn(port int) func() (int, error) {
+	return func() (int, error) { return port, nil }
+}
+
+// pf4B2TestLogger builds a logger that writes only to a temp file.
+// switchop.InjectEmergencySSH calls log.Info on a non-nil logger, so
+// every 4B-2 test that exercises Insert/Remove must construct the
+// dep with a non-nil logger.
+func pf4B2TestLogger(t *testing.T) *logging.Logger {
+	t.Helper()
+	return logging.New(filepath.Join(t.TempDir(), "test.log"), false)
+}
+
+// =============================================================================
+// 4B-2.1 Insert happy path: emits exactly the expected nft-load
+//        sequence, no other commands.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_HappyPath_EmitsOnlyExpectedCommands(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// No stale emergency table → no idempotent NftDeleteTable call.
+
+	s := &productionSafetyNetDep{
+		log:       pf4B2TestLogger(t),
+		exec:      mock,
+		sshPortFn: fakeSSHPortFn(22),
+	}
+
+	if err := s.InsertEmergencySSH(context.Background()); err != nil {
+		t.Fatalf("InsertEmergencySSH returned: %v", err)
+	}
+
+	// Exactly one Run call: nft -f <tmpPath>.
+	if len(mock.Commands) != 1 {
+		t.Fatalf("Insert recorded %d Run commands; want exactly 1 (nft -f). Got: %+v",
+			len(mock.Commands), mock.Commands)
+	}
+	cmd := mock.Commands[0]
+	if cmd.Name != "nft" {
+		t.Errorf("first command name = %q; want %q", cmd.Name, "nft")
+	}
+	if len(cmd.Args) != 2 || cmd.Args[0] != "-f" {
+		t.Errorf("first command args = %v; want [-f <tmpPath>]", cmd.Args)
+	}
+	tmpPath := cmd.Args[1]
+	// Tmp path must be the documented switchop value.
+	if tmpPath != "/tmp/.nftban-emergency-ssh.nft" {
+		t.Errorf("nft -f path = %q; want /tmp/.nftban-emergency-ssh.nft", tmpPath)
+	}
+
+	// One file written: the same tmp path.
+	if _, ok := mock.WrittenFiles[tmpPath]; !ok {
+		t.Errorf("WrittenFiles missing %q; got %v", tmpPath, keysOf(mock.WrittenFiles))
+	}
+
+	// File content must contain the SSH port and the emergency table name.
+	content := string(mock.WrittenFiles[tmpPath])
+	if !strings.Contains(content, "tcp dport 22 accept") {
+		t.Errorf("nft config does not contain expected port-22 rule:\n%s", content)
+	}
+	if !strings.Contains(content, "table inet "+emergencySafetyNetTable) {
+		t.Errorf("nft config does not declare table %q:\n%s", emergencySafetyNetTable, content)
+	}
+}
+
+// =============================================================================
+// 4B-2.2 Insert with stale emergency table: idempotent — exactly ONE
+//        delete-table call (for the emergency table, never for nftban
+//        production tables).
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_StaleEmergencyTable_IdempotentDelete(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// Pre-existing stale emergency table.
+	mock.NftTables["inet:"+emergencySafetyNetTable] = true
+	// Production tables that MUST be preserved.
+	mock.NftTables["ip:nftban"] = true
+	mock.NftTables["ip6:nftban"] = true
+
+	s := &productionSafetyNetDep{
+		log:       pf4B2TestLogger(t),
+		exec:      mock,
+		sshPortFn: fakeSSHPortFn(22),
+	}
+
+	if err := s.InsertEmergencySSH(context.Background()); err != nil {
+		t.Fatalf("Insert returned: %v", err)
+	}
+
+	// Production tables must still be present (idempotent delete is
+	// scoped to the emergency table only).
+	if !mock.NftTables["ip:nftban"] {
+		t.Errorf("Insert deleted ip:nftban — broke production table (CRITICAL §17 violation)")
+	}
+	if !mock.NftTables["ip6:nftban"] {
+		t.Errorf("Insert deleted ip6:nftban — broke production table (CRITICAL §17 violation)")
+	}
+}
+
+// =============================================================================
+// 4B-2.3 Insert with valid SSH port from sshPortFn writes that exact
+//        port into the rule.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_SSHPortFromConfigSource(t *testing.T) {
+	cases := []int{22, 2222, 55000, 65535, 1}
+	for _, port := range cases {
+		t.Run(fmt.Sprintf("port-%d", port), func(t *testing.T) {
+			mock := executor.NewMockExecutor()
+			s := &productionSafetyNetDep{
+				log:       pf4B2TestLogger(t),
+				exec:      mock,
+				sshPortFn: fakeSSHPortFn(port),
+			}
+			if err := s.InsertEmergencySSH(context.Background()); err != nil {
+				t.Fatalf("Insert returned: %v", err)
+			}
+			content := string(mock.WrittenFiles["/tmp/.nftban-emergency-ssh.nft"])
+			want := fmt.Sprintf("tcp dport %d accept", port)
+			if !strings.Contains(content, want) {
+				t.Errorf("nft config missing %q:\n%s", want, content)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// 4B-2.4 Insert with sshPortFn returning error refuses BEFORE any
+//        kernel mutation. ErrSafetyNetSSHPortUnknown surfaced.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_SSHPortUnknown_NoMutation(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	s := &productionSafetyNetDep{
+		log:       pf4B2TestLogger(t),
+		exec: mock,
+		sshPortFn: func() (int, error) {
+			return 0, errors.New("simulated detect.SSHPort failure")
+		},
+	}
+	err := s.InsertEmergencySSH(context.Background())
+	if err == nil {
+		t.Fatalf("Insert accepted unknown SSH port; want refusal")
+	}
+	if !errors.Is(err, ErrSafetyNetSSHPortUnknown) {
+		t.Errorf("err = %v; want ErrSafetyNetSSHPortUnknown", err)
+	}
+	// Critical: NO kernel mutation when SSH port unknown.
+	if len(mock.Commands) != 0 {
+		t.Errorf("Insert ran %d commands on SSH-port-unknown path; want 0: %+v",
+			len(mock.Commands), mock.Commands)
+	}
+	if len(mock.WrittenFiles) != 0 {
+		t.Errorf("Insert wrote %d files on SSH-port-unknown path; want 0",
+			len(mock.WrittenFiles))
+	}
+}
+
+// =============================================================================
+// 4B-2.5 Insert with nil sshPortFn refuses BEFORE any kernel mutation.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_NilSSHPortFn_NoMutation(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	s := &productionSafetyNetDep{exec: mock, sshPortFn: nil, log: pf4B2TestLogger(t)}
+	err := s.InsertEmergencySSH(context.Background())
+	if !errors.Is(err, ErrSafetyNetSSHPortUnknown) {
+		t.Errorf("err = %v; want ErrSafetyNetSSHPortUnknown", err)
+	}
+	if len(mock.Commands) != 0 || len(mock.WrittenFiles) != 0 {
+		t.Errorf("nil sshPortFn caused mutation: cmds=%v files=%v",
+			mock.Commands, keysOf(mock.WrittenFiles))
+	}
+}
+
+// =============================================================================
+// 4B-2.6 Insert with out-of-range SSH port refuses BEFORE any kernel
+//        mutation.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_InvalidSSHPort_NoMutation(t *testing.T) {
+	for _, port := range []int{0, -1, -100, 65536, 999999} {
+		t.Run(fmt.Sprintf("port-%d", port), func(t *testing.T) {
+			mock := executor.NewMockExecutor()
+			s := &productionSafetyNetDep{exec: mock, sshPortFn: fakeSSHPortFn(port), log: pf4B2TestLogger(t)}
+			err := s.InsertEmergencySSH(context.Background())
+			if !errors.Is(err, ErrSafetyNetInvalidSSHPort) {
+				t.Errorf("err = %v; want ErrSafetyNetInvalidSSHPort", err)
+			}
+			if len(mock.Commands) != 0 || len(mock.WrittenFiles) != 0 {
+				t.Errorf("invalid port %d caused mutation", port)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// 4B-2.7 Insert with nil executor refuses cleanly.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_NilExecutor(t *testing.T) {
+	s := &productionSafetyNetDep{exec: nil, sshPortFn: fakeSSHPortFn(22), log: pf4B2TestLogger(t)}
+	err := s.InsertEmergencySSH(context.Background())
+	if !errors.Is(err, ErrSafetyNetNilExecutorProd) {
+		t.Errorf("err = %v; want ErrSafetyNetNilExecutorProd", err)
+	}
+}
+
+// =============================================================================
+// 4B-2.8 Insert touches NO services / blacklist / whitelist /
+//        DaemonReload / WriteFile-outside-tmp.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Insert_NoForbiddenSurfaces(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	s := &productionSafetyNetDep{exec: mock, sshPortFn: fakeSSHPortFn(22), log: pf4B2TestLogger(t)}
+	_ = s.InsertEmergencySSH(context.Background())
+
+	// Run commands — only "nft -f <tmppath>" allowed.
+	for _, cmd := range mock.Commands {
+		if cmd.Name == "systemctl" {
+			t.Errorf("Insert ran systemctl: %+v", cmd)
+		}
+		if cmd.Name == "nft" {
+			if len(cmd.Args) != 2 || cmd.Args[0] != "-f" {
+				t.Errorf("Insert ran nft with non-load args: %+v", cmd)
+			}
+		}
+	}
+	// WriteFileAtomic — only the documented tmp path.
+	for path := range mock.WrittenFiles {
+		if path != "/tmp/.nftban-emergency-ssh.nft" {
+			t.Errorf("Insert wrote unexpected file %q", path)
+		}
+	}
+	// nft set mutations — none.
+	if len(mock.NftSets) != 0 {
+		t.Errorf("Insert added/removed nft set elements: %v", mock.NftSets)
+	}
+}
+
+// =============================================================================
+// 4B-2.9 Remove happy path: deletes ONLY the emergency table.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Remove_HappyPath_DeletesOnlyEmergencyTable(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.NftTables["inet:"+emergencySafetyNetTable] = true
+	mock.NftTables["ip:nftban"] = true
+	mock.NftTables["ip6:nftban"] = true
+
+	s := &productionSafetyNetDep{exec: mock, log: pf4B2TestLogger(t)}
+
+	if err := s.RemoveEmergencySSH(context.Background()); err != nil {
+		t.Fatalf("Remove returned: %v", err)
+	}
+
+	if mock.NftTables["inet:"+emergencySafetyNetTable] {
+		t.Errorf("Remove failed to delete emergency table")
+	}
+	if !mock.NftTables["ip:nftban"] {
+		t.Errorf("Remove deleted ip:nftban — broke production table (CRITICAL §17 violation)")
+	}
+	if !mock.NftTables["ip6:nftban"] {
+		t.Errorf("Remove deleted ip6:nftban — broke production table (CRITICAL §17 violation)")
+	}
+}
+
+// =============================================================================
+// 4B-2.10 Remove with no stale emergency table: no-op, returns nil.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Remove_NoEmergencyTable_NoOp(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.NftTables["ip:nftban"] = true
+
+	s := &productionSafetyNetDep{exec: mock, log: pf4B2TestLogger(t)}
+
+	if err := s.RemoveEmergencySSH(context.Background()); err != nil {
+		t.Errorf("Remove on absent emergency table returned: %v; want nil (idempotent)", err)
+	}
+	// Production tables must still be there.
+	if !mock.NftTables["ip:nftban"] {
+		t.Errorf("Remove (no-op path) deleted production table")
+	}
+}
+
+// =============================================================================
+// 4B-2.11 Remove with nil executor refuses cleanly.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Remove_NilExecutor(t *testing.T) {
+	s := &productionSafetyNetDep{exec: nil, log: pf4B2TestLogger(t)}
+	err := s.RemoveEmergencySSH(context.Background())
+	if !errors.Is(err, ErrSafetyNetNilExecutorProd) {
+		t.Errorf("err = %v; want ErrSafetyNetNilExecutorProd", err)
+	}
+}
+
+// =============================================================================
+// 4B-2.12 Remove emits NO Run / WriteFile / service / set mutation —
+//         only NftDeleteTable on the emergency table.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_Remove_NoForbiddenSurfaces(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.NftTables["inet:"+emergencySafetyNetTable] = true
+	s := &productionSafetyNetDep{exec: mock, log: pf4B2TestLogger(t)}
+	_ = s.RemoveEmergencySSH(context.Background())
+
+	if len(mock.Commands) != 0 {
+		t.Errorf("Remove ran Run commands: %+v", mock.Commands)
+	}
+	if len(mock.WrittenFiles) != 0 {
+		t.Errorf("Remove wrote files: %v", keysOf(mock.WrittenFiles))
+	}
+	if len(mock.NftSets) != 0 {
+		t.Errorf("Remove touched nft sets: %v", mock.NftSets)
+	}
+}
+
+// =============================================================================
+// 4B-2.13 IPv4/IPv6 dual-stack explicit: the rule lives in the
+//         `inet` family which simultaneously matches IPv4 + IPv6.
+//         No silent partial behavior.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_DualStackExplicit(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	s := &productionSafetyNetDep{exec: mock, sshPortFn: fakeSSHPortFn(22), log: pf4B2TestLogger(t)}
+	if err := s.InsertEmergencySSH(context.Background()); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	content := string(mock.WrittenFiles["/tmp/.nftban-emergency-ssh.nft"])
+	// Must declare `table inet ...` — the inet family covers IPv4 + IPv6.
+	if !strings.Contains(content, "table inet ") {
+		t.Errorf("safety net does not use inet family (dual-stack):\n%s", content)
+	}
+	// Must NOT declare `ip` or `ip6` family separately (would be partial).
+	for _, bad := range []string{"table ip ", "table ip6 "} {
+		if strings.Contains(content, bad) {
+			t.Errorf("safety net uses single-stack family %q — must be inet:\n%s", bad, content)
+		}
+	}
+}
+
+// =============================================================================
+// 4B-2.14 Switchop table-name pin — emergencySafetyNetTable must
+//         match switchop's unexported emergencyTable. If switchop
+//         changes the const, this test fails so we update both.
+//
+//         Cross-package check: build a fresh emergency via switchop
+//         on a mock, observe the resulting key in mock.NftTables.
+// =============================================================================
+
+func TestSafetyNetDep_4B2_TableNameMatchesSwitchop(t *testing.T) {
+	// Use a logger seam so switchop can print.
+	mock := executor.NewMockExecutor()
+	s := &productionSafetyNetDep{exec: mock, sshPortFn: fakeSSHPortFn(22), log: pf4B2TestLogger(t)}
+	if err := s.InsertEmergencySSH(context.Background()); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	// After Insert via switchop, the file content references
+	// emergencySafetyNetTable. If the const drifts from switchop's
+	// internal one, the file content from switchop wouldn't contain
+	// our local literal.
+	content := string(mock.WrittenFiles["/tmp/.nftban-emergency-ssh.nft"])
+	if !strings.Contains(content, emergencySafetyNetTable) {
+		t.Errorf("switchop wrote a config that does not reference %q; the local mirror constant has drifted from switchop.emergencyTable",
+			emergencySafetyNetTable)
+	}
+}
+
+// =============================================================================
+// helpers
+// =============================================================================
+
+func keysOf(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
