@@ -74,21 +74,168 @@ var ErrRestoreExecutionUnavailable = errors.New("restore: execution dependency n
 // Production*Dep stubs — every method returns ErrRestoreExecutionUnavailable.
 // =============================================================================
 
-// productionPreflightDep implements restore.PreflightDep.
+// productionPreflightDep implements restore.PreflightDep with a
+// read-only verification of the resolved firewall's runtime presence.
 //
-// Real implementation will check that the resolved firewall package
-// is installed and the corresponding service unit exists. Commit 4
-// stub refuses every call.
+// Per PR-25 contract §23.1: preflight refusal is non-mutating. This
+// implementation calls only `CommandExists(binary)` and
+// `FileExists(unit-path)` on the executor. It does NOT call
+// `ServiceActive`, `ServiceStart`, `Run`, or any nft / systemctl
+// mutation primitive. It does NOT consult any state outside the
+// firewallType argument.
+//
+// Verifies, for the resolved firewallType:
+//   - At least one canonical binary is present in PATH.
+//   - At least one canonical service unit file is present at one of
+//     the standard systemd-unit locations (/usr/lib/systemd/system,
+//     /lib/systemd/system, /etc/systemd/system).
+//
+// The "at least one of N canonical paths" check is distro-aware
+// lookup, NOT fallback: the unit-file location for the SAME
+// firewall varies by distro (e.g. RHEL ships in /usr/lib/, Debian
+// in /lib/). Per §20.3 this is not a fallback to a different
+// firewall — it's the canonical paths for the requested firewall.
 type productionPreflightDep struct {
-	exec executor.Executor //nolint:unused // commit 4B will use this
-	log  *logging.Logger   //nolint:unused // commit 4B will use this
+	exec executor.Executor
+	log  *logging.Logger
 }
 
+// preflightFirewallPresence describes the canonical binary and
+// service-unit search paths for each known firewallType (the §18.2
+// set: ufw / firewalld / iptables / csf).
+//
+// Adding a firewall to this map requires repo-backed authority and
+// matching installer code in 4B-3 (mutation dep). Until 4B-3 lands,
+// preflight may approve targets that 4B-3's mutation cannot serve;
+// per the audit at the end of commit 4, that mismatch is acceptable
+// because mutation will refuse with its own typed error and the
+// safety net is already in place. Mismatch detection itself is a
+// 4B-3 / 4B-5 concern.
+type preflightFirewallPresence struct {
+	binaries  []string // OR-list — at least one must be in PATH
+	unitFiles []string // OR-list — at least one path must exist
+}
+
+var preflightKnownFirewalls = map[string]preflightFirewallPresence{
+	"ufw": {
+		binaries: []string{"ufw"},
+		unitFiles: []string{
+			"/usr/lib/systemd/system/ufw.service",
+			"/lib/systemd/system/ufw.service",
+			"/etc/systemd/system/ufw.service",
+		},
+	},
+	"firewalld": {
+		// firewall-cmd is the universal CLI shipped with firewalld.
+		// The daemon binary is "firewalld" but operators interact
+		// via firewall-cmd; either being present is acceptable.
+		binaries: []string{"firewall-cmd", "firewalld"},
+		unitFiles: []string{
+			"/usr/lib/systemd/system/firewalld.service",
+			"/lib/systemd/system/firewalld.service",
+			"/etc/systemd/system/firewalld.service",
+		},
+	},
+	"iptables": {
+		binaries: []string{"iptables"},
+		// Distro-aware: RHEL/Fedora ship iptables.service;
+		// Debian/Ubuntu ship netfilter-persistent.service for
+		// rule persistence on top of iptables.
+		unitFiles: []string{
+			"/usr/lib/systemd/system/iptables.service",
+			"/lib/systemd/system/iptables.service",
+			"/lib/systemd/system/netfilter-persistent.service",
+			"/usr/lib/systemd/system/netfilter-persistent.service",
+			"/etc/systemd/system/iptables.service",
+			"/etc/systemd/system/netfilter-persistent.service",
+		},
+	},
+	"csf": {
+		binaries: []string{"csf"},
+		// CSF typically installs to /etc/systemd/system; some
+		// distro packagings ship to /usr/lib/. Both are valid.
+		unitFiles: []string{
+			"/etc/systemd/system/csf.service",
+			"/lib/systemd/system/csf.service",
+			"/usr/lib/systemd/system/csf.service",
+		},
+	},
+}
+
+// Sentinel errors returned by productionPreflightDep. Distinct from
+// ErrRestoreExecutionUnavailable so consumers can tell "the binary
+// isn't installed" apart from "the dep isn't implemented yet".
+var (
+	// ErrPreflightUnknownFirewall is returned when firewallType is
+	// not a member of preflightKnownFirewalls. The planner should
+	// have already validated firewallType against the §18.2 known
+	// set; reaching this branch indicates an upstream invariant
+	// violation. Defensive guard.
+	ErrPreflightUnknownFirewall = errors.New("restore preflight: firewallType is not in the known set")
+
+	// ErrPreflightBinaryMissing is returned when none of the
+	// canonical binary names for the firewall are present in PATH.
+	ErrPreflightBinaryMissing = errors.New("restore preflight: no canonical binary present in PATH")
+
+	// ErrPreflightUnitMissing is returned when none of the canonical
+	// service-unit file paths exist.
+	ErrPreflightUnitMissing = errors.New("restore preflight: no canonical systemd unit file present")
+
+	// ErrPreflightNilExecutor is returned when the dep was
+	// constructed without a usable executor. Defensive guard.
+	ErrPreflightNilExecutor = errors.New("restore preflight: executor is nil")
+)
+
 func (p *productionPreflightDep) PreflightTarget(_ context.Context, firewallType string) (bool, error) {
-	if p.log != nil {
-		p.log.Info("restore exec stub: PreflightTarget(%q) refusing — commit 4 stub", firewallType)
+	if p.exec == nil {
+		return false, ErrPreflightNilExecutor
 	}
-	return false, ErrRestoreExecutionUnavailable
+
+	presence, ok := preflightKnownFirewalls[firewallType]
+	if !ok {
+		if p.log != nil {
+			p.log.Info("restore preflight: refusing unknown firewallType=%q", firewallType)
+		}
+		return false, ErrPreflightUnknownFirewall
+	}
+
+	// Check binaries (OR-list — at least one must be in PATH).
+	var binaryFound string
+	for _, name := range presence.binaries {
+		if p.exec.CommandExists(name) {
+			binaryFound = name
+			break
+		}
+	}
+	if binaryFound == "" {
+		if p.log != nil {
+			p.log.Info("restore preflight: refusing firewallType=%q — no canonical binary in PATH (looked for %v)",
+				firewallType, presence.binaries)
+		}
+		return false, ErrPreflightBinaryMissing
+	}
+
+	// Check unit files (OR-list — at least one path must exist).
+	var unitFound string
+	for _, path := range presence.unitFiles {
+		if p.exec.FileExists(path) {
+			unitFound = path
+			break
+		}
+	}
+	if unitFound == "" {
+		if p.log != nil {
+			p.log.Info("restore preflight: refusing firewallType=%q — no canonical service unit (looked at %v)",
+				firewallType, presence.unitFiles)
+		}
+		return false, ErrPreflightUnitMissing
+	}
+
+	if p.log != nil {
+		p.log.Info("restore preflight: firewallType=%q present (binary=%s unit=%s)",
+			firewallType, binaryFound, unitFound)
+	}
+	return true, nil
 }
 
 // productionSafetyNetDep implements restore.SafetyNetDep.

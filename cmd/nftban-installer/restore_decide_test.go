@@ -107,6 +107,34 @@ func procPanelNativeUnmappedFixture() (restore.DecisionResult, restore.DecisionI
 	return dr, in, rec, detect.PanelCPanel
 }
 
+// stubExecutorForPreflightFirewall builds a MockExecutor with the
+// canonical binary + a canonical unit file present for the given
+// firewallType, so the (now real) productionPreflightDep returns
+// ok=true and Execute proceeds to the next (still-stub) step.
+//
+// Used by stub-deps integration tests after 4B-1 made preflight real.
+// Without this, the stub-deps tests would refuse at preflight with
+// ErrPreflight* sentinels instead of reaching the safety-net /
+// mutation stubs that return ErrRestoreExecutionUnavailable.
+func stubExecutorForPreflightFirewall(fwt string) executor.Executor {
+	mock := executor.NewMockExecutor()
+	switch fwt {
+	case "ufw":
+		mock.ExistingCommands["ufw"] = true
+		mock.Files["/usr/lib/systemd/system/ufw.service"] = []byte{}
+	case "firewalld":
+		mock.ExistingCommands["firewall-cmd"] = true
+		mock.Files["/usr/lib/systemd/system/firewalld.service"] = []byte{}
+	case "iptables":
+		mock.ExistingCommands["iptables"] = true
+		mock.Files["/usr/lib/systemd/system/iptables.service"] = []byte{}
+	case "csf":
+		mock.ExistingCommands["csf"] = true
+		mock.Files["/etc/systemd/system/csf.service"] = []byte{}
+	}
+	return mock
+}
+
 // =============================================================================
 // 1. Stub-deps path: PROCEED + RecordedPrior persists FailedExecution
 //    with ErrRestoreExecutionUnavailable in the chain.
@@ -115,20 +143,26 @@ func procPanelNativeUnmappedFixture() (restore.DecisionResult, restore.DecisionI
 func TestRunRestoreExecutionFromProceed_StubDeps_RecordedPrior_PersistsFailedExecution(t *testing.T) {
 	sf := newTestStateFile(t)
 	log := newTestLogger(t)
-	dr, in, rec, panel := procRecordedPriorFixture()
+	dr, in, rec, panel := procRecordedPriorFixture() // ufw target
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// 4B-1: preflight is now real. Provide a MockExecutor with the
+	// canonical ufw binary + unit file so preflight passes; the
+	// next step (safety-net insert, still a stub) refuses with
+	// ErrRestoreExecutionUnavailable.
+	exec := stubExecutorForPreflightFirewall("ufw")
 
-	// Stub preflight returns ErrRestoreExecutionUnavailable -> Execute
-	// terminates at Stage=preflight with StateRestoreFailedExecution
-	// (exit code 8 per §22).
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	// Real preflight passes -> stub safety-net insert refuses ->
+	// Execute terminates at Stage=insert with FailedExecution.
 	if sf.State != state.StateRestoreFailedExecution {
-		t.Errorf("State = %q; want StateRestoreFailedExecution (stub deps refuse at preflight)", sf.State)
+		t.Errorf("State = %q; want StateRestoreFailedExecution (stub safety-net refuses)", sf.State)
 	}
 	if exit != state.ExitRestoreFailedExecution {
 		t.Errorf("exit = %d; want %d", exit, state.ExitRestoreFailedExecution)
 	}
-	// FailureReason must surface the typed sentinel.
+	// FailureReason must surface the typed stub sentinel from the
+	// safety-net insert path.
 	if !strings.Contains(sf.FailureReason, ErrRestoreExecutionUnavailable.Error()) &&
 		!strings.Contains(sf.FailureReason, "execution dependency not implemented") {
 		t.Errorf("FailureReason does not surface ErrRestoreExecutionUnavailable: %q", sf.FailureReason)
@@ -146,7 +180,11 @@ func TestRunRestoreExecutionFromProceed_StubDeps_PanelNativeDirectAdmin_Persists
 	log := newTestLogger(t)
 	dr, in, rec, panel := procPanelNativeDirectAdminFixture()
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// 4B-1: PanelDirectAdmin maps to "csf" via §20; preflight needs
+	// csf binary + unit file present.
+	exec := stubExecutorForPreflightFirewall("csf")
+
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreFailedExecution {
 		t.Errorf("State = %q; want StateRestoreFailedExecution", sf.State)
@@ -223,11 +261,15 @@ func TestRunRestoreExecutionFromProceed_NeverPersistsStateRestoreDecided(t *test
 	sf := newTestStateFile(t)
 	log := newTestLogger(t)
 	dr, in, rec, panel := procRecordedPriorFixture()
+	// 4B-1: provide working executor so preflight passes through to
+	// the next stub. The terminal will be FailedExecution at insert,
+	// not Decided either way — but be deterministic about it.
+	exec := stubExecutorForPreflightFirewall("ufw")
 
-	_ = runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	_ = runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
 
 	if sf.State == state.StateRestoreDecided {
-		t.Errorf("PROCEED persisted StateRestoreDecided; PR-25 commit 4 must produce a §22 execution terminal")
+		t.Errorf("PROCEED persisted StateRestoreDecided; PR-25 must produce a §22 execution terminal")
 	}
 }
 
