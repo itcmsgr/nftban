@@ -515,10 +515,21 @@ nftban_health_check_timers() {
             missing=$((missing + 1))
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
 
-            # Auto-heal: Try to install if from systemd directory
+            # Auto-heal: Try to install from canonical source location.
+            # /usr/share/nftban/src is the install-time source dir;
+            # NFTBAN_DEV_SRC_DIR is an opt-in env var for maintainers
+            # running out of a repo clone.
             if [[ $auto_heal -eq 1 ]]; then
-                local timer_file="/home/gituser/github/nftban-dev/install/systemd/$timer"
-                if [[ -f "$timer_file" ]]; then
+                local timer_file=""
+                local _src_dirs=("/usr/share/nftban/src")
+                [[ -n "${NFTBAN_DEV_SRC_DIR:-}" ]] && _src_dirs=("${NFTBAN_DEV_SRC_DIR}" "${_src_dirs[@]}")
+                for _src in "${_src_dirs[@]}"; do
+                    if [[ -f "$_src/install/systemd/$timer" ]]; then
+                        timer_file="$_src/install/systemd/$timer"
+                        break
+                    fi
+                done
+                if [[ -n "$timer_file" ]]; then
                     echo "  🔧 Auto-heal: Installing $timer..."
                     if cp "$timer_file" /etc/systemd/system/ 2>/dev/null && systemctl daemon-reload 2>/dev/null; then
                         timer_issues+=("✓ Installed $timer")
