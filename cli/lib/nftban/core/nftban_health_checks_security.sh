@@ -652,7 +652,6 @@ nftban_health_check_systemd_hardening() {
         # Key security-sensitive services to check
         local key_services=(
             "nftban-maintenance.service"
-            "nftban-ui.service"
             "nftband.service"
         )
 

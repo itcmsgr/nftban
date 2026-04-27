@@ -219,12 +219,6 @@
       "attachment_formats": ["csv"],
       "max_attachment_size_mb": 10
     },
-    "api": {
-      "description": "JSON via REST API",
-      "base_endpoint": "/api/v1/",
-      "requires_service": "nftban-ui.service",
-      "authentication": "session_token"
-    },
     "prometheus": {
       "description": "Prometheus metrics export",
       "output_path": "/var/lib/nftban/metrics/",

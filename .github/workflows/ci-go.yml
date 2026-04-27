@@ -5,16 +5,12 @@
 # Purpose: Go code validation, build verification, and test execution
 #
 # Checks:
-#   - templ code generation (up to date)
 #   - go mod tidy (dependencies clean)
 #   - go vet (semantic analysis)
 #   - go build (all packages + named binaries)
 #   - go test -race (unit + integration tests with race detector)
 #   - Binary verification (ELF type, minimum size)
 #   - CLI structure validation
-#
-# Note: This merges the former go-check + build-verify jobs into one,
-#       eliminating duplicate Go/templ/libpam setup (~1 min saved).
 # =============================================================================
 
 name: Go Build & Test
@@ -43,9 +39,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
-
       - name: Cache Go modules
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.3.0
         with:
@@ -54,19 +47,6 @@ jobs:
             ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Generate templ files
-        run: $(go env GOPATH)/bin/templ generate
-
-      - name: Verify templ generated files are committed
-        run: |
-          git diff --exit-code -- '*_templ.go' || {
-            echo "::error::Generated *_templ.go files are out of date. Run 'templ generate' and commit."
-            exit 1
-          }
 
       # B80-8: Schema drift gate. Regenerate Go schema from canonical shell
       # source and fail if the committed schema_generated.go differs.
@@ -103,9 +83,6 @@ jobs:
         run: |
           mkdir -p bin
           go build -trimpath -o bin/nftban-core ./cmd/nftban-core
-          # nftban-ui + nftban-ui-auth: removed from shipped binary list per
-          # v1.100.1b.A (GOTH PR-D4 stage 1 — stop shipping). Source trees
-          # remain in repo and are still compiled by `go build ./...` above.
           go build -trimpath -o bin/nftband ./cmd/nftband
           go build -trimpath -o bin/nftban-validate ./cmd/nftban-validate
 

@@ -762,14 +762,6 @@
         "group": "nftban",
         "description": "Runtime data (PID files, sockets)",
         "created_by": "tmpfiles"
-      },
-      {
-        "path": "/run/nftban-ui",
-        "mode": "0755",
-        "owner": "root",
-        "group": "nftban",
-        "description": "GUI/API runtime socket directory",
-        "created_by": "tmpfiles"
       }
     ],
     "shared": [

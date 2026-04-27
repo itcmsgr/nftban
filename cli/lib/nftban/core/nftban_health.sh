@@ -247,13 +247,9 @@ nftban_health_verify_installation() {
     local -a optional_services=(
         "nftban-login-monitor.service"
         "nftban-suricata.service"
-        "nftban-ui.service"
     )
 
-    local -a optional_binaries=(
-        "/usr/lib/nftban/bin/nftban-ui"
-        "/usr/lib/nftban/bin/nftban-ui-auth"
-    )
+    local -a optional_binaries=()
 
     local svc_ok=0
     local svc_missing=0
@@ -309,7 +305,6 @@ nftban_health_verify_installation() {
     # shellcheck disable=SC2034  # Reserved for optional binary checks
     local -a optional_bins=(
         "nftban-core"
-        "nftban-ui"
         "suricata"
     )
 
@@ -548,7 +543,6 @@ nftban_health_check_all() {
     nftban_health_check_portscan_prefix 2>/dev/null || { ((warnings++)) || true; }
     nftban_health_check_v030_helpers 2>/dev/null || true
     nftban_health_check_bash_completion 2>/dev/null || true
-    nftban_health_check_gui 2>/dev/null || true
     nftban_health_check_pro 2>/dev/null || true
 
     # Auto-heal if requested
@@ -636,7 +630,6 @@ export -f nftban_health_check_rbl
 export -f nftban_health_check_botguard
 export -f nftban_health_check_tunnel
 export -f nftban_health_check_timers
-export -f nftban_health_check_gui
 export -f nftban_health_check_fhs
 export -f nftban_health_check_nft_schema
 export -f nftban_health_check_polkit

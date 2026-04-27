@@ -50,9 +50,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
-
       - name: Cache Go modules
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.3.0
         with:
@@ -61,12 +58,6 @@ jobs:
             ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.977
-
-      - name: Generate templ files
-        run: $(go env GOPATH)/bin/templ generate
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@f5c2471be782132e47a6e6f9c725e56730d6e9a3 # v3.32.3
