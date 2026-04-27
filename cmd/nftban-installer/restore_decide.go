@@ -55,9 +55,33 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
 
-// runRestoreDecide orchestrates the PR-24 decision engine invocation.
-// Returns the process exit code derived from the decision output.
-func runRestoreDecide(_ context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
+// runRestoreDecide orchestrates the PR-24 decision engine invocation
+// AND, on PROCEED, the PR-25 execution engine.
+//
+// PR-25 commit 4 (dispatcher integration): on result.Output ==
+// OutputProceed, the dispatcher calls restore.PlanFromDecision to
+// resolve TargetAuthority, then restore.Execute to run the §23
+// six-step sequence, then persists whatever terminal state Execute
+// returns. The four PR-25 execution terminals (StateRestoreExecuted
+// / StateRestoreFailedExecution / StateRestoreFailedVerification /
+// StateRestoreDegraded) replace the PR-24 transitional
+// StateRestoreDecided on the PROCEED path.
+//
+// REFUSE and REQUIRE_EXPLICIT_INTENT paths are byte-identical to
+// PR-24: the dispatcher transitions to StateRestoreRefused /
+// StateRestoreIntentRequired and exits with the same code PR-24 used.
+// No Plan / Execute call on these paths.
+//
+// Production deps are stubs in commit 4 (newRestoreDeps factory at
+// restore_deps.go). Real implementations land in commit 4B. With
+// stubs, PROCEED reliably lands at StateRestoreFailedExecution at
+// Stage="preflight" with ErrRestoreExecutionUnavailable in the chain;
+// the dispatcher persists that terminal truthfully and main.go's
+// writeHistory gate (mode != "restore", at main.go:132) keeps the
+// failure out of update-history.json.
+//
+// Returns the process exit code derived from the persisted state.
+func runRestoreDecide(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
 	log.Info("restore decide starting (mode=restore)")
 
 	// 1. Classify authority.
@@ -119,22 +143,33 @@ func runRestoreDecide(_ context.Context, exec executor.Executor, sf *state.State
 		input.Authority, input.Ambiguity, input.Prior,
 		input.Flags.Restore, input.Flags.PanelAutoTakeover, input.PanelPresent)
 
-	// 9. Transition to terminal state + return exit code.
-	newState, phase := restoreStateForOutput(result.Output)
-	_ = sf.Transition(newState, phase, result.Reason)
-
-	// Operator-facing output (stdout).
+	// 9. Branch on output.
 	switch result.Output {
-	case restore.OutputProceed:
-		log.Result("[NFTBan] restore decision: PROCEED — %s", result.Reason)
-		log.Result("[NFTBan] note: PR-24 is the decision engine only; execution of restoration is deferred to a later PR.")
+
 	case restore.OutputRefuse:
+		// PR-24 byte-identical: terminal refusal, exit ExitRefused.
+		_ = sf.Transition(state.StateRestoreRefused, state.PhaseDetect, result.Reason)
 		log.Result("[NFTBan] restore decision: REFUSE — %s", result.Reason)
+		return sf.State.ExitCode()
+
 	case restore.OutputRequireExplicitIntent:
+		// PR-24 byte-identical: terminal intent-required, exit
+		// ExitIntentRequired.
+		_ = sf.Transition(state.StateRestoreIntentRequired, state.PhaseDetect, result.Reason)
 		log.Result("[NFTBan] restore decision: REQUIRE_EXPLICIT_INTENT — %s", result.Reason)
+		return sf.State.ExitCode()
+
+	case restore.OutputProceed:
+		// PR-25 commit 4: PROCEED flows to execution. Extracted for
+		// unit testability — see runRestoreExecutionFromProceed.
+		log.Result("[NFTBan] restore decision: PROCEED — %s", result.Reason)
+		return runRestoreExecutionFromProceed(ctx, exec, sf, log, result, input, probe.Record, panel)
 	}
 
-	return sf.State.ExitCode()
+	// Unreachable: restore.Decide returns one of the three closed-enum
+	// values. A fourth value here means a contract regression caught
+	// by the G4-RESTORE-DECISION-CORRECTNESS CI gate.
+	panic("restore dispatcher: unknown Output value — contract regression")
 }
 
 // reducePriorState maps uninstall.ProbeResult onto the normalized
@@ -185,21 +220,80 @@ func isStale(rec *uninstall.PriorRecord) bool {
 	return age > time.Duration(restore.StalenessWindowDays)*24*time.Hour
 }
 
-// restoreStateForOutput maps the decision output to the state-machine
-// terminal (or non-terminal handoff) state. Phase is always
-// PhaseDetect for this dispatcher — the engine's job IS detection +
-// decision; there is no later phase to attribute to.
-func restoreStateForOutput(out restore.Output) (state.InstallState, state.Phase) {
-	switch out {
-	case restore.OutputProceed:
-		return state.StateRestoreDecided, state.PhaseDetect
-	case restore.OutputRefuse:
-		return state.StateRestoreRefused, state.PhaseDetect
-	case restore.OutputRequireExplicitIntent:
-		return state.StateRestoreIntentRequired, state.PhaseDetect
+// (PR-25 commit 4 removed the previous restoreStateForOutput helper.
+// PROCEED no longer maps to a single transitional state; it flows
+// through PlanFromDecision + Execute to produce one of four PR-25
+// execution terminals. REFUSE and REQUIRE_EXPLICIT_INTENT now
+// transition inline within runRestoreDecide above; the helper is
+// no longer needed and was unused after the refactor.)
+
+// runRestoreExecutionFromProceed orchestrates the PR-25 §23 path on
+// a PROCEED decision. Extracted from runRestoreDecide so unit tests
+// can exercise the planner + executor + persist flow with controlled
+// inputs (without faking the upstream classify/probe/detect
+// executor calls).
+//
+// The function:
+//
+//   1. Resolves TargetAuthority via restore.PlanFromDecision.
+//      Planner refusal → StateRestoreFailedExecution; no Execute.
+//   2. Constructs ExecuteDeps via the package-level newRestoreDeps
+//      factory (production path = stubs in commit 4; tests swap).
+//   3. Calls restore.Execute and persists whatever terminal state
+//      it returns.
+//   4. Returns the persisted state's exit code.
+//
+// INV-PR25-AUTHORITY-IMMUTABILITY (§17.3): the planner result is the
+// authoritative TargetAuthority. Execute does not re-derive it; the
+// dispatcher does not consult anything besides what the planner
+// returned + what the deps observe at verification time.
+func runRestoreExecutionFromProceed(
+	ctx context.Context,
+	exec executor.Executor,
+	sf *state.StateFile,
+	log *logging.Logger,
+	result restore.DecisionResult,
+	input restore.DecisionInput,
+	priorRec *uninstall.PriorRecord,
+	panel detect.PanelType,
+) int {
+	// Step A — Plan: resolve TargetAuthority once.
+	target, planErr := restore.PlanFromDecision(result, input, priorRec, panel)
+	if planErr != nil {
+		log.Error("restore execute: planner refused PROCEED: %v", planErr)
+		_ = sf.Transition(state.StateRestoreFailedExecution, state.PhaseDetect, planErr.Error())
+		log.Result("[NFTBan] restore execution: FAILED at planner — %s", planErr.Error())
+		return sf.State.ExitCode()
 	}
-	// Unreachable — Decide's return type is a closed enum guarded by
-	// TestDecide_OutputClosedEnum. A fourth value here means a
-	// contract regression.
-	panic("restore dispatcher: unknown Output value — contract regression")
+	log.Info("restore execute: target resolved kind=%s firewallType=%s panel=%s",
+		target.Kind(), target.FirewallType(), target.Panel())
+
+	// Step B — Construct deps. Stubs in commit 4; real impls in 4B.
+	deps := newRestoreDeps(exec, log)
+
+	// Step C — Execute the §23 six-step sequence.
+	execRes := restore.Execute(ctx, target, deps)
+	log.Info("restore execute: terminal=%s stage=%s err=%v",
+		execRes.Terminal, execRes.Stage, execRes.Err)
+
+	reason := result.Reason
+	if execRes.Err != nil {
+		reason = execRes.Err.Error()
+	}
+	_ = sf.Transition(execRes.Terminal, state.PhaseDetect, reason)
+
+	// Step D — Operator-facing output reflects the executed terminal.
+	switch execRes.Terminal {
+	case state.StateRestoreExecuted:
+		log.Result("[NFTBan] restore execution: COMPLETED — authorized restore is in effect")
+	case state.StateRestoreDegraded:
+		log.Result("[NFTBan] restore execution: COMPLETED with warnings — review inline-verify result")
+	case state.StateRestoreFailedExecution:
+		log.Result("[NFTBan] restore execution: FAILED at %s — %s", execRes.Stage, reason)
+	case state.StateRestoreFailedVerification:
+		log.Result("[NFTBan] restore execution: FAILED VERIFICATION at %s — safety net retained — %s",
+			execRes.Stage, reason)
+	}
+
+	return sf.State.ExitCode()
 }
