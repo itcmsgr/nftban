@@ -291,9 +291,8 @@ nftban_distro_is_package_installed() {
 # =============================================================================
 # POLKIT PATH RESOLUTION
 # =============================================================================
-# Get canonical polkit rules directory for current distribution
+# Get canonical polkit rules directory for current distribution.
 # This is the SINGLE SOURCE OF TRUTH for polkit path resolution.
-# See: /home/commonfolder/POLKIT-PATH-AUDIT-REPORT.md
 #
 # Resolution order:
 #   1. Distro config [paths].polkit_rules_dir (preferred)
