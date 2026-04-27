@@ -11,6 +11,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100 PR-25 contract sheet (doc only)
+
+Appends the PR-25 execution contract to `internal/installer/restore/contract.md` as a new "PART II — PR-25 execution contract" section (§§16–29). This is the doc-only first PR of the PR-25 two-PR split (mirrors the PR-24 PR #493 → PR #494 pattern). The implementation PR opens in a separate branch after this one merges.
+
+### Origin
+
+The contract is a faithful normalization of the **locked Q1–Q5 design decisions** recorded 2026-04-20 during PR-24 freeze Day 0 via the §12 protocol (Stage 1 scope classification + Stage 2 five-field answer + LOCK/REVISE/REJECT review). The v0 staging sheet (`memory/project_pr25_contract_sheet_v0.md`) was reviewed and locked 2026-04-27 prior to opening this PR.
+
+### Locked rule applied
+
+> *"Normalize, do not expand."*
+
+Every clause in §§16–29 traces back to a Q1–Q5 lock or to V1100 contract §8. No design decisions were made in this PR. Items intentionally absent (final state-terminal names, final exit-code integers, test fixture matrix, real-host evidence plan, CI gate expansion plan, concrete `IsRestoreExecuted` signature, the PanelType→firewall mapping body) are documented in §27 as code-phase work.
+
+### What changed
+
+- `internal/installer/restore/contract.md` — appended §§16–29 (PR-25 execution contract) after §15 and before "Amendment history"; §1–§15 (PR-24 decision contract) untouched. New "PART II" header marks the boundary. Amendment history gains a 2026-04-27 v2 entry documenting the append + verified code anchors.
+
+### Verified code anchors (2026-04-27)
+
+| Lock reference | Verified at |
+|---|---|
+| `knownFirewallType` set `{ufw, firewalld, iptables, csf}` | `internal/installer/uninstall/prior.go:278-284` |
+| writeHistory gate excluding `cfg.mode == "restore"` | `cmd/nftban-installer/main.go:132` |
+| Exit-code constants `ExitCommitted=0`, `ExitFatal=4`, `ExitRefused=5`, `ExitIntentRequired=6` | `internal/installer/state/machine.go:149-155` |
+
+All three live in surfaces that were fenced under the PR-24 freeze and remained untouched throughout the GOTH removal + SF-1 + repo hygiene stabilization train.
+
+### Out of scope (locked)
+
+- **No code in this PR.** PR-25 implementation (Go types, execution engine, inline safety interlock, state terminals, tests, CI gate update) is the *next* PR (`feat/v1.100-pr25-restore-execution`) and opens only after this contract PR merges.
+- **No expansion** of Q1–Q5 lock content.
+- PR-26 contract content stays out of scope (defined by PR-26's own seed work).
+
+Lifecycle completion lane (PR-25..PR-30) remains explicitly **OPEN** but is now mid-re-entry: contract is the first deliberate step.
+
+---
+
 ## [Unreleased] - v1.100.3e Repo hygiene Phase A slice 1e (H-07 + H-08)
 
 Closes audit findings **H-07** (STATUS.md version drift) and **H-08** (README.md badge version drift). Both displayed visible-version strings that no longer matched `/VERSION` (1.98.2). STATUS.md claimed v1.89.0 (-9 minor versions); README badge pinned 1.95.0 (-3 patches).
