@@ -71,8 +71,7 @@
 //  4. Calling pipeline.Register(source, watcher, parser)
 //
 // No changes to existing internal/loginmon/detector/panel.go are required.
-// The two paths coexist until the legacy parser is retired (see DEC-1..9 in
-// MASTER_TODO.md).
+// The two paths coexist until the legacy parser is retired.
 //
 // NON-GOALS (Phase A explicitly does NOT include)
 //
