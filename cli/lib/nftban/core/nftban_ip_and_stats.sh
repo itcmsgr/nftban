@@ -69,8 +69,7 @@ validate_structure() {
     #   Exit: 0 if status=="OK" or "WARNING", 1 if status=="ERROR"
     #
     # Full removal of this shell file (including the still-independent
-    # check_ip_or_port and get_firewall_stats below) is v1.81 scope — see
-    # V1.80_ROADMAP/MASTER_TODO.md B80-1 discussion dated 2026-04-11.
+    # check_ip_or_port and get_firewall_stats below) is v1.81 scope (B80-1).
     # =========================================================================
     #
     # Args: $1 = output_json (true/false)
