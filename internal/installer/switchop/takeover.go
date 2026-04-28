@@ -78,7 +78,29 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel
 
 // disarmCSFArtifacts removes CSF cron jobs and disables the CSF binary to prevent
 // ghost iptables rules from being recreated after service masking.
+//
+// PR-26-code-C addition: BEFORE removing the cron files, write a
+// cron-backup manifest under /var/lib/nftban/state/csf-cron-backup/
+// so the §31 A.4 restore path can later reverse this removal with
+// fidelity (sha256 + mode + uid + gid + size). The manifest writer
+// is best-effort — its failure does NOT block the rm; the rm is the
+// install-time invariant. Hosts installed before PR-26-code-C ship
+// without a manifest; A.4 stays soft-skip on those hosts (graceful
+// migration per §42.2 lock).
+//
+// §50 ordering lock: the writer in this commit lands in the same PR
+// as the A.4 reader in restore_deps_csf.go::mutateToCSFTarget — the
+// reader will refuse to act on a manifest absent or corrupt; A.4
+// stays skip-only on pre-PR-26 hosts.
 func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
+	// PR-26-code-C: capture the cron-backup manifest BEFORE removal.
+	// Writer failures are logged but non-fatal — the rm path below
+	// MUST execute regardless, because nftban takeover correctness
+	// requires the cron files to be gone.
+	if _, err := WriteCronBackupManifest(exec, log); err != nil {
+		log.Warn("cron-backup manifest writer: %v (continuing with cron rm; A.4 restore will soft-skip on this host)", err)
+	}
+
 	// Remove CSF/LFD cron jobs (lfd-cron runs "csf --lfd restart" daily)
 	for _, cronFile := range []string{"/etc/cron.d/lfd-cron", "/etc/cron.d/csf-cron"} {
 		if exec.FileExists(cronFile) {
