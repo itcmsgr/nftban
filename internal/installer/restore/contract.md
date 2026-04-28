@@ -1265,6 +1265,458 @@ A v5 entry is added to the Amendment history below recording this lock-record co
 
 ---
 
+# PART V — AMENDMENT 2: Orphan-NFTBan explicit-intent CSF restore path
+
+> **Authority gap discovered 2026-04-28** during PR-26-code-E srv3 destructive evidence run (POST_E_SUMMARY.md in private evidence tree). The authorized command `nftban-installer --mode=restore --panel-auto-takeover` returned REFUSE / G1/AuthorityNFTBan / exit 5 on a host whose precondition was: NFTBan currently authoritative (ip:nftban + ip6:nftban tables present, nftband.service active 21h), no prior-authority record on disk (lost or never written, e.g., switched over before PR-26-code-C cron-manifest writer landed), DirectAdmin live, csf.service masked + inactive, /usr/sbin/csf.disabled present, /usr/sbin/csf absent — and the operator's explicit intent was to restore CSF.
+>
+> The §6 G1 hard-stop on AuthorityNFTBan is correct as the **default** behavior: panel-auto-takeover must never fire over nftban residue (§6 Group 4.3 / `AmbiguityOrphanNFTBan + --panel-auto-takeover` → REFUSE). But there is no sanctioned path for the **explicit-operator-intent** subcase where the operator is consciously asking to restore CSF on a DirectAdmin host that nftban took over from CSF and where strong on-disk evidence proves the prior takeover. The operator currently has only two options on such a host: (a) accept that the orphan state is permanent, (b) manually pre-mutate the host to seed `authority=none` (forbidden — see §54.5). Neither is acceptable.
+>
+> Amendment 2 closes the gap by adding **exactly one** explicit-intent override row to the §6 lattice, gated by a strong CSF-disabled evidence predicate, valid only under DirectAdmin, valid only when an additional named flag is supplied alongside `--panel-auto-takeover`. **All other §6 G1 rows remain REFUSE.** This amendment does NOT weaken G1 generally. It does NOT add a "force" or "best effort" flag. It does NOT bypass `AuthorityExternal`, `AmbiguityConflictExternal`, or `AmbiguityOrphanNFTBan` G1 hard-stops. The new row is a single, narrow lattice extension that requires the strongest evidence the host can produce.
+
+## 52. Amendment 2 — pinned sentence + scope
+
+### 52.1 Pinned sentence
+
+> Amendment 2 does not weaken G1 generally. It creates exactly one operator-explicit orphan-restore path for a DirectAdmin host currently classified as `AuthorityNFTBan` where on-disk CSF-disabled evidence proves NFTBan previously took over from CSF, and every other G1 row remains REFUSE.
+
+### 52.2 In scope
+
+This amendment authorizes **exactly one** §6 lattice extension row:
+
+- Classifier `AuthorityNFTBan`
+- Prior `NoRecord`
+- Panel `DirectAdmin`
+- Flags: `--panel-auto-takeover` AND `--accept-orphan-nftban` (flag name locked by auditor disposition 2026-04-28; see §59 Q1)
+- Strong CSF-disabled evidence (§54) holds — every condition in §54.1 must be true
+- → **PROCEED PanelNative/csf**
+
+When the row matches, the dispatcher hands off to the Amendment 1 §32 11-step mutation sequence **unchanged**. The mutation path is reused; the entry-decision is what this amendment changes.
+
+### 52.3 Out of scope
+
+Explicitly **NOT** authorized by this amendment:
+
+- Any §6 G1 row other than `AuthorityNFTBan + DirectAdmin + explicit-intent` (`AuthorityExternal` and `AmbiguityConflictExternal` G1 hard-stops remain absolute under all flag combinations).
+- Any panel other than `DirectAdmin`. cPanel and Plesk variants are out of scope until separately amended (cPanel and Plesk takeover-by-nftban paths exist in `switchop` but Amendment 1 §30.2 already restricts to DirectAdmin; this amendment does not extend Amendment 1's panel scope).
+- The `AmbiguityOrphanNFTBan + --panel-auto-takeover` row in §6 Group 4.3 (currently REFUSE) — this amendment does NOT silently change it. Whether it gets the same treatment is OPEN (§59 Q2). Default position: stays REFUSE until separately amended.
+- Any "force restore" or "ignore safety predicate" flag with broad semantics.
+- Any flag combination that bypasses Amendment 1 §32 ordering, §32.1 safety-net retention, or any §34 forbidden behavior.
+- Any flag combination that bypasses the §41 / §51.3 target-specific safety predicate (§54.7 explicitly preserves it).
+- Any addition of iptables introspection, DirectAdmin custombuild rewrite (`build set csf yes`), history writes during restore, or out-of-target service operations. The §38.2 / §51.3 / §34 forbidden-behaviors lists apply unchanged.
+- Any non-decision change in this PR. **This is a doc-only PR. Code phase opens in a separate `amendment-2-code-A` PR after this seed merges and the auditor approves the code-A scope.**
+- Manual pre-mutation on srv3 or any other host to seed `authority=none` before invocation. The dispatcher's destructive sequence is the only sanctioned mutation path; manual pre-mutation is forbidden by operator-locked rule (2026-04-28) and would invalidate evidence captured on a manually-seeded host.
+
+### 52.4 Invariants — locked, this amendment does NOT modify
+
+The following remain unchanged:
+
+- **§5 precedence rule** — Group 1 still evaluates first; the new lattice row lives ENTIRELY within Group 1 by splitting the existing `AuthorityNFTBan` row into two sub-rows (`G1/AuthorityNFTBan/default` and `G1/AuthorityNFTBan/orphan-intent-candidate`). No later group ever defeats a Group 1 outcome. The `AuthorityExternal` and `AmbiguityConflictExternal` G1 rows are unchanged. (See §53 for the exact mechanic.)
+- **INV-PR25-AUTHORITY-IMMUTABILITY** (§17.3) — TargetAuthority resolved by the planner is read-only across execution.
+- **§19.2 layer 4 / `main.go:132`** — restore mode does not write `update-history.json`. Amendment 2 does not relax this. Any code path added under this amendment must emit zero history writes for `cfg.mode == "restore"` (§55 reaffirms).
+- **§20.1 panel-to-firewall map** — `PanelDirectAdmin → "csf"` is unchanged. Amendment 2 reuses this mapping; it does NOT introduce a new resolution layer.
+- **§21.1 / §21.3** — three-assertion inline verification + safety-net retention on verify-fail are unchanged. The new row produces a `PROCEED` outcome that flows into the same `Execute` path.
+- **§30.1 Amendment 1 applicability** — Amendment 1 activates when its four conditions hold; Amendment 2's PROCEED outcome triggers the second-condition branch (`Kind == TargetAuthorityKindPanelNative AND Panel() == detect.PanelDirectAdmin`). No change to Amendment 1's text; Amendment 2 simply causes one more pre-state to reach Amendment 1's entry point.
+- **§32 11-step ordering** — unchanged. Mutation runs A.1–A.7 in the existing order.
+- **§32.1 safety-net retention** — unchanged.
+- **§35.3 §28 real-host evidence merge-blocker** — unchanged. Amendment 2's evidence run (§57) is in addition to, not in place of, Amendment 1's lab2/lab4 fixture evidence.
+- **§39 / §41 Q1+Q3 BLOCKING evidence** — the target-specific safety predicate (§51.3 Option B) applies to the Amendment 2 PROCEED path identically. Row 6 of §39.1 remains ADVISORY per §51.3.
+- **§43 / §51.5-A2** — typed `ServiceUnmask` + `Rename` (PR-26-code-B) and read-only typed introspection (§51.5-A2) are unchanged; mutation surfaces remain capped.
+- **`INV-PR26-NEW-MUTATION-SURFACES-BOUNDED`** — Amendment 2 adds **zero** new mutation surfaces. The lattice extension is decision-only.
+- **`INV-PR26-VERIFICATION-IS-PROOF-NOT-DECISION`** — unchanged.
+- **`INV-PR26-EVIDENCE-PRIVATE-BY-DEFAULT`** — unchanged.
+
+### 52.5 New invariant introduced by this amendment
+
+- **`INV-AMD2-EXPLICIT-INTENT-IS-NARROW`** — `--accept-orphan-nftban` may activate the new lattice row ONLY in combination with `--panel-auto-takeover` AND `Panel == DirectAdmin` AND `Classifier == AuthorityNFTBan` AND `Prior == NoRecord` AND every §54.1 evidence row holds. Any other flag presence pattern on `AuthorityNFTBan` continues to REFUSE. `--accept-orphan-nftban` must NOT be reachable as a generic "force" override on any other classifier or any other panel.
+
+## 53. Lattice extension — Group 1 split
+
+### 53.1 New sub-rows inserted into §6 Group 1
+
+Amendment 2 does NOT add a Group 6 that overrides G1. Instead, the existing G1/AuthorityNFTBan row is split into two sub-rows evaluated within Group 1:
+
+- **G1/AuthorityNFTBan/default** — REFUSE. Reached when the §54 strong-CSF-disabled evidence predicate is FALSE, OR when `--accept-orphan-nftban` is absent, OR when `--panel-auto-takeover` is absent, OR when `Panel != DirectAdmin`, OR when `Prior != NoRecord`.
+- **G1/AuthorityNFTBan/orphan-intent-candidate** — delegate to the §54 evidence predicate. If the predicate returns true, the lattice output is PROCEED PanelNative/csf. If the predicate returns false, the lattice output is REFUSE G1/EvidenceMismatch.
+
+The split is ENTIRELY within Group 1. No later group ever defeats a Group 1 outcome. The §5 precedence invariant is preserved.
+
+#### Group 1 — `AuthorityNFTBan` rows (post-split)
+
+| Classifier | Prior | Flags | Panel | Evidence (§54.1) | Output | Rule label |
+|---|---|---|---|---|---|---|
+| `AuthorityNFTBan` | `NoRecord` | `--panel-auto-takeover` AND `--accept-orphan-nftban` | `DirectAdmin` | ALL §54.1 rows true | **PROCEED** (target=`PanelNative/csf` per §20.1) | G1/AuthorityNFTBan/OrphanProceed |
+| `AuthorityNFTBan` | `NoRecord` | `--panel-auto-takeover` AND `--accept-orphan-nftban` | `DirectAdmin` | any §54.1 row false | **REFUSE** | G1/EvidenceMismatch |
+| `AuthorityNFTBan` | (anything else) | (anything else) | (anything else) | n/a | **REFUSE** | G1/AuthorityNFTBan/default |
+
+`AuthorityExternal` and `AmbiguityConflictExternal` rows in Group 1 are NOT split and remain REFUSE under all flag combinations (see §53.4).
+
+### 53.2 Mechanic — split-evaluation order within Group 1
+
+The implementation MUST follow this exact evaluation order inside Group 1 for the `AuthorityNFTBan` classifier:
+
+1. **Pre-condition check** — is the candidate triple present? (`Prior == NoRecord` AND `Panel == DirectAdmin` AND `--panel-auto-takeover` present AND `--accept-orphan-nftban` present). If NO → emit `G1/AuthorityNFTBan/default` REFUSE and stop. If YES → step 2.
+2. **§54 evidence predicate evaluation** — read every §54.1 row from the live system. If ALL true → emit `G1/AuthorityNFTBan/OrphanProceed` PROCEED with target `PanelNative/csf`. If ANY row false → emit `G1/EvidenceMismatch` REFUSE.
+
+Both terminal outputs are produced inside Group 1's evaluation. No "later group" is ever reached for `AuthorityNFTBan`. The original G1 refusal exit code (`ExitRefused`, value 5) is preserved for both REFUSE outcomes.
+
+The split is the **only** load-bearing change to §6 in this amendment. Every other G1 row (`AuthorityExternal`, `AmbiguityConflictExternal`) ignores the new flag entirely and continues to REFUSE under all flag combinations.
+
+### 53.3 New rule labels (for structured log output)
+
+Amendment 2 introduces these decision-trace rule labels (used by `restore decide:` log lines, no state-machine impact):
+
+- `G1/AuthorityNFTBan` — existing label, retained as the umbrella; specific outcome labels below
+- `G1/AuthorityNFTBan/default` — emitted when the candidate triple is not present (default REFUSE path)
+- `G1/AuthorityNFTBan/OrphanProceed` — emitted when the candidate triple is present AND every §54.1 row is true (PROCEED path; only PROCEED label introduced by this amendment)
+- `G1/EvidenceMismatch` — emitted when the candidate triple is present AND any §54.1 row is false (REFUSE path with structured-evidence reason)
+
+### 53.4 Lattice rows that explicitly remain REFUSE under the new flag
+
+To make the narrowness load-bearing, the following rows MUST be tested as REFUSE even when `--accept-orphan-nftban` is supplied. All REFUSE outcomes here are emitted within their existing Group; the new flag has zero effect outside the §53.1 split:
+
+| Classifier | Prior | Flags | Panel | Output | Rule label | Reason |
+|---|---|---|---|---|---|---|
+| `AuthorityExternal` | * | `--accept-orphan-nftban` + any | * | **REFUSE** | G1/AuthorityExternal | G1 unchanged; non-nftban authority not in scope |
+| `AmbiguityConflictExternal` | * | `--accept-orphan-nftban` + any | * | **REFUSE** | G1/AmbiguityConflictExternal | G1 unchanged; conflict resolution requires operator |
+| `AmbiguityOrphanNFTBan` | * | `--accept-orphan-nftban` + `--panel-auto-takeover` | DirectAdmin | **REFUSE** | G4.3/AmbiguityOrphanPanelAuto | Locked by §59 Q2 (auditor 2026-04-28); Amendment 2 does NOT extend to orphan-ambiguous state. Future Amendment 3 if needed. |
+| `AmbiguityOrphanNFTBan` | * | `--accept-orphan-nftban` + any other flags | * | **REFUSE** | G4/AmbiguityOrphanNFTBan | Same Q2 lock |
+| `AuthorityNFTBan` | `Complete` | `--accept-orphan-nftban` + `--panel-auto-takeover` | DirectAdmin | **REFUSE** | G1/AuthorityNFTBan/default | Prior is not `NoRecord`; use `--restore` instead |
+| `AuthorityNFTBan` | `Incomplete` | `--accept-orphan-nftban` + `--panel-auto-takeover` | DirectAdmin | **REFUSE** | G1/AuthorityNFTBan/default | Operator must repair the prior record before orphan path |
+| `AuthorityNFTBan` | `Stale` | `--accept-orphan-nftban` + `--panel-auto-takeover` | DirectAdmin | **REFUSE** | G1/AuthorityNFTBan/default | Operator must accept staleness explicitly first |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` without `--panel-auto-takeover` | DirectAdmin | **REFUSE** | G1/AuthorityNFTBan/default | The orphan flag is not a standalone authority; it requires panel-auto |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` + `--panel-auto-takeover` | None | **REFUSE** | G2/PanelAutoNoPanel | Group 2 — panel-auto-takeover with `Panel=None` |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` + `--panel-auto-takeover` | cPanel | **REFUSE** | G1/AuthorityNFTBan/default | Out of scope; cPanel takeover semantics differ |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` + `--panel-auto-takeover` | Plesk | **REFUSE** | G1/AuthorityNFTBan/default | Out of scope; Plesk takeover semantics differ |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` + `--panel-auto-takeover` + `--restore` | DirectAdmin | **REFUSE** | G2/BothFlagsSet | Group 2 — both flags set |
+| `AuthorityNFTBan` | `NoRecord` | `--accept-orphan-nftban` + `--panel-auto-takeover` | DirectAdmin | §54.1 row fails | **REFUSE** | G1/EvidenceMismatch | predicate evaluation false |
+
+The above rows are TEST-PINNED in §56.
+
+## 54. Strong CSF-disabled evidence predicate
+
+### 54.1 Required evidence — ALL must be true
+
+The `G1/AuthorityNFTBan/OrphanProceed` outcome activates ONLY when **every** row below is true at the moment of decision evaluation. Any single row failing → REFUSE (`G1/EvidenceMismatch`).
+
+| ID | What it proves | Source / how the implementation reads it |
+|---|---|---|
+| **AMD2-E.1** | DirectAdmin is the live panel | `detect.DetectPanel() == detect.PanelDirectAdmin`. Re-uses the same value the planner consumed; no parallel detection. |
+| **AMD2-E.2** | Current authority is `AuthorityNFTBan` | `uninstall.authority.Classify` result. Read-only; not re-derived. |
+| **AMD2-E.3** | Prior authority record is `NoRecord` | `prior.Read()` returns the `NoRecord` state. Implies no prior firewall name on disk; this is the "orphan" condition. |
+| **AMD2-E.4** | Operator supplied `--panel-auto-takeover` | Flag presence at the CLI surface. |
+| **AMD2-E.5** | Operator supplied `--accept-orphan-nftban` | Flag presence at the CLI argv surface (NOT env var, NOT config file — see §55). |
+| **AMD2-E.6** | `csf.service` exists AND must not be active. Strongest: `masked + inactive`. Acceptable fallback: `disabled + inactive` (or `disabled + failed`). Forbidden: `active`, `enabled`, `static`. | Existence: `systemctl status csf.service` returns a unit description (NOT "Unit csf.service could not be found"). Allowed `is-enabled` values: `masked` (strongest, matches install-time `switchop.DisableConflicts`) OR `disabled` (acceptable fallback). Forbidden `is-enabled` values: `enabled`, `static`. Allowed `is-active` values: `inactive`, `failed`. Forbidden `is-active` value: `active`. If `csf.service` is `active`, the orphan-nftban precondition does not hold; predicate returns false and dispatcher refuses with `G1/EvidenceMismatch`. If `csf.service` is `inactive` but `enabled` or `static`, predicate returns false and dispatcher refuses with `G1/EvidenceMismatch`. Rationale: `inactive` but `enabled` means csf may return at next boot. The orphan-nftban evidence chain requires nftban to have **disabled** csf, not merely **stopped** it. |
+| **AMD2-E.7** | `/usr/sbin/csf.disabled` exists | `FileExists("/usr/sbin/csf.disabled") == true`. This is the inverse-of-install proof that nftban renamed the binary at install time. |
+| **AMD2-E.8** | `/usr/sbin/csf` does NOT exist | `FileExists("/usr/sbin/csf") == false`. Combined with E.7 this confirms the binary state is "install-time-disabled" (Amendment 1 §33 E.3 vocabulary), not "ambiguous-both-present". Ambiguous-both-present must REFUSE. |
+| **AMD2-E.9** | `ip:nftban` table present in kernel | `nft list tables` includes `ip nftban`. Confirms NFTBan is currently authoritative on the host (corroborates E.2). |
+| **AMD2-E.10** | `ip6:nftban` table present in kernel | `nft list tables` includes `ip6 nftban`. Same purpose as E.9 for the v6 path. |
+| **AMD2-E.11** | `nftband.service` is active | `systemctl is-active nftband.service` returns `active`. Confirms the running daemon corroborates E.2 / E.9 / E.10. |
+| **AMD2-E.12** | No conflicting external firewall is currently authoritative | The classifier already returned `AuthorityNFTBan`, not `AmbiguityConflictExternal` — so this is implicitly true if E.2 holds. Listed explicitly so the implementation does not skip the check by inference. |
+| **AMD2-E.13** | No ambiguity classification | Sub-classifier check: `Classifier != AuthorityAmbiguous` AND no `AmbiguityOrphanNFTBan` / `AmbiguityConflictExternal` sub-state. Listed for the same reason as E.12. |
+
+### 54.2 Evidence read discipline
+
+- All rows are read **once**, at decision evaluation time.
+- Re-reading after PROCEED is forbidden (`INV-PR25-AUTHORITY-IMMUTABILITY` extended to evidence).
+- The implementation does NOT cache stale reads from prior runs; reads come from the live system at decision time.
+- If any of the read APIs fails (e.g., `nft list tables` returns a non-zero exit), the failed-row is treated as FALSE and the outcome is REFUSE (`G1/EvidenceMismatch`), not REQUIRE_EXPLICIT_INTENT.
+- Read failures MUST be logged with the failing API + error.
+
+### 54.3 Evidence predicate location
+
+The evidence predicate lives in the **decision** layer (PR-24's policy engine), not in `Execute`. The decision result is `PROCEED` only after the predicate evaluates to true; the mutation path runs only on `PROCEED`. This preserves the §1 PR-24 pinned-sentence: decision engine spawns no mutation, writes no state, exits without side effects.
+
+The kernel/service/file probes required by §54.1 are READ-ONLY. They use existing read-only surfaces:
+
+- `detect.DetectPanel` (existing)
+- `uninstall.authority.Classify` (existing)
+- `prior.Read` (existing)
+- `executor.ServiceActive` / `ServiceEnabled` / `ServiceListed` (typed read-only — already in the executor surface; if any are missing, Amendment 2 documents the dependency in §59 Q3)
+- `executor.FileExists` (existing read-only)
+- `executor.NftListTables` (typed read-only — depends on whether this surface already exists; see §59 Q4)
+
+If any of the typed read-only surfaces required by §54.1 do not yet exist in `executor.Executor`, Amendment 2 documents them as a prerequisite for `amendment-2-code-A` (no raw `Run` in the decision layer beyond what is already authorized for read-only probes per §51.5-A2).
+
+### 54.4 What §54.1 does not include
+
+- No DirectAdmin custombuild state probe (`build set csf` value). Out of scope. The decision does NOT depend on whether DirectAdmin's own firewall toggle is in any particular state; once CSF is restored by §32 A.5 the operator restores DirectAdmin's own toggle separately (Amendment 1 §31.2 already declares this out of scope).
+- No iptables rule introspection. §51.3 Option B remains in force.
+- No SSH continuity check at decision time. SSH continuity is enforced at §32 step 7 (Amendment 1) during execution; the decision layer never runs network probes.
+- No probe of `update-history.json`. The mode-gate at `main.go:132` already excludes restore from history; the decision layer does NOT consult history for this row.
+
+### 54.5 Operator-side preconditions (forbidden as automatic actions)
+
+The following actions, if performed by the operator manually before invocation, would invalidate the evidence captured by §54.1 (because they would change the on-disk state the predicate is supposed to read):
+
+- `nft delete table ip nftban` / `nft delete table ip6 nftban` before invocation
+- `systemctl stop nftband.service` before invocation
+- `systemctl unmask csf.service` before invocation
+- `mv /usr/sbin/csf.disabled /usr/sbin/csf` before invocation
+- Hand-editing `/var/lib/nftban/state/install_state.json` or `/var/lib/nftban/state/prior-authority.json`
+
+These are forbidden by the standing operator-locked rule (2026-04-28) and by `INV-AMD2-EXPLICIT-INTENT-IS-NARROW` (the predicate must be evaluated against the **untouched** post-install state, not a hand-prepared near-restore state). If any of these are observed in pre-execution snapshots, the auditor must reject the evidence run.
+
+## 55. Forbidden behaviors — extends §25, §34, §38.2
+
+In addition to all prior forbidden lists, Amendment 2 adds:
+
+- **No bypass of `AuthorityExternal` G1 hard-stop.** `--accept-orphan-nftban` has zero effect when `Classifier == AuthorityExternal`. Pinned by §53.4.
+- **No bypass of `AmbiguityConflictExternal` G1 hard-stop.** Same. Pinned by §53.4.
+- **No silent reuse on `AmbiguityOrphanNFTBan`.** The current §6 Group 4.3 row remains REFUSE under `--accept-orphan-nftban`. Locked by §59 Q2 (auditor 2026-04-28); Amendment 2 does NOT extend to orphan-ambiguous state. Future Amendment 3 if needed.
+- **No standalone use of `--accept-orphan-nftban`.** Without `--panel-auto-takeover`, the flag is ignored (REFUSE).
+- **No use on non-DirectAdmin panels.** cPanel / Plesk / None remain REFUSE.
+- **No bypass of §54.1 evidence rows.** Any single false row → REFUSE.
+- **No "force" semantics.** The flag name (`--accept-orphan-nftban`, locked) and its CLI help text MUST describe it as "explicit-intent" / "accept the orphan state and restore CSF", NOT as "force" or "override".
+- **No relaxation of `main.go:132` writeHistory gate.** Restore mode does not write history under any flag combination. Tests pin this.
+- **No iptables introspection added to support §54.1.** §51.3 Option B remains in force.
+- **No new mutation surface.** The amendment is decision-only. `INV-PR26-NEW-MUTATION-SURFACES-BOUNDED` holds.
+- **No retry loop.** A single decision evaluation; if PROCEED is returned, mutation runs once via §32 11-step. No "if PROCEED but mutation failed, re-evaluate decision" — the §22 / §32.1 terminal-state machinery applies unchanged.
+- **No env-var / config / implicit-default fallback for `--accept-orphan-nftban`.** The flag MUST be CLI argv only. NO `NFTBAN_ACCEPT_ORPHAN` environment variable, no config-file key (e.g., in `/etc/nftban/main.conf` or `/etc/nftban/conf.d/*`), no implicit default (e.g., from a stale state file), no inheritance from prior runs. The implementation MUST detect the flag exclusively via the argv parser. Tested by row 20 in §56.1.
+- **No pre-mutation by the dispatcher.** The dispatcher MUST NOT delete nftban tables, stop nftband, or modify any kernel/service/file state before reaching `runRestoreDecide`. The decision evaluates against the live untouched system.
+
+## 56. Test requirements
+
+### 56.1 Decision-engine unit tests (mandatory)
+
+Each row below maps 1:1 to a test case in `internal/installer/restore/decide_amendment2_test.go` (or equivalent path; choice of file is implementer territory but the row coverage is normative).
+
+| # | Inputs | Expected output | Expected rule label |
+|---|---|---|---|
+| 1 | `AuthorityNFTBan` + `NoRecord` + no flags | REFUSE | G1/AuthorityNFTBan/default |
+| 2 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` only (no `--accept-orphan-nftban`) | REFUSE | G1/AuthorityNFTBan/default |
+| 3 | `AuthorityNFTBan` + `NoRecord` + `--accept-orphan-nftban` only (no `--panel-auto-takeover`) | REFUSE | G1/AuthorityNFTBan/default (orphan flag standalone has no effect) |
+| 4 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=None` | REFUSE | G2/PanelAutoNoPanel (existing rule still wins) |
+| 5 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=cPanel` | REFUSE | G1/AuthorityNFTBan/default (Panel != DirectAdmin → candidate triple absent) |
+| 6 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` ABSENT | REFUSE | G1/EvidenceMismatch (E.6 false) |
+| 7 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` ACTIVE | REFUSE | G1/EvidenceMismatch (E.6 false; active forbidden) |
+| 7b | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` inactive but `is-enabled=enabled` | REFUSE | G1/EvidenceMismatch (E.6 false; enabled forbidden — csf would return at next boot) |
+| 7c | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` inactive but `is-enabled=static` | REFUSE | G1/EvidenceMismatch (E.6 false; static forbidden) |
+| 7d | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` inactive + `is-enabled=disabled` (and all other §54.1 rows true) | **PROCEED** | G1/AuthorityNFTBan/OrphanProceed (E.6 acceptable fallback variant) |
+| 8 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `/usr/sbin/csf.disabled` ABSENT | REFUSE | G1/EvidenceMismatch (E.7 false) |
+| 9 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `/usr/sbin/csf` PRESENT | REFUSE | G1/EvidenceMismatch (E.8 false; ambiguous-both-present case) |
+| 10 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `ip:nftban` ABSENT | REFUSE | G1/EvidenceMismatch (E.9 false) |
+| 11 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `nftband.service` INACTIVE | REFUSE | G1/EvidenceMismatch (E.11 false) |
+| 12 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + `csf.service` `masked + inactive` + ALL §54.1 rows true | **PROCEED** | G1/AuthorityNFTBan/OrphanProceed (target=PanelNative/csf; E.6 strongest variant) |
+| 13 | `AuthorityNFTBan` + `Complete` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` | REFUSE | G1/AuthorityNFTBan/default (Prior != NoRecord → candidate triple absent) |
+| 14 | `AuthorityNFTBan` + `Incomplete` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` | REFUSE | G1/AuthorityNFTBan/default |
+| 15 | `AuthorityNFTBan` + `Stale` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` | REFUSE | G1/AuthorityNFTBan/default |
+| 16 | `AuthorityExternal` + any prior + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` + ALL §54.1 rows true | REFUSE | G1/AuthorityExternal (no bypass; classifier mismatch) |
+| 17 | `AmbiguityConflictExternal` + any prior + `--accept-orphan-nftban` + any flags + any panel | REFUSE | G1/AmbiguityConflictExternal (no bypass) |
+| 18 | `AmbiguityOrphanNFTBan` + any prior + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` | REFUSE | G4.3/AmbiguityOrphanPanelAuto (locked by §59 Q2; no silent reuse) |
+| 19 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `--restore` + `Panel=DirectAdmin` | REFUSE | G2/BothFlagsSet (existing rule still wins) |
+| 20 | `AuthorityNFTBan` + `NoRecord` + `--panel-auto-takeover` + `--accept-orphan-nftban` + `Panel=DirectAdmin` — `--accept-orphan-nftban` supplied via env var `NFTBAN_ACCEPT_ORPHAN=1` instead of CLI argv | REFUSE | G1/AuthorityNFTBan/default (no env-var fallback per §55; flag is CLI argv only) |
+
+### 56.2 Decision-engine regression tests (must continue to pass unchanged)
+
+| # | Scenario | Output |
+|---|---|---|
+| R1 | `AuthorityNone` + `NoRecord` + `--panel-auto-takeover` + DirectAdmin (existing G3.3 PROCEED) | **PROCEED** unchanged |
+| R2 | `AuthorityNone` + strong prior + `--restore` + any panel (existing G3.1 PROCEED) | **PROCEED** unchanged |
+| R3 | `AuthorityNone` + `NoRecord` + `--restore` + any panel (existing G3.3 REQUIRE_EXPLICIT_INTENT) | **REQUIRE_EXPLICIT_INTENT** unchanged |
+| R4 | `AmbiguityOrphanNFTBan` + strong prior + `--restore` (existing G4.1 PROCEED) | **PROCEED** unchanged |
+| R5 | `AmbiguityOrphanNFTBan` + `--panel-auto-takeover` (existing G4.3 REFUSE) | **REFUSE** unchanged |
+| R6 | All §6 Group 1 / Group 2 rows without `--accept-orphan-nftban` | unchanged |
+
+### 56.3 CI grep gates (extends §46 / §38.2)
+
+- `grep -nE "iptables-(save|restore|nft)"` over production code → must produce ZERO hits (preserves §51.3 Option B).
+- `grep -nE "build[ -]set[ ]+csf"` → ZERO hits (preserves §34 / Amendment 1 forbidden behavior).
+- `grep -nE "WriteFileAtomic.*update-history|openat.*O_WRONLY.*update-history|WriteUpdateHistory"` over restore-mode code paths → ZERO hits (preserves §19.2 layer 4).
+- `grep -nE "force|override"` (case-insensitive) over CLI flag definitions added in this amendment → ZERO hits in flag NAME or DESCRIPTION (preserves §55 "no force semantics").
+
+### 56.4 Mutation surface invariant test
+
+A structural test must confirm that the decision-engine code added by `amendment-2-code-A` adds **zero** new entries to the executor mutation-surface set. Mutation surfaces in scope: `ServiceMask`, `ServiceUnmask`, `ServiceStop`, `ServiceStart`, `ServiceEnable`, `ServiceDisable`, `Rename`, `RemoveFile`, `WriteFileAtomic`, `NftDeleteTable`, plus any future-typed mutations gated by §51.5-A2. The decision engine MUST use only read-only surfaces.
+
+### 56.5 Dispatcher integration test
+
+A dispatcher-level integration test (`internal/installer/restore/dispatcher_amendment2_test.go` or equivalent) must:
+
+1. Pre-seed mock executor + filesystem to satisfy ALL §54.1 rows.
+2. Invoke `runRestoreDecide` with `--mode=restore --panel-auto-takeover --accept-orphan-nftban`.
+3. Assert decision output is `PROCEED` with rule label `G1/AuthorityNFTBan/OrphanProceed` and target `PanelNative/csf`.
+4. Assert that on a real-host fixture (lab2 or lab4 fixture-only — no destructive run), the §32 11-step sequence is reached and Amendment 1 §31 mutations execute against the mock executor.
+5. Assert that downgrading any single §54.1 row to false flips the decision to REFUSE with rule label `G1/EvidenceMismatch`.
+
+This test is fixture-only. It does NOT execute on a real host. Real-host evidence is captured in §57.
+
+## 57. §28-shape real-host evidence requirements (merge-blocking for amendment-2-code-E)
+
+After `amendment-2-code-A` (decision implementation) merges and after `amendment-2-code-E` (destructive run) is opened, the merge-blocking real-host evidence pack must contain:
+
+### 57.1 Pre-run
+
+- Same H4 pre-snapshot capture as PR-26-code-E (10 files + sha256 manifest), captured on srv3.
+- Tier 1 binary discipline as PR-26-code-E §9: build on lab2 or lab4 only, distribute one binary, source sha256 == host sha256 byte-for-byte, no workstation builds, no per-host rebuilds.
+- Fresh operator signoff (`srv3/operator-signoff.txt`) recording: operator name, UTC timestamp, authorized binary sha256, snapshot/recovery primitive confirmation, OOB SSH discipline confirmation, literal "I authorize this destructive run." sentence.
+- Fresh auditor pre-execution audit issuing `CONDITIONAL PRE-EXECUTION GO FOR AMENDMENT-2-CODE-E — srv3 only, one restore attempt, no optional hosts, no retry on failure`.
+
+### 57.2 Run
+
+- Exactly one operator-driven invocation on session A with KVM/console reachable:
+  ```
+  /root/<new-binary> --mode=restore --panel-auto-takeover --accept-orphan-nftban
+  ```
+- Two SSH sessions, tcpdump or `script` log running before invocation.
+- Operator captures `echo $?` immediately after the dispatcher returns.
+- Assistant does NOT execute the destructive call. Assistant does NOT re-invoke for any reason including telemetry.
+
+### 57.3 Post-run evidence pack
+
+Required files, all under the private evidence root:
+
+1. `srv3/post/install-state.json` — final dispatcher state (must equal `StateRestoreExecuted` for the merge-blocking happy path).
+2. `srv3/post/restore-evidence-<timestamp>.json` — Code-D evidence-record. Must be present (not absent — PR-26-code-D merge-blocking evidence finally captured on a real host).
+3. `srv3/post/nft-post-tables.txt` — `nft list tables`. Must show `ip:nftban` ABSENT, `ip6:nftban` ABSENT, `inet:nftban_install_emergency` ABSENT.
+4. `srv3/post/nft-post-ruleset.txt` — `nft list ruleset`.
+5. `srv3/post/systemctl-post.txt` — `csf.service` is-active=`active`, `nftband.service` is-active=`inactive`.
+6. `srv3/post/csf-binary-post.txt` — `/usr/sbin/csf` PRESENT (sha256 should match the pre-Amendment-2 `csf.disabled` sha256), `/usr/sbin/csf.disabled` ABSENT.
+7. `srv3/post/cron-post.txt` — A.4 branch evidence per host pre-state. If srv3 has a cron-backup manifest at run-time, A.4 manifest-restore is exercised; otherwise A.4 soft-skip is exercised. Either is acceptable per Amendment 1 §31.1 A.4; the post-E auditor reads the dispatcher log to confirm which branch fired.
+8. `srv3/post/update-history-post.txt` — `update-history.json` MUST equal pre-snapshot (still ABSENT, byte-identical or sha256-identical pre/post). Failure = INV-PR25 §19.2 layer 4 violation.
+9. `srv3/post/dispatcher.log` — full dispatcher log including the `restore decide:` line showing rule label `G1/AuthorityNFTBan/OrphanProceed`.
+10. `srv3/post/exit-code.txt` — `0` (or whatever ExitOK is for `StateRestoreExecuted`).
+11. `srv3/run/srv3-amd2-code-e.pcap` and/or `srv3/run/srv3-amd2-code-e-session.log`.
+12. `srv3/post/manifest.txt` — sha256 of every file above.
+13. `srv3/forbidden-grep.log` — `forbidden-grep.sh srv3` returns PASS.
+
+### 57.4 Coverage table — what amendment-2-code-E proves on a real host
+
+| Coverage area | Pre-Amendment-2 status | Post-Amendment-2-code-E status |
+|---|---|---|
+| `G1/AuthorityNFTBan/OrphanProceed` PROCEED path | unit + integration only | + real-host srv3 |
+| §32 A.1 ServiceUnmask | unit + integration only | + real-host srv3 |
+| §32 A.3 binary Rename | unit + integration only | + real-host srv3 |
+| §32 A.4 cron branch (whichever applies on srv3 at run-time) | unit + integration only | + real-host srv3 |
+| §32 A.5 ServiceStart csf | unit + integration only | + real-host srv3 |
+| §32 A.6 ServiceStop nftband | unit + integration only | + real-host srv3 |
+| §32 A.7 NftDeleteTable nftban | unit + integration only | + real-host srv3 |
+| §41 / §51.3 target-specific safety predicate (Option B) | unit + integration only | + real-host srv3 |
+| Code-D evidence-record JSON write on Executed terminal | unit + integration only | + real-host srv3 |
+| `update-history.json` mode-gate at §19.2 layer 4 | unit + integration + lab2/lab4 REFUSE-shape only | + real-host srv3 mutation-shape |
+
+After amendment-2-code-E lands, the destructive merge-blocker (§35.3 / §40.2) closes for the §32 + §41 + Code-D paths together. PR-26 final becomes mergeable.
+
+### 57.5 Failure mode handling
+
+If amendment-2-code-E's single invocation lands at any non-success terminal (`StateRestoreFailedExecution`, `StateRestoreFailedVerification`, `StateRestoreRefused`, `StateRestoreIntentRequired`):
+
+- Operator captures the post-state pack regardless of outcome.
+- No retry without a fresh auditor ruling.
+- The auditor reviews the captured evidence and rules whether (a) the failure points to an Amendment-2 contract gap, (b) it points to an Amendment-1 §32 gap, (c) it points to a srv3-specific environmental issue, or (d) the implementation has a bug. Each disposition has a separate next-step.
+
+## 58. Reviewer checklist (amendment-2-doc seed)
+
+When this seed PR opens for review:
+
+- [ ] §52.1 pinned sentence is verbatim and load-bearing.
+- [ ] §52.2 in-scope is exactly one new lattice row + DirectAdmin + NoRecord + AuthorityNFTBan + `--accept-orphan-nftban` + `--panel-auto-takeover` + strong evidence.
+- [ ] §52.3 out-of-scope explicitly forbids: AuthorityExternal bypass, AmbiguityConflictExternal bypass, AmbiguityOrphanNFTBan reuse, force semantics, panel scope expansion, mutation-surface expansion, manual pre-mutation, code work in this PR.
+- [ ] §52.4 invariants list explicitly enumerates Amendment 1 §30.3, INV-PR25-AUTHORITY-IMMUTABILITY, §19.2 layer 4 / `main.go:132`, §20.1 panel map, §21.1/§21.3, §32 ordering, §32.1, §35.3, §41/§51.3 target-specific safety predicate, §51.5-A2, and the three INV-PR26 invariants — and confirms none are modified.
+- [ ] §52.5 introduces exactly one new invariant: `INV-AMD2-EXPLICIT-INTENT-IS-NARROW`.
+- [ ] §53.1 Group 1 split — `G1/AuthorityNFTBan/OrphanProceed` is the only PROCEED row added; the split is entirely within Group 1; §5 precedence preserved.
+- [ ] §53.2 mechanic — pre-condition triple check + §54 evidence predicate evaluation is the only change to §6 G1's evaluation order.
+- [ ] §53.4 explicit-REFUSE table covers AuthorityExternal, AmbiguityConflictExternal, AmbiguityOrphanNFTBan, every non-NoRecord prior, the no-panel-auto case, every non-DirectAdmin panel, the both-flags-set case, and the §54.1-row-fails case.
+- [ ] §54.1 contains 13 evidence rows (E.1–E.13). Every row has a stated source / read API.
+- [ ] §54.2 evidence read discipline matches `INV-PR25-AUTHORITY-IMMUTABILITY` (read-once, no re-read post-PROCEED).
+- [ ] §54.3 evidence predicate location is the decision layer, not Execute. PR-24 pinned-sentence is preserved.
+- [ ] §54.5 forbids manual pre-mutation; matches operator-locked rule (2026-04-28).
+- [ ] §55 forbidden behaviors enumerates: no AuthorityExternal bypass, no AmbiguityConflictExternal bypass, no silent AmbiguityOrphanNFTBan reuse, no standalone-flag use, no non-DirectAdmin use, no §54.1 bypass, no force semantics, no main.go:132 relaxation, no iptables introspection, no new mutation surface, no retry loop, no env-var/config-file flag chaining, no dispatcher pre-mutation.
+- [ ] §56.1 has 19 unit-test rows + §56.2 has 6 regression rows + §56.3 has 4 CI grep gates + §56.4 mutation-surface invariant test + §56.5 dispatcher integration test.
+- [ ] §57 evidence requirements match PR-26-code-E discipline (Tier 1 binary, fresh signoff, fresh auditor GO, one invocation, operator-driven, no retry).
+- [ ] §57.4 coverage table explicitly lists what amendment-2-code-E proves that PR-26-code-E did not.
+- [ ] §59 open questions explicitly mark every choice that operator/auditor must lock before amendment-2-code-A opens.
+- [ ] §60 non-goals are listed.
+- [ ] §61 sequencing recommendation is explicit and matches Amendment 1's lane discipline.
+- [ ] No code change in this PR.
+- [ ] No CI gate added in this PR (§56.3 specifies what amendment-2-code-A's CI gate must look like; the gate itself is added in code-A's PR, not this seed).
+- [ ] No file other than `internal/installer/restore/contract.md` modified in this PR.
+- [ ] Amendment history line v6 added.
+
+## 59. Open questions
+
+Q1 and Q2 are **LOCKED** by auditor disposition 2026-04-28. Q3–Q7 remain open and must be locked before `amendment-2-code-A` opens. Numbering preserved to minimize diff churn.
+
+### Q1 — Orphan-restore flag name [LOCKED 2026-04-28]
+
+**Lock: `--accept-orphan-nftban`.** Locked by auditor disposition 2026-04-28.
+
+Historical alternatives considered (rejected in favor of the lock):
+
+- `--accept-orphan-nftban` ← LOCKED
+- `--restore-orphan` (rejected: ambiguous about which authority is the orphan)
+- `--restore-csf-from-orphan` (rejected: target-explicit but verbose)
+- `--restore-after-orphan-nftban` (rejected: action-explicit but verbose)
+
+**Constraint preserved by the lock** (also enforced by §55): the name does NOT contain "force" or "override". The name describes the operator's intent ("accept the orphan state and restore CSF anyway") rather than a technical override. The name is unambiguous about the orphan source (NFTBan-orphan) and the implicit target (csf, the panel-default for DirectAdmin per §20.1).
+
+### Q2 — Should `AmbiguityOrphanNFTBan + --panel-auto-takeover + --accept-orphan-nftban` also PROCEED? [LOCKED 2026-04-28]
+
+**Lock: REFUSE under all flag combinations.** Locked by auditor disposition 2026-04-28. Amendment 2 does NOT extend to the `AmbiguityOrphanNFTBan` classification. If operators discover hosts where `AmbiguityOrphanNFTBan` is the actual classification and they need a path, a separate Amendment 3 must be opened. Amendment 2 does NOT silently widen scope.
+
+Pinned by:
+
+- §53.4 row 3 + row 4 (explicit REFUSE rows for `AmbiguityOrphanNFTBan` under the new flag)
+- §55 forbidden behavior "No silent reuse on `AmbiguityOrphanNFTBan`"
+- §56.1 row 18 (test pin)
+
+### Q3 — Are `executor.ServiceListed` / `executor.ServiceEnabled` typed read-only surfaces already exposed?
+
+§54.1 row E.6 requires reading `csf.service` listed-state and is-enabled-state. Amendment 2 assumes these are already typed in `executor.Executor`. If not, amendment-2-code-A must either (a) add the typed read-only surfaces (allowed under §51.5-A2), or (b) use raw `Run("systemctl", ...)` for read-only probes (allowed under §51.5-A2 / §43.3 raw-Run policy for read-only probes only).
+
+**Action:** the implementer of amendment-2-code-A confirms which path before opening the code PR.
+
+### Q4 — Is `executor.NftListTables` typed read-only surface already exposed?
+
+§54.1 rows E.9 + E.10 require reading kernel nft tables. Same disposition as Q3.
+
+### Q5 — Does `--accept-orphan-nftban` require its own help-text section in `--help`?
+
+CLI hygiene: `--accept-orphan-nftban` must appear in `--help` with text describing its narrow applicability. Suggested wording (final phrasing locked by amendment-2-code-A):
+
+> `--accept-orphan-nftban`  Explicitly authorize CSF restore on a DirectAdmin host where NFTBan is the current authority and no prior-authority record exists. Requires `--panel-auto-takeover` AND DirectAdmin AND strong on-disk evidence that NFTBan previously took over from CSF. Without all preconditions the restore refuses.
+
+The help text MUST NOT use "force" or "override". MUST mention the four required preconditions in plain English.
+
+### Q6 — Should the new flag be hidden behind a build tag or separately gated?
+
+Default: NO. The flag is a normal CLI flag. The narrow lattice extension and the strong-evidence predicate provide the gating; a build-tag would obscure the path for operators who legitimately need it.
+
+### Q7 — Is amendment-2-code-E permitted on hosts other than srv3?
+
+Default: NO. Operator-locked rule (2026-04-28) restricts destructive Code-E to srv3 only. amendment-2-code-E inherits this restriction. lab2 / lab4 may exercise the new lattice row in fixture-only mode (§56.5); they MUST NOT exercise §32 destructive A.1–A.7 under any flag.
+
+## 60. Non-goals (explicit)
+
+- This amendment does NOT add cPanel or Plesk panel support to the orphan-restore path. Out of scope.
+- This amendment does NOT change Amendment 1 §31 mutation set (A.1–A.7) or §32 ordering. The mutation path is unchanged.
+- This amendment does NOT change the §22 state-machine terminals or exit codes. The new `G1/AuthorityNFTBan/OrphanProceed` path leads to the same `StateRestoreExecuted` terminal under happy-path; the same `StateRestoreFailedExecution` / `StateRestoreFailedVerification` under failure modes.
+- This amendment does NOT introduce a "force restore" semantic for any other authority class.
+- This amendment does NOT introduce iptables introspection. §51.3 Option B holds.
+- This amendment does NOT introduce DirectAdmin custombuild rewrite. Out of scope per Amendment 1.
+- This amendment does NOT relax `INV-PR26-NEW-MUTATION-SURFACES-BOUNDED`.
+- This amendment does NOT relax `INV-PR26-VERIFICATION-IS-PROOF-NOT-DECISION`.
+- This amendment does NOT relax `INV-PR26-EVIDENCE-PRIVATE-BY-DEFAULT`.
+- This amendment does NOT permit the assistant to execute a destructive call. The PR-26-code-E disposition's Path 1 / operator-driven discipline applies to amendment-2-code-E identically.
+- This amendment does NOT permit manual pre-mutation on any host before invocation.
+- This amendment does NOT modify §28 / §35.3 lab2/lab4 fixture evidence. Those evidence packs remain as already captured.
+
+## 61. Sequencing recommendation
+
+Lane discipline mirrors Amendment 1 (which itself mirrored PR-25):
+
+1. **amendment-2-doc** (this PR) — single doc commit inserting Part V into `internal/installer/restore/contract.md`. No code, no CI, no host action. Auditor pre-merge audit.
+2. **amendment-2-doc operator lock record** — appended to §51-style lock record (perhaps as a new §62 sub-section) recording which §59 open questions were locked at merge time. May be the same PR or a follow-up.
+3. **amendment-2-code-A** — implementation of the §53 + §54 decision-layer lattice extension. Decision-only. No mutation surface change. CI grep gates added per §56.3. Unit tests per §56.1 + §56.2 + §56.4 + dispatcher integration test per §56.5. Auditor pre-merge audit.
+4. **amendment-2-code-A audit pass** — auditor re-runs §56 test matrix and confirms the §51.3 Option B boundary holds (no iptables introspection added).
+5. **amendment-2-code-E pre-execution audit** — fresh Tier 1 binary, fresh signoff, fresh pre-snapshot, full pre-execution audit identical in shape to PR-26-code-E's pre-audit.
+6. **amendment-2-code-E** — exactly one operator-driven invocation on srv3. Operator captures exit code via `echo $?`. No retry. Assistant captures post-state pack only.
+7. **amendment-2-code-E post-execution audit** — auditor classifies evidence (ACCEPTED / PARTIAL / REJECTED) and rules whether PR-26 final becomes mergeable.
+8. **PR-26 final** — only mergeable after step 7 ACCEPTED.
+
+Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2-3 days; step 5 = 0.5 day; step 6 = 0.5 day; step 7 = 1 day. Total: ~5-6 days, contingent on auditor turnaround.
+
+---
+
 ## Amendment history
 
 - **2026-04-20 v1 (seed)** — first committed seed. Lattice v2 + three locked corrections:
@@ -1284,3 +1736,5 @@ A v5 entry is added to the Amendment history below recording this lock-record co
 - **2026-04-28 v4 (PR-26 contract seed: restore verification / evidence hardening)** — appends Part IV (§§37–48). PR-25 (#511, merged `6a0ab67a`) shipped restore execution under Amendment 1 with three known correctness gaps: (1) the safety-net-safe predicate accepts ANY active external firewall as evidence of SSH protection, not the resolved target's specific unit; (2) A.4 cron restore is soft-skip because `switchop.disarmCSFArtifacts` does not preserve `/etc/cron.d/csf-cron` and `/etc/cron.d/lfd-cron` before removal; (3) restore mutation routes through `Run("systemctl","unmask",…)` and `Run("mv",…)` because the `executor.Executor` interface lacks typed `ServiceUnmask` and `Rename` methods, weakening the per-call CI trace. PR-26 closes those gaps and adds post-restore evidence hardening — a structured proof that the restore outcome is correct on real systems. Part IV is normative for PR-26 only and does NOT modify §§1–36. **Doc-only commit; no production code changes.** Code phase opens in segmented commits after this seed is reviewed and merged.
 
 - **2026-04-28 v5 (PR-26 operator lock record)** — appends §51 to Part IV recording the operator's lock signals for §§39–43 proposed locks and the §48 hard blockers. Q1–Q5: ACCEPTED (Q1 row 6 conditional on §48.1). §48.1: **Option B selected** for PR-26-code-A — exact CSF SSH-rule kernel evidence becomes ADVISORY; no `IptablesRuleExists` and no new iptables introspection method in code-A. §48.2: **`firewallType` plumbing selected** — production deps receive raw firewallType, not precomputed targetUnit, consistent with the PR-25 4B-3-pre evidence-plumbing pattern. P1 acknowledgements recorded: Option A remains possible only through future contract amendment; INV-PR26-NEW-MUTATION-SURFACES-BOUNDED caps mutation surfaces only; any §22 / §32 ordering extension must be re-locked explicitly. Entry criteria for PR-26-code-A locked: target-specific safety predicate / inline-verification hardening only — no cron manifest, no typed executor methods, no destructive soak, no repo hygiene. Doc-only commit; no production code, no CI, no schema, no CHANGELOG.
+
+- **2026-04-28 v6 (Amendment 2: Orphan-NFTBan explicit-intent CSF restore path — DOC SEED)** — appends Part V (§§52–61). Authority gap discovered during PR-26-code-E srv3 destructive evidence run: the dispatcher refused at G1/AuthorityNFTBan on a host whose precondition was the canonical "nftban-took-over-from-csf with no prior-record" state, blocking the destructive cycle from running on a real host. Auditor disposition (2026-04-28) approved Option A (narrow explicit-intent override); Options B (different host) and C (manual pre-mutation) rejected. This amendment splits the existing G1/AuthorityNFTBan row into two evaluated-within-Group-1 sub-rows: `G1/AuthorityNFTBan/default` (REFUSE, unchanged behavior for all flag patterns outside the candidate triple) and `G1/AuthorityNFTBan/orphan-intent-candidate` (delegates to the §54 evidence predicate; `G1/AuthorityNFTBan/OrphanProceed` on all-true, `G1/EvidenceMismatch` on any-false). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved. The PROCEED row activates only for `AuthorityNFTBan + NoRecord + DirectAdmin + --panel-auto-takeover + --accept-orphan-nftban + ALL §54.1 evidence rows true → PROCEED PanelNative/csf`. Every other §6 G1 row remains REFUSE under all flag combinations. Adds new invariant `INV-AMD2-EXPLICIT-INTENT-IS-NARROW` (§52.5). §59 Q1 (flag name `--accept-orphan-nftban`) and Q2 (`AmbiguityOrphanNFTBan` REFUSE) locked by auditor disposition 2026-04-28; Q3–Q7 remain open. Doc-only commit; no production code, no CI gate, no host action. Code phase opens in a separate `amendment-2-code-A` PR after this seed merges. Real-host destructive evidence captured by `amendment-2-code-E` after code-A merges; amendment-2-code-E is the merge-blocker for PR-26 final.
