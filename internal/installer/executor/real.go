@@ -27,6 +27,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -134,6 +135,28 @@ func (r *RealExecutor) Symlink(oldname, newname string) error {
 // gives a typed error path consistent with WriteFileAtomic.
 func (r *RealExecutor) Rename(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
+}
+
+// Stat returns FileMeta (mode/uid/gid/size) via os.Stat +
+// syscall.Stat_t. Read-only introspection. Added in PR-26-code-C
+// for the CSF cron-backup manifest writer + reader.
+//
+// On non-POSIX hosts (Windows), uid/gid extraction would not work as
+// written; the production target is Linux only, so this is acceptable.
+func (r *RealExecutor) Stat(path string) (FileMeta, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return FileMeta{}, err
+	}
+	meta := FileMeta{
+		Mode: fi.Mode().Perm(),
+		Size: fi.Size(),
+	}
+	if sys, ok := fi.Sys().(*syscall.Stat_t); ok {
+		meta.UID = int(sys.Uid)
+		meta.GID = int(sys.Gid)
+	}
+	return meta, nil
 }
 
 // --- nftables ---
