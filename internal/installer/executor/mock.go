@@ -40,6 +40,13 @@ type MockExecutor struct {
 	// Files maps path -> content for ReadFile/FileExists.
 	Files map[string][]byte
 
+	// FileStats maps path -> FileMeta for Stat. PR-26-code-C
+	// addition. When a path is in Files but absent from FileStats,
+	// Stat synthesizes a default-mode (0644 root:root) FileMeta with
+	// Size derived from the in-memory content. Tests that need to
+	// pin specific mode/uid/gid populate FileStats explicitly.
+	FileStats map[string]FileMeta
+
 	// WrittenFiles records what was written via WriteFileAtomic.
 	WrittenFiles map[string][]byte
 
@@ -91,6 +98,7 @@ func NewMockExecutor() *MockExecutor {
 	return &MockExecutor{
 		RunResults:       make(map[string]Result),
 		Files:            make(map[string][]byte),
+		FileStats:        make(map[string]FileMeta),
 		WrittenFiles:     make(map[string][]byte),
 		Dirs:             make(map[string]bool),
 		NftTables:        make(map[string]bool),
@@ -189,6 +197,22 @@ func (m *MockExecutor) Remove(path string) error {
 }
 
 func (m *MockExecutor) Symlink(_, _ string) error { return nil }
+
+// Stat returns FileMeta from FileStats if explicitly set; otherwise
+// synthesizes a default-mode (0644 root:root) entry with Size derived
+// from the in-memory content. Returns os.ErrNotExist if neither
+// FileStats nor Files contains the path. PR-26-code-C addition.
+func (m *MockExecutor) Stat(path string) (FileMeta, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if meta, ok := m.FileStats[path]; ok {
+		return meta, nil
+	}
+	if data, ok := m.Files[path]; ok {
+		return FileMeta{Mode: 0644, UID: 0, GID: 0, Size: int64(len(data))}, nil
+	}
+	return FileMeta{}, &os.PathError{Op: "stat", Path: path, Err: os.ErrNotExist}
+}
 
 // Rename simulates atomic rename in the mock's in-memory file map and
 // records a "rename" command for trace assertions. Returns

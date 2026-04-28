@@ -30,6 +30,22 @@ type Result struct {
 	Stderr   string
 }
 
+// FileMeta carries the read-only metadata Stat returns. Added in
+// PR-26-code-C for the CSF cron-backup manifest writer + reader,
+// which need to record and verify mode / uid / gid / size of the
+// backed-up files.
+//
+// Per §51.5-A2 invariant, this is read-only introspection — it is
+// OUTSIDE the bounded-3 mutation surface cap of
+// INV-PR26-NEW-MUTATION-SURFACES-BOUNDED. No new mutation surface is
+// introduced.
+type FileMeta struct {
+	Mode os.FileMode
+	UID  int
+	GID  int
+	Size int64
+}
+
 // Executor contract (frozen):
 //
 // Command execution:
@@ -49,6 +65,9 @@ type Result struct {
 //
 // File operations (atomic):
 //   - Rename — atomic same-filesystem rename via os.Rename
+//
+// File metadata (read-only introspection):
+//   - Stat — return mode/uid/gid/size for a path
 //
 // System:
 //   - CommandExists / UserExists / GroupExists / Getenv
@@ -97,6 +116,16 @@ type Executor interface {
 	// binary-restore step. Mutation surface is bounded by
 	// INV-PR26-NEW-MUTATION-SURFACES-BOUNDED (§44 row 2).
 	Rename(oldpath, newpath string) error
+
+	// Stat returns the FileMeta (mode / uid / gid / size) for a path.
+	// Read-only introspection. Added in PR-26-code-C for the CSF
+	// cron-backup manifest writer + reader. Per §51.5-A2 invariant,
+	// read-only typed introspection is OUTSIDE the bounded-3 mutation
+	// cap; no new mutation surface is introduced.
+	//
+	// Returns an error if the path does not exist or cannot be
+	// stat'd (per os.Stat semantics in the real implementation).
+	Stat(path string) (FileMeta, error)
 
 	// NftTableExists returns true if the given nft table exists in the kernel.
 	// family: "ip", "ip6", or "inet". table: e.g. "nftban".
