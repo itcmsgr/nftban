@@ -300,19 +300,44 @@ func runRestoreExecutionFromProceed(
 	if execRes.Err != nil {
 		reason = execRes.Err.Error()
 	}
-	_ = sf.Transition(execRes.Terminal, state.PhaseDetect, reason)
 
-	// Step D — Operator-facing output reflects the executed terminal.
-	switch execRes.Terminal {
+	// Step D — PR-26-code-D evidence record. Recording-only; no
+	// re-derivation of TargetAuthority, no PR-24 re-decision, no
+	// validator/module-health probe, no update-history write
+	// (§19.2 layer 4 / main.go:132 mode-gate retained).
+	//
+	// The §48.6 lock requires that, if evidence-write fails AFTER a
+	// successful StateRestoreExecuted, we MUST NOT claim "executed"
+	// without recording the evidence. The state model already
+	// supports StateRestoreDegraded (state/machine.go:152) so we
+	// downgrade the terminal in that case.
+	finalTerminal := execRes.Terminal
+	finalReason := reason
+	rec := buildRestoreEvidenceRecord(exec, log, target, execRes)
+	evidenceErr := writeRestoreEvidenceRecord(ctx, exec, rec, log)
+	if evidenceErr != nil {
+		log.Warn("restore evidence: write failed: %v", evidenceErr)
+		if execRes.Terminal == state.StateRestoreExecuted {
+			finalTerminal = state.StateRestoreDegraded
+			finalReason = "restore executed but evidence-write failed: " + evidenceErr.Error()
+			log.Warn("restore evidence: downgrading StateRestoreExecuted -> StateRestoreDegraded — successful restore cannot claim executed without recorded evidence")
+		}
+	}
+
+	_ = sf.Transition(finalTerminal, state.PhaseDetect, finalReason)
+
+	// Step E — Operator-facing output reflects the (possibly
+	// downgraded) terminal.
+	switch finalTerminal {
 	case state.StateRestoreExecuted:
 		log.Result("[NFTBan] restore execution: COMPLETED — authorized restore is in effect")
 	case state.StateRestoreDegraded:
-		log.Result("[NFTBan] restore execution: COMPLETED with warnings — review inline-verify result")
+		log.Result("[NFTBan] restore execution: COMPLETED with warnings — %s", finalReason)
 	case state.StateRestoreFailedExecution:
-		log.Result("[NFTBan] restore execution: FAILED at %s — %s", execRes.Stage, reason)
+		log.Result("[NFTBan] restore execution: FAILED at %s — %s", execRes.Stage, finalReason)
 	case state.StateRestoreFailedVerification:
 		log.Result("[NFTBan] restore execution: FAILED VERIFICATION at %s — safety net retained — %s",
-			execRes.Stage, reason)
+			execRes.Stage, finalReason)
 	}
 
 	return sf.State.ExitCode()

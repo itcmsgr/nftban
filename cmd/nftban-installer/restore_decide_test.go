@@ -218,7 +218,11 @@ func TestRunRestoreExecutionFromProceed_PanelNative_UnmappedPanel_FailsExecution
 	log := newTestLogger(t)
 	dr, in, rec, panel := procPanelNativeUnmappedFixture()
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// PR-26-code-D: dispatcher now writes a post-restore evidence
+	// record via writeRestoreEvidenceRecord which requires a non-nil
+	// executor. Inject a MockExecutor so the writer succeeds and the
+	// terminal stays at StateRestoreExecuted (fake happy path).
+	exit := runRestoreExecutionFromProceed(context.Background(), executor.NewMockExecutor(), sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreFailedExecution {
 		t.Errorf("State = %q; want StateRestoreFailedExecution (unmapped panel)", sf.State)
@@ -251,7 +255,11 @@ func TestRunRestoreExecutionFromProceed_NonProceedAccident_PlannerErrors(t *test
 		Reason: "fixture",
 	}
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// PR-26-code-D: dispatcher now writes a post-restore evidence
+	// record via writeRestoreEvidenceRecord which requires a non-nil
+	// executor. Inject a MockExecutor so the writer succeeds and the
+	// terminal stays at StateRestoreExecuted (fake happy path).
+	exit := runRestoreExecutionFromProceed(context.Background(), executor.NewMockExecutor(), sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreFailedExecution {
 		t.Errorf("State = %q; want StateRestoreFailedExecution (planner refused non-PROCEED)", sf.State)
@@ -374,7 +382,11 @@ func TestRunRestoreExecutionFromProceed_FakeDeps_HappyPath_PersistsExecuted(t *t
 	log := newTestLogger(t)
 	dr, in, rec, panel := procRecordedPriorFixture()
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// PR-26-code-D: dispatcher now writes a post-restore evidence
+	// record via writeRestoreEvidenceRecord which requires a non-nil
+	// executor. Inject a MockExecutor so the writer succeeds and the
+	// terminal stays at StateRestoreExecuted (fake happy path).
+	exit := runRestoreExecutionFromProceed(context.Background(), executor.NewMockExecutor(), sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreExecuted {
 		t.Errorf("State = %q; want StateRestoreExecuted (fake happy path)", sf.State)
@@ -407,7 +419,11 @@ func TestRunRestoreExecutionFromProceed_FakeDeps_MutateFailure(t *testing.T) {
 	log := newTestLogger(t)
 	dr, in, rec, panel := procRecordedPriorFixture()
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// PR-26-code-D: dispatcher now writes a post-restore evidence
+	// record via writeRestoreEvidenceRecord which requires a non-nil
+	// executor. Inject a MockExecutor so the writer succeeds and the
+	// terminal stays at StateRestoreExecuted (fake happy path).
+	exit := runRestoreExecutionFromProceed(context.Background(), executor.NewMockExecutor(), sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreFailedExecution {
 		t.Errorf("State = %q; want StateRestoreFailedExecution", sf.State)
@@ -439,7 +455,11 @@ func TestRunRestoreExecutionFromProceed_FakeDeps_VerifyFailure_NoRemove(t *testi
 	log := newTestLogger(t)
 	dr, in, rec, panel := procRecordedPriorFixture()
 
-	exit := runRestoreExecutionFromProceed(context.Background(), nil, sf, log, dr, in, rec, panel)
+	// PR-26-code-D: dispatcher now writes a post-restore evidence
+	// record via writeRestoreEvidenceRecord which requires a non-nil
+	// executor. Inject a MockExecutor so the writer succeeds and the
+	// terminal stays at StateRestoreExecuted (fake happy path).
+	exit := runRestoreExecutionFromProceed(context.Background(), executor.NewMockExecutor(), sf, log, dr, in, rec, panel)
 
 	if sf.State != state.StateRestoreFailedVerification {
 		t.Errorf("State = %q; want StateRestoreFailedVerification", sf.State)
