@@ -58,6 +58,16 @@ type config struct {
 	// behind an explicit default-off flag. Operators that relied on the
 	// prior behaviour must now pass --panel-auto-takeover.
 	panelAutoTakeover bool // --panel-auto-takeover: allow panel presence to auto-approve takeover (default OFF)
+	// v1.100 Amendment 2: --accept-orphan-nftban — explicit operator
+	// intent for the narrow restore-from-orphan-NFTBan-on-DirectAdmin
+	// path (contract.md §52–61). MUST be CLI argv only — no env-var
+	// fallback, no config-file key, no implicit default. Activates the
+	// G1/AuthorityNFTBan split's orphan-intent candidate row only when
+	// combined with --panel-auto-takeover, Panel=DirectAdmin,
+	// Authority=AuthorityNFTBan, Prior=NoRecord, and ALL §54.1
+	// evidence rows true. Standalone or under any other classifier the
+	// flag has zero effect — REFUSE remains.
+	acceptOrphanNFTBan bool // --accept-orphan-nftban: explicit-intent CSF restore from orphan NFTBan on DirectAdmin (Amendment 2)
 	// v1.100 PR-23: --confirm-mutation replaces the PR-22 auto-elevate
 	// shim. --mode=uninstall now requires exactly one of:
 	//   --dry-run          (observational plan)
@@ -97,6 +107,10 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.restorePriorAuthority, "restore-prior-authority", false, "Restore pre-install external firewall authority. Requires recorded prior-authority record. Plan-only in PR-22.")
 	// v1.100 PR-22B: explicit panel-auto-takeover gate (see config field doc).
 	flag.BoolVar(&cfg.panelAutoTakeover, "panel-auto-takeover", false, "Allow control-panel presence to auto-approve takeover of conflicting firewalls. Default OFF. Set explicitly to preserve pre-PR-22B behaviour.")
+	// v1.100 Amendment 2: --accept-orphan-nftban — explicit-intent
+	// orphan restore. CLI argv only; no env mirror; help text MUST NOT
+	// include "force" or "override" (Amendment 2 §55).
+	flag.BoolVar(&cfg.acceptOrphanNFTBan, "accept-orphan-nftban", false, "Explicit-intent CSF restore on a DirectAdmin host where NFTBan is the current authority and no prior-authority record exists. Requires --mode=restore AND --panel-auto-takeover AND DirectAdmin AND on-disk evidence that NFTBan previously took over from CSF. Without all preconditions the restore refuses (Amendment 2).")
 	// v1.100 PR-23: --confirm-mutation — explicit uninstall mutation entry.
 	flag.BoolVar(&cfg.confirmMutation, "confirm-mutation", false, "Authorize uninstall authority release (real kernel + service mutation). Required for --mode=uninstall without --dry-run. Mutually exclusive with --dry-run.")
 
@@ -161,6 +175,11 @@ func parseFlags() *config {
 				fmt.Fprintln(os.Stderr, "       --mode=restore invokes the PR-24 decision engine; it performs NO mutation.")
 				os.Exit(state.ExitFatal)
 			}
+			// Amendment 2 §55 — `--accept-orphan-nftban` is a
+			// restore-mode-only flag. Reject early in any other mode.
+			// (`cfg.mode == "restore"` here, but ANY mode other than
+			// restore that received the flag must refuse before the
+			// fall-through return below.)
 			if cfg.dryRun {
 				fmt.Fprintln(os.Stderr, "error: --dry-run is not valid with --mode=restore")
 				fmt.Fprintln(os.Stderr, "       --mode=restore is ALWAYS pure policy decision — no mutation path exists.")
@@ -267,6 +286,14 @@ func parseFlags() *config {
 	// nonsense interaction with install/upgrade takeover semantics.
 	if cfg.confirmMutation && cfg.mode != "uninstall" {
 		fmt.Fprintln(os.Stderr, "error: --confirm-mutation is only valid with --mode=uninstall")
+		os.Exit(state.ExitFatal)
+	}
+
+	// Amendment 2 §55: --accept-orphan-nftban is restore-mode only.
+	// Reject explicitly so operators don't get a silent no-op in
+	// install / upgrade / uninstall.
+	if cfg.acceptOrphanNFTBan && cfg.mode != "restore" {
+		fmt.Fprintln(os.Stderr, "error: --accept-orphan-nftban is only valid with --mode=restore")
 		os.Exit(state.ExitFatal)
 	}
 
