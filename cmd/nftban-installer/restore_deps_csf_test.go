@@ -826,7 +826,7 @@ func TestCSFMutate_4B3csf_HappyPath_NoOutOfTargetMutation(t *testing.T) {
 }
 
 // =============================================================================
-// 4B-3-csf — Test #17: no //nolint:unused on consumed mutation fields.
+// 4B-3-csf — Test #17: consumed mutation fields have no stale lint-suppression annotations.
 // =============================================================================
 
 func TestCSFMutate_4B3csf_NoNolintUnusedOnMutationFields(t *testing.T) {
