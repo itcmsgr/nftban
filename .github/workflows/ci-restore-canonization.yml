@@ -312,6 +312,15 @@ jobs:
           # is anchored to a call expression (\bexec\. or similar) so
           # legitimate string literals don't false-match. Doc comments
           # are already excluded by the line-leading // strip above.
+          #
+          # WriteFileAtomic is NOT globally forbidden here because
+          # PR-26-code-C authorizes A.4 cron restore writes (only to
+          # /etc/cron.d/csf-cron and /etc/cron.d/lfd-cron, gated by
+          # the §42.2 manifest). Those writes are constrained by the
+          # dedicated G4-RESTORE-CRON-MANIFEST-INTEGRITY gate below
+          # (writer + reader symbol pin + cron-target literal allow-
+          # list). Carving line-exceptions into this gate would recreate
+          # the regex-brittleness class the auditor flagged at PR #515.
           forbidden_patterns=(
             # Service-policy mutations (mask/disable/daemon-reload) are
             # forbidden by Amendment 1 §34. ServiceUnmask is no longer
@@ -320,9 +329,6 @@ jobs:
             '\bexec\.ServiceMask\('
             '\bexec\.ServiceDisable\('
             '\bexec\.DaemonReload\('
-            # Filesystem-mutation primitives. A.4 cron-restore is a
-            # soft-skip; any WriteFileAtomic here is out of scope.
-            '\bexec\.WriteFileAtomic\('
             # Direct OS bypass (must route through the executor).
             '"os/exec"'
             '\bexec\.Command\('
