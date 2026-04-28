@@ -187,11 +187,31 @@ func (p *productionPreflightDep) PreflightTarget(_ context.Context, firewallType
 		}
 	}
 	if binaryFound == "" {
-		if p.log != nil {
-			p.log.Info("restore preflight: refusing firewallType=%q — no canonical binary in PATH (looked for %v)",
-				firewallType, presence.binaries)
+		// Amendment 2 §54: for CSF-only restore-to-CSF, accept the
+		// install-time-disabled binary `/usr/sbin/csf.disabled` as an
+		// acceptable restorable candidate. The Amendment-2 orphan
+		// evidence chain proves NFTBan disabled CSF by renaming
+		// /usr/sbin/csf → /usr/sbin/csf.disabled at install-time
+		// (switchop.DisableConflicts step 4, Amendment 1 §31 A.3).
+		// §32 A.3 later performs the authoritative rename back.
+		// Preflight remains read-only and only verifies that a
+		// restorable candidate is present; it does NOT mutate or
+		// rename here. The .disabled relaxation is CSF-only — ufw,
+		// firewalld, and iptables retain the strict in-PATH check
+		// per Amendment 1 §30.2 (CSF-only inverse-of-install scope).
+		if firewallType == "csf" && p.exec.FileExists("/usr/sbin/csf.disabled") {
+			if p.log != nil {
+				p.log.Info("restore preflight: firewallType=%q canonical binary absent from PATH but /usr/sbin/csf.disabled present — accepting (Amendment 2 §54 / restore-to-CSF)",
+					firewallType)
+			}
+			binaryFound = "/usr/sbin/csf.disabled"
+		} else {
+			if p.log != nil {
+				p.log.Info("restore preflight: refusing firewallType=%q — no canonical binary in PATH (looked for %v)",
+					firewallType, presence.binaries)
+			}
+			return false, ErrPreflightBinaryMissing
 		}
-		return false, ErrPreflightBinaryMissing
 	}
 
 	// Check unit files (OR-list — at least one path must exist).
