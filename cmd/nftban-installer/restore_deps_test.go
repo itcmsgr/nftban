@@ -899,3 +899,166 @@ func keysOf(m map[string][]byte) []string {
 	}
 	return out
 }
+
+// =============================================================================
+// =============================================================================
+// Amendment 2 code-B — preflight csf.disabled acceptance
+// =============================================================================
+// =============================================================================
+//
+// Amendment 2 §54 + §53 G1/AuthorityNFTBan/OrphanProceed path requires
+// preflight to accept /usr/sbin/csf.disabled as a restorable candidate
+// when /usr/sbin/csf is absent. The .disabled relaxation is CSF-only;
+// ufw / firewalld / iptables retain the strict in-PATH check per
+// Amendment 1 §30.2 (CSF-only inverse-of-install scope).
+//
+// pf4B1MockWith already supports adding arbitrary file paths to the
+// mock; we extend the test fixture set with explicit
+// /usr/sbin/csf.disabled presence/absence variations.
+
+// pfAMD2MockWith builds a MockExecutor with the given binary in PATH
+// (or empty for absent), unit-file paths, and an optional
+// /usr/sbin/csf.disabled presence flag.
+func pfAMD2MockWith(binary string, unitFiles []string, csfDisabledPresent bool) *executor.MockExecutor {
+	mock := pf4B1MockWith(binary, unitFiles)
+	if csfDisabledPresent {
+		mock.Files["/usr/sbin/csf.disabled"] = []byte{}
+	}
+	return mock
+}
+
+// AMD2-1: csf in PATH + unit present + .disabled absent → PASS.
+// Pinned to confirm the §54 relaxation does NOT regress the existing
+// happy path that 4B-1.1 already covers.
+func TestPreflightTarget_AMD2_CSF_InPath_DisabledAbsent_Pass(t *testing.T) {
+	mock := pfAMD2MockWith("csf", []string{"/etc/systemd/system/csf.service"}, false)
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want ok=true err=nil", ok, err)
+	}
+}
+
+// AMD2-2: csf absent + /usr/sbin/csf.disabled present + unit present → PASS.
+// This is the load-bearing Amendment 2 §54 case.
+func TestPreflightTarget_AMD2_CSF_Absent_DisabledPresent_Pass(t *testing.T) {
+	mock := pfAMD2MockWith("", []string{"/etc/systemd/system/csf.service"}, true)
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok {
+		t.Errorf("PreflightTarget(csf) = false; want true (Amendment 2 §54 csf.disabled relaxation)")
+	}
+	if err != nil {
+		t.Errorf("PreflightTarget(csf) returned err: %v", err)
+	}
+}
+
+// AMD2-3: csf absent + .disabled absent + unit present → REFUSE
+// ErrPreflightBinaryMissing. Both restorable candidates are missing.
+func TestPreflightTarget_AMD2_CSF_BothAbsent_Refuse(t *testing.T) {
+	mock := pfAMD2MockWith("", []string{"/etc/systemd/system/csf.service"}, false)
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if ok {
+		t.Errorf("PreflightTarget(csf) accepted with both csf and csf.disabled absent; want refusal")
+	}
+	if !errors.Is(err, ErrPreflightBinaryMissing) {
+		t.Errorf("err = %v; want ErrPreflightBinaryMissing", err)
+	}
+}
+
+// AMD2-4: csf in PATH AND .disabled present + unit present → PASS at
+// preflight. The "ambiguous-both-present" state is A.3's responsibility
+// per Amendment 1 §31 A.3 ("Refuse the entire restore if both
+// /usr/sbin/csf and /usr/sbin/csf.disabled are present"). Preflight
+// remains read-only and only verifies presence of a restorable
+// candidate; the ambiguity is detected and refused later in §32 step 3.
+func TestPreflightTarget_AMD2_CSF_BothPresent_Pass_AmbiguityIsA3(t *testing.T) {
+	mock := pfAMD2MockWith("csf", []string{"/etc/systemd/system/csf.service"}, true)
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want preflight PASS (ambiguity is A.3 territory)", ok, err)
+	}
+}
+
+// AMD2-5: csf in PATH + unit ABSENT → REFUSE ErrPreflightUnitMissing.
+// Existing unit-file presence check remains unchanged by §54.
+func TestPreflightTarget_AMD2_CSF_InPath_UnitAbsent_Refuse(t *testing.T) {
+	mock := pfAMD2MockWith("csf", nil, false)
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if ok {
+		t.Errorf("PreflightTarget(csf) accepted with no unit file; want refusal")
+	}
+	if !errors.Is(err, ErrPreflightUnitMissing) {
+		t.Errorf("err = %v; want ErrPreflightUnitMissing", err)
+	}
+}
+
+// AMD2-6/7/8: non-CSF firewalls do NOT receive the .disabled relaxation.
+// Even if a hypothetical "<binary>.disabled" file exists, preflight
+// still refuses with ErrPreflightBinaryMissing. CSF-only scope per
+// Amendment 1 §30.2.
+func TestPreflightTarget_AMD2_NonCSF_NoDisabledRelaxation(t *testing.T) {
+	cases := []struct {
+		fwt          string
+		unitPath     string
+		disabledPath string // hypothetical .disabled filename for the firewall
+	}{
+		{"ufw", "/usr/lib/systemd/system/ufw.service", "/usr/sbin/ufw.disabled"},
+		{"firewalld", "/usr/lib/systemd/system/firewalld.service", "/usr/bin/firewall-cmd.disabled"},
+		{"iptables", "/usr/lib/systemd/system/iptables.service", "/usr/sbin/iptables.disabled"},
+	}
+	for _, c := range cases {
+		t.Run(c.fwt, func(t *testing.T) {
+			mock := pf4B1MockWith("", []string{c.unitPath})
+			// Add a hypothetical .disabled for this non-CSF firewall.
+			// Must NOT be accepted by preflight under any rationale.
+			mock.Files[c.disabledPath] = []byte{}
+			// Also seed /usr/sbin/csf.disabled to prove the CSF-only
+			// branch does not bleed into non-CSF paths.
+			mock.Files["/usr/sbin/csf.disabled"] = []byte{}
+			d := &productionPreflightDep{exec: mock}
+			ok, err := d.PreflightTarget(context.Background(), c.fwt)
+			if ok {
+				t.Errorf("PreflightTarget(%q) accepted with a hypothetical %q present — Amendment 1 §30.2 CSF-only scope violated",
+					c.fwt, c.disabledPath)
+			}
+			if !errors.Is(err, ErrPreflightBinaryMissing) {
+				t.Errorf("PreflightTarget(%q) err = %v; want ErrPreflightBinaryMissing", c.fwt, err)
+			}
+		})
+	}
+}
+
+// AMD2-9: unknown firewallType still refuses with
+// ErrPreflightUnknownFirewall regardless of any .disabled file
+// presence on disk.
+func TestPreflightTarget_AMD2_UnknownFirewall_StillRefuse(t *testing.T) {
+	mock := pf4B1MockWith("", nil)
+	mock.Files["/usr/sbin/csf.disabled"] = []byte{} // red herring
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "shorewall")
+	if ok {
+		t.Errorf("PreflightTarget(shorewall) accepted; want refusal")
+	}
+	if !errors.Is(err, ErrPreflightUnknownFirewall) {
+		t.Errorf("err = %v; want ErrPreflightUnknownFirewall", err)
+	}
+}
+
+// AMD2-10: preflight remains read-only on the .disabled-acceptance
+// branch. Calling PreflightTarget with the §54 relaxation active must
+// still record ZERO commands (FileExists is a typed read; no Run).
+func TestPreflightTarget_AMD2_CSF_DisabledBranch_NoMutationCalls(t *testing.T) {
+	mock := pfAMD2MockWith("", []string{"/etc/systemd/system/csf.service"}, true)
+	d := &productionPreflightDep{exec: mock}
+	_, err := d.PreflightTarget(context.Background(), "csf")
+	if err != nil {
+		t.Fatalf("setup error: %v", err)
+	}
+	if len(mock.Commands) != 0 {
+		t.Errorf("§54 relaxation branch recorded mutation commands: %+v", mock.Commands)
+	}
+}
