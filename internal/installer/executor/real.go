@@ -124,6 +124,18 @@ func (r *RealExecutor) Symlink(oldname, newname string) error {
 	return os.Symlink(oldname, newname)
 }
 
+// Rename atomically renames oldpath to newpath via os.Rename. Same-
+// filesystem semantics; cross-filesystem renames will return an error
+// per the os.Rename contract (the caller must ensure same-FS).
+//
+// Added in PR-26-code-B per §43.2: replaces the prior Run("mv", ...)
+// indirection used by restore_deps_csf.go's A.3 step. Routing through
+// os.Rename (rather than shelling to mv) avoids a process spawn and
+// gives a typed error path consistent with WriteFileAtomic.
+func (r *RealExecutor) Rename(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
 // --- nftables ---
 
 func (r *RealExecutor) NftTableExists(family, table string) bool {
@@ -223,6 +235,14 @@ func (r *RealExecutor) ServiceMask(unit string) error {
 	res := r.Run("systemctl", "mask", unit)
 	if res.ExitCode != 0 {
 		return fmt.Errorf("systemctl mask %s: %s", unit, strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
+
+func (r *RealExecutor) ServiceUnmask(unit string) error {
+	res := r.Run("systemctl", "unmask", unit)
+	if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl unmask %s: %s", unit, strings.TrimSpace(res.Stderr))
 	}
 	return nil
 }

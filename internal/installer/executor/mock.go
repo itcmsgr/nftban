@@ -67,6 +67,13 @@ type MockExecutor struct {
 	// ExistingCommands maps "name" -> exists.
 	ExistingCommands map[string]bool
 
+	// PR-26-code-B: typed-method error injection. When set non-nil,
+	// the corresponding typed method returns the assigned error
+	// instead of nil. Mirrors the RunResults pattern that controls
+	// Run() exit codes.
+	ServiceUnmaskErr error
+	RenameErr        error
+
 	// callbacks maps "name:args" -> function to call when command is executed.
 	callbacks map[string]func()
 }
@@ -183,6 +190,25 @@ func (m *MockExecutor) Remove(path string) error {
 
 func (m *MockExecutor) Symlink(_, _ string) error { return nil }
 
+// Rename simulates atomic rename in the mock's in-memory file map and
+// records a "rename" command for trace assertions. Returns
+// m.RenameErr (nil by default); when non-nil, the file map is left
+// unchanged (matching real-world atomic-rename failure semantics).
+// PR-26-code-B addition.
+func (m *MockExecutor) Rename(oldpath, newpath string) error {
+	m.recordCommand("rename", oldpath, newpath)
+	if m.RenameErr != nil {
+		return m.RenameErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if data, ok := m.Files[oldpath]; ok {
+		m.Files[newpath] = data
+		delete(m.Files, oldpath)
+	}
+	return nil
+}
+
 // --- nftables ---
 
 func (m *MockExecutor) NftTableExists(family, table string) bool {
@@ -261,6 +287,14 @@ func (m *MockExecutor) ServiceDisable(unit string) error {
 func (m *MockExecutor) ServiceMask(unit string) error {
 	m.recordCommand("systemctl", "mask", unit)
 	return nil
+}
+
+// ServiceUnmask records a systemctl unmask call and returns
+// m.ServiceUnmaskErr (nil by default). Mirrors ServiceMask semantics
+// for parity. PR-26-code-B addition.
+func (m *MockExecutor) ServiceUnmask(unit string) error {
+	m.recordCommand("systemctl", "unmask", unit)
+	return m.ServiceUnmaskErr
 }
 
 func (m *MockExecutor) DaemonReload() error {

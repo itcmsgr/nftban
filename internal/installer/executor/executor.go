@@ -45,7 +45,10 @@ type Result struct {
 //
 // systemd:
 //   - ServiceActive / ServiceEnable / ServiceStart / ServiceStop
-//   - ServiceDisable / ServiceMask / DaemonReload
+//   - ServiceDisable / ServiceMask / ServiceUnmask / DaemonReload
+//
+// File operations (atomic):
+//   - Rename — atomic same-filesystem rename via os.Rename
 //
 // System:
 //   - CommandExists / UserExists / GroupExists / Getenv
@@ -83,6 +86,18 @@ type Executor interface {
 	// Symlink creates a symbolic link (newname -> oldname).
 	Symlink(oldname, newname string) error
 
+	// Rename atomically renames oldpath to newpath. Same-filesystem
+	// semantics equivalent to syscall.Rename. Implementations route
+	// through whatever primitive their host abstraction provides
+	// (RealExecutor uses os.Rename; MockExecutor records the call and
+	// updates its in-memory file map).
+	//
+	// Added in PR-26-code-B per §43.2 lock to replace the previous
+	// Run("mv", ...) indirection used by restore_deps_csf.go's A.3
+	// binary-restore step. Mutation surface is bounded by
+	// INV-PR26-NEW-MUTATION-SURFACES-BOUNDED (§44 row 2).
+	Rename(oldpath, newpath string) error
+
 	// NftTableExists returns true if the given nft table exists in the kernel.
 	// family: "ip", "ip6", or "inet". table: e.g. "nftban".
 	NftTableExists(family, table string) bool
@@ -118,6 +133,13 @@ type Executor interface {
 
 	// ServiceMask masks a systemd unit (prevents start by any means).
 	ServiceMask(unit string) error
+
+	// ServiceUnmask unmasks a systemd unit (inverse of ServiceMask).
+	// Used by the CSF restore A.1 step. Added in PR-26-code-B per
+	// §43.2 lock to replace the previous
+	// Run("systemctl", "unmask", ...) indirection. Mutation surface
+	// is bounded by INV-PR26-NEW-MUTATION-SURFACES-BOUNDED (§44 row 2).
+	ServiceUnmask(unit string) error
 
 	// DaemonReload runs systemctl daemon-reload.
 	DaemonReload() error

@@ -91,25 +91,19 @@ func buildCSFFixture(t *testing.T, f csfTestFixture) (*productionMutationDep, *e
 		}
 	}
 
-	// systemctl unmask csf.service.
+	// PR-26-code-B: systemctl unmask now goes through the typed
+	// executor.ServiceUnmask method. Simulate failure via the
+	// MockExecutor.ServiceUnmaskErr injection field.
 	if f.unmaskFailsExit != 0 {
-		mock.RunResults["systemctl:unmask:"+csfServiceUnit] = executor.Result{
-			ExitCode: f.unmaskFailsExit, Stderr: "simulated unmask failure",
-		}
+		mock.ServiceUnmaskErr = errors.New("simulated unmask failure")
 	}
 
-	// mv csf.disabled csf.
+	// PR-26-code-B: mv now goes through the typed executor.Rename
+	// method. Failure is injected via MockExecutor.RenameErr; success
+	// updates mock.Files automatically (the typed-method semantics
+	// match the prior OnCommand callback that simulated the rename).
 	if f.mvBinaryFailsExit != 0 {
-		mock.RunResults["mv:"+csfBinaryDisabled+":"+csfBinary] = executor.Result{
-			ExitCode: f.mvBinaryFailsExit, Stderr: "simulated mv failure",
-		}
-	} else {
-		// Successful mv: simulate the rename in the mock's Files map
-		// via OnCommand so subsequent FileExists reflects reality.
-		mock.OnCommand(func() {
-			delete(mock.Files, csfBinaryDisabled)
-			mock.Files[csfBinary] = []byte{}
-		}, "mv", csfBinaryDisabled, csfBinary)
+		mock.RenameErr = errors.New("simulated rename failure")
 	}
 
 	// nftban tables.
@@ -352,9 +346,11 @@ func TestCSFMutate_4B3csf_A3_Renames_DisabledToCSF(t *testing.T) {
 	})
 	_ = mutateToCSFTarget(context.Background(), dep)
 
-	mvCalled := mock.CommandCalled("mv", csfBinaryDisabled, csfBinary)
-	if !mvCalled {
-		t.Errorf("A.3 did not call mv %s -> %s", csfBinaryDisabled, csfBinary)
+	// PR-26-code-B: A.3 now goes through typed executor.Rename, which
+	// MockExecutor records as "rename" (not "mv").
+	renameCalled := mock.CommandCalled("rename", csfBinaryDisabled, csfBinary)
+	if !renameCalled {
+		t.Errorf("A.3 did not call Rename(%s, %s)", csfBinaryDisabled, csfBinary)
 	}
 }
 
@@ -367,8 +363,8 @@ func TestCSFMutate_4B3csf_A3_SkipsWhenDisabledAbsent(t *testing.T) {
 	})
 	_ = mutateToCSFTarget(context.Background(), dep)
 
-	if mock.CommandCalled("mv", csfBinaryDisabled, csfBinary) {
-		t.Errorf("A.3 called mv when .disabled was absent")
+	if mock.CommandCalled("rename", csfBinaryDisabled, csfBinary) {
+		t.Errorf("A.3 called Rename when .disabled was absent")
 	}
 }
 
@@ -385,8 +381,8 @@ func TestCSFMutate_4B3csf_A3_AmbiguousAlreadyCovered(t *testing.T) {
 	if !errors.Is(err, ErrCSFRestoreAmbiguousBinary) {
 		t.Fatalf("err = %v; want ErrCSFRestoreAmbiguousBinary", err)
 	}
-	if mock.CommandCalled("mv", csfBinaryDisabled, csfBinary) {
-		t.Errorf("ambiguous-binary refusal still ran A.3's mv")
+	if mock.CommandCalled("rename", csfBinaryDisabled, csfBinary) {
+		t.Errorf("ambiguous-binary refusal still ran A.3's Rename")
 	}
 }
 
@@ -789,7 +785,8 @@ func TestCSFMutate_4B3csf_HappyPath_NoOutOfTargetMutation(t *testing.T) {
 		{"systemctl", []string{"enable", csfServiceUnit}},
 		{"systemctl", []string{"start", csfServiceUnit}},
 		{"systemctl", []string{"stop", nftbandUnit}},
-		{"mv", []string{csfBinaryDisabled, csfBinary}},
+		// PR-26-code-B: typed Rename records as "rename" (not "mv").
+		{"rename", []string{csfBinaryDisabled, csfBinary}},
 	}
 	matchAllowed := func(cmd executor.RecordedCommand) bool {
 		for _, a := range allowed {
@@ -909,13 +906,14 @@ func TestCSFMutate_4B3csf_OrderingPin(t *testing.T) {
 	}
 
 	// Build the list of expected signatures (relative order).
+	// PR-26-code-B: A.3 records "rename" (typed Rename), not "mv".
 	want := []sig{
-		{"systemctl", "is-enabled"}, // §32 step 1 / A.1 gate
-		{"systemctl", "unmask"},     // A.1
-		{"systemctl", "enable"},     // A.2
-		{"mv", csfBinaryDisabled},   // A.3
-		{"systemctl", "start"},      // A.5
-		{"systemctl", "stop"},       // A.6
+		{"systemctl", "is-enabled"},   // §32 step 1 / A.1 gate
+		{"systemctl", "unmask"},       // A.1
+		{"systemctl", "enable"},       // A.2
+		{"rename", csfBinaryDisabled}, // A.3
+		{"systemctl", "start"},        // A.5
+		{"systemctl", "stop"},         // A.6
 	}
 
 	// Verify `seen` contains `want` as a subsequence.
@@ -927,5 +925,192 @@ func TestCSFMutate_4B3csf_OrderingPin(t *testing.T) {
 	}
 	if wi != len(want) {
 		t.Errorf("ordering subsequence mismatch — at %d of %d. seen=%+v want=%+v", wi, len(want), seen, want)
+	}
+}
+
+// =============================================================================
+// =============================================================================
+// PR-26-code-B — typed executor migration tests
+// =============================================================================
+// =============================================================================
+
+// =============================================================================
+// PR-26-code-B test #1: A.1 calls typed exec.ServiceUnmask only on
+// csf.service — never on any other unit.
+// =============================================================================
+
+func TestCSFMutate_PR26B_A1_ServiceUnmaskOnlyCSFService(t *testing.T) {
+	dep, mock := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+		csfMasked:          true,
+	})
+	_ = mutateToCSFTarget(context.Background(), dep)
+
+	unmaskCount := 0
+	for _, cmd := range mock.Commands {
+		if cmd.Name == "systemctl" && len(cmd.Args) >= 2 && cmd.Args[0] == "unmask" {
+			unmaskCount++
+			if cmd.Args[1] != csfServiceUnit {
+				t.Errorf("ServiceUnmask called on unauthorized unit: %+v", cmd)
+			}
+		}
+	}
+	if unmaskCount != 1 {
+		t.Errorf("ServiceUnmask call count = %d; want exactly 1 (csf.service)", unmaskCount)
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #2: A.3 calls typed exec.Rename only with the
+// csf.disabled → csf path pair.
+// =============================================================================
+
+func TestCSFMutate_PR26B_A3_RenameOnlyCSFBinaryRestore(t *testing.T) {
+	dep, mock := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+	})
+	_ = mutateToCSFTarget(context.Background(), dep)
+
+	renameCount := 0
+	for _, cmd := range mock.Commands {
+		if cmd.Name == "rename" {
+			renameCount++
+			if len(cmd.Args) != 2 || cmd.Args[0] != csfBinaryDisabled || cmd.Args[1] != csfBinary {
+				t.Errorf("Rename called outside A.3 scope: %+v", cmd)
+			}
+		}
+	}
+	if renameCount != 1 {
+		t.Errorf("Rename call count = %d; want exactly 1 (csf.disabled -> csf)", renameCount)
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #3: no raw Run("systemctl", "unmask", …) remains
+// in the CSF restore path. File-scan against restore_deps_csf.go.
+// =============================================================================
+
+func TestCSFMutate_PR26B_NoRawSystemctlUnmaskRun_FileScan(t *testing.T) {
+	body, err := os.ReadFile("restore_deps_csf.go")
+	if err != nil {
+		t.Fatalf("read restore_deps_csf.go: %v", err)
+	}
+	src := string(body)
+
+	// Exclude doc-comment lines (production-code-only scan per §46.1).
+	var prodLines []string
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		prodLines = append(prodLines, line)
+	}
+	prodSrc := strings.Join(prodLines, "\n")
+
+	if strings.Contains(prodSrc, `Run("systemctl", "unmask"`) {
+		t.Errorf("restore_deps_csf.go still contains a raw Run(\"systemctl\", \"unmask\", …) call — PR-26-code-B requires the typed exec.ServiceUnmask")
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #4: no raw Run("mv", …) remains in the CSF restore
+// path. File-scan against restore_deps_csf.go.
+// =============================================================================
+
+func TestCSFMutate_PR26B_NoRawMvRun_FileScan(t *testing.T) {
+	body, err := os.ReadFile("restore_deps_csf.go")
+	if err != nil {
+		t.Fatalf("read restore_deps_csf.go: %v", err)
+	}
+	src := string(body)
+
+	var prodLines []string
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		prodLines = append(prodLines, line)
+	}
+	prodSrc := strings.Join(prodLines, "\n")
+
+	if strings.Contains(prodSrc, `Run("mv"`) {
+		t.Errorf("restore_deps_csf.go still contains a raw Run(\"mv\", …) call — PR-26-code-B requires the typed exec.Rename")
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #5: A.1 unmask failure still surfaces the same
+// typed CSF restore error (ErrCSFRestoreUnmaskFailed). Migration must
+// not change the error contract.
+// =============================================================================
+
+func TestCSFMutate_PR26B_A1_UnmaskFailure_TypedErrorPreserved(t *testing.T) {
+	dep, _ := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+		csfMasked:          true,
+		unmaskFailsExit:    1, // injects ServiceUnmaskErr via fixture
+	})
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreUnmaskFailed) {
+		t.Errorf("err = %v; want ErrCSFRestoreUnmaskFailed (PR-26-code-B migration must preserve the error contract)", err)
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #6: A.3 rename failure still surfaces the same
+// typed CSF restore error (ErrCSFRestoreBinaryRestoreFailed).
+// =============================================================================
+
+func TestCSFMutate_PR26B_A3_RenameFailure_TypedErrorPreserved(t *testing.T) {
+	dep, _ := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+		mvBinaryFailsExit:  1, // injects RenameErr via fixture
+	})
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreBinaryRestoreFailed) {
+		t.Errorf("err = %v; want ErrCSFRestoreBinaryRestoreFailed (PR-26-code-B migration must preserve the error contract)", err)
+	}
+}
+
+// =============================================================================
+// PR-26-code-B test #7: removed helper symbols are gone. Compile-time
+// check (the symbols would not parse if referenced). The file-scan
+// pin documents §43.2 lock visibly.
+// =============================================================================
+
+func TestCSFMutate_PR26B_RemovedHelpersGone_FileScan(t *testing.T) {
+	body, err := os.ReadFile("restore_deps_csf.go")
+	if err != nil {
+		t.Fatalf("read restore_deps_csf.go: %v", err)
+	}
+	src := string(body)
+
+	var prodLines []string
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		prodLines = append(prodLines, line)
+	}
+	prodSrc := strings.Join(prodLines, "\n")
+
+	// Function definitions, not just any identifier mention. Use the
+	// "func name(" pattern to avoid false-matching the removal-marker
+	// doc comment.
+	for _, sym := range []string{"func unmaskCSFService(", "func renameAtomicViaExec("} {
+		if strings.Contains(prodSrc, sym) {
+			t.Errorf("restore_deps_csf.go still defines %q — §43.2 lock requires removal in favor of typed executor methods", sym)
+		}
 	}
 }

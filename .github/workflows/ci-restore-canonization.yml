@@ -263,31 +263,35 @@ jobs:
       # ------------------------------------------------------------------
       # G4-RESTORE-EXEC-NO-OUT-OF-TARGET — closed mutation surface in
       # the cmd/-side restore-execution code. Per Amendment 1 §31 / §32,
-      # the only authorized mutations on the CSF restore path are:
+      # the authorized mutations on the CSF restore path are:
       #
-      #   - Run("systemctl", "unmask", "csf.service")          A.1
-      #   - ServiceEnable("csf.service")                       A.2
-      #   - Run("mv", "/usr/sbin/csf.disabled",
-      #               "/usr/sbin/csf")                         A.3
-      #   - ServiceStart("csf.service")                        A.5
-      #   - ServiceStop("nftband.service")                     A.6
-      #   - NftDeleteTable("ip", "nftban")                     A.7
-      #   - NftDeleteTable("ip6", "nftban")                    A.7
+      #   - exec.ServiceUnmask("csf.service")                  A.1 (typed; PR-26-code-B)
+      #   - exec.ServiceEnable("csf.service")                  A.2
+      #   - exec.Rename("/usr/sbin/csf.disabled",
+      #                 "/usr/sbin/csf")                       A.3 (typed; PR-26-code-B)
+      #   - exec.ServiceStart("csf.service")                   A.5
+      #   - exec.ServiceStop("nftband.service")                A.6
+      #   - exec.NftDeleteTable("ip", "nftban")                A.7
+      #   - exec.NftDeleteTable("ip6", "nftban")               A.7
       #
-      # The gate's job is forbidden-symbol coverage at the call-expression
-      # level. Per-call argument enforcement (which unit is started, which
-      # path is renamed) is delegated to the in-Go runtime tests in
-      # restore_deps_csf_test.go (TestCSFMutate_4B3csf_A1_NoUnmaskOfOtherServices,
+      # PR-26-code-B (§43) promoted A.1 + A.3 from raw `Run("systemctl",
+      # "unmask", …)` and `Run("mv", …)` to the typed methods listed
+      # above. The gate's old `\bexec\.ServiceUnmask\(` forbid is
+      # therefore REMOVED, and explicit raw-Run forbids replace it.
+      #
+      # The gate's job is forbidden-symbol coverage. Per-call argument
+      # enforcement (which unit is started, which path is renamed) is
+      # delegated to the in-Go runtime tests in restore_deps_csf_test.go
+      # (TestCSFMutate_4B3csf_A1_NoUnmaskOfOtherServices,
       # …_A2_EnableOnlyCSFService, …_A5_StartsOnlyCSFService,
-      # …_A6_StopsOnlyNftband_AfterCSFStarts,
-      # …_HappyPath_NoOutOfTargetMutation) which assert against
-      # MockExecutor with full Go-level type information. Trying to
-      # reproduce that in shell regex on identifier arguments
-      # (csfServiceUnit, oldpath/newpath) gives false confidence.
+      # …_A6_StopsOnlyNftband_AfterCSFStarts, …_HappyPath_NoOutOfTargetMutation,
+      # TestCSFMutate_PR26B_A1_ServiceUnmaskOnlyCSFService,
+      # TestCSFMutate_PR26B_A3_RenameOnlyCSFBinaryRestore).
       #
-      # Forbidden patterns are call-expression-anchored (\bexec\.) so
-      # they catch real call sites and skip prose / error messages /
-      # comments / const definitions.
+      # §46.1 line-skipping discipline: the gate scans only the
+      # production file (no _test.go), and skips line-leading "//"
+      # comments to avoid the false-positive class that hit Policy
+      # Gates on PR #511.
       # ------------------------------------------------------------------
       - name: G4-RESTORE-EXEC-NO-OUT-OF-TARGET — restore_deps_csf.go closed mutation surface
         shell: bash
@@ -300,23 +304,24 @@ jobs:
             exit 1
           fi
 
+          # §46.1 production-only scan: build a comment-stripped view
+          # so doc-comment lines never trip the forbidden-pattern grep.
+          stripped=$(grep -vE '^[[:space:]]*//' "$target" || true)
+
           # Forbidden: out-of-Amendment-1 mutation surface. Each pattern
           # is anchored to a call expression (\bexec\. or similar) so
-          # legitimate doc strings, error messages, and const
-          # definitions don't false-match.
+          # legitimate string literals don't false-match. Doc comments
+          # are already excluded by the line-leading // strip above.
           forbidden_patterns=(
-            # Service-policy mutations (mask/disable/unmask-typed/daemon-reload).
-            # The csf restore path uses Run("systemctl","unmask",csf.service)
-            # for A.1; the typed exec.ServiceUnmask method is forbidden so
-            # we don't accidentally land on a future executor surface that
-            # bypasses the audit trail.
+            # Service-policy mutations (mask/disable/daemon-reload) are
+            # forbidden by Amendment 1 §34. ServiceUnmask is no longer
+            # forbidden — PR-26-code-B promoted it to authorized typed
+            # method for A.1.
             '\bexec\.ServiceMask\('
             '\bexec\.ServiceDisable\('
-            '\bexec\.ServiceUnmask\('
             '\bexec\.DaemonReload\('
-            # Filesystem-mutation primitives — A.4 cron-restore is a
-            # soft-skip in 4B-3-csf; any WriteFileAtomic in this file is
-            # therefore an out-of-scope mutation.
+            # Filesystem-mutation primitives. A.4 cron-restore is a
+            # soft-skip; any WriteFileAtomic here is out of scope.
             '\bexec\.WriteFileAtomic\('
             # Direct OS bypass (must route through the executor).
             '"os/exec"'
@@ -326,6 +331,22 @@ jobs:
             '\bos\.WriteFile\('
             '\bos\.Create\('
             '\bsyscall\.'
+            # PR-26-code-B raw-Run policy tightening (§43.3): mutating
+            # systemctl verbs MUST go through their typed methods.
+            # Read-only `Run("systemctl", "is-enabled", …)` and similar
+            # probes remain authorized.
+            'Run\("systemctl",[[:space:]]*"start"'
+            'Run\("systemctl",[[:space:]]*"stop"'
+            'Run\("systemctl",[[:space:]]*"enable"'
+            'Run\("systemctl",[[:space:]]*"disable"'
+            'Run\("systemctl",[[:space:]]*"mask"'
+            'Run\("systemctl",[[:space:]]*"unmask"'
+            'Run\("systemctl",[[:space:]]*"restart"'
+            'Run\("systemctl",[[:space:]]*"reload"'
+            'Run\("systemctl",[[:space:]]*"daemon-reload"'
+            # Raw mv via Run is forbidden — typed exec.Rename is the
+            # only authorized atomic-rename surface.
+            'Run\("mv"\b'
             # DirectAdmin custombuild rewrite forbidden (§34).
             '\bcustombuild\b'
             '"build set csf"'
@@ -343,8 +364,11 @@ jobs:
 
           fail=0
           for pat in "${forbidden_patterns[@]}"; do
-            if grep -nE "$pat" "$target" 2>/dev/null; then
+            if echo "$stripped" | grep -nE "$pat" >/dev/null 2>&1; then
+              # Re-grep against the original file (with line numbers)
+              # so the error message points at the right line.
               echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: forbidden call expression matching '$pat' found in $target"
+              grep -nE "$pat" "$target" || true
               fail=1
             fi
           done
@@ -354,8 +378,8 @@ jobs:
           # NftDeleteTable's args in the production code ARE literal
           # quoted strings (no constants), so this allow-list pin works
           # cleanly without identifier resolution. Per-unit / per-path
-          # enforcement for systemctl + mv is delegated to the Go runtime
-          # tests against MockExecutor.
+          # enforcement for systemctl + Rename is delegated to the Go
+          # runtime tests against MockExecutor.
           while IFS= read -r line; do
             args=$(echo "$line" | grep -oE 'NftDeleteTable\([^)]*\)' || true)
             if [[ -n "$args" ]]; then
@@ -368,7 +392,7 @@ jobs:
                   ;;
               esac
             fi
-          done < <(grep -n 'NftDeleteTable(' "$target" || true)
+          done < <(echo "$stripped" | grep -n 'NftDeleteTable(' || true)
 
           if [[ "$fail" -ne 0 ]]; then
             echo "::error::Amendment 1 §30 / §34 violation — restore_deps_csf.go must contain only the closed §31/§32 mutation surface."
