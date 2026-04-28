@@ -274,7 +274,22 @@ func runRestoreExecutionFromProceed(
 	// values come from the PR-24 path the planner already used —
 	// the dispatcher does NOT re-probe or re-detect them, per
 	// INV-PR25-AUTHORITY-IMMUTABILITY (§17.3) + §33 E.7.
-	deps := newRestoreDeps(exec, log, priorRec, panel)
+	//
+	// PR-26-code-A: also resolve firewallType from the target so the
+	// inline-verify dep's safety predicate is target-specific (§51.3
+	// Option B + §51.4 firewallType plumbing). For Kind=RecordedPrior
+	// the value is on the TargetAuthority directly; for Kind=PanelNative
+	// the value comes from the static §20 panel mapping
+	// (restore.ResolvePanelFirewall). No precomputed targetUnit drift
+	// — we pass the raw firewallType identity.
+	resolvedFirewallType, ftErr := resolveFirewallTypeForDeps(target)
+	if ftErr != nil {
+		log.Error("restore execute: firewallType resolution failed: %v", ftErr)
+		_ = sf.Transition(state.StateRestoreFailedExecution, state.PhaseDetect, ftErr.Error())
+		log.Result("[NFTBan] restore execution: FAILED at firewallType resolution — %s", ftErr.Error())
+		return sf.State.ExitCode()
+	}
+	deps := newRestoreDeps(exec, log, priorRec, panel, resolvedFirewallType)
 
 	// Step C — Execute the §23 six-step sequence.
 	execRes := restore.Execute(ctx, target, deps)
@@ -302,3 +317,4 @@ func runRestoreExecutionFromProceed(
 
 	return sf.State.ExitCode()
 }
+
