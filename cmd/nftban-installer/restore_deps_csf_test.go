@@ -1177,10 +1177,11 @@ func TestCSFMutate_PR26C2_A4_HappyPath_RestoresBothFiles(t *testing.T) {
 
 // =============================================================================
 // PR-26-code-C2 test #3: manifest present, target already exists
-// (operator-modified post-takeover) → A.4 skips that file.
+// (operator-content collision) → HARD REFUSE before A.5 with the
+// typed ErrCSFRestoreCronTargetExists sentinel.
 // =============================================================================
 
-func TestCSFMutate_PR26C2_A4_TargetExists_SkipsRestore(t *testing.T) {
+func TestCSFMutate_PR26C2_A4_TargetExists_HardRefuses_StopsBeforeA5(t *testing.T) {
 	dep, mock := buildCSFFixture(t, csfTestFixture{
 		priorRecCSF:        true,
 		priorRecActive:     true,
@@ -1192,24 +1193,28 @@ func TestCSFMutate_PR26C2_A4_TargetExists_SkipsRestore(t *testing.T) {
 	// Operator already created a different version of the cron file.
 	mock.Files[switchop.CronCSFSrcPath] = []byte("operator content\n")
 
-	_ = mutateToCSFTarget(context.Background(), dep)
-
-	// A.4 must NOT overwrite the operator content. WriteFileAtomic
-	// for that path either did not happen, or — if happened — the
-	// content equals the operator's, not the manifest's.
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreCronTargetExists) {
+		t.Errorf("err = %v; want ErrCSFRestoreCronTargetExists (hard refusal on operator-content collision)", err)
+	}
+	// A.4 must NOT overwrite operator content — and the function
+	// must NOT have proceeded to A.5.
 	if got, ok := mock.WrittenFiles[switchop.CronCSFSrcPath]; ok {
 		if string(got) == "manifest body\n" {
 			t.Errorf("A.4 overwrote operator content with manifest content")
 		}
 	}
+	if mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 target-exists collision did NOT stop A.5 — auditor requires hard refusal before A.5")
+	}
 }
 
 // =============================================================================
-// PR-26-code-C2 test #4: manifest sha256 mismatch → soft-skip with the
-// typed sentinel surfaced; A.5 still runs (mutation does NOT abort).
+// PR-26-code-C2 test #4: manifest sha256 mismatch → HARD REFUSE
+// before A.5 with ErrCSFRestoreCronManifestCorrupt.
 // =============================================================================
 
-func TestCSFMutate_PR26C2_A4_SHA256Mismatch_SoftSkip_A5StillRuns(t *testing.T) {
+func TestCSFMutate_PR26C2_A4_SHA256Mismatch_HardRefuses_StopsBeforeA5(t *testing.T) {
 	dep, mock := buildCSFFixture(t, csfTestFixture{
 		priorRecCSF:        true,
 		priorRecActive:     true,
@@ -1222,23 +1227,27 @@ func TestCSFMutate_PR26C2_A4_SHA256Mismatch_SoftSkip_A5StillRuns(t *testing.T) {
 	})
 	mock.Files[switchop.CronManifestDir+"/csf-cron"] = []byte("tampered\n")
 
-	_ = mutateToCSFTarget(context.Background(), dep)
-
-	// A.4 did NOT restore the (tampered) cron file.
-	if _, ok := mock.WrittenFiles[switchop.CronCSFSrcPath]; ok {
-		t.Errorf("A.4 wrote cron file despite sha256 mismatch — must skip on integrity failure")
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreCronManifestCorrupt) {
+		t.Errorf("err = %v; want ErrCSFRestoreCronManifestCorrupt (hard refusal on sha256 mismatch)", err)
 	}
-	// A.5 still ran (csf.service start recorded).
-	if !mock.CommandCalled("systemctl", "start", csfServiceUnit) {
-		t.Errorf("A.4 corrupt-manifest aborted A.5 — §42.2-D requires A.5 still runs (csf can function without cron)")
+	// A.4 did NOT restore the tampered cron file.
+	if _, ok := mock.WrittenFiles[switchop.CronCSFSrcPath]; ok {
+		t.Errorf("A.4 wrote cron file despite sha256 mismatch")
+	}
+	// CRITICAL: A.5 must NOT have run. Restore evidence on disk is
+	// untrusted; starting csf would weaken the evidence chain.
+	if mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 sha256 mismatch did NOT stop A.5 — auditor requires hard refusal before A.5")
 	}
 }
 
 // =============================================================================
-// PR-26-code-C2 test #5: manifest schema mismatch → soft-skip; A.5 still runs.
+// PR-26-code-C2 test #5: manifest schema mismatch → HARD REFUSE
+// before A.5 with ErrCSFRestoreCronManifestCorrupt.
 // =============================================================================
 
-func TestCSFMutate_PR26C2_A4_SchemaMismatch_SoftSkip_A5StillRuns(t *testing.T) {
+func TestCSFMutate_PR26C2_A4_SchemaMismatch_HardRefuses_StopsBeforeA5(t *testing.T) {
 	dep, mock := buildCSFFixture(t, csfTestFixture{
 		priorRecCSF:        true,
 		priorRecActive:     true,
@@ -1250,15 +1259,17 @@ func TestCSFMutate_PR26C2_A4_SchemaMismatch_SoftSkip_A5StillRuns(t *testing.T) {
 	})
 	mock.Files[switchop.CronManifestFile] = body
 
-	_ = mutateToCSFTarget(context.Background(), dep)
-
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreCronManifestCorrupt) {
+		t.Errorf("err = %v; want ErrCSFRestoreCronManifestCorrupt (hard refusal on schema mismatch)", err)
+	}
 	for path := range mock.WrittenFiles {
 		if strings.HasPrefix(path, "/etc/cron.d/") {
-			t.Errorf("A.4 wrote cron file %q on schema-mismatch manifest; expected soft-skip", path)
+			t.Errorf("A.4 wrote cron file %q on schema-mismatch manifest", path)
 		}
 	}
-	if !mock.CommandCalled("systemctl", "start", csfServiceUnit) {
-		t.Errorf("A.4 schema-mismatch aborted A.5 — §42.2-D requires A.5 still runs")
+	if mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 schema mismatch did NOT stop A.5 — auditor requires hard refusal before A.5")
 	}
 }
 
@@ -1306,10 +1317,10 @@ func TestCSFMutate_PR26C2_TypedSentinelExported(t *testing.T) {
 
 // =============================================================================
 // PR-26-code-C2 test #8: A.4 manifest entry with unknown path is
-// rejected by the reader (defense-in-depth file-scan / structural pin).
+// HARD REFUSED before A.5 with ErrCSFRestoreCronManifestCorrupt.
 // =============================================================================
 
-func TestCSFMutate_PR26C2_A4_UnknownEntryPath_Rejected(t *testing.T) {
+func TestCSFMutate_PR26C2_A4_UnknownEntryPath_HardRefuses_StopsBeforeA5(t *testing.T) {
 	dep, mock := buildCSFFixture(t, csfTestFixture{
 		priorRecCSF:        true,
 		priorRecActive:     true,
@@ -1323,15 +1334,85 @@ func TestCSFMutate_PR26C2_A4_UnknownEntryPath_Rejected(t *testing.T) {
 	})
 	mock.Files[switchop.CronManifestFile] = body
 
-	_ = mutateToCSFTarget(context.Background(), dep)
-
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreCronManifestCorrupt) {
+		t.Errorf("err = %v; want ErrCSFRestoreCronManifestCorrupt (hard refusal on unknown-entry path)", err)
+	}
 	for path := range mock.WrittenFiles {
 		if strings.HasPrefix(path, "/etc/cron.d/") {
 			t.Errorf("A.4 wrote cron file %q despite unknown-entry manifest", path)
 		}
 	}
+	if mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 unknown-entry did NOT stop A.5 — auditor requires hard refusal before A.5")
+	}
+}
+
+// =============================================================================
+// PR-26-code-C2 test #9: HappyPath_RestoresBothFiles must continue to
+// A.5 after a clean restore. (Companion to the hard-refusal tests
+// above — proves absent + clean keep the original "continue to A.5"
+// semantics, only the corrupt branches stop.)
+// =============================================================================
+
+func TestCSFMutate_PR26C2_A4_HappyPath_ContinuesToA5(t *testing.T) {
+	dep, mock := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+	})
+	seedCronManifest(t, mock, map[string]string{
+		switchop.CronCSFSrcPath: "csf body\n",
+		switchop.CronLFDSrcPath: "lfd body\n",
+	})
+
+	_ = mutateToCSFTarget(context.Background(), dep)
+
 	if !mock.CommandCalled("systemctl", "start", csfServiceUnit) {
-		t.Errorf("A.4 unknown-entry aborted A.5 — §42.2-D requires A.5 still runs")
+		t.Errorf("A.4 clean restore did not continue to A.5 — happy path must not stop")
+	}
+}
+
+// =============================================================================
+// PR-26-code-C2 test #10: ManifestAbsent must continue to A.5 (the
+// migration soft-skip path is the ONLY non-clean branch that
+// continues — corrupt branches stop).
+// =============================================================================
+
+func TestCSFMutate_PR26C2_A4_ManifestAbsent_ContinuesToA5(t *testing.T) {
+	dep, mock := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+	})
+	// No manifest seeded — pre-PR-26 host case.
+
+	_ = mutateToCSFTarget(context.Background(), dep)
+
+	if !mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 absent-manifest soft-skip did NOT continue to A.5 — migration semantics broken")
+	}
+}
+
+// =============================================================================
+// PR-26-code-C2 test #11: parse-failure manifest (not valid JSON) →
+// HARD REFUSE before A.5 with ErrCSFRestoreCronManifestCorrupt.
+// =============================================================================
+
+func TestCSFMutate_PR26C2_A4_ParseFailure_HardRefuses_StopsBeforeA5(t *testing.T) {
+	dep, mock := buildCSFFixture(t, csfTestFixture{
+		priorRecCSF:        true,
+		priorRecActive:     true,
+		csfDisabledPresent: true,
+	})
+	mock.Files[switchop.CronManifestFile] = []byte("{{{ not json")
+
+	err := mutateToCSFTarget(context.Background(), dep)
+	if !errors.Is(err, ErrCSFRestoreCronManifestCorrupt) {
+		t.Errorf("err = %v; want ErrCSFRestoreCronManifestCorrupt (hard refusal on parse failure)", err)
+	}
+	if mock.CommandCalled("systemctl", "start", csfServiceUnit) {
+		t.Errorf("A.4 parse-failure did NOT stop A.5 — auditor requires hard refusal before A.5")
 	}
 }
 

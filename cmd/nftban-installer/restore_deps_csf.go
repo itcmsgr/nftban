@@ -141,15 +141,33 @@ var (
 	// ErrCSFRestoreServiceStopFailed wraps a non-nil ServiceStop error.
 	ErrCSFRestoreServiceStopFailed = errors.New("restore csf: A.6 ServiceStop(nftband.service) failed")
 
-	// ErrCSFRestoreCronManifestCorrupt is returned (informationally —
-	// not as a fatal error from mutateToCSFTarget) when the §42.2
-	// manifest is present but corrupt / schema-mismatch / lists an
-	// unknown-entry path / has a sha256 mismatch. Per §42.2-D the
-	// overall mutation does NOT abort; A.4 logs a warning, emits this
-	// sentinel for observability, and falls through to A.5. Tests
-	// assert this sentinel is exposed for assertion via errors.Is.
-	// PR-26-code-C2 addition.
-	ErrCSFRestoreCronManifestCorrupt = errors.New("restore csf: A.4 cron-backup manifest is corrupt or unrecognized — soft-skip per §42.2-D, A.5 still runs")
+	// ErrCSFRestoreCronManifestCorrupt is returned by A.4 as a HARD
+	// refusal when the §42.2 manifest is present but cannot be
+	// trusted: parse failure, schema mismatch, unknown-entry path,
+	// or per-entry sha256 mismatch. Per the auditor verdict on
+	// PR-26-code-C: when NFTBan has restore evidence on disk but
+	// cannot trust it, proceeding to A.5 (start csf.service) would
+	// weaken the evidence chain. A.4 stops before A.5, the safety
+	// net is retained by the existing Execute failure path, and the
+	// operator must inspect.
+	//
+	// Manifest ABSENT (no manifest.json at all) is the migration-gap
+	// case for pre-PR-26 hosts; that path remains a soft-skip and
+	// continues to A.5. Only manifest-present-but-untrusted is hard.
+	//
+	// PR-26-code-C2 addition (semantics revised on auditor pass —
+	// originally soft-skip, now hard-refusal).
+	ErrCSFRestoreCronManifestCorrupt = errors.New("restore csf: A.4 cron-backup manifest is corrupt or unrecognized — refusing before A.5 (operator must inspect)")
+
+	// ErrCSFRestoreCronTargetExists is returned by A.4 as a HARD
+	// refusal when a manifest entry's target /etc/cron.d/<name> is
+	// already present on disk at restore time. The operator may have
+	// re-created a different version of the cron file post-takeover;
+	// A.4 must NOT overwrite operator content. Per the auditor verdict
+	// this is treated as an evidence-conflict case — restoration is
+	// stopped before A.5 and the operator must reconcile manually.
+	// PR-26-code-C2 addition (semantics revised on auditor pass).
+	ErrCSFRestoreCronTargetExists = errors.New("restore csf: A.4 target /etc/cron.d/<name> already present — refusing before A.5 (operator-content collision; manual reconcile required)")
 
 	// ErrCSFRestoreNftReleaseUnsafe is returned by A.7 whenever the
 	// safety-net-safe predicate is either unavailable (nil — the
@@ -324,24 +342,31 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 		m.log.Info("restore csf: A.3 skip — %s present, no rename needed", csfBinary)
 	}
 
-	// A.4: Cron restore from manifest (PR-26-code-C2 / §42.2 lock).
+	// A.4: Cron restore from manifest (PR-26-code-C2 / §42.2 lock,
+	// auditor-revised semantics — corrupt manifest is HARD refusal).
 	//
-	// Read switchop.ReadCronBackupManifest. Three branches:
+	// Branches:
 	//
-	//   - Manifest absent (pre-PR-26 host): graceful soft-skip with a
-	//     specific operator warning. A.4 does not act.
-	//   - Manifest present but corrupt / schema-mismatch / unknown-entry
-	//     / sha256-mismatch: refuse the cron restore with the typed
-	//     ErrCSFRestoreCronManifestCorrupt sentinel. Per §42.2-D the
-	//     overall mutation does NOT abort — A.5 still runs because
-	//     csf can function without cron (lfd will not auto-restart;
-	//     operator must inspect). A.4's failure is a P1 logged warning.
-	//   - Manifest present + integrity-clean: for each entry whose
-	//     target path is currently absent, restore the content via
-	//     exec.WriteFileAtomic (preserves mode) + exec.Chown
-	//     (preserves uid/gid). Targets that already exist are
-	//     skipped (operator may have re-created a different version
-	//     post-takeover; A.4 must not overwrite operator content).
+	//   - Manifest ABSENT (pre-PR-26 host): graceful soft-skip with
+	//     an operator warning. A.4 does not act; control falls
+	//     through to A.5. This is the migration-gap path.
+	//   - Manifest present but UNTRUSTED (parse failure / schema
+	//     mismatch / unknown-entry / per-entry sha256 mismatch):
+	//     return ErrCSFRestoreCronManifestCorrupt — A.5 does NOT
+	//     run, the existing §32 step-3 failure path retains the
+	//     safety net, and the operator must inspect. Proceeding to
+	//     start csf.service while restore evidence is on disk but
+	//     untrusted would weaken the evidence chain (auditor
+	//     verdict on PR-26-code-C).
+	//   - Target ALREADY exists on disk (operator-content collision):
+	//     return ErrCSFRestoreCronTargetExists. Same hard-refusal
+	//     semantics as corrupt-manifest — A.4 must not overwrite
+	//     operator content, and the surrounding evidence-conflict
+	//     warrants stopping before A.5.
+	//   - Manifest present + integrity-clean + targets absent: for
+	//     each entry, restore the content via exec.WriteFileAtomic
+	//     (preserves mode) + exec.Chown (preserves uid/gid). Then
+	//     fall through to A.5.
 	//
 	// Absolutely no:
 	//   - template regeneration (only restore-from-backup, never
@@ -349,68 +374,58 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 	//   - writes outside the two §42.2-locked target paths
 	//   - DirectAdmin custombuild rewrites
 	//   - cron files that NFTBan did not back up itself
-	a4SoftSkipWarn := func(reason string) {
-		if m.log != nil {
-			m.log.Warn("restore csf: A.4 soft-skip — %s. %s and %s NOT auto-restored. Operator must restore manually if needed.",
-				reason, csfCronPath, lfdCronPath)
-		}
-	}
-
 	manifest, manifestPresent, manifestErr := switchop.ReadCronBackupManifest(m.exec, m.log)
 	switch {
 	case manifestErr != nil:
-		// Present but corrupt / schema-mismatch / unknown-entry.
 		if m.log != nil {
-			m.log.Warn("restore csf: A.4 manifest is corrupt: %v", manifestErr)
+			m.log.Error("restore csf: A.4 manifest untrusted: %v — refusing before A.5", manifestErr)
 		}
-		a4SoftSkipWarn("cron-backup manifest is corrupt or unrecognized")
-		// Per §42.2-D: do NOT abort. Continue to A.5. The operator
-		// receives the warning and the typed sentinel surfaces in
-		// the dispatcher's evidence record only if higher-layer code
-		// chooses to wrap it. PR-26-code-C does not abort A.5 on
-		// cron failure.
-		_ = ErrCSFRestoreCronManifestCorrupt // typed sentinel exposed for callers/tests; see A.4 corrupt-manifest tests
+		return fmt.Errorf("%w: %v", ErrCSFRestoreCronManifestCorrupt, manifestErr)
 
 	case !manifestPresent:
-		a4SoftSkipWarn("cron-backup manifest absent (pre-PR-26 host)")
+		if m.log != nil {
+			m.log.Warn("restore csf: A.4 soft-skip — cron-backup manifest absent (pre-PR-26 host); %s and %s NOT auto-restored",
+				csfCronPath, lfdCronPath)
+		}
 
 	default:
 		a4Restored := 0
-		a4Skipped := 0
 		for _, entry := range manifest.Files {
 			// Defense-in-depth: only the two §42.2-locked paths.
+			// (The reader already rejects unknown-entry manifests;
+			// this is belt-and-braces.)
 			if entry.Path != csfCronPath && entry.Path != lfdCronPath {
 				if m.log != nil {
-					m.log.Warn("restore csf: A.4 ignoring manifest entry with unauthorized path %q", entry.Path)
+					m.log.Error("restore csf: A.4 manifest entry has unauthorized path %q — refusing before A.5", entry.Path)
 				}
-				continue
+				return fmt.Errorf("%w: unauthorized entry path %q", ErrCSFRestoreCronManifestCorrupt, entry.Path)
 			}
 			// Verify sha256 integrity against the on-disk backup.
+			// Mismatch is HARD refusal — restore evidence on disk
+			// is untrusted; do not start csf with bad evidence.
 			content, vErr := switchop.VerifyCronBackupEntry(m.exec, entry)
 			if vErr != nil {
 				if m.log != nil {
-					m.log.Warn("restore csf: A.4 sha256 verify failed for %s: %v — skipping this file", entry.Path, vErr)
+					m.log.Error("restore csf: A.4 sha256 verify failed for %s: %v — refusing before A.5", entry.Path, vErr)
 				}
-				a4Skipped++
-				continue
+				return fmt.Errorf("%w: %v", ErrCSFRestoreCronManifestCorrupt, vErr)
 			}
-			// Skip if target already exists — operator may have
-			// re-created a different version post-takeover.
+			// Operator-content collision: target already exists.
+			// HARD refuse — A.4 must not overwrite operator content
+			// and the conflict warrants stopping before A.5.
 			if m.exec.FileExists(entry.Path) {
 				if m.log != nil {
-					m.log.Warn("restore csf: A.4 target %s already present — skipping (operator content not overwritten)", entry.Path)
+					m.log.Error("restore csf: A.4 target %s already present — refusing before A.5 (operator-content collision)", entry.Path)
 				}
-				a4Skipped++
-				continue
+				return fmt.Errorf("%w: %s", ErrCSFRestoreCronTargetExists, entry.Path)
 			}
 			// Restore: WriteFileAtomic preserves mode; Chown
 			// applies uid/gid for fidelity.
 			if err := m.exec.WriteFileAtomic(entry.Path, content, fileModeFromUint32(entry.Mode)); err != nil {
 				if m.log != nil {
-					m.log.Warn("restore csf: A.4 WriteFileAtomic(%s) failed: %v — skipping", entry.Path, err)
+					m.log.Error("restore csf: A.4 WriteFileAtomic(%s) failed: %v — refusing before A.5", entry.Path, err)
 				}
-				a4Skipped++
-				continue
+				return fmt.Errorf("%w: WriteFileAtomic(%s): %v", ErrCSFRestoreCronManifestCorrupt, entry.Path, err)
 			}
 			if err := m.exec.Chown(entry.Path, entry.UID, entry.GID); err != nil {
 				if m.log != nil {
@@ -425,8 +440,7 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 			}
 		}
 		if m.log != nil {
-			m.log.Info("restore csf: A.4 manifest-restore complete (restored=%d, skipped=%d)",
-				a4Restored, a4Skipped)
+			m.log.Info("restore csf: A.4 manifest-restore complete (restored=%d)", a4Restored)
 		}
 	}
 
