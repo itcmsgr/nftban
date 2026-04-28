@@ -494,6 +494,16 @@ func (m *productionMutationDep) MutateToTarget(ctx context.Context, firewallType
 type productionInlineVerifyDep struct {
 	exec executor.Executor
 	log  *logging.Logger
+
+	// firewallType is the resolved §18.2 target the planner committed
+	// to. Plumbed by the production factory from the dispatcher's
+	// already-resolved TargetAuthority — never re-derived here, per
+	// INV-PR25-AUTHORITY-IMMUTABILITY (§17.3). Required for a real
+	// production deps invocation; empty value is a defensive guard.
+	//
+	// PR-26-code-A introduced this field to back the §51.3 Option B
+	// target-specific safety-net-safe predicate.
+	firewallType string
 }
 
 // inlineVerifyKnownFirewallServices is the §18.2 known-set, mapped to
@@ -507,26 +517,16 @@ var inlineVerifyKnownFirewallServices = map[string]string{
 	"csf":       "csf.service",
 }
 
-// inlineVerifyExternalFirewallServices is the union of canonical
-// firewall service units that, if active, demonstrate SSH protection
-// outside the nftban emergency table. Used by IsSafetyNetRemovalSafe.
+// (PR-26-code-A — §51.3 Option B): the previous
+// `inlineVerifyExternalFirewallServices` list (any of csf / ufw /
+// firewalld / iptables / netfilter-persistent active was sufficient)
+// is REMOVED. The safety-net-safe predicate is now target-specific:
+// it consults inlineVerifyKnownFirewallServices[v.firewallType] to
+// derive the unit and gates exclusively on that unit's ServiceActive
+// state. A non-target external firewall being active no longer
+// satisfies CSF restore safety — that was the §41 looseness that
+// PR-26-code-A tightens.
 //
-// nftband.service is intentionally NOT in this list: by the time
-// IsSafetyNetRemovalSafe runs, the §32 ordering has already stopped
-// nftband (step 6) and released the nftban authority is being decided
-// at step 7 — so checking for nftband would tautologically refuse.
-//
-// netfilter-persistent.service is included because Debian/Ubuntu hosts
-// rely on it to load iptables rules on boot; it is the runtime
-// equivalent of iptables.service.
-var inlineVerifyExternalFirewallServices = []string{
-	"csf.service",
-	"ufw.service",
-	"firewalld.service",
-	"iptables.service",
-	"netfilter-persistent.service",
-}
-
 // Sentinel errors for the productionInlineVerifyDep.
 var (
 	// ErrInlineVerifyNilExecutor is returned when the dep was
@@ -555,11 +555,44 @@ var (
 	// not observable, the predicate refuses (no fallback to assumption).
 	ErrInlineVerifySSHPortUnknown = errors.New("restore inline-verify: SSH port could not be determined; safety-net removal is not safe")
 
+	// ErrInlineVerifyTargetFirewallTypeMissing is returned when the
+	// dep is invoked without a firewallType field set. Defensive guard
+	// against a factory that constructs the dep without plumbing the
+	// resolved target. PR-26-code-A.
+	ErrInlineVerifyTargetFirewallTypeMissing = errors.New("restore inline-verify: target firewallType is empty; production factory must plumb the resolved target identity (§51.4)")
+
+	// ErrInlineVerifyTargetMismatch is returned when the firewallType
+	// passed to IsTargetFirewallActive differs from the
+	// constructor-injected v.firewallType. Per §51.4 firewallType
+	// plumbing, the dispatcher resolves the target ONCE; any mismatch
+	// indicates an upstream invariant violation (e.g., a fake test
+	// passing a value the production factory did not authorize).
+	ErrInlineVerifyTargetMismatch = errors.New("restore inline-verify: caller-passed firewallType disagrees with constructor-injected target")
+
 	// ErrInlineVerifyInvalidSSHPort is returned when the resolved port
 	// is outside the legal TCP port range. Defensive guard.
 	ErrInlineVerifyInvalidSSHPort = errors.New("restore inline-verify: SSH port outside legal TCP range (1-65535)")
 )
 
+// productionInlineVerifyDep struct fields — 4B-4 declared exec + log.
+// PR-26-code-A adds firewallType: the resolved §18.2 target firewall
+// the planner committed to. Plumbed by the production factory from
+// the dispatcher's already-resolved TargetAuthority — never re-derived
+// here, per INV-PR25-AUTHORITY-IMMUTABILITY (§17.3).
+//
+// firewallType is consumed by:
+//   - IsTargetFirewallActive: cross-checked against the firewallType
+//     argument the caller passes (defensive: must match the
+//     constructor-injected value).
+//   - IsSafetyNetRemovalSafe: replaces PR-25's any-external-FW
+//     heuristic with a target-specific check. Per §51.3 Option B,
+//     the predicate gates safety-net removal on the target's
+//     specific service being active, not "any external firewall".
+//
+// firewallType MUST be non-empty for a real production deps
+// invocation. Empty value is a defensive guard producing
+// ErrInlineVerifyTargetFirewallTypeMissing.
+//
 // IsTargetFirewallActive — §21.1 assertion 1.
 //
 // Maps firewallType to its canonical service unit and returns
@@ -573,6 +606,19 @@ var (
 func (v *productionInlineVerifyDep) IsTargetFirewallActive(_ context.Context, firewallType string) (bool, error) {
 	if v.exec == nil {
 		return false, ErrInlineVerifyNilExecutor
+	}
+	// PR-26-code-A: defensive cross-check — when the production factory
+	// has plumbed v.firewallType, any caller-passed value MUST match.
+	// Disagreement signals an upstream invariant violation
+	// (INV-PR25-AUTHORITY-IMMUTABILITY §17.3). When v.firewallType is
+	// empty (test fixtures that pre-date PR-26-code-A or fakes that
+	// intentionally exercise the dispatch table), the check is skipped.
+	if v.firewallType != "" && firewallType != v.firewallType {
+		if v.log != nil {
+			v.log.Error("restore inline-verify: caller-passed firewallType=%q disagrees with constructor-injected v.firewallType=%q",
+				firewallType, v.firewallType)
+		}
+		return false, ErrInlineVerifyTargetMismatch
 	}
 	if firewallType == "csf" {
 		active := v.exec.ServiceActive("csf.service")
@@ -621,25 +667,41 @@ func (v *productionInlineVerifyDep) CurrentAuthorityClass(_ context.Context) (un
 	return res.State, nil
 }
 
-// IsSafetyNetRemovalSafe — §21.1 assertion 3.
+// IsSafetyNetRemovalSafe — §21.1 assertion 3, target-specific per
+// §51.3 Option B.
 //
-// Returns true iff:
+// Returns true iff ALL of the following hold:
 //
 //   1. detect.SSHPort succeeds — proves sshd is observable on the
 //      host (typically via `ss -tlnp` listener parse). Without an
 //      observable port, the predicate refuses; there is NO fallback
 //      to a hardcoded port.
 //
-//   2. At least one external (non-nftban, non-emergency) firewall
-//      service is currently active — proves SSH protection is being
-//      provided by something other than the nftban_install_emergency
-//      table. If only the emergency table is in place,
-//      inlineVerifyExternalFirewallServices is empty-active and the
-//      predicate refuses.
+//   2. The constructor-injected v.firewallType is non-empty AND in
+//      the §18.2 known set AND equals "csf" (Amendment 1 §30.2 lock).
+//      Defensive guards against an upstream factory that forgot to
+//      plumb the resolved target.
+//
+//   3. The TARGET firewall's specific service unit (e.g.
+//      csf.service for v.firewallType=="csf") is currently active —
+//      derived via the inlineVerifyKnownFirewallServices map.
+//
+// PR-25's any-external-FW heuristic is REMOVED: a host where csf is
+// inactive but ufw / firewalld / iptables happen to be active no
+// longer satisfies CSF restore safety. The §41 looseness is closed.
+//
+// Per §51.3 Option B, exact CSF SSH-rule kernel evidence (the row 6
+// "target firewall has loaded an SSH-allow rule" assertion) is
+// **ADVISORY**, not BLOCKING; it is intentionally NOT checked here.
+// Layered protection (sshd listener observable + csf.service active
+// + downstream kernel/service evidence checked by Execute step 4)
+// remains strong without iptables-legacy introspection. Any future
+// upgrade to BLOCKING requires a contract amendment promoting Option A.
 //
 // All evidence comes from the executor abstraction (ServiceActive +
 // the Run-based ss / sshd_config probes inside detect.SSHPort). No
-// nft-list parsing, no CLI-truth dependency, no kernel mutation.
+// nft-list parsing, no CLI-truth dependency, no kernel mutation,
+// no iptables introspection.
 func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (bool, error) {
 	if v.exec == nil {
 		return false, ErrInlineVerifyNilExecutor
@@ -659,20 +721,39 @@ func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (b
 		return false, fmt.Errorf("%w: got %d", ErrInlineVerifyInvalidSSHPort, port)
 	}
 
-	for _, unit := range inlineVerifyExternalFirewallServices {
-		if v.exec.ServiceActive(unit) {
-			if v.log != nil {
-				v.log.Info("restore inline-verify: assertion-3 ok — %s is active (sshd port %d observable)",
-					unit, port)
-			}
-			return true, nil
+	if v.firewallType == "" {
+		if v.log != nil {
+			v.log.Error("restore inline-verify: assertion-3 refused — production factory did not plumb firewallType (§51.4 violation)")
 		}
+		return false, ErrInlineVerifyTargetFirewallTypeMissing
+	}
+	targetUnit, ok := inlineVerifyKnownFirewallServices[v.firewallType]
+	if !ok {
+		if v.log != nil {
+			v.log.Error("restore inline-verify: assertion-3 refused — firewallType=%q is not in the §18.2 known set", v.firewallType)
+		}
+		return false, ErrInlineVerifyUnknownFirewall
+	}
+	if v.firewallType != "csf" {
+		if v.log != nil {
+			v.log.Info("restore inline-verify: assertion-3 refused — firewallType=%q is known but Amendment 1 authorizes csf only (§30.2)", v.firewallType)
+		}
+		return false, ErrInlineVerifyOnlyCSFAuthorized
+	}
+
+	if !v.exec.ServiceActive(targetUnit) {
+		if v.log != nil {
+			v.log.Warn("restore inline-verify: assertion-3 refused — target firewall %s not active (sshd port %d observable but target unit inactive); a non-target external firewall being active is no longer sufficient under §51.3 Option B",
+				targetUnit, port)
+		}
+		return false, nil
 	}
 
 	if v.log != nil {
-		v.log.Warn("restore inline-verify: assertion-3 refused — no external firewall service active; only the emergency table protects sshd port %d", port)
+		v.log.Info("restore inline-verify: assertion-3 ok — target %s active (sshd port %d observable)",
+			targetUnit, port)
 	}
-	return false, nil
+	return true, nil
 }
 
 // =============================================================================
@@ -682,9 +763,10 @@ func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (b
 
 // newProductionRestoreDeps returns the four-tuple of production deps
 // wired around the given executor + logger, with NO evidence
-// (priorRec=nil, panel=PanelNone). Used in commit 4 baseline only;
-// 4B-3-pre introduces newProductionRestoreDepsWithEvidence which
-// the dispatcher uses for the real flow.
+// (priorRec=nil, panel=PanelNone, firewallType=""). Used in commit 4
+// baseline only; 4B-3-pre introduced newProductionRestoreDepsWithEvidence
+// which the dispatcher uses for the real flow, and PR-26-code-A
+// extended its signature to also carry the resolved target firewallType.
 //
 // Commit progression:
 //   - 4B-1: Preflight dep is real (read-only presence check)
@@ -694,11 +776,13 @@ func (v *productionInlineVerifyDep) IsSafetyNetRemovalSafe(_ context.Context) (b
 //   - 4B-3-csf: Mutation dep becomes real for firewallType=="csf"
 //               using the evidence wired by 4B-3-pre. Other targets
 //               typed-unsupported.
-//   - 4B-4: InlineVerify dep is real.
+//   - 4B-4: InlineVerify dep is real (any-external-FW heuristic).
+//   - PR-26-code-A: InlineVerify safety predicate is target-specific
+//               via newly-plumbed firewallType.
 //
 // Tests swap the package-level newRestoreDeps var to inject fakes.
 func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) restore.ExecuteDeps {
-	return newProductionRestoreDepsWithEvidence(exec, log, nil, detect.PanelNone)
+	return newProductionRestoreDepsWithEvidence(exec, log, nil, detect.PanelNone, "")
 }
 
 // newProductionRestoreDepsWithEvidence is the evidence-aware
@@ -714,8 +798,15 @@ func newProductionRestoreDeps(exec executor.Executor, log *logging.Logger) resto
 // predicate. The mutation dep's safetyNetRemovalSafeFn closure points
 // at the inline-verify dep's IsSafetyNetRemovalSafe method — meaning
 // A.7 (nftban kernel release) now actually executes when the
-// inline-verify says safe-to-remove. Before 4B-4 the predicate was
-// nil and A.7 always refused; this commit closes that gate.
+// inline-verify says safe-to-remove.
+//
+// PR-26-code-A extends the signature to accept the dispatcher's
+// resolved firewallType (§51.4 lock — `firewallType` plumbing, not
+// precomputed `targetUnit`). The inline-verify dep stores this value
+// and uses it for the target-specific safety-net-safe predicate
+// (§51.3 Option B). The mutation dep's A.7 gate flows through the
+// same inline-verify instance, so target-specificity propagates to
+// A.7 automatically.
 //
 // Wiring order: InlineVerify is constructed first so the closure has
 // a non-nil reference to capture. The same instance is then passed
@@ -726,8 +817,13 @@ func newProductionRestoreDepsWithEvidence(
 	log *logging.Logger,
 	priorRec *uninstall.PriorRecord,
 	panel detect.PanelType,
+	firewallType string,
 ) restore.ExecuteDeps {
-	inlineVerify := &productionInlineVerifyDep{exec: exec, log: log}
+	inlineVerify := &productionInlineVerifyDep{
+		exec:         exec,
+		log:          log,
+		firewallType: firewallType,
+	}
 
 	return restore.ExecuteDeps{
 		Preflight: &productionPreflightDep{exec: exec, log: log},
@@ -747,9 +843,11 @@ func newProductionRestoreDepsWithEvidence(
 			log:      log,
 			priorRec: priorRec,
 			panel:    panel,
-			// 4B-4 wiring: A.7 now consults the inline-verify dep's
-			// IsSafetyNetRemovalSafe assertion. ctx flows through; no
-			// state captured beyond the inlineVerify reference.
+			// 4B-4 wiring: A.7 consults the inline-verify dep's
+			// IsSafetyNetRemovalSafe assertion. PR-26-code-A makes
+			// that assertion target-specific via the firewallType
+			// field carried inside the same inlineVerify instance —
+			// A.7's gate is automatically target-aware.
 			safetyNetRemovalSafeFn: func(ctx context.Context) (bool, error) {
 				return inlineVerify.IsSafetyNetRemovalSafe(ctx)
 			},
@@ -759,13 +857,17 @@ func newProductionRestoreDepsWithEvidence(
 }
 
 // restoreDepsFactory is the function shape the dispatcher calls to
-// build deps. 4B-3-pre tightens the signature to require evidence;
-// the dispatcher already has priorRec + panel from the PR-24 path.
+// build deps. 4B-3-pre tightened the signature to require priorRec +
+// panel; PR-26-code-A extends it once more to require the resolved
+// firewallType (§51.4 plumbing lock). The dispatcher resolves
+// firewallType from the planner-emitted TargetAuthority before
+// calling this factory.
 type restoreDepsFactory func(
 	exec executor.Executor,
 	log *logging.Logger,
 	priorRec *uninstall.PriorRecord,
 	panel detect.PanelType,
+	firewallType string,
 ) restore.ExecuteDeps
 
 // newRestoreDeps is the dispatcher's deps-factory hook. Production
@@ -775,3 +877,46 @@ type restoreDepsFactory func(
 // Restoring this to its zero (production) value at end of test is the
 // caller's responsibility (defer / t.Cleanup pattern).
 var newRestoreDeps restoreDepsFactory = newProductionRestoreDepsWithEvidence
+
+// resolveFirewallTypeForDeps maps a planner-emitted TargetAuthority
+// to the §18.2 firewallType identity the inline-verify dep stores.
+//
+// Per §51.4 lock: the dispatcher passes raw firewallType (not a
+// precomputed targetUnit). The inline-verify dep maps firewallType
+// → service unit at call time using inlineVerifyKnownFirewallServices,
+// keeping the seam consistent with the 4B-3-pre priorRec/panel pattern.
+//
+// This helper lives next to the factory (NOT in restore_decide.go)
+// because:
+//
+//   - It is purely a deps-construction concern: the planner produces
+//     TargetAuthority; the factory needs firewallType; this helper
+//     bridges the two without leaking Group→Kind mapping into the
+//     dispatcher (the dispatcher's no-Group-Kind-mapping invariant
+//     is structural, enforced by TestDispatcher_NoLocalGroupKindMapping).
+//   - The TargetAuthorityKind* constants required for the switch
+//     therefore appear ONLY in restore_deps.go, never in restore_decide.go.
+//
+// RecordedPrior: TargetAuthority carries firewallType directly (§18.3
+// invariant: non-empty + member of the §18.2 known set).
+//
+// PanelNative: TargetAuthority's FirewallType() is structurally empty
+// per §18.3; the resolved value lives in the static §20 panel mapping.
+// We call the public restore.ResolvePanelFirewall so the firewallType
+// reaching the inline-verify dep is identical to the one Execute uses
+// for preflight + mutation.
+//
+// None: should be unreachable — Execute refuses Kind=None before deps
+// are consulted — but guard defensively.
+func resolveFirewallTypeForDeps(t restore.TargetAuthority) (string, error) {
+	switch t.Kind() {
+	case restore.TargetAuthorityKindRecordedPrior:
+		return t.FirewallType(), nil
+	case restore.TargetAuthorityKindPanelNative:
+		return restore.ResolvePanelFirewall(t.Panel())
+	case restore.TargetAuthorityKindNone:
+		return "", fmt.Errorf("deps factory: cannot resolve firewallType for TargetAuthority kind=None (upstream invariant violation)")
+	default:
+		return "", fmt.Errorf("deps factory: unknown TargetAuthority kind=%q", t.Kind())
+	}
+}

@@ -862,7 +862,7 @@ func TestCSFMutate_4B3csf_NoNolintUnusedOnMutationFields(t *testing.T) {
 // =============================================================================
 
 func TestCSFMutate_4B3csf_PR25NonShipping_PredicateUnwiredByDefault(t *testing.T) {
-	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone)
+	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone, "csf")
 	mut, ok := deps.Mutation.(*productionMutationDep)
 	if !ok {
 		t.Fatalf("Mutation is not *productionMutationDep")

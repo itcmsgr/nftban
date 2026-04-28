@@ -349,6 +349,7 @@ func withFakeDeps(t *testing.T, fake *fakeDispatcherDeps) {
 		_ *logging.Logger,
 		_ *uninstall.PriorRecord,
 		_ detect.PanelType,
+		_ string, // PR-26-code-A: firewallType plumbing — fakes ignore it.
 	) restore.ExecuteDeps {
 		return restore.ExecuteDeps{
 			Preflight:    fake,
@@ -575,10 +576,11 @@ func readSelfRestoreDecide() (string, error) {
 // recordingFactoryCall captures one call to the deps factory so tests
 // can assert exactly which evidence reached it.
 type recordingFactoryCall struct {
-	exec     executor.Executor
-	log      *logging.Logger
-	priorRec *uninstall.PriorRecord
-	panel    detect.PanelType
+	exec         executor.Executor
+	log          *logging.Logger
+	priorRec     *uninstall.PriorRecord
+	panel        detect.PanelType
+	firewallType string // PR-26-code-A: §51.4 plumbing
 }
 
 // withFakeDepsRecordingEvidence swaps newRestoreDeps with a factory
@@ -594,12 +596,14 @@ func withFakeDepsRecordingEvidence(t *testing.T, fake *fakeDispatcherDeps) *[]re
 		log *logging.Logger,
 		priorRec *uninstall.PriorRecord,
 		panel detect.PanelType,
+		firewallType string,
 	) restore.ExecuteDeps {
 		calls = append(calls, recordingFactoryCall{
-			exec:     exec,
-			log:      log,
-			priorRec: priorRec,
-			panel:    panel,
+			exec:         exec,
+			log:          log,
+			priorRec:     priorRec,
+			panel:        panel,
+			firewallType: firewallType,
 		})
 		return restore.ExecuteDeps{
 			Preflight:    fake,
