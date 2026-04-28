@@ -42,6 +42,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -160,6 +161,19 @@ var (
 	// service-unit file paths exist.
 	ErrPreflightUnitMissing = errors.New("restore preflight: no canonical systemd unit file present")
 
+	// ErrPreflightUnitFileMaskingOnly is returned when every canonical
+	// service-unit file path is either absent OR a mask symlink to
+	// /dev/null. systemd treats /dev/null-symlinks as "masked" units;
+	// `systemctl unmask` removes the symlink, but `systemctl enable`
+	// then fails because no real backing unit-file exists. Surfaced
+	// during the Amendment-2-code-E v2 corrected run on srv3
+	// (2026-04-28T21:30:13Z) — preflight passed against the mask
+	// symlink, A.1 unmask succeeded, A.2 enable failed with "Unit
+	// file csf.service does not exist". This sentinel refuses the
+	// run before §32 step 2 safety-net insertion to prevent partial
+	// mutation on hosts that lack a real unit file.
+	ErrPreflightUnitFileMaskingOnly = errors.New("restore preflight: unit file is a mask symlink (points to /dev/null); no real unit file backs the service")
+
 	// ErrPreflightNilExecutor is returned when the dep was
 	// constructed without a usable executor. Defensive guard.
 	ErrPreflightNilExecutor = errors.New("restore preflight: executor is nil")
@@ -214,15 +228,54 @@ func (p *productionPreflightDep) PreflightTarget(_ context.Context, firewallType
 		}
 	}
 
-	// Check unit files (OR-list — at least one path must exist).
+	// Check unit files (OR-list — at least one path must exist AND
+	// resolve to a real backing unit-file, not /dev/null).
+	//
+	// Amendment-2-code-C hardening (2026-04-28): a path that exists
+	// as a symlink to /dev/null is a systemd "masked" unit. After
+	// A.1 unmask removes the symlink, A.2 ServiceEnable fails with
+	// "Unit file does not exist" because no real backing unit-file
+	// is present. Preflight detects this state and refuses with
+	// ErrPreflightUnitFileMaskingOnly rather than allowing the §32
+	// step 2 safety-net insertion + A.1 unmask to run, which would
+	// partially mutate the host.
+	//
+	// Mechanic: after FileExists returns true, route through
+	// Run("readlink", "-f", path) — read-only per §43.3 raw-Run
+	// policy for read-only probes. If the resolved canonical path
+	// equals "/dev/null", skip this candidate. If all candidates
+	// resolve to /dev/null OR are absent, refuse with the mask-only
+	// sentinel; if some are missing and at least one is a real
+	// unit-file, that real unit-file is accepted.
 	var unitFound string
+	maskOnlyObserved := false
 	for _, path := range presence.unitFiles {
-		if p.exec.FileExists(path) {
-			unitFound = path
-			break
+		if !p.exec.FileExists(path) {
+			continue
 		}
+		// FileExists returned true. Resolve to detect mask-only.
+		res := p.exec.Run("readlink", "-f", path)
+		resolved := strings.TrimSpace(res.Stdout)
+		if resolved == "/dev/null" {
+			maskOnlyObserved = true
+			if p.log != nil {
+				p.log.Info("restore preflight: candidate unit path %q is a mask symlink to /dev/null — skipping (Amendment-2-code-C)",
+					path)
+			}
+			continue
+		}
+		// Real file or symlink to real file: acceptable.
+		unitFound = path
+		break
 	}
 	if unitFound == "" {
+		if maskOnlyObserved {
+			if p.log != nil {
+				p.log.Info("restore preflight: refusing firewallType=%q — every candidate unit-file path is a mask symlink to /dev/null; no real backing unit-file exists",
+					firewallType)
+			}
+			return false, ErrPreflightUnitFileMaskingOnly
+		}
 		if p.log != nil {
 			p.log.Info("restore preflight: refusing firewallType=%q — no canonical service unit (looked at %v)",
 				firewallType, presence.unitFiles)

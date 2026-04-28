@@ -444,11 +444,16 @@ func TestPreflightTarget_4B1_NoMutationCalls(t *testing.T) {
 			d := &productionPreflightDep{exec: mock}
 			_, _ = d.PreflightTarget(context.Background(), c.fwt)
 
-			// Commands recorded must be empty: preflight only calls
-			// CommandExists + FileExists, neither of which records a
-			// command in MockExecutor.Commands.
-			if len(mock.Commands) != 0 {
-				t.Errorf("preflight recorded mutation commands: %+v", mock.Commands)
+			// Recorded commands must contain ONLY read-only probes:
+			// CommandExists + FileExists are typed seams that don't
+			// record. Amendment-2-code-C adds `readlink -f` Run calls
+			// for unit-file resolution — read-only per §43.3 raw-Run
+			// policy. Mutation primitives (Service*, Nft*,
+			// WriteFileAtomic, mv, rename, etc.) must remain ZERO.
+			for _, cmd := range mock.Commands {
+				if cmd.Name != "readlink" {
+					t.Errorf("preflight recorded non-readonly command: %+v", cmd)
+				}
 			}
 		})
 	}
@@ -1050,7 +1055,9 @@ func TestPreflightTarget_AMD2_UnknownFirewall_StillRefuse(t *testing.T) {
 
 // AMD2-10: preflight remains read-only on the .disabled-acceptance
 // branch. Calling PreflightTarget with the §54 relaxation active must
-// still record ZERO commands (FileExists is a typed read; no Run).
+// still record ZERO mutation commands. (After Amendment-2-code-C the
+// branch records a read-only `readlink -f` Run for unit-file resolution;
+// that is a read-only systemctl-class probe per §43.3 and is allowed.)
 func TestPreflightTarget_AMD2_CSF_DisabledBranch_NoMutationCalls(t *testing.T) {
 	mock := pfAMD2MockWith("", []string{"/etc/systemd/system/csf.service"}, true)
 	d := &productionPreflightDep{exec: mock}
@@ -1058,7 +1065,236 @@ func TestPreflightTarget_AMD2_CSF_DisabledBranch_NoMutationCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup error: %v", err)
 	}
-	if len(mock.Commands) != 0 {
-		t.Errorf("§54 relaxation branch recorded mutation commands: %+v", mock.Commands)
+	// All recorded commands must be read-only `readlink` invocations
+	// (or empty). Mutation primitives must be zero.
+	for _, c := range mock.Commands {
+		if c.Name != "readlink" {
+			t.Errorf("§54 relaxation branch recorded non-readonly command: %+v", c)
+		}
+	}
+}
+
+// =============================================================================
+// =============================================================================
+// Amendment 2 code-C — preflight unit-file mask-symlink hardening
+// =============================================================================
+// =============================================================================
+//
+// Amendment-2-code-E v2 corrected run on srv3 surfaced this gap:
+// /etc/systemd/system/csf.service was a mask symlink to /dev/null.
+// FileExists returned true → preflight passed → safety-net inserted
+// → A.1 unmask removed the symlink → A.2 ServiceEnable failed because
+// no real backing unit-file existed → host left in partial-mutation
+// state with safety-net retained.
+//
+// Code-C closes the gap by routing every found unit-file path through
+// `readlink -f` and rejecting paths that resolve to /dev/null. The
+// OR-list still wins if at least one candidate is a real backing file.
+// If every candidate is mask-only, refuse with the new typed sentinel
+// ErrPreflightUnitFileMaskingOnly before any mutation runs.
+
+// pfAMD2CMockWith configures a mock with given binary in PATH (or
+// empty), the given unit-files (each entry is the path → resolved
+// readlink target). A resolved target of "/dev/null" simulates a mask
+// symlink. A resolved target equal to the path itself simulates a
+// regular file. A resolved target pointing elsewhere simulates a
+// normal symlink chain to a real unit-file.
+func pfAMD2CMockWith(binary string, unitFiles map[string]string) *executor.MockExecutor {
+	mock := executor.NewMockExecutor()
+	if binary != "" {
+		mock.ExistingCommands[binary] = true
+	}
+	for path, resolved := range unitFiles {
+		mock.Files[path] = []byte{} // FileExists → true
+		// readlink -f result: stdout is the resolved canonical path.
+		key := "readlink:-f:" + path
+		mock.RunResults[key] = executor.Result{
+			ExitCode: 0,
+			Stdout:   resolved + "\n",
+		}
+	}
+	return mock
+}
+
+// AMD2C-1: regular file at /etc/systemd/system/csf.service → PASS.
+// Resolved canonical path equals the path itself (regular file).
+func TestPreflightTarget_AMD2C_RegularFile_EtcSystemd_Pass(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/etc/systemd/system/csf.service": "/etc/systemd/system/csf.service",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want PASS", ok, err)
+	}
+}
+
+// AMD2C-2: real unit at /usr/lib/systemd/system/csf.service → PASS.
+// Existing OR-list path; same shape as srv2.
+func TestPreflightTarget_AMD2C_RegularFile_UsrLib_Pass(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/usr/lib/systemd/system/csf.service": "/usr/lib/systemd/system/csf.service",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want PASS", ok, err)
+	}
+}
+
+// AMD2C-3: mask symlink at /etc/systemd/system/csf.service → /dev/null,
+// no real unit anywhere else → REFUSE ErrPreflightUnitFileMaskingOnly.
+// Reproduces the srv3 v2 corrected-run failure mode.
+func TestPreflightTarget_AMD2C_MaskOnly_NoBackingFile_Refuse(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/etc/systemd/system/csf.service": "/dev/null",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if ok {
+		t.Errorf("PreflightTarget(csf) accepted mask-only state; want refusal (Amendment-2-code-C)")
+	}
+	if !errors.Is(err, ErrPreflightUnitFileMaskingOnly) {
+		t.Errorf("err = %v; want ErrPreflightUnitFileMaskingOnly", err)
+	}
+}
+
+// AMD2C-4: mask symlink at /etc/systemd/system/csf.service → /dev/null
+// AND real unit at /usr/lib/systemd/system/csf.service → PASS. The
+// OR-list resolves through the second canonical path. This is the
+// "srv3 was rescued by srv2"-shaped case if both paths existed.
+func TestPreflightTarget_AMD2C_MaskAtEtcButRealAtUsrLib_Pass(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/etc/systemd/system/csf.service":     "/dev/null",
+		"/usr/lib/systemd/system/csf.service": "/usr/lib/systemd/system/csf.service",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want PASS (OR-list resolves through real backing path)", ok, err)
+	}
+}
+
+// AMD2C-5: same as AMD2C-1 but with explicit assertion of the
+// "regular file" semantic — file path == resolved canonical path.
+// Already covered by AMD2C-1; kept for explicit table coverage.
+func TestPreflightTarget_AMD2C_PlainRegularFile_Pass(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/etc/systemd/system/csf.service": "/etc/systemd/system/csf.service",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want PASS", ok, err)
+	}
+}
+
+// AMD2C-6: symlink at /etc/systemd/system/csf.service pointing to a
+// real unit-file at /usr/lib/systemd/system/csf.service → PASS. The
+// resolved canonical path is the real backing file (NOT /dev/null),
+// so preflight accepts.
+func TestPreflightTarget_AMD2C_SymlinkToRealUnit_Pass(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", map[string]string{
+		"/etc/systemd/system/csf.service": "/usr/lib/systemd/system/csf.service",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if !ok || err != nil {
+		t.Errorf("PreflightTarget(csf) ok=%v err=%v; want PASS (symlink resolves to real backing file)", ok, err)
+	}
+}
+
+// AMD2C-7: same mask-symlink hardening applies to ufw / firewalld /
+// iptables. A mask-only unit at the canonical path for these firewalls
+// must REFUSE with ErrPreflightUnitFileMaskingOnly identically to csf.
+func TestPreflightTarget_AMD2C_NonCSF_MaskHardening(t *testing.T) {
+	cases := []struct {
+		fwt      string
+		binary   string
+		unitPath string
+	}{
+		{"ufw", "ufw", "/usr/lib/systemd/system/ufw.service"},
+		{"firewalld", "firewall-cmd", "/usr/lib/systemd/system/firewalld.service"},
+		{"iptables", "iptables", "/usr/lib/systemd/system/iptables.service"},
+	}
+	for _, c := range cases {
+		t.Run(c.fwt, func(t *testing.T) {
+			mock := pfAMD2CMockWith(c.binary, map[string]string{
+				c.unitPath: "/dev/null",
+			})
+			d := &productionPreflightDep{exec: mock}
+			ok, err := d.PreflightTarget(context.Background(), c.fwt)
+			if ok {
+				t.Errorf("PreflightTarget(%q) accepted mask-only unit; want refusal", c.fwt)
+			}
+			if !errors.Is(err, ErrPreflightUnitFileMaskingOnly) {
+				t.Errorf("err = %v; want ErrPreflightUnitFileMaskingOnly", err)
+			}
+		})
+	}
+}
+
+// AMD2C-8: unknown firewall type still refuses with
+// ErrPreflightUnknownFirewall, regardless of any mask-symlink state.
+func TestPreflightTarget_AMD2C_UnknownFirewall_StillRefuse(t *testing.T) {
+	mock := pfAMD2CMockWith("", map[string]string{
+		"/etc/systemd/system/shorewall.service": "/dev/null",
+	})
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "shorewall")
+	if ok {
+		t.Errorf("PreflightTarget(shorewall) accepted; want refusal")
+	}
+	if !errors.Is(err, ErrPreflightUnknownFirewall) {
+		t.Errorf("err = %v; want ErrPreflightUnknownFirewall", err)
+	}
+}
+
+// AMD2C-9: NoMutationCalls — code-C adds `readlink -f` Run invocations
+// for read-only resolution. Confirm ZERO mutation calls (no Service*,
+// Nft*, WriteFileAtomic etc.) regardless of which branch fires.
+func TestPreflightTarget_AMD2C_NoMutationCalls(t *testing.T) {
+	cases := []struct {
+		name      string
+		unitFiles map[string]string
+	}{
+		{"happy_real_file", map[string]string{
+			"/etc/systemd/system/csf.service": "/etc/systemd/system/csf.service",
+		}},
+		{"mask_only", map[string]string{
+			"/etc/systemd/system/csf.service": "/dev/null",
+		}},
+		{"mixed_mask_and_real", map[string]string{
+			"/etc/systemd/system/csf.service":     "/dev/null",
+			"/usr/lib/systemd/system/csf.service": "/usr/lib/systemd/system/csf.service",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mock := pfAMD2CMockWith("csf", c.unitFiles)
+			d := &productionPreflightDep{exec: mock}
+			_, _ = d.PreflightTarget(context.Background(), "csf")
+			for _, cmd := range mock.Commands {
+				if cmd.Name != "readlink" {
+					t.Errorf("recorded non-readonly command: %+v", cmd)
+				}
+			}
+		})
+	}
+}
+
+// AMD2C-10: existing 4B-1 ErrPreflightUnitMissing semantic preserved
+// when no candidate path exists at all (FileExists false everywhere).
+// Distinguishes "no file present" (UnitMissing) from "all files are
+// mask-only" (UnitFileMaskingOnly).
+func TestPreflightTarget_AMD2C_NoUnitFileAnywhere_StillUnitMissing(t *testing.T) {
+	mock := pfAMD2CMockWith("csf", nil) // no unit files seeded
+	d := &productionPreflightDep{exec: mock}
+	ok, err := d.PreflightTarget(context.Background(), "csf")
+	if ok {
+		t.Errorf("PreflightTarget(csf) accepted with no unit files; want refusal")
+	}
+	if !errors.Is(err, ErrPreflightUnitMissing) {
+		t.Errorf("err = %v; want ErrPreflightUnitMissing (NOT MaskingOnly — no file ever existed)", err)
 	}
 }
