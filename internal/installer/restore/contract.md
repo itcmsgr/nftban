@@ -1182,6 +1182,87 @@ Per the operator's PR-25 cadence:
 
 Auditor passes between every major slice, mirroring the 4B-1 / 4B-2 / 4B-3-pre / 4B-3-csf / 4B-4 / 5 cadence.
 
+## 51. PR-26 operator lock record (2026-04-28)
+
+Recorded post-merge of PR-26-doc (#512, squash `cd768424`). This section is the authoritative in-repo source for the operator-locked answers to the §§39–43 proposed locks and the §48 open questions. Code phase MUST consult this section before any PR-26-code-* commit opens.
+
+### 51.1 Scope and base
+
+| Field | Value |
+|---|---|
+| Date | 2026-04-28 |
+| Base PR | #512 |
+| Base commit | `cd768424` (squash-merge of contract seed) |
+| Locks recorded by | repository operator |
+| Author of seed | claude-opus-4-7 (drafted Part IV §§37–50; this section records operator decisions on those proposed locks) |
+
+### 51.2 Q1–Q5 lock signals
+
+| Q | Lock | Notes |
+|---|---|---|
+| Q1 (Verification authority) | **ACCEPTED** | Row 6 ("target firewall protects SSH outside the emergency rule") remains conditional on §48.1 — see §51.3. |
+| Q2 (Real-host destructive soak scope) | **ACCEPTED** | Staged DirectAdmin host = merge-blocker for PR-26-code-E; lab2 / lab4 fixture-only acceptable for code-A / B / C; srv3 supplemental + operator-approved per run only. |
+| Q3 (Safety-net-safe predicate target-specific) | **ACCEPTED** | Mechanism for the target-firewall SSH-rule kernel evidence is §48.1-dependent — see §51.3. |
+| Q4 (Cron backup / A.4 manifest-restore) | **ACCEPTED** | No template recreation. Manifest-only restore. Existing pre-PR-26 installs without manifest stay soft-skip (graceful migration). |
+| Q5 (Executor hardening) | **ACCEPTED** | Add typed `ServiceUnmask` + `Rename` ONLY. Raw `Run` permitted in restore deps for read-only probes only. |
+
+### 51.3 §48.1 lock — Option B selected for PR-26-code-A
+
+> **Decision: Option B.**
+
+For PR-26-code-A:
+
+- Exact CSF SSH-rule kernel evidence (§39.1 row 6) is **ADVISORY**, not BLOCKING.
+- **No `IptablesRuleExists`** typed introspection method in code-A.
+- **No new iptables introspection method** of any shape in code-A.
+- Row 6 is logged in the post-restore evidence-record file but does NOT gate `StateRestoreExecuted`.
+- BLOCKING evidence for code-A consists of §39.1 rows 1–5, 8, 9 plus `detect.SSHPort` listener-source success.
+- Row 7 (out-of-band SSH continuity) remains ADVISORY in either option.
+
+Option A (add typed `IptablesRuleExists`, keep row 6 BLOCKING) **remains possible only through a future contract amendment**. It is intentionally NOT authorized in code-A or any subsequent PR-26-code-* slice as currently locked.
+
+### 51.4 §48.2 lock — `firewallType` plumbing selected
+
+> **Decision: `firewallType` plumbing.**
+
+For PR-26-code-A:
+
+- Production verification / mutation deps receive `firewallType string`, NOT a precomputed `targetUnit string`.
+- Keeps the PR-25 4B-3-pre evidence-plumbing pattern (`priorRec` / `panel` are likewise raw values, not precomputed derivatives).
+- The dep maps `firewallType` to its canonical service unit at call time using the existing `inlineVerifyKnownFirewallServices` map; no new resolution layer.
+
+### 51.5 P1 acknowledgements (locked)
+
+- **A1.** Option A remains available only through a future contract amendment. Any code-* slice that wants Option A must STOP and open the amendment first; it must not reach Option A by drift.
+- **A2.** `INV-PR26-NEW-MUTATION-SURFACES-BOUNDED` (§44) caps **mutation surfaces only**, not read-only typed introspection. A future read-only typed method (e.g., a hypothetical `IptablesRuleExists` if Option A is ever chosen via amendment) is not blocked by this invariant. The cap is on what changes the host, not on what observes it.
+- **A3.** Any extension of the §22 / §32 ordering invariant (e.g., a step 12 evidence-collection node) MUST be re-locked explicitly at the relevant code-* slice's lock signal before implementation. The §38.1 phrase "ONLY where the verification path requires" is not a self-authorizing license; each ordering touch needs an explicit lock.
+
+### 51.6 Entry criteria for PR-26-code-A
+
+PR-26-code-A may open ONLY when **all** of the following hold:
+
+1. PR #512 is merged (`cd768424` on `main`). ✅ as of this section's commit.
+2. This lock-record section (§51) is committed and merged. ← landed by this commit.
+3. §48.1 Option B recorded (§51.3 above). ✅
+4. §48.2 `firewallType` plumbing recorded (§51.4 above). ✅
+
+PR-26-code-A scope is bounded to:
+
+- **Target-specific safety predicate** in `productionInlineVerifyDep.IsSafetyNetRemovalSafe` (Q3 / §41).
+- **Inline-verification hardening** for Q1 BLOCKING rows 1–5 + 8 + 9 + listener-source SSH check.
+
+PR-26-code-A is **NOT** authorized to do, in this slice:
+
+- Cron-backup manifest work (Q4 / §42 — that is PR-26-code-C).
+- Typed `ServiceUnmask` / `Rename` work (Q5 / §43 — that is PR-26-code-B).
+- Destructive real-host CSF soak (Q2 / §40 — that is PR-26-code-E).
+- Repo hygiene / UX / GOTH / metrics / module cleanup (out of lane per §49 + operator instruction 2026-04-28).
+- Any addition of iptables introspection in any form (§51.3 Option B lock).
+
+### 51.7 Amendment trail
+
+A v5 entry is added to the Amendment history below recording this lock-record commit.
+
 ---
 
 ## Amendment history
@@ -1201,3 +1282,5 @@ Auditor passes between every major slice, mirroring the 4B-1 / 4B-2 / 4B-3-pre /
 - **2026-04-28 v3 (Amendment 1: CSF restore mutation authorization)** — appends Part III (§§30–36). Authority gap discovered during PR-25 commit 4B-3 inspection: install-time `switchop.DisableConflicts` performs persistent, file-level mutations (service mask, binary rename, cron removal) that cannot be reversed under the §§17–29 forbidden-behaviors list. This amendment authorizes a narrow set of CSF-specific inverse-of-install mutations (A.1–A.7) gated on prior-record / on-disk evidence, with extended §23 ordering (11 steps), evidence-precondition table, failure-mode safety-net retention table, CSF-specific forbidden behaviors, unit + integration test requirements, and §28 real-host evidence requirements (lab2 DEB / lab4 RPM, exec-trace clean of out-of-target processes). Amendment is **CSF-only**; ufw / firewalld / iptables remain typed-unsupported until separately amended. Sections §§16–29 are untouched. `main.go:132` writeHistory gate (§19.2 layer 4) untouched. Doc-only commit; no production code changes — 4B-3-csf code phase opens after this amendment is reviewed and merged.
 
 - **2026-04-28 v4 (PR-26 contract seed: restore verification / evidence hardening)** — appends Part IV (§§37–48). PR-25 (#511, merged `6a0ab67a`) shipped restore execution under Amendment 1 with three known correctness gaps: (1) the safety-net-safe predicate accepts ANY active external firewall as evidence of SSH protection, not the resolved target's specific unit; (2) A.4 cron restore is soft-skip because `switchop.disarmCSFArtifacts` does not preserve `/etc/cron.d/csf-cron` and `/etc/cron.d/lfd-cron` before removal; (3) restore mutation routes through `Run("systemctl","unmask",…)` and `Run("mv",…)` because the `executor.Executor` interface lacks typed `ServiceUnmask` and `Rename` methods, weakening the per-call CI trace. PR-26 closes those gaps and adds post-restore evidence hardening — a structured proof that the restore outcome is correct on real systems. Part IV is normative for PR-26 only and does NOT modify §§1–36. **Doc-only commit; no production code changes.** Code phase opens in segmented commits after this seed is reviewed and merged.
+
+- **2026-04-28 v5 (PR-26 operator lock record)** — appends §51 to Part IV recording the operator's lock signals for §§39–43 proposed locks and the §48 hard blockers. Q1–Q5: ACCEPTED (Q1 row 6 conditional on §48.1). §48.1: **Option B selected** for PR-26-code-A — exact CSF SSH-rule kernel evidence becomes ADVISORY; no `IptablesRuleExists` and no new iptables introspection method in code-A. §48.2: **`firewallType` plumbing selected** — production deps receive raw firewallType, not precomputed targetUnit, consistent with the PR-25 4B-3-pre evidence-plumbing pattern. P1 acknowledgements recorded: Option A remains possible only through future contract amendment; INV-PR26-NEW-MUTATION-SURFACES-BOUNDED caps mutation surfaces only; any §22 / §32 ordering extension must be re-locked explicitly. Entry criteria for PR-26-code-A locked: target-specific safety predicate / inline-verification hardening only — no cron manifest, no typed executor methods, no destructive soak, no repo hygiene. Doc-only commit; no production code, no CI, no schema, no CHANGELOG.
