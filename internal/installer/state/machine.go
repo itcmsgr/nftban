@@ -120,6 +120,42 @@ const (
 	// decision they asked for, and the process exit code reflects
 	// decision success, not execution success.
 	StateRestoreDecided InstallState = "RESTORE_DECIDED"
+
+	// =====================================================================
+	// PR-25 (v1.100) restore EXECUTION terminals — contract §22
+	// =====================================================================
+	// These four states describe the outcome of a PR-25 restore execution
+	// run AFTER PR-24 returned PROCEED. They are intentionally NEW
+	// constants distinct from StateRestoreDecided (contract §19.2 layer
+	// 1) so consumers cannot accidentally use sf.State == RestoreDecided
+	// to infer that execution occurred.
+	//
+	// IsRestoreExecuted (defined below) returns true for the two
+	// success-class terminals and false for the two failure-class
+	// terminals AND for StateRestoreDecided (contract §19.2 layer 2).
+
+	// StateRestoreExecuted is the full-success terminal: mutation
+	// completed, inline verification (§21.1) passed, safety net was
+	// removed. Operator's authorized restore is in effect.
+	StateRestoreExecuted InstallState = "RESTORE_EXECUTED"
+
+	// StateRestoreFailedExecution is the mid-flight failure terminal:
+	// mutation failed before completion. Safety net is still present;
+	// system is rolled to the known-safe state. Explicit operator
+	// inspection required before any further mutation.
+	StateRestoreFailedExecution InstallState = "RESTORE_FAILED_EXECUTION"
+
+	// StateRestoreDegraded is the soft-fail-after-mutation terminal:
+	// mutation completed, inline verification flagged a soft-fail
+	// condition, safety net was removed under explicit policy. The
+	// authorized restore is in effect but warrants operator follow-up.
+	StateRestoreDegraded InstallState = "RESTORE_DEGRADED"
+
+	// StateRestoreFailedVerification is the hard-fail-after-mutation
+	// terminal: mutation completed but inline verification (§21.1)
+	// hard-failed. Safety net is RETAINED (contract §21.3). Explicit
+	// operator action required.
+	StateRestoreFailedVerification InstallState = "RESTORE_FAILED_VERIFICATION"
 )
 
 // Phase represents a named installer phase.
@@ -145,6 +181,18 @@ const (
 //	4 = FATAL            — unrecoverable error (binary not found, permission denied)
 //	5 = REFUSED          — PR-24 restore policy engine: policy forbids restoration
 //	6 = INTENT_REQUIRED  — PR-24 restore policy engine: operator must clarify intent
+//
+// PR-25 (v1.100) — restore EXECUTION exit codes (contract §19.4 + §22):
+//
+//	7 = RESTORE_EXECUTED              — full success after PR-24 PROCEED
+//	8 = RESTORE_FAILED_EXECUTION      — mid-flight failure; safety net retained
+//	9 = RESTORE_DEGRADED              — completed with soft-fail warning
+//	10 = RESTORE_FAILED_VERIFICATION  — hard-fail after mutation; safety net retained
+//
+// All four are distinct from ExitCommitted=0 / ExitFatal=4 / ExitRefused=5 /
+// ExitIntentRequired=6 per contract §19.4. They are also distinct from
+// existing 1/2/3 codes to avoid mixing install-class and restore-class
+// outcome semantics.
 const (
 	ExitCommitted      = 0
 	ExitDegraded       = 1
@@ -153,6 +201,12 @@ const (
 	ExitFatal          = 4
 	ExitRefused        = 5
 	ExitIntentRequired = 6
+
+	// PR-25 restore execution exit codes (contract §22).
+	ExitRestoreExecuted           = 7
+	ExitRestoreFailedExecution    = 8
+	ExitRestoreDegraded           = 9
+	ExitRestoreFailedVerification = 10
 )
 
 // IsApplyTerminal reports whether a state represents the terminal
@@ -203,6 +257,29 @@ func (s InstallState) IsApplyTerminal() bool {
 // file.
 func IsApplyTerminal(s InstallState) bool { return s.IsApplyTerminal() }
 
+// IsRestoreExecuted reports whether the state represents a PR-25 restore
+// execution terminal where actual mutation occurred AND was retained
+// (i.e. the operator's authorized restore is now in effect).
+//
+// Per contract §19.2 layer 2: this helper returns true ONLY for
+// StateRestoreExecuted and StateRestoreDegraded. It returns false for
+// the two failure-class terminals (StateRestoreFailedExecution and
+// StateRestoreFailedVerification) AND for StateRestoreDecided.
+//
+// Consumers MUST NOT use sf.State == StateRestoreDecided to infer that
+// restoration execution has occurred (contract §19.3). Use
+// IsRestoreExecuted instead.
+func (s InstallState) IsRestoreExecuted() bool {
+	switch s {
+	case StateRestoreExecuted, StateRestoreDegraded:
+		return true
+	}
+	return false
+}
+
+// IsRestoreExecuted is a package-level alias for the (InstallState) method.
+func IsRestoreExecuted(s InstallState) bool { return s.IsRestoreExecuted() }
+
 // IsFailed returns true if the state represents a failure.
 //
 // PR-24: restore policy-engine terminal states (StateRestoreRefused,
@@ -213,7 +290,13 @@ func (s InstallState) IsFailed() bool {
 	case StateFailedSSH, StateFailedAbort, StateFailedRender,
 		StateFailedRebuild, StateFailedNoFirewall, StateFailedTakeover,
 		// PR-23 uninstall failure terminal.
-		StateUninstallFailedRelease:
+		StateUninstallFailedRelease,
+		// PR-25 restore execution failure terminals (contract §22).
+		// StateRestoreDegraded is NOT a failure — it mirrors StateDegraded
+		// semantics: the authorized restore is in effect, just with a
+		// soft-fail warning.
+		StateRestoreFailedExecution,
+		StateRestoreFailedVerification:
 		return true
 	}
 	return false
@@ -229,6 +312,12 @@ func (s InstallState) IsTerminal() bool {
 		return true
 	}
 	if s == StateRestoreRefused || s == StateRestoreIntentRequired {
+		return true
+	}
+	// PR-25: all four restore execution outcomes are terminal. The two
+	// failure-class terminals are already covered via IsFailed() above;
+	// add the two success-class terminals here.
+	if s == StateRestoreExecuted || s == StateRestoreDegraded {
 		return true
 	}
 	return false
@@ -256,6 +345,17 @@ func (s InstallState) ExitCode() int {
 		return ExitRefused
 	case StateRestoreIntentRequired:
 		return ExitIntentRequired
+	// PR-25 restore execution terminals (contract §22). Each maps to a
+	// distinct exit code per §19.4 — DO NOT collapse these into existing
+	// codes (0/1/2/3/4/5/6) without contract review.
+	case StateRestoreExecuted:
+		return ExitRestoreExecuted
+	case StateRestoreFailedExecution:
+		return ExitRestoreFailedExecution
+	case StateRestoreDegraded:
+		return ExitRestoreDegraded
+	case StateRestoreFailedVerification:
+		return ExitRestoreFailedVerification
 	case StateDegraded:
 		return ExitDegraded
 	case StateFailedAbort:

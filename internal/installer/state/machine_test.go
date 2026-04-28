@@ -307,3 +307,211 @@ func TestInstallState_IsApplyTerminal(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// PR-25 (v1.100) — restore EXECUTION terminal tests (contract §22, §19)
+// =============================================================================
+
+// TestInstallState_PR25_NewStatesPresent pins the four PR-25 execution
+// terminal constants are defined and are NOT aliases for existing states.
+// Per contract §19.2 layer 1: type-level distinctness from StateRestoreDecided.
+func TestInstallState_PR25_NewStatesPresent(t *testing.T) {
+	pr25States := []InstallState{
+		StateRestoreExecuted,
+		StateRestoreFailedExecution,
+		StateRestoreDegraded,
+		StateRestoreFailedVerification,
+	}
+	// Ensure none collide with StateRestoreDecided.
+	for _, s := range pr25States {
+		if s == StateRestoreDecided {
+			t.Errorf("%s collides with StateRestoreDecided (contract §19.2 layer 1 violation)", s)
+		}
+	}
+	// Ensure all four are pairwise distinct.
+	for i, a := range pr25States {
+		for j, b := range pr25States {
+			if i < j && a == b {
+				t.Errorf("PR-25 states %s and %s have identical string value", a, b)
+			}
+		}
+	}
+}
+
+// TestExitCode_PR25_NoDuplicates pins guardrail 1 from the code-phase
+// briefing: every exit code constant in this package has a unique integer
+// value. Catches accidental reuse of 0/1/2/3/4/5/6 by the new PR-25 codes.
+func TestExitCode_PR25_NoDuplicates(t *testing.T) {
+	all := map[string]int{
+		"ExitCommitted":                 ExitCommitted,
+		"ExitDegraded":                  ExitDegraded,
+		"ExitFailed":                    ExitFailed,
+		"ExitAborted":                   ExitAborted,
+		"ExitFatal":                     ExitFatal,
+		"ExitRefused":                   ExitRefused,
+		"ExitIntentRequired":            ExitIntentRequired,
+		"ExitRestoreExecuted":           ExitRestoreExecuted,
+		"ExitRestoreFailedExecution":    ExitRestoreFailedExecution,
+		"ExitRestoreDegraded":           ExitRestoreDegraded,
+		"ExitRestoreFailedVerification": ExitRestoreFailedVerification,
+	}
+	seen := map[int]string{}
+	for name, code := range all {
+		if other, dup := seen[code]; dup {
+			t.Errorf("exit code %d duplicated: %s and %s", code, name, other)
+		}
+		seen[code] = name
+	}
+}
+
+// TestExitCode_PR25_DistinctFromContractedSet pins the contract §19.4
+// rule: PR-25 execution terminals MUST carry exit codes distinct from
+// ExitCommitted=0, ExitFatal=4, ExitRefused=5, ExitIntentRequired=6.
+func TestExitCode_PR25_DistinctFromContractedSet(t *testing.T) {
+	contracted := map[int]string{
+		ExitCommitted:      "ExitCommitted",
+		ExitFatal:          "ExitFatal",
+		ExitRefused:        "ExitRefused",
+		ExitIntentRequired: "ExitIntentRequired",
+	}
+	pr25 := map[string]int{
+		"ExitRestoreExecuted":           ExitRestoreExecuted,
+		"ExitRestoreFailedExecution":    ExitRestoreFailedExecution,
+		"ExitRestoreDegraded":           ExitRestoreDegraded,
+		"ExitRestoreFailedVerification": ExitRestoreFailedVerification,
+	}
+	for pName, pCode := range pr25 {
+		if cName, conflict := contracted[pCode]; conflict {
+			t.Errorf("%s = %d collides with contracted %s (§19.4 violation)", pName, pCode, cName)
+		}
+	}
+}
+
+// TestInstallState_PR25_ExitCodeMapping pins the (state → exit code)
+// mapping for PR-25 execution terminals. Each candidate name maps to its
+// candidate exit code per contract §22.
+func TestInstallState_PR25_ExitCodeMapping(t *testing.T) {
+	tests := []struct {
+		state InstallState
+		want  int
+	}{
+		{StateRestoreExecuted, ExitRestoreExecuted},
+		{StateRestoreFailedExecution, ExitRestoreFailedExecution},
+		{StateRestoreDegraded, ExitRestoreDegraded},
+		{StateRestoreFailedVerification, ExitRestoreFailedVerification},
+	}
+	for _, tt := range tests {
+		if got := tt.state.ExitCode(); got != tt.want {
+			t.Errorf("ExitCode(%s) = %d; want %d", tt.state, got, tt.want)
+		}
+	}
+}
+
+// TestInstallState_IsRestoreExecuted pins contract §19.2 layer 2:
+// IsRestoreExecuted returns true ONLY for StateRestoreExecuted and
+// StateRestoreDegraded. False for everything else, including
+// StateRestoreDecided (§19.3 consumer rule).
+func TestInstallState_IsRestoreExecuted(t *testing.T) {
+	executed := []InstallState{
+		StateRestoreExecuted,
+		StateRestoreDegraded,
+	}
+	notExecuted := []InstallState{
+		// PR-25 failure-class terminals — mutation may have happened
+		// but the operator's authorized restore is not reliably in effect.
+		StateRestoreFailedExecution,
+		StateRestoreFailedVerification,
+		// PR-24 policy-handoff marker. §19.3 explicitly forbids
+		// inferring execution from this state.
+		StateRestoreDecided,
+		// PR-24 non-execution policy outcomes.
+		StateRestoreRefused,
+		StateRestoreIntentRequired,
+		// Sample of unrelated states to confirm catch-all.
+		StateCommitted,
+		StateDegraded,
+		StateFailedSSH,
+		StateUninstallReleased,
+	}
+	for _, s := range executed {
+		if !s.IsRestoreExecuted() {
+			t.Errorf("%s should be restore-executed (§19.2 layer 2)", s)
+		}
+		if !IsRestoreExecuted(s) {
+			t.Errorf("IsRestoreExecuted(%s) disagrees with method form", s)
+		}
+	}
+	for _, s := range notExecuted {
+		if s.IsRestoreExecuted() {
+			t.Errorf("%s must NOT be restore-executed (§19.2/§19.3)", s)
+		}
+		if IsRestoreExecuted(s) {
+			t.Errorf("IsRestoreExecuted(%s) (alias) disagrees", s)
+		}
+	}
+}
+
+// TestInstallState_PR25_IsFailed pins which PR-25 terminals are failures.
+// Per contract §22: only the two failure-class terminals are failures.
+// StateRestoreDegraded mirrors StateDegraded semantics — not a failure.
+func TestInstallState_PR25_IsFailed(t *testing.T) {
+	failed := []InstallState{
+		StateRestoreFailedExecution,
+		StateRestoreFailedVerification,
+	}
+	notFailed := []InstallState{
+		StateRestoreExecuted,
+		StateRestoreDegraded,
+		// Sanity: the PR-24 policy outcomes are NOT failures (already
+		// pinned in TestInstallState_IsFailed above for non-PR-25 cases;
+		// mirroring here so a future change can't quietly flip them).
+		StateRestoreRefused,
+		StateRestoreIntentRequired,
+		StateRestoreDecided,
+	}
+	for _, s := range failed {
+		if !s.IsFailed() {
+			t.Errorf("%s should be IsFailed (PR-25 failure terminal)", s)
+		}
+	}
+	for _, s := range notFailed {
+		if s.IsFailed() {
+			t.Errorf("%s must NOT be IsFailed", s)
+		}
+	}
+}
+
+// TestInstallState_PR25_IsTerminal pins that all four PR-25 execution
+// terminals report as terminal.
+func TestInstallState_PR25_IsTerminal(t *testing.T) {
+	terminals := []InstallState{
+		StateRestoreExecuted,
+		StateRestoreFailedExecution,
+		StateRestoreDegraded,
+		StateRestoreFailedVerification,
+	}
+	for _, s := range terminals {
+		if !s.IsTerminal() {
+			t.Errorf("%s must be IsTerminal (PR-25 execution outcomes are final)", s)
+		}
+	}
+}
+
+// TestInstallState_PR25_NotApplyTerminal pins that PR-25 execution
+// terminals are NOT IsApplyTerminal — they belong to restore mode and
+// are gated separately at main.go's writeHistory call (mode != "restore",
+// per contract §19.2 layer 4). Mirrors PR-24's deliberate exclusion of
+// the policy-engine states (see IsApplyTerminal comment lines 192-197).
+func TestInstallState_PR25_NotApplyTerminal(t *testing.T) {
+	pr25 := []InstallState{
+		StateRestoreExecuted,
+		StateRestoreFailedExecution,
+		StateRestoreDegraded,
+		StateRestoreFailedVerification,
+	}
+	for _, s := range pr25 {
+		if s.IsApplyTerminal() {
+			t.Errorf("%s must NOT be IsApplyTerminal (restore-mode is gated separately)", s)
+		}
+	}
+}
