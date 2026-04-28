@@ -403,6 +403,146 @@ jobs:
 
           echo "G4-RESTORE-EXEC-NO-OUT-OF-TARGET PASS — restore_deps_csf.go mutation surface is closed"
 
+      # ------------------------------------------------------------------
+      # G4-RESTORE-CRON-MANIFEST-INTEGRITY (PR-26-code-C / §46) —
+      # structural pin on the CSF/LFD cron-backup writer + reader.
+      #
+      # The §42.2 lock authorizes A.4 cron-restore ONLY when the
+      # install-time writer recorded the file content with sha256 and
+      # ONLY for the two locked source paths
+      # (/etc/cron.d/csf-cron, /etc/cron.d/lfd-cron). This gate
+      # structurally enforces:
+      #
+      #   - the writer file (switchop/cron_manifest.go) declares the
+      #     manifest-dir constant, the schema-version constant, and
+      #     both source-path constants verbatim
+      #   - the writer file uses the shared sha256 helper symbol
+      #     ComputeCronBackupSHA256 to compute the manifest entry
+      #   - the reader file (cmd/nftban-installer/restore_deps_csf.go)
+      #     references both ReadCronBackupManifest and
+      #     VerifyCronBackupEntry — i.e. the integrity check is
+      #     consumed, not just imported
+      #   - neither file references DirectAdmin custombuild,
+      #     iptables-restore, or a broad /etc/cron.d/* glob
+      #
+      # Per §46.1 discipline: production-code-only, comment-stripped.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-CRON-MANIFEST-INTEGRITY — writer + reader structural pin
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          writer=internal/installer/switchop/cron_manifest.go
+          reader=cmd/nftban-installer/restore_deps_csf.go
+
+          for f in "$writer" "$reader"; do
+            if [[ ! -f "$f" ]]; then
+              echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: $f not found"
+              exit 1
+            fi
+          done
+
+          # §46.1 production-only scan: strip line-leading // comments.
+          writer_src=$(grep -vE '^[[:space:]]*//' "$writer" || true)
+          reader_src=$(grep -vE '^[[:space:]]*//' "$reader" || true)
+
+          fail=0
+
+          # ---- WRITER required symbols -------------------------------
+          # Each pattern is a structural element the writer MUST contain.
+          # Whitespace-flexible matchers ([[:space:]]+) so the patterns
+          # don't break when gofmt re-aligns the const block.
+          writer_required=(
+            'CronManifestSchemaVersion[[:space:]]+=[[:space:]]+"1\.0\.0"'
+            'CronManifestDir[[:space:]]+=[[:space:]]+"/var/lib/nftban/state/csf-cron-backup"'
+            'CronManifestFile[[:space:]]+=[[:space:]]+"/var/lib/nftban/state/csf-cron-backup/manifest\.json"'
+            'CronCSFSrcPath[[:space:]]+=[[:space:]]+"/etc/cron\.d/csf-cron"'
+            'CronLFDSrcPath[[:space:]]+=[[:space:]]+"/etc/cron\.d/lfd-cron"'
+            'func ComputeCronBackupSHA256\(content \[\]byte\) string'
+            'func WriteCronBackupManifest\('
+            'func ReadCronBackupManifest\('
+            'func VerifyCronBackupEntry\('
+            'sha256\.Sum256'
+          )
+          for pat in "${writer_required[@]}"; do
+            if ! echo "$writer_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: writer ($writer) missing required symbol matching '$pat'"
+              fail=1
+            fi
+          done
+
+          # ---- READER required symbols -------------------------------
+          # The A.4 reader path MUST consume both the manifest reader
+          # and the integrity-verifier — i.e. the sha256 check is
+          # actually performed before A.4 acts.
+          reader_required=(
+            'switchop\.ReadCronBackupManifest\('
+            'switchop\.VerifyCronBackupEntry\('
+            'ErrCSFRestoreCronManifestCorrupt'
+          )
+          for pat in "${reader_required[@]}"; do
+            if ! echo "$reader_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: reader ($reader) missing required symbol matching '$pat'"
+              fail=1
+            fi
+          done
+
+          # ---- WRITER + READER forbidden symbols ---------------------
+          # Defense-in-depth: even though the strengthened
+          # G4-RESTORE-EXEC-NO-OUT-OF-TARGET already covers some of
+          # these, restate the cron-specific bans.
+          forbidden=(
+            '\bcustombuild\b'
+            'iptables-restore'
+            '"/etc/cron\.d/\*"'
+            'WriteFile.*"/etc/cron\.d/[^c]'
+          )
+          for pat in "${forbidden[@]}"; do
+            if echo "$writer_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: writer ($writer) contains forbidden pattern '$pat'"
+              fail=1
+            fi
+            if echo "$reader_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: reader ($reader) contains forbidden pattern '$pat'"
+              fail=1
+            fi
+          done
+
+          # ---- Reader's authorized target-path allow-list -----------
+          # The A.4 reader's WriteFileAtomic call MUST target only one
+          # of the two §42.2-locked paths. Structural check: every
+          # WriteFileAtomic call in restore_deps_csf.go that targets a
+          # /etc/cron.d/* path MUST use one of csfCronPath / lfdCronPath
+          # as the first argument. We grep for any /etc/cron.d/ literal
+          # in WriteFileAtomic args and require it equal one of the two
+          # locked literals. Path constants live in restore_deps_csf.go
+          # (csfCronPath = "/etc/cron.d/csf-cron";
+          # lfdCronPath = "/etc/cron.d/lfd-cron"), so the reader uses
+          # the constants — string-literal grep should find zero
+          # /etc/cron.d/ matches inside WriteFileAtomic argument lists.
+          while IFS= read -r line; do
+            # Capture WriteFileAtomic(... "literal" ...) pattern.
+            literal=$(echo "$line" | grep -oE 'WriteFileAtomic\([^)]*"/etc/cron\.d/[^"]*"' | grep -oE '"/etc/cron\.d/[^"]*"' || true)
+            if [[ -n "$literal" ]]; then
+              case "$literal" in
+                '"/etc/cron.d/csf-cron"'|'"/etc/cron.d/lfd-cron"')
+                  ;;
+                *)
+                  echo "::error::G4-RESTORE-CRON-MANIFEST-INTEGRITY: reader writes unauthorized cron literal: $literal"
+                  fail=1
+                  ;;
+              esac
+            fi
+          done < <(echo "$reader_src" | grep -nE 'WriteFileAtomic\([^)]*"/etc/cron\.d/' || true)
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "::error::§42.2 / §46 violation — cron-backup manifest integrity not enforced."
+            echo "::error::See internal/installer/restore/contract.md §42 + §46 for the lock."
+            exit 1
+          fi
+
+          echo "G4-RESTORE-CRON-MANIFEST-INTEGRITY PASS — writer + reader structurally consume the shared sha256 + manifest API"
+
   restore-canonization-summary:
     name: Restore Canonization summary
     runs-on: ubuntu-24.04
