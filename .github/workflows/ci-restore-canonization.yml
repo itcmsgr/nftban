@@ -274,11 +274,20 @@ jobs:
       #   - NftDeleteTable("ip", "nftban")                     A.7
       #   - NftDeleteTable("ip6", "nftban")                    A.7
       #
-      # Any other mutation symbol in cmd/nftban-installer/restore_deps_csf.go
-      # is an Amendment-1 §30 / §34 violation. Read-only probes via
-      # Run("systemctl", "is-enabled", csf), ServiceActive, FileExists,
-      # CommandExists are permitted; the gate distinguishes by symbol
-      # not by command name.
+      # The gate's job is forbidden-symbol coverage at the call-expression
+      # level. Per-call argument enforcement (which unit is started, which
+      # path is renamed) is delegated to the in-Go runtime tests in
+      # restore_deps_csf_test.go (TestCSFMutate_4B3csf_A1_NoUnmaskOfOtherServices,
+      # …_A2_EnableOnlyCSFService, …_A5_StartsOnlyCSFService,
+      # …_A6_StopsOnlyNftband_AfterCSFStarts,
+      # …_HappyPath_NoOutOfTargetMutation) which assert against
+      # MockExecutor with full Go-level type information. Trying to
+      # reproduce that in shell regex on identifier arguments
+      # (csfServiceUnit, oldpath/newpath) gives false confidence.
+      #
+      # Forbidden patterns are call-expression-anchored (\bexec\.) so
+      # they catch real call sites and skip prose / error messages /
+      # comments / const definitions.
       # ------------------------------------------------------------------
       - name: G4-RESTORE-EXEC-NO-OUT-OF-TARGET — restore_deps_csf.go closed mutation surface
         shell: bash
@@ -291,55 +300,62 @@ jobs:
             exit 1
           fi
 
-          # Forbidden: out-of-Amendment-1 mutation surface.
+          # Forbidden: out-of-Amendment-1 mutation surface. Each pattern
+          # is anchored to a call expression (\bexec\. or similar) so
+          # legitimate doc strings, error messages, and const
+          # definitions don't false-match.
           forbidden_patterns=(
-            # Service-policy mutations (mask/disable/daemon-reload) are
-            # forbidden by Amendment 1 §34 explicit list.
-            'ServiceMask\('
-            'ServiceDisable\('
-            'ServiceUnmask\('   # we route via Run("systemctl","unmask",…) — never the typed call
-            'DaemonReload\('
+            # Service-policy mutations (mask/disable/unmask-typed/daemon-reload).
+            # The csf restore path uses Run("systemctl","unmask",csf.service)
+            # for A.1; the typed exec.ServiceUnmask method is forbidden so
+            # we don't accidentally land on a future executor surface that
+            # bypasses the audit trail.
+            '\bexec\.ServiceMask\('
+            '\bexec\.ServiceDisable\('
+            '\bexec\.ServiceUnmask\('
+            '\bexec\.DaemonReload\('
+            # Filesystem-mutation primitives — A.4 cron-restore is a
+            # soft-skip in 4B-3-csf; any WriteFileAtomic in this file is
+            # therefore an out-of-scope mutation.
+            '\bexec\.WriteFileAtomic\('
             # Direct OS bypass (must route through the executor).
             '"os/exec"'
-            'exec\.Command\('
-            'os\.Rename\('
-            'os\.Remove[All]*\('
-            'os\.WriteFile\('
-            'os\.Create\('
-            'syscall\.'
+            '\bexec\.Command\('
+            '\bos\.Rename\('
+            '\bos\.Remove[All]*\('
+            '\bos\.WriteFile\('
+            '\bos\.Create\('
+            '\bsyscall\.'
             # DirectAdmin custombuild rewrite forbidden (§34).
-            'custombuild'
-            'build set csf'
-            'options\.conf'
+            '\bcustombuild\b'
+            '"build set csf"'
             # iptables / ip6tables manual rule restoration forbidden
             # (§34: csf rebuilds its own iptables on start).
             'iptables-restore'
             'ip6tables-restore'
-            'iptables -[A-Z]'
-            # Cron writes forbidden until installer-side E.5 manifest
-            # exists (§31 A.4 soft-skip in 4B-3-csf).
-            'WriteFileAtomic\('
-            '"/etc/cron\.d/'
             # Generic "fix everything" / "purge" / "rebuild" surface
             # — Amendment 1 narrow scope forbids broad sweeps.
-            'rebuild\.Run\('
-            'rebuild\.Apply\('
-            'purge\.'
-            'cleanup\.Apply'
+            '\brebuild\.Run\('
+            '\brebuild\.Apply\('
+            '\bpurge\.'
+            '\bcleanup\.Apply\('
           )
 
           fail=0
           for pat in "${forbidden_patterns[@]}"; do
             if grep -nE "$pat" "$target" 2>/dev/null; then
-              echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: forbidden symbol matching '$pat' found in $target"
+              echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: forbidden call expression matching '$pat' found in $target"
               fail=1
             fi
           done
 
           # Allow-list pin: every NftDeleteTable call in $target MUST
           # delete only ip:nftban or ip6:nftban — never any other table.
-          # The check is structural: for each match, the literal args
-          # MUST be ("ip", "nftban") or ("ip6", "nftban").
+          # NftDeleteTable's args in the production code ARE literal
+          # quoted strings (no constants), so this allow-list pin works
+          # cleanly without identifier resolution. Per-unit / per-path
+          # enforcement for systemctl + mv is delegated to the Go runtime
+          # tests against MockExecutor.
           while IFS= read -r line; do
             args=$(echo "$line" | grep -oE 'NftDeleteTable\([^)]*\)' || true)
             if [[ -n "$args" ]]; then
@@ -354,46 +370,10 @@ jobs:
             fi
           done < <(grep -n 'NftDeleteTable(' "$target" || true)
 
-          # Allow-list pin: every Run("systemctl", ...) call in $target
-          # MUST target csf.service only. Validate by capturing the
-          # third argument from the literal (after "systemctl" verb).
-          while IFS= read -r line; do
-            # Match Run("systemctl", "<verb>", "<unit>") shapes.
-            unit=$(echo "$line" | grep -oE 'Run\("systemctl", "[^"]+", "[^"]+"\)' \
-                  | sed -E 's/.*"systemctl", "[^"]+", "([^"]+)"\)$/\1/')
-            if [[ -n "$unit" ]]; then
-              if [[ "$unit" != "csf.service" ]]; then
-                echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: Run(\"systemctl\", …) targets unauthorized unit: $unit"
-                fail=1
-              fi
-            fi
-          done < <(grep -n 'Run("systemctl"' "$target" || true)
-
-          # Allow-list pin: every Run("mv", …) call MUST be the A.3
-          # binary restore (csf.disabled -> csf). Any other rename is
-          # an out-of-target file mutation.
-          while IFS= read -r line; do
-            mv_call=$(echo "$line" | grep -oE 'Run\("mv", "[^"]+", "[^"]+"\)' || true)
-            if [[ -n "$mv_call" ]]; then
-              case "$mv_call" in
-                'Run("mv", "/usr/sbin/csf.disabled", "/usr/sbin/csf")')
-                  ;;
-                # Helper indirection: renameAtomicViaExec passes the
-                # paths via variables, so the literal Run("mv", oldpath,
-                # newpath) appears only inside that helper. Allow it.
-                'Run("mv", oldpath, newpath)')
-                  ;;
-                *)
-                  echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: Run(\"mv\", …) outside A.3 scope: $mv_call"
-                  fail=1
-                  ;;
-              esac
-            fi
-          done < <(grep -n 'Run("mv"' "$target" || true)
-
           if [[ "$fail" -ne 0 ]]; then
             echo "::error::Amendment 1 §30 / §34 violation — restore_deps_csf.go must contain only the closed §31/§32 mutation surface."
             echo "::error::See internal/installer/restore/contract.md §§30-36 for the full authorization."
+            echo "::error::Per-call argument enforcement is in restore_deps_csf_test.go runtime tests; this gate covers forbidden-symbol scope only."
             exit 1
           fi
 

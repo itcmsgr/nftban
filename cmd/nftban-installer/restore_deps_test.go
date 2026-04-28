@@ -6,7 +6,7 @@
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-27"
-// meta:description="Tests for the production stub-dep struct methods + the newProductionRestoreDeps factory + the package-level newRestoreDeps default. Confirms every stub method returns ErrRestoreExecutionUnavailable and that no real mutation surface exists in commit 4."
+// meta:description="Covers production restore dependency wiring (Preflight, SafetyNet, Mutation dispatch, InlineVerify defensive guards), forbidden mutation-surface file-scan checks, and PR-25 staged dependency behavior across commits 4 / 4B-1 / 4B-2 / 4B-3-csf / 4B-4. Per-method real-implementation behavior tests live in restore_deps_csf_test.go (CSF mutation A.1-A.7) and restore_deps_inlineverify_test.go (§21.1 three-assertion verify)."
 // meta:depends="github.com/itcmsgr/nftban/internal/installer/restore"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
