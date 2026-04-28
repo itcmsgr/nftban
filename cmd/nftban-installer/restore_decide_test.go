@@ -948,3 +948,210 @@ func TestProductionMutationDep_4B3pre_NoSetterMethods(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// =============================================================================
+// PR-26-code-D — dispatcher evidence-record semantics tests
+//
+// Per auditor checkpoint on 849b372a: the dispatcher's new Step D
+// changes terminal behavior on a successful StateRestoreExecuted
+// when the evidence writer fails (downgrade to StateRestoreDegraded).
+// These 5 tests pin that semantic delta + the parallel preserved-
+// terminal cases on failure-path execution.
+// =============================================================================
+// =============================================================================
+
+// writeFailExec wraps a MockExecutor and forces every WriteFileAtomic
+// to fail with a simulated error. Used by the evidence-failure tests
+// to exercise the dispatcher's Step D failure handling without
+// changing MockExecutor itself.
+type writeFailExec struct {
+	*executor.MockExecutor
+}
+
+func (w *writeFailExec) WriteFileAtomic(_ string, _ []byte, _ os.FileMode) error {
+	return errors.New("simulated WriteFileAtomic failure for evidence-write")
+}
+
+// =============================================================================
+// PR-26-code-D test #1: Execute returns StateRestoreExecuted +
+// evidence writer fails → dispatcher persists StateRestoreDegraded;
+// exit code is the Degraded code; no Executed claim.
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_PR26D_ExecutedPlusEvidenceFail_DowngradesToDegraded(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    true,
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	withFakeDeps(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procRecordedPriorFixture()
+
+	exec := &writeFailExec{MockExecutor: executor.NewMockExecutor()}
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	if sf.State != state.StateRestoreDegraded {
+		t.Errorf("State = %q; want StateRestoreDegraded (evidence-write failure must downgrade Executed)", sf.State)
+	}
+	if exit != state.StateRestoreDegraded.ExitCode() {
+		t.Errorf("exit = %d; want %d (Degraded exit code)", exit, state.StateRestoreDegraded.ExitCode())
+	}
+	if sf.State == state.StateRestoreExecuted {
+		t.Errorf("dispatcher claimed StateRestoreExecuted despite evidence-write failure")
+	}
+	// Note: sf.FailureReason is only populated by Transition when
+	// newState.IsFailed() is true (state/file.go:118). StateRestoreDegraded
+	// is intentionally NOT a failed state (it is success-with-warnings),
+	// so FailureReason stays empty. The evidence-write failure surfaces
+	// via the operator-facing log.Result line ("COMPLETED with warnings
+	// — restore executed but evidence-write failed: …") which is the
+	// authoritative operator channel for Degraded outcomes.
+}
+
+// =============================================================================
+// PR-26-code-D test #2: Execute returns StateRestoreFailedExecution +
+// evidence writer fails → original FailedExecution terminal preserved;
+// evidence failure is warning-only.
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_PR26D_FailedExecutionPlusEvidenceFail_TerminalPreserved(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK: true,
+		mutateErr:   errors.New("simulated mutation failure"),
+	}
+	withFakeDeps(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procRecordedPriorFixture()
+
+	exec := &writeFailExec{MockExecutor: executor.NewMockExecutor()}
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	// Original FailedExecution terminal preserved — evidence failure
+	// does NOT downgrade a non-Executed terminal.
+	if sf.State != state.StateRestoreFailedExecution {
+		t.Errorf("State = %q; want StateRestoreFailedExecution (terminal must be preserved on non-Executed paths)", sf.State)
+	}
+	if exit != state.StateRestoreFailedExecution.ExitCode() {
+		t.Errorf("exit = %d; want %d", exit, state.StateRestoreFailedExecution.ExitCode())
+	}
+}
+
+// =============================================================================
+// PR-26-code-D test #3: Execute returns StateRestoreFailedVerification +
+// evidence writer fails → original FailedVerification terminal
+// preserved; evidence failure is warning-only.
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_PR26D_FailedVerificationPlusEvidenceFail_TerminalPreserved(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    false, // inline-verify assertion 1 returns false → SafeToRemove false
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	withFakeDeps(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procRecordedPriorFixture()
+
+	exec := &writeFailExec{MockExecutor: executor.NewMockExecutor()}
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	if sf.State != state.StateRestoreFailedVerification {
+		t.Errorf("State = %q; want StateRestoreFailedVerification (terminal must be preserved on non-Executed paths)", sf.State)
+	}
+	if exit != state.StateRestoreFailedVerification.ExitCode() {
+		t.Errorf("exit = %d; want %d", exit, state.StateRestoreFailedVerification.ExitCode())
+	}
+}
+
+// =============================================================================
+// PR-26-code-D test #4: Execute returns StateRestoreExecuted +
+// evidence writer succeeds → StateRestoreExecuted preserved; evidence
+// file written under restoreEvidenceDir.
+// =============================================================================
+
+func TestRunRestoreExecutionFromProceed_PR26D_ExecutedPlusEvidenceOk_PreservesExecuted(t *testing.T) {
+	fake := &fakeDispatcherDeps{
+		preflightOK:  true,
+		activeRet:    true,
+		authorityRet: uninstall.AuthorityExternal,
+		safeRet:      true,
+	}
+	withFakeDeps(t, fake)
+
+	sf := newTestStateFile(t)
+	log := newTestLogger(t)
+	dr, in, rec, panel := procRecordedPriorFixture()
+
+	exec := executor.NewMockExecutor()
+	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
+
+	if sf.State != state.StateRestoreExecuted {
+		t.Errorf("State = %q; want StateRestoreExecuted (clean evidence-write must preserve terminal)", sf.State)
+	}
+	if exit != state.StateRestoreExecuted.ExitCode() {
+		t.Errorf("exit = %d; want %d", exit, state.StateRestoreExecuted.ExitCode())
+	}
+	// Exactly one evidence file under restoreEvidenceDir.
+	count := 0
+	for path := range exec.WrittenFiles {
+		if strings.HasPrefix(path, restoreEvidenceDir+"/") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("evidence file count under %s = %d; want 1", restoreEvidenceDir, count)
+	}
+	// No write outside restoreEvidenceDir from the dispatcher path
+	// (the fake deps don't write anything; the only file the
+	// dispatcher writes itself is the evidence record).
+	for path := range exec.WrittenFiles {
+		if !strings.HasPrefix(path, restoreEvidenceDir+"/") {
+			t.Errorf("dispatcher wrote unexpected path: %s", path)
+		}
+	}
+}
+
+// =============================================================================
+// PR-26-code-D test #5: Dispatcher path does NOT write update-history.
+// File-scan against restore_decide.go pins the §19.2 layer-4 invariant
+// stays untouched by the new Step D evidence record.
+// =============================================================================
+
+func TestDispatcher_PR26D_NoUpdateHistoryWrite_FileScan(t *testing.T) {
+	body, err := os.ReadFile("restore_decide.go")
+	if err != nil {
+		t.Fatalf("read restore_decide.go: %v", err)
+	}
+	src := string(body)
+
+	// Strip line-leading // comments per §46.1 discipline.
+	var prodLines []string
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		prodLines = append(prodLines, line)
+	}
+	prodSrc := strings.Join(prodLines, "\n")
+
+	forbidden := []string{
+		"writeHistory(",
+		"update-history.json",
+	}
+	for _, pat := range forbidden {
+		if strings.Contains(prodSrc, pat) {
+			t.Errorf("restore_decide.go references %q (§19.2 layer-4 invariant breached — restore mode must NOT write update-history)", pat)
+		}
+	}
+}
