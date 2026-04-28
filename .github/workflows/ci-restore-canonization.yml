@@ -549,6 +549,130 @@ jobs:
 
           echo "G4-RESTORE-CRON-MANIFEST-INTEGRITY PASS — writer + reader structurally consume the shared sha256 + manifest API"
 
+      # ------------------------------------------------------------------
+      # G4-RESTORE-EVIDENCE-RECORD (PR-26-code-D / §46) — structural
+      # pin on the post-restore evidence-record writer.
+      #
+      # The §39.3 + §48.6 lock requires that ALL evidence-record file
+      # writes route through a SINGLE helper using a NAMED CONSTANT
+      # for the destination directory. This gate structurally
+      # enforces:
+      #
+      #   - cmd/nftban-installer/restore_evidence.go declares the
+      #     restoreEvidenceDir constant verbatim and sets its value
+      #     to /var/lib/nftban/state/restore-evidence
+      #   - the file declares the writeRestoreEvidenceRecord helper
+      #     and the schema_version constant set to "1.0.0"
+      #   - the file contains exactly ONE WriteFileAtomic call (the
+      #     call inside the single helper)
+      #   - the file does NOT reference update-history.json,
+      #     uninstall.Probe, restore.Decide, restore.PlanFromDecision,
+      #     detect.DetectPanel, or any mutation primitive
+      #     (recording-only invariant per §39.3)
+      #   - the dispatcher (cmd/nftban-installer/restore_decide.go)
+      #     calls writeRestoreEvidenceRecord — i.e. evidence is
+      #     actually consumed, not just imported
+      #
+      # §46.1 discipline: production-code-only, comment-stripped.
+      # ------------------------------------------------------------------
+      - name: G4-RESTORE-EVIDENCE-RECORD — single-helper structural pin
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ev=cmd/nftban-installer/restore_evidence.go
+          dispatcher=cmd/nftban-installer/restore_decide.go
+
+          for f in "$ev" "$dispatcher"; do
+            if [[ ! -f "$f" ]]; then
+              echo "::error::G4-RESTORE-EVIDENCE-RECORD: $f not found"
+              exit 1
+            fi
+          done
+
+          ev_src=$(grep -vE '^[[:space:]]*//' "$ev" || true)
+          disp_src=$(grep -vE '^[[:space:]]*//' "$dispatcher" || true)
+
+          fail=0
+
+          # ---- Required symbols in the evidence module ---------------
+          ev_required=(
+            'restoreEvidenceDir[[:space:]]+=[[:space:]]+"/var/lib/nftban/state/restore-evidence"'
+            'restoreEvidenceSchemaVersion[[:space:]]+=[[:space:]]+"1\.0\.0"'
+            'restoreEvidenceFilenamePrefix[[:space:]]+=[[:space:]]+"restore-evidence-"'
+            'func writeRestoreEvidenceRecord\('
+            'func buildRestoreEvidenceRecord\('
+            'type RestoreEvidenceRecord struct'
+          )
+          for pat in "${ev_required[@]}"; do
+            if ! echo "$ev_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-EVIDENCE-RECORD: $ev missing required symbol matching '$pat'"
+              fail=1
+            fi
+          done
+
+          # ---- Single-helper invariant -------------------------------
+          # Exactly one WriteFileAtomic call in the evidence module —
+          # the one inside writeRestoreEvidenceRecord. Anything else
+          # is a violation of the §46 single-helper lock.
+          wfa_count=$(echo "$ev_src" | grep -cE '\bWriteFileAtomic\(' || true)
+          if [[ "$wfa_count" -ne 1 ]]; then
+            echo "::error::G4-RESTORE-EVIDENCE-RECORD: $ev contains $wfa_count WriteFileAtomic calls; want exactly 1 (single-helper invariant)"
+            fail=1
+          fi
+
+          # ---- Forbidden recording-only-violation symbols -----------
+          ev_forbidden=(
+            'restore\.Decide\('
+            'restore\.PlanFromDecision\('
+            'uninstall\.Probe\('
+            'detect\.DetectPanel\('
+            'writeHistory\('
+            'update-history\.json'
+            '\bexec\.ServiceStart\('
+            '\bexec\.ServiceStop\('
+            '\bexec\.ServiceEnable\('
+            '\bexec\.ServiceDisable\('
+            '\bexec\.ServiceMask\('
+            '\bexec\.ServiceUnmask\('
+            '\bexec\.NftDeleteTable\('
+            '\bexec\.NftAddElement\('
+            '\bexec\.DaemonReload\('
+            '\bexec\.Rename\('
+            '"os/exec"'
+            '\bexec\.Command\('
+            '\bos\.Rename\('
+            '\bos\.Remove\('
+            '\bos\.WriteFile\('
+            '\bos\.Create\('
+            '\bsyscall\.'
+          )
+          for pat in "${ev_forbidden[@]}"; do
+            if echo "$ev_src" | grep -qE "$pat"; then
+              echo "::error::G4-RESTORE-EVIDENCE-RECORD: $ev contains forbidden pattern '$pat' (recording-only invariant)"
+              fail=1
+            fi
+          done
+
+          # ---- Dispatcher consumption pin ----------------------------
+          # The dispatcher MUST call writeRestoreEvidenceRecord — proves
+          # evidence is consumed, not just imported.
+          if ! echo "$disp_src" | grep -qE '\bwriteRestoreEvidenceRecord\('; then
+            echo "::error::G4-RESTORE-EVIDENCE-RECORD: $dispatcher does not call writeRestoreEvidenceRecord"
+            fail=1
+          fi
+          if ! echo "$disp_src" | grep -qE '\bbuildRestoreEvidenceRecord\('; then
+            echo "::error::G4-RESTORE-EVIDENCE-RECORD: $dispatcher does not call buildRestoreEvidenceRecord"
+            fail=1
+          fi
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "::error::§39.3 / §46 / §48.6 violation — restore evidence-record writer not structurally enforced."
+            exit 1
+          fi
+
+          echo "G4-RESTORE-EVIDENCE-RECORD PASS — writer + dispatcher structurally consume the single evidence helper"
+
   restore-canonization-summary:
     name: Restore Canonization summary
     runs-on: ubuntu-24.04
