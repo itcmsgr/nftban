@@ -822,6 +822,368 @@ When 4B-3-csf opens for review, the reviewer must confirm each of the following:
 
 ---
 
+# PART IV — PR-26 restore verification / evidence hardening contract (Seed v1)
+
+> **Status:** Seed (drafted 2026-04-28, pre-implementation, post-PR-25 merge `6a0ab67a`)
+> **Scope:** PR-26 is the **verification** counterpart of PR-25's execution engine. It proves on real systems that the PR-25 restore outcome is correct.
+>
+> Part IV is normative for PR-26 only and does not modify §§1–36.
+
+## 37. Pinned sentence
+
+> PR-25 answered: "can restore execute safely?". PR-26 answers: "can we prove the restore outcome is correct after execution?". The two are intentionally distinct lanes; PR-26 may NOT relax PR-25 invariants and may NOT widen restore lifecycle scope. PR-26 produces evidence and a small set of correctness-tightening changes — nothing more.
+
+## 38. Scope (locked)
+
+### 38.1 Permitted (PR-26 may do)
+
+- Tighten the safety-net-safe predicate to be **target-specific** (Q3, §41).
+- Add typed executor methods `ServiceUnmask(unit)` and `Rename(old, new)` and migrate `restore_deps_csf.go` off the raw `Run(...)` indirections (Q5, §43).
+- Amend install-time `switchop.disarmCSFArtifacts` to write a cron-backup manifest, then implement A.4 cron-restore against that manifest (Q4, §42).
+- Capture **destructive real-host CSF restore evidence** on a staged DirectAdmin host (Q2, §40).
+- Tighten the existing `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` CI gate to enforce the new typed-method surface (Q5, §43.4).
+- Extend §22 / §32 ordering ONLY where the verification path requires (e.g., a post-restore evidence-collection step that runs AFTER §32 step 11). No change to A.1–A.7 mutation set.
+
+### 38.2 Forbidden (PR-26 may NOT do)
+
+| Forbidden surface | Why excluded |
+|---|---|
+| Any new mutation primitive beyond Amendment 1 §31 A.1–A.7 | Amendment 1 scope-fence remains in force |
+| Authorize ufw / firewalld / iptables restore | Amendment 1 §30.2 explicitly defers to a separate amendment |
+| Authorize panels other than DirectAdmin | §20.1 mapping is intentionally sparse |
+| Modify the §22 four-terminal set or §19.4 exit codes | Stable consumer contract |
+| Modify the `main.go:132` writeHistory gate | INV-PR25-HISTORY-GATE (§38.3) |
+| Add a "validator full sweep" step | PR-26 verification is restore-specific, not full-system health |
+| Repo hygiene / UX / GOTH / metrics / module cleanup | Out of lane (operator instruction 2026-04-28) |
+| Change `TargetAuthority`, `Decide`, planner, or PR-24 lattice | Frozen by §17.3 / §6 |
+| Allow the cron-backup manifest to be operator-readable secret | Manifest is metadata only — the cron files themselves are public-config |
+
+### 38.3 Scope-bounding invariants (named, locked)
+
+- **INV-PR26-VERIFICATION-IS-PROOF-NOT-DECISION**: PR-26 verification produces evidence and may set a §22 terminal; it does NOT re-decide the PR-24 output, re-resolve `TargetAuthority`, or modify the §32 mutation order.
+- **INV-PR26-NEW-MUTATION-SURFACES-BOUNDED**: PR-26 introduces exactly three new mutation surfaces:
+   1. typed `executor.ServiceUnmask`
+   2. typed `executor.Rename`
+   3. install-time CSF/LFD cron-backup manifest write under `/var/lib/nftban/state/csf-cron-backup/`
+
+   These are bounded extensions of PR-25 Amendment 1 and are the only new mutation surfaces allowed in PR-26. No fourth mutation surface is permitted without a new contract amendment. (Surfaces 1 + 2 replace the raw `Run("systemctl","unmask",…)` and `Run("mv",…)` indirections that Amendment 1 §31 already authorized; surface 3 makes the §31 A.4 cron path implementable by preserving the cron files Amendment 1 implicitly assumed but never required to be backed up.)
+- **INV-PR25-HISTORY-GATE**: `main.go:132` mode-gate (§19.2 layer 4) is unchanged. PR-26 verification MAY emit a PR-26-specific evidence-record file (separate from `update-history.json`) but that file is NEVER `update-history.json` itself.
+- **INV-PR26-EVIDENCE-PRIVATE-BY-DEFAULT**: Real-host evidence captures stay PRIVATE per the PR-25 precedent. `evidence/` and `pr25-evidence/` remain in `.gitignore`; PR-26 evidence lands at the operator's internal handoff path (likely `/home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/PR26_EVIDENCE/`).
+
+## 39. Q1 — Verification authority (proposed lock)
+
+What evidence proves the restore outcome is correct? Each candidate is classified BLOCKING (must hold for `StateRestoreExecuted`) or ADVISORY (logged but not load-bearing).
+
+### 39.1 Decision table
+
+| # | Evidence | Classification | Source | Notes |
+|---|---|---|---|---|
+| 1 | Target firewall service active (`csf.service` for csf restore) | **BLOCKING** | `exec.ServiceActive(unit)` | Already enforced by §21.1 assertion 1 |
+| 2 | nftband.service stopped | **BLOCKING** | `exec.ServiceActive("nftband.service") == false` | §32 step 6 already performs the stop; verification confirms the post-state |
+| 3 | nftban kernel tables released (`ip:nftban` + `ip6:nftban` absent) | **BLOCKING** | `exec.NftTableExists("ip","nftban") == false` AND same for `ip6` | §32 step 8 / A.7 performs the release; verification confirms |
+| 4 | Emergency safety-net table absent post-removal | **BLOCKING** | `exec.NftTableExists("inet","nftban_install_emergency") == false` | §32 step 10 performs the removal; verification confirms |
+| 5 | Final authority class equals expected | **BLOCKING** | `uninstall.Classify().State == AuthorityExternal` for csf restore | Already §21.1 assertion 2; PR-26 elevates to BLOCKING for the post-restore evidence-record file |
+| 6 | Target firewall protects SSH outside the emergency rule (target-specific) | **BLOCKING** | Target-specific kernel evidence — see Q3 / §41 | Replaces PR-25's any-external-FW heuristic |
+| 7 | External SSH continuity from out-of-band session | **ADVISORY** | Operator-driven; cannot be observed by the dispatcher itself | Captured manually in §28 evidence; not a programmatic gate |
+| 8 | `update-history.json` unchanged for restore mode | **BLOCKING** | sha256 pre/post diff | Already enforced by `main.go:132`; PR-26 evidence-record file MUST include the diff |
+| 9 | Final state-machine terminal == `StateRestoreExecuted` (or `StateRestoreDegraded` per §22 candidate set) | **BLOCKING** | Persisted state file | If terminal != one of the success terminals, verification did not pass |
+| 10 | Validator full sweep | **NOT REQUIRED** | n/a | Out of PR-26 scope — restore is a narrow lane |
+| 11 | CLI ruleset parsing (`nft list ruleset` parsed for ownership) | **NOT REQUIRED** | n/a | CLI ruleset parsing is not required and must not be used as truth. Kernel/service truth must come from typed executor methods, such as `NftTableExists`, `ServiceActive`, and any additional typed introspection method explicitly authorized by Q5 / §48.1. |
+
+### 39.2 Decision (proposed lock)
+
+- **Kernel evidence (1, 3, 4)**: BLOCKING.
+- **Systemd evidence (1, 2)**: BLOCKING.
+- **External SSH continuity (7)**: ADVISORY only. PR-26 evidence pack documents the manual check; not programmatic.
+- **Authority class (5)**: BLOCKING.
+- **Target-specific safety predicate (6)**: BLOCKING — see Q3 §41.
+- **History gate (8)**: BLOCKING.
+- **Terminal state (9)**: BLOCKING.
+- **Validator sweep (10) and CLI parsing (11)**: NOT REQUIRED — out of scope.
+
+### 39.3 What PR-26 produces from this
+
+A new file `restore_evidence.go` (or similar) in `cmd/nftban-installer/` that, on every `StateRestoreExecuted` terminal, writes a structured JSON evidence-record file at a documented path under `/var/lib/nftban/state/restore-evidence/<timestamp>.json`. The file carries: kernel-table presence, systemd-active states, authority class, sha256 of `update-history.json` pre/post, terminal name, exit code, target firewall, panel context, and the safety-net-safe predicate's result. **OPEN**: exact path + schema version are §48 open questions.
+
+## 40. Q2 — Real-host destructive soak scope (proposed lock)
+
+### 40.1 Decision table
+
+| # | Question | Proposed lock | Rationale |
+|---|---|---|---|
+| Q2.1 | lab2 / lab4 only, or staged DirectAdmin required? | **Staged DirectAdmin required for PR-26 merge.** lab2 / lab4 fixture-style runs (PR-25 §28 shape) are sufficient for PR-26 commits 1-3 (predicate, executor, cron). The destructive soak is the merge-blocker for PR-26 final. | Without a real DirectAdmin host, A.7 nftban table release post-CSF-active is never observed in production. |
+| Q2.2 | Destructive restore required before PR-26 merge? | **Yes.** At least ONE clean A.1→A.7 destructive cycle on a staged DirectAdmin host with a captured exec-trace. | Otherwise PR-26 reduces to fixture-only and does not prove the outcome. |
+| Q2.3 | Production srv3? | **No, unless operator-approved per-run.** srv3 is a real production DirectAdmin host; running destructive restore against it requires explicit approval each time. The default is a staged VM. | Operator policy: srv3 is supplemental, not required, evidence (per PR-25 close-out). |
+| Q2.4 | What evidence paths are private vs committed? | **Private by default.** Per PR-25 precedent: `evidence/`, `pr25-evidence/`, `pr26-evidence/` all in `.gitignore`. Real evidence lives at the operator's internal handoff path. Public-facing references in commit messages / README cite the private path; do not embed file contents. | Operator policy: hostnames + infra detail must not be published. |
+| Q2.5 | Redaction rules if any evidence is summarized publicly | **Hostnames, IPs, panel-customer data, certificate fingerprints redacted.** Distro / kernel version / nftban version permitted. Per-host classification keys (lab2/lab4/staged-da/srv3) replaced with role labels (DEB-NoCSF/RPM-NoCSF/STAGED-DA-CSF/PROD-DA-CSF). | Defense in depth even when sharing summaries. |
+
+### 40.2 What PR-26 produces from this
+
+- A reproducible setup script (private, lives at the operator handoff path) that stages a DirectAdmin VM with prior CSF state suitable for A.1–A.7.
+- An evidence pack: pre/post nft list ruleset, csf+nftband service states, emergency-table lifecycle, exec-trace capture, update-history.json diff, final installer state, out-of-band SSH continuity log.
+- All of the above in the private evidence tree only.
+
+## 41. Q3 — Safety-net-safe predicate tightening (proposed lock)
+
+### 41.1 Current PR-25 behavior
+
+`productionInlineVerifyDep.IsSafetyNetRemovalSafe` returns true iff:
+1. `detect.SSHPort` resolves AND
+2. ANY service in `inlineVerifyExternalFirewallServices` (csf / ufw / firewalld / iptables / netfilter-persistent) is active.
+
+This loosely accepts a host where, e.g., `firewalld` happens to be active even when CSF (the restore target) failed to start.
+
+### 41.2 Proposed lock
+
+For Amendment-1 csf-restore path, the predicate MUST narrow to the **resolved target's specific unit**:
+
+1. `detect.SSHPort` resolves on the running listener (Source 1 `ss -tlnp`, NOT a fallback to sshd_config or state file). **PROPOSED LOCK** — sshd_config or state file evidence is too weak to confirm post-mutation reachability.
+2. `exec.ServiceActive(targetUnit) == true` where `targetUnit` is the unit derived from the resolved `firewallType` (csf → `csf.service`).
+3. **Target firewall has loaded an SSH-allow rule.** Mechanism: kernel-level evidence ONLY. **OPEN** §48.1 — exact mechanism (csf manages iptables-legacy, not nftables; we may need `iptables-legacy -L INPUT -n -v --line-numbers` parsed for the SSH port allow OR an `nft list table ip filter` query for the `csf` table). The mechanism MUST stay inside `executor.Executor` (no raw `os/exec`) and MUST be deterministic.
+
+### 41.3 Where the tightened predicate lives
+
+The predicate stays in `productionInlineVerifyDep.IsSafetyNetRemovalSafe`. PR-26 does NOT add a new mutation pre-release check or a separate package — it tightens the existing assertion with target awareness.
+
+To make the predicate target-aware, the dep gains a read-only `firewallType` field (or a `targetUnit` field) populated by the production factory at construction time, mirroring the priorRec/panel plumbing landed by 4B-3-pre. **OPEN** §48.2 — whether to plumb `firewallType` or a pre-computed `targetUnit`; the answer depends on whether ufw / firewalld / iptables ever become supported (Amendment 1 §30.2 says no, but the predicate should be ready).
+
+### 41.4 Authorization scope
+
+ufw / firewalld / iptables remain typed-unsupported per Amendment 1 §30.2. The tightened predicate refuses with the existing `ErrInlineVerifyOnlyCSFAuthorized` for non-csf targets — no behavior change there.
+
+## 42. Q4 — Cron backup / A.4 restore contract (proposed lock)
+
+### 42.1 Current state
+
+`internal/installer/switchop/takeover.go::disarmCSFArtifacts` (lines 81–107) runs `rm -f /etc/cron.d/lfd-cron /etc/cron.d/csf-cron` without preserving copies. PR-25 A.4 logs an operator warning and continues; **no cron files are recreated**.
+
+### 42.2 Proposed lock
+
+**A. Install-time backup:**
+
+`disarmCSFArtifacts` MUST, before removing each cron file, copy it (with its mode and ownership) to a backup location AND emit a manifest entry. Proposed paths:
+
+- Backup files: `/var/lib/nftban/state/csf-cron-backup/csf-cron`, `/var/lib/nftban/state/csf-cron-backup/lfd-cron`. **OPEN** §48.3 — exact directory name (alternative: `/var/lib/nftban/csf-restore/cron/`). Pick the one consistent with existing `/var/lib/nftban/state/` layout.
+- Manifest: `/var/lib/nftban/state/csf-cron-backup/manifest.json`. Schema:
+  ```json
+  {
+    "schema_version": "1.0.0",
+    "captured_at": "2026-04-28T07:00:00Z",
+    "files": [
+      {"src": "/etc/cron.d/csf-cron", "backup": "csf-cron", "sha256": "…", "mode": "0644", "uid": 0, "gid": 0},
+      {"src": "/etc/cron.d/lfd-cron", "backup": "lfd-cron", "sha256": "…", "mode": "0644", "uid": 0, "gid": 0}
+    ]
+  }
+  ```
+  **OPEN** §48.4 — schema version, fields, whether to include the original mtime.
+
+**B. A.4 restore preconditions:**
+
+A.4 runs iff **all** of the following hold:
+
+1. Manifest exists at the documented path AND parses cleanly (schema_version match).
+2. Each backup file in the manifest exists AND its sha256 matches the manifest entry (integrity check).
+3. The corresponding `/etc/cron.d/<name>` target path is absent (don't overwrite operator-modified state).
+4. Standard E.1 / E.7 evidence holds (same as PR-25).
+
+If any precondition fails: A.4 stays soft-skip with an operator-warning log line that is more specific than PR-25's generic warning (states which precondition failed).
+
+**C. Migration behavior:**
+
+Existing installs without a manifest (i.e., installs from before the PR-26 amendment lands) get the same soft-skip behavior PR-25 ships today. No retro-active manifest creation; no fabrication of cron contents.
+
+**D. Refusal behavior on integrity failure:**
+
+If the manifest exists but a backup file's sha256 does not match the manifest entry, A.4 refuses with `ErrCSFRestoreCronManifestCorrupt` (new typed sentinel) and stays soft-skip. **The mutation does NOT abort** — A.5 still runs. Cron is non-critical for csf to function (csf runs without cron; LFD just won't auto-restart) per Amendment 1 §31 A.4 rationale. A failed cron restore is a P1 logged warning, not a P0 mutation failure.
+
+### 42.3 What PR-26 produces from this
+
+- An installer-side amendment to `internal/installer/switchop/takeover.go::disarmCSFArtifacts` (yes, this is one place where PR-26 touches install-time code — bounded to writing the backup manifest before cron removal). The file lives in `internal/installer/switchop/`, which is NOT in PR-25's do-not-touch list.
+- New restore-side logic in `cmd/nftban-installer/restore_deps_csf.go::mutateToCSFTarget` step 3 that flips A.4 from soft-skip to manifest-restore when E.5 holds.
+- New typed sentinels for the cron-restore failure modes.
+- Tests for manifest creation, manifest read, integrity check, refusal modes.
+
+## 43. Q5 — Executor hardening (proposed lock)
+
+### 43.1 Current state
+
+`restore_deps_csf.go` uses `exec.Run("systemctl","unmask","csf.service")` at A.1 and `exec.Run("mv", csfBinaryDisabled, csfBinary)` at A.3 because `executor.Executor` lacks typed `ServiceUnmask` and `Rename` methods. The `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` CI gate's per-call argument enforcement was dropped in PR-25 commit-5-fix because shell regex couldn't reliably parse identifier arguments.
+
+### 43.2 Proposed lock
+
+**A. Add typed methods to `executor.Executor`:**
+
+```go
+// ServiceUnmask unmasks a systemd unit (inverse of ServiceMask).
+ServiceUnmask(unit string) error
+
+// Rename atomically renames oldpath to newpath. Same-filesystem semantics
+// equivalent to syscall.Rename. Implementations route through whatever
+// primitive their host abstraction provides (RealExecutor uses os.Rename;
+// MockExecutor records and updates its in-memory file map).
+Rename(oldpath, newpath string) error
+```
+
+**B. Implementation:**
+
+- `RealExecutor.ServiceUnmask` runs `systemctl unmask <unit>` via `RunTimeout` and returns the typed error path consistent with `ServiceMask`.
+- `RealExecutor.Rename` calls `os.Rename(oldpath, newpath)` (NOT `os/exec`-shelled `mv`) — this is the single point where `os.Rename` is permitted in the executor package, matching the existing `WriteFileAtomic` precedent.
+- `MockExecutor.ServiceUnmask` records the systemctl-style command and returns nil.
+- `MockExecutor.Rename` records the call AND updates `Files` to reflect the rename.
+
+**C. Migration:**
+
+`restore_deps_csf.go::unmaskCSFService` becomes `m.exec.ServiceUnmask(csfServiceUnit)`. `restore_deps_csf.go::renameAtomicViaExec` becomes `m.exec.Rename(oldpath, newpath)`. The two helper functions can be inlined or kept as thin wrappers (operator preference; **OPEN** §48.5).
+
+**D. Tighten G4-RESTORE-EXEC-NO-OUT-OF-TARGET:**
+
+- Forbid `Run("systemctl"...)` for unit-mutating verbs (start / stop / enable / disable / mask / unmask / restart / reload). Only `Run("systemctl","is-enabled",…)` and `Run("systemctl","is-active",…)` remain — read-only probes.
+  - Pattern: forbid `exec\.Run\("systemctl",\s*"(start|stop|enable|disable|mask|unmask|restart|reload)"`.
+- Forbid `Run("mv",...)` entirely. The typed `Rename` is the only authorized path for atomic file moves.
+  - Pattern: forbid `exec\.Run\("mv"\b`.
+- Re-introduce the per-call-unit-allow-list pin for `ServiceUnmask`, `ServiceEnable`, `ServiceStart`, `ServiceStop` — but as Go-AST-style structural greps over the typed method calls (not the raw Run strings). This is feasible because typed-method args ARE constants in source and parse as Go identifiers; we can forbid every typed-service call whose argument is not in the allow-list `{csf.service, nftband.service}` for `restore_deps_csf.go`.
+
+### 43.3 Raw `Run` policy in restore deps
+
+After PR-26:
+- `Run` is permitted in `restore_deps.go` ONLY for read-only probes (currently: `detect.SSHPort` indirectly via `Run("ss","-tlnp")`).
+- `Run` is permitted in `restore_deps_csf.go` ONLY for read-only `Run("systemctl","is-enabled",...)` (and similar). Every mutating system call must go through a typed method.
+- The CI gate enforces this with the strengthened patterns above.
+
+### 43.4 What PR-26 produces from this
+
+- Two interface additions in `internal/installer/executor/executor.go`.
+- Implementations in `internal/installer/executor/real.go` and `internal/installer/executor/mock.go`.
+- Migration of `restore_deps_csf.go` to the typed methods.
+- Strengthened CI gate patterns.
+- New tests for the typed methods (parity with existing `ServiceMask` / `WriteFileAtomic` tests).
+
+## 44. Proposed invariants (locked-in summary)
+
+| Name | Statement |
+|---|---|
+| **INV-PR26-VERIFICATION-IS-PROOF-NOT-DECISION** | PR-26 verification produces evidence; it does NOT re-decide PR-24, re-resolve TargetAuthority, or modify §32 ordering. |
+| **INV-PR26-NEW-MUTATION-SURFACES-BOUNDED** | PR-26 introduces exactly three new mutation surfaces: (1) typed `executor.ServiceUnmask`, (2) typed `executor.Rename`, (3) install-time CSF/LFD cron-backup manifest write under `/var/lib/nftban/state/csf-cron-backup/`. No fourth mutation surface is permitted without a new contract amendment. |
+| **INV-PR25-HISTORY-GATE** | `main.go:132` writeHistory mode-gate unchanged; PR-26 evidence-record file is a SEPARATE artefact from `update-history.json`. |
+| **INV-PR26-EVIDENCE-PRIVATE-BY-DEFAULT** | Real-host evidence captures stay PRIVATE per PR-25 precedent; `evidence/`, `pr25-evidence/`, `pr26-evidence/` all gitignored. |
+| **INV-PR26-TARGET-SPECIFIC-PREDICATE** | `IsSafetyNetRemovalSafe` proves the resolved target's unit is providing SSH protection, not "any external firewall". |
+| **INV-PR26-RAW-RUN-FORBIDDEN-FOR-MUTATION** | After PR-26, raw `exec.Run` is permitted in restore deps ONLY for read-only probes. Mutation goes through typed methods exclusively. |
+
+## 45. Merge-blocking evidence requirements
+
+| Evidence | Source | Merge-blocking? |
+|---|---|---|
+| Fixture tests for typed `ServiceUnmask` + `Rename` (parity with existing `ServiceMask` + `WriteFileAtomic`) | `internal/installer/executor/{real,mock}_test.go` | YES |
+| Migration tests proving `restore_deps_csf.go` uses typed methods only (no raw `Run("systemctl",mutating)`, no raw `Run("mv",…)`) | `restore_deps_csf_test.go` | YES |
+| Target-specific predicate tests proving safe-to-remove gates on csf.service AND target SSH-rule kernel evidence | `restore_deps_inlineverify_test.go` | YES |
+| Cron-backup manifest tests: write at install, read at restore, integrity check, missing-manifest soft-skip, corrupt-manifest typed refusal | new test file or extension to existing `switchop_test.go` + `restore_deps_csf_test.go` | YES |
+| Strengthened CI gate replays clean against modified `restore_deps_csf.go` | local + CI run | YES |
+| Real-host destructive CSF restore on a staged DirectAdmin VM: full A.1–A.7 cycle, exec-trace clean of out-of-target processes, post-state verifies all §39.1 BLOCKING signals, evidence pack at the private path | private evidence tree | YES |
+| Fixture-only lab2 (DEB) + lab4 (RPM) coverage of the same code paths | `go test` on lab2 + lab4 | YES |
+| Out-of-band SSH continuity confirmation during the destructive run | operator log entry | YES (advisory but recorded) |
+
+## 46. CI gate requirements
+
+### 46.1 Locked discipline for text-grep gates
+
+All text-grep gates in PR-26 MUST follow these rules to avoid the false-positive class that broke `Architecture Policy / Suppression comment audit` on PR #511:
+
+- **Production-code gates exclude `*_test.go` files.** Tests legitimately reference forbidden symbols in negation comments, fixture strings, and behavior assertions. Production-side scope only.
+- **Grep gates ignore line-leading comments.** Pipe through `grep -vE '^[[:space:]]*//'` (or equivalent line-skipping) before checking forbidden patterns. A literal forbidden token inside a `//` comment is documentation, not a violation.
+- **Future complex write-path gates use Go AST or structural runtime tests, not raw grep.** When a gate needs to assert "every call to API X targets resource Y", that requires AST-aware analysis. Don't bolt regex onto problems that aren't regex problems.
+
+### 46.2 Gate table
+
+| Gate | Change | Rationale |
+|---|---|---|
+| `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` | Add forbidden patterns for `exec\.Run\("systemctl",\s*"(start\|stop\|enable\|disable\|mask\|unmask\|restart\|reload)"` and `exec\.Run\("mv"\b`. Apply §46.1 line-skipping discipline (production-code-only; ignore line-leading comments). | Forces typed-method use for mutating systemctl + atomic rename |
+| `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` | Add per-call unit allow-list for typed `ServiceUnmask` / `ServiceEnable` / `ServiceStart` / `ServiceStop` over `restore_deps_csf.go` only — args MUST be in `{"csf.service", "nftband.service"}`. Implementation MUST use Go-AST parsing (preferred) OR a structural Go-source matcher; raw regex over identifier args is forbidden by §46.1. | Replaces PR-25's silently-no-op systemctl/mv pins with structurally reliable Go-source matching |
+| `G4-RESTORE-EVIDENCE-RECORD` (new) | **Structural requirement, not vague static scan.** All evidence-record file writes MUST route through a single helper (e.g., `writeRestoreEvidence(record)`) that uses a named constant `evidenceRecordDir` for the destination path. Tests in `restore_evidence_test.go` MUST assert every `WriteFileAtomic(...)` call in `restore_evidence.go` flows from that helper / constant. CI may grep for forbidden direct `WriteFileAtomic\(` calls outside the helper definition (production-code-only, §46.1 discipline). | Enforces the §39.3 / §44 separation between PR-26 evidence and PR-23/PR-24 history without relying on fragile path-string parsing |
+| `G4-RESTORE-CRON-MANIFEST-INTEGRITY` (new) | Structural requirement: the manifest writer in `switchop/takeover.go` MUST compute and persist a `sha256` per cron file before removal; the manifest reader in `restore_deps_csf.go` MUST verify each `sha256` before A.4 acts. Behavior tests assert the integrity-check refuses on mismatched sha256. CI may add a structural grep over both files (production-code-only, §46.1 discipline) confirming the sha256 helper symbols are present in both writer + reader. | Catches a silent-corruption regression where A.4 would restore a stale or tampered backup |
+| `G4-RESTORE-NO-IMPLICIT-EXEC` (existing) | No change | Already forbids mutation in `internal/installer/restore/`; PR-26 inherits |
+| `G4-RESTORE-DECISION-CORRECTNESS` (existing) | No change | PR-24 lattice unchanged |
+
+## 47. Reviewer checklist (PR-26 code-phase merge-blocking)
+
+### Scope
+- [ ] No file in PR-25's do-not-touch list is modified outside the PR-26-permitted set (`switchop/takeover.go` for cron-backup; `executor/{executor,real,mock}.go` for typed methods; `restore_deps.go` / `restore_deps_csf.go` / their test files for migration; `restore_evidence.go` new; CI workflow for gate updates).
+- [ ] §22 four-terminal set unchanged.
+- [ ] §19.4 exit codes unchanged.
+- [ ] `main.go:132` writeHistory gate untouched.
+- [ ] No new mutation primitive beyond §43.2 (`ServiceUnmask`, `Rename`).
+
+### Verification correctness
+- [ ] `IsSafetyNetRemovalSafe` is target-specific (resolved unit, not any-external-FW).
+- [ ] Target firewall SSH-rule kernel evidence is actually queried (not skipped).
+- [ ] Cron-backup manifest schema_version is checked at read time.
+- [ ] Cron sha256 integrity checked before A.4 acts.
+- [ ] A.4 corrupt-manifest path returns `ErrCSFRestoreCronManifestCorrupt` and stays soft-skip; A.5 still runs.
+
+### Executor hardening
+- [ ] `executor.Executor` interface adds ONLY `ServiceUnmask` and `Rename`.
+- [ ] `RealExecutor.Rename` uses `os.Rename` directly (not `os/exec`-shelled `mv`).
+- [ ] `restore_deps_csf.go` contains zero `Run("systemctl",mutating-verb,…)` and zero `Run("mv",…)` after migration.
+- [ ] Strengthened CI gate replays clean.
+
+### Evidence
+- [ ] PR-26 evidence-record file lands at the documented path; schema_version matches.
+- [ ] Real-host destructive cycle on a staged DirectAdmin VM captured with full evidence pack at the private path.
+- [ ] No public commit of evidence files; `.gitignore` updated if a new pattern is needed.
+
+### CI
+- [ ] All existing G4-RESTORE-* gates still green.
+- [ ] New `G4-RESTORE-EVIDENCE-RECORD` and `G4-RESTORE-CRON-MANIFEST-INTEGRITY` gates added and green.
+
+## 48. Open questions (explicitly marked)
+
+These are the questions Part IV does NOT lock; the auditor + operator decide them at Q1-Q5 lock time before code phase opens.
+
+- **§48.1 (Q3) — HARD BLOCKER for PR-26-code-A.** Exact mechanism for the target firewall SSH-rule kernel evidence in `IsSafetyNetRemovalSafe`. CSF manages iptables-legacy, not nftables; the existing `executor.NftTableExists` is nft-only and cannot probe iptables rules. PR-26-code-A IS the target-specific safety predicate; without this mechanism locked, code-A cannot be implemented. CLI parsing is forbidden (§39.1 row 11). Operator/auditor must choose:
+
+  - **Option A — Add iptables typed introspection.** Add a third typed executor method, e.g. `IptablesRuleExists(table, chain, port int) bool`, and keep §39.1 row 6 ("target firewall protects SSH outside the emergency rule") **BLOCKING**. Q5's bounded-3-method invariant (`INV-PR26-NEW-MUTATION-SURFACES-BOUNDED`) does NOT cover this addition because that invariant applies to mutation surfaces only; an introspection method is read-only and authorized as the §48.1 resolution. The Q5 §43.2 method list expands from 2 to 3 (read-only) typed methods; the mutation count remains at 2.
+
+  - **Option B — Downgrade target SSH-rule kernel evidence to ADVISORY.** Do NOT add iptables introspection. §39.1 row 6 becomes ADVISORY rather than BLOCKING; row 6 is logged in the evidence-record file but does not gate `StateRestoreExecuted`. BLOCKING evidence then consists of: service-active (rows 1, 2), kernel-table presence/absence (rows 3, 4), authority class (row 5), update-history unchanged (row 8), terminal correct (row 9), AND `detect.SSHPort` listener-source success. External SSH continuity (row 7) remains ADVISORY.
+
+  **No PR-26-code-A may start until operator/auditor chooses Option A or Option B.** This decision is captured in the operator's lock signal for PR-26; until then, code-A is structurally unimplementable.
+- **§48.2 (Q3)** — Whether to plumb `firewallType string` or pre-computed `targetUnit string` into `productionInlineVerifyDep`. Lock candidate: `firewallType` (consistent with the existing `priorRec` / `panel` plumbing pattern from 4B-3-pre).
+- **§48.3 (Q4)** — Cron-backup directory: `/var/lib/nftban/state/csf-cron-backup/` vs `/var/lib/nftban/csf-restore/cron/` vs other. Lock candidate: `/var/lib/nftban/state/csf-cron-backup/` (consistent with existing `/var/lib/nftban/state/` layout).
+- **§48.4 (Q4)** — Cron-backup manifest schema. Proposed shape in §42.2 is a strawman. Lock candidate: `schema_version` + `captured_at` + per-file `{src, backup, sha256, mode, uid, gid}`. Mtime preservation is OPEN; default to NOT preserving mtime (matches `WriteFileAtomic` behaviour).
+- **§48.5 (Q5)** — Whether to keep the `unmaskCSFService` / `renameAtomicViaExec` thin-wrapper helpers or inline them. Lock candidate: inline them — typed methods make the wrappers redundant.
+- **§48.6 (Q1 / §39.3)** — Exact path + schema for the post-restore evidence-record file. Candidate path: `/var/lib/nftban/state/restore-evidence/<unix-timestamp>.json`. Schema TBD; include all §39.1 BLOCKING signals + their observed values.
+- **§48.7 (Q2)** — Where to source the staged DirectAdmin VM. Local KVM image, dedicated staging server, fresh cloud VM per run? Lock candidate: dedicated staging VM with a snapshot-restore script so each destructive run starts from a known clean state.
+
+## 49. Non-goals (explicit)
+
+These are intentionally OUTSIDE PR-26 scope, lest scope creep nullify the lane.
+
+- Authorize ufw / firewalld / iptables restore. Stays as Amendment 1 §30.2 deferral.
+- Authorize panels other than DirectAdmin. Stays as §20.1 sparse mapping.
+- Modify the four §22 terminals or §19.4 exit codes. Stays.
+- Add a "validator full sweep" or module-health probe. Out of lane (§38.2).
+- Repo hygiene / UX / GOTH / metrics / module cleanup. Out of lane (operator instruction 2026-04-28).
+- Change PR-24 lattice rules. Stays.
+- Change `TargetAuthority` types or planner. Stays.
+- Promote read-only systemctl probes (`is-enabled`, `is-active`) to typed methods. Out of PR-26 scope; tracked as a follow-up item.
+- Ship a generic "verify the host is healthy" command. Restore-specific verification only.
+
+## 50. Sequencing recommendation
+
+Per the operator's PR-25 cadence:
+
+| Slice | Scope | Files (expected) |
+|---|---|---|
+| **PR-26-doc** (this) | Contract seed (§§37–48) | `internal/installer/restore/contract.md` |
+| **PR-26-code-A** | Target-specific safety predicate (Q3) | `restore_deps.go`, `restore_deps_inlineverify_test.go` |
+| **PR-26-code-B** | Typed executor methods (Q5) + migration | `executor/{executor,real,mock}.go`, `restore_deps_csf.go`, related tests, CI gate |
+| **PR-26-code-C** | Cron backup manifest at install + A.4 manifest-restore | `switchop/takeover.go`, `restore_deps_csf.go`, related tests. **Internal ordering:** install-time manifest creation in `switchop/takeover.go` MUST land in the same commit as — and BEFORE — the A.4 restore-from-manifest enablement in `restore_deps_csf.go`. A.4 must remain skip/refuse-only on hosts where the manifest is absent (existing pre-PR-26 installs). The two changes are co-required: enabling A.4 restore without the manifest writer would break on the first run; writing the manifest without consuming it would leave dead state on disk. |
+| **PR-26-code-D** | Post-restore evidence-record file (§39.3) + new CI gates | `cmd/nftban-installer/restore_evidence.go` (new), CI workflow |
+| **PR-26-code-E** | Destructive staged DirectAdmin soak — evidence-only commit pointing at the private path | (no source change beyond a CHANGELOG / commit-message pointer) |
+| **PR-26-final** | CHANGELOG + release prep | `CHANGELOG.md` |
+
+Auditor passes between every major slice, mirroring the 4B-1 / 4B-2 / 4B-3-pre / 4B-3-csf / 4B-4 / 5 cadence.
+
+---
+
 ## Amendment history
 
 - **2026-04-20 v1 (seed)** — first committed seed. Lattice v2 + three locked corrections:
@@ -837,3 +1199,5 @@ When 4B-3-csf opens for review, the reviewer must confirm each of the following:
 - **2026-04-27 v2 (PR-25 contract append)** — appends Part II (§§16–29: PR-25 execution contract). Faithful normalization of the locked Q1–Q5 design decisions (recorded 2026-04-20 during PR-24 freeze Day 0) following the locked "no expansion beyond Q1–Q5" rule. Sections §1–§15 are untouched. Verified live-code anchors at `internal/installer/uninstall/prior.go:278-284` (knownFirewallType set), `cmd/nftban-installer/main.go:132` (writeHistory gate), `internal/installer/state/machine.go:149-155` (existing exit-code constants). Doc-only commit; no code changes in this PR. Code phase opens in a separate PR after this one merges.
 
 - **2026-04-28 v3 (Amendment 1: CSF restore mutation authorization)** — appends Part III (§§30–36). Authority gap discovered during PR-25 commit 4B-3 inspection: install-time `switchop.DisableConflicts` performs persistent, file-level mutations (service mask, binary rename, cron removal) that cannot be reversed under the §§17–29 forbidden-behaviors list. This amendment authorizes a narrow set of CSF-specific inverse-of-install mutations (A.1–A.7) gated on prior-record / on-disk evidence, with extended §23 ordering (11 steps), evidence-precondition table, failure-mode safety-net retention table, CSF-specific forbidden behaviors, unit + integration test requirements, and §28 real-host evidence requirements (lab2 DEB / lab4 RPM, exec-trace clean of out-of-target processes). Amendment is **CSF-only**; ufw / firewalld / iptables remain typed-unsupported until separately amended. Sections §§16–29 are untouched. `main.go:132` writeHistory gate (§19.2 layer 4) untouched. Doc-only commit; no production code changes — 4B-3-csf code phase opens after this amendment is reviewed and merged.
+
+- **2026-04-28 v4 (PR-26 contract seed: restore verification / evidence hardening)** — appends Part IV (§§37–48). PR-25 (#511, merged `6a0ab67a`) shipped restore execution under Amendment 1 with three known correctness gaps: (1) the safety-net-safe predicate accepts ANY active external firewall as evidence of SSH protection, not the resolved target's specific unit; (2) A.4 cron restore is soft-skip because `switchop.disarmCSFArtifacts` does not preserve `/etc/cron.d/csf-cron` and `/etc/cron.d/lfd-cron` before removal; (3) restore mutation routes through `Run("systemctl","unmask",…)` and `Run("mv",…)` because the `executor.Executor` interface lacks typed `ServiceUnmask` and `Rename` methods, weakening the per-call CI trace. PR-26 closes those gaps and adds post-restore evidence hardening — a structured proof that the restore outcome is correct on real systems. Part IV is normative for PR-26 only and does NOT modify §§1–36. **Doc-only commit; no production code changes.** Code phase opens in segmented commits after this seed is reviewed and merged.
