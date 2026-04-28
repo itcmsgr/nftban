@@ -128,10 +128,28 @@ func runRestoreDecide(ctx context.Context, exec executor.Executor, sf *state.Sta
 		Ambiguity: auth.Ambiguity,
 		Prior:     priorState,
 		Flags: restore.Flags{
-			Restore:           cfg.restorePriorAuthority,
-			PanelAutoTakeover: cfg.panelAutoTakeover,
+			Restore:            cfg.restorePriorAuthority,
+			PanelAutoTakeover:  cfg.panelAutoTakeover,
+			AcceptOrphanNFTBan: cfg.acceptOrphanNFTBan,
 		},
 		PanelPresent: panelPresent,
+		Panel:        panel,
+	}
+
+	// 6b. Amendment 2 §54.3: gather orphan-restore evidence ONLY when
+	// the candidate triple is otherwise present. This avoids
+	// unnecessary live reads on every restore-mode invocation, and
+	// preserves the §51.3 Option B boundary (no iptables introspection)
+	// by only running the predicate where it matters.
+	if auth.State == uninstall.AuthorityNFTBan &&
+		priorState == restore.PriorStateNoRecord &&
+		panel == detect.PanelDirectAdmin &&
+		cfg.panelAutoTakeover &&
+		cfg.acceptOrphanNFTBan {
+		ev := gatherOrphanEvidence(exec, log, panel, auth, probe, cfg)
+		input.OrphanEvidence = &ev
+		log.Info("restore decide: orphan-evidence gathered all_true=%v failed_row=%q",
+			ev.AllTrue(), ev.FailedRowID())
 	}
 
 	// 7. Evaluate — pure, deterministic, no side effects.

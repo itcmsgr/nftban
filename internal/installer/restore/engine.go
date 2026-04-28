@@ -33,7 +33,10 @@
 // =============================================================================
 package restore
 
-import "github.com/itcmsgr/nftban/internal/installer/uninstall"
+import (
+	"github.com/itcmsgr/nftban/internal/installer/detect"
+	"github.com/itcmsgr/nftban/internal/installer/uninstall"
+)
 
 // Rule identifiers. Stable strings; fixtures and CI gates assert on
 // these. Keep in sync with seed §6 group numbering.
@@ -42,6 +45,12 @@ const (
 	RuleG1AuthorityNFTBan          = "G1/AuthorityNFTBan"
 	RuleG1AuthorityExternal        = "G1/AuthorityExternal"
 	RuleG1AmbiguityConflictExt     = "G1/AmbiguityConflictExternal"
+
+	// Group 1 — Amendment 2 split sub-rules (§53). These live ENTIRELY
+	// within Group 1; no later group ever defeats a Group 1 outcome.
+	RuleG1NFTBanDefault       = "G1/AuthorityNFTBan/default"
+	RuleG1NFTBanOrphanProceed = "G1/AuthorityNFTBan/OrphanProceed"
+	RuleG1EvidenceMismatch    = "G1/EvidenceMismatch"
 
 	// Group 2 — input/flag validity
 	RuleG2PanelAutoWithoutPanel    = "G2/PanelAutoTakeoverWithoutPanel"
@@ -93,11 +102,7 @@ func Decide(in DecisionInput) DecisionResult {
 
 	switch in.Authority {
 	case uninstall.AuthorityNFTBan:
-		return DecisionResult{
-			Output: OutputRefuse,
-			Rule:   RuleG1AuthorityNFTBan,
-			Reason: "nftban is already authoritative on this host; no restore needed",
-		}
+		return decideAuthorityNFTBan(in)
 	case uninstall.AuthorityExternal:
 		return DecisionResult{
 			Output: OutputRefuse,
@@ -317,4 +322,95 @@ func decideAmbiguityOrphan(in DecisionInput) DecisionResult {
 	}
 
 	panic("restore.decideAmbiguityOrphan: unhandled PriorState — contract regression")
+}
+
+// decideAuthorityNFTBan implements Amendment 2 §53 Group 1 split for
+// Authority=AuthorityNFTBan. The split is ENTIRELY within Group 1; no
+// later group ever defeats a Group 1 outcome. §5 precedence holds.
+//
+// Evaluation order (§53.2):
+//
+//  1. Pre-condition triple check — only the specific combination
+//     `Prior=NoRecord + Panel=DirectAdmin + PanelAutoTakeover +
+//     AcceptOrphanNFTBan` (and Group 2 not interfering) is the
+//     "orphan-intent candidate". Any other combination → REFUSE
+//     with `G1/AuthorityNFTBan/default`.
+//  2. §54 evidence predicate evaluation — if all 13 rows hold,
+//     PROCEED with `G1/AuthorityNFTBan/OrphanProceed`. If any row
+//     is false, REFUSE with `G1/EvidenceMismatch` (NOT
+//     REQUIRE_EXPLICIT_INTENT — see §54.2).
+//
+// Group 2 precedence preserved: `--restore-prior-authority +
+// --panel-auto-takeover` (both set) emits `G2/RestoreAndPanelAutoBothSet`;
+// `--panel-auto-takeover` with `PanelPresent=false` emits
+// `G2/PanelAutoTakeoverWithoutPanel`. Both Group 2 rules win over
+// the Amendment 2 split because they're checked here before the
+// candidate-triple delegation, in that exact precedence order.
+//
+// All other AuthorityNFTBan flag patterns (no flags, only Restore,
+// only PanelAutoTakeover, AcceptOrphanNFTBan without PanelAutoTakeover,
+// Panel != DirectAdmin, Prior != NoRecord, etc.) emit
+// `G1/AuthorityNFTBan/default` REFUSE — the Amendment 2 split's
+// "default" sub-rule that preserves the original PR-24 G1 semantics.
+func decideAuthorityNFTBan(in DecisionInput) DecisionResult {
+	// Group 2 precedence: both flags set is an input-validity REFUSE.
+	// Pinned by Amendment 2 §56.1 row 19.
+	if in.Flags.Restore && in.Flags.PanelAutoTakeover {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG2BothRestoreFlags,
+			Reason: "--restore-prior-authority and --panel-auto-takeover are mutually exclusive; pick one",
+		}
+	}
+
+	// Group 2 precedence: panel-auto without a panel is an input-
+	// validity REFUSE. Pinned by Amendment 2 §56.1 row 4.
+	if in.Flags.PanelAutoTakeover && !in.PanelPresent {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG2PanelAutoWithoutPanel,
+			Reason: "--panel-auto-takeover requires a control panel on the host; none detected",
+		}
+	}
+
+	// Candidate-triple check for the Amendment 2 orphan-intent path.
+	// Every condition must hold, else fall through to the default
+	// REFUSE. The triple is composite: classifier already established
+	// AuthorityNFTBan (caller); we additionally require
+	// Prior=NoRecord, Panel=DirectAdmin, --panel-auto-takeover, and
+	// --accept-orphan-nftban.
+	triplePresent := in.Prior == PriorStateNoRecord &&
+		in.Panel == detect.PanelDirectAdmin &&
+		in.Flags.PanelAutoTakeover &&
+		in.Flags.AcceptOrphanNFTBan
+
+	if !triplePresent {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG1NFTBanDefault,
+			Reason: "nftban is already authoritative on this host; no restore needed (default G1 hard-stop)",
+		}
+	}
+
+	// Triple present — delegate to the §54 evidence predicate. The
+	// dispatcher MUST have populated in.OrphanEvidence; nil is treated
+	// as "evidence not gathered" → REFUSE/EvidenceMismatch with
+	// AMD2-E.0 (defensive — should never happen if dispatcher follows
+	// §54.3).
+	if in.OrphanEvidence == nil || !in.OrphanEvidence.AllTrue() {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG1EvidenceMismatch,
+			Reason: "amendment-2 evidence predicate did not hold; failing-row=" + in.OrphanEvidence.FailedRowID(),
+		}
+	}
+
+	// All §54.1 rows hold. PROCEED PanelNative/csf — same target the
+	// existing G3.3 NoRecord+PanelAuto path resolves to. PlanFromDecision
+	// reuses the existing panel-static-map (§20.1: PanelDirectAdmin → "csf").
+	return DecisionResult{
+		Output: OutputProceed,
+		Rule:   RuleG1NFTBanOrphanProceed,
+		Reason: "amendment-2 orphan-intent: AuthorityNFTBan + DirectAdmin + strong CSF-disabled evidence; restoring CSF per §53.1",
+	}
 }

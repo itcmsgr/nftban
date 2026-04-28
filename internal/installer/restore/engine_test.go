@@ -22,6 +22,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/uninstall"
 )
 
@@ -41,6 +42,11 @@ type fixture struct {
 var allFixtures = []fixture{
 	// ───────────────────────── Group 1 hard-stops ────────────────────
 	{
+		// Amendment 2 §53 split: the umbrella RuleG1AuthorityNFTBan is
+		// retained for grep / log parents, but every concrete fixture
+		// resolves to a sub-rule. With Restore=true the candidate-triple
+		// for orphan-intent does NOT hold (the orphan path requires
+		// PanelAutoTakeover, not Restore), so the default sub-rule fires.
 		name: "G1_AuthorityNFTBan_refuses_any_flag",
 		input: DecisionInput{
 			Authority: uninstall.AuthorityNFTBan,
@@ -48,7 +54,65 @@ var allFixtures = []fixture{
 			Flags:     Flags{Restore: true, PanelAutoTakeover: false},
 		},
 		wantOut:  OutputRefuse,
-		wantRule: RuleG1AuthorityNFTBan,
+		wantRule: RuleG1NFTBanDefault,
+	},
+	// Amendment 2 §53 — Group 1 split sub-rules. These two fixtures
+	// pin RuleG1NFTBanOrphanProceed and RuleG1EvidenceMismatch for the
+	// coverage assertion. The full §56.1 matrix lives in
+	// engine_amendment2_test.go.
+	{
+		name: "G1_AuthorityNFTBan_OrphanProceed_all_evidence_true",
+		input: DecisionInput{
+			Authority:    uninstall.AuthorityNFTBan,
+			Prior:        PriorStateNoRecord,
+			Panel:        detect.PanelDirectAdmin,
+			PanelPresent: true,
+			Flags:        Flags{PanelAutoTakeover: true, AcceptOrphanNFTBan: true},
+			OrphanEvidence: &OrphanEvidence{
+				E1PanelDirectAdmin:    true,
+				E2AuthorityNFTBan:     true,
+				E3PriorNoRecord:       true,
+				E4PanelAutoTakeover:   true,
+				E5AcceptOrphanNFTBan:  true,
+				E6CSFServiceDisabled:  true,
+				E7CSFDisabledExists:   true,
+				E8CSFAbsent:           true,
+				E9NftIPNftbanPresent:  true,
+				E10NftIP6NftbanPres:   true,
+				E11NftbandActive:      true,
+				E12NoConflictExternal: true,
+				E13NoAmbiguous:        true,
+			},
+		},
+		wantOut:  OutputProceed,
+		wantRule: RuleG1NFTBanOrphanProceed,
+	},
+	{
+		name: "G1_EvidenceMismatch_one_row_false",
+		input: DecisionInput{
+			Authority:    uninstall.AuthorityNFTBan,
+			Prior:        PriorStateNoRecord,
+			Panel:        detect.PanelDirectAdmin,
+			PanelPresent: true,
+			Flags:        Flags{PanelAutoTakeover: true, AcceptOrphanNFTBan: true},
+			OrphanEvidence: &OrphanEvidence{
+				E1PanelDirectAdmin:    true,
+				E2AuthorityNFTBan:     true,
+				E3PriorNoRecord:       true,
+				E4PanelAutoTakeover:   true,
+				E5AcceptOrphanNFTBan:  true,
+				E6CSFServiceDisabled:  false, // <-- single row false
+				E7CSFDisabledExists:   true,
+				E8CSFAbsent:           true,
+				E9NftIPNftbanPresent:  true,
+				E10NftIP6NftbanPres:   true,
+				E11NftbandActive:      true,
+				E12NoConflictExternal: true,
+				E13NoAmbiguous:        true,
+			},
+		},
+		wantOut:  OutputRefuse,
+		wantRule: RuleG1EvidenceMismatch,
 	},
 	{
 		name: "G1_AuthorityExternal_refuses_any_flag",
@@ -389,7 +453,12 @@ func TestRuleCoverage_EveryRuleExercised(t *testing.T) {
 // Keep in sync when new rules are added.
 func declaredRules() []string {
 	return []string{
-		RuleG1AuthorityNFTBan,
+		// Amendment 2 §53 split: RuleG1AuthorityNFTBan is now an umbrella
+		// const retained for log-parent grep; concrete fixtures resolve
+		// to the three sub-rules below.
+		RuleG1NFTBanDefault,
+		RuleG1NFTBanOrphanProceed,
+		RuleG1EvidenceMismatch,
 		RuleG1AuthorityExternal,
 		RuleG1AmbiguityConflictExt,
 
