@@ -68,6 +68,38 @@ func SSHPort(exec executor.Executor, log *logging.Logger) (int, error) {
 	return 0, fmt.Errorf("cannot determine SSH port from any source (ss, sshd_config, state file, conf.local)")
 }
 
+// SSHPortWithSource returns the resolved SSH port AND a short string
+// identifying which source yielded it: "ss" / "sshd_config" /
+// "state" / "config" — matching the schema enum required by the
+// PR-26-code-D restore evidence record (§39.1 / §48.6 lock).
+//
+// Same priority chain as SSHPort. Read-only typed introspection;
+// no mutation. Per §51.5-A2 invariant, this is OUTSIDE the bounded
+// mutation surface cap. Added in PR-26-code-D.
+func SSHPortWithSource(exec executor.Executor, log *logging.Logger) (port int, source string, err error) {
+	if p := sshFromListener(exec); p > 0 {
+		log.Detect("ssh", "source", "ss-listener")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return p, "ss", nil
+	}
+	if p := sshFromConfig(exec); p > 0 {
+		log.Detect("ssh", "source", "sshd_config")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return p, "sshd_config", nil
+	}
+	if p := sshFromStateFile(exec); p > 0 {
+		log.Detect("ssh", "source", "state-file")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return p, "state", nil
+	}
+	if p := sshFromConfLocal(exec); p > 0 {
+		log.Detect("ssh", "source", "conf.local")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return p, "config", nil
+	}
+	return 0, "", fmt.Errorf("cannot determine SSH port from any source (ss, sshd_config, state file, conf.local)")
+}
+
 // portRe matches a trailing port number after a colon.
 var portRe = regexp.MustCompile(`:(\d+)\s*$`)
 
