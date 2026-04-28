@@ -78,3 +78,9 @@ dist/
 # Repomix analysis files
 repomix*.json
 repomix*.xml
+
+# PR-25 §28 evidence — internal lab snapshots (host names + infra
+# detail are private). Real evidence lives at:
+#   /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/PR25_EVIDENCE_4B4/
+evidence/
+pr25-evidence/

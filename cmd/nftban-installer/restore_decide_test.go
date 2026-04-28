@@ -112,15 +112,17 @@ func procPanelNativeUnmappedFixture() (restore.DecisionResult, restore.DecisionI
 // firewallType, so the (now real) productionPreflightDep returns
 // ok=true and Execute proceeds.
 //
-// 4B-2 update: also seeds a minimal /etc/ssh/sshd_config with
-// "Port 22" so the (now real) productionSafetyNetDep's SSH-port
-// detection succeeds via the sshd_config source. Without this,
-// safety-net Insert would refuse with ErrSafetyNetSSHPortUnknown
-// before reaching the still-stub mutation step.
+// Also seeds a minimal /etc/ssh/sshd_config with "Port 22" so the
+// productionSafetyNetDep's SSH-port detection succeeds via the
+// sshd_config source. Without this, safety-net Insert would refuse
+// with ErrSafetyNetSSHPortUnknown before reaching the mutation step.
 //
-// After 4B-2, dispatcher stub-tests reach Stage=mutate (still stub)
-// and refuse with ErrRestoreExecutionUnavailable from the mutation
-// dep. After 4B-3, they will reach Stage=verify, etc.
+// As of 4B-3-csf + 4B-4 the dispatcher path is fully real: ufw lands
+// at StateRestoreFailedExecution / Stage=mutate with
+// ErrCSFRestoreOnlyAuthorized; csf lands at the §32 step where the
+// fixture state is incomplete (typically A.7 with the wired
+// safetyNetRemovalSafeFn refusing because the test mock's
+// SSH-listener probe is empty).
 func stubExecutorForPreflightFirewall(fwt string) executor.Executor {
 	mock := executor.NewMockExecutor()
 	switch fwt {
@@ -144,8 +146,9 @@ func stubExecutorForPreflightFirewall(fwt string) executor.Executor {
 }
 
 // =============================================================================
-// 1. Stub-deps path: PROCEED + RecordedPrior persists FailedExecution
-//    with ErrRestoreExecutionUnavailable in the chain.
+// 1. PROCEED + RecordedPrior(ufw) persists FailedExecution with
+//    ErrCSFRestoreOnlyAuthorized in the chain — Amendment 1 is
+//    csf-only.
 // =============================================================================
 
 func TestRunRestoreExecutionFromProceed_StubDeps_RecordedPrior_PersistsFailedExecution(t *testing.T) {
@@ -153,28 +156,23 @@ func TestRunRestoreExecutionFromProceed_StubDeps_RecordedPrior_PersistsFailedExe
 	log := newTestLogger(t)
 	dr, in, rec, panel := procRecordedPriorFixture() // ufw target
 
-	// 4B-1: preflight is now real. Provide a MockExecutor with the
-	// canonical ufw binary + unit file so preflight passes; the
-	// next step (safety-net insert, still a stub) refuses with
-	// ErrRestoreExecutionUnavailable.
+	// Preflight is read-only and passes when the canonical ufw binary
+	// + unit file are present. The mutation dispatch then refuses ufw
+	// with ErrCSFRestoreOnlyAuthorized (Amendment 1 §30.2).
 	exec := stubExecutorForPreflightFirewall("ufw")
 
 	exit := runRestoreExecutionFromProceed(context.Background(), exec, sf, log, dr, in, rec, panel)
 
-	// Real preflight passes -> stub safety-net insert refuses ->
-	// Execute terminates at Stage=insert with FailedExecution.
+	// Real preflight passes -> real safety-net inserts -> mutation
+	// dispatch refuses ufw with ErrCSFRestoreOnlyAuthorized ->
+	// Execute terminates at Stage=mutate with FailedExecution.
 	if sf.State != state.StateRestoreFailedExecution {
-		t.Errorf("State = %q; want StateRestoreFailedExecution (stub safety-net refuses)", sf.State)
+		t.Errorf("State = %q; want StateRestoreFailedExecution", sf.State)
 	}
 	if exit != state.ExitRestoreFailedExecution {
 		t.Errorf("exit = %d; want %d", exit, state.ExitRestoreFailedExecution)
 	}
-	// 4B-3-csf: ufw is a known §18.2 firewall but Amendment 1
-	// authorizes csf only. The mutation dep returns
-	// ErrCSFRestoreOnlyAuthorized (typed unsupported sentinel) which
-	// the dispatcher persists in FailureReason. Same end-state
-	// (FailedExecution) as the 4B-1/4B-2 era — only the reason text
-	// changed when csf became real for real-csf inputs.
+	// FailureReason carries Amendment 1 §30.2 typed unsupported.
 	if !strings.Contains(sf.FailureReason, "amendment 1 authorizes csf only") &&
 		!strings.Contains(sf.FailureReason, ErrCSFRestoreOnlyAuthorized.Error()) {
 		t.Errorf("FailureReason does not surface ErrCSFRestoreOnlyAuthorized: %q", sf.FailureReason)
@@ -182,9 +180,11 @@ func TestRunRestoreExecutionFromProceed_StubDeps_RecordedPrior_PersistsFailedExe
 }
 
 // =============================================================================
-// 2. Stub-deps path: PROCEED + PanelNative DirectAdmin persists
-//    FailedExecution. (Mapping resolves to "csf"; preflight stub still
-//    refuses with ErrRestoreExecutionUnavailable.)
+// 2. PROCEED + PanelNative DirectAdmin persists FailedExecution.
+//    Panel maps to "csf" via §20; the §32 sequence runs through the
+//    mock and refuses at the A.7 predicate (fixture host has no
+//    sshd listener, so safetyNetRemovalSafeFn returns
+//    ErrInlineVerifySSHPortUnknown).
 // =============================================================================
 
 func TestRunRestoreExecutionFromProceed_StubDeps_PanelNativeDirectAdmin_PersistsFailedExecution(t *testing.T) {

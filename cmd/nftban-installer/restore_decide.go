@@ -58,27 +58,28 @@ import (
 // runRestoreDecide orchestrates the PR-24 decision engine invocation
 // AND, on PROCEED, the PR-25 execution engine.
 //
-// PR-25 commit 4 (dispatcher integration): on result.Output ==
-// OutputProceed, the dispatcher calls restore.PlanFromDecision to
-// resolve TargetAuthority, then restore.Execute to run the §23
-// six-step sequence, then persists whatever terminal state Execute
-// returns. The four PR-25 execution terminals (StateRestoreExecuted
-// / StateRestoreFailedExecution / StateRestoreFailedVerification /
-// StateRestoreDegraded) replace the PR-24 transitional
-// StateRestoreDecided on the PROCEED path.
+// On result.Output == OutputProceed, the dispatcher calls
+// restore.PlanFromDecision to resolve TargetAuthority, then
+// restore.Execute to run the §23 six-step sequence, then persists
+// whatever terminal state Execute returns. The four PR-25 execution
+// terminals (StateRestoreExecuted / StateRestoreFailedExecution /
+// StateRestoreFailedVerification / StateRestoreDegraded) replace the
+// PR-24 transitional StateRestoreDecided on the PROCEED path.
 //
 // REFUSE and REQUIRE_EXPLICIT_INTENT paths are byte-identical to
 // PR-24: the dispatcher transitions to StateRestoreRefused /
 // StateRestoreIntentRequired and exits with the same code PR-24 used.
 // No Plan / Execute call on these paths.
 //
-// Production deps are stubs in commit 4 (newRestoreDeps factory at
-// restore_deps.go). Real implementations land in commit 4B. With
-// stubs, PROCEED reliably lands at StateRestoreFailedExecution at
-// Stage="preflight" with ErrRestoreExecutionUnavailable in the chain;
-// the dispatcher persists that terminal truthfully and main.go's
-// writeHistory gate (mode != "restore", at main.go:132) keeps the
-// failure out of update-history.json.
+// Production deps live in restore_deps.go (Preflight, SafetyNet,
+// Mutation dispatch, InlineVerify) + restore_deps_csf.go (the csf
+// branch of MutateToTarget). Amendment 1 (§§30-36) authorizes csf
+// only; non-csf §18.2 firewalls land at StateRestoreFailedExecution
+// with ErrCSFRestoreOnlyAuthorized; firewalls outside §18.2 land
+// with ErrRestoreMutationUnknownFirewall. The dispatcher persists
+// each terminal truthfully and main.go's writeHistory gate
+// (mode != "restore", at main.go:132) keeps every restore-mode
+// outcome out of update-history.json.
 //
 // Returns the process exit code derived from the persisted state.
 func runRestoreDecide(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
