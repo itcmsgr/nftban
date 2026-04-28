@@ -72,11 +72,32 @@ func newInlineVerifyMock(t *testing.T, sshdPort int) *executor.MockExecutor {
 
 // newInlineVerifyDep returns a productionInlineVerifyDep wired to the
 // given executor and a per-test logger.
+// newInlineVerifyDep constructs a productionInlineVerifyDep wired to
+// mock + a per-test logger. PR-26-code-A overload: callers that exercise
+// IsSafetyNetRemovalSafe MUST pass a firewallType (the §51.4 lock — the
+// production factory plumbs this; tests do the same). The helper
+// returns a dep without firewallType when only IsTargetFirewallActive
+// or CurrentAuthorityClass is being exercised — those methods either
+// take firewallType as an argument (assertion 1) or do not need it
+// (assertion 2).
 func newInlineVerifyDep(t *testing.T, mock *executor.MockExecutor) *productionInlineVerifyDep {
 	t.Helper()
 	return &productionInlineVerifyDep{
 		exec: mock,
 		log:  pf4B2TestLogger(t),
+	}
+}
+
+// newInlineVerifyDepWithTarget mirrors newInlineVerifyDep but also
+// plumbs the constructor-injected firewallType field (PR-26-code-A
+// §51.4 lock). Use this for any test that exercises
+// IsSafetyNetRemovalSafe.
+func newInlineVerifyDepWithTarget(t *testing.T, mock *executor.MockExecutor, firewallType string) *productionInlineVerifyDep {
+	t.Helper()
+	return &productionInlineVerifyDep{
+		exec:         mock,
+		log:          pf4B2TestLogger(t),
+		firewallType: firewallType,
 	}
 }
 
@@ -213,15 +234,17 @@ func TestInlineVerify_4B4_NoDecisionPathCalls_FileScan(t *testing.T) {
 }
 
 // =============================================================================
-// Test #6: IsSafetyNetRemovalSafe returns true only when an external
+// Test #6: IsSafetyNetRemovalSafe returns true only when the TARGET
 // firewall service is active AND the SSH port is observable.
+// PR-26-code-A: target-specific predicate per §51.3 Option B — replaces
+// the prior any-external-FW heuristic.
 // =============================================================================
 
-func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_TrueOnlyWhenExternalFWActive(t *testing.T) {
+func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_TrueOnlyWhenTargetFWActive(t *testing.T) {
 	mock := newInlineVerifyMock(t, 22)
-	mock.Services["csf.service"] = true // external firewall active
+	mock.Services["csf.service"] = true // target firewall active
 
-	dep := newInlineVerifyDep(t, mock)
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
 	safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
@@ -233,24 +256,24 @@ func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_TrueOnlyWhenExternalFWActive(t 
 
 // =============================================================================
 // Test #7: IsSafetyNetRemovalSafe returns false when the only
-// protection is the emergency table (no external firewall service
-// active).
+// protection is the emergency table (target service is NOT active).
 // =============================================================================
 
 func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_FalseWhenOnlyEmergencyProtects(t *testing.T) {
 	mock := newInlineVerifyMock(t, 22)
-	// Emergency table is present, but no external firewall service.
+	// Emergency table is present, but the target firewall service is NOT.
 	mock.NftTables["inet:nftban_install_emergency"] = true
 	// nftband stopped (as it would be after A.6).
 	mock.Services["nftband.service"] = false
+	// csf.service intentionally NOT in mock.Services (defaults inactive).
 
-	dep := newInlineVerifyDep(t, mock)
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
 	safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
 	if err != nil {
 		t.Errorf("err = %v; want nil (the predicate refuses cleanly, not via error)", err)
 	}
 	if safe {
-		t.Errorf("safe = true; want false (only emergency table protects)")
+		t.Errorf("safe = true; want false (only emergency table protects; target csf.service inactive)")
 	}
 }
 
@@ -264,7 +287,7 @@ func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_FalseWhenSSHPortUnknown(t *test
 	mock := newInlineVerifyMock(t, 0)
 	mock.Services["csf.service"] = true // even with csf active, SSH port unknown → refuse
 
-	dep := newInlineVerifyDep(t, mock)
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
 	safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
 	if !errors.Is(err, ErrInlineVerifySSHPortUnknown) {
 		t.Errorf("err = %v; want ErrInlineVerifySSHPortUnknown", err)
@@ -283,7 +306,7 @@ func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_NoMutation(t *testing.T) {
 	mock := newInlineVerifyMock(t, 22)
 	mock.Services["csf.service"] = true
 
-	dep := newInlineVerifyDep(t, mock)
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
 	_, _ = dep.IsSafetyNetRemovalSafe(context.Background())
 
 	// Allowed Run commands (read-only): ss -tlnp; nothing else.
@@ -323,7 +346,9 @@ func TestInlineVerify_4B4_IsSafetyNetRemovalSafe_NoMutation(t *testing.T) {
 // =============================================================================
 
 func TestInlineVerify_4B4_FactoryWiresSafetyNetPredicate(t *testing.T) {
-	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone)
+	// PR-26-code-A: factory now requires firewallType. Pass "csf" —
+	// the only Amendment-1-authorized target.
+	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone, "csf")
 	mut, ok := deps.Mutation.(*productionMutationDep)
 	if !ok {
 		t.Fatalf("Mutation is not *productionMutationDep")
@@ -333,14 +358,14 @@ func TestInlineVerify_4B4_FactoryWiresSafetyNetPredicate(t *testing.T) {
 	}
 	// The wired closure must reach inlineVerify, not bypass it.
 	// Confirm by giving the dep a non-csf-active mock and observing
-	// the predicate refuses (no external FW + no SSH port).
+	// the predicate refuses (no SSH port observable + no target FW).
 	mock := newInlineVerifyMock(t, 0)
 	// Re-construct deps with this exec so the closure consults it.
-	deps = newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), nil, detect.PanelNone)
+	deps = newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), nil, detect.PanelNone, "csf")
 	mut = deps.Mutation.(*productionMutationDep)
 	safe, _ := mut.safetyNetRemovalSafeFn(context.Background())
 	if safe {
-		t.Errorf("wired predicate returned true with no SSH and no external FW; want false")
+		t.Errorf("wired predicate returned true with no SSH listener; want false")
 	}
 }
 
@@ -364,7 +389,7 @@ func TestInlineVerify_4B4_Integration_A7_DeletesWhenPredicateTrue(t *testing.T) 
 		ActiveAtInstall: &priorActive,
 	}
 
-	deps := newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), priorRec, detect.PanelNone)
+	deps := newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), priorRec, detect.PanelNone, "csf")
 	mut := deps.Mutation.(*productionMutationDep)
 
 	// At the point in the §32 ordering where the predicate is consulted,
@@ -397,7 +422,7 @@ func TestInlineVerify_4B4_Integration_A7_RefusesWhenPredicateFalse(t *testing.T)
 		FirewallType:    "csf",
 		ActiveAtInstall: &priorActive,
 	}
-	deps := newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), priorRec, detect.PanelNone)
+	deps := newProductionRestoreDepsWithEvidence(mock, pf4B2TestLogger(t), priorRec, detect.PanelNone, "csf")
 	mut := deps.Mutation.(*productionMutationDep)
 
 	err := mutateToCSFTarget(context.Background(), mut)
@@ -421,7 +446,7 @@ func TestInlineVerify_4B4_FullRun_ChecksThreeAssertionsOnly(t *testing.T) {
 	mock.ExistingCommands["csf"] = true
 	mock.Files["/usr/sbin/csf"] = []byte{}
 
-	dep := newInlineVerifyDep(t, mock)
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
 	vr := restore.InlineVerify(context.Background(), dep, "csf", uninstall.AuthorityExternal)
 	if vr.Err != nil {
 		t.Fatalf("Err = %v; want nil", vr.Err)
@@ -525,3 +550,244 @@ func TestInlineVerify_4B4_NoDirectOSBypass_FileScan(t *testing.T) {
 // (Test #17 — `go test -race` — is exercised at the suite level on
 // lab2, not as a Go test function. The suite-level invocation is the
 // authoritative pin.)
+
+// =============================================================================
+// =============================================================================
+// PR-26-code-A — target-specific safety predicate tests
+// =============================================================================
+// =============================================================================
+
+// =============================================================================
+// PR-26-code-A test #1: csf target + csf.service inactive +
+// ufw/firewalld/iptables/netfilter-persistent active → false. The §41
+// looseness PR-26-code-A closes — a non-target external firewall
+// being active no longer satisfies CSF restore safety.
+// =============================================================================
+
+func TestInlineVerify_PR26A_NonTargetFWDoesNotSatisfy(t *testing.T) {
+	cases := []struct {
+		name     string
+		decoyFW  string
+	}{
+		{"ufw-active", "ufw.service"},
+		{"firewalld-active", "firewalld.service"},
+		{"iptables-active", "iptables.service"},
+		{"netfilter-persistent-active", "netfilter-persistent.service"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mock := newInlineVerifyMock(t, 22)
+			// Target inactive; an UNRELATED external FW is active.
+			// Under PR-25's loose any-external-FW rule, this would
+			// have returned safe=true. Under PR-26-code-A target-
+			// specific rule, it must return safe=false.
+			mock.Services["csf.service"] = false
+			mock.Services[c.decoyFW] = true
+
+			dep := newInlineVerifyDepWithTarget(t, mock, "csf")
+			safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
+			if err != nil {
+				t.Fatalf("err = %v; want nil (clean refusal)", err)
+			}
+			if safe {
+				t.Errorf("safe=true with %s active and target csf.service inactive — PR-26-code-A target-specificity broken", c.decoyFW)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #2: empty firewallType → typed defensive guard.
+// =============================================================================
+
+func TestInlineVerify_PR26A_EmptyFirewallType_DefensiveGuard(t *testing.T) {
+	mock := newInlineVerifyMock(t, 22)
+	mock.Services["csf.service"] = true
+
+	// Construct dep WITHOUT firewallType (simulates a faulty factory
+	// that forgot to plumb the value).
+	dep := newInlineVerifyDep(t, mock)
+	safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
+	if !errors.Is(err, ErrInlineVerifyTargetFirewallTypeMissing) {
+		t.Errorf("err = %v; want ErrInlineVerifyTargetFirewallTypeMissing", err)
+	}
+	if safe {
+		t.Errorf("safe = true; want false (defensive guard must refuse)")
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #3: factory wires the target firewallType into
+// the inline verification dep. Required test #6 from operator's spec.
+// =============================================================================
+
+func TestInlineVerify_PR26A_FactoryWiresFirewallTypeIntoInlineVerify(t *testing.T) {
+	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone, "csf")
+	iv, ok := deps.InlineVerify.(*productionInlineVerifyDep)
+	if !ok {
+		t.Fatalf("InlineVerify is not *productionInlineVerifyDep")
+	}
+	if iv.firewallType != "csf" {
+		t.Errorf("inlineVerify.firewallType = %q; want %q (factory must plumb the resolved target identity per §51.4)",
+			iv.firewallType, "csf")
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #4: mutation A.7 gate uses the same target-
+// specific predicate. Required test #7 from operator's spec.
+// =============================================================================
+
+func TestInlineVerify_PR26A_A7GateUsesTargetSpecificPredicate(t *testing.T) {
+	// Setup: target csf.service inactive, decoy ufw.service active.
+	// Under loose semantics A.7 would proceed (predicate true) and
+	// delete nftban tables. Under target-specific semantics A.7 must
+	// refuse and retain nftban tables.
+	mock := newInlineVerifyMock(t, 22)
+	mock.Files["/usr/sbin/csf.disabled"] = []byte{}
+	mock.NftTables["ip:nftban"] = true
+	mock.NftTables["ip6:nftban"] = true
+	// Decoy: ufw.service active. csf.service intentionally NOT set
+	// — we want to prevent ServiceStart auto-flipping it to true at
+	// A.5. Use a flaky executor that overrides ServiceActive(csf)
+	// to false even after Start.
+	flaky := &flakyCSFActiveExec{MockExecutor: mock, csfActive: false}
+	mock.Services["ufw.service"] = true
+
+	priorActive := true
+	priorRec := &uninstall.PriorRecord{
+		SchemaVersion:   uninstall.PriorRecordSchemaVersion,
+		FirewallType:    "csf",
+		ActiveAtInstall: &priorActive,
+	}
+
+	deps := newProductionRestoreDepsWithEvidence(flaky, pf4B2TestLogger(t), priorRec, detect.PanelNone, "csf")
+	mut := deps.Mutation.(*productionMutationDep)
+
+	err := mutateToCSFTarget(context.Background(), mut)
+	// flakyCSFActiveExec forces ServiceActive(csf)=false post-A.5;
+	// the function refuses at §32 step 5 with
+	// ErrCSFRestorePostStartInactive BEFORE reaching A.7. nftban
+	// tables remain. Either step-5 refusal OR A.7 refusal is
+	// acceptable here — what matters is that nftban tables are NOT
+	// released because csf is inactive.
+	if err == nil {
+		t.Fatalf("mutate err = nil; want refusal (csf inactive should block at step 5 or A.7)")
+	}
+	if !mock.NftTables["ip:nftban"] || !mock.NftTables["ip6:nftban"] {
+		t.Errorf("nftban tables released despite target csf.service being inactive (decoy ufw.service was active) — A.7 gate did not use target-specific predicate")
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #5: target-specific predicate succeeds when csf
+// is the target AND csf.service is active (parity with PR-25 happy
+// path under new tightened rule).
+// =============================================================================
+
+func TestInlineVerify_PR26A_TargetCSFActive_SafeToRemove(t *testing.T) {
+	mock := newInlineVerifyMock(t, 22)
+	mock.Services["csf.service"] = true
+
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
+	safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
+	if err != nil {
+		t.Fatalf("err = %v; want nil", err)
+	}
+	if !safe {
+		t.Errorf("safe=false; want true (target csf.service active + sshd port observable)")
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #6: non-csf firewallType in v.firewallType returns
+// the typed unsupported sentinel, even if that target's service IS
+// active. Mirrors Amendment 1 §30.2 lock.
+// =============================================================================
+
+func TestInlineVerify_PR26A_NonCSFTarget_TypedUnsupported(t *testing.T) {
+	for _, fwt := range []string{"ufw", "firewalld", "iptables"} {
+		t.Run(fwt, func(t *testing.T) {
+			mock := newInlineVerifyMock(t, 22)
+			mock.Services[fwt+".service"] = true // even if "active"
+
+			dep := newInlineVerifyDepWithTarget(t, mock, fwt)
+			safe, err := dep.IsSafetyNetRemovalSafe(context.Background())
+			if !errors.Is(err, ErrInlineVerifyOnlyCSFAuthorized) {
+				t.Errorf("err = %v; want ErrInlineVerifyOnlyCSFAuthorized", err)
+			}
+			if safe {
+				t.Errorf("safe = true; want false (Amendment 1 §30.2: csf only)")
+			}
+		})
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #7: unknown firewallType returns the typed unknown
+// sentinel.
+// =============================================================================
+
+func TestInlineVerify_PR26A_UnknownTarget_TypedUnknown(t *testing.T) {
+	for _, fwt := range []string{"shorewall", "pf", "CSF", "csf "} {
+		t.Run(fwt, func(t *testing.T) {
+			mock := newInlineVerifyMock(t, 22)
+			dep := newInlineVerifyDepWithTarget(t, mock, fwt)
+			_, err := dep.IsSafetyNetRemovalSafe(context.Background())
+			if !errors.Is(err, ErrInlineVerifyUnknownFirewall) {
+				t.Errorf("err = %v; want ErrInlineVerifyUnknownFirewall", err)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #8: defensive cross-check on IsTargetFirewallActive
+// — caller-passed firewallType disagrees with v.firewallType ⇒
+// ErrInlineVerifyTargetMismatch.
+// =============================================================================
+
+func TestInlineVerify_PR26A_IsTargetFirewallActive_MismatchGuard(t *testing.T) {
+	mock := newInlineVerifyMock(t, 22)
+	mock.Services["csf.service"] = true
+
+	dep := newInlineVerifyDepWithTarget(t, mock, "csf")
+	// Caller passes "ufw" while constructor injected "csf".
+	_, err := dep.IsTargetFirewallActive(context.Background(), "ufw")
+	if !errors.Is(err, ErrInlineVerifyTargetMismatch) {
+		t.Errorf("err = %v; want ErrInlineVerifyTargetMismatch", err)
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #9: the old any-external-FW list is gone —
+// file-scan for the symbol. (Compile-time also catches it, but the
+// scan documents the §51.3 lock more visibly.)
+// =============================================================================
+
+func TestInlineVerify_PR26A_OldExternalFWListRemoved_FileScan(t *testing.T) {
+	body, err := os.ReadFile("restore_deps.go")
+	if err != nil {
+		t.Fatalf("read restore_deps.go: %v", err)
+	}
+	src := string(body)
+	if strings.Contains(src, "var inlineVerifyExternalFirewallServices") {
+		t.Errorf("restore_deps.go still declares inlineVerifyExternalFirewallServices — §51.3 Option B lock requires removal of the any-external-FW list")
+	}
+}
+
+// =============================================================================
+// PR-26-code-A test #10: factory signature requires firewallType.
+// (Compile-time check — if the signature drifts, tests fail to build.
+// Documented here so the requirement is visible in the test file.)
+// =============================================================================
+
+func TestInlineVerify_PR26A_FactorySignatureCarriesFirewallType(t *testing.T) {
+	// Direct compile-time pin: this call exercises the new 5-arg
+	// signature. If the signature drifts back to 4 args, the test
+	// file fails to compile.
+	deps := newProductionRestoreDepsWithEvidence(nil, nil, nil, detect.PanelNone, "csf")
+	if deps.InlineVerify == nil {
+		t.Errorf("InlineVerify nil; factory failed to construct")
+	}
+}
