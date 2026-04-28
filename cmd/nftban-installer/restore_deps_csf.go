@@ -182,32 +182,13 @@ func isCSFServiceMasked(exec executor.Executor) bool {
 	return strings.TrimSpace(res.Stdout) == "masked"
 }
 
-// unmaskCSFService runs systemctl unmask via the executor abstraction.
-// The Executor interface does not expose a typed ServiceUnmask method
-// (only ServiceMask). Routing the inverse through Run is the chosen
-// in-scope option for 4B-3-csf — it stays inside cmd/ and uses the
-// existing executor seam without expanding the interface mid-PR.
-func unmaskCSFService(exec executor.Executor) error {
-	res := exec.Run("systemctl", "unmask", csfServiceUnit)
-	if res.ExitCode != 0 {
-		return fmt.Errorf("systemctl unmask %s: %s", csfServiceUnit, strings.TrimSpace(res.Stderr))
-	}
-	return nil
-}
-
-// renameAtomicViaExec performs an atomic rename via the executor's
-// Run("mv", ...) — same-filesystem mv is atomic at the syscall level.
-// The Executor interface does not expose a Rename method; routing
-// through Run keeps the surface inside the executor abstraction. The
-// direct stdlib rename API (in the os package) is forbidden by the
-// file-scan and intentionally not used here.
-func renameAtomicViaExec(exec executor.Executor, oldpath, newpath string) error {
-	res := exec.Run("mv", oldpath, newpath)
-	if res.ExitCode != 0 {
-		return fmt.Errorf("mv %s -> %s: %s", oldpath, newpath, strings.TrimSpace(res.Stderr))
-	}
-	return nil
-}
+// (PR-26-code-B / §43.2 lock — the prior unmaskCSFService and
+// renameAtomicViaExec helper functions are removed. Both routed
+// through the raw `Run("systemctl","unmask",…)` and `Run("mv",…)`
+// indirections that PR-26-code-B closes by promoting the operations
+// to typed `executor.ServiceUnmask` and `executor.Rename` methods.
+// The §31 A.1 + A.3 call sites in mutateToCSFTarget call those typed
+// methods directly — no thin wrapper is needed.)
 
 // =============================================================================
 // mutateToCSFTarget — the §31/§32 entry point invoked by
@@ -292,7 +273,7 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 		if m.log != nil {
 			m.log.Info("restore csf: A.1 unmasking %s", csfServiceUnit)
 		}
-		if err := unmaskCSFService(m.exec); err != nil {
+		if err := m.exec.ServiceUnmask(csfServiceUnit); err != nil {
 			return fmt.Errorf("%w: %v", ErrCSFRestoreUnmaskFailed, err)
 		}
 	} else if m.log != nil {
@@ -317,7 +298,7 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 		if m.log != nil {
 			m.log.Info("restore csf: A.3 renaming %s -> %s", csfBinaryDisabled, csfBinary)
 		}
-		if err := renameAtomicViaExec(m.exec, csfBinaryDisabled, csfBinary); err != nil {
+		if err := m.exec.Rename(csfBinaryDisabled, csfBinary); err != nil {
 			return fmt.Errorf("%w: %v", ErrCSFRestoreBinaryRestoreFailed, err)
 		}
 	} else if m.log != nil {
