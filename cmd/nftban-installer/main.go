@@ -31,6 +31,12 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/pkg/version"
+
+	// PR26.3: panel adapter registration via blank import. The package
+	// init() calls panelfw.Register so the adapter is in the registry
+	// before phaseValidate runs. Future panel adapters land alongside
+	// this import.
+	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/directadmin"
 )
 
 // globalTimeout is the maximum wall-clock time for the entire installer run.
