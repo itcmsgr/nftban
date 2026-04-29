@@ -29,6 +29,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
 	"github.com/itcmsgr/nftban/internal/installer/render"
 	"github.com/itcmsgr/nftban/internal/installer/safety"
@@ -59,6 +60,11 @@ type phaseData struct {
 	// cfg.panelAutoTakeover in main() before phases run. Default false —
 	// panel detection alone no longer auto-approves takeover.
 	panelAutoApprove bool
+	// v1.100 PR26.2: PANEL-SURVIVAL-001 opt-out. Propagated from
+	// cfg.noPanel in main(). When true, the panel-survival assertion
+	// returns Fatal=false even on adapter failure (operator has
+	// explicitly accepted the risk).
+	noPanel bool
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -345,7 +351,13 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 	validate.RunPermissionsEnforce(exec, log)
 
 	// 3. Run assertions (VALIDATE_1)
-	results := validate.RunAssertions(exec, pd.sshPort, log)
+	// PR26.2: derive panel-survival policy from operator flags. The
+	// adapter registry is consulted by panelfw (empty in PR26.2 —
+	// effectively a no-op until PR26.3 lands the first adapter).
+	policy := panelfw.DefaultPolicy()
+	policy.OperatorDisabled = pd.noPanel
+	opts := validate.AssertionOpts{}.WithPanelPolicy(policy)
+	results := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
 
 	// 4. Set immutable flags on security-critical files (G8)
 	validate.SetImmutableFlags(exec, log)
@@ -373,7 +385,7 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	// v1.98 INV-I-013: Re-run assertions (VALIDATE_2) — only this result counts
-	results2 := validate.RunAssertions(exec, pd.sshPort, log)
+	results2 := validate.RunAssertionsWithOpts(exec, pd.sshPort, log, opts)
 
 	if validate.AllPassed(results2) {
 		log.Info("VALIDATE_2: all assertions passed after safe auto-fix — COMMITTED")
