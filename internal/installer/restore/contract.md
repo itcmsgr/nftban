@@ -1717,6 +1717,226 @@ Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2
 
 ---
 
+# Part VI — Amendment 3 (AmbiguityConflictExternal narrow split for orphan-CSF-on-DA)
+
+## 62. Amendment 3 — pinned sentence + scope
+
+### 62.1 Pinned sentence
+
+> Amendment 3 does not weaken G1 generally. It creates exactly one operator-explicit orphan-restore path for a DirectAdmin host that the classifier reports as `AmbiguityConflictExternal + external=csf` because csf-residue is intact post-canonical-install, where on-disk CSF-disabled evidence (the §54 row set re-cast for §62 entry conditions, formalized in §64) proves NFTBan previously took over from CSF. The split is **entirely within Group 1**: `G1/AmbiguityConflictExternal/default` remains `REFUSE` (locked, unchanged behavior for every other flag pattern and external authority); `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` delegates to the §64 predicate. No Group 6 is added. No later group ever defeats a Group 1 outcome. §5 precedence is preserved. The `AuthorityExternal` G1 hard-stop and the `AmbiguityOrphanNFTBan` G1 hard-stop remain absolute under all flag combinations.
+
+### 62.2 In scope
+
+This amendment authorizes **exactly one** §6 lattice extension row:
+
+- Classifier `AuthorityAmbiguous`
+- Ambiguity `AmbiguityConflictExternal`
+- External `csf` (single-external; multi-external states are out of scope — see §66)
+- Prior `NoRecord`
+- Panel `DirectAdmin`
+- Flags: `--panel-auto-takeover` AND `--accept-orphan-nftban` (both required, neither defaultable)
+- §64 predicate holds — every condition in §64.1 must be true
+- → **PROCEED PanelNative/csf**
+
+When the row matches, the dispatcher hands off to the Amendment 1 §32 11-step mutation sequence **unchanged**. The mutation path is reused; the entry-decision is what this amendment changes.
+
+### 62.3 Out of scope
+
+Explicitly **NOT** authorized by this amendment:
+
+- Any §6 G1 row other than `AmbiguityConflictExternal + external=csf + DirectAdmin + explicit-intent`. The `AuthorityExternal` G1 hard-stop, the `AmbiguityOrphanNFTBan` G1 hard-stop, and the `EvidenceMismatch` refusal remain absolute under all flag combinations.
+- Any external authority other than `csf`. ufw / firewalld / iptables variants are out of scope per Amendment 1 §30.2 (CSF-only inverse-of-install scope).
+- Any panel other than `DirectAdmin`. cPanel and Plesk variants are out of scope until separately amended (matches Amendment 2 §52.3 panel-scope discipline).
+- Any prior-record state other than `NoRecord`. The existence of `prior-authority.json` on disk is itself a different lattice path (Group 3.1 / Group 4.1) and is handled by the standard restore flow without this amendment.
+- Any single-flag invocation. Both `--panel-auto-takeover` AND `--accept-orphan-nftban` must be present; either alone produces `REFUSE default`.
+- Any modification to Amendment 2's §54 predicate. §54 stays scoped to the `AuthorityNFTBan` lattice path. Amendment 3 introduces a separate §64 predicate that uses the same structural rows except for the entry-condition row (E.2) and the row that is incompatible with §62 by construction (E.12). See §64 for the exact mechanic.
+- Any classifier semantic change. The classifier still returns `AmbiguityConflictExternal + external=csf` for the post-canonical-install csf-residue state. Amendment 3 changes lattice behavior only.
+- Any change to the §32 11-step mutation sequence ordering, the §32.1 safety-net retention table, the §34 forbidden-behaviors list, the §38.2 forbidden-behaviors list, the §39 / §41 BLOCKING evidence rows, or the §43 / §51.5-A2 typed executor surface.
+- Any new mutation surface. Amendment 3 adds **zero** new mutation primitives. The lattice extension is decision-only.
+- Any non-decision change in this PR. **This is a doc-only PR. Code phase opens in a separate `amendment-3-code-A` PR after this seed merges and the auditor approves the code-A scope.**
+- Manual pre-mutation on dns2 or any other host to remove csf-residue and force the classifier to return `AuthorityNFTBan`. The dispatcher's destructive sequence is the only sanctioned mutation path; manual pre-mutation is forbidden by operator-locked rule and would invalidate evidence captured on a manually-shaped host.
+- Manual fabrication of `prior-authority.json` to force Group 3.1 PROCEED. The future install-time prior-record writer is filed as a post-PR-26 priority but is NOT a PR-26 closure path. Fabricating a record nftban itself never wrote breaks the prior-record-authoritative-source-of-truth invariant and is forbidden.
+
+### 62.4 Invariants — locked, this amendment does NOT modify
+
+The following remain unchanged:
+
+- **§5 precedence rule** — Group 1 still evaluates first; the new lattice row lives ENTIRELY within Group 1 by splitting the existing `AmbiguityConflictExternal` row into two sub-rows (`G1/AmbiguityConflictExternal/default` and `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf`). No later group ever defeats a Group 1 outcome. The `AuthorityExternal` and `AuthorityNFTBan/default` G1 rows are unchanged.
+- **§54 predicate (Amendment 2)** — unchanged. The §54 evidence rows continue to gate the `G1/AuthorityNFTBan/orphan-intent-candidate` path only. Amendment 3 introduces a separate, structurally-similar §64 predicate; §54 and §64 are distinct contract entities even if their underlying implementation in code-A may share a helper.
+- **INV-AMD2-EXPLICIT-INTENT-IS-NARROW** (§52.5) — unchanged. `--accept-orphan-nftban` semantics under `AuthorityNFTBan` are exactly as Amendment 2 locked them.
+- **INV-PR25-AUTHORITY-IMMUTABILITY** (§17.3) — TargetAuthority resolved by the planner is read-only across execution.
+- **§19.2 layer 4 / `main.go:132`** — restore mode does not write `update-history.json`. Amendment 3 does not relax this.
+- **§20.1 panel-to-firewall map** — `PanelDirectAdmin → "csf"` is unchanged. Amendment 3 reuses this mapping; it does NOT introduce a new resolution layer.
+- **§21.1 / §21.3** — three-assertion inline verification + safety-net retention on verify-fail are unchanged. The new row produces a `PROCEED` outcome that flows into the same `Execute` path.
+- **§30.1 Amendment 1 applicability** — Amendment 1 activates when its four conditions hold; Amendment 3's PROCEED outcome triggers the second-condition branch (`Kind == TargetAuthorityKindPanelNative AND Panel() == detect.PanelDirectAdmin`). No change to Amendment 1's text.
+- **§32 11-step ordering** — unchanged. Mutation runs A.1–A.7 in the existing order.
+- **§32.1 safety-net retention** — unchanged.
+- **§35.3 §28 real-host evidence merge-blocker** — unchanged. Amendment 3's evidence run is in addition to Amendment 1 and Amendment 2 evidence packs.
+- **§39 / §41 Q1+Q3 BLOCKING evidence** — the target-specific safety predicate (§51.3 Option B) applies to the Amendment 3 PROCEED path identically.
+- **§43 / §51.5-A2** — typed executor methods and read-only typed introspection are unchanged; mutation surfaces remain capped.
+- **`INV-PR26-NEW-MUTATION-SURFACES-BOUNDED`** — Amendment 3 adds **zero** new mutation surfaces.
+- **`INV-PR26-VERIFICATION-IS-PROOF-NOT-DECISION`** — unchanged.
+- **`INV-PR26-EVIDENCE-PRIVATE-BY-DEFAULT`** — unchanged.
+
+### 62.5 New invariant introduced by this amendment
+
+- **`INV-AMD3-CONFLICT-EXTERNAL-CSF-NARROW`** — `--accept-orphan-nftban` may activate the `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` row ONLY in combination with `--panel-auto-takeover` AND `Panel == DirectAdmin` AND `Classifier == AmbiguityConflictExternal` AND `external == "csf"` (single-external) AND `Prior == NoRecord` AND every §64.1 evidence row holds. Any other flag presence pattern, any other external authority, or any multi-external classifier state on `AmbiguityConflictExternal` continues to REFUSE. `--accept-orphan-nftban` must NOT become a generic "force" override on any other classifier state, any other external, any other panel, or any other prior state.
+
+## 63. Lattice extension — Group 1 split
+
+### 63.1 New sub-rows inserted into §6 Group 1
+
+Before Amendment 3, §6 Group 1 includes (post-Amendment-2):
+
+| Row | Conditions | Result |
+|---|---|---|
+| `G1/AuthorityExternal` | `Authority == AuthorityExternal` | REFUSE (locked) |
+| `G1/AmbiguityConflictExternal` | `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityConflictExternal` | REFUSE (locked, before Amendment 3) |
+| `G1/AmbiguityOrphanNFTBan` | `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityOrphanNFTBan` | REFUSE (locked) |
+| `G1/EvidenceMismatch` | (computed: candidate + predicate-fail) | REFUSE |
+| `G1/AuthorityNFTBan/default` | `Authority == AuthorityNFTBan AND NOT (orphan-intent candidate)` | REFUSE (Amendment 2) |
+| `G1/AuthorityNFTBan/orphan-intent-candidate` | `Authority == AuthorityNFTBan AND DirectAdmin AND NoRecord AND --panel-auto-takeover AND --accept-orphan-nftban` | delegate to §54 |
+| `G1/AuthorityNFTBan/OrphanProceed` | (computed: candidate + §54 all-true) | PROCEED PanelNative/csf (Amendment 2) |
+
+After Amendment 3, the `G1/AmbiguityConflictExternal` row is split:
+
+| Row | Conditions | Result |
+|---|---|---|
+| `G1/AuthorityExternal` | `Authority == AuthorityExternal` | REFUSE (locked, unchanged) |
+| `G1/AmbiguityConflictExternal/default` | `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityConflictExternal AND NOT (orphan-intent-candidate-csf)` | REFUSE (locked, unchanged behavior for all flag patterns and external authorities outside the candidate quintuple) |
+| `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` | `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityConflictExternal AND external == "csf" AND DirectAdmin AND NoRecord AND --panel-auto-takeover AND --accept-orphan-nftban` | delegate to §64 predicate |
+| `G1/AmbiguityConflictExternal/OrphanProceed` | (computed: candidate + §64 all-true) | PROCEED PanelNative/csf |
+| `G1/AmbiguityConflictExternal/EvidenceMismatch` | (computed: candidate + §64 any-false) | REFUSE |
+| `G1/AmbiguityOrphanNFTBan` | `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityOrphanNFTBan` | REFUSE (locked, unchanged) |
+| `G1/EvidenceMismatch` | (existing — Amendment 2 path) | REFUSE (unchanged) |
+| `G1/AuthorityNFTBan/default` | (Amendment 2) | REFUSE (unchanged) |
+| `G1/AuthorityNFTBan/orphan-intent-candidate` | (Amendment 2) | delegate to §54 (unchanged) |
+| `G1/AuthorityNFTBan/OrphanProceed` | (Amendment 2) | PROCEED PanelNative/csf (unchanged) |
+
+### 63.2 Predicate result mapping
+
+The `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` row computes the §64 predicate:
+
+- All §64.1 rows true → `result.Output = OutputProceed`, `result.Rule = "G1/AmbiguityConflictExternal/OrphanProceed"`, `result.Reason` contains the literal string `"amendment-3 orphan-intent"` followed by an attribution clause naming `AmbiguityConflictExternal + DirectAdmin + strong CSF-disabled evidence; restoring CSF per §63.1`.
+- Any §64.1 row false → `result.Output = OutputRefuse`, `result.Rule = "G1/AmbiguityConflictExternal/EvidenceMismatch"`, `result.Reason` names the first failing row.
+- The PROCEED outcome resolves `Kind = TargetAuthorityKindPanelNative`, `firewallType = "csf"`, `panel = detect.PanelDirectAdmin`. The dispatcher then enters Amendment 1 §32's destructive sequence unchanged.
+
+### 63.3 Split is entirely within Group 1
+
+Amendment 3 does NOT add a Group 6 or any later-group override. The `G1/AmbiguityConflictExternal` row is split into two sub-rows evaluated within Group 1: `G1/AmbiguityConflictExternal/default` (REFUSE — unchanged behavior for all flag patterns outside the candidate quintuple) and `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` (delegates to the §64 predicate). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved.
+
+## 64. §64 evidence predicate
+
+### 64.1 Evidence rows (re-cast §54 rows for §62 entry conditions)
+
+Amendment 3 does NOT modify Amendment 2's §54 (which remains scoped to the `AuthorityNFTBan` path). Amendment 3 introduces an Amendment-3-specific evidence predicate that uses the SAME structural rows as §54 EXCEPT:
+
+- **Row E.2 is reframed**: requires `Authority == AuthorityAmbiguous AND Ambiguity == AmbiguityConflictExternal AND external == "csf"` (the entry condition for §62), not `Authority == AuthorityNFTBan`.
+- **Row E.12 is omitted**: "no AmbiguityConflictExternal" is incompatible with the entry condition by construction. The §62 entry condition IS `AmbiguityConflictExternal`.
+- **All other rows hold unchanged**: E.1 (DirectAdmin live), E.3 (Prior=NoRecord), E.6 (csf.service masked + inactive, with real backing unit-file per Code-C), E.7 (`/usr/sbin/csf.disabled` exists), E.8 (`/usr/sbin/csf` absent), E.9 (`ip:nftban` table present), E.10 (`ip6:nftban` table present), E.11 (`nftband.service` active), E.13 (no `AmbiguityOrphanNFTBan` — must still hold; the operator-intent override does NOT extend to orphan-nftban-with-conflict cases).
+
+The Amendment 3 predicate is referred to as the **"§54/§64 combined predicate"** or simply **"§64 predicate"** in code-A's implementation. §54 and §64 share an implementation path in the engine (a helper function may evaluate the common rows) but the contract treats them as distinct entities, each gated by its own §62/§52 entry conditions.
+
+### 64.2 Predicate ordering
+
+The §64 predicate is evaluated in the same order as §54.1: E.1 (panel) → E.2 (entry-condition reframed) → E.3 (prior) → E.6 (service state) → E.7 (binary disabled present) → E.8 (binary absent) → E.9/E.10 (kernel tables) → E.11 (daemon active) → E.13 (no orphan-nftban ambiguity). The first failing row produces `EvidenceMismatch` with that row name in the reason.
+
+### 64.3 Predicate is read-only
+
+The §64 predicate evaluates against existing typed executor surfaces (`FileExists`, `CommandExists`, `ServiceListed`, `ServiceEnabled`, `NftListTables`) and the classifier's typed output (`Authority`, `Ambiguity`, `external`). No new probe is introduced. No new mutation primitive is introduced. The §64 evaluation is entirely within the decision layer.
+
+## 65. Forbidden behaviors — extends §25, §34, §38.2, §55
+
+Amendment 3 explicitly does NOT authorize:
+
+- Extension of the orphan path to `external != "csf"` (no ufw/firewalld/iptables variant; CSF-only per Amendment 1 §30.2)
+- Extension to `Panel != "directadmin"` (no cPanel/Plesk/none variant in this Amendment)
+- Extension to `Prior != NoRecord` (the existence of prior-authority.json is itself a different lattice path, handled by the standard restore flow)
+- Operation without both flags (`--panel-auto-takeover` AND `--accept-orphan-nftban` are non-defaultable; either alone produces `REFUSE default`)
+- Override of `G1/AuthorityExternal` (locked — REFUSE remains absolute under all flag combinations)
+- Override of `G1/AmbiguityOrphanNFTBan` (locked — REFUSE remains absolute; Amendment 3 does not touch this row)
+- Override of `G1/EvidenceMismatch` (locked — REFUSE remains absolute)
+- Removal of E.13 from the §64 predicate (no AmbiguityOrphanNFTBan must still hold; operator-intent for the orphan-CSF case does NOT extend to orphan-nftban-with-conflict cases)
+- Classifier semantic change (the classifier still returns `AmbiguityConflictExternal + external=csf` for the post-canonical-install csf-residue state; Amendment 3 changes lattice behavior, not classifier behavior)
+- Mutation surface change (the §32 A.1–A.7 destructive sequence is unchanged; this Amendment only changes which lattice path delegates to it)
+- §32 ordering change (the 11-step destructive sequence ordering remains as Amendment 1 locked it)
+- Manual pre-mutation on dns2 or any other host to remove csf-residue and force `AuthorityNFTBan` classifier state
+- Manual fabrication of `prior-authority.json` to force Group 3.1 PROCEED
+- Multi-external state coverage — `external == "csf,ufw"` or any multi-external indicator is out of scope; only single-external `csf` qualifies
+- Empty-external state coverage — `external == ""` while `Ambiguity == AmbiguityConflictExternal` is treated as classifier malformed-output and REFUSEs by default (defensive guard; see §67 row AMD3-13)
+
+## 66. Test requirements
+
+### 66.1 Unit tests required (in `internal/installer/restore/engine_test.go` or a new sibling test file at code-A's discretion)
+
+The 15-row matrix in §67 must be implemented as parameterized table tests. Each row must assert:
+
+- `result.Output` matches expected (PROCEED or REFUSE)
+- `result.Rule` matches expected rule label string
+- For PROCEED rows: `result.Target.Kind`, `result.Target.FirewallType`, `result.Target.Panel` match expected
+- For REFUSE rows with `EvidenceMismatch`: `result.Reason` names the first failing §64 row
+- For REFUSE rows with `default`: `result.Reason` names the failing precondition (missing flag, wrong external, wrong panel, etc.)
+
+### 66.2 Regression tests required
+
+- All Amendment 2 tests (§54 path, `AuthorityNFTBan` G1 split) must remain passing unchanged. Amendment 3 does NOT modify §54 and must not regress Amendment 2's lattice path.
+- All §6 G1 hard-stop tests (`AuthorityExternal`, `AmbiguityOrphanNFTBan`, `EvidenceMismatch`) must remain passing unchanged.
+- The §32 A.1–A.7 mutation path tests must remain passing unchanged.
+
+### 66.3 CI grep gates (added to `.github/workflows/*.yml` by code-A)
+
+- Grep for forbidden classifier-semantic-change wording in the new lattice code
+- Grep for any new probe or mutation primitive introduced under §64
+- Grep for `prior-authority` writer additions (must remain plan-only / never-written by install)
+
+## 67. Test matrix — 15 rows
+
+| # | Authority | Ambiguity | external | Panel | Prior | --panel-auto | --accept-orphan | §54/§64 rows | Expected Output | Expected Rule |
+|---|---|---|---|---|---|---|---|---|---|---|
+| AMD3-1 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | true | true | all true | PROCEED | `G1/AmbiguityConflictExternal/OrphanProceed` |
+| AMD3-2 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | true | true | E.7 false | REFUSE | `G1/AmbiguityConflictExternal/EvidenceMismatch` |
+| AMD3-3 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | true | false | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (missing `--accept-orphan-nftban`) |
+| AMD3-4 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | false | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (missing `--panel-auto-takeover`) |
+| AMD3-5 | Ambiguous | ConflictExternal | csf | cpanel | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (non-DA panel) |
+| AMD3-6 | Ambiguous | ConflictExternal | csf | none | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (no panel) |
+| AMD3-7 | Ambiguous | ConflictExternal | ufw | directadmin | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (external != csf) |
+| AMD3-8 | Ambiguous | ConflictExternal | csf | directadmin | StrongPrior | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (prior != NoRecord) |
+| AMD3-9 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | true | true | E.6 false (csf not masked) | REFUSE | `G1/AmbiguityConflictExternal/EvidenceMismatch` (row E.6) |
+| AMD3-10 | Ambiguous | OrphanNFTBan | csf | directadmin | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityOrphanNFTBan` (locked — Amendment 3 doesn't touch OrphanNFTBan) |
+| AMD3-11 | External | — | csf | directadmin | NoRecord | true | true | all true | REFUSE | `G1/AuthorityExternal` (locked — AuthorityExternal stays locked) |
+| AMD3-12 | NFTBan | — | — | directadmin | NoRecord | true | true | all §54 true | PROCEED | `G1/AuthorityNFTBan/OrphanProceed` (Amendment 2 regression check) |
+| AMD3-13 | Ambiguous | ConflictExternal | "" (empty) | directadmin | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (defensive guard — empty external is malformed classifier output, never qualifies) |
+| AMD3-14 | Ambiguous | ConflictExternal | csf | directadmin | NoRecord | true | true | all true | PROCEED | `G1/AmbiguityConflictExternal/OrphanProceed` AND `result.Target.Kind == PanelNative` AND `result.Target.FirewallType == "csf"` AND `result.Target.Panel == directadmin` AND `result.Reason` contains `"amendment-3 orphan-intent"` (rule-label assertion for downstream consumers — Code-D evidence-record, dispatcher logs, post-B auditor grep) |
+| AMD3-15 | Ambiguous | ConflictExternal | "csf,ufw" | directadmin | NoRecord | true | true | all true | REFUSE | `G1/AmbiguityConflictExternal/default` (multi-external — only single-external "csf" qualifies; defensive guard against future classifier behavior) |
+
+The "§54/§64 rows" column refers to the §54/§64 combined predicate (per §64.1): the same structural rows as §54 with the §64-specific reframings (E.2 reframed, E.12 omitted).
+
+## 68. Sequencing recommendation
+
+Lane discipline mirrors Amendment 2 (which itself mirrored Amendment 1):
+
+1. **amendment-3-doc** (this PR) — single doc commit inserting Part VI into `internal/installer/restore/contract.md`. No code, no CI, no host action. Auditor pre-merge audit.
+2. **amendment-3-doc operator lock record** — appended to a §62-style lock record (perhaps as a new §69-sub-section follow-up) recording any open questions locked at merge time. May be the same PR or a follow-up.
+3. **amendment-3-code-A** — implementation of the §63 + §64 decision-layer lattice extension. Decision-only. No mutation surface change. Unit tests per §66.1 (15-row matrix from §67) + regression tests per §66.2. CI grep gates per §66.3 added if scope warrants. Specific files: `internal/installer/restore/engine.go` (lattice split + new rule constants for `G1/AmbiguityConflictExternal/{default, orphan-intent-candidate-csf, OrphanProceed, EvidenceMismatch}`) and a test file (either appended `engine_test.go` or new sibling `engine_amendment3_test.go` paralleling Amendment 2's structure — code-A's auditor pass rules on file shape). Auditor pre-merge audit.
+4. **amendment-3-code-A audit pass** — auditor confirms: lattice split correctness, predicate delegation, no §54 modification, no classifier semantic change, no §32 ordering change, no new state terminals, no new exit codes, no new mutation surface, regression tests for Amendment 2 path still pass.
+5. **fresh Tier 1 binary** — built on lab4 from post-merge HEAD. Distributed to dns2, byte-pinned source==host. Old Tier 1 binary at sha `153f7abe…` is superseded the moment code-A merges.
+6. **fresh operator H2/H3 signoff** — for Gate B retry. Reachability monitor activated (HARD-GATE-WITH-NO-EXCEPTIONS still in force).
+7. **Gate B retry pre-execution audit** — auditor verifies the corrected §54/§64 predicate result on dns2's post-Gate-A state, fresh binary chain, fresh signoff, and reachability monitor active.
+8. **Gate B retry** — exactly one operator-driven invocation on dns2: `--mode=restore --panel-auto-takeover --accept-orphan-nftban`. Operator captures `echo $?` directly. No retry. Assistant captures post-state pack only. dns2 stays in canonical post-Gate-A state until Gate B retry runs (no R-1 cleanup, no fresh Gate A, no snapshot rollback needed — the Gate B run #1 REFUSE was non-mutating).
+9. **post-Gate-B audit** — auditor classifies evidence (ACCEPTED / PARTIAL / REJECTED) and rules whether PR-26 final becomes mergeable.
+10. **PR-26 final** — only mergeable after step 9 ACCEPTED.
+
+Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2-3 days; step 5+6+7 = 0.5 day; step 8 = 0.5 day; step 9 = 1 day. Total: ~5-6 days, contingent on auditor turnaround.
+
+## 69. Rejected alternatives
+
+- **Option B — manual csf-residue cleanup on dns2 to force the classifier to return AuthorityNFTBan**. REJECTED. Violates the standing "no manual pre-mutation of nftban-managed state on the destructive-cycle host" rule. More importantly: it defeats the purpose of the destructive-cycle test. The whole point is to verify the dispatcher handles a real host with real csf-residue. Manually cleaning up the residue means the run captures evidence of the dispatcher handling a CONTRIVED state, not a REAL state. Not admissible as merge-blocking evidence. Also: would require ad-hoc identification of which residue surface trips the classifier (`/etc/csf/`, `/usr/sbin/csf.disabled`, `lfd.service` unit-file, etc.), and removing those would degrade dns2's recoverability if Gate B retry needs to roll back.
+- **Option C — narrow code-D' classifier semantic patch within PR-26 scope**. REJECTED for PR-26. The classifier is consumed by `install`, `uninstall`, AND `restore` modes; changing its semantics has a wider blast radius than a narrow lattice extension. Requires re-validating the classifier matrix from PR-22 + PR-23 (older, locked contract space). Filed as a future-amendment / post-PR-26 priority: if Amendment 3's lattice approach surfaces complexity (e.g., adding more `G1/AmbiguityConflictExternal/<external-orphan>` rows), a future amendment could revisit Option C as a structural cleanup. Not in PR-26 scope.
+- **Option D — manual fabrication of `prior-authority.json` to force Group 3.1 PROCEED**. REJECTED. Would require fabricating an install-time record that nftban itself never wrote, breaking the prior-record-authoritative-source-of-truth invariant. The future install-time prior-record writer is filed as a post-PR-26 priority but is NOT a PR-26 closure path. Manual write is forbidden by operator-locked rule (no manual pre-mutation of nftban-managed state).
+- **Any path that mutates dns2 state before code-A merges**. REJECTED. dns2 is in canonical post-Gate-A state (csf masked + .disabled present + nftband active + cron-backup manifest intact + ip:nftban + ip6:nftban tables loaded). The Gate B run #1 REFUSE was non-mutating; dns2 did not drift. Any pre-code-A mutation (manual cleanup, manual rollback, fresh Gate A run) would consume preserved evidence and require re-doing work that is already valid. dns2 stays untouched until code-A merges + fresh Tier 1 + fresh signoff + Gate B retry pre-execution audit returns GO.
+
+---
+
 ## Amendment history
 
 - **2026-04-20 v1 (seed)** — first committed seed. Lattice v2 + three locked corrections:
@@ -1738,3 +1958,5 @@ Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2
 - **2026-04-28 v5 (PR-26 operator lock record)** — appends §51 to Part IV recording the operator's lock signals for §§39–43 proposed locks and the §48 hard blockers. Q1–Q5: ACCEPTED (Q1 row 6 conditional on §48.1). §48.1: **Option B selected** for PR-26-code-A — exact CSF SSH-rule kernel evidence becomes ADVISORY; no `IptablesRuleExists` and no new iptables introspection method in code-A. §48.2: **`firewallType` plumbing selected** — production deps receive raw firewallType, not precomputed targetUnit, consistent with the PR-25 4B-3-pre evidence-plumbing pattern. P1 acknowledgements recorded: Option A remains possible only through future contract amendment; INV-PR26-NEW-MUTATION-SURFACES-BOUNDED caps mutation surfaces only; any §22 / §32 ordering extension must be re-locked explicitly. Entry criteria for PR-26-code-A locked: target-specific safety predicate / inline-verification hardening only — no cron manifest, no typed executor methods, no destructive soak, no repo hygiene. Doc-only commit; no production code, no CI, no schema, no CHANGELOG.
 
 - **2026-04-28 v6 (Amendment 2: Orphan-NFTBan explicit-intent CSF restore path — DOC SEED)** — appends Part V (§§52–61). Authority gap discovered during PR-26-code-E srv3 destructive evidence run: the dispatcher refused at G1/AuthorityNFTBan on a host whose precondition was the canonical "nftban-took-over-from-csf with no prior-record" state, blocking the destructive cycle from running on a real host. Auditor disposition (2026-04-28) approved Option A (narrow explicit-intent override); Options B (different host) and C (manual pre-mutation) rejected. This amendment splits the existing G1/AuthorityNFTBan row into two evaluated-within-Group-1 sub-rows: `G1/AuthorityNFTBan/default` (REFUSE, unchanged behavior for all flag patterns outside the candidate triple) and `G1/AuthorityNFTBan/orphan-intent-candidate` (delegates to the §54 evidence predicate; `G1/AuthorityNFTBan/OrphanProceed` on all-true, `G1/EvidenceMismatch` on any-false). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved. The PROCEED row activates only for `AuthorityNFTBan + NoRecord + DirectAdmin + --panel-auto-takeover + --accept-orphan-nftban + ALL §54.1 evidence rows true → PROCEED PanelNative/csf`. Every other §6 G1 row remains REFUSE under all flag combinations. Adds new invariant `INV-AMD2-EXPLICIT-INTENT-IS-NARROW` (§52.5). §59 Q1 (flag name `--accept-orphan-nftban`) and Q2 (`AmbiguityOrphanNFTBan` REFUSE) locked by auditor disposition 2026-04-28; Q3–Q7 remain open. Doc-only commit; no production code, no CI gate, no host action. Code phase opens in a separate `amendment-2-code-A` PR after this seed merges. Real-host destructive evidence captured by `amendment-2-code-E` after code-A merges; amendment-2-code-E is the merge-blocker for PR-26 final.
+
+- **2026-04-29 v7 (Amendment 3: AmbiguityConflictExternal narrow split for orphan-CSF-on-DA — DOC SEED)** — appends Part VI (§§62–69). Authority gap discovered during dns2 Gate B run #1 (2026-04-29T12:33:02Z): on a real DirectAdmin host with a real CSF install where Gate A canonical takeover succeeded, the classifier returns `Authority=AuthorityAmbiguous + Ambiguity=AmbiguityConflictExternal + external=csf` (because csf-residue — `/etc/csf/`, `/usr/sbin/csf.disabled`, `lfd.service`, etc. — is intact post-canonical-install per §17.2 invariant), and the lattice refused at `G1/AmbiguityConflictExternal` per the locked §6 Group 1 hard-stop. Amendment 2's `G1/AuthorityNFTBan/OrphanProceed` was scoped to `Authority=AuthorityNFTBan` (non-ambiguous classifier state); on srv3 the classifier returned that because srv3 had never had csf installed, on dns2 the classifier returns `AmbiguityConflictExternal` because csf-residue is the post-canonical-install reality. The two states share the same operator intent but reach the lattice through different rule paths. Auditor disposition (2026-04-29) approved Option A (narrow lattice extension mirroring Amendment 2); Options B (manual residue cleanup) and C (classifier semantic patch) rejected. This amendment splits the existing `G1/AmbiguityConflictExternal` row into two evaluated-within-Group-1 sub-rows: `G1/AmbiguityConflictExternal/default` (REFUSE, unchanged behavior for all flag patterns and external authorities outside the candidate quintuple) and `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` (delegates to the §54/§64 combined predicate). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved. The PROCEED row activates only for `AmbiguityConflictExternal + external=csf + NoRecord + DirectAdmin + --panel-auto-takeover + --accept-orphan-nftban + ALL §54/§64 evidence rows true → PROCEED PanelNative/csf`. Every other §6 G1 row remains REFUSE under all flag combinations; the `AuthorityExternal` G1 hard-stop is unchanged; the `AmbiguityOrphanNFTBan` G1 hard-stop is unchanged. Adds new invariant `INV-AMD3-CONFLICT-EXTERNAL-CSF-NARROW` (§62.5). Doc-only commit; no production code, no CI gate, no host action; no `engine.go` or `engine_test.go` edit; no §54 modification (Amendment 2's predicate stays scoped to AuthorityNFTBan); no classifier semantic change; no §32 ordering change; no new mutation surface. Code phase opens in a separate `amendment-3-code-A` PR after this seed merges. Real-host destructive evidence captured by Gate B retry on dns2 after code-A merges; that retry is the merge-blocker for PR-26 final.
