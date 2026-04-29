@@ -52,6 +52,22 @@ const (
 	RuleG1NFTBanOrphanProceed = "G1/AuthorityNFTBan/OrphanProceed"
 	RuleG1EvidenceMismatch    = "G1/EvidenceMismatch"
 
+	// Group 1 — Amendment 3 split sub-rules (§63). These live ENTIRELY
+	// within Group 1; no later group ever defeats a Group 1 outcome.
+	// §5 precedence holds. Amendment 3 splits the existing
+	// G1/AmbiguityConflictExternal row (above) into:
+	//   - default: REFUSE (unchanged behavior for every flag pattern,
+	//     external authority, panel, prior, or evidence row outside
+	//     the candidate quintuple)
+	//   - orphan-intent-candidate-csf: delegates to §64 predicate
+	//   - OrphanProceed: PROCEED PanelNative/csf when §64 all-true
+	//   - EvidenceMismatch: REFUSE when §64 any-false (distinct from
+	//     the Amendment 2 path's RuleG1EvidenceMismatch so logs and
+	//     Code-D evidence-records can attribute correctly)
+	RuleG1AmbConflictExtDefault          = "G1/AmbiguityConflictExternal/default"
+	RuleG1AmbConflictExtOrphanProceed    = "G1/AmbiguityConflictExternal/OrphanProceed"
+	RuleG1AmbConflictExtEvidenceMismatch = "G1/AmbiguityConflictExternal/EvidenceMismatch"
+
 	// Group 2 — input/flag validity
 	RuleG2PanelAutoWithoutPanel    = "G2/PanelAutoTakeoverWithoutPanel"
 	RuleG2BothRestoreFlags         = "G2/RestoreAndPanelAutoBothSet"
@@ -111,11 +127,7 @@ func Decide(in DecisionInput) DecisionResult {
 		}
 	case uninstall.AuthorityAmbiguous:
 		if in.Ambiguity == uninstall.AmbiguityConflictExternal {
-			return DecisionResult{
-				Output: OutputRefuse,
-				Rule:   RuleG1AmbiguityConflictExt,
-				Reason: "conflicting external authority detected; operator must resolve before any restoration",
-			}
+			return decideAmbiguityConflictExternal(in)
 		}
 		// Fall through to Group 4 (AmbiguityOrphanNFTBan path). Any
 		// other Ambiguity sub-kind is a preflight invariant violation
@@ -412,5 +424,101 @@ func decideAuthorityNFTBan(in DecisionInput) DecisionResult {
 		Output: OutputProceed,
 		Rule:   RuleG1NFTBanOrphanProceed,
 		Reason: "amendment-2 orphan-intent: AuthorityNFTBan + DirectAdmin + strong CSF-disabled evidence; restoring CSF per §53.1",
+	}
+}
+
+// decideAmbiguityConflictExternal implements Amendment 3 §63 Group 1
+// split for Authority=AuthorityAmbiguous + Ambiguity=AmbiguityConflictExternal.
+// The split is ENTIRELY within Group 1; no later group ever defeats a
+// Group 1 outcome. §5 precedence holds.
+//
+// Evaluation order (§63.2):
+//
+//  1. Pre-condition quintuple check — only the specific combination
+//     `ExternalIndicator="csf" + Prior=NoRecord + Panel=DirectAdmin +
+//     PanelAutoTakeover + AcceptOrphanNFTBan` (and Group 2 not
+//     interfering) is the "orphan-intent-candidate-csf" sub-row.
+//     Any other combination → REFUSE with
+//     `G1/AmbiguityConflictExternal/default` (preserves the original
+//     pre-Amendment-3 hard-stop semantics).
+//
+//  2. §64 evidence predicate evaluation — if AllTrueAmendment3() (every
+//     row except E.12, which is omitted because the §62 entry condition
+//     IS AmbiguityConflictExternal), PROCEED with
+//     `G1/AmbiguityConflictExternal/OrphanProceed`. If any row is false,
+//     REFUSE with `G1/AmbiguityConflictExternal/EvidenceMismatch`
+//     (NOT REQUIRE_EXPLICIT_INTENT — same semantic as Amendment 2 §54.2).
+//
+// Group 2 precedence preserved: `--restore-prior-authority +
+// --panel-auto-takeover` (both set) emits `G2/RestoreAndPanelAutoBothSet`;
+// `--panel-auto-takeover` with `PanelPresent=false` emits
+// `G2/PanelAutoTakeoverWithoutPanel`. Both Group 2 rules win over
+// the Amendment 3 split because they're checked here before the
+// candidate-quintuple delegation, in that exact precedence order.
+//
+// Multi-external states (e.g. ExternalIndicator="csf,ufw") and empty
+// strings fall to the default REFUSE per §65 + §67 row AMD3-13/AMD3-15
+// defensive guards. Only single, exact-match "csf" qualifies.
+func decideAmbiguityConflictExternal(in DecisionInput) DecisionResult {
+	// Group 2 precedence: both flags set is an input-validity REFUSE.
+	if in.Flags.Restore && in.Flags.PanelAutoTakeover {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG2BothRestoreFlags,
+			Reason: "--restore-prior-authority and --panel-auto-takeover are mutually exclusive; pick one",
+		}
+	}
+
+	// Group 2 precedence: panel-auto without a panel is an input-
+	// validity REFUSE.
+	if in.Flags.PanelAutoTakeover && !in.PanelPresent {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG2PanelAutoWithoutPanel,
+			Reason: "--panel-auto-takeover requires a control panel on the host; none detected",
+		}
+	}
+
+	// Candidate-quintuple check for the Amendment 3 orphan-intent-
+	// candidate-csf path. Every condition must hold, else fall through
+	// to the default REFUSE. The quintuple is composite: classifier
+	// already established AuthorityAmbiguous + AmbiguityConflictExternal
+	// (caller); we additionally require ExternalIndicator=="csf"
+	// (single-external, exact-match), Prior=NoRecord, Panel=DirectAdmin,
+	// --panel-auto-takeover, and --accept-orphan-nftban.
+	quintuplePresent := in.ExternalIndicator == "csf" &&
+		in.Prior == PriorStateNoRecord &&
+		in.Panel == detect.PanelDirectAdmin &&
+		in.Flags.PanelAutoTakeover &&
+		in.Flags.AcceptOrphanNFTBan
+
+	if !quintuplePresent {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG1AmbConflictExtDefault,
+			Reason: "conflicting external authority detected; operator must resolve before any restoration (default G1 hard-stop)",
+		}
+	}
+
+	// Quintuple present — delegate to the §64 predicate. The
+	// dispatcher MUST have populated in.OrphanEvidence; nil is treated
+	// as "evidence not gathered" → REFUSE/EvidenceMismatch with
+	// AMD3-E.0 (defensive — should never happen if dispatcher follows
+	// §64.3).
+	if in.OrphanEvidence == nil || !in.OrphanEvidence.AllTrueAmendment3() {
+		return DecisionResult{
+			Output: OutputRefuse,
+			Rule:   RuleG1AmbConflictExtEvidenceMismatch,
+			Reason: "amendment-3 evidence predicate did not hold; failing-row=" + in.OrphanEvidence.FailedRowIDAmendment3(),
+		}
+	}
+
+	// All §64.1 rows hold. PROCEED PanelNative/csf — same target as
+	// the Amendment 2 path. PlanFromDecision reuses the existing
+	// panel-static-map (§20.1: PanelDirectAdmin → "csf").
+	return DecisionResult{
+		Output: OutputProceed,
+		Rule:   RuleG1AmbConflictExtOrphanProceed,
+		Reason: "amendment-3 orphan-intent: AmbiguityConflictExternal + DirectAdmin + strong CSF-disabled evidence; restoring CSF per §63.1",
 	}
 }
