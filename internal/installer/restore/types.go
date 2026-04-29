@@ -154,7 +154,29 @@ type DecisionInput struct {
 	// Flags.PanelAutoTakeover + Flags.AcceptOrphanNFTBan) is present.
 	// Nil for every other input pattern — the engine MUST NOT
 	// dereference it outside the Amendment 2 split.
+	//
+	// For the Amendment 3 path (G1/AmbiguityConflictExternal split,
+	// §62-§69), the same OrphanEvidence struct is reused with
+	// AllTrueAmendment3() / FailedRowIDAmendment3() — they evaluate
+	// the same rows EXCEPT E.12 (omitted because AmbiguityConflictExternal
+	// is the §62 entry condition, incompatible with E.12 by construction).
+	// E.2 is reframed semantically by the dispatcher (the row-bool now
+	// represents AuthorityAmbiguous + AmbiguityConflictExternal +
+	// external=csf rather than AuthorityNFTBan); the predicate
+	// implementation remains shared.
 	OrphanEvidence *OrphanEvidence
+
+	// ExternalIndicator is the classifier's external-authority string
+	// (e.g. "csf", "ufw", "firewalld"; "csf,ufw" for multi-external;
+	// empty when classifier did not flag a conflict). Required for the
+	// Amendment 3 §62 entry condition: the orphan-intent-candidate-csf
+	// sub-row activates only when ExternalIndicator == "csf" (single,
+	// case-sensitive). For every other lattice path, this field is
+	// ignored. Multi-external strings (e.g. "csf,ufw") and empty strings
+	// fall through to G1/AmbiguityConflictExternal/default REFUSE per
+	// §65 (multi-external out of scope) and §67 row AMD3-13 (empty-external
+	// defensive guard).
+	ExternalIndicator string
 }
 
 // OrphanEvidence is the §54.1 evidence predicate result. All 13 rows
@@ -202,6 +224,82 @@ func (e *OrphanEvidence) AllTrue() bool {
 		e.E11NftbandActive &&
 		e.E12NoConflictExternal &&
 		e.E13NoAmbiguous
+}
+
+// AllTrueAmendment3 reports whether every §54/§64 combined-predicate
+// row is satisfied for the Amendment 3 G1/AmbiguityConflictExternal
+// orphan-intent-candidate-csf path (§64.1). Identical to AllTrue()
+// EXCEPT row E.12 (NoConflictExternal) is omitted: the §62 entry
+// condition IS AmbiguityConflictExternal, so requiring "no
+// AmbiguityConflictExternal" is incompatible by construction.
+//
+// E.2's row-bool is reframed by the dispatcher (see DecisionInput.
+// OrphanEvidence doc): in the Amendment 3 path the bool represents
+// AuthorityAmbiguous + AmbiguityConflictExternal + ExternalIndicator
+// == "csf" rather than AuthorityNFTBan. The predicate implementation
+// is unchanged.
+//
+// Per Amendment 3 §66.2 regression requirement, AllTrue() (Amendment 2)
+// and AllTrueAmendment3() (Amendment 3) produce identical results
+// when E.12 is true, and only diverge when E.12 is false.
+func (e *OrphanEvidence) AllTrueAmendment3() bool {
+	if e == nil {
+		return false
+	}
+	return e.E1PanelDirectAdmin &&
+		e.E2AuthorityNFTBan &&
+		e.E3PriorNoRecord &&
+		e.E4PanelAutoTakeover &&
+		e.E5AcceptOrphanNFTBan &&
+		e.E6CSFServiceDisabled &&
+		e.E7CSFDisabledExists &&
+		e.E8CSFAbsent &&
+		e.E9NftIPNftbanPresent &&
+		e.E10NftIP6NftbanPres &&
+		e.E11NftbandActive &&
+		// E.12 OMITTED — incompatible with §62 entry condition
+		e.E13NoAmbiguous
+}
+
+// FailedRowIDAmendment3 returns the stable ID of the first false row
+// in the Amendment 3 evaluation order (§64.2). Skips E.12 per
+// AllTrueAmendment3 semantics. Returns "AMD3-E.0" for nil receiver
+// to distinguish "evidence not gathered" from "every row evaluated
+// false". Returns "AMD3-E.{N}" rather than "AMD2-E.{N}" so structured
+// logs and Code-D evidence-record consumers can distinguish which
+// predicate fired.
+func (e *OrphanEvidence) FailedRowIDAmendment3() string {
+	if e == nil {
+		return "AMD3-E.0"
+	}
+	switch {
+	case !e.E1PanelDirectAdmin:
+		return "AMD3-E.1"
+	case !e.E2AuthorityNFTBan:
+		return "AMD3-E.2"
+	case !e.E3PriorNoRecord:
+		return "AMD3-E.3"
+	case !e.E4PanelAutoTakeover:
+		return "AMD3-E.4"
+	case !e.E5AcceptOrphanNFTBan:
+		return "AMD3-E.5"
+	case !e.E6CSFServiceDisabled:
+		return "AMD3-E.6"
+	case !e.E7CSFDisabledExists:
+		return "AMD3-E.7"
+	case !e.E8CSFAbsent:
+		return "AMD3-E.8"
+	case !e.E9NftIPNftbanPresent:
+		return "AMD3-E.9"
+	case !e.E10NftIP6NftbanPres:
+		return "AMD3-E.10"
+	case !e.E11NftbandActive:
+		return "AMD3-E.11"
+	// E.12 omitted from Amendment 3 evaluation
+	case !e.E13NoAmbiguous:
+		return "AMD3-E.13"
+	}
+	return ""
 }
 
 // FailedRowID returns the stable ID of the first false row (e.g.

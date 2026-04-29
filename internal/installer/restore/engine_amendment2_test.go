@@ -323,7 +323,17 @@ func TestAmd2_Section56_1_SplitFixtures(t *testing.T) {
 			wantOut:  OutputRefuse,
 			wantRule: RuleG1AuthorityExternal,
 		},
-		// Row 17 — AmbiguityConflictExternal + orphan flag → REFUSE/G1/AmbiguityConflictExternal (no bypass)
+		// Row 17 — AmbiguityConflictExternal + orphan flag → REFUSE.
+		// Amendment 2's --accept-orphan-nftban does NOT extend to
+		// AmbiguityConflictExternal — the bypass remains scoped to
+		// AuthorityNFTBan only. After Amendment 3 (§63) splits the
+		// G1/AmbiguityConflictExternal row, this fixture asserts the
+		// new sub-rule G1/AmbiguityConflictExternal/default. Note: this
+		// fixture has no ExternalIndicator field set ("" empty), so
+		// even if Amendment 3's quintuple-check were reached, the
+		// empty-external defensive guard (AMD3-13) would also refuse.
+		// The "default" sub-rule fires first (no quintuple match),
+		// preserving the original Amendment-2-era hard-stop semantics.
 		{
 			name: "row17_ambiguity_conflict_no_bypass",
 			input: DecisionInput{
@@ -335,7 +345,7 @@ func TestAmd2_Section56_1_SplitFixtures(t *testing.T) {
 				Flags:        Flags{PanelAutoTakeover: true, AcceptOrphanNFTBan: true},
 			},
 			wantOut:  OutputRefuse,
-			wantRule: RuleG1AmbiguityConflictExt,
+			wantRule: RuleG1AmbConflictExtDefault,
 		},
 		// Row 18 — AmbiguityOrphanNFTBan + panel-auto + orphan-flag → REFUSE/G4.3 (locked by §59 Q2)
 		{

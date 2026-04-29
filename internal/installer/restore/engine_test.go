@@ -134,7 +134,76 @@ var allFixtures = []fixture{
 			PanelPresent: true,
 		},
 		wantOut:  OutputRefuse,
-		wantRule: RuleG1AmbiguityConflictExt,
+		// Amendment 3 (§63) split: this fixture asserts REFUSE on
+		// the AmbiguityConflictExternal hard-stop. Behavior is
+		// unchanged (still REFUSE); only the rule sub-classifier
+		// name shifts to G1/AmbiguityConflictExternal/default — the
+		// new sub-rule that preserves pre-Amendment-3 hard-stop
+		// semantics for every flag pattern outside the
+		// orphan-intent-candidate-csf quintuple.
+		wantRule: RuleG1AmbConflictExtDefault,
+	},
+	// Amendment 3 §63 — Group 1 split sub-rules. These two fixtures
+	// pin RuleG1AmbConflictExtOrphanProceed and
+	// RuleG1AmbConflictExtEvidenceMismatch for the coverage assertion.
+	// The full §67 15-row matrix lives in engine_amendment3_test.go.
+	{
+		name: "G1_AmbConflictExt_OrphanProceed_all_evidence_true",
+		input: DecisionInput{
+			Authority:         uninstall.AuthorityAmbiguous,
+			Ambiguity:         uninstall.AmbiguityConflictExternal,
+			ExternalIndicator: "csf",
+			Prior:             PriorStateNoRecord,
+			Panel:             detect.PanelDirectAdmin,
+			PanelPresent:      true,
+			Flags:             Flags{PanelAutoTakeover: true, AcceptOrphanNFTBan: true},
+			OrphanEvidence: &OrphanEvidence{
+				E1PanelDirectAdmin:    true,
+				E2AuthorityNFTBan:     true, // semantically reframed per §64.1
+				E3PriorNoRecord:       true,
+				E4PanelAutoTakeover:   true,
+				E5AcceptOrphanNFTBan:  true,
+				E6CSFServiceDisabled:  true,
+				E7CSFDisabledExists:   true,
+				E8CSFAbsent:           true,
+				E9NftIPNftbanPresent:  true,
+				E10NftIP6NftbanPres:   true,
+				E11NftbandActive:      true,
+				E12NoConflictExternal: false, // omitted from §64 predicate
+				E13NoAmbiguous:        true,
+			},
+		},
+		wantOut:  OutputProceed,
+		wantRule: RuleG1AmbConflictExtOrphanProceed,
+	},
+	{
+		name: "G1_AmbConflictExt_EvidenceMismatch_one_row_false",
+		input: DecisionInput{
+			Authority:         uninstall.AuthorityAmbiguous,
+			Ambiguity:         uninstall.AmbiguityConflictExternal,
+			ExternalIndicator: "csf",
+			Prior:             PriorStateNoRecord,
+			Panel:             detect.PanelDirectAdmin,
+			PanelPresent:      true,
+			Flags:             Flags{PanelAutoTakeover: true, AcceptOrphanNFTBan: true},
+			OrphanEvidence: &OrphanEvidence{
+				E1PanelDirectAdmin:    true,
+				E2AuthorityNFTBan:     true,
+				E3PriorNoRecord:       true,
+				E4PanelAutoTakeover:   true,
+				E5AcceptOrphanNFTBan:  true,
+				E6CSFServiceDisabled:  false, // <-- single row false
+				E7CSFDisabledExists:   true,
+				E8CSFAbsent:           true,
+				E9NftIPNftbanPresent:  true,
+				E10NftIP6NftbanPres:   true,
+				E11NftbandActive:      true,
+				E12NoConflictExternal: false,
+				E13NoAmbiguous:        true,
+			},
+		},
+		wantOut:  OutputRefuse,
+		wantRule: RuleG1AmbConflictExtEvidenceMismatch,
 	},
 
 	// ───────────────────────── Group 2 input validity ────────────────
@@ -460,7 +529,12 @@ func declaredRules() []string {
 		RuleG1NFTBanOrphanProceed,
 		RuleG1EvidenceMismatch,
 		RuleG1AuthorityExternal,
-		RuleG1AmbiguityConflictExt,
+		// Amendment 3 §63 split: RuleG1AmbiguityConflictExt is now an
+		// umbrella const retained for log-parent grep; concrete fixtures
+		// resolve to the three sub-rules below.
+		RuleG1AmbConflictExtDefault,
+		RuleG1AmbConflictExtOrphanProceed,
+		RuleG1AmbConflictExtEvidenceMismatch,
 
 		RuleG2PanelAutoWithoutPanel,
 		RuleG2BothRestoreFlags,
