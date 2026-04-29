@@ -50,6 +50,22 @@ func RunAssertions(exec executor.Executor, sshPort int, log *logging.Logger) []A
 	results = append(results, assertPayloadInventory(exec, log))
 	results = append(results, assertConfigIntegrity(exec, log))
 
+	// PR26.1: systemd-payload invariants. One gather call feeds four
+	// assertions so we don't walk the unit dirs (or call systemctl)
+	// four times. Inventory paths are derived from existing
+	// payload.VerifyInventory's required-set; PAYLOAD-INVENTORY-001
+	// fails closed when nothing is supplied (every nftban-owned
+	// referenced path becomes "unknown"), so the gatherer SHOULD
+	// pass a populated set in production.
+	in, _ := GatherSystemdPayloadInputs(exec, log, defaultInventoryPaths())
+	spr := ValidateInstalledSystemdPayload(in)
+	results = append(results,
+		assertSystemdExecStartPaths(spr, log),
+		assertSystemdTimerPair(spr, log),
+		assertSystemdPayloadInventory(spr, log),
+		assertFailedUnitsPostInstall(spr, log),
+	)
+
 	passed := 0
 	for _, r := range results {
 		if r.Passed {
@@ -224,4 +240,116 @@ func assertConfigIntegrity(exec executor.Executor, log *logging.Logger) Assertio
 		log.Debug("ASSERT config_integrity_ok: PASS")
 	}
 	return r
+}
+
+// PR26.1 assertions ----------------------------------------------------------
+//
+// These four assertions implement, respectively:
+//
+//	SYSTEMD-EXECSTART-001         systemd_execstart_paths_ok
+//	SYSTEMD-TIMER-PAIR-001        systemd_timer_pair_ok
+//	PAYLOAD-INVENTORY-001         systemd_payload_inventory_ok
+//	FAILED-UNIT-POSTINSTALL-001   failed_units_postinstall_ok
+//
+// All four are derived from a single SystemdPayloadValidationResult
+// computed once per RunAssertions pass. Each contributes a distinct
+// AssertionResult so FailedNames pinpoints which invariant fired.
+
+func assertSystemdExecStartPaths(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "systemd_execstart_paths_ok", Passed: spr.ExecStartOK()}
+	if r.Passed {
+		log.Debug("ASSERT systemd_execstart_paths_ok: PASS")
+		return r
+	}
+	parts := make([]string, 0, len(spr.MissingExecPaths))
+	for _, m := range spr.MissingExecPaths {
+		parts = append(parts, m.UnitFile+":"+m.Directive+"="+m.Path)
+	}
+	r.Detail = "missing ExecStart paths: " + strings.Join(parts, "; ")
+	log.Warn("ASSERT systemd_execstart_paths_ok: FAIL — %d missing: %s",
+		len(spr.MissingExecPaths), strings.Join(parts, "; "))
+	return r
+}
+
+func assertSystemdTimerPair(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "systemd_timer_pair_ok", Passed: spr.TimerPairOK()}
+	if r.Passed {
+		log.Debug("ASSERT systemd_timer_pair_ok: PASS")
+		return r
+	}
+	parts := make([]string, 0, len(spr.MissingTimerTargets))
+	for _, m := range spr.MissingTimerTargets {
+		parts = append(parts, m.TimerUnit+"->"+m.TargetUnit)
+	}
+	r.Detail = "timers activate missing services: " + strings.Join(parts, "; ")
+	log.Warn("ASSERT systemd_timer_pair_ok: FAIL — %d unpaired: %s",
+		len(spr.MissingTimerTargets), strings.Join(parts, "; "))
+	return r
+}
+
+func assertSystemdPayloadInventory(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "systemd_payload_inventory_ok", Passed: spr.PayloadInventoryOK()}
+	if r.Passed {
+		log.Debug("ASSERT systemd_payload_inventory_ok: PASS")
+		return r
+	}
+	parts := make([]string, 0, len(spr.UnknownPayloadRefs))
+	for _, m := range spr.UnknownPayloadRefs {
+		parts = append(parts, m.UnitFile+":"+m.Path)
+	}
+	r.Detail = "nftban-owned paths not in payload inventory: " + strings.Join(parts, "; ")
+	log.Warn("ASSERT systemd_payload_inventory_ok: FAIL — %d unknown: %s",
+		len(spr.UnknownPayloadRefs), strings.Join(parts, "; "))
+	return r
+}
+
+func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "failed_units_postinstall_ok", Passed: spr.FailedUnitsOK()}
+	if r.Passed {
+		log.Debug("ASSERT failed_units_postinstall_ok: PASS")
+		return r
+	}
+	// Fail-closed query error takes precedence — surfaces the
+	// enumeration failure rather than misreporting "no failed units".
+	if spr.FailedUnitQueryError != "" {
+		r.Detail = "failed-unit enumeration error: " + spr.FailedUnitQueryError
+		log.Warn("ASSERT failed_units_postinstall_ok: FAIL — %s", spr.FailedUnitQueryError)
+		return r
+	}
+	parts := make([]string, 0, len(spr.FailedUnits))
+	for _, f := range spr.FailedUnits {
+		parts = append(parts, f.Unit+"("+f.Detail+")")
+	}
+	r.Detail = "nftban units in failed state: " + strings.Join(parts, "; ")
+	log.Warn("ASSERT failed_units_postinstall_ok: FAIL — %d failed: %s",
+		len(spr.FailedUnits), strings.Join(parts, "; "))
+	return r
+}
+
+// defaultInventoryPaths returns the set of nftban-owned paths the
+// staged install is known to populate. Mirrors payload.VerifyInventory's
+// canonical required set, expressed as a set instead of a slice.
+//
+// Kept local to validate/ so the systemd-payload assertion does not
+// import payload.buildEntries (which would couple validation against
+// the full destination table). The set is intentionally narrow: a
+// missing path here surfaces as a PAYLOAD-INVENTORY-001 finding with
+// actionable detail (the unit file + path), prompting the operator
+// to either expand this set or stop the unit from referencing the
+// path. Either is a deliberate decision — not a silent pass.
+func defaultInventoryPaths() map[string]bool {
+	return map[string]bool{
+		"/usr/sbin/nftban":                         true,
+		"/usr/lib/nftban/bin/nftban-core":          true,
+		"/usr/lib/nftban/bin/nftband":              true,
+		"/usr/lib/nftban/bin/nftban-validate":      true,
+		"/usr/lib/nftban/bin/nftban-installer":     true,
+		"/usr/lib/nftban/sbin/nftban-apply":        true,
+		"/usr/lib/nftban/sbin/nftban-confirm":      true,
+		"/usr/lib/nftban/sbin/nftban-panelctl":     true,
+		"/usr/lib/nftban/sbin/nftban-queue-processor":   true,
+		"/usr/lib/nftban/sbin/nftban-rollback":     true,
+		"/usr/lib/nftban/sbin/nftban-service-alert":     true,
+		"/usr/lib/nftban/sbin/nftban-botscan-processor": true,
+	}
 }
