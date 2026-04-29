@@ -78,6 +78,16 @@ type config struct {
 	// any regression that reintroduces an auto-elevate path while the
 	// mutation code is present.
 	confirmMutation bool // --confirm-mutation: authorize uninstall authority release (PR-23)
+	// v1.100 PR26.2: --no-panel — operator opt-out of panel-survival
+	// enforcement (PANEL-SURVIVAL-001). Default off. When set, the
+	// panel-survival assertion still runs registered adapters for
+	// diagnostic logging but never reports Fatal=true. The flag
+	// exists so an operator on a host that legitimately runs without
+	// nftban-panel integration (e.g., panel managed externally) can
+	// proceed past install without an assertion failure they cannot
+	// resolve. PR26.2 ships with an empty adapter registry — the
+	// flag is a no-op until PR26.3 lands the first real adapter.
+	noPanel bool // --no-panel: opt out of panel-survival enforcement
 }
 
 func parseFlags() *config {
@@ -113,6 +123,8 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.acceptOrphanNFTBan, "accept-orphan-nftban", false, "Explicit-intent CSF restore on a DirectAdmin host where NFTBan is the current authority and no prior-authority record exists. Requires --mode=restore AND --panel-auto-takeover AND DirectAdmin AND on-disk evidence that NFTBan previously took over from CSF. Without all preconditions the restore refuses (Amendment 2).")
 	// v1.100 PR-23: --confirm-mutation — explicit uninstall mutation entry.
 	flag.BoolVar(&cfg.confirmMutation, "confirm-mutation", false, "Authorize uninstall authority release (real kernel + service mutation). Required for --mode=uninstall without --dry-run. Mutually exclusive with --dry-run.")
+	// v1.100 PR26.2: PANEL-SURVIVAL-001 opt-out.
+	flag.BoolVar(&cfg.noPanel, "no-panel", false, "Opt out of PANEL-SURVIVAL-001 enforcement. Adapters still run for diagnostic logging but a detected-panel integration failure will NOT block StateCommitted on this run. Default OFF.")
 
 	flag.Parse()
 

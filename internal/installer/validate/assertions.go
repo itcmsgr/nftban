@@ -18,12 +18,14 @@
 package validate
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
 )
 
@@ -34,9 +36,58 @@ type AssertionResult struct {
 	Detail string
 }
 
-// RunAssertions performs all post-install assertions and returns the results.
-// None of these are individually fatal — the caller decides based on the aggregate.
+// AssertionOpts carries policy + dependency injections that downstream
+// assertions need. New in PR26.2 to thread the panel-survival policy
+// through without forcing every existing caller to construct one.
+//
+// Zero-value AssertionOpts is safe: PanelPolicy defaults to
+// panelfw.DefaultPolicy() (RequirePanelSuccess=true, AllowPanelAbsent=true,
+// OperatorDisabled=false) when unset, and PanelAdapters defaults to
+// the global registry (currently empty in PR26.2).
+type AssertionOpts struct {
+	// PanelPolicy controls how the panel-survival assertion converts
+	// adapter outcomes into a pass/fail verdict. PR26.3+ wires this
+	// from the operator's --no-panel flag and any future policy
+	// flags through the installer's globalPhaseData.
+	PanelPolicy panelfw.PanelPolicy
+
+	// PanelAdapters is an optional adapter slice override. When nil,
+	// the assertion uses panelfw.RegisteredAdapters(). Tests pass a
+	// fixture-controlled slice (typically containing FakePanelAdapter)
+	// to exercise the framework without touching the global registry.
+	PanelAdapters []panelfw.PanelAdapter
+
+	// panelPolicySet records whether the caller explicitly set
+	// PanelPolicy. Internal — used by RunAssertionsWithOpts to
+	// decide between caller-provided and DefaultPolicy(). Exposed
+	// via WithPanelPolicy.
+	panelPolicySet bool
+}
+
+// WithPanelPolicy returns a copy of opts with PanelPolicy set and the
+// internal "set" flag enabled, so RunAssertionsWithOpts honors the
+// override even when the caller passes a zero-value PanelPolicy.
+func (o AssertionOpts) WithPanelPolicy(p panelfw.PanelPolicy) AssertionOpts {
+	o.PanelPolicy = p
+	o.panelPolicySet = true
+	return o
+}
+
+// RunAssertions performs all post-install assertions with default
+// AssertionOpts (panelfw.DefaultPolicy, empty adapter override).
+// Equivalent to RunAssertionsWithOpts(exec, sshPort, log, AssertionOpts{}).
+//
+// Existing callers stay source-compatible. Production paths that need
+// to feed an operator-derived policy use RunAssertionsWithOpts.
 func RunAssertions(exec executor.Executor, sshPort int, log *logging.Logger) []AssertionResult {
+	return RunAssertionsWithOpts(exec, sshPort, log, AssertionOpts{})
+}
+
+// RunAssertionsWithOpts is the policy-aware entry point. The new
+// panel-survival assertion (PR26.2) consumes opts.PanelPolicy /
+// opts.PanelAdapters; every other assertion is unchanged from the
+// pre-PR26.2 surface.
+func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Logger, opts AssertionOpts) []AssertionResult {
 	var results []AssertionResult
 
 	results = append(results, assertNftablesActive(exec, log))
@@ -65,6 +116,11 @@ func RunAssertions(exec executor.Executor, sshPort int, log *logging.Logger) []A
 		assertSystemdPayloadInventory(spr, log),
 		assertFailedUnitsPostInstall(spr, log),
 	)
+
+	// PR26.2: PANEL-SURVIVAL-001. The framework runs registered
+	// adapters and produces a Fatal verdict per policy; failure
+	// blocks StateCommitted via the existing AllPassed gate.
+	results = append(results, assertPanelSurvival(exec, log, opts))
 
 	passed := 0
 	for _, r := range results {
@@ -352,4 +408,44 @@ func defaultInventoryPaths() map[string]bool {
 		"/usr/lib/nftban/sbin/nftban-service-alert":     true,
 		"/usr/lib/nftban/sbin/nftban-botscan-processor": true,
 	}
+}
+
+// PR26.2: PANEL-SURVIVAL-001 -------------------------------------------------
+//
+// assertPanelSurvival evaluates the registered (or test-injected)
+// panel adapters under opts.PanelPolicy and converts the result into
+// an AssertionResult. Failure → AllPassed false → StateCommitted
+// blocked (via the existing gate at cmd/nftban-installer/phases.go).
+//
+// PR26.2 ships with an empty adapter registry. With no adapters and
+// the default policy (AllowPanelAbsent=true), this assertion always
+// passes. PR26.3 wires the first adapter (DirectAdmin) and the
+// production policy gains the operator-flag-derived OperatorDisabled
+// override.
+func assertPanelSurvival(exec executor.Executor, log *logging.Logger, opts AssertionOpts) AssertionResult {
+	policy := opts.PanelPolicy
+	if !opts.panelPolicySet {
+		policy = panelfw.DefaultPolicy()
+	}
+
+	adapters := opts.PanelAdapters
+	if adapters == nil {
+		adapters = panelfw.RegisteredAdapters()
+	}
+
+	result := panelfw.EvaluateAdapters(context.Background(), exec, log, adapters, policy)
+
+	r := AssertionResult{Name: "panel_survival_ok", Passed: !result.Fatal}
+	if result.Fatal {
+		r.Detail = result.Reason
+		log.Warn("ASSERT panel_survival_ok: FAIL — %s", result.Reason)
+		return r
+	}
+	if result.Detection.Detected {
+		log.Debug("ASSERT panel_survival_ok: PASS — panel=%s reachable=%v",
+			string(result.Detection.ID), result.ReachableAfter)
+	} else {
+		log.Debug("ASSERT panel_survival_ok: PASS — no panel detected")
+	}
+	return r
 }
