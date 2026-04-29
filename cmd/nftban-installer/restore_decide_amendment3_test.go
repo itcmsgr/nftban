@@ -6,7 +6,7 @@
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-04-29"
-// meta:description="Amendment 3 dispatcher-side wiring (ExternalIndicator + reframed E.2)"
+// meta:description="Amendment 3 dispatcher-side wiring (ExternalIndicator + reframed E.2 + separate helper)"
 // meta:inventory.files="cmd/nftban-installer/restore_decide_amendment3_test.go"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -19,16 +19,22 @@
 // Confirms the dispatcher correctly:
 //
 //   1. Plumbs ClassifyResult.External into DecisionInput.ExternalIndicator
-//      so the engine's G1/AmbiguityConflictExternal split sees the entry
-//      condition string.
+//      so the engine's G1/AmbiguityConflictExternal split sees the
+//      §62 entry condition string.
 //
-//   2. Triggers gatherOrphanEvidence on the Amendment 3 quintuple shape
-//      (AuthorityAmbiguous + AmbiguityConflictExternal + external=="csf"
-//      + DirectAdmin + NoRecord + --panel-auto-takeover + --accept-orphan-nftban),
-//      not only on the Amendment 2 triple.
+//   2. Calls the Amendment 3 evidence helper (gatherOrphanEvidenceAmendment3)
+//      on the Amendment 3 quintuple shape, NOT the Amendment 2 helper
+//      (auditor-recommended separate-helper structure).
 //
-//   3. Reframes E.2 in the Amendment 3 path so AllTrueAmendment3() returns
-//      true on the happy path (per §64.1 + the dispatcher reframing).
+//   3. Calls the Amendment 2 evidence helper (gatherOrphanEvidence)
+//      on the Amendment 2 quintuple shape (regression — Amendment 2
+//      path unchanged).
+//
+//   4. Reframes E.2 in the Amendment 3 helper so AllTrueAmendment3()
+//      returns true on the §62 happy path.
+//
+//   5. Keeps gatherOrphanEvidence's E.2 strictly evaluating
+//      AuthorityNFTBan (Amendment 2 unchanged).
 //
 // =============================================================================
 package main
@@ -52,58 +58,40 @@ func amd3HappyAuth() *uninstall.ClassifyResult {
 	}
 }
 
-// TestAmd3Dispatcher_E2Reframed_AllTrueAmendment3_True confirms that
-// gatherOrphanEvidence sets E.2=true on the Amendment 3 entry condition
-// (so AllTrueAmendment3() is satisfied on the happy path).
-func TestAmd3Dispatcher_E2Reframed_AllTrueAmendment3_True(t *testing.T) {
+// TestGatherOrphanEvidenceAmendment3_E2Reframed_AllTrueAmendment3_True
+// confirms the Amendment 3 helper sets E.2=true on the §62 entry
+// condition and AllTrueAmendment3() returns true on the happy path.
+// Also verifies E.12 is correctly false (entry condition IS
+// AmbiguityConflictExternal) and that AllTrue() (Amendment 2 predicate)
+// returns false on this fixture (because E.12 is required-true by §54.1).
+func TestGatherOrphanEvidenceAmendment3_E2Reframed_AllTrueAmendment3_True(t *testing.T) {
 	log := logging.New("/dev/null", false)
-	ev := gatherOrphanEvidence(happyExec(), log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
+	ev := gatherOrphanEvidenceAmendment3(happyExec(), log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
 
-	// E.2 must be true under the Amendment 3 entry condition (reframed
-	// per §64.1).
 	if !ev.E2AuthorityNFTBan {
 		t.Errorf("E.2 = false on Amendment 3 entry condition; want true (reframed per §64.1)")
 	}
-
-	// AllTrueAmendment3() must be true (E.12 omitted; E.2 reframed-true).
 	if !ev.AllTrueAmendment3() {
 		t.Errorf("AllTrueAmendment3() = false; failed row=%s", ev.FailedRowIDAmendment3())
 	}
-
-	// E.12 (NoConflictExternal) must be FALSE because the entry condition
-	// IS AmbiguityConflictExternal — this is Amendment 3 by construction.
 	if ev.E12NoConflictExternal {
 		t.Errorf("E.12 = true on Amendment 3 entry; want false (entry condition IS AmbiguityConflictExternal)")
 	}
-
-	// Amendment 2's AllTrue() must return false on this fixture because
-	// E.12 is required-true by §54.1 but the Amendment 3 entry condition
-	// makes that impossible. This proves the two predicates are
-	// independently scoped.
 	if ev.AllTrue() {
 		t.Errorf("AllTrue() = true on Amendment 3 entry; want false (Amendment 2 predicate requires E.12=true)")
 	}
 }
 
-// TestAmd3Dispatcher_E2_FalseWhenMisclassified confirms the E.2
-// reframing is conservative: it only fires when the FULL quintuple
-// shape is present in the classifier output. Empty external,
-// non-csf external, and OrphanNFTBan ambiguity all keep E.2 false.
-func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
+// TestGatherOrphanEvidenceAmendment3_E2FalseOnNonQualifying confirms
+// that the Amendment 3 helper's E.2 is conservative: ONLY fires when
+// the full §62 entry condition (AuthorityAmbiguous + ConflictExternal
+// + external=="csf") is present.
+func TestGatherOrphanEvidenceAmendment3_E2FalseOnNonQualifying(t *testing.T) {
 	cases := []struct {
 		name string
 		auth *uninstall.ClassifyResult
 		want bool
 	}{
-		{
-			name: "amd2_path_authority_nftban",
-			auth: &uninstall.ClassifyResult{
-				State:     uninstall.AuthorityNFTBan,
-				Ambiguity: uninstall.AmbiguityNone,
-				External:  "",
-			},
-			want: true, // Amendment 2's classic E.2
-		},
 		{
 			name: "amd3_path_authority_ambiguous_csf",
 			auth: &uninstall.ClassifyResult{
@@ -111,7 +99,16 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				Ambiguity: uninstall.AmbiguityConflictExternal,
 				External:  "csf",
 			},
-			want: true, // Amendment 3 reframed E.2
+			want: true,
+		},
+		{
+			name: "amd2_path_authority_nftban_FAILS_amendment3_helper",
+			auth: &uninstall.ClassifyResult{
+				State:     uninstall.AuthorityNFTBan,
+				Ambiguity: uninstall.AmbiguityNone,
+				External:  "",
+			},
+			want: false, // gatherOrphanEvidenceAmendment3 ONLY accepts §62 entry
 		},
 		{
 			name: "external_empty_defensive",
@@ -120,7 +117,7 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				Ambiguity: uninstall.AmbiguityConflictExternal,
 				External:  "",
 			},
-			want: false, // empty external — not a §62 candidate
+			want: false,
 		},
 		{
 			name: "external_ufw_out_of_scope",
@@ -129,7 +126,7 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				Ambiguity: uninstall.AmbiguityConflictExternal,
 				External:  "ufw",
 			},
-			want: false, // non-csf external — not a §62 candidate
+			want: false,
 		},
 		{
 			name: "external_multi_csf_ufw",
@@ -138,7 +135,7 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				Ambiguity: uninstall.AmbiguityConflictExternal,
 				External:  "csf,ufw",
 			},
-			want: false, // multi-external — not a §62 candidate
+			want: false,
 		},
 		{
 			name: "ambiguity_orphan_nftban",
@@ -147,7 +144,7 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				Ambiguity: uninstall.AmbiguityOrphanNFTBan,
 				External:  "csf",
 			},
-			want: false, // wrong sub-classifier — not a §62 candidate
+			want: false,
 		},
 		{
 			name: "authority_external",
@@ -155,10 +152,48 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 				State:    uninstall.AuthorityExternal,
 				External: "csf",
 			},
-			want: false, // AuthorityExternal — locked-REFUSE, not §62
+			want: false,
 		},
 	}
 
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			log := logging.New("/dev/null", false)
+			ev := gatherOrphanEvidenceAmendment3(happyExec(), log, detect.PanelDirectAdmin, c.auth, happyProbe(), happyCfg())
+			if ev.E2AuthorityNFTBan != c.want {
+				t.Errorf("E.2 = %v; want %v", ev.E2AuthorityNFTBan, c.want)
+			}
+		})
+	}
+}
+
+// TestGatherOrphanEvidence_Amendment2Unchanged confirms the Amendment 2
+// helper's E.2 still evaluates strictly AuthorityNFTBan. This is the
+// regression check for §66.2 — Amendment 2 path stays passing.
+func TestGatherOrphanEvidence_Amendment2Unchanged(t *testing.T) {
+	cases := []struct {
+		name string
+		auth *uninstall.ClassifyResult
+		want bool
+	}{
+		{
+			name: "amd2_authority_nftban_true",
+			auth: &uninstall.ClassifyResult{
+				State:     uninstall.AuthorityNFTBan,
+				Ambiguity: uninstall.AmbiguityNone,
+			},
+			want: true,
+		},
+		{
+			name: "amd3_classifier_does_NOT_qualify_amendment2_E2",
+			auth: &uninstall.ClassifyResult{
+				State:     uninstall.AuthorityAmbiguous,
+				Ambiguity: uninstall.AmbiguityConflictExternal,
+				External:  "csf",
+			},
+			want: false, // Amendment 2 helper rejects Amendment 3 entry
+		},
+	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			log := logging.New("/dev/null", false)
@@ -170,24 +205,62 @@ func TestAmd3Dispatcher_E2_FalseWhenMisclassified(t *testing.T) {
 	}
 }
 
-// TestAmd3Dispatcher_FailedRow_Amendment3 confirms FailedRowIDAmendment3()
-// returns AMD3-E.{N} on per-row failures from the Amendment 3 path.
-// E.12 is omitted from the Amendment 3 walk so its falseness must not
-// trigger a failed-row return.
-func TestAmd3Dispatcher_FailedRow_Amendment3(t *testing.T) {
+// TestGatherOrphanEvidenceAmendment3_FailedRow confirms
+// FailedRowIDAmendment3() returns AMD3-E.{N} on per-row failures and
+// "" on the happy path. E.12 is omitted from the Amendment 3 walk so
+// its falseness must not trigger a failed-row return.
+func TestGatherOrphanEvidenceAmendment3_FailedRow(t *testing.T) {
 	log := logging.New("/dev/null", false)
 
-	// Happy path: AllTrueAmendment3 holds, FailedRowIDAmendment3 is empty.
-	ev := gatherOrphanEvidence(happyExec(), log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
+	ev := gatherOrphanEvidenceAmendment3(happyExec(), log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
 	if id := ev.FailedRowIDAmendment3(); id != "" {
 		t.Errorf("FailedRowIDAmendment3 on happy path = %q; want \"\"", id)
 	}
 
-	// Failure path: kill E.7 (csf.disabled absent).
 	exec := happyExec()
 	delete(exec.Files, "/usr/sbin/csf.disabled")
-	ev = gatherOrphanEvidence(exec, log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
+	ev = gatherOrphanEvidenceAmendment3(exec, log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
 	if id := ev.FailedRowIDAmendment3(); id != "AMD3-E.7" {
 		t.Errorf("FailedRowIDAmendment3 with E.7 absent = %q; want %q", id, "AMD3-E.7")
+	}
+}
+
+// TestGatherOrphanEvidenceAmendment3_E2_FalseOnNonCSFExternal pins
+// the AMD3-7-equivalent gating: external != "csf" → E.2 = false →
+// AllTrueAmendment3 false → FailedRowIDAmendment3 == AMD3-E.2.
+func TestGatherOrphanEvidenceAmendment3_E2_FalseOnNonCSFExternal(t *testing.T) {
+	log := logging.New("/dev/null", false)
+	auth := &uninstall.ClassifyResult{
+		State:     uninstall.AuthorityAmbiguous,
+		Ambiguity: uninstall.AmbiguityConflictExternal,
+		External:  "ufw",
+	}
+	ev := gatherOrphanEvidenceAmendment3(happyExec(), log, detect.PanelDirectAdmin, auth, happyProbe(), happyCfg())
+	if ev.E2AuthorityNFTBan {
+		t.Errorf("E.2 = true on external=ufw; want false")
+	}
+	if ev.AllTrueAmendment3() {
+		t.Errorf("AllTrueAmendment3 = true on external=ufw; want false")
+	}
+	if id := ev.FailedRowIDAmendment3(); id != "AMD3-E.2" {
+		t.Errorf("FailedRowIDAmendment3 on external=ufw = %q; want %q", id, "AMD3-E.2")
+	}
+}
+
+// TestGatherOrphanEvidenceAmendment3_OmitsE12 carries the §66.2
+// invariant from the engine_amendment3_test.go suite into the
+// dispatcher integration: AllTrueAmendment3() must NOT consider
+// E.12 even when it is false.
+func TestGatherOrphanEvidenceAmendment3_OmitsE12(t *testing.T) {
+	log := logging.New("/dev/null", false)
+	ev := gatherOrphanEvidenceAmendment3(happyExec(), log, detect.PanelDirectAdmin, amd3HappyAuth(), happyProbe(), happyCfg())
+
+	// On Amendment 3 entry, E.12 is false (entry IS ConflictExternal).
+	if ev.E12NoConflictExternal {
+		t.Fatalf("invariant: E.12 must be false on Amendment 3 entry; got true")
+	}
+	// AllTrueAmendment3 must still pass — E.12 omitted from predicate.
+	if !ev.AllTrueAmendment3() {
+		t.Errorf("AllTrueAmendment3 = false despite E.12 omission; failed row=%s", ev.FailedRowIDAmendment3())
 	}
 }

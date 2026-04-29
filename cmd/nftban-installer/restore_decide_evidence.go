@@ -51,9 +51,21 @@ const (
 )
 
 // gatherOrphanEvidence reads the 13 §54.1 rows from the live host
-// using only read-only executor surfaces. Returns a populated
-// restore.OrphanEvidence struct; AllTrue() reports whether every row
-// holds.
+// for the Amendment 2 G1/AuthorityNFTBan/orphan-intent-candidate path.
+// Returns a populated restore.OrphanEvidence struct; AllTrue() reports
+// whether every row holds.
+//
+// Caller MUST verify the §54 candidate triple before invoking this
+// helper:
+//
+//   Authority == AuthorityNFTBan
+//   Prior == NoRecord
+//   Panel == DirectAdmin
+//   --panel-auto-takeover
+//   --accept-orphan-nftban
+//
+// Calling this helper outside the §54 candidate path is an upstream
+// invariant violation; the result is undefined.
 //
 // Rows E.1, E.2, E.3, E.4, E.5 are derived from inputs the dispatcher
 // already gathered (`detect.DetectPanel`, `uninstall.Classify`,
@@ -67,32 +79,98 @@ func gatherOrphanEvidence(
 	probe *uninstall.ProbeResult,
 	cfg *config,
 ) restore.OrphanEvidence {
+	ev := populateSharedOrphanEvidenceRows(exec, log, panel, auth, probe, cfg)
+
+	// E.2 (Amendment 2 §54.1): authority = AuthorityNFTBan.
+	ev.E2AuthorityNFTBan = auth.State == uninstall.AuthorityNFTBan
+
+	return ev
+}
+
+// gatherOrphanEvidenceAmendment3 reads the §64.1 rows from the live
+// host for the Amendment 3 G1/AmbiguityConflictExternal/
+// orphan-intent-candidate-csf path. Returns a populated
+// restore.OrphanEvidence struct; AllTrueAmendment3() reports whether
+// every row holds.
+//
+// Caller MUST verify the §62 candidate quintuple before invoking this
+// helper:
+//
+//   Authority == AuthorityAmbiguous
+//   Ambiguity == AmbiguityConflictExternal
+//   External == "csf"
+//   Prior == NoRecord
+//   Panel == DirectAdmin
+//   --panel-auto-takeover
+//   --accept-orphan-nftban
+//
+// Calling this helper outside the §62 candidate path is an upstream
+// invariant violation; the result is undefined.
+//
+// Identical to gatherOrphanEvidence except E.2 is reframed per §64.1
+// to assert (AuthorityAmbiguous + AmbiguityConflictExternal +
+// external == "csf") rather than (AuthorityNFTBan). Rows E.1, E.3–E.11,
+// E.13 are byte-identical to the Amendment 2 helper. Row E.12
+// (NoConflictExternal) is populated truthfully (false on the §62
+// entry, since AmbiguityConflictExternal IS the entry condition);
+// AllTrueAmendment3() omits E.12 from its predicate per the §64.1
+// reframing, so the false value does not invalidate the predicate.
+func gatherOrphanEvidenceAmendment3(
+	exec executor.Executor,
+	log *logging.Logger,
+	panel detect.PanelType,
+	auth *uninstall.ClassifyResult,
+	probe *uninstall.ProbeResult,
+	cfg *config,
+) restore.OrphanEvidence {
+	ev := populateSharedOrphanEvidenceRows(exec, log, panel, auth, probe, cfg)
+
+	// E.2 (Amendment 3 §64.1): reframed entry condition.
+	//   AuthorityAmbiguous + AmbiguityConflictExternal + external == "csf".
+	ev.E2AuthorityNFTBan = auth.State == uninstall.AuthorityAmbiguous &&
+		auth.Ambiguity == uninstall.AmbiguityConflictExternal &&
+		auth.External == "csf"
+
+	return ev
+}
+
+// populateSharedOrphanEvidenceRows reads every §54.1/§64.1 evidence
+// row EXCEPT E.2 and returns a partially-populated OrphanEvidence
+// struct. The caller is responsible for setting E.2 per the
+// amendment-specific entry condition (Amendment 2: AuthorityNFTBan;
+// Amendment 3: AuthorityAmbiguous + AmbiguityConflictExternal +
+// external == "csf").
+//
+// The shared rows are:
+//   E.1  panel == DirectAdmin
+//   E.3  prior-record == NoRecord
+//   E.4  --panel-auto-takeover present
+//   E.5  --accept-orphan-nftban present
+//   E.6  csf.service masked or disabled (not active)
+//   E.7  /usr/sbin/csf.disabled exists
+//   E.8  /usr/sbin/csf absent
+//   E.9  ip:nftban table present
+//   E.10 ip6:nftban table present
+//   E.11 nftband.service active
+//   E.12 no AuthorityExternal AND no AmbiguityConflictExternal
+//        (recorded truthfully; AllTrueAmendment3 omits this row)
+//   E.13 no AmbiguityOrphanNFTBan
+//
+// All evaluations are read-only.
+func populateSharedOrphanEvidenceRows(
+	exec executor.Executor,
+	log *logging.Logger,
+	panel detect.PanelType,
+	auth *uninstall.ClassifyResult,
+	probe *uninstall.ProbeResult,
+	cfg *config,
+) restore.OrphanEvidence {
 	ev := restore.OrphanEvidence{}
 
 	// E.1 panel = DirectAdmin
 	ev.E1PanelDirectAdmin = panel == detect.PanelDirectAdmin
 
-	// E.2 entry-condition row.
-	//
-	// Amendment 2 §54.1: E.2 = (Authority == AuthorityNFTBan).
-	// Amendment 3 §64.1: E.2 reframed to
-	//   (Authority == AuthorityAmbiguous AND
-	//    Ambiguity == AmbiguityConflictExternal AND
-	//    external == "csf").
-	//
-	// The dispatcher sets E.2=true when EITHER entry condition
-	// holds, so the same OrphanEvidence struct serves both
-	// AllTrue() (Amendment 2 path) and AllTrueAmendment3()
-	// (Amendment 3 path). The engine selects which predicate to
-	// evaluate based on the lattice entry it took
-	// (decideAuthorityNFTBan vs decideAmbiguityConflictExternal);
-	// E.2's reframed semantic is upheld in both because the
-	// dispatcher only enters this gathering function when EITHER
-	// candidate quintuple holds.
-	ev.E2AuthorityNFTBan = auth.State == uninstall.AuthorityNFTBan ||
-		(auth.State == uninstall.AuthorityAmbiguous &&
-			auth.Ambiguity == uninstall.AmbiguityConflictExternal &&
-			auth.External == "csf")
+	// E.2 — caller fills.
 
 	// E.3 prior = NoRecord
 	ev.E3PriorNoRecord = probe.State == uninstall.PriorNoRecord
@@ -124,33 +202,28 @@ func gatherOrphanEvidence(
 	ev.E11NftbandActive = exec.ServiceActive(nftbandServiceUnit)
 
 	// E.12 no AuthorityExternal / no AmbiguityConflictExternal.
-	// Classifier output already established AuthorityNFTBan (caller),
-	// so this is implicit; recorded explicitly per §54.1 to avoid
-	// inferential gaps.
+	// Recorded truthfully per the live classifier state. Under the
+	// Amendment 2 entry, this is true (caller invariant); under the
+	// Amendment 3 entry, this is false because the entry condition
+	// IS AmbiguityConflictExternal. AllTrueAmendment3() omits E.12
+	// from its predicate per §64.1.
 	ev.E12NoConflictExternal = auth.State != uninstall.AuthorityExternal &&
 		auth.Ambiguity != uninstall.AmbiguityConflictExternal
 
 	// E.13 no AmbiguityOrphanNFTBan.
 	//
-	// Amendment 2 §54.1 wording: "no AmbiguityOrphanNFTBan". The
-	// original implementation used the stricter
-	// `auth.State != AuthorityAmbiguous` because under Amendment 2's
-	// entry condition (AuthorityNFTBan) the two are equivalent —
-	// AuthorityNFTBan implies Ambiguity==None which implies
-	// !OrphanNFTBan. Under Amendment 3's entry condition
-	// (AuthorityAmbiguous + AmbiguityConflictExternal + external=csf),
-	// the strict form returns false even though the contract
-	// requires E.13=true; the operator-intent override does NOT
-	// extend to orphan-nftban-with-conflict cases (§66 forbidden
-	// bullet) but DOES extend to orphan-CSF-with-csf-residue
-	// (§63 lattice extension).
+	// Match the §54.1 / §64.1 wording exactly: E.13 = (Ambiguity !=
+	// AmbiguityOrphanNFTBan). Under Amendment 2's entry
+	// (AuthorityNFTBan), Ambiguity is None — !OrphanNFTBan. Under
+	// Amendment 3's entry (AmbiguityConflictExternal), Ambiguity is
+	// ConflictExternal — also !OrphanNFTBan. Only the
+	// AmbiguityOrphanNFTBan path itself fails E.13.
 	//
-	// Match the §64.1 wording exactly: E.13 = (Ambiguity !=
-	// AmbiguityOrphanNFTBan). Both Amendment 2 and Amendment 3
-	// entry conditions satisfy this; only the AmbiguityOrphanNFTBan
-	// path itself fails E.13. Test rows AMD2-E.13 (Amendment 2
-	// fixture) and AMD3-E.13 (Amendment 3 fixture, equivalent
-	// to AMD3-10's classifier shape) both pin this.
+	// (The earlier implementation used the stricter
+	// `auth.State != AuthorityAmbiguous`; that conflated the two
+	// AuthorityAmbiguous sub-kinds and returned false on the
+	// Amendment 3 path even though §64.1 requires E.13=true. Replaced
+	// with the contract-wording-exact form.)
 	ev.E13NoAmbiguous = auth.Ambiguity != uninstall.AmbiguityOrphanNFTBan
 
 	return ev

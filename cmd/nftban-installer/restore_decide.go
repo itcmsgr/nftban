@@ -173,15 +173,17 @@ func runRestoreDecide(ctx context.Context, exec executor.Executor, sf *state.Sta
 		panel == detect.PanelDirectAdmin &&
 		cfg.panelAutoTakeover &&
 		cfg.acceptOrphanNFTBan
-	if amd2Candidate || amd3Candidate {
+	switch {
+	case amd2Candidate:
 		ev := gatherOrphanEvidence(exec, log, panel, auth, probe, cfg)
 		input.OrphanEvidence = &ev
-		// Log each predicate's result. Both AllTrue() (Amendment 2)
-		// and AllTrueAmendment3() (Amendment 3) are evaluated for
-		// observability; the engine consumes whichever is appropriate
-		// per the entry condition (decided in engine.go, not here).
-		log.Info("restore decide: orphan-evidence gathered amd2_all_true=%v amd2_failed_row=%q amd3_all_true=%v amd3_failed_row=%q",
-			ev.AllTrue(), ev.FailedRowID(), ev.AllTrueAmendment3(), ev.FailedRowIDAmendment3())
+		log.Info("restore decide: orphan-evidence gathered (amendment-2 path) all_true=%v failed_row=%q",
+			ev.AllTrue(), ev.FailedRowID())
+	case amd3Candidate:
+		ev := gatherOrphanEvidenceAmendment3(exec, log, panel, auth, probe, cfg)
+		input.OrphanEvidence = &ev
+		log.Info("restore decide: orphan-evidence gathered (amendment-3 path) all_true=%v failed_row=%q",
+			ev.AllTrueAmendment3(), ev.FailedRowIDAmendment3())
 	}
 
 	// 7. Evaluate — pure, deterministic, no side effects.
