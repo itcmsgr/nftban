@@ -20,12 +20,16 @@ package directadmin
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
+	"github.com/itcmsgr/nftban/internal/ports"
 )
 
 func newTestLogger() *logging.Logger {
@@ -147,39 +151,288 @@ func TestDetect_ServiceOnly_Weak(t *testing.T) {
 // RequiredPorts
 // ----------------------------------------------------------------------------
 
-func TestRequiredPorts_Default(t *testing.T) {
+// PR26.4: RequiredPorts now consumes
+// internal/ports/panel_loader.LoadPanelConfig("directadmin"). It must
+// return the canonical conf.d-declared TCP_IN / UDP_IN port surface,
+// NOT a hardcoded [2222] list. Tests stub panelConfDLoader to inject
+// fixture PanelConfig values; one integration test exercises the
+// real bash-subshell loader against a tempdir-stamped main.conf.
+
+// withStubLoader temporarily replaces panelConfDLoader with a
+// deterministic fixture provider. Restores the original on cleanup.
+func withStubLoader(t *testing.T, fn func(configDir, panelName string) (*ports.PanelConfig, error)) {
+	t.Helper()
+	saved := panelConfDLoader
+	panelConfDLoader = fn
+	t.Cleanup(func() { panelConfDLoader = saved })
+}
+
+// withFixtureConfD writes a real conf.d/panels/directadmin/main.conf
+// under a tempdir and points panelConfDDir at it for the duration of
+// the test. Used by the integration test that exercises the real
+// LoadPanelConfig (which shells to bash to source the file).
+func withFixtureConfD(t *testing.T, mainConf string) string {
+	t.Helper()
+	tmp := t.TempDir()
+	confDir := filepath.Join(tmp, "conf.d", "panels", "directadmin")
+	if err := os.MkdirAll(confDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(confDir, "main.conf"), []byte(mainConf), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	saved := panelConfDDir
+	panelConfDDir = tmp
+	t.Cleanup(func() { panelConfDDir = saved })
+	return tmp
+}
+
+// canonicalDA is the conf.d port surface that ships with NFTBan
+// (etc/nftban/conf.d/panels/directadmin/main.conf as of PR26.4). The
+// adapter's RequiredPorts must return this set verbatim, no addition,
+// no truncation.
+var canonicalDA = struct {
+	tcpIn []int
+	udpIn []int
+}{
+	// TCP_IN: 20,21,25,53,853,80,110,143,443,465,587,993,995,2222,35000-35999
+	tcpIn: append([]int{20, 21, 25, 53, 853, 80, 110, 143, 443, 465, 587, 993, 995, 2222}, expandRange(35000, 35999)...),
+	// UDP_IN: 20,21,53,853,80,443
+	udpIn: []int{20, 21, 53, 853, 80, 443},
+}
+
+func expandRange(lo, hi int) []int {
+	out := make([]int, 0, hi-lo+1)
+	for p := lo; p <= hi; p++ {
+		out = append(out, p)
+	}
+	return out
+}
+
+// PR26.4 R1: RequiredPorts equals DirectAdmin conf.d TCP/UDP declarations.
+func TestRequiredPorts_ConfDLoaded_FullSurface(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		if panelName != "directadmin" {
+			t.Fatalf("loader called with panelName=%q; want directadmin", panelName)
+		}
+		return &ports.PanelConfig{
+			Name:       "directadmin",
+			Enabled:    true,
+			ConfigFile: configDir + "/conf.d/panels/directadmin/main.conf",
+			TCPIn:      canonicalDA.tcpIn,
+			UDPIn:      canonicalDA.udpIn,
+		}, nil
+	})
+
 	a := New()
-	mock := executor.NewMockExecutor()
-	tcp, udp, err := a.RequiredPorts(context.Background(), mock)
+	tcp, udp, err := a.RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err != nil {
-		t.Fatalf("RequiredPorts must not error on default-port path: %v", err)
+		t.Fatalf("RequiredPorts must not error on canonical DA conf.d: %v", err)
 	}
-	if len(tcp) != 1 || tcp[0] != 2222 {
-		t.Errorf("expected default TCP=[2222]; got %v", tcp)
+	if !equalIntSlices(tcp, canonicalDA.tcpIn) {
+		t.Errorf("TCP surface mismatch:\n  got  %v\n  want %v", tcp, canonicalDA.tcpIn)
 	}
-	if len(udp) != 0 {
-		t.Errorf("expected UDP=[]; got %v", udp)
+	if !equalIntSlices(udp, canonicalDA.udpIn) {
+		t.Errorf("UDP surface mismatch:\n  got  %v\n  want %v", udp, canonicalDA.udpIn)
 	}
 }
 
-func TestRequiredPorts_ConfigOverride(t *testing.T) {
-	a := New()
-	mock := executor.NewMockExecutor()
-	mock.Files[configPath] = []byte("# header\nport=2225\nfoo=bar\n")
-	tcp, _, err := a.RequiredPorts(context.Background(), mock)
+// PR26.4 R2: RequiredPorts is NOT [2222]-only. This is a structural
+// regression check that ensures the legacy hardcoded path is gone.
+func TestRequiredPorts_ConfDLoaded_NotJust2222(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return &ports.PanelConfig{
+			Name:  "directadmin",
+			TCPIn: canonicalDA.tcpIn,
+			UDPIn: canonicalDA.udpIn,
+		}, nil
+	})
+
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err != nil {
-		t.Fatalf("config-override path must not error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(tcp) != 1 || tcp[0] != 2225 {
-		t.Errorf("expected TCP=[2225] from config override; got %v", tcp)
+	if len(tcp) <= 1 {
+		t.Fatalf("expected full DA TCP surface; got only %v", tcp)
+	}
+	// Specific checks: at least one non-2222 TCP port; UDP non-empty.
+	hasNon2222 := false
+	for _, p := range tcp {
+		if p != 2222 {
+			hasNon2222 = true
+			break
+		}
+	}
+	if !hasNon2222 {
+		t.Errorf("RequiredPorts must include ports beyond control-plane 2222; got %v", tcp)
+	}
+	if len(udp) == 0 {
+		t.Errorf("RequiredPorts must declare UDP surface for DA; got empty")
+	}
+	// Specific port spot-checks (TCP 25 SMTP, TCP 443 HTTPS, UDP 53 DNS).
+	for _, p := range []int{25, 443} {
+		if !containsInt(tcp, p) {
+			t.Errorf("TCP surface missing canonical port %d; got %v", p, tcp)
+		}
+	}
+	if !containsInt(udp, 53) {
+		t.Errorf("UDP surface missing canonical port 53; got %v", udp)
 	}
 }
 
-// Malformed override falls back to default (no error — read-only tolerance).
-func TestRequiredPorts_MalformedConfig_FallsBackToDefault(t *testing.T) {
-	cases := []struct {
-		name, conf string
-	}{
+// PR26.4 R4: missing conf.d main.conf must fail closed.
+func TestRequiredPorts_MissingConfD_FailsClosed(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return nil, fmt.Errorf("panel config not found: %s/conf.d/panels/%s/main.conf",
+			configDir, panelName)
+	})
+
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err == nil {
+		t.Fatalf("expected error on missing conf.d; got tcp=%v udp=%v", tcp, udp)
+	}
+	if !strings.Contains(err.Error(), "DirectAdmin conf.d") {
+		t.Errorf("error must reference DirectAdmin conf.d; got %v", err)
+	}
+}
+
+// PR26.4 R5: malformed conf.d (loaded but empty TCP_IN) must fail closed.
+func TestRequiredPorts_EmptyTCPIn_FailsClosed(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return &ports.PanelConfig{
+			Name:       "directadmin",
+			ConfigFile: "/tmp/test/main.conf",
+			TCPIn:      nil, // malformed: panel host with no inbound surface
+			UDPIn:      []int{53},
+		}, nil
+	})
+
+	_, _, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err == nil {
+		t.Fatalf("expected error on empty TCP_IN")
+	}
+	if !strings.Contains(err.Error(), "no TCP_IN") {
+		t.Errorf("error must explain malformed TCP_IN; got %v", err)
+	}
+}
+
+// Loader returning nil PanelConfig (defensive).
+func TestRequiredPorts_NilPanelConfig_FailsClosed(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return nil, nil
+	})
+	if _, _, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor()); err == nil {
+		t.Fatalf("expected error when loader returns nil cfg")
+	}
+}
+
+// PR26.4 defensive: returned slices must not alias internal loader state.
+func TestRequiredPorts_DefensiveCopy(t *testing.T) {
+	internalTCP := []int{20, 21, 25, 2222}
+	internalUDP := []int{53, 443}
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return &ports.PanelConfig{Name: "directadmin", TCPIn: internalTCP, UDPIn: internalUDP}, nil
+	})
+
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tcp[0] = 99999
+	udp[0] = 99999
+	if internalTCP[0] == 99999 || internalUDP[0] == 99999 {
+		t.Errorf("RequiredPorts must return defensive copies; caller mutation leaked into loader cache")
+	}
+}
+
+// Integration: real internal/ports.LoadPanelConfig against a tempdir-
+// stamped fixture main.conf. Exercises the actual bash-subshell parser
+// path so a future change in the conf.d format or loader behavior
+// surfaces here. Skipped if /bin/bash is not available.
+func TestRequiredPorts_ConfDLoaded_RealLoader_FixtureFile(t *testing.T) {
+	if _, err := os.Stat("/bin/bash"); err != nil {
+		t.Skipf("/bin/bash unavailable on this host: %v", err)
+	}
+	const fixtureMain = `# fixture main.conf for PR26.4 integration test
+NFTBAN_DIRECTADMIN_PATH="/usr/local/directadmin"
+NFTBAN_DIRECTADMIN_PANEL_PORT="2222"
+NFTBAN_DIRECTADMIN_TCP_IN="20,21,25,2222,35000-35001"
+NFTBAN_DIRECTADMIN_UDP_IN="53,853"
+NFTBAN_DIRECTADMIN_TCP_OUT="20,21,25,2222"
+NFTBAN_DIRECTADMIN_UDP_OUT="53,123"
+`
+	withFixtureConfD(t, fixtureMain)
+
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err != nil {
+		t.Fatalf("real-loader RequiredPorts: %v", err)
+	}
+	wantTCP := []int{20, 21, 25, 2222, 35000, 35001}
+	wantUDP := []int{53, 853}
+	if !equalIntSlices(tcp, wantTCP) {
+		t.Errorf("TCP mismatch:\n  got  %v\n  want %v", tcp, wantTCP)
+	}
+	if !equalIntSlices(udp, wantUDP) {
+		t.Errorf("UDP mismatch:\n  got  %v\n  want %v", udp, wantUDP)
+	}
+}
+
+// Integration: missing fixture main.conf must surface as a fail-closed
+// error from the real loader.
+func TestRequiredPorts_RealLoader_MissingConfD_FailsClosed(t *testing.T) {
+	saved := panelConfDDir
+	panelConfDDir = t.TempDir() // tempdir without conf.d/ in it
+	t.Cleanup(func() { panelConfDDir = saved })
+
+	if _, _, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor()); err == nil {
+		t.Fatalf("expected error from real loader when main.conf is absent")
+	}
+}
+
+// equalIntSlices compares two int slices order-sensitively.
+func equalIntSlices(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsInt(slice []int, v int) bool {
+	for _, p := range slice {
+		if p == v {
+			return true
+		}
+	}
+	return false
+}
+
+// ----------------------------------------------------------------------------
+// ValidateReachability — directadmin.conf control-port override now lives here
+// (PR26.4 separates control-plane probing from RequiredPorts surface load).
+// ----------------------------------------------------------------------------
+
+// PR26.4 R3: ValidateReachability still honors directadmin.conf
+// `port=N` override. Previously tested via RequiredPorts; now tested
+// where the override actually applies.
+func TestValidateReachability_ConfigOverride_HonoredByControlPlane(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	mock.Files[configPath] = []byte("port=2225\n")
+	mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(2225)}
+	if err := a.ValidateReachability(context.Background(), mock); err != nil {
+		t.Errorf("expected nil; got %v", err)
+	}
+}
+
+// Malformed override → control-plane probes the default port (2222).
+// Reachability check passes only if 2222 is listening.
+func TestValidateReachability_MalformedOverride_FallsBackToDefault(t *testing.T) {
+	cases := []struct{ name, conf string }{
 		{"non-numeric", "port=NOT_A_PORT\n"},
 		{"out-of-range-zero", "port=0\n"},
 		{"out-of-range-high", "port=99999\n"},
@@ -191,28 +444,12 @@ func TestRequiredPorts_MalformedConfig_FallsBackToDefault(t *testing.T) {
 			a := New()
 			mock := executor.NewMockExecutor()
 			mock.Files[configPath] = []byte(c.conf)
-			tcp, _, err := a.RequiredPorts(context.Background(), mock)
-			if err != nil {
-				t.Fatalf("malformed-config path must not error: %v", err)
-			}
-			if tcp[0] != defaultPort {
-				t.Errorf("expected fallback to default port %d; got %v", defaultPort, tcp)
+			// 2222 listening → fallback succeeds.
+			mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(defaultPort)}
+			if err := a.ValidateReachability(context.Background(), mock); err != nil {
+				t.Errorf("malformed config should fall back to default %d; got error: %v", defaultPort, err)
 			}
 		})
-	}
-}
-
-// Inline-comment tolerance: `port=2222 # comment` parses as 2222.
-func TestRequiredPorts_ConfigInlineComment(t *testing.T) {
-	a := New()
-	mock := executor.NewMockExecutor()
-	mock.Files[configPath] = []byte("port=2225 # operator override\n")
-	tcp, _, err := a.RequiredPorts(context.Background(), mock)
-	if err != nil {
-		t.Fatalf("inline-comment path must not error: %v", err)
-	}
-	if tcp[0] != 2225 {
-		t.Errorf("expected port=2225 with inline comment; got %v", tcp)
 	}
 }
 
@@ -331,7 +568,23 @@ func TestID(t *testing.T) {
 // Framework integration: registered adapter detected → policy fires
 // ----------------------------------------------------------------------------
 
+// stubCanonicalDA installs a stub loader returning the canonical DA
+// conf.d port surface, so framework-integration tests are deterministic
+// regardless of whether /etc/nftban/conf.d/... exists on the build host.
+func stubCanonicalDA(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return &ports.PanelConfig{
+			Name:    "directadmin",
+			Enabled: true,
+			TCPIn:   canonicalDA.tcpIn,
+			UDPIn:   canonicalDA.udpIn,
+		}, nil
+	})
+}
+
 func TestFrameworkIntegration_DA_Detected_Reachable_Passes(t *testing.T) {
+	stubCanonicalDA(t)
+
 	a := New()
 	mock := executor.NewMockExecutor()
 	seedDirectAdmin(mock, 2222)
@@ -348,9 +601,19 @@ func TestFrameworkIntegration_DA_Detected_Reachable_Passes(t *testing.T) {
 	if !res.PortsApplied || !res.ReachableAfter {
 		t.Errorf("expected PortsApplied+ReachableAfter true; got %#v", res)
 	}
+	// PR26.4: framework PanelResult must carry the full conf.d
+	// port surface, not just the control plane.
+	if !equalIntSlices(res.PortsTCP, canonicalDA.tcpIn) {
+		t.Errorf("PortsTCP must equal canonical DA TCP_IN; got %v", res.PortsTCP)
+	}
+	if !equalIntSlices(res.PortsUDP, canonicalDA.udpIn) {
+		t.Errorf("PortsUDP must equal canonical DA UDP_IN; got %v", res.PortsUDP)
+	}
 }
 
 func TestFrameworkIntegration_DA_Detected_NotReachable_Blocks(t *testing.T) {
+	stubCanonicalDA(t)
+
 	a := New()
 	mock := executor.NewMockExecutor()
 	// Install dir + binary + service active, but port NOT listening.
@@ -379,6 +642,8 @@ func TestFrameworkIntegration_DA_Detected_NotReachable_Blocks(t *testing.T) {
 // covers only the control plane in PR26.3. Full port-surface
 // validation lands in PR26.4.
 func TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival(t *testing.T) {
+	stubCanonicalDA(t)
+
 	a := New()
 	mock := executor.NewMockExecutor()
 	mock.Dirs[installDir] = true
@@ -425,6 +690,8 @@ func TestFrameworkIntegration_DA_Absent_Passes(t *testing.T) {
 
 // OperatorDisabled (--no-panel) flips a failing DA host to non-fatal.
 func TestFrameworkIntegration_DA_NotReachable_OperatorDisabled_Passes(t *testing.T) {
+	stubCanonicalDA(t)
+
 	a := New()
 	mock := executor.NewMockExecutor()
 	mock.Dirs[installDir] = true
@@ -466,6 +733,8 @@ func TestInitRegistration_AdapterPresent(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 func TestReadOnly_NoWrites_NoMutationCommands(t *testing.T) {
+	stubCanonicalDA(t)
+
 	a := New()
 	mock := executor.NewMockExecutor()
 	seedDirectAdmin(mock, 2222)
