@@ -16,41 +16,46 @@
 // meta:inventory.privileges="root"
 // =============================================================================
 //
-// PR26.3 — DirectAdmin adapter under the PR26.2 panelfw contract.
-// First and only adapter shipped in this PR. cPanel/Plesk/etc. live in
-// future PRs under the same framework.
+// PR26.3 / PR26.4 — DirectAdmin adapter under the PR26.2 panelfw
+// contract. First and only adapter shipped in this PR. cPanel/Plesk/
+// etc. live in future PRs (PR26.5+) under the same framework.
 //
-// SCOPE — CONTROL PLANE ONLY (PR26.3)
-// -----------------------------------
-// This adapter validates DirectAdmin **control-plane reachability**
-// only. It detects DirectAdmin and validates the DirectAdmin control
-// port (TCP 2222 by default, per-config override via directadmin.conf
-// `port=N`).
+// SCOPE
+// -----
+// CONTROL PLANE — ValidateReachability tests the DirectAdmin control
+// port only (default TCP 2222, per-config override via
+// directadmin.conf `port=N`). Failure ⇒ PANEL-SURVIVAL-001 fires
+// unless --no-panel.
 //
-// It does NOT yet validate the full DirectAdmin service-port surface
-// (the 16+ public-facing ports DirectAdmin manages on behalf of
-// hosted accounts: SMTP/SMTPS, IMAP/IMAPS, POP3/POP3S, FTP/FTPS, SSH,
-// HTTP/HTTPS, DNS, etc.). Those are tracked separately by the
-// canonical /etc/nftban/conf.d/panels/directadmin/main.conf and are
-// loaded by internal/ports/panel_loader.LoadPanelConfig — neither of
-// which this adapter consumes.
+// FULL PORT SURFACE — RequiredPorts consults the canonical
+// /etc/nftban/conf.d/panels/directadmin/main.conf via
+// internal/ports/panel_loader.LoadPanelConfig("directadmin") and
+// returns the conf.d-declared TCP_IN / UDP_IN port set. The adapter
+// does NOT invent or duplicate a DirectAdmin port list. Conf.d wins
+// over the legacy shell library (per the audit four-truth resolution:
+// SSH port 22 is managed separately via /etc/nftban/ports.d/00-ssh.conf
+// and is intentionally absent from panel TCP_IN).
 //
-// PR26.4 follow-up:
-//   Full port-surface validation MUST reuse
-//   internal/ports/panel_loader.LoadPanelConfig("directadmin") and the
-//   canonical conf.d panel config. PR26.3 deliberately does not import
-//   internal/ports — that import lands in PR26.4 so the control-plane
-//   assertion ships narrowly first and full-surface validation is a
-//   separate, separately-reviewed change.
+// Fail-closed contract:
+//   - Missing conf.d main.conf → RequiredPorts returns error →
+//     PanelResult.Fatal=true via panelfw.finalizeDetected.
+//   - Loaded conf.d with empty TCP_IN → returns error (a DirectAdmin
+//     panel host with zero declared inbound ports is malformed).
+//
+// PR26.4 status (this commit):
+//   - Full port-surface LOAD wired through panel_loader.
+//   - Full port-surface REACHABILITY probing remains out of scope —
+//     only the control plane is probed in ValidateReachability.
+//   - The existing bash-subshell parser inside panel_loader is
+//     untouched; its Go-native rewrite is PR26.7's lane.
 //
 // Read-only by interface contract:
 //   - Detect:               filesystem stat + service-active query + ss listener parse
-//   - RequiredPorts:        config-file read (best-effort); falls back to default 2222
+//   - RequiredPorts:        canonical conf.d load via panel_loader (read-only)
 //   - ValidateReachability: ss -lnt output parse for the control port
 //
-// No mutation surface: no nft, no service writes, no file writes, no
-// shell out beyond the read-only `systemctl is-active` and `ss -lnt`
-// invocations the framework's existing executor already supports.
+// No new mutation surface in PR26.4: panel_loader's existing read-only
+// bash-subshell sourcing is the only added I/O path.
 //
 // =============================================================================
 
@@ -63,7 +68,9 @@ import (
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/fhs"
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
+	"github.com/itcmsgr/nftban/internal/ports"
 )
 
 // adapterID is the canonical PanelID for this adapter. Matches the
@@ -84,6 +91,22 @@ const (
 	systemdUnit   = "directadmin.service"
 	confidenceKey = "port"
 )
+
+// panelConfDLoader is the function the adapter calls to load the
+// canonical conf.d panel config. Defaults to the package-public
+// internal/ports/panel_loader.LoadPanelConfig at process startup.
+//
+// Tests inject a fixture loader by writing to this var; production
+// code never reassigns it. The seam is here (rather than passing the
+// loader down through every call site) because PanelAdapter's
+// interface is fixed by panelfw and we can't add a constructor
+// argument without breaking the contract.
+var panelConfDLoader func(configDir, panelName string) (*ports.PanelConfig, error) = ports.LoadPanelConfig
+
+// panelConfDDir is the configDir argument supplied to the loader.
+// Default: fhs.EtcDir ("/etc/nftban"). Tests override to a tempdir
+// containing fixture conf.d/panels/directadmin/main.conf.
+var panelConfDDir = fhs.EtcDir
 
 // adapter is the package-private DirectAdmin adapter type. The
 // framework receives it via Register(); callers should not construct
@@ -157,16 +180,42 @@ func (a *adapter) Detect(ctx context.Context, exec executor.Executor) panelfw.Pa
 
 // RequiredPorts implements panelfw.PanelAdapter. Read-only.
 //
-// Returns DirectAdmin's required TCP control port (default 2222 or
-// per-config override). UDP list is always empty — DirectAdmin's
-// surface is HTTP/HTTPS only.
+// PR26.4: returns the canonical conf.d-declared DirectAdmin TCP_IN /
+// UDP_IN port surface, loaded via internal/ports/panel_loader.LoadPanelConfig.
 //
-// Adapter does NOT error on a missing config file: if directadmin.conf
-// cannot be read the default port is returned with no error. Detect()
-// already records the partial-install signal via Confidence=weak.
+// The adapter does NOT invent a port list — it reports exactly what
+// /etc/nftban/conf.d/panels/directadmin/main.conf declares. Conf.d
+// wins over the legacy shell library; SSH port 22 is intentionally
+// absent because /etc/nftban/ports.d/00-ssh.conf manages it
+// separately.
+//
+// Fail-closed contract:
+//   - Missing main.conf → returns error.
+//   - Loaded with empty TCP_IN → returns error (malformed for a real
+//     DirectAdmin host; an empty inbound list cannot serve the panel).
+//
+// On error, panelfw.finalizeDetected sets PanelResult.Fatal=true per
+// PANEL-SURVIVAL-001 unless --no-panel.
 func (a *adapter) RequiredPorts(ctx context.Context, exec executor.Executor) ([]int, []int, error) {
-	port := readConfiguredPort(exec)
-	return []int{port}, nil, nil
+	cfg, err := panelConfDLoader(panelConfDDir, string(adapterID))
+	if err != nil {
+		return nil, nil, fmt.Errorf("DirectAdmin conf.d load failed: %w (path: %s/conf.d/panels/%s/main.conf)",
+			err, panelConfDDir, string(adapterID))
+	}
+	if cfg == nil {
+		return nil, nil, fmt.Errorf("DirectAdmin conf.d load returned nil PanelConfig")
+	}
+	if len(cfg.TCPIn) == 0 {
+		return nil, nil, fmt.Errorf(
+			"DirectAdmin conf.d declares no TCP_IN ports (malformed: %s) — "+
+				"a real DirectAdmin host must declare its inbound port surface",
+			cfg.ConfigFile)
+	}
+	// Conf.d is the authoritative source; copy slices defensively so
+	// the caller cannot mutate the loader's cached values.
+	tcp := append([]int(nil), cfg.TCPIn...)
+	udp := append([]int(nil), cfg.UDPIn...)
+	return tcp, udp, nil
 }
 
 // ValidateReachability implements panelfw.PanelAdapter. Read-only.
@@ -175,9 +224,12 @@ func (a *adapter) RequiredPorts(ctx context.Context, exec executor.Executor) ([]
 // state. Returns nil on success; a structured error otherwise. Does
 // NOT mutate ports, services, or rules.
 //
-// Scope is the control plane (default 2222) only. The full DirectAdmin
-// service-port surface (mail/web/SSH/etc.) is NOT validated here —
-// see the file-level "PR26.4 follow-up" comment.
+// Scope is the control plane (default 2222 or per-`directadmin.conf`
+// override) only. RequiredPorts (PR26.4) loads the full DirectAdmin
+// service-port surface from the canonical conf.d via panel_loader, but
+// this method deliberately does NOT probe each conf.d-declared port —
+// full-surface reachability probing is intentionally out of scope here
+// and remains the broader rebuild/validate path's responsibility.
 func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Executor) error {
 	port := readConfiguredPort(exec)
 	if portInListenState(exec, port) {
@@ -185,7 +237,8 @@ func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Execut
 	}
 	return fmt.Errorf(
 		"DirectAdmin control-plane port %d not in LISTEN state — control-plane unreachable "+
-			"(note: this assertion validates the control plane only; full DirectAdmin port surface validated in PR26.4)",
+			"(this assertion probes the control plane only; the full DirectAdmin port surface is loaded "+
+			"from conf.d via RequiredPorts but not probed here)",
 		port)
 }
 
