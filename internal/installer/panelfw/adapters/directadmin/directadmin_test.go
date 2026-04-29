@@ -245,6 +245,42 @@ func TestValidateReachability_NotListening_ReturnsError(t *testing.T) {
 	}
 }
 
+// PR26.3 Path A: the user-facing error must explicitly identify the
+// scope as control-plane, not "panel survival" or "full panel". This
+// keeps operators from mistakenly believing the assertion has
+// validated the full DirectAdmin port surface.
+func TestValidateReachability_NotListening_ErrorMentionsControlPlane(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(80)}
+
+	err := a.ValidateReachability(context.Background(), mock)
+	if err == nil {
+		t.Fatalf("expected error when control port not listening")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "control-plane") {
+		t.Errorf("error must explicitly say 'control-plane'; got %q", msg)
+	}
+	// Negative: the message must NOT make affirmative claims of full
+	// survival or full surface validation. We allow the explanatory
+	// negation form ("full DirectAdmin port surface validated in
+	// PR26.4") because it reads as scope clarification, not a claim
+	// the assertion has validated those ports.
+	for _, forbidden := range []string{
+		"full panel survival validated",
+		"full panel survived",
+		"all DirectAdmin ports validated",
+		"all DirectAdmin ports listening",
+		"all panel ports listening",
+		"all panel ports validated",
+	} {
+		if strings.Contains(msg, forbidden) {
+			t.Errorf("error must NOT claim %q (overstates scope); got %q", forbidden, msg)
+		}
+	}
+}
+
 // Defensive: ":22222" must not match expected ":2222".
 func TestValidateReachability_PortPrefixCollision(t *testing.T) {
 	a := New()
@@ -331,6 +367,46 @@ func TestFrameworkIntegration_DA_Detected_NotReachable_Blocks(t *testing.T) {
 	}
 	if !strings.Contains(res.Reason, "directadmin") {
 		t.Errorf("Reason should mention directadmin: %q", res.Reason)
+	}
+	// PR26.3 Path A: the surfaced Reason must say control-plane.
+	if !strings.Contains(res.Reason, "control-plane") {
+		t.Errorf("Reason must say 'control-plane'; got %q", res.Reason)
+	}
+}
+
+// PR26.3 Path A: the surfaced Reason on a failing DA host must NOT
+// claim that the full panel survival was checked — the assertion
+// covers only the control plane in PR26.3. Full port-surface
+// validation lands in PR26.4.
+func TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	mock.Dirs[installDir] = true
+	mock.Files[binaryPath] = []byte("ELF")
+	mock.Services[systemdUnit] = true
+	mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(80)}
+
+	res := panelfw.EvaluateAdapters(context.Background(), mock, newTestLogger(),
+		[]panelfw.PanelAdapter{a}, panelfw.DefaultPolicy())
+
+	if !res.Fatal {
+		t.Fatalf("expected Fatal=true; got %#v", res)
+	}
+	// These phrases would imply the assertion validated more than the
+	// control plane. The error MAY mention "full ... port surface" in
+	// a NEGATION (e.g., "...full DirectAdmin port surface validated in
+	// PR26.4"), so we look for affirmative-claim verbs instead.
+	for _, forbidden := range []string{
+		"full panel survival validated",
+		"full panel survived",
+		"all DirectAdmin ports validated",
+		"all DirectAdmin ports listening",
+		"all panel ports listening",
+		"all panel ports validated",
+	} {
+		if strings.Contains(res.Reason, forbidden) {
+			t.Errorf("Reason must NOT claim %q (overstates PR26.3 scope); got %q", forbidden, res.Reason)
+		}
 	}
 }
 

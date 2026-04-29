@@ -20,10 +20,33 @@
 // First and only adapter shipped in this PR. cPanel/Plesk/etc. live in
 // future PRs under the same framework.
 //
+// SCOPE — CONTROL PLANE ONLY (PR26.3)
+// -----------------------------------
+// This adapter validates DirectAdmin **control-plane reachability**
+// only. It detects DirectAdmin and validates the DirectAdmin control
+// port (TCP 2222 by default, per-config override via directadmin.conf
+// `port=N`).
+//
+// It does NOT yet validate the full DirectAdmin service-port surface
+// (the 16+ public-facing ports DirectAdmin manages on behalf of
+// hosted accounts: SMTP/SMTPS, IMAP/IMAPS, POP3/POP3S, FTP/FTPS, SSH,
+// HTTP/HTTPS, DNS, etc.). Those are tracked separately by the
+// canonical /etc/nftban/conf.d/panels/directadmin/main.conf and are
+// loaded by internal/ports/panel_loader.LoadPanelConfig — neither of
+// which this adapter consumes.
+//
+// PR26.4 follow-up:
+//   Full port-surface validation MUST reuse
+//   internal/ports/panel_loader.LoadPanelConfig("directadmin") and the
+//   canonical conf.d panel config. PR26.3 deliberately does not import
+//   internal/ports — that import lands in PR26.4 so the control-plane
+//   assertion ships narrowly first and full-surface validation is a
+//   separate, separately-reviewed change.
+//
 // Read-only by interface contract:
 //   - Detect:               filesystem stat + service-active query + ss listener parse
 //   - RequiredPorts:        config-file read (best-effort); falls back to default 2222
-//   - ValidateReachability: ss -lnt output parse for the required port
+//   - ValidateReachability: ss -lnt output parse for the control port
 //
 // No mutation surface: no nft, no service writes, no file writes, no
 // shell out beyond the read-only `systemctl is-active` and `ss -lnt`
@@ -148,15 +171,22 @@ func (a *adapter) RequiredPorts(ctx context.Context, exec executor.Executor) ([]
 
 // ValidateReachability implements panelfw.PanelAdapter. Read-only.
 //
-// Confirms the required TCP port is in LISTEN state. Returns nil on
-// success; a structured error otherwise. Does NOT mutate ports,
-// services, or rules.
+// Confirms the DirectAdmin **control-plane** TCP port is in LISTEN
+// state. Returns nil on success; a structured error otherwise. Does
+// NOT mutate ports, services, or rules.
+//
+// Scope is the control plane (default 2222) only. The full DirectAdmin
+// service-port surface (mail/web/SSH/etc.) is NOT validated here —
+// see the file-level "PR26.4 follow-up" comment.
 func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Executor) error {
 	port := readConfiguredPort(exec)
 	if portInListenState(exec, port) {
 		return nil
 	}
-	return fmt.Errorf("DirectAdmin TCP port %d not in LISTEN state — panel control surface unreachable", port)
+	return fmt.Errorf(
+		"DirectAdmin control-plane port %d not in LISTEN state — control-plane unreachable "+
+			"(note: this assertion validates the control plane only; full DirectAdmin port surface validated in PR26.4)",
+		port)
 }
 
 // readConfiguredPort returns the configured control port from
