@@ -281,6 +281,8 @@ func TestRequiredPorts_ConfDLoaded_NotJust2222(t *testing.T) {
 }
 
 // PR26.4 R4: missing conf.d main.conf must fail closed.
+// Loader returns (nil, err) — adapter must propagate error AND must
+// NOT silently fall back to [2222].
 func TestRequiredPorts_MissingConfD_FailsClosed(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		return nil, fmt.Errorf("panel config not found: %s/conf.d/panels/%s/main.conf",
@@ -294,9 +296,12 @@ func TestRequiredPorts_MissingConfD_FailsClosed(t *testing.T) {
 	if !strings.Contains(err.Error(), "DirectAdmin conf.d") {
 		t.Errorf("error must reference DirectAdmin conf.d; got %v", err)
 	}
+	assertNoControlPlaneFallback(t, tcp, udp)
 }
 
 // PR26.4 R5: malformed conf.d (loaded but empty TCP_IN) must fail closed.
+// Loader returns a PanelConfig with empty TCPIn — adapter must error
+// AND must NOT fall back to [2222].
 func TestRequiredPorts_EmptyTCPIn_FailsClosed(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		return &ports.PanelConfig{
@@ -307,22 +312,138 @@ func TestRequiredPorts_EmptyTCPIn_FailsClosed(t *testing.T) {
 		}, nil
 	})
 
-	_, _, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err == nil {
 		t.Fatalf("expected error on empty TCP_IN")
 	}
 	if !strings.Contains(err.Error(), "no TCP_IN") {
 		t.Errorf("error must explain malformed TCP_IN; got %v", err)
 	}
+	assertNoControlPlaneFallback(t, tcp, udp)
 }
 
-// Loader returning nil PanelConfig (defensive).
+// Loader returning nil PanelConfig (defensive). Loader returns
+// (nil, nil) — adapter must error AND must NOT fall back to [2222].
 func TestRequiredPorts_NilPanelConfig_FailsClosed(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		return nil, nil
 	})
-	if _, _, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor()); err == nil {
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err == nil {
 		t.Fatalf("expected error when loader returns nil cfg")
+	}
+	assertNoControlPlaneFallback(t, tcp, udp)
+}
+
+// PR26.4 condition A: explicit regression guard — port 22 (SSH) must
+// NOT appear in DirectAdmin RequiredPorts output. The canonical
+// conf.d intentionally excludes 22 (managed separately by
+// /etc/nftban/ports.d/00-ssh.conf); the legacy shell library
+// historically included 22 (four-truth drift). Conf.d wins.
+//
+// This test is independent of the full-surface identity test so a
+// future conf.d edit that re-introduces 22 trips a clearly-named
+// failure even if the surface-identity test has been amended.
+func TestRequiredPorts_ConfDDoesNotIncludeSSHPort22(t *testing.T) {
+	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
+		return &ports.PanelConfig{
+			Name:    "directadmin",
+			Enabled: true,
+			TCPIn:   canonicalDA.tcpIn,
+			UDPIn:   canonicalDA.udpIn,
+		}, nil
+	})
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err != nil {
+		t.Fatalf("unexpected error from canonical DA stub: %v", err)
+	}
+	if containsInt(tcp, 22) {
+		t.Errorf("DirectAdmin RequiredPorts TCP_IN must NOT include port 22 — "+
+			"SSH is managed by /etc/nftban/ports.d/00-ssh.conf, conf.d wins over shell library; got %v", tcp)
+	}
+	if containsInt(udp, 22) {
+		t.Errorf("DirectAdmin RequiredPorts UDP_IN must NOT include port 22; got %v", udp)
+	}
+}
+
+// PR26.4 condition C: range-form (35000-35999) regression guard.
+// internal/ports/panel_loader.parsePortList expands ranges into
+// individual ints (35000..35999 = 1000 values). Verify the loader
+// integration produces the expected expanded length and both endpoints
+// so a future loader change that drops range expansion or shifts the
+// boundary surfaces here.
+//
+// Canonical conf.d declares:
+//
+//	TCP_IN: 14 discrete + 35000-35999 range = 14 + 1000 = 1014 ports
+func TestRequiredPorts_RealLoader_RangeExpansion_LengthAndEndpoints(t *testing.T) {
+	if _, err := os.Stat("/bin/bash"); err != nil {
+		t.Skipf("/bin/bash unavailable on this host: %v", err)
+	}
+	const fixtureMain = `
+NFTBAN_DIRECTADMIN_PATH="/usr/local/directadmin"
+NFTBAN_DIRECTADMIN_PANEL_PORT="2222"
+NFTBAN_DIRECTADMIN_TCP_IN="20,21,25,53,853,80,110,143,443,465,587,993,995,2222,35000-35999"
+NFTBAN_DIRECTADMIN_UDP_IN="20,21,53,853,80,443"
+`
+	withFixtureConfD(t, fixtureMain)
+
+	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
+	if err != nil {
+		t.Fatalf("real-loader RequiredPorts: %v", err)
+	}
+
+	// Exact length: 14 discrete + 1000 expanded range = 1014.
+	const expectedTCP = 14 + 1000
+	if len(tcp) != expectedTCP {
+		t.Errorf("TCP_IN length = %d; want %d (14 discrete + 1000-port range expansion)",
+			len(tcp), expectedTCP)
+	}
+	// Both range endpoints must be present.
+	if !containsInt(tcp, 35000) {
+		t.Errorf("TCP_IN must include range start 35000; got %v ports total", len(tcp))
+	}
+	if !containsInt(tcp, 35999) {
+		t.Errorf("TCP_IN must include range end 35999; got %v ports total", len(tcp))
+	}
+	// Spot-check one mid-range port to confirm the loader didn't only
+	// keep endpoints.
+	if !containsInt(tcp, 35500) {
+		t.Errorf("TCP_IN must include mid-range port 35500 (loader range expansion broken?)")
+	}
+	// Every discrete declared port must be present.
+	for _, p := range []int{20, 21, 25, 53, 853, 80, 110, 143, 443, 465, 587, 993, 995, 2222} {
+		if !containsInt(tcp, p) {
+			t.Errorf("TCP_IN missing discrete declared port %d", p)
+		}
+	}
+	// SSH port 22 still excluded even with the real loader.
+	if containsInt(tcp, 22) {
+		t.Errorf("real loader produced TCP_IN containing port 22 — conf.d four-truth violation; got %v", tcp)
+	}
+	// UDP_IN exact length and contents.
+	wantUDP := []int{20, 21, 53, 853, 80, 443}
+	if len(udp) != len(wantUDP) {
+		t.Errorf("UDP_IN length = %d; want %d", len(udp), len(wantUDP))
+	}
+	for _, p := range wantUDP {
+		if !containsInt(udp, p) {
+			t.Errorf("UDP_IN missing %d", p)
+		}
+	}
+}
+
+// assertNoControlPlaneFallback is a fail-closed assertion helper: when
+// RequiredPorts errors, the returned slices must be nil/empty — never
+// the legacy [2222] fallback. This catches a regression where a future
+// edit re-introduces the pre-PR26.4 default-port behavior.
+func assertNoControlPlaneFallback(t *testing.T, tcp, udp []int) {
+	t.Helper()
+	if len(tcp) != 0 {
+		t.Errorf("fail-closed: tcp must be nil/empty on error — must NOT fall back to [2222]; got %v", tcp)
+	}
+	if len(udp) != 0 {
+		t.Errorf("fail-closed: udp must be nil/empty on error; got %v", udp)
 	}
 }
 
@@ -500,10 +621,12 @@ func TestValidateReachability_NotListening_ErrorMentionsControlPlane(t *testing.
 		t.Errorf("error must explicitly say 'control-plane'; got %q", msg)
 	}
 	// Negative: the message must NOT make affirmative claims of full
-	// survival or full surface validation. We allow the explanatory
-	// negation form ("full DirectAdmin port surface validated in
-	// PR26.4") because it reads as scope clarification, not a claim
-	// the assertion has validated those ports.
+	// surface probing. The PR26.4-shape error mentions "full
+	// DirectAdmin port surface" as part of an explanatory negation
+	// ("loaded from conf.d via RequiredPorts but not probed here") —
+	// that's scope clarification, not a claim the method has probed
+	// those ports. The forbidden list below catches affirmative-claim
+	// verbs only.
 	for _, forbidden := range []string{
 		"full panel survival validated",
 		"full panel survived",
@@ -637,11 +760,16 @@ func TestFrameworkIntegration_DA_Detected_NotReachable_Blocks(t *testing.T) {
 	}
 }
 
-// PR26.3 Path A: the surfaced Reason on a failing DA host must NOT
-// claim that the full panel survival was checked — the assertion
-// covers only the control plane in PR26.3. Full port-surface
-// validation lands in PR26.4.
-func TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival(t *testing.T) {
+// PR26.4: the surfaced Reason on a control-plane-unreachable host
+// must NOT claim full-surface reachability has been probed. After
+// PR26.4, RequiredPorts loads the full DirectAdmin port surface from
+// conf.d (panel_loader), but ValidateReachability still probes the
+// control plane only — so the Reason on failure must read as a
+// control-plane miss, not as "all 1014 panel ports unreachable".
+//
+// Renamed from TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival
+// so the name matches the post-PR26.4 semantics.
+func TestFrameworkIntegration_DA_ControlPlaneError_DoesNotClaimFullSurfaceReachability(t *testing.T) {
 	stubCanonicalDA(t)
 
 	a := New()
@@ -657,10 +785,11 @@ func TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival(t *testing.
 	if !res.Fatal {
 		t.Fatalf("expected Fatal=true; got %#v", res)
 	}
-	// These phrases would imply the assertion validated more than the
-	// control plane. The error MAY mention "full ... port surface" in
-	// a NEGATION (e.g., "...full DirectAdmin port surface validated in
-	// PR26.4"), so we look for affirmative-claim verbs instead.
+	// Affirmative-claim phrases that would overstate the assertion's
+	// scope. The error MAY mention "full ... port surface" inside a
+	// negation (the PR26.4 wording: "loaded from conf.d via
+	// RequiredPorts but not probed here"); that is intentional scope
+	// clarification, not a claim the method has probed those ports.
 	for _, forbidden := range []string{
 		"full panel survival validated",
 		"full panel survived",
@@ -670,7 +799,7 @@ func TestFrameworkIntegration_DA_Reason_DoesNotImplyFullPortSurvival(t *testing.
 		"all panel ports validated",
 	} {
 		if strings.Contains(res.Reason, forbidden) {
-			t.Errorf("Reason must NOT claim %q (overstates PR26.3 scope); got %q", forbidden, res.Reason)
+			t.Errorf("Reason must NOT claim %q (control-plane probe only); got %q", forbidden, res.Reason)
 		}
 	}
 }

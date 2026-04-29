@@ -224,9 +224,12 @@ func (a *adapter) RequiredPorts(ctx context.Context, exec executor.Executor) ([]
 // state. Returns nil on success; a structured error otherwise. Does
 // NOT mutate ports, services, or rules.
 //
-// Scope is the control plane (default 2222) only. The full DirectAdmin
-// service-port surface (mail/web/SSH/etc.) is NOT validated here —
-// see the file-level "PR26.4 follow-up" comment.
+// Scope is the control plane (default 2222 or per-`directadmin.conf`
+// override) only. RequiredPorts (PR26.4) loads the full DirectAdmin
+// service-port surface from the canonical conf.d via panel_loader, but
+// this method deliberately does NOT probe each conf.d-declared port —
+// full-surface reachability probing is intentionally out of scope here
+// and remains the broader rebuild/validate path's responsibility.
 func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Executor) error {
 	port := readConfiguredPort(exec)
 	if portInListenState(exec, port) {
@@ -234,7 +237,8 @@ func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Execut
 	}
 	return fmt.Errorf(
 		"DirectAdmin control-plane port %d not in LISTEN state — control-plane unreachable "+
-			"(note: this assertion validates the control plane only; full DirectAdmin port surface validated in PR26.4)",
+			"(this assertion probes the control plane only; the full DirectAdmin port surface is loaded "+
+			"from conf.d via RequiredPorts but not probed here)",
 		port)
 }
 
