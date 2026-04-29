@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -187,29 +188,50 @@ func withFixtureConfD(t *testing.T, mainConf string) string {
 	return tmp
 }
 
-// canonicalDA is the conf.d port surface that ships with NFTBan
-// (etc/nftban/conf.d/panels/directadmin/main.conf as of PR26.4). The
-// adapter's RequiredPorts must return this set verbatim, no addition,
-// no truncation.
-var canonicalDA = struct {
+// =============================================================================
+// FUTURE-AUDITOR DIRECTIVE — port content lives in CONF.D, not in Go.
+// =============================================================================
+// The DirectAdmin port surface (TCP/UDP × IN/OUT × IPv4/IPv6 + CUSTOM
+// — 16 declarable lists per panel) lives ONLY in the shipped conf.d
+// file:
+//
+//	etc/nftban/conf.d/panels/directadmin/main.conf
+//
+// That file is the single source of truth. Operators edit conf.d, not
+// Go. Reproducing any port list in Go (this test file or production
+// code) recreates the four-truth drift PR26.4 was created to close.
+//
+// RULES FOR FUTURE EDITS TO THIS TEST FILE:
+//   1. Stub-loader tests use the small `synthDA` synthetic fixture
+//      below — clearly marked synthetic, not authoritative. Its only
+//      job is to give the adapter SOMETHING to pass through so we can
+//      test the contract (errors, defensive copies, fail-closed
+//      branches). Its specific port values are arbitrary.
+//   2. Tests that verify ACTUAL DirectAdmin port content read the
+//      shipped conf.d via the real loader (see real-loader tests).
+//      Use `locateRepoFile(t, "etc/nftban/conf.d/panels/directadmin/main.conf")`.
+//   3. Do NOT add hardcoded port lists to Go. If you find yourself
+//      typing a list of DirectAdmin ports in this file, stop and put
+//      them in conf.d instead.
+// =============================================================================
+
+// synthDA is a tiny synthetic PanelConfig used only by stub-loader
+// tests that test the adapter contract (pass-through, defensive copy,
+// non-trivial surface size). Its port values are arbitrary fixtures —
+// NOT the canonical DirectAdmin port surface. The canonical surface
+// lives in etc/nftban/conf.d/panels/directadmin/main.conf and is
+// verified by real-loader tests further down.
+var synthDA = struct {
 	tcpIn []int
 	udpIn []int
 }{
-	// TCP_IN: 20,21,25,53,853,80,110,143,443,465,587,993,995,2222,35000-35999
-	tcpIn: append([]int{20, 21, 25, 53, 853, 80, 110, 143, 443, 465, 587, 993, 995, 2222}, expandRange(35000, 35999)...),
-	// UDP_IN: 20,21,53,853,80,443
-	udpIn: []int{20, 21, 53, 853, 80, 443},
+	tcpIn: []int{2222, 25, 80, 443, 35000, 35001},
+	udpIn: []int{53, 443},
 }
 
-func expandRange(lo, hi int) []int {
-	out := make([]int, 0, hi-lo+1)
-	for p := lo; p <= hi; p++ {
-		out = append(out, p)
-	}
-	return out
-}
-
-// PR26.4 R1: RequiredPorts equals DirectAdmin conf.d TCP/UDP declarations.
+// PR26.4 R1: adapter passes through the loader's PanelConfig
+// verbatim. Stub fixture (synthetic ports) — content correctness for
+// real DirectAdmin lives in the real-loader test below.
 func TestRequiredPorts_ConfDLoaded_FullSurface(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		if panelName != "directadmin" {
@@ -219,32 +241,32 @@ func TestRequiredPorts_ConfDLoaded_FullSurface(t *testing.T) {
 			Name:       "directadmin",
 			Enabled:    true,
 			ConfigFile: configDir + "/conf.d/panels/directadmin/main.conf",
-			TCPIn:      canonicalDA.tcpIn,
-			UDPIn:      canonicalDA.udpIn,
+			TCPIn:      synthDA.tcpIn,
+			UDPIn:      synthDA.udpIn,
 		}, nil
 	})
 
 	a := New()
 	tcp, udp, err := a.RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err != nil {
-		t.Fatalf("RequiredPorts must not error on canonical DA conf.d: %v", err)
+		t.Fatalf("RequiredPorts must not error on stub fixture: %v", err)
 	}
-	if !equalIntSlices(tcp, canonicalDA.tcpIn) {
-		t.Errorf("TCP surface mismatch:\n  got  %v\n  want %v", tcp, canonicalDA.tcpIn)
+	if !equalIntSlices(tcp, synthDA.tcpIn) {
+		t.Errorf("TCP pass-through mismatch:\n  got  %v\n  want %v", tcp, synthDA.tcpIn)
 	}
-	if !equalIntSlices(udp, canonicalDA.udpIn) {
-		t.Errorf("UDP surface mismatch:\n  got  %v\n  want %v", udp, canonicalDA.udpIn)
+	if !equalIntSlices(udp, synthDA.udpIn) {
+		t.Errorf("UDP pass-through mismatch:\n  got  %v\n  want %v", udp, synthDA.udpIn)
 	}
 }
 
-// PR26.4 R2: RequiredPorts is NOT [2222]-only. This is a structural
-// regression check that ensures the legacy hardcoded path is gone.
+// PR26.4 R2: RequiredPorts is NOT [2222]-only. Structural regression
+// guard — the legacy hardcoded path is gone.
 func TestRequiredPorts_ConfDLoaded_NotJust2222(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		return &ports.PanelConfig{
 			Name:  "directadmin",
-			TCPIn: canonicalDA.tcpIn,
-			UDPIn: canonicalDA.udpIn,
+			TCPIn: synthDA.tcpIn,
+			UDPIn: synthDA.udpIn,
 		}, nil
 	})
 
@@ -336,100 +358,131 @@ func TestRequiredPorts_NilPanelConfig_FailsClosed(t *testing.T) {
 }
 
 // PR26.4 condition A: explicit regression guard — port 22 (SSH) must
-// NOT appear in DirectAdmin RequiredPorts output. The canonical
-// conf.d intentionally excludes 22 (managed separately by
-// /etc/nftban/ports.d/00-ssh.conf); the legacy shell library
-// historically included 22 (four-truth drift). Conf.d wins.
+// NOT appear in DirectAdmin RequiredPorts output. SSH is managed
+// separately by /etc/nftban/ports.d/00-ssh.conf; the legacy shell
+// library historically included 22 (four-truth drift). Conf.d wins.
 //
-// This test is independent of the full-surface identity test so a
-// future conf.d edit that re-introduces 22 trips a clearly-named
-// failure even if the surface-identity test has been amended.
+// Reads the SHIPPED conf.d file directly so the assertion verifies
+// the actual source of truth, not a Go-level mirror. A future
+// conf.d edit that re-introduces 22 trips this test by name.
 func TestRequiredPorts_ConfDDoesNotIncludeSSHPort22(t *testing.T) {
-	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
-		return &ports.PanelConfig{
-			Name:    "directadmin",
-			Enabled: true,
-			TCPIn:   canonicalDA.tcpIn,
-			UDPIn:   canonicalDA.udpIn,
-		}, nil
-	})
+	if _, err := os.Stat("/bin/bash"); err != nil {
+		t.Skipf("/bin/bash unavailable on this host: %v", err)
+	}
+	shipped := locateRepoFile(t, "etc/nftban/conf.d/panels/directadmin/main.conf")
+	data, err := os.ReadFile(shipped) // #nosec G304 -- fixed path under repo
+	if err != nil {
+		t.Fatalf("read shipped main.conf at %s: %v", shipped, err)
+	}
+	withFixtureConfD(t, string(data))
+
 	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err != nil {
-		t.Fatalf("unexpected error from canonical DA stub: %v", err)
+		t.Fatalf("unexpected error loading shipped conf.d: %v", err)
 	}
 	if containsInt(tcp, 22) {
-		t.Errorf("DirectAdmin RequiredPorts TCP_IN must NOT include port 22 — "+
-			"SSH is managed by /etc/nftban/ports.d/00-ssh.conf, conf.d wins over shell library; got %v", tcp)
+		t.Errorf("shipped DirectAdmin conf.d declares port 22 in TCP_IN — "+
+			"SSH is managed by /etc/nftban/ports.d/00-ssh.conf; check %s", shipped)
 	}
 	if containsInt(udp, 22) {
-		t.Errorf("DirectAdmin RequiredPorts UDP_IN must NOT include port 22; got %v", udp)
+		t.Errorf("shipped DirectAdmin conf.d declares port 22 in UDP_IN; check %s", shipped)
 	}
 }
 
 // PR26.4 condition C: range-form (35000-35999) regression guard.
 // internal/ports/panel_loader.parsePortList expands ranges into
 // individual ints (35000..35999 = 1000 values). Verify the loader
-// integration produces the expected expanded length and both endpoints
-// so a future loader change that drops range expansion or shifts the
-// boundary surfaces here.
+// integration produces the expected expanded length and both endpoints.
 //
-// Canonical conf.d declares:
+// FUTURE-AUDITOR DIRECTIVE — DO NOT INVENT PORT LISTS HERE.
+// Source of truth for DirectAdmin ports is:
 //
-//	TCP_IN: 14 discrete + 35000-35999 range = 14 + 1000 = 1014 ports
+//	etc/nftban/conf.d/panels/directadmin/main.conf
+//
+// This test reads that shipped file directly and runs the real loader
+// against it. Structural assertions only (length range, range
+// endpoints, port-22 exclusion, control-port presence). NEVER add a
+// hardcoded port list to this test — if you need to
+// change DirectAdmin's port surface, edit the conf.d file and the
+// test will follow automatically.
 func TestRequiredPorts_RealLoader_RangeExpansion_LengthAndEndpoints(t *testing.T) {
 	if _, err := os.Stat("/bin/bash"); err != nil {
 		t.Skipf("/bin/bash unavailable on this host: %v", err)
 	}
-	const fixtureMain = `
-NFTBAN_DIRECTADMIN_PATH="/usr/local/directadmin"
-NFTBAN_DIRECTADMIN_PANEL_PORT="2222"
-NFTBAN_DIRECTADMIN_TCP_IN="20,21,25,53,853,80,110,143,443,465,587,993,995,2222,35000-35999"
-NFTBAN_DIRECTADMIN_UDP_IN="20,21,53,853,80,443"
-`
-	withFixtureConfD(t, fixtureMain)
+
+	// Read the SHIPPED conf.d file (single source of truth). The
+	// adapter, the loader, and this test all consume the same bytes.
+	shipped := locateRepoFile(t, "etc/nftban/conf.d/panels/directadmin/main.conf")
+	data, err := os.ReadFile(shipped) // #nosec G304 -- fixed path under repo
+	if err != nil {
+		t.Fatalf("read shipped main.conf at %s: %v", shipped, err)
+	}
+	withFixtureConfD(t, string(data))
 
 	tcp, udp, err := New().RequiredPorts(context.Background(), executor.NewMockExecutor())
 	if err != nil {
 		t.Fatalf("real-loader RequiredPorts: %v", err)
 	}
 
-	// Exact length: 14 discrete + 1000 expanded range = 1014.
-	const expectedTCP = 14 + 1000
-	if len(tcp) != expectedTCP {
-		t.Errorf("TCP_IN length = %d; want %d (14 discrete + 1000-port range expansion)",
-			len(tcp), expectedTCP)
+	// Structural assertions — config-driven.
+	//
+	// Length: at minimum the range alone (35000..35999 = 1000) plus
+	// the discrete declarations (>0). Use a sane lower bound rather
+	// than an exact count so a future operator-edit of conf.d that
+	// adds/removes a discrete port doesn't churn this test.
+	if len(tcp) < 1000+1 {
+		t.Errorf("TCP_IN length = %d; expected >= 1001 (1000 from range + at least one discrete); "+
+			"loader may be dropping range expansion", len(tcp))
 	}
-	// Both range endpoints must be present.
-	if !containsInt(tcp, 35000) {
-		t.Errorf("TCP_IN must include range start 35000; got %v ports total", len(tcp))
-	}
-	if !containsInt(tcp, 35999) {
-		t.Errorf("TCP_IN must include range end 35999; got %v ports total", len(tcp))
-	}
-	// Spot-check one mid-range port to confirm the loader didn't only
-	// keep endpoints.
-	if !containsInt(tcp, 35500) {
-		t.Errorf("TCP_IN must include mid-range port 35500 (loader range expansion broken?)")
-	}
-	// Every discrete declared port must be present.
-	for _, p := range []int{20, 21, 25, 53, 853, 80, 110, 143, 443, 465, 587, 993, 995, 2222} {
+	// Range endpoints + mid-range — protects against "endpoints only"
+	// or "skip every Nth" loader bugs.
+	for _, p := range []int{35000, 35500, 35999} {
 		if !containsInt(tcp, p) {
-			t.Errorf("TCP_IN missing discrete declared port %d", p)
+			t.Errorf("TCP_IN missing range port %d (panel_loader range expansion broken?)", p)
 		}
 	}
-	// SSH port 22 still excluded even with the real loader.
+	// DirectAdmin control plane MUST be in the surface — without 2222
+	// the panel itself is unreachable. This is the one literal
+	// expectation the test makes; it's the architectural invariant,
+	// not a port enumeration.
+	if !containsInt(tcp, 2222) {
+		t.Errorf("TCP_IN must include the DirectAdmin control port 2222; got len=%d", len(tcp))
+	}
+	// SSH port 22 must be absent (conf.d four-truth rule: SSH is
+	// managed separately by /etc/nftban/ports.d/00-ssh.conf).
 	if containsInt(tcp, 22) {
-		t.Errorf("real loader produced TCP_IN containing port 22 — conf.d four-truth violation; got %v", tcp)
+		t.Errorf("real loader produced TCP_IN containing port 22 — conf.d four-truth violation; "+
+			"check %s for stale port-22 entry", shipped)
 	}
-	// UDP_IN exact length and contents.
-	wantUDP := []int{20, 21, 53, 853, 80, 443}
-	if len(udp) != len(wantUDP) {
-		t.Errorf("UDP_IN length = %d; want %d", len(udp), len(wantUDP))
+	// UDP must be non-empty (DirectAdmin needs DNS at minimum).
+	if len(udp) == 0 {
+		t.Errorf("UDP_IN empty — conf.d should declare DirectAdmin's UDP surface (DNS, etc.)")
 	}
-	for _, p := range wantUDP {
-		if !containsInt(udp, p) {
-			t.Errorf("UDP_IN missing %d", p)
+	// SSH port 22 also forbidden in UDP_IN.
+	if containsInt(udp, 22) {
+		t.Errorf("real loader produced UDP_IN containing port 22; check %s", shipped)
+	}
+}
+
+// locateRepoFile climbs from the test file's directory until it finds
+// the repo's go.mod, then resolves relPath against that root. Used by
+// tests that read shipped config files (the source of truth for ports).
+func locateRepoFile(t *testing.T, relPath string) string {
+	t.Helper()
+	_, this, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	dir := filepath.Dir(this)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return filepath.Join(dir, relPath)
 		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("could not locate go.mod above %s", filepath.Dir(this))
+		}
+		dir = parent
 	}
 }
 
@@ -691,16 +744,19 @@ func TestID(t *testing.T) {
 // Framework integration: registered adapter detected → policy fires
 // ----------------------------------------------------------------------------
 
-// stubCanonicalDA installs a stub loader returning the canonical DA
-// conf.d port surface, so framework-integration tests are deterministic
-// regardless of whether /etc/nftban/conf.d/... exists on the build host.
+// stubCanonicalDA installs a stub loader returning the small
+// `synthDA` synthetic fixture so framework-integration tests are
+// deterministic regardless of whether the shipped conf.d exists on
+// the build host. Synthetic — NOT the canonical DirectAdmin port
+// surface; the canonical surface is verified separately by
+// real-loader tests reading the shipped main.conf.
 func stubCanonicalDA(t *testing.T) {
 	withStubLoader(t, func(configDir, panelName string) (*ports.PanelConfig, error) {
 		return &ports.PanelConfig{
 			Name:    "directadmin",
 			Enabled: true,
-			TCPIn:   canonicalDA.tcpIn,
-			UDPIn:   canonicalDA.udpIn,
+			TCPIn:   synthDA.tcpIn,
+			UDPIn:   synthDA.udpIn,
 		}, nil
 	})
 }
@@ -724,13 +780,14 @@ func TestFrameworkIntegration_DA_Detected_Reachable_Passes(t *testing.T) {
 	if !res.PortsApplied || !res.ReachableAfter {
 		t.Errorf("expected PortsApplied+ReachableAfter true; got %#v", res)
 	}
-	// PR26.4: framework PanelResult must carry the full conf.d
-	// port surface, not just the control plane.
-	if !equalIntSlices(res.PortsTCP, canonicalDA.tcpIn) {
-		t.Errorf("PortsTCP must equal canonical DA TCP_IN; got %v", res.PortsTCP)
+	// PR26.4: framework PanelResult must carry the loaded surface
+	// pass-through (synthetic here; full conf.d-content correctness
+	// is verified by real-loader tests).
+	if !equalIntSlices(res.PortsTCP, synthDA.tcpIn) {
+		t.Errorf("PortsTCP pass-through mismatch; got %v want %v", res.PortsTCP, synthDA.tcpIn)
 	}
-	if !equalIntSlices(res.PortsUDP, canonicalDA.udpIn) {
-		t.Errorf("PortsUDP must equal canonical DA UDP_IN; got %v", res.PortsUDP)
+	if !equalIntSlices(res.PortsUDP, synthDA.udpIn) {
+		t.Errorf("PortsUDP pass-through mismatch; got %v want %v", res.PortsUDP, synthDA.udpIn)
 	}
 }
 
