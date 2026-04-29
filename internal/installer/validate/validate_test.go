@@ -81,6 +81,12 @@ func seedCompletePayloadInventory(mock *executor.MockExecutor) {
 	} {
 		mock.Dirs[d] = true
 	}
+	// PR26.1: gatherer requires systemctl for FAILED-UNIT-POSTINSTALL-001
+	// enumeration. Default exit-0 + empty stdout from MockExecutor means
+	// "no failed nftban units" — happy path. Without this seeding the
+	// gatherer fails closed (correct production behavior, but not the
+	// scenario these existing happy-path tests exercise).
+	mock.ExistingCommands["systemctl"] = true
 }
 
 func TestRunAssertions_AllPass(t *testing.T) {
