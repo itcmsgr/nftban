@@ -134,22 +134,54 @@ func runRestoreDecide(ctx context.Context, exec executor.Executor, sf *state.Sta
 		},
 		PanelPresent: panelPresent,
 		Panel:        panel,
+		// Amendment 3 §62 entry condition: the engine consumes the
+		// classifier's external-authority string so the
+		// G1/AmbiguityConflictExternal/orphan-intent-candidate-csf
+		// sub-row can gate on `external == "csf"` (single, exact).
+		// Carrying it on every restore-mode invocation is cheap; the
+		// engine ignores it on every lattice path other than the
+		// Amendment 3 quintuple.
+		ExternalIndicator: auth.External,
 	}
 
-	// 6b. Amendment 2 §54.3: gather orphan-restore evidence ONLY when
-	// the candidate triple is otherwise present. This avoids
-	// unnecessary live reads on every restore-mode invocation, and
-	// preserves the §51.3 Option B boundary (no iptables introspection)
-	// by only running the predicate where it matters.
-	if auth.State == uninstall.AuthorityNFTBan &&
+	// 6b. Gather orphan-restore evidence ONLY when an orphan-intent
+	// candidate quintuple is otherwise present. Two entry conditions
+	// trigger evidence-gathering:
+	//
+	//   (i) Amendment 2 §54.3 — AuthorityNFTBan + NoRecord + DirectAdmin
+	//       + --panel-auto-takeover + --accept-orphan-nftban
+	//   (ii) Amendment 3 §62 — AuthorityAmbiguous + AmbiguityConflictExternal
+	//       + external=="csf" + NoRecord + DirectAdmin
+	//       + --panel-auto-takeover + --accept-orphan-nftban
+	//
+	// Both candidates share the same flag pair, the same panel, the
+	// same prior state, the same evidence-row set (§54 = §54/§64 except
+	// E.2 reframed and E.12 omitted — handled by the dispatcher inside
+	// gatherOrphanEvidence). The dispatcher avoids unnecessary live
+	// reads on every restore-mode invocation by only running the
+	// predicate where it matters, preserving the §51.3 Option B
+	// boundary (no iptables introspection).
+	amd2Candidate := auth.State == uninstall.AuthorityNFTBan &&
 		priorState == restore.PriorStateNoRecord &&
 		panel == detect.PanelDirectAdmin &&
 		cfg.panelAutoTakeover &&
-		cfg.acceptOrphanNFTBan {
+		cfg.acceptOrphanNFTBan
+	amd3Candidate := auth.State == uninstall.AuthorityAmbiguous &&
+		auth.Ambiguity == uninstall.AmbiguityConflictExternal &&
+		auth.External == "csf" &&
+		priorState == restore.PriorStateNoRecord &&
+		panel == detect.PanelDirectAdmin &&
+		cfg.panelAutoTakeover &&
+		cfg.acceptOrphanNFTBan
+	if amd2Candidate || amd3Candidate {
 		ev := gatherOrphanEvidence(exec, log, panel, auth, probe, cfg)
 		input.OrphanEvidence = &ev
-		log.Info("restore decide: orphan-evidence gathered all_true=%v failed_row=%q",
-			ev.AllTrue(), ev.FailedRowID())
+		// Log each predicate's result. Both AllTrue() (Amendment 2)
+		// and AllTrueAmendment3() (Amendment 3) are evaluated for
+		// observability; the engine consumes whichever is appropriate
+		// per the entry condition (decided in engine.go, not here).
+		log.Info("restore decide: orphan-evidence gathered amd2_all_true=%v amd2_failed_row=%q amd3_all_true=%v amd3_failed_row=%q",
+			ev.AllTrue(), ev.FailedRowID(), ev.AllTrueAmendment3(), ev.FailedRowIDAmendment3())
 	}
 
 	// 7. Evaluate — pure, deterministic, no side effects.

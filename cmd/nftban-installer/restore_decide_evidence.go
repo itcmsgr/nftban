@@ -72,8 +72,27 @@ func gatherOrphanEvidence(
 	// E.1 panel = DirectAdmin
 	ev.E1PanelDirectAdmin = panel == detect.PanelDirectAdmin
 
-	// E.2 authority = AuthorityNFTBan
-	ev.E2AuthorityNFTBan = auth.State == uninstall.AuthorityNFTBan
+	// E.2 entry-condition row.
+	//
+	// Amendment 2 §54.1: E.2 = (Authority == AuthorityNFTBan).
+	// Amendment 3 §64.1: E.2 reframed to
+	//   (Authority == AuthorityAmbiguous AND
+	//    Ambiguity == AmbiguityConflictExternal AND
+	//    external == "csf").
+	//
+	// The dispatcher sets E.2=true when EITHER entry condition
+	// holds, so the same OrphanEvidence struct serves both
+	// AllTrue() (Amendment 2 path) and AllTrueAmendment3()
+	// (Amendment 3 path). The engine selects which predicate to
+	// evaluate based on the lattice entry it took
+	// (decideAuthorityNFTBan vs decideAmbiguityConflictExternal);
+	// E.2's reframed semantic is upheld in both because the
+	// dispatcher only enters this gathering function when EITHER
+	// candidate quintuple holds.
+	ev.E2AuthorityNFTBan = auth.State == uninstall.AuthorityNFTBan ||
+		(auth.State == uninstall.AuthorityAmbiguous &&
+			auth.Ambiguity == uninstall.AmbiguityConflictExternal &&
+			auth.External == "csf")
 
 	// E.3 prior = NoRecord
 	ev.E3PriorNoRecord = probe.State == uninstall.PriorNoRecord
@@ -111,8 +130,28 @@ func gatherOrphanEvidence(
 	ev.E12NoConflictExternal = auth.State != uninstall.AuthorityExternal &&
 		auth.Ambiguity != uninstall.AmbiguityConflictExternal
 
-	// E.13 no Ambiguous classification
-	ev.E13NoAmbiguous = auth.State != uninstall.AuthorityAmbiguous
+	// E.13 no AmbiguityOrphanNFTBan.
+	//
+	// Amendment 2 §54.1 wording: "no AmbiguityOrphanNFTBan". The
+	// original implementation used the stricter
+	// `auth.State != AuthorityAmbiguous` because under Amendment 2's
+	// entry condition (AuthorityNFTBan) the two are equivalent —
+	// AuthorityNFTBan implies Ambiguity==None which implies
+	// !OrphanNFTBan. Under Amendment 3's entry condition
+	// (AuthorityAmbiguous + AmbiguityConflictExternal + external=csf),
+	// the strict form returns false even though the contract
+	// requires E.13=true; the operator-intent override does NOT
+	// extend to orphan-nftban-with-conflict cases (§66 forbidden
+	// bullet) but DOES extend to orphan-CSF-with-csf-residue
+	// (§63 lattice extension).
+	//
+	// Match the §64.1 wording exactly: E.13 = (Ambiguity !=
+	// AmbiguityOrphanNFTBan). Both Amendment 2 and Amendment 3
+	// entry conditions satisfy this; only the AmbiguityOrphanNFTBan
+	// path itself fails E.13. Test rows AMD2-E.13 (Amendment 2
+	// fixture) and AMD3-E.13 (Amendment 3 fixture, equivalent
+	// to AMD3-10's classifier shape) both pin this.
+	ev.E13NoAmbiguous = auth.Ambiguity != uninstall.AmbiguityOrphanNFTBan
 
 	return ev
 }
