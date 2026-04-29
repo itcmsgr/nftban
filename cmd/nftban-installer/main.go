@@ -105,6 +105,9 @@ func main() {
 	// authority classifier honours the operator's explicit opt-in. Default
 	// false — panel presence alone no longer implicitly approves takeover.
 	globalPhaseData.panelAutoApprove = cfg.panelAutoTakeover
+	// PR26.2: propagate --no-panel so the panel-survival assertion's
+	// policy can opt out when the operator explicitly disables it.
+	globalPhaseData.noPanel = cfg.noPanel
 
 	exitCode := run(ctx, exec, sf, cfg, log)
 
