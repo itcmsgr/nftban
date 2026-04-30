@@ -396,6 +396,20 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		{category: "data", srcRel: "cli/lib/nftban/data", srcGlob: "*", dstGlob: "/usr/lib/nftban/data", mode: 0644, policy: policyAlways, isDir: true},
 		{category: "shell", srcRel: "cli/lib/nftban/health", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/health", mode: 0755, policy: policyAlways, isDir: true},
 
+		// PR26.5: source-install payload completeness — close the gaps surfaced
+		// by the dns2 evidence run (2026-04-30). systemd unit ExecStart paths
+		// referenced these destinations; pre-PR26.5 source install did not stage
+		// them, causing PR26.1 systemd_execstart_paths_ok to fail.
+		// G-14-C continued: shell payload destinations referenced by units.
+		{category: "shell", srcRel: "cli/lib/nftban/exporters", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/exporters", mode: 0755, policy: policyAlways, isDir: true},
+		{category: "shell", srcRel: "cli/lib/nftban/cron", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/cron", mode: 0755, policy: policyAlways, isDir: true},
+		// Top-level scripts/ — referenced by nftban-soak.service.
+		{category: "shell", srcRel: "scripts", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/scripts", mode: 0755, policy: policyAlways, isDir: true},
+		// install/helpers/ ships the firewall-init-with-delay.sh helper which is
+		// distinct from the cli/lib/nftban/helpers/ tree above. Both flatten into
+		// /usr/lib/nftban/helpers/.
+		{category: "shell", srcRel: "install/helpers", srcGlob: "*.sh", dstGlob: "/usr/lib/nftban/helpers", mode: 0755, policy: policyAlways, isDir: true, optional: true},
+
 		// Shipped nftables template (always overwrite — installer-managed,
 		// never operator-edited here).
 		{category: "templates", srcRel: "cli/lib/nftban/templates/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
@@ -423,6 +437,21 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 
 		// Distro-aware path registry (always overwrite — installer-owned).
 		{category: "configs", srcRel: "etc/nftban/distros", srcGlob: "*.conf", dstGlob: "/etc/nftban/distros", mode: 0640, policy: policyAlways, isDir: true},
+
+		// PR26.5: panel canonical port-declaration configs. Source-of-truth for
+		// PR26.4's DirectAdmin adapter (and future PR26.7 cPanel / PR26.8 Plesk
+		// adapters) via internal/ports/panel_loader.LoadPanelConfig. Per the
+		// V190_PANELS audit there are 8 first-class panels; staging is a static
+		// set of 8 single-file entries (one per panel) so future panel removals
+		// require an explicit edit to this list.
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/directadmin/main.conf", dstGlob: "/etc/nftban/conf.d/panels/directadmin/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/cpanel/main.conf", dstGlob: "/etc/nftban/conf.d/panels/cpanel/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/plesk/main.conf", dstGlob: "/etc/nftban/conf.d/panels/plesk/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/cyberpanel/main.conf", dstGlob: "/etc/nftban/conf.d/panels/cyberpanel/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/cwp/main.conf", dstGlob: "/etc/nftban/conf.d/panels/cwp/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/interworx/main.conf", dstGlob: "/etc/nftban/conf.d/panels/interworx/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/vesta/main.conf", dstGlob: "/etc/nftban/conf.d/panels/vesta/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
+		{category: "panels", srcRel: "etc/nftban/conf.d/panels/generic/main.conf", dstGlob: "/etc/nftban/conf.d/panels/generic/main.conf", mode: 0640, policy: policyConfigNoReplace, optional: true},
 
 		// Manual whitelist/blacklist templates (%config(noreplace)).
 		// safety.SeedManualWhitelist runs in phaseConfigure after these land.
