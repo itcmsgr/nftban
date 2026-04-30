@@ -689,6 +689,25 @@ func isNftbanOwnedPath(p string) bool {
 		p == "/usr/sbin/nftban"
 }
 
+// seedStubBuiltBinaries seeds stub source files for the four Go binaries
+// that StageAll expects under bin/<name>. CI runners produce a clean source
+// checkout without prebuilt binaries — preloadAllRepoFilesIntoMock therefore
+// cannot pre-load them. This helper closes that test-environment gap so the
+// integration tests don't depend on a prior `./build.sh` invocation.
+//
+// Production correctness is unaffected: payload.StageAll's binary entries
+// remain category=binaries, srcRel=bin/<name>. On real installs the build
+// step produces these files; in tests we pretend they exist (with arbitrary
+// content) so the subsequent staging copy-or-skip succeeds.
+func seedStubBuiltBinaries(t *testing.T, mock *executor.MockExecutor, repoRoot string) {
+	t.Helper()
+	for _, name := range []string{"nftban-core", "nftband", "nftban-validate", "nftban-installer"} {
+		p := filepath.Join(repoRoot, "bin", name)
+		mock.Files[p] = []byte("stub-binary")
+		mock.Dirs[filepath.Dir(p)] = true
+	}
+}
+
 // PR26.5 R1: every nftban-owned ExecStart path declared by the shipped
 // install/systemd/*.service unit files MUST be staged by payload.StageAll.
 // dns2 evidence (2026-04-30) failed exactly this — exporter/cron/scripts/
@@ -698,6 +717,10 @@ func TestStageAll_AllUnitNftbanOwnedExecStartPathsStaged_PR26_5(t *testing.T) {
 
 	mock := executor.NewMockExecutor()
 	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// CI runners ship a clean checkout without prebuilt binaries; seed
+	// stubs so the binary staging entries succeed and we can verify the
+	// end-state-on-mock invariant the test was written to enforce.
+	seedStubBuiltBinaries(t, mock, repoRoot)
 
 	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
 		t.Fatalf("StageAll: %v", err)
@@ -748,6 +771,12 @@ func TestStageAll_AllPanelConfDStaged_PR26_5(t *testing.T) {
 
 	mock := executor.NewMockExecutor()
 	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// Seed stub binaries so StageAll's binary entries succeed on CI runners
+	// that don't have prebuilt binaries in bin/. Doesn't affect this test's
+	// assertions (they check /etc/nftban/conf.d/panels/* destinations, not
+	// /usr/lib/nftban/bin/*) but keeps StageAll's overall completeness behavior
+	// consistent across tests.
+	seedStubBuiltBinaries(t, mock, repoRoot)
 
 	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
 		t.Fatalf("StageAll: %v", err)
@@ -788,6 +817,8 @@ func TestStageAll_PR26_5_NewShellCategoriesStaged(t *testing.T) {
 
 	mock := executor.NewMockExecutor()
 	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// Stub binaries (CI-runner consistency). See helper doc.
+	seedStubBuiltBinaries(t, mock, repoRoot)
 
 	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
 		t.Fatalf("StageAll: %v", err)
