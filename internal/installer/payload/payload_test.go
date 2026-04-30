@@ -18,8 +18,10 @@
 package payload
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -543,6 +545,294 @@ func TestCriticalConfigs_FrozenTwoFileSet(t *testing.T) {
 	for path, seen := range wantPaths {
 		if !seen {
 			t.Errorf("expected %s in criticalConfigs; not found", path)
+		}
+	}
+}
+
+// =============================================================================
+// PR26.5: source-install payload completeness — integration test
+// =============================================================================
+// Walks the real repo source tree on disk, runs payload.StageAll into a mock,
+// and asserts that:
+//   1. Every nftban-owned ExecStart path declared by units in install/systemd/
+//      (after the v1.100.1b.A GOTH retirements) is present in mock.WrittenFiles.
+//   2. Every panel conf.d main.conf (8 panels) lands at its canonical
+//      /etc/nftban/conf.d/panels/<name>/main.conf destination.
+// These two checks are the dns2 evidence reproducer — they would have failed
+// pre-PR26.5 (missing exporters/cron/scripts/helpers categories + missing
+// panels category). Together they pin the staging-table contract.
+
+// locatePayloadRepoRoot climbs from this test file's location until it finds
+// the repo's go.mod, and returns that absolute path. Used by the source-tree
+// integration tests below so they read the real shipped source files instead
+// of a synthetic minimal fixture.
+func locatePayloadRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, this, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	dir := filepath.Dir(this)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("could not locate go.mod above %s", filepath.Dir(this))
+		}
+		dir = parent
+	}
+}
+
+// preloadAllRepoFilesIntoMock walks the repo and pre-populates mock.Files so
+// that exec.FileExists / exec.ReadFile succeed for every source path StageAll
+// might consult. Skips the test cache + .git + obvious build artifacts.
+func preloadAllRepoFilesIntoMock(t *testing.T, mock *executor.MockExecutor, repoRoot string) {
+	t.Helper()
+	mock.Dirs[repoRoot] = true
+	skip := map[string]bool{
+		".git":          true,
+		"node_modules":  true,
+		"build-tmp":     true,
+		"gocache":       true,
+		"build":         true,
+	}
+	err := filepath.Walk(repoRoot, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // tolerate transient access errors during walk
+		}
+		base := filepath.Base(p)
+		if info.IsDir() {
+			if skip[base] {
+				return filepath.SkipDir
+			}
+			mock.Dirs[p] = true
+			return nil
+		}
+		// Cap file size to avoid loading binaries unnecessarily; staging
+		// only needs content for files actually copied.
+		if info.Size() > 50*1024*1024 {
+			return nil
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		mock.Files[p] = data
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", repoRoot, err)
+	}
+}
+
+// extractNftbanOwnedExecStartPaths parses one .service unit file and returns
+// every ExecStart/Pre/Post path that lives under an nftban-owned prefix. Used
+// by the integration test to derive expectations directly from shipped units.
+func extractNftbanOwnedExecStartPaths(t *testing.T, unitFile string) []string {
+	t.Helper()
+	f, err := os.Open(unitFile)
+	if err != nil {
+		t.Fatalf("open %s: %v", unitFile, err)
+	}
+	defer f.Close()
+	var out []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		// Match ExecStart / ExecStartPre / ExecStartPost
+		var rhs string
+		switch {
+		case strings.HasPrefix(line, "ExecStart="):
+			rhs = strings.TrimPrefix(line, "ExecStart=")
+		case strings.HasPrefix(line, "ExecStartPre="):
+			rhs = strings.TrimPrefix(line, "ExecStartPre=")
+		case strings.HasPrefix(line, "ExecStartPost="):
+			rhs = strings.TrimPrefix(line, "ExecStartPost=")
+		default:
+			continue
+		}
+		// Strip systemd Exec prefixes
+		rhs = strings.TrimLeft(rhs, "-+!@ \t")
+		fields := strings.Fields(rhs)
+		if len(fields) == 0 {
+			continue
+		}
+		bin := fields[0]
+		if !strings.HasPrefix(bin, "/") {
+			continue
+		}
+		// Filter to nftban-owned only
+		if isNftbanOwnedPath(bin) {
+			out = append(out, bin)
+		}
+		// Also scan remaining tokens for embedded nftban paths inside
+		// shell wrappers (matches systemd_payload's parser policy).
+		for _, tok := range fields[1:] {
+			tok = strings.Trim(tok, "'\"")
+			if strings.HasPrefix(tok, "/") && isNftbanOwnedPath(tok) {
+				out = append(out, tok)
+			}
+		}
+	}
+	return out
+}
+
+// isNftbanOwnedPath mirrors the canonical nftban path-ownership prefixes used
+// by the systemd_payload validator. Kept private to this test file to avoid
+// pulling the validate package (which imports payload — would create a cycle
+// if reversed).
+func isNftbanOwnedPath(p string) bool {
+	return strings.HasPrefix(p, "/usr/lib/nftban/") ||
+		strings.HasPrefix(p, "/etc/nftban/") ||
+		p == "/usr/sbin/nftban"
+}
+
+// seedStubBuiltBinaries seeds stub source files for the four Go binaries
+// that StageAll expects under bin/<name>. CI runners produce a clean source
+// checkout without prebuilt binaries — preloadAllRepoFilesIntoMock therefore
+// cannot pre-load them. This helper closes that test-environment gap so the
+// integration tests don't depend on a prior `./build.sh` invocation.
+//
+// Production correctness is unaffected: payload.StageAll's binary entries
+// remain category=binaries, srcRel=bin/<name>. On real installs the build
+// step produces these files; in tests we pretend they exist (with arbitrary
+// content) so the subsequent staging copy-or-skip succeeds.
+func seedStubBuiltBinaries(t *testing.T, mock *executor.MockExecutor, repoRoot string) {
+	t.Helper()
+	for _, name := range []string{"nftban-core", "nftband", "nftban-validate", "nftban-installer"} {
+		p := filepath.Join(repoRoot, "bin", name)
+		mock.Files[p] = []byte("stub-binary")
+		mock.Dirs[filepath.Dir(p)] = true
+	}
+}
+
+// PR26.5 R1: every nftban-owned ExecStart path declared by the shipped
+// install/systemd/*.service unit files MUST be staged by payload.StageAll.
+// dns2 evidence (2026-04-30) failed exactly this — exporter/cron/scripts/
+// helper destinations referenced by units were not in the staging table.
+func TestStageAll_AllUnitNftbanOwnedExecStartPathsStaged_PR26_5(t *testing.T) {
+	repoRoot := locatePayloadRepoRoot(t)
+
+	mock := executor.NewMockExecutor()
+	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// CI runners ship a clean checkout without prebuilt binaries; seed
+	// stubs so the binary staging entries succeed and we can verify the
+	// end-state-on-mock invariant the test was written to enforce.
+	seedStubBuiltBinaries(t, mock, repoRoot)
+
+	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
+		t.Fatalf("StageAll: %v", err)
+	}
+
+	// Build the set of expected destination paths from every shipped unit.
+	unitFiles, err := filepath.Glob(filepath.Join(repoRoot, "install/systemd/*.service"))
+	if err != nil {
+		t.Fatalf("glob units: %v", err)
+	}
+	if len(unitFiles) == 0 {
+		t.Fatalf("no unit files found under install/systemd/")
+	}
+
+	missing := map[string][]string{} // path -> []unit
+	for _, unit := range unitFiles {
+		paths := extractNftbanOwnedExecStartPaths(t, unit)
+		for _, p := range paths {
+			// Skip /usr/sbin/nftban — staged via cli-bin, not under
+			// /usr/lib/nftban/ — covered by other tests.
+			if p == "/usr/sbin/nftban" {
+				if _, ok := mock.WrittenFiles[p]; ok {
+					continue
+				}
+				missing[p] = append(missing[p], filepath.Base(unit))
+				continue
+			}
+			if _, ok := mock.WrittenFiles[p]; !ok {
+				missing[p] = append(missing[p], filepath.Base(unit))
+			}
+		}
+	}
+	if len(missing) > 0 {
+		for path, units := range missing {
+			t.Errorf("ExecStart destination not staged: %s  (referenced by: %s)",
+				path, strings.Join(units, ", "))
+		}
+	}
+}
+
+// PR26.5 R2: every panel's canonical conf.d main.conf must be staged.
+// PR26.4's panelfw adapters (DirectAdmin currently, cPanel/Plesk/etc. in
+// PR26.7+) consume these via internal/ports/panel_loader.LoadPanelConfig.
+// dns2 evidence failed `panel_survival_ok` because the DirectAdmin entry
+// was missing from the staging table.
+func TestStageAll_AllPanelConfDStaged_PR26_5(t *testing.T) {
+	repoRoot := locatePayloadRepoRoot(t)
+
+	mock := executor.NewMockExecutor()
+	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// Seed stub binaries so StageAll's binary entries succeed on CI runners
+	// that don't have prebuilt binaries in bin/. Doesn't affect this test's
+	// assertions (they check /etc/nftban/conf.d/panels/* destinations, not
+	// /usr/lib/nftban/bin/*) but keeps StageAll's overall completeness behavior
+	// consistent across tests.
+	seedStubBuiltBinaries(t, mock, repoRoot)
+
+	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
+		t.Fatalf("StageAll: %v", err)
+	}
+
+	// 8 first-class panels per V190_PANELS audit.
+	panels := []string{
+		"directadmin",
+		"cpanel",
+		"plesk",
+		"cyberpanel",
+		"cwp",
+		"interworx",
+		"vesta",
+		"generic",
+	}
+	for _, p := range panels {
+		dst := "/etc/nftban/conf.d/panels/" + p + "/main.conf"
+		// Only assert if the source file exists in the repo (skip
+		// gracefully on test forks that prune some panels).
+		src := filepath.Join(repoRoot, "etc/nftban/conf.d/panels", p, "main.conf")
+		if _, err := os.Stat(src); err != nil {
+			t.Logf("source absent for panel %s — skipping (%v)", p, err)
+			continue
+		}
+		if _, ok := mock.WrittenFiles[dst]; !ok {
+			t.Errorf("panel conf.d not staged: %s (source: %s)", dst, src)
+		}
+	}
+}
+
+// PR26.5 R3: regression guard for the original dns2 ExecStart-staging
+// failures. After PR26.5, the four destinations below MUST be present in
+// mock.WrittenFiles. They map to the four "shell payload" categories added
+// to buildEntries: exporters, cron, scripts, install/helpers.
+func TestStageAll_PR26_5_NewShellCategoriesStaged(t *testing.T) {
+	repoRoot := locatePayloadRepoRoot(t)
+
+	mock := executor.NewMockExecutor()
+	preloadAllRepoFilesIntoMock(t, mock, repoRoot)
+	// Stub binaries (CI-runner consistency). See helper doc.
+	seedStubBuiltBinaries(t, mock, repoRoot)
+
+	if err := StageAll(mock, repoRoot, &detect.DistroInfo{ID: "rocky"}, newTestLogger()); err != nil {
+		t.Fatalf("StageAll: %v", err)
+	}
+
+	mustHave := []string{
+		"/usr/lib/nftban/exporters/nftban_unified_exporter.sh",
+		"/usr/lib/nftban/cron/maintenance.sh",
+		"/usr/lib/nftban/scripts/nftban-soak-check.sh",
+		"/usr/lib/nftban/helpers/firewall-init-with-delay.sh",
+	}
+	for _, dst := range mustHave {
+		if _, ok := mock.WrittenFiles[dst]; !ok {
+			t.Errorf("PR26.5 staging gap not closed: %s missing from WrittenFiles", dst)
 		}
 	}
 }
