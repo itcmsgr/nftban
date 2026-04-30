@@ -395,18 +395,31 @@ func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *loggi
 // path. Either is a deliberate decision — not a silent pass.
 func defaultInventoryPaths() map[string]bool {
 	return map[string]bool{
-		"/usr/sbin/nftban":                         true,
-		"/usr/lib/nftban/bin/nftban-core":          true,
-		"/usr/lib/nftban/bin/nftband":              true,
-		"/usr/lib/nftban/bin/nftban-validate":      true,
-		"/usr/lib/nftban/bin/nftban-installer":     true,
-		"/usr/lib/nftban/sbin/nftban-apply":        true,
-		"/usr/lib/nftban/sbin/nftban-confirm":      true,
-		"/usr/lib/nftban/sbin/nftban-panelctl":     true,
+		// CLI shim + Go binaries
+		"/usr/sbin/nftban":                              true,
+		"/usr/lib/nftban/bin/nftban-core":               true,
+		"/usr/lib/nftban/bin/nftband":                   true,
+		"/usr/lib/nftban/bin/nftban-validate":           true,
+		"/usr/lib/nftban/bin/nftban-installer":          true,
+		// Shell-side privileged helpers (cli/sbin/* → /usr/lib/nftban/sbin/)
+		"/usr/lib/nftban/sbin/nftban-apply":             true,
+		"/usr/lib/nftban/sbin/nftban-confirm":           true,
+		"/usr/lib/nftban/sbin/nftban-panelctl":          true,
 		"/usr/lib/nftban/sbin/nftban-queue-processor":   true,
-		"/usr/lib/nftban/sbin/nftban-rollback":     true,
+		"/usr/lib/nftban/sbin/nftban-rollback":          true,
 		"/usr/lib/nftban/sbin/nftban-service-alert":     true,
 		"/usr/lib/nftban/sbin/nftban-botscan-processor": true,
+		// PR26.5: shell payload destinations referenced by installed
+		// systemd units. Each lives at the corresponding source-side
+		// path under cli/lib/nftban/{core,cron,exporters} or scripts/
+		// or install/helpers/, and is staged by payload.StageAll.
+		// Without these entries `systemd_payload_inventory_ok` falsely
+		// flags legitimate staged shell payload as "unknown".
+		"/usr/lib/nftban/core/nftban_rebuild_recovery.sh":      true,
+		"/usr/lib/nftban/cron/maintenance.sh":                  true,
+		"/usr/lib/nftban/exporters/nftban_unified_exporter.sh": true,
+		"/usr/lib/nftban/helpers/firewall-init-with-delay.sh":  true,
+		"/usr/lib/nftban/scripts/nftban-soak-check.sh":         true,
 	}
 }
 
