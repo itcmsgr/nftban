@@ -200,15 +200,15 @@ func (a *adapter) Detect(ctx context.Context, exec executor.Executor) panelfw.Pa
 func (a *adapter) RequiredPorts(ctx context.Context, exec executor.Executor) ([]int, []int, error) {
 	cfg, err := panelConfDLoader(panelConfDDir, string(adapterID))
 	if err != nil {
-		return nil, nil, fmt.Errorf("Plesk conf.d load failed: %w (path: %s/conf.d/panels/%s/main.conf)",
+		return nil, nil, fmt.Errorf("conf.d load failed for Plesk panel: %w (path: %s/conf.d/panels/%s/main.conf)",
 			err, panelConfDDir, string(adapterID))
 	}
 	if cfg == nil {
-		return nil, nil, fmt.Errorf("Plesk conf.d load returned nil PanelConfig")
+		return nil, nil, fmt.Errorf("conf.d load returned nil PanelConfig for Plesk panel")
 	}
 	if len(cfg.TCPIn) == 0 {
 		return nil, nil, fmt.Errorf(
-			"Plesk conf.d declares no TCP_IN ports (malformed: %s) — "+
+			"conf.d for Plesk panel declares no TCP_IN ports (malformed: %s) — "+
 				"a real Plesk host must declare its inbound port surface",
 			cfg.ConfigFile)
 	}
@@ -241,7 +241,7 @@ func (a *adapter) ValidateReachability(ctx context.Context, exec executor.Execut
 		return nil
 	}
 	return fmt.Errorf(
-		"Plesk control-plane port %d not in LISTEN state — control-plane unreachable "+
+		"control-plane port %d (Plesk) not in LISTEN state — control-plane unreachable "+
 			"(this assertion probes the control plane only; the full Plesk port surface is loaded "+
 			"from conf.d via RequiredPorts but not probed here)",
 		port)

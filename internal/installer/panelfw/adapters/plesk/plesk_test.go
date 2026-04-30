@@ -308,8 +308,8 @@ func TestRequiredPorts_MissingConfD_FailsClosed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error on missing conf.d; got tcp=%v udp=%v", tcp, udp)
 	}
-	if !strings.Contains(err.Error(), "Plesk conf.d") {
-		t.Errorf("error must reference Plesk conf.d; got %v", err)
+	if !strings.Contains(err.Error(), "Plesk") || !strings.Contains(err.Error(), "conf.d") {
+		t.Errorf("error must reference Plesk and conf.d; got %v", err)
 	}
 	assertNoControlPlaneFallback(t, tcp, udp)
 }
