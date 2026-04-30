@@ -439,46 +439,59 @@ else
 fi
 
 # =============================================================================
-# 9. Remove rogue nftables tables (v1.17.6)
+# 9. Classify and clean ghost nftables tables (PR26.6 / 6A)
 # =============================================================================
-# iptables-nft, docker, fail2ban can create rogue tables like "ip raw", "ip filter"
-# These interfere with NFTBan and cause schema corruption
-log_info "Checking for rogue nftables tables..."
+# TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001 — replaces prior
+# allowlist-sweep that silently deleted operator-retained tables such
+# as `inet ssh_safety`. Default policy is WARN-and-preserve for
+# OPERATOR_SAFETY; only EXTERNAL_AUTHORITY_GHOST is deleted.
+log_info "Classifying nft tables (preserve operator safety)..."
 
-# Allowed tables (v1.18.0: ONLY ip/ip6 nftban - NO inet tables!)
-# CVE-2025-NFTBAN-001: inet filter at priority 0 bypasses NFTBan protection
-ALLOWED_TABLES_PATTERN="^table (ip|ip6) nftban$"
+_NFTBAN_TABLE_CLASSIFY_LIB="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_table_classify.sh"
+if [[ -f "$_NFTBAN_TABLE_CLASSIFY_LIB" ]]; then
+    # shellcheck source=/dev/null
+    source "$_NFTBAN_TABLE_CLASSIFY_LIB" 2>/dev/null || true
+fi
 
 # Get all tables
 ALL_TABLES=$(nft list tables 2>/dev/null || true)
 
-# Find and remove rogue tables
-ROGUE_COUNT=0
+GHOST_COUNT=0
+SAFETY_COUNT=0
 while IFS= read -r table_line; do
     [[ -z "$table_line" ]] && continue
-
-    # Check if table is allowed
-    if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
-        ROGUE_COUNT=$((ROGUE_COUNT + 1))
-        log_warn "Detected rogue table: $table_line"
-
-        # Extract table family and name (e.g., "table ip raw" -> "ip raw")
-        TABLE_SPEC="${table_line#table }"
-
-        # Delete the rogue table
-        # v1.19.20 FIX
-        if nft delete table "$TABLE_SPEC" 2>/dev/null; then
-            log_info "✅ Deleted rogue table: $TABLE_SPEC"
-        else
-            log_error "Failed to delete rogue table: $TABLE_SPEC"
-        fi
+    TABLE_SPEC="${table_line#table }"
+    _class=""
+    if declare -f nftban_classify_table_line &>/dev/null; then
+        _class="$(nftban_classify_table_line "$table_line")"
     fi
+    case "$_class" in
+        "$TC_EXTERNAL_AUTHORITY_GHOST")
+            log_warn "Detected external-authority ghost table: $table_line"
+            if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                log_info "✅ Deleted external-authority ghost table: $TABLE_SPEC"
+                GHOST_COUNT=$((GHOST_COUNT + 1))
+            else
+                log_error "Failed to delete ghost table: $TABLE_SPEC"
+            fi
+            ;;
+        "$TC_OPERATOR_SAFETY")
+            # PR26.6 invariant — preserve operator-retained tables.
+            log_warn "Preserving non-nftban operator table: $TABLE_SPEC (TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001)"
+            SAFETY_COUNT=$((SAFETY_COUNT + 1))
+            ;;
+        "$TC_NFTBAN_OWNED"|"$TC_KERNEL_DEFAULT")
+            : ;;
+        *)
+            log_warn "Table classifier unavailable; preserving: $TABLE_SPEC"
+            ;;
+    esac
 done <<< "$ALL_TABLES"
 
-if [[ $ROGUE_COUNT -eq 0 ]]; then
-    log_info "✅ No rogue tables detected - schema clean"
+if [[ $GHOST_COUNT -eq 0 && $SAFETY_COUNT -eq 0 ]]; then
+    log_info "✅ No ghost tables, no operator-safety tables — schema clean"
 else
-    log_info "Removed $ROGUE_COUNT rogue table(s)"
+    log_info "Cleaned $GHOST_COUNT ghost table(s); preserved $SAFETY_COUNT operator-safety table(s)"
 fi
 
 # =============================================================================

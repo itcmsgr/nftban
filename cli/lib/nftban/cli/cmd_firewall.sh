@@ -1315,22 +1315,50 @@ _firewall_rebuild_core() {
         [[ "$quiet" == "false" ]] && echo "    Schema validation: PASSED" || true
     fi
 
-    # Step 4: Remove rogue tables (keep only NFTBan tables)
-    [[ "$quiet" == "false" ]] && echo "  [4/12] Removing rogue tables..."
-    # v1.48.0: Include SYNPROXY raw tables in allowed list
-    # v1.51.1: Include emergency install table (postinst lockout prevention)
-    local ALLOWED_TABLES_PATTERN="^table (ip|ip6) (nftban|raw)$|^table inet (filter|nftban|nftban_install_emergency)$"
+    # Step 4: Classify and clean ghost tables (PR26.6 / 6A).
+    # TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001 — replaces prior
+    # allowlist-sweep that silently deleted operator-retained tables
+    # such as `inet ssh_safety`. Default policy is WARN-and-preserve
+    # for OPERATOR_SAFETY; only EXTERNAL_AUTHORITY_GHOST is deleted.
+    [[ "$quiet" == "false" ]] && echo "  [4/12] Classifying nft tables (preserve operator safety)..."
+    local _classify_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_table_classify.sh"
+    if [[ -f "$_classify_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$_classify_lib" 2>/dev/null || true
+    fi
+
     local ALL_TABLES
     ALL_TABLES=$(nft list tables 2>/dev/null || true)
 
     while IFS= read -r table_line; do
         [[ -z "$table_line" ]] && continue
-        if ! echo "$table_line" | grep -qE "$ALLOWED_TABLES_PATTERN"; then
-            local TABLE_SPEC="${table_line#table }"
-            if nft delete table "$TABLE_SPEC" 2>/dev/null; then
-                [[ "$quiet" == "false" ]] && echo "    Deleted rogue table: $TABLE_SPEC" || true
-            fi
+        local TABLE_SPEC="${table_line#table }"
+        local _class=""
+        if declare -f nftban_classify_table_line &>/dev/null; then
+            _class="$(nftban_classify_table_line "$table_line")"
         fi
+        case "$_class" in
+            "$TC_EXTERNAL_AUTHORITY_GHOST")
+                if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                    [[ "$quiet" == "false" ]] && echo "    Deleted external-authority ghost table: $TABLE_SPEC" || true
+                fi
+                ;;
+            "$TC_OPERATOR_SAFETY")
+                # PR26.6 invariant — preserve operator-retained tables.
+                # Emit warning to stderr so it lands in install logs.
+                echo "WARNING: preserving non-nftban operator table: $TABLE_SPEC (TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001)" >&2
+                ;;
+            "$TC_NFTBAN_OWNED"|"$TC_KERNEL_DEFAULT")
+                # nftban-owned: flushed in step 5 below.
+                # kernel default (ip raw / ip6 raw): preserve silently.
+                : ;;
+            *)
+                # Classifier unavailable (lib missing) — preserve, do
+                # not silently delete. Better to leave a foreign table
+                # than to wipe operator state.
+                echo "WARNING: table classifier unavailable; preserving: $TABLE_SPEC" >&2
+                ;;
+        esac
     done <<< "$ALL_TABLES"
 
     # Step 5: Flush + load (safe — we validated above)
