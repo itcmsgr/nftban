@@ -37,6 +37,8 @@ import (
 	// before phaseValidate runs. Future panel adapters land alongside
 	// this import.
 	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/directadmin"
+	// PR26.7: Plesk adapter — same registration shape as DirectAdmin.
+	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/plesk"
 )
 
 // globalTimeout is the maximum wall-clock time for the entire installer run.
