@@ -92,10 +92,36 @@ const defaultPort = 8443
 // reference the same canonical names. Marker bin path comes from
 // etc/nftban/conf.d/panels/plesk/main.conf NFTBAN_PLESK_MARKER_BIN.
 const (
-	installDir  = "/usr/local/psa"
-	binaryPath  = "/usr/local/psa/admin/bin/httpdmng"
-	systemdUnit = "plesk.service"
+	installDir = "/usr/local/psa"
+	binaryPath = "/usr/local/psa/admin/bin/httpdmng"
 )
+
+// systemdUnits is the ordered any-of list of systemd units that, if any
+// one is active, count as E3 evidence that Plesk is running.
+//
+// PR26.7.1 calibration: the original adapter probed `plesk.service`
+// alone, which does NOT exist on Ubuntu Plesk Obsidian — verified by
+// the read-only audit on 203.0.113.229 (frozen evidence sha256
+// c1a72266e2eb3489768a188d40d4cebcd242e1ed2bb3ba45ad0d316b549b21c3).
+// Real Ubuntu Plesk units:
+//
+//	sw-cp-server.service   active running   enabled  ← owns 8443/8880 listener
+//	sw-engine.service      active running   enabled  ← PHP-FPM panel backend
+//	psa.service            active(exited)   enabled  ← orchestrator (one-shot)
+//
+// `plesk.service` is absent from `systemctl list-unit-files` on Ubuntu.
+//
+// Order matters for evidence reporting (first match wins): we list the
+// strongest indicator (the daemon that actually owns the panel listener)
+// first and the legacy compat unit last. Detect must NOT broaden so
+// far that a non-Plesk host with a coincidentally-named service trips a
+// signal — Plesk-specific filesystem markers (E1/E2) and/or the 8443
+// listener (E4) remain required for any positive Detect.
+var systemdUnits = []string{
+	"sw-cp-server.service", // primary: owns 8443/8880 listener (sw-cp-serverd)
+	"psa.service",          // orchestrator: active(exited) on healthy host
+	"plesk.service",        // legacy/compat: present on some non-Ubuntu Plesk distros
+}
 
 // panelConfDLoader is the function the adapter calls to load the
 // canonical conf.d panel config. Defaults to the package-public
@@ -133,8 +159,15 @@ func (a *adapter) ID() panelfw.PanelID { return adapterID }
 //
 //	E1 — /usr/local/psa/                      (canonical install dir)
 //	E2 — /usr/local/psa/admin/bin/httpdmng    (panel binary marker)
-//	E3 — plesk.service active                 (systemd-managed run)
+//	E3 — any of {sw-cp-server.service,
+//	             psa.service,
+//	             plesk.service} active        (systemd-managed run)
 //	E4 — TCP 8443 in LISTEN state             (panel actually serving)
+//
+// E3 is an any-of probe (PR26.7.1 calibration) because `plesk.service`
+// does not exist on Ubuntu Plesk Obsidian — `sw-cp-server.service`
+// owns the 8443 listener instead. The first matching unit wins for
+// evidence reporting; `service-active:<unit>` records which one fired.
 //
 // Confidence rule: 3+ indicators ⇒ "strong"; 1–2 ⇒ "weak"; 0 ⇒
 // Detected=false. The required port is always declared (8443) so the
@@ -156,9 +189,16 @@ func (a *adapter) Detect(ctx context.Context, exec executor.Executor) panelfw.Pa
 		det.Evidence = append(det.Evidence, "binary-present:"+binaryPath)
 		signals++
 	}
-	if exec.ServiceActive(systemdUnit) {
-		det.Evidence = append(det.Evidence, "service-active:"+systemdUnit)
-		signals++
+	// E3 — any-of probe across the canonical Plesk service units.
+	// Stops at the first active unit so Evidence carries exactly one
+	// `service-active:<unit>` entry naming which one fired. Avoids
+	// double-counting if multiple units happen to be active.
+	for _, unit := range systemdUnits {
+		if exec.ServiceActive(unit) {
+			det.Evidence = append(det.Evidence, "service-active:"+unit)
+			signals++
+			break
+		}
 	}
 	if portInListenState(exec, port) {
 		det.Evidence = append(det.Evidence, fmt.Sprintf("listener-tcp:%d", port))

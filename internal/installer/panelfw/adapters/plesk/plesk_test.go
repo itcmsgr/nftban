@@ -37,13 +37,50 @@ func newTestLogger() *logging.Logger {
 	return logging.New("/dev/null", false)
 }
 
-// seedPlesk populates the mock with strong-confidence Plesk evidence:
-// install dir, marker binary, active service, and TCP <port> in LISTEN
-// state.
+// seedPlesk populates the mock with strong-confidence Plesk evidence
+// in the Ubuntu-realistic shape: install dir, marker binary,
+// sw-cp-server.service active (the canonical panel-listener daemon
+// per the 203.0.113.229 audit; sha256 c1a72266e2eb...), and TCP
+// <port> in LISTEN state.
+//
+// PR26.7.1 calibration: the original seedPlesk activated
+// `plesk.service`, which does not exist on Ubuntu Plesk Obsidian.
+// Switching the default to `sw-cp-server.service` makes the strong-
+// confidence path mirror real-world Ubuntu Plesk. Tests covering the
+// legacy plesk.service compat path use seedPleskLegacyService below.
 func seedPlesk(mock *executor.MockExecutor, port int) {
 	mock.Dirs[installDir] = true
 	mock.Files[binaryPath] = []byte("ELF")
-	mock.Services[systemdUnit] = true
+	mock.Services["sw-cp-server.service"] = true
+	mock.RunResults["ss:-lnt"] = executor.Result{
+		ExitCode: 0,
+		Stdout:   ssOutput(port),
+	}
+}
+
+// seedPleskLegacyService activates `plesk.service` (the legacy/compat
+// unit) instead of sw-cp-server.service. Used to verify that hosts
+// where only the legacy unit is the systemd surface still detect
+// strong. Mirror of seedPlesk but with E3 wired through the legacy
+// any-of branch.
+func seedPleskLegacyService(mock *executor.MockExecutor, port int) {
+	mock.Dirs[installDir] = true
+	mock.Files[binaryPath] = []byte("ELF")
+	mock.Services["plesk.service"] = true
+	mock.RunResults["ss:-lnt"] = executor.Result{
+		ExitCode: 0,
+		Stdout:   ssOutput(port),
+	}
+}
+
+// seedPleskOrchestratorOnly activates psa.service (the orchestrator
+// unit, typically `active(exited)` on a healthy host). Used to verify
+// the any-of probe accepts psa as fallback E3 evidence when neither
+// sw-cp-server nor plesk.service is the surfaced unit.
+func seedPleskOrchestratorOnly(mock *executor.MockExecutor, port int) {
+	mock.Dirs[installDir] = true
+	mock.Files[binaryPath] = []byte("ELF")
+	mock.Services["psa.service"] = true
 	mock.RunResults["ss:-lnt"] = executor.Result{
 		ExitCode: 0,
 		Stdout:   ssOutput(port),
@@ -125,11 +162,14 @@ func TestDetect_PartialInstall_Weak(t *testing.T) {
 	}
 }
 
-// Service-only signal still counts as a (weak) detection.
+// Service-only signal still counts as a (weak) detection. Activating
+// the canonical Ubuntu Plesk listener unit (sw-cp-server.service) is
+// the strongest single E3 evidence; PR26.7.1 any-of probe accepts it
+// alone as enough for Detected=true with weak confidence.
 func TestDetect_ServiceOnly_Weak(t *testing.T) {
 	a := New()
 	mock := executor.NewMockExecutor()
-	mock.Services[systemdUnit] = true
+	mock.Services["sw-cp-server.service"] = true
 
 	det := a.Detect(context.Background(), mock)
 	if !det.Detected {
@@ -137,6 +177,159 @@ func TestDetect_ServiceOnly_Weak(t *testing.T) {
 	}
 	if det.Confidence != "weak" {
 		t.Errorf("expected weak confidence; got %q", det.Confidence)
+	}
+}
+
+// PR26.7.1 — Ubuntu Plesk Obsidian realistic strong-detect path.
+//
+// Real-world Ubuntu Plesk (per the 203.0.113.229 audit, sha256
+// c1a72266e2eb...) has:
+//   /usr/local/psa            present (symlink → /opt/psa)
+//   httpdmng                  present (symlink → ../sbin/wrapper)
+//   sw-cp-server.service      active+enabled (owns 8443/8880 listener)
+//   plesk.service             ABSENT from systemctl list-unit-files
+//   8443                      LISTEN
+//
+// The pre-PR26.7.1 adapter probed only `plesk.service`, computing
+// confidence="weak" with a misleading "partial install" warning on a
+// fully-functional Ubuntu Plesk panel. After PR26.7.1, Detect must
+// compute confidence="strong" with no warnings on this realistic
+// signal set.
+func TestDetect_UbuntuRealistic_SwCpServer_Strong(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	seedPlesk(mock, defaultPort) // seedPlesk now defaults to sw-cp-server.service
+
+	// Explicit guard: plesk.service must be absent from this fixture
+	// to prove the any-of probe does NOT silently fall back to it.
+	if mock.Services["plesk.service"] {
+		t.Fatal("test fixture invariant: plesk.service must not be active in this case")
+	}
+
+	det := a.Detect(context.Background(), mock)
+	if !det.Detected {
+		t.Fatalf("expected Detected=true on Ubuntu-realistic Plesk fixture; got %#v", det)
+	}
+	if det.Confidence != "strong" {
+		t.Errorf("expected strong confidence on Ubuntu-realistic 4-signal Plesk; got %q (evidence=%v)",
+			det.Confidence, det.Evidence)
+	}
+	if len(det.Warnings) != 0 {
+		t.Errorf("expected zero warnings on healthy Ubuntu Plesk; got %v", det.Warnings)
+	}
+	// Evidence must explicitly name sw-cp-server.service (not plesk.service).
+	foundSwCp := false
+	for _, e := range det.Evidence {
+		if e == "service-active:sw-cp-server.service" {
+			foundSwCp = true
+		}
+		if e == "service-active:plesk.service" {
+			t.Errorf("evidence wrongly references plesk.service when sw-cp-server is the active unit: %v", det.Evidence)
+		}
+	}
+	if !foundSwCp {
+		t.Errorf("evidence must record service-active:sw-cp-server.service; got %v", det.Evidence)
+	}
+}
+
+// PR26.7.1 — psa.service-only fallback path. When sw-cp-server is
+// somehow not the surfaced unit (rare, but possible on fresh-boot
+// race or non-Ubuntu Plesk distros), psa.service active(exited) is
+// the orchestrator-evidence fallback. Adapter must accept it as E3.
+func TestDetect_UbuntuRealistic_PsaServiceFallback_Strong(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	seedPleskOrchestratorOnly(mock, defaultPort)
+
+	if mock.Services["sw-cp-server.service"] || mock.Services["plesk.service"] {
+		t.Fatal("test fixture invariant: only psa.service must be the surfaced unit")
+	}
+
+	det := a.Detect(context.Background(), mock)
+	if !det.Detected {
+		t.Fatalf("expected Detected=true with psa.service evidence; got %#v", det)
+	}
+	if det.Confidence != "strong" {
+		t.Errorf("expected strong confidence (4 signals); got %q (evidence=%v)",
+			det.Confidence, det.Evidence)
+	}
+	foundPsa := false
+	for _, e := range det.Evidence {
+		if e == "service-active:psa.service" {
+			foundPsa = true
+		}
+	}
+	if !foundPsa {
+		t.Errorf("evidence must record service-active:psa.service; got %v", det.Evidence)
+	}
+}
+
+// PR26.7.1 — legacy plesk.service compat path. Distros that DO ship
+// `plesk.service` (some non-Ubuntu Plesk hosts) must still detect
+// strong via the legacy any-of branch.
+func TestDetect_LegacyPleskService_Compat_Strong(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	seedPleskLegacyService(mock, defaultPort)
+
+	if mock.Services["sw-cp-server.service"] || mock.Services["psa.service"] {
+		t.Fatal("test fixture invariant: only plesk.service must be the surfaced unit")
+	}
+
+	det := a.Detect(context.Background(), mock)
+	if !det.Detected {
+		t.Fatalf("expected Detected=true with plesk.service evidence; got %#v", det)
+	}
+	if det.Confidence != "strong" {
+		t.Errorf("expected strong confidence on legacy plesk.service compat path; got %q",
+			det.Confidence)
+	}
+	foundLegacy := false
+	for _, e := range det.Evidence {
+		if e == "service-active:plesk.service" {
+			foundLegacy = true
+		}
+	}
+	if !foundLegacy {
+		t.Errorf("evidence must record service-active:plesk.service; got %v", det.Evidence)
+	}
+}
+
+// PR26.7.1 — broadening guard: bare TCP 8443 listener WITHOUT Plesk
+// filesystem markers must NOT trigger detection. The any-of systemd
+// probe could otherwise incorrectly broaden the detection surface to
+// any non-Plesk host that happens to listen on 8443 (e.g., a custom
+// HTTPS service). Filesystem markers (E1/E2) gate the host as Plesk
+// before E3/E4 contribute.
+//
+// Note on confidence: a bare 8443 listener still records E4 evidence,
+// which technically means signals=1 → Detected=true / Confidence=weak
+// per the existing rule. That is correct framework behavior — the
+// adapter does not pretend the host is non-Plesk. The PANEL-SURVIVAL
+// invariant fires only on `Detected=true` AND failing reachability;
+// this test guards against a confident MISdetection (e.g., strong on
+// 8443 alone).
+func TestDetect_BarePort8443_NoPleskMarkers_NotConfidentDetection(t *testing.T) {
+	a := New()
+	mock := executor.NewMockExecutor()
+	mock.RunResults["ss:-lnt"] = executor.Result{
+		ExitCode: 0,
+		Stdout:   ssOutput(defaultPort),
+	}
+
+	det := a.Detect(context.Background(), mock)
+	if det.Confidence == "strong" {
+		t.Errorf("bare 8443 without Plesk markers must NOT yield strong confidence; got %q evidence=%v",
+			det.Confidence, det.Evidence)
+	}
+	// E1/E2/E3 must all be absent in evidence — only the listener entry.
+	for _, e := range det.Evidence {
+		if e == "install-dir-present:"+installDir || e == "binary-present:"+binaryPath {
+			t.Errorf("evidence wrongly claims Plesk filesystem markers on bare-8443 fixture: %v", det.Evidence)
+		}
+		if len(e) >= 16 && e[:16] == "service-active:s" {
+			t.Errorf("evidence wrongly claims Plesk service on bare-8443 fixture: %v", det.Evidence)
+		}
 	}
 }
 
@@ -399,6 +592,14 @@ func TestRequiredPorts_RealLoader_ControlPortAndSurfaceSize(t *testing.T) {
 	// Plesk control plane MUST be in the surface.
 	if !containsInt(tcp, defaultPort) {
 		t.Errorf("TCP_IN must include the Plesk control port %d; got len=%d", defaultPort, len(tcp))
+	}
+	// PR26.7.1 — TCP 4190 (Sieve/managesieve, RFC 5804) MUST be in
+	// the surface. Confirmed listening on real Plesk Obsidian 18.0.76
+	// by the 203.0.113.229 audit; required for dovecot-managed mail
+	// filter rules from external clients.
+	if !containsInt(tcp, 4190) {
+		t.Errorf("TCP_IN must include managesieve port 4190 (RFC 5804); got len=%d — "+
+			"check %s for missing 4190 entry (PR26.7.1)", len(tcp), shipped)
 	}
 	// SSH must be absent.
 	if containsInt(tcp, 22) {
@@ -688,7 +889,7 @@ func TestFrameworkIntegration_Plesk_Detected_NotReachable_Blocks(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Dirs[installDir] = true
 	mock.Files[binaryPath] = []byte("ELF")
-	mock.Services[systemdUnit] = true
+	mock.Services["sw-cp-server.service"] = true
 	mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(80)}
 
 	res := panelfw.EvaluateAdapters(context.Background(), mock, newTestLogger(),
@@ -714,7 +915,7 @@ func TestFrameworkIntegration_Plesk_ControlPlaneError_DoesNotClaimFullSurfaceRea
 	mock := executor.NewMockExecutor()
 	mock.Dirs[installDir] = true
 	mock.Files[binaryPath] = []byte("ELF")
-	mock.Services[systemdUnit] = true
+	mock.Services["sw-cp-server.service"] = true
 	mock.RunResults["ss:-lnt"] = executor.Result{ExitCode: 0, Stdout: ssOutput(80)}
 
 	res := panelfw.EvaluateAdapters(context.Background(), mock, newTestLogger(),
