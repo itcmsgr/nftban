@@ -39,6 +39,38 @@ func TestStartDaemon(t *testing.T) {
 	}
 }
 
+// TestStartDaemon_UnmasksNftbandBeforeEnable — v1.100.4 defensive
+// belt for UPSTREAM-UNINSTALL-INCOMPLETE-001. A prior uninstall may
+// have left a phantom mask symlink at /etc/systemd/system/nftband.service
+// -> /dev/null; install must call ServiceUnmask before ServiceEnable.
+func TestStartDaemon_UnmasksNftbandBeforeEnable(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	StartDaemon(mock, newTestLogger())
+
+	unmaskIdx, enableIdx := -1, -1
+	for i, c := range mock.Commands {
+		switch {
+		case c.Name == "systemctl" && len(c.Args) >= 2 && c.Args[0] == "unmask" && c.Args[1] == "nftband.service":
+			if unmaskIdx < 0 {
+				unmaskIdx = i
+			}
+		case c.Name == "systemctl" && len(c.Args) >= 2 && c.Args[0] == "enable" && c.Args[1] == "nftband.service":
+			if enableIdx < 0 {
+				enableIdx = i
+			}
+		}
+	}
+	if unmaskIdx < 0 {
+		t.Fatal("StartDaemon must invoke ServiceUnmask(nftband.service); never called")
+	}
+	if enableIdx < 0 {
+		t.Fatal("StartDaemon must invoke ServiceEnable(nftband.service); never called")
+	}
+	if unmaskIdx >= enableIdx {
+		t.Errorf("ServiceUnmask at index %d must precede ServiceEnable at index %d", unmaskIdx, enableIdx)
+	}
+}
+
 func TestReconcileTimers_Default(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	// No config file → default is reconcile=true

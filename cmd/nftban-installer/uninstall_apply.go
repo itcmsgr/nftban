@@ -60,7 +60,7 @@ import (
 
 // runUninstallApply orchestrates the PR-23 authority release path.
 // Returns the process exit code derived from the final state.
-func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.StateFile, _ *config, log *logging.Logger) int {
+func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
 	log.Info("uninstall apply starting (mode=uninstall, confirm-mutation=true)")
 
 	// 1. SSH port — needed for the emergency SSH safety table.
@@ -110,7 +110,21 @@ func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.Stat
 	}
 
 	// 4. Apply the mutation sequence.
-	result := uninstall.Apply(exec, &uninstall.ApplyConfig{SSHPort: sshPort}, log)
+	//
+	// Mode comes from the operator's --purge / --force-delete-operator-config
+	// flags via modeFromFlags (defined in uninstall_dryrun.go). v1.100.4
+	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) wires this through ApplyConfig
+	// so artifact removal can honour the §4.4 mode contract.
+	//
+	// Distro is detected separately for the polkit-destination branch in
+	// payload.Destinations; nil is acceptable (defaults to RHEL-family
+	// polkit dir).
+	distroInfo, _ := detect.DetectDistro(exec, log)
+	result := uninstall.Apply(exec, &uninstall.ApplyConfig{
+		SSHPort: sshPort,
+		Mode:    modeFromFlags(cfg),
+		Distro:  distroInfo,
+	}, log)
 
 	// 5. Persist terminal state. sf.Transition returns a non-nil error
 	// for failure states (so phase runners halt); here we ignore that

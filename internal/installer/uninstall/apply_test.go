@@ -74,16 +74,19 @@ func TestApply_HappyPath_KernelAndServiceReleased(t *testing.T) {
 	if !r.EmergencyInjected {
 		t.Error("happy path: EmergencyInjected must be true after apply")
 	}
-	// Every step must be recorded as success.
+	// Every step must be recorded as success. v1.100.4
+	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) inserted "remove_artifacts" at
+	// position 8 between "disable_nftband" and "mask_nftband"; the
+	// 11-step sequence is documented in apply.go's docstring.
 	wantSteps := []string{
 		"inject_emergency_ssh", "stop_nftband",
 		"flush_ip_nftban", "flush_ip6_nftban",
 		"delete_ip_nftban", "delete_ip6_nftban",
-		"disable_nftband", "mask_nftband",
+		"disable_nftband", "remove_artifacts", "mask_nftband",
 		"validate_end_state", "remove_emergency_ssh",
 	}
 	if len(r.Steps) != len(wantSteps) {
-		t.Fatalf("step count = %d; want %d (happy path must execute all 10 steps)", len(r.Steps), len(wantSteps))
+		t.Fatalf("step count = %d; want %d (happy path must execute all 11 steps)", len(r.Steps), len(wantSteps))
 	}
 	for i, want := range wantSteps {
 		if r.Steps[i].Name != want {
@@ -104,7 +107,7 @@ func TestApply_HappyPath_KernelAndServiceReleased(t *testing.T) {
 	}
 	// Emergency table must have been injected and then removed.
 	if m.NftTables["inet:nftban_install_emergency"] {
-		t.Error("post-apply: emergency SSH table still present; step 10 should have removed it")
+		t.Error("post-apply: emergency SSH table still present; step 11 should have removed it")
 	}
 }
 

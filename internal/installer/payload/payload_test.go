@@ -34,6 +34,40 @@ func newTestLogger() *logging.Logger {
 	return logging.New("", false)
 }
 
+// TestDestinations_MatchesBuildEntries — public Destinations() must
+// be a parallel projection of private buildEntries(). Establishes the
+// single-source-of-truth contract that uninstall.RemoveArtifacts
+// depends on.
+func TestDestinations_MatchesBuildEntries(t *testing.T) {
+	for _, distro := range []*detect.DistroInfo{
+		nil,
+		{ID: "ubuntu"},
+		{ID: "debian"},
+		{ID: "rocky"},
+		{ID: "almalinux"},
+	} {
+		entries := buildEntries(distro)
+		dests := Destinations(distro)
+		if len(entries) != len(dests) {
+			t.Fatalf("distro=%+v: len(buildEntries)=%d != len(Destinations)=%d",
+				distro, len(entries), len(dests))
+		}
+		for i := range entries {
+			if entries[i].dstGlob != dests[i].Path {
+				t.Errorf("distro=%+v: index %d Path mismatch: entry=%q dest=%q",
+					distro, i, entries[i].dstGlob, dests[i].Path)
+			}
+			if entries[i].isDir != dests[i].IsDir {
+				t.Errorf("distro=%+v: index %d IsDir mismatch", distro, i)
+			}
+			if entries[i].srcGlob != dests[i].Glob {
+				t.Errorf("distro=%+v: index %d Glob mismatch: entry=%q dest=%q",
+					distro, i, entries[i].srcGlob, dests[i].Glob)
+			}
+		}
+	}
+}
+
 // -----------------------------------------------------------------------------
 // idempotency.go tests — no filesystem needed
 // -----------------------------------------------------------------------------
