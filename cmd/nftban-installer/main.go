@@ -50,7 +50,7 @@ func main() {
 	cfg := parseFlags()
 
 	if cfg.showVersion {
-		fmt.Printf("nftban-installer %s\n", version.Version)
+		fmt.Println(version.Line("nftban-installer"))
 		os.Exit(0)
 	}
 

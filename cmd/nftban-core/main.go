@@ -32,10 +32,12 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// Build-time variables (injected by -ldflags)
+// Build-time variables — PR v1.100.4 H1.1: canonical names live in
+// pkg/version. Aliases re-exported here for cmd-local readability;
+// the build-time injection path is single-sourced through pkg/version.
 var (
-	GitCommit = "dev"
-	BuildDate = "unknown"
+	GitCommit = version.GitCommit
+	BuildDate = version.BuildDate
 )
 
 func main() {
@@ -45,6 +47,17 @@ func main() {
 	}
 
 	command := os.Args[1]
+
+	// PR v1.100.4 H1.1: handle --version / -v as a flag-style alias
+	// of the existing `version` subcommand. Operators reach for
+	// --version reflexively; rejecting it as "Unknown command" is a
+	// poor UX. Keeps the legacy `version` subcommand for backwards
+	// compatibility with any tooling that already invokes it.
+	switch command {
+	case "--version", "-v":
+		fmt.Println(version.Line(version.CoreEngineName))
+		return
+	}
 
 	// ════════════════════════════════════════════════════════════
 	// LOAD CONFIG ONCE - Pass to all commands
@@ -248,7 +261,7 @@ func main() {
 	case "lifecycle":
 		os.Exit(cmdLifecycle(os.Args[2:]))
 	case "version":
-		fmt.Printf("nftban-core %s (git %s, build %s)\n", version.FullVersion(), GitCommit, BuildDate)
+		fmt.Println(version.Line(version.CoreEngineName))
 	case "help", "--help", "-h":
 		printUsage()
 	default:
