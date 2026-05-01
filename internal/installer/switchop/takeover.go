@@ -132,6 +132,9 @@ func disarmCSFArtifacts(exec executor.Executor, log *logging.Logger) {
 //
 // DirectAdmin: runs `custombuild/build set csf no` to set csf=no in options.conf.
 // Also audits DA custom scripts for CSF/iptables references (informational WARN).
+// PR26.6.1 addition: also flips DirectAdmin's runtime services.status watchdog
+// `lfd=ON` → `lfd=OFF` so dataskq stops trying to restart the masked lfd unit
+// (PANEL-WATCHDOG-COHERENCE-001). See disarmDAWatchdog for details.
 //
 // cPanel/Plesk: CSF is standalone — service masking is sufficient.
 func disarmPanelCSF(exec executor.Executor, panel detect.PanelType, log *logging.Logger) {
@@ -139,6 +142,10 @@ func disarmPanelCSF(exec executor.Executor, panel detect.PanelType, log *logging
 		log.Debug("panel %s — CSF masking is sufficient, no custombuild disarm needed", panel)
 		return
 	}
+	// PR26.6.1: clear the DA runtime watchdog so dataskq no longer
+	// emits perpetual "Unit lfd.service is masked." failures every
+	// minute. Best-effort — failure here does not break takeover.
+	disarmDAWatchdog(exec, log)
 
 	buildCmd := filepath.Join(detect.PathDirectAdmin, "custombuild", "build")
 	if !exec.FileExists(buildCmd) {
@@ -187,4 +194,96 @@ func disarmPanelCSF(exec executor.Executor, panel detect.PanelType, log *logging
 			}
 		}
 	}
+}
+
+// daServicesStatusPath is the canonical DirectAdmin runtime
+// service-monitor configuration. dataskq reads this file every minute
+// and runs service-watchdog for each `<svc>=ON` line.
+const daServicesStatusPath = "/usr/local/directadmin/data/admin/services.status"
+
+// disarmDAWatchdog flips DirectAdmin's runtime watchdog setting for
+// lfd from ON to OFF after takeover masks lfd.service.
+//
+// PR26.6.1 invariant — PANEL-WATCHDOG-COHERENCE-001:
+//
+//	When takeover intentionally disarms an external firewall service
+//	that a panel monitors, takeover must also update the panel's
+//	runtime service-monitor configuration so the panel does not
+//	continuously attempt to restart the disarmed service.
+//
+// Without this, dns2 evidence (2026-04-30 → 2026-05-01) showed
+// dataskq emitting `error=service "lfd": Unit lfd.service is masked.`
+// every 60 seconds for 14+ hours. The lfd binary is preserved on
+// disk and the systemd mask is intact — the loop is purely a
+// false-failure-noise issue, but it is high-volume and obscures
+// real failures in the journal.
+//
+// Behavior:
+//   - Idempotent: re-running on a host where lfd=OFF already is a no-op.
+//   - Best-effort: file absent → no-op + debug log; read/write failure
+//     → warn + continue. Takeover does not abort on watchdog disarm.
+//   - Surgical: only the `^lfd=ON` line is edited; all other watchdog
+//     entries (dovecot, exim, named, mysqld, etc.) are preserved
+//     byte-for-byte. The match is anchored to the line start to avoid
+//     accidentally matching an inline comment or substring.
+//   - DA-only: this helper runs only when panel == DirectAdmin (caller
+//     gates it). cPanel/Plesk have separate service-monitor mechanisms
+//     handled in their own future PRs.
+//
+// Out of scope (deferred to restore-coherence work): re-enabling the
+// watchdog (`lfd=OFF` → `lfd=ON`) on full §32 CSF restore. The forward
+// direction is the immediate operational fix; the reverse is part of
+// the broader restore-coherence track.
+func disarmDAWatchdog(exec executor.Executor, log *logging.Logger) {
+	if !exec.FileExists(daServicesStatusPath) {
+		log.Debug("DA services.status not present at %s — watchdog disarm skipped", daServicesStatusPath)
+		return
+	}
+	data, err := exec.ReadFile(daServicesStatusPath)
+	if err != nil {
+		log.Warn("DA watchdog: read %s: %v", daServicesStatusPath, err)
+		return
+	}
+
+	original := string(data)
+	updated, changed := flipLfdWatchdogOff(original)
+	if !changed {
+		log.Debug("DA watchdog: lfd already OFF (or absent) in %s — no change", daServicesStatusPath)
+		return
+	}
+
+	if err := exec.WriteFileAtomic(daServicesStatusPath, []byte(updated), 0644); err != nil {
+		log.Warn("DA watchdog: write %s: %v (dataskq may continue emitting masked-lfd noise)", daServicesStatusPath, err)
+		return
+	}
+	log.Info("DA services.status: lfd watchdog disabled (PANEL-WATCHDOG-COHERENCE-001)")
+}
+
+// flipLfdWatchdogOff replaces every `^lfd=ON` line with `lfd=OFF`,
+// preserving line endings and all other content byte-for-byte.
+// Returns (newContent, didChange). Pure function — no I/O — so the
+// edit logic is unit-testable independently of executor mocking.
+//
+// Match anchors to start-of-line on purpose: a substring match would
+// risk hitting comment lines like `# lfd=ON disabled in 2024-12 ...`
+// that should not be rewritten. Only the canonical setting line at
+// column zero is flipped.
+func flipLfdWatchdogOff(content string) (string, bool) {
+	const target = "lfd=ON"
+	const replacement = "lfd=OFF"
+	if !strings.Contains(content, target) {
+		return content, false
+	}
+	changed := false
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if line == target {
+			lines[i] = replacement
+			changed = true
+		}
+	}
+	if !changed {
+		return content, false
+	}
+	return strings.Join(lines, "\n"), true
 }
