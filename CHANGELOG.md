@@ -11,6 +11,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - v1.100.4-dev — release hygiene + panel-framework completion
+
+Pre-release rollup of the v1.100 panel-framework completion lane and the
+v1.100.4 release-hygiene track. Tag flips `-dev` → plain `v1.100.4` at
+final release.
+
+### Scope of the panel-framework lane
+
+> **Install-time panel survival validation migrated to Go for DirectAdmin,
+> Plesk, and cPanel. Operator-facing panel CLI (`nftban panel <name>
+> enable/disable/status/report/repair/test` + Cloudflare checks +
+> cPHulk reporting + full panel UX) remains shell-owned until a future
+> explicit migration/decommission lane.**
+
+The `panelfw` adapters added in this lane replace **only** the
+install-time `PanelAdapter` contract:
+
+- `Detect()` — filesystem + service + listener evidence
+- `RequiredPorts()` — conf.d-driven port surface declaration
+- `ValidateReachability()` — control-plane LISTEN check
+
+They do **not** thin or replace the shell panel libraries. Shell
+decommission is gated on per-function `MIGRATION_COVERAGE.md` (H3.1+).
+
+### Panel-adapter coverage under `panelfw` (install-time validation only)
+
+| Panel | Status | Evidence |
+|---|---|---|
+| **DirectAdmin** | adapter merged + live destructive evidence | dns2 PR26.4+26.5+26.6 retry SUCCESS + PR26.6.1 watchdog hotfix verified live |
+| **Plesk** | adapter merged + live read-only reality audit | 178.105.74.229 (Ubuntu 24.04 + Obsidian 18.0.76); lab2 H2 supplementary baseline (Ubuntu 24.04 + Plesk) |
+| **cPanel** | adapter merged + live read-only reality audit | lab4 (AlmaLinux 9.7 + cPanel 11.132.0.19); lab4 H2 supplementary baseline |
+| CyberPanel / CWP / InterWorx / Vesta / Generic | DEFERRED | gated on licensed clean evidence hosts |
+
+### Merged PRs (panel-framework lane)
+
+- **PR26.1** install validation hardening (`cdf8f770`) — generic systemd-payload validation; 5 invariants block StateCommitted on missing exporter / orphan timer / unknown ExecStart / failed unit / payload inventory mismatch
+- **PR26.2** panel-survival framework (`fdbebe8c`) — generic `panelfw` framework + `FakePanelAdapter` test fixture; `PANEL-SURVIVAL-001` invariant; `--no-panel` opt-out
+- **PR26.3** DirectAdmin adapter (`5366caf5`) — first adapter, control-plane reachability only (Path A scope-limit)
+- **PR26.4** DirectAdmin adapter consumes conf.d (`bfe6eac9`) — adapter reads `etc/nftban/conf.d/panels/directadmin/main.conf` via `internal/ports/panel_loader.LoadPanelConfig`; closes DirectAdmin four-truth drift
+- **PR26.5** source-install payload completeness (`1510e361`) — `etc/nftban/conf.d/panels/*` staged; 4 shell-payload categories (exporters, cron, scripts, helpers); dead UI/API unit removal; validator strictly extended
+- **PR26.6** takeover preserves non-nftban authority (`1e48b795`) — `TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001` invariant; 4-class nft table classifier; CSF rename-to-`.disabled` (reversible-disarm); cron-backup manifest before rm; **dns2 retry SUCCESS** (INSTALL_RC=0 / StateCommitted / PROTECTED / inet ssh_safety preserved live)
+- **PR26.7** Plesk adapter (`867f047a`) — second adapter under `panelfw`; control-plane TCP 8443 only; 8447 explicitly NOT control-plane
+- **PR26.7.1** Plesk reality calibration (`93078da1`) — Detect E3 any-of `{sw-cp-server.service, psa.service, plesk.service}` (Ubuntu Plesk has no `plesk.service`); conf.d adds TCP 4190 (managesieve, RFC 5804)
+- **PR26.6.1** DirectAdmin watchdog coherence (`2d8bbc7c`) — `PANEL-WATCHDOG-COHERENCE-001` invariant; `disarmDAWatchdog` flips `^lfd=ON` → `lfd=OFF` in DA `services.status` atomically + idempotently; closes dns2 dataskq lfd-mask noise loop (14+ hours of journal noise eliminated)
+- **PR26.8** cPanel adapter (`6442d2f6`) — third adapter; Detect E3 = `cpanel.service` (orchestrator; NOT `cpsrvd.service`); ValidateReachability any-of `{2087 WHM, 2083 cPanel}`; **CPANEL-RPCBIND-111-DIRECTIVE** honored (no port 111 anywhere in adapter or conf.d)
+
+### Release-hygiene PRs
+
+- **H1.1** version truth + build metadata (`c8ede6d7`) — `/VERSION` 1.98.2 → 1.100.4-dev; `pkg/version` centralizes `GitCommit` + `BuildDate` ldflag-injectable vars + `Line(component)` helper; all 4 binaries (`nftband`, `nftban-core`, `nftban-installer`, `nftban-validate`) print canonical line via `--version`; `nftban-validate --version` is zero-side-effect; sentinel `dev`/`unknown` defaults flag uninjected builds; FHS spec regenerated and Policy Gates clean
+- **H2** docs/wiki/status sync (this PR) — STATUS.md + CHANGELOG.md + V1.90 staging refreshed against current main
+
+### Invariants codified during the lane
+
+- `TAKEOVER-PRESERVES-NON-NFTBAN-AUTHORITY-001` (PR26.6) — takeover may disable external authority via reversible lifecycle ops; must not destructively delete operator-retained tables/binaries/configs/recovery paths
+- `PANEL-SURVIVAL-001` (PR26.2) — adapter detection + control-plane reachability gate StateCommitted unless `--no-panel`
+- `PANEL-WATCHDOG-COHERENCE-001` (PR26.6.1) — when takeover masks an external service the panel watches, panel runtime watchdog config must be updated to stop monitoring it
+- `CPANEL-RPCBIND-111-DIRECTIVE` (PR26.8 era) — TCP/UDP 111 is operator/service-specific RPC surface, NOT panel-survival; never auto-add to panel adapter/conf.d
+- `SEC-HARDEN-RPCBIND-001` (PR26.8 era) — host-level rpcbind on 0.0.0.0 with no NFS evidence is `UNEXPECTED_EXPOSED`; warn/report only, never auto-mutate
+
+### Out of scope (deferred)
+
+- Plain `v1.100.4` tag (final release PR after H3-H5)
+- CHANGELOG entries for individual H1.x sub-PRs
+- Restore-symmetric DA watchdog re-arm (`lfd=OFF` → `lfd=ON` on §32 CSF restore)
+- chkservd CSF-watchdog clearing (PR26.6.1 generalization for cPanel-with-CSF hosts; needs evidence host with CSF + WHM CSF plugin)
+- WHM CSF plugin presence detection (informational warn)
+- Generic ufw/firewalld/fail2ban disarm in takeover (`GENERIC-EXTERNAL-AUTHORITY-DISARM-001` proposed; lab2 has the ufw=active specimen ready)
+- conf.d additions for cPanel TCP 4190 (managesieve) + 2091 (cpdavd auxiliary, pending stability)
+- meta:inventory header backfill for DA + cPanel sister conf.d files (Plesk got it in PR26.7.1)
+- PR26.8-hygiene: explicit-name regression-guard tests (bare-control-port no-strong-detect, webmail-only-fails, rpcbind+cpanel presence-side guard)
+- CyberPanel / CWP / InterWorx / Vesta / Generic adapters
+
+### Standing rules
+
+- Panel adapters beyond DirectAdmin + Plesk + cPanel are evidence-gated; no adapter built from assumptions.
+- No restore authorized.
+- No new destructive panel-host runs without operator authorization + Tier 1 rebuild.
+
+---
+
 ## [Unreleased] - v1.100 PR-25 contract sheet (doc only)
 
 Appends the PR-25 execution contract to `internal/installer/restore/contract.md` as a new "PART II — PR-25 execution contract" section (§§16–29). This is the doc-only first PR of the PR-25 two-PR split (mirrors the PR-24 PR #493 → PR #494 pattern). The implementation PR opens in a separate branch after this one merges.
