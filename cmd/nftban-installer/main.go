@@ -39,6 +39,8 @@ import (
 	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/directadmin"
 	// PR26.7: Plesk adapter — same registration shape as DirectAdmin.
 	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/plesk"
+	// PR26.8: cPanel/WHM adapter — same registration shape.
+	_ "github.com/itcmsgr/nftban/internal/installer/panelfw/adapters/cpanel"
 )
 
 // globalTimeout is the maximum wall-clock time for the entire installer run.
