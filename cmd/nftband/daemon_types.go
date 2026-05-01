@@ -48,6 +48,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/stats"
 	"github.com/itcmsgr/nftban/internal/watchdog"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 const (
@@ -101,10 +102,14 @@ func getAPIAddr() string {
 	return DefaultHTTPAddr
 }
 
-// Build-time variables (injected by -ldflags)
+// Build-time variables (injected by -ldflags) — PR v1.100.4 H1.1:
+// the canonical names live in pkg/version. Aliases are kept here for
+// backwards-compatibility with tests that reference cmd-local symbols
+// during the transition; they re-export the centralized values so the
+// build-time injection path stays single-sourced.
 var (
-	GitCommit = "dev"
-	BuildDate = "unknown"
+	GitCommit = version.GitCommit
+	BuildDate = version.BuildDate
 )
 
 // Runtime flags

@@ -103,7 +103,19 @@ GOARCH=amd64
 
 # Read version from VERSION file (single source of truth)
 VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "dev")
-LDFLAGS="-s -w -X github.com/itcmsgr/nftban/pkg/version.Version=$VERSION"
+
+# v1.100.4 H1.1 — inject GitCommit + BuildDate so binaries report
+# chain-of-custody (--version output ties back to a specific source
+# commit + build wall-clock). Both fall back to the pkg/version
+# defaults ("dev" / "unknown") when run outside a git checkout, so
+# release tooling can detect uninjected builds.
+GIT_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo "dev")
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+LDFLAGS="-s -w \
+  -X github.com/itcmsgr/nftban/pkg/version.Version=$VERSION \
+  -X github.com/itcmsgr/nftban/pkg/version.GitCommit=$GIT_COMMIT \
+  -X github.com/itcmsgr/nftban/pkg/version.BuildDate=$BUILD_DATE"
 
 # Component to build (default: all)
 COMPONENT="${1:-all}"

@@ -39,11 +39,22 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/validator"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 func main() {
 	jsonOutput := flag.Bool("json", false, "Output JSON instead of summary")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	// PR v1.100.4 H1.1 — --version short-circuits before we touch the
+	// kernel. Zero side-effects (the binary's invariant per file
+	// header). Output is the canonical `pkg/version.Line` shape so
+	// release/audit tooling can grep a stable format.
+	if *showVersion {
+		fmt.Println(version.Line("nftban-validate"))
+		os.Exit(0)
+	}
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

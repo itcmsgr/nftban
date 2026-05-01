@@ -38,7 +38,7 @@ func main() {
 	for _, arg := range os.Args[1:] {
 		switch arg {
 		case "--version", "-v":
-			fmt.Printf("nftband v%s (git %s, build %s)\n", version.Version, GitCommit, BuildDate)
+			fmt.Println(version.Line("nftband"))
 			return
 		case "--help", "-h":
 			printHelp()
