@@ -3,7 +3,8 @@
 > **Policy:** Main branch is always green. Failed CI blocks merge.
 > No manual overrides for truth-critical checks. Evidence over claims.
 
-**Version (this commit):** v1.98.2 — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
+**Version (this commit):** v1.100.4-dev — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
+**Release lane:** v1.100.4 (in flight). Panel-adapter coverage under `panelfw`: **DirectAdmin** (live destructive evidence) + **Plesk** (live + read-only reality audits) + **cPanel** (read-only reality audit). CyberPanel / CWP / InterWorx / Vesta / Generic deferred to v1.101+ pending licensed clean evidence hosts.
 **Truth model:** Kernel → Validator → CLI
 **Enforcement:** [Design Principles](docs/DESIGN_PRINCIPLES.md)
 
