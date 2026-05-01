@@ -23,13 +23,56 @@
 package version
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-// Version is injected at build time from VERSION file via -ldflags
-// If not set during build, defaults to development version
+// Version is injected at build time from the repo VERSION file via
+// -ldflags. If not set during build, defaults to "dev".
 var Version = "dev"
+
+// GitCommit is injected at build time (-X) with `git rev-parse HEAD`
+// (typically the short SHA). Carries chain-of-custody for the binary
+// back to the source commit. Default "dev" means "this binary was
+// built without ldflag injection — do not trust the version string".
+var GitCommit = "dev"
+
+// BuildDate is injected at build time (-X) with the build host's
+// UTC timestamp. Format: RFC3339 (`2006-01-02T15:04:05Z`). Default
+// "unknown" pairs with GitCommit="dev" to flag uninjected builds.
+var BuildDate = "unknown"
+
+// Commit returns the build-injected git commit SHA, or "dev" when
+// the binary was built without ldflag injection. Use this rather than
+// reading the package var directly so tests can swap implementations
+// in the future without mutating package state.
+func Commit() string { return GitCommit }
+
+// BuildTimestamp returns the build-injected UTC timestamp, or
+// "unknown" when the binary was built without ldflag injection.
+func BuildTimestamp() string { return BuildDate }
+
+// Line returns the canonical one-line --version string for the named
+// binary component. All NFTBan binaries print this exact format so
+// release/audit tooling can grep a stable shape:
+//
+//	<component> v<Version> (git <commit>, build <date>)
+//
+// Examples:
+//
+//	nftband v1.100.4-dev (git 2d8bbc7c, build 2026-05-01T08:30:00Z)
+//	nftban-core v1.100.4-dev (git dev, build unknown)   # uninjected
+//
+// Component is the binary name (e.g., "nftband", "nftban-core",
+// "nftban-installer", "nftban-validate"). Empty component prints
+// the product name only.
+func Line(component string) string {
+	if component == "" {
+		component = ProductName
+	}
+	return fmt.Sprintf("%s %s (git %s, build %s)", component, FullVersion(), GitCommit, BuildDate)
+}
 
 // parseVersion splits Version into [major, minor, patch] integers.
 func parseVersion() []int {

@@ -195,3 +195,111 @@ func TestConstants(t *testing.T) {
 		t.Error("ConfigVersion should not be empty")
 	}
 }
+
+// =============================================================================
+// Build-metadata tests (PR v1.100.4 H1.1)
+// =============================================================================
+//
+// GitCommit / BuildDate are package-level vars meant to be overridden
+// at link time via -ldflags '-X github.com/itcmsgr/nftban/pkg/version.GitCommit=...'.
+// When the binary is built without injection (go test, plain go build,
+// developer workstation), the defaults must be the agreed sentinel
+// strings so release/audit tooling can detect uninjected builds.
+
+func TestBuildMetadata_Defaults(t *testing.T) {
+	// Save + restore around any test that mutates these.
+	origCommit, origDate := GitCommit, BuildDate
+	defer func() { GitCommit, BuildDate = origCommit, origDate }()
+
+	if GitCommit != "dev" {
+		t.Errorf("GitCommit default = %q, want %q (release tooling treats this as 'uninjected build')",
+			GitCommit, "dev")
+	}
+	if BuildDate != "unknown" {
+		t.Errorf("BuildDate default = %q, want %q (release tooling treats this as 'uninjected build')",
+			BuildDate, "unknown")
+	}
+}
+
+func TestCommit_BuildTimestamp_Accessors(t *testing.T) {
+	origCommit, origDate := GitCommit, BuildDate
+	defer func() { GitCommit, BuildDate = origCommit, origDate }()
+
+	GitCommit = "abc1234"
+	BuildDate = "2026-05-01T08:30:00Z"
+
+	if got := Commit(); got != "abc1234" {
+		t.Errorf("Commit() = %q, want %q", got, "abc1234")
+	}
+	if got := BuildTimestamp(); got != "2026-05-01T08:30:00Z" {
+		t.Errorf("BuildTimestamp() = %q, want %q", got, "2026-05-01T08:30:00Z")
+	}
+}
+
+func TestLine_FormatStable(t *testing.T) {
+	origVersion, origCommit, origDate := Version, GitCommit, BuildDate
+	defer func() {
+		Version, GitCommit, BuildDate = origVersion, origCommit, origDate
+	}()
+
+	Version = "1.100.4-dev"
+	GitCommit = "abc1234"
+	BuildDate = "2026-05-01T08:30:00Z"
+
+	cases := []struct {
+		name      string
+		component string
+		want      string
+	}{
+		{
+			name:      "named component",
+			component: "nftband",
+			want:      "nftband v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+		},
+		{
+			name:      "another named component",
+			component: "nftban-core",
+			want:      "nftban-core v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+		},
+		{
+			name:      "empty component falls back to ProductName",
+			component: "",
+			want:      "NFTBan v1.100.4-dev (git abc1234, build 2026-05-01T08:30:00Z)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Line(tc.component); got != tc.want {
+				t.Errorf("Line(%q) = %q\n  want %q", tc.component, got, tc.want)
+			}
+		})
+	}
+}
+
+// Uninjected-build path: Line() must still return a stable shape
+// (with sentinel "dev"/"unknown") rather than panic or print garbage.
+// Release tooling and operators rely on the leading-component-token
+// shape so they can distinguish "build with no metadata" from a
+// genuine version line.
+func TestLine_UninjectedBuild_StableShape(t *testing.T) {
+	origVersion, origCommit, origDate := Version, GitCommit, BuildDate
+	defer func() {
+		Version, GitCommit, BuildDate = origVersion, origCommit, origDate
+	}()
+
+	Version = "dev"
+	GitCommit = "dev"
+	BuildDate = "unknown"
+
+	got := Line("nftban-core")
+	want := "nftban-core vdev (git dev, build unknown)"
+	if got != want {
+		t.Errorf("Line on uninjected build:\n  got  %q\n  want %q", got, want)
+	}
+	if !strings.HasPrefix(got, "nftban-core ") {
+		t.Errorf("Line must always start with the component name; got %q", got)
+	}
+	if !strings.Contains(got, "(git ") {
+		t.Errorf("Line must always contain `(git ` segment; got %q", got)
+	}
+}
