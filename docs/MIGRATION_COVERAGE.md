@@ -69,7 +69,7 @@ What this wording DOES say:
 | 3 | Install-time panel survival: ValidateReachability (DA / Plesk / cPanel) | **Go** | migrated (PR26.4 / PR26.7 / PR26.8) | v1.100.4 non-blocker (CLOSED) | `internal/installer/panelfw/adapters/*/` (port any-of lists) | H3.2: prevent unbounded port-list growth |
 | 4 | Install-time panel survival: CyberPanel / CWP / InterWorx / Vesta / generic | **conf.d only** (no Go adapter yet) | pending — evidence-gated | v1.100.4 non-blocker (deferred to v1.101+) | `etc/nftban/conf.d/panels/{cyberpanel,cwp,interworx,vesta,generic}/main.conf` | none in H3.2 |
 | 5 | DirectAdmin runtime watchdog coherence (services.status flip) | **Go** | migrated (PR26.6.1) | v1.100.4 non-blocker (CLOSED) | `internal/installer/panelfw/adapters/directadmin/` | H3.2: prevent regression |
-| 6 | nft table classifier (NFTBAN_OWNED / EXTERNAL_AUTHORITY_GHOST / KERNEL_DEFAULT / OPERATOR_SAFETY) | **Go + shared shell lib** | mixed (PR26.6) | v1.100.4 non-blocker (CLOSED) | `cli/lib/nftban/lib/nftban_table_classify.sh` + Go callers | H3.2: shell lib must remain in sync with Go classifier |
+| 6 | nft table classifier (NFTBAN_OWNED / EXTERNAL_AUTHORITY_GHOST / KERNEL_DEFAULT / OPERATOR_SAFETY) | **Go + shared shell lib** | mixed (PR26.6) | v1.100.4 non-blocker (CLOSED) | `cli/lib/nftban/core/nftban_table_classify.sh` + Go callers | H3.2: shell lib must remain in sync with Go classifier |
 | 7 | Source-install payload staging (binaries / shell / configs / panels / systemd / polkit / logrotate / docs) | **Go** | migrated (PR26.5) | v1.100.4 non-blocker (CLOSED) | `internal/installer/payload/payload.go` `buildEntries()` + `Destinations()` | H3.2: payload destinations registry must be sole source for install AND uninstall |
 | 8 | Uninstall artifact removal (PR-25-equivalent) | **Go** | migrated (PR #541, this release) | v1.100.4 non-blocker (CLOSED) | `internal/installer/uninstall/artifacts.go` | H3.2: G3-UN-NO-MUTATION whitelist locked |
 | 9 | Authority release / safe-switch / emergency SSH | **Go** | migrated (PR-23, pre-v1.100.4) | v1.100.4 non-blocker (CLOSED) | `internal/installer/uninstall/apply.go` + `internal/installer/switchop/` | H3.2: G3-UN-SHIM-LOCK + G3-EXEC-TRACE remain green |
@@ -79,7 +79,7 @@ What this wording DOES say:
 | 13 | Operator-facing `nftban ban` / `unban` / `whitelist` / `blacklist` | **shell** | **intentionally shell-owned** | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_ban.sh`, `cmd_unban.sh`, `cmd_whitelist.sh`, `cmd_blacklist.sh` | H3.3: shell-delete guard MUST refuse deletion |
 | 14 | Operator-facing `nftban status` / `health` / `feeds` / `stats` | **shell** | **intentionally shell-owned** | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_{status,health*,feeds,stats}.sh` | H3.3: shell-delete guard MUST refuse deletion |
 | 15 | Operator-facing `nftban panel` (enable / disable / status / report / repair / test) | **shell** | **intentionally shell-owned** | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_panel.sh` (+ `cmd_report.sh`, `cmd_status.sh`, `cmd_test.sh`) | H3.3: shell-delete guard MUST refuse deletion |
-| 16 | Operator-facing Cloudflare integration | **shell** | intentionally shell-owned | v1.100.4 non-blocker (panel-only feature) | `cli/lib/nftban/cli/cmd_cloudflare.sh` (if present) | H3.3: shell-delete guard MUST refuse deletion |
+| 16 | Operator-facing trust feeds / CDN provider whitelist (incl. Cloudflare) | **shell + Go bridge** | intentionally shell-owned operator CLI with Go-side trust parser | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_trust.sh` + `cli/lib/nftban/core/nftban_trust.sh` + `cmd/nftban-core/cmd_trust.go` | H3.3: shell-delete guard MUST refuse deletion of trust CLI/core table |
 | 17 | Operator-facing cPHulk integration | **shell** | intentionally shell-owned | v1.100.4 non-blocker | shell module under cPanel-specific paths | H3.3: shell-delete guard MUST refuse deletion |
 | 18 | Operator-facing `nftban ddos` / `botguard` / `suricata` / `botscan` | **shell** | intentionally shell-owned | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_{ddos,botguard,suricata,botscan}.sh` | H3.3: shell-delete guard MUST refuse deletion |
 | 19 | Operator-facing `nftban login` (loginmon CLI) | **shell** with Go daemon backing | mixed (Go daemon owns runtime, shell owns CLI) | v1.100.4 non-blocker | `cli/lib/nftban/cli/cmd_login.sh` + `internal/loginmon/` Go daemon | H3.2: shell CLI must call into Go daemon, NOT reimplement |
@@ -129,7 +129,8 @@ These surfaces are operator CLI / runtime ergonomics. They remain shell-owned fo
 
 - `nftban ban` / `unban` / `whitelist` / `blacklist`
 - `nftban status` / `health` / `feeds` / `stats`
-- `nftban panel {enable,disable,status,report,repair,test}` and Cloudflare / cPHulk integrations
+- `nftban panel {enable,disable,status,report,repair,test}` (cPHulk integration is inline within `cmd_panel.sh` + `lib/nftban_panel_cpanel.sh`; no standalone cPHulk file)
+- `nftban trust …` (trust-feed CLI: list / enable / disable / update / status). Trust providers: CLOUDFLARE, CLOUDFLARE_CHINA, AWS, GOOGLE, AZURE, DIGITALOCEAN, FASTLY, QUICCLOUD. DirectAdmin is the only panel that mandates the Cloudflare whitelist — enforcement lives in `cli/lib/nftban/lib/nftban_panel_directadmin.sh` + `cli/lib/nftban/lib/nftban_panel_common.sh`. **Panelfw Go install-time adapters have zero Cloudflare references by design** — Cloudflare is operator-runtime trust-feed logic, NOT install-time panelfw validation.
 - `nftban ddos` / `botguard` / `suricata` / `botscan`
 - `nftban login` CLI (delegates to Go daemon)
 - `nftban firewall rebuild` (driver script; Go validator is authority)
@@ -143,7 +144,7 @@ Shell-side runtime artifacts created by these surfaces (e.g. `/etc/nftban/rules.
 
 These surfaces have BOTH Go and shell components by design. Each side has a defined role.
 
-- **nft table classifier** — Go logic in PR26.6 + shared shell library `cli/lib/nftban/lib/nftban_table_classify.sh`. Shell consumers call the shared lib, Go consumers call native code. Both must produce identical 4-class output.
+- **nft table classifier** — Go logic in PR26.6 + shared shell library `cli/lib/nftban/core/nftban_table_classify.sh`. Shell consumers call the shared lib, Go consumers call native code. Both must produce identical 4-class output.
 - **Login-monitor** — Go daemon owns runtime; shell `cmd_login.sh` is the operator CLI front-end. Shell must NOT reimplement detection logic.
 - **Firewall rebuild** — shell `cmd_firewall.sh` is the driver; `nftban-validate` (Go) is the authority. Shell must defer to validator's verdict.
 - **Health model** — Go validator computes the 5-state health; shell `cmd_health*.sh` exposes it to operator.
@@ -164,7 +165,7 @@ H3.2 implements a CI gate that enforces this document's classifications structur
 
 1. **PANELFW-ADAPTER-COVERAGE** — every adapter in `internal/installer/panelfw/adapters/<name>/` must have a corresponding row in §4 with status=`migrated` AND a matching `etc/nftban/conf.d/panels/<name>/main.conf`. New adapters require a §4 row addition.
 2. **PAYLOAD-DESTINATIONS-SOLE-TRUTH** — `payload.Destinations()` must be the ONLY source consulted by `internal/installer/uninstall/artifacts.go` for installer-owned paths (no parallel hardcoded list grown in artifacts.go beyond the bounded `uninstallOwnedRuntimePaths` enumerated in PR #541).
-3. **NFTBAN-TABLE-CLASSIFIER-PARITY** — `cli/lib/nftban/lib/nftban_table_classify.sh` and the Go classifier in `internal/installer/uninstall/` must classify the same fixture set identically (table-driven test).
+3. **NFTBAN-TABLE-CLASSIFIER-PARITY** — `cli/lib/nftban/core/nftban_table_classify.sh` and the Go classifier in `internal/installer/uninstall/` must classify the same fixture set identically (table-driven test).
 4. **G3-UN-NO-MUTATION whitelist locked** — only `apply.go` and `artifacts.go` excluded from the structural no-mutation grep; any new uninstall .go file added to the whitelist requires a documented entry in §4 + §5.
 5. **G3-UN-SHIM-LOCK + G3-EXEC-TRACE** — existing PR-22/PR-23 gates must remain green (already in `.github/workflows/ci-uninstall-canonization.yml`).
 6. **DEPRECATED-UI-UNIT-REFUSAL** — CI must FAIL if `nftban-ui.service` reappears in any payload-destination glob.
@@ -183,7 +184,7 @@ Required checks:
 
 1. **NO-DROP-OPERATOR-FACING-SHELL** — deletion of any file in `cli/lib/nftban/cli/cmd_{ban,unban,whitelist,blacklist,status,health*,feeds,stats,panel,report,test,ddos,botguard,suricata,botscan,login,firewall,config}.sh` MUST be refused unless the PR title contains `[MIGRATION-LANE-AUTHORIZED]` AND `MIGRATION_COVERAGE.md` has been updated to flip the row to `migrated` or `deprecated`.
 
-2. **NO-DROP-SHARED-SHELL-LIBS** — deletion of `cli/lib/nftban/lib/nftban_table_classify.sh` (and other shared libs) MUST be refused unless §7 row is flipped.
+2. **NO-DROP-SHARED-SHELL-LIBS** — deletion of `cli/lib/nftban/core/nftban_table_classify.sh` (and other shared libs) MUST be refused unless §7 row is flipped.
 
 3. **NO-DROP-RUNTIME-DIRS-CODE** — code that creates `/etc/nftban/rules.d/`, `/var/lib/nftban/state/`, `/var/lib/nftban/recorder/`, `/var/lib/nftban/backup/` is shell-runtime — H3.3 refuses deletion of those creator paths until UPSTREAM-UNINSTALL-SHELL-RESIDUE-002 lands.
 
