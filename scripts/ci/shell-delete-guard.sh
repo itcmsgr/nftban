@@ -17,9 +17,10 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Composes with H3.2 (Migration Coverage Gate). Reads the same
-# docs/MIGRATION_COVERAGE.md spec. H3.2 enforces add/state invariants;
-# H3.3 enforces deletion-side discipline.
+# Composes with H3.2 (Migration Coverage Gate). Both gates use inline
+# classification rules — the spec doc lives in an internal audit/wiki
+# workspace and is intentionally NOT shipped in this repo. H3.2 enforces
+# add/state invariants; H3.3 enforces deletion-side discipline.
 #
 # 5 required checks per OPERATOR DECISION 2026-05-02:
 #   1. NO-DROP-OPERATOR-FACING-SHELL
@@ -34,9 +35,9 @@
 #   [DEPRECATED-REMOVAL]
 #
 # Multi-PR migration handling: a deletion PR with [MIGRATION-LANE-AUTHORIZED]
-# may PASS even without same-PR Go replacement IF the H3.1 row was already
-# migrated/deprecated on main BEFORE this PR opened. The doc is the
-# source of truth.
+# may PASS even without same-PR Go replacement IF the surface basename is in
+# the inline ALREADY_MIGRATED_BASENAMES allow-list (operator updates the
+# script when a migration lands).
 #
 # Local invocation:
 #     bash scripts/ci/shell-delete-guard.sh [<base-ref>]
@@ -67,18 +68,21 @@ fi
 
 BASE_REF="${1:-${BASE_REF:-origin/main}}"
 
-# MIGRATION_COVERAGE.md is the H3.1 spec — same locations as H3.2 gate.
-MIGRATION_COVERAGE_PATHS=(
-    "docs/MIGRATION_COVERAGE.md"
-    "/home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md"
-)
-MIGRATION_COVERAGE_DOC=""
-for p in "${MIGRATION_COVERAGE_PATHS[@]}"; do
-    if [ -f "$p" ]; then
-        MIGRATION_COVERAGE_DOC="$p"
-        break
-    fi
-done
+# Inline classification rules. The migration-coverage spec lives in an
+# internal audit/wiki workspace and is intentionally NOT shipped in this
+# repo. The lists below MUST stay in sync with that internal spec.
+
+# Files currently classified as deprecated (eligible for [DEPRECATED-REMOVAL]).
+# Empty by design at v1.100.4 — the only deprecated unit (nftban-ui.service)
+# is already absent from the source tree; future deprecations land here.
+DEPRECATED_BASENAMES=()
+
+# Surfaces classified as already-migrated/deprecated on main BEFORE any PR.
+# Used by the multi-PR migration support: a follow-up deletion PR with
+# [MIGRATION-LANE-AUTHORIZED] passes if the surface is in this list.
+# Empty at v1.100.4 — no formal/intentional shell-owned surface has yet
+# been migrated to Go-only. Update inline when migrations land.
+ALREADY_MIGRATED_BASENAMES=()
 
 declare -i FAILS=0
 declare -i CHECKS=0
@@ -98,16 +102,9 @@ check_fail() {
 
 echo "============================================================"
 echo "H3.3 shell-delete guard — branch HEAD $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "spec: ${MIGRATION_COVERAGE_DOC:-NOT FOUND} (H3.1)"
+echo "rules: inline (internal H3.1 spec is not in this repo)"
 echo "diff base: $BASE_REF"
 echo "============================================================"
-
-if [ -z "$MIGRATION_COVERAGE_DOC" ]; then
-    check_fail "SPEC-DOC-PRESENCE" "MIGRATION_COVERAGE.md not found in any of: ${MIGRATION_COVERAGE_PATHS[*]}"
-    echo "Summary: 1 check executed; 1 required failure (spec doc unreachable)."
-    echo "H3.3 shell-delete guard: FAIL"
-    exit 1
-fi
 
 # -----------------------------------------------------------------------------
 # Compute deletion set (status=D), with rename detection (-M) so renames are
@@ -223,31 +220,36 @@ has_deprecated_marker() {
     grep -qiE '\[\s*DEPRECATED-REMOVAL\s*\]' <<<"$COMBINED_TEXT"
 }
 
-# Doc-classification helpers (read from $MIGRATION_COVERAGE_DOC).
-# Returns 0 if the file's surface is classified migrated or deprecated.
+# Inline-list classification helpers (replaces in-repo doc lookups).
+# Returns 0 if the file's basename is classified per the inline rule.
+
 # shellcheck disable=SC2329  # used by future check expansions
-doc_says_migrated_or_deprecated() {
-    local file="$1"
-    local base
+classified_migrated_or_deprecated() {
+    local file="$1" base
     base=$(basename "$file")
-    grep -qiE "${base}.*\b(migrated|deprecated)\b" "$MIGRATION_COVERAGE_DOC" 2>/dev/null
-}
-
-doc_says_deprecated() {
-    local file="$1"
-    local base
-    base=$(basename "$file")
-    grep -qiE "${base}.*\bdeprecated\b" "$MIGRATION_COVERAGE_DOC" 2>/dev/null
-}
-
-# Verify the doc is in the diff (CHECK 5 + multi-PR migration check).
-doc_in_diff() {
-    local f
-    for f in "${ADDED_OR_MODIFIED[@]}"; do
-        case "$f" in
-            docs/MIGRATION_COVERAGE.md) return 0 ;;
-        esac
+    local x
+    for x in "${ALREADY_MIGRATED_BASENAMES[@]:-}" "${DEPRECATED_BASENAMES[@]:-}"; do
+        [ "$x" = "$base" ] && return 0
     done
+    return 1
+}
+
+classified_deprecated() {
+    local file="$1" base
+    base=$(basename "$file")
+    local x
+    for x in "${DEPRECATED_BASENAMES[@]:-}"; do
+        [ "$x" = "$base" ] && return 0
+    done
+    return 1
+}
+
+# CHECK 5 doc-coverage-update no longer applies — the spec doc is not in
+# the repo. The migration-marker authorization path now relies on the
+# inline ALREADY_MIGRATED_BASENAMES allow-list (operator updates the
+# script when migrations land). Stub remains for code-flow continuity.
+# shellcheck disable=SC2329  # retained for symmetry; always returns false
+doc_in_diff() {
     return 1
 }
 
@@ -256,7 +258,8 @@ doc_in_diff() {
 # presence-only signal; behavioral equivalence is human-review territory).
 go_replacement_in_diff() {
     local f
-    for f in "${ADDED_OR_MODIFIED[@]}"; do
+    for f in "${ADDED_OR_MODIFIED[@]:-}"; do
+        [ -z "$f" ] && continue
         case "$f" in
             internal/installer/*.go|cmd/nftban-installer/*.go) return 0 ;;
         esac
@@ -264,15 +267,16 @@ go_replacement_in_diff() {
     return 1
 }
 
-# Multi-PR migration support: if doc on BASE_REF already says migrated/
-# deprecated for the surface, a same-PR Go-replacement is NOT required.
-doc_already_migrated_on_base() {
-    local file="$1"
-    local base
+# Multi-PR migration support: if surface already in ALREADY_MIGRATED_BASENAMES,
+# a same-PR Go-replacement is NOT required.
+already_migrated_on_base() {
+    local file="$1" base
     base=$(basename "$file")
-    git show "$BASE_REF":docs/MIGRATION_COVERAGE.md 2>/dev/null \
-        | grep -qiE "${base}.*\b(migrated|deprecated)\b" || return 1
-    return 0
+    local x
+    for x in "${ALREADY_MIGRATED_BASENAMES[@]:-}"; do
+        [ "$x" = "$base" ] && return 0
+    done
+    return 1
 }
 
 # -----------------------------------------------------------------------------
@@ -288,7 +292,7 @@ doc_already_migrated_on_base() {
         if is_operator_facing_path "$f"; then
             matched=$((matched + 1))
             if has_deprecated_marker; then
-                if doc_says_deprecated "$f"; then
+                if classified_deprecated "$f"; then
                     continue
                 fi
                 fail_detail+="$f deleted under [DEPRECATED-REMOVAL] but docs/MIGRATION_COVERAGE.md does not mark it 'deprecated'; "
@@ -300,7 +304,7 @@ doc_already_migrated_on_base() {
                 if doc_in_diff && go_replacement_in_diff; then
                     continue
                 fi
-                if doc_already_migrated_on_base "$f"; then
+                if already_migrated_on_base "$f"; then
                     continue
                 fi
                 fail_detail+="$f deleted under [MIGRATION-LANE-AUTHORIZED] but lacks (doc update + Go replacement) in same PR AND doc on $BASE_REF does not already mark it migrated/deprecated; "
@@ -329,12 +333,12 @@ doc_already_migrated_on_base() {
         [ -z "$f" ] && continue
         if is_shared_shell_lib_path "$f"; then
             matched=$((matched + 1))
-            if has_deprecated_marker && doc_says_deprecated "$f"; then
+            if has_deprecated_marker && classified_deprecated "$f"; then
                 continue
             fi
             if has_migration_marker; then
                 if doc_in_diff && go_replacement_in_diff; then continue; fi
-                if doc_already_migrated_on_base "$f"; then continue; fi
+                if already_migrated_on_base "$f"; then continue; fi
                 fail_detail+="$f shared-lib deletion under [MIGRATION-LANE-AUTHORIZED] but doc/Go-replacement requirements not met; "
                 continue
             fi
@@ -392,7 +396,7 @@ doc_already_migrated_on_base() {
             [ -z "$f" ] && continue
             # Only meaningful for paths that fall into a watched category.
             if is_operator_facing_path "$f" || is_shared_shell_lib_path "$f" || is_runtime_creator_path "$f"; then
-                if ! doc_says_deprecated "$f"; then
+                if ! classified_deprecated "$f"; then
                     fail_detail+="$f under [DEPRECATED-REMOVAL] but doc does not classify it 'deprecated'; "
                 fi
             fi
@@ -439,7 +443,7 @@ doc_already_migrated_on_base() {
 
     if [ "$cross" -gt 0 ]; then
         if has_migration_marker; then
-            if ! doc_in_diff && ! doc_already_migrated_on_base "${DELETED_FILES[0]:-}"; then
+            if ! doc_in_diff && ! already_migrated_on_base "${DELETED_FILES[0]:-}"; then
                 fail_detail+="ownership-boundary crossing detected ($cross deletion(s)) — docs/MIGRATION_COVERAGE.md must be in the diff OR the surface must already be migrated/deprecated on $BASE_REF; "
             fi
         elif has_deprecated_marker; then
