@@ -185,7 +185,7 @@ else
     echo -e "${RED}❌ Some files are missing!${NC}"
     echo ""
     echo "To install missing files, run:"
-    echo "  cd /path/to/nftban-dev"
+    echo "  cd /path/to/nftban"
     echo "  sudo ./install.sh"
     exit 1
 fi
