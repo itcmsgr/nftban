@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.21.0 - Bot Scanner Timer (Clock 3)
+# NFTBan - Bot Scanner Timer (Clock 3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Systemd timer that triggers botscan batch processing every 10 minutes

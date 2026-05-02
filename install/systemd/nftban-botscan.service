@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.21.0 - Bot Scanner Service (Clock 3)
+# NFTBan - Bot Scanner Service (Clock 3)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Systemd oneshot service for NFTBan botscan batch processing

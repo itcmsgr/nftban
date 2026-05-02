@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - System Watchdog Timer
+# NFTBan - System Watchdog Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Systemd timer unit for NFTBan system watchdog
