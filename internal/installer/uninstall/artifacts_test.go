@@ -157,15 +157,16 @@ func TestRemoveArtifacts_DoesNotRemoveNonOwnedParents(t *testing.T) {
 		"/etc/nftban",
 		"/var/lib/nftban",
 		"/var/log/nftban",
+		"/var/cache/nftban", // tmpfiles.d-created persistent cache (audit item A)
 		"/etc/logrotate.d/nftban",
-		"/etc/polkit-1/rules.d",   // polkit dest (RHEL family)
+		"/etc/polkit-1/rules.d",       // polkit dest (RHEL family)
 		"/usr/share/polkit-1/rules.d", // polkit dest (Debian family)
 		"/usr/share/man/man8/nftban",
 		"/usr/share/bash-completion/completions/nftban",
 		"/usr/lib/tmpfiles.d/nftban",
 		"/usr/lib/systemd/system/nftban", // unit-file rm
 		"/usr/lib/systemd/system/nftband",
-		"/etc/systemd/system/nftban",  // mask-symlink rm under purge
+		"/etc/systemd/system/nftban", // mask-symlink rm under purge
 		"/etc/systemd/system/nftband",
 	}
 	for _, target := range rms {
