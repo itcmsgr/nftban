@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - Suricata Integration Daemon Service
+# NFTBan - Suricata Integration Daemon Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-suricata.service"

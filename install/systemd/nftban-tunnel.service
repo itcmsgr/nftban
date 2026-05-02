@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.30.0 - Tunnel Suspicion Scan Service
+# NFTBan - Tunnel Suspicion Scan Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-tunnel.service"
 # meta:type="systemd"
-# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="DNS tunnel suspicion scanner (advisory-only, never bans)"
 # meta:input="None"

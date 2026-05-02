@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.41.0 - Daily Report Timer
+# NFTBan - Daily Report Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-report-daily.timer"
 # meta:type="systemd"
-# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Timer for daily report generation"
 # meta:inventory.files=""

@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.41.0 - Community Stats Service
+# NFTBan - Community Stats Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-community-stats.service"
 # meta:type="systemd"
-# meta:version="1.41.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Oneshot service for anonymous community stats submission"
 # meta:inventory.files=""

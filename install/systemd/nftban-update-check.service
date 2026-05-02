@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.71.0 - Update Check Service (Unprivileged)
+# NFTBan - Update Check Service (Unprivileged)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-update-check.service"
 # meta:type="systemd"
-# meta:version="1.71.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Unprivileged update check — writes cache, no mutation"
 # meta:inventory.files=""

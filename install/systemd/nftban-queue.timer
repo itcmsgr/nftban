@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - Queue Processor Timer
+# NFTBan - Queue Processor Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Systemd timer unit that triggers queue processing every 5 minutes
