@@ -1,8 +1,9 @@
 name: Shell-Delete Guard (H3.3)
 
 # H3.3 — CI gate refusing protected shell deletions without authorization
-# marker. Composes with H3.2 (Migration Coverage Gate). Reads same
-# docs/MIGRATION_COVERAGE.md spec.
+# marker. Composes with H3.2 (Migration Coverage Gate). Both gates use
+# inline classification rules; the spec doc itself lives in an internal
+# audit/wiki workspace and is intentionally NOT shipped in this repo.
 #
 # 5 required checks:
 #   1. NO-DROP-OPERATOR-FACING-SHELL
@@ -21,7 +22,6 @@ on:
   pull_request:
     paths:
       - 'cli/lib/nftban/**'
-      - 'docs/MIGRATION_COVERAGE.md'
       - 'scripts/ci/shell-delete-guard.sh'
       - '.github/workflows/ci-shell-delete-guard.yml'
   push:

@@ -1,8 +1,8 @@
 name: Migration Coverage Gate (H3.2)
 
-# H3.2 — CI gate enforcing the migration classifications declared in
-# /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md
-# (the H3.1 doc).
+# H3.2 — CI gate enforcing the migration classifications. Rules are inlined
+# in scripts/ci/migration-coverage-gate.sh; the spec doc itself lives in an
+# internal audit/wiki workspace and is intentionally NOT shipped in this repo.
 #
 # 8 checks per the H3.2 specification:
 #   1. PANELFW-ADAPTER-COVERAGE       (asymmetric — pending conf.d allowed)
