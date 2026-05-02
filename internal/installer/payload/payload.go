@@ -491,6 +491,64 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 	}
 }
 
+// Destination is a public, read-only catalog entry describing one
+// staged-payload destination. Returned by Destinations.
+//
+// Establishes a single source of truth between install (StageAll) and
+// uninstall (uninstall.RemoveArtifacts) so the two paths stay coherent
+// under future evolution of the destination set.
+type Destination struct {
+	// Path is the destination filesystem path. For directory-glob
+	// entries (IsDir=true) it is the directory; for single-file entries
+	// it is the exact destination file.
+	Path string
+
+	// IsDir reports whether Path is a directory containing files
+	// matching Glob (true) or a single-file destination (false).
+	IsDir bool
+
+	// Glob is the glob pattern within Path when IsDir is true (e.g.
+	// "*.service", "*.conf"). Empty for single-file entries.
+	Glob string
+
+	// Category groups entries (binaries, shell, configs, systemd,
+	// polkit, logrotate, docs, ...).
+	Category string
+
+	// Optional reports whether absence of the source is non-fatal at
+	// install time. Uninstall treats every destination uniformly —
+	// presence is checked before delete in either case.
+	Optional bool
+
+	// Mode is the file mode applied at install. Carried for symmetry;
+	// uninstall does not use it.
+	Mode os.FileMode
+}
+
+// Destinations returns the public, read-only destination catalog
+// derived from buildEntries. Same set, same distro-conditional polkit
+// branch — uninstall walks this list to identify every path the
+// installer staged.
+//
+// This is a snapshot, not a live view: the slice is freshly allocated
+// per call and safe for the caller to sort/filter without affecting
+// other callers or future Destinations() calls.
+func Destinations(distro *detect.DistroInfo) []Destination {
+	entries := buildEntries(distro)
+	out := make([]Destination, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, Destination{
+			Path:     e.dstGlob,
+			IsDir:    e.isDir,
+			Glob:     e.srcGlob,
+			Category: e.category,
+			Optional: e.optional,
+			Mode:     e.mode,
+		})
+	}
+	return out
+}
+
 // stageEntry copies a single entry (file or directory glob) to its destination.
 // Returns (wrote, skipped, failed) counters for the orchestrator.
 func stageEntry(exec executor.Executor, srcDir string, e entry, log *logging.Logger) (wrote, skipped, failed int) {

@@ -206,6 +206,15 @@ jobs:
           # from this grep scope because it MUST contain the kernel +
           # service mutation calls the release sequence performs.
           #
+          # v1.100.4 (UPSTREAM-UNINSTALL-INCOMPLETE-001) added
+          # internal/installer/uninstall/artifacts.go as the
+          # filesystem-cleanup counterpart of payload.StageAll —
+          # symmetric mutation by contract, also excluded from this
+          # structural audit. Its safety boundary is enforced inside
+          # the file (paths bounded to payload.Destinations() +
+          # explicit runtime list) rather than by absence of mutation
+          # syscalls.
+          #
           # G3-UN-SHIM-LOCK (separate gate in this workflow) is the
           # invariant that ensures apply.go's mutation cannot coexist
           # with the auto-elevate shim. G3-EXEC-TRACE (all 3 workflows)
@@ -216,7 +225,7 @@ jobs:
           files=$(find \
             internal/installer/uninstall \
             cmd/nftban-installer/uninstall_dryrun.go \
-            -type f -name '*.go' 2>/dev/null | grep -vE '/apply\.go$' || true)
+            -type f -name '*.go' 2>/dev/null | grep -vE '/(apply|artifacts)\.go$' || true)
           if [[ -z "$files" ]]; then
             echo "::error::G3-UN-NO-MUTATION: uninstall scope files not found"
             exit 1

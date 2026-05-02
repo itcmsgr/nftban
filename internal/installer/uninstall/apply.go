@@ -49,6 +49,7 @@ package uninstall
 import (
 	"fmt"
 
+	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
@@ -61,6 +62,17 @@ type ApplyConfig struct {
 	// SSHPort is the port the emergency SSH safety table accepts on.
 	// Must be > 0 and a valid TCP port.
 	SSHPort int
+
+	// Mode is the §4.4 artifact-removal policy. Default ModeRemove.
+	// Added in v1.100.4 (UPSTREAM-UNINSTALL-INCOMPLETE-001) to wire
+	// payload-symmetric artifact removal into the existing release
+	// sequence.
+	Mode Mode
+
+	// Distro is passed through to RemoveArtifacts so the destination
+	// catalog matches install-time staging (currently only polkit
+	// branch differs by distro family).
+	Distro *detect.DistroInfo
 }
 
 // ApplyResult is the output of Apply. Consumed by the dispatcher
@@ -101,9 +113,9 @@ type StepResult struct {
 	Detail  string
 }
 
-// Apply runs the PR-23 authority release mutation sequence.
+// Apply runs the v1.100.4 authority release mutation sequence.
 //
-// The sequence is 10 explicit steps, executed in order:
+// The sequence is 11 explicit steps, executed in order:
 //
 //	 1. Inject emergency SSH safety table (inet nftban_install_emergency)
 //	 2. Stop nftband.service (prevent it from fighting kernel mutation)
@@ -112,28 +124,38 @@ type StepResult struct {
 //	 5. Delete ip nftban table
 //	 6. Delete ip6 nftban table (if present)
 //	 7. Disable nftband.service
-//	 8. Mask nftband.service (prevent any re-enable path)
-//	 9. Validate end-state:
+//	 8. Remove staged payload artifacts per cfg.Mode (v1.100.4 — closes
+//	    UPSTREAM-UNINSTALL-INCOMPLETE-001). Walks payload.Destinations
+//	    and rm -rf's installer-owned paths; mode gates operator-owned
+//	    territory. ServiceUnmask("nftband.service") happens inside this
+//	    step before unit-file rm.
+//	 9. Mask nftband.service ONLY if its unit file still exists (skipped
+//	    when step 8 removed it — masking an absent unit creates a
+//	    phantom /etc/systemd/system/nftband.service -> /dev/null
+//	    symlink that fails the next reinstall with "Unit file is masked")
+//	10. Validate end-state:
 //	      - no ip nftban / ip6 nftban tables
 //	      - nftband.service not active
-//	      - emergency SSH table STILL PRESENT (step 10 removes it)
-//	10. Remove emergency SSH table (warn-only on failure — leaving an
+//	      - emergency SSH table STILL PRESENT (step 11 removes it)
+//	11. Remove emergency SSH table (warn-only on failure — leaving an
 //	    over-permissive SSH rule in place is safer than lockout)
 //
 // Failure mapping:
 //
-//	Step 1 fails   → StateFailedNoFirewall (no kernel mutation; safe to retry)
-//	Step 2 fail    → log warn, continue (stop-of-already-stopped is OK)
-//	Steps 3-6 fail → StateUninstallFailedRelease (kernel partial; emergency up)
-//	Steps 7-8 fail → StateDegraded (kernel released; service lingers)
-//	Step 9 fail    → StateUninstallFailedRelease (end-state mismatch)
-//	Step 10 fail   → log warn; State stays StateUninstallReleased (over-permissive safer than lockout)
-//	All pass       → StateUninstallReleased
+//	Step 1 fails    → StateFailedNoFirewall (no kernel mutation; safe to retry)
+//	Step 2 fail     → log warn, continue (stop-of-already-stopped is OK)
+//	Steps 3-6 fail  → StateUninstallFailedRelease (kernel partial; emergency up)
+//	Steps 7+9 fail  → StateDegraded (kernel released; service lingers)
+//	Step 8 fail     → log warn, continue (best-effort artifact removal;
+//	                  end-state residue is the operator-visible signal)
+//	Step 10 fail    → StateUninstallFailedRelease (end-state mismatch)
+//	Step 11 fail    → log warn; State stays StateUninstallReleased (over-permissive safer than lockout)
+//	All pass        → StateUninstallReleased
 func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *ApplyResult {
 	r := &ApplyResult{}
 
 	// Step 1 — emergency SSH safety net MUST land before any mutation.
-	log.Info("uninstall apply: step 1/10 — injecting emergency SSH safety net (port %d)", cfg.SSHPort)
+	log.Info("uninstall apply: step 1/11 — injecting emergency SSH safety net (port %d)", cfg.SSHPort)
 	if err := switchop.InjectEmergencySSH(exec, cfg.SSHPort, log); err != nil {
 		r.Steps = append(r.Steps, StepResult{Name: "inject_emergency_ssh", Success: false, Detail: err.Error()})
 		r.State = state.StateFailedNoFirewall
@@ -150,7 +172,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	// we push through because the subsequent flush+delete IS the
 	// authority release, and the daemon without its kernel tables has
 	// no firewall job to do.
-	log.Info("uninstall apply: step 2/10 — stopping nftband.service")
+	log.Info("uninstall apply: step 2/11 — stopping nftband.service")
 	if err := exec.ServiceStop("nftband.service"); err != nil {
 		log.Warn("stop nftband.service: %v (continuing; daemon may already be stopped)", err)
 		r.Steps = append(r.Steps, StepResult{Name: "stop_nftband", Success: false, Detail: err.Error()})
@@ -159,7 +181,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	}
 
 	// Step 3 — flush ip nftban.
-	log.Info("uninstall apply: step 3/10 — flushing ip nftban table")
+	log.Info("uninstall apply: step 3/11 — flushing ip nftban table")
 	if res := exec.Run("nft", "flush", "table", "ip", "nftban"); res.ExitCode != 0 {
 		r.Steps = append(r.Steps, StepResult{Name: "flush_ip_nftban", Success: false, Detail: res.Stderr})
 		r.State = state.StateUninstallFailedRelease
@@ -170,7 +192,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	r.Steps = append(r.Steps, StepResult{Name: "flush_ip_nftban", Success: true})
 
 	// Step 4 — flush ip6 nftban (may legitimately not exist).
-	log.Info("uninstall apply: step 4/10 — flushing ip6 nftban table (if present)")
+	log.Info("uninstall apply: step 4/11 — flushing ip6 nftban table (if present)")
 	if exec.NftTableExists("ip6", "nftban") {
 		if res := exec.Run("nft", "flush", "table", "ip6", "nftban"); res.ExitCode != 0 {
 			r.Steps = append(r.Steps, StepResult{Name: "flush_ip6_nftban", Success: false, Detail: res.Stderr})
@@ -184,7 +206,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	}
 
 	// Step 5 — delete ip nftban.
-	log.Info("uninstall apply: step 5/10 — deleting ip nftban table")
+	log.Info("uninstall apply: step 5/11 — deleting ip nftban table")
 	if err := exec.NftDeleteTable("ip", "nftban"); err != nil {
 		r.Steps = append(r.Steps, StepResult{Name: "delete_ip_nftban", Success: false, Detail: err.Error()})
 		r.State = state.StateUninstallFailedRelease
@@ -194,7 +216,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	r.Steps = append(r.Steps, StepResult{Name: "delete_ip_nftban", Success: true})
 
 	// Step 6 — delete ip6 nftban (may legitimately not exist).
-	log.Info("uninstall apply: step 6/10 — deleting ip6 nftban table (if present)")
+	log.Info("uninstall apply: step 6/11 — deleting ip6 nftban table (if present)")
 	if exec.NftTableExists("ip6", "nftban") {
 		if err := exec.NftDeleteTable("ip6", "nftban"); err != nil {
 			r.Steps = append(r.Steps, StepResult{Name: "delete_ip6_nftban", Success: false, Detail: err.Error()})
@@ -208,7 +230,7 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	}
 
 	// Step 7 — disable nftband.service.
-	log.Info("uninstall apply: step 7/10 — disabling nftband.service")
+	log.Info("uninstall apply: step 7/11 — disabling nftband.service")
 	if err := exec.ServiceDisable("nftband.service"); err != nil {
 		r.Steps = append(r.Steps, StepResult{Name: "disable_nftband", Success: false, Detail: err.Error()})
 		// Kernel is released (steps 3-6 succeeded). Service teardown
@@ -219,20 +241,44 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	}
 	r.Steps = append(r.Steps, StepResult{Name: "disable_nftband", Success: true})
 
-	// Step 8 — mask nftband.service (prevents accidental restart).
-	log.Info("uninstall apply: step 8/10 — masking nftband.service")
-	if err := exec.ServiceMask("nftband.service"); err != nil {
-		r.Steps = append(r.Steps, StepResult{Name: "mask_nftband", Success: false, Detail: err.Error()})
-		r.State = state.StateDegraded
-		r.Reason = "authority released but nftband.service mask failed: " + err.Error()
-		return r
+	// Step 8 — remove staged payload artifacts per cfg.Mode. Best-effort:
+	// failure here is logged but does not fail the release (kernel is
+	// already down). Defaults to ModeRemove if cfg.Mode is the zero
+	// value — symmetric with the operator default of `nftban-installer
+	// --mode=uninstall --confirm-mutation` (no --purge).
+	mode := cfg.Mode
+	if mode == "" {
+		mode = ModeRemove
 	}
-	r.Steps = append(r.Steps, StepResult{Name: "mask_nftband", Success: true})
+	log.Info("uninstall apply: step 8/11 — removing payload artifacts (mode=%s)", mode)
+	rr := RemoveArtifacts(exec, mode, cfg.Distro, log)
+	r.Steps = append(r.Steps, StepResult{
+		Name:    "remove_artifacts",
+		Success: true,
+		Detail:  fmt.Sprintf("removed=%d preserved=%d failed=%d unit_removed=%t mode=%s", rr.Removed, rr.Preserved, rr.Failed, rr.UnitFileRemoved, mode),
+	})
 
-	// Step 9 — end-state validation. Proves the release claim directly
+	// Step 9 — mask nftband.service ONLY if its unit file still exists.
+	// Masking a removed unit recreates the /etc/systemd/system/nftband.service
+	// -> /dev/null phantom symlink that triggers the
+	// UPSTREAM-UNINSTALL-INCOMPLETE-001 reinstall failure.
+	log.Info("uninstall apply: step 9/11 — masking nftband.service (if unit file remains)")
+	if exec.FileExists("/usr/lib/systemd/system/nftband.service") {
+		if err := exec.ServiceMask("nftband.service"); err != nil {
+			r.Steps = append(r.Steps, StepResult{Name: "mask_nftband", Success: false, Detail: err.Error()})
+			r.State = state.StateDegraded
+			r.Reason = "authority released but nftband.service mask failed: " + err.Error()
+			return r
+		}
+		r.Steps = append(r.Steps, StepResult{Name: "mask_nftband", Success: true})
+	} else {
+		r.Steps = append(r.Steps, StepResult{Name: "mask_nftband", Success: true, Detail: "skipped — unit file removed by step 8"})
+	}
+
+	// Step 10 — end-state validation. Proves the release claim directly
 	// rather than trusting step return codes. Emergency SSH table must
-	// STILL be present; step 10 removes it.
-	log.Info("uninstall apply: step 9/10 — validating end-state")
+	// STILL be present; step 11 removes it.
+	log.Info("uninstall apply: step 10/11 — validating end-state")
 	if exec.NftTableExists("ip", "nftban") {
 		r.Steps = append(r.Steps, StepResult{Name: "validate_end_state", Success: false, Detail: "ip nftban table still present after delete"})
 		r.State = state.StateUninstallFailedRelease
@@ -252,23 +298,23 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 		return r
 	}
 	// Correction 2 locked 2026-04-20: validation MUST assert emergency
-	// SSH is STILL PRESENT here. Step 10 is what removes it.
+	// SSH is STILL PRESENT here. Step 11 is what removes it.
 	if !exec.NftTableExists("inet", "nftban_install_emergency") {
-		r.Steps = append(r.Steps, StepResult{Name: "validate_end_state", Success: false, Detail: "emergency SSH table unexpectedly missing at step 9"})
+		r.Steps = append(r.Steps, StepResult{Name: "validate_end_state", Success: false, Detail: "emergency SSH table unexpectedly missing at step 10"})
 		r.State = state.StateUninstallFailedRelease
-		r.Reason = "post-mutation validation failed: emergency SSH table disappeared unexpectedly before step 10"
+		r.Reason = "post-mutation validation failed: emergency SSH table disappeared unexpectedly before step 11"
 		return r
 	}
-	r.Steps = append(r.Steps, StepResult{Name: "validate_end_state", Success: true, Detail: "nftban kernel + service released; emergency SSH still intact pending step 10"})
+	r.Steps = append(r.Steps, StepResult{Name: "validate_end_state", Success: true, Detail: "nftban kernel + service released; emergency SSH still intact pending step 11"})
 
-	// Step 10 — remove emergency SSH. Failure is warn-only: leaving an
+	// Step 11 — remove emergency SSH. Failure is warn-only: leaving an
 	// over-permissive SSH rule in place is safer than risking lockout.
 	// RemoveEmergencySSH logs its own warning internally if it fails.
-	log.Info("uninstall apply: step 10/10 — removing emergency SSH safety net")
+	log.Info("uninstall apply: step 11/11 — removing emergency SSH safety net")
 	switchop.RemoveEmergencySSH(exec, log)
 	r.Steps = append(r.Steps, StepResult{Name: "remove_emergency_ssh", Success: true, Detail: "warn-only on failure per PR-23 safety policy"})
 
-	// All 10 steps green — authority released.
+	// All 11 steps green — authority released.
 	r.State = state.StateUninstallReleased
 	r.Reason = "nftban authority released: kernel tables deleted, nftband.service stopped+disabled+masked, emergency SSH cleaned up"
 	log.Result("[NFTBan] uninstall complete — nftban authority released")

@@ -44,6 +44,15 @@ func StartDaemon(exec executor.Executor, log *logging.Logger) {
 	_ = exec.Run("systemctl", "reset-failed", "nftband.service")
 	_ = exec.Run("systemctl", "reset-failed", "nftband.socket")
 
+	// v1.100.4 (UPSTREAM-UNINSTALL-INCOMPLETE-001) — defensive unmask
+	// symmetry. A prior uninstall may have left a phantom mask symlink
+	// at /etc/systemd/system/nftband.service -> /dev/null (the
+	// "Unit file is masked" reinstall failure surfaced by VANILLA_MATRIX
+	// Round 1 RE-RUN cross-distro). Soft-fail: unmask of an unmasked
+	// unit is a no-op on systemd >= 242, and a hard failure here should
+	// not block install.
+	_ = exec.ServiceUnmask("nftband.service")
+
 	// Enable socket (primary activation method)
 	if err := exec.ServiceEnable("nftband.socket"); err != nil {
 		log.Warn("enable nftband.socket: %v", err)
