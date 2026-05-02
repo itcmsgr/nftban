@@ -20,7 +20,7 @@
 | `nftban-suricata-update.timer` | Weekly Sun 3:40 | Suricata rules update |
 | `nftban-update-check.timer` | Daily 3:30 | Update availability check |
 | `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
-| `nftban-rollback.timer` | Manual | Emergency rollback |
+| `nftban-rollback.timer` | Manual-trigger (`OnActiveSec=5min`) | Emergency rollback — started by `nftban-apply`, stopped by `nftban-confirm` |
 
 ## Services (25)
 
