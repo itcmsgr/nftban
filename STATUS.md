@@ -5,6 +5,7 @@
 
 **Version (this commit):** v1.100.4-dev — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
 **Release lane:** v1.100.4 (in flight). Panel-adapter coverage under `panelfw`: **DirectAdmin** (live destructive evidence) + **Plesk** (live + read-only reality audits) + **cPanel** (read-only reality audit). CyberPanel / CWP / InterWorx / Vesta / Generic deferred to v1.101+ pending licensed clean evidence hosts.
+**H4 status:** schema + metrics closed as **GO-NO-CODE** for v1.100.4. No metric names, labels, or health JSON schema changed. Schema remains `1.83.0`. See [CHANGELOG.md](CHANGELOG.md) "H4 schema/metrics disclosures" for three behavior notes operators should be aware of (ban attribution, effective-state, shared counter); resolution deferred to v1.101+.
 **Truth model:** Kernel → Validator → CLI
 **Enforcement:** [Design Principles](docs/DESIGN_PRINCIPLES.md)
 
