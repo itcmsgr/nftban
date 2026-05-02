@@ -68,9 +68,9 @@ fuzz-long:
 lint: lint-headers lint-shell lint-go
 	@echo "All linting passed."
 
-# Validate HEADER_SPEC compliance
+# Validate file-header compliance
 lint-headers:
-	@echo "Validating headers (HEADER_SPEC.md)..."
+	@echo "Validating headers (per CONTRIBUTING.md File Headers)..."
 	@./tools/validate-headers.sh
 
 # ShellCheck for Bash scripts
@@ -108,7 +108,7 @@ help:
 	@echo "  make fuzz          - Run fuzz tests (30 seconds each)"
 	@echo "  make fuzz-long     - Run extended fuzz tests (5 minutes each)"
 	@echo "  make lint          - Run all linters (headers, shell, go)"
-	@echo "  make lint-headers  - Validate HEADER_SPEC.md compliance"
+	@echo "  make lint-headers  - Validate file-header compliance (per CONTRIBUTING.md)"
 	@echo "  make lint-shell    - Run ShellCheck on Bash scripts"
 	@echo "  make lint-go       - Run Go formatters and linters"
 	@echo "  make install-hooks - Install pre-commit hooks"
