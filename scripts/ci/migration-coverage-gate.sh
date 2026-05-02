@@ -46,7 +46,24 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# Treat tests + script comments as non-source (avoid false hits on grep).
+# MIGRATION_COVERAGE.md is the H3.1 spec. Two locations are checked:
+#   1. docs/MIGRATION_COVERAGE.md
+#      (in-repo CI-readable mirror — preferred)
+#   2. /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md
+#      (operator wiki-workspace editable source — present locally only)
+# The gate fails if NEITHER copy is reachable.
+MIGRATION_COVERAGE_PATHS=(
+    "docs/MIGRATION_COVERAGE.md"
+    "/home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md"
+)
+MIGRATION_COVERAGE_DOC=""
+for p in "${MIGRATION_COVERAGE_PATHS[@]}"; do
+    if [ -f "$p" ]; then
+        MIGRATION_COVERAGE_DOC="$p"
+        break
+    fi
+done
+
 declare -i FAILS=0
 declare -i CHECKS=0
 
@@ -71,8 +88,15 @@ check_advisory() {
 
 echo "============================================================"
 echo "H3.2 migration-coverage gate — branch HEAD $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "spec: VANILLA_DISTRO_INSTALL_MATRIX/MIGRATION_COVERAGE.md (H3.1)"
+echo "spec: ${MIGRATION_COVERAGE_DOC:-NOT FOUND} (H3.1)"
 echo "============================================================"
+
+if [ -z "$MIGRATION_COVERAGE_DOC" ]; then
+    check_fail "SPEC-DOC-PRESENCE" "MIGRATION_COVERAGE.md not found in any of: ${MIGRATION_COVERAGE_PATHS[*]}"
+    echo "Summary: 1 check executed; 1 required failure (spec doc unreachable)."
+    echo "H3.2 migration-coverage gate: FAIL"
+    exit 1
+fi
 
 # =============================================================================
 # CHECK 1 — PANELFW-ADAPTER-COVERAGE (asymmetric)
@@ -104,10 +128,10 @@ echo "============================================================"
             # Migration row check — adapter name appears in MIGRATION_COVERAGE.md
             # under a row tagged "migrated". We grep for the adapter name + migrated.
             if ! grep -E "^\| [0-9]+ \|.*${ad_name}.*\|.*\*\*Go\*\*.*\|.*migrated" \
-                 /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md \
+                 "$MIGRATION_COVERAGE_DOC" \
                  >/dev/null 2>&1 && \
                ! grep -iE "${ad_name}.*migrated|migrated.*${ad_name}" \
-                 /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md \
+                 "$MIGRATION_COVERAGE_DOC" \
                  >/dev/null 2>&1; then
                 fail_detail+="Go adapter $ad_name not classified migrated in MIGRATION_COVERAGE.md; "
             fi
@@ -117,7 +141,7 @@ echo "============================================================"
         # the adapter as pending. We just verify row 4 (the "pending evidence-gated"
         # row) exists.
         if ! grep -E "CyberPanel.*CWP.*InterWorx.*Vesta.*generic" \
-             /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md \
+             "$MIGRATION_COVERAGE_DOC" \
              >/dev/null 2>&1; then
             fail_detail+="MIGRATION_COVERAGE.md row 4 (pending evidence-gated panels) missing; "
         fi
