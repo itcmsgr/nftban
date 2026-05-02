@@ -80,6 +80,7 @@ check_fail() {
     FAILS=$((FAILS + 1))
 }
 
+# shellcheck disable=SC2329  # reserved for future advisory-only checks
 check_advisory() {
     local name="$1" detail="$2"
     printf "%s: ADVISORY  %s\n" "$name" "$detail"
@@ -262,7 +263,6 @@ fi
 {
     name="G3-UN-NO-MUTATION-WHITELIST-LOCKED"
     workflow=".github/workflows/ci-uninstall-canonization.yml"
-    expected_re='/(apply|artifacts)\\.go\$'
     fail_detail=""
 
     if [ ! -f "$workflow" ]; then
