@@ -21,7 +21,7 @@
 
 [Unit]
 Description=NFTBan Core - Weekly GeoIP Database Update Timer
-Documentation=https://github.com/itcmsgr/nftban-dev
+Documentation=https://github.com/itcmsgr/nftban
 # Timer triggers nftban-core-geoip.service (implicit by name match)
 # No explicit Requires needed - the service is self-contained
 

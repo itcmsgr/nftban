@@ -1336,7 +1336,7 @@ EXAMPLES:
     nftban update git develop
 
     # Install from local path
-    nftban update local /home/user/nftban-dev
+    nftban update local /home/user/nftban
 
     # Force reinstall (fixes dpkg state, removes immutable flags, forces overwrite)
     nftban update force

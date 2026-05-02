@@ -21,7 +21,7 @@
 
 [Unit]
 Description=NFTBan Core - Feed Update
-Documentation=https://github.com/itcmsgr/nftban-dev
+Documentation=https://github.com/itcmsgr/nftban
 After=network-online.target
 Wants=network-online.target
 

@@ -117,8 +117,7 @@ systemctl daemon-reload
 
 # Remove test repo if exists
 log "Removing test repo..."
-rm -rf /root/nftban-dev
-rm -rf /root/nftban-v1.0-dev
+rm -rf /root/nftban
 rm -rf /tmp/nftban*
 
 echo ""
