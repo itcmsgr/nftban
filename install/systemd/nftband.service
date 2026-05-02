@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - Daemon Service (Single nftables Writer)
+# NFTBan - Daemon Service (Single nftables Writer)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftband.service"

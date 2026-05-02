@@ -1,11 +1,10 @@
 # =============================================================================
-# NFTBan v1.71.0 - Daily Update Check Timer
+# NFTBan - Daily Update Check Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-update-check.timer"
 # meta:type="systemd"
 # meta:tier="CORE"
-# meta:version="1.71.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Daily update check timer — read-only, enabled by default"
 # meta:inventory.files=""

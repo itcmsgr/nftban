@@ -1,11 +1,10 @@
 # =============================================================================
-# NFTBan v1.30.0 - Tunnel Suspicion Scan Timer
+# NFTBan - Tunnel Suspicion Scan Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-tunnel.timer"
 # meta:type="systemd"
 # meta:tier="OPTIONAL"
-# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Timer for periodic DNS tunnel suspicion scanning (every 5 minutes)"
 # meta:inventory.files=""

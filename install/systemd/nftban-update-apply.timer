@@ -1,11 +1,10 @@
 # =============================================================================
-# NFTBan v1.71.0 - Weekly Auto-Update Apply Timer
+# NFTBan - Weekly Auto-Update Apply Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-update-apply.timer"
 # meta:type="systemd"
 # meta:tier="OPTIONAL"
-# meta:version="1.71.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Weekly auto-update apply timer — NOT enabled by default"
 # meta:inventory.files=""

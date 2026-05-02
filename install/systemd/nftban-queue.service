@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - Queue Processor Service
+# NFTBan - Queue Processor Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Systemd service unit for NFTBan task queue processor

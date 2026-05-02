@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.71.0 - Auto-Update Apply Service (Privileged, Gated)
+# NFTBan - Auto-Update Apply Service (Privileged, Gated)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-update-apply.service"
 # meta:type="systemd"
-# meta:version="1.71.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:description="Privileged auto-update apply — gated by preflight + verify"
 # meta:inventory.files=""

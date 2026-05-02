@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v1.0.0 - Service Failure Alert (Template Unit)
+# NFTBan - Service Failure Alert (Template Unit)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Send alert when a critical NFTBan service fails

@@ -1,10 +1,9 @@
 # =============================================================================
-# NFTBan v1.96.0 - Rebuild Recovery Timer
+# NFTBan - Rebuild Recovery Timer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="nftban-rebuild-recovery.timer"
 # meta:type="systemd"
-# meta:version="1.96.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-17"
 # meta:description="Timer for deferred rebuild recovery — fires once after boot"
