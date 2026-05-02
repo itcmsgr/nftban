@@ -60,7 +60,21 @@ decommission is gated on per-function `MIGRATION_COVERAGE.md` (H3.1+).
 ### Release-hygiene PRs
 
 - **H1.1** version truth + build metadata (`c8ede6d7`) — `/VERSION` 1.98.2 → 1.100.4-dev; `pkg/version` centralizes `GitCommit` + `BuildDate` ldflag-injectable vars + `Line(component)` helper; all 4 binaries (`nftband`, `nftban-core`, `nftban-installer`, `nftban-validate`) print canonical line via `--version`; `nftban-validate --version` is zero-side-effect; sentinel `dev`/`unknown` defaults flag uninjected builds; FHS spec regenerated and Policy Gates clean
-- **H2** docs/wiki/status sync (this PR) — STATUS.md + CHANGELOG.md + V1.90 staging refreshed against current main
+- **H2** docs/wiki/status sync — STATUS.md + CHANGELOG.md + V1.90 staging refreshed against current main
+- **H3.1** migration coverage doc (CLOSED INTERNAL) — classification rules inlined into CI gates; spec lives in private audit/wiki workspace, not shipped in repo (PR #546)
+- **H3.2** migration-coverage CI gate (`50ab2532`) — 8-check gate enforcing panelfw adapter coverage, payload-destinations sole truth, nftban-table classifier parity, G3-UN-NO-MUTATION whitelist, deprecated UI unit refusal, port-list bounds, validator-authority pin
+- **H3.3** shell-delete CI gate (`09325e87`) — 5-check gate refusing protected shell deletions without `[MIGRATION-LANE-AUTHORIZED]` or `[DEPRECATED-REMOVAL]` PR markers; 7/7 self-test scenarios green
+- **H4** schema + metrics — closed as **GO-NO-CODE** for v1.100.4. No metric names, labels, or health JSON schema changed. Schema remains frozen at `1.83.0`. Deeper attribution / effective-state work routed to v1.101+ (R-01-impl source label split, R-02-impl `EffectiveUnverifiable`, R-12-impl typed `Status().Extra`, MET-01..05). See "H4 schema/metrics disclosures" below.
+
+### H4 schema/metrics disclosures (read carefully)
+
+These are **disclosure only.** No metric, label, or schema changed in v1.100.4. They describe behaviors operators should be aware of when interpreting v1.100.4 output. The deeper work that resolves each item is deferred to v1.101+.
+
+1. **Ban attribution disclosure.** Current per-source ban metrics may aggregate some module-originated bans under `source=manual`. Forensic correlation remains available through evidence/source-index data (`evidence_correlate.go` + `source_index.jsonl`). Per-source label expansion is deferred to v1.101.
+
+2. **Effective-state disclosure.** Portscan and LoginMon currently report `EffectiveIdle` when no kernel-observable per-module enforcement signal exists. This should be read as *"not independently kernel-verifiable,"* not proof that the modules are inactive. `EffectiveUnverifiable` / per-module counters are deferred to v1.101.
+
+3. **Shared counter disclosure.** `input_syn_rate_exceeded` is a shared DDoS / Portscan signal in v1.100.4. Per-module counter split is deferred to v1.101.
 
 ### Invariants codified during the lane
 
