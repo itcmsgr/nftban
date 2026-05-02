@@ -60,7 +60,7 @@ import (
 
 // runUninstallApply orchestrates the PR-23 authority release path.
 // Returns the process exit code derived from the final state.
-func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.StateFile, _ *config, log *logging.Logger) int {
+func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.StateFile, cfg *config, log *logging.Logger) int {
 	log.Info("uninstall apply starting (mode=uninstall, confirm-mutation=true)")
 
 	// 1. SSH port — needed for the emergency SSH safety table.
@@ -110,7 +110,28 @@ func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.Stat
 	}
 
 	// 4. Apply the mutation sequence.
-	result := uninstall.Apply(exec, &uninstall.ApplyConfig{SSHPort: sshPort}, log)
+	//
+	// Mode comes from the operator's --purge / --force-delete-operator-config
+	// flags via modeFromFlags (defined in uninstall_dryrun.go). v1.100.4
+	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) wires this through ApplyConfig
+	// so artifact removal can honour the §4.4 mode contract.
+	//
+	// Distro is detected for the polkit-destination branch in
+	// payload.Destinations. Third-audit item B: detection failure must NOT
+	// silently default to the RHEL polkit dir — that would skip Debian
+	// polkit residue. On error: log WARN and pass nil; artifacts.go's
+	// polkit-fallback enumerates BOTH /etc/polkit-1/rules.d and
+	// /usr/share/polkit-1/rules.d so neither family's residue survives.
+	distroInfo, distroErr := detect.DetectDistro(exec, log)
+	if distroErr != nil {
+		log.Warn("uninstall apply: distro detection failed: %v — polkit cleanup will enumerate both Debian and RHEL destinations as a fallback", distroErr)
+		distroInfo = nil
+	}
+	result := uninstall.Apply(exec, &uninstall.ApplyConfig{
+		SSHPort: sshPort,
+		Mode:    modeFromFlags(cfg),
+		Distro:  distroInfo,
+	}, log)
 
 	// 5. Persist terminal state. sf.Transition returns a non-nil error
 	// for failure states (so phase runners halt); here we ignore that
