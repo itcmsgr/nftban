@@ -69,9 +69,14 @@ import (
 // in modes that explicitly authorise removing operator state.
 //
 // Bounded list — adding a new entry requires a contract update.
+//
+// /run/nftban (tmpfs, ephemeral, cleared on reboot) is intentionally
+// NOT in this list — third-audit decision (item A): tmpfs paths are
+// ephemeral and adding rm-rf would be ceremony with no effect.
 var uninstallOwnedRuntimePaths = []string{
 	"/var/lib/nftban",
 	"/var/log/nftban",
+	"/var/cache/nftban", // tmpfiles.d-created persistent cache
 }
 
 // protectedDirs is the set of directories this function strips the
@@ -294,6 +299,19 @@ func RemoveArtifacts(exec executor.Executor, mode Mode, distro *detect.DistroInf
 	// installer-owned residue, not operator state).
 	removeUnitFilesAtDest(exec, log, "/etc/systemd/system", "*.timer", r)
 	removeUnitFilesAtDest(exec, log, "/etc/systemd/system", "*.service", r)
+
+	// Phase e.4: polkit fallback. Third-audit item B: if distro
+	// detection failed (distro==nil), payload.Destinations() chose
+	// the RHEL polkit dir by default; sweep BOTH dirs here so a
+	// Debian-family host with degraded detection still cleans its
+	// /usr/share/polkit-1/rules.d/nftban-*.rules. Under successful
+	// detection one of the dirs is already in dirGlobs (sweep is a
+	// no-op there). Bounded to nftban*/nftband* prefix via
+	// removeUnitFilesAtDest's isNftbanArtifact filter — never touches
+	// other packages' polkit rules.
+	if distro == nil {
+		removePolkitFallback(exec, log, r)
+	}
 	r.Steps = append(r.Steps, StepResult{Name: "remove_payload_artifacts", Success: true})
 
 	// (f) daemon-reload + reset-failed clears systemd's stale view.
@@ -330,8 +348,23 @@ func disableUnitsAtDest(exec executor.Executor, log *logging.Logger, dir, glob s
 	}
 }
 
-// removeUnitFilesAtDest removes every unit file at dir matching glob
-// whose basename starts with nftban or nftband. Bounded to the prefix.
+// removePolkitFallback sweeps BOTH polkit rules dirs for
+// nftban*/nftband*-prefixed files. Used only when distro detection
+// failed (distro==nil) to guarantee Debian-family residue does not
+// survive a degraded uninstall. Each rm is bounded to the nftban
+// artifact prefix via removeUnitFilesAtDest.
+func removePolkitFallback(exec executor.Executor, log *logging.Logger, r *RemovalResult) {
+	for _, dir := range []string{
+		"/etc/polkit-1/rules.d",
+		"/usr/share/polkit-1/rules.d",
+	} {
+		removeUnitFilesAtDest(exec, log, dir, "*.rules", r)
+	}
+}
+
+// removeUnitFilesAtDest removes every file at dir matching glob whose
+// basename starts with nftban or nftband. Bounded to the prefix.
+// Used for systemd unit dirs AND the polkit-fallback dir sweep.
 func removeUnitFilesAtDest(exec executor.Executor, log *logging.Logger, dir, glob string, r *RemovalResult) {
 	matches, err := filepath.Glob(filepath.Join(dir, glob))
 	if err != nil {
@@ -339,7 +372,7 @@ func removeUnitFilesAtDest(exec executor.Executor, log *logging.Logger, dir, glo
 	}
 	for _, p := range matches {
 		base := filepath.Base(p)
-		if !isNftbanUnit(base) {
+		if !isNftbanArtifact(base) {
 			continue
 		}
 		res := exec.Run("rm", "-f", p)
@@ -352,7 +385,7 @@ func removeUnitFilesAtDest(exec executor.Executor, log *logging.Logger, dir, glo
 			r.UnitFileRemoved = true
 		}
 		r.Removed++
-		log.Debug("uninstall artifacts: removed unit file %s", p)
+		log.Debug("uninstall artifacts: removed file %s", p)
 	}
 }
 

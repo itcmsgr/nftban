@@ -116,10 +116,17 @@ func runUninstallApply(_ context.Context, exec executor.Executor, sf *state.Stat
 	// (UPSTREAM-UNINSTALL-INCOMPLETE-001) wires this through ApplyConfig
 	// so artifact removal can honour the §4.4 mode contract.
 	//
-	// Distro is detected separately for the polkit-destination branch in
-	// payload.Destinations; nil is acceptable (defaults to RHEL-family
-	// polkit dir).
-	distroInfo, _ := detect.DetectDistro(exec, log)
+	// Distro is detected for the polkit-destination branch in
+	// payload.Destinations. Third-audit item B: detection failure must NOT
+	// silently default to the RHEL polkit dir — that would skip Debian
+	// polkit residue. On error: log WARN and pass nil; artifacts.go's
+	// polkit-fallback enumerates BOTH /etc/polkit-1/rules.d and
+	// /usr/share/polkit-1/rules.d so neither family's residue survives.
+	distroInfo, distroErr := detect.DetectDistro(exec, log)
+	if distroErr != nil {
+		log.Warn("uninstall apply: distro detection failed: %v — polkit cleanup will enumerate both Debian and RHEL destinations as a fallback", distroErr)
+		distroInfo = nil
+	}
 	result := uninstall.Apply(exec, &uninstall.ApplyConfig{
 		SSHPort: sshPort,
 		Mode:    modeFromFlags(cfg),
