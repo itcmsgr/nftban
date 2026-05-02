@@ -11,11 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - v1.100.4-dev — release hygiene + panel-framework completion
+## [v1.100.4] - 2026-05-02 — release hygiene + panel-framework completion
 
-Pre-release rollup of the v1.100 panel-framework completion lane and the
-v1.100.4 release-hygiene track. Tag flips `-dev` → plain `v1.100.4` at
-final release.
+Rollup of the v1.100 panel-framework completion lane and the v1.100.4
+release-hygiene track. Released as v1.100.4 on 2026-05-02 (tag at
+`9a6373bb`).
 
 ### Scope of the panel-framework lane
 
@@ -86,7 +86,6 @@ These are **disclosure only.** No metric, label, or schema changed in v1.100.4. 
 
 ### Out of scope (deferred)
 
-- Plain `v1.100.4` tag (final release PR after H3-H5)
 - CHANGELOG entries for individual H1.x sub-PRs
 - Restore-symmetric DA watchdog re-arm (`lfd=OFF` → `lfd=ON` on §32 CSF restore)
 - chkservd CSF-watchdog clearing (PR26.6.1 generalization for cPanel-with-CSF hosts; needs evidence host with CSF + WHM CSF plugin)
@@ -229,6 +228,8 @@ Locked gate `git grep -nE "/home/gituser|/home/commonfolder|nftban-v1.0-dev" -- 
 
 - 3 × H-04 sites (locked to slice 1c): `cli/lib/nftban/lib/nftban_distro_config.sh:296`, `packaging/polkit-1/rules.d/30-nftban-panel.rules:243`, `tests/review/05_feeds_test.sh:28`.
 - 1 × `scripts/test_server_cleanup.sh:121` (`/root/nftban-v1.0-dev` in a one-shot dev cleanup script, not in the audit's H-list — handled separately).
+
+> **Follow-up (2026-05-02, v1.101 PR #549, merge `b38fd216`):** line 121 was folded into the canonical `/root/nftban` cleanup on line 120; the `/tmp/nftban*` glob on the next line catches stragglers. Entry preserved above as historical record of the v1.100.3b release state.
 
 ### Out of scope (deferred)
 
