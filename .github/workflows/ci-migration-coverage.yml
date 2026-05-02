@@ -1,0 +1,56 @@
+name: Migration Coverage Gate (H3.2)
+
+# H3.2 — CI gate enforcing the migration classifications declared in
+# /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md
+# (the H3.1 doc).
+#
+# 8 checks per the H3.2 specification:
+#   1. PANELFW-ADAPTER-COVERAGE       (asymmetric — pending conf.d allowed)
+#   2. PAYLOAD-DESTINATIONS-SOLE-TRUTH
+#   3. NFTBAN-TABLE-CLASSIFIER-PARITY (structural)
+#   4. G3-UN-NO-MUTATION whitelist locked
+#   5. G3-UN-SHIM-LOCK + G3-EXEC-TRACE preserved
+#   6. DEPRECATED-UI-UNIT-REFUSAL
+#   7. PORT-LIST-BOUNDS
+#   8. VALIDATOR-AUTHORITY-PIN
+#
+# Doc-only enforcement — no runtime behavior changes, no shell deletion.
+
+on:
+  pull_request:
+    paths:
+      - 'internal/installer/panelfw/**'
+      - 'internal/installer/uninstall/**'
+      - 'internal/installer/payload/**'
+      - 'cli/lib/nftban/cli/cmd_firewall.sh'
+      - 'cli/lib/nftban/core/nftban_table_classify.sh'
+      - 'cli/lib/nftban/helpers/autoheal.sh'
+      - 'etc/nftban/conf.d/panels/**'
+      - 'install/systemd/**'
+      - 'cmd/nftban-installer/**'
+      - 'cmd/nftban-ui*/**'
+      - 'scripts/ci/migration-coverage-gate.sh'
+      - '.github/workflows/ci-migration-coverage.yml'
+      - '.github/workflows/ci-uninstall-canonization.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  migration-coverage-gate:
+    name: Migration Coverage Gate (H3.2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run migration-coverage-gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ ! -x scripts/ci/migration-coverage-gate.sh ]; then
+              chmod +x scripts/ci/migration-coverage-gate.sh
+          fi
+          bash scripts/ci/migration-coverage-gate.sh
