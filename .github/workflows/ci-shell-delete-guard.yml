@@ -1,0 +1,66 @@
+name: Shell-Delete Guard (H3.3)
+
+# H3.3 — CI gate refusing protected shell deletions without authorization
+# marker. Composes with H3.2 (Migration Coverage Gate). Reads same
+# docs/MIGRATION_COVERAGE.md spec.
+#
+# 5 required checks:
+#   1. NO-DROP-OPERATOR-FACING-SHELL
+#   2. NO-DROP-SHARED-SHELL-LIBS
+#   3. NO-DROP-RUNTIME-DIRS-CODE
+#   4. NO-DROP-DEPRECATED-MARKERS
+#   5. REQUIRE-MIGRATION-COVERAGE-UPDATE
+#
+# Markers (case-insensitive, in PR title OR body):
+#   [MIGRATION-LANE-AUTHORIZED]
+#   [DEPRECATED-REMOVAL]
+#
+# Doc-only enforcement — no shell deletion executed by H3.3 itself.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/lib/nftban/**'
+      - 'docs/MIGRATION_COVERAGE.md'
+      - 'scripts/ci/shell-delete-guard.sh'
+      - '.github/workflows/ci-shell-delete-guard.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shell-delete-guard:
+    name: Shell-Delete Guard (H3.3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for diff base)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine diff base
+        id: base
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=origin/${{ github.event.pull_request.base.ref }}" >> "$GITHUB_OUTPUT"
+          else
+            # push to main: compare to previous commit
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run shell-delete-guard
+        shell: bash
+        env:
+          GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_PR_BODY:  ${{ github.event.pull_request.body }}
+          BASE_REF:        ${{ steps.base.outputs.ref }}
+        run: |
+          set -uo pipefail
+          if [ ! -x scripts/ci/shell-delete-guard.sh ]; then
+              chmod +x scripts/ci/shell-delete-guard.sh
+          fi
+          bash scripts/ci/shell-delete-guard.sh "$BASE_REF"
