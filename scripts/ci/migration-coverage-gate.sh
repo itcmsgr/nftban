@@ -7,7 +7,7 @@
 # meta:type="ci-script"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-02"
-# meta:description="H3.2 CI gate enforcing MIGRATION_COVERAGE.md classifications"
+# meta:description="H3.2 CI gate enforcing migration-coverage classifications (rules inline)"
 # meta:inventory.files="scripts/ci/migration-coverage-gate.sh"
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -17,7 +17,10 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 #
-# Enforces the classifications in MIGRATION_COVERAGE.md (the H3.1 doc).
+# Enforces migration-coverage classifications using rules inlined in this
+# script. The classification spec lives in an internal audit/wiki workspace
+# and is intentionally NOT shipped in this repo. The rules below MUST stay
+# in sync with that spec.
 # Doc-only enforcement — does NOT change runtime behavior, does NOT delete shell.
 #
 # 8 checks per the H3.2 specification:
@@ -46,23 +49,16 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# MIGRATION_COVERAGE.md is the H3.1 spec. Two locations are checked:
-#   1. docs/MIGRATION_COVERAGE.md
-#      (in-repo CI-readable mirror — preferred)
-#   2. /home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md
-#      (operator wiki-workspace editable source — present locally only)
-# The gate fails if NEITHER copy is reachable.
-MIGRATION_COVERAGE_PATHS=(
-    "docs/MIGRATION_COVERAGE.md"
-    "/home/commonfolder/LLMAI4NFTBAN/V1.90_AUDIT_WIKI_CODE/MIGRATION_COVERAGE.md"
-)
-MIGRATION_COVERAGE_DOC=""
-for p in "${MIGRATION_COVERAGE_PATHS[@]}"; do
-    if [ -f "$p" ]; then
-        MIGRATION_COVERAGE_DOC="$p"
-        break
-    fi
-done
+# Inline classification rules (mirroring the internal H3.1 spec):
+#
+# Migrated panelfw adapters (Go install-time validation framework):
+MIGRATED_PANELFW_ADAPTERS=("cpanel" "directadmin" "plesk")
+# Pending evidence-gated panel families (have conf.d, no Go adapter yet):
+PENDING_PANELFW_FAMILIES=("cwp" "cyberpanel" "generic" "interworx" "vesta")
+# Deprecated unit names that must NOT reappear in payload destinations.
+# Used by CHECK 6 via inline patterns; declared here as the canonical list.
+# shellcheck disable=SC2034  # consumed by CHECK 6's inline grep patterns
+DEPRECATED_UNIT_NAMES=("nftban-ui.service" "nftban-ui-auth.service")
 
 declare -i FAILS=0
 declare -i CHECKS=0
@@ -89,15 +85,8 @@ check_advisory() {
 
 echo "============================================================"
 echo "H3.2 migration-coverage gate — branch HEAD $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "spec: ${MIGRATION_COVERAGE_DOC:-NOT FOUND} (H3.1)"
+echo "rules: inline (internal H3.1 spec is not in this repo)"
 echo "============================================================"
-
-if [ -z "$MIGRATION_COVERAGE_DOC" ]; then
-    check_fail "SPEC-DOC-PRESENCE" "MIGRATION_COVERAGE.md not found in any of: ${MIGRATION_COVERAGE_PATHS[*]}"
-    echo "Summary: 1 check executed; 1 required failure (spec doc unreachable)."
-    echo "H3.2 migration-coverage gate: FAIL"
-    exit 1
-fi
 
 # =============================================================================
 # CHECK 1 — PANELFW-ADAPTER-COVERAGE (asymmetric)
@@ -117,7 +106,15 @@ fi
     elif [ ! -d "$confd_dir" ]; then
         check_fail "$name" "conf.d/panels dir missing: $confd_dir"
     else
-        # Iterate Go adapters
+        # Helper: is element in array
+        in_list() {
+            local needle="$1"; shift
+            local x
+            for x in "$@"; do [ "$x" = "$needle" ] && return 0; done
+            return 1
+        }
+
+        # Iterate Go adapters: each must have conf.d + be in the migrated list
         for adapter in "$panelfw_dir"/*/; do
             [ -d "$adapter" ] || continue
             ad_name=$(basename "$adapter")
@@ -126,29 +123,26 @@ fi
                 fail_detail+="Go adapter $ad_name has no $confd; "
                 continue
             fi
-            # Migration row check — adapter name appears in MIGRATION_COVERAGE.md
-            # under a row tagged "migrated". We grep for the adapter name + migrated.
-            if ! grep -E "^\| [0-9]+ \|.*${ad_name}.*\|.*\*\*Go\*\*.*\|.*migrated" \
-                 "$MIGRATION_COVERAGE_DOC" \
-                 >/dev/null 2>&1 && \
-               ! grep -iE "${ad_name}.*migrated|migrated.*${ad_name}" \
-                 "$MIGRATION_COVERAGE_DOC" \
-                 >/dev/null 2>&1; then
-                fail_detail+="Go adapter $ad_name not classified migrated in MIGRATION_COVERAGE.md; "
+            if ! in_list "$ad_name" "${MIGRATED_PANELFW_ADAPTERS[@]}"; then
+                fail_detail+="Go adapter $ad_name not in MIGRATED_PANELFW_ADAPTERS allow-list (update inline rule if a new adapter migrates); "
             fi
         done
 
-        # conf.d-only entries are allowed if MIGRATION_COVERAGE.md row 4 marks
-        # the adapter as pending. We just verify row 4 (the "pending evidence-gated"
-        # row) exists.
-        if ! grep -E "CyberPanel.*CWP.*InterWorx.*Vesta.*generic" \
-             "$MIGRATION_COVERAGE_DOC" \
-             >/dev/null 2>&1; then
-            fail_detail+="MIGRATION_COVERAGE.md row 4 (pending evidence-gated panels) missing; "
-        fi
+        # conf.d-only families (no Go adapter) are allowed if listed in
+        # PENDING_PANELFW_FAMILIES. Iterate conf.d to catch unexpected families.
+        for confd_path in "$confd_dir"/*/; do
+            [ -d "$confd_path" ] || continue
+            family=$(basename "$confd_path")
+            if in_list "$family" "${MIGRATED_PANELFW_ADAPTERS[@]}"; then
+                continue   # already validated above
+            fi
+            if ! in_list "$family" "${PENDING_PANELFW_FAMILIES[@]}"; then
+                fail_detail+="conf.d/panels/$family/ is neither migrated nor pending — update inline rule; "
+            fi
+        done
 
         if [ -z "$fail_detail" ]; then
-            check_pass "$name" "3 Go adapters (cpanel, directadmin, plesk) all have conf.d + migrated rows; 5 conf.d-only entries (cwp, cyberpanel, generic, interworx, vesta) allowed by row 4 pending status"
+            check_pass "$name" "${#MIGRATED_PANELFW_ADAPTERS[@]} migrated Go adapters all have conf.d + inline-rule entry; ${#PENDING_PANELFW_FAMILIES[@]} pending conf.d-only families allowed"
         else
             check_fail "$name" "$fail_detail"
         fi
