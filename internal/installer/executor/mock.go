@@ -187,7 +187,7 @@ func (m *MockExecutor) MkdirAll(path string, _ os.FileMode) error {
 	return nil
 }
 
-func (m *MockExecutor) Chown(_ string, _, _ int) error { return nil }
+func (m *MockExecutor) Chown(_ string, _, _ int) error      { return nil }
 func (m *MockExecutor) Chmod(_ string, _ os.FileMode) error { return nil }
 
 func (m *MockExecutor) Remove(path string) error {
