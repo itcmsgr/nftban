@@ -216,3 +216,130 @@ func TestIsRPMFamily(t *testing.T) {
 		}
 	}
 }
+
+// PR-P4 (issue #467): apt-get update preflight before apt-get install.
+
+// TestInstallMissing_DEB_RunsAptGetUpdateBeforeInstall verifies that the
+// DEB path issues `apt-get update` BEFORE `apt-get install` so a stale
+// apt index does not cause a misleading "Unable to locate package".
+func TestInstallMissing_DEB_RunsAptGetUpdateBeforeInstall(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	for _, d := range requiredDeps {
+		if d.cmd != "jq" {
+			mock.ExistingCommands[d.cmd] = true
+		}
+	}
+	mock.ExistingCommands["apt-get"] = true
+
+	distro := &detect.DistroInfo{ID: "ubuntu", VersionID: "22.04"}
+	// jq remains "missing" so the post-install check returns critical-still-missing,
+	// but that's fine — we only assert the call ordering.
+	_ = InstallMissing(mock, distro, newTestLogger())
+
+	updateIdx := -1
+	installIdx := -1
+	for i, cmd := range mock.Commands {
+		if cmd.Name != "apt-get" {
+			continue
+		}
+		if len(cmd.Args) > 0 && cmd.Args[0] == "update" && updateIdx == -1 {
+			updateIdx = i
+		}
+		if len(cmd.Args) > 0 && cmd.Args[0] == "install" && installIdx == -1 {
+			installIdx = i
+		}
+	}
+	if updateIdx == -1 {
+		t.Fatal("expected apt-get update to be called as preflight")
+	}
+	if installIdx == -1 {
+		t.Fatal("expected apt-get install to be called")
+	}
+	if updateIdx >= installIdx {
+		t.Errorf("apt-get update must precede apt-get install (updateIdx=%d, installIdx=%d)", updateIdx, installIdx)
+	}
+}
+
+// TestInstallMissing_DEB_AptGetUpdateFailureIsFatal verifies that when the
+// apt-get update preflight fails, InstallMissing returns a clear preflight
+// error AND apt-get install is NOT attempted.
+func TestInstallMissing_DEB_AptGetUpdateFailureIsFatal(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	for _, d := range requiredDeps {
+		if d.cmd != "jq" {
+			mock.ExistingCommands[d.cmd] = true
+		}
+	}
+	mock.ExistingCommands["apt-get"] = true
+
+	// Seed apt-get update to fail (simulates network-down / repo unreachable).
+	mock.RunResults["apt-get:update"] = executor.Result{
+		ExitCode: 100,
+		Stderr:   "E: Could not resolve 'archive.ubuntu.com'",
+	}
+
+	distro := &detect.DistroInfo{ID: "debian", VersionID: "12"}
+	err := InstallMissing(mock, distro, newTestLogger())
+	if err == nil {
+		t.Fatal("expected error when apt-get update preflight fails (critical dep missing path)")
+	}
+
+	// Find apt-get update + assert apt-get install was NOT attempted.
+	sawUpdate := false
+	sawInstall := false
+	for _, cmd := range mock.Commands {
+		if cmd.Name != "apt-get" {
+			continue
+		}
+		if len(cmd.Args) > 0 && cmd.Args[0] == "update" {
+			sawUpdate = true
+		}
+		if len(cmd.Args) > 0 && cmd.Args[0] == "install" {
+			sawInstall = true
+		}
+	}
+	if !sawUpdate {
+		t.Fatal("expected apt-get update to be attempted")
+	}
+	if sawInstall {
+		t.Error("apt-get install must NOT run after apt-get update preflight failure")
+	}
+
+	// Direct helper check: aptGetUpdate must surface a clear preflight error.
+	directErr := aptGetUpdate(mock, newTestLogger())
+	if directErr == nil {
+		t.Fatal("expected aptGetUpdate to return an error when apt-get exits non-zero")
+	}
+	msg := directErr.Error()
+	if !strings.Contains(msg, "apt-get update preflight failed") {
+		t.Errorf("expected error to contain 'apt-get update preflight failed', got: %v", directErr)
+	}
+	if !strings.Contains(msg, "100") {
+		t.Errorf("expected error to contain exit code 100, got: %v", directErr)
+	}
+	if !strings.Contains(msg, "archive.ubuntu.com") {
+		t.Errorf("expected error to contain stderr text, got: %v", directErr)
+	}
+}
+
+// TestInstallMissing_RPM_DoesNotRunAptGetUpdate verifies that the RPM/DNF
+// path is unaffected by the PR-P4 preflight (apt-get update only applies
+// to the DEB family).
+func TestInstallMissing_RPM_DoesNotRunAptGetUpdate(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	for _, d := range requiredDeps {
+		if d.cmd != "socat" {
+			mock.ExistingCommands[d.cmd] = true
+		}
+	}
+	mock.ExistingCommands["dnf"] = true
+
+	distro := &detect.DistroInfo{ID: "almalinux", VersionID: "9"}
+	_ = InstallMissing(mock, distro, newTestLogger())
+
+	for _, cmd := range mock.Commands {
+		if cmd.Name == "apt-get" {
+			t.Errorf("RPM path must not call apt-get (got: %s %v)", cmd.Name, cmd.Args)
+		}
+	}
+}
