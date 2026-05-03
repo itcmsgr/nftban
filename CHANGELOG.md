@@ -11,6 +11,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.101.0] - 2026-05-03 — cleanup / truth-boundary release
+
+Operator-locked cleanup slice on top of v1.100.4. Seven PRs across four lanes
+(H / T / C / P). No new features. No schema or metrics changes. No panel
+adapters added. No portal coordination. Schema remains frozen at `1.83.0`.
+
+### Lane H — repository hygiene
+
+- **PR-H1** dev/internal path residue removed (`b38fd216`, PR #549) — 4 systemd
+  `Documentation=` URLs + 4 script/CI references converted from `nftban-dev`
+  to canonical `nftban`.
+- **PR-H2** STATUS.md + CHANGELOG.md release-state cleanup (`58b6b231`,
+  PR #550) — `v1.100.4-dev` → `v1.100.4`; `(in flight)` → `(released)`;
+  v1.100.4 entry promoted from `[Unreleased]` to released.
+- **PR-H3** Final live `HEADER_SPEC.md` reference removed from `Makefile`
+  (`aa77db7d`, PR #551) — closes audit finding H-10 across the Lane H arc
+  (`CONTRIBUTING.md` + `tools/validate-headers.sh` were closed in
+  v1.100.3a).
+- **PR-H4** Per-file version tokens stripped from systemd unit / timer /
+  socket banners (`57305c76`, PR #552) — 48 files; pure comment cleanup;
+  zero behavior change. Inline historical-fix comments preserved.
+
+### Lane T — timers / maintenance
+
+- **Internal timer-inventory correction** (workspace H5 doc-fix, no repo PR):
+  21 systemd timers, not 3. Three ownership classes documented: 3 daemon-tier
+  (watchdog / maintenance / queue), 1 manual-trigger (rollback), 17
+  subsystem-coupled.
+- **PR-T1** `nftban-rollback.timer` documented as manual-trigger safety net
+  (`535c60ef`, PR #553) — `OnActiveSec=5min`; started by `nftban-apply`,
+  stopped by `nftban-confirm`; `WantedBy=timers.target` intentionally
+  commented out so fresh installs (no `backup.rules`) do not trigger
+  spurious rollback countdowns.
+
+### Lane C — config authority
+
+- **Confirmation: legacy GUI base-write surface is gone.** PR-C0A
+  (workspace audit, no repo PR) found zero production code paths writing
+  to base `.conf` files at HEAD; the v1.80 finding referred to
+  `cmd_gui.sh` which has been removed entirely.
+- **PR-C2** Report-data layer now reads merged config (base + sibling
+  `.conf.local`) for DDoS-enabled, Portscan-enabled, GeoBan-enabled, and
+  GeoBan countries (`28e114b6`, PR #554). New private `_read_conf_key`
+  helper; `.conf.local` wins on assignment-exists semantics, including
+  empty-value override. Pure shell; no `jq`; no sourcing of `.conf` or
+  `.conf.local`. Closes 4 P1 drift rows (C0A-D-01..04). Same-function
+  count-bug in `_get_geoban_countries` fixed inline. 17-case test added.
+- **Deferred:** PR-C3 (`*_ENABLED` duplicate-key coalescing across DDoS /
+  Portscan / Login / BotGuard) — needs canonical-name decisions; routed
+  to a future release.
+
+### Lane P — production hygiene
+
+- **PR-P4** `apt-get update` preflight added before `apt-get install` in
+  `internal/installer/deps/deps.go::installDEB` (`57600518`, PR #555).
+  60s timeout; fail-fast on update failure with a clear preflight error
+  containing exit code + stderr. RPM/DNF/yum path unchanged. **Closes
+  [#467](https://github.com/itcmsgr/nftban/issues/467).**
+
+### Issues
+
+- **Closed:** [#467](https://github.com/itcmsgr/nftban/issues/467) (apt-get
+  update preflight).
+- **Open / classified, no fix in v1.101.0:**
+  - [#524](https://github.com/itcmsgr/nftban/issues/524) (lfd reset-failed)
+    — STILL_REPRODUCES; PR-P1 deferred.
+  - [#525](https://github.com/itcmsgr/nftban/issues/525) (geoip Go panic)
+    — NEEDS_HOST; deferred to v1.102 unless a host-debug lane opens.
+  - [#526](https://github.com/itcmsgr/nftban/issues/526) (unified-exporter
+    missing payload) — ALREADY_FIXED at code level by PR26.5; awaits one
+    fresh-install verification before issue closure.
+
+### Out of scope (deferred)
+
+- Portal lane (M-T9 cutover, allow-list, CMS, `nftbanpro`) — external; no
+  v1.101 work.
+- Schema / metrics changes (Lane S held).
+- Module-isolation public-safe summary (Lane M held; internal H5 docs
+  remain unpublished).
+- Full 1614-key config audit (PR-C0B) — large audit batch; future release.
+- Panel adapter Round 2 (CyberPanel / CWP / InterWorx / Vesta / Generic)
+  — evidence-host gated.
+- v2.0 UX sprint and GOTH / `nftban-ui` decommission (PR-D4) — separate
+  v2.0 track.
+- EgressMon — separate v1.1XX lane.
+- EL10 / EL8 distro-matrix expansion — evidence-host gated.
+
+### Standing rules
+
+- Schema remains frozen at `1.83.0`.
+- `policyConfigNoReplace` + `*.conf.default` lifecycle model from v1.100.4
+  is design-correct for v1.101 (operator decision recorded against
+  `CONFIG_DRIFT.md` row C0A-D-09).
+- Sub-config files `classic.conf` / `suricata.conf` / `scorer.conf` /
+  `services.conf` are mode-specific sub-surfaces, not duplicates of
+  `main.conf`.
+
+---
+
 ## [v1.100.4] - 2026-05-02 — release hygiene + panel-framework completion
 
 Rollup of the v1.100 panel-framework completion lane and the v1.100.4

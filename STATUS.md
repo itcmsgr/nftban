@@ -3,9 +3,9 @@
 > **Policy:** Main branch is always green. Failed CI blocks merge.
 > No manual overrides for truth-critical checks. Evidence over claims.
 
-**Version (this commit):** v1.100.4 — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
-**Release lane:** v1.100.4 (released 2026-05-02). Panel-adapter coverage under `panelfw`: **DirectAdmin** (live destructive evidence) + **Plesk** (live + read-only reality audits) + **cPanel** (read-only reality audit). CyberPanel / CWP / InterWorx / Vesta / Generic deferred to v1.101+ pending licensed clean evidence hosts.
-**H4 status:** schema + metrics closed as **GO-NO-CODE** for v1.100.4. No metric names, labels, or health JSON schema changed. Schema remains `1.83.0`. See [CHANGELOG.md](CHANGELOG.md) "H4 schema/metrics disclosures" for three behavior notes operators should be aware of (ban attribution, effective-state, shared counter); resolution deferred to v1.101+.
+**Version (this commit):** v1.101.0 — sourced from [`/VERSION`](VERSION); static per commit, not auto-updated. For the current released tag see [GitHub releases](https://github.com/itcmsgr/nftban/releases) or the README badge.
+**Release lane:** v1.101.0 (released 2026-05-03) — cleanup / truth-boundary release. Repo hygiene + timer doc + report-data merged-config read + Debian dependency-install preflight. Panel-adapter coverage from v1.100.4 unchanged: **DirectAdmin** + **Plesk** + **cPanel** under `panelfw`; CyberPanel / CWP / InterWorx / Vesta / Generic still deferred pending licensed clean evidence hosts.
+**Schema status:** schema remains frozen at `1.83.0` in v1.101.0. No metric names, labels, or health JSON schema changed. The three v1.100.4 H4 disclosure items (ban attribution under `source=manual`, `EffectiveIdle` for Portscan/LoginMon, shared `input_syn_rate_exceeded` counter) are unchanged in v1.101.0. The schema / metrics lane remains held; deeper attribution / effective-state work is routed to a future release.
 **Truth model:** Kernel → Validator → CLI
 **Enforcement:** [Design Principles](docs/DESIGN_PRINCIPLES.md)
 
