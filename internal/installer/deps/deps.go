@@ -143,10 +143,34 @@ func installRPM(exec executor.Executor, pkgs []string, log *logging.Logger) erro
 	return nil
 }
 
+// aptGetUpdate refreshes the apt package index. Called as a preflight
+// before apt-get install so a stale index does not cause a misleading
+// "Unable to locate package" failure on fresh VMs (issue #467).
+//
+// Operator policy: deterministic correctness — if the index refresh
+// itself fails, surface a clear preflight error rather than continuing
+// into the install command (which would fail less readably).
+func aptGetUpdate(exec executor.Executor, log *logging.Logger) error {
+	log.Debug("running: apt-get update (preflight)")
+	res := exec.RunTimeout(60*time.Second, "apt-get", "update")
+	if res.ExitCode != 0 {
+		return fmt.Errorf("apt-get update preflight failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
+	return nil
+}
+
 // installDEB uses apt-get to install packages.
 func installDEB(exec executor.Executor, pkgs []string, log *logging.Logger) error {
 	if !exec.CommandExists("apt-get") {
 		return fmt.Errorf("apt-get not available")
+	}
+
+	// Preflight: refresh apt index before install. Required on fresh VMs
+	// with stale apt cache; otherwise apt-get install fails with
+	// "Unable to locate package". Fail-fast on update error so the
+	// operator sees the real cause (issue #467).
+	if err := aptGetUpdate(exec, log); err != nil {
+		return err
 	}
 
 	args := append([]string{"install", "-y", "--no-install-recommends"}, pkgs...)
