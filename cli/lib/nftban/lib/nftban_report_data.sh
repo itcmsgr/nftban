@@ -25,6 +25,41 @@ readonly REPORT_CACHE_FILE="${REPORT_CACHE_DIR}/report_data.json"
 readonly REPORT_CACHE_TTL=5  # seconds
 
 # =============================================================================
+# CONFIG MERGED-READ HELPER
+# =============================================================================
+
+# Read a single KEY from a base .conf and its sibling .conf.local.
+# Base is read first, then .conf.local override. .conf.local wins if it
+# defines the key, even if the value is empty. Pure shell; does not source
+# either file (so malformed .local cannot crash the report layer); does not
+# require jq.
+# Args: $1 = base .conf path; $2 = key name (e.g. DDOS_ENABLED)
+# Output: the value (without surrounding quotes), or empty if undefined.
+_read_conf_key() {
+    local base="$1"
+    local key="$2"
+    local local_file="${base%.conf}.conf.local"
+    local line=""
+    local val=""
+
+    if [[ -f "$base" ]]; then
+        line=$(grep -E "^${key}=" "$base" 2>/dev/null | tail -1 || true)
+        if [[ -n "$line" ]]; then
+            val=$(printf '%s\n' "$line" | cut -d'"' -f2)
+        fi
+    fi
+
+    if [[ -f "$local_file" ]]; then
+        line=$(grep -E "^${key}=" "$local_file" 2>/dev/null | tail -1 || true)
+        if [[ -n "$line" ]]; then
+            val=$(printf '%s\n' "$line" | cut -d'"' -f2)
+        fi
+    fi
+
+    printf '%s' "$val"
+}
+
+# =============================================================================
 # CORE DATA COLLECTION (uses nft_schema.sh SSOT)
 # =============================================================================
 
@@ -185,9 +220,9 @@ _collect_module_status() {
     local -n _mdata="$1"
 
     # DDoS Module
-    local ddos_enabled="false"
-    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" ]] && \
-        ddos_enabled=$(grep -E "^DDOS_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    local ddos_enabled
+    ddos_enabled=$(_read_conf_key "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" DDOS_ENABLED)
+    [[ -z "$ddos_enabled" ]] && ddos_enabled="false"
 
     if [[ "$ddos_enabled" == "true" ]]; then
         _mdata[MODULE_DDOS_STATUS]="Active"
@@ -202,9 +237,9 @@ _collect_module_status() {
     fi
 
     # Portscan Module
-    local portscan_enabled="false"
-    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" ]] && \
-        portscan_enabled=$(grep -E "^PORTSCAN_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    local portscan_enabled
+    portscan_enabled=$(_read_conf_key "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" PORTSCAN_ENABLED)
+    [[ -z "$portscan_enabled" ]] && portscan_enabled="false"
 
     if [[ "$portscan_enabled" == "true" ]]; then
         _mdata[MODULE_PORTSCAN_STATUS]="Active"
@@ -246,9 +281,9 @@ _collect_module_status() {
     _mdata[FEEDS_COUNT]="$feeds_count"
 
     # GeoBan
-    local geoban_enabled="false"
-    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf" ]] && \
-        geoban_enabled=$(grep -E "^GEOBAN_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+    local geoban_enabled
+    geoban_enabled=$(_read_conf_key "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf" GEOBAN_ENABLED)
+    [[ -z "$geoban_enabled" ]] && geoban_enabled="false"
 
     if [[ "$geoban_enabled" == "true" ]]; then
         _mdata[MODULE_GEOBAN_STATUS]="Active"
@@ -279,16 +314,20 @@ _get_module_activity() {
 }
 
 _get_geoban_countries() {
-    local geoban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf"
-    if [[ -f "$geoban_conf" ]]; then
-        local countries
-        countries=$(grep -E "^GEOBAN_COUNTRIES=" "$geoban_conf" 2>/dev/null | cut -d'"' -f2 || echo "")
-        local count
-        count=$(echo "$countries" | tr ',' '\n' | grep -c . || echo 0)
-        echo "${count} countries"
-    else
+    local base="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf"
+    local local_file="${base%.conf}.conf.local"
+    # Preserve "-" sentinel: only when neither base nor .local exists
+    if [[ ! -f "$base" && ! -f "$local_file" ]]; then
         echo "-"
+        return
     fi
+    local countries
+    countries=$(_read_conf_key "$base" GEOBAN_COUNTRIES)
+    # grep -c . emits "0" + exits 1 on empty input; swallow exit, count is already correct
+    local count
+    count=$(printf '%s' "$countries" | tr ',' '\n' | grep -c . || true)
+    [[ -z "$count" ]] && count=0
+    echo "${count} countries"
 }
 
 # =============================================================================
