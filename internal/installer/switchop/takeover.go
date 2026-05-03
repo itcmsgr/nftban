@@ -43,8 +43,22 @@ func DisableConflicts(exec executor.Executor, conflicts []detect.Conflict, panel
 		if err := exec.ServiceDisable(c.Service); err != nil {
 			log.Warn("disable %s: %v", c.Service, err)
 		}
-		if err := exec.ServiceMask(c.Service); err != nil {
-			log.Warn("mask %s: %v", c.Service, err)
+		maskErr := exec.ServiceMask(c.Service)
+		if maskErr != nil {
+			log.Warn("mask %s: %v", c.Service, maskErr)
+		}
+		// PR-P1 / closes #524: clear the stale `failed (Result: signal)`
+		// marker so `systemctl --failed` does not show the unit nftban
+		// just intentionally tore down. Defensive: only run if mask
+		// succeeded — a service we couldn't mask is one we shouldn't
+		// reset-failed either. reset-failed errors are cosmetic-only;
+		// non-fatal.
+		if maskErr == nil {
+			if err := exec.ServiceResetFailed(c.Service); err != nil {
+				log.Warn("reset-failed %s: %v (cosmetic only)", c.Service, err)
+			} else {
+				log.Info("cleared stale failed marker for masked conflict service: %s", c.Service)
+			}
 		}
 		if c.Name == "CSF" {
 			hasCSF = true

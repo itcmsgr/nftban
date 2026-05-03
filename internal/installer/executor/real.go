@@ -270,6 +270,14 @@ func (r *RealExecutor) ServiceUnmask(unit string) error {
 	return nil
 }
 
+func (r *RealExecutor) ServiceResetFailed(unit string) error {
+	res := r.Run("systemctl", "reset-failed", unit)
+	if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl reset-failed %s: %s", unit, strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
+
 func (r *RealExecutor) DaemonReload() error {
 	res := r.Run("systemctl", "daemon-reload")
 	if res.ExitCode != 0 {

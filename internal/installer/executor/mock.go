@@ -78,8 +78,10 @@ type MockExecutor struct {
 	// the corresponding typed method returns the assigned error
 	// instead of nil. Mirrors the RunResults pattern that controls
 	// Run() exit codes.
-	ServiceUnmaskErr error
-	RenameErr        error
+	ServiceMaskErr        error
+	ServiceUnmaskErr      error
+	ServiceResetFailedErr error
+	RenameErr             error
 
 	// callbacks maps "name:args" -> function to call when command is executed.
 	callbacks map[string]func()
@@ -310,7 +312,7 @@ func (m *MockExecutor) ServiceDisable(unit string) error {
 
 func (m *MockExecutor) ServiceMask(unit string) error {
 	m.recordCommand("systemctl", "mask", unit)
-	return nil
+	return m.ServiceMaskErr
 }
 
 // ServiceUnmask records a systemctl unmask call and returns
@@ -319,6 +321,14 @@ func (m *MockExecutor) ServiceMask(unit string) error {
 func (m *MockExecutor) ServiceUnmask(unit string) error {
 	m.recordCommand("systemctl", "unmask", unit)
 	return m.ServiceUnmaskErr
+}
+
+// ServiceResetFailed records a systemctl reset-failed call and returns
+// m.ServiceResetFailedErr (nil by default). Mirrors ServiceUnmask
+// semantics for parity. PR-P1 addition (closes #524).
+func (m *MockExecutor) ServiceResetFailed(unit string) error {
+	m.recordCommand("systemctl", "reset-failed", unit)
+	return m.ServiceResetFailedErr
 }
 
 func (m *MockExecutor) DaemonReload() error {
