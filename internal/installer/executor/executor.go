@@ -170,6 +170,20 @@ type Executor interface {
 	// is bounded by INV-PR26-NEW-MUTATION-SURFACES-BOUNDED (§44 row 2).
 	ServiceUnmask(unit string) error
 
+	// ServiceResetFailed clears systemd's "failed" state for a unit
+	// (the `Result: signal` / `Result: exit-code` cosmetic marker that
+	// persists after stop/mask escalation paths). Used by takeover
+	// after successful ServiceMask of conflicting firewalls (csf, lfd,
+	// future ufw / firewalld) so `systemctl --failed` does not show
+	// stale entries for units nftban intentionally tore down.
+	// PR-P1 / closes #524.
+	//
+	// Mutation surface bounded: callers must only invoke for units
+	// they have just successfully masked. The restore path does NOT
+	// call ServiceResetFailed (re-arming the watchdog is restore-side
+	// and out of scope per Amendment 1 §31).
+	ServiceResetFailed(unit string) error
+
 	// DaemonReload runs systemctl daemon-reload.
 	DaemonReload() error
 
