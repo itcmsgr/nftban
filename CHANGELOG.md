@@ -11,6 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.102.0] - 2026-05-04 — focused Lane P corrective release
+
+One code PR on top of v1.101.0. Schema remains frozen at `1.83.0`. No
+metrics changes. No portal coordination. No transport-adapter work.
+Lane S remains held.
+
+### Lane P — production hygiene
+
+- **PR-P1** typed `executor.ServiceResetFailed` + takeover clears
+  stale systemd `failed (Result: signal)` markers after successful
+  `ServiceMask` (`c2697dd9`, PR #557). All-conflicts behavior (csf,
+  lfd, future ufw / firewalld), not lfd-only. Defensive guard:
+  `reset-failed` runs only if the mask succeeded. `reset-failed`
+  errors are cosmetic-only / non-fatal. Restore path explicitly does
+  **not** call `ServiceResetFailed` (Amendment 1 §31; pinned by
+  `internal/installer/restore/engine_pr_p1_test.go` static-grep
+  invariant). **Closes [#524](https://github.com/itcmsgr/nftban/issues/524).**
+
+### Issue verification (no v1.102 code change)
+
+- **[#526](https://github.com/itcmsgr/nftban/issues/526)**
+  unified-exporter missing payload — verified fixed on a fresh
+  AlmaLinux 9.7 VM with the v1.101.0 RPM. Closure attributed to
+  upstream PR26.5 (`1510e361`, merged 2026-04-30). Issue closed
+  2026-05-03. DEB cross-family verification is optional release-QA,
+  not required for closure.
+
+### Out of scope (deferred)
+
+TRANSPORT-001 outbound-transport adapter layer; Lane S
+(schema/metrics contract); portal lane; PR-C3
+(`*_ENABLED` duplicate-pair coalescing); PR-C0B (full 1614-key
+config audit); PR-T2 (timer cluster spread);
+[#525](https://github.com/itcmsgr/nftban/issues/525) GeoIP runtime
+panic (no host-debug lane in v1.102); PR-B2 / PR-B3 service header
+notes; `docs/systemd/UNITS.md` line 5 timer-count drift; POLKIT
+audit inventory; panel adapter Round 2 (CyberPanel / CWP /
+InterWorx / Vesta / Generic); EgressMon (separate v1.1XX lane);
+EL10 / EL8 distro-matrix expansion.
+
+---
+
 ## [v1.101.0] - 2026-05-03 — cleanup / truth-boundary release
 
 Operator-locked cleanup slice on top of v1.100.4. Seven PRs across four lanes
