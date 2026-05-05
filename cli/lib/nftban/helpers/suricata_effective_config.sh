@@ -29,6 +29,12 @@ _NFTBAN_SURICATA_EFFECTIVE_CONFIG_LOADED=1
 : "${SURICATA_CONFIG_DIR:=/etc/suricata}"
 : "${SURICATA_RULES_DIR:=/var/lib/suricata/rules}"
 
+# v1.103 PR-C3-C: load canonical/alias resolver for DDoS + Portscan enabled keys.
+# Resolves to a no-op if the helper is missing (e.g. partial install during
+# upgrade); falls back to the prior alias-only behavior in that case.
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban/lib}/nftban_config_alias.sh" 2>/dev/null || true
+
 # =============================================================================
 # DISTRO DETECTION
 # =============================================================================
@@ -226,9 +232,16 @@ _suricata_generate_module_overlap_disables() {
     login_enabled="${NFTBAN_LOGIN_ENABLED:-$login_enabled}"
     login_ssh_enabled="${NFTBAN_LOGIN_SSH_ENABLED:-$login_ssh_enabled}"
     login_mail_enabled="${NFTBAN_LOGIN_MAIL_ENABLED:-$login_mail_enabled}"
-    portscan_enabled="${NFTBAN_PORTSCAN_ENABLED:-$portscan_enabled}"
+    # v1.103 PR-C3-C: accept canonical (bare) OR compatibility (NFTBAN_*) form;
+    # canonical wins on conflict; warn on conflict (one stderr line, never fatal).
+    if declare -F nftban_config_alias_env >/dev/null 2>&1; then
+        portscan_enabled="$(nftban_config_alias_env PORTSCAN_ENABLED NFTBAN_PORTSCAN_ENABLED "$portscan_enabled")"
+        ddos_enabled="$(nftban_config_alias_env DDOS_ENABLED NFTBAN_DDOS_ENABLED "$ddos_enabled")"
+    else
+        portscan_enabled="${PORTSCAN_ENABLED:-${NFTBAN_PORTSCAN_ENABLED:-$portscan_enabled}}"
+        ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-$ddos_enabled}}"
+    fi
     portscan_mode="${NFTBAN_PORTSCAN_MODE:-$portscan_mode}"
-    ddos_enabled="${NFTBAN_DDOS_ENABLED:-$ddos_enabled}"
     ddos_mode="${NFTBAN_DDOS_MODE:-$ddos_mode}"
 
     cat > "$output" << 'EOF'
