@@ -256,20 +256,40 @@ func TestOverlayFromFile_DDoSAlias_PreservesIndependentInvocationState(t *testin
 }
 
 // -----------------------------------------------------------------------------
-// Login is intentionally NOT aliased here — DEFER to Lane M / v1.104.
-// This negative assertion documents the intent.
+// Login: permanent semantic guard (Lane M / v1.104 Decision B).
+//
+// Per Lane M finding (recorded in
+// AUDIT_190_CONFIGS_ECOSYSTEM/06_REPORTS/PR_M_A_LANE_M_LOGIN_OWNERSHIP_AUDIT.md):
+// LOGIN_ENABLED is the Go loginmon module's per-module self-enable flag
+// (owned by internal/loginmon, declared in conf.d/login/main.conf).
+// NFTBAN_LOGIN_MONITOR_ENABLED is the central nftban infra's
+// observability/monitor-gate flag (owned by internal/nftbanconf, declared
+// in nftban.conf). They are DISTINCT FACTS and must never be aliased.
+// These tests are permanent regression guards against future re-attempts
+// to collapse the two keys into one struct field. Drift row C0A-D-07
+// closed by Lane M Decision B (no runtime behavior change).
 // -----------------------------------------------------------------------------
 
-func TestLoadFromFile_LoginNotAliasedInC3C(t *testing.T) {
-	// Bare LOGIN_ENABLED is NOT recognized by the central nftbanconf loader
-	// in v1.103 (Login is structurally deferred to Lane M / v1.104).
-	// Only NFTBAN_LOGIN_MONITOR_ENABLED still drives cfg.LoginMonitorEnabled.
+func TestLoadFromFile_LoginKeysAreDistinctFacts(t *testing.T) {
+	// LOGIN_ENABLED must NOT alias into cfg.LoginMonitorEnabled via loadFromFile.
+	// Only NFTBAN_LOGIN_MONITOR_ENABLED drives cfg.LoginMonitorEnabled.
 	p := writeConf(t, "LOGIN_ENABLED=\"true\"\n")
 	cfg, err := loadFromFile(p)
 	if err != nil {
 		t.Fatalf("loadFromFile: %v", err)
 	}
 	if cfg.LoginMonitorEnabled {
-		t.Errorf("LoginMonitorEnabled = true, want false (LOGIN_ENABLED must NOT alias to LoginMonitorEnabled in v1.103; deferred to Lane M)")
+		t.Errorf("LoginMonitorEnabled = true, want false (LOGIN_ENABLED must NOT alias to LoginMonitorEnabled per Lane M Decision B; distinct facts)")
+	}
+}
+
+func TestOverlayFromFile_LoginKeysAreDistinctFacts(t *testing.T) {
+	// Symmetric guard against the overlay path: LOGIN_ENABLED in a .conf.local
+	// must NOT flip cfg.LoginMonitorEnabled either.
+	cfg := &Config{LoginMonitorEnabled: false}
+	p := writeConf(t, "LOGIN_ENABLED=\"true\"\n")
+	overlayFromFile(cfg, p)
+	if cfg.LoginMonitorEnabled {
+		t.Errorf("LoginMonitorEnabled = true, want false (LOGIN_ENABLED in overlay must NOT alias to LoginMonitorEnabled per Lane M Decision B; distinct facts)")
 	}
 }
