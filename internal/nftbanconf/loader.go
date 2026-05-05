@@ -52,8 +52,8 @@ type Config struct {
 	ConfigVersion string
 
 	// Binary paths (from nftban.conf PATHS section)
-	Bin      string // NFTBAN_BIN - main CLI
-	CoreBin  string // NFTBAN_CORE_BIN - Go core binary
+	Bin     string // NFTBAN_BIN - main CLI
+	CoreBin string // NFTBAN_CORE_BIN - Go core binary
 
 	// Directory paths
 	LibDir    string // NFTBAN_LIB_DIR
@@ -64,32 +64,32 @@ type Config struct {
 	RunDir    string // NFTBAN_RUN_DIR
 
 	// Feature flags
-	MetricsEnabled      bool   // NFTBAN_METRICS_ENABLED
-	MetricsBackend      string // NFTBAN_METRICS_BACKEND
-	MetricsSamplingInterval int // NFTBAN_METRICS_SAMPLING_INTERVAL (seconds)
-	MetricsMaxSamples   int    // NFTBAN_METRICS_MAX_SAMPLES
-	PrometheusDir       string // NFTBAN_PROMETHEUS_DIR (node_exporter textfile dir)
+	MetricsEnabled          bool   // NFTBAN_METRICS_ENABLED
+	MetricsBackend          string // NFTBAN_METRICS_BACKEND
+	MetricsSamplingInterval int    // NFTBAN_METRICS_SAMPLING_INTERVAL (seconds)
+	MetricsMaxSamples       int    // NFTBAN_METRICS_MAX_SAMPLES
+	PrometheusDir           string // NFTBAN_PROMETHEUS_DIR (node_exporter textfile dir)
 	MetricsPrometheusAddr   string // NFTBAN_METRICS_PROMETHEUS_ADDR
 	MetricsNodeExporterAddr string // NFTBAN_METRICS_NODE_EXPORTER_ADDR
 	MetricsVictoriaAddr     string // NFTBAN_METRICS_VICTORIA_ADDR
-	GeoIPEnabled        bool   // NFTBAN_GEOIP_ENABLED
-	GeoIPLicenseKey     string // NFTBAN_GEOIP_LICENSE_KEY
-	FeedsEnabled        bool   // NFTBAN_FEEDS_ENABLED
-	FeedsAutoUpdate     bool   // NFTBAN_FEEDS_AUTO_UPDATE
-	SuricataEnabled     bool   // NFTBAN_SURICATA_ENABLED
-	GUIEnabled          bool   // NFTBAN_GUI_ENABLED
-	GUIAddr             string // NFTBAN_GUI_ADDR
-	APIAddr             string // NFTBAN_API_ADDR (daemon HTTP API address)
-	PortscanEnabled     bool   // NFTBAN_PORTSCAN_ENABLED
-	DDoSEnabled         bool   // NFTBAN_DDOS_ENABLED
-	LoginMonitorEnabled bool   // NFTBAN_LOGIN_MONITOR_ENABLED
+	GeoIPEnabled            bool   // NFTBAN_GEOIP_ENABLED
+	GeoIPLicenseKey         string // NFTBAN_GEOIP_LICENSE_KEY
+	FeedsEnabled            bool   // NFTBAN_FEEDS_ENABLED
+	FeedsAutoUpdate         bool   // NFTBAN_FEEDS_AUTO_UPDATE
+	SuricataEnabled         bool   // NFTBAN_SURICATA_ENABLED
+	GUIEnabled              bool   // NFTBAN_GUI_ENABLED
+	GUIAddr                 string // NFTBAN_GUI_ADDR
+	APIAddr                 string // NFTBAN_API_ADDR (daemon HTTP API address)
+	PortscanEnabled         bool   // PORTSCAN_ENABLED (canonical; v1.103 PR-C3-C) / NFTBAN_PORTSCAN_ENABLED (compatibility alias)
+	DDoSEnabled             bool   // DDOS_ENABLED (canonical; v1.103 PR-C3-C) / NFTBAN_DDOS_ENABLED (compatibility alias)
+	LoginMonitorEnabled     bool   // NFTBAN_LOGIN_MONITOR_ENABLED
 
 	// Suricata settings
-	SuricataEveLog            string // NFTBAN_SURICATA_EVE_LOG
-	SuricataLogDir            string // NFTBAN_SURICATA_LOG_DIR
-	SuricataBanThreshold      int    // NFTBAN_SURICATA_BAN_THRESHOLD
-	SuricataScoreDecay        int    // NFTBAN_SURICATA_SCORE_DECAY
-	SuricataCloudflareWhitelist bool // NFTBAN_SURICATA_CLOUDFLARE_WHITELIST
+	SuricataEveLog              string // NFTBAN_SURICATA_EVE_LOG
+	SuricataLogDir              string // NFTBAN_SURICATA_LOG_DIR
+	SuricataBanThreshold        int    // NFTBAN_SURICATA_BAN_THRESHOLD
+	SuricataScoreDecay          int    // NFTBAN_SURICATA_SCORE_DECAY
+	SuricataCloudflareWhitelist bool   // NFTBAN_SURICATA_CLOUDFLARE_WHITELIST
 
 	// Grafana settings
 	GrafanaEnabled bool   // NFTBAN_GRAFANA_ENABLED
@@ -97,9 +97,9 @@ type Config struct {
 	GrafanaAPIKey  string // NFTBAN_GRAFANA_API_KEY
 
 	// Logging
-	LogLevel    string // NFTBAN_LOG_LEVEL
-	ColorOutput bool   // NFTBAN_COLOR_OUTPUT
-	DebugTrace  bool   // NFTBAN_DEBUG_TRACE
+	LogLevel      string // NFTBAN_LOG_LEVEL
+	ColorOutput   bool   // NFTBAN_COLOR_OUTPUT
+	DebugTrace    bool   // NFTBAN_DEBUG_TRACE
 	DebugTraceLog string // NFTBAN_DEBUG_TRACE_LOG
 
 	// Distro config
@@ -117,25 +117,25 @@ type Paths struct {
 	ExportsDir   string
 
 	// Config subdirectories
-	ConfD        string
-	WhitelistD   string
-	BlacklistD   string
-	PortsD       string
-	GeobanD      string
-	DistrosD     string
+	ConfD      string
+	WhitelistD string
+	BlacklistD string
+	PortsD     string
+	GeobanD    string
+	DistrosD   string
 
 	// Log files
-	MainLog      string
-	AuditLog     string
-	BansLog      string
-	PortscanLog  string
-	DDoSLog      string
-	LoginAlertLog string
-	FeedsLog     string
-	GeobanLog    string
-	CronLog      string
+	MainLog        string
+	AuditLog       string
+	BansLog        string
+	PortscanLog    string
+	DDoSLog        string
+	LoginAlertLog  string
+	FeedsLog       string
+	GeobanLog      string
+	CronLog        string
 	MaintenanceLog string
-	CLIErrorsLog string
+	CLIErrorsLog   string
 
 	// Botguard log files
 	BotguardLog          string
@@ -148,8 +148,8 @@ type Paths struct {
 	SuricataMainLog  string
 
 	// Runtime files
-	PIDFile      string
-	SocketFile   string
+	PIDFile    string
+	SocketFile string
 
 	// Metrics files
 	PrometheusFile          string // nftban.prom
@@ -166,24 +166,24 @@ type Timeouts struct {
 
 // NFTables references (table/chain/set names)
 type NFTables struct {
-	TableIPv4       string
-	TableIPv6       string
-	BlacklistIPv4   string
-	BlacklistIPv6   string
-	WhitelistIPv4   string
-	WhitelistIPv6   string
+	TableIPv4     string
+	TableIPv6     string
+	BlacklistIPv4 string
+	BlacklistIPv6 string
+	WhitelistIPv4 string
+	WhitelistIPv6 string
 	// v2.1: All ban sources (feeds, geoban, auto, manual) go to blacklist
 	// Source tracking done in daemon database, not separate nft sets
 }
 
 var (
 	// Global singleton
-	globalConfig *Config
-	globalPaths  *Paths
+	globalConfig   *Config
+	globalPaths    *Paths
 	globalTimeouts *Timeouts
-	globalNFT    *NFTables
-	loadOnce     sync.Once
-	loadErr      error
+	globalNFT      *NFTables
+	loadOnce       sync.Once
+	loadErr        error
 
 	// Default config file path
 	DefaultConfigFile = "/etc/nftban/nftban.conf"
@@ -276,6 +276,53 @@ func GetNFT() *NFTables {
 }
 
 // loadFromFile reads and parses the config file
+// aliasState tracks per-(canonical,alias) pair occurrences inside a single
+// parser invocation. It implements Strategy C from PR-C3 (v1.103 PR-C3-C):
+// canonical wins on conflict, alias is accepted when canonical is absent,
+// and a single warning is emitted to the loader's logger when both keys are
+// present in the same file with conflicting values. Never fatal.
+type aliasState struct {
+	sawCanonical bool
+	sawAlias     bool
+	canonicalVal string
+	aliasVal     string
+}
+
+// setBoolAlias resolves a canonical/alias bool key pair seen on a single line
+// of the parsed config. The CALLER passes the matching switch case ("canonical"
+// or "alias"). Canonical assignments always overwrite the target. Alias
+// assignments only overwrite the target when no canonical assignment has been
+// seen yet on this parser invocation. Conflicts (both keys present with
+// different values) emit one log line and proceed.
+func setBoolAlias(target *bool, state *aliasState, isCanonical bool, value, path, canonical, alias string) {
+	parsed := util.ParseBool(value, false)
+	if isCanonical {
+		*target = parsed
+		state.canonicalVal = value
+		if state.sawAlias && state.aliasVal != value {
+			warnAliasConflict(path, canonical, alias, value, state.aliasVal)
+		}
+		state.sawCanonical = true
+		return
+	}
+	// alias case
+	if !state.sawCanonical {
+		*target = parsed
+	} else if state.canonicalVal != value {
+		warnAliasConflict(path, canonical, alias, state.canonicalVal, value)
+	}
+	state.aliasVal = value
+	state.sawAlias = true
+}
+
+// warnAliasConflict logs a single warning when both canonical and alias keys
+// appear in the same parsed file with conflicting values. Canonical always
+// wins; this is informational only.
+func warnAliasConflict(path, canonical, alias, canonicalVal, aliasVal string) {
+	log.Printf("nftbanconf: %s: both %s=%q and %s=%q set with conflicting values; using %s (canonical)",
+		path, canonical, canonicalVal, alias, aliasVal, canonical)
+}
+
 func loadFromFile(path string) (*Config, error) {
 	// Start with defaults
 	cfg := defaultConfig()
@@ -289,6 +336,11 @@ func loadFromFile(path string) (*Config, error) {
 		return nil, err
 	}
 	defer file.Close()
+
+	// v1.103 PR-C3-C: per-parser-invocation alias tracking for DDoS + Portscan.
+	// Login (NFTBAN_LOGIN_MONITOR_ENABLED) is intentionally NOT aliased here —
+	// deferred to Lane M / v1.104.
+	var ddosAlias, portscanAlias aliasState
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -375,10 +427,16 @@ func loadFromFile(path string) (*Config, error) {
 			cfg.GUIAddr = value
 		case "NFTBAN_API_ADDR":
 			cfg.APIAddr = value
+		// v1.103 PR-C3-C: Strategy C — accept canonical bare key OR prefixed
+		// alias for DDoS + Portscan. Canonical always wins on conflict.
+		case "PORTSCAN_ENABLED":
+			setBoolAlias(&cfg.PortscanEnabled, &portscanAlias, true, value, path, "PORTSCAN_ENABLED", "NFTBAN_PORTSCAN_ENABLED")
 		case "NFTBAN_PORTSCAN_ENABLED":
-			cfg.PortscanEnabled = util.ParseBool(value, false)
+			setBoolAlias(&cfg.PortscanEnabled, &portscanAlias, false, value, path, "PORTSCAN_ENABLED", "NFTBAN_PORTSCAN_ENABLED")
+		case "DDOS_ENABLED":
+			setBoolAlias(&cfg.DDoSEnabled, &ddosAlias, true, value, path, "DDOS_ENABLED", "NFTBAN_DDOS_ENABLED")
 		case "NFTBAN_DDOS_ENABLED":
-			cfg.DDoSEnabled = util.ParseBool(value, false)
+			setBoolAlias(&cfg.DDoSEnabled, &ddosAlias, false, value, path, "DDOS_ENABLED", "NFTBAN_DDOS_ENABLED")
 		case "NFTBAN_LOGIN_MONITOR_ENABLED":
 			cfg.LoginMonitorEnabled = util.ParseBool(value, false)
 
@@ -430,6 +488,11 @@ func overlayFromFile(cfg *Config, path string) {
 		return
 	}
 	defer file.Close()
+
+	// v1.103 PR-C3-C: alias tracking is per-invocation. Overlays from
+	// nftban.conf.local maintain their own alias state independent from the
+	// base file's.
+	var ddosAlias, portscanAlias aliasState
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -499,10 +562,15 @@ func overlayFromFile(cfg *Config, path string) {
 			cfg.GUIAddr = value
 		case "NFTBAN_API_ADDR":
 			cfg.APIAddr = value
+		// v1.103 PR-C3-C: Strategy C — accept canonical OR prefixed alias.
+		case "PORTSCAN_ENABLED":
+			setBoolAlias(&cfg.PortscanEnabled, &portscanAlias, true, value, path, "PORTSCAN_ENABLED", "NFTBAN_PORTSCAN_ENABLED")
 		case "NFTBAN_PORTSCAN_ENABLED":
-			cfg.PortscanEnabled = util.ParseBool(value, false)
+			setBoolAlias(&cfg.PortscanEnabled, &portscanAlias, false, value, path, "PORTSCAN_ENABLED", "NFTBAN_PORTSCAN_ENABLED")
+		case "DDOS_ENABLED":
+			setBoolAlias(&cfg.DDoSEnabled, &ddosAlias, true, value, path, "DDOS_ENABLED", "NFTBAN_DDOS_ENABLED")
 		case "NFTBAN_DDOS_ENABLED":
-			cfg.DDoSEnabled = util.ParseBool(value, false)
+			setBoolAlias(&cfg.DDoSEnabled, &ddosAlias, false, value, path, "DDOS_ENABLED", "NFTBAN_DDOS_ENABLED")
 		case "NFTBAN_LOGIN_MONITOR_ENABLED":
 			cfg.LoginMonitorEnabled = util.ParseBool(value, false)
 		case "NFTBAN_SURICATA_EVE_LOG":
@@ -563,15 +631,15 @@ func defaultConfig() *Config {
 		MetricsNodeExporterAddr: "localhost:9100",
 		MetricsVictoriaAddr:     "localhost:8428",
 		GeoIPEnabled:            false,
-		FeedsEnabled:        false,
-		FeedsAutoUpdate:     true,
-		SuricataEnabled:     false,
-		GUIEnabled:          false,
-		GUIAddr:             "127.0.0.1:3940",
-		APIAddr:             ":9580",
-		PortscanEnabled:     false,
-		DDoSEnabled:         false,
-		LoginMonitorEnabled: false,
+		FeedsEnabled:            false,
+		FeedsAutoUpdate:         true,
+		SuricataEnabled:         false,
+		GUIEnabled:              false,
+		GUIAddr:                 "127.0.0.1:3940",
+		APIAddr:                 ":9580",
+		PortscanEnabled:         false,
+		DDoSEnabled:             false,
+		LoginMonitorEnabled:     false,
 
 		// Suricata
 		SuricataEveLog:       "/var/log/nftban/suricata/eve-alerts.json",
@@ -652,8 +720,8 @@ func derivePaths(cfg *Config) *Paths {
 func defaultTimeouts() *Timeouts {
 	return &Timeouts{
 		Fast:   constants.IPCFastTimeout,   // status, simple queries
-		Medium: constants.IPCMediumTimeout,  // ban, unban, search
-		Slow:   constants.IPCSlowTimeout,    // sync, health, feed updates
+		Medium: constants.IPCMediumTimeout, // ban, unban, search
+		Slow:   constants.IPCSlowTimeout,   // sync, health, feed updates
 	}
 }
 
@@ -669,7 +737,6 @@ func defaultNFTables() *NFTables {
 		// v2.1: All bans go to blacklist (source tracked in DB)
 	}
 }
-
 
 // Reload forces config reload (for testing or config changes)
 func Reload() error {
