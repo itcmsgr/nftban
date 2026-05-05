@@ -55,11 +55,13 @@ fi
 # =============================================================================
 
 # Canonical security-sensitive key list — shared definition to prevent drift
+# v1.103 PR-C3-C: bare canonical and prefixed alias both listed for DDoS and
+# Portscan so the effective-config snapshot picks up either form (Strategy C).
 readonly -a _DOCTOR_SECURITY_KEYS=(
     TCP_PORTS_IN UDP_PORTS_IN SSH_PORT
-    NFTBAN_DDOS_ENABLED NFTBAN_DDOS_SYNPROXY_ENABLED
+    DDOS_ENABLED NFTBAN_DDOS_ENABLED NFTBAN_DDOS_SYNPROXY_ENABLED
     DDOS_SYN_RATE DDOS_CONN_LIMIT_SSH DDOS_CONN_LIMIT_HTTP DDOS_CONN_LIMIT_MAIL
-    NFTBAN_PORTSCAN_ENABLED PORTSCAN_BAN_THRESHOLD
+    PORTSCAN_ENABLED NFTBAN_PORTSCAN_ENABLED PORTSCAN_BAN_THRESHOLD
     NFTBAN_LOGIN_MONITOR_ENABLED LOGIN_BAN_THRESHOLD LOGIN_BAN_DURATION
     HTTP_BOTGUARD_ENABLED
     NFTBAN_FEEDS_ENABLED
@@ -70,9 +72,12 @@ readonly -a _DOCTOR_SECURITY_KEYS=(
 )
 
 # Module definitions: name -> enable_key|chain_artifacts|set_artifacts
+# v1.103 PR-C3-C: enable_key is the CANONICAL key per Strategy C.
+# Compatibility aliases are mapped via _DOCTOR_MODULE_ALIASES below;
+# consumers call _doctor_config_bool_aliased() when an alias is mapped.
 declare -g -A _DOCTOR_MODULES=(
-    ["portscan"]="NFTBAN_PORTSCAN_ENABLED|portscan_detection|"
-    ["ddos"]="NFTBAN_DDOS_ENABLED|ddos_protection|"
+    ["portscan"]="PORTSCAN_ENABLED|portscan_detection|"
+    ["ddos"]="DDOS_ENABLED|ddos_protection|"
     ["botguard"]="HTTP_BOTGUARD_ENABLED|http_bot_guard|http_bot_suspect"
     ["login"]="NFTBAN_LOGIN_MONITOR_ENABLED||"
     ["feeds"]="NFTBAN_FEEDS_ENABLED||blacklist_ipv4"
@@ -80,6 +85,14 @@ declare -g -A _DOCTOR_MODULES=(
     ["geoban"]="GEOBAN_ENABLED||"
     ["suricata"]="NFTBAN_SURICATA_ENABLED||"
     ["synproxy"]="NFTBAN_DDOS_SYNPROXY_ENABLED||"
+)
+
+# v1.103 PR-C3-C: canonical-key -> compatibility-alias-key map.
+# Only DDoS and Portscan are in scope for v1.103; Login and BotGuard are
+# explicitly out of scope (DEFER / SKIP per PR_C3_INTERNAL_DECISION_MEMO §2).
+declare -g -A _DOCTOR_MODULE_ALIASES=(
+    ["DDOS_ENABLED"]="NFTBAN_DDOS_ENABLED"
+    ["PORTSCAN_ENABLED"]="NFTBAN_PORTSCAN_ENABLED"
 )
 
 # Severity constants
@@ -123,6 +136,37 @@ _doctor_config_bool() {
     local val
     val=$(_doctor_config_val "$1")
     case "${val,,}" in
+        true|1|yes|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# v1.103 PR-C3-C: aliased boolean read for Strategy-C canonical/alias pairs.
+# Doctor-local wrapper around the doctor's effective-config snapshot.
+# Args: $1 = canonical key (e.g. DDOS_ENABLED)
+#       $2 = alias key     (e.g. NFTBAN_DDOS_ENABLED)
+# Returns 0 (true) iff the resolved value is true|1|yes|on.
+# Canonical wins on conflict; emits one-line WARN to stderr when both are
+# set in the effective config with different values. Never fatal.
+_doctor_config_bool_aliased() {
+    local canonical_key="$1"
+    local alias_key="$2"
+    local canonical_val alias_val resolved
+    canonical_val=$(_doctor_config_val "$canonical_key")
+    alias_val=$(_doctor_config_val "$alias_key")
+
+    if [[ -n "$canonical_val" && -n "$alias_val" && "$canonical_val" != "$alias_val" ]]; then
+        printf 'WARN _doctor_config_bool_aliased: both %s=%q and %s=%q set with conflicting values; using %s (canonical)\n' \
+            "$canonical_key" "$canonical_val" "$alias_key" "$alias_val" "$canonical_key" >&2
+    fi
+
+    if [[ -n "$canonical_val" ]]; then
+        resolved="$canonical_val"
+    else
+        resolved="$alias_val"
+    fi
+
+    case "${resolved,,}" in
         true|1|yes|on) return 0 ;;
         *) return 1 ;;
     esac
@@ -568,7 +612,12 @@ _doctor_global_drift() {
         [[ -z "$chain_artifact" ]] && continue
 
         local config_enabled=false
-        _doctor_config_bool "$enable_key" && config_enabled=true
+        local _alias_key="${_DOCTOR_MODULE_ALIASES[$enable_key]:-}"
+        if [[ -n "$_alias_key" ]]; then
+            _doctor_config_bool_aliased "$enable_key" "$_alias_key" && config_enabled=true
+        else
+            _doctor_config_bool "$enable_key" && config_enabled=true
+        fi
 
         local kernel_present=false
         # Check both families — chain should exist in at least ip
@@ -611,7 +660,12 @@ _doctor_module_audit() {
 
     # --- L1: Enabled in config? ---
     if [[ -n "$enable_key" ]]; then
-        _doctor_config_bool "$enable_key" && l1_enabled=true
+        local _alias_key="${_DOCTOR_MODULE_ALIASES[$enable_key]:-}"
+        if [[ -n "$_alias_key" ]]; then
+            _doctor_config_bool_aliased "$enable_key" "$_alias_key" && l1_enabled=true
+        else
+            _doctor_config_bool "$enable_key" && l1_enabled=true
+        fi
     fi
 
     # --- L2: Kernel artifacts exist? ---
@@ -916,8 +970,9 @@ _doctor_security_gaps() {
     fi
 
     # CT limit check for SSH
+    # v1.103 PR-C3-C: read both DDOS_ENABLED (canonical) and NFTBAN_DDOS_ENABLED (alias)
     local ddos_enabled=false
-    _doctor_config_bool "NFTBAN_DDOS_ENABLED" && ddos_enabled=true
+    _doctor_config_bool_aliased "DDOS_ENABLED" "NFTBAN_DDOS_ENABLED" && ddos_enabled=true
     if [[ "$ddos_enabled" == "false" ]]; then
         # Check if SSH is in allowed ports — warning if no DDoS protection
         local kernel_tcp
@@ -1013,7 +1068,12 @@ _doctor_diff_kernel() {
         [[ -z "$enable_key" || -z "$chain_artifact" ]] && continue
 
         local config_val="false"
-        _doctor_config_bool "$enable_key" && config_val="true"
+        local _alias_key="${_DOCTOR_MODULE_ALIASES[$enable_key]:-}"
+        if [[ -n "$_alias_key" ]]; then
+            _doctor_config_bool_aliased "$enable_key" "$_alias_key" && config_val="true"
+        else
+            _doctor_config_bool "$enable_key" && config_val="true"
+        fi
 
         local kernel_val="absent"
         _doctor_nft_chain_exists "$chain_artifact" "ip" && kernel_val="present"
