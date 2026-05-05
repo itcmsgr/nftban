@@ -11,6 +11,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.103.0] - 2026-05-05 — config canonical-alias reads (Lane C / C3-C)
+
+One code PR on top of v1.102.0. Schema remains frozen at `1.83.0`. No
+metrics changes. No portal coordination. No lifecycle, install,
+packaging, or panel-adapter changes. Lane S remains held.
+
+### Lane C — config canonical-alias (Strategy C)
+
+- **PR-C3-C** Add read-side `*_ENABLED` key aliases for DDoS and
+  Portscan (`f6163af6`, PR [#559](https://github.com/itcmsgr/nftban/pull/559)).
+  Strategy C: read both keys, canonical wins on conflict, warn on
+  conflict. Write paths already canonical in v1.102.0 — no write-side
+  change. Six files: shared shell helper
+  `cli/lib/nftban/lib/nftban_config_alias.sh` (new); shell consumers
+  `cli/lib/nftban/core/nftban_config_doctor.sh` and
+  `cli/lib/nftban/helpers/suricata_effective_config.sh`; 23-case shell
+  test `cli/lib/nftban/tests/test_config_alias_ddos_portscan.sh` (new);
+  Go central loader `internal/nftbanconf/loader.go` adds `DDoSEnabled`
+  and `PortscanEnabled` fields with alias switch cases; Go alias test
+  `internal/nftbanconf/loader_alias_test.go` (new) including
+  `TestLoadFromFile_LoginNotAliasedInC3C` boundary guard.
+- **Operator-visible behavior change:** operators who had only set
+  `NFTBAN_DDOS_ENABLED` or `NFTBAN_PORTSCAN_ENABLED` in
+  `nftban.conf.local` will now see those values honored by
+  `config-doctor` and the central Go loader. If both the canonical and
+  the prefixed key are set with different values, the canonical wins
+  and a warning is emitted.
+- **Drift register effect:** C0A-D-05 (DDoS) and C0A-D-06 (Portscan)
+  CLOSED.
+
+### Out of scope (explicit non-goals)
+
+- **Login (C0A-D-07)** remains deferred to v1.104 Lane M.
+- **BotGuard (C0A-D-08)** skipped — production clean; the legacy
+  `BOTGUARD_ENABLED` regression-guard fixture is intentionally
+  retained.
+- **GeoBan** tracked separately as `GEO-CLEANUP-001` (optional
+  micro-cleanup; not started).
+- **Issue [#525](https://github.com/itcmsgr/nftban/issues/525)** —
+  `nftban-core-geoip.service crashes at startup (Go runtime panic,
+  status=2/INVALIDARGUMENT)` — remains OPEN and is deferred to v1.104
+  investigation. Not introduced by v1.103; carries over from v1.101 /
+  v1.102 deferrals.
+
+### Standing rules
+
+- Schema frozen at `1.83.0`.
+- No metrics, portal, lifecycle, install, packaging, or panel-adapter
+  changes in v1.103.0.
+- v1.103 hygiene Batch 1 closed internal-only (workspace audit-pack
+  cross-references); zero `nftban-core` repo touches in that lane.
+
+### Release-prep
+
+- **Release-prep PR** VERSION + STATUS + CHANGELOG + FHS regen.
+
+---
+
 ## [v1.102.0] - 2026-05-04 — focused Lane P corrective release
 
 One code PR on top of v1.101.0. Schema remains frozen at `1.83.0`. No
