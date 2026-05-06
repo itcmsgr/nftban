@@ -29,6 +29,7 @@
 %dir %attr(0755,root,root) /usr/lib/nftban/data
 %dir %attr(0755,root,root) /usr/lib/nftban/templates
 %dir %attr(0755,root,root) /usr/lib/nftban/tools
+%dir %attr(0755,root,root) /usr/lib/nftban/scripts
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION DIRECTORIES (root:nftban)

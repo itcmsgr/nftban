@@ -62,6 +62,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/data"]="0755|root|root|Static data files (registries, schemas)"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/templates"]="0755|root|root|Config templates with placeholders (rendered at install/rebuild)"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/tools"]="0755|root|root|Utility tools and scripts"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/scripts"]="0755|root|root|Helper scripts (generate-help, generate-wiki, soak-check)"
 
     # Configuration Directories (root:nftban)
     NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="0750|root|nftban|Configuration files (daemon readable via group)"
