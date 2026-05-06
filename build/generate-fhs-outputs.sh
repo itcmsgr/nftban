@@ -55,6 +55,7 @@ FHS_SPEC="${SCRIPT_DIR}/fhs-spec.yaml"
 TMPFILES_OUT="${PROJECT_ROOT}/install/systemd/tmpfiles.d/nftban.conf"
 SYSUSERS_OUT="${PROJECT_ROOT}/install/systemd/sysusers.d/nftban.conf"
 DEB_DIRS_OUT="${PROJECT_ROOT}/install/packaging/deb/nftban.dirs"
+DEB_ATTRS_OUT="${PROJECT_ROOT}/install/packaging/deb/nftban-dir-attrs.list"
 RPM_FILES_OUT="${PROJECT_ROOT}/install/packaging/rpm/nftban-files.inc"
 JSON_OUT="${PROJECT_ROOT}/cli/lib/nftban/data/fhs_directories.json"
 SHELL_OUT="${PROJECT_ROOT}/cli/lib/nftban/core/nftban_fhs_spec.sh"
@@ -259,6 +260,48 @@ EOF
     yq -r '.directories.shared[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
 
     print_status "Generated $DEB_DIRS_OUT"
+}
+
+# =============================================================================
+# DEB DIR ATTRIBUTES (D-NEW-12 fix; AUTH-HARDENING)
+# =============================================================================
+# Emits ownership/mode metadata for package-territory directories so the DEB
+# build (build_deb() in packaging/build_nftban.sh) can record correct owner/
+# group/mode in the dpkg DB — bringing DEB to RPM %attr parity for /etc/nftban.
+#
+# Format (deterministic, easy to parse):
+#   path|mode|owner|group
+# RPM uses %attr() inside nftban-files.inc for the same purpose; DEB needs
+# this externalised list because dpkg-deb has no equivalent in-tree directive.
+#
+# Scope: ONLY config-tier directories (/etc/nftban + subdirs). System dirs
+# (/usr/lib/nftban, /usr/share/nftban) are correctly root:root 0755 by
+# default and need no override. Tmpfiles-managed dirs are runtime-created
+# and not in the package payload.
+generate_deb_dir_attrs() {
+    print_info "Generating deb/nftban-dir-attrs.list..."
+
+    mkdir -p "$(dirname "$DEB_ATTRS_OUT")"
+
+    cat > "$DEB_ATTRS_OUT" << 'EOF'
+# =============================================================================
+# NFTBan Debian package directory attributes (ownership + mode)
+# =============================================================================
+# Generated from build/fhs-spec.yaml - DO NOT EDIT
+#
+# Consumer: packaging/build_nftban.sh build_deb() — applies chown/chmod
+# inside ${deb_root} before dpkg-deb --build so dpkg DB records correct
+# ownership/mode. Brings DEB to RPM %attr parity (closes D-NEW-12).
+#
+# Format: path|mode|owner|group
+# =============================================================================
+
+EOF
+
+    yq -r '.directories.config[] | select(.created_by == "package") | "\(.path)|\(.mode)|\(.owner)|\(.group)"' \
+        "$FHS_SPEC" >> "$DEB_ATTRS_OUT"
+
+    print_status "Generated $DEB_ATTRS_OUT"
 }
 
 generate_rpm_files() {
@@ -544,6 +587,7 @@ check_mode() {
     local orig_tmpfiles="$TMPFILES_OUT"
     local orig_sysusers="$SYSUSERS_OUT"
     local orig_deb="$DEB_DIRS_OUT"
+    local orig_deb_attrs="$DEB_ATTRS_OUT"
     local orig_rpm="$RPM_FILES_OUT"
     local orig_json="$JSON_OUT"
     local orig_shell="$SHELL_OUT"
@@ -552,6 +596,7 @@ check_mode() {
     TMPFILES_OUT="${temp_dir}/tmpfiles.conf"
     SYSUSERS_OUT="${temp_dir}/sysusers.conf"
     DEB_DIRS_OUT="${temp_dir}/nftban.dirs"
+    DEB_ATTRS_OUT="${temp_dir}/nftban-dir-attrs.list"
     RPM_FILES_OUT="${temp_dir}/nftban-files.inc"
     JSON_OUT="${temp_dir}/fhs_directories.json"
     SHELL_OUT="${temp_dir}/nftban_fhs_spec.sh"
@@ -560,6 +605,7 @@ check_mode() {
     generate_tmpfiles
     generate_sysusers
     generate_deb_dirs
+    generate_deb_dir_attrs
     generate_rpm_files
     generate_json
     generate_shell_helper
@@ -569,6 +615,7 @@ check_mode() {
         "${temp_dir}/tmpfiles.conf:${orig_tmpfiles}" \
         "${temp_dir}/sysusers.conf:${orig_sysusers}" \
         "${temp_dir}/nftban.dirs:${orig_deb}" \
+        "${temp_dir}/nftban-dir-attrs.list:${orig_deb_attrs}" \
         "${temp_dir}/nftban-files.inc:${orig_rpm}" \
         "${temp_dir}/fhs_directories.json:${orig_json}" \
         "${temp_dir}/nftban_fhs_spec.sh:${orig_shell}"; do
@@ -705,6 +752,7 @@ main() {
     generate_tmpfiles
     generate_sysusers
     generate_deb_dirs
+    generate_deb_dir_attrs
     generate_rpm_files
     generate_json
     generate_shell_helper
@@ -719,6 +767,7 @@ main() {
     echo "  - $TMPFILES_OUT"
     echo "  - $SYSUSERS_OUT"
     echo "  - $DEB_DIRS_OUT"
+    echo "  - $DEB_ATTRS_OUT"
     echo "  - $RPM_FILES_OUT"
     echo "  - $JSON_OUT"
     echo "  - $SHELL_OUT"

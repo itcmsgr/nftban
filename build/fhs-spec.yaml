@@ -814,6 +814,7 @@ directories:
       group: nftban
       description: "Cache files"
       created_by: tmpfiles
+      note: "0755 intentional: public-cache traversal — non-sensitive cache contents (timestamps, last-check status) readable by unprivileged tooling. Sensitive subdirs (e.g. /health) are tightened to 0750 individually."
 
     - path: /var/cache/nftban/health
       mode: "0750"
@@ -828,7 +829,7 @@ directories:
       group: nftban
       description: "Runtime data (PID files, sockets)"
       created_by: tmpfiles
-      note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict"
+      note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict. 0755 intentional: socket-discovery — non-nftban-group processes (panel adapters, monitoring tools) must stat() the daemon socket; the socket file itself uses unit-level SocketMode=0660 + group ownership for access control. Tightening the parent dir would break socket-discovery for anything outside the nftban group."
 
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data

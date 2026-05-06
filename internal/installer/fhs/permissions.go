@@ -89,9 +89,9 @@ func applyPermissions(exec executor.Executor, log *logging.Logger) {
 	exec.Run("chown", "-R", "nftban:nftban", LogDir)
 	exec.Run("chmod", "0750", LogDir)
 
-	// /var/cache/nftban — nftban:nftban 0750
+	// /var/cache/nftban — nftban:nftban 0755 (public-cache traversal; /health subdir is 0750)
 	exec.Run("chown", "-R", "nftban:nftban", CacheDir)
-	exec.Run("chmod", "0750", CacheDir)
+	exec.Run("chmod", "0755", CacheDir)
 
 	// /run/nftban — nftban:nftban 0755
 	exec.Run("chown", "-R", "nftban:nftban", RunDir)
