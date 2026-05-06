@@ -348,6 +348,24 @@ echo "Using pre-built nftban-core binary"
 ls -la bin/
 
 %install
+# MFST-HOTFIX-B1: pre-create all package-owned directories declared in
+# install/packaging/rpm/nftban-files.inc (staged as Source1 by build_rpm()).
+# Symmetric to DEB build_deb()'s nftban.dirs while-read loop. Idempotent —
+# mkdir -p on an already-existing dir is a no-op, so this does not conflict
+# with subsequent install/cp -r operations. Without this, dirs declared as
+# %dir in nftban-files.inc but having no source content (e.g. /usr/lib/nftban/
+# modules, /etc/nftban/connectors, /usr/share/nftban/dashboards) cause
+# rpmbuild to fail at "Processing files" with "Directory not found".
+while IFS= read -r dir_line; do
+    case "\$dir_line" in
+        ''|\#*) continue ;;
+        '%dir '*)
+            dir_path=\$(echo "\$dir_line" | sed -E 's|^%dir[[:space:]]+%attr\([^)]+\)[[:space:]]+||')
+            mkdir -p "%{buildroot}\${dir_path}"
+            ;;
+    esac
+done < %{_sourcedir}/nftban-files.inc
+
 # Download yq at BUILD time (supply-chain safe - not at install time)
 # SHA256 verified before bundling in package
 YQ_VERSION="4.44.1"
