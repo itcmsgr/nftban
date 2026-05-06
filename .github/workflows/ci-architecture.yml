@@ -192,6 +192,83 @@ jobs:
           echo "✓ C3 structural assertions: PASS (mask_if_exists + /dev/null boundary + no unconditional mask)"
 
       # =====================================================================
+      # MFST-C6 (v1.107): packaging-wire structural assertions (AM-4)
+      # =====================================================================
+      # Proves both packagers consume generated manifest authority artifacts.
+      # If a future edit silently replaces a generator-driven %include / while-read
+      # loop with hardcoded content, these greps fail before the build runs.
+      #   AM-4.1: RPM Source1 + %include of nftban-files.inc
+      #   AM-4.2: DEB build_deb() while-read of nftban.dirs
+      #   AM-4.3: RPM/DEB consume nftban-systemd-install.list
+      - name: MFST-C6 packaging-wire structural assertions (AM-4)
+        run: |
+          echo "=== MFST-C6 / AM-4: packaging-wire structural assertions ==="
+          spec=packaging/build_nftban.sh
+          fail=0
+
+          # AM-4.1 — RPM consumes generated nftban-files.inc
+          grep -qE '^Source1:[[:space:]]+nftban-files\.inc' "$spec" \
+            || { echo "::error::AM-4.1: RPM Source1: nftban-files.inc missing in $spec"; fail=1; }
+          grep -qE '^%include[[:space:]]+%\{_sourcedir\}/nftban-files\.inc' "$spec" \
+            || { echo "::error::AM-4.1: %include %{_sourcedir}/nftban-files.inc missing in $spec"; fail=1; }
+
+          # AM-4.2 — DEB build_deb() consumes generated nftban.dirs via while-read
+          if ! awk '/^build_deb\(\)/,/^\}/' "$spec" \
+               | grep -qE 'install/packaging/deb/nftban\.dirs'; then
+            echo "::error::AM-4.2: build_deb() does not reference install/packaging/deb/nftban.dirs in $spec"
+            fail=1
+          fi
+          if ! awk '/^build_deb\(\)/,/^\}/' "$spec" \
+               | grep -qE 'while[[:space:]]+(IFS=.*[[:space:]]+)?read'; then
+            echo "::error::AM-4.2: build_deb() lacks while-read loop consuming nftban.dirs in $spec"
+            fail=1
+          fi
+
+          # AM-4.3 — RPM and DEB both consume generated nftban-systemd-install.list
+          grep -qE '^Source2:[[:space:]]+nftban-systemd-install\.list' "$spec" \
+            || { echo "::error::AM-4.3: RPM Source2: nftban-systemd-install.list missing in $spec"; fail=1; }
+          # %install RPM body must reference the generated install list
+          grep -qE '%\{_sourcedir\}/nftban-systemd-install\.list' "$spec" \
+            || { echo "::error::AM-4.3: RPM %install does not reference %{_sourcedir}/nftban-systemd-install.list in $spec"; fail=1; }
+          # build_deb() must reference the generated install list
+          if ! awk '/^build_deb\(\)/,/^\}/' "$spec" \
+               | grep -qE 'install/packaging/systemd/nftban-systemd-install\.list'; then
+            echo "::error::AM-4.3: build_deb() does not reference install/packaging/systemd/nftban-systemd-install.list in $spec"
+            fail=1
+          fi
+
+          [ "$fail" = "0" ] || exit 1
+          echo "✓ MFST-C6 / AM-4: PASS (RPM Source1+%include + DEB while-read + RPM/DEB systemd-install-list)"
+
+      # =====================================================================
+      # MFST-C6 (v1.107): UNITS.md per-row parity (E6)
+      # =====================================================================
+      # Closes content-gap left by the existing count-only check above.
+      # Asserts every active unit listed in nftban-systemd-install.list (the C1
+      # source-of-truth) appears as a backticked table row in UNITS.md.
+      - name: MFST-C6 docs/systemd/UNITS.md table-row parity (E6)
+        run: |
+          echo "=== MFST-C6 / E6: UNITS.md per-row parity vs systemd install list ==="
+          list=install/packaging/systemd/nftban-systemd-install.list
+          doc=docs/systemd/UNITS.md
+          fail=0
+          missing=0
+          while IFS= read -r unit; do
+            # Skip blank lines and comments
+            case "$unit" in
+              ''|\#*) continue ;;
+            esac
+            # Each unit must appear as a backticked token somewhere in UNITS.md
+            if ! grep -qF "\`${unit}\`" "$doc"; then
+              echo "::error::E6: docs/systemd/UNITS.md missing row for unit: ${unit}"
+              missing=$((missing + 1))
+              fail=1
+            fi
+          done < "$list"
+          [ "$fail" = "0" ] || { echo "::error::E6: ${missing} unit(s) missing from $doc"; exit 1; }
+          echo "✓ MFST-C6 / E6: PASS (every unit in $list has a backticked row in $doc)"
+
+      # =====================================================================
       # NEW CHECKS (v1.50.1 — Distribution Compatibility Audit)
       # =====================================================================
 
