@@ -1959,6 +1959,30 @@ build_deb() {
     fakeroot find "${deb_root}/etc" -type f -exec chown root:root {} \;
     fakeroot find "${deb_root}/etc" -type d -exec chown root:root {} \;
 
+    # AUTH-HARDENING (D-NEW-12): apply config-tier directory ownership/mode
+    # from generator output (build/fhs-spec.yaml -> nftban-dir-attrs.list).
+    # Brings DEB to RPM %attr parity for /etc/nftban + subdirs (root:nftban 0750)
+    # so dpkg-verify is clean and `dpkg --reinstall` does not reset to root:root.
+    # RPM uses %attr() inside nftban-files.inc for the same purpose.
+    local nftban_dir_attrs="${PROJECT_ROOT}/install/packaging/deb/nftban-dir-attrs.list"
+    if [[ ! -f "$nftban_dir_attrs" ]]; then
+        log_error "nftban-dir-attrs.list not found at $nftban_dir_attrs; run 'bash build/generate-fhs-outputs.sh' first"
+        return 1
+    fi
+    log_info "Applying config-tier directory attributes from $(basename "$nftban_dir_attrs")..."
+    local attrs_count=0
+    while IFS='|' read -r dir_path dir_mode dir_owner dir_group; do
+        [[ -z "$dir_path" || "$dir_path" =~ ^[[:space:]]*# ]] && continue
+        if [[ -d "${deb_root}${dir_path}" ]]; then
+            fakeroot chown "${dir_owner}:${dir_group}" "${deb_root}${dir_path}"
+            fakeroot chmod "${dir_mode}" "${deb_root}${dir_path}"
+            ((attrs_count++))
+        else
+            log_warn "Skipping attrs for missing dir: ${deb_root}${dir_path}"
+        fi
+    done < "$nftban_dir_attrs"
+    log_success "Applied attrs to ${attrs_count} config-tier directories"
+
     # Build DEB
     fakeroot dpkg-deb --build "${deb_root}" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
 

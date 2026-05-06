@@ -222,8 +222,10 @@ var RequiredDirs = []DirSpec{
 	{EtcDir + "/suricata/cache", 0750, "root:nftban"},
 	{EtcDir + "/suricata/state", 0750, "root:nftban"},
 	{EtcDir + "/suricata/state/last-good", 0750, "root:nftban"},
-	// /var/lib/nftban/ — nftban:nftban (synced with install/systemd/tmpfiles.d/nftban.conf)
-	{DataDir, 0750, "nftban:nftban"},
+	// /var/lib/nftban/ — synced with install/systemd/tmpfiles.d/nftban.conf
+	// Top dir + integrity-sensitive subdirs are root:nftban (security boundary).
+	// Writable subdirs are nftban:nftban.
+	{DataDir, 0750, "root:nftban"},
 	{StateDir, 0750, "nftban:nftban"},
 	{FeedsDir, 0750, "nftban:nftban"},
 	{PanelsDir, 0750, "nftban:nftban"},
@@ -232,9 +234,10 @@ var RequiredDirs = []DirSpec{
 	{DataDir + "/geoip", 0750, "nftban:nftban"},
 	{DataDir + "/reports", 0750, "nftban:nftban"},
 	{DataDir + "/reports/baseline", 0750, "nftban:nftban"},
-	{DataDir + "/reports/auditors", 0770, "nftban:nftban"},
+	{DataDir + "/reports/auditors", 0770, "root:nftban-auditor"},
 	{DataDir + "/reports/watchdog", 0750, "nftban:nftban"},
 	{DataDir + "/reports/archive", 0750, "nftban:nftban"},
+	{DataDir + "/community", 0750, "nftban:nftban"},
 	{DataDir + "/config", 0750, "nftban:nftban"},
 	{DataDir + "/metrics", 0750, "nftban:nftban"},
 	{DataDir + "/snapshots", 0750, "nftban:nftban"},
@@ -250,26 +253,29 @@ var RequiredDirs = []DirSpec{
 	{DataDir + "/botguard", 0750, "nftban:nftban"},
 	{DataDir + "/tunnel", 0750, "nftban:nftban"},
 	{DataDir + "/analytics", 0750, "nftban:nftban"},
-	{DataDir + "/backup", 0750, "nftban:nftban"},
+	{DataDir + "/backup", 0750, "root:nftban"},
 	{DataDir + "/login", 0750, "nftban:nftban"},
 	{DataDir + "/portscan", 0750, "nftban:nftban"},
 	{DataDir + "/recorder", 0750, "nftban:nftban"},
 	{DataDir + "/staging", 0750, "nftban:nftban"},
 	{DataDir + "/suricata", 0750, "nftban:nftban"},
-	{DataDir + "/update-backups", 0750, "nftban:nftban"},
+	{DataDir + "/update-backups", 0750, "root:nftban"},
 	{DataDir + "/watchdog", 0750, "nftban:nftban"},
-	{DataDir + "/pro", 0750, "nftban:nftban"},
+	{DataDir + "/pro", 0750, "root:nftban"},
 	// /var/log/nftban/ — nftban:nftban (synced with install/systemd/tmpfiles.d/nftban.conf)
+	// Note: /var/log/nftban/suricata is feature_enable per fhs-spec.yaml
+	// (created by `nftban suricata enable` as suricata:nftban 0770) and
+	// intentionally NOT eagerly created here.
 	{LogDir, 0750, "nftban:nftban"},
 	{LogDir + "/reports", 0750, "nftban:nftban"},
 	{LogDir + "/watchdog", 0750, "nftban:nftban"},
 	{LogDir + "/rbl", 0750, "nftban:nftban"},
 	{LogDir + "/botguard", 0750, "nftban:nftban"},
-	{LogDir + "/suricata", 0750, "nftban:nftban"},
 	{LogDir + "/metrics", 0750, "nftban:nftban"},
 	{LogDir + "/soak", 0750, "nftban:nftban"},
-	// /var/cache/nftban/ — nftban:nftban
-	{CacheDir, 0750, "nftban:nftban"},
+	// /var/cache/nftban/ — nftban:nftban; top is 0755 (public-cache traversal),
+	// /health subdir tightened to 0750 (per fhs-spec.yaml).
+	{CacheDir, 0755, "nftban:nftban"},
 	{CacheDir + "/health", 0750, "nftban:nftban"},
 	// /run/nftban/ — nftban:nftban
 	{RunDir, 0755, "nftban:nftban"},
