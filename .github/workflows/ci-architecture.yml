@@ -133,6 +133,16 @@ jobs:
           fi
           echo "✓ FHS spec: PASS (generated files match YAML spec)"
 
+      - name: Systemd install-list generated file check
+        run: |
+          echo "=== Verifying systemd install-list is up to date ==="
+          if ! ./build/generate-systemd-install-list.sh --check; then
+            echo ""
+            echo "::error::install/packaging/systemd/nftban-systemd-install.list is stale — run: ./build/generate-systemd-install-list.sh"
+            exit 1
+          fi
+          echo "✓ Systemd install-list: PASS (matches install/systemd source)"
+
       # =====================================================================
       # NEW CHECKS (v1.50.1 — Distribution Compatibility Audit)
       # =====================================================================

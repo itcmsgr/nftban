@@ -277,6 +277,7 @@ License:        GPL-3.0-or-later
 URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 Source1:        nftban-files.inc
+Source2:        nftban-systemd-install.list
 
 BuildRequires:  systemd-rpm-macros
 
@@ -439,54 +440,14 @@ mkdir -p %{buildroot}/etc/nftban/blacklist.d
 install -m 0640 etc/nftban/whitelist.d/99-manual.conf %{buildroot}/etc/nftban/whitelist.d/99-manual.conf
 install -m 0640 etc/nftban/blacklist.d/99-manual.conf %{buildroot}/etc/nftban/blacklist.d/99-manual.conf
 
-# Systemd units (actual files that exist)
-install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/lib/systemd/system/nftban-maintenance.service
-install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib/systemd/system/nftban-maintenance.timer
-install -D -m 0644 install/systemd/nftban-health.service %{buildroot}/usr/lib/systemd/system/nftban-health.service
-install -D -m 0644 install/systemd/nftban-health.timer %{buildroot}/usr/lib/systemd/system/nftban-health.timer
-# v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
-# Deprecated since v1.21.3, replaced by Go daemon loginmon module (internal/loginmon)
-install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.service
-install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
-install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
-install -D -m 0644 install/systemd/nftban-core-feeds.timer %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.timer
-install -D -m 0644 install/systemd/nftban-unified-exporter.service %{buildroot}/usr/lib/systemd/system/nftban-unified-exporter.service
-install -D -m 0644 install/systemd/nftban-unified-exporter.timer %{buildroot}/usr/lib/systemd/system/nftban-unified-exporter.timer
-install -D -m 0644 install/systemd/nftban-watchdog.service %{buildroot}/usr/lib/systemd/system/nftban-watchdog.service
-install -D -m 0644 install/systemd/nftban-watchdog.timer %{buildroot}/usr/lib/systemd/system/nftban-watchdog.timer
-install -D -m 0644 install/systemd/nftban-snapshot.service %{buildroot}/usr/lib/systemd/system/nftban-snapshot.service
-install -D -m 0644 install/systemd/nftban-snapshot.timer %{buildroot}/usr/lib/systemd/system/nftban-snapshot.timer
-install -D -m 0644 install/systemd/nftban-rollback.service %{buildroot}/usr/lib/systemd/system/nftban-rollback.service
-install -D -m 0644 install/systemd/nftban-rollback.timer %{buildroot}/usr/lib/systemd/system/nftban-rollback.timer
-install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.service
-install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
-install -D -m 0644 install/systemd/nftban-suricata.service %{buildroot}/usr/lib/systemd/system/nftban-suricata.service
-install -D -m 0644 install/systemd/nftban-suricata-stats.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-stats.service
-# v1.100.1b.A: nftban-ui + nftban-ui-auth service/socket files no longer installed.
-install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
-install -D -m 0644 install/systemd/nftban-queue.timer %{buildroot}/usr/lib/systemd/system/nftban-queue.timer
-install -D -m 0644 install/systemd/nftban-botscan.service %{buildroot}/usr/lib/systemd/system/nftban-botscan.service
-install -D -m 0644 install/systemd/nftban-botscan.timer %{buildroot}/usr/lib/systemd/system/nftban-botscan.timer
-install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
-install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
-install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
-install -D -m 0644 install/systemd/nftban-tunnel.service %{buildroot}/usr/lib/systemd/system/nftban-tunnel.service
-install -D -m 0644 install/systemd/nftban-tunnel.timer %{buildroot}/usr/lib/systemd/system/nftban-tunnel.timer
-install -D -m 0644 install/systemd/nftband.service %{buildroot}/usr/lib/systemd/system/nftband.service
-install -D -m 0644 install/systemd/nftband.socket %{buildroot}/usr/lib/systemd/system/nftband.socket
-# v1.41.0: Report timer + community stats
-install -D -m 0644 install/systemd/nftban-report-daily.service %{buildroot}/usr/lib/systemd/system/nftban-report-daily.service
-install -D -m 0644 install/systemd/nftban-report-daily.timer %{buildroot}/usr/lib/systemd/system/nftban-report-daily.timer
-install -D -m 0644 install/systemd/nftban-community-stats.service %{buildroot}/usr/lib/systemd/system/nftban-community-stats.service
-install -D -m 0644 install/systemd/nftban-community-stats.timer %{buildroot}/usr/lib/systemd/system/nftban-community-stats.timer
-# v1.71.0: Split update units (check=unprivileged, apply=gated)
-install -D -m 0644 install/systemd/nftban-update-check.service %{buildroot}/usr/lib/systemd/system/nftban-update-check.service
-install -D -m 0644 install/systemd/nftban-update-check.timer %{buildroot}/usr/lib/systemd/system/nftban-update-check.timer
-install -D -m 0644 install/systemd/nftban-update-apply.service %{buildroot}/usr/lib/systemd/system/nftban-update-apply.service
-install -D -m 0644 install/systemd/nftban-update-apply.timer %{buildroot}/usr/lib/systemd/system/nftban-update-apply.timer
-# v1.98.1: Soak validation timer (opt-in, staggered off HH:00)
-install -D -m 0644 install/systemd/nftban-soak.service %{buildroot}/usr/lib/systemd/system/nftban-soak.service
-install -D -m 0644 install/systemd/nftban-soak.timer %{buildroot}/usr/lib/systemd/system/nftban-soak.timer
+# MFST-C1: systemd units come from generator (install/systemd glob -> nftban-systemd-install.list).
+# Closes D1 install-list drift. File presence does NOT auto-enable units; the Go installer
+# (/usr/lib/nftban/bin/nftban-installer) owns enablement per PR-22B safety contract.
+while IFS= read -r unit; do
+    [ -z "\$unit" ] && continue
+    case "\$unit" in '#'*) continue ;; esac
+    install -D -m 0644 "install/systemd/\$unit" "%{buildroot}/usr/lib/systemd/system/\$unit"
+done < %{_sourcedir}/nftban-systemd-install.list
 
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
@@ -1309,6 +1270,15 @@ build_rpm() {
     cp "$files_inc_src" "${BUILD_DIR}/SOURCES/nftban-files.inc"
     log_success "Staged nftban-files.inc ($(wc -l < "${BUILD_DIR}/SOURCES/nftban-files.inc") lines)"
 
+    # MFST-C1: stage Layer-1 generated systemd install list into SOURCES/ for spec %install loop.
+    local systemd_list_src="${PROJECT_ROOT}/install/packaging/systemd/nftban-systemd-install.list"
+    if [[ ! -f "$systemd_list_src" ]]; then
+        log_error "nftban-systemd-install.list not found at $systemd_list_src; run 'bash build/generate-systemd-install-list.sh' first"
+        return 1
+    fi
+    cp "$systemd_list_src" "${BUILD_DIR}/SOURCES/nftban-systemd-install.list"
+    log_success "Staged nftban-systemd-install.list ($(grep -cvE '^#|^$' "${BUILD_DIR}/SOURCES/nftban-systemd-install.list") units)"
+
     # Build RPM (version from VERSION file)
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
         --define "pkg_version ${PKG_VERSION}" \
@@ -1917,57 +1887,19 @@ build_deb() {
     install -m 0640 "${PROJECT_ROOT}/etc/nftban/whitelist.d/99-manual.conf" "${deb_root}/etc/nftban/whitelist.d/"
     install -m 0640 "${PROJECT_ROOT}/etc/nftban/blacklist.d/99-manual.conf" "${deb_root}/etc/nftban/blacklist.d/"
 
-    # Copy all systemd units
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.timer" "${deb_root}/usr/lib/systemd/system/"
-    # v1.23.0 (EVAL-3): nftban-login-monitor.service REMOVED from package
-    # Deprecated since v1.21.3, replaced by Go daemon loginmon module (internal/loginmon)
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-snapshot.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-snapshot.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rollback.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rollback.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-stats.service" "${deb_root}/usr/lib/systemd/system/"
-    # v1.100.1b.A: nftban-ui.service + nftban-ui-auth.service + nftban-ui-auth.socket
-    # no longer installed in DEB payload (GOTH PR-D4 stage 1). Transitional postinst
-    # cleans up any prior install via deb_root postinst handlers.
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-botscan.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-botscan.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rbl-check.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-tunnel.timer" "${deb_root}/usr/lib/systemd/system/"
-    # v1.100.1b.A: nftban-ui-auth.socket no longer installed.
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
-    # v1.41.0: Report timer + community stats
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-report-daily.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-report-daily.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-community-stats.timer" "${deb_root}/usr/lib/systemd/system/"
-    # v1.71.0: Split update units (check=unprivileged, apply=gated)
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-check.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-check.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-update-apply.timer" "${deb_root}/usr/lib/systemd/system/"
-    # v1.98.1: Soak validation timer (opt-in, staggered off HH:00)
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-soak.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-soak.timer" "${deb_root}/usr/lib/systemd/system/"
+    # MFST-C1: systemd units come from generator (install/systemd glob -> nftban-systemd-install.list).
+    # Closes D1 install-list drift; the list is canonical and re-checked by CI --check.
+    # File presence here does NOT auto-enable any unit; enablement is owned by
+    # /usr/lib/nftban/bin/nftban-installer (PR-22B safety contract).
+    local systemd_install_list="${PROJECT_ROOT}/install/packaging/systemd/nftban-systemd-install.list"
+    if [[ ! -f "$systemd_install_list" ]]; then
+        log_error "nftban-systemd-install.list not found at $systemd_install_list; run 'bash build/generate-systemd-install-list.sh' first"
+        return 1
+    fi
+    while IFS= read -r unit; do
+        [[ -z "$unit" || "$unit" =~ ^[[:space:]]*# ]] && continue
+        install -m 0644 "${PROJECT_ROOT}/install/systemd/${unit}" "${deb_root}/usr/lib/systemd/system/"
+    done < "$systemd_install_list"
     # v1.41.0: Community stats config default
     install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
