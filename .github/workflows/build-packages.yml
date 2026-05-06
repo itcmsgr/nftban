@@ -281,6 +281,10 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            # MFST-C6 / F-1: strict mode — surface dpkg-deb failures to CI
+            # instead of swallowing them. Mirror RPM step pattern (post-#571).
+            set -euo pipefail
+
             # Install build dependencies (curl required for yq download)
             for i in 1 2 3; do
               apt-get update && apt-get install -y dpkg-dev build-essential file curl && break
@@ -291,7 +295,14 @@ jobs:
             # Build DEB
             chmod +x packaging/build_nftban.sh
             cd packaging
-            ./build_nftban.sh deb
+            ./build_nftban.sh deb || { echo '❌ DEB build failed!'; exit 1; }
+
+            # Verify at least one DEB was created (catches silent dpkg-deb failures)
+            if ! ls /workspace/build/packages/*.deb 2>/dev/null; then
+              echo '❌ No DEB files created!'
+              ls -laR /workspace/build/ || true
+              exit 1
+            fi
 
             # Fix permissions
             chmod -R a+rX /workspace/build/
