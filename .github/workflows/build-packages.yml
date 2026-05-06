@@ -166,6 +166,10 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            # MFST-HOTFIX-B2: strict mode — surface rpmbuild failures to CI
+            # instead of swallowing them. Mirror release.yml's pattern.
+            set -euo pipefail
+
             # Install build dependencies (curl required for yq download)
             # Note: --allowerasing handles curl-minimal vs curl conflict on Rocky/Alma
             dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
@@ -173,7 +177,14 @@ jobs:
             # Build RPM
             chmod +x packaging/build_nftban.sh
             cd packaging
-            ./build_nftban.sh rpm
+            ./build_nftban.sh rpm || { echo '❌ RPM build failed!'; exit 1; }
+
+            # Verify at least one RPM was created (catches silent rpmbuild failures)
+            if ! ls /workspace/build/packages/RPMS/*/*.rpm 2>/dev/null; then
+              echo '❌ No RPM files created!'
+              ls -laR /workspace/build/ || true
+              exit 1
+            fi
 
             # Fix permissions
             chmod -R a+rX /workspace/build/
