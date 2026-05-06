@@ -143,6 +143,23 @@ jobs:
           fi
           echo "✓ Systemd install-list: PASS (matches install/systemd source)"
 
+      - name: docs/systemd/UNITS.md count parity
+        run: |
+          echo "=== Verifying docs/systemd/UNITS.md counts match install list ==="
+          list=install/packaging/systemd/nftban-systemd-install.list
+          fs_timer=$(grep -cE '\.timer$' "$list")
+          fs_svc=$(grep -cE '\.service$' "$list")
+          fs_socket=$(grep -cE '\.socket$' "$list")
+          doc_timer=$(grep -oE '^## Timers \([0-9]+\)' docs/systemd/UNITS.md | grep -oE '[0-9]+' || echo 0)
+          doc_svc=$(grep -oE '^## Services \([0-9]+\)' docs/systemd/UNITS.md | grep -oE '[0-9]+' || echo 0)
+          doc_socket=$(grep -oE '^## Sockets \([0-9]+\)' docs/systemd/UNITS.md | grep -oE '[0-9]+' || echo 0)
+          fail=0
+          [ "$fs_timer" = "$doc_timer" ] || { echo "::error::timer count drift: list=$fs_timer doc=$doc_timer"; fail=1; }
+          [ "$fs_svc" = "$doc_svc" ] || { echo "::error::service count drift: list=$fs_svc doc=$doc_svc"; fail=1; }
+          [ "$fs_socket" = "$doc_socket" ] || { echo "::error::socket count drift: list=$fs_socket doc=$doc_socket"; fail=1; }
+          [ "$fail" = "0" ] || exit 1
+          echo "✓ docs/systemd/UNITS.md counts: PASS ($fs_timer timers, $fs_svc services, $fs_socket socket)"
+
       # =====================================================================
       # NEW CHECKS (v1.50.1 — Distribution Compatibility Audit)
       # =====================================================================
