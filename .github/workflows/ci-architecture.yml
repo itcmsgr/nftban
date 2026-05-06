@@ -160,6 +160,37 @@ jobs:
           [ "$fail" = "0" ] || exit 1
           echo "✓ docs/systemd/UNITS.md counts: PASS ($fs_timer timers, $fs_svc services, $fs_socket socket)"
 
+      - name: Systemd maintainer-script generated files check
+        run: |
+          echo "=== Verifying systemd maintainer-script artifacts are up to date ==="
+          if ! ./build/generate-systemd-maintainer-scripts.sh --check; then
+            echo ""
+            echo "::error::Systemd maintainer-script artifacts are stale — run: ./build/generate-systemd-maintainer-scripts.sh"
+            exit 1
+          fi
+          echo "✓ Systemd maintainer-scripts: PASS (matches generator output)"
+
+      - name: C3 maintainer-script structural assertions (A5)
+        run: |
+          echo "=== A5: structural assertions on generated cleanup artifacts ==="
+          rpm_art=install/packaging/rpm/nftban-preun-systemd-cleanup.inc
+          deb_art=install/packaging/deb/nftban-prerm-systemd-cleanup.inc
+          fail=0
+          # A5.1 — both artifacts contain mask_if_exists helper
+          grep -qE '^mask_if_exists\(\)' "$rpm_art" || { echo "::error::RPM artifact missing mask_if_exists() helper"; fail=1; }
+          grep -qE '^mask_if_exists\(\)' "$deb_art" || { echo "::error::DEB artifact missing mask_if_exists() helper"; fail=1; }
+          # A5.2 — both artifacts have the readlink /dev/null boundary check
+          grep -qE 'readlink "/etc/systemd/system/\$unit".*= *"/dev/null"' "$rpm_art" || { echo "::error::RPM artifact missing readlink /dev/null check (A1 policy)"; fail=1; }
+          grep -qE 'readlink "/etc/systemd/system/\$unit".*= *"/dev/null"' "$deb_art" || { echo "::error::DEB artifact missing readlink /dev/null check (A1 policy)"; fail=1; }
+          # A5.3 — no unconditional `systemctl mask nftban-ui*` literal outside mask_if_exists in any maintainer-script source
+          if grep -nE 'systemctl mask "[^"]*nftban-ui[^"]*"' packaging/build_nftban.sh packaging/deb/prerm 2>/dev/null \
+             | grep -v 'mask_if_exists'; then
+              echo "::error::unconditional systemctl mask nftban-ui* found outside mask_if_exists (A1 regression)"
+              fail=1
+          fi
+          [ "$fail" = "0" ] || exit 1
+          echo "✓ C3 structural assertions: PASS (mask_if_exists + /dev/null boundary + no unconditional mask)"
+
       # =====================================================================
       # NEW CHECKS (v1.50.1 — Distribution Compatibility Audit)
       # =====================================================================

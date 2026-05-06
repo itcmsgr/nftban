@@ -253,6 +253,15 @@ create_rpm_spec_nftban_core() {
 
     log_info "Creating spec file at ${BUILD_DIR}/SPECS/nftban-core.spec"
 
+    # MFST-C3: load generated %preun systemd cleanup snippet for heredoc interpolation.
+    local rpm_preun_body
+    local rpm_preun_src="${PROJECT_ROOT}/install/packaging/rpm/nftban-preun-systemd-cleanup.inc"
+    if [[ ! -f "$rpm_preun_src" ]]; then
+        log_error "RPM preun cleanup snippet not found at $rpm_preun_src; run 'bash build/generate-systemd-maintainer-scripts.sh' first"
+        return 1
+    fi
+    rpm_preun_body=$(cat "$rpm_preun_src")
+
     # Use explicit file descriptor to catch cat errors
     if ! cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
@@ -949,40 +958,15 @@ for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh;
         chattr -i "\$immutable_file" 2>/dev/null || true
     fi
 done
-# FULL list of all systemd units — must match DEB prerm
-# NOTE: %%systemd_preun macros removed due to el10 compatibility issues
-# Using explicit systemctl commands instead (same functionality)
+# MFST-C3: systemd stop/disable/mask cleanup is generated from
+#   install/packaging/systemd/nftban-systemd-install.list (active units)
+#   build/deprecated-units.yaml                            (deprecated units)
+# via build/generate-systemd-maintainer-scripts.sh. The mask_if_exists()
+# helper inside the snippet only modifies /etc/systemd/system/\$unit when its
+# existing symlink targets /dev/null (operator-created custom aliases preserved).
+# Cleanup runs only on complete uninstall (\$1 -eq 0), not on upgrade.
 if [ \$1 -eq 0 ]; then
-    # Complete uninstall: stop and disable all services
-    for unit in nftband.socket nftband.service nftban-maintenance.service nftban-maintenance.timer \
-                nftban-health.service nftban-health.timer nftban-health-fix.service \
-                nftban-watchdog.service nftban-watchdog.timer nftban-login-monitor.service \
-                nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service \
-                nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer \
-                nftban-queue.service nftban-queue.timer nftban-botscan.service nftban-botscan.timer \
-                nftban-rbl-check.service nftban-rbl-check.timer \
-                nftban-tunnel.service nftban-tunnel.timer \
-                nftban-rollback.service nftban-rollback.timer nftban-snapshot.service nftban-snapshot.timer \
-                nftban-suricata-update.service nftban-suricata-update.timer nftban-suricata.service \
-                nftban-suricata-stats.service nftban-pro-inventory.service nftban-pro-inventory.timer \
-                nftban-pro-license.service nftban-pro-license.timer \
-                nftban-update-check.service nftban-update-check.timer \
-                nftban-update-apply.service nftban-update-apply.timer \
-                nftban-api.service nftban-firewall-init.service \
-                nftban-ui.service nftban-ui-auth.socket nftban-ui-auth.service; do
-        # v1.100.1b.A transitional: nftban-ui.* units may exist from a prior
-        # install. Stop + disable + mask + remove their unit files so they
-        # don't try to restart after upgrade.
-        systemctl stop "\$unit" 2>/dev/null || true
-        systemctl disable "\$unit" 2>/dev/null || true
-        case "\$unit" in
-            nftban-ui*.service|nftban-ui*.socket)
-                systemctl mask "\$unit" 2>/dev/null || true
-                rm -f "/usr/lib/systemd/system/\$unit" 2>/dev/null || true
-                ;;
-        esac
-    done
-    systemctl daemon-reload 2>/dev/null || true
+${rpm_preun_body}
 fi
 
 %postun
