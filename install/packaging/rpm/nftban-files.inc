@@ -39,9 +39,20 @@
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/portscan
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/login
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/cpanel
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/cwp
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/cyberpanel
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/directadmin
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/generic
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/interworx
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/plesk
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels/vesta
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/botscan
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/botguard
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/botguard/profiles
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/suricata
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/tunnel
+%dir %attr(0750,root,nftban) /etc/nftban/templates
 %dir %attr(0750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(0750,root,nftban) /etc/nftban/patterns.d/botscan
 %dir %attr(0750,root,nftban) /etc/nftban/whitelist.d
@@ -62,7 +73,7 @@
 %dir %attr(0750,root,nftban) /etc/nftban/suricata/state
 %dir %attr(0750,root,nftban) /etc/nftban/suricata/state/last-good
 %dir %attr(0750,root,nftban) /etc/nftban/connectors
-%dir %attr(0755,root,root) /etc/nftban/distros
+%dir %attr(0750,root,nftban) /etc/nftban/distros
 
 # ---------------------------------------------------------------------------
 # SHARED DATA DIRECTORIES (root:root)
