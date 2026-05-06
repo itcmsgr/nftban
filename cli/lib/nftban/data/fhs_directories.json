@@ -130,6 +130,14 @@
         "group": "root",
         "description": "Utility tools and scripts",
         "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/scripts",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Helper scripts (generate-help, generate-wiki, soak-check)",
+        "created_by": "package"
       }
     ],
     "config": [
