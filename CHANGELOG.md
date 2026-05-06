@@ -11,6 +11,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.104.0] - 2026-05-05 — Lane M test-guard release (Decision B)
+
+One test-guard PR on top of v1.103.0. Schema remains frozen at `1.83.0`. No
+metrics changes. No portal coordination. No lifecycle, install, packaging,
+or panel-adapter changes. **No runtime behavior change.** Lane S remains held.
+
+### Lane M — Login config-namespace ownership formalized (Decision B)
+
+- **PR-M-C** Rename the temporary v1.103 boundary-guard test
+  `TestLoadFromFile_LoginNotAliasedInC3C` into a permanent regression guard
+  `TestLoadFromFile_LoginKeysAreDistinctFacts`, and add a symmetric
+  `TestOverlayFromFile_LoginKeysAreDistinctFacts` covering the `.conf.local`
+  overlay path (`67e7492f`, PR
+  [#561](https://github.com/itcmsgr/nftban/pull/561)). The comment block now
+  cites Lane M Decision B as the authority. Single file:
+  `internal/nftbanconf/loader_alias_test.go` (+27 / −7).
+- **Lane M Decision B (locked):** `LOGIN_ENABLED` (Go loginmon module
+  per-module self-enable; owned by `internal/loginmon`; declared in
+  `etc/nftban/conf.d/login/main.conf:26`) and `NFTBAN_LOGIN_MONITOR_ENABLED`
+  (central nftban infra observability/monitor gate; owned by
+  `internal/nftbanconf`; declared in `install/config/nftban.conf:207`) are
+  **distinct configuration facts**, not duplicates. They control different
+  subsystems and **must never be aliased**. Drift row **C0A-D-07** closed by
+  formalizing the split. **No alias was introduced**: the central loader
+  (`internal/nftbanconf/loader.go`), the loginmon module
+  (`internal/loginmon/module.go`), and the alias helper
+  (`cli/lib/nftban/lib/nftban_config_alias.sh`) all remain unchanged.
+
+### Out of scope (explicit non-goals)
+
+- **Issue [#525](https://github.com/itcmsgr/nftban/issues/525)** —
+  `nftban-core-geoip.service crashes at startup (Go runtime panic,
+  status=2/INVALIDARGUMENT)` — remains OPEN and is deferred to **Lane G /
+  v1.105** investigation. Not introduced by v1.104; carries over from
+  v1.101 / v1.102 / v1.103 deferrals.
+- BotGuard (C0A-D-08) skipped — production clean; legacy `BOTGUARD_ENABLED`
+  regression-guard fixture intentionally retained.
+- GeoBan tracked separately as `GEO-CLEANUP-001` (optional micro-cleanup;
+  not started).
+- Bucket C residual old tags (`v0.8.0`, `v0.9.2-final`, `v0.9.3`, `v0.9.4`,
+  `v0.9.5`, `v0.9.5-final`, `v0.10.0`, `v0.30.0`, `v0.30.6`, `v0.30.7`,
+  `v0.30.8`, `v0.31.1`, `v0.32.5`, `v0.32.22`) remain deferred to a future
+  historical-review lane (separate from any release).
+
+### Standing rules
+
+- Schema frozen at `1.83.0`.
+- No metrics, portal, lifecycle, install, packaging, or panel-adapter
+  changes in v1.104.0.
+
+### Release-prep
+
+- **Release-prep PR** VERSION + STATUS + CHANGELOG + FHS regen.
+
+---
+
 ## [v1.103.0] - 2026-05-05 — config canonical-alias reads (Lane C / C3-C)
 
 One code PR on top of v1.102.0. Schema remains frozen at `1.83.0`. No
