@@ -1779,9 +1779,36 @@ build_deb() {
     local deb_root="${BUILD_DIR}/deb"
     rm -rf "${deb_root}"
 
-    # Create directory structure
-    # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,nftban/{conf.d/{botguard/profiles,tunnel},distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}},usr/share/polkit-1/rules.d,var/{lib/nftban/{feeds,geoip,staging,reports,botguard,tunnel,community},log/nftban/botguard,cache/nftban},run/nftban}
+    # MFST-C0b: directory creation comes from generator (build/fhs-spec.yaml -> nftban.dirs).
+    # Tmpfiles-managed runtime dirs (/var/lib/nftban, /var/log/nftban, /var/cache/nftban,
+    # /run/nftban) are intentionally NOT listed in nftban.dirs and NOT created here
+    # (Option 4a — owned by /usr/lib/tmpfiles.d/nftban.conf at boot).
+    local nftban_dirs="${PROJECT_ROOT}/install/packaging/deb/nftban.dirs"
+    if [[ ! -f "$nftban_dirs" ]]; then
+        log_error "nftban.dirs not found at $nftban_dirs; run 'bash build/generate-fhs-outputs.sh' first"
+        return 1
+    fi
+
+    # Bucket 2 — DEB metadata + FHS system dirs (NOT package-territory; not in generator).
+    # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ for polkit rules.
+    mkdir -p "${deb_root}/DEBIAN" \
+             "${deb_root}/etc/logrotate.d" \
+             "${deb_root}/etc/nftables" \
+             "${deb_root}/etc/sysctl.d" \
+             "${deb_root}/usr/bin" \
+             "${deb_root}/usr/sbin" \
+             "${deb_root}/usr/libexec" \
+             "${deb_root}/usr/lib/systemd/system" \
+             "${deb_root}/usr/lib/tmpfiles.d" \
+             "${deb_root}/usr/share/bash-completion/completions" \
+             "${deb_root}/usr/share/man/man8" \
+             "${deb_root}/usr/share/polkit-1/rules.d"
+
+    # Package-territory dirs — consume generator output (closes D-NEW-1 DEB-side).
+    while IFS= read -r path; do
+        [[ -z "$path" || "$path" =~ ^[[:space:]]*# ]] && continue
+        mkdir -p "${deb_root}${path}"
+    done < "$nftban_dirs"
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
@@ -1807,7 +1834,6 @@ build_deb() {
     # Copy helper scripts to /usr/lib/nftban/sbin/
     # CRITICAL: These scripts are executed by systemd services and MUST have 755 permissions
     # Bug fix v1.9.4: Ensure sbin scripts are always installed with correct permissions
-    mkdir -p "${deb_root}/usr/lib/nftban/sbin"
     local sbin_count=0
     for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
                   nftban-botscan-processor nftban-rollback nftban-service-alert; do
@@ -1847,19 +1873,16 @@ build_deb() {
     find "${deb_root}/usr/lib/nftban" -name "*.sh" -exec chmod 755 {} \;
 
     # Copy main configuration file
-    mkdir -p "${deb_root}/etc/nftban"
     install -m 0640 "${PROJECT_ROOT}/install/config/nftban.conf" "${deb_root}/etc/nftban/nftban.conf"
 
     # Copy nftables config (pre-rendered with safe defaults, boot-safe)
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"
 
     # v1.50.0: Template with placeholders (always overwritten on upgrade)
-    mkdir -p "${deb_root}/usr/lib/nftban/templates"
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf.tpl" "${deb_root}/usr/lib/nftban/templates/nftables.conf.tpl"
 
     # Copy conf.d directory with subdirectories
     # NOTE: Central whitelist moved to whitelist.d/ - per-module whitelist.txt files removed
-    mkdir -p "${deb_root}/etc/nftban/conf.d"
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
     # Remove any stale whitelist.txt files (consolidated to whitelist.d/)
     find "${deb_root}/etc/nftban/conf.d" -name 'whitelist.txt' -delete 2>/dev/null || true
@@ -1870,21 +1893,14 @@ build_deb() {
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/persistent.conf" "${deb_root}/etc/nftban/conf.d/persistent.conf"
 
     # Copy patterns.d directory (botscan patterns)
-    mkdir -p "${deb_root}/etc/nftban/patterns.d/botscan"
     cp "${PROJECT_ROOT}/etc/nftban/patterns.d/botscan"/*.patterns "${deb_root}/etc/nftban/patterns.d/botscan/"
 
     # Install logrotate configuration
-    mkdir -p "${deb_root}/etc/logrotate.d"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/logrotate.d/nftban"
-    mkdir -p "${deb_root}/etc/nftban/templates"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/nftban/templates/nftban.logrotate"
     install -m 0644 "${PROJECT_ROOT}/install/config/nftban-suricata.logrotate" "${deb_root}/etc/nftban/templates/nftban-suricata.logrotate"
 
-    # Copy Suricata profile templates and create config directories
-    mkdir -p "${deb_root}/etc/nftban/suricata/profiles"
-    mkdir -p "${deb_root}/etc/nftban/suricata/config"
-    mkdir -p "${deb_root}/etc/nftban/suricata/rules"
-    mkdir -p "${deb_root}/etc/nftban/suricata/cache"
+    # Copy Suricata profile templates
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/minimal.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/standard.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/maximum.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
@@ -1895,12 +1911,9 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/conf.d/botguard/profiles/wordpress.yaml" "${deb_root}/etc/nftban/conf.d/botguard/profiles/"
 
     # Copy distro configuration files (CRITICAL for distro-aware paths)
-    mkdir -p "${deb_root}/etc/nftban/distros"
     cp "${PROJECT_ROOT}/etc/nftban/distros"/*.conf "${deb_root}/etc/nftban/distros/"
 
     # Manual whitelist/blacklist files (user-managed, preserved on upgrade)
-    mkdir -p "${deb_root}/etc/nftban/whitelist.d"
-    mkdir -p "${deb_root}/etc/nftban/blacklist.d"
     install -m 0640 "${PROJECT_ROOT}/etc/nftban/whitelist.d/99-manual.conf" "${deb_root}/etc/nftban/whitelist.d/"
     install -m 0640 "${PROJECT_ROOT}/etc/nftban/blacklist.d/99-manual.conf" "${deb_root}/etc/nftban/blacklist.d/"
 
@@ -1959,11 +1972,9 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
     # Sysctl tuning profile (v1.38.0)
-    mkdir -p "${deb_root}/etc/sysctl.d"
     install -m 0644 "${PROJECT_ROOT}/install/sysctl/90-nftban.conf" "${deb_root}/etc/sysctl.d/"
 
     # v1.47.0 DEPLOY-006: tmpfiles.d for /run/nftban ownership
-    mkdir -p "${deb_root}/usr/lib/tmpfiles.d"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/tmpfiles.d/nftban.conf" "${deb_root}/usr/lib/tmpfiles.d/"
 
     # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
@@ -1973,29 +1984,24 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/30-nftban-panel.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
 
     # Copy validator spec
-    mkdir -p "${deb_root}/usr/share/nftban/specs"
     install -m 0644 "${PROJECT_ROOT}/install/share/nftban/specs/structure_default.json" "${deb_root}/usr/share/nftban/specs/"
 
     # Copy templates (mail, reports, email, partials)
-    mkdir -p "${deb_root}/usr/share/nftban/templates"
     find "${PROJECT_ROOT}/install/share/nftban/templates" -type f -name "*.html" | while read -r tmpl; do
         rel_path="${tmpl#${PROJECT_ROOT}/install/share/nftban/templates/}"
         install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
     done
 
     # Copy man page
-    mkdir -p "${deb_root}/usr/share/man/man8"
     install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
 
     # Copy bash completion
-    mkdir -p "${deb_root}/usr/share/bash-completion/completions"
     install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
 
     # Copy commands registry (v1.0.16 - single source of truth)
     install -m 0644 "${PROJECT_ROOT}/commands.registry.yml" "${deb_root}/etc/nftban/"
 
     # Copy documentation generators (v1.0.16)
-    mkdir -p "${deb_root}/usr/lib/nftban/scripts"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-help.sh" "${deb_root}/usr/lib/nftban/scripts/"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-operator.sh" "${deb_root}/usr/lib/nftban/scripts/"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-auditor.sh" "${deb_root}/usr/lib/nftban/scripts/"
@@ -2006,7 +2012,6 @@ build_deb() {
     # See: https://github.com/itcmsgr/nftban/wiki
 
     # Copy test scripts
-    mkdir -p "${deb_root}/usr/lib/nftban/tests"
     find "${PROJECT_ROOT}/cli/lib/nftban/tests" -type f -name "*.sh" -exec install -m 0755 {} "${deb_root}/usr/lib/nftban/tests/" \;
 
     # Create control file
