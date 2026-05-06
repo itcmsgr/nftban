@@ -276,6 +276,7 @@ Summary:        Open-source Linux IPS and nftables firewall manager
 License:        GPL-3.0-or-later
 URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
+Source1:        nftban-files.inc
 
 BuildRequires:  systemd-rpm-macros
 
@@ -1104,10 +1105,13 @@ if [ \$1 -eq 0 ]; then
 fi
 
 %files
-# NB-5: canonical ownership root:nftban 0750 set at package-install time.
-# nftban group is created in %pre (line ~860), so attrs resolve cleanly here.
+# MFST-C0a: directory ownership comes from generator (build/fhs-spec.yaml -> nftban-files.inc).
+# Tmpfiles-managed runtime dirs (/var/lib, /var/log, /var/cache, /run) are created by
+# /usr/lib/tmpfiles.d/nftban.conf at boot and intentionally NOT listed here (Option 4a).
+%include %{_sourcedir}/nftban-files.inc
+# Binary entry point (explicit attr; NOT a directory)
 %attr(0750,root,nftban) /usr/sbin/nftban
-# v1.100.1b.A: /usr/sbin/nftban-ui + /usr/libexec/nftban-ui-auth removed.
+# Package payload trees (bare paths -> recursive include of files within generator-owned dirs)
 /usr/lib/nftban/bin
 /usr/lib/nftban/sbin
 /usr/lib/nftban/VERSION
@@ -1124,20 +1128,23 @@ fi
 /usr/lib/nftban/health
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
-# v1.50.0: Template with placeholders (always replaced on upgrade, NOT %config)
+# v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
 /usr/lib/nftban/templates/nftables.conf.tpl
-# Main config files - root:nftban so services can read configs
+# Main config files
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
 %config(noreplace) /etc/logrotate.d/nftban
 %config(noreplace) /etc/sysctl.d/90-nftban.conf
 /usr/lib/tmpfiles.d/nftban.conf
+# Systemd unit globs (Layer 1 — MFST-C1 will replace these with nftban-systemd-install.inc)
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.socket
 /usr/lib/systemd/system/*.timer
+# Polkit rules
 /etc/polkit-1/rules.d/10-nftban-systemd.rules
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
 /etc/polkit-1/rules.d/30-nftban-panel.rules
+# Shared data
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/nftban/selinux
@@ -1148,85 +1155,38 @@ fi
 /usr/lib/nftban/scripts/generate-wiki-operator.sh
 /usr/lib/nftban/scripts/generate-wiki-auditor.sh
 /usr/lib/nftban/scripts/nftban-soak-check.sh
-# Config directories - root:nftban so services can read configs
-%dir %attr(750,root,nftban) /etc/nftban
-%dir %attr(750,root,nftban) /etc/nftban/conf.d
+# Config file payloads (%config(noreplace) for operator-edited; dirs come from %include)
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/*.conf
 %attr(640,root,nftban) /etc/nftban/conf.d/*.conf.default
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/ddos/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/login
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/login/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/suricata
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/suricata/interfaces.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/tunnel
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/tunnel/main.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cpanel
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cpanel/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cwp
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cwp/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cyberpanel
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cyberpanel/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/interworx
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/interworx/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/vesta
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/vesta/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/generic
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/plesk
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botscan/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/botguard
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/main.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/allowed_crawlers.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/denied_crawlers.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/botguard/profiles
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botguard/profiles/*.yaml
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
-%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoip/main.conf
-%dir %attr(750,root,nftban) /etc/nftban/patterns.d
-%dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/patterns.d/botscan/*.patterns
-%dir %attr(750,root,nftban) /etc/nftban/distros
 %attr(644,root,nftban) /etc/nftban/distros/*.conf
-%dir %attr(750,root,nftban) /etc/nftban/suricata
-%dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
-%dir %attr(750,root,nftban) /etc/nftban/suricata/config
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
-%dir %attr(750,root,nftban) /etc/nftban/suricata/rules
-%dir %attr(750,root,nftban) /etc/nftban/suricata/cache
-%dir %attr(750,root,nftban) /etc/nftban/whitelist.d
 %config(noreplace) %attr(640,root,nftban) /etc/nftban/whitelist.d/99-manual.conf
-%dir %attr(750,root,nftban) /etc/nftban/blacklist.d
 %config(noreplace) %attr(640,root,nftban) /etc/nftban/blacklist.d/99-manual.conf
-%dir %attr(750,root,nftban) /etc/nftban/ports.d
-%dir %attr(750,root,nftban) /etc/nftban/rules.d
-%dir %attr(750,root,nftban) /etc/nftban/access.d
-%dir %attr(750,root,nftban) /etc/nftban/templates
 /etc/nftban/templates/nftban.logrotate
 /etc/nftban/templates/nftban-suricata.logrotate
-%dir %attr(750,nftban,nftban) /var/lib/nftban
-%dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
-%dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
-%dir %attr(750,nftban,nftban) /var/lib/nftban/staging
-%dir %attr(750,nftban,nftban) /var/lib/nftban/reports
-%dir %attr(750,nftban,nftban) /var/lib/nftban/botguard
-%dir %attr(750,nftban,nftban) /var/lib/nftban/community
-%dir %attr(750,nftban,nftban) /var/log/nftban
-%dir %attr(750,nftban,nftban) /var/log/nftban/botguard
-%dir %attr(755,root,root) /var/cache/nftban
-%dir %attr(755,nftban,nftban) /run/nftban
 
 %changelog
 * Mon Mar 24 2026 NFTBan Team <noreply@nftban.com> - 1.39.0-1
@@ -1339,6 +1299,15 @@ build_rpm() {
     fi
 
     log_success "Tarball created: ${tarball} ($(stat -c%s "${BUILD_DIR}/SOURCES/${tarball}" 2>/dev/null || echo 'unknown') bytes)"
+
+    # MFST-C0a: stage Layer-0 generated %dir manifest into SOURCES/ for spec %include.
+    local files_inc_src="${PROJECT_ROOT}/install/packaging/rpm/nftban-files.inc"
+    if [[ ! -f "$files_inc_src" ]]; then
+        log_error "nftban-files.inc not found at $files_inc_src; run 'bash build/generate-fhs-outputs.sh' first"
+        return 1
+    fi
+    cp "$files_inc_src" "${BUILD_DIR}/SOURCES/nftban-files.inc"
+    log_success "Staged nftban-files.inc ($(wc -l < "${BUILD_DIR}/SOURCES/nftban-files.inc") lines)"
 
     # Build RPM (version from VERSION file)
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
