@@ -1,0 +1,64 @@
+# =============================================================================
+# NFTBan systemd unit install list
+# =============================================================================
+# Generated from install/systemd/*.{service,timer,socket} - DO NOT EDIT
+# Generator: build/generate-systemd-install-list.sh
+#
+# Consumers:
+#   - packaging/build_nftban.sh::build_rpm() spec heredoc %install loop
+#   - packaging/build_nftban.sh::build_deb() install-loop
+#
+# Note: filesystem glob; all units in install/systemd are listed.
+# Runtime-controlled enablement is owned by /usr/lib/nftban/bin/nftban-installer
+# (PR-22B safety contract); file presence in /usr/lib/systemd/system/ does NOT
+# imply enable. See V106_LANE_MFST_C1_SCOPE.md §7 for safety analysis.
+# =============================================================================
+nftban-alert@.service
+nftban-botscan.service
+nftban-botscan.timer
+nftban-community-stats.service
+nftban-community-stats.timer
+nftban-core-feeds.service
+nftban-core-feeds.timer
+nftban-core-geoip.service
+nftban-core-geoip.timer
+nftban-firewall-init.service
+nftban-health-fix.service
+nftban-health.service
+nftban-health.timer
+nftban-maintenance.service
+nftban-maintenance.timer
+nftban-pro-inventory.service
+nftban-pro-inventory.timer
+nftban-pro-license.service
+nftban-pro-license.timer
+nftban-queue.service
+nftban-queue.timer
+nftban-rbl-check.service
+nftban-rbl-check.timer
+nftban-rebuild-recovery.service
+nftban-rebuild-recovery.timer
+nftban-report-daily.service
+nftban-report-daily.timer
+nftban-rollback.service
+nftban-rollback.timer
+nftban-snapshot.service
+nftban-snapshot.timer
+nftban-soak.service
+nftban-soak.timer
+nftban-suricata-stats.service
+nftban-suricata-update.service
+nftban-suricata-update.timer
+nftban-suricata.service
+nftban-tunnel.service
+nftban-tunnel.timer
+nftban-unified-exporter.service
+nftban-unified-exporter.timer
+nftban-update-apply.service
+nftban-update-apply.timer
+nftban-update-check.service
+nftban-update-check.timer
+nftban-watchdog.service
+nftban-watchdog.timer
+nftband.service
+nftband.socket
