@@ -11,6 +11,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.106.0] - 2026-05-06 — Lane MFST (Manifest Authority) partial release
+
+Seven code PRs land manifest-pipeline drift closures on top of v1.104.0
+(v1.105.0 was reserved but never tagged; the lane is codenamed v1.106
+Manifest Authority and the release name follows the lane). Schema remains
+frozen at `1.83.0`. No metrics changes. No portal coordination. No install
+API or panel-adapter changes. The only documented runtime-visible change
+is **8 net-new systemd unit files now ship passively** (file-presence
+only; the Go installer at `internal/installer/services/daemon.go`
+continues to own enablement per the PR-22B safety contract).
+
+C6 (AM-4 + E6 structural CI hardening) is deferred to v1.107+ per
+operator queue narrowing. AUTH-HARDENING (D-NEW-8 / D-NEW-9 / D-NEW-12)
+and POLKIT-AUTHORITY (D-NEW-10 / D-NEW-11) remain separately gated.
+Issue #525 (geoip startup Go runtime panic, P1) remains deferred to
+Lane G / v1.107+.
+
+### Lane MFST — Manifest Authority partial closure
+
+- **C0a** RPM Layer-0 wire-in. Spec heredoc consumes the generator
+  output `install/packaging/rpm/nftban-files.inc` via `%include
+  %{_sourcedir}/nftban-files.inc`; staged into `${BUILD_DIR}/SOURCES/`
+  by `build_rpm()`. 11 new directory entries added to
+  `build/fhs-spec.yaml` (8 panel sub-dirs + `botguard/profiles` +
+  `conf.d/suricata` + `/etc/nftban/templates`). `/etc/nftban/distros`
+  yaml mode/owner corrected (0755 root:root → 0750 root:nftban) to
+  preserve current package behavior. Tmpfiles-managed `/var/*` and
+  `/run/*` removed from `%files` (Option 4a — created by tmpfiles at
+  boot). Closes drift D-NEW-1 RPM-side.
+  (`8f5b35a8`, PR [#563](https://github.com/itcmsgr/nftban/pull/563))
+- **C0b** DEB Layer-0 wire-in. `build_deb()` consumes
+  `install/packaging/deb/nftban.dirs` via a while-read loop; 26-entry
+  brace expansion + 17 inline mkdirs replaced. 10 tmpfiles-managed
+  runtime dirs removed from build_deb (Option 4a parity). Closes drift
+  D-NEW-1 DEB-side.
+  (`be0c9bc3`, PR [#564](https://github.com/itcmsgr/nftban/pull/564))
+- **C1** Layer-1 systemd install-list generator. New
+  `build/generate-systemd-install-list.sh` reads
+  `install/systemd/*.{service,timer,socket}` and emits a shared
+  `install/packaging/systemd/nftban-systemd-install.list` (49 unit
+  basenames). Both `build_rpm()` (via spec heredoc + `Source2:`) and
+  `build_deb()` (while-read loop) consume the same list. CI gains a
+  parallel `--check` step. Closes drift D1 (the prior 41-of-49 gap).
+  The 8 net-new units are file-presence only — no auto-enable, no
+  `%systemd_post`/`%systemd_preset` macros, no preset files; the Go
+  installer continues to own enablement.
+  (`a07f4c2c`, PR [#565](https://github.com/itcmsgr/nftban/pull/565))
+- **C2** `docs/systemd/UNITS.md` regenerated from filesystem truth.
+  Header counts fixed (15 → 21 timers, 25 → 27 services), Sockets
+  promoted to its own section (1), 6 missing timer rows + 6 missing
+  service rows added with Schedule and Purpose pulled from each
+  unit's `OnCalendar=` / `OnBootSec=` / `Description=`, 5 stale
+  entries (`nftban-login-monitor.service`, `nftban-api.service`,
+  `nftban-ui.service`, `nftban-ui-auth.service`,
+  `nftban-ui-auth.socket`) moved to DEPRECATED with removal-version
+  notes. Senior audit fix-up commit corrected the
+  `nftban-rbl-check.timer` schedule from "Daily 2:00" to "Twice daily
+  02:00/14:00 + boot+10m", fixed the `nftban-pro-inventory.timer`
+  purpose ("inventory collection", not "license"), added
+  `+ boot+Nm` annotations to 8 timer rows, replaced the misleading
+  "SINGLE SOURCE OF TRUTH" header with a curated-projection
+  description, and renamed Type to Category to disambiguate from the
+  literal systemd `Type=` directive. CI gains a count-parity step.
+  Closes drift D3.
+  (`b331d5c3`, PR [#566](https://github.com/itcmsgr/nftban/pull/566))
+- **C3** `build/deprecated-units.yaml` (5 entries: `login-monitor` and
+  `api` as `stop_only`; `ui`, `ui-auth.service`, `ui-auth.socket` as
+  `stop_disable_mask_remove`) + `build/generate-systemd-maintainer-scripts.sh`
+  (~490 LOC) emit per-packager cleanup snippets (`.inc`) consumed by
+  RPM `%preun` (heredoc interpolation) and DEB `prerm` (sentinel
+  region). The new `mask_if_exists()` helper guards all mask / remove
+  operations behind a `readlink "/etc/systemd/system/$unit" ==
+  "/dev/null"` check, so clean hosts no longer accumulate
+  `/etc/systemd/system/nftban-ui*` mask residue (Lane L10 F7_LOW class
+  structurally closed) and operator-created custom symlinks
+  (target ≠ `/dev/null`) are preserved. Active stop list now sources
+  from C1 (49 units minus 1 `*@.service` template skip = 48). CI
+  gains structural assertions (mask_if_exists + readlink
+  /dev/null + no unconditional `systemctl mask nftban-ui*`). Closes
+  drift D6.
+  (`ed632e34`, PR [#567](https://github.com/itcmsgr/nftban/pull/567))
+- **C4** `internal/installer/fhs/paths_yaml_parity_test.go`. The Go
+  test reads the C0a-generated mirror
+  `cli/lib/nftban/data/fhs_directories.json` (no yq / YAML-library
+  dep), iterates `RequiredDirs`, asserts every path is either
+  declared in yaml or explicitly exempted with rationale. One inline
+  exemption: `/var/lib/node_exporter/textfile_collector`
+  (runtime-only metrics-deposit subdir of externally-owned
+  `/var/lib/node_exporter`). Mode/owner alignment is intentionally
+  out of scope; that work is routed to AUTH-HARDENING. Closes
+  drift D4.
+  (`63fab761`, PR [#568](https://github.com/itcmsgr/nftban/pull/568))
+- **C5** `internal/loginmon/distroconf/distroconf_loader_parity_test.go`.
+  Iterates all 18 committed distro fixtures in
+  `etc/nftban/distros/*.conf` and asserts each parses cleanly via
+  `distroconf.LoadFromFile()` and contains the 7 shell-recognized
+  sections (`distro`, `package_manager`, `packages`, `services`,
+  `paths`, `repository`, `features`). Three documented design
+  asymmetries inline (NOT enforced): shell drops `[tier]`; shell
+  collapses absent / empty / `n/a` to `""` while Go has 4-state
+  `Resolve()`; `centos.conf` and `fedora.conf` are shell-only
+  generic fallbacks. Extends Go-side fixture coverage from 2 of 18
+  to all 18, symmetric to the existing shell-side coverage in
+  `cli/lib/nftban/tests/validate_distro_configs.sh`. Closes
+  drift D5.
+  (`4222f707`, PR [#569](https://github.com/itcmsgr/nftban/pull/569))
+
+### v1.106 lane closure surfaces
+
+- **D-NEW-1 RPM** (`nftban-files.inc` orphan) — closed by C0a.
+- **D-NEW-1 DEB** (`nftban.dirs` orphan) — closed by C0b.
+- **D1** (RPM/DEB systemd install-list drift, 41 vs 49) — closed by C1.
+- **D3** (`docs/systemd/UNITS.md` count + content drift) — closed by C2.
+- **D4** (paths.go ↔ fhs-spec.yaml parity) — closed by C4.
+- **D5** (shell ↔ Go distro-loader fixture coverage) — closed by C5.
+- **D6** (RPM `%preun` / DEB `prerm` hand-rolled lists + unconditional
+  `nftban-ui*` mask) — closed by C3.
+- **Lane L10 F7_LOW class** (`/etc/systemd/system` mask-residue on
+  clean hosts during uninstall) — structurally closed by C3.
+
+### Out-of-scope items deferred to later releases
+
+- C6 (AM-4 + E6 structural CI hardening) — v1.107+.
+- AUTH-HARDENING lane (D-NEW-8 paths.go ↔ tmpfiles owner drift,
+  D-NEW-9 `/run/nftban` + `/var/cache/nftban` mode tightening,
+  D-NEW-12 DEB postinst missing chown for `/etc/nftban/*`) — separate
+  lane, not started.
+- POLKIT-AUTHORITY lane (D-NEW-10 auditor reports `0770 root:nftban-auditor`
+  doc gap, D-NEW-11 `nftban-panel` group decommission) — separate
+  lane, not started.
+- Issue #525 (geoip startup Go runtime panic, P1) — Lane G, deferred.
+- F14 manifest-parity gate, Shape A wrapper — deferred per MFST-A2
+  AM-5 / AM-6.
+
+---
+
 ## [v1.104.0] - 2026-05-05 — Lane M test-guard release (Decision B)
 
 One test-guard PR on top of v1.103.0. Schema remains frozen at `1.83.0`. No
