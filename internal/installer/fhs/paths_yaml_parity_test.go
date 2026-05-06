@@ -34,11 +34,14 @@
 package fhs
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -137,5 +140,136 @@ Remediation (pick one):
       one-line rationale describing why the path is runtime-only and not
       part of package-territory.`,
 			len(missing), strings.Join(missing, "\n"))
+	}
+}
+
+// =============================================================================
+// AUTH-HARDENING (v1.107): paths.go ↔ tmpfiles.d mode/owner parity (D-NEW-8)
+// =============================================================================
+// Closes drift class D-NEW-8 (rows 1-7 in V107_AUTH_HARDENING_SCOPE.md §3).
+// Asserts that for every shared path, paths.go RequiredDirs mode + owner
+// matches install/systemd/tmpfiles.d/nftban.conf (which is generated from
+// build/fhs-spec.yaml — verified by FHS --check).
+//
+// Drift here means a future paths.go edit re-introduced an authority-surface
+// disagreement; the test names the path + the divergent value pair so the
+// remediation is obvious.
+
+// tmpfilesEntry captures one parsed tmpfiles.d directive.
+type tmpfilesEntry struct {
+	path  string
+	mode  uint32
+	owner string
+	group string
+}
+
+// loadTmpfilesEntries parses install/systemd/tmpfiles.d/nftban.conf and
+// returns a path -> entry map for `d` (directory) directives only.
+func loadTmpfilesEntries(t *testing.T) map[string]tmpfilesEntry {
+	t.Helper()
+	_, filename, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(filename), "..", "..", "..")
+	tmpfilesPath := filepath.Join(repoRoot, "install", "systemd", "tmpfiles.d", "nftban.conf")
+
+	f, err := os.Open(tmpfilesPath) // #nosec G304 — fixed test-time path under repo root
+	if err != nil {
+		t.Fatalf("read %s: %v\n(generator output missing or stale; run: bash build/generate-fhs-outputs.sh)", tmpfilesPath, err)
+	}
+	defer f.Close()
+
+	out := make(map[string]tmpfilesEntry)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Format: <type> <path> <mode> <owner> <group> <age> <argument>
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		if fields[0] != "d" {
+			continue
+		}
+		mode, err := strconv.ParseUint(fields[2], 8, 32)
+		if err != nil {
+			t.Fatalf("parse mode %q on line %q in %s: %v", fields[2], line, tmpfilesPath, err)
+		}
+		out[fields[1]] = tmpfilesEntry{
+			path:  fields[1],
+			mode:  uint32(mode),
+			owner: fields[3],
+			group: fields[4],
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan %s: %v", tmpfilesPath, err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s contained zero `d` directives (likely generator regression)", tmpfilesPath)
+	}
+	return out
+}
+
+// TestRequiredDirsModesAndOwnersMatchTmpfiles asserts mode/owner parity
+// between paths.go::RequiredDirs and tmpfiles.d/nftban.conf for every
+// path that appears in both surfaces. Paths only in one surface are
+// ignored (covered by TestRequiredDirsYamlParity above + the FHS --check
+// gate); this test catches *value* drift, not *presence* drift.
+func TestRequiredDirsModesAndOwnersMatchTmpfiles(t *testing.T) {
+	tmpfiles := loadTmpfilesEntries(t)
+
+	type mismatch struct {
+		path     string
+		paths_go string
+		tmpfiles string
+	}
+	var mismatches []mismatch
+
+	for _, dir := range RequiredDirs {
+		entry, ok := tmpfiles[dir.Path]
+		if !ok {
+			continue // path is package-territory or feature-gated; not in tmpfiles
+		}
+		expected := fmt.Sprintf("%s:%s", entry.owner, entry.group)
+		if dir.Owner != expected || dir.Mode != entry.mode {
+			mismatches = append(mismatches, mismatch{
+				path:     dir.Path,
+				paths_go: fmt.Sprintf("%04o %s", dir.Mode, dir.Owner),
+				tmpfiles: fmt.Sprintf("%04o %s", entry.mode, expected),
+			})
+		}
+	}
+
+	if len(mismatches) > 0 {
+		sort.Slice(mismatches, func(i, j int) bool { return mismatches[i].path < mismatches[j].path })
+		var msg strings.Builder
+		fmt.Fprintf(&msg, "RequiredDirs ↔ tmpfiles.d mode/owner parity failed (%d mismatches)\n\n", len(mismatches))
+		fmt.Fprintf(&msg, "%-50s  %-22s  %-22s\n", "PATH", "paths.go", "tmpfiles.d (SoT)")
+		fmt.Fprintf(&msg, "%-50s  %-22s  %-22s\n", strings.Repeat("-", 50), strings.Repeat("-", 22), strings.Repeat("-", 22))
+		for _, m := range mismatches {
+			fmt.Fprintf(&msg, "%-50s  %-22s  %-22s\n", m.path, m.paths_go, m.tmpfiles)
+		}
+		fmt.Fprintf(&msg, "\nRemediation: align paths.go::RequiredDirs to tmpfiles.d (which is generated from build/fhs-spec.yaml).\n")
+		fmt.Fprintf(&msg, "Do NOT edit tmpfiles.d directly — edit fhs-spec.yaml + regen.\n")
+		t.Errorf("%s", msg.String())
+	}
+}
+
+// TestSuricataLogIsFeatureGated asserts paths.go does NOT eagerly create
+// /var/log/nftban/suricata. Per build/fhs-spec.yaml the directory is
+// `created_by: feature_enable` (via `nftban suricata enable`) with owner
+// suricata:nftban. Eager creation by paths.go conflicts with the
+// feature-gate contract (D8.7 in V107 scope §3).
+func TestSuricataLogIsFeatureGated(t *testing.T) {
+	const suricataLog = "/var/log/nftban/suricata"
+	for _, dir := range RequiredDirs {
+		if dir.Path == suricataLog {
+			t.Errorf(`paths.go RequiredDirs eagerly creates %s.
+This conflicts with the feature_enable contract in build/fhs-spec.yaml
+(directory is created by 'nftban suricata enable' as suricata:nftban 0770).
+Remove the entry from RequiredDirs.`, suricataLog)
+		}
 	}
 }

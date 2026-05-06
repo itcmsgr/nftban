@@ -1,0 +1,53 @@
+# =============================================================================
+# NFTBan Debian package directory attributes (ownership + mode)
+# =============================================================================
+# Generated from build/fhs-spec.yaml - DO NOT EDIT
+#
+# Consumer: packaging/build_nftban.sh build_deb() — applies chown/chmod
+# inside ${deb_root} before dpkg-deb --build so dpkg DB records correct
+# ownership/mode. Brings DEB to RPM %attr parity (closes D-NEW-12).
+#
+# Format: path|mode|owner|group
+# =============================================================================
+
+/etc/nftban|0750|root|nftban
+/etc/nftban/conf.d|0750|root|nftban
+/etc/nftban/conf.d/ddos|0750|root|nftban
+/etc/nftban/conf.d/portscan|0750|root|nftban
+/etc/nftban/conf.d/login|0750|root|nftban
+/etc/nftban/conf.d/panels|0750|root|nftban
+/etc/nftban/conf.d/panels/cpanel|0750|root|nftban
+/etc/nftban/conf.d/panels/cwp|0750|root|nftban
+/etc/nftban/conf.d/panels/cyberpanel|0750|root|nftban
+/etc/nftban/conf.d/panels/directadmin|0750|root|nftban
+/etc/nftban/conf.d/panels/generic|0750|root|nftban
+/etc/nftban/conf.d/panels/interworx|0750|root|nftban
+/etc/nftban/conf.d/panels/plesk|0750|root|nftban
+/etc/nftban/conf.d/panels/vesta|0750|root|nftban
+/etc/nftban/conf.d/botscan|0750|root|nftban
+/etc/nftban/conf.d/botguard|0750|root|nftban
+/etc/nftban/conf.d/botguard/profiles|0750|root|nftban
+/etc/nftban/conf.d/suricata|0750|root|nftban
+/etc/nftban/conf.d/tunnel|0750|root|nftban
+/etc/nftban/templates|0750|root|nftban
+/etc/nftban/patterns.d|0750|root|nftban
+/etc/nftban/patterns.d/botscan|0750|root|nftban
+/etc/nftban/whitelist.d|0750|root|nftban
+/etc/nftban/blacklist.d|0750|root|nftban
+/etc/nftban/ports.d|0750|root|nftban
+/etc/nftban/rules.d|0750|root|nftban
+/etc/nftban/access.d|0750|root|nftban
+/etc/nftban/conf.d/rbl|0750|root|nftban
+/etc/nftban/conf.d/geoban|0750|root|nftban
+/etc/nftban/conf.d/geoip|0750|root|nftban
+/etc/nftban/nftables.d|0750|root|nftban
+/etc/nftban/ssl|0750|root|nftban
+/etc/nftban/suricata|0750|root|nftban
+/etc/nftban/suricata/profiles|0750|root|nftban
+/etc/nftban/suricata/config|0750|root|nftban
+/etc/nftban/suricata/rules|0750|root|nftban
+/etc/nftban/suricata/cache|0750|root|nftban
+/etc/nftban/suricata/state|0750|root|nftban
+/etc/nftban/suricata/state/last-good|0750|root|nftban
+/etc/nftban/connectors|0750|root|nftban
+/etc/nftban/distros|0750|root|nftban
