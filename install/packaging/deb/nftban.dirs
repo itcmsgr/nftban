@@ -69,6 +69,7 @@
 /etc/nftban/suricata/state/last-good
 /etc/nftban/connectors
 /etc/nftban/distros
+/var/lib/nftban/community
 /usr/share/nftban
 /usr/share/nftban/templates
 /usr/share/nftban/templates/mail

@@ -51,3 +51,4 @@
 /etc/nftban/suricata/state/last-good|0750|root|nftban
 /etc/nftban/connectors|0750|root|nftban
 /etc/nftban/distros|0750|root|nftban
+/var/lib/nftban/community|0750|nftban|nftban
