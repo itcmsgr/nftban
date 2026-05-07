@@ -77,6 +77,11 @@
 %dir %attr(0750,root,nftban) /etc/nftban/distros
 
 # ---------------------------------------------------------------------------
+# DATA DIRECTORIES (package-territory only; tmpfiles-managed runtime dirs excluded)
+# ---------------------------------------------------------------------------
+%dir %attr(0750,nftban,nftban) /var/lib/nftban/community
+
+# ---------------------------------------------------------------------------
 # SHARED DATA DIRECTORIES (root:root)
 # ---------------------------------------------------------------------------
 %dir %attr(0755,root,root) /usr/share/nftban

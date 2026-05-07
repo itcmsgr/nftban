@@ -256,6 +256,12 @@ EOF
     # Config directories
     yq -r '.directories.config[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
 
+    # Data directories (package-territory only; tmpfiles-managed are runtime-created).
+    # PKG-EFFECTIVE-PARITY precondition fix: closes Layer-3 gap where data-tier
+    # dirs declared `created_by:package` (e.g. /var/lib/nftban/community) were
+    # in paths.go::RequiredDirs but missing from package payload.
+    yq -r '.directories.data[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
+
     # Shared directories
     yq -r '.directories.shared[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
 
@@ -301,6 +307,13 @@ EOF
     yq -r '.directories.config[] | select(.created_by == "package") | "\(.path)|\(.mode)|\(.owner)|\(.group)"' \
         "$FHS_SPEC" >> "$DEB_ATTRS_OUT"
 
+    # Data directories (package-territory only). PKG-EFFECTIVE-PARITY precondition
+    # fix: dirs like /var/lib/nftban/community declared `created_by:package` need
+    # ownership/mode metadata recorded in dpkg DB so dpkg-verify is clean and
+    # dpkg --reinstall does not reset to root:root.
+    yq -r '.directories.data[] | select(.created_by == "package") | "\(.path)|\(.mode)|\(.owner)|\(.group)"' \
+        "$FHS_SPEC" >> "$DEB_ATTRS_OUT"
+
     print_status "Generated $DEB_ATTRS_OUT"
 }
 
@@ -335,6 +348,16 @@ EOF
     echo "# ---------------------------------------------------------------------------" >> "$RPM_FILES_OUT"
 
     yq -r '.directories.config[] | select(.created_by == "package") | "%dir %attr(\(.mode),\(.owner),\(.group)) \(.path)"' "$FHS_SPEC" >> "$RPM_FILES_OUT"
+
+    echo "" >> "$RPM_FILES_OUT"
+    echo "# ---------------------------------------------------------------------------" >> "$RPM_FILES_OUT"
+    echo "# DATA DIRECTORIES (package-territory only; tmpfiles-managed runtime dirs excluded)" >> "$RPM_FILES_OUT"
+    echo "# ---------------------------------------------------------------------------" >> "$RPM_FILES_OUT"
+
+    # PKG-EFFECTIVE-PARITY precondition fix: closes Layer-3 gap where data-tier
+    # dirs declared `created_by:package` (e.g. /var/lib/nftban/community) were
+    # in paths.go::RequiredDirs but missing from RPM %files payload.
+    yq -r '.directories.data[] | select(.created_by == "package") | "%dir %attr(\(.mode),\(.owner),\(.group)) \(.path)"' "$FHS_SPEC" >> "$RPM_FILES_OUT"
 
     echo "" >> "$RPM_FILES_OUT"
     echo "# ---------------------------------------------------------------------------" >> "$RPM_FILES_OUT"
