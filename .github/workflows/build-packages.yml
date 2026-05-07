@@ -970,35 +970,49 @@ jobs:
       - name: L3 — assert DEB package metadata matches expected table
         run: |
           set -euo pipefail
+          # PKG-EFFECTIVE-PARITY Slot 5a: DEB archive ships postinst-converged
+          # paths as root:root (per V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md
+          # Option α). Pass the exception list so the L3 assert expects
+          # root:root for the 6 converged paths instead of root:nftban etc.
+          # L4 (installed-fs stat) and L6 (dpkg --verify) are NOT affected by
+          # this exception list — they continue to require by-name parity.
+          DEB_L3_EXCEPTIONS="scripts/test-package-deb-l3-exceptions.list"
+          [[ -r "$DEB_L3_EXCEPTIONS" ]] || { echo "::error::Missing $DEB_L3_EXCEPTIONS"; exit 1; }
           fail=0
           for f in parity/parity-deb-debian12/*.txt parity/parity-deb-debian13/*.txt parity/parity-deb-ubuntu22.04/*.txt parity/parity-deb-ubuntu24.04/*.txt; do
             [[ -f "$f" ]] || continue
-            echo "=== Asserting expected against $f ==="
+            echo "=== Asserting expected against $f (with DEB L3 postinst-converged exceptions) ==="
             cat "$f"
-            if ! bash scripts/test-package-effective-parity.sh assert-expected "$f" package; then
+            if ! bash scripts/test-package-effective-parity.sh assert-expected "$f" package "--deb-l3-exceptions=$DEB_L3_EXCEPTIONS"; then
               echo "::error::L3 DEB metadata mismatch in $f"
               fail=1
             fi
           done
           [ "$fail" = "0" ] || exit 1
-          echo "✓ L3 DEB metadata matches expected for all matrix variants"
+          echo "✓ L3 DEB metadata matches expected for all matrix variants (postinst-converged paths verified as root:root in archive)"
 
       - name: L3 — cross-packager parity diff (RPM vs DEB)
         run: |
           set -euo pipefail
-          # Pick representative variants (Tier 0): el9 + ubuntu24.04
+          # Pick representative variants (Tier 0): el9 + ubuntu24.04.
+          # PKG-EFFECTIVE-PARITY Slot 5a: pass the exception list so the diff
+          # tolerates the documented postinst-converged divergence (RPM ships
+          # root:nftban via %attr; DEB ships root:root in archive and converges
+          # at postinst). All non-exception paths must still match exactly.
+          DEB_L3_EXCEPTIONS="scripts/test-package-deb-l3-exceptions.list"
+          [[ -r "$DEB_L3_EXCEPTIONS" ]] || { echo "::error::Missing $DEB_L3_EXCEPTIONS"; exit 1; }
           rpm_meta=$(ls parity/parity-rpm-el9/*.txt 2>/dev/null | head -1)
           deb_meta=$(ls parity/parity-deb-ubuntu24.04/*.txt 2>/dev/null | head -1)
           if [[ -z "$rpm_meta" || -z "$deb_meta" ]]; then
             echo "::error::Missing parity metadata artifacts (rpm=$rpm_meta deb=$deb_meta)"
             exit 1
           fi
-          echo "=== L3 cross-packager diff: $rpm_meta vs $deb_meta ==="
-          if ! bash scripts/test-package-effective-parity.sh diff "$rpm_meta" "$deb_meta"; then
-            echo "::error::L3 RPM vs DEB metadata divergence (no AUTHORITY_EXCEPTION channel honored at HEAD)"
+          echo "=== L3 cross-packager diff: $rpm_meta vs $deb_meta (with $DEB_L3_EXCEPTIONS) ==="
+          if ! bash scripts/test-package-effective-parity.sh diff "$rpm_meta" "$deb_meta" "--exceptions=$DEB_L3_EXCEPTIONS"; then
+            echo "::error::L3 RPM vs DEB metadata divergence on non-exception paths (postinst-converged paths are tolerated; non-exception divergence is a real packaging bug)"
             exit 1
           fi
-          echo "✓ L3 cross-packager metadata parity: RPM == DEB for critical paths"
+          echo "✓ L3 cross-packager metadata parity: RPM == DEB for non-exception critical paths (6 paths converged at postinst)"
 
       - name: L4+L5 — cross-packager fresh-install stat parity (Tier 0)
         run: |

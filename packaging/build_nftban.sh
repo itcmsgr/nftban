@@ -1951,81 +1951,42 @@ build_deb() {
     # Create control file
     create_deb_control
 
-    # AUTH-HARDENING (D-NEW-12) + PKG-EFFECTIVE-PARITY (Slot 5 / row 14):
-    # baseline chown, per-directory attrs from nftban-dir-attrs.list, and
-    # `dpkg-deb --build` MUST share ONE fakeroot session. Each `fakeroot <cmd>`
-    # invocation is an independent in-memory state — chown/chmod values from
-    # one session are NOT visible to the next, so a separate `fakeroot dpkg-deb`
-    # records the real on-disk owner (root from the baseline pass), losing the
-    # AUTH-HARDENING root:nftban metadata for /etc/nftban/*. PKG-EFFECTIVE-PARITY
-    # L4 stat assertions on Test DEB install caught this. RPM uses %attr() in
-    # nftban-files.inc for the equivalent metadata channel.
+    # PKG-EFFECTIVE-PARITY Slot 5a (row 14) — DEB ownership authority moved to postinst.
+    # Per V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md (Option α + Option A):
+    # the .deb archive ships with root:root metadata only; postinst chown + chmod +
+    # dpkg-statoverride converge ownership to root:nftban / nftban:nftban after the
+    # nftban identities exist on the target host. Build-time fakeroot per-directory
+    # ownership baking was structurally wrong for DEB because dpkg archives store
+    # numeric UID/GID, not portable names — on a target host without matching numeric
+    # IDs, /etc/nftban resolved to root:systemd-journal (or root:UNKNOWN). RPM is
+    # unaffected because %attr() in nftban-files.inc is a name-based directive
+    # re-applied at install time. The attrs list is shipped inside the DEB at
+    # /usr/share/nftban/packaging/nftban-dir-attrs.list so postinst can consume it.
     local nftban_dir_attrs="${PROJECT_ROOT}/install/packaging/deb/nftban-dir-attrs.list"
     if [[ ! -f "$nftban_dir_attrs" ]]; then
         log_error "nftban-dir-attrs.list not found at $nftban_dir_attrs; run 'bash build/generate-fhs-outputs.sh' first"
         return 1
     fi
+    install -D -m 0644 "$nftban_dir_attrs" \
+        "${deb_root}/usr/share/nftban/packaging/nftban-dir-attrs.list"
 
-    # PKG-EFFECTIVE-PARITY (Slot 5 / row 14): build-host identity preconditions.
-    # libfakeroot intercepts chown/lchown/fchown SYSCALLS but does NOT fake
-    # getpwnam()/getgrnam() name resolution. coreutils chown resolves owner/
-    # group names BEFORE the syscall, so 'chown nftban:nftban target' aborts
-    # with "invalid group" inside the fakeroot session when the nftban identity
-    # is absent on the build host. Create the identities idempotently here so
-    # the per-directory chown loop below can resolve "nftban" (and the
-    # "nftban-auditor" group, kept symmetric with the runtime identity model).
-    # Build-host-only: the package's own postinst/sysusers still creates these
-    # identities on the target host at install time.
-    PATH="/usr/sbin:/sbin:${PATH}"
-    if ! command -v groupadd >/dev/null 2>&1; then
-        log_error "groupadd not available on build host; cannot ensure DEB build-time identities"
-        return 1
-    fi
-    if ! command -v useradd >/dev/null 2>&1; then
-        log_error "useradd not available on build host; cannot ensure DEB build-time identities"
-        return 1
-    fi
-    if ! getent group nftban >/dev/null 2>&1; then
-        groupadd -r nftban || { log_error "groupadd -r nftban failed on build host"; return 1; }
-    fi
-    if ! getent group nftban-auditor >/dev/null 2>&1; then
-        groupadd -r nftban-auditor || { log_error "groupadd -r nftban-auditor failed on build host"; return 1; }
-    fi
-    if ! id -u nftban >/dev/null 2>&1; then
-        useradd -r -g nftban -s /usr/sbin/nologin -d /var/lib/nftban nftban \
-            || { log_error "useradd -r nftban failed on build host"; return 1; }
-    fi
-
-    log_info "Setting DEB ownership/attrs and building package in single fakeroot session..."
+    log_info "Building DEB with root:root archive metadata (postinst converges ownership)..."
     local deb_out="${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
     if ! fakeroot -- bash -ec '
-        deb_root="$1"; attrs_file="$2"; deb_out="$3"
+        deb_root="$1"; deb_out="$2"
 
-        # Baseline: own everything as root:root (FHS: /usr/lib/nftban = root:root)
+        # Baseline: own everything as root:root. Postinst applies per-path
+        # ownership for the 41 paths in nftban-dir-attrs.list after target-host
+        # nftban / nftban-auditor identities exist; statoverride keeps dpkg DB
+        # in sync so dpkg --verify stays clean.
         find "$deb_root/usr" -type f -exec chown root:root {} +
         find "$deb_root/usr" -type d -exec chown root:root {} +
         find "$deb_root/etc" -type f -exec chown root:root {} +
         find "$deb_root/etc" -type d -exec chown root:root {} +
+        find "$deb_root/var" -type d -exec chown root:root {} + 2>/dev/null || true
 
-        # Apply per-directory attrs from generator output (D-NEW-12)
-        attrs_count=0
-        while IFS="|" read -r dir_path dir_mode dir_owner dir_group; do
-            [[ -z "$dir_path" || "$dir_path" =~ ^[[:space:]]*# ]] && continue
-            target="${deb_root}${dir_path}"
-            if [[ -d "$target" ]]; then
-                chown "${dir_owner}:${dir_group}" "$target"
-                chmod "$dir_mode" "$target"
-                attrs_count=$((attrs_count + 1))
-            else
-                echo "WARN: skipping attrs for missing dir: $target" >&2
-            fi
-        done < "$attrs_file"
-        echo "Applied attrs to $attrs_count config-tier directories"
-
-        # Build DEB inside same fakeroot context so chown/chmod values are
-        # recorded in the package control DB (root:nftban 0750 for /etc/nftban*).
         dpkg-deb --build "$deb_root" "$deb_out"
-    ' _ "$deb_root" "$nftban_dir_attrs" "$deb_out"; then
+    ' _ "$deb_root" "$deb_out"; then
         log_error "DEB build failed inside fakeroot session (see output above)"
         return 1
     fi

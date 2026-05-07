@@ -292,32 +292,102 @@ mode_verify_tool() {
 }
 
 # -----------------------------------------------------------------------------
+# Helper: load path-only list from L3 exception file
+# -----------------------------------------------------------------------------
+# Reads scripts/test-package-deb-l3-exceptions.list (or any file with the same
+# format `<path>|<rationale-tag>`) and emits one path per line. Used by
+# mode_diff and mode_assert_expected to honor the postinst-converged authority
+# model on the cross-packager (L3) layer only — L4/L5/L6 are unaffected.
+load_l3_exception_paths() {
+    local exceptions_file="$1"
+    [[ -r "$exceptions_file" ]] || return 0
+    awk -F'|' '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        NF >= 1 { gsub(/[[:space:]]+$/, "", $1); print $1 }
+    ' "$exceptions_file"
+}
+
+# -----------------------------------------------------------------------------
 # Mode: diff — compare two parity tables; require exact match for shared paths
 # -----------------------------------------------------------------------------
 # Portable shell-only comparison — does NOT depend on the external `diff`
 # binary, which is not preinstalled in minimal EL9 containers
 # (rockylinux:9, almalinux:9, centos:stream9). Uses sort + bash string
 # equality, with awk-based set-difference reporting on divergence.
+#
+# Optional 3rd argument: --exceptions=<file>
+#   When set, lines whose path field is listed in the exception file are
+#   filtered out of BOTH inputs before comparison. This is intended for the
+#   L3 cross-packager aggregator only — RPM (`%attr` name-based, applied at
+#   install time, archive ships final ownership) vs DEB (postinst-converged,
+#   archive ships root:root). The 6 critical postinst-converged paths are
+#   listed in scripts/test-package-deb-l3-exceptions.list. L4/L5 (installed-fs
+#   stat) and L6 (verify-tool) modes are NOT affected by this option.
 mode_diff() {
-    local a="${1:?usage: diff <file-a> <file-b>}"
-    local b="${2:?usage: diff <file-a> <file-b>}"
+    local a="${1:?usage: diff <file-a> <file-b> [--exceptions=<file>]}"
+    local b="${2:?usage: diff <file-a> <file-b> [--exceptions=<file>]}"
     [[ -r "$a" ]] || { log_err "Not readable: $a"; exit 3; }
     [[ -r "$b" ]] || { log_err "Not readable: $b"; exit 3; }
 
-    local sorted_a sorted_b
-    sorted_a=$(sort "$a")
-    sorted_b=$(sort "$b")
+    local exceptions_file=""
+    case "${3:-}" in
+        "")            ;;
+        --exceptions=*) exceptions_file="${3#--exceptions=}" ;;
+        *) log_err "Unknown arg: $3 (expected --exceptions=<file>)"; exit 2 ;;
+    esac
+
+    local sorted_a sorted_b filter_count=0
+    if [[ -n "$exceptions_file" ]]; then
+        if [[ ! -r "$exceptions_file" ]]; then
+            log_err "Exceptions file not readable: $exceptions_file"
+            exit 3
+        fi
+        local exception_paths
+        exception_paths=$(load_l3_exception_paths "$exceptions_file")
+        if [[ -z "$exception_paths" ]]; then
+            log_info "Exceptions file present but empty: $exceptions_file"
+            sorted_a=$(sort "$a")
+            sorted_b=$(sort "$b")
+        else
+            # Filter both files: drop rows whose path field is in exception_paths.
+            # Use awk with the exception paths supplied via stdin (NR==FNR trick).
+            sorted_a=$(awk -F'|' -v paths="$exception_paths" '
+                BEGIN {
+                    n = split(paths, p, "\n")
+                    for (i = 1; i <= n; i++) drop[p[i]] = 1
+                }
+                !($1 in drop) { print }
+            ' "$a" | sort)
+            sorted_b=$(awk -F'|' -v paths="$exception_paths" '
+                BEGIN {
+                    n = split(paths, p, "\n")
+                    for (i = 1; i <= n; i++) drop[p[i]] = 1
+                }
+                !($1 in drop) { print }
+            ' "$b" | sort)
+            filter_count=$(echo "$exception_paths" | grep -cv '^$' || true)
+            log_info "Applied L3 exceptions: $filter_count path(s) filtered from cross-packager diff (postinst-converged authority model)"
+        fi
+    else
+        sorted_a=$(sort "$a")
+        sorted_b=$(sort "$b")
+    fi
 
     if [[ "$sorted_a" == "$sorted_b" ]]; then
-        log_pass "Parity tables match: $a == $b"
+        if [[ "$filter_count" -gt 0 ]]; then
+            log_pass "Parity tables match (after $filter_count L3 exceptions): $a == $b"
+        else
+            log_pass "Parity tables match: $a == $b"
+        fi
         return 0
     fi
 
     log_fail "Parity tables diverge: $a vs $b"
     {
-        echo "--- $a (sorted) ---"
+        echo "--- $a (sorted, filtered) ---"
         printf '%s\n' "$sorted_a"
-        echo "--- $b (sorted) ---"
+        echo "--- $b (sorted, filtered) ---"
         printf '%s\n' "$sorted_b"
         echo "--- lines only in $a ---"
         awk 'NR==FNR{seen[$0]++; next} !($0 in seen)' \
@@ -325,6 +395,10 @@ mode_diff() {
         echo "--- lines only in $b ---"
         awk 'NR==FNR{seen[$0]++; next} !($0 in seen)' \
             <(printf '%s\n' "$sorted_a") <(printf '%s\n' "$sorted_b")
+        if [[ -n "$exceptions_file" ]]; then
+            echo "--- L3 exceptions file: $exceptions_file ---"
+            cat "$exceptions_file"
+        fi
     } >&2
     return 1
 }
@@ -334,10 +408,45 @@ mode_diff() {
 # -----------------------------------------------------------------------------
 # Asserts every package_shipped=yes path is present and matches expected metadata.
 # For package_shipped=no paths, only checks against expected when path is found.
+#
+# Optional 3rd argument: --deb-l3-exceptions=<file>
+#   When set (used by DEB L3 assert step in the aggregator only), paths listed
+#   in the exception file are expected to ship as root:root in the DEB archive
+#   instead of root:nftban / nftban:nftban. This is the L3 reflection of the
+#   postinst-converged authority model — DEB archive ships root:root, postinst
+#   chown applies the final ownership (which L4/L5 still verify by name on the
+#   installed filesystem, unchanged). Without this flag, expected ownership is
+#   read from EXPECTED_TABLE verbatim (used for RPM L3 + L4/L5/L6 layers).
 mode_assert_expected() {
-    local observed="${1:?usage: assert-expected <observed-file>}"
+    local observed="${1:?usage: assert-expected <observed-file> [package|all] [--deb-l3-exceptions=<file>]}"
     local mode_filter="${2:-}"  # 'package' or 'all'
     [[ -r "$observed" ]] || { log_err "Not readable: $observed"; exit 3; }
+
+    local deb_l3_exceptions=""
+    case "${3:-}" in
+        "")                          ;;
+        --deb-l3-exceptions=*)       deb_l3_exceptions="${3#--deb-l3-exceptions=}" ;;
+        *) log_err "Unknown arg: $3 (expected --deb-l3-exceptions=<file>)"; exit 2 ;;
+    esac
+
+    # Build a map of postinst-converged exception paths (DEB L3 only).
+    # An exception path means: in the DEB archive, this path is expected to
+    # ship as root:root with its declared mode and type, NOT as root:nftban
+    # etc. This catches a regression where someone re-introduces build-time
+    # fakeroot chown — in that case the archive would show root:nftban for
+    # an exception path and this assert would FAIL.
+    local -A is_l3_exception=()
+    if [[ -n "$deb_l3_exceptions" ]]; then
+        if [[ ! -r "$deb_l3_exceptions" ]]; then
+            log_err "DEB L3 exceptions file not readable: $deb_l3_exceptions"
+            exit 3
+        fi
+        local p
+        while IFS= read -r p; do
+            [[ -n "$p" ]] && is_l3_exception["$p"]=1
+        done < <(load_l3_exception_paths "$deb_l3_exceptions")
+        log_info "DEB L3 exceptions loaded: ${#is_l3_exception[@]} postinst-converged path(s)"
+    fi
 
     local fail=0 row exp_path exp_type exp_mode exp_owner exp_group exp_pkg
     for row in "${EXPECTED_TABLE[@]}"; do
@@ -352,21 +461,32 @@ mode_assert_expected() {
             fail=1
             continue
         fi
-        local expected_row="${exp_path}|${exp_type}|${exp_mode}|${exp_owner}|${exp_group}"
+        # If this path is a DEB L3 exception (postinst-converged), expect
+        # root:root in the archive instead of the EXPECTED_TABLE owner/group.
+        local effective_owner="$exp_owner" effective_group="$exp_group"
+        if [[ -n "$deb_l3_exceptions" ]] && [[ -n "${is_l3_exception[$exp_path]:-}" ]]; then
+            effective_owner="root"
+            effective_group="root"
+        fi
+        local expected_row="${exp_path}|${exp_type}|${exp_mode}|${effective_owner}|${effective_group}"
         if [[ "$actual" != "$expected_row" ]]; then
             log_fail "metadata mismatch for $exp_path"
             log_fail "  expected: $expected_row"
             log_fail "  observed: $actual"
             fail=1
         else
-            log_pass "$exp_path matches expected"
+            if [[ "$effective_owner" != "$exp_owner" || "$effective_group" != "$exp_group" ]]; then
+                log_pass "$exp_path matches DEB L3 exception (archive=root:root; postinst converges to ${exp_owner}:${exp_group})"
+            else
+                log_pass "$exp_path matches expected"
+            fi
         fi
     done
 
     if [[ "$fail" -eq 1 ]]; then
         return 1
     fi
-    log_pass "assert-expected (filter=${mode_filter:-all}) clean"
+    log_pass "assert-expected (filter=${mode_filter:-all}${deb_l3_exceptions:+, deb-l3-exceptions=$deb_l3_exceptions}) clean"
 }
 
 # -----------------------------------------------------------------------------
@@ -397,10 +517,19 @@ Modes:
   reinstall-stat                   Alias of fresh-stat (semantic marker post-reinstall)
   upgrade-stat <pre|post>          Alias of fresh-stat with phase tag for upgrade canon
   verify-tool <rpm|deb>            Run rpm -V or dpkg --verify; filter by exceptions
-  diff <file-a> <file-b>           Diff two parity tables; exit 1 on divergence
-  assert-expected <observed-file>  [package|all]
+  diff <file-a> <file-b> [--exceptions=<file>]
+                                    Diff two parity tables; exit 1 on divergence.
+                                    --exceptions=<file>: paths listed in <file>
+                                    are filtered out before comparison (used by
+                                    L3 cross-packager aggregator only; honors
+                                    the postinst-converged DEB authority model)
+  assert-expected <observed-file>  [package|all] [--deb-l3-exceptions=<file>]
                                     Assert observed matches expected; package-only
-                                    filter restricts to L3-applicable paths
+                                    filter restricts to L3-applicable paths.
+                                    --deb-l3-exceptions=<file>: paths listed
+                                    in <file> are expected to ship root:root
+                                    in the DEB archive (postinst converges
+                                    final ownership at install time)
   list-critical-paths              Emit the 11 critical paths (one per line)
   list-expected                    Emit the expected metadata table
 

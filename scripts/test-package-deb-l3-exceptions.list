@@ -1,0 +1,56 @@
+# =============================================================================
+# NFTBan v1.107 - DEB L3 Package Metadata Exceptions
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# meta:name="test-package-deb-l3-exceptions"
+# meta:type="data"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-05-07"
+# meta:description="DEB L3 metadata divergence exceptions for postinst-converged paths"
+# =============================================================================
+#
+# Consumer: scripts/test-package-effective-parity.sh diff (and L3 cross-packager
+# aggregation in .github/workflows/build-packages.yml).
+#
+# Purpose: enumerate paths where DEB archive metadata is INTENTIONALLY divergent
+# from RPM archive metadata because the DEB authority model converges ownership
+# at install time (postinst chown + dpkg-statoverride) rather than baking it
+# into the archive. RPM uses %attr() in nftban-files.inc, which is name-based
+# and re-applied at install time, so RPM ships the final ownership in the
+# archive. DEB ships these paths as root:root in the archive and converges
+# at postinst — see V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md.
+#
+# Why this matters: dpkg-deb stores numeric UID/GID in the tar payload, not
+# names. A build-host fakeroot chown to "nftban:nftban" bakes the build-host's
+# numeric IDs into the archive. On a target host where the GID resolves to a
+# different name (or no name at all), the directory ends up owned by
+# systemd-journal / UNKNOWN. The canonical Debian solution is postinst chown
+# after addgroup --system creates the identity with the target's free GID.
+#
+# Format (deterministic, easy to parse):
+#   <path>|<rationale-tag>
+# Lines starting with '#' or blank are ignored.
+#
+# Rationale tag values:
+#   postinst-converged  → archive ships root:root; postinst chown + statoverride
+#                         applies final ownership/mode by name on target host.
+#                         L4 (installed-fs stat) MUST still match EXPECTED_TABLE.
+#                         L6 (dpkg --verify) MUST still be clean (statoverride
+#                         keeps dpkg DB in sync with on-disk state).
+#
+# This file is consumed by mode_diff (cross-packager L3 parity aggregation)
+# ONLY. L4 / L5 / L6 expectations are NOT weakened by entries here — those
+# layers continue to require root:nftban / nftban:nftban final state and
+# clean verify-tool output.
+#
+# =============================================================================
+# Critical-path exceptions (6 paths from EXPECTED_TABLE where package_shipped=yes)
+# =============================================================================
+
+/etc/nftban|postinst-converged
+/etc/nftban/conf.d|postinst-converged
+/etc/nftban/suricata|postinst-converged
+/etc/nftban/suricata/state|postinst-converged
+/etc/nftban/suricata/state/last-good|postinst-converged
+/var/lib/nftban/community|postinst-converged
