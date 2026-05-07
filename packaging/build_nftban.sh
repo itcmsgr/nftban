@@ -1966,8 +1966,39 @@ build_deb() {
         return 1
     fi
 
+    # PKG-EFFECTIVE-PARITY (Slot 5 / row 14): build-host identity preconditions.
+    # libfakeroot intercepts chown/lchown/fchown SYSCALLS but does NOT fake
+    # getpwnam()/getgrnam() name resolution. coreutils chown resolves owner/
+    # group names BEFORE the syscall, so 'chown nftban:nftban target' aborts
+    # with "invalid group" inside the fakeroot session when the nftban identity
+    # is absent on the build host. Create the identities idempotently here so
+    # the per-directory chown loop below can resolve "nftban" (and the
+    # "nftban-auditor" group, kept symmetric with the runtime identity model).
+    # Build-host-only: the package's own postinst/sysusers still creates these
+    # identities on the target host at install time.
+    PATH="/usr/sbin:/sbin:${PATH}"
+    if ! command -v groupadd >/dev/null 2>&1; then
+        log_error "groupadd not available on build host; cannot ensure DEB build-time identities"
+        return 1
+    fi
+    if ! command -v useradd >/dev/null 2>&1; then
+        log_error "useradd not available on build host; cannot ensure DEB build-time identities"
+        return 1
+    fi
+    if ! getent group nftban >/dev/null 2>&1; then
+        groupadd -r nftban || { log_error "groupadd -r nftban failed on build host"; return 1; }
+    fi
+    if ! getent group nftban-auditor >/dev/null 2>&1; then
+        groupadd -r nftban-auditor || { log_error "groupadd -r nftban-auditor failed on build host"; return 1; }
+    fi
+    if ! id -u nftban >/dev/null 2>&1; then
+        useradd -r -g nftban -s /usr/sbin/nologin -d /var/lib/nftban nftban \
+            || { log_error "useradd -r nftban failed on build host"; return 1; }
+    fi
+
     log_info "Setting DEB ownership/attrs and building package in single fakeroot session..."
-    fakeroot -- bash -ec '
+    local deb_out="${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    if ! fakeroot -- bash -ec '
         deb_root="$1"; attrs_file="$2"; deb_out="$3"
 
         # Baseline: own everything as root:root (FHS: /usr/lib/nftban = root:root)
@@ -1994,9 +2025,23 @@ build_deb() {
         # Build DEB inside same fakeroot context so chown/chmod values are
         # recorded in the package control DB (root:nftban 0750 for /etc/nftban*).
         dpkg-deb --build "$deb_root" "$deb_out"
-    ' _ "$deb_root" "$nftban_dir_attrs" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    ' _ "$deb_root" "$nftban_dir_attrs" "$deb_out"; then
+        log_error "DEB build failed inside fakeroot session (see output above)"
+        return 1
+    fi
 
-    log_success "DEB built: ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    # Verify the artifact actually exists. build_deb is invoked as
+    # `build_deb || { ... }` in main(), which disables errexit inside the
+    # function (Bash gotcha) — without this explicit check, a fakeroot
+    # session that printed errors but exited 0 anyway would still reach
+    # log_success and produce the misleading "DEB built" log line that
+    # PKG-EFFECTIVE-PARITY caught in CI.
+    if [[ ! -s "$deb_out" ]]; then
+        log_error "DEB build did not produce ${deb_out}"
+        return 1
+    fi
+
+    log_success "DEB built: ${deb_out}"
 }
 
 main() {
