@@ -509,8 +509,9 @@ find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl;
     install -D -m 0644 "\$tmpl" "%{buildroot}/usr/share/nftban/templates/\$rel_path"
 done
 
-# Man page
-install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+# Man page intentionally not shipped — see build_deb() comment for rationale.
+# CLI docs are registry-driven (commands.registry.yml + nftban help); the
+# hand-maintained nftban.8 is stale. Symmetric removal across DEB+RPM.
 
 # Bash completion
 install -D -m 0644 install/bash-completion/nftban %{buildroot}/usr/share/bash-completion/completions/nftban
@@ -1111,7 +1112,6 @@ fi
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/nftban/selinux
-/usr/share/man/man8/nftban.8*
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
 /usr/lib/nftban/scripts/generate-help.sh
@@ -1926,17 +1926,17 @@ build_deb() {
         install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
     done
 
-    # Copy man page (Debian convention: ship gzipped to match dpkg DB after
-    # mandb auto-compresses on Ubuntu). PKG-EFFECTIVE-PARITY Slot 5a Phase 6
-    # exposed this: Ubuntu mandb auto-compresses /usr/share/man/man8/nftban.8
-    # → nftban.8.gz post-install, but dpkg DB still recorded the uncompressed
-    # name, causing dpkg --verify to flag the path as missing on ubuntu22.04
-    # and ubuntu24.04 while debian12/13 happened to pass. RPM has the
-    # equivalent behavior via rpmbuild's brp-compress (the %files glob
-    # `nftban.8*` accommodates both forms). Gzip with -9n for deterministic
-    # compression (no timestamp/name in header → reproducible builds).
-    install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
-    gzip -9n "${deb_root}/usr/share/man/man8/nftban.8"
+    # Man page intentionally not shipped. CLI documentation lives in the
+    # registry-driven dynamic help (`nftban help` → scripts/generate-help.sh
+    # reading commands.registry.yml). The hand-maintained install/man/man8/
+    # nftban.8 is 30 versions stale and competes with the registry SoT.
+    # Removing here brings DEB/RPM packaging into symmetry (see RPM spec
+    # heredoc — corresponding install + %files entry also removed). Source
+    # man-page file + scripts/update_man_page.sh + lint-registry-parity G15-B
+    # cleanup deferred to a separate hygiene gate. PKG-EFFECTIVE-PARITY Slot
+    # 5a Phase 6 (dpkg --verify) was failing on ubuntu22.04/24.04 because the
+    # shipped man page interacted unpredictably with mandb post-install; not
+    # shipping it removes the failure honestly without weakening L6.
 
     # Copy bash completion
     install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
