@@ -269,6 +269,76 @@ jobs:
           echo "G7 enforcement lives in .github/workflows/build-packages.yml"
           echo "(RPM + DEB build + install matrix must also stay green for merge)"
 
+      # ------------------------------------------------------------------
+      # G8: PKG-EFFECTIVE-PARITY L4 tmpfiles-managed coverage (Slot 5 / row 14)
+      # ------------------------------------------------------------------
+      # Runtime Truth runs on real OS images with full systemd. This step
+      # verifies the 6 tmpfiles-managed critical paths (which Test RPM/DEB
+      # install jobs in build-packages.yml cannot reliably exercise inside
+      # vanilla Docker without systemd PID 1).
+      #
+      # Path-set coverage:
+      #   - /run/nftban (0755 nftban:nftban)
+      #   - /var/cache/nftban (0755 nftban:nftban)
+      #   - /var/lib/nftban (0750 root:nftban)
+      #   - /var/lib/nftban/reports/auditors (0770 root:nftban-auditor)
+      #   - /var/log/nftban (0750 nftban:nftban)
+      #   (Note: /var/lib/nftban/community is package-shipped, NOT tmpfiles —
+      #   asserted in build-packages.yml Test * install jobs)
+      - name: G8 — PKG-EFFECTIVE-PARITY L4 tmpfiles parity (real-systemd)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "=== G8: tmpfiles-managed path parity ==="
+
+          # 1. Create system users/groups (matches install/systemd/sysusers.d/nftban.conf)
+          sudo getent group nftban >/dev/null 2>&1 || sudo groupadd --system nftban
+          sudo getent group nftban-auditor >/dev/null 2>&1 || sudo groupadd --system nftban-auditor
+          sudo getent group suricata >/dev/null 2>&1 || sudo groupadd --system suricata
+          sudo getent passwd nftban >/dev/null 2>&1 || \
+            sudo useradd --system --gid nftban --groups nftban-auditor \
+              --home-dir /var/lib/nftban --no-create-home --shell /usr/sbin/nologin nftban
+
+          # 2. Stage tmpfiles config (single source of truth)
+          sudo install -m 0644 install/systemd/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
+
+          # 3. Run systemd-tmpfiles --create (full systemd available here)
+          if ! sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf; then
+            echo "::warning::G8 systemd-tmpfiles --create reported issues; will check anyway"
+          fi
+
+          # 4. Assert each of the 6 tmpfiles-managed critical paths
+          fail=0
+          # Format: path|expected_mode|expected_owner|expected_group
+          for entry in \
+              "/run/nftban|0755|nftban|nftban" \
+              "/var/cache/nftban|0755|nftban|nftban" \
+              "/var/lib/nftban|0750|root|nftban" \
+              "/var/lib/nftban/reports/auditors|0770|root|nftban-auditor" \
+              "/var/log/nftban|0750|nftban|nftban" \
+          ; do
+            IFS='|' read -r p exp_mode exp_owner exp_group <<< "$entry"
+            if [[ ! -d "$p" ]]; then
+              echo "::error::G8 missing dir: $p"
+              fail=1
+              continue
+            fi
+            actual_mode=$(stat -c '%a' "$p")
+            [[ ${#actual_mode} -eq 3 ]] && actual_mode="0$actual_mode"
+            actual_owner=$(stat -c '%U' "$p")
+            actual_group=$(stat -c '%G' "$p")
+            if [[ "$actual_mode" != "$exp_mode" || "$actual_owner" != "$exp_owner" || "$actual_group" != "$exp_group" ]]; then
+              echo "::error::G8 mismatch on $p"
+              echo "::error::  expected: $exp_mode $exp_owner:$exp_group"
+              echo "::error::  observed: $actual_mode $actual_owner:$actual_group"
+              fail=1
+            else
+              echo "[PASS] $p: $actual_mode $actual_owner:$actual_group"
+            fi
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "G8 PASS: tmpfiles-managed path parity verified on real systemd"
+
   summary:
     name: Runtime Truth summary
     needs: runtime-truth
