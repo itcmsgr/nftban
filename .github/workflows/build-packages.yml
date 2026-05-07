@@ -432,6 +432,12 @@ jobs:
             tier: 0
 
     steps:
+      # Checkout required so docker mount of $(pwd)/scripts/ resolves to a real
+      # path containing test-package-effective-parity.sh + verify-exceptions.list
+      # (PKG-EFFECTIVE-PARITY Phase 4/5/6).
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
       - name: Download RPM packages (with retry)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -591,6 +597,12 @@ jobs:
             tier: 1
 
     steps:
+      # Checkout required so docker mount of $(pwd)/scripts/ resolves to a real
+      # path containing test-package-effective-parity.sh + verify-exceptions.list
+      # (PKG-EFFECTIVE-PARITY Phase 4/5/6).
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
       - name: Download DEB packages (with retry)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
