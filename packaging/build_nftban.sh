@@ -1951,40 +1951,50 @@ build_deb() {
     # Create control file
     create_deb_control
 
-    # Fix ownership before building (FHS: /usr/lib/nftban = root:root)
-    # Without this, files keep the builder's UID which breaks systemd services
-    log_info "Setting package file ownership to root:root..."
-    fakeroot find "${deb_root}/usr" -type f -exec chown root:root {} \;
-    fakeroot find "${deb_root}/usr" -type d -exec chown root:root {} \;
-    fakeroot find "${deb_root}/etc" -type f -exec chown root:root {} \;
-    fakeroot find "${deb_root}/etc" -type d -exec chown root:root {} \;
-
-    # AUTH-HARDENING (D-NEW-12): apply config-tier directory ownership/mode
-    # from generator output (build/fhs-spec.yaml -> nftban-dir-attrs.list).
-    # Brings DEB to RPM %attr parity for /etc/nftban + subdirs (root:nftban 0750)
-    # so dpkg-verify is clean and `dpkg --reinstall` does not reset to root:root.
-    # RPM uses %attr() inside nftban-files.inc for the same purpose.
+    # AUTH-HARDENING (D-NEW-12) + PKG-EFFECTIVE-PARITY (Slot 5 / row 14):
+    # baseline chown, per-directory attrs from nftban-dir-attrs.list, and
+    # `dpkg-deb --build` MUST share ONE fakeroot session. Each `fakeroot <cmd>`
+    # invocation is an independent in-memory state — chown/chmod values from
+    # one session are NOT visible to the next, so a separate `fakeroot dpkg-deb`
+    # records the real on-disk owner (root from the baseline pass), losing the
+    # AUTH-HARDENING root:nftban metadata for /etc/nftban/*. PKG-EFFECTIVE-PARITY
+    # L4 stat assertions on Test DEB install caught this. RPM uses %attr() in
+    # nftban-files.inc for the equivalent metadata channel.
     local nftban_dir_attrs="${PROJECT_ROOT}/install/packaging/deb/nftban-dir-attrs.list"
     if [[ ! -f "$nftban_dir_attrs" ]]; then
         log_error "nftban-dir-attrs.list not found at $nftban_dir_attrs; run 'bash build/generate-fhs-outputs.sh' first"
         return 1
     fi
-    log_info "Applying config-tier directory attributes from $(basename "$nftban_dir_attrs")..."
-    local attrs_count=0
-    while IFS='|' read -r dir_path dir_mode dir_owner dir_group; do
-        [[ -z "$dir_path" || "$dir_path" =~ ^[[:space:]]*# ]] && continue
-        if [[ -d "${deb_root}${dir_path}" ]]; then
-            fakeroot chown "${dir_owner}:${dir_group}" "${deb_root}${dir_path}"
-            fakeroot chmod "${dir_mode}" "${deb_root}${dir_path}"
-            ((attrs_count++))
-        else
-            log_warn "Skipping attrs for missing dir: ${deb_root}${dir_path}"
-        fi
-    done < "$nftban_dir_attrs"
-    log_success "Applied attrs to ${attrs_count} config-tier directories"
 
-    # Build DEB
-    fakeroot dpkg-deb --build "${deb_root}" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    log_info "Setting DEB ownership/attrs and building package in single fakeroot session..."
+    fakeroot -- bash -ec '
+        deb_root="$1"; attrs_file="$2"; deb_out="$3"
+
+        # Baseline: own everything as root:root (FHS: /usr/lib/nftban = root:root)
+        find "$deb_root/usr" -type f -exec chown root:root {} +
+        find "$deb_root/usr" -type d -exec chown root:root {} +
+        find "$deb_root/etc" -type f -exec chown root:root {} +
+        find "$deb_root/etc" -type d -exec chown root:root {} +
+
+        # Apply per-directory attrs from generator output (D-NEW-12)
+        attrs_count=0
+        while IFS="|" read -r dir_path dir_mode dir_owner dir_group; do
+            [[ -z "$dir_path" || "$dir_path" =~ ^[[:space:]]*# ]] && continue
+            target="${deb_root}${dir_path}"
+            if [[ -d "$target" ]]; then
+                chown "${dir_owner}:${dir_group}" "$target"
+                chmod "$dir_mode" "$target"
+                attrs_count=$((attrs_count + 1))
+            else
+                echo "WARN: skipping attrs for missing dir: $target" >&2
+            fi
+        done < "$attrs_file"
+        echo "Applied attrs to $attrs_count config-tier directories"
+
+        # Build DEB inside same fakeroot context so chown/chmod values are
+        # recorded in the package control DB (root:nftban 0750 for /etc/nftban*).
+        dpkg-deb --build "$deb_root" "$deb_out"
+    ' _ "$deb_root" "$nftban_dir_attrs" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
 
     log_success "DEB built: ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
 }

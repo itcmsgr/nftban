@@ -294,21 +294,38 @@ mode_verify_tool() {
 # -----------------------------------------------------------------------------
 # Mode: diff — compare two parity tables; require exact match for shared paths
 # -----------------------------------------------------------------------------
+# Portable shell-only comparison — does NOT depend on the external `diff`
+# binary, which is not preinstalled in minimal EL9 containers
+# (rockylinux:9, almalinux:9, centos:stream9). Uses sort + bash string
+# equality, with awk-based set-difference reporting on divergence.
 mode_diff() {
     local a="${1:?usage: diff <file-a> <file-b>}"
     local b="${2:?usage: diff <file-a> <file-b>}"
     [[ -r "$a" ]] || { log_err "Not readable: $a"; exit 3; }
     [[ -r "$b" ]] || { log_err "Not readable: $b"; exit 3; }
 
-    # Both files are |-separated parity tables; sort + diff
-    if diff -u <(sort "$a") <(sort "$b") > /tmp/parity-diff.$$ 2>&1; then
+    local sorted_a sorted_b
+    sorted_a=$(sort "$a")
+    sorted_b=$(sort "$b")
+
+    if [[ "$sorted_a" == "$sorted_b" ]]; then
         log_pass "Parity tables match: $a == $b"
-        rm -f /tmp/parity-diff.$$
         return 0
     fi
+
     log_fail "Parity tables diverge: $a vs $b"
-    cat /tmp/parity-diff.$$ >&2
-    rm -f /tmp/parity-diff.$$
+    {
+        echo "--- $a (sorted) ---"
+        printf '%s\n' "$sorted_a"
+        echo "--- $b (sorted) ---"
+        printf '%s\n' "$sorted_b"
+        echo "--- lines only in $a ---"
+        awk 'NR==FNR{seen[$0]++; next} !($0 in seen)' \
+            <(printf '%s\n' "$sorted_b") <(printf '%s\n' "$sorted_a")
+        echo "--- lines only in $b ---"
+        awk 'NR==FNR{seen[$0]++; next} !($0 in seen)' \
+            <(printf '%s\n' "$sorted_a") <(printf '%s\n' "$sorted_b")
+    } >&2
     return 1
 }
 
