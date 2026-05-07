@@ -1926,8 +1926,17 @@ build_deb() {
         install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
     done
 
-    # Copy man page
+    # Copy man page (Debian convention: ship gzipped to match dpkg DB after
+    # mandb auto-compresses on Ubuntu). PKG-EFFECTIVE-PARITY Slot 5a Phase 6
+    # exposed this: Ubuntu mandb auto-compresses /usr/share/man/man8/nftban.8
+    # → nftban.8.gz post-install, but dpkg DB still recorded the uncompressed
+    # name, causing dpkg --verify to flag the path as missing on ubuntu22.04
+    # and ubuntu24.04 while debian12/13 happened to pass. RPM has the
+    # equivalent behavior via rpmbuild's brp-compress (the %files glob
+    # `nftban.8*` accommodates both forms). Gzip with -9n for deterministic
+    # compression (no timestamp/name in header → reproducible builds).
     install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+    gzip -9n "${deb_root}/usr/share/man/man8/nftban.8"
 
     # Copy bash completion
     install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
