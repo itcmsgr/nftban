@@ -63,10 +63,43 @@
 //   - Plesk "Security Advisor" extension
 //   - Webmin "NFTBan" module
 //
+// CONSUMERS (verified live as of v1.107):
+//   - cli/sbin/nftban-panelctl:55       PANEL_GROUP="nftban-panel" auth gate
+//   - cli/sbin/nftban-panelctl:154-155  id -nG | grep -qw "$PANEL_GROUP"
+//   - internal/installer/users/ensure.go:66       identity-ensure step
+//   - internal/installer/payload/payload.go:383   ships nftban-panelctl binary
+//   - internal/installer/validate/assertions.go:407 install-validation required-files
+//   - cli/lib/nftban/tests/polkit_validator.sh    rule + group structural validator
+//   - cli/lib/nftban/cli/cmd_polkit.sh            nftban polkit status diagnostic
+//   - cli/lib/nftban/core/nftban_health_checks_security.sh:536  rule presence check
+//   - cli/lib/nftban/core/nftban_health_fixes.sh:1409           repair surface
+//
+//   Adapter-level consumers (NOT FOUND, intentional — adapters route through wrapper):
+//     etc/nftban/conf.d/panels/{cpanel,cwp,cyberpanel,directadmin,
+//                               generic,interworx,plesk,vesta}/main.conf  -> empty grep
+//     cli/lib/nftban/lib/nftban_panel_*.sh + cli/lib/nftban/cli/cmd_panel.sh -> empty grep
+//
+//   D-NEW-11 closure (Slot 6 / 2026-05-09):
+//     Decommission rejected. The wrapper auth gate IS the live consumer.
+//     Removing the nftban-panel group + 30-nftban-panel.rules would force panels
+//     into either:
+//       (a) operator tier (10-nftban-systemd.rules) - over-privileged: panels
+//           would gain start/stop/restart on all whitelisted units; security
+//           regression.
+//       (b) auditor tier (20-nftban-auditor.rules) - under-privileged: panels
+//           would lose `reload` (cannot apply config changes); functional
+//           regression.
+//     Neither is acceptable. The three-tier model (operator/auditor/panel) is
+//     intentional and load-bearing. See build/fhs-spec.yaml `nftban-panel`
+//     group entry `note:` field for the cross-reference.
+//
 // Version History:
 //   v1.0.19: Created for panel integration Phase 1
 //            Provides minimal privileges needed for panel UIs
 //            Complements nftban-panelctl wrapper security
+//   v1.107  (2026-05-09): D-NEW-11 closure - decommission rejected, live
+//            consumers documented above. Rule body unchanged. Header-only
+//            documentation amendment via Slot 6 POLKIT-AUTHORITY.
 // =============================================================================
 
 polkit.addRule(function (action, subject) {
