@@ -509,8 +509,9 @@ find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl;
     install -D -m 0644 "\$tmpl" "%{buildroot}/usr/share/nftban/templates/\$rel_path"
 done
 
-# Man page
-install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+# Man page intentionally not shipped — see build_deb() comment for rationale.
+# CLI docs are registry-driven (commands.registry.yml + nftban help); the
+# hand-maintained nftban.8 is stale. Symmetric removal across DEB+RPM.
 
 # Bash completion
 install -D -m 0644 install/bash-completion/nftban %{buildroot}/usr/share/bash-completion/completions/nftban
@@ -1111,7 +1112,6 @@ fi
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/nftban/selinux
-/usr/share/man/man8/nftban.8*
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
 /usr/lib/nftban/scripts/generate-help.sh
@@ -1926,8 +1926,17 @@ build_deb() {
         install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
     done
 
-    # Copy man page
-    install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+    # Man page intentionally not shipped. CLI documentation lives in the
+    # registry-driven dynamic help (`nftban help` → scripts/generate-help.sh
+    # reading commands.registry.yml). The hand-maintained install/man/man8/
+    # nftban.8 is 30 versions stale and competes with the registry SoT.
+    # Removing here brings DEB/RPM packaging into symmetry (see RPM spec
+    # heredoc — corresponding install + %files entry also removed). Source
+    # man-page file + scripts/update_man_page.sh + lint-registry-parity G15-B
+    # cleanup deferred to a separate hygiene gate. PKG-EFFECTIVE-PARITY Slot
+    # 5a Phase 6 (dpkg --verify) was failing on ubuntu22.04/24.04 because the
+    # shipped man page interacted unpredictably with mandb post-install; not
+    # shipping it removes the failure honestly without weakening L6.
 
     # Copy bash completion
     install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
@@ -1951,42 +1960,81 @@ build_deb() {
     # Create control file
     create_deb_control
 
-    # Fix ownership before building (FHS: /usr/lib/nftban = root:root)
-    # Without this, files keep the builder's UID which breaks systemd services
-    log_info "Setting package file ownership to root:root..."
-    fakeroot find "${deb_root}/usr" -type f -exec chown root:root {} \;
-    fakeroot find "${deb_root}/usr" -type d -exec chown root:root {} \;
-    fakeroot find "${deb_root}/etc" -type f -exec chown root:root {} \;
-    fakeroot find "${deb_root}/etc" -type d -exec chown root:root {} \;
-
-    # AUTH-HARDENING (D-NEW-12): apply config-tier directory ownership/mode
-    # from generator output (build/fhs-spec.yaml -> nftban-dir-attrs.list).
-    # Brings DEB to RPM %attr parity for /etc/nftban + subdirs (root:nftban 0750)
-    # so dpkg-verify is clean and `dpkg --reinstall` does not reset to root:root.
-    # RPM uses %attr() inside nftban-files.inc for the same purpose.
+    # PKG-EFFECTIVE-PARITY Slot 5a (row 14) — DEB ownership authority moved to postinst.
+    # Per V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md (Option α + Option A):
+    # the .deb archive ships with root:root metadata only; postinst chown + chmod +
+    # dpkg-statoverride converge ownership to root:nftban / nftban:nftban after the
+    # nftban identities exist on the target host. Build-time fakeroot per-directory
+    # ownership baking was structurally wrong for DEB because dpkg archives store
+    # numeric UID/GID, not portable names — on a target host without matching numeric
+    # IDs, /etc/nftban resolved to root:systemd-journal (or root:UNKNOWN). RPM is
+    # unaffected because %attr() in nftban-files.inc is a name-based directive
+    # re-applied at install time. The attrs list is shipped inside the DEB at
+    # /usr/share/nftban/packaging/nftban-dir-attrs.list so postinst can consume it.
     local nftban_dir_attrs="${PROJECT_ROOT}/install/packaging/deb/nftban-dir-attrs.list"
     if [[ ! -f "$nftban_dir_attrs" ]]; then
         log_error "nftban-dir-attrs.list not found at $nftban_dir_attrs; run 'bash build/generate-fhs-outputs.sh' first"
         return 1
     fi
-    log_info "Applying config-tier directory attributes from $(basename "$nftban_dir_attrs")..."
-    local attrs_count=0
-    while IFS='|' read -r dir_path dir_mode dir_owner dir_group; do
-        [[ -z "$dir_path" || "$dir_path" =~ ^[[:space:]]*# ]] && continue
-        if [[ -d "${deb_root}${dir_path}" ]]; then
-            fakeroot chown "${dir_owner}:${dir_group}" "${deb_root}${dir_path}"
-            fakeroot chmod "${dir_mode}" "${deb_root}${dir_path}"
-            ((attrs_count++))
+    install -D -m 0644 "$nftban_dir_attrs" \
+        "${deb_root}/usr/share/nftban/packaging/nftban-dir-attrs.list"
+
+    # PKG-EFFECTIVE-PARITY Slot 5a — chmod-only mode convergence at build time.
+    # Numeric modes are portable across hosts (unlike numeric UID/GID which
+    # broke ownership baking pre-Slot-5a), so it is safe and correct to apply
+    # the per-path mode column from nftban-dir-attrs.list during the build.
+    # Postinst still converges OWNERSHIP (and re-applies mode for symmetry +
+    # statoverride registration), but the DEB archive layer (L3) now ships
+    # the directories at their final mode (typically 0750) so L3 cross-
+    # packager parity reports the documented end state. Owner/group columns
+    # are intentionally NOT used here — this loop is chmod-only.
+    local _chmod_count=0 _chmod_skipped=0
+    while IFS='|' read -r _mc_path _mc_mode _mc_owner _mc_group; do
+        [[ -z "$_mc_path" || "$_mc_path" =~ ^[[:space:]]*# ]] && continue
+        local _mc_target="${deb_root}${_mc_path}"
+        if [[ -d "$_mc_target" ]]; then
+            chmod "$_mc_mode" "$_mc_target"
+            _chmod_count=$((_chmod_count + 1))
         else
-            log_warn "Skipping attrs for missing dir: ${deb_root}${dir_path}"
+            _chmod_skipped=$((_chmod_skipped + 1))
         fi
     done < "$nftban_dir_attrs"
-    log_success "Applied attrs to ${attrs_count} config-tier directories"
+    log_info "DEB build-time chmod convergence: ${_chmod_count} dirs chmod'd, ${_chmod_skipped} skipped (missing in deb_root)"
+    unset _chmod_count _chmod_skipped _mc_path _mc_mode _mc_owner _mc_group _mc_target
 
-    # Build DEB
-    fakeroot dpkg-deb --build "${deb_root}" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    log_info "Building DEB with root:root archive metadata (postinst converges ownership)..."
+    local deb_out="${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    if ! fakeroot -- bash -ec '
+        deb_root="$1"; deb_out="$2"
 
-    log_success "DEB built: ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+        # Baseline: own everything as root:root. Postinst applies per-path
+        # ownership for the 41 paths in nftban-dir-attrs.list after target-host
+        # nftban / nftban-auditor identities exist; statoverride keeps dpkg DB
+        # in sync so dpkg --verify stays clean.
+        find "$deb_root/usr" -type f -exec chown root:root {} +
+        find "$deb_root/usr" -type d -exec chown root:root {} +
+        find "$deb_root/etc" -type f -exec chown root:root {} +
+        find "$deb_root/etc" -type d -exec chown root:root {} +
+        find "$deb_root/var" -type d -exec chown root:root {} + 2>/dev/null || true
+
+        dpkg-deb --build "$deb_root" "$deb_out"
+    ' _ "$deb_root" "$deb_out"; then
+        log_error "DEB build failed inside fakeroot session (see output above)"
+        return 1
+    fi
+
+    # Verify the artifact actually exists. build_deb is invoked as
+    # `build_deb || { ... }` in main(), which disables errexit inside the
+    # function (Bash gotcha) — without this explicit check, a fakeroot
+    # session that printed errors but exited 0 anyway would still reach
+    # log_success and produce the misleading "DEB built" log line that
+    # PKG-EFFECTIVE-PARITY caught in CI.
+    if [[ ! -s "$deb_out" ]]; then
+        log_error "DEB build did not produce ${deb_out}"
+        return 1
+    fi
+
+    log_success "DEB built: ${deb_out}"
 }
 
 main() {

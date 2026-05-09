@@ -240,6 +240,27 @@ jobs:
           path: dist/packages/*.rpm
           retention-days: 30
 
+      # PKG-EFFECTIVE-PARITY (Slot 5 / row 14): extract L3 package metadata
+      # from the built RPM artifact. Output is consumed by the
+      # validate-package-effective-parity aggregation job for cross-packager diff.
+      - name: Extract RPM package metadata (PKG-EFFECTIVE-PARITY L3)
+        run: |
+          mkdir -p dist/parity
+          for rpm in dist/packages/*.rpm; do
+            [[ -f "$rpm" ]] || continue
+            bash scripts/test-package-effective-parity.sh rpm-meta "$rpm" \
+              > "dist/parity/rpm-${{ matrix.distro }}-meta.txt"
+            echo "=== RPM metadata table (${{ matrix.distro }}) ==="
+            cat "dist/parity/rpm-${{ matrix.distro }}-meta.txt"
+          done
+
+      - name: Upload RPM parity metadata (${{ matrix.distro }})
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parity-rpm-${{ matrix.distro }}
+          path: dist/parity/rpm-${{ matrix.distro }}-meta.txt
+          retention-days: 30
+
   # ==========================================================================
   # BUILD DEB PACKAGES
   # ==========================================================================
@@ -359,6 +380,27 @@ jobs:
           path: dist/packages/*.deb
           retention-days: 30
 
+      # PKG-EFFECTIVE-PARITY (Slot 5 / row 14): extract L3 package metadata
+      # from the built DEB artifact. Output is consumed by the
+      # validate-package-effective-parity aggregation job for cross-packager diff.
+      - name: Extract DEB package metadata (PKG-EFFECTIVE-PARITY L3)
+        run: |
+          mkdir -p dist/parity
+          for deb in dist/packages/*.deb; do
+            [[ -f "$deb" ]] || continue
+            bash scripts/test-package-effective-parity.sh deb-meta "$deb" \
+              > "dist/parity/deb-${{ matrix.distro }}-meta.txt"
+            echo "=== DEB metadata table (${{ matrix.distro }}) ==="
+            cat "dist/parity/deb-${{ matrix.distro }}-meta.txt"
+          done
+
+      - name: Upload DEB parity metadata (${{ matrix.distro }})
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parity-deb-${{ matrix.distro }}
+          path: dist/parity/deb-${{ matrix.distro }}-meta.txt
+          retention-days: 30
+
   # ==========================================================================
   # TEST INSTALLATION (RPM - CentOS Stream)
   # ==========================================================================
@@ -390,6 +432,12 @@ jobs:
             tier: 0
 
     steps:
+      # Checkout required so docker mount of $(pwd)/scripts/ resolves to a real
+      # path containing test-package-effective-parity.sh + verify-exceptions.list
+      # (PKG-EFFECTIVE-PARITY Phase 4/5/6).
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
       - name: Download RPM packages (with retry)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -409,7 +457,12 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+          mkdir -p parity-out
+          docker run --rm \
+            -v $(pwd)/packages:/packages \
+            -v $(pwd)/scripts:/scripts:ro \
+            -v $(pwd)/parity-out:/parity-out \
+            ${{ matrix.container }} bash -c '
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
 
@@ -469,9 +522,49 @@ jobs:
               echo "[EXPECTED] No installer.log (Docker has no systemd/nftables)"
             fi
 
+            # PKG-EFFECTIVE-PARITY Phase 4: fresh-install stat (L4)
+            # Best-effort tmpfiles-managed dir creation (vanilla Docker has no
+            # systemd PID 1 but systemd-tmpfiles binary works without dbus)
+            echo "=== Phase 4: Fresh-install stat (PKG-EFFECTIVE-PARITY L4) ==="
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+            bash /scripts/test-package-effective-parity.sh fresh-stat \
+              > /parity-out/rpm-${{ matrix.distro }}-fresh-stat.txt
+            cat /parity-out/rpm-${{ matrix.distro }}-fresh-stat.txt
+            # Assert package-shipped paths match expected (HARD FAIL on mismatch)
+            bash /scripts/test-package-effective-parity.sh assert-expected \
+              /parity-out/rpm-${{ matrix.distro }}-fresh-stat.txt package
+
+            # PKG-EFFECTIVE-PARITY Phase 5: reinstall preservation (L5)
+            echo "=== Phase 5: Reinstall preservation (PKG-EFFECTIVE-PARITY L5) ==="
+            dnf reinstall -y nftban-core > /dev/null 2>&1 || dnf install -y --allowerasing /packages/*.rpm > /dev/null 2>&1
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+            bash /scripts/test-package-effective-parity.sh reinstall-stat \
+              > /parity-out/rpm-${{ matrix.distro }}-reinstall-stat.txt
+            bash /scripts/test-package-effective-parity.sh diff \
+              /parity-out/rpm-${{ matrix.distro }}-fresh-stat.txt \
+              /parity-out/rpm-${{ matrix.distro }}-reinstall-stat.txt
+
+            # PKG-EFFECTIVE-PARITY Phase 6: verify-tool (L6)
+            echo "=== Phase 6: rpm -V verify-tool (PKG-EFFECTIVE-PARITY L6) ==="
+            bash /scripts/test-package-effective-parity.sh verify-tool rpm \
+              > /parity-out/rpm-${{ matrix.distro }}-verify.txt 2>&1 || {
+                echo "[FAIL] rpm -V flagged unexpected entries:"
+                cat /parity-out/rpm-${{ matrix.distro }}-verify.txt
+                exit 1
+              }
+            cat /parity-out/rpm-${{ matrix.distro }}-verify.txt
+
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
           '
+
+      - name: Upload RPM parity install artifacts (${{ matrix.distro }})
+        if: always() && steps.download.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parity-rpm-install-${{ matrix.distro }}
+          path: parity-out/rpm-${{ matrix.distro }}-*.txt
+          retention-days: 30
 
   # ==========================================================================
   # TEST INSTALLATION (DEB)
@@ -504,6 +597,12 @@ jobs:
             tier: 1
 
     steps:
+      # Checkout required so docker mount of $(pwd)/scripts/ resolves to a real
+      # path containing test-package-effective-parity.sh + verify-exceptions.list
+      # (PKG-EFFECTIVE-PARITY Phase 4/5/6).
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
       - name: Download DEB packages (with retry)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -523,7 +622,12 @@ jobs:
       - name: Test installation on ${{ matrix.distro }}
         if: steps.download.outcome == 'success'
         run: |
-          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.container }} bash -c '
+          mkdir -p parity-out
+          docker run --rm \
+            -v $(pwd)/packages:/packages \
+            -v $(pwd)/scripts:/scripts:ro \
+            -v $(pwd)/parity-out:/parity-out \
+            ${{ matrix.container }} bash -c '
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
 
@@ -585,9 +689,49 @@ jobs:
               echo "[EXPECTED] No installer.log (Docker has no systemd/nftables)"
             fi
 
+            # PKG-EFFECTIVE-PARITY Phase 4: fresh-install stat (L4)
+            echo "=== Phase 4: Fresh-install stat (PKG-EFFECTIVE-PARITY L4) ==="
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+            bash /scripts/test-package-effective-parity.sh fresh-stat \
+              > /parity-out/deb-${{ matrix.distro }}-fresh-stat.txt
+            cat /parity-out/deb-${{ matrix.distro }}-fresh-stat.txt
+            # Assert package-shipped paths match expected (HARD FAIL on mismatch)
+            # This is THE D-NEW-12 regression guard: DEB regressing /etc/nftban
+            # to root:root 0755 will fail here.
+            bash /scripts/test-package-effective-parity.sh assert-expected \
+              /parity-out/deb-${{ matrix.distro }}-fresh-stat.txt package
+
+            # PKG-EFFECTIVE-PARITY Phase 5: reinstall preservation (L5)
+            echo "=== Phase 5: Reinstall preservation (PKG-EFFECTIVE-PARITY L5) ==="
+            apt-get install --reinstall -y nftban-core > /dev/null 2>&1 || apt-get install -y /packages/*.deb > /dev/null 2>&1
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+            bash /scripts/test-package-effective-parity.sh reinstall-stat \
+              > /parity-out/deb-${{ matrix.distro }}-reinstall-stat.txt
+            bash /scripts/test-package-effective-parity.sh diff \
+              /parity-out/deb-${{ matrix.distro }}-fresh-stat.txt \
+              /parity-out/deb-${{ matrix.distro }}-reinstall-stat.txt
+
+            # PKG-EFFECTIVE-PARITY Phase 6: verify-tool (L6)
+            echo "=== Phase 6: dpkg --verify verify-tool (PKG-EFFECTIVE-PARITY L6) ==="
+            bash /scripts/test-package-effective-parity.sh verify-tool deb \
+              > /parity-out/deb-${{ matrix.distro }}-verify.txt 2>&1 || {
+                echo "[FAIL] dpkg --verify flagged unexpected entries:"
+                cat /parity-out/deb-${{ matrix.distro }}-verify.txt
+                exit 1
+              }
+            cat /parity-out/deb-${{ matrix.distro }}-verify.txt
+
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
           '
+
+      - name: Upload DEB parity install artifacts (${{ matrix.distro }})
+        if: always() && steps.download.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parity-deb-install-${{ matrix.distro }}
+          path: parity-out/deb-${{ matrix.distro }}-*.txt
+          retention-days: 30
 
   # ==========================================================================
   # CONSOLIDATE ALL PACKAGES
@@ -777,6 +921,126 @@ jobs:
             name=$(basename "$binary")
             hash=$(sha256sum "$binary" | cut -c1-16)
             echo "| $name | \`$hash...\` |" >> $GITHUB_STEP_SUMMARY
+          done
+
+  # ==========================================================================
+  # PKG-EFFECTIVE-PARITY: cross-packager aggregation (Slot 5 / row 14)
+  # ==========================================================================
+  # Closes the L3 escape class that lived ~13 releases pre-AUTH-HARDENING:
+  # both packages could "ship the same dirs" while recording different
+  # ownership/mode in their package DBs. Now we extract metadata from each
+  # built artifact + diff cross-packager + assert against expected table.
+  # ==========================================================================
+  validate-package-effective-parity:
+    name: Validate package effective parity (RPM vs DEB)
+    needs: [build-rpm, build-deb, test-rpm-install, test-deb-install]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download all parity artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: parity/
+          pattern: parity-*
+
+      - name: Inspect parity artifact tree
+        run: |
+          echo "=== Parity artifact tree ==="
+          find parity -type f | sort
+          echo ""
+
+      - name: L3 — assert RPM package metadata matches expected table
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in parity/parity-rpm-el9/*.txt parity/parity-rpm-el10/*.txt; do
+            [[ -f "$f" ]] || continue
+            echo "=== Asserting expected against $f ==="
+            cat "$f"
+            if ! bash scripts/test-package-effective-parity.sh assert-expected "$f" package; then
+              echo "::error::L3 RPM metadata mismatch in $f"
+              fail=1
+            fi
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "✓ L3 RPM metadata matches expected for all matrix variants"
+
+      - name: L3 — assert DEB package metadata matches expected table
+        run: |
+          set -euo pipefail
+          # PKG-EFFECTIVE-PARITY Slot 5a: DEB archive ships postinst-converged
+          # paths as root:root (per V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md
+          # Option α). Pass the exception list so the L3 assert expects
+          # root:root for the 6 converged paths instead of root:nftban etc.
+          # L4 (installed-fs stat) and L6 (dpkg --verify) are NOT affected by
+          # this exception list — they continue to require by-name parity.
+          DEB_L3_EXCEPTIONS="scripts/test-package-deb-l3-exceptions.list"
+          [[ -r "$DEB_L3_EXCEPTIONS" ]] || { echo "::error::Missing $DEB_L3_EXCEPTIONS"; exit 1; }
+          fail=0
+          for f in parity/parity-deb-debian12/*.txt parity/parity-deb-debian13/*.txt parity/parity-deb-ubuntu22.04/*.txt parity/parity-deb-ubuntu24.04/*.txt; do
+            [[ -f "$f" ]] || continue
+            echo "=== Asserting expected against $f (with DEB L3 postinst-converged exceptions) ==="
+            cat "$f"
+            if ! bash scripts/test-package-effective-parity.sh assert-expected "$f" package "--deb-l3-exceptions=$DEB_L3_EXCEPTIONS"; then
+              echo "::error::L3 DEB metadata mismatch in $f"
+              fail=1
+            fi
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "✓ L3 DEB metadata matches expected for all matrix variants (postinst-converged paths verified as root:root in archive)"
+
+      - name: L3 — cross-packager parity diff (RPM vs DEB)
+        run: |
+          set -euo pipefail
+          # Pick representative variants (Tier 0): el9 + ubuntu24.04.
+          # PKG-EFFECTIVE-PARITY Slot 5a: pass the exception list so the diff
+          # tolerates the documented postinst-converged divergence (RPM ships
+          # root:nftban via %attr; DEB ships root:root in archive and converges
+          # at postinst). All non-exception paths must still match exactly.
+          DEB_L3_EXCEPTIONS="scripts/test-package-deb-l3-exceptions.list"
+          [[ -r "$DEB_L3_EXCEPTIONS" ]] || { echo "::error::Missing $DEB_L3_EXCEPTIONS"; exit 1; }
+          rpm_meta=$(ls parity/parity-rpm-el9/*.txt 2>/dev/null | head -1)
+          deb_meta=$(ls parity/parity-deb-ubuntu24.04/*.txt 2>/dev/null | head -1)
+          if [[ -z "$rpm_meta" || -z "$deb_meta" ]]; then
+            echo "::error::Missing parity metadata artifacts (rpm=$rpm_meta deb=$deb_meta)"
+            exit 1
+          fi
+          echo "=== L3 cross-packager diff: $rpm_meta vs $deb_meta (with $DEB_L3_EXCEPTIONS) ==="
+          if ! bash scripts/test-package-effective-parity.sh diff "$rpm_meta" "$deb_meta" "--exceptions=$DEB_L3_EXCEPTIONS"; then
+            echo "::error::L3 RPM vs DEB metadata divergence on non-exception paths (postinst-converged paths are tolerated; non-exception divergence is a real packaging bug)"
+            exit 1
+          fi
+          echo "✓ L3 cross-packager metadata parity: RPM == DEB for non-exception critical paths (6 paths converged at postinst)"
+
+      - name: L4+L5 — cross-packager fresh-install stat parity (Tier 0)
+        run: |
+          set -euo pipefail
+          # Pick Tier 0 representatives
+          rpm_stat=$(ls parity/parity-rpm-install-rocky9/*-fresh-stat.txt 2>/dev/null | head -1)
+          deb_stat=$(ls parity/parity-deb-install-ubuntu24.04/*-fresh-stat.txt 2>/dev/null | head -1)
+          if [[ -z "$rpm_stat" || -z "$deb_stat" ]]; then
+            echo "::warning::Missing install-stat artifacts (rpm=$rpm_stat deb=$deb_stat) — Tier 0 install jobs may have skipped"
+            exit 0
+          fi
+          echo "=== L4 cross-packager fresh-install stat diff: $rpm_stat vs $deb_stat ==="
+          if ! bash scripts/test-package-effective-parity.sh diff "$rpm_stat" "$deb_stat"; then
+            echo "::error::L4 RPM vs DEB installed-fs divergence (no AUTHORITY_EXCEPTION)"
+            exit 1
+          fi
+          echo "✓ L4 cross-packager installed-fs parity"
+
+      - name: Generate parity report
+        if: always()
+        run: |
+          echo "## PKG-EFFECTIVE-PARITY Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Layers asserted: L3 (package metadata) + L4 (installed-fs) + L5 (reinstall preservation) + L6 (verify-tool)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Critical paths (11)" >> $GITHUB_STEP_SUMMARY
+          bash scripts/test-package-effective-parity.sh list-expected | while IFS='|' read -r path type mode owner group pkg; do
+            echo "- \`$path\` → $type $mode $owner:$group (pkg-shipped=$pkg)" >> $GITHUB_STEP_SUMMARY
           done
 
   # ==========================================================================

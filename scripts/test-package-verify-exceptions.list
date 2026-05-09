@@ -1,0 +1,27 @@
+# =============================================================================
+# NFTBan - Package verify-tool exceptions list (PKG-EFFECTIVE-PARITY / L6)
+# =============================================================================
+# Consumer: scripts/test-package-effective-parity.sh verify-tool {rpm,deb}
+#
+# Purpose: enumerate explicitly-tolerated entries in `rpm -V nftban-core` /
+# `dpkg --verify nftban-core` output. ANY line not matching an exception here
+# causes the verify-tool gate to FAIL.
+#
+# Format (deterministic, easy to parse):
+#   <path-fragment>|<flag-pattern>
+# Lines starting with '#' or blank are ignored.
+#
+# A verify-tool output line is exempted when BOTH:
+#   1. the line contains <path-fragment> as a substring
+#   2. the line matches <flag-pattern> as a bash regex
+#
+# Empty exceptions file is the desired baseline — fresh install of nftban-core
+# should produce zero `rpm -V` / `dpkg --verify` output. Exceptions are
+# expected only after operator-side modifications to %config(noreplace) files,
+# which are out of scope for fresh-install CI.
+#
+# =============================================================================
+# Currently-tolerated exceptions: NONE.
+# Fresh install of nftban-core must produce empty `rpm -V` / `dpkg --verify`
+# output. Any deviation is a real packaging bug and must be investigated.
+# =============================================================================
