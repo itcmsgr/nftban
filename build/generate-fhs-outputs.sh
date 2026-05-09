@@ -213,8 +213,15 @@ generate_sysusers() {
 EOF
 
     # Groups
+    # Per sysusers.d(5): g-lines have the form `g name [id]` — GECOS/comment
+    # fields are not permitted on g-lines (only on u-lines). Earlier output
+    # included `"\(.comment)"` here, which systemd-sysusers rejects across
+    # systemd 252/255/259+ with "Lines of type 'g' don't take a GECOS field".
+    # Comment metadata is preserved in build/fhs-spec.yaml under
+    # `.sysusers.groups[].comment` for documentation purposes; it is not
+    # consumed by sysusers.d output.
     echo "# Groups" >> "$SYSUSERS_OUT"
-    yq -r '.sysusers.groups[] | "g \(.name) - \"\(.comment)\""' "$FHS_SPEC" >> "$SYSUSERS_OUT"
+    yq -r '.sysusers.groups[] | "g \(.name) -"' "$FHS_SPEC" >> "$SYSUSERS_OUT"
     echo "" >> "$SYSUSERS_OUT"
 
     # Users
