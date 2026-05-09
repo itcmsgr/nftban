@@ -83,7 +83,14 @@ SystemCallErrorNumber=EPERM
 # Resource limits
 CPUQuota=50%
 MemoryMax=256M
-TasksMax=10
+# TasksMax sets the cgroup pids.max limit. The geoip updater is a Go 1.25
+# binary that performs HTTP downloads + maxminddb finalizer cleanup; the
+# Go runtime needs OS-thread headroom for sysmon, GC workers, the
+# finalizer/cleanup goroutine, and net/http I/O. TasksMax=10 is too low —
+# clone(2) returns EAGAIN once the cgroup is exhausted, which surfaces as
+# a Go runtime fatal trace on startup (see #525). 64 matches the upper
+# range of peer Go services in install/systemd (feeds=20, suricata-update=50).
+TasksMax=64
 TimeoutStartSec=10min
 
 [Install]

@@ -477,6 +477,119 @@ jobs:
           [ "$fail" = "0" ] || exit 1
           echo "G8 PASS: tmpfiles-managed path parity verified on real systemd"
 
+      # ------------------------------------------------------------------
+      # G9: nftban-core-geoip.service runtime-fatal-trace assertion (#525)
+      # ------------------------------------------------------------------
+      # Slot 7 / Lane G regression guard. Closes #525 silent-recurrence:
+      # the geoip service emitted a Go runtime fatal trace
+      # ("runtime.(*cleanupQueue)..." with status=2/INVALIDARGUMENT) at
+      # startup on a canonical install. No CI step previously asserted
+      # geoip startup was crash-free, so the panic class could recur
+      # silently on any change to the unit file, the Go binary, or the
+      # maxminddb-golang dependency.
+      #
+      # Contract: invoking the geoip updater (via real systemd on the
+      # ubuntu-24.04 leg, or directly on the alma9 container leg where
+      # systemd PID 1 is unavailable) MUST NOT emit any of the documented
+      # Go runtime fatal-trace patterns. Normal command failure caused by
+      # network / config / download conditions is tolerated as long as no
+      # fatal trace appears in the captured output.
+      - name: G9 — nftban-core-geoip startup runtime-fatal-trace assertion
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "=== G9: nftban-core-geoip runtime-fatal-trace assertion (#525) ==="
+
+          # Build the real nftban-core binary. Earlier setup (line 111)
+          # stubbed /usr/lib/nftban/bin/nftban-core with /bin/true to keep
+          # G1-G8 CGO-free; G9 needs the real binary. nftban-core +
+          # github.com/oschwald/maxminddb-golang are pure Go (no CGO).
+          go build -trimpath -o bin/nftban-core ./cmd/nftban-core/
+          sudo install -m 0755 bin/nftban-core /usr/lib/nftban/bin/nftban-core
+
+          # Stage the systemd unit so systemctl can resolve it on the
+          # ubuntu-24.04 leg (real systemd PID 1).
+          sudo mkdir -p /etc/systemd/system
+          sudo install -m 0644 install/systemd/nftban-core-geoip.service \
+                                /etc/systemd/system/nftban-core-geoip.service
+
+          # Detect whether systemd PID 1 is available. ubuntu-24.04 runner
+          # has it; almalinux:9 container does not (PID 1 is the runner
+          # agent, not systemd). systemctl daemon-reload returns non-zero
+          # when there is no D-Bus to systemd; we use that as the probe.
+          have_systemd=0
+          if sudo systemctl daemon-reload 2>/dev/null; then
+            have_systemd=1
+          fi
+          echo "systemd PID 1 available: $have_systemd"
+
+          output_file=/tmp/g9-output.log
+          : > "$output_file"
+          rc=0
+
+          if [ "$have_systemd" = "1" ]; then
+            # Path A: real systemd. Apply unit verbatim, capture journal.
+            echo "--- G9 path A: systemctl start nftban-core-geoip.service ---"
+            sudo systemctl start nftban-core-geoip.service 2>&1 \
+              | sudo tee -a "$output_file" \
+              || rc=$?
+            sudo journalctl -u nftban-core-geoip.service --no-pager 2>&1 \
+              | sudo tee -a "$output_file" \
+              || true
+          else
+            # Path B: no systemd PID 1 (alma9 container). Run the binary
+            # directly under prlimit --nproc=64 to mirror TasksMax=64.
+            # The fatal-trace assertion is the contract; the unit's
+            # full sandbox cannot be applied here, but the runtime path
+            # the panic class follows (clone(2) under cgroup pids limit
+            # in #525, runtime cleanup-queue interaction generally) is
+            # still exercised by running the binary through `geoip
+            # update`. Network/download failure is tolerated.
+            echo "--- G9 path B: direct exec under prlimit --nproc=64 ---"
+            sudo prlimit --nproc=64 -- /usr/lib/nftban/bin/nftban-core geoip update 2>&1 \
+              | sudo tee -a "$output_file" \
+              || rc=$?
+          fi
+
+          echo "G9 nftban-core-geoip exit=$rc, output captured at $output_file"
+          echo "--- output (last 80 lines) ---"
+          sudo tail -80 "$output_file" || true
+          echo "--- end ---"
+
+          # Assert NO Go runtime fatal trace patterns. These are the
+          # signatures the #525 reproduction emitted (and adjacent
+          # signatures the runtime emits on related fatal paths).
+          fatal_patterns=(
+            'runtime\.fatalpanic'
+            'runtime\.gopanic'
+            'runtime\.\(\*cleanupQueue\)'
+            'fatal error:'
+            '^panic:'
+            'goroutine 1 \[running\]:'
+          )
+          fail=0
+          for pat in "${fatal_patterns[@]}"; do
+            if sudo grep -E -q "$pat" "$output_file"; then
+              echo "::error::G9 FAIL: Go runtime fatal trace detected: pattern=$pat"
+              echo "::error::  matching lines:"
+              sudo grep -E -n "$pat" "$output_file" | head -5 \
+                | sed 's/^/::error::    /' || true
+              fail=1
+            fi
+          done
+
+          if [ "$fail" = "1" ]; then
+            echo "::error::G9 FAIL — see #525; geoip emitted Go runtime fatal trace"
+            exit 1
+          fi
+
+          # Tolerate non-zero exit codes when no fatal trace was found.
+          # Network/download/config failures produce fmt.Errorf strings
+          # (exit 1) which is acceptable in this CI environment; the
+          # contract this step enforces is "no Go runtime fatal trace,"
+          # not "successful download."
+          echo "G9 PASS: no Go runtime fatal trace in geoip startup output (exit=$rc)"
+
   summary:
     name: Runtime Truth summary
     needs: runtime-truth

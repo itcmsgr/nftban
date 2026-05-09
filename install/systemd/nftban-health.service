@@ -80,7 +80,12 @@ RestrictAddressFamilies=AF_UNIX AF_NETLINK
 
 # Resource limits
 MemoryMax=128M
-TasksMax=10
+# Mirror of the nftban-core-geoip.service TasksMax fix (#525). The health
+# check shells out to nftban-core subcommands, including geoip status,
+# which exercise the same Go 1.25 runtime + finalizer-goroutine surface.
+# Raising the cgroup pids.max limit prevents the same clone(2) EAGAIN
+# class of fatal trace from recurring here.
+TasksMax=64
 
 # Logging
 StandardOutput=journal
