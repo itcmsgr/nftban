@@ -416,10 +416,19 @@ jobs:
           # Reveals whether the auditor dir was skipped entirely or created with
           # wrong owner/mode.
           echo "--- diag.4: post-tmpfiles stat (parent + leaf) ---"
+          # Slot 5b Stage 2-F (Bucket F fix): wrap path-existence tests with
+          # `sudo` because /var/lib/nftban is 0750 root:nftban and the runner
+          # user is not in the nftban group on the bare Ubuntu 24.04 runner.
+          # Without sudo, the runner-user `[ -d ]` test cannot traverse the
+          # parent and falsely reports MISSING for /var/lib/nftban/reports*.
+          # AlmaLinux 9 PASSed without sudo only because the container job
+          # runs as root (which bypasses POSIX mode checks). systemd-tmpfiles
+          # itself created the directories correctly on both — the test was
+          # the broken thing, not the product.
           for p in /var/lib/nftban /var/lib/nftban/reports /var/lib/nftban/reports/auditors; do
-            if [ -d "$p" ]; then
+            if sudo test -d "$p"; then
               echo "$(sudo stat -c '%n: type=dir mode=%a owner=%U:%G uid=%u gid=%g' "$p")"
-            elif [ -e "$p" ]; then
+            elif sudo test -e "$p"; then
               echo "$p: type=non-directory ($(sudo stat -c '%F' "$p"))"
             else
               echo "$p: MISSING (does not exist)"
@@ -442,15 +451,20 @@ jobs:
               "/var/log/nftban|0750|nftban|nftban" \
           ; do
             IFS='|' read -r p exp_mode exp_owner exp_group <<< "$entry"
-            if [[ ! -d "$p" ]]; then
+            # Slot 5b Stage 2-F: sudo-wrap path-existence + stat checks.
+            # See diag.4 comment block above — same Bucket F mechanism. The
+            # 5-path mode/owner/group contract below is unchanged; only the
+            # privilege context of the verifier changes so it can traverse
+            # the 0750 root:nftban parent.
+            if ! sudo test -d "$p"; then
               echo "::error::G8 missing dir: $p"
               fail=1
               continue
             fi
-            actual_mode=$(stat -c '%a' "$p")
+            actual_mode=$(sudo stat -c '%a' "$p")
             [[ ${#actual_mode} -eq 3 ]] && actual_mode="0$actual_mode"
-            actual_owner=$(stat -c '%U' "$p")
-            actual_group=$(stat -c '%G' "$p")
+            actual_owner=$(sudo stat -c '%U' "$p")
+            actual_group=$(sudo stat -c '%G' "$p")
             if [[ "$actual_mode" != "$exp_mode" || "$actual_owner" != "$exp_owner" || "$actual_group" != "$exp_group" ]]; then
               echo "::error::G8 mismatch on $p"
               echo "::error::  expected: $exp_mode $exp_owner:$exp_group"
