@@ -54,3 +54,18 @@
 /etc/nftban/suricata/state|postinst-converged
 /etc/nftban/suricata/state/last-good|postinst-converged
 /var/lib/nftban/community|postinst-converged
+
+# =============================================================================
+# Parent-tier exception (Slot 5a follow-up — /var/lib/nftban L3 parity fix)
+# =============================================================================
+# /var/lib/nftban is `created_by:tmpfiles` in fhs-spec.yaml (runtime authority)
+# but is also explicitly emitted to package payload (build/generate-fhs-outputs.sh
+# Slot 5a additions) so DEB and RPM symmetrically declare the parent dir. RPM
+# uses name-based %attr and ships archive metadata as root:nftban directly. DEB
+# uses chmod-only build-time convergence (mode 0750) and postinst chown to
+# root:nftban via the same attrs.list — so DEB archive metadata is root:root.
+# This entry filters the path from both sides of the cross-packager L3 diff;
+# L4 (installed-fs stat) still requires both packagers to converge to root:nftban
+# 0750 by name on the target host, which is verified by Test * install Phase 4.
+
+/var/lib/nftban|postinst-converged

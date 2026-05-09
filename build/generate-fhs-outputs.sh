@@ -262,6 +262,16 @@ EOF
     # in paths.go::RequiredDirs but missing from package payload.
     yq -r '.directories.data[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
 
+    # PKG-EFFECTIVE-PARITY Slot 5a: explicit parent emission. /var/lib/nftban
+    # is `created_by:tmpfiles` in fhs-spec.yaml (runtime authority via
+    # tmpfiles.d), but DEB build's `mkdir -p /var/lib/nftban/community`
+    # incidentally creates the parent in the staged tree, and the L3 cross-
+    # packager parity gate sees it diverge from RPM (which doesn't ship it).
+    # Make /var/lib/nftban explicit in package payload to keep the L3 diff
+    # symmetric. The runtime authority remains tmpfiles + postinst chown
+    # (DEB ships root:root, postinst converges to root:nftban).
+    echo "/var/lib/nftban" >> "$DEB_DIRS_OUT"
+
     # Shared directories
     yq -r '.directories.shared[] | select(.created_by == "package") | .path' "$FHS_SPEC" >> "$DEB_DIRS_OUT"
 
@@ -314,6 +324,17 @@ EOF
     yq -r '.directories.data[] | select(.created_by == "package") | "\(.path)|\(.mode)|\(.owner)|\(.group)"' \
         "$FHS_SPEC" >> "$DEB_ATTRS_OUT"
 
+    # PKG-EFFECTIVE-PARITY Slot 5a: explicit parent emission for /var/lib/nftban.
+    # See generate_deb_dirs() for rationale. Emit using the metadata from
+    # fhs-spec.yaml (which still says created_by:tmpfiles — that is the runtime
+    # authority — but the package archive layer also needs to ship it so cross-
+    # packager L3 parity is symmetric). The chmod loop in build_deb() reads
+    # this attrs.list and applies mode 0750 to /var/lib/nftban at build time;
+    # ownership is left as root:root in the archive (postinst converges to
+    # root:nftban via the same attrs.list).
+    yq -r '.directories.data[] | select(.path == "/var/lib/nftban") | "\(.path)|\(.mode)|\(.owner)|\(.group)"' \
+        "$FHS_SPEC" >> "$DEB_ATTRS_OUT"
+
     print_status "Generated $DEB_ATTRS_OUT"
 }
 
@@ -358,6 +379,15 @@ EOF
     # dirs declared `created_by:package` (e.g. /var/lib/nftban/community) were
     # in paths.go::RequiredDirs but missing from RPM %files payload.
     yq -r '.directories.data[] | select(.created_by == "package") | "%dir %attr(\(.mode),\(.owner),\(.group)) \(.path)"' "$FHS_SPEC" >> "$RPM_FILES_OUT"
+
+    # PKG-EFFECTIVE-PARITY Slot 5a: explicit parent emission for /var/lib/nftban.
+    # See generate_deb_dirs() for rationale. RPM uses %attr() which is name-
+    # based and re-applied at install time, so RPM ships /var/lib/nftban at
+    # 0750 root:nftban (matching fhs-spec.yaml + tmpfiles.d). Cross-packager
+    # L3 parity is preserved via test-package-deb-l3-exceptions.list which
+    # filters /var/lib/nftban from both sides (DEB ships postinst-converged
+    # root:root in archive; RPM ships root:nftban directly).
+    yq -r '.directories.data[] | select(.path == "/var/lib/nftban") | "%dir %attr(\(.mode),\(.owner),\(.group)) \(.path)"' "$FHS_SPEC" >> "$RPM_FILES_OUT"
 
     echo "" >> "$RPM_FILES_OUT"
     echo "# ---------------------------------------------------------------------------" >> "$RPM_FILES_OUT"

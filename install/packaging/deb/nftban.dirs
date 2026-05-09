@@ -70,6 +70,7 @@
 /etc/nftban/connectors
 /etc/nftban/distros
 /var/lib/nftban/community
+/var/lib/nftban
 /usr/share/nftban
 /usr/share/nftban/templates
 /usr/share/nftban/templates/mail

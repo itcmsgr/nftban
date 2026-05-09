@@ -80,6 +80,7 @@
 # DATA DIRECTORIES (package-territory only; tmpfiles-managed runtime dirs excluded)
 # ---------------------------------------------------------------------------
 %dir %attr(0750,nftban,nftban) /var/lib/nftban/community
+%dir %attr(0750,root,nftban) /var/lib/nftban
 
 # ---------------------------------------------------------------------------
 # SHARED DATA DIRECTORIES (root:root)
