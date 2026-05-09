@@ -302,7 +302,46 @@ jobs:
           systemd --version 2>&1 | head -2 || true
           systemd-tmpfiles --version 2>&1 | head -2 || echo "(systemd-tmpfiles --version not supported)"
 
-          # 1. Create system users/groups (matches install/systemd/sysusers.d/nftban.conf)
+          # ─────────────────────────────────────────────────────────────────
+          # PATH-CLARITY: NFTBan has THREE files named `nftban.conf` in
+          # different namespaces. Their authority and meaning differ; the
+          # directory is the namespace.
+          #
+          #   /etc/nftban/nftban.conf
+          #     → NFTBan APPLICATION config (operator-editable runtime config).
+          #     → THIS WORKFLOW DOES NOT TOUCH /etc/nftban/nftban.conf except
+          #       in the source-install staging block above (G1-G6 setup);
+          #       it is NOT what this G8 step exercises.
+          #
+          #   install/systemd/sysusers.d/nftban.conf  →  /usr/lib/sysusers.d/nftban.conf
+          #     → systemd IDENTITY recipe (declares nftban + nftban-auditor groups
+          #       and the nftban user). Generated from build/fhs-spec.yaml.
+          #
+          #   install/systemd/tmpfiles.d/nftban.conf  →  /usr/lib/tmpfiles.d/nftban.conf
+          #     → systemd DIRECTORY recipe (declares /var/lib/nftban/reports*,
+          #       /run/nftban, /var/cache/nftban, /var/log/nftban with mode +
+          #       owner). Generated from build/fhs-spec.yaml.
+          #
+          # G8 below tests that the installed (sysusers + tmpfiles) recipes
+          # produce the expected on-disk state. It does NOT test
+          # /etc/nftban/nftban.conf.
+          # ─────────────────────────────────────────────────────────────────
+
+          # 1. Create system users/groups via groupadd/useradd.
+          # Note: an earlier Stage 2 attempt (PR #579 commit 1e4bf69e, since
+          # reverted) tried `systemd-sysusers install/systemd/sysusers.d/nftban.conf`
+          # to align CI with the runtime authority model. That attempt failed
+          # because the shipped sysusers.d/nftban.conf currently has GECOS
+          # strings on `g` lines — a syntax `systemd-sysusers` rejects on both
+          # systemd 252 (AlmaLinux) and 255 (Ubuntu). Production DEB postinst
+          # uses groupadd/useradd directly (build_nftban.sh:837-852) and does
+          # not invoke systemd-sysusers, so the malformed file is dormant in
+          # production. That sysusers.d defect is tracked separately
+          # (proposed worklog row SYSUSERS-GECOS-G-LINES) and is NOT in scope
+          # for this G8 diagnostic step. We use groupadd/useradd here to keep
+          # Stage 1's working baseline so the original Bucket-E systemd 255
+          # symptom on /var/lib/nftban/reports/auditors remains observable
+          # under the SYSTEMD_LOG_LEVEL=debug capture below.
           sudo getent group nftban >/dev/null 2>&1 || sudo groupadd --system nftban
           sudo getent group nftban-auditor >/dev/null 2>&1 || sudo groupadd --system nftban-auditor
           sudo getent group suricata >/dev/null 2>&1 || sudo groupadd --system suricata
@@ -355,8 +394,17 @@ jobs:
           if [ "$tmpfiles_supports_debug" = "1" ]; then
             tmpfiles_args=(--debug "${tmpfiles_args[@]}")
           fi
+          # Slot 5b Stage 1.5 — SYSTEMD_LOG_LEVEL=debug exposes the per-line
+          # processing trace inside systemd-tmpfiles. systemd-tmpfiles itself
+          # has no --debug CLI flag (we keep the probe above for older systemd
+          # versions that may add one); the canonical way to make it verbose
+          # is the env var, set per-call via `sudo VAR=value cmd` syntax.
+          # Goal: capture the per-rule decision systemd 255 makes for the
+          # /var/lib/nftban/reports* subtree on Ubuntu 24.04 (Stage 1 evidence
+          # showed the leaf is silently missing post-call with exit=0 and
+          # zero log output — debug should make the silent skip visible).
           tmpfiles_rc=0
-          sudo systemd-tmpfiles "${tmpfiles_args[@]}" /usr/lib/tmpfiles.d/nftban.conf 2>&1 \
+          sudo SYSTEMD_LOG_LEVEL=debug systemd-tmpfiles "${tmpfiles_args[@]}" /usr/lib/tmpfiles.d/nftban.conf 2>&1 \
             | sudo tee /tmp/g8-tmpfiles.log \
             || tmpfiles_rc=$?
           echo "--- diag.3b: systemd-tmpfiles exit=$tmpfiles_rc, log size=$(sudo wc -l < /tmp/g8-tmpfiles.log) lines ---"
