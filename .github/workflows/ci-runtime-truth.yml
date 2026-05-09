@@ -616,8 +616,18 @@ jobs:
           which systemd-sysusers
           systemd-sysusers --version 2>&1 | head -1
 
-          file=install/systemd/sysusers.d/nftban.conf
-          test -f "$file" || { echo "::error::G10: $file not found"; exit 1; }
+          # Resolve the sysusers file to an absolute path. `sudo` runs
+          # systemd-sysusers with a sanitized environment, so a relative
+          # path is resolved against root's CWD (or simply not found),
+          # not the runner's CWD — observed on both ubuntu-24.04 (systemd
+          # 255) and almalinux-9 container (systemd 252) as
+          # "Failed to open 'install/systemd/sysusers.d/nftban.conf',
+          #  ignoring: No such file or directory" with exit=1. Using
+          # $GITHUB_WORKSPACE keeps this a source-tree parse-validation;
+          # we deliberately do NOT install the file into /usr/lib/sysusers.d
+          # for this check.
+          file="${GITHUB_WORKSPACE:-$(pwd)}/install/systemd/sysusers.d/nftban.conf"
+          sudo test -f "$file" || { echo "::error::G10: $file not found"; exit 1; }
 
           rc=0
           out=$(sudo systemd-sysusers --dry-run "$file" 2>&1) || rc=$?
