@@ -220,25 +220,79 @@ mode_rpm_meta() {
 # -----------------------------------------------------------------------------
 # Mode: deb-meta — extract dir metadata from DEB artifact via `dpkg-deb --contents`
 # -----------------------------------------------------------------------------
+# Defensive parser: dpkg-deb --contents output column counts can shift between
+# dpkg versions and locales. The previous fixed-column read silently produced
+# 0 lines on debian12/13 + ubuntu22.04/24.04 containers in CI, hidden behind
+# the parallel mode_rpm_meta failure (the L3 RPM assert step ran first and
+# aborted the workflow before L3 DEB executed). After 75ebf1ad fixed RPM,
+# the empty DEB extraction surfaced as the next blocker.
+#
+# Parse each line into an array. Mode is at stable position 1; owner/group
+# is the combined "owner/group" token at position 2 (canonical since dpkg
+# 1.0). Path is the LAST whitespace-separated field — none of our 11 critical
+# paths contain spaces, and FHS paths in package archives never do in practice.
+# Strip leading "./" and trailing "/" to normalize to absolute paths matching
+# the EXPECTED_TABLE keys. Fail loudly if dpkg-deb itself fails or produces
+# empty output.
 mode_deb_meta() {
     local deb_file="${1:?usage: deb-meta <deb-file>}"
     [[ -r "$deb_file" ]] || { log_err "DEB not readable: $deb_file"; exit 3; }
     command -v dpkg-deb >/dev/null || { log_err "dpkg-deb not installed"; exit 2; }
 
-    # `dpkg-deb --contents` output: drwxr-xr-x root/root         0 2024-12-22 18:08 ./etc/nftban/
-    dpkg-deb --contents "$deb_file" | while read -r mode_str owner_group _size _date _time path _link; do
-        # Strip leading './' and trailing '/'
-        path="${path#./}"
-        path="${path%/}"
-        path="/$path"
+    # Force C locale for predictable date/decimal formatting across CI
+    # containers; capture all output to surface failures explicitly.
+    local raw
+    if ! raw=$(LC_ALL=C dpkg-deb --contents "$deb_file" 2>/dev/null); then
+        log_err "dpkg-deb --contents failed for $deb_file"
+        exit 1
+    fi
+    if [[ -z "$raw" ]]; then
+        log_err "dpkg-deb --contents produced empty output for $deb_file"
+        exit 1
+    fi
+
+    # Parse line-by-line; emit canonical "path|mode|owner|group" rows for any
+    # line whose last field is an absolute path (after normalization). Mode is
+    # field 1; owner_group is field 2 ("owner/group" combined per dpkg-deb
+    # convention); path is field NF (last whitespace-separated token).
+    local out
+    out=$(printf '%s\n' "$raw" | awk '
+        /^[-dlcbps]/ {
+            mode = $1
+            owner_group = $2
+            path = $NF
+            # Skip lines whose last field is not a path-like token
+            if (path !~ /^\.?\//) next
+            # Skip if line did not yield enough fields for a valid record
+            if (NF < 4) next
+            # Strip leading "./" and trailing "/" from path
+            sub(/^\.\//, "", path)
+            sub(/\/$/, "", path)
+            # Normalize to absolute path
+            if (path !~ /^\//) path = "/" path
+            # Split owner_group "owner/group" into separate fields
+            split(owner_group, og, "/")
+            print path "|" mode "|" og[1] "|" og[2]
+        }
+    ')
+
+    if [[ -z "$out" ]]; then
+        log_err "deb-meta parsed zero records from $deb_file (dpkg-deb output was non-empty; parser may need adjustment)"
+        log_err "First 5 raw lines for diagnosis:"
+        printf '%s\n' "$raw" | head -5 >&2
+        exit 1
+    fi
+
+    # Filter to critical paths and convert mode to octal in the shell loop
+    # (matches mode_rpm_meta pattern; reuses ls_mode_to_octal helper). Sort
+    # -u for deterministic output.
+    while IFS='|' read -r path mode owner group; do
         is_critical_path "$path" || continue
-        local octal type owner group
-        octal=$(ls_mode_to_octal "$mode_str")
-        type=$(ls_type_from_mode "$mode_str")
-        owner="${owner_group%%/*}"
-        group="${owner_group#*/}"
+        local octal type
+        octal=$(ls_mode_to_octal "$mode")
+        type=$(ls_type_from_mode "$mode")
         echo "$path|$type|$octal|$owner|$group"
-    done | sort -u
+    done <<< "$out" | sort -u
 }
 
 # -----------------------------------------------------------------------------
