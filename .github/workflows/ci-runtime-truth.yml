@@ -590,6 +590,66 @@ jobs:
           # not "successful download."
           echo "G9 PASS: no Go runtime fatal trace in geoip startup output (exit=$rc)"
 
+      # ------------------------------------------------------------------
+      # G10: install/systemd/sysusers.d/nftban.conf parse-validation
+      # ------------------------------------------------------------------
+      # Row 16 ONE-SHOT regression guard. Closes the SYSUSERS-GECOS-G-LINES
+      # dormant defect: prior generator emitted `g name - "comment"` which
+      # systemd-sysusers rejects ("Lines of type 'g' don't take a GECOS
+      # field") on systemd 252 (AlmaLinux 9), 255 (Ubuntu 24.04), and 259
+      # (verified locally during the fix). Production never noticed
+      # because postinst uses groupadd directly, not systemd-sysusers —
+      # but the shipped file was syntactically invalid and any future
+      # operator running `systemd-sysusers --replace=…` would have hit it.
+      #
+      # Contract: `systemd-sysusers --dry-run` MUST exit 0 on the shipped
+      # file. --dry-run parses + would-create messages without touching
+      # /etc/{passwd,group,shadow}. Runs on both systemd-252-class
+      # (AlmaLinux 9 container) and systemd-255-class (ubuntu-24.04
+      # runner) legs.
+      - name: G10 — sysusers.d/nftban.conf parse-validation (row 16 one-shot guard)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "=== G10: systemd-sysusers parse-validation ==="
+
+          which systemd-sysusers
+          systemd-sysusers --version 2>&1 | head -1
+
+          # Resolve the sysusers file to an absolute path. `sudo` runs
+          # systemd-sysusers with a sanitized environment, so a relative
+          # path is resolved against root's CWD (or simply not found),
+          # not the runner's CWD — observed on both ubuntu-24.04 (systemd
+          # 255) and almalinux-9 container (systemd 252) as
+          # "Failed to open 'install/systemd/sysusers.d/nftban.conf',
+          #  ignoring: No such file or directory" with exit=1. Using
+          # $GITHUB_WORKSPACE keeps this a source-tree parse-validation;
+          # we deliberately do NOT install the file into /usr/lib/sysusers.d
+          # for this check.
+          file="${GITHUB_WORKSPACE:-$(pwd)}/install/systemd/sysusers.d/nftban.conf"
+          sudo test -f "$file" || { echo "::error::G10: $file not found"; exit 1; }
+
+          rc=0
+          out=$(sudo systemd-sysusers --dry-run "$file" 2>&1) || rc=$?
+          echo "--- systemd-sysusers --dry-run output ---"
+          echo "$out"
+          echo "--- end (exit=$rc) ---"
+
+          if [ "$rc" != "0" ]; then
+            echo "::error::G10 FAIL: systemd-sysusers rejected $file (exit=$rc)"
+            exit 1
+          fi
+
+          # Belt-and-braces: even if exit=0, fail if the diagnostic message
+          # for malformed g-lines appears in output (in case a future
+          # systemd version downgrades the rejection from error to warning).
+          if echo "$out" | grep -qE "Lines of type 'g' don't take a GECOS field"; then
+            echo "::error::G10 FAIL: malformed g-line GECOS detected in $file"
+            exit 1
+          fi
+
+          echo "G10 PASS: $file parses cleanly under systemd-sysusers"
+
   summary:
     name: Runtime Truth summary
     needs: runtime-truth
