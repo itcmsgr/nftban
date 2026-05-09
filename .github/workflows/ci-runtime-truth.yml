@@ -302,15 +302,24 @@ jobs:
           systemd --version 2>&1 | head -2 || true
           systemd-tmpfiles --version 2>&1 | head -2 || echo "(systemd-tmpfiles --version not supported)"
 
-          # 1. Create system users/groups (matches install/systemd/sysusers.d/nftban.conf)
-          sudo getent group nftban >/dev/null 2>&1 || sudo groupadd --system nftban
-          sudo getent group nftban-auditor >/dev/null 2>&1 || sudo groupadd --system nftban-auditor
-          sudo getent group suricata >/dev/null 2>&1 || sudo groupadd --system suricata
-          sudo getent passwd nftban >/dev/null 2>&1 || \
-            sudo useradd --system --gid nftban --groups nftban-auditor \
-              --home-dir /var/lib/nftban --no-create-home --shell /usr/sbin/nologin nftban
+          # 1. Create system users/groups via systemd-sysusers — Slot 5b Stage 2
+          # fix per V107_G8_AUDITOR_DIR_UBUNTU_SCOPE.md root-cause classification
+          # (Bucket E: Ubuntu 24.04 systemd 255 silently fails to create the
+          # /var/lib/nftban/reports* subtree when identities are created via
+          # ad-hoc groupadd/useradd, but creates them correctly when identities
+          # come through systemd-sysusers against the project's sysusers.d
+          # drop-in. AlmaLinux 9 (systemd 252) accepts either path).
+          # This aligns the CI harness with the runtime authority model: real
+          # installs go through sysusers + tmpfiles, and so does this test.
+          # Suricata is not declared in install/systemd/sysusers.d/nftban.conf
+          # and therefore is not created here — none of the tmpfiles entries
+          # reference it as group, so its absence does not affect G8.
+          sudo install -m 0644 install/systemd/sysusers.d/nftban.conf /usr/lib/sysusers.d/nftban.conf
+          if ! sudo systemd-sysusers /usr/lib/sysusers.d/nftban.conf 2>&1 | sudo tee /tmp/g8-sysusers.log; then
+            echo "::warning::G8 systemd-sysusers reported issues; will check identities anyway"
+          fi
 
-          echo "--- diag.1: identity resolution (after groupadd/useradd) ---"
+          echo "--- diag.1: identity resolution (after systemd-sysusers) ---"
           echo "getent group nftban:           $(getent group nftban || echo '<unresolved>')"
           echo "getent group nftban-auditor:   $(getent group nftban-auditor || echo '<unresolved>')"
           echo "getent passwd nftban:          $(getent passwd nftban || echo '<unresolved>')"
@@ -324,6 +333,22 @@ jobs:
           if command -v userdbctl >/dev/null 2>&1; then
             userdbctl group nftban-auditor 2>&1 | head -5 || true
           fi
+
+          # Hard-fail if systemd-sysusers did not populate the 3 required
+          # identities. Replaces the previous `getent ... || groupadd` fallback
+          # — we want to KNOW if sysusers is failing on a given runner rather
+          # than silently masking it with a groupadd that triggers the very
+          # bucket-E systemd 255 skip we are fixing.
+          missing_id=0
+          for ident in "group:nftban" "group:nftban-auditor" "passwd:nftban"; do
+            kind="${ident%%:*}"
+            name="${ident#*:}"
+            if ! getent "$kind" "$name" >/dev/null 2>&1; then
+              echo "::error::G8 systemd-sysusers did not create $kind $name"
+              missing_id=$((missing_id + 1))
+            fi
+          done
+          [ "$missing_id" = "0" ] || exit 1
 
           # 2. Stage tmpfiles config (single source of truth)
           sudo install -m 0644 install/systemd/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
