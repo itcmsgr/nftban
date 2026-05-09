@@ -150,23 +150,71 @@ is_critical_path() {
 # -----------------------------------------------------------------------------
 # Mode: rpm-meta — extract dir metadata from RPM artifact via `rpm -qplv`
 # -----------------------------------------------------------------------------
+# Defensive parser: rpm -qplv output column counts shift between rpm versions
+# and locales. Recent files use date "Mon Day HH:MM" (3 columns), older/future
+# files use "Mon Day Year" (also 3 columns), but some rpm builds emit extra
+# columns (selinux context, capabilities) and the LANG-dependent month name
+# may contain non-ASCII characters. The previous fixed-position read pattern
+# silently produced 0 lines on Rocky 9 / EL 9-family containers in CI.
+#
+# Parse each line into an array. Mode/owner/group are at stable positions
+# (1, 3, 4 — these have been canonical since RPM 4.0). Path is the LAST
+# whitespace-separated field (none of our 11 critical paths contain spaces;
+# paths in the FHS namespace never do in practice). Fail loudly if rpm itself
+# fails or produces empty output, so the aggregator surfaces the real cause
+# rather than silently passing on no data.
 mode_rpm_meta() {
     local rpm_file="${1:?usage: rpm-meta <rpm-file>}"
     [[ -r "$rpm_file" ]] || { log_err "RPM not readable: $rpm_file"; exit 3; }
     command -v rpm >/dev/null || { log_err "rpm not installed"; exit 2; }
 
-    # `rpm -qplv` output: drwxr-x---    2 root    nftban              0 Jan  1 00:00 /etc/nftban
-    rpm -qplv "$rpm_file" | while read -r mode_str _links owner group _size _date _time _tz path; do
-        # Some `rpm -qplv` formats omit timezone column; handle both
-        if [[ -z "$path" ]]; then
-            path="$_tz"
-        fi
+    # Force C locale so month names + decimal separators are predictable
+    # across CI containers; capture all output to surface failures explicitly.
+    local raw
+    if ! raw=$(LC_ALL=C rpm -qplv "$rpm_file" 2>/dev/null); then
+        log_err "rpm -qplv failed for $rpm_file"
+        exit 1
+    fi
+    if [[ -z "$raw" ]]; then
+        log_err "rpm -qplv produced empty output for $rpm_file"
+        exit 1
+    fi
+
+    # Parse line-by-line; emit only critical paths in canonical format.
+    local out
+    out=$(printf '%s\n' "$raw" | awk '
+        /^[-dlcbps]/ {
+            # Field 1 = mode (e.g. drwxr-x---), Field 3 = owner, Field 4 = group.
+            # Field NF = path (last whitespace-separated token; safe for FHS).
+            mode = $1
+            owner = $3
+            group = $4
+            path = $NF
+            # Skip lines whose last field is not an absolute path.
+            if (path !~ /^\//) next
+            # Skip if line did not yield enough fields for a valid record.
+            if (NF < 5) next
+            print path "|" mode "|" owner "|" group
+        }
+    ')
+
+    if [[ -z "$out" ]]; then
+        log_err "rpm-meta parsed zero records from $rpm_file (rpm output was non-empty; parser may need adjustment)"
+        log_err "First 5 raw lines for diagnosis:"
+        printf '%s\n' "$raw" | head -5 >&2
+        exit 1
+    fi
+
+    # Filter to critical paths and convert mode to octal in the shell loop
+    # (awk's substr/permission math is more verbose than reusing the existing
+    # ls_mode_to_octal helper). Sort -u for deterministic output.
+    while IFS='|' read -r path mode owner group; do
         is_critical_path "$path" || continue
         local octal type
-        octal=$(ls_mode_to_octal "$mode_str")
-        type=$(ls_type_from_mode "$mode_str")
+        octal=$(ls_mode_to_octal "$mode")
+        type=$(ls_type_from_mode "$mode")
         echo "$path|$type|$octal|$owner|$group"
-    done | sort -u
+    done <<< "$out" | sort -u
 }
 
 # -----------------------------------------------------------------------------
