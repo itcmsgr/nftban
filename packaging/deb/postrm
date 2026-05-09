@@ -103,6 +103,32 @@ case "$1" in
         fi
 
         # -----------------------------------------------------------------
+        # STEP 6b: Remove dpkg-statoverride entries registered by postinst
+        # (PKG-EFFECTIVE-PARITY Slot 5a / row 14)
+        # -----------------------------------------------------------------
+        # Postinst registered statoverride for each path in the attrs list so
+        # dpkg --verify stays clean against the DEB DB (which records root:root
+        # for these paths because the archive ships them that way and ownership
+        # converges at install time, not in the archive). On purge, remove the
+        # override entries so the dpkg DB is clean. Tolerate missing list (e.g.
+        # if the package was installed before this convergence model existed).
+        # MUST run before STEP 7's rm -rf /usr/share/nftban (which would also
+        # delete the attrs list itself).
+        _nftban_attrs="/usr/share/nftban/packaging/nftban-dir-attrs.list"
+        if [ -r "$_nftban_attrs" ] && command -v dpkg-statoverride >/dev/null 2>&1; then
+            while IFS='|' read -r _attr_path _attr_mode _attr_owner _attr_group; do
+                case "$_attr_path" in
+                    ""|"#"*) continue ;;
+                esac
+                if dpkg-statoverride --list "$_attr_path" >/dev/null 2>&1; then
+                    dpkg-statoverride --remove "$_attr_path" >/dev/null 2>&1 || true
+                fi
+            done < "$_nftban_attrs"
+            unset _attr_path _attr_mode _attr_owner _attr_group
+        fi
+        unset _nftban_attrs
+
+        # -----------------------------------------------------------------
         # STEP 7: Remove ALL configuration, data, logs, cache directories
         # (user config already backed up in STEP 1)
         # -----------------------------------------------------------------

@@ -101,6 +101,52 @@ case "$1" in
             usermod -a -G nftban root 2>/dev/null || true
         fi
 
+        # --- PKG-EFFECTIVE-PARITY Slot 5a (row 14): postinst ownership convergence ---
+        # Per V107_PKG_EFFECTIVE_PARITY_DEB_POSTINST_OWNERSHIP_SCOPE.md Option α +
+        # Option A. DEB archive ships /etc/nftban* and /var/lib/nftban/community as
+        # root:root (numeric IDs in the archive don't survive transit between hosts).
+        # After identity creation above, apply per-path ownership/mode by name from
+        # the attrs list shipped inside the package, then register dpkg-statoverride
+        # so dpkg --verify stays clean (otherwise dpkg DB would still record root:root
+        # and verify would flag every converged path with ??????U?G?). Idempotent:
+        # statoverride --update overwrites existing entries cleanly on reinstall/upgrade.
+        # No recursive chown — only the explicitly listed paths.
+        _nftban_attrs="/usr/share/nftban/packaging/nftban-dir-attrs.list"
+        if [ -r "$_nftban_attrs" ]; then
+            _nftban_attrs_count=0
+            _nftban_attrs_skipped=0
+            while IFS='|' read -r _attr_path _attr_mode _attr_owner _attr_group; do
+                # Skip blank lines and comments
+                case "$_attr_path" in
+                    ""|"#"*) continue ;;
+                esac
+                # Trim possible trailing whitespace from group field (last field)
+                _attr_group="${_attr_group%%[[:space:]]*}"
+                if [ -d "$_attr_path" ]; then
+                    chown "${_attr_owner}:${_attr_group}" "$_attr_path" 2>/dev/null || true
+                    chmod "$_attr_mode" "$_attr_path" 2>/dev/null || true
+                    # Register/refresh statoverride so dpkg --verify is clean.
+                    # If an entry already exists from a prior install, remove first
+                    # so --add succeeds idempotently across releases that may change
+                    # owner/mode for a path.
+                    if dpkg-statoverride --list "$_attr_path" >/dev/null 2>&1; then
+                        dpkg-statoverride --remove "$_attr_path" >/dev/null 2>&1 || true
+                    fi
+                    dpkg-statoverride --update --add \
+                        "$_attr_owner" "$_attr_group" "$_attr_mode" "$_attr_path" \
+                        >/dev/null 2>&1 || true
+                    _nftban_attrs_count=$((_nftban_attrs_count + 1))
+                else
+                    _nftban_attrs_skipped=$((_nftban_attrs_skipped + 1))
+                fi
+            done < "$_nftban_attrs"
+            log_info "DEB ownership convergence: ${_nftban_attrs_count} paths converged, ${_nftban_attrs_skipped} skipped (missing dirs)"
+            unset _nftban_attrs_count _nftban_attrs_skipped _attr_path _attr_mode _attr_owner _attr_group
+        else
+            log_warn "DEB attrs list not found at $_nftban_attrs — skipping ownership convergence"
+        fi
+        unset _nftban_attrs
+
         # --- NB-5: Canonical ownership for privileged binaries (DEB-PERM-001) ---
         # Must run AFTER nftban group is created. DEB payload ships 0750
         # root:root; postinst converges to root:nftban 0750 so the runtime
