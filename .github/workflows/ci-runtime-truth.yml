@@ -31,6 +31,7 @@ on:
       - 'install/**'
       - 'packaging/**'
       - 'VERSION'
+      - '.github/workflows/ci-runtime-truth.yml'
   push:
     branches: [main]
   workflow_dispatch:
