@@ -31,6 +31,7 @@ on:
       - 'install/**'
       - 'packaging/**'
       - 'VERSION'
+      - '.github/workflows/ci-runtime-truth.yml'
   push:
     branches: [main]
   workflow_dispatch:
@@ -291,7 +292,56 @@ jobs:
           set -Eeuo pipefail
           echo "=== G8: tmpfiles-managed path parity ==="
 
-          # 1. Create system users/groups (matches install/systemd/sysusers.d/nftban.conf)
+          # Slot 5b Stage 1 diagnostics — V107_G8_AUDITOR_DIR_UBUNTU_SCOPE.md.
+          # Captures evidence for Ubuntu-vs-AlmaLinux divergence on
+          # /var/lib/nftban/reports/auditors creation. Pure additive diagnostic
+          # output; final assertions are NOT weakened.
+          echo "--- diag.0: runner+systemd version banners ---"
+          uname -a || true
+          if [ -r /etc/os-release ]; then . /etc/os-release && echo "OS: $PRETTY_NAME ($ID $VERSION_ID)" || true; fi
+          systemd --version 2>&1 | head -2 || true
+          systemd-tmpfiles --version 2>&1 | head -2 || echo "(systemd-tmpfiles --version not supported)"
+
+          # ─────────────────────────────────────────────────────────────────
+          # PATH-CLARITY: NFTBan has THREE files named `nftban.conf` in
+          # different namespaces. Their authority and meaning differ; the
+          # directory is the namespace.
+          #
+          #   /etc/nftban/nftban.conf
+          #     → NFTBan APPLICATION config (operator-editable runtime config).
+          #     → THIS WORKFLOW DOES NOT TOUCH /etc/nftban/nftban.conf except
+          #       in the source-install staging block above (G1-G6 setup);
+          #       it is NOT what this G8 step exercises.
+          #
+          #   install/systemd/sysusers.d/nftban.conf  →  /usr/lib/sysusers.d/nftban.conf
+          #     → systemd IDENTITY recipe (declares nftban + nftban-auditor groups
+          #       and the nftban user). Generated from build/fhs-spec.yaml.
+          #
+          #   install/systemd/tmpfiles.d/nftban.conf  →  /usr/lib/tmpfiles.d/nftban.conf
+          #     → systemd DIRECTORY recipe (declares /var/lib/nftban/reports*,
+          #       /run/nftban, /var/cache/nftban, /var/log/nftban with mode +
+          #       owner). Generated from build/fhs-spec.yaml.
+          #
+          # G8 below tests that the installed (sysusers + tmpfiles) recipes
+          # produce the expected on-disk state. It does NOT test
+          # /etc/nftban/nftban.conf.
+          # ─────────────────────────────────────────────────────────────────
+
+          # 1. Create system users/groups via groupadd/useradd.
+          # Note: an earlier Stage 2 attempt (PR #579 commit 1e4bf69e, since
+          # reverted) tried `systemd-sysusers install/systemd/sysusers.d/nftban.conf`
+          # to align CI with the runtime authority model. That attempt failed
+          # because the shipped sysusers.d/nftban.conf currently has GECOS
+          # strings on `g` lines — a syntax `systemd-sysusers` rejects on both
+          # systemd 252 (AlmaLinux) and 255 (Ubuntu). Production DEB postinst
+          # uses groupadd/useradd directly (build_nftban.sh:837-852) and does
+          # not invoke systemd-sysusers, so the malformed file is dormant in
+          # production. That sysusers.d defect is tracked separately
+          # (proposed worklog row SYSUSERS-GECOS-G-LINES) and is NOT in scope
+          # for this G8 diagnostic step. We use groupadd/useradd here to keep
+          # Stage 1's working baseline so the original Bucket-E systemd 255
+          # symptom on /var/lib/nftban/reports/auditors remains observable
+          # under the SYSTEMD_LOG_LEVEL=debug capture below.
           sudo getent group nftban >/dev/null 2>&1 || sudo groupadd --system nftban
           sudo getent group nftban-auditor >/dev/null 2>&1 || sudo groupadd --system nftban-auditor
           sudo getent group suricata >/dev/null 2>&1 || sudo groupadd --system suricata
@@ -299,15 +349,98 @@ jobs:
             sudo useradd --system --gid nftban --groups nftban-auditor \
               --home-dir /var/lib/nftban --no-create-home --shell /usr/sbin/nologin nftban
 
-          # 2. Stage tmpfiles config (single source of truth)
-          sudo install -m 0644 install/systemd/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
-
-          # 3. Run systemd-tmpfiles --create (full systemd available here)
-          if ! sudo systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf; then
-            echo "::warning::G8 systemd-tmpfiles --create reported issues; will check anyway"
+          echo "--- diag.1: identity resolution (after groupadd/useradd) ---"
+          echo "getent group nftban:           $(getent group nftban || echo '<unresolved>')"
+          echo "getent group nftban-auditor:   $(getent group nftban-auditor || echo '<unresolved>')"
+          echo "getent passwd nftban:          $(getent passwd nftban || echo '<unresolved>')"
+          echo "/etc/group nftban entries:"
+          grep -E "^nftban|^nftban-auditor|^nftban-panel|^suricata" /etc/group || echo "  (no nftban entries in /etc/group)"
+          echo "/etc/passwd nftban entries:"
+          grep -E "^nftban" /etc/passwd || echo "  (no nftban entries in /etc/passwd)"
+          if command -v systemd-userdbd >/dev/null 2>&1 || systemctl list-unit-files systemd-userdbd.service >/dev/null 2>&1; then
+            echo "systemd-userdbd: present (may cache identity resolution differently than nss-files)"
+          fi
+          if command -v userdbctl >/dev/null 2>&1; then
+            userdbctl group nftban-auditor 2>&1 | head -5 || true
           fi
 
-          # 4. Assert each of the 6 tmpfiles-managed critical paths
+          # 2. Stage tmpfiles config (single source of truth)
+          sudo install -m 0644 install/systemd/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
+          echo "--- diag.2: tmpfiles.d/nftban.conf staged at /usr/lib/tmpfiles.d/nftban.conf ---"
+          echo "auditor-related lines in staged config:"
+          grep -n "reports" /usr/lib/tmpfiles.d/nftban.conf || true
+
+          # 3. Run systemd-tmpfiles --create with verbose diagnostics if supported.
+          # Probe --debug and --cat-config support; fall back to plain --create on
+          # versions that don't accept the verbose flags. Capture all output via
+          # tee to a known artifact path so the next step can stat against it.
+          echo "--- diag.3: systemd-tmpfiles --create (with verbose probes) ---"
+          tmpfiles_supports_debug=0
+          if sudo systemd-tmpfiles --help 2>&1 | grep -q -- "--debug"; then
+            tmpfiles_supports_debug=1
+          fi
+          tmpfiles_supports_cat=0
+          if sudo systemd-tmpfiles --help 2>&1 | grep -q -- "--cat-config"; then
+            tmpfiles_supports_cat=1
+          fi
+          echo "--debug supported: $tmpfiles_supports_debug; --cat-config supported: $tmpfiles_supports_cat"
+
+          if [ "$tmpfiles_supports_cat" = "1" ]; then
+            echo "--- diag.3a: cat-config view ---"
+            sudo systemd-tmpfiles --cat-config /usr/lib/tmpfiles.d/nftban.conf 2>&1 | grep -E "reports|auditors" | head -10 || true
+          fi
+
+          tmpfiles_args=("--create")
+          if [ "$tmpfiles_supports_debug" = "1" ]; then
+            tmpfiles_args=(--debug "${tmpfiles_args[@]}")
+          fi
+          # Slot 5b Stage 1.5 — SYSTEMD_LOG_LEVEL=debug exposes the per-line
+          # processing trace inside systemd-tmpfiles. systemd-tmpfiles itself
+          # has no --debug CLI flag (we keep the probe above for older systemd
+          # versions that may add one); the canonical way to make it verbose
+          # is the env var, set per-call via `sudo VAR=value cmd` syntax.
+          # Goal: capture the per-rule decision systemd 255 makes for the
+          # /var/lib/nftban/reports* subtree on Ubuntu 24.04 (Stage 1 evidence
+          # showed the leaf is silently missing post-call with exit=0 and
+          # zero log output — debug should make the silent skip visible).
+          tmpfiles_rc=0
+          sudo SYSTEMD_LOG_LEVEL=debug systemd-tmpfiles "${tmpfiles_args[@]}" /usr/lib/tmpfiles.d/nftban.conf 2>&1 \
+            | sudo tee /tmp/g8-tmpfiles.log \
+            || tmpfiles_rc=$?
+          echo "--- diag.3b: systemd-tmpfiles exit=$tmpfiles_rc, log size=$(sudo wc -l < /tmp/g8-tmpfiles.log) lines ---"
+          if [ "$tmpfiles_rc" != "0" ]; then
+            echo "::warning::G8 systemd-tmpfiles exited $tmpfiles_rc; full log captured at /tmp/g8-tmpfiles.log"
+          fi
+
+          # 4. Diagnostic stat of the parent + leaf BEFORE the assertion loop.
+          # Reveals whether the auditor dir was skipped entirely or created with
+          # wrong owner/mode.
+          echo "--- diag.4: post-tmpfiles stat (parent + leaf) ---"
+          # Slot 5b Stage 2-F (Bucket F fix): wrap path-existence tests with
+          # `sudo` because /var/lib/nftban is 0750 root:nftban and the runner
+          # user is not in the nftban group on the bare Ubuntu 24.04 runner.
+          # Without sudo, the runner-user `[ -d ]` test cannot traverse the
+          # parent and falsely reports MISSING for /var/lib/nftban/reports*.
+          # AlmaLinux 9 PASSed without sudo only because the container job
+          # runs as root (which bypasses POSIX mode checks). systemd-tmpfiles
+          # itself created the directories correctly on both — the test was
+          # the broken thing, not the product.
+          for p in /var/lib/nftban /var/lib/nftban/reports /var/lib/nftban/reports/auditors; do
+            if sudo test -d "$p"; then
+              echo "$(sudo stat -c '%n: type=dir mode=%a owner=%U:%G uid=%u gid=%g' "$p")"
+            elif sudo test -e "$p"; then
+              echo "$p: type=non-directory ($(sudo stat -c '%F' "$p"))"
+            else
+              echo "$p: MISSING (does not exist)"
+            fi
+          done
+          echo "--- diag.4b: lines in tmpfiles log mentioning auditors/reports ---"
+          sudo grep -E "reports|auditors|nftban-auditor|skip|ignor|Failed|fail|denied|invalid" /tmp/g8-tmpfiles.log 2>/dev/null \
+            | head -40 || echo "(no relevant lines in tmpfiles log)"
+
+          # 5. Assert each of the 6 tmpfiles-managed critical paths (UNCHANGED).
+          # Diagnostics above are purely additive; the contract this step enforces
+          # is identical to before — failure on missing/mismatched dirs.
           fail=0
           # Format: path|expected_mode|expected_owner|expected_group
           for entry in \
@@ -318,15 +451,20 @@ jobs:
               "/var/log/nftban|0750|nftban|nftban" \
           ; do
             IFS='|' read -r p exp_mode exp_owner exp_group <<< "$entry"
-            if [[ ! -d "$p" ]]; then
+            # Slot 5b Stage 2-F: sudo-wrap path-existence + stat checks.
+            # See diag.4 comment block above — same Bucket F mechanism. The
+            # 5-path mode/owner/group contract below is unchanged; only the
+            # privilege context of the verifier changes so it can traverse
+            # the 0750 root:nftban parent.
+            if ! sudo test -d "$p"; then
               echo "::error::G8 missing dir: $p"
               fail=1
               continue
             fi
-            actual_mode=$(stat -c '%a' "$p")
+            actual_mode=$(sudo stat -c '%a' "$p")
             [[ ${#actual_mode} -eq 3 ]] && actual_mode="0$actual_mode"
-            actual_owner=$(stat -c '%U' "$p")
-            actual_group=$(stat -c '%G' "$p")
+            actual_owner=$(sudo stat -c '%U' "$p")
+            actual_group=$(sudo stat -c '%G' "$p")
             if [[ "$actual_mode" != "$exp_mode" || "$actual_owner" != "$exp_owner" || "$actual_group" != "$exp_group" ]]; then
               echo "::error::G8 mismatch on $p"
               echo "::error::  expected: $exp_mode $exp_owner:$exp_group"
