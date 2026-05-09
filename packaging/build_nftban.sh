@@ -1979,6 +1979,29 @@ build_deb() {
     install -D -m 0644 "$nftban_dir_attrs" \
         "${deb_root}/usr/share/nftban/packaging/nftban-dir-attrs.list"
 
+    # PKG-EFFECTIVE-PARITY Slot 5a — chmod-only mode convergence at build time.
+    # Numeric modes are portable across hosts (unlike numeric UID/GID which
+    # broke ownership baking pre-Slot-5a), so it is safe and correct to apply
+    # the per-path mode column from nftban-dir-attrs.list during the build.
+    # Postinst still converges OWNERSHIP (and re-applies mode for symmetry +
+    # statoverride registration), but the DEB archive layer (L3) now ships
+    # the directories at their final mode (typically 0750) so L3 cross-
+    # packager parity reports the documented end state. Owner/group columns
+    # are intentionally NOT used here — this loop is chmod-only.
+    local _chmod_count=0 _chmod_skipped=0
+    while IFS='|' read -r _mc_path _mc_mode _mc_owner _mc_group; do
+        [[ -z "$_mc_path" || "$_mc_path" =~ ^[[:space:]]*# ]] && continue
+        local _mc_target="${deb_root}${_mc_path}"
+        if [[ -d "$_mc_target" ]]; then
+            chmod "$_mc_mode" "$_mc_target"
+            _chmod_count=$((_chmod_count + 1))
+        else
+            _chmod_skipped=$((_chmod_skipped + 1))
+        fi
+    done < "$nftban_dir_attrs"
+    log_info "DEB build-time chmod convergence: ${_chmod_count} dirs chmod'd, ${_chmod_skipped} skipped (missing in deb_root)"
+    unset _chmod_count _chmod_skipped _mc_path _mc_mode _mc_owner _mc_group _mc_target
+
     log_info "Building DEB with root:root archive metadata (postinst converges ownership)..."
     local deb_out="${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
     if ! fakeroot -- bash -ec '
