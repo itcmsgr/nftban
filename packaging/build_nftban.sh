@@ -566,8 +566,8 @@ end
 -- new conffile. SetImmutableFlags (internal/installer/validate/authority.go)
 -- sets +i on this file post-install/repair, and %preun runs too late to help
 -- because cpio extraction happens first. _remove_immutable_flags in the CLI
--- handles this for `nftban update` callers; this block aligns the direct
--- `dnf upgrade` / `rpm -Uvh` path with the same lifecycle invariant.
+-- handles this for nftban update callers; this block aligns the direct
+-- dnf upgrade / rpm -Uvh path with the same lifecycle invariant.
 local nftban_conf = "/etc/nftban/nftban.conf"
 local g = io.open(nftban_conf, "r")
 if g then
@@ -1376,8 +1376,8 @@ fi
 
 # v1.107.2: strip +i from /etc/nftban/nftban.conf before dpkg replaces the
 # conffile (mirror of the RPM %pretrans block). Aligns the direct
-# `apt install` / `dpkg -i` path with the immutable lifecycle that
-# _remove_immutable_flags already covers for `nftban update` callers.
+# apt install / dpkg -i path with the immutable lifecycle that
+# _remove_immutable_flags already covers for nftban update callers.
 if [ -f /etc/nftban/nftban.conf ]; then
     chattr -i /etc/nftban/nftban.conf 2>/dev/null || true
 fi
