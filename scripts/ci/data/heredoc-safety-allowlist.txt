@@ -1,0 +1,32 @@
+# =============================================================================
+# NFTBan V108 Item 3 — Heredoc-safety allowlist
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Consumed by scripts/ci/test-heredoc-safety.sh
+#
+# Format:
+#   <file-path>:<line-number>:<reason-tag>
+#   Lines starting with `#` are comments
+#   Blank lines ignored
+#
+# Adding an entry overrides ANY UNESCAPED_* / UNCLOSED_HEREDOC failure
+# at that file:line into PASS_ALLOWLISTED. Use sparingly — only when
+# operator has reviewed the heredoc and confirmed the apparent risk
+# token is intentional and safe.
+#
+# Initial state: EMPTY.
+#
+# At HEAD 86690661, all 51 heredocs (39 quoted + 12 unquoted) classify
+# cleanly without any allowlist entries needed:
+#   - 39 PASS_QUOTED            (safe by construction)
+#   - 9  PASS_REQUIRED_EXPANSION (var-ref-only unquoted)
+#   - 1  PASS_FUNCTION_CONTEXT   (test-package-effective-parity.sh:612
+#                                  $(basename "$0") inside usage())
+#   - 0  WARN_*
+#   - 0  FAIL_*
+#
+# Audit refs:
+#   - V107_PACKAGING_HEREDOC_EXPANSION_HAZARDS_AUDIT.md (1114 lines)
+#   - V108_ITEM3_HEREDOC_SAFETY_SCAN_SCOPE.md
+# =============================================================================
