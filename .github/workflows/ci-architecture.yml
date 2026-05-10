@@ -570,6 +570,21 @@ jobs:
           echo "OK: rule engine isolated from inline"
 
       # ====================================================================
+      # V108 Item 6 — install-method detection (source-install mismatch)
+      # ====================================================================
+      # Validates _detect_install_type + _classify_for_pkg_mgr_update across
+      # 9 fixtures covering rpm/deb/source/source-git/unknown/mixed/cross-
+      # family/confirms-db. Closes the dns2-class defect where source-
+      # installed hosts fell through to "unknown" because the detector
+      # didn't read update-history.json first-entry "type".
+      # ====================================================================
+      - name: "V108 Item 6: install-method detection"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V108 Item 6 — install-method detection gate ==="
+          bash scripts/ci/test-install-method-detection.sh suite
+
+      # ====================================================================
       # V108 Item 3 — heredoc command-substitution safety gate
       # ====================================================================
       # Detects unsafe shell expansion (unescaped backticks, $(...), $((...)))

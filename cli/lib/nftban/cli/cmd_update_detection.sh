@@ -34,38 +34,174 @@ _NFTBAN_CLI_UPDATE_DETECTION_LOADED=1
 # INSTALL TYPE DETECTION
 # =============================================================================
 
-_detect_install_type() {
-    # Detect how NFTBan was installed
-    # Returns: rpm, deb, git, unknown
+# -----------------------------------------------------------------------------
+# Read the oldest (first install) entry's "type" field from update-history.json.
+# History is prepended newest-first (see internal/installer/history/history.go:81)
+# so the FIRST install chronologically is at array index [-1].
+#
+# Returns the type string ("rpm" / "deb" / "source") or empty if unavailable.
+# Test-overrides:
+#   NFTBAN_TEST_HISTORY_FILE     - override path to history JSON (for fixtures)
+# -----------------------------------------------------------------------------
+_read_history_first_type() {
+    local f="${NFTBAN_TEST_HISTORY_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-history.json}"
+    [[ -r "$f" ]] || { echo ""; return 0; }
 
-    # Check RPM first (RHEL/CentOS/Rocky/Alma/Fedora)
-    # Try both nftban and nftban-core package names
-    if command -v rpm &>/dev/null; then
-        if rpm -q nftban &>/dev/null || rpm -q nftban-core &>/dev/null; then
-            echo "rpm"
-            return 0
-        fi
-    fi
-
-    # Check DEB (Debian/Ubuntu)
-    # Try both nftban and nftban-core package names
-    if command -v dpkg &>/dev/null; then
-        if dpkg -l nftban 2>/dev/null | grep -q "^ii" || \
-           dpkg -l nftban-core 2>/dev/null | grep -q "^ii"; then
-            echo "deb"
-            return 0
-        fi
-    fi
-
-    # Check Git install
-    if [[ -d "${NFTBAN_GIT_REPO}/.git" ]]; then
-        echo "git"
+    # Prefer jq if available
+    if command -v jq &>/dev/null; then
+        jq -r '.[-1].type // empty' "$f" 2>/dev/null
         return 0
     fi
 
-    # Unknown install type
+    # Bash fallback: walk JSON to find LAST occurrence of "type" field.
+    # Newest-first → oldest is the last "type" line.
+    local last_type
+    last_type=$(grep -oE '"type"[[:space:]]*:[[:space:]]*"[a-zA-Z0-9_-]+"' "$f" 2>/dev/null \
+                | tail -1 \
+                | sed -E 's/.*"type"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    echo "$last_type"
+}
+
+# -----------------------------------------------------------------------------
+# Override-aware probes for test fixtures.
+# Real production paths use rpm/dpkg/etc; fixtures inject mocked outputs via
+# the NFTBAN_TEST_* env vars without polluting the rpm/dpkg databases.
+# -----------------------------------------------------------------------------
+_probe_rpm_owns_nftban() {
+    # Returns 0 if rpm db reports ownership, non-zero otherwise.
+    if [[ -n "${NFTBAN_TEST_RPM_OWNS:-}" ]]; then
+        [[ "$NFTBAN_TEST_RPM_OWNS" == "yes" ]] && return 0 || return 1
+    fi
+    command -v rpm &>/dev/null || return 1
+    rpm -q nftban &>/dev/null || rpm -q nftban-core &>/dev/null
+}
+
+_probe_dpkg_owns_nftban() {
+    # Returns 0 if dpkg db reports ownership (installed ^ii), non-zero otherwise.
+    if [[ -n "${NFTBAN_TEST_DPKG_OWNS:-}" ]]; then
+        [[ "$NFTBAN_TEST_DPKG_OWNS" == "yes" ]] && return 0 || return 1
+    fi
+    command -v dpkg &>/dev/null || return 1
+    dpkg -l nftban 2>/dev/null | grep -q "^ii" || \
+    dpkg -l nftban-core 2>/dev/null | grep -q "^ii"
+}
+
+_probe_git_repo_present() {
+    if [[ -n "${NFTBAN_TEST_GIT_REPO_PRESENT:-}" ]]; then
+        [[ "$NFTBAN_TEST_GIT_REPO_PRESENT" == "yes" ]] && return 0 || return 1
+    fi
+    [[ -d "${NFTBAN_GIT_REPO:-}/.git" ]]
+}
+
+_detect_install_type() {
+    # Detect how NFTBan was installed.
+    # Returns one of: rpm, deb, source, mixed, unknown
+    #
+    # V108 Item 6 (dns2-derived): adds history.json probe + mixed/source classes.
+    # Probe order (deterministic, first-match):
+    #   1. RPM db ownership (with drift check vs history "rpm")
+    #   2. DEB db ownership (with drift check vs history "deb")
+    #   3. History first-entry "type":"source"          → source
+    #   4. History first-entry "type":"rpm" no rpm db   → mixed
+    #   5. History first-entry "type":"deb" no dpkg db  → mixed
+    #   6. ${NFTBAN_GIT_REPO}/.git directory present    → source
+    #   7. Fallthrough                                  → unknown
+    # Legacy callers that handle "git" as a class can treat "source" identically.
+
+    local history_type
+    history_type=$(_read_history_first_type)
+
+    # 1. RPM db check
+    if _probe_rpm_owns_nftban; then
+        # Drift check: rpm db says yes but history says non-rpm
+        if [[ -n "$history_type" && "$history_type" != "rpm" ]]; then
+            echo "mixed"
+            return 0
+        fi
+        echo "rpm"
+        return 0
+    fi
+
+    # 2. DEB db check
+    if _probe_dpkg_owns_nftban; then
+        # Drift check: dpkg db says yes but history says non-deb
+        if [[ -n "$history_type" && "$history_type" != "deb" ]]; then
+            echo "mixed"
+            return 0
+        fi
+        echo "deb"
+        return 0
+    fi
+
+    # 3. History first-entry "source" — the dns2 case
+    if [[ "$history_type" == "source" ]]; then
+        echo "source"
+        return 0
+    fi
+
+    # 4. History "rpm" but no rpm-db → drifted (rpm package removed but history retained)
+    if [[ "$history_type" == "rpm" ]]; then
+        echo "mixed"
+        return 0
+    fi
+
+    # 5. History "deb" but no dpkg-db → drifted
+    if [[ "$history_type" == "deb" ]]; then
+        echo "mixed"
+        return 0
+    fi
+
+    # 6. Git source checkout (legacy "git" class) — return canonical "source"
+    if _probe_git_repo_present; then
+        echo "source"
+        return 0
+    fi
+
+    # 7. Fallthrough
     echo "unknown"
     return 0
+}
+
+# -----------------------------------------------------------------------------
+# Gate-framework classifier: maps install_type → exit code for direct
+# package-manager update paths.
+#
+# Args:
+#   $1 - target package family ("rpm" or "deb")
+#
+# Exit codes (per V108_ITEM6_SOURCE_INSTALL_DETECTION_SCOPE.md §6.3):
+#   0   PROCEED (host method matches target family)
+#   10  NOT_APPLICABLE_SOURCE_INSTALL
+#   11  NOT_APPLICABLE_UNKNOWN_INSTALL_METHOD
+#   12  PRECONDITION_MISMATCH_PACKAGER_FAMILY (rpm host + deb target etc.)
+#   13  PRECONDITION_MISMATCH_REQUIRES_OPERATOR (mixed)
+# -----------------------------------------------------------------------------
+_classify_for_pkg_mgr_update() {
+    local target_family="${1:-}"
+    if [[ -z "$target_family" ]]; then
+        return 11
+    fi
+
+    local install_type
+    install_type=$(_detect_install_type)
+
+    case "$install_type" in
+        rpm)
+            [[ "$target_family" == "rpm" ]] && return 0 || return 12
+            ;;
+        deb)
+            [[ "$target_family" == "deb" ]] && return 0 || return 12
+            ;;
+        source)
+            return 10
+            ;;
+        mixed)
+            return 13
+            ;;
+        unknown|*)
+            return 11
+            ;;
+    esac
 }
 
 _detect_system_pkg_manager() {
