@@ -24,14 +24,16 @@ Each fixture directory may also contain a fixture-scoped allowlist file.
 | `fail-unescaped-backtick.sh` | Unquoted heredoc with raw markdown backtick — the v1.107.1-class defect | 1 |
 | `fail-unescaped-cmd-subst.sh` | Unquoted heredoc with raw `$(some_command)` outside function context | 1 |
 | `fail-unescaped-arith.sh` | Unquoted heredoc with raw `$((1+2))` | 1 |
-| `fail-unclosed-heredoc.sh` | Heredoc opener with no closer | 1 |
+| `fail-unclosed-heredoc.shfix` | Heredoc opener with no closer | 1 |
 | `warn-should-be-quoted.sh` | Unquoted heredoc with NO `$` and NO backticks (style WARN) | 0 (WARN only) |
 
 ## Running fixtures
 
 ```bash
 cd /home/gituser/github/nftban
-for f in scripts/ci/fixtures/heredoc-safety/*.sh; do
+for f in scripts/ci/fixtures/heredoc-safety/*.sh \
+         scripts/ci/fixtures/heredoc-safety/*.shfix; do
+    [[ -f "$f" ]] || continue
     expected=$(grep '^# expected-exit:' "$f" | head -1 | sed 's/^# expected-exit: //')
     set +e
     bash scripts/ci/test-heredoc-safety.sh scan --paths="$f" --allowlist=/dev/null >/dev/null 2>&1
@@ -40,6 +42,10 @@ for f in scripts/ci/fixtures/heredoc-safety/*.sh; do
     [[ "$actual" == "$expected" ]] && echo "✅ $f" || echo "❌ $f (got $actual, want $expected)"
 done
 ```
+
+### Note on `.shfix` extension
+
+`fail-unclosed-heredoc` uses the `.shfix` extension instead of `.sh` because the file is intentionally malformed (unclosed heredoc) — that's what the fixture tests. Naming it `.sh` would cause the repo-wide `ShellCheck - Find bash errors` CI job (which runs `find . -name "*.sh" -exec shellcheck`) to FAIL on the fixture's parse error. The `.shfix` extension is invisible to that job's find pattern while preserving the bash shebang for the gate-runner. The gate itself accepts any filename via `--paths=`.
 
 ## Notes
 
