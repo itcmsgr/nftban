@@ -1,0 +1,4 @@
+# Test-scoped deprecated units (none for this fixture)
+deprecated_units:
+  - name: nftban-legacy-fixture.service
+    policy: stop_only

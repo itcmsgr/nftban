@@ -1,0 +1,3 @@
+deprecated_units:
+  - name: nftban-deprecated.service
+    policy: stop_only
