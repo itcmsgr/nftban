@@ -568,3 +568,24 @@ jobs:
             exit 1
           fi
           echo "OK: rule engine isolated from inline"
+
+      # ====================================================================
+      # V108 Item 3 — heredoc command-substitution safety gate
+      # ====================================================================
+      # Detects unsafe shell expansion (unescaped backticks, $(...), $((...)))
+      # in unquoted heredoc bodies in build/generator scripts.
+      #
+      # Defends against the v1.107.1-class defect (PR #585 fixup da14e182):
+      # markdown backticks in unquoted RPM-spec heredoc were interpreted by
+      # bash as command substitution at heredoc-write time, corrupting the
+      # generated spec content. el10's rpmbuild failed; el9's tolerated.
+      #
+      # Scope: packaging/build_nftban.sh, build/generate-*.sh, scripts/*.sh,
+      # scripts/ci/*.sh. Function-context heredocs (usage()) are auto-
+      # detected and allowed to use $(...) at function-call time.
+      # ====================================================================
+      - name: "V108 Item 3: heredoc command-substitution safety"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V108 Item 3 — heredoc-safety gate ==="
+          bash scripts/ci/test-heredoc-safety.sh scan
