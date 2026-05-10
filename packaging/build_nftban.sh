@@ -262,6 +262,17 @@ create_rpm_spec_nftban_core() {
     fi
     rpm_preun_body=$(cat "$rpm_preun_src")
 
+    # v108-item7c: load generated %pre deprecated-unit cleanup snippet (NEW-package-side,
+    # runs on install + upgrade, deprecated-only, never touches active units).
+    # Closes srv1-class stale nftban-ui.service residue from pre-v1.100.1b.A hosts.
+    local rpm_pre_deprecated_body
+    local rpm_pre_deprecated_src="${PROJECT_ROOT}/install/packaging/rpm/nftban-pre-deprecated-cleanup.inc"
+    if [[ ! -f "$rpm_pre_deprecated_src" ]]; then
+        log_error "RPM %pre deprecated-cleanup snippet not found at $rpm_pre_deprecated_src; run 'bash build/generate-systemd-maintainer-scripts.sh' first"
+        return 1
+    fi
+    rpm_pre_deprecated_body=$(cat "$rpm_pre_deprecated_src")
+
     # Use explicit file descriptor to catch cat errors
     if ! cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
@@ -578,6 +589,14 @@ if g then
 end
 
 %pre
+# =============================================================================
+# v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
+# =============================================================================
+# Runs on install + upgrade. Touches ONLY deprecated units (build/deprecated-units.yaml).
+# Idempotent. Silent on absence. Closes srv1-class stale residue from hosts upgrading
+# from packages that pre-date v1.100.1b.A (GOTH PR-D4 stage 1).
+# Generated content (DO NOT EDIT here — edit build/generate-systemd-maintainer-scripts.sh):
+${rpm_pre_deprecated_body}
 # =============================================================================
 # NFTBan - PREREQUISITE CHECKS
 # =============================================================================
@@ -1352,313 +1371,15 @@ Description: Open-source Linux IPS and nftables firewall manager
   - PolicyKit rules for privilege management
 EOF
 
-    # Create preinst script for prerequisite checks
-    cat > "${BUILD_DIR}/deb/DEBIAN/preinst" <<'PREINST_EOF'
-#!/bin/bash
-# NFTBan - PREREQUISITE CHECKS (DEB)
-set -e
-
-# Remove immutable flag from nft_schema.sh before upgrade (security protection)
-# The file is protected with chattr +i to prevent command injection attacks.
-# dpkg cannot create backup links of immutable files, so we MUST remove the flag.
-if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
-    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-    # Verify the flag was actually removed (chattr may not be available)
-    if command -v lsattr >/dev/null 2>&1; then
-        if lsattr /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null | grep -q -- '----i'; then
-            echo "[!] WARNING: Could not remove immutable flag from nft_schema.sh"
-            echo "    Run: chattr -i /usr/lib/nftban/lib/nft_schema.sh"
-            echo "    Then retry the installation."
-            exit 1
-        fi
-    fi
-fi
-
-# v1.107.2: strip +i from /etc/nftban/nftban.conf before dpkg replaces the
-# conffile (mirror of the RPM %pretrans block). Aligns the direct
-# apt install / dpkg -i path with the immutable lifecycle that
-# _remove_immutable_flags already covers for nftban update callers.
-if [ -f /etc/nftban/nftban.conf ]; then
-    chattr -i /etc/nftban/nftban.conf 2>/dev/null || true
-fi
-
-echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo "  NFTBan v__PKG_VERSION__ - Installation Prerequisite Checks"
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo ""
-
-PREREQ_FAILED=0
-PREREQ_ERRORS=""
-
-# -----------------------------------------------------------------------------
-# CHECK 1: Operating System Version
-# -----------------------------------------------------------------------------
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    echo "[✓] Operating System: $PRETTY_NAME"
-
-    # Check for supported OS
-    case "$ID" in
-        ubuntu|debian|linuxmint)
-            echo "[✓] Supported OS family: Debian/Ubuntu"
-            IS_DEBIAN_FAMILY=1
-            ;;
-        *)
-            echo "[!] Warning: Untested OS: $ID (may work, but not officially supported)"
-            IS_DEBIAN_FAMILY=0
-            ;;
-    esac
-
-    # Check distro version matches package (prevent wrong package install)
-    # BUILD_DISTRO is injected at build time by CI (e.g., "ubuntu22.04", "debian12")
-    PKG_BUILD_DISTRO="__BUILD_DISTRO__"
-    if [ "$PKG_BUILD_DISTRO" != "__BUILD_DISTRO__" ] && [ -n "$PKG_BUILD_DISTRO" ]; then
-        case "$ID" in
-            ubuntu)
-                SYS_DISTRO_TAG="ubuntu${VERSION_ID}"
-                if [ "$PKG_BUILD_DISTRO" != "$SYS_DISTRO_TAG" ]; then
-                    echo "[✗] ERROR: Wrong package for this system!"
-                    echo "    Package built for: ${PKG_BUILD_DISTRO}"
-                    echo "    System version:    ${SYS_DISTRO_TAG}"
-                    echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
-                    PREREQ_FAILED=1
-                    PREREQ_ERRORS="WRONG PACKAGE: This is a ${PKG_BUILD_DISTRO} package but you are running ${SYS_DISTRO_TAG}. Download: nftban-${SYS_DISTRO_TAG}-amd64.deb"
-                fi
-                ;;
-            debian)
-                SYS_DISTRO_TAG="debian${VERSION_ID%%.*}"
-                if [ "$PKG_BUILD_DISTRO" != "$SYS_DISTRO_TAG" ]; then
-                    # Allow debian package on debian (different minor is OK)
-                    PKG_IS_DEBIAN=$(echo "$PKG_BUILD_DISTRO" | grep -c '^debian' || echo "0")
-                    if [ "$PKG_IS_DEBIAN" = "1" ]; then
-                        PKG_DEB_MAJOR=$(echo "$PKG_BUILD_DISTRO" | sed -n 's/^debian\([0-9]*\).*/\1/p')
-                        SYS_DEB_MAJOR="${VERSION_ID%%.*}"
-                        if [ "$PKG_DEB_MAJOR" != "$SYS_DEB_MAJOR" ]; then
-                            echo "[✗] ERROR: Wrong package for this system!"
-                            echo "    Package built for: Debian ${PKG_DEB_MAJOR}"
-                            echo "    System version:    Debian ${SYS_DEB_MAJOR}"
-                            echo "    Use the correct package: nftban-debian${SYS_DEB_MAJOR}-amd64.deb"
-                            PREREQ_FAILED=1
-                            PREREQ_ERRORS="WRONG PACKAGE: This is a Debian ${PKG_DEB_MAJOR} package but you are running Debian ${SYS_DEB_MAJOR}. Download: nftban-debian${SYS_DEB_MAJOR}-amd64.deb"
-                        fi
-                    else
-                        echo "[✗] ERROR: Wrong package for this system!"
-                        echo "    Package built for: ${PKG_BUILD_DISTRO}"
-                        echo "    System version:    ${SYS_DISTRO_TAG}"
-                        echo "    Use the correct package: nftban-${SYS_DISTRO_TAG}-amd64.deb"
-                        PREREQ_FAILED=1
-                        PREREQ_ERRORS="WRONG PACKAGE: This is a ${PKG_BUILD_DISTRO} package but you are running ${SYS_DISTRO_TAG}. Download: nftban-${SYS_DISTRO_TAG}-amd64.deb"
-                    fi
-                fi
-                ;;
-        esac
-    fi
-else
-    echo "[✗] ERROR: Cannot detect OS version (/etc/os-release missing)"
-    PREREQ_FAILED=1
-    IS_DEBIAN_FAMILY=0
-fi
-
-# -----------------------------------------------------------------------------
-# CHECK 2: Check for missing dependencies
-# -----------------------------------------------------------------------------
-# NOTE: We cannot install packages here because dpkg holds the database lock.
-# Dependencies are handled by apt when using: apt install ./package.deb
-echo ""
-
-echo "Checking required commands..."
-
-# Critical commands (must be present)
-for cmd in nft systemctl curl jq tar; do
-    if command -v $cmd >/dev/null 2>&1; then
-        echo "[✓] Found: $cmd"
+    # Create preinst script (v108-item7c: now staged from packaging/deb/preinst,
+    # mirroring prerm/postinst. Includes BEGIN GENERATED deprecated-unit cleanup
+    # sentinel region populated by build/generate-systemd-maintainer-scripts.sh).
+    if [[ -f "${PROJECT_ROOT}/packaging/deb/preinst" ]]; then
+        cp "${PROJECT_ROOT}/packaging/deb/preinst" "${BUILD_DIR}/deb/DEBIAN/preinst"
     else
-        echo "[✗] MISSING: $cmd (CRITICAL)"
-        PREREQ_FAILED=1
+        log_error "packaging/deb/preinst not found; this file ships preinst content + generator-populated deprecated-unit cleanup sentinel region"
+        return 1
     fi
-done
-
-# Optional commands (nice to have, but not critical)
-if command -v ip >/dev/null 2>&1; then
-    echo "[✓] Found: ip (iproute2)"
-else
-    echo "[i] Info: ip command not found (optional, will use fallback methods)"
-fi
-
-# Check for other firewall tools
-echo ""
-echo "Checking for other firewall tools..."
-LEGACY_FOUND=0
-
-if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
-    # Differentiate iptables-nft (conflicts) vs iptables-legacy (co-exists)
-    IPT_VERSION=$(iptables --version 2>/dev/null || echo "")
-    if echo "$IPT_VERSION" | grep -q "nf_tables"; then
-        echo "[!] WARNING: iptables-nft detected (iptables-over-nftables wrapper)"
-        echo "    iptables-nft translates iptables rules into nftables and may"
-        echo "    create conflicting tables (e.g. 'ip filter')."
-        echo "    Recommended: switch to iptables-legacy or remove iptables-nft"
-        LEGACY_FOUND=1
-    else
-        echo "[i] INFO: iptables detected (co-exists with nftables)"
-        echo "    iptables-legacy uses a separate kernel API from nftables."
-        echo "    Both can run simultaneously. NFTBan uses its own 'nftban' table."
-        echo "    cPanel/WHM and other hosting panels may require iptables."
-    fi
-fi
-
-if command -v ufw >/dev/null 2>&1; then
-    echo "[!] WARNING: ufw installed (manages nftables/iptables backend)"
-    echo "    NFTBan manages nftables directly. ufw may conflict."
-    echo "    Recommended: apt remove ufw"
-    LEGACY_FOUND=1
-fi
-
-if command -v firewall-cmd >/dev/null 2>&1; then
-    echo "[!] WARNING: firewalld installed (conflicts with nftables)"
-    echo "    NFTBan manages nftables directly. firewalld should be removed."
-    echo "    Recommended: apt remove firewalld"
-    LEGACY_FOUND=1
-fi
-
-if [ $LEGACY_FOUND -eq 0 ]; then
-    echo "[✓] No conflicting firewall tools detected"
-fi
-
-# -----------------------------------------------------------------------------
-# CHECK 3: Kernel nftables Support
-# -----------------------------------------------------------------------------
-echo ""
-echo "Checking kernel nftables support..."
-
-if [ -d /proc/sys/net/netfilter ]; then
-    echo "[✓] Netfilter subsystem available"
-else
-    echo "[✗] ERROR: Netfilter not available in kernel"
-    PREREQ_FAILED=1
-fi
-
-# Check if nft can list rulesets (indicates kernel support)
-if nft list ruleset >/dev/null 2>&1; then
-    echo "[✓] nftables kernel modules loaded"
-else
-    echo "[!] Warning: nftables modules not loaded (will auto-load on first use)"
-fi
-
-# -----------------------------------------------------------------------------
-# CHECK 4: Conflicting Firewall Services
-# -----------------------------------------------------------------------------
-echo ""
-echo "Checking for conflicting firewall services..."
-
-CONFLICTS_FOUND=0
-
-# Check ufw (common on Ubuntu/Debian)
-if command -v ufw >/dev/null 2>&1; then
-    if ufw status 2>/dev/null | grep -q "Status: active"; then
-        echo "[!] WARNING: ufw is ACTIVE"
-        echo "    NFTBan manages nftables directly and may conflict with ufw."
-        echo "    Recommended action:"
-        echo "      ufw disable"
-        echo ""
-        CONFLICTS_FOUND=1
-    fi
-fi
-
-# Check firewalld (rare on Debian but possible)
-if systemctl is-active firewalld >/dev/null 2>&1; then
-    echo "[!] WARNING: firewalld is ACTIVE"
-    echo "    NFTBan manages nftables directly and may conflict with firewalld."
-    echo "    Recommended action:"
-        echo "      systemctl stop firewalld"
-        echo "      systemctl disable firewalld"
-    echo ""
-    CONFLICTS_FOUND=1
-fi
-
-# Check iptables-persistent service - differentiate iptables-nft (conflict) vs legacy (OK)
-if systemctl is-active iptables-persistent >/dev/null 2>&1 || systemctl is-active netfilter-persistent >/dev/null 2>&1; then
-    IPT_SVC_VERSION=$(iptables --version 2>/dev/null || echo "")
-    if echo "$IPT_SVC_VERSION" | grep -q "nf_tables"; then
-        echo "[!] WARNING: iptables-persistent/netfilter-persistent is ACTIVE (iptables-nft backend)"
-        echo "    iptables-nft creates nftables tables that may conflict with NFTBan."
-        echo "    Recommended action:"
-        echo "      systemctl stop netfilter-persistent"
-        echo "      systemctl disable netfilter-persistent"
-        echo ""
-        CONFLICTS_FOUND=1
-    else
-        echo "[i] INFO: iptables-persistent/netfilter-persistent is ACTIVE (legacy backend)"
-        echo "    iptables-legacy co-exists with nftables (separate kernel APIs)."
-        echo "    cPanel/WHM, CSF/LFD, and cPHulk may require this service."
-    fi
-fi
-
-if [ $CONFLICTS_FOUND -eq 0 ]; then
-    echo "[✓] No conflicting firewall services detected"
-fi
-
-# -----------------------------------------------------------------------------
-# CHECK 5: Network Connectivity (for GeoIP download)
-# -----------------------------------------------------------------------------
-echo ""
-echo "Checking network connectivity..."
-
-if curl -sI --connect-timeout 5 https://github.com >/dev/null 2>&1; then
-    echo "[✓] Internet connectivity: OK (github.com reachable)"
-else
-    echo "[!] Warning: Cannot reach github.com"
-    echo "    GeoIP database download may fail."
-    echo "    You can manually download later: nftban-core geoip update"
-    echo ""
-fi
-
-# -----------------------------------------------------------------------------
-# FINAL RESULT
-# -----------------------------------------------------------------------------
-echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
-
-if [ $PREREQ_FAILED -eq 1 ]; then
-    echo "[✗] PREREQUISITE CHECK FAILED"
-    echo ""
-    if [ -n "$PREREQ_ERRORS" ]; then
-        echo "ROOT CAUSE: $PREREQ_ERRORS"
-        echo ""
-    fi
-    echo "If missing dependencies, install using apt (not dpkg):"
-    echo ""
-    echo "  sudo apt update"
-    echo "  sudo apt install -y ./nftban-*.deb"
-    echo ""
-    echo "apt will automatically install missing dependencies (nftables, curl, jq)."
-    echo "════════════════════════════════════════════════════════════════════════════════"
-    echo ""
-    # Print root cause to stderr as well (survives dpkg/apt noise)
-    [ -n "$PREREQ_ERRORS" ] && echo "NFTBan: $PREREQ_ERRORS" >&2
-    exit 1
-fi
-
-if [ $CONFLICTS_FOUND -eq 1 ]; then
-    echo "[!] WARNING: Firewall conflicts detected"
-    echo ""
-    echo "NFTBan can still be installed, but conflicts may cause issues."
-    echo "Recommended: Disable conflicting firewalls before continuing."
-    echo ""
-    echo "To proceed anyway, you can ignore this warning."
-    echo "To abort installation, press Ctrl+C now (waiting 10 seconds)..."
-    echo "════════════════════════════════════════════════════════════════════════════════"
-    echo ""
-    sleep 10
-fi
-
-echo "[✓] All critical prerequisites satisfied"
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo ""
-
-exit 0
-PREINST_EOF
 
     # Inject actual version and build distro into preinst
     sed -i "s/__PKG_VERSION__/${PKG_VERSION}/g; s/v1\.0\.0/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
