@@ -8,8 +8,6 @@
 /usr/sbin/nftban                                        --  gen_context(system_u:object_r:nftband_exec_t,s0)
 /usr/lib/nftban/bin/nftband                             --  gen_context(system_u:object_r:nftband_exec_t,s0)
 /usr/lib/nftban/bin/nftban-core                         --  gen_context(system_u:object_r:nftband_exec_t,s0)
-/usr/lib/nftban/bin/nftban-ui                           --  gen_context(system_u:object_r:nftband_exec_t,s0)
-/usr/libexec/nftban-ui-auth                             --  gen_context(system_u:object_r:nftband_exec_t,s0)
 
 # Configuration files
 /etc/nftban(/.*)?                                           gen_context(system_u:object_r:nftban_conf_t,s0)
