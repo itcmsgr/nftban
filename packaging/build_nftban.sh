@@ -476,6 +476,10 @@ while IFS= read -r unit; do
     install -D -m 0644 "install/systemd/\$unit" "%{buildroot}/usr/lib/systemd/system/\$unit"
 done < %{_sourcedir}/nftban-systemd-install.list
 
+# v1.107.1: ship boot-delay helper referenced by nftban-firewall-init.service ExecStart=
+# (matches source-install staging at internal/installer/payload/payload.go install/helpers entry)
+install -D -m 0755 install/helpers/firewall-init-with-delay.sh %{buildroot}/usr/lib/nftban/helpers/firewall-init-with-delay.sh
+
 # Sysctl tuning profile (v1.38.0)
 install -D -m 0644 install/sysctl/90-nftban.conf %{buildroot}/etc/sysctl.d/90-nftban.conf
 
@@ -1902,6 +1906,11 @@ build_deb() {
         [[ -z "$unit" || "$unit" =~ ^[[:space:]]*# ]] && continue
         install -m 0644 "${PROJECT_ROOT}/install/systemd/${unit}" "${deb_root}/usr/lib/systemd/system/"
     done < "$systemd_install_list"
+
+    # v1.107.1: ship boot-delay helper referenced by nftban-firewall-init.service ExecStart=
+    # (matches source-install staging at internal/installer/payload/payload.go install/helpers entry)
+    install -m 0755 "${PROJECT_ROOT}/install/helpers/firewall-init-with-delay.sh" "${deb_root}/usr/lib/nftban/helpers/"
+
     # v1.41.0: Community stats config default
     install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
 
