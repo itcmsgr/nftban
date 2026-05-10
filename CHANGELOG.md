@@ -11,6 +11,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.107.2] - 2026-05-10 — packaging hotfix (immutable-bit pre-cpio asymmetry)
+
+Single-defect packaging hotfix on top of v1.107.1. Closes a pre-existing
+pre-cpio `+i` (immutable bit) asymmetry surfaced operationally during the
+v1.107.1 lab4 convergence test (2026-05-10). Schema remains frozen at
+`1.83.0`. No metrics changes. No portal coordination. No install API or
+panel-adapter changes. No behavior change in `nftban-core` / `nftband`
+daemons. The `+i` setter, the unit file, the validator assertion, the
+CLI helper `_remove_immutable_flags`, and the comprehensive `%preun` /
+prerm are all unchanged — the fix lives exclusively in the
+upgrade-pre-cpio path of `packaging/build_nftban.sh`.
+
+### Defect
+
+`internal/installer/validate/authority.go SetImmutableFlags` sets
+`chattr +i` on **two** files post-install/repair:
+
+- `/etc/nftban/nftban.conf`
+- `/usr/lib/nftban/lib/nft_schema.sh`
+
+The CLI canonical update path `nftban update` (which most operators use)
+runs `cli/lib/nftban/cli/cmd_update_helpers.sh:120 _remove_immutable_flags`
+before invoking the package manager. That helper walks `/usr/lib/nftban`,
+`/usr/sbin/nftban`, and `/etc/nftban` recursively, so both `+i`-protected
+files are stripped before extraction.
+
+The **direct package-manager upgrade path** is asymmetric:
+
+- RPM `%pretrans` Lua (`packaging/build_nftban.sh:552-564`) stripped `+i`
+  only from `nft_schema.sh` (and a recursive `chattr -i -R /usr/lib/nftban`).
+- DEB preinst (`packaging/build_nftban.sh:1346-1361`) stripped `+i` only
+  from `nft_schema.sh`.
+- `%preun` and DEB prerm DO cover both files, but they run **after** cpio
+  extraction in the RPM upgrade transaction (`%preun` of OLD package fires
+  at step 5; cpio extract at step 3) — too late to help.
+
+Effect: on any host that completed install/repair under v1.76.0 through
+v1.107.1, `/etc/nftban/nftban.conf` carries `+i`. A direct
+`dnf upgrade ./nftban-core-*.rpm` or `apt install ./nftban-core-*.deb`
+fails at cpio extraction with the misleading message:
+
+    cpio: utime failed - Directory not empty
+    error: nftban-core-1.107.1-1.el9.x86_64: install failed
+    error: nftban-core-1.107.0-1.el9.x86_64: erase skipped
+
+(`erase skipped` is the proof that `%preun` never ran.) The cpio error
+text is `errno=ENOTEMPTY` mistranslation by cpio for the actual
+immutable-write block on a regular file.
+
+The defect has existed since v1.76.0 (when the Go installer started
+setting `+i` on `nftban.conf`) but was never operationally surfaced
+until the v1.107.1 lab4 convergence test deliberately attempted a
+direct `dnf upgrade`.
+
+### Fix
+
+`packaging/build_nftban.sh` — two surgical insertions mirroring the
+existing `nft_schema.sh` handling:
+
+- **RPM `%pretrans` Lua** — add a 9-line block after the existing
+  `if/end` at line 564 that opens `/etc/nftban/nftban.conf`, closes it,
+  and runs `chattr -i` via three PATH variants.
+- **DEB preinst** — add a 3-line shell `if` before the trailing
+  `fi` at line 1361 that runs `chattr -i /etc/nftban/nftban.conf`.
+
+Both blocks are idempotent and silent on absence (file may not exist
+on a fresh install). Both mirror the existing pattern.
+
+### Out of scope (explicit non-goals)
+
+- **`internal/installer/validate/authority.go SetImmutableFlags`** —
+  unchanged. The `+i` setter is correct as-is; protection is the
+  intended security posture.
+- **`cli/lib/nftban/cli/cmd_update_helpers.sh _remove_immutable_flags`** —
+  unchanged. The CLI workaround already covers the missing path; the
+  fix in this release brings the package-manager direct-upgrade path
+  to parity, not the other way round.
+- **`%preun` / prerm** — unchanged. Already comprehensive; runs in the
+  correct ordering for uninstall but is too late on upgrade-pre-cpio.
+- **CI hardening** to verify `+i`-managed paths are stripped by both
+  upgrade-pre-cpio scriptlets — recommended as separate follow-on; not
+  in this hotfix to keep scope minimal.
+- **Row 17 SELF-HEALING-AUTHORITY-REDESIGN** — proposed / non-counted /
+  SCOPE-FIRST. Remains deferred. Not displaced by v1.107.2.
+- **FHS Authority Graph / ATG** — intentionally deferred post-v1.108.
+  Not a v1.107.x blocker.
+- **Optional org-level GHCR `sha-*` retention policy** — forward-
+  looking hygiene; post-v1.107.x.
+- **Issue #525 GitHub-level close** — operator-decided.
+- **CI hardening to trace systemd `ExecStart=` paths back to package
+  payload** (the v1.107.1 architectural blind spot) — recommended
+  follow-on; not in this hotfix.
+
+### Standing rules
+
+Schema frozen at `1.83.0`.
+No metrics, portal, schema, install API, lifecycle, or panel-adapter
+changes in v1.107.2.
+`nftban-core` / `nftband` daemons unchanged.
+Cross-distro `+i` lifecycle invariant preserved across all four
+mechanisms (Go setter / RPM scriptlets / DEB scriptlets / Go uninstall
+artifacts) and now also at upgrade-pre-cpio.
+
+### Migration
+
+No operator action required. Hosts already on v1.107.1 will pick up
+v1.107.2 cleanly via either canonical `nftban update` (which already
+worked) **or** direct `dnf upgrade` / `apt install` (which now also
+works on hosts where `/etc/nftban/nftban.conf` carries `+i`). No
+takeover state change.
+
+### Release-prep
+
+`packaging/build_nftban.sh` (the fix) +
+`VERSION` (`1.107.1` → `1.107.2`) +
+`STATUS.md` (release-lane block) +
+`CHANGELOG.md` (this block) +
+`cli/lib/nftban/core/nftban_fhs_spec.sh` (regen with new VERSION).
+Total: 5 files.
+
+---
+
 ## [v1.107.1] - 2026-05-10 — packaging hotfix (firewall-init helper)
 
 Single-defect packaging hotfix on top of v1.107.0. Closes a
