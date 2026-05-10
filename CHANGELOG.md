@@ -11,6 +11,184 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.107.0] - 2026-05-10 — post-MFST closure release
+
+Five code PRs and one accepted-retention closure land the v1.107 worklog
+targets on top of v1.106.0. Schema remains frozen at `1.83.0`. No metrics
+changes. No portal coordination. No install API or panel-adapter changes.
+
+Behavior changes are confined to (a) raised cgroup `TasksMax` on the
+`nftban-core-geoip.service` + `nftban-health.service` units (10 → 64) and
+(b) corrected `sysusers.d` g-line syntax (dormant in production — DEB
+postinst uses `groupadd -r` directly, never `systemd-sysusers`). The
+`nftban-core` and `nftband` daemons themselves are unchanged.
+
+Counted-findings progress in v1.106 post-MFST worklog: 12 CLOSED / 3 OPEN
+at v1.106.0 → **13 CLOSED / 2 OPEN** at v1.107.0 release-prep, with
+remaining rows 6 (F-4) + 7 (F-5) closed in this release-prep PR per
+Option α.
+
+### Closure-set PRs
+
+- **PR #576 (squash `15bb9f44`)** — Slot 5a PKG-EFFECTIVE-PARITY. DEB
+  postinst ownership convergence using Option α + Option A
+  `dpkg-statoverride` semantics. New CI parity gate
+  (`Validate package effective parity (RPM vs DEB)`) covers all six
+  authority layers: yaml SoT (`build/fhs-spec.yaml`) → generator output
+  → archive metadata → installed-fs → reinstall preservation → verify
+  tool. RPM continues to use `%attr()` name-based directives; DEB
+  reaches the same effective on-disk state through postinst chown +
+  `dpkg-statoverride --update --add`.
+
+- **PR #579 (squash `0daeb38e`)** — Slot 5b G8-AUDITOR-DIR-UBUNTU.
+  Runtime Truth `G8` verifier wraps its `[ -d ]` / `[ -e ]` / `stat -c`
+  checks in `sudo` so the runner user can traverse the intentionally-
+  restrictive `0750 root:nftban` parent directory on Ubuntu 24.04.
+  Bucket F (CI verifier privilege) classification confirmed by
+  `SYSTEMD_LOG_LEVEL=debug` capture; `systemd-tmpfiles` always created
+  the auditor directory correctly on both AlmaLinux 9 / systemd 252 and
+  Ubuntu 24.04 / systemd 255 — the bug was entirely in the test harness.
+  No product code, packaging, or sysusers/tmpfiles change.
+
+- **PR #580 (squash `1d2c4b63`)** — Slot 6 POLKIT-AUTHORITY documentation
+  amendment (2 files / +73 / −0). Two `note:` fields added to
+  `build/fhs-spec.yaml` (one on the `nftban-panel` group entry recording
+  the D-NEW-11 keep-decision + 9-surface live-consumer manifest, one on
+  `/var/lib/nftban/reports/auditors` flagging it as an AUTHORITY
+  EXCEPTION). Header `// CONSUMERS (verified live as of v1.107)` block
+  added to `packaging/polkit-1/rules.d/30-nftban-panel.rules` with the
+  decommission-rejected rationale. `polkit.addRule(...)` body
+  **BYTE-IDENTICAL** to base — verified by `diff` on extracted rule
+  bodies. Generator `--check` confirms the new `note:` field is not
+  consumed by yq queries (zero generated-artifact drift). The three-tier
+  polkit model (operator / auditor / panel) is confirmed load-bearing
+  and intentional.
+
+- **PR #581 (squash `1d83df9e`)** — Slot 7 LANE-G / Issue #525.
+  `install/systemd/nftban-core-geoip.service`: `TasksMax=10`→`64` with a
+  mechanism comment citing Go 1.25 runtime + maxminddb finalizer-
+  goroutine OS-thread requirements (peer Go services in
+  `install/systemd/` ran 20–50; geoip was the outlier). Mirror fix on
+  `install/systemd/nftban-health.service` because health checks shell
+  out to `nftban-core` subcommands and exercise the same Go runtime
+  surface. New Runtime Truth `G9` step asserts no Go runtime fatal-trace
+  patterns (`runtime.fatalpanic`, `runtime.gopanic`,
+  `runtime.(*cleanupQueue)`, `fatal error:`, `^panic:`,
+  `goroutine 1 [running]:`) appear in geoip startup output on both
+  matrix legs (real-systemd path A on ubuntu-24.04; `prlimit --nproc=64`
+  path B on almalinux-9 container). Closes Issue #525 root cause:
+  `clone(2) EAGAIN` under cgroup pids-exhaustion. **No `cmd_geoip.go`
+  or `internal/geoip/lookup.go` change. No `maxminddb-golang` version
+  bump.** Issue #525 left OPEN by the merge gate (operational hygiene;
+  operator may close separately).
+
+- **PR #582 (squash `3af86877`)** — proposed worklog row 16 SYSUSERS-
+  GECOS-G-LINES one-shot. `build/generate-fhs-outputs.sh:217` g-line
+  emitter switched from `g \(.name) - "\(.comment)"` to `g \(.name) -`,
+  per `sysusers.d(5)`'s rule that g-lines take only `name [id]` (GECOS
+  is reserved for u-lines). Regenerated `install/systemd/sysusers.d/
+  nftban.conf` so the 3 g-lines now match `g <name> -`. New Runtime
+  Truth `G10` step asserts `systemd-sysusers --dry-run` exits `0` on
+  both ubuntu-24.04 (systemd 255) and almalinux-9 (systemd 252) matrix
+  legs + belt-and-braces grep on the diagnostic message. Identities
+  byte-equivalent (3 groups + 1 user + 1 membership preserved); u-line
+  GECOS preserved (allowed on u-lines per `sysusers.d(5)`); comment
+  metadata preserved in `build/fhs-spec.yaml` under
+  `.sysusers.groups[].comment` (just no longer emitted to sysusers.d
+  g-lines). Was dormant in production: postinst uses `groupadd -r`
+  directly, never `systemd-sysusers`.
+
+### Accepted-retention closure (no PR)
+
+- **Row 13 / F-6 REGISTRY-HYGIENE** — closed via accepted-retention
+  path (b) per `OPEN-REGISTRY-HYGIENE-SCOPE` (verdict
+  `GO_CLOSE_AS_ACCEPTED_RETENTION`). Read-only GHCR HEAD/GET probes
+  confirmed `ghcr.io/itcmsgr/nftban:sha-4de527d` exists (manifest digest
+  `sha256:e1f0fc37…`) and is one of 284 `sha-*` tags emitted by the
+  standard `docker/metadata-action@v5.9.0` `type=sha` rule in
+  `.github/workflows/docker.yml`. The tag corresponds to git commit
+  `4de527dc` (the v1.106.0 release squash). Original "first/failed
+  publish" framing was a misclassification — the tag is a normal CI
+  artifact, not stale. **Zero registry mutation; zero code change; zero
+  PR.** Closure recorded in worklog `§6.9` and this CHANGELOG entry.
+
+### CI hardening (Runtime Truth Gate)
+
+The `Runtime Truth Gate` workflow grew from 8 G-steps at v1.106.0 to
+**10 G-steps** at v1.107.0:
+
+- `G9` (added by PR #581): no Go runtime fatal trace at geoip startup;
+  matrix-aware (real systemd path A on ubuntu-24.04; `prlimit --nproc=64`
+  path B on almalinux-9).
+- `G10` (added by PR #582): `systemd-sysusers --dry-run` exits 0 on
+  systemd 252 + 255; belt-and-braces grep on the diagnostic message
+  catches future regressions.
+
+Both new gates lock the regression class: any future PR that
+re-introduces the geoip fatal-trace path or the sysusers GECOS-on-g-line
+defect fails CI.
+
+### Documentation closures (rows 6 + 7 / F-4 + F-5, this PR)
+
+- **Row 6 / F-4** — v1.106.0 hotfix-arc disclosure consolidation. The
+  v1.106.0 release shipped seven Lane MFST PRs (#563–#569). The v1.107.0
+  closure narrative above documents the post-v1.106 work that completes
+  the arc: PRs #576/#579 close the PKG-EFFECTIVE-PARITY layer (Slot 5);
+  PR #580 closes the POLKIT-AUTHORITY documentation gaps surfaced
+  during Slot 5; PR #581 closes the long-deferred Lane G #525; PR #582
+  closes the SYSUSERS-GECOS-G-LINES dormant defect surfaced by Slot 5b's
+  reverted Stage-2 attempt; row 13 closes via accepted-retention. F-4
+  disclosure complete.
+
+- **Row 7 / F-5** — release/status rolling-context note. STATUS.md and
+  this CHANGELOG together carry the rolling closure context for the
+  v1.106 → v1.107 arc, including: explicit non-goals (row 17
+  SELF-HEALING-AUTHORITY-REDESIGN; FHS Authority Graph / ATG; org-level
+  GHCR retention); preserved scope discipline (no schema/metrics/portal
+  changes); preserved authority discipline (no postinst migration to
+  systemd-sysusers; row 17 not displaced by v1.107). F-5 disclosure
+  complete.
+
+### Explicit non-goals (carried forward as future debt)
+
+- **Row 17 SELF-HEALING-AUTHORITY-REDESIGN** — lifecycle / authority-
+  model debt (proposed/non-counted); treatment SCOPE-FIRST per the
+  2026-05-09 doctrine. After Slot 5 + Slot 6 closed, NFTBan's authority
+  model spans `build/fhs-spec.yaml` (SoT) + `systemd-tmpfiles` +
+  `systemd-sysusers` + postinst/postrm + `dpkg-statoverride` + RPM
+  `%attr()` / dpkg verification + Runtime Truth + PKG-EFFECTIVE-PARITY
+  gates. Self-Healing must be audited and (if needed) redesigned to
+  route every repair through the correct authority mechanism rather
+  than independent `mkdir`/`chown`/`chmod`/identity-create. Awaits
+  separately-authorized `OPEN-SELF-HEALING-AUTHORITY-REDESIGN-SCOPE`
+  gate. **Not displaced by v1.107.0.**
+
+- **FHS Authority Graph / ATG** — intentionally deferred. **Not a
+  v1.107.0 blocker; will not open before release.** After v1.108.0 the
+  operator may introduce it as a separate debt lane with its own scope
+  gate. v1.107.0 release scope is limited to the closure-set PRs above
+  + row 13 accepted-retention + rows 6/7 release-prep doc-amend.
+
+- **Optional org-level GHCR `sha-*` retention policy** — forward-
+  looking hygiene; post-v1.107. Would auto-prune `sha-*` tags older
+  than N days while preserving `latest`/`main`/semver tags. Out of
+  scope for v1.107.0; not a row-13 dependency.
+
+- **`maxminddb-golang` version bump** — explicitly excluded from PR
+  #581 / Slot 7. The conservative TasksMax fix proved sufficient; the
+  dependency bump is available as a separate PR if a future regression
+  ever requires it. Not a v1.107.0 task.
+
+### Migration
+
+No operator action required. The two TasksMax changes apply on the
+next service restart (or immediately on fresh install). The sysusers
+change is dormant in production for current postinst paths and only
+matters if a future packaging change moves identity creation to
+`systemd-sysusers`.
+
+---
+
 ## [v1.106.0] - 2026-05-06 — Lane MFST (Manifest Authority) partial release
 
 Seven code PRs land manifest-pipeline drift closures on top of v1.104.0
