@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2026-05-11T00:00:00Z",
+    "from": "none",
+    "to": "fixture",
+    "status": "success",
+    "type": "source",
+    "duration_s": 1,
+    "host": "fixture-pass-source-installed"
+  }
+]
