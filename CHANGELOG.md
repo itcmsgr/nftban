@@ -11,6 +11,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.107.1] - 2026-05-10 — packaging hotfix (firewall-init helper)
+
+Single-defect packaging hotfix on top of v1.107.0. Closes a
+packaging-vs-source-install asymmetry surfaced operationally by the
+v1.107.0 lab4 takeover (Issue #525 follow-on rollout, 2026-05-10).
+Schema remains frozen at `1.83.0`. No metrics changes. No portal
+coordination. No install API or panel-adapter changes. No behavior
+change in `nftban-core` / `nftband` daemons. The helper script,
+unit file, and Go validator are all unchanged — the fix lives
+exclusively in `packaging/build_nftban.sh`.
+
+### Defect
+
+`install/systemd/nftban-firewall-init.service:55` references
+`/usr/lib/nftban/helpers/firewall-init-with-delay.sh`. The
+source-install path in `internal/installer/payload/payload.go:411`
+correctly stages the helper from `install/helpers/` (per PR26.5,
+"source-install payload completeness — close the gaps surfaced
+by the dns2 evidence run, 2026-04-30"). The package-build path
+in `packaging/build_nftban.sh` was not updated in symmetry, so
+RPM and DEB payloads ship 8 helpers (from `cli/lib/nftban/helpers/`)
+but not this 9th helper from `install/helpers/`. Effect: every
+successful `nftban-installer --repair` takeover ended in
+`INSTALL_STATE=DEGRADED` because the Go-side
+`systemd_execstart_paths_ok` assertion failed at install time
+on real hosts. The directory-glob-level Effective Parity Gate
+(PR #576) did not catch this — its scope is package-payload-vs-yaml
+SoT at directory granularity, not per-unit ExecStart-path resolution.
+
+### Fix (one PR — packaging only)
+
+- **`packaging/build_nftban.sh`** — two `install` lines:
+  - RPM `%install` step (after the systemd-units `while` loop):
+    `install -D -m 0755 install/helpers/firewall-init-with-delay.sh %{buildroot}/usr/lib/nftban/helpers/firewall-init-with-delay.sh`
+  - DEB `build_deb()` step (after the systemd-units `while` loop):
+    `install -m 0755 "${PROJECT_ROOT}/install/helpers/firewall-init-with-delay.sh" "${deb_root}/usr/lib/nftban/helpers/firewall-init-with-delay.sh"`
+
+Helper source (`install/helpers/firewall-init-with-delay.sh`,
+3,841 B, mode `rwx--x--x`, present since `d55e38a9`) is unchanged.
+Both target directories already exist via the prior
+`cp -r cli/lib/nftban/*` step; the new lines are purely additive.
+
+### Out of scope (explicit non-goals)
+
+- **`install/systemd/nftban-firewall-init.service`** — unchanged.
+  The `ExecStart=` reference is correct; the missing payload was
+  the bug.
+- **`install/helpers/firewall-init-with-delay.sh`** — unchanged.
+  The helper itself is correct; only its packaging shipment was
+  broken.
+- **`internal/installer/validate/assertions.go`** — unchanged.
+  The `systemd_execstart_paths_ok` assertion correctly surfaced
+  the defect; weakening it would mask the same bug class going
+  forward.
+- **`internal/installer/payload/payload.go`** — unchanged.
+  Already correct under PR26.5.
+- **CI assertion that traces every unit-file `ExecStart=` path
+  back to the package payload** — recommended as a follow-on to
+  permanently close the architectural blind spot (extend
+  `scripts/test-package-effective-parity.sh`); not landed in
+  this hotfix to keep PR scope minimal.
+- **Row 17 SELF-HEALING-AUTHORITY-REDESIGN** — proposed /
+  non-counted / SCOPE-FIRST per the v1.107.0 doctrine. Not
+  displaced by v1.107.1.
+- **FHS Authority Graph / ATG** — intentionally deferred
+  post-v1.108. Not a v1.107.x blocker.
+- **Optional org-level GHCR `sha-*` retention policy** — forward-
+  looking hygiene; post-v1.107.x.
+- **Issue #525 GitHub-level close** — operator-decided after
+  rollout reaches `OK` terminal state on at least one host. The
+  v1.107.0 worklog row 12 closure remains authoritative.
+
+### Standing rules
+
+Schema frozen at `1.83.0`.
+No metrics, portal, schema, install API, lifecycle, or panel-adapter
+changes in v1.107.1.
+`nftban-core` / `nftband` daemons unchanged.
+
+### Migration
+
+No operator action required for the daemon. Hosts already on
+v1.107.0 in `FAILED_AUTHORITY_ABORT` state (lab2, srv4) will
+ship the helper on next `apt-get install` / `dnf install` of
+v1.107.1, and a subsequent `NFTBAN_TAKEOVER=1 nftban-installer
+--repair` will reach `INSTALL_STATE=OK`. Hosts already in
+`DEGRADED` state (lab4) can either upgrade in place (next
+`dnf upgrade` ships the helper; subsequent `nftban-installer
+--repair` resolves the assertion) or roll back via the
+`xt-backup` file written during initial takeover and reinstall
+fresh from v1.107.1.
+
+### Release-prep
+
+`packaging/build_nftban.sh` (the fix) +
+`VERSION` (`1.107.0` → `1.107.1`) +
+`STATUS.md` (release-lane block) +
+`CHANGELOG.md` (this block) +
+`cli/lib/nftban/core/nftban_fhs_spec.sh` (regen with new VERSION).
+Total: 5 files.
+
+---
+
 ## [v1.107.0] - 2026-05-10 — post-MFST closure release
 
 Five code PRs and one accepted-retention closure land the v1.107 worklog
