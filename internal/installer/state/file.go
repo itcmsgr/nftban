@@ -117,6 +117,15 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 	sf.PhaseReached = string(phase)
 	if newState.IsFailed() {
 		sf.FailureReason = reason
+	} else if newState == StateCommitted || newState == StateDegraded {
+		// V108 Item 5: clear stale pre-failure carry-over fields when reaching
+		// success/soft-success terminals. Without this, a host that experienced
+		// FAILED_AUTHORITY_ABORT earlier and then advanced to COMMITTED/DEGRADED
+		// would carry CONFLICTS=… / FAILURE_REASON="takeover not approved…" /
+		// PREFLIGHT_PASSED=0 verbatim into the terminal state file — visible on
+		// 4 of 6 v1.107.2 rollout hosts (lab2/srv1/srv3/srv4) and confusing for
+		// operator diagnosis. See V108_ITEM5_INSTALL_STATE_HYGIENE_SCOPE.md.
+		sf.applyTerminalHygiene()
 	}
 	sf.Timestamp = time.Now().UTC()
 	if !sf.DryRun {
@@ -129,6 +138,29 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		return fmt.Errorf("%s: %s", newState, reason)
 	}
 	return nil
+}
+
+// applyTerminalHygiene clears stale pre-failure carry-over fields when
+// transitioning to COMMITTED or DEGRADED. Per V108 Item 5 scope §4:
+//
+//   - FailureReason: cleared (no current failure on success/soft-success
+//     terminal — the prior reason is no longer current)
+//   - Conflicts: cleared iff Authority == "UPDATE" (takeover approved, so
+//     the prior conflict descriptors no longer reflect current state)
+//   - PreflightPassed: set true (a successful terminal implies preflight
+//     passed; the prior 0 from an aborted phase is stale)
+//
+// All three writes are idempotent on a clean (never-failed) host.
+//
+// Failure terminals (StateFailedAbort etc.) MUST preserve all fields —
+// operator needs the diagnostic — and intermediate states preserve as-is
+// (legitimate carry-over for diagnosis).
+func (sf *StateFile) applyTerminalHygiene() {
+	sf.FailureReason = ""
+	if sf.Authority == "UPDATE" {
+		sf.Conflicts = ""
+	}
+	sf.PreflightPassed = true
 }
 
 // WriteAtomic writes the state file atomically (write to tmp, then rename).
