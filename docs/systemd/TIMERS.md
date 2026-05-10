@@ -116,9 +116,6 @@ the daemon is active.
 | Service | Tier | Purpose |
 |---------|------|---------|
 | `nftban-api.service` | PRO | REST API server |
-| `nftban-ui.service` | PRO | Web UI |
-| `nftban-ui-auth.service` | PRO | UI authentication |
-| `nftban-ui-auth.socket` | PRO | UI auth socket activation |
 | `nftban-firewall-init.service` | EXPERIMENTAL | Boot delay initialization |
 
 ## Configuration

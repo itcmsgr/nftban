@@ -124,7 +124,6 @@ NFTBan implements a **capability-based privilege model** following the principle
 | `nftband` (daemon) | `root` | `CAP_NET_ADMIN`, `CAP_DAC_OVERRIDE` | nftables rule management, stats writing |
 | `nftban-health` | `nftban` | `CAP_NET_ADMIN` | Health monitoring |
 | `nftban-unified-exporter` | `nftban` | `CAP_NET_ADMIN` | Metrics collection |
-| `nftban-ui` | `nftban` | `CAP_NET_ADMIN` | Web interface |
 
 **Key Points:**
 - **Root required for nftables:** `CAP_NET_ADMIN` capability is essential for firewall rule management
@@ -211,7 +210,7 @@ ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
 
 **Status:** Intentionally DISABLED for Go-based services
 
-**Affected Services:** `nftban-ui`, `nftban-ui-auth`
+**Affected Services:** current Go-based services (`nftband`, `nftban-core`)
 
 **Reason:** Go runtime requires writable-executable memory for JIT compilation, which conflicts with `MemoryDenyWriteExecute=true` on Ubuntu 24.04+ (AppArmor + Landlock LSM interaction).
 
