@@ -5,8 +5,6 @@
 //
 // DEPRECATED (v1.89 INV-M-006): sampler.go is scheduled for removal.
 // New code MUST NOT import or call GetSampler(). Use daemon /metrics instead.
-// Existing callers (nftban-ui, internal/api) are grandfathered until v1.90.
-// Decision on removal vs migration deferred to v1.90 (depends on UI redesign).
 //
 // meta:name="sampler"
 // meta:type="package"

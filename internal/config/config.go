@@ -6,7 +6,7 @@
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
-// meta:description="Application configuration for nftban-ui server"
+// meta:description="Application configuration"
 // meta:input="Configuration file"
 // meta:output="Server configuration"
 // meta:depends="github.com/itcmsgr/nftban/internal/nftbanconf"
@@ -76,7 +76,7 @@ func Load(path string) (*Config, error) {
 		SessionTimeout:   60,
 		IPWhitelistFile:  configDir + "/whitelist.d/ui-access.conf",
 		AuditLogFile:     logDir + "/ui-access.log",
-		RequiredGroup:    "nftban", // Web GUI admin users must be in nftban group
+		RequiredGroup:    "nftban", // admin users must be in nftban group
 		BlockRootLogin:   true,
 		MaxLoginAttempts: 5,
 		LockoutDuration:  15,
@@ -228,7 +228,7 @@ func (c *Config) Save(path string) error {
 	defer file.Close()
 
 	// Write configuration
-	fmt.Fprintf(file, "# NFTBan Web GUI Configuration\n")
+	fmt.Fprintf(file, "# NFTBan Configuration\n")
 	fmt.Fprintf(file, "# Generated: %s\n\n", "2025-11-10")
 
 	fmt.Fprintf(file, "PORT=%d\n", c.Port)
