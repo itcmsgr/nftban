@@ -1,0 +1,61 @@
+# =============================================================================
+# NFTBan V108 Item 2 — +i Lifecycle Matrix (canonical declaration)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Single source of truth for which files are protected with `chattr +i` and
+# which lifecycle hooks must strip the bit before each operation. Consumed by:
+#   scripts/ci/test-immutable-lifecycle-matrix.sh   (CI invariant gate)
+#
+# Per V108_ITEM2_IMMUTABLE_LIFECYCLE_MATRIX_SCOPE.md: any new entry here MUST
+# be matched by code in all `required`-marked lifecycle hooks. The gate fails
+# on drift between this yaml and the 4 source surfaces:
+#
+#   1. internal/installer/validate/authority.go::SetImmutableFlags
+#      (the canonical Go-side apply list)
+#   2. packaging/build_nftban.sh         %pretrans + %preun
+#   3. packaging/deb/preinst, postinst, prerm
+#   4. cli/lib/nftban/cli/cmd_update_helpers.sh::_remove_immutable_flags
+#      (broad sweep — covers any future addition; "covered_by_sweep")
+#
+# Re-application authority: Go SetImmutableFlags is the ONLY direct +i
+# applier. RPM %post and DEB postinst never re-apply +i directly (strip-only
+# design). Item 2's gate verifies this symmetric design holds.
+#
+# Audit refs:
+#   - V107_PRETRANS_NFTBAN_CONF_SCOPE.md (the v1.107.2 hotfix scope)
+#   - V107_2_ROLLOUT_FINAL_CLOSURE.md
+#   - V108_ITEM2_IMMUTABLE_LIFECYCLE_MATRIX_SCOPE.md
+# =============================================================================
+
+# Canonical re-application authority. Item 2 declares this as the symmetric
+# design: BOTH packagers strip-only; only Go re-applies. Any future packager-
+# side direct +i application requires a separate scope decision.
+reapplication_authority: go_set_immutable_flags
+
+# Per-file lifecycle hook requirements.
+# Hook values:
+#   required                — gate FAILs if scriptlet does not strip this file
+#   not_required            — explicitly waived (gate accepts absence)
+#   covered_by_sweep        — covered by directory-level recursive sweep
+#   covered_by_dir_recursion — covered by uninstall artifacts.go chattr -R -i
+protected_files:
+  - path: /etc/nftban/nftban.conf
+    go_set_apply: required
+    rpm_pretrans: required
+    rpm_preun: required
+    deb_preinst: required
+    deb_postinst: required
+    deb_prerm: required
+    cli_remove_helper: covered_by_sweep
+    go_uninstall_artifacts: covered_by_dir_recursion
+
+  - path: /usr/lib/nftban/lib/nft_schema.sh
+    go_set_apply: required
+    rpm_pretrans: required
+    rpm_preun: required
+    deb_preinst: required
+    deb_postinst: required
+    deb_prerm: required
+    cli_remove_helper: covered_by_sweep
+    go_uninstall_artifacts: covered_by_dir_recursion

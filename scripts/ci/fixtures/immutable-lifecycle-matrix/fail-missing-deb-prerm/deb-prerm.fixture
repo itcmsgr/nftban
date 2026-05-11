@@ -1,0 +1,20 @@
+# fixture content (no shebang — avoid validate-headers is_bash)
+# =============================================================================
+# NFTBan V108 Item 2 — CI Gate Test Fixture
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="immutable-lifecycle-fixture"
+# meta:type="test-fixture"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-05-11"
+# meta:description="Synthetic fixture for V108 Item 2 CI gate testing"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+set -Eeuo pipefail
+echo 'no chattr here'

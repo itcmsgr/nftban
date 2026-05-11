@@ -1,0 +1,8 @@
+package validate
+func SetImmutableFlags() {
+    immutableFiles := []string{
+        "/etc/nftban/nftban.conf",
+        "/usr/lib/nftban/lib/nft_schema.sh",
+    }
+    _ = immutableFiles
+}
