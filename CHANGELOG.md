@@ -11,6 +11,218 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.108.0] - 2026-05-12 — V108 primary hardening bundle
+
+V108 primary hardening lane on top of v1.107.2. Closes 6 of 7 primary
+items from the `V108_LIFECYCLE_AUTHORITY_AND_CI_BLIND_SPOT_HARDENING`
+workspace scope. Item 4 (DEGRADED-runtime-pattern investigation) is
+**not** bundled and remains separately gated for a future release.
+
+The bundle is CI hardening + GOTH/`nftban-ui` decommission completion +
+two narrow behavior fixes (CLI install-method classifier and installer
+state-writer terminal hygiene). Schema remains frozen at `1.83.0`. No
+daemon behavior change. No metrics, portal, install API, or
+panel-adapter changes.
+
+### Goals
+
+Lock four operational regression classes that emerged across the
+v1.107.x lab2 / lab4 / srv1 / srv3 / srv4 / dns2 rollout into permanent
+CI invariants, so they can never recur silently:
+
+1. **v1.107.1-class** — a unit's `ExecStart=` references a helper path
+   that the RPM/DEB packagers never staged, leaving
+   `INSTALL_STATE=DEGRADED` after every successful takeover.
+2. **v1.107.1-class** — an unescaped backtick / `$(...)` inside a
+   build-time heredoc silently corrupts the generated RPM `.spec` /
+   shell artifact.
+3. **v1.107.2-class** — Go `SetImmutableFlags` extends its protected
+   files list, but RPM `%pretrans` Lua / DEB preinst / postinst / prerm
+   strip-lists fall out of sync, breaking direct package-manager
+   upgrade on `+i`-protected hosts (`cpio: rename failed - No data
+   available`).
+4. **dns2-class** — source-tree installs and `rpm`+`deb` mixed-method
+   hosts misclassified as `unknown` by the CLI install-method probe,
+   causing upstream gates to refuse safe updates.
+
+In parallel, complete the `nftban-ui` (Go template hot-reload, "GOTH")
+decommission started in v1.100.1b.A by cleaning the four remaining
+residue surfaces (transitional scriptlets, source/config residue,
+active-docs strikethrough policy, and packaging cleanup) and fix the
+install_state carry-over hygiene defect observed across all v1.107.2
+host snapshots.
+
+### Primary Items
+
+**Item 7C — Transitional `nftban-ui*` scriptlet cleanup** (PR #587,
+squash `7c5bccd5`). RPM `%pre` (`packaging/build_nftban.sh`) and DEB
+preinst (`packaging/deb/preinst`) gain a small transitional block that
+stops, disables, and `systemctl reset-failed` deprecated `nftban-ui*`
+units on package upgrade if they survive from pre-v1.100.1b.A
+installations. Cross-validated on lab4 (the canonical srv1-class host)
+where pre-existing `nftban-ui*` residue was confirmed cleaned by a
+single `dnf reinstall`. The scriptlets are idempotent and no-op on
+clean hosts.
+
+**Item 7B — Residual source/config residue cleanup** (PR #588, squash
+`3a8351e2`). Removes 9 residual GOTH source/config files including the
+837-byte `cli/lib/nftban/cli/ui-access.list`. Pure tree cleanup — no
+runtime, packaging, or scriptlet behavior touched. Confirmed orphan
+status via path-corpus grep across all live consumers prior to
+deletion.
+
+**Item 7A — Active-docs cleanup** (PR #589, squash `4a31a58a`). Five
+active doc files trimmed of GOTH/`nftban-ui` references.
+`docs/systemd/UNITS.md` and `CHANGELOG.md` (this file) retain
+**strikethrough** entries for the deprecated units as a deliberate
+historical record (not removal). Confirmed via wiki-repo audit that
+the external `../wiki` mirror is already aligned with this policy and
+needs no separate commit.
+
+**Item 1 — systemd ExecStart payload-resolution CI gate** (PR #590,
+squash `86690661`). New gate `scripts/ci/test-systemd-execstart-payload-resolution.sh`
+(~470 lines) walks every active unit in `install/systemd/` and asserts
+that every `Exec*` path resolves to a payload that RPM or DEB will
+ship. Five failure modes (`INVALID_MISSING_PATH`,
+`INVALID_NOT_IN_PAYLOAD`, etc.). Wired in as a Policy Gates step in
+`.github/workflows/ci-architecture.yml`. Locks the v1.107.1 defect
+class permanently (re-running the gate against the v1.107.0 spec
+proves it would have caught PR #569 / `nftban-firewall-init.service`
+before merge).
+
+**Item 3 — heredoc command-substitution safety CI gate** (PR #591,
+squash `8f9318fb`). New gate `scripts/ci/test-heredoc-safety.sh` (~486
+lines) parses every shell script in the repo and reports unescaped
+backticks / `$(...)` / `$((...))` inside unquoted heredocs. Six
+failure modes including `UNESCAPED_BACKTICK_IN_UNQUOTED_HEREDOC` and
+`UNCLOSED_HEREDOC`. Fixture extension `.shfix` (instead of `.sh`) so
+ShellCheck CI does not pre-parse intentionally malformed fixtures.
+Wired into the same Policy Gates job.
+
+**Item 6 — Source-install / mixed package-manager detection** (PR
+#592, squash `721b2a5c`). Behavior change in
+`cli/lib/nftban/cli/cmd_update_detection.sh`:
+
+- `_detect_install_type()` now reads
+  `/var/lib/nftban/state/update-history.json` first-entry type and
+  uses three override-aware probes (`_probe_rpm_owns_nftban`,
+  `_probe_dpkg_owns_nftban`, `_probe_git_repo_present`) to emit a
+  5-class taxonomy: `rpm` / `deb` / `source` / `mixed` / `unknown`.
+- New `_classify_for_pkg_mgr_update <target_family>` returns
+  gate-framework verdicts via distinct exit codes:
+  - `0`  — match (rpm host, rpm target; deb host, deb target)
+  - `10` — mismatch (rpm host, deb target — refuse)
+  - `11` — source-install (manual upgrade required)
+  - `12` — mixed (manual reconciliation required)
+  - `13` — unknown (host probe inconclusive)
+
+Closes the dns2-class misclassification where a source-installed host
+was reported as `unknown` and silently refused safe updates.
+
+**Item 5 — install_state carry-over hygiene** (PR #593, squash
+`ccf37e1f`). Behavior change in
+`internal/installer/state/file.go::Transition()`:
+
+- On `COMMITTED` or `DEGRADED` terminals, the new private method
+  `applyTerminalHygiene()` clears stale `FailureReason`, clears
+  `Conflicts` when `Authority=UPDATE`, and forces
+  `PreflightPassed=true`.
+- Seven new unit tests in
+  `internal/installer/state/file_test.go` cover all transition
+  matrices.
+
+Closes the cross-host (lab2 / srv1 / srv3 / srv4) v1.107.2
+contradictory-field issue where successful upgrades carried forward
+`FailureReason` strings from earlier failed transitions, confusing
+downstream gate logic.
+
+**Item 2 — chattr `+i` lifecycle matrix CI gate** (PR #594, squash
+`73394dac`). New canonical SoT `build/+i-lifecycle-matrix.yaml`
+declares every immutable-protected file and which of four surfaces
+must strip the bit at each lifecycle step:
+
+1. Go: `internal/installer/validate/authority.go::SetImmutableFlags`
+   (canonical apply list).
+2. RPM `%pretrans` Lua + `%preun` (`packaging/build_nftban.sh`).
+3. DEB `preinst` + `postinst` + `prerm` (`packaging/deb/`).
+4. CLI sweep helper `cli/lib/nftban/cli/cmd_update_helpers.sh::_remove_immutable_flags`
+   (covered_by_sweep / covered_by_dir_recursion).
+
+New gate `scripts/ci/test-immutable-lifecycle-matrix.sh` (~280 lines)
+validates 7 failure modes (`YAML_FILE_NOT_IN_GO`,
+`GO_FILE_NOT_IN_YAML`, `MISSING_RPM_PRETRANS_STRIP`, etc.) and
+includes 8 fixtures under `scripts/ci/fixtures/immutable-lifecycle-matrix/`.
+Wired in as a Policy Gates step. Mid-PR re-audit confirmed the v1.107.2
+DEB `preinst` already strips both files (the original scope §3.3 was
+operator-corrected on this point); the gate locks the symmetric strip
+requirement permanently across all four surfaces.
+
+Re-running the gate against the v1.107.1 spec proves it would have
+caught the v1.107.2 defect class before merge: any future addition to
+the Go `SetImmutableFlags` list now requires matching strip-block
+additions in every scriptlet OR an explicit `not_required` /
+`covered_by_sweep` annotation in the yaml.
+
+### Behavior changes (narrow, explicit)
+
+1. **CLI `nftban update`** now distinguishes `source` / `mixed` /
+   `unknown` install methods explicitly and emits distinct exit codes
+   for upstream gates (Item 6).
+2. **Installer state-writer terminal hygiene** clears stale
+   `FailureReason` / `Conflicts` / `PreflightPassed` fields on
+   `COMMITTED` / `DEGRADED` transitions (Item 5).
+3. **Deprecated `nftban-ui*` units auto-clean** on package upgrade for
+   hosts upgrading from pre-v1.100.1b.A packages (Item 7C).
+
+**No behavior change in `nftban-core` / `nftband` daemons.** Schema
+frozen at `1.83.0`. No metrics, portal, install API, panel-adapter,
+FHS-ATG, Self-Healing, or POLKIT-AUTHORITY implementation changes.
+
+### Defense in place after v1.108.0
+
+| Regression class | Blocked by |
+|------------------|------------|
+| v1.107.1-class — helper missing from package payload | Item 1 (PR #590) |
+| v1.107.1-class — heredoc backtick corruption in generated spec | Item 3 (PR #591) |
+| v1.107.2-class — Go `+i` list silently out of sync with scriptlets | Item 2 (PR #594) |
+| srv1-class — stale deprecated unit residue across upgrades | Item 7C (PR #587) + Item 1 detector |
+| dns2-class — source-install misclassified as `unknown` | Item 6 (PR #592) |
+| v1.107.2 cross-host install_state contradictions | Item 5 (PR #593) |
+
+### Non-goals — explicitly carried forward to v1.109+ as separately-gated future debt
+
+- Item 4 DEGRADED-runtime-pattern investigation (separate scope; may
+  produce its own hotfix).
+- Items 8–16 from the V108 parent inventory (dns2 migration, FHS
+  Authority Graph / ATG, POLKIT-AUTHORITY follow-on, optional org-level
+  GHCR retention, row 17 SELF-HEALING-AUTHORITY-REDESIGN, etc.).
+- `SEC-FW-BYPASS-ALERT-GAP-001` — security backlog, parked,
+  scope-ready, not auto-bundled.
+- README rewrite PR #586 — routed to a separate docs review track.
+- Open Dependabot PRs (#495, #497, #535, #577, #578).
+- v1.107.3 hotfix — **not authorized**.
+
+### Reverts / removed
+
+None.
+
+### File counts (merge-bundle scope)
+
+- Item 7C: PR #587 — `packaging/build_nftban.sh` + `packaging/deb/preinst` (transitional blocks).
+- Item 7B: PR #588 — 9 files removed (837-byte `ui-access.list` deleted; 8 other GOTH residue).
+- Item 7A: PR #589 — 5 active docs trimmed (CHANGELOG.md + `docs/systemd/UNITS.md` strikethrough preserved).
+- Item 1: PR #590 — new `scripts/ci/test-systemd-execstart-payload-resolution.sh` + 5 fixtures + workflow EDIT.
+- Item 3: PR #591 — new `scripts/ci/test-heredoc-safety.sh` + 6 fixtures (`.shfix`) + workflow EDIT.
+- Item 6: PR #592 — `cli/lib/nftban/cli/cmd_update_detection.sh` extended + 9 fixtures (`.vars`).
+- Item 5: PR #593 — `internal/installer/state/file.go` + new `file_test.go` (7 tests).
+- Item 2: PR #594 — new canonical `build/+i-lifecycle-matrix.yaml` + new `scripts/ci/test-immutable-lifecycle-matrix.sh` + 8 fixtures + workflow EDIT.
+
+This release-prep commit bumps `VERSION` `1.107.2`→`1.108.0`, updates
+`STATUS.md` Release lane block, prepends this `CHANGELOG.md` entry, and
+regenerates `cli/lib/nftban/core/nftban_fhs_spec.sh` (version-string-only diff).
+
+---
+
 ## [v1.107.2] - 2026-05-10 — packaging hotfix (immutable-bit pre-cpio asymmetry)
 
 Single-defect packaging hotfix on top of v1.107.1. Closes a pre-existing
