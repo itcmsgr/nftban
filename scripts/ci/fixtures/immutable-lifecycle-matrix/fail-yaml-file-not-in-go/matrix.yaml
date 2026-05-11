@@ -1,0 +1,23 @@
+reapplication_authority: go_set_immutable_flags
+protected_files:
+  - path: /etc/nftban/nftban.conf
+    go_set_apply: required
+    rpm_pretrans: required
+    rpm_preun: required
+    deb_preinst: required
+    deb_postinst: required
+    deb_prerm: required
+  - path: /usr/lib/nftban/lib/nft_schema.sh
+    go_set_apply: required
+    rpm_pretrans: required
+    rpm_preun: required
+    deb_preinst: required
+    deb_postinst: required
+    deb_prerm: required
+  - path: /var/lib/nftban/extra.key
+    go_set_apply: required
+    rpm_pretrans: required
+    rpm_preun: required
+    deb_preinst: required
+    deb_postinst: required
+    deb_prerm: required

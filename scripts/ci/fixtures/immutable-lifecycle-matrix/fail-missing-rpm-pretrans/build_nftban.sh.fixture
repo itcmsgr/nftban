@@ -1,0 +1,11 @@
+%pretrans -p <lua>
+local schema = "/usr/lib/nftban/lib/nft_schema.sh"
+os.execute("chattr -i " .. schema)
+%pre
+echo pre
+%preun
+for f in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+    chattr -i "$f"
+done
+%post
+echo post
