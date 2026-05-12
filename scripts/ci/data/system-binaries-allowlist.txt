@@ -1,0 +1,35 @@
+# =============================================================================
+# NFTBan V108 Item 1 — System binary allowlist for CI gate
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Consumed by scripts/ci/test-systemd-execstart-payload-resolution.sh
+#
+# Format:
+#   - One absolute path per line
+#   - Lines beginning with `#` are comments
+#   - Blank lines ignored
+#
+# Allowlisted paths are OS-provided binaries assumed present on all supported
+# distros (alma9, alma10, centos-stream-9/10, rocky9/10, debian12/13,
+# ubuntu22.04, ubuntu24.04). Active NFTBan systemd units may reference these
+# in Exec* directives without the gate flagging them as INVALID_MISSING_PATH.
+#
+# To add a new allowlist entry:
+#   1. Confirm the binary ships in the package(s) listed in the RPM Requires
+#      and DEB Depends fields for nftban-core (packaging/build_nftban.sh).
+#   2. Append the path here.
+#   3. CI gate will pass without further changes.
+#
+# Audit refs:
+#   - V108_ITEM1_EXECSTART_PAYLOAD_RESOLUTION_SCOPE.md §4.2a (rationale)
+#   - install/systemd/*.{service,socket,timer} (consumers)
+# =============================================================================
+
+# --- bash ---
+/bin/bash
+
+# --- coreutils / util-linux (POSIX shell helpers) ---
+/bin/kill
+/bin/sh
+/usr/bin/flock

@@ -1,0 +1,21 @@
+# =============================================================================
+# NFTBan V108 Item 1 — CI Gate Test Fixture
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="execstart-resolution-fixture-unit"
+# meta:type="test-fixture"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-05-10"
+# meta:description="Synthetic systemd unit for CI gate testing"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+[Unit]
+Description=Divergent ExecStart (fixture)
+[Service]
+ExecStart=/usr/lib/nftban/helpers/divergent-helper.sh

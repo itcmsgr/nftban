@@ -924,6 +924,96 @@ jobs:
           done
 
   # ==========================================================================
+  # V108 ITEM 1: SYSTEMD ExecStart PAYLOAD-RESOLUTION GATE
+  # ==========================================================================
+  # Compile-time complement to the runtime assertion `systemd_execstart_paths_ok`
+  # (internal/installer/validate/assertions.go::assertSystemdExecStartPaths).
+  # The runtime assertion fires after install on a deployed host; this CI job
+  # catches the same defect class at PR / release-build time by inspecting
+  # built RPM and DEB package payloads.
+  #
+  # Closes the v1.107.1-class regression where install/systemd/*.service
+  # ExecStart= references a path that was never packaged (helper missing
+  # from RPM glob), surfacing only at install time as a 203/EXEC failure.
+  # ==========================================================================
+  validate-systemd-execstart-resolution:
+    name: Validate systemd ExecStart payload resolution
+    needs: [consolidate-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download all package artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: all-packages/
+
+      - name: Extract representative RPM (el9) + DEB (ubuntu24.04) for validation
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rpm-payload /tmp/deb-payload
+
+          # Tier 0 representatives: el9 + ubuntu24.04 (mirror the
+          # parity job's Tier 0 selection at lines 1004-1005).
+          rpm_file=$(find all-packages -name 'nftban-el9-x86_64*.rpm' -o -name 'nftban-core-*.el9.x86_64.rpm' 2>/dev/null | head -1)
+          deb_file=$(find all-packages -name 'nftban-ubuntu24.04-amd64*.deb' -o -name 'nftban-core_*_amd64.deb' -path '*ubuntu24*' 2>/dev/null | head -1)
+          # Fallback: pick first available of each type
+          [[ -z "$rpm_file" ]] && rpm_file=$(find all-packages -name '*.rpm' | sort | head -1)
+          [[ -z "$deb_file" ]] && deb_file=$(find all-packages -name '*.deb' | sort | head -1)
+
+          if [[ -z "$rpm_file" || -z "$deb_file" ]]; then
+            echo "::error::Cannot find RPM/DEB artifacts (rpm=$rpm_file deb=$deb_file)"
+            find all-packages -type f | head -20
+            exit 1
+          fi
+
+          echo "RPM artifact: $rpm_file"
+          echo "DEB artifact: $deb_file"
+
+          # Extract RPM
+          (cd /tmp/rpm-payload && rpm2cpio "$GITHUB_WORKSPACE/$rpm_file" | cpio -idm --quiet)
+
+          # Extract DEB (ar + tar)
+          (cd /tmp/deb-payload && ar x "$GITHUB_WORKSPACE/$deb_file" && \
+              { tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null || tar -xf data.tar.zst 2>/dev/null || tar -xf data.tar.* 2>/dev/null; } && \
+              rm -f control.tar.* data.tar.* debian-binary)
+
+          echo ""
+          echo "=== RPM payload tree (top-level) ==="
+          ls -la /tmp/rpm-payload/usr/lib/systemd/system/ 2>/dev/null | head -10
+          echo ""
+          echo "=== DEB payload tree (top-level) ==="
+          ls -la /tmp/deb-payload/usr/lib/systemd/system/ 2>/dev/null | head -10
+
+      - name: Run V108 Item 1 ExecStart payload-resolution gate
+        run: |
+          set -euo pipefail
+          bash scripts/ci/test-systemd-execstart-payload-resolution.sh validate \
+              --rpm-payload=/tmp/rpm-payload \
+              --deb-payload=/tmp/deb-payload \
+              --verbose
+
+      - name: Generate gate report
+        if: always()
+        run: |
+          echo "## V108 Item 1 — systemd ExecStart payload resolution" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "✅ All Exec* paths in installed systemd units resolve to artifacts shipped in both RPM and DEB payloads." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failure(s) detected. Review the gate output above for failure-mode classification." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Failure modes (see scripts/ci/test-systemd-execstart-payload-resolution.sh):" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- \`INVALID_MISSING_PATH\` — active unit references a path not present in either packager" >> $GITHUB_STEP_SUMMARY
+            echo "- \`DEPRECATED_UNIT_RESIDUE_IN_ACTIVE_UNIT\` — active install ships a unit named in deprecated-units.yaml" >> $GITHUB_STEP_SUMMARY
+            echo "- \`PARITY_UNIT_PRESENT_IN_ONE_PACKAGER\` — unit in RPM but not DEB (or vice versa)" >> $GITHUB_STEP_SUMMARY
+            echo "- \`PARITY_EXEC_PATH_RESOLUTION_DIVERGENT\` — Exec path resolves in one packager only" >> $GITHUB_STEP_SUMMARY
+            echo "- \`STALE_RESIDUE_INCOHERENT_STATE\` — unit in BOTH install/systemd and deprecated-units.yaml" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ==========================================================================
   # PKG-EFFECTIVE-PARITY: cross-packager aggregation (Slot 5 / row 14)
   # ==========================================================================
   # Closes the L3 escape class that lived ~13 releases pre-AUTH-HARDENING:

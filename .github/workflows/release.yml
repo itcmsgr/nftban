@@ -6,7 +6,7 @@
 # Triggers: Push to v* tags (e.g., v1.0.0, v1.0.1)
 #
 # What this does:
-#   1. Builds Go binaries (nftban-core, nftban-api-server) for x86_64
+#   1. Builds Go binaries (nftban-core) for x86_64
 #   2. Creates RPM packages for EL9, EL10
 #   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12/13
 #   4. Generates SHA256SUMS.build (local ground truth checksums)

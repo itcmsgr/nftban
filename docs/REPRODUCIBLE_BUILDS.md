@@ -16,29 +16,28 @@ go version
 
 ### Required System Packages
 
-**For CGO-disabled builds (nftban-core, nftban-ui):**
+**For CGO-disabled builds (nftban-core):**
 - Go 1.23+
 - No additional system dependencies
 
-**For CGO-enabled builds (nftban-ui-auth, nftband):**
+**For CGO-enabled builds (nftband):**
 - Go 1.23+
 - GCC compiler (build-essential on Debian/Ubuntu)
-- PAM development headers (for nftban-ui-auth only)
 
 ```bash
 # Debian/Ubuntu
-sudo apt-get install -y build-essential libpam0g-dev
+sudo apt-get install -y build-essential
 
 # RHEL/Fedora/Rocky
-sudo dnf install -y gcc pam-devel
+sudo dnf install -y gcc
 ```
 
 ### Environment Variables
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `CGO_ENABLED` | `0` | For SLSA builds (nftban-core, nftban-ui) |
-| `CGO_ENABLED` | `1` | For PAM builds (nftban-ui-auth) |
+| `CGO_ENABLED` | `0` | For SLSA builds (nftban-core) |
+| `CGO_ENABLED` | `1` | For CGO builds (nftband) |
 | `GOOS` | `linux` | Target operating system |
 | `GOARCH` | `amd64` | Target architecture |
 
@@ -46,7 +45,7 @@ sudo dnf install -y gcc pam-devel
 
 ### SLSA-Verified Binaries (Recommended)
 
-The official release binaries for `nftban-core` and `nftban-ui` are built using the [SLSA Go Builder](https://github.com/slsa-framework/slsa-github-generator) which provides SLSA Level 3 compliance. These builds are:
+The official release binary for `nftban-core` is built using the [SLSA Go Builder](https://github.com/slsa-framework/slsa-github-generator) which provides SLSA Level 3 compliance. These builds are:
 
 - Hermetic (isolated build environment)
 - Reproducible (deterministic output)
@@ -60,12 +59,6 @@ CGO_ENABLED=0 go build -trimpath \
   -ldflags="-s -w -X github.com/itcmsgr/nftban/pkg/version.FullVersion=vX.Y.Z" \
   -o nftban-core-linux-amd64 \
   ./cmd/nftban-core
-
-# nftban-ui
-CGO_ENABLED=0 go build -trimpath \
-  -ldflags="-s -w -X main.Version=vX.Y.Z" \
-  -o nftban-ui-linux-amd64 \
-  ./cmd/nftban-ui
 ```
 
 Replace `vX.Y.Z` with the actual version tag (e.g., `v1.18.0`).
@@ -94,12 +87,6 @@ ls -la bin/
 ```bash
 # nftban-core only
 ./build.sh core
-
-# nftban-ui only (requires templ code generation)
-./build.sh gui
-
-# nftban-ui-auth only (requires CGO + PAM)
-./build.sh ui-auth
 
 # nftband (IPC daemon)
 ./build.sh daemon
@@ -154,7 +141,7 @@ For cryptographic verification, use SLSA provenance instead.
 
 ## 4. SLSA Provenance Verification
 
-NFTBan releases include [SLSA Level 3](https://slsa.dev/spec/v1.0/levels) provenance for `nftban-core` and `nftban-ui`. This cryptographically proves the binary was built from the claimed source code.
+NFTBan releases include [SLSA Level 3](https://slsa.dev/spec/v1.0/levels) provenance for `nftban-core`. This cryptographically proves the binary was built from the claimed source code.
 
 ### Install slsa-verifier
 
@@ -173,14 +160,6 @@ sudo mv slsa-verifier-linux-amd64 /usr/local/bin/slsa-verifier
 ```bash
 slsa-verifier verify-artifact nftban-core-linux-amd64 \
   --provenance-path nftban-core-linux-amd64.intoto.jsonl \
-  --source-uri github.com/itcmsgr/nftban
-```
-
-### Verify nftban-ui
-
-```bash
-slsa-verifier verify-artifact nftban-ui-linux-amd64 \
-  --provenance-path nftban-ui-linux-amd64.intoto.jsonl \
   --source-uri github.com/itcmsgr/nftban
 ```
 
@@ -217,7 +196,7 @@ The `SHA256SUMS` file contains checksums for:
 
 - **RPM packages:** `nftban-el9-x86_64.rpm`, `nftban-el10-x86_64.rpm`
 - **DEB packages:** `nftban-ubuntu22.04-amd64.deb`, `nftban-ubuntu24.04-amd64.deb`, `nftban-debian12-amd64.deb`, `nftban-debian13-amd64.deb`
-- **Binaries:** `nftban-core-linux-amd64`, `nftban-ui-linux-amd64`, `nftband-linux-amd64`, `nftban-ui-auth-linux-amd64`
+- **Binaries:** `nftban-core-linux-amd64`, `nftband-linux-amd64`
 
 ### Verification Commands
 
@@ -244,31 +223,6 @@ sha256sum nftban-core-linux-amd64
 
 ## 6. Known Limitations
 
-### CGO and PAM Dependencies
-
-**`nftban-ui-auth` cannot be built with SLSA provenance** because it requires:
-- CGO enabled (`CGO_ENABLED=1`)
-- PAM development headers (`libpam0g-dev` / `pam-devel`)
-
-The SLSA hermetic build environment does not support external C dependencies. This binary is built via the standard release workflow instead and verified via SHA256 checksums only.
-
-### Templ Code Generation
-
-**`nftban-ui` requires templ code generation** before building:
-
-```bash
-# Install templ
-go install github.com/a-h/templ/cmd/templ@latest
-
-# Generate Go code from .templ files
-templ generate
-
-# Then build
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/nftban-ui
-```
-
-The SLSA workflow handles this automatically, but local builds must run `templ generate` first.
-
 ### Factors Affecting Reproducibility
 
 | Factor | Impact | Mitigation |
@@ -278,7 +232,6 @@ The SLSA workflow handles this automatically, but local builds must run `templ g
 | `-s -w` ldflags | Strips debug info | Always use both flags |
 | Build timestamp | May be embedded | Stripped by `-s -w` |
 | Module cache | Different downloads | Use `go mod download` first |
-| Templ version | Different generated code | Pin templ version |
 
 ### What SLSA Provenance Proves
 

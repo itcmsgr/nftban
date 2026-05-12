@@ -40,7 +40,7 @@ advisory_mode=false
 GLOBS="--glob=*.sh --glob=*.go --glob=*.md --glob=*.conf --glob=*.spec --glob=*.service --glob=*.timer --glob=*.8"
 
 # Exclusions: historical changelogs, test fixtures, lint script itself
-EXCLUDES="--glob=!packaging/deb/changelog --glob=!CHANGELOG.md --glob=!.claude/** --glob=!packaging/rpm/nftban-ui.spec --glob=!scripts/lint-cli-wording.sh"
+EXCLUDES="--glob=!packaging/deb/changelog --glob=!CHANGELOG.md --glob=!.claude/** --glob=!scripts/lint-cli-wording.sh"
 
 # =============================================================================
 # HARD-FAIL CHECKS (block CI)

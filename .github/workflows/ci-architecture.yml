@@ -568,3 +568,60 @@ jobs:
             exit 1
           fi
           echo "OK: rule engine isolated from inline"
+
+      # ====================================================================
+      # V108 Item 2 — +i lifecycle matrix CI gate
+      # ====================================================================
+      # Verifies build/+i-lifecycle-matrix.yaml is in sync with the 4 source
+      # surfaces that handle chattr +i lifecycle:
+      #   1. Go SetImmutableFlags (internal/installer/validate/authority.go)
+      #   2. RPM scriptlets (packaging/build_nftban.sh: %pretrans + %preun)
+      #   3. DEB scriptlets (packaging/deb/preinst, postinst, prerm)
+      # The matrix yaml is the single source of truth. Drift between yaml and
+      # any source surface FAILs the gate.
+      #
+      # Closes v1.107.2-class regression where Go SetImmutableFlags extended
+      # its protected list silently and the scriptlets fell out of sync,
+      # producing "cpio: rename failed - No data available" on package upgrade.
+      # ====================================================================
+      - name: "V108 Item 2: +i lifecycle matrix"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V108 Item 2 — +i lifecycle matrix gate ==="
+          bash scripts/ci/test-immutable-lifecycle-matrix.sh scan
+
+      # ====================================================================
+      # V108 Item 6 — install-method detection (source-install mismatch)
+      # ====================================================================
+      # Validates _detect_install_type + _classify_for_pkg_mgr_update across
+      # 9 fixtures covering rpm/deb/source/source-git/unknown/mixed/cross-
+      # family/confirms-db. Closes the dns2-class defect where source-
+      # installed hosts fell through to "unknown" because the detector
+      # didn't read update-history.json first-entry "type".
+      # ====================================================================
+      - name: "V108 Item 6: install-method detection"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V108 Item 6 — install-method detection gate ==="
+          bash scripts/ci/test-install-method-detection.sh suite
+
+      # ====================================================================
+      # V108 Item 3 — heredoc command-substitution safety gate
+      # ====================================================================
+      # Detects unsafe shell expansion (unescaped backticks, $(...), $((...)))
+      # in unquoted heredoc bodies in build/generator scripts.
+      #
+      # Defends against the v1.107.1-class defect (PR #585 fixup da14e182):
+      # markdown backticks in unquoted RPM-spec heredoc were interpreted by
+      # bash as command substitution at heredoc-write time, corrupting the
+      # generated spec content. el10's rpmbuild failed; el9's tolerated.
+      #
+      # Scope: packaging/build_nftban.sh, build/generate-*.sh, scripts/*.sh,
+      # scripts/ci/*.sh. Function-context heredocs (usage()) are auto-
+      # detected and allowed to use $(...) at function-call time.
+      # ====================================================================
+      - name: "V108 Item 3: heredoc command-substitution safety"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V108 Item 3 — heredoc-safety gate ==="
+          bash scripts/ci/test-heredoc-safety.sh scan

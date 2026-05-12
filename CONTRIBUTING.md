@@ -104,9 +104,7 @@ nftban/
 │       ├── helpers/       # Utility functions
 │       └── setup/         # Installation helpers
 ├── cmd/                    # Go binaries
-│   ├── nftban-core/       # Main Go binary
-│   ├── nftban-api-server/ # REST API
-│   └── nftban-ui/         # Web interface
+│   └── nftban-core/       # Main Go binary
 ├── internal/              # Go internal packages
 ├── pkg/                    # Go public packages (ipc, version)
 ├── install/               # Installation scripts

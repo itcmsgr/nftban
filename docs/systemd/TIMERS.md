@@ -115,10 +115,7 @@ the daemon is active.
 
 | Service | Tier | Purpose |
 |---------|------|---------|
-| `nftban-api.service` | PRO | REST API server |
-| `nftban-ui.service` | PRO | Web UI |
-| `nftban-ui-auth.service` | PRO | UI authentication |
-| `nftban-ui-auth.socket` | PRO | UI auth socket activation |
+| ~~`nftban-api.service`~~ | ~~PRO~~ | ~~REST API server~~ (deprecated; never shipped passively; cleaned at upgrade by packaging — see `docs/systemd/UNITS.md`) |
 | `nftban-firewall-init.service` | EXPERIMENTAL | Boot delay initialization |
 
 ## Configuration

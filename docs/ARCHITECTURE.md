@@ -44,18 +44,13 @@ Key Principle: Single Writer Architecture
 |  BINARIES (Go)                                                               |
 |  +-------------------------------------------------------------------------+ |
 |  |                                                                         | |
-|  |  +----------------+  +----------------+  +----------------+             | |
-|  |  |    nftband     |  |  nftban-core   |  |   nftban-ui    |             | |
-|  |  |    (daemon)    |  | (fast CLI ops) |  |  (web portal)  |             | |
-|  |  +----------------+  +----------------+  +----------------+             | |
-|  |         |                   |                    |                      | |
-|  |         | Runs as root      | CAP_NET_ADMIN      | CAP_NET_ADMIN        | |
-|  |         | (nftables ops)    | (geoip, feeds)     | (status views)       | |
-|  |                                                                         | |
-|  |  +----------------+                                                     | |
-|  |  | nftban-ui-auth |                                                     | |
-|  |  | (auth service) |                                                     | |
-|  |  +----------------+                                                     | |
+|  |  +----------------+  +----------------+                                 | |
+|  |  |    nftband     |  |  nftban-core   |                                 | |
+|  |  |    (daemon)    |  | (fast CLI ops) |                                 | |
+|  |  +----------------+  +----------------+                                 | |
+|  |         |                   |                                           | |
+|  |         | Runs as root      | CAP_NET_ADMIN                             | |
+|  |         | (nftables ops)    | (geoip, feeds)                            | |
 |  |                                                                         | |
 |  +-------------------------------------------------------------------------+ |
 |                                                                              |
@@ -241,7 +236,7 @@ Exporters (cli/lib/nftban/exporters/):
  |           |                                                                |
  |   +-------+--------+    +----------------+    +------------------+         |
  |   |   nftban CLI   |    |  nftban-core   |    |  nftban-health   |         |
- |   | (bash scripts) |    |  (Go binary)   |    |  nftban-ui       |         |
+ |   | (bash scripts) |    |  (Go binary)   |    |                  |         |
  |   +----------------+    +----------------+    +------------------+         |
  |                                                                            |
  |   Capabilities: CAP_NET_ADMIN (ambient)                                    |
@@ -277,7 +272,6 @@ Socket Access Control:
 | `nftband` | root | CAP_NET_ADMIN, CAP_DAC_OVERRIDE | nftables rule management |
 | `nftban-health` | nftban | CAP_NET_ADMIN | Health monitoring |
 | `nftban-unified-exporter` | nftban | CAP_NET_ADMIN | Metrics collection |
-| `nftban-ui` | nftban | CAP_NET_ADMIN | Web interface |
 | `nftban CLI` | varies | via IPC | User commands |
 
 ---
@@ -384,11 +378,6 @@ SYSTEMD UNITS (/etc/systemd/system/ or /lib/systemd/system/)
 |  +-- nftban-snapshot.timer    # Periodic snapshots                           |
 |  +-- nftban-unified-exporter  # Metrics export                               |
 |  +-- nftban-watchdog.timer    # Self-monitoring                              |
-|                                                                              |
-|  Optional Services:                                                          |
-|  +-- nftban-ui.service        # Web interface                                |
-|  +-- nftban-ui-auth.service   # Authentication service                       |
-|  +-- nftban-api.service       # REST API                                     |
 +-----------------------------------------------------------------------------+
 ```
 
@@ -535,8 +524,6 @@ nftban/
 +-- cmd/                    # Go main packages (binaries)
 |   +-- nftband/            # Main daemon
 |   +-- nftban-core/        # Fast CLI operations (Go)
-|   +-- nftban-ui/          # Web portal
-|   +-- nftban-ui-auth/     # Auth service
 |   +-- nftban-loginmon/    # Login monitor (placeholder)
 +-- pkg/                    # Go packages (libraries)
 +-- cli/                    # Bash CLI components
@@ -559,7 +546,6 @@ nftban/
 |--------|--------------|
 | `cmd/nftband/` | `/usr/lib/nftban/bin/nftband` |
 | `cmd/nftban-core/` | `/usr/lib/nftban/bin/nftban-core` |
-| `cmd/nftban-ui/` | `/usr/lib/nftban/bin/nftban-ui` |
 | `cli/sbin/nftban` | `/usr/sbin/nftban` |
 | `cli/lib/nftban/` | `/usr/lib/nftban/` |
 | `etc/nftban/` | `/etc/nftban/` |

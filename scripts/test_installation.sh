@@ -17,7 +17,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 # Usage: ./scripts/test_installation.sh [mode]
-#        mode: cli (default), gui, all
+#        mode: cli (default), all
 # =============================================================================
 
 set -Eeuo pipefail
@@ -97,12 +97,8 @@ info "=== Checking Binaries ==="
 
 check_file "/usr/sbin/nftban" "Main CLI"
 
-if [[ "$MODE" == "all" || "$MODE" == "gui" ]]; then
+if [[ "$MODE" == "all" ]]; then
     check_file "/usr/lib/nftban/bin/nftban-core" "nftban-core binary"
-fi
-
-if [[ "$MODE" == "gui" ]]; then
-    check_file "/usr/sbin/nftban-ui" "nftban-ui binary"
 fi
 
 echo ""
@@ -201,10 +197,6 @@ echo ""
 info "=== Checking Systemd ==="
 
 check_service "nftban-health.timer"
-
-if [[ "$MODE" == "gui" ]]; then
-    check_service "nftban-ui"
-fi
 
 echo ""
 

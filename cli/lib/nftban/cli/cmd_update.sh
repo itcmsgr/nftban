@@ -368,13 +368,26 @@ _cmd_update_main() {
     current_version=$(_get_current_version)
 
     # Auto-detect source if needed
+    # V108 Item 6: handle "source" (canonical from history.json) + "mixed" cleanly.
+    # "git" is kept as a backward-compatible alias for "source" (same update path).
     if [[ "$source" == "auto" ]]; then
         case "$install_type" in
             rpm|deb)
                 source="github"
                 ;;
-            git)
+            source|git)
                 source="git"
+                ;;
+            mixed)
+                _update_log ERROR "Install method drift detected (install_type=mixed)"
+                _update_log ERROR "Package db and update-history disagree — operator review required"
+                _update_log INFO  "Run 'nftban update status' for diagnosis"
+                return 13
+                ;;
+            unknown)
+                _update_log ERROR "Install method unknown — cannot auto-select update source"
+                _update_log INFO  "Specify explicitly: 'nftban update github' / 'nftban update git' / 'nftban update local <path>'"
+                return 11
                 ;;
             *)
                 source="github"
@@ -405,6 +418,8 @@ _cmd_update_main() {
     fi
 
     # Execute update based on source
+    # V108 Item 6: when source resolves to "github" (direct package-manager path),
+    # only proceed for rpm/deb install types. Reject source/mixed/unknown.
     local result=0
     case "$source" in
         github)
@@ -415,16 +430,19 @@ _cmd_update_main() {
                 deb)
                     _update_via_deb "$arg" || result=$?
                     ;;
-                *)
-                    # Try to detect and use appropriate method
-                    if command -v rpm &>/dev/null; then
-                        _update_via_rpm "$arg" || result=$?
-                    elif command -v dpkg &>/dev/null; then
-                        _update_via_deb "$arg" || result=$?
-                    else
-                        _update_log ERROR "No package manager found (rpm/dpkg)"
-                        result=1
-                    fi
+                source|git)
+                    _update_log ERROR "Direct package-manager update not applicable for source install"
+                    _update_log INFO  "Use 'nftban update git' for source/git installs"
+                    result=10
+                    ;;
+                mixed)
+                    _update_log ERROR "Install method drift detected — operator review required"
+                    result=13
+                    ;;
+                unknown|*)
+                    _update_log ERROR "Install method unknown — cannot proceed with direct package upgrade"
+                    _update_log INFO  "Specify update source explicitly"
+                    result=11
                     ;;
             esac
             ;;
