@@ -176,8 +176,24 @@ type SystemMetrics struct {
 	MemAvail   uint64  `json:"mem_available_bytes"`
 	SwapTotal  uint64  `json:"swap_total_bytes"`
 	SwapFree   uint64  `json:"swap_free_bytes"`
-	DiskUsePct float64 `json:"disk_use_percent"`  // Log partition
+	DiskUsePct float64 `json:"disk_use_percent"`  // Log partition (single-mount; preserved for backwards compat)
 	Entropy    int     `json:"entropy_available"` // /proc/sys/kernel/random/entropy_avail
+
+	// PR-M2b-w1 (v1.112): host-vitals additions per schema doc 17 §F4.
+	// `omitempty` preserves byte-identical JSON output for zero-value cases.
+	Disks     []DiskUsageEntry `json:"disks,omitempty"`      // multi-mount disk usage per NFTBAN_HOST_DISK_MOUNT_ALLOWLIST
+	OOMEvents uint64           `json:"oom_events,omitempty"` // cumulative /proc/vmstat oom_kill counter
+}
+
+// DiskUsageEntry holds per-mount disk usage data emitted as the
+// nftban_host_disk_usage_ratio{mount,device,fstype} metric per schema doc 17
+// §F4.3. Populated by SystemCollector.collectMultiMountDisks against the
+// NFTBAN_HOST_DISK_MOUNT_ALLOWLIST policy.
+type DiskUsageEntry struct {
+	Mount  string  `json:"mount"`
+	Device string  `json:"device"`
+	FSType string  `json:"fstype"`
+	Ratio  float64 `json:"ratio"` // used / total, 0..1
 }
 
 // KernelMetrics contains kernel/netfilter metrics

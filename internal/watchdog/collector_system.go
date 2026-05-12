@@ -7,7 +7,7 @@
 // meta:version="1.0.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="Collects system-level metrics including load, memory, and disk usage"
-// meta:inventory.files="/proc/loadavg,/proc/meminfo,/proc/stat"
+// meta:inventory.files="/proc/loadavg,/proc/meminfo,/proc/stat,/proc/vmstat,/proc/self/mountinfo"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files=""
@@ -75,6 +75,9 @@ func (c *SystemCollector) Collect(ctx context.Context, snapshot *Snapshot) error
 	c.collectMemInfo(snapshot)
 	c.collectDiskUsage(snapshot)
 	c.collectEntropy(snapshot)
+	// PR-M2b-w1: host-vitals additions per schema doc 17 §F4.
+	c.collectMultiMountDisks(snapshot)
+	c.collectOOMEvents(snapshot)
 
 	return nil
 }
@@ -211,4 +214,146 @@ func (c *SystemCollector) collectEntropy(snapshot *Snapshot) {
 		return
 	}
 	snapshot.System.Entropy, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+}
+
+// =============================================================================
+// PR-M2b-w1 (v1.112) — Host-vitals collection per schema doc 17 §F4
+// =============================================================================
+
+// defaultHostDiskMounts is the default mount-policy allowlist for the
+// host_disk_usage_ratio metric per schema doc 17 §F4.3.1. The first three
+// match the doc default; /var/lib/nftban is added because nftban writes
+// state there per the FHS spec.
+var defaultHostDiskMounts = []string{"/", "/var", "/var/log", "/var/lib/nftban"}
+
+// hostDiskMountAllowlist returns the mount-points to read for
+// nftban_host_disk_usage_ratio. Operator may override via
+// NFTBAN_HOST_DISK_MOUNT_ALLOWLIST (comma-separated). Empty env value
+// falls back to defaultHostDiskMounts.
+func hostDiskMountAllowlist() []string {
+	env := strings.TrimSpace(os.Getenv("NFTBAN_HOST_DISK_MOUNT_ALLOWLIST"))
+	if env == "" {
+		return defaultHostDiskMounts
+	}
+	parts := strings.Split(env, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return defaultHostDiskMounts
+	}
+	return out
+}
+
+// collectMultiMountDisks populates snapshot.System.Disks via per-mount
+// syscall.Statfs() across the allowlist. Mounts that fail to stat are
+// skipped silently (e.g. unmounted, permission denied). Device + fstype
+// are resolved from /proc/self/mountinfo; on parse failure they default
+// to "unknown" so the ratio still emits keyed on the mount path.
+func (c *SystemCollector) collectMultiMountDisks(snapshot *Snapshot) {
+	mounts := hostDiskMountAllowlist()
+	mountInfo := readMountInfo() // best-effort; may be empty map on parse error
+
+	out := make([]DiskUsageEntry, 0, len(mounts))
+	for _, mp := range mounts {
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs(mp, &stat); err != nil {
+			continue
+		}
+		blockSize := safeconv.Int64ToUint64OrZero(stat.Bsize)
+		totalBytes := stat.Blocks * blockSize
+		if totalBytes == 0 {
+			continue
+		}
+		freeBytes := stat.Bfree * blockSize
+		usedBytes := totalBytes - freeBytes
+		ratio := float64(usedBytes) / float64(totalBytes)
+
+		device, fstype := "unknown", "unknown"
+		if info, ok := mountInfo[mp]; ok {
+			device = info.device
+			fstype = info.fstype
+		}
+		out = append(out, DiskUsageEntry{
+			Mount:  mp,
+			Device: device,
+			FSType: fstype,
+			Ratio:  ratio,
+		})
+	}
+	snapshot.System.Disks = out
+}
+
+// collectOOMEvents reads /proc/vmstat oom_kill (cumulative kernel counter
+// since kernel 4.7). On older kernels missing the field, the counter stays
+// at zero silently — Prometheus Counter handles delta tracking on the
+// emission side.
+func (c *SystemCollector) collectOOMEvents(snapshot *Snapshot) {
+	f, err := os.Open("/proc/vmstat")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "oom_kill ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			snapshot.System.OOMEvents, _ = strconv.ParseUint(fields[1], 10, 64)
+		}
+		return
+	}
+}
+
+// mountInfoEntry holds device + filesystem-type resolved from
+// /proc/self/mountinfo for a given mount path.
+type mountInfoEntry struct {
+	device string
+	fstype string
+}
+
+// readMountInfo parses /proc/self/mountinfo into a mount-point→entry map.
+// Returns an empty (non-nil) map on read or parse failure so callers can
+// always range over it. Format reference: proc(5) mountinfo —
+// fields[4]=mount-point, fields[N+1]=fstype where N is index of "-"
+// separator, fields[N+2]=mount-source.
+func readMountInfo() map[string]mountInfoEntry {
+	out := make(map[string]mountInfoEntry)
+	f, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return out
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 5 {
+			continue
+		}
+		mountPoint := fields[4]
+		// Find the "-" separator between optional fields and fstype/source.
+		sepIdx := -1
+		for i := 5; i < len(fields); i++ {
+			if fields[i] == "-" {
+				sepIdx = i
+				break
+			}
+		}
+		if sepIdx < 0 || sepIdx+2 >= len(fields) {
+			continue
+		}
+		out[mountPoint] = mountInfoEntry{
+			device: fields[sepIdx+2],
+			fstype: fields[sepIdx+1],
+		}
+	}
+	return out
 }
