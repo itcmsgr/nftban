@@ -296,14 +296,35 @@ func (m *Module) Stop() error {
 	return nil
 }
 
+// DDoSStatusExtra is the typed status payload for the DDoS module's
+// Status().Extra field. Field names map to legacy map[string]any keys
+// via JSON tags byte-for-byte; R-12 introduces type-safety without an
+// API change. Module.Status() / Status.Extra / ExtraInfo all unchanged.
+type DDoSStatusExtra struct {
+	Mode              string `json:"mode"`
+	SuricataAvailable bool   `json:"suricata_available"`
+}
+
+// ToExtraInfo serializes the typed struct into the module.ExtraInfo
+// map[string]any contract expected by module.Status.Extra.
+func (e DDoSStatusExtra) ToExtraInfo() module.ExtraInfo {
+	return module.ExtraInfo{
+		"mode":               e.Mode,
+		"suricata_available": e.SuricataAvailable,
+	}
+}
+
 // Status returns the current module status
 func (m *Module) Status() module.Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	m.status.UpdateUptime()
-	m.status.Extra["mode"] = m.mode
-	m.status.Extra["suricata_available"] = m.suricataAvail
+	extra := DDoSStatusExtra{
+		Mode:              m.mode,
+		SuricataAvailable: m.suricataAvail,
+	}
+	m.status.Extra = extra.ToExtraInfo()
 
 	return m.status
 }
