@@ -19,6 +19,8 @@
 #   - Anchor marker count validation (v1.64.0)
 #   - Bash hazard lint H1-H2 (v1.66.3): nft -a flag + set -e traps
 #   - Update safety lint U1-U2 (v1.70.0): rebuild failure must be fatal
+#   - Module isolation lint R-10 (v1.110.0): distinct ModuleName + EventBan
+#     source-label + Status.Extra cross-module key isolation (with baseline)
 # =============================================================================
 
 name: Architecture Policy
@@ -625,3 +627,26 @@ jobs:
           set -Eeuo pipefail
           echo "=== V108 Item 3 — heredoc-safety gate ==="
           bash scripts/ci/test-heredoc-safety.sh scan
+
+      # ====================================================================
+      # V110 R-10 — Module Isolation Lint
+      # ====================================================================
+      # Enforces three invariants over registered Module implementers:
+      #   A1 — Distinct ModuleName across all `func (m *Module) Name() string`
+      #        implementers (rejects accidental name reuse)
+      #   A2 — Every `eventbus.NewEvent(eventbus.EventBan, ...)` publish uses
+      #        the calling module's own ModuleName const (rejects cross-
+      #        attribution and string-literal sources)
+      #   A3 — Status().Extra cross-module key isolation: locks the current
+      #        baseline of legitimate shared keys (`mode`, `suricata_available`,
+      #        `tracked_ips`) and blocks NEW cross-module key introductions
+      #
+      # Schema impact: NONE. Lint is repository-static.
+      # Origin: V110 R-10 (FM-J) per AUDIT_190_MODULE_ISOLATION/REMEDIATION_PLAN.md
+      # Workspace anchor: V110_MOD_ISOLATION_DELTA_AUDIT.md §5
+      # ====================================================================
+      - name: "V110 R-10: module isolation lint"
+        run: |
+          set -Eeuo pipefail
+          echo "=== V110 R-10 — module isolation lint ==="
+          bash scripts/lint-module-isolation.sh
