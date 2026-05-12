@@ -11,6 +11,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.110.0] - 2026-05-12 — V110 module-isolation moderate-cut lane
+
+V110 module-isolation lane on top of v1.109.0. Closes R-10 and R-12
+from `AUDIT_190_MODULE_ISOLATION/REMEDIATION_PLAN.md` per the V110
+moderate cut (R-11 explicitly deferred to a future gate).
+
+**No daemon behavior change. No code change in `nftban-core` /
+`nftband` daemons.** Schema remains frozen at `1.83.0`. No metrics,
+portal, install API, panel-adapter, FHS-ATG, Self-Healing,
+POLKIT-AUTHORITY, dns2-migration, eventbus, packaging, or systemd
+implementation changes.
+
+### Goals
+
+Close two long-standing module-isolation findings via the narrow lane
+discipline that V108/V109 proved out:
+
+1. **R-10** — formalize the module-isolation invariants as a CI gate.
+   Three rules: distinct `ModuleName` across registered Module
+   implementers, module-owned `source` label on every `EventBan`
+   publish, and `Status().Extra` cross-module key isolation
+   (baseline-allowlist current shared concepts; block NEW collisions).
+2. **R-12** — replace ad-hoc `map[string]any` writes to `Status().Extra`
+   with a typed `<Module>StatusExtra` struct per module. Preserve the
+   `Module.Status() Status` interface byte-for-byte. Preserve all JSON
+   wire keys byte-for-byte. Type-system supersedes runtime lint for
+   within-module key validity.
+
+### Primary Items
+
+**PR #599 — R-10 module-isolation invariant lint** (squash `c8050d9e`).
+2 files (+280/-0): new `scripts/lint-module-isolation.sh` (236 LOC,
+shellcheck-clean, executable) plus a `V110 R-10: module isolation
+lint` step inserted into `.github/workflows/ci-architecture.yml`
+after the V108 Item 3 heredoc-safety step. Three invariants:
+
+- **A1** Distinct `ModuleName` — auto-discovers Module implementers
+  via `func (m *Module) Name() string`; verifies each declares a
+  unique package-level `ModuleName` const. At v1.109.0 base HEAD:
+  4 distinct (`ddos`, `portscan`, `loginmon`, `botguard`).
+- **A2** EventBan source label — every `eventbus.NewEvent(eventbus.
+  EventBan, <arg>)` publish in module code must pass the module's own
+  `ModuleName` const. Rejects cross-attribution and string-literal
+  sources.
+- **A3** `Status().Extra` cross-module key isolation — locks the
+  current baseline (`mode`, `suricata_available`, `tracked_ips` —
+  confirmed intentional shared concepts at v1.109.0 HEAD) and blocks
+  NEW cross-module key introductions. Future shared keys require
+  deliberate `BASELINE_ALLOWLIST` update.
+
+The PR landed via a brief history rewrite to clean a Gitleaks regex
+false-positive on the literal phrase `key isolation ===` in an A3
+section header (renamed to `cross-module check`); the squash-merge
+commit contains only the final clean text.
+
+**PR #600 — R-12 typed `Status().Extra` per module** (squash
+`9e26d2d6`). 8 files (+433/-41): 4 production refactors (`ddos`,
+`portscan`, `loginmon`, `botguard`) plus 4 test files (3 new + 1
+extended). Each module gains a `<Module>StatusExtra` struct and a
+`ToExtraInfo() module.ExtraInfo` method that builds the map manually
+(no reflection, no JSON-marshal roundtrip). Field counts:
+`DDoSStatusExtra` 2, `PortscanStatusExtra` 3, `LoginMonStatusExtra`
+18 (including `string` + `map[string]int64` value types),
+`BotGuardStatusExtra` 16.
+
+A minimal post-CI fix corrected two preflight-inferred type
+mismatches in `LoginMonStatusExtra`: `Services []string` →
+`Services string` (matches the actual return type of
+`m.getServiceList()` which is comma-joined; this also preserves the
+existing JSON wire format `"services": "..."` byte-for-byte), and
+`TrackedIPs int64` → `TrackedIPs int` (matches `m.scorer.TrackedIPs()`
+return type). The fix landed as the second commit on the PR; both
+commits squashed cleanly into `9e26d2d6` at merge time.
+
+### Behavior changes
+
+**None.** R-10 is a CI-only invariant gate. R-12 is a module-internal
+refactor with no external API change. The `Module.Status()` interface
+contract is preserved byte-identical: `Status.Extra` is still
+`ExtraInfo`, `ExtraInfo` is still `map[string]any`, and JSON wire keys
+(snake_case via struct tags) are unchanged.
+
+After R-12, R-10's A3 lint becomes vacuous (0 direct `Extra[KEY] =`
+writes remain in any module dir; the type system supersedes the
+runtime grep for within-module key validity). R-10 A1 and A2 remain
+active and continue to enforce their invariants.
+
+### Workspace-only (not repo payload)
+
+- **W1 MASTER_TODO refresh** — `V1.80_ROADMAP/MASTER_TODO.md`
+  (workspace doc) MAY be refreshed in parallel to bring it current
+  through v1.110.0 in-progress state. Not bundled here; not a repo
+  release artifact.
+
+### Out of scope (explicit non-goals carried forward to v1.111+)
+
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract —
+  deferred per the moderate-cut authorization. Eventbus infrastructure
+  is already present from PR-26 era; the SafetyPressure topic + producer
+  + consumer wiring estimated at ~200-300 LOC. Available via separate
+  `OPEN-V1XX-WATCHDOG-BOTGUARD-EVENTBUS-CONTRACT-SCOPE` gate.
+- **D-MET-1** Metrics + Portal Contract Enforcement Lane — 18 active
+  M-T TODOs; producer of v1.112+ portal/pro.nftban.com design evidence.
+- **D-METR-2** Watchdog `nftban_watchdog_action_total` emission gap
+  (sub-item of D-MET-1; concrete BUG).
+- **D-DNS-1** dns2 host migration execution — PARTIALLY FIXED. BUG
+  side closed in v1.108.0 PR #592; DESIGN-FIX side OPEN. dns2 host
+  still source-installed at v1.98.2 and reports `Install type: unknown`.
+  Migration scope ready (Option C: manual uninstall + RPM install);
+  requires P1-P8 operator attestations.
+- **D-FHS-1..5** FHS Authority Graph (5 verified gaps).
+- **D-SHA-1** SELF-HEALING-AUTHORITY-REDESIGN (post-v1.108.0
+  reservation MET).
+- **D-POL-1** POLKIT-AUTHORITY impl-level decisions.
+- **D-DEG-1** V108 Item 4 DEGRADED-runtime-pattern investigation.
+- **D-SEC-1** SEC-FW-BYPASS-ALERT-GAP-001 security backlog.
+- **D-TRP-1** TRANSPORT-001 outbound transport adapter.
+- **D-EGM-1** V1.1XX EgressMon module (CONDITIONAL GO post-CVE-
+  2026-41940).
+- **D-PNL-1** Panel architecture consolidation (4 deferred adapters).
+- **D-OSH-1** OS hardening blueprint SELinux/AppArmor.
+- **D-GHC-1** Optional org-level GHCR `sha-*` retention policy.
+- **D-BKT-1** Bucket C 14 v0.x tag historical-review (remote
+  untouched).
+- v1.110.x hotfix slot **not authorized** (latent reservation only).
+
+### Scope
+
+10 files changed since v1.109.0 (excluding this release-prep), plus
+4 files in this release-prep: `VERSION` (1.109.0 → 1.110.0),
+`STATUS.md` (v1.110.0 release lane added; v1.109.0 demoted to first
+Prior; schema-status line updated), `CHANGELOG.md` (this block
+prepended), and auto-regenerated
+`cli/lib/nftban/core/nftban_fhs_spec.sh` (version banner refresh).
+
+---
+
 ## [v1.109.0] - 2026-05-12 — V109 narrow-governance lane
 
 V109 narrow-governance lane on top of v1.108.0. Closes the 6-item
