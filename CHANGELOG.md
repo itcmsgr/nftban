@@ -11,6 +11,173 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.112.0] - 2026-05-12 — V112 PR-B schema-fulfill: PR-M2b-w1 host-vitals emission
+
+V112 PR-B schema-fulfill lane on top of v1.111.0. Single-PR release closing
+the PR-M2b-w1 host-vitals emission gap by implementing 6 metric names
+already declared in schema doc 17 §F4 + already accepted in the
+receiver-v2 181-entry allow-list since v1.111.0 publish. **Schema 1.83.0
+frozen invariant remains intact** per operator contract-fulfill
+interpretation locked at `V112_CONTRACT_FULFILL_ATTESTATION.md` —
+implementing already-declared schema names is fulfillment, not schema
+mutation.
+
+### Goals
+
+Close the highest-value schema-fulfillment sub-item from the D-MET-1
+portal-evidence checklist, deferred from v1.111 per PR-A scope §4
+friction point 1:
+
+- **PR-M2b-w1** — emit 6 `nftban_host_*` Prometheus metrics that have
+  been part of the frozen schema contract since v1.90 + accepted by the
+  consumer-side allow-list since v1.111.0, but which the daemon was not
+  previously producing.
+
+Conservative scope: only the 6 PR-M2b-w1 targets emit. Other §F4 metrics
+(CPU details, swap, inodes, IO wait, SMART, RAID, service health) remain
+deferred to future per-section PR-M2b sub-items.
+
+### Primary Item
+
+**PR #604 — `fix(watchdog): emit nftban_host_* vitals per schema doc 17
+§F4 (PR-M2b-w1)`** (squash `1d0a6221`). 5 files (+592/-2).
+
+### Metrics emitted
+
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `nftban_host_load_average` | GaugeVec | `window` (1m/5m/15m) | `/proc/loadavg` |
+| `nftban_host_memory_total_bytes` | Gauge | — | `/proc/meminfo` MemTotal |
+| `nftban_host_memory_available_bytes` | Gauge | — | `/proc/meminfo` MemAvailable |
+| `nftban_host_memory_used_bytes` | Gauge | — | derived (MemTotal − MemAvailable) |
+| `nftban_host_disk_usage_ratio` | GaugeVec | `mount`, `device`, `fstype` | `syscall.Statfs()` + `/proc/self/mountinfo` |
+| `nftban_host_oom_events_total` | Counter | — | `/proc/vmstat oom_kill` (per-tick delta) |
+
+**Cardinality bound:** ~11 series per host under the default mount
+policy (3 load_average windows + 3 plain memory gauges + ~4 disk mounts
++ 1 OOM counter).
+
+### Architecture decision (locked at PR-B scope)
+
+This release is an **EXTENSION of the existing `SystemCollector`** in
+`internal/watchdog/collector_system.go` — not a new `collector_host.go`.
+The PR-B daemon-source audit found that `SystemCollector` already reads
+`/proc/loadavg`, `/proc/meminfo`, `/proc/stat`, and uses
+`syscall.Statfs()`; `SystemMetrics` already exposes `LoadAvg1/5/15`,
+`MemTotal`, `MemAvail`, etc. PR-M2b-w1 adds two new collector functions
+(`collectOOMEvents` reads `/proc/vmstat`; `collectMultiMountDisks` per
+mount-policy allowlist plus `readMountInfo` parses
+`/proc/self/mountinfo` for device + fstype) and 6 new `promauto.New*`
+blocks in `metrics.go`.
+
+**`Watchdog` struct, `internal/watchdog/config.go`, and
+`internal/watchdog/collector_base.go` remain UNCHANGED** — no
+struct/interface churn.
+
+### Files touched (strict envelope, locked at PR-B scope gate)
+
+- `internal/watchdog/types.go` (+18/-2): `SystemMetrics` extended with
+  `Disks []DiskUsageEntry` + `OOMEvents uint64` (both `omitempty` for
+  byte-identical zero-value JSON output); NEW `DiskUsageEntry{Mount,
+  Device, FSType string; Ratio float64}`
+- `internal/watchdog/collector_system.go` (+147): NEW
+  `collectOOMEvents()`, `collectMultiMountDisks()`,
+  `hostDiskMountAllowlist()` env helper, `readMountInfo()` parser,
+  `defaultHostDiskMounts` var; wired into existing `Collect()` body
+- `internal/watchdog/metrics.go` (+65): 6 new `promauto.New*` blocks;
+  new `lastOOMEvents uint64` field on `MetricsExporter` for
+  counter-delta semantics; new emission section in `Update()` pump with
+  memory-underflow guard
+- `internal/watchdog/collector_system_test.go` (NEW, +239): 11 tests
+  covering mount-policy default/env/whitespace + multi-mount
+  root-always/nonexistent-skipped/cardinality-bound + OOM events +
+  `Collect()` integration + mountinfo parser
+- `internal/watchdog/metrics_test.go` (+125): 5 tests covering
+  host-vitals emission + OOM counter delta + OOM monotonic-down
+  regression guard + multi-mount loop + memory underflow guard
+
+### Behavior changes (narrow, explicit)
+
+- 6 `nftban_host_*` Prometheus metrics now emit values in production
+  when the watchdog ticks (default cadence 5 seconds per
+  `WatchdogSystemInterval`). The receiver-v2 has been ready to accept
+  these names since the M-T9 cutover on 2026-05-02; this release
+  fulfills the daemon side.
+- Cardinality is bounded ~11 series per host under default mount policy.
+- OOM counter uses per-tick delta semantics (Prometheus Counter is
+  Add-only). Counter regression (kernel reset or host change) is
+  handled by resyncing baseline without crashing.
+
+**No other behavior change in `nftban-core` / `nftband` daemons.** No
+new metric names beyond schema doc 17 §F4. No new label cardinality
+dimensions. No schema/contract changes. No portal, install API,
+panel-adapter, FHS-ATG, Self-Healing, POLKIT-AUTHORITY, dns2-migration,
+eventbus, packaging, or systemd changes.
+
+### Mount policy
+
+Per schema doc 17 §F4.3.1:
+
+- Default 4 mounts: `/`, `/var`, `/var/log`, `/var/lib/nftban` (3 from
+  doc + nftban-FHS-specific addition)
+- Operator override:
+  `NFTBAN_HOST_DISK_MOUNT_ALLOWLIST=/data,/mnt/storage`
+  (comma-separated)
+- Mounts that fail `statfs` are skipped silently (unmounted / permission
+  denied)
+- Device + FSType resolved from `/proc/self/mountinfo`; fallback to
+  `"unknown"` if not resolvable
+
+### Kernel compatibility
+
+All supported distros (EL9/10, Debian 12/13, Ubuntu 22.04/24.04) ship
+kernel ≥5.14, well above the 4.7 `oom_kill` threshold and 3.14
+`MemAvailable` threshold. Fallbacks are documented in PR-B scope but
+unlikely to trigger.
+
+### Why this is safe (7-axis prerequisite check)
+
+1. **R-10 module-isolation lint SAFE** — watchdog is not a Module
+2. **R-12 typed `Status().Extra` SAFE** — same reason
+3. **JSON wire-format SAFE** — new `SystemMetrics` fields use
+   `omitempty`; zero-value output is byte-identical
+4. **`SystemCollector` mutex pattern READY** — new helpers inherit
+   `c.mu` from `Collect()` body
+5. **Config-loader NO change** — reuses `SystemInterval` (5s default)
+6. **No `internal/contracts/` directory exists** — no metric-inventory
+   CI gate to update
+7. **`ci-architecture.yml` SAFE** — runs R-10 lint only; does not lint
+   metric registrations
+
+### Explicit non-goals carried forward to v1.113+ as separately-gated future debt
+
+- **PR-M2b-w2..w7** per-module emission waves (LoginMon, DDoS,
+  BotGuard, Feed, Geoban, Suricata) — per-wave gating recommended
+- **PR-M2c new nft named counters** (`ddos_drop`, `whitelist_hit`,
+  `feed_hit`, `geoban_hit`) — true schema-UNFREEZE; requires
+  `OPEN-V1XX-SCHEMA-UNFREEZE-NFT-NAMED-COUNTERS-SCOPE`
+- **PR-M2d kernel set element annotation cookies** — schema-UNFREEZE +
+  migration plan; requires
+  `OPEN-V1XX-SCHEMA-UNFREEZE-SET-ELEMENT-FORMAT-SCOPE`
+- **PR-M3** cache v2 producer + **PR-M1** CLI formatter — depend on
+  PR-M2/PR-M3 sequence
+- **§F4 metrics beyond the 6 PR-M2b-w1 targets** (CPU details, swap,
+  inodes, IO wait, SMART, RAID, service health) — future PR-M2b
+  sub-items
+- **D-LMA-1** legacy `/opt/nftban-pro:3000` decommission — sibling W1
+  governance lane; observation window OPEN since 2026-05-02 M-T9
+  cutover
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract
+- **D-DNS-1** dns2 host migration (DESIGN-FIX side OPEN)
+- **D-FHS-1..5**, **D-SHA-1**, **D-POL-1**, **D-DEG-1**, **D-SEC-1**,
+  **D-TRP-1**, **D-EGM-1**, **D-PNL-1**, **D-OSH-1**, **D-GHC-1**,
+  **D-BKT-1** — all long-deferred carry-forward debt
+
+v1.112.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.112.0 defect surfaces).
+
+---
+
 ## [v1.111.0] - 2026-05-12 — V111 PR-A conservative: D-METR-2 watchdog emission gap fix
 
 V111 PR-A conservative lane on top of v1.110.0. Closes D-METR-2 (watchdog
