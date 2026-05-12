@@ -802,7 +802,20 @@ collect_all_metrics() {
             # Count sets per family (nft list sets FAMILY, not "nft list sets FAMILY TABLE")
             local ipv4_family="${NFTBAN_TABLE_IPV4%% *}"  # "ip" from "ip nftban"
             local ipv6_family="${NFTBAN_TABLE_IPV6%% *}"  # "ip6" from "ip6 nftban"
-            sets_count=$(( $(nft list sets "$ipv4_family" 2>/dev/null | grep -c "set " || echo 0) + $(nft list sets "$ipv6_family" 2>/dev/null | grep -c "set " || echo 0) ))
+            # v1.112.1 hotfix: split the compound arithmetic into separate steps to avoid
+            # bash arithmetic syntax error when `grep -c` exits 1 on zero matches AND
+            # `|| echo 0` then concatenates a second "0" into the captured stdout. The
+            # captured `0\n0` is invalid inside `$(( ))` and exits the script with code 2
+            # under `set -Eeuo pipefail`, breaking the entire extended-mode pipeline under
+            # systemd. Discovered in lab4 (EL9) bash -x trace; EL10 (newer toolchain) does
+            # not reproduce reliably. Per-step assignment + numeric validation makes the
+            # arithmetic safe regardless of whether `nft list sets` finds 0 or N sets.
+            local _v4_sets _v6_sets
+            _v4_sets=$(nft list sets "$ipv4_family" 2>/dev/null | grep -c "set " 2>/dev/null) || _v4_sets=0
+            _v6_sets=$(nft list sets "$ipv6_family" 2>/dev/null | grep -c "set " 2>/dev/null) || _v6_sets=0
+            [[ "$_v4_sets" =~ ^[0-9]+$ ]] || _v4_sets=0
+            [[ "$_v6_sets" =~ ^[0-9]+$ ]] || _v6_sets=0
+            sets_count=$((_v4_sets + _v6_sets))
             # Total elements across all standard sets (use function-level whitelist_v4/v6 from LIVE)
             elements_total=$((${active_v4:-0} + ${active_v6:-0} + ${whitelist_v4:-0} + ${whitelist_v6:-0}))
             metrics+="nftban_nft_sets_total $sets_count $timestamp\n"
