@@ -4,13 +4,13 @@ go 1.25.0
 
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/nftables v0.3.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/procfs v0.20.1
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
