@@ -11,6 +11,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.112.1] - 2026-05-12 — V112.1 hotfix: unified-exporter arithmetic syntax error on EL9 + Ubuntu
+
+V112.1 single-PR hotfix on top of v1.112.0. Closes a v1.112.0-released
+regression in the `nftban-unified-exporter.service` shell exporter that
+surfaced under post-release host-vitals validation. **Zero impact on
+v1.112.0 host-vitals release content** — the Go daemon `/metrics`
+continues to emit all 6 `nftban_host_*` metrics correctly on every
+validated host; the hotfix touches the shell-exporter side only.
+**Schema 1.83.0 remains frozen.**
+
+### Defect
+
+`cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh:805`:
+
+```bash
+sets_count=$(( $(nft list sets "$ipv4_family" 2>/dev/null \
+                  | grep -c "set " || echo 0) + ... ))
+```
+
+When `nft list sets` returns no `"set "` matches:
+
+1. `grep -c "set "` outputs `"0"` AND exits **1** (no matches per GNU
+   grep semantics)
+2. `|| echo 0` fallback then outputs **another** `"0"`
+3. Combined captured stdout is `"0\n0"`
+4. `$(( "0\n0" + ... ))` is a bash arithmetic syntax error
+5. Under `set -Eeuo pipefail` bash exits with code 2; systemd reports
+   `INVALIDARGUMENT` and the entire exporter run fails
+
+Manifests reliably under `groups: live extended` invocation in
+restricted systemd context (`User=nftban` + `ProtectSystem=strict` +
+`CAP_NET_ADMIN` + `RestrictAddressFamilies` + `LockPersonality`).
+Intermittent under `groups: live` only. Manual root invocation
+succeeds (different env state). EL10 hosts (srv4) were unaffected
+because the timer fires when nft tables are already populated and the
+`grep -c` matches at least one set, avoiding the dual-zero output.
+
+Cross-distro defect matrix (from V112 validation gates):
+
+- lab2 (Ubuntu 24.04, DEB): extended-fail
+- lab4 (AlmaLinux 9, RPM): extended-fail (root-cause line identified
+  via `bash -x` trace under systemd; leave-no-trace cleanup verified)
+- srv4 (AlmaLinux 10.1, RPM): all runs succeed including
+  `live extended` (newer toolchain timing)
+
+### Fix (Shape A defensive wrapping)
+
+Split the compound arithmetic into separate command-substitutions
+with `|| _var=0` assignment-level fallback plus `[[ =~ ^[0-9]+$ ]]`
+numeric-validation guard plus safe two-operand arithmetic. The
+dual-output pattern cannot occur:
+
+```bash
+local _v4_sets _v6_sets
+_v4_sets=$(nft list sets "$ipv4_family" 2>/dev/null \
+            | grep -c "set " 2>/dev/null) || _v4_sets=0
+_v6_sets=$(nft list sets "$ipv6_family" 2>/dev/null \
+            | grep -c "set " 2>/dev/null) || _v6_sets=0
+[[ "$_v4_sets" =~ ^[0-9]+$ ]] || _v4_sets=0
+[[ "$_v6_sets" =~ ^[0-9]+$ ]] || _v6_sets=0
+sets_count=$((_v4_sets + _v6_sets))
+```
+
+### Files touched
+
+- `cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh`
+  (+14 / -1)
+
+That is the entire envelope. The Go daemon, all other exporter
+scripts (`nftban_unified_exporter.sh` loader + `_helpers.sh` +
+`_export.sh`), the systemd unit file, the timer file, and the FHS
+spec are all UNCHANGED.
+
+### Primary Item
+
+**PR #606 — `fix(exporter): nftban_nft_sets_total arithmetic syntax
+error (v1.112.1 hotfix)`** (squash `5d4e9613`). 1 file (+14/-1).
+
+### Behavior changes
+
+- `nftban-unified-exporter.service` no longer fails with
+  `exit-code 2/INVALIDARGUMENT` under `live extended` invocation on
+  EL9 + Ubuntu hosts when nft sets are empty.
+- All other exporter behavior unchanged.
+
+**No change in Go daemon `/metrics` output.** **No change in receiver-v2
+ingest contract.** **No change in schema, metric names, label
+cardinality, or systemd unit hardening.**
+
+### Why this is safe
+
+Pre-merge investigation gate (`V112_1_HOTFIX_PR_B_SCOPE.md`)
+identified the exact failing line via `bash -x` trace under systemd
+on lab4 with leave-no-trace cleanup (drop-in removed; unit restored
+to packaged baseline; run #166 post-cleanup SUCCESS confirms healthy
+state). Shape A fix locked at scope §3. PR #606 verification gate
+(8-criterion) confirmed 1-file 14-line envelope strict; all RPM
+install (alma9 / rocky9 / centos-stream9 / centos-stream10) and DEB
+install (debian12 / debian13 / ubuntu22.04 / ubuntu24.04) CI checks
+PASS. Local bash reproduction confirmed both the bug (arithmetic
+syntax error on `"0\n0"`) and the fix (correct sum for empty +
+matched inputs). End-to-end re-validation on lab4 reproducible host
+deferred to `EXECUTE_V112_1_VALIDATE_LAB4` post-release gate.
+
+### Explicit non-goals carried forward to v1.113+ as separately-gated future debt
+
+All v1.112.0 deferred items remain deferred:
+
+- **PR-M2b-w2..w7** per-module emission waves (LoginMon, DDoS,
+  BotGuard, Feed, Geoban, Suricata)
+- **PR-M2c new nft named counters** — schema-unfreeze required
+- **PR-M2d kernel set element annotation cookies** — schema-unfreeze
+  + migration plan
+- **PR-M3** cache v2 producer + **PR-M1** CLI formatter
+- **§F4 metrics beyond the 6 PR-M2b-w1 targets** (CPU details, swap,
+  inodes, IO wait, SMART, RAID, service health)
+- **D-LMA-1** legacy `/opt/nftban-pro:3000` decommission — sibling
+  W1 governance lane
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract
+- **D-DNS-1** dns2 host migration (DESIGN-FIX side OPEN)
+- **D-FHS-1..5**, **D-SHA-1**, **D-POL-1**, **D-DEG-1**, **D-SEC-1**,
+  **D-TRP-1**, **D-EGM-1**, **D-PNL-1**, **D-OSH-1**, **D-GHC-1**,
+  **D-BKT-1**
+
+v1.112.2 hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.112.1 defect surfaces).
+
+---
+
 ## [v1.112.0] - 2026-05-12 — V112 PR-B schema-fulfill: PR-M2b-w1 host-vitals emission
 
 V112 PR-B schema-fulfill lane on top of v1.111.0. Single-PR release closing
