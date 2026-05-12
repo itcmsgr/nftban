@@ -378,9 +378,6 @@ SYSTEMD UNITS (/etc/systemd/system/ or /lib/systemd/system/)
 |  +-- nftban-snapshot.timer    # Periodic snapshots                           |
 |  +-- nftban-unified-exporter  # Metrics export                               |
 |  +-- nftban-watchdog.timer    # Self-monitoring                              |
-|                                                                              |
-|  Optional Services:                                                          |
-|  +-- nftban-api.service       # REST API                                     |
 +-----------------------------------------------------------------------------+
 ```
 
