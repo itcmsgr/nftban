@@ -414,6 +414,13 @@ func (d *Daemon) initWatchdog() error {
 		}
 	})
 
+	// Wire up action callback so nftban_watchdog_action_total and
+	// nftban_watchdog_last_action_timestamp_seconds actually emit in production
+	// (fixes D-METR-2 — registered-but-unwired emission).
+	wd.SetOnAction(func(action watchdog.Action) {
+		d.wdMetrics.RecordAction(action)
+	})
+
 	d.watchdog = wd
 	return nil
 }

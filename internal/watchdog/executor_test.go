@@ -585,3 +585,52 @@ func TestExecutorConcurrency(t *testing.T) {
 
 	wg.Wait()
 }
+
+// =============================================================================
+// PR-M2 (D-METR-2) end-to-end emission wiring
+// =============================================================================
+
+// TestActionExecutor_FiresWatchdogOnAction verifies the production callback
+// chain: ActionExecutor.recordAction → Watchdog.handleAction (wired in
+// New() via SetOnAction) → Watchdog.onAction. Before PR-M2 the third hop
+// did not exist; this test guards against regression in the chain that
+// makes nftban_watchdog_action_total actually increment in production.
+func TestActionExecutor_FiresWatchdogOnAction(t *testing.T) {
+	w, err := New(testConfig(), NewRuntimeControls())
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	var mu sync.Mutex
+	var fired int
+	var got Action
+	w.SetOnAction(func(a Action) {
+		mu.Lock()
+		defer mu.Unlock()
+		fired++
+		got = a
+	})
+
+	action := Action{
+		Type:      ActionThrottle,
+		Timestamp: time.Date(2026, 5, 12, 10, 0, 0, 0, time.UTC),
+		Reason:    "executor_chain_regression",
+		Success:   true,
+	}
+	w.executor.recordAction(action)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if fired != 1 {
+		t.Fatalf("watchdog onAction fired %d times through executor chain, want 1", fired)
+	}
+	if got.Type != action.Type {
+		t.Errorf("Action.Type = %q, want %q", got.Type, action.Type)
+	}
+	if got.Reason != action.Reason {
+		t.Errorf("Action.Reason = %q, want %q", got.Reason, action.Reason)
+	}
+	if !got.Timestamp.Equal(action.Timestamp) {
+		t.Errorf("Action.Timestamp = %v, want %v", got.Timestamp, action.Timestamp)
+	}
+}
