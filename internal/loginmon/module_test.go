@@ -38,7 +38,7 @@ func TestLoginMonStatusExtra_ToExtraInfo(t *testing.T) {
 	extra := LoginMonStatusExtra{
 		Mode:                "auto",
 		SuricataAvailable:   true,
-		Services:            []string{"ssh", "ftp"},
+		Services:            "ssh,ftp",
 		Detectors:           []string{"SSHDetector", "FTPDetector"},
 		TotalDetections:     100,
 		TotalBans:           20,
@@ -58,7 +58,7 @@ func TestLoginMonStatusExtra_ToExtraInfo(t *testing.T) {
 	want := module.ExtraInfo{
 		"mode":                  "auto",
 		"suricata_available":    true,
-		"services":              []string{"ssh", "ftp"},
+		"services":              "ssh,ftp",
 		"detectors":             []string{"SSHDetector", "FTPDetector"},
 		"total_detections":      int64(100),
 		"total_bans":            int64(20),
@@ -69,7 +69,7 @@ func TestLoginMonStatusExtra_ToExtraInfo(t *testing.T) {
 		"detections_ipv6":       int64(10),
 		"bans_ipv4":             int64(18),
 		"bans_ipv6":             int64(2),
-		"tracked_ips":           int64(5),
+		"tracked_ips":           5,
 		"detections_by_service": map[string]int64{"ssh": 80, "ftp": 20},
 		"bans_by_service":       map[string]int64{"ssh": 18, "ftp": 2},
 		"detections_by_reason":  map[string]int64{"bruteforce": 95, "scan": 5},

@@ -458,7 +458,7 @@ func (m *Module) Stop() error {
 type LoginMonStatusExtra struct {
 	Mode                string           `json:"mode"`
 	SuricataAvailable   bool             `json:"suricata_available"`
-	Services            []string         `json:"services"`
+	Services            string           `json:"services"`
 	Detectors           []string         `json:"detectors"`
 	TotalDetections     int64            `json:"total_detections"`
 	TotalBans           int64            `json:"total_bans"`
@@ -469,7 +469,7 @@ type LoginMonStatusExtra struct {
 	DetectionsIPv6      int64            `json:"detections_ipv6"`
 	BansIPv4            int64            `json:"bans_ipv4"`
 	BansIPv6            int64            `json:"bans_ipv6"`
-	TrackedIPs          int64            `json:"tracked_ips"`
+	TrackedIPs          int              `json:"tracked_ips"`
 	DetectionsByService map[string]int64 `json:"detections_by_service"`
 	BansByService       map[string]int64 `json:"bans_by_service"`
 	DetectionsByReason  map[string]int64 `json:"detections_by_reason"`
