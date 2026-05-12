@@ -11,6 +11,164 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.109.0] - 2026-05-12 — V109 narrow-governance lane
+
+V109 narrow-governance lane on top of v1.108.0. Closes the 6-item
+narrow cleanup scope: stale docs/comment residue + dead-code deletion +
+README package-matrix restoration + Dependabot dependency refresh.
+
+**No daemon behavior change. No code change in `nftban-core` /
+`nftband` daemons.** Schema remains frozen at `1.83.0`. No metrics,
+portal, install API, panel-adapter, FHS-ATG, Self-Healing,
+POLKIT-AUTHORITY, dns2-migration, or module-isolation implementation
+changes.
+
+### Goals
+
+Clear V109 narrow-governance debt items that accumulated through the
+v1.107.x / v1.108.0 cycle and were intentionally deferred until after
+v1.108.0 publication:
+
+1. **CF-13 + CF-14** — finish documentation-side decommissioning of the
+   legacy `nftban-api-server` / `nftban-api.service` surface that was
+   already removed from the codebase but left residual references in
+   four docs/workflow files.
+2. **CF-12** — remove the orphaned `internal/config` package (legacy
+   JWT-secret bootstrap from the `nftban-api-server` era) with zero
+   importers in the codebase.
+3. **CF-04** — restore the README tier 0/1/2 package matrix that was
+   inadvertently removed in PR #399 (2026-04-15), and fix a latent
+   defect where Debian 12 users were instructed to install the Ubuntu
+   24.04 package.
+4. **CF-05** — refresh five parked Dependabot PRs (one Go-module bump
+   + four GitHub Actions version bumps including three major version
+   advances).
+
+### Primary Items
+
+**PR #596 — `nftban-api-server` / `nftban-api.service` documentation
+decommissioning** (squash `46847717`). 4 files modified
+(+3/−7): `CONTRIBUTING.md` directory-tree connector fix;
+`.github/workflows/release.yml` comment-only edit dropping
+`nftban-api-server` from the Go-binary build list;
+`docs/systemd/TIMERS.md` HISTORICAL_KEEP strikethrough on the
+`nftban-api.service` row with annotation pointing to
+`docs/systemd/UNITS.md`; `docs/ARCHITECTURE.md` removal of the
+deprecated "Optional Services" block from the ASCII art (strikethrough
+does not render inside fenced code blocks; canonical history record
+preserved at `docs/systemd/UNITS.md:103`). The four packaging
+deprecated-service cleanup snippets in `install/packaging/{deb,rpm}/`
+that reference `nftban-api.service` are **intentionally preserved** —
+they remain the upgrade-time mechanism that removes stale
+`nftban-api.service` from older installations.
+
+**PR #597 — Unused `internal/config` package deletion** (squash
+`787558f7`). 1 file deleted (−247 lines): `internal/config/config.go`
+(legacy JWT-secret bootstrap code from the `nftban-api-server` era).
+Zero-importer pre-verified across `*.go`, `*_test.go`, and
+build-tag-gated files. `internal/configloader/` is a distinct package
+and is **not** touched. Local Go validation not run on this host per
+build policy; CI build-packages matrix validated Go compilation across
+all 6 distros (RPM EL9/EL10, DEB Debian 12/13, Ubuntu 22.04/24.04).
+
+**PR #586 — README tier 0/1/2 package matrix restoration** (squash
+`a3293ff1`). 1 file modified (+51/−3): `README.md`. Adds explicit
+per-distro install blocks for **Tier 0** (Ubuntu 24.04 LTS, Debian 12,
+Rocky/Alma/RHEL 9), **Tier 1** (Debian 13, Rocky/Alma/RHEL 10), and
+**Tier 2** (Ubuntu 22.04 LTS). Adds the full `## Available Packages`
+matrix covering all 6 published RPM/DEB packages. Restores coverage
+removed in PR #399 (2026-04-15). Fixes a latent defect in the previous
+combined "Ubuntu 24.04 / Debian 12" heading that directed Debian 12
+users to install the Ubuntu 24.04 `.deb` package.
+
+**PR #497 — `aquasecurity/trivy-action` SHA-pin bump** (squash
+`57ba0f4f`). 1 file modified (+1/−1): `.github/workflows/secure-go.yml`.
+SHA pin updated `e368e328` → `ed142fd0` per supply-chain best-practice
+SHA-pinning pattern.
+
+**PR #578 — `actions/dependency-review-action` v4.9.0 → v5.0.0**
+(squash `29353171`). 1 file modified (+1/−1):
+`.github/workflows/dependency-review.yml`. Major version bump.
+Dependency Review check verified SUCCESS under v5 in the PR's own CI
+before merge.
+
+**PR #495 — `actions/setup-node` v4.4.0 → v6.4.0** (squash
+`232e2dc4`). 1 file modified (+1/−1):
+`.github/workflows/project-health.yml`. Two-major-version bump.
+`project-health.yml` is a scheduled non-gating advisory workflow.
+
+**PR #577 — `github/codeql-action` v3.32.3 → v4.35.4** (squash
+`bd4727ec`). 5 workflows updated (+8/−8): `codeql.yml`,
+`osv-scanner.yml`, `scorecard.yml`, `secure-go.yml`, `semgrep.yml`.
+`github/codeql-action` is the SARIF uploader used across five security
+workflows. Major version bump. CodeQL Analysis (Go) verified SUCCESS
+under v4 in the PR's own CI before merge.
+
+**PR #535 — Go modules bump** (squash `267b02b8`). 2 files modified
+(+6/−6): `go.mod` + `go.sum`. Two modules bumped:
+`github.com/fsnotify/fsnotify v1.9.0 → v1.10.1` (semver-minor; used in
+`nftband` for inotify watching) and `golang.org/x/sys v0.42.0 → v0.44.0`
+(patch-level within v0). Full build matrix verified in CI: Build &
+Test, all 6 distro RPM/DEB builds, all 8 install tests, CodeQL
+Analysis (Go), gosec, govulncheck, osv-scanner, Go Security Analysis,
+Dependency Review, Validate package effective parity, Validate systemd
+ExecStart payload resolution.
+
+### Behavior changes
+
+**None.** Pure docs / dead-code-removal / dependency-refresh. No
+daemon, packaging-payload, runtime, schema, metrics, portal, install
+API, panel-adapter, FHS, sysusers, polkit, dns2, or DEGRADED-runtime
+work in this release.
+
+### Workspace-only (not repo payload)
+
+- **W1 MASTER_TODO refresh** — `V1.80_ROADMAP/MASTER_TODO.md` (workspace
+  doc) refreshed from v1.95.0 cutoff through v1.108.0 released + v1.109
+  in progress. Workspace-only; not a repo release artifact.
+
+### Out of scope (explicit non-goals carried forward to v1.110+)
+
+- **dns2 host migration execution** — D-DNS-1 PARTIALLY FIXED. BUG side
+  closed in v1.108.0 PR #592; DESIGN-FIX side still OPEN. dns2 host is
+  source-installed at v1.98.2 and reports `Install type: unknown` until
+  manually migrated. Migration scope ready (Option C: manual uninstall
+  + RPM install) per `DNS2_SOURCE_INSTALL_TO_RPM_MIGRATION_SCOPE.md`;
+  requires P1-P8 operator attestations. **Not a v1.109.0 blocker.**
+- **FHS Authority Graph (D-FHS-1..5)** — 5 verified gaps; lane gated by
+  separate scope artifact.
+- **SELF-HEALING-AUTHORITY-REDESIGN (D-SHA-1)** — post-v1.108.0
+  reservation now MET; lane available for separate gate.
+- **POLKIT-AUTHORITY impl-level decisions (D-POL-1)**.
+- **V108 Item 4 DEGRADED-runtime-pattern investigation (D-DEG-1)** —
+  lab repro across 3 host classes required.
+- **SEC-FW-BYPASS-ALERT-GAP-001 (D-SEC-1)** — security backlog; parked,
+  scope-ready.
+- **TRANSPORT-001 (D-TRP-1)** — outbound transport adapter; sub-items
+  001A/B/C ordered.
+- **Module Isolation V1.101-FOLLOWUP (D-MOD-1)** — 5 R-* findings.
+- **Metrics + Portal Contract Enforcement Lane (D-MET-1)** — 18 active
+  M-T TODOs.
+- **EgressMon module (D-EGM-1)** — CONDITIONAL GO post-CVE-2026-41940.
+- **Panel architecture consolidation (D-PNL-1)** — 4 deferred adapters.
+- **OS hardening blueprint SELinux/AppArmor (D-OSH-1)** — precondition
+  now MET.
+- **GHCR `sha-*` retention policy (D-GHC-1)** — org-level governance,
+  optional follow-on to V108 Item 12 closure.
+- **Bucket C 14 v0.x tag historical-review (D-BKT-1)** — remote
+  untouched; deferred per `TAG_HYGIENE_LOCAL_ADOPTION_CLOSURE.md`.
+- **v1.109.x hotfix slot** — latent; not authorized.
+
+### Scope
+
+15 files changed since v1.108.0 (excluding this release-prep), plus 2
+files in this release-prep: `VERSION` (1.108.0 → 1.109.0), `STATUS.md`
+(v1.109.0 release lane added; v1.108.0 demoted to first Prior),
+`CHANGELOG.md` (this block prepended), and auto-regenerated
+`cli/lib/nftban/core/nftban_fhs_spec.sh` (version banner refresh).
+
+---
+
 ## [v1.108.0] - 2026-05-12 — V108 primary hardening bundle
 
 V108 primary hardening lane on top of v1.107.2. Closes 6 of 7 primary
