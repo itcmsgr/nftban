@@ -261,6 +261,46 @@ var (
 		Name:      "cidr_filter_kept",
 		Help:      "CIDRs that passed filtering in last sync",
 	})
+
+	// ==========================================================================
+	// Host-Vitals Metrics (PR-M2b-w1 — schema doc 17 §F4)
+	// ==========================================================================
+
+	hostLoadAverage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "host_load_average",
+		Help:      "System load average per window (per /proc/loadavg)",
+	}, []string{"window"})
+
+	hostMemoryTotalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "host_memory_total_bytes",
+		Help:      "Total system memory in bytes (per /proc/meminfo MemTotal)",
+	})
+
+	hostMemoryAvailableBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "host_memory_available_bytes",
+		Help:      "Available system memory in bytes (per /proc/meminfo MemAvailable)",
+	})
+
+	hostMemoryUsedBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "host_memory_used_bytes",
+		Help:      "Used system memory in bytes (derived as MemTotal - MemAvailable)",
+	})
+
+	hostDiskUsageRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "host_disk_usage_ratio",
+		Help:      "Disk usage as ratio (used/total, 0..1) per filesystem (per statvfs)",
+	}, []string{"mount", "device", "fstype"})
+
+	hostOOMEventsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "host_oom_events_total",
+		Help:      "Cumulative OOM-kill events (per /proc/vmstat oom_kill)",
+	})
 )
 
 // MetricsExporter updates Prometheus metrics from watchdog data
@@ -268,6 +308,11 @@ type MetricsExporter struct {
 	// For cost calculation
 	lastRSS    uint64
 	lastBlocks int
+
+	// PR-M2b-w1 (v1.112): tracks the last cumulative oom_kill counter so
+	// the Prometheus Counter advances by the per-tick delta rather than
+	// being set to the absolute kernel value (Counter only supports Add).
+	lastOOMEvents uint64
 }
 
 // NewMetricsExporter creates a new metrics exporter
@@ -356,6 +401,26 @@ func (m *MetricsExporter) Update(snapshot *Snapshot, state *PressureState) {
 	}
 
 	// Cost per block calculation
+	// Host-vitals metrics (PR-M2b-w1 — schema doc 17 §F4).
+	// SystemMetrics has been populated this tick by SystemCollector.Collect().
+	hostLoadAverage.WithLabelValues("1m").Set(snapshot.System.LoadAvg1)
+	hostLoadAverage.WithLabelValues("5m").Set(snapshot.System.LoadAvg5)
+	hostLoadAverage.WithLabelValues("15m").Set(snapshot.System.LoadAvg15)
+	hostMemoryTotalBytes.Set(float64(snapshot.System.MemTotal))
+	hostMemoryAvailableBytes.Set(float64(snapshot.System.MemAvail))
+	if snapshot.System.MemTotal >= snapshot.System.MemAvail {
+		hostMemoryUsedBytes.Set(float64(snapshot.System.MemTotal - snapshot.System.MemAvail))
+	}
+	for _, d := range snapshot.System.Disks {
+		hostDiskUsageRatio.WithLabelValues(d.Mount, d.Device, d.FSType).Set(d.Ratio)
+	}
+	// Counter semantics: oom_kill is a cumulative kernel counter; emit the
+	// per-tick delta so the Prometheus Counter monotonically advances.
+	if snapshot.System.OOMEvents > m.lastOOMEvents {
+		hostOOMEventsTotal.Add(float64(snapshot.System.OOMEvents - m.lastOOMEvents))
+	}
+	m.lastOOMEvents = snapshot.System.OOMEvents
+
 	m.updateCostMetrics(snapshot)
 
 	// CIDR filter metrics (read from state file)
