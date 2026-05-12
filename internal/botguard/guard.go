@@ -228,28 +228,77 @@ func (m *Module) Stop() error {
 	return nil
 }
 
+// BotGuardStatusExtra is the typed status payload for the BotGuard
+// module's Status().Extra field. Field names map to legacy
+// map[string]any keys via JSON tags byte-for-byte; R-12 introduces
+// type-safety without an API change.
+type BotGuardStatusExtra struct {
+	LoopInterval          string `json:"loop_interval"`
+	PressureMode          bool   `json:"pressure_mode"`
+	TrackedIPs            int64  `json:"tracked_ips"`
+	TotalTicks            int64  `json:"total_ticks"`
+	SuspectsFound         int64  `json:"suspects_found"`
+	Classified            int64  `json:"classified"`
+	AllowCount            int64  `json:"allow_count"`
+	GreyCount             int64  `json:"grey_count"`
+	BanCount              int64  `json:"ban_count"`
+	EmergencyCount        int64  `json:"emergency_count"`
+	LastTickDuration      string `json:"last_tick_duration"`
+	VerifyEnqueued        int64  `json:"verify_enqueued"`
+	VerifyCompleted       int64  `json:"verify_completed"`
+	VerifyVerified        int64  `json:"verify_verified"`
+	VerifyFailed          int64  `json:"verify_failed"`
+	BatchSignalsProcessed int64  `json:"batch_signals_processed"`
+}
+
+// ToExtraInfo serializes the typed struct into the module.ExtraInfo
+// map[string]any contract expected by module.Status.Extra.
+func (e BotGuardStatusExtra) ToExtraInfo() module.ExtraInfo {
+	return module.ExtraInfo{
+		"loop_interval":           e.LoopInterval,
+		"pressure_mode":           e.PressureMode,
+		"tracked_ips":             e.TrackedIPs,
+		"total_ticks":             e.TotalTicks,
+		"suspects_found":          e.SuspectsFound,
+		"classified":              e.Classified,
+		"allow_count":             e.AllowCount,
+		"grey_count":              e.GreyCount,
+		"ban_count":               e.BanCount,
+		"emergency_count":         e.EmergencyCount,
+		"last_tick_duration":      e.LastTickDuration,
+		"verify_enqueued":         e.VerifyEnqueued,
+		"verify_completed":        e.VerifyCompleted,
+		"verify_verified":         e.VerifyVerified,
+		"verify_failed":           e.VerifyFailed,
+		"batch_signals_processed": e.BatchSignalsProcessed,
+	}
+}
+
 // Status returns the current module status.
 func (m *Module) Status() module.Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	m.status.UpdateUptime()
-	m.status.Extra["loop_interval"] = m.config.LoopInterval.String()
-	m.status.Extra["pressure_mode"] = m.stats.PressureMode
-	m.status.Extra["tracked_ips"] = m.stats.TrackedIPs
-	m.status.Extra["total_ticks"] = m.stats.TickCount
-	m.status.Extra["suspects_found"] = m.stats.SuspectsFound
-	m.status.Extra["classified"] = m.stats.Classified
-	m.status.Extra["allow_count"] = m.stats.AllowCount
-	m.status.Extra["grey_count"] = m.stats.GreyCount
-	m.status.Extra["ban_count"] = m.stats.BanCount
-	m.status.Extra["emergency_count"] = m.stats.EmergencyCount
-	m.status.Extra["last_tick_duration"] = m.stats.LastTickDuration.String()
-	m.status.Extra["verify_enqueued"] = m.stats.VerifyEnqueued
-	m.status.Extra["verify_completed"] = m.stats.VerifyCompleted
-	m.status.Extra["verify_verified"] = m.stats.VerifyVerified
-	m.status.Extra["verify_failed"] = m.stats.VerifyFailed
-	m.status.Extra["batch_signals_processed"] = m.stats.BatchSignalsProcessed
+	extra := BotGuardStatusExtra{
+		LoopInterval:          m.config.LoopInterval.String(),
+		PressureMode:          m.stats.PressureMode,
+		TrackedIPs:            m.stats.TrackedIPs,
+		TotalTicks:            m.stats.TickCount,
+		SuspectsFound:         m.stats.SuspectsFound,
+		Classified:            m.stats.Classified,
+		AllowCount:            m.stats.AllowCount,
+		GreyCount:             m.stats.GreyCount,
+		BanCount:              m.stats.BanCount,
+		EmergencyCount:        m.stats.EmergencyCount,
+		LastTickDuration:      m.stats.LastTickDuration.String(),
+		VerifyEnqueued:        m.stats.VerifyEnqueued,
+		VerifyCompleted:       m.stats.VerifyCompleted,
+		VerifyVerified:        m.stats.VerifyVerified,
+		VerifyFailed:          m.stats.VerifyFailed,
+		BatchSignalsProcessed: m.stats.BatchSignalsProcessed,
+	}
+	m.status.Extra = extra.ToExtraInfo()
 
 	return m.status
 }

@@ -451,33 +451,84 @@ func (m *Module) Stop() error {
 	return nil
 }
 
+// LoginMonStatusExtra is the typed status payload for the LoginMon
+// module's Status().Extra field. Field names map to legacy
+// map[string]any keys via JSON tags byte-for-byte; R-12 introduces
+// type-safety without an API change.
+type LoginMonStatusExtra struct {
+	Mode                string           `json:"mode"`
+	SuricataAvailable   bool             `json:"suricata_available"`
+	Services            string           `json:"services"`
+	Detectors           []string         `json:"detectors"`
+	TotalDetections     int64            `json:"total_detections"`
+	TotalBans           int64            `json:"total_bans"`
+	TotalEscalations    int64            `json:"total_escalations"`
+	TotalPermanent      int64            `json:"total_permanent"`
+	UniqueIPs           int64            `json:"unique_ips"`
+	DetectionsIPv4      int64            `json:"detections_ipv4"`
+	DetectionsIPv6      int64            `json:"detections_ipv6"`
+	BansIPv4            int64            `json:"bans_ipv4"`
+	BansIPv6            int64            `json:"bans_ipv6"`
+	TrackedIPs          int              `json:"tracked_ips"`
+	DetectionsByService map[string]int64 `json:"detections_by_service"`
+	BansByService       map[string]int64 `json:"bans_by_service"`
+	DetectionsByReason  map[string]int64 `json:"detections_by_reason"`
+	BansByReason        map[string]int64 `json:"bans_by_reason"`
+}
+
+// ToExtraInfo serializes the typed struct into the module.ExtraInfo
+// map[string]any contract expected by module.Status.Extra.
+func (e LoginMonStatusExtra) ToExtraInfo() module.ExtraInfo {
+	return module.ExtraInfo{
+		"mode":                  e.Mode,
+		"suricata_available":    e.SuricataAvailable,
+		"services":              e.Services,
+		"detectors":             e.Detectors,
+		"total_detections":      e.TotalDetections,
+		"total_bans":            e.TotalBans,
+		"total_escalations":     e.TotalEscalations,
+		"total_permanent":       e.TotalPermanent,
+		"unique_ips":            e.UniqueIPs,
+		"detections_ipv4":       e.DetectionsIPv4,
+		"detections_ipv6":       e.DetectionsIPv6,
+		"bans_ipv4":             e.BansIPv4,
+		"bans_ipv6":             e.BansIPv6,
+		"tracked_ips":           e.TrackedIPs,
+		"detections_by_service": e.DetectionsByService,
+		"bans_by_service":       e.BansByService,
+		"detections_by_reason":  e.DetectionsByReason,
+		"bans_by_reason":        e.BansByReason,
+	}
+}
+
 // Status returns the current module status
 func (m *Module) Status() module.Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	m.status.UpdateUptime()
-	m.status.Extra["mode"] = string(m.mode)
-	m.status.Extra["suricata_available"] = m.suricataAvail
-	m.status.Extra["services"] = m.getServiceList()
-	m.status.Extra["detectors"] = m.registry.Detectors()
-
-	// Add scorer statistics
 	stats := m.scorer.GetStats()
-	m.status.Extra["total_detections"] = stats.TotalDetections
-	m.status.Extra["total_bans"] = stats.TotalBans
-	m.status.Extra["total_escalations"] = stats.TotalEscalations
-	m.status.Extra["total_permanent"] = stats.TotalPermanent
-	m.status.Extra["unique_ips"] = stats.UniqueIPs
-	m.status.Extra["detections_ipv4"] = stats.DetectionsIPv4
-	m.status.Extra["detections_ipv6"] = stats.DetectionsIPv6
-	m.status.Extra["bans_ipv4"] = stats.BansIPv4
-	m.status.Extra["bans_ipv6"] = stats.BansIPv6
-	m.status.Extra["tracked_ips"] = m.scorer.TrackedIPs()
-	m.status.Extra["detections_by_service"] = stats.DetectionsByService
-	m.status.Extra["bans_by_service"] = stats.BansByService
-	m.status.Extra["detections_by_reason"] = stats.DetectionsByReason
-	m.status.Extra["bans_by_reason"] = stats.BansByReason
+	extra := LoginMonStatusExtra{
+		Mode:                string(m.mode),
+		SuricataAvailable:   m.suricataAvail,
+		Services:            m.getServiceList(),
+		Detectors:           m.registry.Detectors(),
+		TotalDetections:     stats.TotalDetections,
+		TotalBans:           stats.TotalBans,
+		TotalEscalations:    stats.TotalEscalations,
+		TotalPermanent:      stats.TotalPermanent,
+		UniqueIPs:           stats.UniqueIPs,
+		DetectionsIPv4:      stats.DetectionsIPv4,
+		DetectionsIPv6:      stats.DetectionsIPv6,
+		BansIPv4:            stats.BansIPv4,
+		BansIPv6:            stats.BansIPv6,
+		TrackedIPs:          m.scorer.TrackedIPs(),
+		DetectionsByService: stats.DetectionsByService,
+		BansByService:       stats.BansByService,
+		DetectionsByReason:  stats.DetectionsByReason,
+		BansByReason:        stats.BansByReason,
+	}
+	m.status.Extra = extra.ToExtraInfo()
 
 	return m.status
 }
