@@ -63,6 +63,7 @@ type Watchdog struct {
 
 	// Metrics callbacks
 	onMetrics func(*Snapshot, *PressureState)
+	onAction  func(Action)
 }
 
 // New creates a new watchdog
@@ -319,9 +320,14 @@ func (w *Watchdog) handleAction(action Action) {
 
 	w.mu.RLock()
 	snapshot := w.lastSnapshot
+	cb := w.onAction
 	w.mu.RUnlock()
 
 	w.recorder.RecordAction(action, snapshot)
+
+	if cb != nil {
+		cb(action)
+	}
 }
 
 // getLevelEntryTime returns when a dimension entered its current level
@@ -377,6 +383,17 @@ func (w *Watchdog) SetOnMetrics(cb func(*Snapshot, *PressureState)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.onMetrics = cb
+}
+
+// SetOnAction sets a callback fired when the watchdog executes an action.
+// The callback runs on the watchdog's action-dispatch goroutine; it must not
+// block. Wires action events into the Prometheus metrics exporter so that
+// nftban_watchdog_action_total and nftban_watchdog_last_action_timestamp_seconds
+// are emitted in production (companion to SetOnMetrics for tick-based metrics).
+func (w *Watchdog) SetOnAction(cb func(Action)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onAction = cb
 }
 
 // GetRecorderStats returns flight recorder statistics
