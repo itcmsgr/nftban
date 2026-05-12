@@ -11,6 +11,190 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.111.0] - 2026-05-12 — V111 PR-A conservative: D-METR-2 watchdog emission gap fix
+
+V111 PR-A conservative lane on top of v1.110.0. Closes D-METR-2 (watchdog
+`nftban_watchdog_action_total` emission gap) via a single focused PR.
+**Schema remains frozen at `1.83.0`.** **No new metric names, no new metric
+registrations, no schema or contract changes.** Behavior change confined to
+two already-registered watchdog Prometheus counters now actually advancing
+in production when watchdog actions fire (previously registered via
+`promauto` at package init but never incremented because the production
+action-fire path did not invoke the Prometheus emission method).
+
+### Goals
+
+Close the single highest-value frozen-safe sub-item from the D-MET-1 portal-
+evidence checklist surfaced in `V111_METRICS_PORTAL_SCOPE_PREFLIGHT.md`:
+
+- **D-METR-2** — fix the orphaned `MetricsExporter.RecordAction` so that
+  `nftban_watchdog_action_total{action=...}` and
+  `nftban_watchdog_last_action_timestamp_seconds{action=...}` actually
+  increment in production.
+
+Conservative path deliberately chosen per PR-A scope artifact §4 friction
+analysis: PR-M2b-w1 host-vitals registration was deferred to v1.112 to
+avoid the "new metric registration" interpretation ambiguity (the 6
+host-vitals metric names are pre-declared in schema doc 17 §F4 and
+pre-accepted in the receiver-v2 181-entry allow-list, but implementing
+them requires new `promauto.New*` calls that need an explicit operator
+contract-fulfill judgment on a future schema-fulfill gate
+`OPEN-V112-SCHEMA-FULFILL-HOST-VITALS-SCOPE`).
+
+### Primary Item
+
+**PR #602 — `fix(watchdog): wire MetricsExporter.RecordAction via SetOnAction
+callback` (D-METR-2)** (squash `7334e63e`). 4 files (+267/-0).
+
+Fix mirrors the existing `onMetrics`/`SetOnMetrics` callback pattern (used
+for per-tick metrics pump) with a parallel `onAction`/`SetOnAction` hook
+(for action-fire events), then wires the daemon side in
+`cmd/nftband/daemon_init.go` immediately after the existing `SetOnMetrics`
+block:
+
+```go
+wd.SetOnAction(func(action watchdog.Action) {
+    d.wdMetrics.RecordAction(action)
+})
+```
+
+Root cause was a clean orphaned-method gap discovered during the PR-A
+daemon-source audit: `MetricsExporter.RecordAction(action)` at
+`internal/watchdog/metrics.go:366-369` had been defined since the watchdog
+metrics package was created, but no production caller ever invoked it.
+`Watchdog.handleAction()` at `internal/watchdog/watchdog.go:317-325`
+dispatched only to the in-memory flight recorder (`Recorder.RecordAction`
+at `internal/watchdog/flight_recorder.go:98`), never to the Prometheus
+exporter — so both counter metrics appeared in `/metrics` output at zero
+value forever, even when the watchdog was actively taking actions.
+
+**Files touched (strict envelope, locked at PR-A scope gate):**
+
+- `internal/watchdog/watchdog.go` (+17): `onAction func(Action)` field
+  added to `Watchdog` struct alongside `onMetrics`; new `SetOnAction(cb)`
+  setter mirrors `SetOnMetrics` exactly (same `mu.Lock`/`defer Unlock`
+  pattern); `handleAction()` now captures `cb := w.onAction` under
+  `RLock`, releases, then calls `cb(action)` if non-nil (race-safe
+  release-before-call pattern).
+- `cmd/nftband/daemon_init.go` (+7): `wd.SetOnAction(...)` block inserted
+  after the `SetOnMetrics` closure at line 415, with a 3-line comment
+  citing D-METR-2.
+- `internal/watchdog/metrics_test.go` (NEW, +194): 5 tests covering the
+  full contract — `TestSetOnAction_NilSafe`, `TestSetOnAction_Fires`,
+  `TestSetOnAction_Replace`, `TestSetOnAction_ConcurrentSetAndDispatch`
+  (race coverage of the `mu.Lock` pattern under `-race`), and
+  `TestMetricsExporter_RecordAction_Smoke` (verifies the previously
+  orphaned `RecordAction` is callable for all 7 documented `ActionType`
+  values: `throttle`, `disable_optional`, `profile_cpu`, `profile_heap`,
+  `profile_goroutine`, `free_os_memory`, `degrade_mode`).
+- `internal/watchdog/executor_test.go` (+49): `TestActionExecutor_FiresWatchdogOnAction`
+  end-to-end chain regression — constructs a full `Watchdog`, sets a
+  test `onAction` callback via `SetOnAction`, then invokes
+  `w.executor.recordAction(action)` to verify the full production chain
+  (executor → `handleAction` via `SetOnAction(w.handleAction)` at
+  `watchdog.go:105` → `w.onAction`) fires exactly once with the correct
+  `Action` payload.
+
+### Behavior changes (narrow, explicit)
+
+- **`nftban_watchdog_action_total{action=...}`** now emits non-zero counter
+  values in production when the watchdog executes actions. Previously
+  registered but always zero.
+- **`nftban_watchdog_last_action_timestamp_seconds{action=...}`** now emits
+  Unix timestamps when actions fire. Previously registered but always
+  zero.
+
+Both metric names were already in the schema 1.83.0 frozen contract set
+at v1.110.0; this release only makes their emission paths reach the
+Prometheus default registry in production.
+
+**No other behavior change in `nftban-core` / `nftband` daemons.** No new
+metric names. No new metric registrations. No schema or contract changes.
+No portal, install API, panel-adapter, FHS-ATG, Self-Healing,
+POLKIT-AUTHORITY, dns2-migration, eventbus, packaging, or systemd
+changes.
+
+### Why this is safe
+
+Pre-merge **PR-A daemon-source scope audit**
+(`V111_METRICS_PORTAL_PR_A_SCOPE.md`) answered 10 locked questions with
+file:line evidence. Pre-merge **PR-A prerequisite check**
+(`V111_PR_A_PREREQUISITE_CHECK.md`) verified 7 invariant axes:
+
+1. **R-10 module-isolation lint SAFE** — `scripts/lint-module-isolation.sh`
+   autodiscovers Module implementers via `func (m *Module) Name() string`;
+   watchdog has zero hits (it is a subsystem coordinator, not the
+   `module.Module` interface). A1/A2/A3 invariants do not apply.
+2. **R-12 typed `Status().Extra` SAFE** — only applies to the 4 Module
+   implementers (`ddos`, `portscan`, `loginmon`, `botguard` per v1.110.0
+   PR #600); watchdog has no `Status() module.Status` method.
+3. **Watchdog struct READY** — existing `onMetrics`/`SetOnMetrics`
+   callback pattern (per-tick pump, daemon wires via
+   `cmd/nftband/daemon_init.go:387-388`) is directly mirrorable.
+4. **ActionExecutor already wired** — `executor.go:43-59` defines
+   `onAction func(Action)` + `SetOnAction(cb)`; `watchdog.go:105` calls
+   `w.executor.SetOnAction(w.handleAction)`. The bug was one missing
+   hop: `handleAction` never bridged to `d.wdMetrics.RecordAction`.
+5. **Config-loader NO change** — watchdog config (`config.go:77-79`) has
+   only `ProcessInterval`/`SystemInterval`/`KernelInterval`; no action
+   or host-vitals keys touched.
+6. **No `internal/contracts/` directory exists**; no nftban-core
+   metric-inventory CI gate to update.
+7. **`ci-architecture.yml`** runs the R-10 lint only; does not lint
+   metric registrations.
+
+Master worklog cross-check confirmed no blocker: receiver-v2 PR-M4
+enforcement was already DONE + LIVE in production since the M-T9 cutover
+2026-05-02 (per `nftbanpro_cms/docs/CURRENT_STATE.md` 2026-05-03 update +
+direct receiver-v2 source inspection); v1.111 PR-A was the only
+outstanding nftban-core deliverable required to close the watchdog
+emission half of D-METR-2.
+
+### Explicit non-goals carried forward to v1.112+ as separately-gated future debt
+
+- **PR-M2b-w1 host vitals emission** — DEFERRED to v1.112 schema-fulfill
+  gate. Requires 6 new `promauto.New*` registrations for
+  `nftban_host_load_average`, `nftban_host_memory_{total,used,available}_bytes`,
+  `nftban_host_disk_usage_ratio`, `nftban_host_oom_events_total`. Names
+  already in schema doc 17 §F4 + receiver-v2 181-entry allow-list, but
+  the "new metric registration" interpretation ambiguity requires
+  explicit operator authorization. Proposed gate
+  `OPEN-V112-SCHEMA-FULFILL-HOST-VITALS-SCOPE`. Estimated envelope
+  ~200-300 LOC including new `internal/watchdog/collector_host.go`.
+- **PR-M2c new nft named counters** (`ddos_drop`, `whitelist_hit`,
+  `feed_hit`, `geoban_hit`) — CROSSES freeze; requires schema-unfreeze
+  gate.
+- **PR-M2d kernel set element annotation cookies** — CROSSES freeze;
+  requires schema-unfreeze gate plus migration plan for existing set
+  elements.
+- **PR-M2b-w2..w7** — 6 module-emission waves (LoginMon, DDoS, BotGuard,
+  Feed, Geoban, Suricata); per-wave gating recommended once
+  PR-M2b-w1 lands cleanly.
+- **PR-M3** cache v2 producer (depends on PR-M2 cache reorganization);
+  **PR-M1** CLI formatter (depends on PR-M3). Both deferred to v1.112+.
+- **D-LMA-1** legacy `/opt/nftban-pro:3000` decommission decision —
+  sibling W1 governance lane; observation window OPEN since 2026-05-02
+  M-T9 cutover (~10+ days mature). Separable from v1.111.0 release
+  timing.
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract — explicitly
+  deferred from V110 moderate cut.
+- **D-DNS-1** dns2 host migration execution — PARTIALLY FIXED (BUG side
+  closed in v1.108.0 PR #592; DESIGN-FIX side still OPEN).
+- **D-FHS-1..5** FHS Authority Graph; **D-SHA-1**
+  SELF-HEALING-AUTHORITY-REDESIGN; **D-POL-1** POLKIT-AUTHORITY impl
+  decisions; **D-DEG-1** V108 Item 4 DEGRADED-runtime-pattern
+  investigation; **D-SEC-1** SEC-FW-BYPASS-ALERT-GAP-001; **D-TRP-1**
+  TRANSPORT-001; **D-EGM-1** EgressMon (CONDITIONAL GO
+  post-CVE-2026-41940); **D-PNL-1** Panel architecture consolidation;
+  **D-OSH-1** OS hardening blueprint; **D-GHC-1** optional GHCR `sha-*`
+  retention policy; **D-BKT-1** Bucket C 14 v0.x tag historical-review
+  (remote untouched).
+
+v1.111.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.111.0 defect surfaces).
+
+---
+
 ## [v1.110.0] - 2026-05-12 — V110 module-isolation moderate-cut lane
 
 V110 module-isolation lane on top of v1.109.0. Closes R-10 and R-12
