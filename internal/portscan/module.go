@@ -285,15 +285,38 @@ func (m *Module) Stop() error {
 	return nil
 }
 
+// PortscanStatusExtra is the typed status payload for the Portscan
+// module's Status().Extra field. Field names map to legacy
+// map[string]any keys via JSON tags byte-for-byte; R-12 introduces
+// type-safety without an API change.
+type PortscanStatusExtra struct {
+	Mode              string `json:"mode"`
+	SuricataAvailable bool   `json:"suricata_available"`
+	ScansDetected     int64  `json:"scans_detected"`
+}
+
+// ToExtraInfo serializes the typed struct into the module.ExtraInfo
+// map[string]any contract expected by module.Status.Extra.
+func (e PortscanStatusExtra) ToExtraInfo() module.ExtraInfo {
+	return module.ExtraInfo{
+		"mode":               e.Mode,
+		"suricata_available": e.SuricataAvailable,
+		"scans_detected":     e.ScansDetected,
+	}
+}
+
 // Status returns the current module status
 func (m *Module) Status() module.Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	m.status.UpdateUptime()
-	m.status.Extra["mode"] = m.mode
-	m.status.Extra["suricata_available"] = m.suricataAvail
-	m.status.Extra["scans_detected"] = m.scansDetected
+	extra := PortscanStatusExtra{
+		Mode:              m.mode,
+		SuricataAvailable: m.suricataAvail,
+		ScansDetected:     m.scansDetected,
+	}
+	m.status.Extra = extra.ToExtraInfo()
 
 	return m.status
 }

@@ -23,8 +23,11 @@
 package portscan
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/itcmsgr/nftban/internal/module"
 )
 
 // newTestModule creates a Module without calling nftbanconf.MustLoad() so
@@ -242,5 +245,33 @@ func TestModule_Name(t *testing.T) {
 	m := newTestModule()
 	if m.Name() != "portscan" {
 		t.Errorf("Name() = %q, want %q", m.Name(), "portscan")
+	}
+}
+
+// =============================================================================
+// PortscanStatusExtra.ToExtraInfo() Tests (V110 R-12)
+// =============================================================================
+
+// TestPortscanStatusExtra_ToExtraInfo asserts the typed-status struct
+// marshals to the byte-exact module.ExtraInfo map[string]any contract.
+// Backstops the V110 R-12 invariant that Module.Status() API and
+// JSON wire keys remain unchanged after the typed-struct refactor.
+func TestPortscanStatusExtra_ToExtraInfo(t *testing.T) {
+	extra := PortscanStatusExtra{
+		Mode:              "classic",
+		SuricataAvailable: true,
+		ScansDetected:     42,
+	}
+	want := module.ExtraInfo{
+		"mode":               "classic",
+		"suricata_available": true,
+		"scans_detected":     int64(42),
+	}
+	got := extra.ToExtraInfo()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ToExtraInfo() = %v, want %v", got, want)
+	}
+	if len(got) != 3 {
+		t.Errorf("ToExtraInfo() key count = %d, want 3", len(got))
 	}
 }
