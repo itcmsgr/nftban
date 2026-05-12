@@ -99,21 +99,69 @@ Interpretation rules:
 
 ## Quick Install
 
-### Ubuntu 24.04 / Debian 12
+### Tier 0 — Primary Platforms
 
+#### Ubuntu 24.04 LTS (Noble)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
 sudo apt install -y ./nftban-ubuntu24.04-amd64.deb
 ```
 
-### Rocky / AlmaLinux / RHEL 9
+#### Debian 12 (Bookworm)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+sudo apt install -y ./nftban-debian12-amd64.deb
+```
 
+#### Rocky / AlmaLinux / RHEL 9
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
 sudo dnf install -y ./nftban-el9-x86_64.rpm
 ```
 
-See [Supported Platforms](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for full matrix.
+### Tier 1 — Future Platforms
+
+#### Debian 13 (Trixie)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+sudo apt install -y ./nftban-debian13-amd64.deb
+```
+
+#### Rocky / AlmaLinux / RHEL 10
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
+sudo dnf install -y ./nftban-el10-x86_64.rpm
+```
+
+### Tier 2 — Legacy Platforms
+
+#### Ubuntu 22.04 LTS (Jammy)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
+sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
+```
+
+---
+
+## Available Packages
+
+### RPM Packages (EL Family)
+
+| Tier | Distribution | Version | Package |
+|------|--------------|---------|---------|
+| 0 | Rocky / Alma / RHEL / CentOS Stream | 9 | [nftban-el9-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm) |
+| 1 | Rocky / Alma / RHEL / CentOS Stream | 10 | [nftban-el10-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm) |
+
+### DEB Packages (Ubuntu + Debian)
+
+| Tier | Distribution | Version | Package |
+|------|--------------|---------|---------|
+| 0 | Ubuntu | 24.04 (Noble) | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
+| 0 | Debian | 12 (Bookworm) | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
+| 1 | Debian | 13 (Trixie) | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
+| 2 | Ubuntu | 22.04 (Jammy) | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
+
+> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. See [Supported Platforms](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for the full platform contract.
 
 ---
 
