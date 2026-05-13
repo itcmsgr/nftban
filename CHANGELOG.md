@@ -11,6 +11,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.112.2] - 2026-05-13 — V112.2 hotfix: DEB postinst tmpfiles ordering before service activation
+
+V112.2 single-PR packaging hotfix on top of v1.112.1. Closes a long-latent
+DEB-postinst ordering defect exposed under V112.2 fresh-install validation
+across the 9-VM lab fleet (`hyperv-itcms`) plus lab2 snapshot rebuild.
+**Zero impact on v1.112.x release content** — the Go daemon, all exporter
+scripts (including the v1.112.1 line-805 Shape A fix which stays in place),
+the systemd unit files, and the FHS spec are all UNCHANGED. **Schema
+1.83.0 remains frozen.** **No RPM packaging change.**
+
+### Defect
+
+`packaging/deb/postinst` invokes the Go installer (which triggers service
+activation) BEFORE creating the runtime tree shipped via
+`/usr/lib/tmpfiles.d/nftban.conf`. With `nftband.service` declaring
+`ReadWritePaths=/var/cache/nftban` for systemd mount-namespace isolation,
+systemd refuses the unit at namespace setup with:
+
+```
+nftband.service: Failed to set up mount namespacing:
+/var/cache/nftban: No such file or directory
+status=226/NAMESPACE
+```
+
+`nftban-unified-exporter.service` inherits the same failure path and
+surfaces as `exit-code 2/INVALIDARGUMENT` — the SAME visible symptom that
+motivated v1.112.1 PR #606, but rooted in packaging ordering rather than
+shell arithmetic.
+
+### Why v1.112.1 fix was insufficient
+
+PR #606 line-805 Shape A arithmetic fix is a real defensive improvement
+but targets a different surface (the extended-mode `live extended` code
+path in `nftban_unified_exporter_collect.sh`). The actual broader
+V112-class regression was this DEB-postinst ordering gap — visible from
+minute one in the journal as `nftband.service 226/NAMESPACE` one layer
+earlier than the unified-exporter exit=2 that V112.1 chased. PR #606
+remains correctly merged at v1.112.1 as a defensive improvement and is
+unrelated to this hotfix.
+
+### Fix
+
+Insert a tmpfiles-create call between `systemctl daemon-reload` and the
+Go-installer invocation block:
+
+```sh
+if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+fi
+```
+
+Idempotent (`[ -f ]` guard + redirect + `|| true` fallback). The package-
+shipped tmpfiles config creates `/var/cache/nftban`, `/run/nftban`,
+`/var/log/nftban`, and the rest of the runtime tree before any unit with
+`ReadWritePaths=` references those paths.
+
+### Reproduction matrix (11 hosts)
+
+Evidence preserved at
+`AUDIT_190_LIFECYCLE/V112_HOST_VITALS_EVIDENCE/v112_2_vm_fleet/`.
+
+| Host | OS / Pkg | Reproduced exit=2? |
+|---|---|---|
+| lab4 | AlmaLinux 9 RPM | ❌ |
+| lab2 (post snapshot rebuild) | Ubuntu 24.04 DEB | ✅ (preinst-blocked first; after manual tmpfiles + restart → 10/10 SUCCESS) |
+| tgt-a9 | AlmaLinux 9 RPM | ❌ |
+| tgt-r9 | Rocky 9 RPM | ❌ |
+| tgt-cs9 | CentOS Stream 9 RPM | ❌ |
+| tgt-a8 | AlmaLinux 8 (cross-major el9 RPM) | ❌ |
+| **tgt-d11** | **Debian 11 DEB** | **✅** |
+| **tgt-d12** | **Debian 12 DEB** | **✅ (r1-r3 exit=2, then 7/10 pass)** |
+| **tgt-d13** | **Debian 13 DEB** | **✅ (r1-r4+ exit=2 then SUCCESS)** |
+| **tgt-u2204** | **Ubuntu 22.04 DEB** | **✅ (r1-r3 exit=2, then 7/10 pass)** |
+| **tgt-u2404** | **Ubuntu 24.04 DEB** | **✅ (r1-r4 exit=2 then SUCCESS)** |
+
+5/5 RPM hosts: clean. 4/4 fresh DEB VMs: reproduced. Defect localized
+to DEB postinst ordering exclusively.
+
+### Files touched (the entire envelope)
+
+- `packaging/deb/postinst` (+16 / -0)
+
+No Go source changes, no schema changes, no unit files, no FHS spec,
+no RPM packaging, no other generated files, no go.mod/go.sum.
+
+### Behavior changes
+
+- Fresh DEB installs (Debian 11/12/13 + Ubuntu 22.04/24.04) now bring
+  `nftband.service` and `nftban-unified-exporter.service` up successfully
+  on first activation; the manual
+  `systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf` workaround
+  is no longer required.
+- All other behavior unchanged.
+
+**No change in Go daemon `/metrics` output. No change in receiver-v2
+ingest contract. No change in schema, metric names, label cardinality,
+or systemd unit hardening.**
+
+### Why this is safe (pre-merge attestation)
+
+Pre-merge investigation gate (`V112_2_HOTFIX_SCOPE_LOCKED.md`) reproduced
+the defect on 4/4 fresh DEB VMs with per-VM before/after evidence
+preserved. RPM hosts (5/5) never reproduced because RPM `%post`
+scriptlet ordering already creates the runtime tree before service
+activation. Manual workaround (`systemd-tmpfiles --create` +
+`systemctl restart nftband.service`) demonstrated 10/10 SUCCESS on lab2
+post-install, confirming tmpfiles-create is the precise remediation.
+PR #608 verification gate confirmed 1-file 16-line envelope strict;
+all 4 RPM install workflows (alma9 / centos-stream9 / centos-stream10 /
+rocky9) and 4 DEB install workflows (debian12 / debian13 / ubuntu22.04 /
+ubuntu24.04) CI checks PASS plus Runtime Truth (almalinux-9 +
+ubuntu-24.04) plus package effective parity plus systemd ExecStart
+payload resolution.
+
+### Investigation lesson captured
+
+When a systemd unit fails, ALWAYS read one journal layer earlier — the
+decisive error often sits in a dependent unit. Here, `nftband.service`
+`226/NAMESPACE` was visible from minute one but V112.1 chased the
+downstream exporter `exit=2`. Status codes 200–255 indicate
+pre-script-exec setup failure (namespace / capabilities / user / cgroup),
+not script-body bugs. Documented at
+`/home/gituser/.claude/projects/-home-gituser-github-nftban/memory/feedback_investigation_follow_layer_one_journal.md`.
+
+Prevention CI guard recorded as separately-gated future debt:
+`OPEN_V112_2_CI_FRESH_INSTALL_GUARD_PR` would add a CI truth case
+asserting "remove `/var/cache/nftban` → install DEB → service must
+start without `226/NAMESPACE`".
+
+### Explicit non-goals carried forward to v1.113+ as separately-gated future debt
+
+All v1.112.0 and v1.112.1 deferred items remain deferred:
+
+- **PR-M2b-w2..w7** per-module emission waves (LoginMon, DDoS, BotGuard,
+  Feed, Geoban, Suricata)
+- **PR-M2c** new nft named counters — schema-unfreeze required
+- **PR-M2d** kernel set element annotation cookies — schema-unfreeze +
+  migration plan
+- **PR-M3** cache v2 producer + **PR-M1** CLI formatter
+- **§F4 metrics beyond the 6 PR-M2b-w1 targets** (CPU details, swap,
+  inodes, IO wait, SMART, RAID, service health)
+- **D-LMA-1** legacy `/opt/nftban-pro:3000` decommission — sibling W1
+  governance lane
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract
+- **D-DNS-1** dns2 host migration (DESIGN-FIX side OPEN)
+- **D-FHS-1..5**, **D-SHA-1**, **D-POL-1**, **D-DEG-1**, **D-SEC-1**,
+  **D-TRP-1**, **D-EGM-1**, **D-PNL-1**, **D-OSH-1**, **D-GHC-1**,
+  **D-BKT-1**
+- **OPEN_V112_2_CI_FRESH_INSTALL_GUARD_PR** — CI prevention guard
+- **OPEN_V112_2_RPM_POST_DEFENSIVE_HOTFIX_PR** — RPM defense-in-depth
+- **OPEN_V112_2_EXPORTER_INVOCATION_INVESTIGATION_RESUME** — companion
+  bash-wrapped vs bare-path question
+
+v1.112.3 hotfix slot **not authorized** (latent reservation only).
+
+---
+
 ## [v1.112.1] - 2026-05-12 — V112.1 hotfix: unified-exporter arithmetic syntax error on EL9 + Ubuntu
 
 V112.1 single-PR hotfix on top of v1.112.0. Closes a v1.112.0-released
