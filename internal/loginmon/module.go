@@ -736,13 +736,13 @@ func (m *Module) parseShellConfig(content string) {
 				m.config.SubnetWindow = d
 			}
 		case "LOGINMON_EXIM_SUBNET_UNIQUE_IPS":
-			fmt.Sscanf(value, "%d", &m.config.SubnetUniqueIPsMin)
+			_, _ = fmt.Sscanf(value, "%d", &m.config.SubnetUniqueIPsMin)
 		case "LOGINMON_EXIM_SUBNET_MIN_TOTAL_EVENTS":
-			fmt.Sscanf(value, "%d", &m.config.SubnetMinTotalEvents)
+			_, _ = fmt.Sscanf(value, "%d", &m.config.SubnetMinTotalEvents)
 		case "LOGINMON_EXIM_SUBNET_IPV4_PREFIX":
-			fmt.Sscanf(value, "%d", &m.config.SubnetIPv4Prefix)
+			_, _ = fmt.Sscanf(value, "%d", &m.config.SubnetIPv4Prefix)
 		case "LOGINMON_EXIM_SUBNET_IPV6_PREFIX":
-			fmt.Sscanf(value, "%d", &m.config.SubnetIPv6Prefix)
+			_, _ = fmt.Sscanf(value, "%d", &m.config.SubnetIPv6Prefix)
 		case "LOGINMON_EXIM_SUBNET_ACTION":
 			lc := strings.ToLower(value)
 			// v1.113 ships only ban_cidr; pressure_score + dynamic_threshold

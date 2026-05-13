@@ -31,6 +31,7 @@
 package detector
 
 import (
+	"math"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -740,12 +741,23 @@ func (s *Scorer) emitSubnetBan(prefix netip.Prefix, state *SubnetState, v Verdic
 	// counters using the triggering verdict's labels.
 	s.incrementServiceBan(v.Service)
 	s.incrementReasonBan(v.Reason)
+	// Defensive int32 clamp on the unique-IP count. In practice the value is
+	// always tiny (threshold check fires at SubnetUniqueIPsMin = 5 default;
+	// the per-prefix map rarely exceeds a few dozen IPs), but gosec G115
+	// flags any unchecked int→int32 conversion.
+	uc := len(state.UniqueIPs)
+	var score int32
+	if uc > math.MaxInt32 {
+		score = math.MaxInt32
+	} else {
+		score = int32(uc) // #nosec G115 — bounded above by explicit MaxInt32 check
+	}
 	return &BanAction{
 		IP:       v.IP, // triggering IP (audit-log attribution)
 		Prefix:   prefix,
 		Duration: s.config.SubnetCIDRBanDuration,
 		Reason:   ReasonName[v.Reason] + "_subnet",
-		Score:    int32(len(state.UniqueIPs)), // unique-IP count as "score"
+		Score:    score, // unique-IP count as "score"
 		Service:  v.Service,
 		IsNew:    true,
 		IsSubnet: true,
