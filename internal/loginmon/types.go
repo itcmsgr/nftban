@@ -213,6 +213,24 @@ type Config struct {
 	// Thresholds
 	MaxFailedAttempts int // Max failed attempts before blocking (default: 5)
 	MaxUsersPerIP     int // Max different users from same IP before suspicious (default: 3)
+
+	// ==========================================================================
+	// v1.113 SUBNET AGGREGATION (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP)
+	// ==========================================================================
+	// Closes per-IP-only scoring blindspot to rotating /24 SMTP brute force.
+	// Opt-in default-false. Configurable via /etc/nftban/conf.d/login/scorer.conf
+	// with LOGINMON_EXIM_SUBNET_AGG_* env keys; plumbed into ScorerConfig by
+	// Module.buildScorerConfig().
+
+	SubnetAggEnabled      bool          // Master toggle (default: false; explicit opt-in)
+	SubnetAggMode         string        // "observe" or "enforce" (default: "observe")
+	SubnetWindow          time.Duration // Rolling-window duration (default: 5m)
+	SubnetUniqueIPsMin    int           // Min distinct IPs in window to trigger (default: 5)
+	SubnetMinTotalEvents  int           // Min total events in window to trigger (default: 10)
+	SubnetIPv4Prefix      int           // IPv4 aggregation prefix bits (default: 24)
+	SubnetIPv6Prefix      int           // IPv6 aggregation prefix bits (default: 64)
+	SubnetAction          string        // "ban_cidr" only ships v1.113 (default: "ban_cidr")
+	SubnetCIDRBanDuration time.Duration // Duration of subnet bans (default: 24h)
 }
 
 // NewLoginState creates a new login monitor state
@@ -270,5 +288,16 @@ func DefaultConfig() *Config {
 		ProfileRetention:    constants.LoginmonProfileRetention,
 		MaxFailedAttempts:   5,
 		MaxUsersPerIP:       3,
+
+		// v1.113 subnet-aggregation defaults — opt-in (ENABLED=false).
+		SubnetAggEnabled:      false,
+		SubnetAggMode:         "observe",
+		SubnetWindow:          5 * time.Minute,
+		SubnetUniqueIPsMin:    5,
+		SubnetMinTotalEvents:  10,
+		SubnetIPv4Prefix:      24,
+		SubnetIPv6Prefix:      64,
+		SubnetAction:          "ban_cidr",
+		SubnetCIDRBanDuration: 24 * time.Hour,
 	}
 }

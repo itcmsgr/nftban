@@ -83,3 +83,88 @@ func TestLoginMonStatusExtra_ToExtraInfo(t *testing.T) {
 		t.Errorf("ToExtraInfo() key count = %d, want 18", len(got))
 	}
 }
+
+// TestLoginMonStatusExtra_SubnetFields_ZeroOmitted asserts the v1.113
+// subnet-aggregation fields are omitted from ToExtraInfo() when zero, so
+// hosts where the feature is disabled produce byte-identical Status.Extra
+// payloads compared to v1.112 (preserves the wire-format invariant from
+// the R-12 typed status struct introduction).
+func TestLoginMonStatusExtra_SubnetFields_ZeroOmitted(t *testing.T) {
+	extra := LoginMonStatusExtra{
+		Mode:                "auto",
+		SuricataAvailable:   true,
+		Services:            "ssh,ftp",
+		Detectors:           []string{"SSHDetector"},
+		TotalDetections:     1,
+		TotalBans:           1,
+		TotalEscalations:    0,
+		TotalPermanent:      0,
+		UniqueIPs:           1,
+		DetectionsIPv4:      1,
+		DetectionsIPv6:      0,
+		BansIPv4:            1,
+		BansIPv6:            0,
+		TrackedIPs:          1,
+		DetectionsByService: map[string]int64{},
+		BansByService:       map[string]int64{},
+		DetectionsByReason:  map[string]int64{},
+		BansByReason:        map[string]int64{},
+		// SubnetPressureCount, SubnetBansTotal, SubnetWatchActive all zero (default).
+	}
+	got := extra.ToExtraInfo()
+	if _, present := got["subnet_pressure_count"]; present {
+		t.Errorf("zero SubnetPressureCount should be omitted; got key present")
+	}
+	if _, present := got["subnet_bans_total"]; present {
+		t.Errorf("zero SubnetBansTotal should be omitted; got key present")
+	}
+	if _, present := got["subnet_watch_active"]; present {
+		t.Errorf("zero SubnetWatchActive should be omitted; got key present")
+	}
+	if len(got) != 18 {
+		t.Errorf("ToExtraInfo() with zero subnet fields key count = %d, want 18", len(got))
+	}
+}
+
+// TestLoginMonStatusExtra_SubnetFields_NonZeroEmitted asserts that when the
+// v1.113 subnet-aggregation fields hold non-zero values, ToExtraInfo()
+// emits them under stable JSON keys for portal + status consumers.
+func TestLoginMonStatusExtra_SubnetFields_NonZeroEmitted(t *testing.T) {
+	extra := LoginMonStatusExtra{
+		Mode:                "auto",
+		SuricataAvailable:   true,
+		Services:            "exim",
+		Detectors:           []string{"MailDetector"},
+		TotalDetections:     50,
+		TotalBans:           5,
+		TotalEscalations:    0,
+		TotalPermanent:      0,
+		UniqueIPs:           11,
+		DetectionsIPv4:      50,
+		DetectionsIPv6:      0,
+		BansIPv4:            5,
+		BansIPv6:            0,
+		TrackedIPs:          11,
+		DetectionsByService: map[string]int64{"exim": 50},
+		BansByService:       map[string]int64{"exim": 5},
+		DetectionsByReason:  map[string]int64{"exim_auth_fail": 50},
+		BansByReason:        map[string]int64{"exim_auth_fail_subnet": 1, "exim_auth_fail": 4},
+		// v1.113 subnet fields populated:
+		SubnetPressureCount: 7,
+		SubnetBansTotal:     1,
+		SubnetWatchActive:   3,
+	}
+	got := extra.ToExtraInfo()
+	if got["subnet_pressure_count"] != int64(7) {
+		t.Errorf("subnet_pressure_count = %v, want 7", got["subnet_pressure_count"])
+	}
+	if got["subnet_bans_total"] != int64(1) {
+		t.Errorf("subnet_bans_total = %v, want 1", got["subnet_bans_total"])
+	}
+	if got["subnet_watch_active"] != int64(3) {
+		t.Errorf("subnet_watch_active = %v, want 3", got["subnet_watch_active"])
+	}
+	if len(got) != 21 {
+		t.Errorf("ToExtraInfo() with all 3 subnet fields populated key count = %d, want 21", len(got))
+	}
+}
