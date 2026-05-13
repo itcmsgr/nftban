@@ -388,6 +388,351 @@ func TestScorer_BanEscalationLadder(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// v1.113 SUBNET AGGREGATION TESTS (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP)
+// =============================================================================
+// Closes the rotating-/24 SMTP brute-force blindspot exposed by the srv1
+// production incident 2026-05-13. Per-IP scoring couldn't ban any single
+// 81.30.98.x IP because each made only 1-2 attempts (15-30 pts < 45-pt
+// threshold). Subnet aggregation watches the /24 itself and bans the CIDR
+// when N unique IPs + M total events fire within the window.
+
+// subnetTestConfig returns a ScorerConfig with low thresholds + short window
+// suitable for unit tests. Time-window tests use durations measured in ms.
+func subnetTestConfig() ScorerConfig {
+	c := DefaultScorerConfig()
+	c.RecentBanWindow = 0 // disable per-IP dedup so tests run rapidly
+	c.SubnetAggEnabled = true
+	c.SubnetAggMode = "enforce"
+	c.SubnetWindow = 200 * time.Millisecond // short window for window-expiry tests
+	c.SubnetUniqueIPsMin = 3                // lower than default 5 for shorter tests
+	c.SubnetMinTotalEvents = 4              // lower than default 10
+	c.SubnetIPv4Prefix = 24
+	c.SubnetIPv6Prefix = 64
+	c.SubnetAction = "ban_cidr"
+	c.SubnetCIDRBanDuration = 1 * time.Hour
+	c.SubnetMaxTracked = 100
+	c.SubnetTriggerReasonOnly = true
+	return c
+}
+
+func TestSubnetAgg_DisabledNoOp(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetAggEnabled = false
+	s := NewScorer(c)
+	// Send well over the trigger threshold from 5 different IPs in same /24.
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetPressureCount != 0 {
+		t.Errorf("SubnetPressureCount = %d, want 0 (disabled)", stats.SubnetPressureCount)
+	}
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("SubnetBansTotal = %d, want 0 (disabled)", stats.SubnetBansTotal)
+	}
+	if s.TrackedSubnets() != 0 {
+		t.Errorf("TrackedSubnets = %d, want 0 (disabled)", s.TrackedSubnets())
+	}
+}
+
+func TestSubnetAgg_ObserveMode_TriggersPressureNotBan(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetAggMode = "observe"
+	s := NewScorer(c)
+	var lastAction *BanAction
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		lastAction = s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	if lastAction != nil && lastAction.IsSubnet {
+		t.Errorf("observe mode should NOT return a subnet BanAction; got %+v", lastAction)
+	}
+	stats := s.GetStats()
+	if stats.SubnetPressureCount == 0 {
+		t.Errorf("SubnetPressureCount = 0, want > 0 (observe-mode pressure should increment)")
+	}
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("SubnetBansTotal = %d, want 0 (observe mode does not ban)", stats.SubnetBansTotal)
+	}
+}
+
+func TestSubnetAgg_EnforceMode_TriggersCIDRBan(t *testing.T) {
+	c := subnetTestConfig() // enforce by default in helper
+	s := NewScorer(c)
+	var subnetAction *BanAction
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		action := s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+		if action != nil && action.IsSubnet {
+			subnetAction = action
+		}
+	}
+	if subnetAction == nil {
+		t.Fatal("expected a subnet BanAction in enforce mode after threshold met")
+	}
+	if !subnetAction.IsSubnet {
+		t.Errorf("BanAction.IsSubnet = false, want true")
+	}
+	wantPrefix := netip.MustParsePrefix("81.30.98.0/24")
+	if subnetAction.Prefix != wantPrefix {
+		t.Errorf("BanAction.Prefix = %v, want %v", subnetAction.Prefix, wantPrefix)
+	}
+	if !subnetAction.IsNew {
+		t.Errorf("subnet ban should be marked IsNew=true")
+	}
+	if subnetAction.Reason != "exim_auth_fail_subnet" {
+		t.Errorf("Reason = %q, want exim_auth_fail_subnet", subnetAction.Reason)
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 1 {
+		t.Errorf("SubnetBansTotal = %d, want 1", stats.SubnetBansTotal)
+	}
+	if stats.SubnetWatchActive != 1 {
+		t.Errorf("SubnetWatchActive = %d, want 1", stats.SubnetWatchActive)
+	}
+}
+
+func TestSubnetAgg_DualThresholdGuard_UniqueIPsOnly(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetUniqueIPsMin = 3
+	c.SubnetMinTotalEvents = 100 // unreachable for this test
+	s := NewScorer(c)
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("Bans should NOT fire when MIN_TOTAL_EVENTS not met; got %d", stats.SubnetBansTotal)
+	}
+}
+
+func TestSubnetAgg_DualThresholdGuard_TotalEventsOnly(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetUniqueIPsMin = 100 // unreachable for this test
+	c.SubnetMinTotalEvents = 3
+	s := NewScorer(c)
+	ip := netip.AddrFrom4([4]byte{81, 30, 98, 32})
+	for i := 0; i < 10; i++ {
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("Bans should NOT fire when UNIQUE_IPS not met; got %d", stats.SubnetBansTotal)
+	}
+}
+
+func TestSubnetAgg_PrivateRangeBlocked(t *testing.T) {
+	c := subnetTestConfig()
+	s := NewScorer(c)
+	// 10.x.x.x is RFC 1918 private.
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{10, 0, 0, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 || stats.SubnetPressureCount != 0 {
+		t.Errorf("Private-range subnet should NOT trigger; got bans=%d pressure=%d", stats.SubnetBansTotal, stats.SubnetPressureCount)
+	}
+	if s.TrackedSubnets() != 0 {
+		t.Errorf("Private-range subnet should NOT be tracked; got %d", s.TrackedSubnets())
+	}
+}
+
+func TestSubnetAgg_TrustedAllowlist(t *testing.T) {
+	c := subnetTestConfig()
+	// Allowlist contains the test subnet — should be exempt.
+	c.SubnetTrustedAllowlist = []netip.Prefix{netip.MustParsePrefix("81.30.98.0/24")}
+	s := NewScorer(c)
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("Trusted-allowlist subnet should NOT trigger; got %d bans", stats.SubnetBansTotal)
+	}
+}
+
+func TestSubnetAgg_ReasonFilter_OnlyEximAuthFail(t *testing.T) {
+	c := subnetTestConfig()
+	s := NewScorer(c)
+	// Non-EXIM reason — should be excluded by reason filter.
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonSSHFailedPassword, ScoreDelta: 15, Service: "ssh"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 || stats.SubnetPressureCount != 0 {
+		t.Errorf("Non-EXIM reason should NOT trigger subnet agg; got bans=%d pressure=%d", stats.SubnetBansTotal, stats.SubnetPressureCount)
+	}
+}
+
+func TestSubnetAgg_IPv6Prefix(t *testing.T) {
+	c := subnetTestConfig()
+	s := NewScorer(c)
+	// 2001:db8::/64 — 5 different IPs in same /64.
+	base := "2001:db8::"
+	ips := []string{base + "1", base + "2", base + "3", base + "4", base + "5"}
+	var subnetAction *BanAction
+	for _, ipStr := range ips {
+		ip := netip.MustParseAddr(ipStr)
+		action := s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+		if action != nil && action.IsSubnet {
+			subnetAction = action
+		}
+	}
+	if subnetAction == nil {
+		t.Fatal("expected IPv6 subnet ban after 5 unique IPs from same /64")
+	}
+	wantPrefix := netip.MustParsePrefix("2001:db8::/64")
+	if subnetAction.Prefix.Masked() != wantPrefix {
+		t.Errorf("IPv6 Prefix = %v, want %v", subnetAction.Prefix.Masked(), wantPrefix)
+	}
+}
+
+func TestSubnetAgg_WindowExpiry(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetWindow = 50 * time.Millisecond // very short for fast test
+	s := NewScorer(c)
+	// First burst: 2 IPs (below 3-IP threshold).
+	for i := 0; i < 2; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	// Sleep past window to force reset.
+	time.Sleep(80 * time.Millisecond)
+	// Second burst: 5 NEW IPs — should trigger because window reset.
+	for i := 5; i < 10; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 1 {
+		t.Errorf("expected 1 ban after window-reset + second burst; got %d", stats.SubnetBansTotal)
+	}
+}
+
+func TestSubnetAgg_SuppressRepeatedTriggersWithinWindow(t *testing.T) {
+	c := subnetTestConfig()
+	s := NewScorer(c)
+	// First trigger.
+	for i := 0; i < 5; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(32 + i)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	if got := s.GetStats().SubnetBansTotal; got != 1 {
+		t.Fatalf("first burst should produce exactly 1 ban; got %d", got)
+	}
+	// More events from new IPs in same subnet — should NOT generate a second ban.
+	for i := 100; i < 110; i++ {
+		ip := netip.AddrFrom4([4]byte{81, 30, 98, byte(i % 256)})
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	if got := s.GetStats().SubnetBansTotal; got != 1 {
+		t.Errorf("subsequent events on already-banned subnet should NOT re-ban; got %d", got)
+	}
+}
+
+func TestSubnetAgg_MaxTrackedCap(t *testing.T) {
+	c := subnetTestConfig()
+	c.SubnetMaxTracked = 2
+	s := NewScorer(c)
+	// Use 3 different subnets — only first 2 should be tracked.
+	subnets := [][4]byte{{81, 30, 98, 32}, {81, 30, 99, 32}, {81, 30, 100, 32}}
+	for _, base := range subnets {
+		ip := netip.AddrFrom4(base)
+		s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	if got := s.TrackedSubnets(); got > 2 {
+		t.Errorf("TrackedSubnets exceeded cap; got %d, want <=2", got)
+	}
+}
+
+func TestSubnetAgg_PrefixHelpers(t *testing.T) {
+	tests := []struct {
+		name      string
+		prefix    string
+		wantBlock bool // true if isPrivateOrInternalPrefix should return true
+	}{
+		{"public_v4", "81.30.98.0/24", false},
+		{"private_10", "10.0.0.0/24", true},
+		{"private_172_16", "172.16.0.0/12", true},
+		{"private_192_168", "192.168.0.0/24", true},
+		{"link_local_169_254", "169.254.0.0/16", true},
+		{"loopback_127", "127.0.0.0/8", true},
+		{"ipv6_public", "2001:db8::/64", false},
+		{"ipv6_link_local", "fe80::/10", true},
+		{"ipv6_ula", "fc00::/7", true},
+		{"ipv6_loopback", "::1/128", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := netip.MustParsePrefix(tt.prefix)
+			got := isPrivateOrInternalPrefix(p)
+			if got != tt.wantBlock {
+				t.Errorf("isPrivateOrInternalPrefix(%s) = %v, want %v", tt.prefix, got, tt.wantBlock)
+			}
+		})
+	}
+}
+
+func TestSubnetAgg_IsInTrustedAllowlist(t *testing.T) {
+	allow := []netip.Prefix{
+		netip.MustParsePrefix("173.194.0.0/16"), // Google example
+		netip.MustParsePrefix("17.0.0.0/8"),     // Apple example
+	}
+	tests := []struct {
+		name      string
+		candidate string
+		want      bool
+	}{
+		{"matches_google", "173.194.76.0/24", true},
+		{"matches_apple", "17.142.30.0/24", true},
+		{"no_match", "81.30.98.0/24", false},
+		{"empty_check", "0.0.0.0/0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := netip.MustParsePrefix(tt.candidate)
+			got := isInTrustedAllowlist(p, allow)
+			if got != tt.want {
+				t.Errorf("isInTrustedAllowlist(%s) = %v, want %v", tt.candidate, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSubnetAgg_PerIPPathStillWorks(t *testing.T) {
+	// Subnet-aggregation enabled should NOT change per-IP ban behavior for
+	// hosts that hit per-IP thresholds without involving subnet aggregation.
+	c := subnetTestConfig()
+	c.SubnetUniqueIPsMin = 100  // unreachable
+	c.SubnetMinTotalEvents = 100 // unreachable
+	c.ThresholdTempBan = 30      // lower than default for fast test
+	c.ThresholdEscalate = 999    // unreachable; we want temp-ban
+	c.ThresholdPermanent = 999   // unreachable
+	c.RecentBanWindow = 0
+	s := NewScorer(c)
+	ip := netip.AddrFrom4([4]byte{81, 30, 98, 32})
+	var action *BanAction
+	for i := 0; i < 3; i++ {
+		action = s.RecordVerdict(Verdict{IP: ip, Reason: ReasonEximAuthFail, ScoreDelta: 15, Service: "exim"})
+	}
+	if action == nil {
+		t.Fatal("expected per-IP temp ban after 3 events × 15 pts crossing 30-pt threshold")
+	}
+	if action.IsSubnet {
+		t.Errorf("per-IP ban should NOT be marked IsSubnet=true; got %+v", action)
+	}
+	stats := s.GetStats()
+	if stats.SubnetBansTotal != 0 {
+		t.Errorf("per-IP ban should NOT increment SubnetBansTotal; got %d", stats.SubnetBansTotal)
+	}
+}
+
 func BenchmarkScorer_RecordVerdict(b *testing.B) {
 	s := NewScorerDefault()
 
