@@ -186,6 +186,22 @@ case "$1" in
         # --- Reload systemd so new unit files are visible ---
         systemctl daemon-reload 2>/dev/null || true
 
+        # --- v1.112.2 hotfix: create runtime directories before service activation.
+        # nftband.service declares ReadWritePaths=/var/cache/nftban for systemd
+        # mount-namespace isolation. On fresh DEB installs the cache dir does not
+        # exist at the moment the Go installer (below) triggers `systemctl start`,
+        # so systemd refuses the unit with status=226/NAMESPACE
+        # ("Failed to set up mount namespacing: /var/cache/nftban: No such file
+        # or directory") and nftban-unified-exporter.service inherits the same
+        # failure. systemd-tmpfiles --create against the package-shipped
+        # /usr/lib/tmpfiles.d/nftban.conf creates the required runtime tree
+        # (/var/cache/nftban, /run/nftban, /var/log/nftban, etc.) idempotently.
+        # Reproduced on 4/4 DEB VMs in the V112.2 lane (Debian 12/13 + Ubuntu
+        # 22.04/24.04); RPM scriptlet ordering was already correct.
+        if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || true
+        fi
+
         # =================================================================
         # GO INSTALLER
         # =================================================================
