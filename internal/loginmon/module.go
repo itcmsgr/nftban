@@ -474,12 +474,19 @@ type LoginMonStatusExtra struct {
 	BansByService       map[string]int64 `json:"bans_by_service"`
 	DetectionsByReason  map[string]int64 `json:"detections_by_reason"`
 	BansByReason        map[string]int64 `json:"bans_by_reason"`
+
+	// v1.113 subnet aggregation (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP).
+	// All fields zero-value-omittable on hosts where the feature is disabled,
+	// so the wire format for existing readers stays byte-equivalent at zero.
+	SubnetPressureCount int64 `json:"subnet_pressure_count,omitempty"` // Cumulative observe-mode pressure events.
+	SubnetBansTotal     int64 `json:"subnet_bans_total,omitempty"`     // Cumulative CIDR bans (enforce mode).
+	SubnetWatchActive   int64 `json:"subnet_watch_active,omitempty"`   // Active prefixes being watched (gauge).
 }
 
 // ToExtraInfo serializes the typed struct into the module.ExtraInfo
 // map[string]any contract expected by module.Status.Extra.
 func (e LoginMonStatusExtra) ToExtraInfo() module.ExtraInfo {
-	return module.ExtraInfo{
+	out := module.ExtraInfo{
 		"mode":                  e.Mode,
 		"suricata_available":    e.SuricataAvailable,
 		"services":              e.Services,
@@ -499,6 +506,18 @@ func (e LoginMonStatusExtra) ToExtraInfo() module.ExtraInfo {
 		"detections_by_reason":  e.DetectionsByReason,
 		"bans_by_reason":        e.BansByReason,
 	}
+	// v1.113 subnet-aggregation fields are emitted only when non-zero to keep
+	// the wire format byte-identical on hosts with the feature disabled.
+	if e.SubnetPressureCount != 0 {
+		out["subnet_pressure_count"] = e.SubnetPressureCount
+	}
+	if e.SubnetBansTotal != 0 {
+		out["subnet_bans_total"] = e.SubnetBansTotal
+	}
+	if e.SubnetWatchActive != 0 {
+		out["subnet_watch_active"] = e.SubnetWatchActive
+	}
+	return out
 }
 
 // Status returns the current module status
@@ -527,6 +546,10 @@ func (m *Module) Status() module.Status {
 		BansByService:       stats.BansByService,
 		DetectionsByReason:  stats.DetectionsByReason,
 		BansByReason:        stats.BansByReason,
+		// v1.113 subnet-aggregation gauges/counters from the Scorer.
+		SubnetPressureCount: stats.SubnetPressureCount,
+		SubnetBansTotal:     stats.SubnetBansTotal,
+		SubnetWatchActive:   stats.SubnetWatchActive,
 	}
 	m.status.Extra = extra.ToExtraInfo()
 
@@ -697,6 +720,40 @@ func (m *Module) parseShellConfig(content string) {
 			var v int
 			fmt.Sscanf(value, "%d", &v)
 			m.config.WordPressWPLogin = safeconv.ToInt16OrDefault(v, 10)
+
+		// v1.113 subnet-aggregation knobs (D-LOGINMON-EXIM-SUBNET-ROTATION-GAP).
+		// Closes the rotating-/24 brute-force blindspot exposed by the srv1
+		// production incident 2026-05-13. Opt-in default-false.
+		case "LOGINMON_EXIM_SUBNET_AGG_ENABLED":
+			m.config.SubnetAggEnabled = strings.EqualFold(value, "true")
+		case "LOGINMON_EXIM_SUBNET_AGG_MODE":
+			lc := strings.ToLower(value)
+			if lc == "enforce" || lc == "observe" {
+				m.config.SubnetAggMode = lc
+			}
+		case "LOGINMON_EXIM_SUBNET_WINDOW":
+			if d, err := time.ParseDuration(value); err == nil && d > 0 {
+				m.config.SubnetWindow = d
+			}
+		case "LOGINMON_EXIM_SUBNET_UNIQUE_IPS":
+			fmt.Sscanf(value, "%d", &m.config.SubnetUniqueIPsMin)
+		case "LOGINMON_EXIM_SUBNET_MIN_TOTAL_EVENTS":
+			fmt.Sscanf(value, "%d", &m.config.SubnetMinTotalEvents)
+		case "LOGINMON_EXIM_SUBNET_IPV4_PREFIX":
+			fmt.Sscanf(value, "%d", &m.config.SubnetIPv4Prefix)
+		case "LOGINMON_EXIM_SUBNET_IPV6_PREFIX":
+			fmt.Sscanf(value, "%d", &m.config.SubnetIPv6Prefix)
+		case "LOGINMON_EXIM_SUBNET_ACTION":
+			lc := strings.ToLower(value)
+			// v1.113 ships only ban_cidr; pressure_score + dynamic_threshold
+			// are accepted but currently behave as ban_cidr (reserved labels).
+			if lc == "ban_cidr" || lc == "pressure_score" || lc == "dynamic_threshold" {
+				m.config.SubnetAction = lc
+			}
+		case "LOGINMON_EXIM_SUBNET_CIDR_BAN_DURATION":
+			if d, err := time.ParseDuration(value); err == nil && d >= 0 {
+				m.config.SubnetCIDRBanDuration = d
+			}
 		}
 	}
 }
@@ -704,14 +761,27 @@ func (m *Module) parseShellConfig(content string) {
 // buildScorerConfig creates a ScorerConfig from the loaded Config
 func (m *Module) buildScorerConfig() detector.ScorerConfig {
 	return detector.ScorerConfig{
-		ThresholdTempBan:      m.config.ThresholdTempBan,
-		ThresholdEscalate:     m.config.ThresholdEscalate,
-		ThresholdPermanent:    m.config.ThresholdPermanent,
-		TempBanDuration:       m.config.TempBanDuration,
-		EscalateDurations:     m.config.EscalateDurations,
-		ScoreDecayInterval:    m.config.ScoreDecayInterval,
-		ScoreDecayAmount:      m.config.ScoreDecayAmount,
-		IPRetentionDuration:   m.config.IPRetentionDuration,
+		ThresholdTempBan:    m.config.ThresholdTempBan,
+		ThresholdEscalate:   m.config.ThresholdEscalate,
+		ThresholdPermanent:  m.config.ThresholdPermanent,
+		TempBanDuration:     m.config.TempBanDuration,
+		EscalateDurations:   m.config.EscalateDurations,
+		ScoreDecayInterval:  m.config.ScoreDecayInterval,
+		ScoreDecayAmount:    m.config.ScoreDecayAmount,
+		IPRetentionDuration: m.config.IPRetentionDuration,
+
+		// v1.113 subnet aggregation
+		SubnetAggEnabled:        m.config.SubnetAggEnabled,
+		SubnetAggMode:           m.config.SubnetAggMode,
+		SubnetWindow:            m.config.SubnetWindow,
+		SubnetUniqueIPsMin:      m.config.SubnetUniqueIPsMin,
+		SubnetMinTotalEvents:    m.config.SubnetMinTotalEvents,
+		SubnetIPv4Prefix:        m.config.SubnetIPv4Prefix,
+		SubnetIPv6Prefix:        m.config.SubnetIPv6Prefix,
+		SubnetAction:            m.config.SubnetAction,
+		SubnetCIDRBanDuration:   m.config.SubnetCIDRBanDuration,
+		SubnetTriggerReasonOnly: true, // v1.113 ships restricted to EXIM_AUTH_FAIL
+		SubnetMaxTracked:        10000,
 	}
 }
 
@@ -1227,7 +1297,13 @@ func (m *Module) processLine(line []byte) {
 	}
 }
 
-// triggerBan initiates a ban based on scorer decision
+// triggerBan initiates a ban based on scorer decision.
+//
+// v1.113: when action.IsSubnet is true, the ban target is action.Prefix
+// (e.g., 81.30.98.0/24) rather than action.IP. The triggering IP stays in
+// action.IP for audit-log attribution; downstream ban executor accepts CIDR
+// strings via the canonical .WithIP() field per same path as manual
+// `nftban ban <CIDR>`.
 func (m *Module) triggerBan(action *detector.BanAction) {
 	// Determine severity based on duration
 	severity := eventbus.SeverityCritical
@@ -1236,10 +1312,25 @@ func (m *Module) triggerBan(action *detector.BanAction) {
 		banType = "permanent"
 	}
 
-	// Determine IP family
+	// Determine IP family — for subnet bans use the prefix's family.
 	family := "ipv4"
-	if !action.IP.Is4() {
-		family = "ipv6"
+	switch {
+	case action.IsSubnet:
+		if action.Prefix.Addr().Is6() && !action.Prefix.Addr().Is4In6() {
+			family = "ipv6"
+		}
+	default:
+		if !action.IP.Is4() {
+			family = "ipv6"
+		}
+	}
+
+	// Choose the ban target string. For subnet bans this is the CIDR; for
+	// per-IP bans this is the IP address. Audit-log attribution always uses
+	// action.IP (the triggering IP).
+	target := action.IP.String()
+	if action.IsSubnet {
+		target = action.Prefix.String()
 	}
 
 	// Record ban metrics
@@ -1247,17 +1338,29 @@ func (m *Module) triggerBan(action *detector.BanAction) {
 	metrics.RecordLoginmonScoreAtBan(float64(action.Score))
 	metrics.RecordBan("loginmon", family)
 
-	// Publish ban event
-	m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-		WithIP(action.IP.String()).
-		WithMessage(fmt.Sprintf("Banning %s: score=%d reason=%s", action.IP, action.Score, action.Reason)).
+	// Build event with extra fields when this is a subnet ban so downstream
+	// readers (audit logs, portal) can distinguish.
+	ev := eventbus.NewEvent(eventbus.EventBan, ModuleName).
+		WithIP(target).
 		WithSeverity(severity).
 		WithData("service", action.Service).
 		WithData("reason", action.Reason).
 		WithData("score", action.Score).
 		WithData("duration", action.Duration.String()).
 		WithData("ban_type", banType).
-		WithData("is_new", action.IsNew))
+		WithData("is_new", action.IsNew)
+
+	if action.IsSubnet {
+		ev = ev.
+			WithMessage(fmt.Sprintf("Banning subnet %s (triggered by %s): unique_ips=%d reason=%s", action.Prefix, action.IP, action.Score, action.Reason)).
+			WithData("is_subnet", true).
+			WithData("subnet_prefix", action.Prefix.String()).
+			WithData("trigger_ip", action.IP.String())
+	} else {
+		ev = ev.WithMessage(fmt.Sprintf("Banning %s: score=%d reason=%s", action.IP, action.Score, action.Reason))
+	}
+
+	m.bus.Publish(ev)
 }
 
 // runEVEWatcher watches Suricata EVE JSON log for auth failures
