@@ -11,6 +11,217 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.113.0] - 2026-05-13 — V113 LoginMon SMTP subnet aggregation: opt-in detection primitive for distributed /24 brute force
+
+V113 single-PR feature release on top of v1.112.2. Closes
+`D-LOGINMON-EXIM-SUBNET-ROTATION-GAP` from the srv1 production incident on
+2026-05-13: a distributed `81.30.98.0/24` SMTP brute force where each
+individual IP made only 1-2 attempts (15-30 points each) and never crossed
+the per-IP LoginMon 45-point temp-ban threshold. Per-IP scoring could not
+defeat the /24 rotation; this release adds a per-prefix tracking primitive
+that runs in parallel to the existing per-IP map.
+
+**The feature is disabled by default.** On hosts that do not enable it the
+daemon `/metrics` surface, Status JSON wire format, ban behavior, and
+per-IP scoring path are byte-identical to v1.112.2. **Schema 1.83.0
+remains frozen.** **No Prometheus emission added.**
+
+### Closes
+
+- `D-LOGINMON-EXIM-SUBNET-ROTATION-GAP` (srv1 production incident
+  2026-05-13: distributed `81.30.98.0/24` exim brute force; ~5 manual /27
+  bans deployed as temporary mitigation before this release).
+
+### Files touched (the entire envelope)
+
+6 files / +1039 / -51 = **988 net new LOC**:
+
+- `internal/loginmon/detector/scorer.go` (+393) — `SubnetState` type,
+  `Scorer.subnets` per-prefix map, `BanAction.Prefix`/`IsSubnet` fields,
+  `ScorerConfig` +13 new fields, `Stats` +3 atomic counters,
+  `StatsSnapshot` +3 fields, `RecordVerdict` extension, new
+  `checkSubnetAggregation` path + 5 private helpers
+  (`subnetPrefixForIP`, `getOrCreateSubnetState`, `emitSubnetBan`,
+  `isPrivateOrInternalPrefix`, `isInTrustedAllowlist`). gosec G115
+  int→int32 bounded clamp on the unique-IP count at line 748 with
+  explicit `#nosec` annotation.
+- `internal/loginmon/detector/scorer_test.go` (+345) — 14 new
+  `TestSubnetAgg_*` cases (disabled-noop, observe-mode pressure,
+  enforce-mode CIDR ban, dual-threshold guards in both directions,
+  private-range blocked, trusted allowlist, reason filter, IPv6 /64,
+  window expiry, repeated-trigger suppression, max-tracked cap, prefix
+  helpers × 10 subcases, allowlist helper × 4 subcases, per-IP path
+  regression coverage).
+- `internal/loginmon/module.go` (+139 / -13) — env-var parsing for 9
+  `LOGINMON_EXIM_SUBNET_*` knobs, `buildScorerConfig` extended,
+  `LoginMonStatusExtra` grows 18→21 fields with `omitempty` JSON tags,
+  `ToExtraInfo` emits the 3 new fields non-zero-only, `Status()`
+  populates them, `triggerBan` branches for CIDR target when
+  `action.IsSubnet`. gosec errcheck `_, _ =` discard on 4×
+  `fmt.Sscanf` returns.
+- `internal/loginmon/module_test.go` (+85) — 2 new
+  `TestLoginMonStatusExtra_SubnetFields_{ZeroOmitted,NonZeroEmitted}`
+  cases that lock the wire-format invariant (disabled-feature hosts
+  produce byte-identical Status.Extra payloads vs v1.112.2).
+- `internal/loginmon/types.go` (+29) — `Config` +9 new fields with
+  defaults (`SubnetAggEnabled=false`, `SubnetMode=observe`,
+  `SubnetWindow=5m`, `SubnetUniqueIPsMin=5`, `SubnetMinTotalEvents=10`,
+  `SubnetIPv4Prefix=24`, `SubnetIPv6Prefix=64`, `SubnetAction=ban_cidr`,
+  `SubnetCIDRBanDuration=24h`).
+- `docs/loginmon/SUBNET_AGGREGATION.md` (NEW, +99) — user-facing docs
+  covering opt-in/observe-first, configuration reference, the 6
+  false-positive guards, observability fields, performance
+  characteristics, what-it-does-not-do (yet), and verification steps.
+
+No daemon binary change beyond the LoginMon module. No schema change.
+No systemd unit changes. No FHS spec body change. No RPM/DEB packaging
+change. No `go.mod`/`go.sum` change. No CI workflow change.
+
+### Design (locked)
+
+8 user-visible config knobs (the 9th env-var binding covers the action
+label completeness):
+
+| Env key | Default | Purpose |
+|---|---|---|
+| `LOGINMON_EXIM_SUBNET_AGG_ENABLED` | `false` | Master toggle (opt-in) |
+| `LOGINMON_EXIM_SUBNET_AGG_MODE` | `observe` | `observe` (count + log) or `enforce` (ban CIDR) |
+| `LOGINMON_EXIM_SUBNET_WINDOW` | `5m` | Rolling-window duration |
+| `LOGINMON_EXIM_SUBNET_UNIQUE_IPS` | `5` | Distinct-IP threshold |
+| `LOGINMON_EXIM_SUBNET_MIN_TOTAL_EVENTS` | `10` | Total-event threshold (AND with unique-IPs) |
+| `LOGINMON_EXIM_SUBNET_IPV4_PREFIX` | `24` | IPv4 aggregation prefix bits |
+| `LOGINMON_EXIM_SUBNET_IPV6_PREFIX` | `64` | IPv6 aggregation prefix bits |
+| `LOGINMON_EXIM_SUBNET_ACTION` | `ban_cidr` | Only `ban_cidr` ships in v1.113; `pressure_score` and `dynamic_threshold` reserved for v1.114+ |
+| `LOGINMON_EXIM_SUBNET_CIDR_BAN_DURATION` | `24h` | CIDR ban duration (`0` = permanent) |
+
+### False-positive guards
+
+Six guards must ALL pass before a trigger fires:
+
+1. **Reason filter** — only `EXIM_AUTH_FAIL` events count toward
+   subnet aggregation in v1.113. Other LoginMon reasons (SSH/FTP/panel)
+   are not subnet-aggregated.
+2. **Dual threshold** — both the unique-IP count AND the total-event
+   count must cross their respective thresholds.
+3. **Rolling window** — events older than `SubnetWindow` expire;
+   when the window resets, subnet state resets.
+4. **Trusted-provider allowlist** — operator-curated subnets are
+   exempt (Google, Microsoft, Apple, large mail-relay networks).
+5. **Private/internal ranges blocked** — RFC 1918, RFC 4193,
+   link-local, and loopback never aggregate.
+6. **Audit logging** — every trigger writes a structured journal
+   entry with subnet, unique-IP count, total event count, sample IPs,
+   action taken, and the trigger IP for attribution.
+
+### Behavior changes
+
+- **Disabled by default.** On hosts that do not set
+  `LOGINMON_EXIM_SUBNET_AGG_ENABLED=true`, the daemon `/metrics`
+  surface, Status JSON wire format, ban behavior, and per-IP scoring
+  path are byte-identical to v1.112.2 (`omitempty` JSON tags on the
+  three new `LoginMonStatusExtra` fields suppress them when zero).
+- **Observe mode.** Surfaces 3 new non-zero fields under Status.Extra
+  (`subnet_pressure_count`, `subnet_bans_total`, `subnet_watch_active`)
+  via `nftban status --json`. No bans issued.
+- **Enforce mode.** Issues CIDR bans via the existing
+  `nftban ban <CIDR>` path with reason `exim_auth_fail_subnet`,
+  recorded in `/etc/nftban/blacklist.d/99-manual.conf`. The triggering
+  IP is preserved in the event data `trigger_ip` field for attribution.
+
+No other behavior change in `nftban-core` / `nftband` daemons.
+
+### Invariants preserved
+
+- **R-10 module-isolation** — A1 distinct `LoginMonName` const
+  unchanged; A2 subnet-triggered `EventBan` publishes with the
+  `LoginMonName` source; A3 stays vacuous per R-12 typed-struct.
+- **R-12 typed Status.Extra** — additive growth 18→21 fields with
+  `omitempty` JSON tags preserves byte-identical wire format on
+  disabled-feature hosts (locked by
+  `TestLoginMonStatusExtra_SubnetFields_ZeroOmitted`).
+- **Module-interface** — no change to `Module.*` contracts.
+- **Cross-distro** — pure `internal/loginmon/` Go change; no
+  packaging, systemd, or FHS asymmetry.
+
+### Schema status
+
+Schema remains frozen at `1.83.0`. **No new metric names. No new label
+cardinality. No schema doc edits. No allow-list mutation.** No
+Prometheus emission added in v1.113.0; subnet counters surface via
+`LoginMonStatusExtra` typed-struct fields only. The two candidate
+Prometheus metric names `nftban_loginmon_subnet_pressure_total` +
+`nftban_loginmon_subnet_bans_total` are reserved for v1.114 with an
+explicit schema-unfreeze gate if/when telemetry need arises. PR-M2b-w1
+host-vitals release content from v1.112.0 (6 `nftban_host_*` metrics)
+continues to emit correctly via the unaltered Go daemon path.
+
+### Verification
+
+- Pre-merge PR #610 HEAD `ec1e7732` CI: 50 PASS / 3 fail (baseline-
+  advisory triplet OSV-Scanner + 2× health) / 1 skip (Typosquat/Socket
+  expected fork-skip). gosec PASS after the G115 int32 bounded-clamp
+  + errcheck `fmt.Sscanf` fix commit.
+- Post-merge main `35c4eb25` CI: 21 PASS / 2 fail (baseline-advisory
+  doublet OSV-Scanner + Project Health = 13th consecutive ack matching
+  v1.102→v1.112.2 precedent).
+- All gating checks pass: Go Build & Test, all 4 RPM install distros
+  (alma9 / centos-stream9 / centos-stream10 / rocky9), all 4 DEB
+  install distros (debian12 / debian13 / ubuntu22.04 / ubuntu24.04),
+  both Runtime Truth distros (almalinux-9 / ubuntu-24.04), CodeQL,
+  Secure Go, Semgrep, ShellCheck, Bash Validation, Architecture
+  Policy, all 5 Canonization Gates (Install / Update / Restore /
+  Uninstall + Migration Coverage), Shell-Delete Guard, Smoke Test,
+  Documentation Validation, Docker, Gitleaks, OpenSSF Scorecard, Fuzz
+  Tests.
+
+### Non-goals carried forward to v1.114+
+
+Each item separately gated:
+
+- **LoginMon subnet Prometheus emission**
+  (`nftban_loginmon_subnet_pressure_total` +
+  `nftban_loginmon_subnet_bans_total`) — reserved for v1.114
+  schema-unfreeze gate if/when telemetry need arises.
+- **`pressure_score` + `dynamic_threshold` action types** — reserved
+  for v1.114+ (boost per-IP score for offending subnet IPs / lower
+  per-IP threshold temporarily).
+- **Cross-module subnet aggregation** (BotGuard / DDoS hooks) — not
+  in v1.113.
+- **Subnet state persistence across restart** — 5-minute window
+  granularity makes persistence unnecessary in v1.113; reserved for
+  v1.114 if pressure justifies.
+- **LRU eviction at `MaxTracked=10000` cap** — v1.113 declines new
+  prefixes when full; reserved for v1.114 if pressure justifies.
+- **PR-M2b-w2..w7** per-module host-vitals emission waves (LoginMon /
+  DDoS / BotGuard / Feed / Geoban / Suricata).
+- **PR-M2c** new nft named counters (`ddos_drop`, `whitelist_hit`,
+  `feed_hit`, `geoban_hit`) — schema-UNFREEZE.
+- **PR-M2d** kernel set element annotation cookies — schema-UNFREEZE
+  + migration plan.
+- **PR-M3** cache v2 producer + **PR-M1** CLI formatter.
+- **§F4** metrics beyond the 6 PR-M2b-w1 targets (CPU details, swap,
+  inodes, IO wait, SMART, RAID, service health).
+- **D-LMA-1** legacy `/opt/nftban-pro:3000` decommission decision.
+- **R-11** Watchdog → BotGuard `EventSafetyPressure` contract.
+- **D-DNS-1** dns2 host migration (DESIGN-FIX side OPEN).
+- **D-FHS-1..5**, **D-SHA-1**, **D-POL-1**, **D-DEG-1**, **D-SEC-1**,
+  **D-TRP-1**, **D-EGM-1**, **D-PNL-1**, **D-OSH-1**, **D-GHC-1**,
+  **D-BKT-1** — all unchanged from v1.112.2 forward-list.
+
+### Acceptance plan (separately gated)
+
+`EXECUTE_V113_VALIDATE_SRV1 = GO` — enable observe mode on srv1
+(which still has the 81.30.98.x attack pattern that motivated this
+feature) → verify `subnet_pressure_count` increments under live
+traffic → switch to enforce mode → verify CIDR ban fires for
+`81.30.98.0/24` → confirm coexistence with the 5 existing manual /27
+bans on srv1.
+
+v1.113.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.113.0 defect surfaces).
+
+---
+
 ## [v1.112.2] - 2026-05-13 — V112.2 hotfix: DEB postinst tmpfiles ordering before service activation
 
 V112.2 single-PR packaging hotfix on top of v1.112.1. Closes a long-latent
