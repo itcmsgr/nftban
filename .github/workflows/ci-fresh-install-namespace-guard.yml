@@ -281,7 +281,12 @@ jobs:
     name: Fresh-install namespace guard summary
     runs-on: ubuntu-latest
     needs: fresh-install-guard
-    if: always()
+    # Match the matrix's workflow_run-only short-circuit: on PR/push the matrix
+    # children skip, so the summary must also skip (otherwise `needs.X.result ==
+    # 'skipped'` makes the summary script's success-check fail and report a false
+    # failure). `always()` preserved so the summary still reports REAL matrix
+    # failures in workflow_run mode (e.g. assertion failures on a specific distro).
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Report aggregate result
         run: |
