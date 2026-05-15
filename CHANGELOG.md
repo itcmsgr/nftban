@@ -11,6 +11,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.115.0] - 2026-05-15 — V115 narrow-cleanup: DEB config-perm + D-DEG-1 fixes + CI guard polish
+
+V115 operational hygiene / packaging and CI guard stabilization release on
+top of v1.114.0. Bundles three workflow-only and packaging-only fixes with
+**zero daemon binary change** — the v1.115.0 `/usr/lib/nftban/bin/nftband`
+is byte-identical to v1.114.0 because no `internal/` or `cmd/` Go code
+changes ship in this release.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no schema doc edits, no allow-list mutation. No new
+behavior on the daemon `/metrics` surface, Status JSON wire format, ban
+behavior, or per-IP/per-subnet scoring path.
+
+### Fixed (DEB packaging)
+
+- `packaging/deb/postinst` — `/etc/nftban/nftban.conf` +
+  `/etc/nftban/nftables.conf` + `/etc/nftban/conf.d/**/*.conf` +
+  `/etc/nftban/conf.d/**/*.conf.default` now converge to **mode 0640
+  owner `root:nftban`** after package install, matching RPM
+  `%attr(640,root,nftban) %config(noreplace)` parity. The existing
+  dir-only convergence loop intentionally skipped files; the new
+  file-level loop closes the gap. Idempotent. `dpkg-statoverride`
+  remove/add pattern for top-level conf files keeps `dpkg --verify`
+  clean across reinstalls. Operator-edited file contents preserved —
+  only ownership/mode changes. **Side-effect: closes D-DEG-1 sub-class
+  B** (`Permission denied on /etc/nftban/nftban.conf` at
+  `cli/lib/nftban/sbin/nftban-service-alert:47` when `nftban-alert@`
+  template runs as user `nftban`). 1 file (+39/-0). (PR #622)
+
+### Fixed (D-DEG-1 sub-class A)
+
+- `install/systemd/nftban-queue.service` — `[Service]` section gains
+  3 literal `Environment=` directives after `Type=oneshot`:
+  ```
+  Environment=NFTBAN_DATA_DIR=/var/lib/nftban
+  Environment=NFTBAN_RUN_DIR=/run/nftban
+  Environment=NFTBAN_LOG_DIR=/var/log/nftban
+  ```
+  The queue helper at `cli/lib/nftban/helpers/nftban_task_queue.sh`
+  runs under `set -u` and references these vars without per-var
+  fallbacks in fallback-substitution chains
+  (`${NFTBAN_QUEUE_PENDING_DIR:-${NFTBAN_DATA_DIR}/queue/pending}`).
+  systemd does not inherit shell environment by default; pre-v1.115
+  the queue service hit `NFTBAN_DATA_DIR: unbound variable` on hosts
+  where the system environment did not pre-set these vars (lab2
+  reproduction confirmed in V113 fleet rollout). All three vars set
+  defensively (defense-in-depth Option 1b) so any future helper that
+  references RUN_DIR/LOG_DIR through the same fallback pattern is
+  also protected. Literal `Environment=` chosen (Option 2a) over
+  `EnvironmentFile=-` to avoid introducing an external packaging
+  surface. 1 file (+12/-0). (PR #623)
+
+### Fixed (CI Fresh-Install Namespace Guard)
+
+- `.github/workflows/ci-fresh-install-namespace-guard.yml` — appended
+  `procps` to each of 4 DEB matrix `systemd_install` entries
+  (debian12 / debian13 / ubuntu22.04 / ubuntu24.04). `procps` provides
+  `/usr/bin/kill`, which merged-usr `/bin → /usr/bin` symlink
+  resolves to satisfy `nftband.service:75 ExecReload=/bin/kill -HUP
+  $MAINPID` in minimal Debian/Ubuntu CI containers. Closes
+  `D-V114-CI-GUARD-DEB-BINKILL-VERIFY-001` (the DEGRADED VERIFY-stage
+  observation surfaced in V114 PR #620's decisive run, carried to
+  v1.115 as deferred non-blocking polish). DEB installer now reports
+  `outcome=SUCCESS, stage=FINAL, health=PROTECTED` (was `FAILED,
+  VERIFY, DEGRADED`). Workflow-only — no nftban product code change.
+  Same mechanical pattern as V114 PR #618 (curl restore) and PR #620
+  (netbase add). 1 file (+4/-4). (PR #624)
+
+### Closes
+
+- `D-DEG-1` sub-class A (nftban-queue.service NFTBAN_DATA_DIR unbound) — by PR #623
+- `D-DEG-1` sub-class B (alert@ EACCES on nftban.conf) — by PR #622 side-effect
+- `D-V114-CI-GUARD-DEB-BINKILL-VERIFY-001` (DEB VERIFY-stage DEGRADED on /bin/kill) — by PR #624
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be
+guarded by the workflow_run-triggered Fresh-Install Namespace Guard
+built across V114 PRs #612-#620 + v1.115's `/bin/kill` polish.
+**32/32 A1-A4 assertions PASS on the v1.115.0 baseline** (run
+`25927046952` on commit `f5c8c242`), continuing the streak from
+v1.114.0 release-prep verification.
+
+### Files touched (the entire envelope)
+
+3 PR envelope for v1.115 candidates (already on `main` before this
+release-prep):
+
+- `packaging/deb/postinst` (+39/-0) — Cand 6 (PR #622)
+- `install/systemd/nftban-queue.service` (+12/-0) — Cand 2 sub-A (PR #623)
+- `.github/workflows/ci-fresh-install-namespace-guard.yml` (+4/-4)
+  — `/bin/kill` VERIFY polish (PR #624)
+
+Plus the v1.115.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.114.0 → 1.115.0)
+- `STATUS.md` (v1.115.0 release-lane row + schema unchanged statement)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; header version-banner only; no
+  FHS path-table change)
+
+**No daemon binary change.** No `internal/` Go change. No `cmd/`
+Go change. No schema change. No FHS spec body change. No RPM
+packaging change. No metric / label / cardinality change. No
+`go.mod`/`go.sum` change.
+
+### Non-goals carried forward to v1.116+
+
+Explicit deferred debt — each separately gated:
+
+- **Cand 1** — LoginMon Source State API (CLI formatter for typed
+  `LoginMonStatusExtra`); scope-plan first to confirm CLI-only
+  contract surface
+- **Cand 3** — Manual CIDR design fix Option D (typed `IsCIDR`
+  loader + CIDR-containment in membership + counter-label
+  clarification; HIGH-risk cross-5-file Go + shell + counter-UX
+  change); design-only gate first; D-MANUAL-CIDR-LOAD-GAP
+- Optional Docker tag scheme cleanup (V114 PR #620 surfaced drift:
+  no v-prefix on Docker tag, 7-char short SHA instead of 8-char)
+- V113 LoginMon scope/source audit B1-B8 follow-up gates (B1 legacy
+  parser decommission, B2 subnet aggregation expansion, B4 FTP
+  file watcher, B5 Plesk/cPanel distroconf keys, B6 EVE overlap
+  review, B7 WP detector decision, B8 stale CLI residue cleanup)
+- All Schema-UNFREEZE items (PR-M2b-w2..w7, PR-M2c, PR-M2d,
+  LoginMon subnet Prometheus emission)
+- All large lanes from V109 debt inventory (D-MET-1, D-MOD-1,
+  D-DNS-1, D-FHS-1..5, D-SHA-1, D-POL-1, D-SEC-1, D-TRP-1, D-EGM-1,
+  D-PNL-1, D-OSH-1, D-GHC-1, D-WIK-2, D-MIG-1, D-BKT-1 — **NEVER
+  delete remote** per long-standing policy)
+- V1.80 backlog reconciliation (historical input only — most items
+  already shipped under different names)
+
+### Behavior changes (narrow, explicit)
+
+- **None on daemon.** The `nftban-core` / `nftband` binaries are
+  byte-identical to v1.114.0.
+- **DEB `packaging/deb/postinst`** runs an additional file-perm
+  convergence loop at package-install time. Idempotent.
+  Operator-edited file contents preserved.
+- **`nftban-queue.service`** receives 3 literal `Environment=`
+  directives. systemd-launched queue runs deterministic across
+  distros without depending on inherited shell environment.
+- **CI Fresh-Install Namespace Guard** uses richer DEB base images
+  for the test scaffold (one additional package `procps`). No
+  production-host impact.
+
+v1.115.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.115.0 defect surfaces).
+
+---
+
 ## [v1.114.0] - 2026-05-15 — V114 narrow-cleanup: RPM tmpfiles defensive mirror + CI fresh-install 226/NAMESPACE guard
 
 V114 narrow-cleanup release on top of v1.113.0. Bundles three operational
