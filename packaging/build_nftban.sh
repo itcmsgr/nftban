@@ -932,9 +932,10 @@ fi
 # =============================================================================
 # STEP 0.5: Defensive systemd-tmpfiles --create (v1.114 mirror of v1.112.2 DEB)
 # =============================================================================
-# RPM already ships /var/cache/nftban as a package-owned directory (see %install
-# and %files), so the V112.2 status=226/NAMESPACE failure (Failed to set up mount
-# namespacing) was reproduced 0/5 on RPM during V112.2 validation. This call is
+# RPM already ships /var/cache/nftban as a package-owned directory via the
+# generated spec's install-time directory creation and packaged files list, so
+# the V112.2 status=226/NAMESPACE failure (Failed to set up mount namespacing)
+# was reproduced 0/5 on RPM during V112.2 validation. This call is
 # defense-in-depth — protects against any future regression where the package
 # payload's mkdir entry is removed, and provides symmetric behavior with the
 # v1.112.2 DEB-postinst fix at packaging/deb/postinst:196-203.
