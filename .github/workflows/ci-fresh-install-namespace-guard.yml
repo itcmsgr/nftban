@@ -106,22 +106,22 @@ jobs:
             image: debian:12
             pkg_type: deb
             artifact: deb-debian12
-            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
           - distro: debian13
             image: debian:13
             pkg_type: deb
             artifact: deb-debian13
-            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
           - distro: ubuntu22.04
             image: ubuntu:22.04
             pkg_type: deb
             artifact: deb-ubuntu22.04
-            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
           - distro: ubuntu24.04
             image: ubuntu:24.04
             pkg_type: deb
             artifact: deb-ubuntu24.04
-            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
 
     steps:
       - name: Checkout code
