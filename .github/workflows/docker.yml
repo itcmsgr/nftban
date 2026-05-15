@@ -59,9 +59,16 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
+            # v-prefixed semver tag — restores v1.108.0-era convenience tag.
+            # Pairs with the non-v {{version}} rule below so both `1.116.0`
+            # and `v1.116.0` resolve. Closes V114 PR #620 Docker tag scheme
+            # drift observation (V116 P2 scope).
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            # 8-char short SHA — restores v1.108.0-era format. Default of
+            # `type=sha` is 7-char; explicit length=8 matches git short-form.
+            type=sha,format=short,length=8
 
       - name: Build and push
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
