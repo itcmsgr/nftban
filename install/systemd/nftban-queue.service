@@ -31,6 +31,18 @@ OnFailure=nftban-alert@%n.service
 
 [Service]
 Type=oneshot
+
+# v1.115 Cand 2 sub-A: D-DEG-1 NFTBAN_DATA_DIR unbound-variable fix.
+# The helper at cli/lib/nftban/helpers/nftban_task_queue.sh runs under
+# `set -u` and references NFTBAN_DATA_DIR, NFTBAN_RUN_DIR, and
+# NFTBAN_LOG_DIR without per-var fallbacks. systemd does not inherit
+# shell environment by default — these literal directives keep the
+# queue processor deterministic across distros without depending on
+# an external EnvironmentFile.
+Environment=NFTBAN_DATA_DIR=/var/lib/nftban
+Environment=NFTBAN_RUN_DIR=/run/nftban
+Environment=NFTBAN_LOG_DIR=/var/log/nftban
+
 ExecStart=/usr/lib/nftban/sbin/nftban-queue-processor
 StandardOutput=journal
 StandardError=journal
