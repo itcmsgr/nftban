@@ -63,13 +63,18 @@ on:
 
 permissions:
   contents: read
+  actions: read  # required for actions/download-artifact cross-workflow read of Build NFTBan Packages artifacts (per V114_CI_GUARD_CROSS_WORKFLOW_ARTIFACT_FIX_SCOPE.md)
 
 jobs:
   fresh-install-guard:
     name: Fresh-install namespace guard (${{ matrix.distro }})
     runs-on: ubuntu-latest
-    # Only run after Build NFTBan Packages succeeds (when triggered by workflow_run)
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # Only run on workflow_run after Build NFTBan Packages succeeds. PR/push
+    # triggers are no-ops here because the parallel Build NFTBan Packages run
+    # uploads the artifacts under a different run-id; PR-time install coverage
+    # is provided by Test {RPM,DEB} install in build-packages.yml. See
+    # AUDIT_190_LIFECYCLE/V114_CI_GUARD_CROSS_WORKFLOW_ARTIFACT_FIX_SCOPE.md §6.
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -113,12 +118,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Download package artifact (with retry tolerance)
+      - name: Download package artifact (cross-workflow from Build NFTBan Packages)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ matrix.artifact }}
           path: ./packages
+          # Cross-workflow download: when triggered by workflow_run, pull artifacts
+          # from the triggering Build NFTBan Packages run (its run-id). Required to
+          # fix D-V114-CI-GUARD-CROSS-WORKFLOW-ARTIFACT-GAP-001 (PR #612 self-caused
+          # defect where artifacts were searched in the wrong run). github-token with
+          # actions:read scope is required for cross-workflow access.
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         id: download
+        # continue-on-error retained as defense-in-depth against artifact-retention
+        # expiry edge cases. Expected outcome is success now that run-id is explicit.
         continue-on-error: true
 
       - name: Skip if artifacts unavailable (rerun limitation)
@@ -267,7 +281,12 @@ jobs:
     name: Fresh-install namespace guard summary
     runs-on: ubuntu-latest
     needs: fresh-install-guard
-    if: always()
+    # Match the matrix's workflow_run-only short-circuit: on PR/push the matrix
+    # children skip, so the summary must also skip (otherwise `needs.X.result ==
+    # 'skipped'` makes the summary script's success-check fail and report a false
+    # failure). `always()` preserved so the summary still reports REAL matrix
+    # failures in workflow_run mode (e.g. assertion failures on a specific distro).
+    if: ${{ always() && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Report aggregate result
         run: |
