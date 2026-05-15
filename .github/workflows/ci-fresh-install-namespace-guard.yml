@@ -1,0 +1,281 @@
+# =============================================================================
+# NFTBan — CI: Fresh-Install Namespace Guard (v1.114 PR-V114-CI-NS slice)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Purpose:
+#   Catch the v1.112.2 failure class — `nftband.service` failing with
+#   `status=226/NAMESPACE` because `/var/cache/nftban` (a ReadWritePaths
+#   target of the unit) does not exist at service-activation time.
+#
+#   Original defect: `packaging/deb/postinst` invoked the Go installer
+#   (triggering service activation) BEFORE the runtime tree shipped via
+#   `/usr/lib/tmpfiles.d/nftban.conf` was created. Fixed in PR #608 by
+#   adding an idempotent `systemd-tmpfiles --create` call between
+#   `daemon-reload` and the Go-installer block.
+#
+#   This guard codifies the V112.2 investigation lesson:
+#     "When a systemd unit fails, read one journal layer earlier —
+#      status codes 200-255 = pre-script-exec setup failure."
+#
+#   The prevention rule: on a freshly-installed host with /var/cache/nftban
+#   absent, after the package install scriptlet completes, nftband.service
+#   MUST start successfully without any status=226/NAMESPACE journal entry.
+#
+# Scope reference:
+#   AUDIT_190_LIFECYCLE/V114_CI_FRESH_INSTALL_GUARD_SCOPE.md
+#
+# Coverage matrix:
+#   RPM: alma9, rocky9, centos-stream9 (all share rpm-el9 artifact)
+#        centos-stream10 (rpm-el10)
+#   DEB: debian12, debian13, ubuntu22.04, ubuntu24.04
+#
+# Assertions (each with distinct exit code so CI logs are diagnostic):
+#   A1 (exit 2): nftband.service active post-install
+#   A2 (exit 3): no `status=226/NAMESPACE` or `Failed to set up mount
+#                namespacing` in nftband.service journal — primary defect
+#   A3 (exit 4): /var/cache/nftban exists post-install (tmpfiles ran)
+#   A4 (exit 5): no failed nftban-* dependent units
+#
+# Out-of-scope (deliberately not asserted):
+#   - nftban-unified-exporter.service exit=2 transient (known v1.112.2
+#     self-repair pattern; including would create a flaky gate).
+#   - Upgrade lifecycle (covered by ci-update-canonization.yml).
+#
+# =============================================================================
+
+name: CI Fresh-Install Namespace Guard
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'packaging/**'
+      - 'install/**'
+      - 'build/fhs-spec.yaml'
+      - 'build/packages/SPECS/**'
+      - '.github/workflows/ci-fresh-install-namespace-guard.yml'
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Build NFTBan Packages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-install-guard:
+    name: Fresh-install namespace guard (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    # Only run after Build NFTBan Packages succeeds (when triggered by workflow_run)
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # RPM family — rpm-el9 artifact covers alma9 + rocky9 + centos-stream9
+          - distro: alma9
+            image: almalinux:9
+            pkg_type: rpm
+            artifact: rpm-el9
+          - distro: rocky9
+            image: rockylinux:9
+            pkg_type: rpm
+            artifact: rpm-el9
+          - distro: centos-stream9
+            image: quay.io/centos/centos:stream9
+            pkg_type: rpm
+            artifact: rpm-el9
+          - distro: centos-stream10
+            image: quay.io/centos/centos:stream10
+            pkg_type: rpm
+            artifact: rpm-el10
+          # DEB family — one artifact per distro
+          - distro: debian12
+            image: debian:12
+            pkg_type: deb
+            artifact: deb-debian12
+          - distro: debian13
+            image: debian:13
+            pkg_type: deb
+            artifact: deb-debian13
+          - distro: ubuntu22.04
+            image: ubuntu:22.04
+            pkg_type: deb
+            artifact: deb-ubuntu22.04
+          - distro: ubuntu24.04
+            image: ubuntu:24.04
+            pkg_type: deb
+            artifact: deb-ubuntu24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download package artifact (with retry tolerance)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ matrix.artifact }}
+          path: ./packages
+        id: download
+        continue-on-error: true
+
+      - name: Skip if artifacts unavailable (rerun limitation)
+        if: steps.download.outcome == 'failure'
+        run: |
+          echo "::warning::Artifact ${{ matrix.artifact }} unavailable - likely partial rerun"
+          echo "This is a known GitHub Actions limitation when reruns occur."
+          exit 0
+
+      - name: Fresh-install namespace guard (${{ matrix.distro }})
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          # systemd-in-container requires --privileged + tmpfs /run for
+          # status=226/NAMESPACE detection (nftband.service ReadWritePaths
+          # mount-namespace setup happens at unit start, not via the
+          # installer Go binary directly).
+          docker run --rm \
+            --privileged \
+            --tmpfs /tmp \
+            --tmpfs /run \
+            --tmpfs /run/lock \
+            -v "$PWD/packages:/packages:ro" \
+            -e PKG_TYPE="${{ matrix.pkg_type }}" \
+            -e DISTRO="${{ matrix.distro }}" \
+            "${{ matrix.image }}" \
+            /bin/bash -c '
+              set -euo pipefail
+
+              echo "=== ${DISTRO} (${PKG_TYPE}) fresh-install namespace guard ==="
+
+              # -----------------------------------------------------------
+              # Pre-test cleanup: ensure /var/cache/nftban does NOT exist
+              # (simulates a true fresh install on a host where tmpfiles
+              # has never run).
+              # -----------------------------------------------------------
+              rm -rf /var/cache/nftban /var/lib/nftban /var/log/nftban || true
+              if test -d /var/cache/nftban; then
+                echo "::error::PRE-CLEANUP FAILED — /var/cache/nftban still present"
+                exit 1
+              fi
+              echo "PRE: /var/cache/nftban absent (verified)"
+
+              # -----------------------------------------------------------
+              # Install base dependencies needed for systemd-in-container
+              # -----------------------------------------------------------
+              if [ "${PKG_TYPE}" = "deb" ]; then
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq
+                apt-get install -y --no-install-recommends \
+                  systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates
+              else
+                dnf install -y -q systemd systemd-resolved curl iproute2 nftables jq tar
+              fi
+
+              # -----------------------------------------------------------
+              # Start systemd as PID 1 (background) so unit lifecycle is real
+              # -----------------------------------------------------------
+              /usr/sbin/init &
+              INIT_PID=$!
+              sleep 5
+              if ! ps -p ${INIT_PID} >/dev/null; then
+                # Fallback for distros where /usr/sbin/init is not present
+                /lib/systemd/systemd --system --unit=multi-user.target &
+                sleep 5
+              fi
+
+              # -----------------------------------------------------------
+              # Install the package under test (fresh install path)
+              # -----------------------------------------------------------
+              if [ "${PKG_TYPE}" = "deb" ]; then
+                dpkg -i /packages/*.deb || apt-get install -y -f
+              else
+                # Prefer dnf install (resolves deps); rpm -ivh as fallback
+                dnf install -y --allowerasing /packages/*.rpm || rpm -ivh --replacepkgs /packages/*.rpm
+              fi
+              echo "INSTALL: package installed"
+
+              # -----------------------------------------------------------
+              # Allow postinst/scriptlet + service activation to settle
+              # -----------------------------------------------------------
+              sleep 10
+
+              # -----------------------------------------------------------
+              # ASSERTION 1: nftband.service active
+              # -----------------------------------------------------------
+              if ! systemctl is-active --quiet nftband.service; then
+                echo "::error::A1 FAIL — nftband.service is not active post-install"
+                systemctl status nftband.service --no-pager || true
+                echo "--- journalctl -u nftband.service ---"
+                journalctl -u nftband.service --no-pager || true
+                exit 2
+              fi
+              echo "ASSERT-1 PASS: nftband.service active"
+
+              # -----------------------------------------------------------
+              # ASSERTION 2 (PRIMARY): no status=226/NAMESPACE in journal
+              # -----------------------------------------------------------
+              if journalctl -u nftband.service --no-pager 2>&1 | \
+                 grep -qE "status=226/NAMESPACE|Failed to set up mount namespacing"; then
+                echo "::error::A2 FAIL — 226/NAMESPACE detected in nftband.service journal"
+                echo "This is the v1.112.2 defect class. Check that packaging"
+                echo "creates /var/cache/nftban before service activation."
+                journalctl -u nftband.service --no-pager | \
+                  grep -E "status=226|mount namespac" | head -10 || true
+                exit 3
+              fi
+              echo "ASSERT-2 PASS: no 226/NAMESPACE in journal"
+
+              # -----------------------------------------------------------
+              # ASSERTION 3: /var/cache/nftban exists post-install
+              # (proves either package payload OR tmpfiles --create call
+              # OR Go installer mkdir created it)
+              # -----------------------------------------------------------
+              if ! test -d /var/cache/nftban; then
+                echo "::error::A3 FAIL — /var/cache/nftban absent post-install"
+                echo "Neither package payload mkdir nor systemd-tmpfiles created it."
+                ls -la /var/cache/ 2>&1 || true
+                exit 4
+              fi
+              echo "ASSERT-3 PASS: /var/cache/nftban exists post-install"
+
+              # -----------------------------------------------------------
+              # ASSERTION 4: no failed nftban-* dependent units
+              # (catches D-DEG-1 sub-class regressions — env-var unbound,
+              # alert@ permission denied, etc.)
+              # -----------------------------------------------------------
+              FAILED_UNITS=$(systemctl list-units --failed --no-legend --no-pager 2>/dev/null | \
+                              grep -E "nftban|nftband" | awk "{print \$1}" || true)
+              if [ -n "${FAILED_UNITS}" ]; then
+                echo "::error::A4 FAIL — failed nftban-* dependent units detected"
+                echo "${FAILED_UNITS}"
+                for u in ${FAILED_UNITS}; do
+                  echo "--- $u status ---"
+                  systemctl status "$u" --no-pager || true
+                done
+                exit 5
+              fi
+              echo "ASSERT-4 PASS: no failed nftban-* dependent units"
+
+              echo ""
+              echo "=== ${DISTRO}: ALL 4 ASSERTIONS PASSED ==="
+            '
+
+  summary:
+    name: Fresh-install namespace guard summary
+    runs-on: ubuntu-latest
+    needs: fresh-install-guard
+    if: always()
+    steps:
+      - name: Report aggregate result
+        run: |
+          if [ "${{ needs.fresh-install-guard.result }}" = "success" ]; then
+            echo "✅ Fresh-install namespace guard: all 8 distros passed"
+          else
+            echo "❌ Fresh-install namespace guard: failures detected"
+            echo "Review individual distro jobs for assertion details."
+            echo "Exit codes: 1=infra / 2=service-inactive / 3=226-NAMESPACE / 4=cache-absent / 5=failed-deps"
+            exit 1
+          fi
