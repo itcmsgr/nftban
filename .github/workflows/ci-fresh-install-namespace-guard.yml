@@ -180,12 +180,19 @@ jobs:
               # Install base dependencies needed for systemd-in-container
               # -----------------------------------------------------------
               if [ "${PKG_TYPE}" = "deb" ]; then
+                # adduser package provides addgroup/adduser binaries that
+                # packaging/deb/postinst:82-96 invokes during package install.
+                # Minimal Debian/Ubuntu containers omit it by default.
+                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-001 sub-class B.
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get update -qq
                 apt-get install -y --no-install-recommends \
-                  systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates
+                  systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser
               else
-                dnf install -y -q systemd systemd-resolved curl iproute2 nftables jq tar
+                # On EL9/EL10 the iproute tooling package is named `iproute`
+                # (not `iproute2`, which is Debian/Ubuntu only).
+                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-001 sub-class A.
+                dnf install -y -q systemd systemd-resolved curl iproute nftables jq tar
               fi
 
               # -----------------------------------------------------------
