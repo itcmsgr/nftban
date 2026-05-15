@@ -69,6 +69,7 @@ jobs:
   fresh-install-guard:
     name: Fresh-install namespace guard (${{ matrix.distro }})
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Only run on workflow_run after Build NFTBan Packages succeeds. PR/push
     # triggers are no-ops here because the parallel Build NFTBan Packages run
     # uploads the artifacts under a different run-id; PR-time install coverage
@@ -84,35 +85,43 @@ jobs:
             image: almalinux:9
             pkg_type: rpm
             artifact: rpm-el9
+            systemd_install: dnf install -y -q systemd systemd-resolved iproute nftables jq tar
           - distro: rocky9
             image: rockylinux:9
             pkg_type: rpm
             artifact: rpm-el9
+            systemd_install: dnf install -y -q systemd systemd-resolved iproute nftables jq tar
           - distro: centos-stream9
             image: quay.io/centos/centos:stream9
             pkg_type: rpm
             artifact: rpm-el9
+            systemd_install: dnf install -y -q systemd systemd-resolved iproute nftables jq tar
           - distro: centos-stream10
             image: quay.io/centos/centos:stream10
             pkg_type: rpm
             artifact: rpm-el10
+            systemd_install: dnf install -y -q systemd systemd-resolved iproute nftables jq tar
           # DEB family — one artifact per distro
           - distro: debian12
             image: debian:12
             pkg_type: deb
             artifact: deb-debian12
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv iproute2 nftables jq tar ca-certificates adduser
           - distro: debian13
             image: debian:13
             pkg_type: deb
             artifact: deb-debian13
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv iproute2 nftables jq tar ca-certificates adduser
           - distro: ubuntu22.04
             image: ubuntu:22.04
             pkg_type: deb
             artifact: deb-ubuntu22.04
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv iproute2 nftables jq tar ca-certificates adduser
           - distro: ubuntu24.04
             image: ubuntu:24.04
             pkg_type: deb
             artifact: deb-ubuntu24.04
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv iproute2 nftables jq tar ca-certificates adduser
 
     steps:
       - name: Checkout code
@@ -142,15 +151,38 @@ jobs:
           echo "This is a known GitHub Actions limitation when reruns occur."
           exit 0
 
+      # -----------------------------------------------------------
+      # Build a systemd-ready image per distro so systemd can run as
+      # PID 1 inside the container (rather than backgrounded by a bash
+      # PID 1 wrapper, which Linux process namespaces do not allow to
+      # take over PID 1 retroactively). Fixes D-V114-CI-GUARD-SYSTEMD-PID1-001.
+      # Folds in: dep install (sub-classes A+B+C of CONTAINER-DEPS-001/002)
+      # and sshd_config seed (sub-class D of CONTAINER-DEPS-002). Image is
+      # tagged per-distro and exists only for the duration of the runner job.
+      # -----------------------------------------------------------
+      - name: Build systemd-ready image for ${{ matrix.distro }}
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          BUILDCTX=$(mktemp -d)
+          cat > "${BUILDCTX}/Dockerfile" <<DOCKERFILE
+          FROM ${{ matrix.image }}
+          RUN ${{ matrix.systemd_install }}
+          RUN mkdir -p /etc/ssh && echo "Port 22" > /etc/ssh/sshd_config
+          STOPSIGNAL SIGRTMIN+3
+          ENTRYPOINT ["/sbin/init"]
+          DOCKERFILE
+          docker build -t v114-guard-${{ matrix.distro }} "${BUILDCTX}"
+          rm -rf "${BUILDCTX}"
+
       - name: Fresh-install namespace guard (${{ matrix.distro }})
         if: steps.download.outcome == 'success'
         run: |
           set -euo pipefail
-          # systemd-in-container requires --privileged + tmpfs /run for
-          # status=226/NAMESPACE detection (nftband.service ReadWritePaths
-          # mount-namespace setup happens at unit start, not via the
-          # installer Go binary directly).
-          docker run --rm \
+          # Start container detached with systemd as PID 1 via ENTRYPOINT.
+          # --privileged + tmpfs /run is required for systemd cgroup/namespace
+          # operations and for v1.112.2 status=226/NAMESPACE detection.
+          CID=$(docker run -d \
             --privileged \
             --tmpfs /tmp \
             --tmpfs /run \
@@ -158,147 +190,106 @@ jobs:
             -v "$PWD/packages:/packages:ro" \
             -e PKG_TYPE="${{ matrix.pkg_type }}" \
             -e DISTRO="${{ matrix.distro }}" \
-            "${{ matrix.image }}" \
-            /bin/bash -c '
-              set -euo pipefail
+            "v114-guard-${{ matrix.distro }}")
+          echo "Started container ${CID} for ${{ matrix.distro }}"
 
-              echo "=== ${DISTRO} (${PKG_TYPE}) fresh-install namespace guard ==="
+          # Cleanup trap: capture last 200 in-container journal lines,
+          # last 100 docker stdout/stderr lines, then force-remove the
+          # container on any exit (pass, fail, timeout, killed).
+          # Each command guarded with || true so cleanup never fails the job.
+          trap 'echo "=== container journal (tail 200) ==="; docker exec "$CID" journalctl -xb --no-pager 2>&1 | tail -200 || true; echo "=== docker logs (tail 100) ==="; docker logs "$CID" 2>&1 | tail -100 || true; docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
 
-              # -----------------------------------------------------------
-              # Pre-test cleanup: ensure /var/cache/nftban does NOT exist
-              # (simulates a true fresh install on a host where tmpfiles
-              # has never run).
-              # -----------------------------------------------------------
-              rm -rf /var/cache/nftban /var/lib/nftban /var/log/nftban || true
-              if test -d /var/cache/nftban; then
-                echo "::error::PRE-CLEANUP FAILED — /var/cache/nftban still present"
-                exit 1
-              fi
-              echo "PRE: /var/cache/nftban absent (verified)"
+          # Poll for systemd readiness (degraded acceptable; pre-install some
+          # warning units are expected). Bound at 30s.
+          for i in $(seq 1 30); do
+            STATE=$(docker exec "$CID" systemctl is-system-running 2>/dev/null || true)
+            case "$STATE" in
+              running|degraded|starting)
+                echo "systemd state=${STATE} after ${i}s"
+                break
+                ;;
+            esac
+            sleep 1
+          done
 
-              # -----------------------------------------------------------
-              # Install base dependencies needed for systemd-in-container
-              # -----------------------------------------------------------
-              if [ "${PKG_TYPE}" = "deb" ]; then
-                # adduser package provides addgroup/adduser binaries that
-                # packaging/deb/postinst:82-96 invokes during package install.
-                # Minimal Debian/Ubuntu containers omit it by default.
-                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-001 sub-class B.
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update -qq
-                apt-get install -y --no-install-recommends \
-                  systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser
-              else
-                # On EL9/EL10 the iproute tooling package is named `iproute`
-                # (not `iproute2`, which is Debian/Ubuntu only).
-                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-001 sub-class A.
-                # curl intentionally omitted: EL9/EL10 minimal base images
-                # ship curl-minimal which provides /usr/bin/curl; installing
-                # the full curl package triggers a baseos package conflict.
-                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-002 sub-class C.
-                dnf install -y -q systemd systemd-resolved iproute nftables jq tar
-              fi
+          # Run the install + A1-A4 grid inside the running systemd container.
+          # Quoted heredoc terminator SCRIPT means the outer shell does NOT
+          # expand $VARS in the body; in-container bash performs all expansion.
+          docker exec -i "$CID" bash -s <<'SCRIPT'
+            set -euo pipefail
 
-              # -----------------------------------------------------------
-              # Start systemd as PID 1 (background) so unit lifecycle is real
-              # -----------------------------------------------------------
-              /usr/sbin/init &
-              INIT_PID=$!
-              sleep 5
-              if ! ps -p ${INIT_PID} >/dev/null; then
-                # Fallback for distros where /usr/sbin/init is not present
-                /lib/systemd/systemd --system --unit=multi-user.target &
-                sleep 5
-              fi
+            echo "=== ${DISTRO} (${PKG_TYPE}) fresh-install namespace guard ==="
 
-              # -----------------------------------------------------------
-              # Seed a minimal sshd_config so nftban-installer Detect phase
-              # can resolve an SSH port. On real hosts this comes from the
-              # OS image + a running sshd; minimal CI base images carry
-              # neither, and the installer correctly refuses to proceed with
-              # FAILED_SSH_UNKNOWN (lockout-prevention defense-in-depth).
-              # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-002 sub-class D.
-              # Scaffold-only: no nftban product code change.
-              # -----------------------------------------------------------
-              mkdir -p /etc/ssh
-              echo "Port 22" > /etc/ssh/sshd_config
+            # Pre-test cleanup: simulate a true fresh install where tmpfiles
+            # has never run on the host.
+            rm -rf /var/cache/nftban /var/lib/nftban /var/log/nftban || true
+            if test -d /var/cache/nftban; then
+              echo "::error::PRE-CLEANUP FAILED — /var/cache/nftban still present"
+              exit 1
+            fi
+            echo "PRE: /var/cache/nftban absent (verified)"
 
-              # -----------------------------------------------------------
-              # Install the package under test (fresh install path)
-              # -----------------------------------------------------------
-              if [ "${PKG_TYPE}" = "deb" ]; then
-                dpkg -i /packages/*.deb || apt-get install -y -f
-              else
-                # Prefer dnf install (resolves deps); rpm -ivh as fallback
-                dnf install -y --allowerasing /packages/*.rpm || rpm -ivh --replacepkgs /packages/*.rpm
-              fi
-              echo "INSTALL: package installed"
+            # Install the package under test (fresh install path).
+            if [ "${PKG_TYPE}" = "deb" ]; then
+              dpkg -i /packages/*.deb || apt-get install -y -f
+            else
+              dnf install -y --allowerasing /packages/*.rpm || rpm -ivh --replacepkgs /packages/*.rpm
+            fi
+            echo "INSTALL: package installed"
 
-              # -----------------------------------------------------------
-              # Allow postinst/scriptlet + service activation to settle
-              # -----------------------------------------------------------
-              sleep 10
+            # Allow postinst/scriptlet + service activation to settle.
+            sleep 10
 
-              # -----------------------------------------------------------
-              # ASSERTION 1: nftband.service active
-              # -----------------------------------------------------------
-              if ! systemctl is-active --quiet nftband.service; then
-                echo "::error::A1 FAIL — nftband.service is not active post-install"
-                systemctl status nftband.service --no-pager || true
-                echo "--- journalctl -u nftband.service ---"
-                journalctl -u nftband.service --no-pager || true
-                exit 2
-              fi
-              echo "ASSERT-1 PASS: nftband.service active"
+            # ASSERTION 1 (exit 2): nftband.service active.
+            if ! systemctl is-active --quiet nftband.service; then
+              echo "::error::A1 FAIL — nftband.service is not active post-install"
+              systemctl status nftband.service --no-pager || true
+              echo "--- journalctl -u nftband.service ---"
+              journalctl -u nftband.service --no-pager || true
+              exit 2
+            fi
+            echo "ASSERT-1 PASS: nftband.service active"
 
-              # -----------------------------------------------------------
-              # ASSERTION 2 (PRIMARY): no status=226/NAMESPACE in journal
-              # -----------------------------------------------------------
-              if journalctl -u nftband.service --no-pager 2>&1 | \
-                 grep -qE "status=226/NAMESPACE|Failed to set up mount namespacing"; then
-                echo "::error::A2 FAIL — 226/NAMESPACE detected in nftband.service journal"
-                echo "This is the v1.112.2 defect class. Check that packaging"
-                echo "creates /var/cache/nftban before service activation."
-                journalctl -u nftband.service --no-pager | \
-                  grep -E "status=226|mount namespac" | head -10 || true
-                exit 3
-              fi
-              echo "ASSERT-2 PASS: no 226/NAMESPACE in journal"
+            # ASSERTION 2 (exit 3, PRIMARY): no status=226/NAMESPACE in journal.
+            if journalctl -u nftband.service --no-pager 2>&1 | \
+               grep -qE "status=226/NAMESPACE|Failed to set up mount namespacing"; then
+              echo "::error::A2 FAIL — 226/NAMESPACE detected in nftband.service journal"
+              echo "This is the v1.112.2 defect class. Check that packaging"
+              echo "creates /var/cache/nftban before service activation."
+              journalctl -u nftband.service --no-pager | \
+                grep -E "status=226|mount namespac" | head -10 || true
+              exit 3
+            fi
+            echo "ASSERT-2 PASS: no 226/NAMESPACE in journal"
 
-              # -----------------------------------------------------------
-              # ASSERTION 3: /var/cache/nftban exists post-install
-              # (proves either package payload OR tmpfiles --create call
-              # OR Go installer mkdir created it)
-              # -----------------------------------------------------------
-              if ! test -d /var/cache/nftban; then
-                echo "::error::A3 FAIL — /var/cache/nftban absent post-install"
-                echo "Neither package payload mkdir nor systemd-tmpfiles created it."
-                ls -la /var/cache/ 2>&1 || true
-                exit 4
-              fi
-              echo "ASSERT-3 PASS: /var/cache/nftban exists post-install"
+            # ASSERTION 3 (exit 4): /var/cache/nftban exists post-install
+            # (proves package payload OR tmpfiles OR Go installer mkdir).
+            if ! test -d /var/cache/nftban; then
+              echo "::error::A3 FAIL — /var/cache/nftban absent post-install"
+              echo "Neither package payload mkdir nor systemd-tmpfiles created it."
+              ls -la /var/cache/ 2>&1 || true
+              exit 4
+            fi
+            echo "ASSERT-3 PASS: /var/cache/nftban exists post-install"
 
-              # -----------------------------------------------------------
-              # ASSERTION 4: no failed nftban-* dependent units
-              # (catches D-DEG-1 sub-class regressions — env-var unbound,
-              # alert@ permission denied, etc.)
-              # -----------------------------------------------------------
-              FAILED_UNITS=$(systemctl list-units --failed --no-legend --no-pager 2>/dev/null | \
-                              grep -E "nftban|nftband" | awk "{print \$1}" || true)
-              if [ -n "${FAILED_UNITS}" ]; then
-                echo "::error::A4 FAIL — failed nftban-* dependent units detected"
-                echo "${FAILED_UNITS}"
-                for u in ${FAILED_UNITS}; do
-                  echo "--- $u status ---"
-                  systemctl status "$u" --no-pager || true
-                done
-                exit 5
-              fi
-              echo "ASSERT-4 PASS: no failed nftban-* dependent units"
+            # ASSERTION 4 (exit 5): no failed nftban-* dependent units
+            # (catches D-DEG-1 sub-class regressions).
+            FAILED_UNITS=$(systemctl list-units --failed --no-legend --no-pager 2>/dev/null | \
+                            grep -E "nftban|nftband" | awk "{print \$1}" || true)
+            if [ -n "${FAILED_UNITS}" ]; then
+              echo "::error::A4 FAIL — failed nftban-* dependent units detected"
+              echo "${FAILED_UNITS}"
+              for u in ${FAILED_UNITS}; do
+                echo "--- $u status ---"
+                systemctl status "$u" --no-pager || true
+              done
+              exit 5
+            fi
+            echo "ASSERT-4 PASS: no failed nftban-* dependent units"
 
-              echo ""
-              echo "=== ${DISTRO}: ALL 4 ASSERTIONS PASSED ==="
-            '
+            echo ""
+            echo "=== ${DISTRO}: ALL 4 ASSERTIONS PASSED ==="
+          SCRIPT
 
   summary:
     name: Fresh-install namespace guard summary
