@@ -192,7 +192,11 @@ jobs:
                 # On EL9/EL10 the iproute tooling package is named `iproute`
                 # (not `iproute2`, which is Debian/Ubuntu only).
                 # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-001 sub-class A.
-                dnf install -y -q systemd systemd-resolved curl iproute nftables jq tar
+                # curl intentionally omitted: EL9/EL10 minimal base images
+                # ship curl-minimal which provides /usr/bin/curl; installing
+                # the full curl package triggers a baseos package conflict.
+                # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-002 sub-class C.
+                dnf install -y -q systemd systemd-resolved iproute nftables jq tar
               fi
 
               # -----------------------------------------------------------
@@ -206,6 +210,18 @@ jobs:
                 /lib/systemd/systemd --system --unit=multi-user.target &
                 sleep 5
               fi
+
+              # -----------------------------------------------------------
+              # Seed a minimal sshd_config so nftban-installer's Detect phase
+              # can resolve an SSH port. On real hosts this comes from the
+              # OS image + a running sshd; minimal CI base images carry
+              # neither, and the installer correctly refuses to proceed with
+              # FAILED_SSH_UNKNOWN (lockout-prevention defense-in-depth).
+              # Fixes D-V114-CI-GUARD-CONTAINER-DEPS-002 sub-class D.
+              # Scaffold-only: no nftban product code change.
+              # -----------------------------------------------------------
+              mkdir -p /etc/ssh
+              echo "Port 22" > /etc/ssh/sshd_config
 
               # -----------------------------------------------------------
               # Install the package under test (fresh install path)
