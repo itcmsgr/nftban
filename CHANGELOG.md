@@ -11,6 +11,138 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.114.0] - 2026-05-15 — V114 narrow-cleanup: RPM tmpfiles defensive mirror + CI fresh-install 226/NAMESPACE guard
+
+V114 narrow-cleanup release on top of v1.113.0. Bundles three operational
+hygiene improvements with **zero impact** on `nftban-core` / `nftband`
+daemon behavior, packaging payloads, systemd units, or runtime semantics.
+The v1.114.0 daemon binary is byte-identical to v1.113.0 because no
+`internal/` or `cmd/` Go code changes ship in this release.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no schema doc edits, no allow-list mutation. No new
+behavior on the daemon `/metrics` surface, Status JSON wire format, ban
+behavior, or per-IP/per-subnet scoring path.
+
+### Added
+
+- **CI: Fresh-Install Namespace Guard** workflow — workflow_run-triggered
+  systemd-in-container assertion grid across 8 distros (alma9, rocky9,
+  centos-stream9, centos-stream10, debian12, debian13, ubuntu22.04,
+  ubuntu24.04). Runs after every `Build NFTBan Packages` success and
+  validates four assertions per distro:
+    - **A1** `nftband.service` active post-install
+    - **A2** no `status=226/NAMESPACE` or `Failed to set up mount
+      namespacing` entries in the unit journal
+    - **A3** `/var/cache/nftban` exists post-install
+    - **A4** no failed `nftban-*` dependent units
+  32/32 assertions PASS on the v1.114.0 baseline. Continuous protection
+  against the v1.112.2 226/NAMESPACE regression class on every PR-merge
+  that touches packaging or installer paths. Architecture: inline
+  per-distro Dockerfile builds a systemd-ready image (FROM matrix image
+  → install systemd + iproute + nftables + jq + tar + family-specific
+  prereqs → seed `/etc/ssh/sshd_config` with `Port 22` → STOPSIGNAL
+  SIGRTMIN+3 → ENTRYPOINT `/sbin/init`), `docker run -d --privileged
+  --tmpfs /run` starts systemd as PID 1, then `docker exec -i $CID bash
+  -s <<'SCRIPT'` runs the install + A1-A4 grid. Cleanup trap captures
+  last 200 in-container journal lines + last 100 docker stdout lines on
+  any exit. Job-level `timeout-minutes: 5`. Workflow-only — **no nftban
+  product code change**. (PRs #612, #613, #614, #615, #616, #617, #618,
+  #620 over a single iteration arc; final SHA `3cbf1376`.)
+
+### Fixed (defense-in-depth)
+
+- `packaging/build_nftban.sh` STEP 0.5: idempotent
+  `systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null
+  || true` call inserted between the RPM scriptlet's STEP 0 (yq link)
+  and STEP 1 (Go installer). Mirror of the v1.112.2 DEB-postinst fix at
+  `packaging/deb/postinst:196-203`. Protects against any future
+  regression that removes `/var/cache/nftban` from the RPM payload. The
+  V112.2 status=226/NAMESPACE failure was reproduced 0/5 on RPM during
+  v1.112.2 validation; this call is strict defense-in-depth. (PR #612)
+
+### Operational
+
+- Closed stale GitHub Issue #212 (security-summary issue closed
+  2026-05-14; operational hygiene; no code change).
+
+### Files touched (the entire envelope)
+
+The Cand 4 fix is **1 file**:
+
+- `packaging/build_nftban.sh` (STEP 0.5 block at lines 933, 942, 945
+  preserved across PRs #613-#620)
+
+The Cand 5 CI guard is **1 file** (single new workflow):
+
+- `.github/workflows/ci-fresh-install-namespace-guard.yml` — created in
+  PR #612 and re-architected across 7 follow-up PRs; final shape: ~300
+  LOC; systemd-as-PID-1 via inline Dockerfile + `docker run -d` +
+  `docker exec` heredoc + cleanup trap + 30s readiness poll + 8-distro
+  matrix.
+
+The v1.114.0 release-prep envelope is **4 files**:
+
+- `VERSION` (1.113.0 → 1.114.0)
+- `STATUS.md` (v1.114.0 release-lane row + schema unchanged statement)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh` — header version-banner only;
+  produces no FHS path-table changes)
+
+No daemon binary change. No Go source change. No schema change. No
+systemd unit changes. No FHS spec body change. No RPM/DEB packaging
+payload change. No `go.mod`/`go.sum` change.
+
+### Non-goals carried forward to v1.115+
+
+Explicit deferred debt — each separately gated:
+
+- **Cand 1** LoginMon Source State API — not yet scoped; product code
+  change pending operator authorization.
+- **Cand 2** D-DEG-1 investigation resume — investigation-only gate;
+  requires 3-host lab reproduction queued from v1.108 lineage; two
+  named sub-classes: A `NFTBAN_DATA_DIR: unbound variable` at
+  `helpers/nftban_task_queue.sh:64` (env-var-export gap in queue unit);
+  B `Permission denied on /etc/nftban/nftban.conf` at
+  `sbin/nftban-service-alert:47` (alert-helper conf permission).
+- **Cand 3** Manual-CIDR design fix — D-MANUAL-CIDR-LOAD-GAP; design
+  decision pending; product code change.
+- **Cand 6** DEB config-permission hardening — not yet scoped.
+- **Optional** `D-V114-CI-GUARD-DEB-BINKILL-VERIFY-001` — non-blocking
+  observation surfaced by the PR #620 decisive run. The
+  nftban-installer VERIFY phase reports DEGRADED on DEB CI containers
+  because `install/systemd/nftband.service:75 ExecReload=/bin/kill -HUP
+  $MAINPID` does not resolve in minimal Debian containers without
+  `bsdutils`/`procps`. A1-A4 all still PASS because the service IS
+  active, the journal is clean, the cache dir exists, and no units are
+  in `failed` state. Does not affect any real-host behavior (real
+  Debian/Ubuntu hosts ship `/bin/kill` via `bsdutils` essential-priority
+  or merged-usr `/bin → /usr/bin` symlink). Recommend defer to v1.115+
+  if pursued at all.
+
+All v1.113.0 deferred items remain deferred (PR-M2b-w2..w7 per-module
+emission waves; PR-M2c new nft named counters; PR-M2d kernel set
+element annotation cookies; PR-M3 cache v2 + PR-M1 CLI formatter; §F4
+metrics beyond 6 PR-M2b-w1 targets; D-LMA-1; R-11; D-DNS-1 DESIGN-FIX;
+D-FHS-1..5; D-SHA-1; D-POL-1; D-SEC-1 SEC-FW-BYPASS-ALERT-GAP-001;
+D-TRP-1 TRANSPORT-001; D-EGM-1; D-PNL-1; D-OSH-1; D-GHC-1; D-BKT-1).
+
+### Behavior changes (narrow, explicit)
+
+- **None on daemon.** The `nftban-core` / `nftband` binaries are
+  byte-identical to v1.113.0.
+- **RPM `%post` STEP 0.5** fires `systemd-tmpfiles --create` once at
+  install time on RPM hosts. Idempotent; no observable runtime change
+  on hosts where `/var/cache/nftban` already exists.
+- **CI Fresh-Install Namespace Guard** runs in GitHub Actions only; no
+  production-host impact.
+
+v1.114.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.114.0 defect surfaces).
+
+---
+
 ## [v1.113.0] - 2026-05-13 — V113 LoginMon SMTP subnet aggregation: opt-in detection primitive for distributed /24 brute force
 
 V113 single-PR feature release on top of v1.112.2. Closes
