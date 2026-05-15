@@ -212,7 +212,7 @@ jobs:
               fi
 
               # -----------------------------------------------------------
-              # Seed a minimal sshd_config so nftban-installer's Detect phase
+              # Seed a minimal sshd_config so nftban-installer Detect phase
               # can resolve an SSH port. On real hosts this comes from the
               # OS image + a running sshd; minimal CI base images carry
               # neither, and the installer correctly refuses to proceed with
