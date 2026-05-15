@@ -147,6 +147,45 @@ case "$1" in
         fi
         unset _nftban_attrs
 
+        # --- v1.115 Cand 6: DEB config-file ownership/mode convergence -----------
+        # The directory-convergence loop above intentionally skips files
+        # (line `if [ -d "$_attr_path" ]`). DEB payload ships config files at
+        # mode 0640 root:root because `dpkg-deb --build` records the build-user
+        # numeric IDs. RPM payload ships the same files at mode 0640 root:nftban
+        # via spec %attr(640,root,nftban). This block applies the RPM %attr
+        # parity for files on DEB. Idempotent. Closes D-DEG-1 sub-class B as a
+        # side-effect: nftban-alert@.service runs as user `nftban` and can now
+        # read /etc/nftban/nftban.conf via group-read (nftban user is in the
+        # nftban group; group-read 0640 applies). Scope: V115 Cand 6.
+        # Preserves operator-edited file contents — only ownership/mode change.
+        for _nftban_conf in \
+            /etc/nftban/nftban.conf \
+            /etc/nftban/nftables.conf
+        do
+            if [ -f "$_nftban_conf" ]; then
+                chown root:nftban "$_nftban_conf" 2>/dev/null || true
+                chmod 0640 "$_nftban_conf" 2>/dev/null || true
+                if dpkg-statoverride --list "$_nftban_conf" >/dev/null 2>&1; then
+                    dpkg-statoverride --remove "$_nftban_conf" >/dev/null 2>&1 || true
+                fi
+                dpkg-statoverride --update --add \
+                    root nftban 0640 "$_nftban_conf" \
+                    >/dev/null 2>&1 || true
+            fi
+        done
+        unset _nftban_conf
+
+        if [ -d /etc/nftban/conf.d ]; then
+            find /etc/nftban/conf.d \
+                \( -name '*.conf' -o -name '*.conf.default' \) \
+                -type f 2>/dev/null | while IFS= read -r _nftban_subconf; do
+                chown root:nftban "$_nftban_subconf" 2>/dev/null || true
+                chmod 0640 "$_nftban_subconf" 2>/dev/null || true
+            done
+            unset _nftban_subconf
+        fi
+        log_info "DEB config-file convergence: nftban.conf + nftables.conf + conf.d/**/*.conf -> root:nftban 0640"
+
         # --- NB-5: Canonical ownership for privileged binaries (DEB-PERM-001) ---
         # Must run AFTER nftban group is created. DEB payload ships 0750
         # root:root; postinst converges to root:nftban 0750 so the runtime
