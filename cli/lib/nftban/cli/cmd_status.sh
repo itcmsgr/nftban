@@ -590,6 +590,37 @@ _status_section_firewall() {
     echo ""
 }
 
+_status_section_authority() {
+    # ─────────────────────────────────────────────────────────────────────
+    # AUTHORITY (v1.118 B1)
+    # ─────────────────────────────────────────────────────────────────────
+    # Surfaces install_state AUTHORITY + CONFLICTS so operators on
+    # AMBIGUOUS hosts (CSF/lfd/firewalld still active) see the resolution
+    # command without having to read /var/lib/nftban/state/install_state.
+    # No-op when the state file is missing or AUTHORITY is empty.
+    local state_file="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/install_state"
+    [[ -f "$state_file" ]] || return 0
+
+    local authority conflicts
+    authority=$(grep '^AUTHORITY=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2-)
+    conflicts=$(grep '^CONFLICTS=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2-)
+
+    [[ -z "$authority" ]] && return 0
+
+    echo "AUTHORITY"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s\n" "Install authority..." "$authority"
+    if [[ -n "$conflicts" ]]; then
+        printf "  %-20s %s\n" "Active conflicts...." "$conflicts"
+    fi
+    if [[ "$authority" == "AMBIGUOUS" && -n "$conflicts" ]]; then
+        echo ""
+        echo "  WARNING: $conflicts still active — nftban is not sole authority."
+        echo "  ACTION:  Run 'nftban update --panel-auto-takeover' to disarm conflicts."
+    fi
+    echo ""
+}
+
 _status_section_services() {
     # ─────────────────────────────────────────────────────────────────────
     # SERVICES
@@ -1447,6 +1478,7 @@ output_terminal() {
 
     _status_section_system "$protection_state"
     _status_section_firewall "$quiet_mode"
+    _status_section_authority
     _status_section_services
     _status_section_protection "$quiet_mode"
     _status_section_health "$protection_state" "$quiet_mode"
@@ -1592,6 +1624,21 @@ output_json() {
         enforcement_24h=$(nftban_stats_count_bans "$since" 2>/dev/null || echo 0)
     fi
     echo "    \"enforcement_events_24h\": $enforcement_24h"
+    echo "  },"
+
+    # Authority + conflicts (v1.118 B1)
+    local _json_auth_state="" _json_auth_conflicts=""
+    local _json_auth_file="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/install_state"
+    if [[ -f "$_json_auth_file" ]]; then
+        _json_auth_state=$(grep '^AUTHORITY=' "$_json_auth_file" 2>/dev/null | head -1 | cut -d= -f2-)
+        _json_auth_conflicts=$(grep '^CONFLICTS=' "$_json_auth_file" 2>/dev/null | head -1 | cut -d= -f2-)
+    fi
+    local _json_auth_ambig=false
+    [[ "$_json_auth_state" == "AMBIGUOUS" && -n "$_json_auth_conflicts" ]] && _json_auth_ambig=true
+    echo "  \"authority\": {"
+    echo "    \"state\": \"${_json_auth_state}\","
+    echo "    \"conflicts\": \"${_json_auth_conflicts}\","
+    echo "    \"ambiguous_with_conflicts\": $_json_auth_ambig"
     echo "  },"
 
     # Master control
