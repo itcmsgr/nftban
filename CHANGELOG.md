@@ -11,6 +11,156 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.116.0] - 2026-05-16 — V116 narrow-cleanup: Docker tag scheme restore + LoginMon CLI source-state visibility
+
+V116 narrow-cleanup release on top of v1.115.0. Bundles two non-Go fixes
+with **zero daemon binary change** — the v1.116.0
+`/usr/lib/nftban/bin/nftband` is byte-identical to v1.115.0 because no
+`internal/` or `cmd/` Go code changes ship in this release.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no schema doc edits, no allow-list mutation. No new
+behavior on the daemon `/metrics` surface, Status JSON wire format, ban
+behavior, or per-IP/per-subnet scoring path.
+
+### Fixed (Docker tag scheme)
+
+- `.github/workflows/docker.yml` — restored pre-v1.108.0-era convenience
+  tag pattern to the `docker/metadata-action@v5` configuration. Added
+  `type=semver,pattern=v{{version}}` alongside the existing non-v
+  `{{version}}` and `{{major}}.{{minor}}` rules so both
+  `ghcr.io/itcmsgr/nftban:v1.116.0` and `ghcr.io/itcmsgr/nftban:1.116.0`
+  resolve post-publication. Added explicit
+  `type=sha,format=short,length=8` to restore 8-character short-SHA tags
+  (default `type=sha` is 7-char; explicit length matches git short-form).
+  Workflow-only — no nftban product code change. Closes the V114 PR #620
+  Docker tag scheme drift observation. 1 file (+8/-1). (PR #626)
+
+### Added (LoginMon CLI source-state visibility)
+
+- `cli/lib/nftban/cli/cmd_login.sh` — `nftban login stats` now consumes
+  the daemon's existing `modules` IPC method and renders the typed
+  `LoginMonStatusExtra` fields when available. New helpers
+  `_loginmon_ipc_call` (Unix-socket call via `socat - UNIX-CONNECT:`,
+  mirroring the proven `cmd_watchdog.sh:_watchdog_ipc_call` pattern) +
+  `_loginmon_extract_extra` (extracts `.data[] | select(.name=="loginmon") | .extra`
+  via `jq`). Text mode renders: module status header (mode,
+  suricata_available, tracked_ips), totals with IPv4/v6 split, top
+  services by detections, top reasons by bans, and the v1.113 subnet
+  aggregation section (zero-omittable — shown only when any of
+  `subnet_pressure_count` / `subnet_bans_total` / `subnet_watch_active`
+  is non-zero). The pre-v1.116 file-log section is preserved verbatim
+  as "Today's logged events". When daemon socket / `socat` / `jq`
+  unavailable, the formatter degrades to file-log-only with a
+  `(daemon unreachable — file-log fallback only)` notice and exits 0.
+  JSON mode adds a `.module` key when daemon data is available and
+  omits the key entirely when unavailable; `.events` and `.service`
+  keys remain byte-stable for existing JSON consumers. **No new IPC
+  method. No new HTTP route. No new Go struct. No `internal/loginmon/`
+  touch. No daemon code touch.** 1 file (+177/-27). (PR #628)
+
+- `cli/lib/nftban/tests/cmd_login_stats_test.sh` — NEW. Bats-free test
+  fixture with 27 sub-assertions across 6 scenarios (daemon-up text,
+  daemon-up JSON, daemon-down text fallback, daemon-down JSON omit,
+  subnet-zero omission, subnet-non-zero presence). Executes entirely
+  in a `mktemp -d` sandbox with a PATH-based `socat` wrapper, stubbed
+  `systemctl`, and a passthrough `json_output`. Verifies that existing
+  `TestLoginMonStatusExtra_*` Go regression guards in
+  `internal/loginmon/module_test.go` remain byte-unchanged. 1 file
+  (+323/0). (PR #628)
+
+### Closes
+
+- D-DOCKER-TAG-SCHEME-DRIFT (V114 PR #620 observation) — by PR #626
+- LoginMon CLI source-state visibility gap (V117_BACKLOG_INVENTORY §B-1) — by PR #628
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be guarded
+by the workflow_run-triggered Fresh-Install Namespace Guard built
+across V114 PRs #612-#620 + V115 PR #624's `/bin/kill` polish.
+**32/32 A1-A4 assertions expected PASS on the v1.116.0 baseline**
+post-tag, continuing the streak from v1.115.0 / v1.114.0 release-prep
+verification.
+
+### Files touched (the entire envelope)
+
+V116 candidate envelope already on `main` before this release-prep:
+
+- `.github/workflows/docker.yml` (+8/-1) — P2 Docker tag scheme restore (PR #626)
+- `cli/lib/nftban/cli/cmd_login.sh` (+177/-27) — V116 Cand 1 LoginMon CLI (PR #628)
+- `cli/lib/nftban/tests/cmd_login_stats_test.sh` (+323) — V116 Cand 1 test fixture (PR #628)
+
+Plus the v1.116.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.115.0 → 1.116.0)
+- `STATUS.md` (v1.116.0 release-lane paragraph + schema unchanged statement)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; header version-banner only; no
+  FHS path-table change)
+
+**No daemon binary change.** No `internal/` Go change. No `cmd/`
+Go change. No schema change. No FHS spec body change. No RPM
+packaging change. No DEB packaging change. No systemd unit change.
+No metric / label / cardinality change. No `go.mod`/`go.sum` change.
+
+### Non-goals carried forward to v1.117+
+
+Explicit deferred debt — each separately gated:
+
+- **Cand 3** Manual CIDR design fix Option D (DESIGN-LOCKED in
+  `V116_CAND3_MANUAL_CIDR_DESIGN_FIX_SCOPE.md`; cross-5-file Go +
+  shell + counter-UX change; HIGH-risk; v1.117 candidate via
+  `OPEN_V117_MANUAL_CIDR_FIX_PR`; D-MANUAL-CIDR-LOAD-GAP)
+- **B7** WordPress login-failure detector — separate gate, not scoped
+- **B8** stale CLI residue cleanup (nftban-api-server, nftban-ui
+  residue from V108 closure) — separate gate, not scoped
+- All **schema-UNFREEZE** items (PR-M2b-w2..w7, PR-M2c new nft named
+  counters, PR-M2d kernel set element annotation cookies, PR-M3 + PR-M1,
+  §F4 metrics beyond the 6 PR-M2b-w1 targets, LoginMon subnet
+  Prometheus emission `nftban_loginmon_subnet_pressure_total` +
+  `nftban_loginmon_subnet_bans_total`)
+- All **pre-V113 D-* large lanes** (D-MET-1, D-MOD-1, D-DNS-1,
+  D-FHS-1..5, D-SHA-1, D-POL-1, D-SEC-1 SEC-FW-BYPASS-ALERT-GAP-001,
+  D-TRP-1 TRANSPORT-001, D-EGM-1, D-PNL-1, D-OSH-1, D-GHC-1, D-WIK-2,
+  D-MIG-1, D-BKT-1 Bucket-C 14 v0.x tags **NEVER delete remote** per
+  long-standing policy, D-RECV-INSTALL-RESULT-JSON-PARSE-001
+  nftbanpro_cms scope, D-LMA-1, R-11, #525 geoip Go panic Lane G)
+- **dns2 migration** — D-DNS-1 separately gated
+- **nftbanpro_cms changes** — separate-track / pro lanes
+- **Packaging/systemd/installer payload changes** — none; future
+  packaging cleanup lanes separate
+- **Host rollout** (srv1–4, lab2, monitor) — post-publication
+  validation gate, operator-conditional
+- **Bucket-C v0.x tag changes** — FORBIDDEN INDEFINITELY per
+  long-standing operator policy
+- **MASTER_TODO edits** — FORBIDDEN per workspace control rule locked
+  2026-05-13
+- **README PR #586** — open PR, separate merge
+
+### Behavior changes (narrow, explicit)
+
+- **None on daemon.** The `nftban-core` / `nftband` binaries are
+  byte-identical to v1.115.0.
+- **`nftban login stats` text mode** adds a daemon-derived module
+  status section when daemon data is reachable; on daemon-down the
+  formatter is byte-equivalent to pre-v1.116 behavior.
+- **`nftban login stats --json`** adds a `.module` key when daemon
+  data is reachable; omits the key entirely otherwise (absence, not
+  null). `.events` and `.service` keys remain byte-stable.
+- **Docker/GHCR tag pattern after publication**: both `v1.116.0` and
+  `1.116.0` resolve; `sha-<8>` resolves (was: `sha-<7>` only).
+- New IPC traffic from CLI to daemon: one read-only `modules` IPC
+  call per `nftban login stats` invocation; idempotent; bounded by
+  `timeout 5` seconds; no daemon-side handler change required because
+  the `modules` method has existed since prior releases.
+
+v1.116.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.116.0 defect surfaces).
+
+---
+
 ## [v1.115.0] - 2026-05-15 — V115 narrow-cleanup: DEB config-perm + D-DEG-1 fixes + CI guard polish
 
 V115 operational hygiene / packaging and CI guard stabilization release on
