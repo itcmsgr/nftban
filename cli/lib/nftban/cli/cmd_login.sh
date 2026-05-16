@@ -581,8 +581,126 @@ nftban_login_cmd_run() {
     fi
 }
 
+# v1.116 Cand1: Fetch raw `modules` IPC response from nftband daemon.
+# Emits the JSON response on stdout, returns non-zero if daemon/socket/socat
+# unavailable. Mirrors the proven pattern in cmd_watchdog.sh:_watchdog_ipc_call
+# (read-only IPC call to an already-existing daemon method; no new method).
+_loginmon_ipc_call() {
+    local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+    [[ -S "$socket_path" ]] || return 1
+    command -v socat >/dev/null 2>&1 || return 1
+    local resp=""
+    resp=$(echo '{"method":"modules","params":{}}' | \
+        timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || return 1
+    [[ -n "$resp" ]] || return 1
+    printf '%s' "$resp"
+}
+
+# v1.116 Cand1: Extract the LoginMon module's `.extra` object from the raw
+# `modules` IPC response. Emits the extra object (JSON) on stdout, empty
+# string on miss. jq required; absent jq → empty (caller falls back).
+_loginmon_extract_extra() {
+    command -v jq >/dev/null 2>&1 || return 1
+    local extra=""
+    extra=$(jq -c '.data[]? | select(.name=="loginmon") | .extra // empty' 2>/dev/null) || return 1
+    [[ -n "$extra" ]] || return 1
+    printf '%s' "$extra"
+}
+
 nftban_login_cmd_stats() {
-    # Show login statistics for Prometheus/metrics
+    # v1.116 Cand1: daemon-first formatter consuming LoginMon Module Status Extra.
+    # Falls back to file-log-only behavior if daemon/socket/socat/jq absent.
+    local module_extra=""
+    local ipc_raw=""
+    if ipc_raw=$(_loginmon_ipc_call 2>/dev/null); then
+        module_extra=$(printf '%s' "$ipc_raw" | _loginmon_extract_extra 2>/dev/null) || module_extra=""
+    fi
+
+    echo "NFTBan Login Statistics"
+    echo "======================="
+    echo ""
+
+    if [[ -n "$module_extra" ]] && command -v jq >/dev/null 2>&1; then
+        # Tier 1 — module status header
+        local mode suricata tracked
+        mode=$(printf '%s' "$module_extra" | jq -r '.mode // "unknown"' 2>/dev/null || echo "unknown")
+        suricata=$(printf '%s' "$module_extra" | jq -r '.suricata_available // false' 2>/dev/null || echo "false")
+        tracked=$(printf '%s' "$module_extra" | jq -r '.tracked_ips // 0' 2>/dev/null || echo "0")
+        echo "Module Status (from daemon):"
+        printf "  %-20s %s\n" "Mode:" "$mode"
+        if [[ "$suricata" == "true" ]]; then
+            printf "  %-20s %s\n" "Suricata:" "available"
+        else
+            printf "  %-20s %s\n" "Suricata:" "unavailable"
+        fi
+        printf "  %-20s %s\n" "Tracked IPs:" "$tracked"
+        echo ""
+
+        # Tier 1 + 2 — totals
+        local d_total d_v4 d_v6 b_total b_v4 b_v6 esc perm uniq
+        d_total=$(printf '%s' "$module_extra" | jq -r '.total_detections // 0' 2>/dev/null || echo "0")
+        d_v4=$(printf '%s' "$module_extra" | jq -r '.detections_ipv4 // 0' 2>/dev/null || echo "0")
+        d_v6=$(printf '%s' "$module_extra" | jq -r '.detections_ipv6 // 0' 2>/dev/null || echo "0")
+        b_total=$(printf '%s' "$module_extra" | jq -r '.total_bans // 0' 2>/dev/null || echo "0")
+        b_v4=$(printf '%s' "$module_extra" | jq -r '.bans_ipv4 // 0' 2>/dev/null || echo "0")
+        b_v6=$(printf '%s' "$module_extra" | jq -r '.bans_ipv6 // 0' 2>/dev/null || echo "0")
+        esc=$(printf '%s' "$module_extra" | jq -r '.total_escalations // 0' 2>/dev/null || echo "0")
+        perm=$(printf '%s' "$module_extra" | jq -r '.total_permanent // 0' 2>/dev/null || echo "0")
+        uniq=$(printf '%s' "$module_extra" | jq -r '.unique_ips // 0' 2>/dev/null || echo "0")
+        echo "Totals:"
+        printf "  %-20s %s (IPv4: %s / IPv6: %s)\n" "Detections:" "$d_total" "$d_v4" "$d_v6"
+        printf "  %-20s %s (IPv4: %s / IPv6: %s)\n" "Bans:" "$b_total" "$b_v4" "$b_v6"
+        printf "  %-20s %s\n" "Escalations:" "$esc"
+        printf "  %-20s %s\n" "Permanent Bans:" "$perm"
+        printf "  %-20s %s\n" "Unique Offenders:" "$uniq"
+        echo ""
+
+        # Tier 3 — Top services by detections
+        local top_dbs
+        top_dbs=$(printf '%s' "$module_extra" | jq -r '
+            (.detections_by_service // {}) | to_entries
+            | sort_by(-.value) | .[:5]
+            | map("  \(.key)\t\(.value)") | .[]' 2>/dev/null || true)
+        if [[ -n "$top_dbs" ]]; then
+            echo "Top Services (by detections):"
+            printf '%s\n' "$top_dbs"
+            echo ""
+        fi
+
+        # Tier 3 — Top reasons by bans
+        local top_rbs
+        top_rbs=$(printf '%s' "$module_extra" | jq -r '
+            (.bans_by_reason // {}) | to_entries
+            | sort_by(-.value) | .[:5]
+            | map("  \(.key)\t\(.value)") | .[]' 2>/dev/null || true)
+        if [[ -n "$top_rbs" ]]; then
+            echo "Top Reasons (by bans):"
+            printf '%s\n' "$top_rbs"
+            echo ""
+        fi
+
+        # Tier 4 — Subnet aggregation (v1.113). Section omitted when all zero.
+        local sub_p sub_b sub_w sub_nonzero
+        sub_p=$(printf '%s' "$module_extra" | jq -r '.subnet_pressure_count // 0' 2>/dev/null || echo "0")
+        sub_b=$(printf '%s' "$module_extra" | jq -r '.subnet_bans_total // 0' 2>/dev/null || echo "0")
+        sub_w=$(printf '%s' "$module_extra" | jq -r '.subnet_watch_active // 0' 2>/dev/null || echo "0")
+        sub_nonzero="false"
+        if [[ "$sub_p" != "0" || "$sub_b" != "0" || "$sub_w" != "0" ]]; then
+            sub_nonzero="true"
+        fi
+        if [[ "$sub_nonzero" == "true" ]]; then
+            echo "Subnet Aggregation (v1.113):"
+            printf "  %-20s %s (observe-mode counter)\n" "Pressure events:" "$sub_p"
+            printf "  %-20s %s (enforce-mode counter)\n" "CIDR bans:" "$sub_b"
+            printf "  %-20s %s (gauge)\n" "Watched prefixes:" "$sub_w"
+            echo ""
+        fi
+    else
+        echo "Module Status: (daemon unreachable — file-log fallback only)"
+        echo ""
+    fi
+
+    # File-log section (preserved from pre-v1.116 behavior).
     local log_file="$NFTBAN_LOGIN_ALERT_LOG"
     local total_events=0
     local success_events=0
@@ -599,13 +717,11 @@ nftban_login_cmd_stats() {
         today_events=$(grep -c "\[$today" "$log_file" 2>/dev/null) || today_events=0
     fi
 
-    echo "NFTBan Login Statistics"
-    echo "======================="
-    echo ""
-    echo "Total Events: $total_events"
-    echo "  Successful: $success_events"
-    echo "  Failed:     $failed_events"
-    echo "  Today:      $today_events"
+    echo "Today's logged events (file: $log_file):"
+    echo "  Total:                $total_events"
+    echo "  Successful:           $success_events"
+    echo "  Failed:               $failed_events"
+    echo "  Today:                $today_events"
     echo ""
 
     # Daemon uptime (v1.48.0: use nftband, not removed service)
@@ -645,27 +761,59 @@ _nftban_login_cmd_stats_json() {
             service_uptime=$(systemctl show nftband.service --property=ActiveEnterTimestamp --value 2>/dev/null) || service_uptime=""
         fi
 
+        # v1.116 Cand1: fetch module status from daemon. Omit .module key
+        # entirely when unavailable to keep wire format compatible.
+        local module_extra=""
+        local ipc_raw=""
+        if ipc_raw=$(_loginmon_ipc_call 2>/dev/null); then
+            module_extra=$(printf '%s' "$ipc_raw" | _loginmon_extract_extra 2>/dev/null) || module_extra=""
+        fi
+
         local data
         if command -v jq &>/dev/null; then
-            data=$(jq -n \
-                --arg total "$total_events" \
-                --arg success "$success_events" \
-                --arg failed "$failed_events" \
-                --arg today "$today_events" \
-                --arg running "$service_running" \
-                --arg uptime "$service_uptime" \
-                '{
-                    events: {
-                        total: ($total | tonumber),
-                        success: ($success | tonumber),
-                        failed: ($failed | tonumber),
-                        today: ($today | tonumber)
-                    },
-                    service: {
-                        running: ($running == "true"),
-                        uptime: $uptime
-                    }
-                }')
+            if [[ -n "$module_extra" ]]; then
+                data=$(jq -n \
+                    --arg total "$total_events" \
+                    --arg success "$success_events" \
+                    --arg failed "$failed_events" \
+                    --arg today "$today_events" \
+                    --arg running "$service_running" \
+                    --arg uptime "$service_uptime" \
+                    --argjson module "$module_extra" \
+                    '{
+                        events: {
+                            total: ($total | tonumber),
+                            success: ($success | tonumber),
+                            failed: ($failed | tonumber),
+                            today: ($today | tonumber)
+                        },
+                        service: {
+                            running: ($running == "true"),
+                            uptime: $uptime
+                        },
+                        module: $module
+                    }')
+            else
+                data=$(jq -n \
+                    --arg total "$total_events" \
+                    --arg success "$success_events" \
+                    --arg failed "$failed_events" \
+                    --arg today "$today_events" \
+                    --arg running "$service_running" \
+                    --arg uptime "$service_uptime" \
+                    '{
+                        events: {
+                            total: ($total | tonumber),
+                            success: ($success | tonumber),
+                            failed: ($failed | tonumber),
+                            today: ($today | tonumber)
+                        },
+                        service: {
+                            running: ($running == "true"),
+                            uptime: $uptime
+                        }
+                    }')
+            fi
         else
             data="{\"total\":$total_events,\"success\":$success_events,\"failed\":$failed_events,\"today\":$today_events,\"service_running\":$service_running}"
         fi
@@ -1257,6 +1405,8 @@ export -f nftban_login_cmd_status
 export -f _nftban_login_cmd_status_json
 export -f nftban_login_cmd_stats
 export -f _nftban_login_cmd_stats_json
+export -f _loginmon_ipc_call
+export -f _loginmon_extract_extra
 export -f nftban_login_cmd_config
 export -f nftban_login_cmd_install
 export -f nftban_login_cmd_enable
