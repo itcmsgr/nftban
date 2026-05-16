@@ -11,6 +11,179 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.117.0] - 2026-05-16 — V117 narrow-cleanup: firewall takeover discoverability + Docker SHA-length fix
+
+V117 narrow-cleanup release on top of v1.116.0. Bundles two non-Go
+fixes with **zero daemon binary change** — the v1.117.0
+`/usr/lib/nftban/bin/nftband` is byte-identical to v1.116.0 (and to
+v1.115.0) because no `internal/` or `cmd/` Go code changes ship in
+this release.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no schema doc edits, no allow-list mutation. No new
+behavior on the daemon `/metrics` surface, Status JSON wire format,
+ban behavior, or per-IP/per-subnet scoring path.
+
+### Added (CLI discoverability)
+
+- `commands.registry.yml` — registers `firewall.subcommands.takeover`
+  (`requires_root: true`, options `--panel-auto-takeover` + `--dry-run`,
+  examples, reversibility notes, env-mirror reference) and
+  `update.options.--panel-auto-takeover`. The existing central
+  pipeline (`scripts/generate-help.sh` +
+  `scripts/generate-wiki-operator.sh` +
+  `scripts/generate-wiki-auditor.sh` + bash completion +
+  `scripts/lint-registry-parity.sh` G15) picks both surfaces up
+  automatically. The 72-entry registry was the central CLI/help
+  source-of-truth; the takeover mechanism (well-engineered since
+  PR-22B 2026-02) was invisible to operators through normal
+  discovery channels until this release. (PR #630)
+
+- `cli/lib/nftban/cli/cmd_firewall.sh` — adds `takeover` dispatch case
+  + `firewall_takeover()` handler with `--help` (Usage block citing
+  reversibility, env-mirror, and reverse path), root + `--dry-run`
+  gating, and `exec` of
+  `/usr/lib/nftban/bin/nftban-installer --mode=upgrade
+  [--panel-auto-takeover] [--dry-run]`. Refuses with operator-actionable
+  error when invoked without `--panel-auto-takeover` or `--dry-run`.
+  Refuses with privilege error when invoked non-root without
+  `--dry-run`. 1 file (+87/-0). (PR #630)
+
+- `cli/lib/nftban/cli/cmd_update.sh` — parses + strips
+  `--panel-auto-takeover` from argv in the `nftban_cmd_update`
+  preamble and exports `NFTBAN_PANEL_AUTO_TAKEOVER=1`. The
+  install.sh chain (install.sh:67 `exec` of installer) inherits env,
+  so the existing env-mirror handler at
+  `cmd/nftban-installer/flags.go:141` picks it up across every
+  update path (github / git / local / package). Stripping the flag
+  before the existing case dispatcher avoids polluting version /
+  branch / path subcommand parsers. 1 file (+19/-0). (PR #630)
+
+- `cli/lib/nftban/tests/cmd_firewall_takeover_test.sh` — NEW. 21
+  sub-assertions across help output, no-flags refusal, dry-run argv,
+  panel-auto-takeover argv forwarding, unknown-arg refusal, root
+  gate, update env-mirror set/unset, registry YAML structural
+  validity, and a regression guard asserting
+  `cmd/nftban-installer/flags.go` byte-unchanged vs main
+  (scope-violation guard). 1 file (+332/0). (PR #630)
+
+### Fixed (Docker tag scheme polish)
+
+- `.github/workflows/docker.yml` — closes
+  `D-DOCKER-SHA-LENGTH-OBSERVATION` from
+  `V1_116_0_RELEASE_CLOSURE.md` §6. `docker/metadata-action@v5`
+  silently ignores `length=N` on `type=sha` (the action hard-codes
+  `context.sha.substr(0, 7)` for `format=short`). v1.116.0 evidence:
+  workflow declared `type=sha,format=short,length=8` yet the
+  published Docker tag was `sha-3ea0488` (7-char) instead of the
+  intended `sha-3ea0488b` (8-char). The fix adds a pre-step that
+  computes `${GITHUB_SHA:0:8}` via `cut -c1-8`, exports as
+  `SHA_SHORT` via `$GITHUB_ENV`, and replaces the broken sha rule
+  with `type=raw,value=sha-${{ env.SHA_SHORT }},enable=true,priority=100`
+  — the canonical metadata-action escape hatch. v-prefix + non-v +
+  major.minor semver tags from v1.116.0 PR #626 remain unchanged.
+  1 file (+20/-3). (PR #631)
+
+### Closes
+
+- V117 firewall-takeover-discoverability-gap — by PR #630
+- D-DOCKER-SHA-LENGTH-OBSERVATION (v1.116.0 closure §6) — by PR #631
+
+### Mechanism unchanged
+
+- `cmd/nftban-installer/flags.go` — **byte-identical** to v1.116.0
+  (regression-guarded by test T9.1 in PR #630)
+- `internal/installer/switchop/takeover.go` — byte-identical
+- `internal/installer/restore/contract.md` — byte-identical
+- `internal/installer/uninstall/contract.md` — byte-identical
+- All `cmd/nftban-installer/**`, `internal/installer/**` — no Go change
+- Takeover mechanism preserved from PR-22B (2026-02)
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be
+guarded by the workflow_run-triggered Fresh-Install Namespace Guard
+built across V114 PRs #612-#620 + V115 PR #624's `/bin/kill` polish.
+**32/32 A1-A4 assertions expected PASS on the v1.117.0 baseline**
+post-tag, continuing the streak from v1.116.0 / v1.115.0 / v1.114.0
+release-prep verification.
+
+### Files touched (the entire envelope)
+
+V117 candidate envelope already on `main` before this release-prep:
+
+- `commands.registry.yml` (+25/-0) — PR #630 takeover discoverability
+- `cli/lib/nftban/cli/cmd_firewall.sh` (+87/-0) — PR #630
+- `cli/lib/nftban/cli/cmd_update.sh` (+19/-0) — PR #630
+- `cli/lib/nftban/tests/cmd_firewall_takeover_test.sh` (+332/0) — PR #630
+- `.github/workflows/docker.yml` (+20/-3) — PR #631 SHA-length fix
+
+Plus the v1.117.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.116.0 → 1.117.0)
+- `STATUS.md` (v1.117.0 release-lane paragraph)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; header version-banner only; no
+  FHS path-table change)
+
+**No daemon binary change.** No `internal/` Go change. No `cmd/`
+Go change. No schema change. No FHS spec body change. No RPM
+packaging change. No DEB packaging change. No systemd unit change.
+No metric / label / cardinality change. No `go.mod`/`go.sum` change.
+
+### Non-goals carried forward to v1.118+
+
+Explicit deferred debt — each separately gated:
+
+- **Cand 3** Manual CIDR design fix Option D (DESIGN-LOCKED in
+  `V116_CAND3_MANUAL_CIDR_DESIGN_FIX_SCOPE.md`; cross-10-file Go +
+  shell + counter-UX change; HIGH-risk; recommended for its own
+  narrow-feature **v1.118** release with fleet validation
+  acceptance gates `EXECUTE_V118_VALIDATE_SRV*`, mirroring the
+  v1.113 LoginMon subnet aggregation release pattern;
+  D-MANUAL-CIDR-LOAD-GAP)
+- **B7** WordPress login-failure detector — separate gate, not scoped
+- **B8** stale CLI residue cleanup (nftban-api-server, nftban-ui
+  residue from V108 closure) — separate gate, not scoped
+- All **schema-UNFREEZE** items (PR-M2b-w2..w7, PR-M2c new nft named
+  counters, PR-M2d kernel set element annotation cookies, PR-M3 + PR-M1,
+  §F4 metrics beyond 6 PR-M2b-w1 targets, LoginMon subnet
+  Prometheus emission)
+- All **pre-V113 D-* large lanes** (D-MET-1, D-MOD-1, D-DNS-1,
+  D-FHS-1..5, D-SHA-1, D-POL-1, D-SEC-1, D-TRP-1, D-EGM-1, D-PNL-1,
+  D-OSH-1, D-GHC-1, D-WIK-2, D-MIG-1, D-BKT-1 Bucket-C 14 v0.x tags
+  **NEVER delete remote**, D-LMA-1, R-11, #525 geoip Go panic Lane G,
+  D-RECV-INSTALL-RESULT-JSON-PARSE-001 nftbanpro_cms scope)
+- **dns2 migration** — D-DNS-1 separately gated
+- **nftbanpro_cms changes** — separate-track / pro lanes
+- **Packaging/systemd/installer payload changes** — none; future
+  packaging cleanup lanes separate
+- **Host rollout** (srv1–4, lab2, monitor) — post-publication
+  validation gate, operator-conditional
+- **Bucket-C v0.x tag changes** — FORBIDDEN INDEFINITELY
+- **MASTER_TODO edits** — workspace control rule locked 2026-05-13
+
+### Behavior changes (narrow, explicit)
+
+- **None on daemon.** `nftban-core` / `nftband` byte-identical to
+  v1.115.0 and v1.116.0.
+- **`nftban firewall takeover`** new CLI surface — wraps the
+  existing installer; mechanism unchanged.
+- **`nftban update --panel-auto-takeover`** exports
+  `NFTBAN_PANEL_AUTO_TAKEOVER=1` env mirror for the duration of the
+  update; existing handler at `cmd/nftban-installer/flags.go:141`
+  is unchanged.
+- **Docker/GHCR tag pattern after publication:** `v1.117.0`,
+  `1.117.0`, `1.117`, `latest` all resolve (PR #626 logic
+  preserved); `sha-<8>` 8-character short-SHA tag is **restored**
+  via PR #631 (was: only 7-char `sha-<7>` resolved in v1.116.0).
+
+v1.117.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.117.0 defect surfaces).
+
+---
+
 ## [v1.116.0] - 2026-05-16 — V116 narrow-cleanup: Docker tag scheme restore + LoginMon CLI source-state visibility
 
 V116 narrow-cleanup release on top of v1.115.0. Bundles two non-Go fixes
