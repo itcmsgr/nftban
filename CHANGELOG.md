@@ -11,6 +11,195 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.118.0] - 2026-05-16 — V118 narrow-cleanup: CSF #4 active-conflict CLI guidance + FHS single-authority design-scope
+
+V118 narrow-cleanup release on top of v1.117.0. Bundles one shell-only
+CLI surface (V118 B1) with **zero daemon binary change** — the v1.118.0
+`/usr/lib/nftban/bin/nftband` is byte-identical to v1.117.0 (and to
+v1.116.0, v1.115.0) because no `internal/` or `cmd/` Go code changes
+ship in this release.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no schema doc edits, no allow-list mutation. No new
+behavior on the daemon `/metrics` surface, Status JSON wire format,
+ban behavior, or per-IP/per-subnet scoring path.
+
+### Added (CLI authority discoverability)
+
+- `cli/lib/nftban/cli/cmd_status.sh` — adds `_status_section_authority()`
+  section function reading
+  `${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/install_state` via
+  `grep '^AUTHORITY='` and `grep '^CONFLICTS='` plus `cut -d= -f2-`.
+  Section is emitted from `output_terminal()` between
+  `_status_section_firewall` and `_status_section_services`. Silent
+  when the state file is missing (fresh installs pre-classification)
+  or `AUTHORITY=""` (FRESH installs pre-classification). When
+  `AUTHORITY=AMBIGUOUS` AND `CONFLICTS` is non-empty (e.g. CSF/lfd/
+  firewalld still active after a failed takeover attempt) the section
+  emits a `WARNING: <conflicts> still active — nftban is not sole
+  authority.` line followed by `ACTION:  Run 'nftban update
+  --panel-auto-takeover' to disarm conflicts.`, closing the gap where
+  operators on srv4-class hosts had to read
+  `/var/lib/nftban/state/install_state` manually to discover the
+  resolution command. Silent on `AUTHORITY=UPDATE` because V108 Item 5
+  hygiene (`internal/installer/state/file.go:applyTerminalHygiene`)
+  clears CONFLICTS on COMMITTED transition when Authority==UPDATE so
+  UPDATE+CONFLICTS is transient and not the B1 actionable case.
+  Also adds an `authority` JSON object to `output_json()` between the
+  firewall close and master_enabled with fields `state` (string),
+  `conflicts` (string), `ambiguous_with_conflicts` (bool); object is
+  always emitted (empty strings + `false` when install_state is
+  missing) so the JSON wire format is byte-stable for downstream
+  parsers. 1 file (+47/-0). (PR #633)
+
+- `cli/lib/nftban/tests/cmd_status_authority_test.sh` — NEW. 12
+  sub-assertions across 5 fixtures: F1 AMBIGUOUS+CONFLICTS positive
+  (header, fields, WARNING, ACTION); F2 UPDATE no-warning; F3
+  missing install_state silent; F4 empty AUTHORITY silent; F5
+  AMBIGUOUS without CONFLICTS no-warning. Sandbox isolation via
+  `mktemp -d` + `NFTBAN_STATE_DIR` env override + `trap rm -rf`
+  cleanup; no live `/var/lib/nftban` dependency. Test extracts the
+  `_status_section_authority()` function definition from
+  `cmd_status.sh` via `awk` and runs it in a subshell so the test
+  does not need to source the full nftban runtime. 1 file (+182/0).
+  (PR #633)
+
+### Closes
+
+- V118 B1 CSF #4 active-conflict CLI guidance gap recorded as
+  `V117_BACKLOG_INVENTORY.md §C-1` — by PR #633
+
+### Mechanism unchanged
+
+- `internal/installer/state/file.go` — **byte-identical** to v1.117.0
+  (B1 is a read-only consumer of fields owned by this file)
+- `internal/installer/authority/types.go` — byte-identical (AUTHORITY
+  enum `UPDATE/FRESH/TAKEOVER/ABORT/AMBIGUOUS` already canonical)
+- All `cmd/nftban-installer/**`, `internal/installer/**`, `internal/`,
+  `cmd/` — no Go change
+- Daemon `nftband` binary — byte-identical to v1.117.0, v1.116.0, v1.115.0
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be
+guarded by the workflow_run-triggered Fresh-Install Namespace Guard
+built across V114 PRs #612-#620 + V115 PR #624's `/bin/kill` polish.
+**32/32 A1-A4 assertions expected PASS on the v1.118.0 baseline**
+post-tag, continuing the streak from v1.117.0 / v1.116.0 / v1.115.0 /
+v1.114.0 release-prep verification.
+
+### Files touched (the entire envelope)
+
+V118 candidate envelope already on `main` before this release-prep:
+
+- `cli/lib/nftban/cli/cmd_status.sh` (+47/-0) — PR #633 B1 authority section
+- `cli/lib/nftban/tests/cmd_status_authority_test.sh` (NEW, +182) — PR #633
+
+Plus the v1.118.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.117.0 → 1.118.0)
+- `STATUS.md` (v1.118.0 release-lane paragraph + v1.117.0 demoted)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; header version-banner only; no
+  FHS path-table change because B1 did not touch
+  `build/fhs-spec.yaml`)
+
+**No daemon binary change.** No `internal/` Go change. No `cmd/`
+Go change. No schema change. No FHS spec body change. No RPM
+packaging change. No DEB packaging change. No systemd unit change.
+No metric / label / cardinality change. No `go.mod`/`go.sum` change.
+
+### Workspace artifacts (no PR, no code)
+
+v1.118 Track A FHS Single-Authority Design design-scope filed at:
+
+- `AUDIT_190_LIFECYCLE/V118_DUAL_TRACK_SCOPE.md` (314 lines, recommends
+  Option D Hybrid staged authority preserving MFST + adding executive
+  authority layer for `nftban_health_fix_permissions` + RPM/DEB
+  scriptlets + Go installer `applyPermissions`; D-FHS-1..5 decomposed
+  into 5 separately gated phases D-1 Authority Territory Graph
+  filing through D-6 polkit live-consumer audit across multiple
+  release cycles)
+- `AUDIT_190_LIFECYCLE/V118_FHS_SINGLE_AUTHORITY_DESIGN_SCOPE.md`
+  (314 lines, 19-surface authority territory matrix + 5 drift classes
+  + 4-option comparison rejecting Options B/C and choosing Option D)
+- `AUDIT_190_LIFECYCLE/V118_SCOPE_FILING_CLOSURE.md` (closure record)
+
+Phase D-1 Authority Territory Graph filing **deferred** to separately
+gated session; no v1.118 implementation.
+
+### Non-goals carried forward to v1.119+
+
+Explicit deferred debt — each separately gated:
+
+- **Cand 3** Manual CIDR design fix Option D (DESIGN-LOCKED in
+  `V116_CAND3_MANUAL_CIDR_DESIGN_FIX_SCOPE.md`; cross-10-file Go +
+  shell + counter-UX change; HIGH-risk; recommended for its own
+  narrow-feature **v1.119** dedicated lane with fleet validation
+  acceptance gates `EXECUTE_V119_VALIDATE_SRV*`, mirroring the
+  v1.113 LoginMon subnet aggregation release pattern;
+  D-MANUAL-CIDR-LOAD-GAP)
+- **D-FHS-1..5 Phase D-1..D-6 implementation** — design-only filed
+  in v1.118 Track A; each phase separately gated across multiple
+  release cycles
+- **B2** EVE overlap review (LoginMon + Suricata double-action) —
+  separate gate, architectural decision pending
+- **B3** Legacy parser decommission (4 stale shell files) — separate
+  gate, needs 7-day soak
+- **B4** Plesk/cPanel distroconf keys (BUG-14 schema closure) —
+  separate gate, blocked on schema-unfreeze decision
+- **B7** WordPress login-failure detector — separate gate, not scoped
+- **B8** stale CLI residue cleanup (nftban-api-server, nftban-ui
+  residue from V108 closure) — separate gate, not scoped
+- All **schema-UNFREEZE** items (PR-M2b-w2..w7, PR-M2c new nft named
+  counters, PR-M2d kernel set element annotation cookies, PR-M3 + PR-M1,
+  §F4 metrics beyond 6 PR-M2b-w1 targets, LoginMon subnet
+  Prometheus emission)
+- All **pre-V113 D-* large lanes** (D-MET-1, D-MOD-1, D-DNS-1,
+  D-FHS-1..5 implementation, D-SHA-1, D-POL-1, D-SEC-1, D-TRP-1,
+  D-EGM-1, D-PNL-1, D-OSH-1, D-GHC-1, D-WIK-2, D-MIG-1, D-BKT-1
+  Bucket-C 14 v0.x tags **NEVER delete remote**, D-LMA-1, R-11,
+  #525 geoip Go panic Lane G, D-RECV-INSTALL-RESULT-JSON-PARSE-001
+  nftbanpro_cms scope)
+- **dns2 migration** — D-DNS-1 separately gated
+- **nftbanpro_cms changes** — separate-track / pro lanes
+- **Packaging/systemd/installer payload changes** — none; future
+  packaging cleanup lanes separate
+- **Host rollout** (srv1–4, lab2, monitor) — post-publication
+  validation gate, operator-conditional
+- **Bucket-C v0.x tag changes** — FORBIDDEN INDEFINITELY
+- **MASTER_TODO edits** — workspace control rule locked 2026-05-13
+
+### Behavior changes (narrow, explicit)
+
+- **None on daemon.** `nftban-core` / `nftband` byte-identical to
+  v1.115.0, v1.116.0, and v1.117.0.
+- **`nftban status` text output** gains an optional new AUTHORITY
+  section between FIREWALL and SERVICES. Section is silent when
+  install_state is missing or AUTHORITY=""; emits 1-line WARNING +
+  1-line ACTION when AUTHORITY=AMBIGUOUS + CONFLICTS non-empty;
+  emits header + fields only on other AUTHORITY values
+  (UPDATE/FRESH/TAKEOVER/ABORT).
+- **`nftban status --json`** adds a new `authority` object between
+  the firewall and master_enabled top-level keys. Fields: `state`
+  (string), `conflicts` (string), `ambiguous_with_conflicts` (bool).
+  Object is always emitted (empty strings + `false` when install_state
+  is missing) so JSON wire format is byte-stable.
+- **New file read at status time:**
+  `${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/install_state` — bounded
+  by `[[ -f $state_file ]]` existence check; idempotent; no write; no
+  daemon contact; no IPC; no network.
+- **Docker/GHCR tag pattern after publication:** `v1.118.0`,
+  `1.118.0`, `1.118`, `latest`, AND `sha-<8>` all resolve (the
+  `sha-<8>` 8-char short-SHA tag continues to use the v1.117.0
+  raw-template escape hatch from PR #631).
+
+v1.118.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.118.0 defect surfaces).
+
+---
+
 ## [v1.117.0] - 2026-05-16 — V117 narrow-cleanup: firewall takeover discoverability + Docker SHA-length fix
 
 V117 narrow-cleanup release on top of v1.116.0. Bundles two non-Go
