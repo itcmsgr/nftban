@@ -266,12 +266,98 @@ nftban_cmd_firewall() {
             shift
             firewall_record "$@"
             ;;
+        takeover)
+            shift
+            firewall_takeover "$@"
+            ;;
         *)
             echo "ERROR: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
             return 1
             ;;
     esac
+}
+
+# =============================================================================
+# SUBCOMMAND: TAKEOVER (v1.117 — registry-backed discoverability)
+# =============================================================================
+# Forwards to the installer's panel-auto-takeover flow. The mechanism is
+# unchanged from PR-22B; this is a discoverability surface only. The actual
+# disarm logic lives in cmd/nftban-installer + internal/installer/switchop.
+firewall_takeover() {
+    local panel_auto=false
+    local dry_run=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --panel-auto-takeover) panel_auto=true; shift ;;
+            --dry-run|-n) dry_run=true; shift ;;
+            -h|--help|help)
+                cat <<'HELP_EOF'
+Usage: nftban firewall takeover [--panel-auto-takeover] [--dry-run]
+
+Disarm conflicting external firewalls (CSF/iptables/firewalld) so nftban
+can become the sole authority on this host. REVERSIBLE.
+
+Options:
+  --panel-auto-takeover   Allow detected control-panel presence
+                          (cPanel/Plesk/DirectAdmin) to auto-approve
+                          takeover. Default OFF (PR-22B gate).
+  --dry-run, -n           Preview takeover actions without changes.
+
+What disarm does (reversible):
+  - External firewall binary renamed to <name>.disabled (sha256-equal)
+  - Service masked (systemctl mask)
+  - Config trees preserved verbatim
+  - Cron-backup manifest written before any rm
+
+To reverse:
+  nftban firewall restore csf
+  # or equivalently:
+  /usr/lib/nftban/bin/nftban-installer --mode=restore
+
+Env mirror:
+  NFTBAN_PANEL_AUTO_TAKEOVER=1   useful for cloud-init / Ansible /
+                                 package %post hooks.
+
+Requires root.
+HELP_EOF
+                return 0
+                ;;
+            *)
+                echo "ERROR: Unknown takeover argument: $1" >&2
+                echo "Try 'nftban firewall takeover --help' for more information." >&2
+                return 2
+                ;;
+        esac
+    done
+
+    if [[ "$panel_auto" == "false" && "$dry_run" == "false" ]]; then
+        echo "ERROR: nftban firewall takeover requires --panel-auto-takeover or --dry-run." >&2
+        echo "  --panel-auto-takeover : opt into auto-approve on detected panel hosts (PR-22B gate)" >&2
+        echo "  --dry-run             : preview without changes" >&2
+        echo "Reference: nftban firewall takeover --help" >&2
+        return 2
+    fi
+
+    if [[ $EUID -ne 0 && "$dry_run" == "false" ]]; then
+        echo "ERROR: nftban firewall takeover requires root (mutates: true)." >&2
+        return 1
+    fi
+
+    local installer="${NFTBAN_INSTALLER_BIN:-/usr/lib/nftban/bin/nftban-installer}"
+    if [[ ! -x "$installer" ]]; then
+        echo "ERROR: nftban-installer not found at $installer" >&2
+        echo "       Set NFTBAN_INSTALLER_BIN to override path." >&2
+        return 1
+    fi
+
+    local args=(--mode=upgrade)
+    [[ "$panel_auto" == "true" ]] && args+=(--panel-auto-takeover)
+    [[ "$dry_run" == "true" ]] && args+=(--dry-run)
+
+    echo "Invoking installer: $installer ${args[*]}"
+    exec "$installer" "${args[@]}"
 }
 
 # =============================================================================
@@ -2479,6 +2565,7 @@ Operations:
   rebuild       Rebuild schema (fix corruption, keeps IPs)
   reset         Complete reset (flush all, rebuild clean)
   restore       Enterprise rollback (restore previous state)
+  takeover      Disarm conflicting external firewalls (CSF/iptables/firewalld); reversible
 
 Examples:
   # Validate with strict mode (recommended before enabling)

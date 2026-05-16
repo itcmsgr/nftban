@@ -1524,6 +1524,26 @@ firewall:
       mutates: true
       requires_root: true
       description: "Reload nftables ruleset"
+    takeover:
+      mutates: true
+      requires_root: true
+      description: "Disarm conflicting external firewalls (CSF/iptables/firewalld); reversible; explicit operator approval required"
+      examples:
+        - "nftban firewall takeover --panel-auto-takeover"
+        - "nftban firewall takeover --dry-run"
+      options:
+        --panel-auto-takeover:
+          type: bool
+          default: false
+          description: "Allow detected control-panel presence (cPanel/Plesk/DA) to auto-approve takeover. Default OFF (PR-22B gate)."
+        --dry-run:
+          type: bool
+          default: false
+          description: "Preview takeover actions without changes"
+      notes:
+        - "Disarm is REVERSIBLE: external firewall binary renamed to .disabled (sha256-equal), config trees preserved, cron-backup manifest written before any rm"
+        - "To reverse: nftban firewall restore csf  (or  /usr/lib/nftban/bin/nftban-installer --mode=restore)"
+        - "Env mirror: NFTBAN_PANEL_AUTO_TAKEOVER=1 (useful for cloud-init / Ansible / package %post)"
     logs:
       mutates: conditional
       requires_root: conditional
@@ -3360,6 +3380,11 @@ update:
     methods:
       mutates: false
       description: "Update method implementations (github, git, local)"
+  options:
+    --panel-auto-takeover:
+      type: bool
+      default: false
+      description: "Allow detected control-panel presence to auto-approve takeover of conflicting firewalls during the update. Exported as NFTBAN_PANEL_AUTO_TAKEOVER=1 and forwarded to /usr/lib/nftban/bin/nftban-installer. Default OFF (PR-22B gate)."
   config_file: "/etc/nftban/update.conf"
   config_vars:
     NFTBAN_UPDATE_SOURCE:
