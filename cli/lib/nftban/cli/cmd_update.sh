@@ -2104,6 +2104,25 @@ nftban_cmd_update() {
         fi
     done
 
+    # v1.117 (registry option update.options.--panel-auto-takeover):
+    # parse-and-forward to the installer via the env mirror that
+    # cmd/nftban-installer/flags.go:141 already honors. install.sh
+    # exec's the installer (install.sh:67) and inherits env, so this
+    # works for every update path (github / git / local / package).
+    # The flag is stripped from argv before the case dispatch so it
+    # doesn't pollute version/branch/path subcommand parsers.
+    local _filtered_args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "--panel-auto-takeover" ]]; then
+            export NFTBAN_PANEL_AUTO_TAKEOVER=1
+        else
+            _filtered_args+=("$arg")
+        fi
+    done
+    if [[ ${#_filtered_args[@]} -lt $# ]]; then
+        set -- "${_filtered_args[@]}"
+    fi
+
     case "$cmd" in
         check|--check|-c)
             _cmd_update_check "$@"
