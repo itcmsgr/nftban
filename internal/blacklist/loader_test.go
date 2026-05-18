@@ -440,3 +440,172 @@ func TestBlacklist_RemoveIPFromFile_InlineComment(t *testing.T) {
 		t.Error("5.6.7.8 should remain")
 	}
 }
+
+// =============================================================================
+// V119 A1: Typed loader + IsIPInBlacklistFile tests
+// Covers V116_CAND3_MANUAL_CIDR_DESIGN_FIX_SCOPE.md §7 test matrix rows 1-4.
+// =============================================================================
+
+func TestLoadAllBlacklistsTyped_PreservesIsCIDR(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", `# Mixed single-IP + CIDR entries
+1.2.3.4
+1.2.3.0/27
+5.6.7.8
+2001:db8::1
+2001:db8::/64
+`)
+
+	ipv4, ipv6, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ipv4) != 3 {
+		t.Errorf("len(ipv4) = %d, want 3 (1.2.3.4 + 1.2.3.0/27 + 5.6.7.8)", len(ipv4))
+	}
+	if len(ipv6) != 2 {
+		t.Errorf("len(ipv6) = %d, want 2 (2001:db8::1 + 2001:db8::/64)", len(ipv6))
+	}
+
+	if entry, ok := ipv4["1.2.3.4"]; !ok || entry.IsCIDR {
+		t.Errorf("ipv4[1.2.3.4]: got IsCIDR=%v, want IsCIDR=false (and present)", entry.IsCIDR)
+	}
+	if entry, ok := ipv4["1.2.3.0/27"]; !ok || !entry.IsCIDR {
+		t.Errorf("ipv4[1.2.3.0/27]: got IsCIDR=%v, want IsCIDR=true (and present)", entry.IsCIDR)
+	}
+	if entry, ok := ipv6["2001:db8::/64"]; !ok || !entry.IsCIDR {
+		t.Errorf("ipv6[2001:db8::/64]: got IsCIDR=%v, want IsCIDR=true (and present)", entry.IsCIDR)
+	}
+}
+
+// V116 §7 Test 1: literal IPv4 exact match (pre-V119 path still works).
+func TestIsIPInBlacklistFile_SingleIPv4ExactMatch(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", "1.2.3.4\n")
+
+	ipv4, _, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !IsIPInBlacklistFile("1.2.3.4", ipv4) {
+		t.Error("IsIPInBlacklistFile(1.2.3.4) = false, want true")
+	}
+	if IsIPInBlacklistFile("1.2.3.5", ipv4) {
+		t.Error("IsIPInBlacklistFile(1.2.3.5) = true, want false (not in file)")
+	}
+}
+
+// V116 §7 Test 2: IPv4 CIDR containment — IS the V119 fix.
+// Pre-V119 all three sub-checks returned false; post-V119 the first two MUST return true.
+func TestIsIPInBlacklistFile_IPv4CIDRContainment(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", "1.2.3.0/27\n")
+
+	ipv4, _, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 1.2.3.5 is inside 1.2.3.0/27 (which spans 1.2.3.0-1.2.3.31).
+	if !IsIPInBlacklistFile("1.2.3.5", ipv4) {
+		t.Error("IsIPInBlacklistFile(1.2.3.5) against 1.2.3.0/27: got false, want true")
+	}
+	// 1.2.3.32 is OUTSIDE 1.2.3.0/27 (next /27 starts at .32).
+	if IsIPInBlacklistFile("1.2.3.32", ipv4) {
+		t.Error("IsIPInBlacklistFile(1.2.3.32) against 1.2.3.0/27: got true, want false")
+	}
+	// Exact CIDR literal still matches (preserves operator workflow).
+	if !IsIPInBlacklistFile("1.2.3.0/27", ipv4) {
+		t.Error("IsIPInBlacklistFile(1.2.3.0/27) against 1.2.3.0/27: got false, want true (exact key)")
+	}
+}
+
+// V116 §7 Test 3: single IPv6 — symmetric to Test 1.
+func TestIsIPInBlacklistFile_SingleIPv6ExactMatch(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", "2001:db8::1\n")
+
+	_, ipv6, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !IsIPInBlacklistFile("2001:db8::1", ipv6) {
+		t.Error("IsIPInBlacklistFile(2001:db8::1) = false, want true")
+	}
+	if IsIPInBlacklistFile("2001:db8::2", ipv6) {
+		t.Error("IsIPInBlacklistFile(2001:db8::2) = true, want false")
+	}
+}
+
+// V116 §7 Test 4: IPv6 CIDR — symmetric to Test 2.
+func TestIsIPInBlacklistFile_IPv6CIDRContainment(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", "2001:db8::/64\n")
+
+	_, ipv6, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !IsIPInBlacklistFile("2001:db8::5", ipv6) {
+		t.Error("IsIPInBlacklistFile(2001:db8::5) against 2001:db8::/64: got false, want true")
+	}
+	if IsIPInBlacklistFile("2001:db9::1", ipv6) {
+		t.Error("IsIPInBlacklistFile(2001:db9::1) against 2001:db8::/64: got true, want false")
+	}
+}
+
+// Edge case: invalid IP argument returns false rather than panicking.
+func TestIsIPInBlacklistFile_InvalidIPInput(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", "1.2.3.0/27\n")
+	ipv4, _, _ := LoadAllBlacklistsTyped(dir)
+
+	if IsIPInBlacklistFile("not-an-ip", ipv4) {
+		t.Error("IsIPInBlacklistFile(not-an-ip) = true, want false (invalid input)")
+	}
+	if IsIPInBlacklistFile("", ipv4) {
+		t.Error("IsIPInBlacklistFile(\"\") = true, want false")
+	}
+}
+
+// Dual-API parity guard: legacy LoadAllBlacklists must return identical
+// key sets as LoadAllBlacklistsTyped (just shaped differently). This
+// guards profile_sync.go's legacy-API callers against silent drift.
+func TestLoadAllBlacklists_DualAPIParity(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeBlacklistFile(t, dir, "99-manual.conf", `1.2.3.4
+1.2.3.0/27
+2001:db8::1
+2001:db8::/64
+`)
+
+	ipv4Bool, ipv6Bool, err := LoadAllBlacklists(dir)
+	if err != nil {
+		t.Fatalf("LoadAllBlacklists: %v", err)
+	}
+	ipv4Typed, ipv6Typed, err := LoadAllBlacklistsTyped(dir)
+	if err != nil {
+		t.Fatalf("LoadAllBlacklistsTyped: %v", err)
+	}
+
+	if len(ipv4Bool) != len(ipv4Typed) {
+		t.Errorf("len(ipv4Bool)=%d != len(ipv4Typed)=%d", len(ipv4Bool), len(ipv4Typed))
+	}
+	if len(ipv6Bool) != len(ipv6Typed) {
+		t.Errorf("len(ipv6Bool)=%d != len(ipv6Typed)=%d", len(ipv6Bool), len(ipv6Typed))
+	}
+	for k := range ipv4Typed {
+		if !ipv4Bool[k] {
+			t.Errorf("ipv4Typed key %q missing from ipv4Bool", k)
+		}
+	}
+	for k := range ipv6Typed {
+		if !ipv6Bool[k] {
+			t.Errorf("ipv6Typed key %q missing from ipv6Bool", k)
+		}
+	}
+}

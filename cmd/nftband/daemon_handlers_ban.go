@@ -40,19 +40,24 @@ import (
 
 // isWhitelisted checks if an IP is in the whitelist.
 // Returns true if the IP should NOT be banned.
+//
+// V119: CIDR-aware via whitelist.IsIPInWhitelistFile — an IP inside a
+// whitelisted CIDR (e.g. "1.2.3.5" against stored "1.2.3.0/27") is now
+// correctly protected from being banned. Closes the daemon-side half of
+// D-MANUAL-CIDR-LOAD-GAP per V116 §4 file 8.
 func (d *Daemon) isWhitelisted(ip string) bool {
 	if d.configDir == "" {
 		return false
 	}
-	ipv4Set, ipv6Set, err := whitelist.LoadAllWhitelists(d.configDir)
+	ipv4Set, ipv6Set, err := whitelist.LoadAllWhitelistsTyped(d.configDir)
 	if err != nil {
 		log.Printf("[WHITELIST] Warning: failed to load whitelists: %v", err)
 		return false
 	}
 	if strings.Contains(ip, ":") {
-		return ipv6Set[ip]
+		return whitelist.IsIPInWhitelistFile(ip, ipv6Set)
 	}
-	return ipv4Set[ip]
+	return whitelist.IsIPInWhitelistFile(ip, ipv4Set)
 }
 
 // checkAndEscalate checks if a temp-banned IP has exceeded the persistent
