@@ -111,9 +111,15 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	content := string(data)
-	occurrences := strings.Count(content, "62.38.150.122")
+	// T-1 fix (V120_PR_637_CI_AND_DIFF_VERIFICATION §3): count only DATA
+	// lines whose first whitespace-delimited token equals the IP. A naive
+	// strings.Count over the raw content double-counts the example
+	// occurrence inside the file header (`# 62.38.150.122 # EXPIRES_AT=...
+	// REASON=v120-update-session ADDED_BY=nftban-update`). Skip blank and
+	// `#`-prefixed comment lines so the header example is not counted.
+	occurrences := countDataLinesForIP(content, "62.38.150.122")
 	if occurrences != 1 {
-		t.Errorf("expected exactly 1 occurrence of 62.38.150.122 after refresh, got %d:\n%s",
+		t.Errorf("expected exactly 1 data-line occurrence of 62.38.150.122 after refresh, got %d:\n%s",
 			occurrences, content)
 	}
 	if !strings.Contains(content, "REASON=second-add") {
@@ -122,6 +128,34 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 	if strings.Contains(content, "REASON=first-add") {
 		t.Errorf("expected refresh to drop older REASON; still present:\n%s", content)
 	}
+}
+
+// countDataLinesForIP returns the number of non-blank, non-comment lines
+// in `content` whose first whitespace-delimited token equals `ip`. Used by
+// V120 dedup/refresh assertions where a naive substring count would also
+// match the IP appearing inside file-header example/documentation lines.
+//
+// Lines whose trimmed-leading-whitespace form starts with `#` are treated
+// as comments and skipped. Blank lines are skipped. For non-skipped lines,
+// the IP is matched only against the first token before any inline `#`.
+func countDataLinesForIP(content, ip string) int {
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Strip inline `# ...` trailing comment, then take the first token.
+		beforeHash := trimmed
+		if idx := strings.IndexByte(beforeHash, '#'); idx >= 0 {
+			beforeHash = beforeHash[:idx]
+		}
+		fields := strings.Fields(beforeHash)
+		if len(fields) > 0 && fields[0] == ip {
+			count++
+		}
+	}
+	return count
 }
 
 // TestCleanupExpiredSessionWhitelist_RemovesOnlyExpired asserts cleanup
@@ -179,8 +213,14 @@ func TestReadSessionWhitelist_ParsesInlineMarkers(t *testing.T) {
 	log := newSessionTestLogger(t)
 	defer log.Close()
 
-	t1 := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
-	t2 := time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC)
+	// T-2 fix (V120_PR_637_CI_AND_DIFF_VERIFICATION §3): use relative
+	// timestamps so neither entry can be "born expired" when the test
+	// runs near a calendar boundary. The original hard-coded 2026-05-18
+	// fixtures became stale relative to "now" when CI ran on the same
+	// day, causing the v1.120 loader's EXPIRES_AT skip to drop the first
+	// entry and surface a false-negative read assertion.
+	t1 := time.Now().UTC().Add(time.Hour)
+	t2 := time.Now().UTC().Add(2 * time.Hour)
 	_ = AddSessionWhitelist(mock, log, SessionWhitelistEntry{
 		IP: "10.0.0.1", ExpiresAt: t1, Reason: "one", AddedBy: "test",
 	})
