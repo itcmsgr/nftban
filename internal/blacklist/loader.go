@@ -24,6 +24,7 @@ package blacklist
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,36 +34,61 @@ import (
 	"github.com/itcmsgr/nftban/internal/util"
 )
 
-// LoadAllBlacklists loads IPs from all blacklist sources:
-// - /etc/nftban/blacklist.d/*.conf (modular files organized by category)
-// Returns two sets: IPv4 and IPv6 addresses
-//
-// Now uses optimized generic Set type from internal/util for:
-// - Zero memory overhead (struct{} instead of bool)
-// - Consistent API
-// - Better performance
-func LoadAllBlacklists(configDir string) (map[string]bool, map[string]bool, error) {
-	// Use generic Set internally for efficiency
-	ipv4Set := util.NewSet[string]()
-	ipv6Set := util.NewSet[string]()
+// BlacklistEntry is the typed loader output preserving IsCIDR semantics so
+// downstream callers can do CIDR-containment lookups instead of exact-key
+// map[ip] match. The pre-V119 loader dropped IsCIDR on the entry.Value path,
+// silently turning entries like "1.2.3.0/27" into opaque map keys that no
+// longer matched "1.2.3.5" — closes D-MANUAL-CIDR-LOAD-GAP per
+// V116_CAND3_MANUAL_CIDR_DESIGN_FIX_SCOPE.md §3.
+type BlacklistEntry struct {
+	Value  string // exact normalized form as written: "1.2.3.4" or "1.2.3.0/27"
+	IsCIDR bool   // true if Value contains "/"
+}
 
-	// Load all files from blacklist.d/
+// LoadAllBlacklists loads IPs from all blacklist sources and returns two
+// map[string]bool sets for backward compatibility with pre-V119 callers
+// (notably cmd/nftban-core/profile_sync.go which iterates keys for pprof
+// diff profiling and does not perform membership tests).
+//
+// New consumers needing CIDR semantics should call LoadAllBlacklistsTyped
+// + IsIPInBlacklistFile instead.
+//
+// V119: thin wrapper around LoadAllBlacklistsTyped (single scanning/parsing
+// path, two return shapes) per the dual-API pattern in
+// V119_MANUAL_CIDR_PREFLIGHT_PROFILE_SYNC_AUDIT.md §5.
+func LoadAllBlacklists(configDir string) (map[string]bool, map[string]bool, error) {
+	ipv4Typed, ipv6Typed, err := LoadAllBlacklistsTyped(configDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	ipv4Map := make(map[string]bool, len(ipv4Typed))
+	for k := range ipv4Typed {
+		ipv4Map[k] = true
+	}
+	ipv6Map := make(map[string]bool, len(ipv6Typed))
+	for k := range ipv6Typed {
+		ipv6Map[k] = true
+	}
+	return ipv4Map, ipv6Map, nil
+}
+
+// LoadAllBlacklistsTyped loads IPs from all blacklist sources and returns
+// map[string]BlacklistEntry preserving IsCIDR semantics. Use in tandem
+// with IsIPInBlacklistFile for CIDR-aware membership checks.
+//
+// V119 A1: closes D-MANUAL-CIDR-LOAD-GAP. Callers in V116 §4 allowlist
+// (cmd_check.go, cmd_ban.go, cmd_unban.go, daemon_handlers_ban.go) use
+// this typed loader; profile_sync.go remains on legacy LoadAllBlacklists.
+func LoadAllBlacklistsTyped(configDir string) (map[string]BlacklistEntry, map[string]BlacklistEntry, error) {
+	ipv4 := make(map[string]BlacklistEntry)
+	ipv6 := make(map[string]BlacklistEntry)
+
 	blacklistDir := filepath.Join(configDir, "blacklist.d")
 	entries, err := os.ReadDir(blacklistDir)
 	if err != nil {
 		// Non-fatal: directory might not exist yet
 		fmt.Fprintf(os.Stderr, "Warning: Could not read blacklist.d: %v\n", err)
-
-		// Convert to map[string]bool for backwards compatibility
-		ipv4Map := make(map[string]bool, ipv4Set.Len())
-		for ip := range ipv4Set {
-			ipv4Map[ip] = true
-		}
-		ipv6Map := make(map[string]bool, ipv6Set.Len())
-		for ip := range ipv6Set {
-			ipv6Map[ip] = true
-		}
-		return ipv4Map, ipv6Map, nil
+		return ipv4, ipv6, nil
 	}
 
 	for _, entry := range entries {
@@ -74,28 +100,52 @@ func LoadAllBlacklists(configDir string) (map[string]bool, map[string]bool, erro
 		}
 
 		filePath := filepath.Join(blacklistDir, entry.Name())
-		if err := loadBlacklistFile(filePath, ipv4Set, ipv6Set); err != nil {
+		if err := loadBlacklistFileTyped(filePath, ipv4, ipv6); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Could not load %s: %v\n", filePath, err)
 		}
 	}
 
-	// Convert util.Set back to map[string]bool for backwards compatibility
-	// TODO: Update all callers to use util.Set directly in future
-	ipv4Map := make(map[string]bool, ipv4Set.Len())
-	for ip := range ipv4Set {
-		ipv4Map[ip] = true
-	}
-
-	ipv6Map := make(map[string]bool, ipv6Set.Len())
-	for ip := range ipv6Set {
-		ipv6Map[ip] = true
-	}
-
-	return ipv4Map, ipv6Map, nil
+	return ipv4, ipv6, nil
 }
 
-// loadBlacklistFile loads IPs from a single blacklist file
-// Uses unified ParseFeedLine for consistent parsing across the codebase
+// IsIPInBlacklistFile returns true if ip is present as an exact key OR is
+// contained within any CIDR entry in the typed map. 1:1 replacement for
+// the pre-V119 exact-key `entries[ip]` pattern at callsites needing
+// CIDR-aware membership.
+//
+// The ip argument must be a single IP literal (e.g. "1.2.3.45"), not a CIDR.
+// To check whether an exact CIDR string is in the file (e.g. "1.2.3.0/27"
+// as a literal), use direct map lookup `_, ok := entries[cidr]` instead.
+//
+// V119 A1: closes D-MANUAL-CIDR-LOAD-GAP.
+func IsIPInBlacklistFile(ip string, entries map[string]BlacklistEntry) bool {
+	// Fast path: exact key match (single-IP entries or literal-CIDR lookups)
+	if _, ok := entries[ip]; ok {
+		return true
+	}
+	// Slow path: iterate CIDR entries for containment check
+	parsedIP, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsCIDR {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(entry.Value)
+		if err != nil {
+			continue
+		}
+		if prefix.Contains(parsedIP) {
+			return true
+		}
+	}
+	return false
+}
+
+// loadBlacklistFile loads IPs from a single blacklist file (legacy
+// signature retained for any future direct callers; current internal
+// users have migrated to loadBlacklistFileTyped via the dual-API).
 func loadBlacklistFile(filePath string, ipv4Set, ipv6Set util.Set[string]) error {
 	lineNum := 0
 
@@ -114,6 +164,27 @@ func loadBlacklistFile(filePath string, ipv4Set, ipv6Set util.Set[string]) error
 			ipv6Set.Add(entry.Value)
 		}
 
+		return nil
+	})
+}
+
+// loadBlacklistFileTyped loads IPs from a single blacklist file into typed
+// maps, preserving IsCIDR semantics from feeds.ParsedEntry.
+func loadBlacklistFileTyped(filePath string, ipv4, ipv6 map[string]BlacklistEntry) error {
+	return util.LoadLines(filePath, func(line string) error {
+		entry := feeds.ParseFeedLineSilent(line)
+		if entry == nil {
+			return nil
+		}
+		be := BlacklistEntry{
+			Value:  entry.Value,
+			IsCIDR: entry.IsCIDR,
+		}
+		if entry.IPv4 {
+			ipv4[entry.Value] = be
+		} else {
+			ipv6[entry.Value] = be
+		}
 		return nil
 	})
 }

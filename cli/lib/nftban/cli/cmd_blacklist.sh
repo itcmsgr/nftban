@@ -168,44 +168,58 @@ nftban_blacklist_list() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # IPv4 blacklist from nftables
+    # V119 D2: query BOTH blacklist_ipv4 (interval set — CIDRs from feeds/
+    # geoban) AND blacklist_manual_ipv4 (hash set — single-IP manual bans),
+    # mirroring the canonical cmd_list.sh pattern. Pre-V119 this command
+    # queried only blacklist_ipv4 and silently missed all
+    # blacklist_manual_ipv4 entries — closes D2 per V116 §3.
+
+    # Helper to extract `elements = { ... }` entries from `nft list set` output.
+    _nftban_blacklist_extract_elements() {
+        local raw="$1"
+        echo "$raw" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | sed 's/^[[:space:]]*//' | grep -v '^[[:space:]]*$'
+    }
+
+    # IPv4 blacklist from nftables — merged from both sets, deduplicated.
     echo "IPv4 Blacklist (nftables):"
     echo "──────────────────────────"
+    local ipv4_interval_raw ipv4_manual_raw ipv4_interval_elems ipv4_manual_elems ipv4_merged
     # $NFTBAN_TABLE_IPV4 must word-split (e.g. "ip nftban")
     # shellcheck disable=SC2086
-    local ipv4_output
-    ipv4_output=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || true
-    if [[ -n "$ipv4_output" ]]; then
-        local ipv4_elements
-        ipv4_elements=$(echo "$ipv4_output" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' | grep -v '^[[:space:]]*$' || true)
-        if [[ -n "$ipv4_elements" ]]; then
-            echo "$ipv4_elements"
-        else
-            echo "  (empty)"
-        fi
-    else
+    ipv4_interval_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || true
+    # shellcheck disable=SC2086
+    ipv4_manual_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} blacklist_manual_ipv4 2>/dev/null) || true
+    ipv4_interval_elems=$(_nftban_blacklist_extract_elements "$ipv4_interval_raw" || true)
+    ipv4_manual_elems=$(_nftban_blacklist_extract_elements "$ipv4_manual_raw" || true)
+    ipv4_merged=$(printf '%s\n%s\n' "$ipv4_interval_elems" "$ipv4_manual_elems" | grep -v '^[[:space:]]*$' | sort -u | sed 's/^/  /' || true)
+    if [[ -z "$ipv4_interval_raw" && -z "$ipv4_manual_raw" ]]; then
         echo "  (not available)"
+    elif [[ -z "$ipv4_merged" ]]; then
+        echo "  (empty)"
+    else
+        echo "$ipv4_merged"
     fi
 
     echo ""
 
-    # IPv6 blacklist from nftables
+    # IPv6 blacklist from nftables — merged from both sets, deduplicated.
     echo "IPv6 Blacklist (nftables):"
     echo "──────────────────────────"
+    local ipv6_interval_raw ipv6_manual_raw ipv6_interval_elems ipv6_manual_elems ipv6_merged
     # $NFTBAN_TABLE_IPV6 must word-split (e.g. "ip6 nftban")
     # shellcheck disable=SC2086
-    local ipv6_output
-    ipv6_output=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || true
-    if [[ -n "$ipv6_output" ]]; then
-        local ipv6_elements
-        ipv6_elements=$(echo "$ipv6_output" | tr '\n' ' ' | sed -n 's/.*elements = { *\([^}]*\).*/\1/p' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' | grep -v '^[[:space:]]*$' || true)
-        if [[ -n "$ipv6_elements" ]]; then
-            echo "$ipv6_elements"
-        else
-            echo "  (empty)"
-        fi
-    else
+    ipv6_interval_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || true
+    # shellcheck disable=SC2086
+    ipv6_manual_raw=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} blacklist_manual_ipv6 2>/dev/null) || true
+    ipv6_interval_elems=$(_nftban_blacklist_extract_elements "$ipv6_interval_raw" || true)
+    ipv6_manual_elems=$(_nftban_blacklist_extract_elements "$ipv6_manual_raw" || true)
+    ipv6_merged=$(printf '%s\n%s\n' "$ipv6_interval_elems" "$ipv6_manual_elems" | grep -v '^[[:space:]]*$' | sort -u | sed 's/^/  /' || true)
+    if [[ -z "$ipv6_interval_raw" && -z "$ipv6_manual_raw" ]]; then
         echo "  (not available)"
+    elif [[ -z "$ipv6_merged" ]]; then
+        echo "  (empty)"
+    else
+        echo "$ipv6_merged"
     fi
 
     echo ""

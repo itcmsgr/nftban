@@ -71,38 +71,38 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	fmt.Printf("  ✅ Valid %s address: %s\n", ipType, normalizedIP)
 	fmt.Println()
 
-	// Check if IP is whitelisted
+	// Check if IP is whitelisted (V119: CIDR-aware via IsIPInWhitelistFile)
 	fmt.Println("Step 2: Checking whitelist...")
 	configDir := getBanConfigDir(cfg)
-	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelists(configDir)
+	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelistsTyped(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
 	}
 
 	if isIPv4 {
-		if whitelistIPv4[normalizedIP] {
+		if whitelist.IsIPInWhitelistFile(normalizedIP, whitelistIPv4) {
 			return fmt.Errorf("IP %s is whitelisted, cannot ban", normalizedIP)
 		}
 	} else {
-		if whitelistIPv6[normalizedIP] {
+		if whitelist.IsIPInWhitelistFile(normalizedIP, whitelistIPv6) {
 			return fmt.Errorf("IP %s is whitelisted, cannot ban", normalizedIP)
 		}
 	}
 	fmt.Printf("  ✅ IP is not whitelisted\n")
 	fmt.Println()
 
-	// Check if already banned
+	// Check if already banned (V119: CIDR-aware via IsIPInBlacklistFile)
 	fmt.Println("Step 3: Checking if already banned...")
-	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklists(configDir)
+	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklistsTyped(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load blacklists: %w", err)
 	}
 
 	alreadyBanned := false
 	if isIPv4 {
-		alreadyBanned = blacklistIPv4[normalizedIP]
+		alreadyBanned = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv4)
 	} else {
-		alreadyBanned = blacklistIPv6[normalizedIP]
+		alreadyBanned = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv6)
 	}
 
 	// Step 4: Check for persistent offender escalation (all temp ban sources)

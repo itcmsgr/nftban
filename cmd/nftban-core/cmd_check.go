@@ -60,18 +60,18 @@ func cmdCheck(ipStr string, cfg *nftbanconf.Config) error {
 
 	configDir, dataDir := getCheckPaths(cfg)
 
-	// Check whitelist
+	// Check whitelist (V119: CIDR-aware via IsIPInWhitelistFile)
 	fmt.Println("Checking whitelist...")
-	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelists(configDir)
+	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelistsTyped(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
 	}
 
 	isWhitelisted := false
 	if isIPv4 {
-		isWhitelisted = whitelistIPv4[normalizedIP]
+		isWhitelisted = whitelist.IsIPInWhitelistFile(normalizedIP, whitelistIPv4)
 	} else {
-		isWhitelisted = whitelistIPv6[normalizedIP]
+		isWhitelisted = whitelist.IsIPInWhitelistFile(normalizedIP, whitelistIPv6)
 	}
 
 	if isWhitelisted {
@@ -83,18 +83,18 @@ func cmdCheck(ipStr string, cfg *nftbanconf.Config) error {
 		fmt.Println()
 	}
 
-	// Check blacklist
+	// Check blacklist (V119: CIDR-aware via IsIPInBlacklistFile)
 	fmt.Println("Checking blacklist...")
-	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklists(configDir)
+	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklistsTyped(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load blacklists: %w", err)
 	}
 
 	isBlacklisted := false
 	if isIPv4 {
-		isBlacklisted = blacklistIPv4[normalizedIP]
+		isBlacklisted = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv4)
 	} else {
-		isBlacklisted = blacklistIPv6[normalizedIP]
+		isBlacklisted = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv6)
 	}
 
 	if isBlacklisted {
