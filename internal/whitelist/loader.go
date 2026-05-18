@@ -155,31 +155,6 @@ func IsIPInWhitelistFile(ip string, entries map[string]WhitelistEntry) bool {
 	return false
 }
 
-// loadWhitelistFile loads IPs from a single whitelist file (legacy
-// signature retained for any future direct callers; current internal
-// users have migrated to loadWhitelistFileTyped via the dual-API).
-func loadWhitelistFile(filePath string, ipv4Set, ipv6Set util.Set[string]) error {
-	lineNum := 0
-
-	return util.LoadLines(filePath, func(line string) error {
-		lineNum++
-
-		// Use unified parser for consistent handling
-		entry := feeds.ParseFeedLineSilent(line)
-		if entry == nil {
-			return nil // Skip empty/comment lines or invalid entries
-		}
-
-		if entry.IPv4 {
-			ipv4Set.Add(entry.Value)
-		} else {
-			ipv6Set.Add(entry.Value)
-		}
-
-		return nil
-	})
-}
-
 // loadWhitelistFileTyped loads IPs from a single whitelist file into typed
 // maps, preserving IsCIDR semantics from feeds.ParsedEntry.
 func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntry) error {
