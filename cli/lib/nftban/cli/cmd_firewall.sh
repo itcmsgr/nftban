@@ -270,12 +270,477 @@ nftban_cmd_firewall() {
             shift
             firewall_takeover "$@"
             ;;
+        whitelist-session)
+            shift
+            firewall_whitelist_session "$@"
+            ;;
         *)
             echo "ERROR: Unknown firewall subcommand: $subcommand" >&2
             echo "Try 'nftban firewall help' for more information." >&2
             return 1
             ;;
     esac
+}
+
+# =============================================================================
+# SUBCOMMAND: WHITELIST-SESSION (v1.120 — D-UPDATE-OPERATOR-SELF-BAN-GAP-001)
+# =============================================================================
+# Manage time-bounded operator-session whitelist entries in
+# /etc/nftban/whitelist.d/00-session.conf. Each entry carries an inline
+# `# EXPIRES_AT=<RFC3339>` marker; the whitelist loader (v1.119 CIDR-aware,
+# extended in v1.120) skips expired entries at load time.
+#
+# v1.120 ships text-mode only. The `--json` flag is REJECTED with an
+# operator-actionable error message per V120_OPERATOR_TEMP_WHITELIST_
+# SCHEMA_IMPACT_DECISION.md §4 amendment (deferred to v1.121 pending the
+# Q2 schema-envelope question).
+firewall_whitelist_session() {
+    local action="${1:-}"
+    [[ -n "$action" ]] && shift
+
+    # V120 §4 amendment: reject --json early at every entry point.
+    # The loop below checks ALL remaining args for --json or -j and refuses.
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --json|-j)
+                cat >&2 <<'JSON_REFUSE_EOF'
+ERROR: --json output for `nftban firewall whitelist-session` is NOT supported in v1.120.
+
+Per V120_OPERATOR_TEMP_WHITELIST_SCHEMA_IMPACT_DECISION.md, JSON output for
+this new subcommand was deferred from v1.120 pending an operator decision
+on whether new top-level CLI subcommand JSON falls under the M81-6 Status
+JSON wire-format freeze envelope. v1.120 supports TEXT MODE only.
+
+If you need machine-readable output, parse the text-mode `list` output OR
+read /etc/nftban/whitelist.d/00-session.conf directly (one entry per line,
+inline `# EXPIRES_AT=<RFC3339>  REASON=<...>  ADDED_BY=<...>` markers).
+
+JSON support is planned for v1.121 if/when the schema decision is locked.
+JSON_REFUSE_EOF
+                return 2
+                ;;
+        esac
+    done
+
+    case "$action" in
+        add)        _whitelist_session_add "$@" ;;
+        list)       _whitelist_session_list "$@" ;;
+        remove|rm)  _whitelist_session_remove "$@" ;;
+        cleanup)    _whitelist_session_cleanup "$@" ;;
+        -h|--help|help|"")
+            cat <<'HELP_EOF'
+Usage: nftban firewall whitelist-session <action> [args]
+
+Manage time-bounded operator-session whitelist entries.
+
+Actions:
+  add <ip-or-cidr> --ttl <duration> [--reason <text>]
+      Add a temporary whitelist entry with EXPIRES_AT = now + ttl.
+      Duration format: 30m, 1h, 1h30m, 24h, etc. (Go's time.ParseDuration).
+      Re-adding the same IP REFRESHES the entry (does not duplicate).
+      Calls `nftban firewall reload` to make the entry effective immediately.
+
+  list
+      Show all non-expired session entries: IP | TTL remaining | Reason | Added-By.
+      Text-mode only; --json deferred to v1.121 (see V120 schema decision).
+
+  remove <ip-or-cidr>
+      Delete the entry for the given IP from 00-session.conf and reload.
+
+  cleanup
+      Manually remove all expired entries from 00-session.conf.
+      (The loader skips expired entries at load time regardless; this is
+      file-hygiene only.)
+
+Notes:
+  - This file is machine-managed: do NOT hand-edit /etc/nftban/whitelist.d/00-session.conf.
+  - Permanent operator entries belong in 99-manual.conf (NOT this file).
+  - Static host-interface entries belong in 00-system.conf (NOT this file).
+  - Requires root (writes /etc/nftban/whitelist.d/).
+
+V120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): closes the operator self-ban gap by
+ensuring `nftban update` / `firewall takeover` / validation workflows
+auto-seed the operator's SSH peer IP into this file with a bounded TTL.
+This subcommand is the explicit operator-override for cases where
+auto-seed cannot detect the right IP (multi-hop SSH, sudo chains, etc.).
+
+HELP_EOF
+            return 0
+            ;;
+        *)
+            echo "ERROR: Unknown whitelist-session action: $action" >&2
+            echo "Try 'nftban firewall whitelist-session help' for usage." >&2
+            return 1
+            ;;
+    esac
+}
+
+# Internal helper: 00-session.conf path
+_NFTBAN_SESSION_WHITELIST_PATH="/etc/nftban/whitelist.d/00-session.conf"
+
+# Internal helper: validate IP or CIDR. Returns 0 if valid, 1 otherwise.
+# Uses basic bash regex; not as strict as Go's net.ParseIP but catches
+# obvious garbage. Real validation happens at whitelist-load time.
+_whitelist_session_validate_ip() {
+    local v="$1"
+    # IPv4: a.b.c.d optionally /N
+    [[ "$v" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]] && return 0
+    # IPv6: very loose pattern (full validation is the loader's job)
+    [[ "$v" =~ ^[0-9a-fA-F:]+(/[0-9]{1,3})?$ && "$v" == *:* ]] && return 0
+    return 1
+}
+
+# Internal helper: convert TTL like "30m" / "1h" / "1h30m" to seconds.
+# Returns the integer count of seconds on stdout, or 1 on parse error.
+_whitelist_session_ttl_seconds() {
+    local ttl="$1"
+    if [[ -z "$ttl" ]]; then
+        echo "0"; return 1
+    fi
+    local total=0
+    local rest="$ttl"
+    while [[ -n "$rest" ]]; do
+        if [[ "$rest" =~ ^([0-9]+)h(.*)$ ]]; then
+            total=$(( total + ${BASH_REMATCH[1]} * 3600 ))
+            rest="${BASH_REMATCH[2]}"
+        elif [[ "$rest" =~ ^([0-9]+)m(.*)$ ]]; then
+            total=$(( total + ${BASH_REMATCH[1]} * 60 ))
+            rest="${BASH_REMATCH[2]}"
+        elif [[ "$rest" =~ ^([0-9]+)s(.*)$ ]]; then
+            total=$(( total + ${BASH_REMATCH[1]} ))
+            rest="${BASH_REMATCH[2]}"
+        elif [[ "$rest" =~ ^([0-9]+)$ ]]; then
+            # bare integer = seconds
+            total=$(( total + ${BASH_REMATCH[1]} ))
+            rest=""
+        else
+            echo "0"; return 1
+        fi
+    done
+    echo "$total"
+    return 0
+}
+
+# Internal: ensure 00-session.conf has the canonical header on first write.
+_whitelist_session_ensure_header() {
+    [[ -f "$_NFTBAN_SESSION_WHITELIST_PATH" ]] && return 0
+    mkdir -p "$(dirname "$_NFTBAN_SESSION_WHITELIST_PATH")"
+    cat > "$_NFTBAN_SESSION_WHITELIST_PATH" <<'SESSION_HEADER_EOF'
+# =============================================================================
+# NFTBan Session Whitelist (managed by nftban; do not hand-edit)
+# =============================================================================
+#
+# Time-bounded operator-session entries with inline EXPIRES_AT TTL.
+# Expired entries are skipped at whitelist-load time. Use:
+#   nftban firewall whitelist-session add <ip> --ttl 30m
+#   nftban firewall whitelist-session list
+#   nftban firewall whitelist-session remove <ip>
+#   nftban firewall whitelist-session cleanup
+#
+# Permanent operator entries: 99-manual.conf  (NOT this file)
+# Static host-interface entries: 00-system.conf  (NOT this file)
+#
+# =============================================================================
+
+SESSION_HEADER_EOF
+    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+    chown root:nftban "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+}
+
+_whitelist_session_add() {
+    local ip=""
+    local ttl=""
+    local reason="operator-explicit"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --ttl)     ttl="$2"; shift 2 ;;
+            --reason)  reason="$2"; shift 2 ;;
+            -h|--help) _whitelist_session_add_help; return 0 ;;
+            -*)        echo "ERROR: Unknown flag: $1" >&2; return 1 ;;
+            *)
+                if [[ -z "$ip" ]]; then
+                    ip="$1"; shift
+                else
+                    echo "ERROR: Unexpected argument: $1" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+
+    if [[ -z "$ip" || -z "$ttl" ]]; then
+        echo "ERROR: <ip> and --ttl are required" >&2
+        _whitelist_session_add_help
+        return 1
+    fi
+
+    if ! _whitelist_session_validate_ip "$ip"; then
+        echo "ERROR: Invalid IP or CIDR: $ip" >&2
+        return 1
+    fi
+
+    local ttl_sec
+    ttl_sec=$(_whitelist_session_ttl_seconds "$ttl") || {
+        echo "ERROR: Invalid --ttl value: $ttl (use formats like 30m, 1h, 1h30m)" >&2
+        return 1
+    }
+    if [[ "$ttl_sec" -le 0 ]]; then
+        echo "ERROR: --ttl must be > 0" >&2
+        return 1
+    fi
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        return 1
+    fi
+
+    _whitelist_session_ensure_header
+
+    local expires_at
+    expires_at=$(date -u -d "@$(( $(date -u +%s) + ttl_sec ))" '+%Y-%m-%dT%H:%M:%SZ')
+
+    # Remove any prior entry for the same IP (refresh semantics).
+    local tmp
+    tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+    # shellcheck disable=SC2016
+    awk -v ip="$ip" '
+        # Drop entry lines whose first token equals ip
+        {
+            t = $0
+            # Strip leading whitespace
+            gsub(/^[ \t]+/, "", t)
+            # If line starts with # or is empty, keep as-is
+            if (t == "" || substr(t, 1, 1) == "#") { print; next }
+            # Take first whitespace-delimited token; strip trailing comment
+            split(t, a, "#")
+            n = split(a[1], b, /[ \t]+/)
+            if (n >= 1 && b[1] == ip) next   # drop
+            print
+        }
+    ' "$_NFTBAN_SESSION_WHITELIST_PATH" > "$tmp"
+
+    # Append the new entry.
+    printf '%s  # EXPIRES_AT=%s  REASON=%s  ADDED_BY=nftban-firewall-whitelist-session\n' \
+        "$ip" "$expires_at" "$reason" >> "$tmp"
+
+    # Atomic rename.
+    mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
+    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+    chown root:nftban "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+
+    echo "Added: $ip  (expires $expires_at, reason=$reason)"
+
+    # Trigger reload so the daemon picks up the new entry immediately.
+    if command -v nftban >/dev/null 2>&1; then
+        nftban firewall reload >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+_whitelist_session_add_help() {
+    cat <<'HELP_EOF'
+Usage: nftban firewall whitelist-session add <ip-or-cidr> --ttl <duration> [--reason <text>]
+
+Add a time-bounded whitelist entry for the operator-session.
+
+Required:
+  <ip-or-cidr>           IPv4 or IPv6 address, optionally with CIDR suffix.
+  --ttl <duration>       Time-to-live: 30m, 1h, 1h30m, 24h, 3600s, etc.
+
+Optional:
+  --reason <text>        Short description (default: "operator-explicit").
+
+Examples:
+  nftban firewall whitelist-session add 62.38.150.122 --ttl 30m
+  nftban firewall whitelist-session add 192.168.1.0/24 --ttl 1h --reason "office VPN"
+HELP_EOF
+}
+
+_whitelist_session_list() {
+    if [[ ! -f "$_NFTBAN_SESSION_WHITELIST_PATH" ]]; then
+        echo "(no session whitelist entries — file absent)"
+        return 0
+    fi
+
+    local now_unix
+    now_unix=$(date -u +%s)
+
+    local count=0
+    printf '%-22s %-12s %-30s %s\n' "IP/CIDR" "TTL-LEFT" "REASON" "ADDED-BY"
+    printf '%-22s %-12s %-30s %s\n' "----------------------" "------------" "------------------------------" "--------"
+
+    local line
+    while IFS= read -r line; do
+        # Skip blank and comment lines (header)
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$trimmed" ]] && continue
+        [[ "$trimmed" =~ ^# ]] && continue
+
+        # Extract IP token (first whitespace-delimited field before #)
+        local before_hash="${line%%#*}"
+        local ip
+        # shellcheck disable=SC2086
+        ip=$(echo $before_hash | awk '{print $1}')
+        [[ -z "$ip" ]] && continue
+
+        # Extract EXPIRES_AT, REASON, ADDED_BY from the comment portion
+        local expires_at="" reason="-" added_by="-"
+        if [[ "$line" == *EXPIRES_AT=* ]]; then
+            expires_at=$(echo "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
+        fi
+        if [[ "$line" == *REASON=* ]]; then
+            reason=$(echo "$line" | grep -oE 'REASON=[^ ]+' | head -1 | cut -d= -f2)
+        fi
+        if [[ "$line" == *ADDED_BY=* ]]; then
+            added_by=$(echo "$line" | grep -oE 'ADDED_BY=[^ ]+' | head -1 | cut -d= -f2)
+        fi
+
+        if [[ -z "$expires_at" ]]; then
+            continue
+        fi
+
+        # Compute TTL remaining
+        local expires_unix
+        expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null) || continue
+        local ttl_left=$(( expires_unix - now_unix ))
+        if [[ "$ttl_left" -le 0 ]]; then
+            continue  # skip expired
+        fi
+
+        local ttl_pretty
+        if [[ "$ttl_left" -ge 3600 ]]; then
+            ttl_pretty="$(( ttl_left / 3600 ))h$(( (ttl_left % 3600) / 60 ))m"
+        elif [[ "$ttl_left" -ge 60 ]]; then
+            ttl_pretty="$(( ttl_left / 60 ))m$(( ttl_left % 60 ))s"
+        else
+            ttl_pretty="${ttl_left}s"
+        fi
+
+        printf '%-22s %-12s %-30s %s\n' "$ip" "$ttl_pretty" "$reason" "$added_by"
+        count=$(( count + 1 ))
+    done < "$_NFTBAN_SESSION_WHITELIST_PATH"
+
+    echo ""
+    echo "($count active session whitelist entries)"
+}
+
+_whitelist_session_remove() {
+    local ip="${1:-}"
+    if [[ -z "$ip" ]]; then
+        echo "ERROR: <ip-or-cidr> is required" >&2
+        echo "Usage: nftban firewall whitelist-session remove <ip-or-cidr>" >&2
+        return 1
+    fi
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        return 1
+    fi
+
+    if [[ ! -f "$_NFTBAN_SESSION_WHITELIST_PATH" ]]; then
+        echo "(no session whitelist file — nothing to remove)"
+        return 0
+    fi
+
+    local tmp
+    tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+    local removed=0
+    # shellcheck disable=SC2016
+    removed=$(awk -v ip="$ip" '
+        {
+            t = $0
+            gsub(/^[ \t]+/, "", t)
+            if (t == "" || substr(t, 1, 1) == "#") { print; next }
+            split(t, a, "#")
+            n = split(a[1], b, /[ \t]+/)
+            if (n >= 1 && b[1] == ip) { count++; next }
+            print
+        }
+        END { print count > "/dev/stderr" }
+    ' "$_NFTBAN_SESSION_WHITELIST_PATH" 2> >(tail -1) > "$tmp")
+
+    if [[ ! -s "$tmp" ]]; then
+        # awk produced no output (file was effectively empty)
+        : > "$tmp"
+    fi
+
+    mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
+    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+
+    # Re-count removed by diffing against the original (simpler & reliable)
+    # We approximate count by re-checking presence of the IP.
+    if grep -qE "^[[:space:]]*${ip//./\\.}[[:space:]]" "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null; then
+        echo "(no entries removed — $ip not found)"
+    else
+        echo "Removed: $ip"
+    fi
+
+    if command -v nftban >/dev/null 2>&1; then
+        nftban firewall reload >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+_whitelist_session_cleanup() {
+    if [[ ! -f "$_NFTBAN_SESSION_WHITELIST_PATH" ]]; then
+        echo "(no session whitelist file — nothing to clean up)"
+        return 0
+    fi
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        return 1
+    fi
+
+    local now_unix
+    now_unix=$(date -u +%s)
+    local tmp
+    tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
+
+    local removed=0
+    local line
+    while IFS= read -r line; do
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        if [[ -z "$trimmed" || "${trimmed:0:1}" == "#" ]]; then
+            printf '%s\n' "$line" >> "$tmp"
+            continue
+        fi
+
+        # Entry line — check EXPIRES_AT
+        if [[ "$line" == *EXPIRES_AT=* ]]; then
+            local expires_at
+            expires_at=$(echo "$line" | grep -oE 'EXPIRES_AT=[^ ]+' | head -1 | cut -d= -f2)
+            local expires_unix
+            expires_unix=$(date -u -d "$expires_at" +%s 2>/dev/null)
+            if [[ -z "$expires_unix" ]]; then
+                # Unparseable — drop conservatively
+                removed=$(( removed + 1 ))
+                continue
+            fi
+            if [[ "$expires_unix" -le "$now_unix" ]]; then
+                # Expired — drop
+                removed=$(( removed + 1 ))
+                continue
+            fi
+        fi
+        # No EXPIRES_AT marker OR not expired — keep
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$_NFTBAN_SESSION_WHITELIST_PATH"
+
+    mv "$tmp" "$_NFTBAN_SESSION_WHITELIST_PATH"
+    chmod 0640 "$_NFTBAN_SESSION_WHITELIST_PATH" 2>/dev/null || true
+
+    if [[ "$removed" -gt 0 ]]; then
+        echo "Removed $removed expired entries"
+        if command -v nftban >/dev/null 2>&1; then
+            nftban firewall reload >/dev/null 2>&1 || true
+        fi
+    else
+        echo "(no expired entries — nothing to remove)"
+    fi
+    return 0
 }
 
 # =============================================================================

@@ -2104,6 +2104,19 @@ nftban_cmd_update() {
         fi
     done
 
+    # v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): capture the operator's
+    # SSH peer IP from $SSH_CLIENT and propagate it to the installer via
+    # the env mirror NFTBAN_OPERATOR_SESSION_IP. The installer's
+    # phaseConfigure auto-seeds /etc/nftban/whitelist.d/00-session.conf
+    # with a bounded TTL so the operator does not self-ban during update.
+    # The capture is best-effort and skipped silently for non-SSH invocations
+    # (cron, systemd, local console). install.sh exec's the installer and
+    # inherits env, so this works across all update paths.
+    if [[ -z "${NFTBAN_OPERATOR_SESSION_IP:-}" && -n "${SSH_CLIENT:-}" ]]; then
+        # SSH_CLIENT format: "<peer-ip> <peer-port> <local-port>"
+        export NFTBAN_OPERATOR_SESSION_IP="${SSH_CLIENT%% *}"
+    fi
+
     # v1.117 (registry option update.options.--panel-auto-takeover):
     # parse-and-forward to the installer via the env mirror that
     # cmd/nftban-installer/flags.go:141 already honors. install.sh

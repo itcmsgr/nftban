@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/netutil"
@@ -157,10 +158,25 @@ func IsIPInWhitelistFile(ip string, entries map[string]WhitelistEntry) bool {
 
 // loadWhitelistFileTyped loads IPs from a single whitelist file into typed
 // maps, preserving IsCIDR semantics from feeds.ParsedEntry.
+//
+// V120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): if the line carries an inline
+// `# EXPIRES_AT=<RFC3339>` marker, the entry is loaded only when the
+// timestamp is in the future. Expired entries are skipped at load time so
+// the runtime CIDR-aware membership check never sees them. Lines without an
+// EXPIRES_AT marker continue to be loaded unchanged (backward compatibility
+// with 00-system.conf, 99-manual.conf, and any pre-V120 whitelist files).
+// Malformed EXPIRES_AT markers (no value, unparseable RFC3339) cause the
+// entry to be skipped conservatively — operator-intent ambiguity is treated
+// as "do not honor as whitelist."
 func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntry) error {
 	return util.LoadLines(filePath, func(line string) error {
 		entry := feeds.ParseFeedLineSilent(line)
 		if entry == nil {
+			return nil
+		}
+		// V120: skip if the entry carries an EXPIRES_AT marker that is past
+		// or unparseable. No marker → load normally (backward compat).
+		if shouldSkipDueToExpiresAt(line) {
 			return nil
 		}
 		we := WhitelistEntry{
@@ -174,6 +190,38 @@ func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntr
 		}
 		return nil
 	})
+}
+
+// shouldSkipDueToExpiresAt inspects the raw whitelist line for an inline
+// `EXPIRES_AT=<RFC3339>` marker (V120 session-whitelist convention) and
+// returns true if the entry should be SKIPPED — either because the marker
+// is present-but-malformed, or because the timestamp has already passed.
+// Returns false when there is no marker (the entry is non-expiring and
+// loads normally) or when the marker is parseable and the timestamp is
+// still in the future.
+//
+// V120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): keeps the EXPIRES_AT contract
+// in one place so AddSessionWhitelist (writer) and the loader (reader)
+// stay byte-compatible. See internal/installer/safety/session_whitelist.go.
+func shouldSkipDueToExpiresAt(line string) bool {
+	const marker = "EXPIRES_AT="
+	idx := strings.Index(line, marker)
+	if idx < 0 {
+		// No marker — entry is non-expiring; load normally.
+		return false
+	}
+	rest := line[idx+len(marker):]
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		// Marker present but no value — malformed; skip conservatively.
+		return true
+	}
+	ts, err := time.Parse(time.RFC3339, fields[0])
+	if err != nil {
+		// Unparseable timestamp — skip conservatively.
+		return true
+	}
+	return time.Now().UTC().After(ts)
 }
 
 // AddIP adds an IP to the appropriate whitelist file
