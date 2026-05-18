@@ -624,6 +624,101 @@ func TestIsIPInWhitelistFile_InvalidIPInput(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// V120 EXPIRES_AT matrix tests (D-UPDATE-OPERATOR-SELF-BAN-GAP-001)
+// =============================================================================
+// Asserts the v1.120 loader extension `shouldSkipDueToExpiresAt`:
+//   * loads entries with EXPIRES_AT in the future
+//   * skips entries with EXPIRES_AT in the past (expired)
+//   * conservatively skips entries with malformed EXPIRES_AT timestamps
+//   * preserves backward compatibility (no marker → always load)
+// =============================================================================
+
+func TestLoadAllWhitelists_EXPIRES_AT_FutureEntryLoaded(t *testing.T) {
+	dir := setupTestConfig(t)
+	// EXPIRES_AT in the year 2100 — comfortably future.
+	writeWhitelistFile(t, dir, "00-session.conf", `10.0.0.1  # EXPIRES_AT=2100-01-01T00:00:00Z  REASON=test  ADDED_BY=test
+`)
+
+	ipv4, _, err := LoadAllWhitelists(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ipv4["10.0.0.1/32"] && !ipv4["10.0.0.1"] {
+		t.Errorf("expected 10.0.0.1 to be loaded (EXPIRES_AT future), ipv4=%v", ipv4)
+	}
+}
+
+func TestLoadAllWhitelists_EXPIRES_AT_PastEntrySkipped(t *testing.T) {
+	dir := setupTestConfig(t)
+	// EXPIRES_AT in the year 2000 — comfortably past.
+	writeWhitelistFile(t, dir, "00-session.conf", `10.0.0.2  # EXPIRES_AT=2000-01-01T00:00:00Z  REASON=stale  ADDED_BY=test
+`)
+
+	ipv4, _, err := LoadAllWhitelists(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ipv4["10.0.0.2/32"] || ipv4["10.0.0.2"] {
+		t.Errorf("expected 10.0.0.2 to be SKIPPED (EXPIRES_AT past), ipv4=%v", ipv4)
+	}
+}
+
+func TestLoadAllWhitelists_EXPIRES_AT_MalformedSkippedConservatively(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeWhitelistFile(t, dir, "00-session.conf", `10.0.0.3  # EXPIRES_AT=not-a-timestamp  REASON=garbage  ADDED_BY=test
+`)
+
+	ipv4, _, err := LoadAllWhitelists(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Malformed marker → conservative skip (the marker's PRESENCE signals
+	// "this is a TTL'd entry"; failure to parse must not be treated as
+	// "no marker" because that would default to permanent load).
+	if ipv4["10.0.0.3/32"] || ipv4["10.0.0.3"] {
+		t.Errorf("expected 10.0.0.3 to be SKIPPED (malformed EXPIRES_AT), ipv4=%v", ipv4)
+	}
+}
+
+func TestLoadAllWhitelists_EXPIRES_AT_NoMarkerLoaded(t *testing.T) {
+	dir := setupTestConfig(t)
+	// Plain entry without any EXPIRES_AT marker — backward-compat path.
+	writeWhitelistFile(t, dir, "99-manual.conf", `10.0.0.4
+`)
+
+	ipv4, _, err := LoadAllWhitelists(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ipv4["10.0.0.4/32"] && !ipv4["10.0.0.4"] {
+		t.Errorf("expected 10.0.0.4 to be loaded (no EXPIRES_AT = permanent), ipv4=%v", ipv4)
+	}
+}
+
+func TestLoadAllWhitelists_EXPIRES_AT_MixedFileFutureAndPast(t *testing.T) {
+	dir := setupTestConfig(t)
+	writeWhitelistFile(t, dir, "00-session.conf", `# header
+10.0.0.5  # EXPIRES_AT=2100-01-01T00:00:00Z  REASON=keep  ADDED_BY=test
+10.0.0.6  # EXPIRES_AT=2000-01-01T00:00:00Z  REASON=drop  ADDED_BY=test
+10.0.0.7
+`)
+
+	ipv4, _, err := LoadAllWhitelists(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ipv4["10.0.0.5/32"] && !ipv4["10.0.0.5"] {
+		t.Errorf("expected 10.0.0.5 loaded (future), ipv4=%v", ipv4)
+	}
+	if ipv4["10.0.0.6/32"] || ipv4["10.0.0.6"] {
+		t.Errorf("expected 10.0.0.6 SKIPPED (past), ipv4=%v", ipv4)
+	}
+	if !ipv4["10.0.0.7/32"] && !ipv4["10.0.0.7"] {
+		t.Errorf("expected 10.0.0.7 loaded (no marker), ipv4=%v", ipv4)
+	}
+}
+
 // Dual-API parity guard: legacy LoadAllWhitelists key set must match
 // LoadAllWhitelistsTyped (guards profile_sync.go callers against drift).
 func TestLoadAllWhitelists_DualAPIParity(t *testing.T) {

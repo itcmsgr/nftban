@@ -22,8 +22,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 )
 
@@ -88,6 +90,13 @@ type config struct {
 	// resolve. PR26.2 ships with an empty adapter registry — the
 	// flag is a no-op until PR26.3 lands the first real adapter.
 	noPanel bool // --no-panel: opt out of panel-survival enforcement
+	// v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): --session-whitelist-ttl.
+	// Bounds the lifetime of the auto-seeded operator SSH peer IP in
+	// /etc/nftban/whitelist.d/00-session.conf. Default 30m via
+	// safety.DefaultSessionWhitelistTTL. Set to 0 to disable the
+	// auto-seed for the current run (operator can still use
+	// `nftban firewall whitelist-session add` explicitly).
+	sessionWhitelistTTL time.Duration // --session-whitelist-ttl: TTL for auto-seeded operator session entries
 }
 
 func parseFlags() *config {
