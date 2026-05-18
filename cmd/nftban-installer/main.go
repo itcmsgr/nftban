@@ -118,6 +118,10 @@ func main() {
 	// PR26.2: propagate --no-panel so the panel-survival assertion's
 	// policy can opt out when the operator explicitly disables it.
 	globalPhaseData.noPanel = cfg.noPanel
+	// v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): propagate the operator-
+	// session whitelist TTL. Default safety.DefaultSessionWhitelistTTL (30m)
+	// already applied in parseFlags when --session-whitelist-ttl is unset.
+	globalPhaseData.sessionWhitelistTTL = cfg.sessionWhitelistTTL
 
 	exitCode := run(ctx, exec, sf, cfg, log)
 

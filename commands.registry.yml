@@ -1544,6 +1544,46 @@ firewall:
         - "Disarm is REVERSIBLE: external firewall binary renamed to .disabled (sha256-equal), config trees preserved, cron-backup manifest written before any rm"
         - "To reverse: nftban firewall restore csf  (or  /usr/lib/nftban/bin/nftban-installer --mode=restore)"
         - "Env mirror: NFTBAN_PANEL_AUTO_TAKEOVER=1 (useful for cloud-init / Ansible / package %post)"
+    whitelist-session:
+      mutates: true
+      requires_root: true
+      description: "Manage time-bounded operator-session whitelist entries (D-UPDATE-OPERATOR-SELF-BAN-GAP-001; v1.120)"
+      examples:
+        - "nftban firewall whitelist-session add 192.0.2.122 --ttl 30m"
+        - "nftban firewall whitelist-session list"
+        - "nftban firewall whitelist-session remove 192.0.2.122"
+        - "nftban firewall whitelist-session cleanup"
+      subcommands:
+        add:
+          mutates: true
+          requires_root: true
+          description: "Add a time-bounded whitelist entry with EXPIRES_AT marker"
+          options:
+            --ttl:
+              type: string
+              description: "Time-to-live: 30m, 1h, 1h30m, 24h, 3600s (required)"
+            --reason:
+              type: string
+              default: "operator-explicit"
+              description: "Short description of why the entry was added"
+        list:
+          mutates: false
+          description: "Show all non-expired session whitelist entries (text-mode only; --json deferred to v1.121)"
+        remove:
+          mutates: true
+          requires_root: true
+          description: "Remove a session whitelist entry by IP or CIDR"
+        cleanup:
+          mutates: true
+          requires_root: true
+          description: "Manually remove all expired entries from 00-session.conf"
+      notes:
+        - "File-based mechanism (Shape E.0): writes /etc/nftban/whitelist.d/00-session.conf with inline EXPIRES_AT=<RFC3339> markers"
+        - "The whitelist loader skips expired entries at load time (no kernel set, no systemd timer)"
+        - "Auto-seeded during nftban update / firewall takeover with --session-whitelist-ttl (default 30m); this subcommand is the explicit operator override"
+        - "Permanent operator entries belong in 99-manual.conf, NOT this file"
+        - "v1.120 ships text-mode only; --json is REJECTED with operator-actionable error (deferred to v1.121 pending schema-envelope decision)"
+        - "Schema 1.83.0 unchanged (per V120_OPERATOR_TEMP_WHITELIST_SCHEMA_IMPACT_DECISION.md verdict SCHEMA_STAYS_FROZEN)"
     logs:
       mutates: conditional
       requires_root: conditional

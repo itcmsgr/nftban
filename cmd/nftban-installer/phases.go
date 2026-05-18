@@ -65,6 +65,12 @@ type phaseData struct {
 	// returns Fatal=false even on adapter failure (operator has
 	// explicitly accepted the risk).
 	noPanel bool
+	// v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): operator-session
+	// whitelist TTL. Propagated from cfg.sessionWhitelistTTL in main().
+	// Default 30m (safety.DefaultSessionWhitelistTTL). Used by
+	// phaseConfigure's AddSessionWhitelist call to bound the auto-seeded
+	// operator SSH peer entry.
+	sessionWhitelistTTL time.Duration
 }
 
 // globalPhaseData is set by phaseDetect and consumed by later phases.
@@ -319,6 +325,29 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 		if err := safety.SeedManualWhitelist(exec, log); err != nil {
 			log.Warn("safety whitelist seed failed (non-fatal): %v", err)
 		}
+	}
+
+	// v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): operator-session whitelist
+	// auto-seed. UNGATED (runs for both --source AND package installs/upgrades)
+	// to close the gap proven by the 2026-05-18 lab2 self-ban incident. If
+	// SSH_CLIENT is empty (non-SSH invocation: cron, systemd timer, RPM/DEB
+	// scriptlet without inherited env), CaptureSSHPeerIP returns "" and we
+	// skip without seeding. TTL is bounded so stale entries auto-expire even
+	// if cleanup never runs. Non-fatal: failure to seed does NOT block the
+	// install/upgrade — the operator can still recover via the V119 runbook
+	// (manual whitelist edit + reload via OOB console).
+	if peerIP := safety.CaptureSSHPeerIP(); peerIP != "" {
+		entry := safety.SessionWhitelistEntry{
+			IP:        peerIP,
+			ExpiresAt: time.Now().UTC().Add(pd.sessionWhitelistTTL),
+			Reason:    "v120-update-session",
+			AddedBy:   "nftban-installer",
+		}
+		if err := safety.AddSessionWhitelist(exec, log, entry); err != nil {
+			log.Warn("session whitelist seed failed (non-fatal): %v", err)
+		}
+	} else {
+		log.Debug("session whitelist seed skipped: SSH_CLIENT empty (non-SSH invocation)")
 	}
 
 	// 5. Whitelist sync (loads whitelists and feeds)
