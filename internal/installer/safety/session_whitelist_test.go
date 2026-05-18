@@ -219,8 +219,17 @@ func TestReadSessionWhitelist_ParsesInlineMarkers(t *testing.T) {
 	// fixtures became stale relative to "now" when CI ran on the same
 	// day, causing the v1.120 loader's EXPIRES_AT skip to drop the first
 	// entry and surface a false-negative read assertion.
-	t1 := time.Now().UTC().Add(time.Hour)
-	t2 := time.Now().UTC().Add(2 * time.Hour)
+	//
+	// T-2 follow-on fix (V120_PR_637_CI_AND_DIFF_VERIFICATION_RERUN §3):
+	// truncate to second precision so the in-memory value matches the
+	// RFC3339 round-trip the implementation performs at write/read.
+	// time.Now() returns nanosecond precision; AddSessionWhitelist
+	// serializes via RFC3339 ("2026-05-18T12:08:59Z") which drops sub-
+	// second digits; ReadSessionWhitelist parses back at 0 ns. Without
+	// the Truncate, entries[0].ExpiresAt.Equal(t1) returns false for
+	// any non-zero-nanosecond t1 even when the implementation is correct.
+	t1 := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	t2 := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 	_ = AddSessionWhitelist(mock, log, SessionWhitelistEntry{
 		IP: "10.0.0.1", ExpiresAt: t1, Reason: "one", AddedBy: "test",
 	})
