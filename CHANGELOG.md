@@ -11,6 +11,303 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.119.0] - 2026-05-18 — V119 dedicated narrow-feature: Manual CIDR DESIGN-FIX Option D
+
+V119 dedicated narrow-feature release on top of v1.118.0, closing
+`D-MANUAL-CIDR-LOAD-GAP` with **Cand 3 Manual CIDR DESIGN-FIX Option D**.
+Mirrors the v1.113 LoginMon subnet aggregation single-feature precedent —
+one design-locked Go + shell + test PR with fleet-validation gates
+reserved post-publication.
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no Status JSON wire format additions, no allow-list
+mutation. Per `V119_MANUAL_CIDR_SCHEMA_IMPACT_DECISION.md` verdict
+`SCHEMA_STAYS_FROZEN` (5-row decision matrix Q1-Q5 verified). In-PR
+regression test `TestSchemaVersionUnchangedByManualCIDRFix` enforces
+`SchemaVersionCurrent == "1.83.0"`.
+
+**Daemon binary NOT byte-identical to v1.118.0:** real Go change in
+`internal/blacklist/loader.go` + `internal/whitelist/loader.go` (typed
+`BlacklistEntry`/`WhitelistEntry{Value,IsCIDR}` structs + `LoadAll*Typed`
++ `IsIPIn*File` CIDR-containment helpers via `netip.Prefix.Contains`)
+plus 4 callsite swaps from exact-key `map[ip]` lookups to the new
+helpers. Closes D1 (loader IsCIDR drop) and the daemon-side whitelist
+CIDR safety predicate.
+
+### Added (typed CIDR-aware loader API)
+
+- `internal/blacklist/loader.go` — new `BlacklistEntry{Value,IsCIDR}`
+  struct, new `LoadAllBlacklistsTyped(configDir)` returning
+  `map[string]BlacklistEntry`, new `IsIPInBlacklistFile(ip, entries)`
+  helper using `netip.Prefix.Contains` for CIDR containment with
+  fast-path exact-key match preserved. Legacy `LoadAllBlacklists`
+  kept as thin wrapper around `LoadAllBlacklistsTyped` per dual-API
+  pattern from `V119_MANUAL_CIDR_PREFLIGHT_PROFILE_SYNC_AUDIT.md` §5
+  (`profile_sync.go` callers preserved on legacy API byte-unchanged).
+  +107/−36. (PR #633)
+
+- `internal/whitelist/loader.go` — parallel implementation: new
+  `WhitelistEntry{Value,IsCIDR}` + `LoadAllWhitelistsTyped` +
+  `IsIPInWhitelistFile` + legacy wrapper preserved. Orphan
+  `loadWhitelistFile` helper deleted in remediation commit
+  `15e48816` (staticcheck U1000) per
+  `V119_A1_WHITELIST_BLACKLIST_CORRECTNESS_AND_ORPHAN_AUDIT.md`
+  verdict `V119_A1_CORRECTNESS_CONFIRMED_REMEDIATION_IS_SINGLE_ORPHAN_DELETE`.
+  Blacklist counterpart `loadBlacklistFile` retained — still used by
+  pre-existing `GetBlacklistByCategory()`; whitelist has no symmetric
+  `GetWhitelistByCategory` (pre-V119 asymmetry).
+  +108/−37, then -25 in remediation. (PR #633)
+
+### Fixed (D1 + D2 + D3 + whitelist CIDR safety predicate)
+
+- `cmd/nftban-core/cmd_check.go` — whitelist + blacklist membership
+  check swap from exact-key `map[ip]` to CIDR-aware helpers. +8/−8.
+  (PR #633)
+
+- `cmd/nftban-core/cmd_ban.go` — pre-ban whitelist guard and
+  already-banned detection swap to CIDR-aware helpers. +8/−8. (PR #633)
+
+- `cmd/nftban-core/cmd_unban.go` — file-membership check swap to
+  CIDR-aware helper. Per V116 §7 Test 6 design: file is treated as
+  authoritative for what the operator wrote; single-IP-inside-CIDR
+  removal does NOT auto-rewrite the file; kernel-side removal
+  proceeds via existing `backend.Unban` IPC path. +8/−3. (PR #633)
+
+- `cmd/nftban-core/cmd_status.go` — D3 label disambiguation: upper-pane
+  stats labels gain `(configured file entries)` suffix to disambiguate
+  file-loaded counts from kernel-enforced counts in lower "Shared
+  State" pane. Text-only change; `runtime.Counters.TotalBlacklistIPv*`
+  field name byte-unchanged per V116 §3 (preserves watchdog/metrics
+  surface). +9/−4. (PR #633)
+
+- `cmd/nftband/daemon_handlers_ban.go` — **safety-invariant fix**:
+  `isWhitelisted()` IPC pre-ban guard now uses
+  `whitelist.IsIPInWhitelistFile` so an IP inside a whitelisted CIDR
+  (e.g. `1.2.3.5` against stored `1.2.3.0/27`) is now correctly
+  protected from being banned. Pre-V119 the guard silently failed
+  to detect IP-in-CIDR membership, allowing bans to proceed against
+  IPs inside whitelisted CIDR ranges. Pure internal-Go predicate
+  change — no JSON, no IPC method, no Prometheus metric, no Status
+  JSON wire format change, no CLI whitelist output change. +8/−3.
+  (PR #633)
+
+- `cli/lib/nftban/cli/cmd_blacklist.sh` — D2 closure: text-mode
+  `nftban_blacklist_list` now queries BOTH `blacklist_ipv4`
+  (interval, CIDRs from feeds/geoban) AND `blacklist_manual_ipv4`
+  (hash, single-IP manual bans), merges via `sort -u`
+  (deduplicated), mirroring canonical `cmd_list.sh:165-200`
+  pattern. Pre-V119 this command queried only `blacklist_ipv4` and
+  silently missed all `blacklist_manual_ipv4` entries. JSON path
+  byte-unchanged (already delegates to `nftban list banned --json`
+  which queries both sets). +38/−24. (PR #633)
+
+### Tests (V116 §7 acceptance bar — 10 cases covered)
+
+- `internal/blacklist/loader_test.go` — extended +169 (6 new test
+  funcs): `TestLoadAllBlacklistsTyped_PreservesIsCIDR`,
+  `TestIsIPInBlacklistFile_SingleIPv4ExactMatch`,
+  `TestIsIPInBlacklistFile_IPv4CIDRContainment`,
+  `TestIsIPInBlacklistFile_SingleIPv6ExactMatch`,
+  `TestIsIPInBlacklistFile_IPv6CIDRContainment`,
+  `TestIsIPInBlacklistFile_InvalidIPInput`,
+  `TestLoadAllBlacklists_DualAPIParity`. Covers V116 §7 Tests 1-4 +
+  dual-API parity guard.
+
+- `internal/whitelist/loader_test.go` — extended +130 (6 new test
+  funcs): symmetric matrix to blacklist.
+
+- `internal/blacklist/schema_freeze_test.go` (NEW, +56):
+  `TestSchemaVersionUnchangedByManualCIDRFix` asserts
+  `validator.SchemaVersionCurrent == "1.83.0"` per V116 §7 Test 10
+  regression guard. Fails closed if any future V119-class change
+  accidentally introduces a schema-impacting field.
+
+- `cmd/nftband/daemon_handlers_ban_test.go` (NEW, +102, 5 test
+  funcs): `TestIsWhitelisted_IPv4CIDRContainment` (the V119 fix),
+  `TestIsWhitelisted_IPv4ExactMatch` (regression guard for
+  single-IP), `TestIsWhitelisted_IPv6CIDRContainment`,
+  `TestIsWhitelisted_NoConfigDir`, `TestIsWhitelisted_EmptyWhitelist`.
+  Covers V116 §7 Test 5.
+
+- `cli/lib/nftban/tests/cmd_blacklist_list_test.sh` (NEW, +199, 5
+  fixtures × 7 assertions, all PASS locally): mocks `nft list set`
+  via PATH stub in `mktemp -d` sandbox; F1 both sets populated → both
+  visible; F2 only hash set → entries visible; F3 same IP in both
+  sets → deduplicated; F4 both empty → `(empty)` marker; F5 neither
+  set exists → `(not available)` marker. Covers V116 §7 Test 9.
+
+### Closes
+
+- `D-MANUAL-CIDR-LOAD-GAP` — D1 (loader) + D2 (shell list) + D3
+  (status label) + daemon-side whitelist CIDR safety predicate — by PR #633
+
+### Mechanism unchanged (V116 §5 forbidden surfaces preserved)
+
+- `internal/nftbackend/backend.go` byte-unchanged (CIDR routing to
+  `blacklist_ipv4` interval set + single-IP routing to
+  `blacklist_manual_ipv4` hash set already correct pre-V119)
+- `internal/opqueue/types.go` byte-unchanged (set-name mapping)
+- `internal/setsync/*` byte-unchanged
+- `internal/metrics/*` byte-unchanged
+- `internal/loginmon/*` byte-unchanged (v1.113 LoginMon path independent)
+- `internal/validator/types.go` byte-unchanged (schema 1.83.0 const +
+  in-PR `TestSchemaVersionUnchangedByManualCIDRFix` enforces)
+- `install/nftables/*` byte-unchanged (no new kernel set — both
+  `blacklist_ipv4` interval + `blacklist_manual_ipv4` hash already
+  existed pre-V119; the bug was at the shell-query and Go-helper
+  layers only)
+- `cli/lib/nftban/lib/nft_schema.sh` byte-unchanged (schema mirror)
+- `internal/installer/*` + `cmd/nftban-installer/*` byte-unchanged
+- `packaging/*` + `install/packaging/*` byte-unchanged
+- `cli/lib/nftban/cli/cmd_list.sh` byte-unchanged (already correct
+  per V116 §3 NOT-defects)
+- `cli/lib/nftban/cli/cmd_whitelist.sh` byte-unchanged (out of V116
+  scope per §5)
+- `cmd/nftban-core/profile_sync.go` byte-unchanged (hidden caller
+  honored via dual-API per V119 preflight audit)
+- `internal/runtime/state.go` byte-unchanged (lowest-churn variant
+  per V116 §4 file 3 — V119 callsites bypass runtime state and use
+  typed loader + helper directly)
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be
+guarded by the workflow_run-triggered Fresh-Install Namespace Guard
+built across V114 PRs #612-#620 + V115 PR #624's `/bin/kill` polish.
+**32/32 A1-A4 assertions expected PASS on the v1.119.0 baseline**
+post-tag, continuing the streak from v1.118.0 / v1.117.0 / v1.116.0 /
+v1.115.0 / v1.114.0 release-prep verification.
+
+### Files touched (the entire envelope)
+
+V119 candidate envelope (already on `main` before this release-prep):
+
+- `internal/blacklist/loader.go` (+107/−36) — PR #633
+- `internal/whitelist/loader.go` (+108/−37, then −25 remediation) — PR #633
+- `internal/blacklist/loader_test.go` (+169) — PR #633
+- `internal/whitelist/loader_test.go` (+130) — PR #633
+- `internal/blacklist/schema_freeze_test.go` (NEW, +56) — PR #633
+- `cmd/nftban-core/cmd_check.go` (+8/−8) — PR #633
+- `cmd/nftban-core/cmd_ban.go` (+8/−8) — PR #633
+- `cmd/nftban-core/cmd_unban.go` (+8/−3) — PR #633
+- `cmd/nftban-core/cmd_status.go` (+9/−4) — PR #633
+- `cmd/nftband/daemon_handlers_ban.go` (+8/−3) — PR #633
+- `cmd/nftband/daemon_handlers_ban_test.go` (NEW, +102) — PR #633
+- `cli/lib/nftban/cli/cmd_blacklist.sh` (+38/−24) — PR #633
+- `cli/lib/nftban/tests/cmd_blacklist_list_test.sh` (NEW, +199) — PR #633
+
+Cumulative PR #633: +936/−134 across 13 files.
+
+Plus the v1.119.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.118.0 → 1.119.0)
+- `STATUS.md` (v1.119.0 release-lane paragraph + v1.118.0 demoted)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; banner version only; FHS
+  path-table body byte-unchanged because V119 did not touch
+  `build/fhs-spec.yaml`)
+
+**No daemon binary byte-equivalence claim** (this release ships real
+Go change in blacklist/whitelist loader + 4 callsite swaps + daemon
+guard). **No schema change. No `internal/validator` change. No
+metric change. No nftables kernel set change. No RPM/DEB packaging
+change. No systemd unit change. No `go.mod`/`go.sum` change.**
+
+### Workspace artifacts (no PR, no code)
+
+V119 design-lock + decision chain filed at `AUDIT_190_LIFECYCLE/`:
+
+- `V119_SCOPE_TRIAGE.md` (408 lines, recommended Option A dedicated
+  A1 lane; verdict `V119_SCOPE_TRIAGE_LOCKED_PLAN_READY`)
+- `V119_MANUAL_CIDR_SCHEMA_IMPACT_DECISION.md` (252 lines, 5-row
+  decision matrix Q1-Q5; verdict `SCHEMA_STAYS_FROZEN`)
+- `V119_MANUAL_CIDR_PREFLIGHT_PROFILE_SYNC_AUDIT.md` (247 lines,
+  dual-API non-blocking pattern; verdict
+  `SCOPE_CONSTRAINT_CONFIRMED_NON_BLOCKING_WITH_DUAL_API`)
+- `V119_A1_WHITELIST_BLACKLIST_CORRECTNESS_AND_ORPHAN_AUDIT.md` (352
+  lines, Part A correctness 6/6 + Part B orphan scan 4/4 + remediation
+  envelope; verdict
+  `V119_A1_CORRECTNESS_CONFIRMED_REMEDIATION_IS_SINGLE_ORPHAN_DELETE`)
+
+All four artifacts read-only / zero code mutation / zero host contact
+during preflight + verification cycles.
+
+### Non-goals carried forward to v1.120+
+
+Explicit deferred debt — each separately gated:
+
+- **FHS Phase D-1 Authority Territory Graph filing** — design-only
+  deliverable per `V118_FHS_SINGLE_AUTHORITY_DESIGN_SCOPE.md` §6 Option
+  D phasing; deferred since v1.118 Track A; recommended next
+  workspace-only gate.
+- **B2** EVE overlap review (LoginMon + Suricata double-action) —
+  separate gate, architectural decision pending.
+- **B3** Legacy parser decommission (4 stale shell files) — separate
+  gate, needs 7-day soak period.
+- **B4** Plesk/cPanel distroconf keys (BUG-14 schema closure) —
+  separate gate, blocked on schema-unfreeze decision.
+- **B7** WordPress login-failure detector — separate gate, not scoped.
+- **B8** stale CLI residue cleanup (nftban-api-server, nftban-ui
+  residue from V108 closure) — separate gate, not scoped.
+- All **schema-UNFREEZE** items (PR-M2b-w2..w7, PR-M2c new nft named
+  counters, PR-M2d kernel set element annotation cookies, PR-M3 + PR-M1,
+  §F4 metrics beyond 6 PR-M2b-w1 targets, LoginMon subnet
+  Prometheus emission)
+- All **pre-V113 D-* large lanes** (D-MET-1, D-MOD-1, D-DNS-1,
+  D-FHS-1..5 implementation, D-SHA-1, D-POL-1, D-SEC-1, D-TRP-1,
+  D-EGM-1, D-PNL-1, D-OSH-1, D-GHC-1, D-WIK-2, D-MIG-1, D-BKT-1
+  Bucket-C 14 v0.x tags **NEVER delete remote**, D-LMA-1, R-11,
+  #525 geoip Go panic Lane G, D-RECV-INSTALL-RESULT-JSON-PARSE-001
+  nftbanpro_cms scope)
+- **dns2 migration** — D-DNS-1 separately gated
+- **nftbanpro_cms / portal changes** — separate-track / pro lanes
+- **Packaging/systemd/installer payload changes** — none; future
+  packaging cleanup lanes separate
+- **Host rollout** (srv1–4, lab2, monitor) — post-publication
+  fleet validation gates `EXECUTE_V119_VALIDATE_{LAB2,LAB4,SRV1-4,MONITOR}`,
+  operator-conditional (mirrors v1.113 LoginMon HIGH-risk lane
+  precedent for the dedicated narrow-feature release pattern)
+- **Bucket-C v0.x tag changes** — FORBIDDEN INDEFINITELY
+- **MASTER_TODO edits** — workspace control rule locked 2026-05-13
+
+### Behavior changes (narrow, explicit)
+
+- **ZERO behavior change for single-IP entries** in blacklist or
+  whitelist files (loader output byte-equivalent for the common path;
+  helpers' fast-path exact-key match preserves prior semantics).
+- **NEW correct behavior for CIDR entries** in blacklist.d /
+  whitelist.d configuration files:
+  - `nftban check <ip>` against blacklist `1.2.3.0/27` containing
+    `1.2.3.5` now correctly reports BLACKLISTED.
+  - `nftban ban <ip>` against whitelist `1.2.3.0/27` containing
+    `1.2.3.5` now correctly refuses with "IP is whitelisted, cannot ban".
+  - `nftban unban <ip>` against blacklist file `1.2.3.0/27`
+    containing `1.2.3.5` now correctly detects in-file membership
+    (per V116 §7 Test 6 design the blacklist file is treated as
+    authoritative for what operator wrote and is NOT auto-rewritten —
+    kernel-side removal proceeds via existing `backend.Unban` IPC
+    path).
+  - Daemon `isWhitelisted(<ip>)` IPC pre-ban guard now correctly
+    returns true for IPs inside whitelisted CIDR ranges
+    (**silent safety-invariant violation now fixed**).
+- **`nftban blacklist list`** text-mode now shows entries from both
+  `blacklist_ipv4` and `blacklist_manual_ipv4` kernel sets,
+  deduplicated. `--json` byte-unchanged.
+- **`nftban status`** upper-pane stats labels gain `(configured file
+  entries)` suffix; `runtime.Counters.TotalBlacklistIPv*` field name
+  byte-unchanged.
+- **New IPC traffic:** NONE. **New Prometheus metric:** NONE. **New
+  Status JSON key:** NONE. **New file system surface:** NONE.
+  **New external dependency:** NONE.
+- **Docker/GHCR tag pattern after publication:** `v1.119.0`,
+  `1.119.0`, `1.119`, `latest`, AND `sha-<8>` all resolve.
+
+v1.119.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.119.0 defect surfaces).
+
+---
+
 ## [v1.118.0] - 2026-05-16 — V118 narrow-cleanup: CSF #4 active-conflict CLI guidance + FHS single-authority design-scope
 
 V118 narrow-cleanup release on top of v1.117.0. Bundles one shell-only
