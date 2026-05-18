@@ -64,13 +64,18 @@ func cmdStatus(cfg *nftbanconf.Config) error {
 	fmt.Println()
 
 	// Display stats
+	// V119 D3: upper-pane counts are file-loaded entries (line count, NOT
+	// kernel-enforced element count). Lower "Shared State" pane reports
+	// kernel-derived counts from watchdog netlink. Label disambiguation
+	// added per V116 §3 D3 — runtime.Counters.TotalBlacklistIPv* field is
+	// deliberately NOT renamed to preserve watchdog/metrics surface.
 	stats := state.GetStats()
 	fmt.Println("📊 Current Statistics:")
 	fmt.Println(strings.Repeat("-", 70))
-	fmt.Printf("Whitelist IPv4: %d\n", stats["whitelist_ipv4"])
-	fmt.Printf("Whitelist IPv6: %d\n", stats["whitelist_ipv6"])
-	fmt.Printf("Blacklist IPv4: %d\n", stats["blacklist_ipv4"])
-	fmt.Printf("Blacklist IPv6: %d\n", stats["blacklist_ipv6"])
+	fmt.Printf("Whitelist IPv4: %d        (configured file entries)\n", stats["whitelist_ipv4"])
+	fmt.Printf("Whitelist IPv6: %d        (configured file entries)\n", stats["whitelist_ipv6"])
+	fmt.Printf("Blacklist IPv4: %d        (configured file entries)\n", stats["blacklist_ipv4"])
+	fmt.Printf("Blacklist IPv6: %d        (configured file entries)\n", stats["blacklist_ipv6"])
 	fmt.Printf("Last Reload:    %s\n", stats["last_reload"])
 	fmt.Println()
 

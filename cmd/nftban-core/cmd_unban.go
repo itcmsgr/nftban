@@ -63,18 +63,23 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 	fmt.Println()
 
 	// Check if currently banned (in files OR in nftables)
+	// V119: CIDR-aware via IsIPInBlacklistFile — an IP inside a file CIDR
+	// (e.g. "1.2.3.5" against stored "1.2.3.0/27") is recognised as banned;
+	// per V116 §7 Test 6, single-IP-inside-CIDR file rewrite is NOT performed
+	// (file is authoritative for what the operator wrote); kernel-side removal
+	// is delegated to backend.Unban via the IPC handler below.
 	fmt.Println("Step 2: Checking if IP is banned...")
 	configDir := getUnbanConfigDir(cfg)
-	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklists(configDir)
+	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklistsTyped(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load blacklists: %w", err)
 	}
 
 	isBannedInFile := false
 	if isIPv4 {
-		isBannedInFile = blacklistIPv4[normalizedIP]
+		isBannedInFile = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv4)
 	} else {
-		isBannedInFile = blacklistIPv6[normalizedIP]
+		isBannedInFile = blacklist.IsIPInBlacklistFile(normalizedIP, blacklistIPv6)
 	}
 
 	// Also check nftables via IPC (handles orphan entries not in files)
