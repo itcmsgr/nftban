@@ -134,6 +134,22 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.confirmMutation, "confirm-mutation", false, "Authorize uninstall authority release (real kernel + service mutation). Required for --mode=uninstall without --dry-run. Mutually exclusive with --dry-run.")
 	// v1.100 PR26.2: PANEL-SURVIVAL-001 opt-out.
 	flag.BoolVar(&cfg.noPanel, "no-panel", false, "Opt out of PANEL-SURVIVAL-001 enforcement. Adapters still run for diagnostic logging but a detected-panel integration failure will NOT block StateCommitted on this run. Default OFF.")
+	// v1.120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): --session-whitelist-ttl.
+	// Bounds the lifetime of the auto-seeded operator SSH peer IP in
+	// /etc/nftban/whitelist.d/00-session.conf. Default is
+	// safety.DefaultSessionWhitelistTTL (30m). Setting to 0 disables the
+	// auto-seed for this run — the operator can still use
+	// `nftban firewall whitelist-session add` explicitly.
+	//
+	// REMEDIATION NOTE (V120_PR_637_ORPHAN_AND_DEAD_CODE_AUDIT B-2):
+	// the registration was missing in the initial V120 commit; absent
+	// this line the field defaulted to zero, causing every auto-seeded
+	// entry to be born expired (ExpiresAt = time.Now() + 0) and the
+	// loader's shouldSkipDueToExpiresAt to drop it on first reload —
+	// silently no-opping the D-UPDATE-OPERATOR-SELF-BAN-GAP-001 fix.
+	flag.DurationVar(&cfg.sessionWhitelistTTL, "session-whitelist-ttl", safety.DefaultSessionWhitelistTTL,
+		"TTL for auto-seeded operator session whitelist entries in /etc/nftban/whitelist.d/00-session.conf. "+
+			"Default 30m (safety.DefaultSessionWhitelistTTL). Set to 0 to disable auto-seed for this run.")
 
 	flag.Parse()
 

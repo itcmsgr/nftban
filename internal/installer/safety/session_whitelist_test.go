@@ -31,9 +31,9 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
-// newTestLogger returns a Logger writing to /dev/null. The test never
+// newSessionTestLogger returns a Logger writing to /dev/null. The test never
 // asserts on log output; we just need a non-nil Logger.
-func newTestLogger(t *testing.T) *logging.Logger {
+func newSessionTestLogger(t *testing.T) *logging.Logger {
 	t.Helper()
 	return logging.New("/dev/null", false)
 }
@@ -43,7 +43,7 @@ func newTestLogger(t *testing.T) *logging.Logger {
 // machine-managed header AND the new entry.
 func TestAddSessionWhitelist_CreatesFileWithHeaderOnFirstAdd(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	log := newTestLogger(t)
+	log := newSessionTestLogger(t)
 	defer log.Close()
 
 	entry := SessionWhitelistEntry{
@@ -83,7 +83,7 @@ func TestAddSessionWhitelist_CreatesFileWithHeaderOnFirstAdd(t *testing.T) {
 // same IP REPLACES rather than DUPLICATES the prior entry (refresh semantics).
 func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	log := newTestLogger(t)
+	log := newSessionTestLogger(t)
 	defer log.Close()
 
 	first := SessionWhitelistEntry{
@@ -128,7 +128,7 @@ func TestAddSessionWhitelist_RefreshesExistingEntry(t *testing.T) {
 // drops expired entries and preserves active entries + header lines.
 func TestCleanupExpiredSessionWhitelist_RemovesOnlyExpired(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	log := newTestLogger(t)
+	log := newSessionTestLogger(t)
 	defer log.Close()
 
 	now := time.Now().UTC()
@@ -176,7 +176,7 @@ func TestCleanupExpiredSessionWhitelist_RemovesOnlyExpired(t *testing.T) {
 // structured entries (IP + ExpiresAt + Reason + AddedBy) from the file.
 func TestReadSessionWhitelist_ParsesInlineMarkers(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	log := newTestLogger(t)
+	log := newSessionTestLogger(t)
 	defer log.Close()
 
 	t1 := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
@@ -211,7 +211,7 @@ func TestReadSessionWhitelist_ParsesInlineMarkers(t *testing.T) {
 // other entries intact.
 func TestRemoveSessionWhitelist_RemovesByIP(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	log := newTestLogger(t)
+	log := newSessionTestLogger(t)
 	defer log.Close()
 
 	now := time.Now().UTC().Add(1 * time.Hour)
