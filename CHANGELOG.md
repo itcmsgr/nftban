@@ -11,6 +11,261 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.120.0] - 2026-05-18 — V120 dedicated narrow-feature: operator-session whitelist guard
+
+V120 dedicated narrow-feature release on top of v1.119.0, closing
+`D-UPDATE-OPERATOR-SELF-BAN-GAP-001` with the **operator-session
+whitelist guard** (single PR #637 squash `38cc86f6`). Resolves the
+operator self-ban gap surfaced during v1.119 fleet validation: when
+the operator's SSH peer IP was not in the permanent whitelist, the
+LoginMon brute-force scorer could ban that IP during a `nftban update`
+or `firewall takeover` and lock the operator out for the full timeout
+(typ. 900s).
+
+**Schema 1.83.0 remains frozen.** No new metric names, no new metric
+registrations, no Status JSON wire format additions, no allow-list
+mutation, no nftables kernel set change. Per
+`V120_OPERATOR_TEMP_WHITELIST_SCHEMA_IMPACT_DECISION.md` verdict
+`SCHEMA_STAYS_FROZEN` (conditional on `--json` deferral). In-PR
+regression test `TestSchemaVersionUnchangedByV120OperatorSessionWhitelist`
+enforces `SchemaVersionCurrent == "1.83.0"`.
+
+**Daemon binary byte-identical to v1.119.0:** the V120 implementation
+runs entirely inside the installer + CLI shell layer + whitelist
+loader. `cmd/nftband/` and `cmd/nftban-core/` are byte-unchanged.
+`internal/profile/profile_sync.go` and `internal/runtime/state.go`
+are byte-unchanged. `install/nftables/`, `install/systemd/`, and
+`internal/validator/` are byte-unchanged. No new IPC traffic, no new
+nft set, no new systemd timer.
+
+### Added (file-based session whitelist mechanism, Shape E.0)
+
+- `internal/installer/safety/session_whitelist.go` (NEW, +431) —
+  core mechanism. Manages `/etc/nftban/whitelist.d/00-session.conf`
+  with inline `# EXPIRES_AT=<RFC3339>  REASON=<text>  ADDED_BY=<source>`
+  markers. Public API: `AddSessionWhitelist`,
+  `CleanupExpiredSessionWhitelist`, `ReadSessionWhitelist`,
+  `RemoveSessionWhitelist`, `CaptureSSHPeerIP`. Constant
+  `DefaultSessionWhitelistTTL = 30 * time.Minute`. `CaptureSSHPeerIP`
+  prefers explicit `NFTBAN_OPERATOR_SESSION_IP` env-mirror over
+  `$SSH_CLIENT` so the value survives sudo and package-scriptlet
+  hops that scrub the SSH session env. (PR #637)
+
+- `internal/whitelist/loader.go` (+48) — `shouldSkipDueToExpiresAt`
+  helper called from `loadWhitelistFileTyped`. Entries with
+  `EXPIRES_AT` in the past are silently skipped at load time;
+  malformed `EXPIRES_AT` markers are conservatively skipped;
+  entries with no marker continue to load permanently (backward
+  compatible with pre-v1.120 99-manual.conf semantics). (PR #637)
+
+- `cmd/nftban-installer/phases.go` (+29) — `phaseConfigure` auto-seeds
+  the operator's SSH peer IP into `00-session.conf` on every install
+  mode (NOT gated to `--source` like v1.98.x `SeedManualWhitelist`).
+  Runs before the rebuild phase; failure is non-fatal (logged WARN
+  only) so a missing peer IP never blocks the upgrade. (PR #637)
+
+- `cmd/nftban-installer/flags.go` (+25), `main.go` (+4),
+  `flags_test.go` (NEW, +96) — new flag
+  `--session-whitelist-ttl <duration>` defaulting to
+  `safety.DefaultSessionWhitelistTTL` (30m). Set 0 to disable
+  auto-seed for the current run. Two regression-guard tests
+  (`TestParseFlags_SessionWhitelistTTL{Default,Explicit}`) pin both
+  the default-value path and the explicit-override path; the
+  default-test exists specifically to prevent the silent-zero-TTL
+  regression class surfaced by V120 audit B-2. (PR #637)
+
+- `cli/lib/nftban/cli/cmd_update.sh` (+13) — captures `$SSH_CLIENT`
+  pre-installer-invoke and exports `NFTBAN_OPERATOR_SESSION_IP` so
+  the env-mirror survives sudo and package-scriptlet env scrubs.
+  Best-effort; silently skipped for non-SSH invocations (cron,
+  systemd timer, local console). (PR #637)
+
+- `cli/lib/nftban/cli/cmd_firewall.sh` (+465) — new
+  `nftban firewall whitelist-session {add,list,remove,cleanup}`
+  subcommand. Explicit operator override for multi-hop SSH / sudo
+  chains where auto-seed cannot detect the right IP. Text-mode
+  only; `--json` and `-j` are REJECTED at the dispatcher with an
+  operator-actionable error message and exit code 2 (deferred to
+  v1.121 per schema-impact decision). Helper functions
+  `_whitelist_session_{add,list,remove,cleanup}` plus
+  `countDataLinesForIP`-style helpers; atomic write via `mktemp` +
+  `mv`; `nftban firewall reload` triggered after every add/remove.
+  (PR #637)
+
+- `commands.registry.yml` (+40) — registry entry for
+  `firewall.subcommands.whitelist-session` with sub-subcommand
+  options. Notes text-mode-only and the v1.121 `--json` deferral.
+  (PR #637)
+
+- `cli/lib/nftban/tests/cmd_firewall_whitelist_session_test.sh`
+  (NEW, +276) — shell test suite: 33/33 assertions PASS in
+  `mktemp -d` sandbox with `_NFTBAN_SESSION_WHITELIST_PATH`
+  override and patched-out `$EUID` root guards. Covers help,
+  `--json`/`-j` rejection at the dispatcher (3 forms), add creates
+  file with header, refresh-by-IP dedup, invalid IP rejection,
+  missing `--ttl` rejection, list with TTL-remaining display,
+  remove, cleanup expired-only, unknown action. (PR #637)
+
+- `internal/installer/safety/session_whitelist_test.go` (NEW, +375)
+  — 11 Go unit tests covering Add (create-with-header / refresh
+  dedup), Cleanup, Read, Remove, `CaptureSSHPeerIP` (env-mirror
+  precedence / SSH_CLIENT fallback / both-empty / non-routable
+  rejection), `lineIsExpired` parse matrix, `extractIPField`. Uses
+  `newSessionTestLogger` helper (renamed during B-1 remediation
+  to avoid collision with pre-existing `newTestLogger` in
+  `whitelist_test.go`). (PR #637)
+
+- `internal/whitelist/loader_test.go` (+95) — 5 EXPIRES_AT matrix
+  cases: future entry loaded; past entry skipped; malformed
+  EXPIRES_AT conservatively skipped; entry without marker loaded
+  (backward compat); mixed file (header + future + past +
+  no-marker). (PR #637)
+
+- `internal/whitelist/schema_freeze_test.go` (NEW, +61) —
+  `TestSchemaVersionUnchangedByV120OperatorSessionWhitelist`
+  asserts `validator.SchemaVersionCurrent == "1.83.0"`. Mirrors
+  v1.119's `internal/blacklist/schema_freeze_test.go` regression
+  guard. (PR #637)
+
+### Fixed
+
+- `D-UPDATE-OPERATOR-SELF-BAN-GAP-001` — closed by PR #637. When the
+  operator runs `nftban update` or `firewall takeover` from an SSH
+  session whose peer IP is not in the permanent whitelist, the
+  LoginMon brute-force scorer can ban that IP during the brief
+  reload window and lock the operator out for the full timeout
+  (typ. 900s). V120 closes the gap by auto-seeding the SSH peer IP
+  into `/etc/nftban/whitelist.d/00-session.conf` with a bounded TTL
+  (default 30m) before the rebuild phase runs, on every install
+  mode. The explicit
+  `nftban firewall whitelist-session add <ip> --ttl <duration>`
+  subcommand covers the multi-hop SSH / sudo chain case where
+  auto-seed cannot detect the right IP.
+
+### Mechanism (V120 forbidden surfaces preserved byte-unchanged)
+
+`internal/runtime/state.go`, `internal/profile/profile_sync.go`,
+`internal/validator/*` (schema 1.83.0), `install/systemd/*`,
+`install/nftables/*` (no new kernel set, no new chain),
+`internal/metrics/*`, `internal/health/*`, `internal/lifecycle/*`,
+`internal/portal/*`, `internal/dns2/*`, `internal/panel/*`,
+`packaging/*`, `cmd/nftband/*` (daemon byte-identical), and
+`cmd/nftban-core/*` (CLI binary byte-identical) are all untouched.
+Pre-existing orphans `whitelist.AddIP` / `whitelist.RemoveIP` are
+exported public APIs flagged by V120 audit as currently
+unused-by-production; explicitly deferred to a separate cleanup
+lane per audit §5 boundary (NOT touched in PR #637).
+
+### Lifecycle (4 commits squashed as `38cc86f6`)
+
+- `752e89dc` — initial implementation: 12 files + ~1,800 lines of
+  Go, shell, registry, tests. PR opened.
+- `4ecd3905` — B-1 + B-2 remediation per
+  `V120_PR_637_ORPHAN_AND_DEAD_CODE_AUDIT.md`. B-1: rename
+  `newTestLogger(t)` → `newSessionTestLogger(t)` to resolve
+  package-level collision with pre-existing helper in
+  `whitelist_test.go`. B-2: register the missing
+  `flag.DurationVar(&cfg.sessionWhitelistTTL, "session-whitelist-ttl",
+  safety.DefaultSessionWhitelistTTL, …)` in `parseFlags()` — without
+  this line every auto-seeded entry was born expired (silent
+  zero-TTL regression class). Added `flags_test.go` regression
+  guard.
+- `627130d2` — T-1 + T-2 remediation per
+  `V120_PR_637_CI_AND_DIFF_VERIFICATION.md`. T-1: line-anchored,
+  comment-skipping `countDataLinesForIP` helper replaces
+  `strings.Count` to avoid double-counting the IP that appears
+  inside the file header example. T-2: relative
+  `time.Now().UTC().Add(time.Hour)` fixture replaces absolute
+  `time.Date(2026, 5, 18, …)` so the entry is never born expired.
+- `5d1e3681` — T-2 follow-on remediation per
+  `V120_PR_637_CI_AND_DIFF_VERIFICATION_RERUN.md`. Append
+  `.Truncate(time.Second)` to relative timestamps so the
+  in-memory `t1.Equal(parsedT1)` assertion holds across the
+  RFC3339 round-trip (RFC3339 drops sub-second digits).
+
+Each remediation was a single additive commit; no force-push, no
+amend across the whole lifecycle; production code
+(`internal/installer/safety/session_whitelist.go`) byte-unchanged
+across all three test-fixture remediations.
+
+### CI final tally (pre-merge on head `5d1e3681`)
+
+21 SUCCESS / 3 FAILURE / 1 SKIPPED — only baseline-advisory failures
+(`OSV-Scanner` 26 Go stdlib CVEs all filtered + `Project Health` ×2
+same 7/305 shellcheck warnings as main @ `2082d23e`). All product
+gates green including **Go Build & Test**, **Secure Go**, Build
+NFTBan Packages, all 5 Canonization gates (Install / Restore /
+Update / Uninstall / Runtime Truth), CodeQL, Semgrep, ShellCheck,
+Bash Validation, Docker, Smoke Test, Documentation Validation,
+Architecture Policy, Migration Coverage, Shell-Delete Guard,
+Secret Scanning (Gitleaks), Dependency Review, 2026 OSSRA
+Remediation.
+
+### Behavior changes (narrow, explicit)
+
+- NEW CLI subcommand
+  `nftban firewall whitelist-session add <ip> --ttl <duration> [--reason <text>]`
+  writes a TTL'd entry to `/etc/nftban/whitelist.d/00-session.conf`
+  and reloads the firewall. `list` shows non-expired entries with
+  TTL-remaining. `remove <ip>` drops a single entry and reloads.
+  `cleanup` drops all expired entries.
+- NEW installer flag `--session-whitelist-ttl <duration>`
+  (default 30m; 0 disables auto-seed for this run).
+- NEW env-mirror `NFTBAN_OPERATOR_SESSION_IP` propagated by
+  `nftban update`.
+- NEW behavior on every `nftban update` or `firewall takeover` from
+  an SSH session: the operator's SSH peer IP is auto-seeded into
+  `00-session.conf` with the configured TTL before the rebuild
+  phase. This is the load-bearing behavior change closing
+  `D-UPDATE-OPERATOR-SELF-BAN-GAP-001`.
+- Loader: entries past `EXPIRES_AT` are silently skipped at load
+  time; entries with no marker continue to load permanently
+  (backward compatible).
+- `--json` on the new `whitelist-session` subcommand is REJECTED
+  with operator-actionable error and exit code 2; deferred to
+  v1.121.
+- New IPC traffic: NONE. New Prometheus metric: NONE. New Status
+  JSON key: NONE. New file system surface:
+  `/etc/nftban/whitelist.d/00-session.conf` (managed by the
+  installer / CLI; persistent across reboots; cleanup at load
+  time). New external dependency: NONE.
+
+### Docker / GHCR tag pattern (post-publication)
+
+`v1.120.0`, `1.120.0`, `1.120`, `latest`, AND `sha-<8>` all
+resolve. The `sha-<8>` 8-char short-SHA tag continues to use the
+v1.117.0 raw-template escape hatch from PR #631.
+
+v1.120.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.120.0 defect surfaces).
+
+### Workspace artifacts (no PR, no code; filed at `AUDIT_190_LIFECYCLE/`)
+
+- `V119_OPERATOR_SELF_BAN_INCIDENT_AUDIT.md` (338 lines) — incident
+  audit, verdict `OPERATOR_SELF_BAN_GAP_CONFIRMED_CODE_FIX_REQUIRED`.
+- `V119_VALIDATE_RUNBOOK_SELF_BAN_GUARD_AMENDMENT.md` (272 lines)
+  — 6 binding rules for fleet validation.
+- `V120_OPERATOR_TEMP_WHITELIST_GUARD_SCOPE.md` (490 lines) —
+  Shape E.0 design scope.
+- `V120_OPERATOR_TEMP_WHITELIST_SCHEMA_IMPACT_DECISION.md`
+  (297 lines) — verdict `SCHEMA_STAYS_FROZEN` conditional on
+  `--json` deferral.
+- `V120_PR_637_ORPHAN_AND_DEAD_CODE_AUDIT.md` (437 lines) — B-1
+  + B-2 surfaced.
+- `V120_PR_637_ORPHAN_AND_DEAD_CODE_AUDIT_RERUN.md` (344 lines) —
+  verdict `V120_PR_637_ORPHAN_AUDIT_CLEAN`.
+- `V120_PR_637_CI_AND_DIFF_VERIFICATION.md` — NOT CLEAN, T-1 + T-2
+  surfaced.
+- `V120_PR_637_CI_AND_DIFF_VERIFICATION_RERUN.md` — NOT CLEAN,
+  T-2 follow-on surfaced.
+- `V120_PR_637_CI_AND_DIFF_VERIFICATION_CLEAN.md` (302 lines) —
+  final verdict `V120_PR_637_VERIFICATION_CLEAN`.
+
+All artifacts read-only / zero code mutation / zero host contact
+during preflight + verification cycles.
+
+---
+
 ## [v1.119.0] - 2026-05-18 — V119 dedicated narrow-feature: Manual CIDR DESIGN-FIX Option D
 
 V119 dedicated narrow-feature release on top of v1.118.0, closing
