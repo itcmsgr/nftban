@@ -524,9 +524,11 @@ find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl;
     install -D -m 0644 "\$tmpl" "%{buildroot}/usr/share/nftban/templates/\$rel_path"
 done
 
-# Man page intentionally not shipped — see build_deb() comment for rationale.
-# CLI docs are registry-driven (commands.registry.yml + nftban help); the
-# hand-maintained nftban.8 is stale. Symmetric removal across DEB+RPM.
+# Man page deliberately not shipped (registry-canonical since v1.95.0).
+# PR #646 deleted the source files; V123 B-1 residual-refs PR completed
+# the surrounding cleanup across DEB+RPM symmetrically — see build_deb()
+# comment for the long-form rationale. CLI docs: commands.registry.yml +
+# nftban help.
 
 # Bash completion
 install -D -m 0644 install/bash-completion/nftban %{buildroot}/usr/share/bash-completion/completions/nftban
@@ -1571,7 +1573,6 @@ build_deb() {
              "${deb_root}/usr/lib/systemd/system" \
              "${deb_root}/usr/lib/tmpfiles.d" \
              "${deb_root}/usr/share/bash-completion/completions" \
-             "${deb_root}/usr/share/man/man8" \
              "${deb_root}/usr/share/polkit-1/rules.d"
 
     # Package-territory dirs — consume generator output (closes D-NEW-1 DEB-side).
@@ -1729,17 +1730,16 @@ build_deb() {
         install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
     done
 
-    # Man page intentionally not shipped. CLI documentation lives in the
-    # registry-driven dynamic help (`nftban help` → scripts/generate-help.sh
-    # reading commands.registry.yml). The hand-maintained install/man/man8/
-    # nftban.8 is 30 versions stale and competes with the registry SoT.
-    # Removing here brings DEB/RPM packaging into symmetry (see RPM spec
-    # heredoc — corresponding install + %files entry also removed). Source
-    # man-page file + scripts/update_man_page.sh + lint-registry-parity G15-B
-    # cleanup deferred to a separate hygiene gate. PKG-EFFECTIVE-PARITY Slot
-    # 5a Phase 6 (dpkg --verify) was failing on ubuntu22.04/24.04 because the
-    # shipped man page interacted unpredictably with mandb post-install; not
-    # shipping it removes the failure honestly without weakening L6.
+    # Man page deliberately not shipped (registry-canonical since v1.95.0).
+    # CLI documentation lives in `commands.registry.yml` + `nftban help`
+    # (registry-driven, current). PR #646 deleted the source files
+    # (install/man/man8/nftban.8 + nftban-suricata.8); V123 B-1 residual-refs
+    # PR completed the surrounding installer/uninstall/script/CI cleanup
+    # across DEB+RPM symmetrically. Historical note (preserved for context):
+    # PKG-EFFECTIVE-PARITY Slot 5a Phase 6 dpkg --verify previously failed on
+    # ubuntu22.04/24.04 because the shipped man page interacted unpredictably
+    # with mandb post-install; not shipping it removed that failure mode
+    # without weakening L6.
 
     # Copy bash completion
     install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
