@@ -25,7 +25,6 @@ package whitelist
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
