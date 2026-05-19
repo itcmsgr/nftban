@@ -11,6 +11,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.123.0] - 2026-05-19 — V123 small-cleanup: man-page decommission completion + OSV suppression refresh
+
+V123 small-cleanup release on top of v1.122.0. Bundles three merged
+narrow-cleanup PRs that complete the man-page decommission lane (begun
+in v1.95.0's registry-canonical pivot) and refresh the CI OSV-Scanner
+suppression list. **Zero daemon binary change** — `/usr/lib/nftban/bin/nftband`
+is byte-identical to v1.122.0 because no exported runtime API was touched.
+Source-side changes are confined to docs deletions, an orphan helper
+script deletion, comment rephrases, uninstall test allowed-prefix
+removal (Go test-only, no behavior change), and a CI suppression-list
+data refresh. **10-release identical-daemon-binary streak** preserved
+(v1.114.0 → v1.123.0).
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No validator field,
+no new metric, no new Prometheus label, no Status JSON wire-format
+key, no `install_state` field, no nftables kernel set / chain / table
+name change. `internal/validator/types.go` continues to declare
+`const SchemaVersionCurrent = "1.83.0"`.
+
+**No dns2 migration in v1.123.0.** The dns2 source-install → RPM
+migration design is separately gated and deferred. **No metrics
+changes.** **No new schema or config keys.** **No new systemd
+units.** **No portal / nftbanpro_cms changes.** **No Bucket-C
+v0.x tag changes** (D-BKT-1 FORBIDDEN INDEFINITELY). **No
+MASTER_TODO mutation.** **No host contact during the V123 lane.**
+
+### Removed — V123 B-1 stale man-page sources (PR #646 sq `c08c64c0`)
+
+- `install/man/man8/nftban.8` (DELETED, –646 LOC) — header `.TH NFTBAN 8 "April 2026" "NFTBan 1.77.0"`; 44 minor versions stale relative to v1.122.0; last meaningful update at commit `eb7d99bb` (v1.77.0). Never packaged by RPM (`packaging/build_nftban.sh:1734` explicitly excluded it: "Man page intentionally not shipped — CLI docs are registry-driven"). Never installed by source-install either due to a pre-existing path typo at `internal/installer/payload/payload.go:490` (`srcRel: "install/man/nftban.8"` missing the `man8/` segment; `optional: true policyAlways` silently skipped). Net production impact: zero hosts had `/usr/share/man/man8/nftban.8` deployed; the source file's only effect was to confuse future readers.
+
+- `install/man/man8/nftban-suricata.8` (DELETED, –189 LOC) — pre-v1.77 stale companion to `nftban.8`.
+
+- `commands.registry.yml` header (–1 LOC) — removed the vestigial `"- Man page generation"` line from the channel list. Surviving channels (`CLI help output`, `Wiki documentation`, `Bash completion`, `RBAC enforcement`) remain accurate.
+
+### Changed — V123 B-1 residual man-page reference hygiene (PR #647 sq `a65d56d5`)
+
+Completes the man-page decommission across the 11 surrounding surfaces left behind by PR #646, per `V123_B1_RESIDUAL_REFS_HYGIENE_SCOPE.md` + `V123_B1_RESIDUAL_REFS_HYGIENE_SCOPE_AMENDMENT.md` (challenge-and-counter-sweep audit):
+
+- `internal/installer/payload/payload.go` — deleted the orphaned man-page payload entry at line 490; rephrased section-header comment at line 487 from `// Other shipped artifacts: bash completion, man page (optional)` to `// Other shipped artifacts: bash completion (optional)`.
+- `internal/installer/uninstall/artifacts.go` — preserved `/usr/share/man/man8` in `isSharedDestDir` as defense-in-depth against future regressions (no current payload destination targets it after Surface 1 removal); added 5-line explanatory comment block citing PR #646 + this PR.
+- `internal/installer/uninstall/artifacts_test.go` — deleted `/usr/share/man/man8/nftban` from the `allowedPrefixes` test list (no man8 dst remains after Surface 1); preserved the forbidden-parent `/usr/share/man/man8` entry in `forbiddenParents`.
+- `packaging/build_nftban.sh` — deleted `${deb_root}/usr/share/man/man8` mkdir from the DEB Bucket-2 system-dirs block; rephrased the build_deb() decommission comment (lines 1732–1742) to past tense citing PR #646 + this PR; rephrased the parallel RPM `%install` comment (lines 527–529) to past tense, symmetric with the build_deb() rephrase.
+- `scripts/update_man_page.sh` (DELETED, –170 LOC) — orphan helper script whose `MAN_SOURCE` target was deleted in PR #646.
+- `scripts/lint-registry-parity.sh` — deleted the G15-B man-page parity block + the `MANPAGE=` variable; rephrased meta:description to drop `"man page,"`. G15-A completion parity check preserved. After this change, the lint emits zero G15-B WARN lines (was 70 between PR #646 and PR #647) while continuing to exit 0.
+- `.github/workflows/ci-architecture.yml` — rephrased the G15 step's leading comment to drop `"+ man page match registry"`; replaced with a 4-line explanatory comment citing PR #646 + this PR.
+- `CHANGELOG.md:4538-4539` — **PRESERVED** as historical append-only entry (Keep-a-Changelog convention).
+- `packaging/deb/changelog:207` — **PRESERVED** as historical append-only entry (Debian Policy Manual §4.4 / `dch(1)` convention).
+
+Net diff for PR #647: 7 files / -220 / +32.
+
+### Changed — V123 B-OSV CI suppression refresh (PR #648 sq `e9747135`)
+
+- `osv-scanner.toml` (+35 / 0) — appended 8 new `[[IgnoredVulns]]` entries for Go stdlib CVE IDs published since the last successful weekly auto-refresh on 2026-05-04. Auto-generated by `tools/refresh-osv-suppressions.sh --apply` against `api.osv.dev/v1/query` with `OSV_TARGET_GO_VERSION=1.25.8` — the canonical entries the broken auto-refresh workflow would have produced. New GO-IDs covered: `GO-2026-4918` (HTTP/2 transport infinite loop on bad `SETTINGS_MAX_FRAME_SIZE` — patched in `golang.org/x/net v0.53.0` embedded by our Go 1.25.8 toolchain; same GO-ID covers both stdlib and `golang.org/x/net@0.52.0` reporting surfaces, no dep bump required), `GO-2026-4971` / `4976` / `4977` / `4980` / `4981` / `4982` / `4986` (stdlib `net` / `net/http` / `net/mail` / `html/template` issues — patched in Go 1.25.10+, "out of scope for current build profile (1.25.8 builders)" class symmetric with pre-existing `GO-2026-4864` .. `GO-2026-4947` entries). `IgnoredVulns` count 26 → 34.
+
+- **Operator-only advisory (NOT addressed in v1.123.0):** the weekly `.github/workflows/osv-suppress-refresh.yml` auto-refresh workflow remains BROKEN pending a repository-admin setting toggle — enable "Allow GitHub Actions to create and approve pull requests" in Settings → Actions → General → Workflow permissions. Until enabled, OSV suppression updates must continue as manual PRs of PR #648's shape.
+
+### CI baseline-advisory pattern delta
+
+Before V123 B-OSV (PR #648): every NFTBan PR + main commit fired a 3-failure **baseline-advisory triplet** that was acknowledged across V120 / V121 / V122 release cycles:
+
+- `OSV Vulnerability Scan`: FAILURE — stale suppression-list drift, not runtime exposure
+- `Project Health`: FAILURE (×2)
+
+After PR #648, the triplet reduces to a **doublet**:
+
+- `OSV Vulnerability Scan`: **SUCCESS** ✅
+- `Project Health`: FAILURE (×2) — baseline advisory, non-blocking, unchanged
+
+The v1.123.0 release-prep / verify / tag / closure cycle and all subsequent V124+ work will see the doublet pattern rather than the triplet.
+
+### Closes
+
+- **V123 B-1**: stale man-page source decommission (PR #646)
+- **V123 B-1 residual**: man-page reference hygiene completion (PR #647)
+- **V123 B-OSV**: OSV suppression-list drift since 2026-05-04 (PR #648)
+- **OSV Vulnerability Scan baseline-advisory class** — root cause was stale suppression list (NOT runtime exposure); reduced from triplet to doublet for all future NFTBan PRs + main commits
+
+### Mechanism unchanged
+
+- `internal/validator/types.go` (schema 1.83.0 frozen) — byte-identical to v1.122.0
+- `cmd/nftband/**`, `cmd/nftban-core/**` — no Go change; **daemon binary byte-identical to v1.122.0**
+- `internal/metrics/**` — no change
+- `install/systemd/*` — byte-identical (only V122 PR #642 touched `nftban-unified-exporter.service`; V123 leaves all units untouched)
+- `build/fhs-spec.yaml` — byte-identical (no install path moved this cycle)
+- `commands.registry.yml` — byte-identical to v1.122.0 (PR #646 was the only header edit, already in v1.122.0)
+- `go.mod` / `go.sum` — byte-identical to v1.122.0 (no dependency bumps in V123; OSV refresh is data-only suppression list, not a dep change)
+- `tools/refresh-osv-suppressions.sh` — byte-identical (only its output changed, not the tool itself)
+- Polkit / panel detection / nftables templates — byte-identical
+- `MASTER_TODO*` — byte-identical
+- Bucket-C v0.x tag paths — byte-identical (D-BKT-1 FORBIDDEN INDEFINITELY)
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be guarded by the workflow_run-triggered Fresh-Install Namespace Guard built across V114 PRs #612–#620 + V115 PR #624's `/bin/kill` polish. **32/32 A1–A4 assertions expected PASS on the v1.123.0 baseline** post-tag, continuing the streak from v1.122.0 / v1.121.0 / v1.120.0 / v1.119.0 / v1.118.0 / v1.117.0 release-prep verification.
+
+### Files touched (the entire envelope)
+
+V123 candidate envelope already on `main` before this release-prep:
+
+- `install/man/man8/nftban.8` (DELETED) — PR #646
+- `install/man/man8/nftban-suricata.8` (DELETED) — PR #646
+- `commands.registry.yml` (–1 LOC header) — PR #646
+- `internal/installer/payload/payload.go` (–3 / +2) — PR #647 Surfaces 1 + 11
+- `internal/installer/uninstall/artifacts.go` (+6 LOC explanatory comment) — PR #647 Surface 2
+- `internal/installer/uninstall/artifacts_test.go` (–1 LOC) — PR #647 Surface 3
+- `packaging/build_nftban.sh` (–20 / +10) — PR #647 Surfaces 4 + 5 + 9
+- `scripts/update_man_page.sh` (DELETED, –170 LOC) — PR #647 Surface 6
+- `scripts/lint-registry-parity.sh` (–37 LOC + comment) — PR #647 Surfaces 7 + 10
+- `.github/workflows/ci-architecture.yml` (–1 / +4) — PR #647 Surface 8
+- `osv-scanner.toml` (+35 LOC) — PR #648 B-OSV
+
+Plus the v1.123.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.122.0 → 1.123.0)
+- `STATUS.md` (v1.123.0 release-lane paragraph; v1.122.0 demoted)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via `build/generate-fhs-outputs.sh`; header version-banner only; FHS path-table body byte-unchanged because V123 did not touch `build/fhs-spec.yaml`)
+
+**No daemon binary change.** **No `cmd/` Go change.** **No schema change.** **No FHS spec body change.** **No metrics changes.** **No dns2 migration in v1.123.0** (separately gated). **No host contact.**
+
 ## [v1.122.0] - 2026-05-19 — V122 small backlog-burn: docs hygiene + exporter transient + whitelist API cleanup + config sidecar quarantine
 
 V122 small backlog-burn release on top of v1.121.0. Bundles four merged
