@@ -408,6 +408,12 @@ func isNftbanArtifact(base string) bool {
 // isSharedDestDir returns true if the destination directory is shared
 // with other packages — uninstall must scope rm to nftban-prefixed
 // files only.
+//
+// /usr/share/man/man8 is preserved here as defense-in-depth even though
+// no current payload destination targets it (the optional man-page entry
+// was removed in V123 B-1 PR #646 + residual-refs PR). Keeping the entry
+// guards against future regressions that might re-introduce a man-page
+// dst without re-adding the safety scope.
 func isSharedDestDir(dir string) bool {
 	switch dir {
 	case "/usr/lib/systemd/system",

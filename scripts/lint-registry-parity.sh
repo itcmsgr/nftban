@@ -7,7 +7,7 @@
 # meta:type="ci"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-04-05"
-# meta:description="CI lint: verify commands.registry.yml entries have matching CLI handler, man page, and completion"
+# meta:description="CI lint: verify commands.registry.yml entries have matching CLI handler and completion"
 # meta:input="None"
 # meta:output="PASS/FAIL lint result to stdout"
 # meta:depends=""
@@ -32,7 +32,6 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGISTRY="$REPO_ROOT/commands.registry.yml"
 COMPLETION="$REPO_ROOT/install/bash-completion/nftban"
-MANPAGE="$REPO_ROOT/install/man/man8/nftban.8"
 
 # Meta entries to skip (not actual commands)
 SKIP_ENTRIES="global_options standard_params"
@@ -76,32 +75,11 @@ else
     ((errors += comp_gaps)) || true
 fi
 
-# G15-B: Every registry command should appear in man page
-echo ""
-echo "--- G15-B: Man page parity ---"
-man_gaps=0
-for cmd in "${registry_cmds[@]}"; do
-    skip=false
-    for s in $SKIP_ENTRIES; do
-        [[ "$cmd" == "$s" ]] && skip=true
-    done
-    $skip && continue
-
-    # Man page uses .B command or .B command \fR patterns
-    # Hyphens in troff are escaped as \- so check both forms
-    man_cmd="${cmd//-/\\-}"
-    if ! grep -qE "^\.B ${cmd}( |$)" "$MANPAGE" 2>/dev/null && \
-       ! grep -qF ".B ${man_cmd}" "$MANPAGE" 2>/dev/null; then
-        echo "  WARN: '$cmd' in registry but not documented in man page"
-        ((man_gaps++)) || true
-    fi
-done
-
-if [[ $man_gaps -eq 0 ]]; then
-    echo "  ✓ All registry commands found in man page"
-else
-    echo "  ⚠ $man_gaps command(s) not in man page (warnings only)"
-fi
+# G15-B (man page parity) was removed in V123 B-1 residual-refs PR — the
+# man-page source files were deleted in PR #646 (registry-canonical CLI
+# docs since v1.95.0). `commands.registry.yml` -> `nftban help` /
+# `scripts/generate-wiki-*.sh` / bash completion are the surviving docs
+# channels and remain checked by G15-A above.
 
 echo ""
 if [[ $errors -gt 0 ]]; then
@@ -109,8 +87,5 @@ if [[ $errors -gt 0 ]]; then
     exit 1
 else
     echo "✓ Registry parity lint: PASS"
-    if [[ $man_gaps -gt 0 ]]; then
-        echo "  ($man_gaps man page warning(s) — non-blocking)"
-    fi
     exit 0
 fi

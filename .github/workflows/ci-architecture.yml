@@ -456,7 +456,10 @@ jobs:
           echo ""
           echo "✓ Anchor marker check: PASS"
 
-      # v1.77.0: Registry parity lint — completion + man page match registry
+      # v1.77.0: Registry parity lint — completion matches registry
+      # (G15-A; G15-B man-page parity removed in V123 B-1 / PR #646 +
+      # residual-refs PR — man-page source decommissioned in favour of
+      # the registry-canonical `nftban help` + Wiki + completion).
       - name: Lint registry parity (G15)
         run: bash scripts/lint-registry-parity.sh
 

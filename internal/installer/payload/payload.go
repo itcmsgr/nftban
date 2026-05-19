@@ -484,10 +484,9 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		{category: "logrotate", srcRel: "install/config/nftban-suricata.logrotate", dstGlob: "/etc/nftban/templates/nftban-suricata.logrotate", mode: 0644, policy: policyAlways, optional: true},
 
 		// -----------------------------------------------------------------
-		// Other shipped artifacts: bash completion, man page (optional)
+		// Other shipped artifacts: bash completion (optional)
 		// -----------------------------------------------------------------
 		{category: "docs", srcRel: "install/bash-completion/nftban", dstGlob: "/usr/share/bash-completion/completions/nftban", mode: 0644, policy: policyAlways, optional: true},
-		{category: "docs", srcRel: "install/man/nftban.8", dstGlob: "/usr/share/man/man8/nftban.8", mode: 0644, policy: policyAlways, optional: true},
 	}
 }
 

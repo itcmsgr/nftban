@@ -161,7 +161,6 @@ func TestRemoveArtifacts_DoesNotRemoveNonOwnedParents(t *testing.T) {
 		"/etc/logrotate.d/nftban",
 		"/etc/polkit-1/rules.d",       // polkit dest (RHEL family)
 		"/usr/share/polkit-1/rules.d", // polkit dest (Debian family)
-		"/usr/share/man/man8/nftban",
 		"/usr/share/bash-completion/completions/nftban",
 		"/usr/lib/tmpfiles.d/nftban",
 		"/usr/lib/systemd/system/nftban", // unit-file rm
