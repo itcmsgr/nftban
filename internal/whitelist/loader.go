@@ -24,7 +24,6 @@ package whitelist
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -32,8 +31,6 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/feeds"
-	"github.com/itcmsgr/nftban/internal/netutil"
-	"github.com/itcmsgr/nftban/internal/setsync"
 	"github.com/itcmsgr/nftban/internal/util"
 )
 
@@ -224,140 +221,3 @@ func shouldSkipDueToExpiresAt(line string) bool {
 	return time.Now().UTC().After(ts)
 }
 
-// AddIP adds an IP to the appropriate whitelist file
-// Creates whitelist.d/99-manual.conf for manual additions
-func AddIP(configDir string, ipStr string) error {
-	// Reject /0 and /1 CIDR prefixes - would match entire address space
-	if strings.Contains(ipStr, "/") {
-		_, ipNet, err := net.ParseCIDR(ipStr)
-		if err == nil {
-			ones, _ := ipNet.Mask.Size()
-			if ones <= 1 {
-				return fmt.Errorf("refusing to whitelist /%d: would match entire address space", ones)
-			}
-		}
-	}
-
-	// v1.19.0: Reject bogon/reserved ranges (R23)
-	// Uses shared bogon filter from internal/setsync/cidr.go
-	filtered, stats := setsync.FilterProblematicCIDRs([]string{ipStr})
-	if stats.Bogon > 0 || stats.TooLarge > 0 {
-		return fmt.Errorf("refusing to whitelist %s: bogon/reserved range", ipStr)
-	}
-	if len(filtered) == 0 {
-		return fmt.Errorf("refusing to whitelist %s: filtered as problematic", ipStr)
-	}
-
-	// Validate IP
-	normalizedIP, isIPv4, err := netutil.ValidateAndNormalizeIP(ipStr)
-	if err != nil {
-		return err
-	}
-
-	// Target file: whitelist.d/99-manual.conf
-	whitelistDir := filepath.Join(configDir, "whitelist.d")
-	if err := os.MkdirAll(whitelistDir, 0750); err != nil {
-		return fmt.Errorf("failed to create whitelist.d: %w", err)
-	}
-
-	manualFile := filepath.Join(whitelistDir, "99-manual.conf")
-
-	// Check if IP already exists
-	ipv4Set, ipv6Set, err := LoadAllWhitelists(configDir)
-	if err != nil {
-		return fmt.Errorf("failed to load whitelists: %w", err)
-	}
-
-	if isIPv4 {
-		if ipv4Set[normalizedIP] {
-			return fmt.Errorf("IP %s already whitelisted", normalizedIP)
-		}
-	} else {
-		if ipv6Set[normalizedIP] {
-			return fmt.Errorf("IP %s already whitelisted", normalizedIP)
-		}
-	}
-
-	// Append to manual file
-	f, err := os.OpenFile(manualFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
-	if err != nil {
-		return fmt.Errorf("failed to open manual whitelist: %w", err)
-	}
-	defer f.Close()
-
-	// Add header if file is empty
-	stat, _ := f.Stat()
-	if stat.Size() == 0 {
-		fmt.Fprintf(f, "# Manual Whitelist Entries\n")
-		fmt.Fprintf(f, "# Added via nftban whitelist add command\n")
-		fmt.Fprintf(f, "# Format: One IP or CIDR per line\n\n")
-	}
-
-	fmt.Fprintf(f, "%s\n", normalizedIP)
-	return nil
-}
-
-// RemoveIP removes an IP from all whitelist files
-// Note: This searches all .conf files and removes the IP
-func RemoveIP(configDir string, ipStr string) error {
-	// Validate and normalize IP
-	normalizedIP, _, err := netutil.ValidateAndNormalizeIP(ipStr)
-	if err != nil {
-		return err
-	}
-
-	removed := false
-
-	// Check main whitelist.conf
-	mainFile := filepath.Join(configDir, "whitelist.conf")
-	if err := removeIPFromFile(mainFile, normalizedIP); err == nil {
-		removed = true
-	}
-
-	// Check all files in whitelist.d/
-	whitelistDir := filepath.Join(configDir, "whitelist.d")
-	entries, err := os.ReadDir(whitelistDir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
-				continue
-			}
-
-			// Skip system-critical files (00-system.conf, 01-nftban-init.conf)
-			if entry.Name() == "00-system.conf" || entry.Name() == "01-nftban-init.conf" {
-				continue
-			}
-
-			filePath := filepath.Join(whitelistDir, entry.Name())
-			if err := removeIPFromFile(filePath, normalizedIP); err == nil {
-				removed = true
-			}
-		}
-	}
-
-	if !removed {
-		return fmt.Errorf("IP %s not found in whitelist", normalizedIP)
-	}
-
-	return nil
-}
-
-// removeIPFromFile removes an IP from a specific file
-// Uses util.RemoveLineFromFile for atomic file operations
-func removeIPFromFile(filePath string, ipToRemove string) error {
-	removed, err := util.RemoveLineFromFile(filePath, func(line string) bool {
-		trimmed := strings.TrimSpace(line)
-		// Check if this line contains the IP (exact match or with whitespace/comment after)
-		return trimmed == ipToRemove ||
-			strings.HasPrefix(trimmed, ipToRemove+" ") ||
-			strings.HasPrefix(trimmed, ipToRemove+"\t")
-	})
-
-	if err != nil {
-		return err
-	}
-	if !removed {
-		return fmt.Errorf("IP not found in %s", filePath)
-	}
-	return nil
-}
