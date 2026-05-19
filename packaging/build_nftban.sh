@@ -1010,6 +1010,41 @@ fi
 find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
 find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
+# v1.122 B-10a: quarantine RPM-generated config sidecars.
+# RPM writes /etc/nftban/<path>.rpmnew when an operator-edited file marked
+# %config(noreplace) is shipped with a newer default in a package upgrade.
+# Active operator config is never touched. This sweep moves each *.rpmnew
+# under /etc/nftban/ into /var/lib/nftban/state/rpmnew-archive/<UTC-ts>/
+# preserving the relative path so operators can diff at leisure. Idempotent
+# (no-op when nothing matches); non-fatal (never breaks install/upgrade).
+_nftban_rpmnew_quarantine() (
+    ts=\$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
+    arch="/var/lib/nftban/state/rpmnew-archive/\${ts}"
+    count=0
+    # shellcheck disable=SC2044
+    for sidecar in \$(find /etc/nftban -type f -name '*.rpmnew' 2>/dev/null); do
+        if [ ! -f "\$sidecar" ]; then continue; fi
+        rel="\${sidecar#/etc/nftban/}"
+        reldir=\$(dirname -- "\$rel")
+        dst="\${arch}/\${reldir}"
+        if ! mkdir -p "\$dst" 2>/dev/null; then
+            echo "[NFTBan] WARN: rpmnew-quarantine cannot create \$dst -- skipping \$sidecar"
+            continue
+        fi
+        if mv -- "\$sidecar" "\${dst}/" 2>/dev/null; then
+            echo "[NFTBan] Quarantined RPM config sidecar: \$sidecar -> \${dst}/"
+            count=\$((count + 1))
+        else
+            echo "[NFTBan] WARN: rpmnew-quarantine cannot move \$sidecar"
+        fi
+    done
+    if [ "\$count" -gt 0 ]; then
+        echo "[NFTBan] B-10a: \$count RPM config sidecar(s) quarantined under \${arch}/"
+        echo "[NFTBan] B-10a: review with: diff -u /etc/nftban/<path> \${arch}/<path>"
+    fi
+)
+_nftban_rpmnew_quarantine || true
+
 # Send minimal anonymous install result (fire-and-forget, one-time)
 # Reuses nftban_pro.sh infrastructure. Failure is silent.
 # INVARIANT: this is a MINIMAL signal, NOT enrollment. See state-separation invariant.
