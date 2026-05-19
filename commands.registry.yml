@@ -3364,6 +3364,22 @@ update:
     github:
       mutates: true
       description: "Update from GitHub releases"
+      arguments:
+        VERSION:
+          type: string
+          optional: true
+          description: "Pin to a specific release (e.g., 1.120.0 OR v1.120.0 — both accepted, leading v/V stripped). Omit to install the latest stable release published on the GitHub releases page. The explicit-version path bypasses channel eligibility (blocked_minor_on_stable) and goes directly to RPM/DEB install — use for rollback, phased rollout, or multi-minor direct jumps."
+      examples:
+        - "nftban update github                 # latest stable (channel-gated)"
+        - "nftban update github 1.120.0         # pin to specific release"
+        - "nftban update github v1.120.0        # same as above; leading v stripped by V121 normalization"
+        - "nftban update github 1.119.0         # roll back to prior release (operator-explicit)"
+        - "nftban update github 1.120.0-rc1     # pin to a pre-release tag"
+      notes:
+        - "V121 input normalization (per V121_UPDATE_GITHUB_VERSION_ARG_DOC_SCOPE.md): strips optional leading 'v' or 'V' before strict regex validation. Accepts BOTH `1.120.0` and `v1.120.0`."
+        - "Strict regex (post-strip): ^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9._-]+)?$ — rejects '1.120', '1.120.0.0', 'latest', and empty input."
+        - "Explicit-version path bypasses the channel-eligibility gate (`blocked_minor_on_stable`). For phased rollout, use this path; for auto-update, omit the VERSION argument."
+        - "Downstream URL construction always uses `v<N.N.N>` (with leading `v`), matching the GitHub release-tag form. The CLI normalization is purely an input convenience."
     git:
       mutates: true
       description: "Update from git repository"
