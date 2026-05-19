@@ -56,14 +56,28 @@ _get_latest_release() {
 
 _get_package_url() {
     # Get download URL for current distro
-    # Args: $1 = version (must be semver: N.N.N or N.N.N-suffix)
+    # Args: $1 = version (accepts N.N.N or vN.N.N or N.N.N-suffix or vN.N.N-suffix)
     # Returns: URL
 
     local version="$1"
 
-    # v1.19.28 fix: validate version format to prevent arbitrary strings in URL
+    # V121 normalization (Part B — update github [VERSION] ergonomics):
+    # Strip optional leading 'v' or 'V' so the operator can pass either
+    # `nftban update github 1.120.0` (canonical) OR
+    # `nftban update github v1.120.0` (matches the GitHub tag form they see
+    # in release pages and runbooks). This closes the discoverability gap
+    # surfaced during the lab2 v1.115.0 → v1.120.0 validation where the
+    # first attempt with `v1.120.0` was rejected by the v1.115 CLI's strict
+    # input validator. Downstream URL construction at line ~80 still uses
+    # the canonical `v${version}` prefix when building the GitHub release
+    # download URL — the leading v/V is purely an input convenience.
+    version="${version#[vV]}"
+
+    # v1.19.28 fix (preserved): validate version format to prevent arbitrary
+    # strings in URL. Post-V121 the message also mentions the vN.N.N form
+    # operators may have typed.
     if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?$ ]]; then
-        _update_log ERROR "Invalid version format: '$version' (expected: N.N.N)"
+        _update_log ERROR "Invalid version format: '$1' (expected: N.N.N or vN.N.N — both accepted)"
         return 1
     fi
 

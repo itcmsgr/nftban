@@ -539,25 +539,47 @@ _cmd_update_main() {
         _update_log WARN "nft command not available, skipping authority check"
     fi
 
-    # V2: SSH port reachable in whitelist
+    # V2: SSH port reachable in whitelist (V121 dual-surface check —
+    # D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 closure)
     if command -v nft &>/dev/null; then
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
-        local _ssh_in_set=0
+        # Surface 1 (live kernel): SSH port in nft set tcp_ports_in
+        local _ssh_in_kernel=0
         local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
         local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-        # Check IPv4 tcp_ports_in
         if nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
-            _ssh_in_set=1
+            _ssh_in_kernel=1
         fi
-        # Check IPv6 tcp_ports_in
         if nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
-            _ssh_in_set=1
+            _ssh_in_kernel=1
         fi
-        if [[ $_ssh_in_set -eq 1 ]]; then
-            _update_log OK "SSH port ${_ssh_port}: present in service ports"
-        else
-            _update_log ERROR "SSH port ${_ssh_port}: NOT in service ports — lockout risk"
+        # Surface 2 (durable config): SSH port reachable via Mechanism A
+        # (TCP_PORTS_IN includes port) OR Mechanism B (SSH_PORT=port drives
+        # render injection of rendered nftables.conf).
+        local _ssh_in_durable=0
+        # Mechanism A: explicit TCP_PORTS_IN list in operator canonical
+        if [[ -f /etc/nftban/nftban.conf.local ]] && \
+           grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
+            _ssh_in_durable=1
+        fi
+        # Mechanism B: SSH_PORT=<port> drives render injection; verify by
+        # checking the rendered nftables.conf actually carries the port.
+        if [[ $_ssh_in_durable -eq 0 ]] && \
+           [[ -f /etc/nftban/nftban.conf.local ]] && \
+           grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
+           grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+            _ssh_in_durable=1
+        fi
+        # Report
+        if [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 1 ]]; then
+            _update_log OK "SSH port ${_ssh_port}: present in kernel AND durable config"
+        elif [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 0 ]]; then
+            _update_log WARN "SSH port ${_ssh_port}: present in kernel but NOT in durable config — lockout risk on next reload/reboot. Add SSH_PORT=${_ssh_port} or include ${_ssh_port} in TCP_PORTS_IN in /etc/nftban/nftban.conf.local"
+            # WARN (not FAIL) because the current session is safe; operator
+            # needs to act before next reload to make protection durable.
+        elif [[ $_ssh_in_kernel -eq 0 ]]; then
+            _update_log ERROR "SSH port ${_ssh_port}: NOT in kernel set — lockout risk NOW"
             _verify_fail=1
         fi
     fi
@@ -974,17 +996,28 @@ _cmd_update_preflight() {
         _pf_check "nftables authority: nft command not available" "FAIL"
     fi
 
-    # PF5: SSH port in service ports
+    # PF5: SSH port in service ports (V121 dual-surface — D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001)
     if command -v nft &>/dev/null; then
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
-        local _ssh_ok=0
+        local _ssh_kernel=0
         local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
         local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        if [[ $_ssh_ok -eq 1 ]]; then
-            _pf_check "SSH port ${_ssh_port} in service ports" "PASS"
+        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+        local _ssh_durable=0
+        if [[ -f /etc/nftban/nftban.conf.local ]] && \
+           grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
+            _ssh_durable=1
+        elif [[ -f /etc/nftban/nftban.conf.local ]] && \
+             grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
+             grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+            _ssh_durable=1
+        fi
+        if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then
+            _pf_check "SSH port ${_ssh_port} in service ports (kernel + durable config)" "PASS"
+        elif [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 0 ]]; then
+            _pf_check "SSH port ${_ssh_port}: kernel YES, durable config NO — fix nftban.conf.local before next reload" "WARN"
         else
             _pf_check "SSH port ${_ssh_port} NOT in service ports" "FAIL"
         fi
@@ -1114,17 +1147,28 @@ _cmd_update_verify() {
         _vf_check "nftables authority: nft command not available" "FAIL"
     fi
 
-    # VF2: SSH port in service ports
+    # VF2: SSH port in service ports (V121 dual-surface — D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001)
     if command -v nft &>/dev/null; then
         local _ssh_port
         _ssh_port=$(_update_detect_ssh_port)
-        local _ssh_ok=0
+        local _ssh_kernel=0
         local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
         local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_ok=1
-        if [[ $_ssh_ok -eq 1 ]]; then
-            _vf_check "SSH port ${_ssh_port} in service ports" "PASS"
+        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+        local _ssh_durable=0
+        if [[ -f /etc/nftban/nftban.conf.local ]] && \
+           grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
+            _ssh_durable=1
+        elif [[ -f /etc/nftban/nftban.conf.local ]] && \
+             grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
+             grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+            _ssh_durable=1
+        fi
+        if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then
+            _vf_check "SSH port ${_ssh_port} in service ports (kernel + durable config)" "PASS"
+        elif [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 0 ]]; then
+            _vf_check "SSH port ${_ssh_port}: kernel YES, durable config NO — lockout risk on next reload/reboot" "WARN"
         else
             _vf_check "SSH port ${_ssh_port} NOT in service ports — lockout risk" "FAIL"
         fi
