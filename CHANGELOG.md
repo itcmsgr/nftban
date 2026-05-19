@@ -11,6 +11,234 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.121.0] - 2026-05-19 — V121 operator-safety hardening: SSH-port durable-config injection + update github [VERSION] ergonomics
+
+V121 operator-safety hardening release on top of v1.120.0, bundling two
+narrow-feature surfaces in a single PR (#639 squash `a175bb4f`):
+
+- **Part A** closes `D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001` (P1 silent
+  self-lockout class for hosts using non-default SSH ports) with two
+  complementary code paths: render-path SSH-port injection guarantees
+  the port reaches the rendered `nftables.conf` durably, and the update
+  CLI verifier widens to a dual-surface check that accepts BOTH durable
+  mechanisms (operator-canonical `TCP_PORTS_IN=…,<port>` AND
+  `SSH_PORT=<port>` driving render injection).
+- **Part B** closes the `update github [VERSION]` ergonomics gap surfaced
+  at lab2 V120 validation by stripping optional leading `v`/`V` before
+  the strict regex check (`v1.120.0` now accepted alongside `1.120.0`)
+  and adding the formal `arguments: VERSION` block to the registry for
+  auto-rendered operator wiki coverage.
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY per
+`V121_OPERATOR_SAFETY_HARDENING_SCHEMA_IMPACT_DECISION.md` verdict
+`SCHEMA_STAYS_FROZEN`. No new metric, no new Prometheus label, no
+Status JSON wire-format key, no validator field, no install_state field,
+no nftables kernel set/chain/table name change. In-PR regression guard
+`TestSchemaVersionUnchangedByV121OperatorSafetyHardening` enforces and
+PASSED in CI.
+
+**Daemon binary byte-identical to v1.120.0** — V121 changes are confined
+to the installer Go layer (`internal/installer/render/nftables.go`), the
+update CLI shell layer (`cli/lib/nftban/cli/cmd_update.sh` +
+`cmd_update_methods.sh`), and operator-facing metadata
+(`commands.registry.yml`). `cmd/nftband/*` and `cmd/nftban-core/*` are
+byte-unchanged.
+
+### Added — V121 render-path SSH-port injection (Part A)
+
+- `internal/installer/render/nftables.go` — new
+  `ensureSSHPortInTcpPortsIn(content, sshPort, log)` helper. Injects the
+  detected SSH port into every `set tcp_ports_in { … elements = { … } …
+  }` block in the rendered nftables.conf if the port is missing after
+  `__SSH_PORT__` placeholder substitution. Fast-path no-op when the port
+  is already present (handles both Mechanism A and Mechanism B). Multi-
+  set support (both `ip nftban` and `ip6 nftban` blocks injected in a
+  single ReplaceAllStringFunc pass). Idempotent across repeated calls.
+  +91 LOC; closes `D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001` at the source.
+
+- `internal/installer/render/nftables_test.go` (NEW, +204) — 7 Go test
+  cases covering Mechanism A (port already in template), Mechanism B
+  (placeholder substituted), Mechanism C (port missing → inject),
+  multi-set injection (ip + ip6), idempotency, empty-elements edge case,
+  no-tcp_ports_in-set degenerate case, multi-line elements. All 7 PASS
+  in CI.
+
+- `internal/installer/render/schema_freeze_test.go` (NEW, +67) —
+  `TestSchemaVersionUnchangedByV121OperatorSafetyHardening` regression
+  guard. Co-located in the V121 primary-affected package per
+  `V121_OPERATOR_SAFETY_HARDENING_SCHEMA_IMPACT_DECISION.md` §5 mandate.
+  PASSES in CI.
+
+### Added — V121 verifier dual-surface check (Part A)
+
+- `cli/lib/nftban/cli/cmd_update.sh` — V2 (post-update verify), PF5
+  (preflight), VF2 (post-update verify) all widened from kernel-only to
+  DUAL-SURFACE check: kernel state AND durable config. Durable check
+  accepts BOTH:
+  - **Mechanism A** — `TCP_PORTS_IN=…,<port>` in
+    `/etc/nftban/nftban.conf.local` (monitor pattern)
+  - **Mechanism B** — `SSH_PORT=<port>` in operator canonical AND
+    rendered `nftables.conf` carries the port (srv2/lab2/lab4 pattern)
+  Reports: PASS (kernel + durable both YES), WARN (kernel YES + durable
+  NO; operator-actionable lockout-risk-on-next-reload warning), or FAIL
+  (kernel NO; lockout-risk-now). +88 LOC across 3 sites.
+
+- `cli/lib/nftban/tests/test_update_ssh_port_durability.sh` (NEW, +306)
+  — 8 shell test cases covering Mechanism A PASS-BOTH, Mechanism B
+  PASS-BOTH, kernel-only-via-failed-Mechanism-B WARN, kernel-only-no-conf-
+  local WARN, kernel-missing FAIL, default-port-22-no-override WARN,
+  empty-empty FAIL, word-boundary safety (5500 vs 55000). All 8 PASS
+  locally; CI shell-test framework confirms parse + lint cleanliness.
+
+### Added — V121 update github [VERSION] ergonomics (Part B)
+
+- `cli/lib/nftban/cli/cmd_update_methods.sh` — `_get_package_url` now
+  strips optional leading `v` or `V` before the existing strict N.N.N
+  regex check. Both `1.120.0` AND `v1.120.0` accepted. Strict regex
+  preserved post-strip:
+  `^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?$`. Error message updated
+  to reflect both accepted forms. Downstream URL construction unchanged
+  (still uses canonical `v${version}` prefix when building the GitHub
+  release URL — V121 normalization is purely an input convenience).
+  +20 LOC.
+
+- `commands.registry.yml` — `arguments: VERSION` block added under
+  `update.subcommands.github:` with formal type/optional/description
+  fields, 5 examples covering the latest-stable / version-pin / rollback
+  / v-prefix / pre-release cases, and 4 notes documenting V121
+  normalization, the strict regex, channel-eligibility bypass behavior,
+  and the downstream URL form. Auto-renders into operator wiki at next
+  wiki build via `scripts/generate-wiki-operator.sh`. +16 LOC. **NOTE:**
+  The registry's own `schema_version: "1.2"` self-description (file-
+  format version) is UNTOUCHED — distinct from M81-6 schema 1.83.0.
+
+- `cli/lib/nftban/tests/test_update_version_normalization.sh` (NEW, +116)
+  — 21 shell test cases: 4 canonical N.N.N acceptances, 3 v/V-strip
+  acceptances (`v1.120.0`, `V1.120.0`, `v1.119.0-rc1`), 3 pre-release
+  suffix acceptances (`-rc1`, `-beta.2`, `-alpha_3`), 6 malformed
+  rejections (`1.120`, `1.120.0.0`, `latest`, empty, non-numeric,
+  command-injection), 3 embedded-v rejections (only LEADING v/V
+  stripped), 2 whitespace rejections. All 21 PASS locally.
+
+### Fixed
+
+- `D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001` — P1 silent self-lockout
+  class. Hosts using non-default SSH ports (monitor + srv2 on port
+  55000) could end up with the SSH port in the LIVE kernel tcp_ports_in
+  set but NOT in the DURABLE rendered config, risking SSH lockout on the
+  next `nftban firewall reload`, `systemctl restart nftband`, server
+  reboot, or `nftban update`. The misleading Prepare-phase warning
+  `SSH port N not found in rendered nftables.conf — may need manual
+  tcp_ports_in entry` was technically correct at the moment of the
+  check but failed to acknowledge that downstream conf.d/ports.d merges
+  would resolve the gap on most paths — operators had no way to
+  distinguish a real durability gap from a transient pipeline-staging
+  state. V121 fixes this at the source via render-path injection (Part A
+  code path 1) AND surfaces the gap loudly at update time via the
+  dual-surface verifier (Part A code path 2). Closes the misleading-
+  signal class entirely.
+
+- Lab2 V120 validation root cause (`update github v1.120.0` input
+  rejection) — V121 Part B normalization accepts both forms.
+
+### Mechanism unchanged (V121 forbidden surfaces preserved byte-unchanged)
+
+- `internal/runtime/state.go`, `internal/profile/profile_sync.go` —
+  byte-unchanged
+- `internal/validator/*` (schema 1.83.0 frozen) — byte-unchanged
+- `install/systemd/*` — byte-unchanged
+- `install/nftables/*` — byte-unchanged (no new kernel set, no new
+  chain, no new table)
+- `internal/metrics/*`, `internal/health/*`, `internal/lifecycle/*`,
+  `internal/portal/*`, `internal/dns2/*`, `internal/panel/*` — all
+  byte-unchanged
+- `packaging/*` — byte-unchanged
+- `cmd/nftband/*` (daemon) — byte-unchanged (8-release identical-binary
+  streak preserved)
+- `cmd/nftban-core/*` (CLI binary) — byte-unchanged
+- `build/fhs-spec.yaml` — byte-unchanged
+- `MASTER_TODO*` — byte-unchanged (workspace-control rule locked
+  2026-05-13)
+- Bucket-C v0.x tag paths — byte-unchanged
+- Pre-existing orphans `whitelist.AddIP` / `whitelist.RemoveIP` —
+  untouched (deferred to separate cleanup lane per V120 audit §5
+  boundary)
+
+### Lifecycle
+
+- `f9f34fc4` — single implementation commit (8 files / +881/-27 / no
+  force-push / no amend); CI clean (17 SUCCESS / 3 FAILURE baseline-
+  advisory / 1 SKIPPED); verified merge-ready per
+  `V121_OPERATOR_SAFETY_HARDENING_PR_639_CI_AND_DIFF_VERIFICATION.md`
+  verdict `PR_639_VERIFIED_MERGE_READY`; squash-merged as `a175bb4f`.
+
+V121 had no remediation cycles (unlike V120's 4-commit B-1/B-2/T-1/T-2/
+T-2-followon arc) — the scope was simpler and the local test coverage
+was thorough enough to catch issues before push.
+
+### CI final tally (pre-merge on head `f9f34fc4`)
+
+17 SUCCESS / 3 FAILURE / 1 SKIPPED — only baseline-advisory failures
+(`OSV-Scanner` 26 Go stdlib CVEs all filtered per current 1.25.8
+builder profile + `Project Health` ×2 same 7/305 shellcheck warnings
+as main `e96938aa`). All product gates green including **Go Build &
+Test** (all 9 V121 tests PASS), **Secure Go**, Build NFTBan Packages,
+Update Canonization Gate, Runtime Truth Gate, CodeQL, Semgrep,
+ShellCheck, Bash Validation, Docker, Smoke Test, Documentation
+Validation, Architecture Policy, Shell-Delete Guard, Secret Scanning
+(Gitleaks), Dependency Review, 2026 OSSRA Remediation.
+
+### Behavior changes (narrow, explicit)
+
+- **NEW** render-path SSH-port injection: every `nftban firewall
+  rebuild` / `nftban-installer` Configure phase now guarantees the
+  detected SSH port reaches the rendered `/etc/nftban/nftables.conf`
+  tcp_ports_in set (was: warned-but-didn't-fix if template lacked the
+  port).
+- **NEW** dual-surface verifier output: V2 / PF5 / VF2 all report
+  PASS (kernel + durable) / WARN (kernel-YES + durable-NO; operator-
+  actionable lockout-risk warning) / FAIL (kernel-NO; lockout-risk-now)
+  instead of the prior kernel-only PASS/FAIL binary.
+- **NEW** version-format input normalization: `nftban update github
+  1.120.0` AND `nftban update github v1.120.0` AND `V1.120.0` all
+  accepted; downstream URL still uses canonical `v${version}` prefix.
+- **NEW** registry `arguments: VERSION` block: auto-renders into
+  operator wiki — operators discoverable via wiki/help that VERSION is
+  optional and both formats accepted.
+- **No new IPC traffic, no new Prometheus metric, no new Status JSON
+  key, no new file system surface, no new external dependency.**
+
+### Docker / GHCR tag pattern (post-publication)
+
+`v1.121.0`, `1.121.0`, `1.121`, `latest`, AND `sha-<8>` all resolve.
+The `sha-<8>` 8-char short-SHA tag continues to use the v1.117.0
+raw-template escape hatch from PR #631 (5th consecutive cycle).
+
+v1.121.x hotfix slot **not authorized** (latent reservation only —
+opened only if a v1.121.0 defect surfaces).
+
+### Workspace artifacts (no PR, no code; filed at `AUDIT_190_LIFECYCLE/`)
+
+- `V121_UPDATE_GITHUB_VERSION_ARG_DOC_SCOPE.md` — Part B scope
+- `V121_SSH_PORT_TEMPLATE_GAP_SCOPE.md` — Part A scope
+- `V121_OPERATOR_SAFETY_HARDENING_SCHEMA_IMPACT_DECISION.md` — schema-
+  impact decision (verdict `SCHEMA_STAYS_FROZEN` unconditional)
+- `V121_OPERATOR_SAFETY_HARDENING_PR_639_CI_AND_DIFF_VERIFICATION.md`
+  — PR #639 verification (verdict `PR_639_VERIFIED_MERGE_READY`)
+- `MONITOR_SSH_PORT_DURABILITY_DIAG_AND_FIX.md` — Mechanism A evidence
+  on monitor
+- `SRV2_V120_PREFLIGHT_CLOSURE.md` — Mechanism B evidence on srv2
+- `SRV2_OOB_ACCESS_AND_WHITELIST_PREP_SCOPE.md` — production OOB-prep
+  discipline scope
+- `V119_VALIDATE_LAB4_CLOSURE.md` — lab4 V120 validation closure
+- `V119_VALIDATE_MONITOR_LOG_DERIVED_CLOSURE.md` — monitor V120
+  validation closure (with v1 + v2 amendments)
+
+All artifacts read-only / zero code mutation / zero host contact during
+preflight + verification cycles.
+
+---
+
 ## [v1.120.0] - 2026-05-18 — V120 dedicated narrow-feature: operator-session whitelist guard
 
 V120 dedicated narrow-feature release on top of v1.119.0, closing
