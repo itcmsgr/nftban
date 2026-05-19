@@ -11,6 +11,216 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.122.0] - 2026-05-19 — V122 small backlog-burn: docs hygiene + exporter transient + whitelist API cleanup + config sidecar quarantine
+
+V122 small backlog-burn release on top of v1.121.0. Bundles four merged
+narrow-cleanup PRs and records two scope items as ALREADY-CLOSED. **Zero
+daemon binary change** — the v1.122.0 `/usr/lib/nftban/bin/nftband` is
+byte-identical to v1.121.0 because the only Go change ships in
+`internal/whitelist/loader.go` and the removed `AddIP` / `RemoveIP` /
+`removeIPFromFile` symbols were not called from `cmd/nftband/*` or
+`cmd/nftban-core/*`. The surviving public surface of the `whitelist`
+package (`LoadAllWhitelists`, `LoadAllWhitelistsTyped`,
+`IsIPInWhitelistFile`, `WhitelistEntry{Value,IsCIDR}`, plus V120
+EXPIRES_AT parser) is byte-equivalent across consumers.
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No validator field
+added, no new metric name, no new Prometheus label, no Status JSON
+wire-format key, no install_state field, no nftables kernel set /
+chain / table name change. `internal/validator/types.go` continues to
+declare `const SchemaVersionCurrent = "1.83.0"`.
+
+**No dns2 migration in v1.122.0.** The dns2 source-install → RPM
+migration design is deferred to a v1.123 dedicated planning lane per
+`DNS2_SOURCE_INSTALL_TO_RPM_MIGRATION_SCOPE.md`; it is explicitly not
+a v1.122 release-blocker. **No metrics changes.** **No new schema or
+config keys.** **No new systemd units** (only the existing
+`nftban-unified-exporter.service` dependency line tightened, see B-4).
+
+### Added — V122 B-1 / B-2 / B-3 operator + internals docs (PR #641 sq `a66449d8`)
+
+- `docs/operator/CSF_REMOVAL_AND_TAKEOVER.md` (NEW, +185 lines) —
+  codified takeover process rule. Documents `nftban firewall takeover
+  --panel-auto-takeover` as the canonical operator procedure for
+  disarming CSF / lfd on DirectAdmin hosts, with full code-trace into
+  `internal/installer/switchop/takeover.go` + `ghost.go` +
+  `cron_manifest.go`. Lists the 4 PR-tagged refinements the codified
+  path integrates (PR-22B opt-in, PR-26-code-C structured cron
+  manifest, PR26.6.1 `disarmDAWatchdog`, PR-P1 `ServiceResetFailed`)
+  and the anti-patterns (manual `systemctl` sequences, `csf -x`
+  alone, over-removal via `da build remove_csf`). Closes the
+  process-debt finding from V121 srv4 lane
+  (`V121_SRV4_CSF_REMOVE_CODE_DISCOVERY.md`).
+
+- `docs/operator/UPGRADING_FROM_V1_120_AND_EARLIER.md` (NEW, +131
+  lines) — documents the bare-version upgrade syntax shift introduced
+  by V121 PR #639 Part B (leading-letter normalization in
+  `cli/lib/nftban/cli/cmd_update_methods.sh::_get_package_url`). Both
+  `nftban update github 1.122.0` and `nftban update github v1.122.0`
+  now accepted; pre-V121 hosts that hit `Invalid version format` on
+  the leading-`v` form get a documented operator-only fallback. Also
+  carries the B-10b CSF config preservation companion section
+  (lines 92–116): `da build remove_csf` deletes `/etc/csf/csf.allow`
+  + `/etc/csf/csf.deny`; recommends `cp -p` backup to
+  `/var/lib/nftban/state/operator-csf-backup-<ts>/` before running
+  the DirectAdmin command; states the codified takeover path
+  preserves `/etc/csf/` byte-equivalent.
+
+- `docs/internals/V119_MANUAL_CIDR_DUAL_API.md` (NEW) — operator-
+  facing documentation of the V119 dual-API pattern (legacy
+  `LoadAllWhitelists` map[string]bool API preserved for pre-V119
+  callers like `cmd/nftban-core/profile_sync.go` that iterate keys
+  for pprof diff profiling; new `LoadAllWhitelistsTyped` +
+  `IsIPInWhitelistFile` typed API for CIDR-aware membership checks).
+  Closes the architectural-knowledge gap identified during V119
+  Manual CIDR DESIGN-FIX scope filing.
+
+### Changed — V122 B-4 exporter transient hardening (PR #642 sq `3f751035`)
+
+- `install/systemd/nftban-unified-exporter.service` —
+  `Wants=nftband.service` → `Requires=nftband.service`. With
+  `nftband.service` `Type=notify`, systemd considers `nftband`
+  "active" only after the daemon signals `READY=1`. The `Requires=`
+  upgrade refuses to start the exporter when `nftband` is not in
+  the active state, preventing the timer-fire-during-restart race.
+  Combined with the existing `After=` ordering, this guarantees
+  the exporter runs only against a ready daemon. The recurrent
+  post-upgrade `exit-code-2` transient observed on lab2 / monitor /
+  srv3 / srv4 during the `nftband` restart window is closed.
+  Telemetry-only failure mode — **no impact on bans / enforcement**.
+  Single-file edit: +9 LOC for the dependency line + a 9-line
+  comment block citing the V120 / V121 reproduction set.
+
+### Removed — V122 B-5 unused exported whitelist APIs (PR #643 sq `9d4b76ba`)
+
+- `internal/whitelist/loader.go` — removes the unused exported
+  `AddIP()` (140 LOC removed), `RemoveIP()` (–140 LOC removed),
+  and unexported `removeIPFromFile()` helper. These functions
+  pre-dated the V119 manual CIDR dual-API and the V120 EXPIRES_AT
+  parser and were never called from `cmd/nftband/*`,
+  `cmd/nftban-core/*`, or any CLI shell path. Surviving callers
+  use `LoadAllWhitelists` / `LoadAllWhitelistsTyped` /
+  `IsIPInWhitelistFile` for membership semantics. The orphan
+  imports (`net`, `internal/netutil`, `internal/setsync`) are
+  also dropped.
+
+- `internal/whitelist/loader_test.go` — removes 19 test functions
+  for the removed APIs (–288 LOC) plus an orphan `"strings"` import
+  cleaned up in PR #643's remediation commit `6cbd244b`. The
+  surviving 27 tests cover the V119 typed API + V120 EXPIRES_AT
+  behavior unchanged.
+
+- Net change: **–428 / +0** across the two files.
+
+### Added — V122 B-10a config sidecar quarantine (PR #644 sq `540373d2`)
+
+- `packaging/build_nftban.sh` — `create_rpm_spec_nftban_core()` `%post`
+  generator now emits a `_nftban_rpmnew_quarantine() ( ... )` subshell
+  helper between the cache-ownership fix and the install-result
+  telemetry block. The helper scans `/etc/nftban` for `*.rpmnew`
+  artifacts (written by RPM when an operator-edited
+  `%config(noreplace)` file is shipped with a newer default during an
+  upgrade) and moves each one into
+  `/var/lib/nftban/state/rpmnew-archive/<UTC-timestamp>/` preserving
+  the relative path under `/etc/nftban/`. Idempotent (no-op when
+  nothing matches); non-fatal (failures emit `WARN` and continue;
+  outer `|| true` guards the function call). Active operator config
+  is never touched. +35 LOC inside the generated `%post` heredoc;
+  all `\$VAR` / `\$(...)` correctly resolve to runtime `$VAR` /
+  `$(...)` in the emitted spec.
+
+- `packaging/deb/postinst` — `configure)` arm now emits a
+  `_nftban_dpkg_quarantine() ( ... )` subshell helper at the end of
+  the case body (after the cache-ownership find loop). Same archive
+  root for symmetry: `/var/lib/nftban/state/rpmnew-archive/`
+  `<UTC-timestamp>/`. Handles `*.dpkg-dist` and `*.dpkg-new` sidecars
+  via `while IFS= read -r ... < <(find ...)` for whitespace safety;
+  outer `|| true` prevents `set -Eeuo pipefail` from killing the
+  postinst on a quarantine failure. +37 LOC.
+
+- The two helpers share an archive layout so RPM and DEB operator
+  review paths are identical (`diff -u /etc/nftban/<path>
+  /var/lib/nftban/state/rpmnew-archive/<UTC-ts>/<path>`).
+
+### Closes
+
+- **B-1 codified takeover process rule docs** — by PR #641
+- **B-2 bare-version upgrade syntax docs** — by PR #641
+- **B-3 V119 manual CIDR dual-API operational doc** — by PR #641
+- **B-4 exporter transient post-upgrade exit-code-2 class** — by PR #642
+- **B-5 unused exported whitelist API surface** — by PR #643
+- **B-10a config sidecar accumulation class** — by PR #644
+- **B-9 stale CLI residue cleanup** — ALREADY-CLOSED disposition;
+  no remaining deletable surface (`nftban-api-server` references
+  confined to CHANGELOG / STATUS history; `nftban-ui` references
+  confined to active cleanup logic, historical docs, or CI guards).
+  Recorded in PR #644 body and in this entry.
+- **B-10b operator-curated CSF config preservation docs** —
+  ALREADY-CLOSED by PR #641 content. All three acceptance criteria
+  met by:
+  `docs/operator/CSF_REMOVAL_AND_TAKEOVER.md:139–144` (over-removal
+  anti-pattern + cross-reference);
+  `docs/operator/UPGRADING_FROM_V1_120_AND_EARLIER.md:97–100`
+  (explicit deletion warning);
+  `docs/operator/UPGRADING_FROM_V1_120_AND_EARLIER.md:101–108`
+  (`cp -p` backup block + non-recreation note); and
+  `docs/operator/UPGRADING_FROM_V1_120_AND_EARLIER.md:114–116`
+  (codified takeover preserves `/etc/csf/` byte-equivalent).
+  Recorded in PR #644 body and in this entry.
+
+### Mechanism unchanged
+
+- `internal/validator/types.go` — **byte-identical** to v1.121.0
+  (`const SchemaVersionCurrent = "1.83.0"` unchanged).
+- `cmd/nftband/**`, `cmd/nftban-core/**` — no Go change. **Daemon
+  binary byte-identical to v1.121.0.**
+- `internal/metrics/**` — no change. No new metric name, no new
+  Prometheus label.
+- `internal/installer/**` — no Go change (only the packaging-
+  scriptlet layer was touched in PR #644).
+- `install/systemd/*` — only `nftban-unified-exporter.service`
+  changed (PR #642); all other units byte-identical.
+- `build/fhs-spec.yaml` — byte-identical to v1.121.0 (no install
+  path moved this cycle, so the FHS spec body is unchanged; only
+  the `nftban_fhs_spec.sh` generated banner shifts to v1.122.0).
+- `commands.registry.yml` — byte-identical to v1.121.0.
+
+### Continuous protection preserved
+
+v1.112.2 `status=226/NAMESPACE` regression class continues to be
+guarded by the workflow_run-triggered Fresh-Install Namespace Guard
+built across V114 PRs #612–#620 + V115 PR #624's `/bin/kill` polish.
+**32/32 A1–A4 assertions expected PASS on the v1.122.0 baseline**
+post-tag, continuing the streak from v1.121.0 / v1.120.0 / v1.119.0
+/ v1.118.0 / v1.117.0 release-prep verification.
+
+### Files touched (the entire envelope)
+
+V122 candidate envelope already on `main` before this release-prep:
+
+- `docs/operator/CSF_REMOVAL_AND_TAKEOVER.md` (NEW) — PR #641 B-1
+- `docs/operator/UPGRADING_FROM_V1_120_AND_EARLIER.md` (NEW) — PR #641 B-2 + B-10b
+- `docs/internals/V119_MANUAL_CIDR_DUAL_API.md` (NEW) — PR #641 B-3
+- `install/systemd/nftban-unified-exporter.service` — PR #642 B-4
+- `internal/whitelist/loader.go` (–140) — PR #643 B-5
+- `internal/whitelist/loader_test.go` (–288) — PR #643 B-5
+- `packaging/build_nftban.sh` (+35) — PR #644 B-10a
+- `packaging/deb/postinst` (+37) — PR #644 B-10a
+
+Plus the v1.122.0 release-prep 4-file envelope (this PR):
+
+- `VERSION` (1.121.0 → 1.122.0)
+- `STATUS.md` (v1.122.0 release-lane paragraph; v1.121.0 demoted)
+- `CHANGELOG.md` (this entry)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (auto-regen via
+  `build/generate-fhs-outputs.sh`; header version-banner only; no
+  FHS path-table body change because V122 did not touch
+  `build/fhs-spec.yaml`)
+
+**No daemon binary change.** No `cmd/` Go change. **No schema
+change.** No FHS spec body change. **No metrics changes.** **No
+dns2 migration in v1.122.0** (deferred to v1.123 lane).
+
 ## [v1.121.0] - 2026-05-19 — V121 operator-safety hardening: SSH-port durable-config injection + update github [VERSION] ergonomics
 
 V121 operator-safety hardening release on top of v1.120.0, bundling two
