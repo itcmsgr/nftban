@@ -24,7 +24,16 @@
 Description=NFTBan Unified Metrics Exporter
 Documentation=https://nftban.com/docs/metrics
 After=network.target nftband.service
-Wants=nftband.service
+# V122 B-4: upgraded from Wants= to Requires= to eliminate the recurrent
+# post-upgrade exit-code-2 transient observed on lab2, monitor, srv3, srv4
+# during the nftband-restart window. With nftband.service Type=notify,
+# systemd considers nftband "active" only after the daemon signals READY=1;
+# Requires= now refuses to start the exporter when nftband is not in the
+# active state, preventing the timer-fire-during-restart race. Combined
+# with the existing After= ordering, this guarantees the exporter runs only
+# against a ready daemon. Telemetry-only failure mode — no impact on
+# bans/enforcement.
+Requires=nftband.service
 
 # MUTUAL EXCLUSION: Prevent running alongside legacy exporters
 Conflicts=nftban-metrics-exporter.service
