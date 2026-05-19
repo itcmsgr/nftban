@@ -128,3 +128,38 @@ reason = "stdlib: crypto/x509 inefficient policy validation; patched in Go 1.25.
 [[IgnoredVulns]]
 id = "GO-2026-4947"
 reason = "stdlib: crypto/x509 unexpected work during chain building; patched in Go 1.25.9+ — out of scope for current build profile (1.25.8 builders)"
+
+# === Auto-added by tools/refresh-osv-suppressions.sh on 2026-05-19 ===
+
+[[IgnoredVulns]]
+id = "GO-2026-4918"
+reason = "stdlib: Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in net/http/inter; patched in Go 0.53.0+ (our builders run 1.25.8+)"
+
+[[IgnoredVulns]]
+id = "GO-2026-4971"
+reason = "stdlib: Panic in Dial and LookupPort when handling NUL byte on Windows in net; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4976"
+reason = "stdlib: ReverseProxy forwards queries with more than urlmaxqueryparams parameters in net/http/http; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4977"
+reason = "stdlib: Quadratic string concatenation in consumePhrase in net/mail; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4980"
+reason = "stdlib: Escaper bypass leads to XSS in html/template; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4981"
+reason = "stdlib: Crash when handling long CNAME response in net; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4982"
+reason = "stdlib: Bypass of meta content URL escaping causes XSS in html/template; patched in Go 1.25.10+ — toolchain upgrade pending"
+
+[[IgnoredVulns]]
+id = "GO-2026-4986"
+reason = "stdlib: Quadratic string concatentation in consumeComment in net/mail; patched in Go 1.25.10+ — toolchain upgrade pending"
+
