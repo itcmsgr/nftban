@@ -297,6 +297,43 @@ case "$1" in
         find /var/cache/nftban -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
         find /var/cache/nftban -type d -exec chown nftban:nftban {} \; 2>/dev/null || true
 
+        # --- v1.122 B-10a: quarantine DEB-generated config sidecars ---
+        # dpkg writes /etc/nftban/<path>.dpkg-dist (or .dpkg-new) when an
+        # operator-edited conffile is shipped with a newer default in a
+        # package upgrade. Active operator config is never touched. This
+        # sweep moves each sidecar under /etc/nftban/ into
+        # /var/lib/nftban/state/rpmnew-archive/<UTC-ts>/ preserving the
+        # relative path so operators can diff at leisure. Archive root
+        # shared with the RPM path for symmetry. Idempotent (no-op when
+        # nothing matches); non-fatal (never breaks install/upgrade).
+        _nftban_dpkg_quarantine() (
+            _ts=$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
+            _arch="/var/lib/nftban/state/rpmnew-archive/${_ts}"
+            _count=0
+            while IFS= read -r _sidecar; do
+                if [ -z "$_sidecar" ]; then continue; fi
+                if [ ! -f "$_sidecar" ]; then continue; fi
+                _rel="${_sidecar#/etc/nftban/}"
+                _reldir=$(dirname -- "$_rel")
+                _dst="${_arch}/${_reldir}"
+                if ! mkdir -p "$_dst" 2>/dev/null; then
+                    log_warn "B-10a: dpkg-quarantine cannot create $_dst -- skipping $_sidecar"
+                    continue
+                fi
+                if mv -- "$_sidecar" "${_dst}/" 2>/dev/null; then
+                    log_info "Quarantined DEB config sidecar: $_sidecar -> ${_dst}/"
+                    _count=$((_count + 1))
+                else
+                    log_warn "B-10a: dpkg-quarantine cannot move $_sidecar"
+                fi
+            done < <(find /etc/nftban -type f \( -name '*.dpkg-dist' -o -name '*.dpkg-new' \) 2>/dev/null || true)
+            if [ "$_count" -gt 0 ]; then
+                log_info "B-10a: $_count DEB config sidecar(s) quarantined under ${_arch}/"
+                log_info "B-10a: review with: diff -u /etc/nftban/<path> ${_arch}/<path>"
+            fi
+        )
+        _nftban_dpkg_quarantine || true
+
         ;;
 esac
 
