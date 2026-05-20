@@ -11,6 +11,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.124.1] - 2026-05-21 — V124 hotfix: clear Project Health workflow shellcheck baseline
+
+V124 hotfix release on top of v1.124.0, clearing the **`Project Health`
+workflow baseline shellcheck failure** that had persisted on `main` since
+at least 2026-05-19, plus two related shellcheck issues flagged locally
+but not by the older CI shellcheck version.
+
+**Zero daemon binary change.** **Zero production CLI behavior change.**
+`/usr/lib/nftban/bin/nftband` is byte-identical to v1.124.0 (and v1.123.0,
+v1.122.0, ... v1.114.0). **12-release identical-daemon-binary streak**
+preserved (v1.114.0 → v1.124.1).
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field,
+no new metric, no new Prometheus label, no Status JSON wire-format key,
+no `install_state` field, no nftables kernel set / chain / table name
+change. `internal/validator/types.go` continues to declare
+`const SchemaVersionCurrent = "1.83.0"`.
+
+**Background:** PR #650 (v1.124.0) and the V123 release lane (#646–#649)
+all merged with the `Project Health` workflow advisory-failing for
+7/306 files. The failure was pre-existing and unrelated to either V123
+or V124 narrow PR diffs, but it was noisy enough that the operator
+classified it for cleanup before any further release work proceeded.
+This v1.124.1 hotfix targets exactly those 7 baseline shellcheck
+findings plus two additional findings flagged locally on
+`cli/lib/nftban/cli/cmd_firewall.sh` by a newer shellcheck version (the
+older CI shellcheck did not catch them; both are dead-code-by-design
+markers added in V120 PR #637 and documented as such).
+
+### Fixed — Project Health workflow shellcheck baseline (8 sites)
+
+**1. `scripts/ci/test-install-method-detection.sh:107` (SC1090 warning)**
+   The pre-existing `# shellcheck disable=SC1090` directive was attached
+   to the `local` declaration two lines above the actual `source
+   "$fixture_env"` call, so the directive applied to the wrong command
+   and the warning still fired on the source line. Fix: move the
+   directive to be immediately above the `source` line and switch to the
+   more precise `# shellcheck source=/dev/null` form (declares "this
+   source target is dynamic and shellcheck need not follow it"). Comment
+   block added explaining the move so a future reader does not "fix" it
+   back into the broken position.
+
+**2. `scripts/ci/test-systemd-execstart-payload-resolution.sh:417`
+   (SC2034 warning)** — `local deb_unit_file="$deb_sysd/$unit"` is
+   declared but not consumed in the current code path (the assertion is
+   RPM-side authoritative; DEB-side parity is verified earlier via the
+   `comm -12` set-intersection check). The variable was kept by the
+   author for symmetry with `rpm_unit_file` and as a future-checks
+   anchor. Fix: explicit `# shellcheck disable=SC2034` directive with a
+   1-line comment explaining the intentional retention; behavior
+   unchanged.
+
+**3. `scripts/test-package-effective-parity.sh:305` (SC2034 warning)** —
+   `local row path type expected_type` declared 4 locals; `expected_type`
+   was assigned via `cut -d'|' -f2` on line 305 but never read in the
+   function (the aggregator validates type/owner/group via stat-derived
+   tags below; `expected_type` from the EXPECTED_TABLE was not consulted
+   in this fresh-stat code path). Fix: remove `expected_type` from the
+   local declaration AND remove the now-unused `cut` assignment.
+   1-line comment added explaining the removal + how to reintroduce if
+   a future check needs it.
+
+**4-7. `scripts/ci/fixtures/execstart-resolution/{fail-parity-unit,pass-clean}/{rpm,deb}/usr/sbin/nftban`
+   (4 files; SC2148 error)** — Each fixture file was 0 bytes (empty
+   stub). The `health_check.sh` workflow sweep finds these via
+   `find ... -name "nftban"` because they are named without an extension,
+   and shellcheck flags them with SC2148 ("Tips depend on target shell
+   and yours is unknown. Add a shebang or a 'shell' directive."). The
+   fixtures are consumed by `scripts/ci/test-systemd-execstart-payload-resolution.sh`
+   which checks file presence and path-resolution semantics, NOT file
+   content. Fix: add a `# shellcheck shell=bash` directive line + brief
+   purpose comment to each fixture (file goes from 0 bytes → ~430 bytes
+   of comment + directive; zero executable code; test semantics
+   unchanged because the test does not read content).
+
+**8. `cli/lib/nftban/cli/cmd_firewall.sh:651` (SC2327 warning) +
+   `:662` (SC2328 error)** — The `removed=$(awk -v ip="$ip" ' ...
+   ' "$file" 2> >(tail -1) > "$tmp")` block uses an intentionally-
+   dead-code outer command-substitution: awk's stdout is redirected to
+   `$tmp`, awk's stderr is piped through `tail -1` via process
+   substitution, and the outer `$()` captures nothing. The real
+   "removed" count comes from the IP-presence re-check below (see
+   "Re-count removed by diffing against the original" block). The
+   pattern was added in V120 PR #637 (squash `38cc86f6`) operator
+   session-whitelist guard and was working-as-designed at the time;
+   newer shellcheck (>= 0.10) catches the dead capture. Fix: extend
+   the existing `# shellcheck disable=SC2016` directive (originally
+   silencing the single-quoted awk script warning) to also cover
+   `SC2327,SC2328`, with an inline comment explaining the intentional
+   dead-code pattern and noting that a cleaner refactor (drop the
+   capture entirely, drop awk's END block + count++) is deferred to
+   V125+. Behavior is byte-equivalent to v1.124.0; this is purely a
+   linter-directive update.
+
+### Verification
+
+- Whole-tree shellcheck sweep (replicating `health_check.sh::check_shellcheck`
+  exactly: `find . -type f \( -name "*.sh" -o -name "nftban" \)
+  ! -path "*/.git/*" ! -path "*/build/*" ! -path "*/node_modules/*"` then
+  `shellcheck -x -S warning <file>` per match): **0/306 files failed**
+  on the v1.124.1 commit (was 7/306 pre-hotfix).
+- `Project Health` workflow expected to PASS on this commit — closing the
+  only remaining baseline advisory CI failure across v1.120 → v1.124
+  release lanes.
+- All 10 required branch-protection checks unaffected (Build & Test,
+  CodeQL Go, Docs Quality, Policy Gates, Scan for secrets, Semgrep,
+  Shell Quality, ShellCheck, etc. all already passed for the cmd_firewall.sh
+  edit because the shellcheck-disable directive update is a 1-line
+  comment-style change in a file the existing tests already cover).
+- Shell test suites unaffected (no shell-test changes in this hotfix);
+  pre-hotfix tests still PASS: `cmd_status_authority_test.sh` 15/15,
+  `cmd_firewall_takeover_test.sh` 39/39, `cmd_firewall_whitelist_session_test.sh`
+  33/33, `test_update_version_normalization.sh` 21/21,
+  `test_update_ssh_port_durability.sh` 8/8.
+
+### Scope boundaries held
+
+- **ZERO daemon binary change** — `cmd/nftband/`, `cmd/nftban-core/`,
+  `cmd/nftban-installer/`, `internal/installer/`, `internal/whitelist/`,
+  `internal/blacklist/`, `internal/loginmon/`, `internal/safety/`,
+  `internal/runtime/`, `internal/profile/`, `internal/validator/`,
+  `internal/health/`, `internal/lifecycle/`, `internal/portal/`,
+  `internal/dns2/`, `internal/panel/`, `internal/nftbackend/`,
+  `internal/opqueue/`, `internal/setsync/`, `internal/metrics/`,
+  `internal/loginmon/pipeline/` — all byte-unchanged.
+- **ZERO** schema / metrics / lifecycle / packaging / systemd / polkit /
+  install / build / release-process changes.
+- **ZERO** new V124 features (single-purpose hotfix; no new behavior;
+  no new CLI surface; no new flag; no new test fixture beyond the
+  4 nftban-stub directive updates).
+- **No `NFTBAN_MASTER_PLAN_AND_PENDINGS.md` edit.**
+- **No `MEMORY.md` edit.**
+- **No host contact during release-prep.**
+- **No tag/release/PR activity beyond the v1.124.1 release-prep PR itself.**
+
+### Files touched
+
+8 source files (shellcheck-directive updates / fixture comments) +
+4 release-prep files:
+
+- `scripts/ci/test-install-method-detection.sh` (+6/-1)
+- `scripts/ci/test-systemd-execstart-payload-resolution.sh` (+5/-0)
+- `scripts/test-package-effective-parity.sh` (+5/-2)
+- `scripts/ci/fixtures/execstart-resolution/fail-parity-unit/rpm/usr/sbin/nftban` (+7/-0; from 0 bytes)
+- `scripts/ci/fixtures/execstart-resolution/fail-parity-unit/deb/usr/sbin/nftban` (+7/-0; from 0 bytes)
+- `scripts/ci/fixtures/execstart-resolution/pass-clean/rpm/usr/sbin/nftban` (+7/-0; from 0 bytes)
+- `scripts/ci/fixtures/execstart-resolution/pass-clean/deb/usr/sbin/nftban` (+7/-0; from 0 bytes)
+- `cli/lib/nftban/cli/cmd_firewall.sh` (+8/-1; directive extension only)
+- `VERSION` (1.124.0 → 1.124.1)
+- `STATUS.md` (v1.124.1 release-lane added; v1.124.0 demoted to Prior)
+- `CHANGELOG.md` (this entry prepended)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (header version-banner only; FHS path-table body byte-unchanged)
+
+### Release-prep envelope (this PR)
+
+Single squash PR opens the hotfix as a bundle. Tag `v1.124.1` is created
+against the merge SHA. SLSA workflow auto-publishes the GitHub release
+with 14 assets. Docker tags `v1.124.1` / `1.124.1` / `1.124` (advanced
+from `1.124` pointing at v1.124.0) / `latest` / `sha-<8>` all expected
+HTTP 200 post-publication.
+
+### Forbidden surfaces
+
+- `cmd/nftband/` byte-unchanged
+- `cmd/nftban-core/` byte-unchanged
+- `cmd/nftban-installer/` byte-unchanged
+- `internal/installer/` byte-unchanged
+- Schema 1.83.0 frozen
+- No new V124 candidates beyond the shellcheck baseline cleanup
+- No V125 install-robustness lanes (those open separately after
+  v1.124.1 ships and `Project Health` is verified-green on `main`)
+
+---
+
 ## [v1.124.0] - 2026-05-20 — V124 urgent CLI fix: takeover guidance + wrapper dispatch + help clarity
 
 V124 urgent bugfix release on top of v1.123.0, addressing four user-facing
