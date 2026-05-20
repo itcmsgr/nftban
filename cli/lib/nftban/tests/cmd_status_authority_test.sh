@@ -103,10 +103,31 @@ if echo "$F1_OUT" | grep -q "WARNING: csf,lfd still active"; then
 else
     log_fail "F1: WARNING line missing"
 fi
-if echo "$F1_OUT" | grep -q "ACTION:.*nftban update --panel-auto-takeover"; then
-    log_pass "F1: ACTION line surfaces resolution command"
+if echo "$F1_OUT" | grep -q "ACTION:.*nftban firewall takeover --panel-auto-takeover"; then
+    log_pass "F1: ACTION line surfaces resolution command (nftban firewall takeover --panel-auto-takeover)"
 else
-    log_fail "F1: ACTION line missing"
+    log_fail "F1: ACTION line missing or points at unwired entrypoint"
+fi
+# v1.124 regression guard (BUG-A / V124_TAKEOVER_CLI_GUIDANCE_AND_WRAPPER_FIX):
+# Pre-v1.124 the action string was 'nftban update --panel-auto-takeover'
+# which returned "Unknown command" because bare-form was unwired.
+if echo "$F1_OUT" | grep -qE "ACTION:.*nftban update --panel-auto-takeover( |$)"; then
+    log_fail "F1: ACTION line still emits pre-v1.124 dead-end 'nftban update --panel-auto-takeover'"
+else
+    log_pass "F1: ACTION line does NOT emit pre-v1.124 dead-end text"
+fi
+# v1.124 clarity guards: ACTION block must explain what the command does so
+# operators understand WHY they're running it. (User feedback during dns2
+# migration: bare action text without explanation forces operators to guess.)
+if echo "$F1_OUT" | grep -q "disarm detected panel/firewall conflicts"; then
+    log_pass "F1: ACTION block explains disarm purpose"
+else
+    log_fail "F1: ACTION block missing 'disarm detected panel/firewall conflicts' explanation"
+fi
+if echo "$F1_OUT" | grep -q "permits panel-aware conflict handling"; then
+    log_pass "F1: ACTION block explains --panel-auto-takeover is a permission flag"
+else
+    log_fail "F1: ACTION block missing permission-flag clarification"
 fi
 
 # =============================================================================

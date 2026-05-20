@@ -768,7 +768,38 @@ Options:
   --panel-auto-takeover   Allow detected control-panel presence
                           (cPanel/Plesk/DirectAdmin) to auto-approve
                           takeover. Default OFF (PR-22B gate).
-  --dry-run, -n           Preview takeover actions without changes.
+                          This is a PERMISSION flag — it permits
+                          panel-aware conflict handling.
+                          The flag does NOT itself authorize takeover.
+                          The wrapper supplies the real takeover
+                          authorization (--takeover) internally when
+                          this flag is set on a real (non-dry-run) call.
+  --dry-run, -n           Preview the takeover wrapper path only. Uses
+                          an upgrade-mode preview because the installer
+                          does not implement an honest install-mode
+                          dry-run orchestrator (v1.100 PR-22B scope).
+                          --dry-run does NOT perform conflict disarm or
+                          authority transition, and is NOT an exact
+                          simulation of the install-mode takeover phases.
+
+What this wrapper does for a real (non-dry-run) call:
+  nftban firewall takeover --panel-auto-takeover  ← supported takeover
+  is the public CLI for source-install or RPM hosts where install_state
+  AUTHORITY=AMBIGUOUS or CONFLICTS!=(empty). The wrapper invokes the
+  installer with takeover authorization to disarm detected panel /
+  external-firewall conflicts so nftban becomes the sole authority.
+
+Underlying invocation (v1.124+):
+  Real:    nftban-installer --mode=install --takeover --force [--panel-auto-takeover]
+  Dry-run: nftban-installer --mode=upgrade --dry-run [--panel-auto-takeover]
+
+Why two modes:
+  --takeover is the authorizer (cmd/nftban-installer/main.go:104-106;
+  sets NFTBAN_TAKEOVER=1; reaches switchop.DisableConflicts via the
+  authority classifier's takeover branch at phases.go:259).
+  --panel-auto-takeover (flags.go:127-128) only opts panel presence
+  into auto-approval; it does NOT itself initiate the takeover branch.
+  Both flags are passed on real runs.
 
 What disarm does (reversible):
   - External firewall binary renamed to <name>.disabled (sha256-equal)
@@ -817,9 +848,27 @@ HELP_EOF
         return 1
     fi
 
-    local args=(--mode=upgrade)
+    # v1.124 fix (BUG-C / V124_TAKEOVER_CLI_GUIDANCE_AND_WRAPPER_FIX):
+    # Real takeover requires --mode=install --takeover. The --panel-auto-takeover
+    # flag is a permission (cmd/nftban-installer/flags.go:127-128), not an
+    # authorizer; the authorizer is --takeover which sets NFTBAN_TAKEOVER=1
+    # (main.go:104-106) and reaches the authority classifier's takeover branch
+    # (phases.go:259 → switchop.DisableConflicts).
+    # --force is needed because hosts arriving here typically have
+    # install_state INSTALL_STATE=COMMITTED (terminal).
+    # --mode=install --dry-run is explicitly rejected by the installer
+    # ("an honest install dry-run orchestrator is out of scope for v1.100
+    # PR-22B"), so --dry-run preview falls back to --mode=upgrade --dry-run
+    # which exercises the same preflight/plan code path.
+    # dns2 migration evidence:
+    # AUDIT_190_LIFECYCLE/DNS2_MIGRATION_EXECUTED_CLOSURE.md §4.4.
+    local args
+    if [[ "$dry_run" == "true" ]]; then
+        args=(--mode=upgrade --dry-run)
+    else
+        args=(--mode=install --takeover --force)
+    fi
     [[ "$panel_auto" == "true" ]] && args+=(--panel-auto-takeover)
-    [[ "$dry_run" == "true" ]] && args+=(--dry-run)
 
     echo "Invoking installer: $installer ${args[*]}"
     exec "$installer" "${args[@]}"
