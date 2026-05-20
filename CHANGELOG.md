@@ -11,6 +11,276 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.124.0] - 2026-05-20 — V124 urgent CLI fix: takeover guidance + wrapper dispatch + help clarity
+
+V124 urgent bugfix release on top of v1.123.0, addressing four user-facing
+text/wrapper-dispatch bugs surfaced during the **dns2 source-install →
+v1.123.0 RPM migration (2026-05-20)**. The v1.123.0 installer/takeover
+engine itself proved correct (15/15 post-install assertions PASS, V107.2
+invariant `5e3f7498f2cc...` `/usr/sbin/csf.disabled` byte-equal preserved,
+V120 operator session-whitelist auto-seed worked, panel-survival validated,
+DirectAdmin integration intact through migration). What needed fixing was
+the **CLI surface above the Go layer**.
+
+**Zero daemon binary change** — `/usr/lib/nftban/bin/nftband` byte-identical
+to v1.123.0 because no `cmd/nftban-installer/`, `cmd/nftband/`,
+`cmd/nftban-core/`, or `internal/installer/` Go code is touched in this
+release (T9.1 in-test guard asserts `flags.go` byte-equal vs main).
+**11-release identical-daemon-binary streak** preserved (v1.114.0 →
+v1.124.0).
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field,
+no new metric, no new Prometheus label, no Status JSON wire-format key,
+no `install_state` field, no nftables kernel set / chain / table name
+change. `internal/validator/types.go` continues to declare
+`const SchemaVersionCurrent = "1.83.0"`.
+
+**No release-process changes.** **No metrics changes.** **No new schema or
+config keys.** **No new systemd units.** **No packaging changes.** **No
+portal / nftbanpro_cms changes.** **No Bucket-C v0.x tag changes**
+(D-BKT-1 FORBIDDEN INDEFINITELY). **No MASTER_TODO mutation.** **No
+host contact during release-prep** (workspace dev host only; dns2
+migration that surfaced these bugs is closed and untouched by this PR).
+
+### Fixed — V124 takeover CLI guidance + wrapper dispatch + help clarity (PR #650 sq `a0755fe1`)
+
+Four bugs classified by user-facing surface, each pinpointed at exact
+file:line, each verified against the dns2 migration evidence pack.
+
+- **BUG-A — `cli/lib/nftban/cli/cmd_status.sh:619` ACTION text recommended
+  the unwired entrypoint.** When `install_state AUTHORITY=AMBIGUOUS` and
+  `CONFLICTS` is non-empty, `nftban status` emitted: `ACTION: Run 'nftban
+  update --panel-auto-takeover' to disarm conflicts.` On dns2 this returned
+  `ERROR: Unknown command: --panel-auto-takeover`. Fixed: emits the wired
+  `nftban firewall takeover --panel-auto-takeover` recommendation plus a
+  multi-line explanation block clarifying disarm purpose and that
+  `--panel-auto-takeover` is a **permission** flag (not the takeover
+  authorizer).
+
+- **BUG-B — `cli/lib/nftban/cli/cmd_update.sh::nftban_cmd_update` parse
+  order.** The V117 env-mirror filter (lines pre-v1.124 around 2173-2183)
+  that strips `--panel-auto-takeover` from argv and exports
+  `NFTBAN_PANEL_AUTO_TAKEOVER=1` ran AFTER `cmd="${1:-}"` extraction. For
+  the bare form `nftban update --panel-auto-takeover` (no subcommand
+  between `update` and the flag), `$cmd` captured the flag and fell
+  through to the `case "$cmd" in` default → "Unknown command" error.
+  Fixed: filter loop moved ABOVE `cmd="${1:-}"` extraction so the flag is
+  stripped from argv first, then `$cmd` captures the (possibly-empty)
+  next positional cleanly. Existing subcommand forms
+  (`nftban update check --panel-auto-takeover`,
+  `nftban update github --panel-auto-takeover [VERSION]`, etc.) remain
+  byte-stable. Test guard `T7.4` asserts the filter loop precedes the
+  cmd extraction by line number.
+
+- **BUG-C — `cli/lib/nftban/cli/cmd_firewall.sh::firewall_takeover`
+  wrapper missing `--takeover` flag pass-through.** Pre-v1.124 the
+  wrapper unconditionally built `args=(--mode=upgrade)` and only
+  appended `--panel-auto-takeover` (line ~820). The wrapper exit-0
+  "succeeded" without authorizing the takeover branch because
+  `--panel-auto-takeover` is a permission flag
+  (`cmd/nftban-installer/flags.go:127-128`) — the **authorizer** is
+  `--takeover`, which sets `NFTBAN_TAKEOVER=1`
+  (`cmd/nftban-installer/main.go:104-106`) and reaches
+  `switchop.DisableConflicts` via the authority classifier's takeover
+  branch (`cmd/nftban-installer/phases.go:259`). On dns2 the wrapper
+  invocation showed `Invoking installer: ... --mode=upgrade
+  --panel-auto-takeover`, the upgrade lifecycle rebuilt rules cleanly,
+  but `install_state AUTHORITY` stayed `AMBIGUOUS` with `CONFLICTS=CSF`
+  persisting. The direct installer call
+  `/usr/lib/nftban/bin/nftban-installer --mode=install --takeover
+  --panel-auto-takeover --force --verbose` was the path that actually
+  succeeded (15/15 assertions PASS, AUTHORITY=UPDATE,
+  CONFLICTS=(empty)). Fixed: wrapper now branches:
+  - non-dry-run: `args=(--mode=install --takeover --force)`
+  - dry-run: `args=(--mode=upgrade --dry-run)` (because the installer
+    explicitly rejects `--mode=install --dry-run` with "an honest
+    install dry-run orchestrator is out of scope for v1.100 PR-22B")
+
+  `--force` is needed because hosts arriving at this wrapper typically
+  have `install_state INSTALL_STATE=COMMITTED` (terminal). Both code
+  paths append `--panel-auto-takeover` when the operator passed it.
+  Test guards: `T10.1-T10.3` static source guard (assert correct args
+  construction, assert pre-v1.124 broken `args=(--mode=upgrade)`
+  unconditional line not present); `T11.1-T11.6` runtime guard via
+  `unshare -r` (fake-root non-dry-run invocation captures stub argv +
+  asserts `--mode=install --takeover --force` present, `--mode=upgrade`
+  absent).
+
+- **BUG-D — `docs/operator/CSF_REMOVAL_AND_TAKEOVER.md` documented the
+  wrong installer invocation.** The doc stated that the wrapper invokes
+  `nftban-installer --mode=upgrade --panel-auto-takeover` — empirically
+  proven incorrect by dns2 (that combination ran the upgrade lifecycle
+  but did NOT disarm conflicts). Updated to the correct
+  `nftban-installer --mode=install --takeover --force
+  [--panel-auto-takeover]` with a clear permission-vs-authorizer
+  paragraph. Also added an explicit **DirectAdmin CustomBuild command
+  comparison table** to prevent future reviewer drift:
+  - nftban **uses** `da build set csf no` (conservative; writes `csf=no`
+    to `/usr/local/directadmin/custombuild/options.conf`; reversible by
+    `da build set csf yes`; files preserved). Invocation site:
+    `internal/installer/switchop/takeover.go:172` via
+    `exec.Run(buildCmd, "set", "csf", "no")`.
+  - nftban **intentionally does NOT use** `da build remove_csf`
+    (destructive; would delete `/etc/csf/` + `/usr/sbin/csf` +
+    `/usr/sbin/lfd` + `/usr/local/directadmin/plugins/csf` +
+    `/etc/cron.d/csf-cron` + `/etc/cron.d/lfd-cron`) because that
+    would destroy the cron-backup manifest and `/etc/csf/`
+    configuration that the `nftban firewall restore csf` path
+    (Amendment 1/2/3 of `internal/installer/restore/contract.md`)
+    depends on. Operators who want CSF permanently gone can run
+    `da build remove_csf` themselves AFTER nftban takeover lands —
+    operator territory, not nftban's responsibility.
+
+### Added — Help / auto-text clarity (V124 gate amendment in PR #650)
+
+Operators must clearly understand the takeover model. PR #650 expanded
+user-facing text on every CLI surface that mentions takeover:
+
+- `cmd_status.sh` ACTION block: now explains disarm purpose + flag
+  semantics (PERMISSION vs AUTHORIZER) in a multi-line block, not a
+  single-sentence directive.
+
+- `cmd_firewall.sh --help` block reorganized:
+  - PERMISSION flag (`--panel-auto-takeover`) clearly disambiguated
+    from AUTHORIZER (`--takeover`).
+  - `--dry-run` preview semantics explicit: dry-run uses upgrade-mode
+    preview because install-mode dry-run is not implemented; dry-run is
+    NOT an exact simulation of install-mode takeover and does NOT
+    perform conflict disarm or authority transition.
+  - Underlying real-mode and dry-run installer invocations documented
+    inline so operators can verify what the wrapper actually runs.
+
+- `docs/operator/CSF_REMOVAL_AND_TAKEOVER.md` "The codified command"
+  section rewritten: explicit "supported takeover" wording on the
+  non-dry-run form; explicit do-not-use note on bare `nftban update
+  --panel-auto-takeover` as primary recovery action; explicit dry-run
+  semantics paragraph (preview-only, not exact install-mode simulation).
+
+### Test coverage extended
+
+- `cli/lib/nftban/tests/cmd_status_authority_test.sh` — F1 extended:
+  - pre-v1.124 dead-end-text regression guard (asserts `nftban update
+    --panel-auto-takeover` text NOT emitted)
+  - clarity assertions (disarm purpose + permission-flag clarification
+    present)
+  - 15/15 PASS (was 13)
+
+- `cli/lib/nftban/tests/cmd_firewall_takeover_test.sh` — extended with
+  15 new assertions:
+  - **T1.6-T1.12** (help-text clarity): PERMISSION flag mentioned,
+    "does NOT itself authorize takeover" present, "supported takeover"
+    phrasing for non-dry-run, dry-run "does NOT perform conflict
+    disarm" present, dry-run "NOT an exact" simulation present,
+    underlying `--mode=install --takeover --force` invocation
+    documented, underlying `--mode=upgrade --dry-run` invocation
+    documented.
+  - **T7.3-T7.4** (BUG-B fix verification): bare-form env-mirror set;
+    static-source guard asserts filter loop precedes cmd extraction by
+    line number.
+  - **T10.1-T10.3** (BUG-C static source guard): non-dry-run path uses
+    `--mode=install --takeover --force`; dry-run path uses
+    `--mode=upgrade --dry-run`; pre-v1.124 unconditional
+    `args=(--mode=upgrade)` line absent.
+  - **T11.1-T11.6** (BUG-C runtime guard via `unshare -r`): non-dry-run
+    forwards `--mode=install`, `--takeover`, `--force`,
+    `--panel-auto-takeover`; does NOT forward `--mode=upgrade` or
+    `--dry-run`.
+  - 39/39 PASS (was 24).
+
+- **T9.1** in-test scope-regression guard (`cmd/nftban-installer/flags.go`
+  byte-unchanged vs main) — PASS, confirming zero Go change.
+
+### Sibling-test no-regression confirmation
+
+Run locally on Fedora 44 dev host pre-merge of PR #650 (all PASS, no
+regression introduced by the V124 edits):
+
+- `cmd_firewall_whitelist_session_test.sh`: 33/33 PASS
+- `test_update_version_normalization.sh`: 21/21 PASS
+- `test_update_ssh_port_durability.sh`: 8/8 PASS
+
+### CI tally (PR #650 head `a4509405`)
+
+- **Required checks: 10/10 PASS** — Build & Test, Build/Test/Scan (Go),
+  CodeQL Analysis (Go), Docs Quality, Policy Gates, Scan for secrets,
+  Semgrep Scan, Shell Quality, ShellCheck (Find bash errors), Validate
+  binary consistency (RPM vs DEB).
+- **Non-required PASS: 41** — RPM/DEB build matrix (8), RPM/DEB install
+  matrix (8), Runtime Truth (3), Update Canonization (3), Build Go
+  binaries, Build Docker Image, CLI Smoke Test, GitGuardian, Migration
+  Coverage Gate H3.2, OSV Vulnerability Scan, P0/P1 license + SPDX +
+  Lychee + libyear, Semgrep OSS, osv-scanner inline, Validate bundled
+  deps + ExecStart + RPM/DEB parity, Dependency Review, Shell-Delete
+  Guard, Detailed ShellCheck.
+- **Skipped (non-required, expected):** 2 — Go Security Analysis
+  (correctly skipped because Detect-Go-changes found zero diff),
+  Typosquat/Malware (Socket) behavioral scan (only runs on dep changes).
+- **Failed (non-required, advisory):** 2 — `Project Health` ×2.
+  Pre-existing baseline failure on main since at least 2026-05-19
+  (`scripts/ci/test-install-method-detection.sh:107` SC1090 +
+  `scripts/ci/fixtures/execstart-resolution/fail-parity-unit/rpm/usr/sbin/nftban`).
+  Neither file is in PR #650's diff. Same advisory failure pattern on
+  v1.123.0 release commit (`42314b46`) + PRs #646/#647/#648/#649.
+  Classified as "ci ok finished" per project precedent.
+
+### Scope boundaries held (per V124 gate)
+
+- **ZERO Go change** (`cmd/nftban-installer/` + `internal/installer/`
+  + `cmd/nftband/` + `cmd/nftban-core/` byte-unchanged; T9.1 asserts).
+- **ZERO daemon binary impact.**
+- **ZERO** metrics / lifecycle / packaging / systemd / polkit / install /
+  build / release-process changes.
+- **ZERO** host contact during PR construction.
+- **No new V124 candidates beyond #650.** The other V124 backlog items
+  in `NFTBAN_MASTER_PLAN_AND_PENDINGS.md` §3 Part A (`V124-B-2`
+  whitelist-session JSON envelope, `V124-B-3` emergency-table
+  classification docs, `V124-HK-1` issue #619 close, `V124-OSV-WF`
+  workflow permission toggle, `V124-OSV-POLISH` GO-2026-4918 rationale
+  polish) explicitly deferred per operator instruction "in .124 and
+  .125 we dont touch old worklog we fix taht we have 124 solve from
+  backlog DNS2".
+
+### dns2 host status post-migration
+
+dns2 is now: `INSTALL_STATE=COMMITTED`, `INSTALL_VERSION=1.124.0`-eligible
+(currently at v1.123.0; will pick up v1.124.0 on next regular update),
+`AUTHORITY=UPDATE`, `CONFLICTS=(empty)`, `PANEL=directadmin`, all 9
+timers active, DA :2222 reachable, named active, SSH :55000 preserved.
+Fleet parity achieved across lab2 / monitor / srv1-4 / lab4 / dns1 /
+dns2 on the v1.123.0 baseline plus the v1.124.0 CLI-clarity overlay.
+
+### Deferred to v1.125+ (workspace-only scope filed)
+
+Per operator instruction, v1.125 is the **install-robustness lane**
+(separate from v1.124's text/help fixes). Plan-only scope filed at
+`AUDIT_190_LIFECYCLE/V125_INSTALL_ROBUSTNESS_SCOPE.md` (17 lanes
+identified, file:line-cited against HEAD `a0755fe1`):
+
+- **v1.125.0 minimum cut (5 quick wins, ~340 LOC):** SSH multi-port
+  detection + render, installer flock concurrent-run lock,
+  phase-context honor, `--force` + `--allow-recommit` companion gate,
+  disk-space preflight.
+- **v1.125.0 stretch (4 lanes, ~170 LOC):** dependency-install retry,
+  V120 SSH peer-IP TTY fallback, iptables-pre-disarm snapshot,
+  `install_state` atomic write + schema version.
+- **v1.126+ defer (8 lanes):** source-install mutating uninstall
+  (PR-23/25/26), install-mode dry-run orchestrator, cPanel/Plesk
+  takeover-disarm parity, nft ruleset snapshot-restore on rebuild fail
+  (if not in v1.125.0), Configure-phase rollback, clock/fs-writable/DNS
+  preflights, SELinux/AppArmor preflight, install metrics emission.
+
+### Release-prep envelope (this PR)
+
+- `VERSION` (1.123.0 → 1.124.0)
+- `STATUS.md` (v1.124.0 release-lane added; v1.123.0 demoted to "Prior
+  release lane")
+- `CHANGELOG.md` (this entry prepended)
+- `cli/lib/nftban/core/nftban_fhs_spec.sh` (header version-banner only;
+  FHS path-table body byte-unchanged — PR #650 did not touch
+  `build/fhs-spec.yaml`)
+
+---
+
 ## [v1.123.0] - 2026-05-19 — V123 small-cleanup: man-page decommission completion + OSV suppression refresh
 
 V123 small-cleanup release on top of v1.122.0. Bundles three merged
