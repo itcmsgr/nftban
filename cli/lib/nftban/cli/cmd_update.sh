@@ -2138,6 +2138,32 @@ To rollback:
 # =============================================================================
 
 nftban_cmd_update() {
+    # v1.117 (registry option update.options.--panel-auto-takeover):
+    # parse-and-forward to the installer via the env mirror that
+    # cmd/nftban-installer/flags.go:141 already honors. install.sh
+    # exec's the installer (install.sh:67) and inherits env, so this
+    # works for every update path (github / git / local / package).
+    # The flag is stripped from argv before the case dispatch so it
+    # doesn't pollute version/branch/path subcommand parsers.
+    #
+    # v1.124 fix (BUG-B / V124_TAKEOVER_CLI_GUIDANCE_AND_WRAPPER_FIX):
+    # This filter MUST run before `cmd="${1:-}"` extraction, otherwise
+    # the bare form `nftban update --panel-auto-takeover` (no subcommand
+    # between `update` and the flag) captures the flag as $cmd and falls
+    # through to the "Unknown command" branch. dns2 migration evidence:
+    # AUDIT_190_LIFECYCLE/DNS2_MIGRATION_EXECUTED_CLOSURE.md §4.2.
+    local _filtered_args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "--panel-auto-takeover" ]]; then
+            export NFTBAN_PANEL_AUTO_TAKEOVER=1
+        else
+            _filtered_args+=("$arg")
+        fi
+    done
+    if [[ ${#_filtered_args[@]} -lt $# ]]; then
+        set -- "${_filtered_args[@]}"
+    fi
+
     local cmd="${1:-}"
     shift || true
 
@@ -2159,25 +2185,6 @@ nftban_cmd_update() {
     if [[ -z "${NFTBAN_OPERATOR_SESSION_IP:-}" && -n "${SSH_CLIENT:-}" ]]; then
         # SSH_CLIENT format: "<peer-ip> <peer-port> <local-port>"
         export NFTBAN_OPERATOR_SESSION_IP="${SSH_CLIENT%% *}"
-    fi
-
-    # v1.117 (registry option update.options.--panel-auto-takeover):
-    # parse-and-forward to the installer via the env mirror that
-    # cmd/nftban-installer/flags.go:141 already honors. install.sh
-    # exec's the installer (install.sh:67) and inherits env, so this
-    # works for every update path (github / git / local / package).
-    # The flag is stripped from argv before the case dispatch so it
-    # doesn't pollute version/branch/path subcommand parsers.
-    local _filtered_args=()
-    for arg in "$@"; do
-        if [[ "$arg" == "--panel-auto-takeover" ]]; then
-            export NFTBAN_PANEL_AUTO_TAKEOVER=1
-        else
-            _filtered_args+=("$arg")
-        fi
-    done
-    if [[ ${#_filtered_args[@]} -lt $# ]]; then
-        set -- "${_filtered_args[@]}"
     fi
 
     case "$cmd" in
