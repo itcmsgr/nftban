@@ -20,21 +20,64 @@ Two steps. The first is a dry-run preview. The second is the actual
 disarm. Both require root.
 
 ```
-nftban firewall takeover --dry-run
-nftban firewall takeover --panel-auto-takeover
+nftban firewall takeover --dry-run                       # preview only
+nftban firewall takeover --panel-auto-takeover           # supported takeover
 ```
 
+The second form is the **supported takeover path** on panel hosts —
+the wrapper invokes the installer with the real takeover authorization
+internally. Use this for `install_state AUTHORITY=AMBIGUOUS` or
+`CONFLICTS != (empty)`. Do **not** use `nftban update --panel-auto-takeover`
+as the primary recovery action — that path forwards the flag via env
+mirror for use during an actual update, but the standalone-recovery
+wrapper is `nftban firewall takeover --panel-auto-takeover`.
+
 The `--panel-auto-takeover` flag is the PR-22B opt-in for control-panel
-hosts (cPanel / Plesk / DirectAdmin). Without it the codified path
-refuses to act, which is by design.
+hosts (cPanel / Plesk / DirectAdmin). It is a **permission** flag —
+it permits panel-aware conflict handling but does NOT by itself
+authorize takeover. The wrapper supplies the actual `--takeover`
+authorizer to the installer on real (non-dry-run) calls. Without
+`--panel-auto-takeover` the codified path refuses to act on panel
+hosts, which is by design (PR-22B explicit opt-in gate).
+
+`--dry-run` previews the wrapper path where supported. It runs the
+installer's upgrade-mode preview (because the installer does not
+implement an honest install-mode dry-run orchestrator — v1.100 PR-22B
+scope). It does **not** perform conflict disarm, does **not** trigger
+the authority transition, and is **not** an exact simulation of the
+real install-mode takeover phases.
 
 ## What the codified path does
 
 `nftban firewall takeover` is a discoverability surface — the actual
-work happens inside the installer when called as
-`nftban-installer --mode=upgrade --panel-auto-takeover`. The disarm
-logic is `DisableConflicts()` at
+work happens inside the installer. As of v1.124, the wrapper invokes
+the installer as:
+
+```
+nftban-installer --mode=install --takeover --force [--panel-auto-takeover]
+```
+
+(For `--dry-run` preview the wrapper falls back to
+`--mode=upgrade --dry-run`, since install-mode dry-run is not
+implemented in this release — v1.100 PR-22B scope boundary.)
+
+The disarm logic is `DisableConflicts()` at
 `internal/installer/switchop/takeover.go:32`.
+
+**Important flag distinction:** `--panel-auto-takeover` is a
+**permission** flag, not the takeover authorizer. The authorizer is
+`--takeover`, which sets `NFTBAN_TAKEOVER=1`
+(`cmd/nftban-installer/main.go:104-106`) and reaches the authority
+classifier's takeover branch (`cmd/nftban-installer/phases.go:259`
+→ `switchop.DisableConflicts`). Without `--takeover`, the installer
+runs the upgrade lifecycle (rebuild only) and does NOT disarm
+conflicts — the wrapper now passes both flags for the non-dry-run
+path. **Pre-v1.124 history:** earlier versions of this doc described
+the wrapper as invoking `--mode=upgrade --panel-auto-takeover`. That
+was the actual code at the time and did NOT trigger the takeover
+branch on hosts arriving with `install_state INSTALL_STATE=COMMITTED`;
+the dns2 source-install → RPM migration (2026-05-20) surfaced the
+gap.
 
 For each conflicting service (CSF emits two entries — `csf.service`
 and `lfd.service` — so each is handled independently):
@@ -79,6 +122,24 @@ DirectAdmin-specific disarm (`disarmPanelCSF()`):
   references and emit one informational `WARN` per match. This is
   informational only — operator review is recommended but not
   required.
+
+### DA CustomBuild commands: which one nftban uses
+
+DirectAdmin offers two CustomBuild commands for CSF; nftban uses one
+and explicitly avoids the other:
+
+| DA command | What it does | nftban uses it? |
+|---|---|---|
+| **`da build set csf no`** | Writes `csf=no` to `/usr/local/directadmin/custombuild/options.conf`. Tells CustomBuild "don't manage CSF on next `./build update`". Pure configuration toggle. **Files preserved.** Reversible by `da build set csf yes`. | ✅ YES — `internal/installer/switchop/takeover.go:172` |
+| **`da build remove_csf`** | Destructive cleanup: physically removes `/etc/csf/`, `/etc/cron.d/csf-cron`, `/etc/cron.d/lfd-cron`, `/usr/sbin/csf`, `/usr/sbin/lfd`, `/usr/local/directadmin/plugins/csf`. **Irreversible** without backup. | ❌ NO — would destroy `/etc/csf/` and the cron-backup manifest that `nftban firewall restore csf` depends on. |
+
+**Design rationale:** nftban's takeover is reversible-by-design. The
+restore-contract Amendments 1/2/3 (`internal/installer/restore/contract.md`)
+require `/etc/csf/`, `/usr/sbin/csf.disabled`, and the cron-backup
+manifest to be on disk for `--mode=restore` to work. `da build remove_csf`
+would destroy those prerequisites. Operators who want CSF permanently
+gone can run `da build remove_csf` themselves AFTER nftban takeover
+lands — that's operator territory, not nftban's responsibility.
 
 Ghost-table cleanup (`CleanGhostTables()`, runs in `phaseSwitch` after
 `DisableConflicts`):

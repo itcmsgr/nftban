@@ -178,6 +178,16 @@ assert_contains "$T1_OUT" "--panel-auto-takeover"                    "T1.2 flag 
 assert_contains "$T1_OUT" "--dry-run"                                "T1.3 dry-run mentioned"
 assert_contains "$T1_OUT" "REVERSIBLE"                               "T1.4 reversibility callout"
 assert_contains "$T1_OUT" "NFTBAN_PANEL_AUTO_TAKEOVER=1"             "T1.5 env mirror documented"
+# v1.124 help-text clarity guards (BUG-D / V124_TAKEOVER_CLI_GUIDANCE_WRAPPER_AND_HELP_FIX):
+# Operators reading --help must clearly understand permission-vs-authorizer
+# semantics + that --dry-run is a preview, not an install-mode simulation.
+assert_contains "$T1_OUT" "PERMISSION flag"                          "T1.6 --panel-auto-takeover documented as permission flag"
+assert_contains "$T1_OUT" "does NOT itself authorize takeover"       "T1.7 permission-vs-authorizer disambiguated"
+assert_contains "$T1_OUT" "supported takeover"                       "T1.8 supported-takeover phrasing for non-dry-run"
+assert_contains "$T1_OUT" "does NOT perform conflict disarm"         "T1.9 dry-run preview semantics explained"
+assert_contains "$T1_OUT" "NOT an exact"                             "T1.10 dry-run is NOT-exact-simulation callout"
+assert_contains "$T1_OUT" "nftban-installer --mode=install --takeover --force" "T1.11 underlying real-mode invocation documented"
+assert_contains "$T1_OUT" "nftban-installer --mode=upgrade --dry-run" "T1.12 underlying dry-run invocation documented"
 
 # ---------------------------------------------------------------------------
 # T2: bare invocation (no flags) refuses with operator-actionable error
@@ -272,6 +282,34 @@ assert_contains "$T7_OUT" "NFTBAN_PANEL_AUTO_TAKEOVER=1"             "T7.1 env m
 T7B_OUT=$(call_update_with_panel_flag check 2>&1 || true)
 assert_contains "$T7B_OUT" "NFTBAN_PANEL_AUTO_TAKEOVER=unset"        "T7.2 env mirror NOT set when flag absent"
 
+# v1.124 fix (BUG-B / V124_TAKEOVER_CLI_GUIDANCE_AND_WRAPPER_FIX):
+# Pre-v1.124, bare-form `nftban update --panel-auto-takeover` (no subcommand
+# between `update` and the flag) captured the flag as $cmd and fell through
+# to "Unknown command" — the V117 env-mirror filter ran on $@ AFTER $1 was
+# already extracted. The fix moves the filter to run BEFORE cmd extraction.
+# Test guard: env mirror must be set even when the flag is the FIRST and
+# ONLY positional argument.
+# Evidence: AUDIT_190_LIFECYCLE/DNS2_MIGRATION_EXECUTED_CLOSURE.md §4.2
+T7C_OUT=$(call_update_with_panel_flag --panel-auto-takeover 2>&1 || true)
+assert_contains "$T7C_OUT" "NFTBAN_PANEL_AUTO_TAKEOVER=1"            "T7.3 BUG-B fix: env mirror set on bare-form invocation (--panel-auto-takeover as \$1)"
+
+# v1.124 static-source guard for BUG-B: assert the filter loop appears BEFORE
+# the `local cmd="${1:-}"` line in cmd_update.sh's nftban_cmd_update function.
+T7D_FN_SRC=$(awk '/^nftban_cmd_update\(\)/,/^}$/' "$NFTBAN_LIB_DIR/cli/cmd_update.sh")
+# Extract line numbers within the function body for both key markers.
+T7D_FILTER_LINE=$(printf '%s' "$T7D_FN_SRC" | grep -n 'NFTBAN_PANEL_AUTO_TAKEOVER=1' | head -1 | cut -d: -f1 || echo "0")
+T7D_CMD_LINE=$(printf '%s' "$T7D_FN_SRC" | grep -n 'local cmd="${1:-}"' | head -1 | cut -d: -f1 || echo "0")
+if [[ "$T7D_FILTER_LINE" =~ ^[0-9]+$ ]] && [[ "$T7D_CMD_LINE" =~ ^[0-9]+$ ]] && \
+   [[ "$T7D_FILTER_LINE" -gt 0 ]] && [[ "$T7D_CMD_LINE" -gt 0 ]] && \
+   [[ "$T7D_FILTER_LINE" -lt "$T7D_CMD_LINE" ]]; then
+    printf "  [PASS] %s\n" "T7.4 BUG-B fix: --panel-auto-takeover filter loop precedes cmd extraction (filter@$T7D_FILTER_LINE < cmd@$T7D_CMD_LINE)"
+    PASS=$((PASS + 1))
+else
+    printf "  [FAIL] %s\n" "T7.4 BUG-B fix: filter loop does NOT precede cmd extraction (filter@$T7D_FILTER_LINE, cmd@$T7D_CMD_LINE)"
+    FAIL=$((FAIL + 1))
+    FAILED_TESTS+=("T7.4")
+fi
+
 # ---------------------------------------------------------------------------
 # T8: Registry YAML structural validity + new entries present
 # ---------------------------------------------------------------------------
@@ -295,6 +333,63 @@ PY
     assert_not_contains "$T8_OUT" "YAML_ERR"                         "T8.2 No YAML errors"
 else
     echo "  [SKIP] T8 — python3 not available"
+fi
+
+# ---------------------------------------------------------------------------
+# T10: v1.124 wrapper-args static source guard (BUG-C regression guard).
+# Pre-v1.124 the wrapper unconditionally built args=(--mode=upgrade), which
+# silently ran the upgrade lifecycle without authorizing takeover — the
+# wrapper "succeeded" without disarming conflicts on dns2 (AUTHORITY stayed
+# AMBIGUOUS). v1.124 fix: non-dry-run uses --mode=install --takeover --force.
+# Static-source guard so a future refactor cannot silently restore the
+# pre-v1.124 broken pattern.
+# Evidence: AUDIT_190_LIFECYCLE/DNS2_MIGRATION_EXECUTED_CLOSURE.md §4.4
+# ---------------------------------------------------------------------------
+echo
+echo "[T10] v1.124 wrapper args static source guard"
+T10_FN_SRC=$(awk '/^firewall_takeover\(\)/,/^}$/' "$NFTBAN_LIB_DIR/cli/cmd_firewall.sh")
+assert_contains "$T10_FN_SRC" "args=(--mode=install --takeover --force)" \
+    "T10.1 non-dry-run path uses --mode=install --takeover --force"
+assert_contains "$T10_FN_SRC" "args=(--mode=upgrade --dry-run)" \
+    "T10.2 dry-run path uses --mode=upgrade --dry-run"
+# Pre-v1.124 regression-guard: the unconditional line `args=(--mode=upgrade)`
+# (no --takeover, no conditional) must NOT reappear.
+if printf '%s' "$T10_FN_SRC" | grep -qE '^[[:space:]]+args=\(--mode=upgrade\)[[:space:]]*$'; then
+    printf "  [FAIL] %s\n" "T10.3 pre-v1.124 unconditional 'args=(--mode=upgrade)' line reappeared"
+    FAIL=$((FAIL + 1))
+    FAILED_TESTS+=("T10.3")
+else
+    printf "  [PASS] %s\n" "T10.3 pre-v1.124 unconditional 'args=(--mode=upgrade)' line not present"
+    PASS=$((PASS + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# T11: v1.124 runtime test for non-dry-run path (BUG-C runtime guard).
+# Uses unshare -r (Linux user namespace) to fake root so the EUID gate
+# doesn't refuse. SKIPs cleanly if unshare unavailable or unsupported.
+# ---------------------------------------------------------------------------
+echo
+echo "[T11] v1.124 wrapper non-dry-run installer args (fake-root via unshare -r)"
+if command -v unshare >/dev/null 2>&1 && unshare -r true >/dev/null 2>&1; then
+    reset_installer_log
+    unshare -r bash -c "
+        export NFTBAN_LIB_DIR='$NFTBAN_LIB_DIR'
+        export NFTBAN_INSTALLER_BIN='$INSTALLER_STUB'
+        export INSTALLER_LOG='$INSTALLER_LOG'
+        eval \"\$(awk '/^# SUBCOMMAND: TAKEOVER/,/^# =========.*\$/ { print }
+                        /^firewall_takeover\(\)/,/^}\$/ { print }' \
+                  '$NFTBAN_LIB_DIR/cli/cmd_firewall.sh')\"
+        firewall_takeover --panel-auto-takeover >/dev/null 2>&1 || true
+    " || true
+    T11_LOG=$(cat "$INSTALLER_LOG" 2>/dev/null || true)
+    assert_contains "$T11_LOG" "--mode=install"            "T11.1 non-dry-run forwards --mode=install"
+    assert_contains "$T11_LOG" "--takeover"                "T11.2 non-dry-run forwards --takeover (real authorizer)"
+    assert_contains "$T11_LOG" "--force"                   "T11.3 non-dry-run forwards --force (COMMITTED state hosts)"
+    assert_contains "$T11_LOG" "--panel-auto-takeover"     "T11.4 --panel-auto-takeover still forwarded"
+    assert_not_contains "$T11_LOG" "--mode=upgrade"        "T11.5 non-dry-run does NOT forward --mode=upgrade (pre-v1.124 bug)"
+    assert_not_contains "$T11_LOG" "--dry-run"             "T11.6 non-dry-run does NOT forward --dry-run"
+else
+    echo "  [SKIP] T11 — unshare -r unavailable or unsupported on this host"
 fi
 
 # ---------------------------------------------------------------------------

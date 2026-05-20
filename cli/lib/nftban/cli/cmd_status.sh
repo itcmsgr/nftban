@@ -616,7 +616,11 @@ _status_section_authority() {
     if [[ "$authority" == "AMBIGUOUS" && -n "$conflicts" ]]; then
         echo ""
         echo "  WARNING: $conflicts still active — nftban is not sole authority."
-        echo "  ACTION:  Run 'nftban update --panel-auto-takeover' to disarm conflicts."
+        echo "  ACTION:  Run 'nftban firewall takeover --panel-auto-takeover' to let nftban"
+        echo "           disarm detected panel/firewall conflicts and become the active"
+        echo "           firewall authority."
+        echo "           Note: --panel-auto-takeover permits panel-aware conflict handling;"
+        echo "           the wrapper invokes the installer with takeover authorization."
     fi
     echo ""
 }
