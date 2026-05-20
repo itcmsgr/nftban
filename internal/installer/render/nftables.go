@@ -48,7 +48,37 @@ var tcpPortsInElementsRe = regexp.MustCompile(`(?s)(set tcp_ports_in \{[^{}]*ele
 
 // RenderNftablesConf reads the nftables.conf template, substitutes placeholders,
 // validates syntax, and writes back atomically.
+//
+// Backward-compat single-port entry point. v1.125 R-1 multi-port-aware
+// callers should use RenderNftablesConfMultiPort which renders all detected
+// SSH listener ports into the tcp_ports_in allow-set (closes the
+// dns2-class lockout vector for hosts with sshd on multiple ports).
 func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits, log *logging.Logger) error {
+	return RenderNftablesConfMultiPort(exec, []int{sshPort}, ct, log)
+}
+
+// RenderNftablesConfMultiPort renders nftables.conf with multi-port SSH
+// allow-set support (v1.125 R-1 — closes the dns2-class lockout vector
+// where a host listens on multiple SSH ports, e.g. :22 + :55000, but the
+// installer rendered only the first detected port into the firewall).
+//
+// sshPorts[0] is the PRIMARY port used for the `__SSH_PORT__` template
+// substitution (per-IP rate-limit rule and other single-port references
+// in the template stay byte-identical to the v1.124 behavior for
+// single-port hosts). All ports in sshPorts (primary AND any additional)
+// are injected into the rendered tcp_ports_in allow-set so the firewall
+// admits SSH on every detected port.
+//
+// When len(sshPorts) == 1 this is semantically identical to the pre-v1.125
+// single-port render path. The single-port RenderNftablesConf is preserved
+// as a thin wrapper around this function for backward compatibility with
+// existing callers.
+func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct detect.CTLimits, log *logging.Logger) error {
+	if len(sshPorts) == 0 {
+		return fmt.Errorf("RenderNftablesConfMultiPort: sshPorts is empty (primary port required)")
+	}
+	primary := sshPorts[0]
+
 	data, err := exec.ReadFile(nftbanConf)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", nftbanConf, err)
@@ -57,8 +87,13 @@ func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits,
 	content := string(data)
 	original := content
 
-	// Substitute placeholders
-	content = strings.ReplaceAll(content, "__SSH_PORT__", strconv.Itoa(sshPort))
+	// Substitute placeholders. __SSH_PORT__ uses the PRIMARY port — the
+	// per-IP rate-limit rule and other single-port references in the
+	// template stay byte-identical to v1.124 behavior for single-port
+	// hosts. For multi-port hosts, the allow-set carries every port (via
+	// ensureSSHPortInTcpPortsIn below) but per-port rate-limit semantics
+	// for additional ports are deferred to V125 stretch / V126+.
+	content = strings.ReplaceAll(content, "__SSH_PORT__", strconv.Itoa(primary))
 	content = strings.ReplaceAll(content, "__CT_LIMIT_SSH__", strconv.Itoa(ct.SSH))
 	content = strings.ReplaceAll(content, "__CT_LIMIT_HTTP__", strconv.Itoa(ct.HTTP))
 	content = strings.ReplaceAll(content, "__CT_LIMIT_MAIL__", strconv.Itoa(ct.Mail))
@@ -70,33 +105,33 @@ func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits,
 		}
 	}
 
-	// V121 — D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001:
+	// V121 — D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 (single-port baseline):
 	// Ensure the SSH port reaches the rendered nftables.conf tcp_ports_in set.
 	// Templates that lack a __SSH_PORT__ placeholder (older v1.x templates,
 	// custom operator-edited templates) previously left the rendered config
 	// without the SSH port — the kernel set still got the port from
 	// downstream conf.d/ports.d merges, but the durable config drifted from
-	// the kernel state. Hosts using non-default SSH ports could lose SSH
-	// access on the next firewall reload/restart/reboot if the rebuild
-	// ever read only the rendered config.
+	// the kernel state.
 	//
-	// Two durable mechanisms produce a correct outcome (per
-	// SRV2_V120_PREFLIGHT_CLOSURE.md §4 and V121 schema-impact decision §4):
-	//   Mechanism A — template has `tcp_ports_in = { 22, … }` with the
-	//                 SSH port explicitly listed (monitor pattern).
-	//   Mechanism B — template uses `__SSH_PORT__` placeholder, substituted
-	//                 above (srv2/lab2/lab4 default pattern).
-	// If neither produces a rendered file containing the SSH port, this
-	// helper INJECTS the port into the tcp_ports_in elements list so the
-	// rendered file is durable on its own.
-	content = ensureSSHPortInTcpPortsIn(content, sshPort, log)
+	// V125 R-1 extension — multi-port: inject every detected SSH listener
+	// port (primary AND additional) into the tcp_ports_in elements list, so
+	// operators connecting on any of the host's sshd listener ports survive
+	// a firewall reload. ensureSSHPortInTcpPortsIn is idempotent and
+	// safe-to-call-repeatedly: if a port is already present (e.g., from
+	// __SSH_PORT__ substitution above for the primary), the helper is a
+	// no-op for that port.
+	for _, port := range sshPorts {
+		content = ensureSSHPortInTcpPortsIn(content, port, log)
+	}
 
 	// Final sanity check (warning only — injection above should have made
 	// this pass, but a malformed template without any tcp_ports_in set
 	// would still log a warning).
-	portStr := strconv.Itoa(sshPort)
-	if !strings.Contains(content, portStr) {
-		log.Warn("SSH port %d still not present in rendered nftables.conf after V121 injection — template may lack a tcp_ports_in set entirely", sshPort)
+	for _, port := range sshPorts {
+		portStr := strconv.Itoa(port)
+		if !strings.Contains(content, portStr) {
+			log.Warn("SSH port %d still not present in rendered nftables.conf after V121/V125-R1 injection — template may lack a tcp_ports_in set entirely", port)
+		}
 	}
 
 	// Skip write if content unchanged
@@ -115,7 +150,16 @@ func RenderNftablesConf(exec executor.Executor, sshPort int, ct detect.CTLimits,
 		return fmt.Errorf("write %s: %w", nftbanConf, err)
 	}
 
-	log.Info("rendered nftables.conf (SSH=%d, CT: ssh=%d http=%d mail=%d)", sshPort, ct.SSH, ct.HTTP, ct.Mail)
+	if len(sshPorts) > 1 {
+		extras := make([]string, 0, len(sshPorts)-1)
+		for _, p := range sshPorts[1:] {
+			extras = append(extras, strconv.Itoa(p))
+		}
+		log.Info("rendered nftables.conf (SSH primary=%d, additional=%s, CT: ssh=%d http=%d mail=%d) — V125 R-1 multi-port allow-set",
+			primary, strings.Join(extras, ","), ct.SSH, ct.HTTP, ct.Mail)
+	} else {
+		log.Info("rendered nftables.conf (SSH=%d, CT: ssh=%d http=%d mail=%d)", primary, ct.SSH, ct.HTTP, ct.Mail)
+	}
 	return nil
 }
 

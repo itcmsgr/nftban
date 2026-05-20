@@ -19,6 +19,7 @@ package detect
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -36,36 +37,13 @@ import (
 //  2. sshd_config + drop-in dirs (config-declared)
 //  3. State file from previous install (/var/lib/nftban/state/ssh_port_active.state)
 //  4. nftban.conf.local override (/etc/nftban/nftban.conf.local SSH_PORT=)
+//
+// Backward-compat shim around DetectSSHPorts (v1.125 R-1). Returns the
+// primary port; callers that need the full multi-port list (e.g., to render
+// the nftables allow-set) should call DetectSSHPorts directly.
 func SSHPort(exec executor.Executor, log *logging.Logger) (int, error) {
-	// Source 1: ss listener
-	if port := sshFromListener(exec); port > 0 {
-		log.Detect("ssh", "source", "ss-listener")
-		log.Detect("ssh", "port", strconv.Itoa(port))
-		return port, nil
-	}
-
-	// Source 2: sshd_config
-	if port := sshFromConfig(exec); port > 0 {
-		log.Detect("ssh", "source", "sshd_config")
-		log.Detect("ssh", "port", strconv.Itoa(port))
-		return port, nil
-	}
-
-	// Source 3: state file
-	if port := sshFromStateFile(exec); port > 0 {
-		log.Detect("ssh", "source", "state-file")
-		log.Detect("ssh", "port", strconv.Itoa(port))
-		return port, nil
-	}
-
-	// Source 4: nftban.conf.local
-	if port := sshFromConfLocal(exec); port > 0 {
-		log.Detect("ssh", "source", "conf.local")
-		log.Detect("ssh", "port", strconv.Itoa(port))
-		return port, nil
-	}
-
-	return 0, fmt.Errorf("cannot determine SSH port from any source (ss, sshd_config, state file, conf.local)")
+	_, primary, err := DetectSSHPorts(exec, log)
+	return primary, err
 }
 
 // SSHPortWithSource returns the resolved SSH port AND a short string
@@ -77,10 +55,15 @@ func SSHPort(exec executor.Executor, log *logging.Logger) (int, error) {
 // no mutation. Per §51.5-A2 invariant, this is OUTSIDE the bounded
 // mutation surface cap. Added in PR-26-code-D.
 func SSHPortWithSource(exec executor.Executor, log *logging.Logger) (port int, source string, err error) {
-	if p := sshFromListener(exec); p > 0 {
+	// v1.125 R-1: keep per-source resolution for the schema-enum return,
+	// but route the listener path through sshAllListeners so multi-port
+	// hosts are not silently truncated. Other sources are single-port by
+	// file format and remain byte-identical.
+	if ports := sshAllListeners(exec); len(ports) > 0 {
+		primary := selectPrimarySSHPort(ports, sshClientLocalPort())
 		log.Detect("ssh", "source", "ss-listener")
-		log.Detect("ssh", "port", strconv.Itoa(p))
-		return p, "ss", nil
+		log.Detect("ssh", "port", strconv.Itoa(primary))
+		return primary, "ss", nil
 	}
 	if p := sshFromConfig(exec); p > 0 {
 		log.Detect("ssh", "source", "sshd_config")
@@ -103,23 +86,138 @@ func SSHPortWithSource(exec executor.Executor, log *logging.Logger) (port int, s
 // portRe matches a trailing port number after a colon.
 var portRe = regexp.MustCompile(`:(\d+)\s*$`)
 
-// sshFromListener checks ss -tlnp for sshd listening port.
+// sshFromListener checks ss -tlnp for sshd listening port and returns the
+// FIRST detected sshd listener. Preserved for backward compatibility with
+// pre-v1.125 callers. v1.125 R-1 callers should use sshAllListeners + the
+// primary-port selection helper instead.
 func sshFromListener(exec executor.Executor) int {
-	res := exec.Run("ss", "-tlnp")
-	if res.ExitCode != 0 {
+	ports := sshAllListeners(exec)
+	if len(ports) == 0 {
 		return 0
 	}
+	return ports[0]
+}
+
+// sshAllListeners parses `ss -tlnp` and returns ALL sshd listening ports
+// found in the output, deduplicated and ordered by first-occurrence in the
+// `ss` output. v1.125 R-1: closes the dns2-class lockout vector where a
+// host listens on multiple ports (e.g. :22 internal + :55000 external) but
+// the installer rendered only the first detected port into the firewall
+// allow-set.
+func sshAllListeners(exec executor.Executor) []int {
+	res := exec.Run("ss", "-tlnp")
+	if res.ExitCode != 0 {
+		return nil
+	}
+	seen := make(map[int]bool)
+	var ports []int
 	for _, line := range strings.Split(res.Stdout, "\n") {
 		if !strings.Contains(line, "sshd") {
 			continue
 		}
 		// Extract port from LISTEN address column (e.g., *:22 or 0.0.0.0:55000)
 		m := portRe.FindStringSubmatch(safeField(line, 3))
-		if m != nil {
-			return validatePort(m[1])
+		if m == nil {
+			continue
+		}
+		port := validatePort(m[1])
+		if port == 0 || seen[port] {
+			continue
+		}
+		seen[port] = true
+		ports = append(ports, port)
+	}
+	return ports
+}
+
+// sshClientLocalPort returns the LOCAL (destination) port from the
+// SSH_CLIENT environment variable, or 0 if absent or unparseable.
+//
+// SSH_CLIENT format: "<peer-ip> <peer-port> <local-port>" — the 3rd field
+// is the port the operator is connected to on this host. v1.125 R-1 uses
+// this to pick the multi-port primary so the rendered firewall allow-set
+// and the operator's session port stay aligned.
+func sshClientLocalPort() int {
+	v := os.Getenv("SSH_CLIENT")
+	if v == "" {
+		return 0
+	}
+	fields := strings.Fields(v)
+	if len(fields) < 3 {
+		return 0
+	}
+	return validatePort(fields[2])
+}
+
+// selectPrimarySSHPort picks the primary SSH port from a list of detected
+// listeners, preferring (1) the port the operator's SSH_CLIENT session is
+// connected on if it is in the listener list, else (2) the first detected
+// listener (which is typically the lowest-numbered well-known port). The
+// primary is used for the `__SSH_PORT__` template substitution and for
+// install_state SSH_PORT (single-int backward-compat field).
+func selectPrimarySSHPort(ports []int, sshClientPort int) int {
+	if len(ports) == 0 {
+		return 0
+	}
+	if sshClientPort > 0 {
+		for _, p := range ports {
+			if p == sshClientPort {
+				return p
+			}
 		}
 	}
-	return 0
+	return ports[0]
+}
+
+// DetectSSHPorts is the v1.125 R-1 multi-port-aware entry point. It returns
+// the full list of detected sshd listener ports (or a single-element slice
+// when the host has only one listener), AND the primary port chosen by
+// selectPrimarySSHPort (SSH_CLIENT-aware). Error is returned only when no
+// source yields any valid port.
+//
+// Source-chain semantics match SSHPort's existing priority: ss listener →
+// sshd_config → state file → conf.local. Multi-port discovery is only
+// available from the ss listener source (the other three sources are
+// single-port by file format). When the primary comes from a non-listener
+// source, the ports slice contains just that single primary.
+//
+// Backward compatibility: SSHPort() and SSHPortWithSource() now delegate
+// to DetectSSHPorts and return the primary, so all existing callers
+// continue to receive a single int with unchanged semantics.
+func DetectSSHPorts(exec executor.Executor, log *logging.Logger) (ports []int, primary int, err error) {
+	// Source 1: ss listener (multi-port-aware)
+	if ports = sshAllListeners(exec); len(ports) > 0 {
+		primary = selectPrimarySSHPort(ports, sshClientLocalPort())
+		log.Detect("ssh", "source", "ss-listener")
+		log.Detect("ssh", "port", strconv.Itoa(primary))
+		if len(ports) > 1 {
+			parts := make([]string, len(ports))
+			for i, p := range ports {
+				parts[i] = strconv.Itoa(p)
+			}
+			log.Detect("ssh", "ports_all", strings.Join(parts, ","))
+			log.Warn("multi-port SSH detected: %s — primary=%d; rendering allow-set for all detected ports (V125 R-1)",
+				strings.Join(parts, ","), primary)
+		}
+		return ports, primary, nil
+	}
+	// Sources 2-4 are single-port by file format; wrap in single-element slice.
+	if p := sshFromConfig(exec); p > 0 {
+		log.Detect("ssh", "source", "sshd_config")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return []int{p}, p, nil
+	}
+	if p := sshFromStateFile(exec); p > 0 {
+		log.Detect("ssh", "source", "state-file")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return []int{p}, p, nil
+	}
+	if p := sshFromConfLocal(exec); p > 0 {
+		log.Detect("ssh", "source", "conf.local")
+		log.Detect("ssh", "port", strconv.Itoa(p))
+		return []int{p}, p, nil
+	}
+	return nil, 0, fmt.Errorf("cannot determine SSH port from any source (ss, sshd_config, state file, conf.local)")
 }
 
 // sshFromConfig reads /etc/ssh/sshd_config and drop-in dirs.

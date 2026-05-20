@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
@@ -200,5 +201,108 @@ func TestEnsureSSHPortInTcpPortsIn_MultilineElements(t *testing.T) {
 		if !strings.Contains(out, p) {
 			t.Errorf("expected original port %s preserved; got:\n%s", p, out)
 		}
+	}
+}
+
+// =============================================================================
+// v1.125 R-1: SSH multi-port render
+// =============================================================================
+// Tests for the new RenderNftablesConfMultiPort entry point that closes the
+// dns2-class lockout vector. The pre-v1.125 RenderNftablesConf path is kept
+// as a back-compat shim around RenderNftablesConfMultiPort with a
+// single-element slice — both paths share the same V121 injection helper
+// (ensureSSHPortInTcpPortsIn), exercised here directly to assert multi-port
+// behavior without spinning up the full executor/file I/O machinery.
+//
+// Scope per AUDIT_190_LIFECYCLE/V125_INSTALL_ROBUSTNESS_SCOPE.md §3.1 R-1.
+// =============================================================================
+
+func TestEnsureSSHPortInTcpPortsIn_MultiPort_BothInjected(t *testing.T) {
+	// Template lacks both SSH ports — verify that calling the injection
+	// helper once per port (matching RenderNftablesConfMultiPort's loop)
+	// lands both ports in the rendered allow-set.
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	input := `set tcp_ports_in {
+	elements = { 80, 443 }
+}`
+	// Simulate the v1.125 R-1 multi-port render loop: injection helper
+	// called once per port, in order (primary first).
+	out := ensureSSHPortInTcpPortsIn(input, 22, log)
+	out = ensureSSHPortInTcpPortsIn(out, 55000, log)
+
+	for _, p := range []string{"22", "55000", "80", "443"} {
+		if !strings.Contains(out, p) {
+			t.Errorf("expected port %s in multi-port allow-set; got:\n%s", p, out)
+		}
+	}
+}
+
+func TestEnsureSSHPortInTcpPortsIn_MultiPort_PrimaryAlreadyPresent_AdditionalInjected(t *testing.T) {
+	// Template already carries the primary (via Mechanism A or Mechanism B
+	// from V121); the additional multi-port (v1.125 R-1) still needs
+	// injection.
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	input := `set tcp_ports_in {
+	elements = { 22, 80, 443 }
+}`
+	// Primary 22 is already present → no-op. Additional 55000 → injection.
+	out := ensureSSHPortInTcpPortsIn(input, 22, log)
+	out = ensureSSHPortInTcpPortsIn(out, 55000, log)
+
+	if !strings.Contains(out, "22") {
+		t.Errorf("primary port 22 missing from output:\n%s", out)
+	}
+	if !strings.Contains(out, "55000") {
+		t.Errorf("additional port 55000 missing from output:\n%s", out)
+	}
+	// Original non-SSH entries preserved.
+	if !strings.Contains(out, "80") || !strings.Contains(out, "443") {
+		t.Errorf("original ports lost:\n%s", out)
+	}
+}
+
+func TestEnsureSSHPortInTcpPortsIn_MultiPort_Idempotent_AcrossCalls(t *testing.T) {
+	// Calling the helper twice for the same port (e.g., the multi-port
+	// loop re-encounters the same value) must be a no-op on the second
+	// call. The fast-path strings.Contains check inside the helper
+	// guarantees this.
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	input := `set tcp_ports_in {
+	elements = { 80 }
+}`
+	once := ensureSSHPortInTcpPortsIn(input, 55000, log)
+	twice := ensureSSHPortInTcpPortsIn(once, 55000, log)
+	if once != twice {
+		t.Errorf("multi-port injection NOT idempotent:\nonce:\n%s\ntwice:\n%s", once, twice)
+	}
+}
+
+// TestRenderNftablesConfMultiPort_EmptySSHPorts asserts the function's
+// pre-condition: caller MUST supply at least one port (the primary).
+// The single-port back-compat shim RenderNftablesConf always supplies
+// []int{sshPort}, so this error path is unreachable from existing
+// callers; it guards against future multi-port-aware callers passing
+// an empty slice by accident.
+func TestRenderNftablesConfMultiPort_EmptySSHPorts(t *testing.T) {
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	// Cannot exercise the full render path without an executor; assert
+	// the early-return error path via the public API. Using nil
+	// executor is acceptable because the empty-sshPorts check fires
+	// before any executor method is called.
+	err := RenderNftablesConfMultiPort(nil, nil, detect.CTLimits{}, log)
+	if err == nil {
+		t.Fatalf("expected error on empty sshPorts; got nil")
+	}
+	if !strings.Contains(err.Error(), "sshPorts is empty") {
+		t.Errorf("expected 'sshPorts is empty' in error; got: %v", err)
+	}
+	// Empty slice (vs nil) — same code path.
+	err = RenderNftablesConfMultiPort(nil, []int{}, detect.CTLimits{}, log)
+	if err == nil {
+		t.Fatalf("expected error on empty sshPorts slice; got nil")
 	}
 }
