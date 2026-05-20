@@ -101,9 +101,13 @@ run_fixture() {
     fi
 
     # Load env: NFTBAN_TEST_RPM_OWNS, NFTBAN_TEST_DPKG_OWNS, NFTBAN_TEST_GIT_REPO_PRESENT
-    # shellcheck disable=SC1090
     local NFTBAN_TEST_RPM_OWNS="" NFTBAN_TEST_DPKG_OWNS="" NFTBAN_TEST_GIT_REPO_PRESENT=""
     set +u
+    # v1.124.1: directive moved to be immediately before `source` so shellcheck
+    # applies it to the right command. Previously SC1090 was attached to the
+    # `local` declaration above and didn't suppress the warning on the actual
+    # source line, producing a baseline Project Health workflow failure.
+    # shellcheck source=/dev/null
     source "$fixture_env"
     set -u
 

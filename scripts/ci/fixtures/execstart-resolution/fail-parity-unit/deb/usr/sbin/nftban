@@ -1,0 +1,7 @@
+# shellcheck shell=bash
+# v1.124.1 fixture: intentionally empty stub representing the DEB-side
+# /usr/sbin/nftban payload for the fail-parity-unit case driven by
+# scripts/ci/test-systemd-execstart-payload-resolution.sh. The shell
+# directive above silences SC2148 in the Project Health workflow sweep;
+# it does not affect test semantics (the test reads file presence and
+# path, not file content).
