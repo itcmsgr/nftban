@@ -299,10 +299,13 @@ mode_deb_meta() {
 # Mode: fresh-stat / reinstall-stat / upgrade-stat — stat live filesystem
 # -----------------------------------------------------------------------------
 mode_fresh_stat() {
-    local row path type expected_type
+    # v1.124.1: removed unused `expected_type` local + assignment (SC2034
+    # baseline Project Health warning). The aggregator path validates the
+    # type/owner/group columns; expected_type was never read in this
+    # function. If a future check needs it back, add via `cut -d'|' -f2`.
+    local row path type
     for row in "${EXPECTED_TABLE[@]}"; do
         path="${row%%|*}"
-        expected_type=$(echo "$row" | cut -d'|' -f2)
         if [[ ! -e "$path" ]]; then
             # MISSING is reported as a sentinel row; aggregator treats as failure
             echo "$path|MISSING|-|-|-"

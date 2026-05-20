@@ -647,7 +647,15 @@ _whitelist_session_remove() {
     local tmp
     tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
     local removed=0
-    # shellcheck disable=SC2016
+    # SC2016: single-quoted awk script (intentional — awk variable references,
+    # not bash expansion). SC2327/SC2328: the awk capture is dead-code by design
+    # — stdout goes to "$tmp" via `> "$tmp"`, stderr is process-substituted
+    # through `tail -1`, and the outer command-substitution captures the empty
+    # stdout. The real "removed" count is computed via the IP-presence re-check
+    # below (see "Re-count removed by diffing against the original" block).
+    # Kept as-is to avoid behavior churn in v1.124.1 hotfix; the cleaner
+    # refactor (drop the dead capture and the END block) is deferred to V125+.
+    # shellcheck disable=SC2016,SC2327,SC2328
     removed=$(awk -v ip="$ip" '
         {
             t = $0

@@ -414,6 +414,11 @@ validate_payloads() {
         fi
 
         local rpm_unit_file="$rpm_sysd/$unit"
+        # deb_unit_file kept for symmetry / future DEB-side checks but not
+        # currently consumed; RPM-side is authoritative per the assertion
+        # below. v1.124.1: explicitly suppress SC2034 to silence the
+        # baseline Project Health workflow warning.
+        # shellcheck disable=SC2034
         local deb_unit_file="$deb_sysd/$unit"
 
         # Parse Exec* from RPM-side unit file (authoritative; should match DEB)
