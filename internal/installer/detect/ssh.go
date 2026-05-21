@@ -86,18 +86,6 @@ func SSHPortWithSource(exec executor.Executor, log *logging.Logger) (port int, s
 // portRe matches a trailing port number after a colon.
 var portRe = regexp.MustCompile(`:(\d+)\s*$`)
 
-// sshFromListener checks ss -tlnp for sshd listening port and returns the
-// FIRST detected sshd listener. Preserved for backward compatibility with
-// pre-v1.125 callers. v1.125 R-1 callers should use sshAllListeners + the
-// primary-port selection helper instead.
-func sshFromListener(exec executor.Executor) int {
-	ports := sshAllListeners(exec)
-	if len(ports) == 0 {
-		return 0
-	}
-	return ports[0]
-}
-
 // sshAllListeners parses `ss -tlnp` and returns ALL sshd listening ports
 // found in the output, deduplicated and ordered by first-occurrence in the
 // `ss` output. v1.125 R-1: closes the dns2-class lockout vector where a
