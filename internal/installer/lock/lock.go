@@ -118,9 +118,10 @@ func Acquire(path string) (*Lock, error) {
 	// the flock state (kernel-tracked). No reader other than root needs
 	// access. gosec G304 false-positive: `path` is bounded by the caller
 	// to state.LockFilePath(cfg.stateDir) which is a fixed-suffix join
-	// of the validated state-dir; not user-controlled input.
-	// #nosec G304 -- path is bounded by state.LockFilePath helper
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+	// of the validated state-dir; not user-controlled input. The
+	// #nosec G304 annotation is placed on the same line as the call so
+	// GitHub Advanced Security's gosec integration honors it.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600) // #nosec G304 -- bounded by state.LockFilePath
 	if err != nil {
 		return nil, fmt.Errorf("installer-lock: open %s: %w", path, err)
 	}
@@ -188,9 +189,9 @@ func (l *Lock) Release() error {
 func readLockPID(path string) (int, error) {
 	// gosec G304 false-positive: `path` is bounded by callers to
 	// state.LockFilePath(cfg.stateDir) — a fixed-suffix join of the
-	// validated state-dir. Not user-controlled input.
-	// #nosec G304 -- path is bounded by state.LockFilePath helper
-	data, err := os.ReadFile(path)
+	// validated state-dir. Not user-controlled input. Same-line
+	// #nosec annotation per GitHub Advanced Security gosec convention.
+	data, err := os.ReadFile(path) // #nosec G304 -- bounded by state.LockFilePath
 	if err != nil {
 		return 0, err
 	}
