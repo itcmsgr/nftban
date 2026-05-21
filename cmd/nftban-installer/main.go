@@ -72,18 +72,31 @@ func main() {
 	// + cron-scheduled-repair collision class). Lock file lives alongside
 	// install_state so it shares the same state-dir lifecycle.
 	//
+	// Skipped during --dry-run per PR-22B contract: dry-run modes MUST
+	// NOT mutate the filesystem. Creating the lock file (even to record
+	// our PID) would violate the contract enforced by the Update and
+	// Uninstall Canonization Gates (G3-U3 / G3-KS-SNAPSHOT). Dry-run is
+	// inherently safe to run in parallel because no writes happen, so
+	// the race the lock prevents cannot occur during dry-run.
+	//
 	// Lock is released explicitly before os.Exit at the end of main
 	// (Go skips defers on os.Exit, so an explicit Release call is
 	// required to avoid leaving the lock file's flock held until the
 	// kernel reclaims it on process exit — defensive cleanup).
-	lockPath := state.LockFilePath(cfg.stateDir)
-	installerLock, err := lock.Acquire(lockPath)
-	if err != nil {
-		log.Error("%v", err)
-		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
-		os.Exit(75) // EX_TEMPFAIL — operator should retry after the holder exits
+	var installerLock *lock.Lock
+	if !cfg.dryRun {
+		lockPath := state.LockFilePath(cfg.stateDir)
+		var lockErr error
+		installerLock, lockErr = lock.Acquire(lockPath)
+		if lockErr != nil {
+			log.Error("%v", lockErr)
+			fmt.Fprintf(os.Stderr, "ERROR: %v\n", lockErr)
+			os.Exit(75) // EX_TEMPFAIL — operator should retry after the holder exits
+		}
+		log.Debug("acquired installer lock: %s (pid %d)", lockPath, os.Getpid())
+	} else {
+		log.Debug("V125 R-2: installer lock skipped (--dry-run; PR-22B no-filesystem-mutation contract)")
 	}
-	log.Debug("acquired installer lock: %s (pid %d)", lockPath, os.Getpid())
 
 	// Global timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)

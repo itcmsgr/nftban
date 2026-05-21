@@ -137,10 +137,12 @@ func TestAcquire_StalePIDIsReclaimable(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "installer.lock")
 
-	// Seed the lock file with a fake stale PID. PID 99999 is chosen to
-	// be unlikely-to-exist; if it happens to be a live process on the
-	// test host, processAlive will still return false because its comm
-	// won't match "nftban-installer".
+	// Seed the lock file with a fake stale PID. The flock semantics
+	// don't depend on the PID value at all (kernel tracks ownership
+	// via the open file description, not the file's contents), so the
+	// new Acquire succeeds regardless of whether PID 99999 happens to
+	// be a live process on the test host. The PID record is purely
+	// informational.
 	if err := os.WriteFile(path, []byte("99999\n"), 0644); err != nil {
 		t.Fatalf("seed stale lock file: %v", err)
 	}
@@ -321,28 +323,38 @@ func TestReadLockPID_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestProcessAlive_NonExistentPID asserts the /proc check correctly
-// reports "not alive" when /proc/<pid>/comm does not exist. PID 1 is
-// always alive (init/systemd) but its comm is NOT "nftban-installer",
-// so processAlive must return false for it too — the check is
-// name-matched, not mere existence.
-func TestProcessAlive_NonExistentPID(t *testing.T) {
-	// Very high PID unlikely to exist. The Linux PID_MAX_LIMIT is
-	// 2^22 = 4194304 on 64-bit hosts, so 9999999 is reliably absent.
-	if processAlive(9999999) {
-		t.Error("processAlive(9999999) = true; expected false (pid should not exist)")
-	}
-}
+// TestAcquire_SecondAcquireFailsOnUnreadablePIDFile covers the defensive
+// branch in Acquire's contention handler: if the lock file is empty /
+// malformed (e.g., writeLockPID was interrupted mid-write on a prior
+// holder), the second-acquire error message falls back to the generic
+// "recorded pid unreadable" form. This guards the post-mortem code path
+// where readLockPID returns an error but flock is genuinely held.
+//
+// Simulated by truncating the lock file AFTER the first Acquire has
+// written its PID, while the first lock still holds the flock.
+func TestAcquire_SecondAcquireFailsOnUnreadablePIDFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "installer.lock")
 
-// TestProcessAlive_PID1IsNotNftbanInstaller asserts the comm-string
-// match filter: even though PID 1 (init/systemd) is always alive,
-// processAlive returns false because its comm doesn't match
-// nftban-installer. This guards against PID-reuse false positives.
-func TestProcessAlive_PID1IsNotNftbanInstaller(t *testing.T) {
-	if _, err := os.Stat("/proc/1/comm"); err != nil {
-		t.Skip("test requires /proc filesystem (Linux-only)")
+	first, err := Acquire(path)
+	if err != nil {
+		t.Fatalf("first Acquire: %v", err)
 	}
-	if processAlive(1) {
-		t.Error("processAlive(1) = true; expected false (PID 1 is systemd/init, not nftban-installer)")
+	defer first.Release()
+
+	// Truncate the lock file to empty WITHOUT releasing the flock.
+	// The kernel keeps the flock held on the open file descriptor; only
+	// the file's contents go away.
+	if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+		t.Fatalf("truncate lock file: %v", err)
+	}
+
+	_, err = Acquire(path)
+	if err == nil {
+		t.Fatal("second Acquire unexpectedly succeeded after lock-file truncation")
+	}
+	if !strings.Contains(err.Error(), "recorded pid unreadable") &&
+		!strings.Contains(err.Error(), "another installer is running") {
+		t.Errorf("expected fallback error message; got: %v", err)
 	}
 }

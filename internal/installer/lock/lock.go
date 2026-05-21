@@ -70,18 +70,6 @@ import (
 // Callers may override (e.g., tests use t.TempDir() + this filename).
 const DefaultLockFile = "installer.lock"
 
-// processNameLong is the binary name the lock writes the PID for. Used by
-// processAlive to validate that a recorded PID corresponds to an actual
-// nftban-installer process (and not a PID that was reused by some other
-// program after the prior installer exited).
-const processNameLong = "nftban-installer"
-
-// processNameTruncated mirrors the kernel's 15-character truncation of
-// /proc/<pid>/comm (TASK_COMM_LEN = 16, including the trailing NUL). The
-// 16-character "nftban-installer" name is truncated to "nftban-installe"
-// in /proc/<pid>/comm; processAlive must accept both forms.
-const processNameTruncated = "nftban-installe"
-
 // Lock represents an acquired installer lock. Callers MUST call Release()
 // when done; the recommended pattern is `defer lk.Release()` immediately
 // after a successful Acquire.
@@ -129,24 +117,22 @@ func Acquire(path string) (*Lock, error) {
 
 	// Exclusive non-blocking flock. Kernel auto-releases on process exit
 	// (clean or crash), so a "stale" lock file with a dead PID does NOT
-	// keep the lock held — flock succeeds in that case.
+	// keep the lock held — flock succeeds in that case (no contention,
+	// new Acquire overwrites the stale PID record).
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		// Contention OR I/O error.
 		f.Close()
 		if err == syscall.EWOULDBLOCK {
-			// Stale-PID protection: only blame the recorded PID in the
-			// error if the process still exists AND its comm matches
-			// nftban-installer (avoids false-positive blame on a PID
-			// that has since been reused by an unrelated process).
-			if pid, perr := readLockPID(path); perr == nil && pid > 0 && processAlive(pid) {
+			// EWOULDBLOCK means a process IS holding the flock right
+			// now (kernel guarantee — flock is auto-released on holder
+			// exit). The recorded PID in the file is the holder's PID
+			// — trust it. If the file is empty / unreadable / contains
+			// junk (e.g., writeLockPID was interrupted mid-write),
+			// fall back to a generic "unknown process" message.
+			if pid, perr := readLockPID(path); perr == nil && pid > 0 {
 				return nil, fmt.Errorf("another installer is running (pid %d) — lock file: %s", pid, path)
 			}
-			// Lock held but recorded PID is gone or doesn't match —
-			// kernel says the lock is held but no qualifying process
-			// owns it. This branch is theoretically unreachable on
-			// Linux (kernel releases on process exit); if hit, manual
-			// cleanup is the safest path.
-			return nil, fmt.Errorf("installer-lock: %s is held by an unknown process — manual cleanup may be required", path)
+			return nil, fmt.Errorf("another installer holds the lock at %s (recorded pid unreadable)", path)
 		}
 		return nil, fmt.Errorf("installer-lock: flock %s: %w", path, err)
 	}
@@ -214,22 +200,4 @@ func writeLockPID(f *os.File, pid int) error {
 		return fmt.Errorf("write: %w", err)
 	}
 	return f.Sync()
-}
-
-// processAlive returns true if /proc/<pid>/comm exists AND contains the
-// nftban-installer name (full or kernel-truncated). The /proc check is
-// more robust than `kill -0 <pid>` because it avoids PID-reuse false
-// positives: a recycled PID belonging to an unrelated process won't
-// match the comm string. Linux-only (the installer is Linux-only).
-//
-// Returns false on any error reading /proc — including ENOENT (process
-// gone) which is the dominant case after a normal installer exit.
-func processAlive(pid int) bool {
-	commPath := fmt.Sprintf("/proc/%d/comm", pid)
-	data, err := os.ReadFile(commPath)
-	if err != nil {
-		return false
-	}
-	comm := strings.TrimSpace(string(data))
-	return comm == processNameLong || comm == processNameTruncated
 }
