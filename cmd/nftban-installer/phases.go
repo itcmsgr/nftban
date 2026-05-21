@@ -43,7 +43,8 @@ import (
 // phaseData holds state accumulated across phases (detect→prepare→switch etc.)
 // Stored on the config struct or passed via state file fields.
 type phaseData struct {
-	sshPort   int
+	sshPort   int   // primary SSH port (back-compat scalar; used by InjectEmergencySSH, AssertSSHInLiveSet, assertions, lifecycle bridge)
+	sshPorts  []int // v1.125 R-1: ALL detected sshd listener ports (primary first). len(sshPorts) >= 1 once phaseDetect completes; len > 1 on multi-port hosts (e.g., sshd on :22 + :55000). Passed to RenderNftablesConfMultiPort so the firewall allow-set covers every detected port (closes dns2-class lockout vector).
 	panel     detect.PanelType
 	conflicts []detect.Conflict
 	decision  authority.Decision
@@ -81,14 +82,22 @@ var globalPhaseData phaseData
 func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
 
-	// 1. Detect SSH port
-	sshPort, err := detect.SSHPort(exec, log)
+	// 1. Detect SSH port(s). v1.125 R-1: multi-port-aware — captures the
+	// full list of sshd listener ports (e.g. dns2-class hosts on :22 + :55000)
+	// and the primary port (SSH_CLIENT-aware: prefers the port the operator's
+	// session is connected on, else first detected). Phase data carries
+	// both: pd.sshPort = primary (back-compat scalar consumed by all single-
+	// port callers; install_state SSH_PORT field stays single-int), pd.sshPorts
+	// = full list (consumed by phasePrepare → render.RenderNftablesConfMultiPort
+	// so the rendered nftables.conf allow-set covers every detected port).
+	sshPorts, sshPort, err := detect.DetectSSHPorts(exec, log)
 	if err != nil {
 		log.Error("SSH port detection failed: %v", err)
 		return sf.Transition(state.StateFailedSSH, state.PhaseDetect, err.Error())
 	}
 	pd.sshPort = sshPort
-	sf.SSHPort = sshPort
+	pd.sshPorts = sshPorts
+	sf.SSHPort = sshPort // install_state keeps single-int primary (backward compatible)
 	log.Detect("ssh", "port", fmt.Sprintf("%d", sshPort))
 
 	// 2. Detect panel
@@ -202,8 +211,13 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 	// 5. Set binary capabilities
 	fhs.SetCapabilities(exec, log)
 
-	// 6. Render nftables.conf (substitute SSH port + CT limits)
-	if err := render.RenderNftablesConf(exec, pd.sshPort, pd.ctLimits, log); err != nil {
+	// 6. Render nftables.conf (substitute SSH port + CT limits). v1.125 R-1:
+	// pass the full multi-port list so the rendered tcp_ports_in allow-set
+	// covers every detected sshd listener port (closes dns2-class lockout
+	// vector). For single-port hosts (the common case) pd.sshPorts is a
+	// single-element slice and the render output is byte-identical to the
+	// v1.124 single-port code path.
+	if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, pd.ctLimits, log); err != nil {
 		log.Error("nftables.conf render failed: %v", err)
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
