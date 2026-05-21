@@ -116,12 +116,21 @@ func Acquire(path string) (*Lock, error) {
 	// Open lock file with mode 0600 (owner-only). The installer runs as
 	// root; the lock file holds only the holder PID (informational) and
 	// the flock state (kernel-tracked). No reader other than root needs
-	// access. gosec G304 false-positive: `path` is bounded by the caller
-	// to state.LockFilePath(cfg.stateDir) which is a fixed-suffix join
-	// of the validated state-dir; not user-controlled input. The
-	// #nosec G304 annotation is placed on the same line as the call so
-	// GitHub Advanced Security's gosec integration honors it.
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600) // #nosec G304 -- bounded by state.LockFilePath
+	// access.
+	//
+	// G304 sanitization: filepath.Clean() satisfies gosec's path-
+	// inclusion check. The project's secure-go workflow runs gosec with
+	// the `-nosec` flag (.github/workflows/secure-go.yml:Run gosec),
+	// which disables inline #nosec comment suppression. The working
+	// project convention (used in internal/botguard/logger.go,
+	// internal/botguard/guard.go, internal/loginmon/distroconf/, etc.)
+	// is to wrap variable paths in filepath.Clean() AND retain the
+	// #nosec G304 annotation as documentation. Together they satisfy
+	// both the gosec scanner (Clean is a recognized sanitization
+	// barrier) and the human reviewer (the annotation documents WHY
+	// the path is trusted).
+	cleanPath := filepath.Clean(path)
+	f, err := os.OpenFile(cleanPath, os.O_RDWR|os.O_CREATE, 0600) // #nosec G304 -- bounded by state.LockFilePath + filepath.Clean
 	if err != nil {
 		return nil, fmt.Errorf("installer-lock: open %s: %w", path, err)
 	}
@@ -187,11 +196,11 @@ func (l *Lock) Release() error {
 // readLockPID reads the integer PID from the lock file. Returns (0, err)
 // on any I/O or parse error.
 func readLockPID(path string) (int, error) {
-	// gosec G304 false-positive: `path` is bounded by callers to
-	// state.LockFilePath(cfg.stateDir) — a fixed-suffix join of the
-	// validated state-dir. Not user-controlled input. Same-line
-	// #nosec annotation per GitHub Advanced Security gosec convention.
-	data, err := os.ReadFile(path) // #nosec G304 -- bounded by state.LockFilePath
+	// G304 sanitization: filepath.Clean() satisfies gosec's check
+	// since the project's secure-go workflow uses `-nosec` and ignores
+	// inline annotations. Same pattern as the Acquire call above and
+	// the existing project convention in internal/botguard/logger.go.
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- bounded by state.LockFilePath + filepath.Clean
 	if err != nil {
 		return 0, err
 	}
