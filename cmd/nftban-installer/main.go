@@ -28,6 +28,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/history"
+	"github.com/itcmsgr/nftban/internal/installer/lock"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/pkg/version"
@@ -64,6 +65,25 @@ func main() {
 	log.Info("nftban-installer %s starting (mode=%s, repair=%v)", version.Version, cfg.mode, cfg.repair)
 	log.Debug("flags: rpm=%v takeover=%v force=%v dry-run=%v verbose=%v", cfg.rpm, cfg.takeover, cfg.force, cfg.dryRun, cfg.verbose)
 	log.Debug("state-dir=%s log=%s", cfg.stateDir, cfg.logPath)
+
+	// V125 R-2: Acquire exclusive non-blocking flock BEFORE any state
+	// mutation. Prevents concurrent installer/update/takeover runs from
+	// racing install_state writes (the operator-running-nftban-installer
+	// + cron-scheduled-repair collision class). Lock file lives alongside
+	// install_state so it shares the same state-dir lifecycle.
+	//
+	// Lock is released explicitly before os.Exit at the end of main
+	// (Go skips defers on os.Exit, so an explicit Release call is
+	// required to avoid leaving the lock file's flock held until the
+	// kernel reclaims it on process exit — defensive cleanup).
+	lockPath := state.LockFilePath(cfg.stateDir)
+	installerLock, err := lock.Acquire(lockPath)
+	if err != nil {
+		log.Error("%v", err)
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(75) // EX_TEMPFAIL — operator should retry after the holder exits
+	}
+	log.Debug("acquired installer lock: %s (pid %d)", lockPath, os.Getpid())
 
 	// Global timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
@@ -152,6 +172,16 @@ func main() {
 
 	// Write run footer with final state for post-mortem
 	log.RunFooter(string(sf.State), exitCode)
+
+	// V125 R-2: Release the installer flock BEFORE os.Exit (Go skips
+	// deferred calls on os.Exit, so explicit release is required to
+	// guarantee the kernel sees the unlock before the process is gone).
+	// Best-effort: any release error is logged but does NOT change the
+	// installer exit code, since the lock will be released anyway when
+	// the kernel reclaims the OFD on process exit.
+	if relErr := installerLock.Release(); relErr != nil {
+		log.Warn("installer-lock release: %v", relErr)
+	}
 
 	os.Exit(exitCode)
 }

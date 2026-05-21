@@ -33,6 +33,22 @@ const DefaultStateDir = "/var/lib/nftban/state"
 // StateFileName is the install state file name.
 const StateFileName = "install_state"
 
+// LockFileName is the V125 R-2 installer concurrent-run lock file name.
+// Lives alongside install_state so it shares the same state-dir lifecycle.
+// Consumed by internal/installer/lock via LockFilePath().
+const LockFileName = "installer.lock"
+
+// LockFilePath returns the full path to the installer concurrent-run lock
+// file given a state-dir. If stateDir is empty, DefaultStateDir is used —
+// matches NewStateFile's empty-stateDir fallback so the two file paths
+// always share a parent directory.
+func LockFilePath(stateDir string) string {
+	if stateDir == "" {
+		stateDir = DefaultStateDir
+	}
+	return filepath.Join(stateDir, LockFileName)
+}
+
 // StateFile holds all install state and handles persistence.
 //
 // Schema contract (frozen):
