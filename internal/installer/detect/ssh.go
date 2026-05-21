@@ -157,6 +157,32 @@ func selectPrimarySSHPort(ports []int, sshClientPort int) int {
 	return ports[0]
 }
 
+// primaryFirstPorts returns a new slice with primary at index 0 followed by
+// every other port from `ports` in original detection order. If primary is
+// already at index 0 (or primary is 0, or ports is empty), the input slice
+// is returned unchanged.
+//
+// v1.125 R-1 contract enforcement: DetectSSHPorts callers (and through the
+// phaseData.sshPorts field, RenderNftablesConfMultiPort) rely on sshPorts[0]
+// being the SSH_CLIENT-aware primary so the rendered `__SSH_PORT__` template
+// substitution applies to the right port for the per-IP SSH rate-limit rule.
+// Without this reorder, a dns2-class host with sshd on :22+:55000 and
+// SSH_CLIENT=55000 would render the rate-limit rule against :22 because
+// selectPrimarySSHPort returns 55000 but ports[0] is still 22.
+func primaryFirstPorts(ports []int, primary int) []int {
+	if len(ports) == 0 || primary == 0 || ports[0] == primary {
+		return ports
+	}
+	out := make([]int, 0, len(ports))
+	out = append(out, primary)
+	for _, p := range ports {
+		if p != primary {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // DetectSSHPorts is the v1.125 R-1 multi-port-aware entry point. It returns
 // the full list of detected sshd listener ports (or a single-element slice
 // when the host has only one listener), AND the primary port chosen by
@@ -176,6 +202,14 @@ func DetectSSHPorts(exec executor.Executor, log *logging.Logger) (ports []int, p
 	// Source 1: ss listener (multi-port-aware)
 	if ports = sshAllListeners(exec); len(ports) > 0 {
 		primary = selectPrimarySSHPort(ports, sshClientLocalPort())
+		// v1.125 R-1 contract: sshPorts[0] MUST be the primary. Without
+		// this reorder, callers reading sshPorts[0] (e.g.,
+		// RenderNftablesConfMultiPort which uses sshPorts[0] for the
+		// __SSH_PORT__ template substitution) would diverge from the
+		// SSH_CLIENT-aware primary on multi-port hosts. dns2-class
+		// regression: ports=[22,55000] + SSH_CLIENT=55000 → primary=55000
+		// but ports[0]=22 → rate-limit rule applied to wrong port.
+		ports = primaryFirstPorts(ports, primary)
 		log.Detect("ssh", "source", "ss-listener")
 		log.Detect("ssh", "port", strconv.Itoa(primary))
 		if len(ports) > 1 {

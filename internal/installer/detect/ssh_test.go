@@ -251,6 +251,14 @@ func TestDetectSSHPorts_SSHClient_PrimaryPreference(t *testing.T) {
 	// dns2 topology, but the operator is connected on :55000. The primary
 	// MUST come back as :55000 so the rendered firewall and the operator's
 	// session port stay aligned.
+	//
+	// v1.125 R-1 contract (primary-first): the returned ports slice MUST
+	// have the selected primary at index 0. RenderNftablesConfMultiPort
+	// reads sshPorts[0] for the __SSH_PORT__ template substitution (the
+	// per-IP SSH rate-limit rule). Without primary-first ordering, the
+	// rate-limit rule would apply to the wrong port on multi-port hosts
+	// (regression discovered in v1.125 R-1 code review — bundle reviewer
+	// noted "selected primary is not first in sshPorts" as merge-blocker).
 	mock := executor.NewMockExecutor()
 	mock.RunResults["ss:-tlnp"] = executor.Result{
 		ExitCode: 0,
@@ -274,9 +282,74 @@ LISTEN 0       128     0.0.0.0:55000         0.0.0.0:*          users:(("sshd",p
 	if primary != 55000 {
 		t.Errorf("primary = %d, want 55000 (SSH_CLIENT destination port preferred)", primary)
 	}
-	// Full ports slice still contains both, in detection order.
+	// v1.125 R-1 primary-first contract: primary (55000) MUST be at index 0;
+	// the additional listener (22, detected first in `ss -tlnp`) goes to
+	// index 1.
+	if ports[0] != 55000 || ports[1] != 22 {
+		t.Errorf("ports = %v, want [55000, 22] (primary-first ordering per v1.125 R-1 contract)", ports)
+	}
+}
+
+// TestDetectSSHPorts_PrimaryFirst_NoSSHClient_PreservesDetectionOrder asserts
+// that primaryFirstPorts is a no-op when the selected primary is already at
+// index 0 (the common single-port case + the multi-port-no-SSH_CLIENT case).
+// The reorder must only fire when SSH_CLIENT selects a non-first port.
+func TestDetectSSHPorts_PrimaryFirst_NoSSHClient_PreservesDetectionOrder(t *testing.T) {
+	t.Setenv("SSH_CLIENT", "")
+	mock := executor.NewMockExecutor()
+	mock.RunResults["ss:-tlnp"] = executor.Result{
+		ExitCode: 0,
+		Stdout: `LISTEN 0 128 0.0.0.0:22    0.0.0.0:* users:(("sshd",pid=1,fd=3))
+LISTEN 0 128 0.0.0.0:55000 0.0.0.0:* users:(("sshd",pid=1,fd=4))
+`,
+	}
+	ports, primary, err := DetectSSHPorts(mock, newTestLogger())
+	if err != nil {
+		t.Fatalf("DetectSSHPorts: %v", err)
+	}
+	// Without SSH_CLIENT, primary defaults to the first detected listener
+	// (22). primaryFirstPorts no-ops because primary == ports[0]. Detection
+	// order preserved.
+	if primary != 22 {
+		t.Errorf("primary = %d, want 22 (no SSH_CLIENT → first listener)", primary)
+	}
 	if ports[0] != 22 || ports[1] != 55000 {
-		t.Errorf("ports = %v, want [22, 55000]", ports)
+		t.Errorf("ports = %v, want [22, 55000] (detection order preserved when SSH_CLIENT absent)", ports)
+	}
+}
+
+// TestPrimaryFirstPorts directly exercises the reorder helper across the
+// edge cases that DetectSSHPorts depends on. Without this guard, a future
+// refactor could silently break the primary-first contract that
+// RenderNftablesConfMultiPort relies on.
+func TestPrimaryFirstPorts(t *testing.T) {
+	tests := []struct {
+		name    string
+		ports   []int
+		primary int
+		want    []int
+	}{
+		{"empty in", []int{}, 22, []int{}},
+		{"primary=0 (no selection)", []int{22, 55000}, 0, []int{22, 55000}},
+		{"primary already first", []int{22, 55000}, 22, []int{22, 55000}},
+		{"primary at index 1 → moved to 0", []int{22, 55000}, 55000, []int{55000, 22}},
+		{"primary at index 2 of 3 → moved to 0", []int{22, 2222, 55000}, 55000, []int{55000, 22, 2222}},
+		{"primary not in list (defensive)", []int{22, 55000}, 9999, []int{9999, 22, 55000}},
+		{"single port already first", []int{22}, 22, []int{22}},
+		{"single port + different primary (defensive)", []int{22}, 55000, []int{55000, 22}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := primaryFirstPorts(tt.ports, tt.primary)
+			if len(got) != len(tt.want) {
+				t.Fatalf("len(got) = %d, want %d (got=%v want=%v)", len(got), len(tt.want), got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d] = %d, want %d (got=%v want=%v)", i, got[i], tt.want[i], got, tt.want)
+				}
+			}
+		})
 	}
 }
 

@@ -163,28 +163,46 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 	return nil
 }
 
-// ensureSSHPortInTcpPortsIn guarantees the detected SSH port appears inside
-// every `set tcp_ports_in { … elements = { … } … }` block in the rendered
-// content. If the port is already present anywhere in the content, the
-// function is a no-op (avoids duplicate injection). Otherwise, for each
-// matched `tcp_ports_in` set block, it injects the port at the head of the
-// elements list, preserving existing entries and formatting.
+// ensureSSHPortInTcpPortsIn guarantees the detected SSH port appears as a
+// whole numeric token inside at least one `set tcp_ports_in { … elements = { … } … }`
+// block in the rendered content. If the port is already present (as a comma-
+// separated element token in any tcp_ports_in elements list), the function
+// is a no-op. Otherwise, for each matched `tcp_ports_in` set block, it
+// injects the port at the head of the elements list, preserving existing
+// entries and formatting.
 //
 // V121 fix for D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 — closes the gap where
 // hosts using non-default SSH ports could end up with kernel-only safety
 // (transient) instead of durable-config safety (survives reload/restart/
 // reboot/update).
 //
+// v1.125 R-1 hardening: presence check is now strict (exact numeric token
+// inside the parsed elements list), not a loose strings.Contains substring
+// match. The pre-v1.125 substring check incorrectly treated port 22 as
+// "present" when only 2222 (DirectAdmin control port) appeared anywhere in
+// the content; on DA-class multi-port hosts this caused port 22 to silently
+// not get injected. The new check parses the tcp_ports_in elements
+// regex-match, splits on commas, and compares each trimmed token against
+// the port literal — eliminating false-positive presence detection.
+//
 // Idempotent: calling on already-correct content returns content unchanged.
 func ensureSSHPortInTcpPortsIn(content string, sshPort int, log *logging.Logger) string {
 	portStr := strconv.Itoa(sshPort)
 
-	// Fast-path exact-substring check — if the port number appears anywhere
-	// in the content, assume it's already in the set(s) and skip injection.
-	// This handles both Mechanism A (template hardcodes the port) and
-	// Mechanism B (template uses __SSH_PORT__ which was substituted above).
-	if strings.Contains(content, portStr) {
-		return content
+	// Strict presence check (v1.125 R-1 hardening): parse every
+	// tcp_ports_in match's elements list and compare port as a whole
+	// numeric token. Replaces the pre-v1.125 loose strings.Contains
+	// check which was vulnerable to substring false positives (22 vs
+	// 2222, 80 vs 8080, etc.).
+	for _, match := range tcpPortsInElementsRe.FindAllStringSubmatch(content, -1) {
+		if len(match) < 4 {
+			continue
+		}
+		for _, tok := range strings.Split(match[2], ",") {
+			if strings.TrimSpace(tok) == portStr {
+				return content
+			}
+		}
 	}
 
 	// Slow path: port is missing. Inject into every tcp_ports_in set.

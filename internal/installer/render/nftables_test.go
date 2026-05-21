@@ -23,10 +23,13 @@
 package render
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
+	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
@@ -304,5 +307,134 @@ func TestRenderNftablesConfMultiPort_EmptySSHPorts(t *testing.T) {
 	err = RenderNftablesConfMultiPort(nil, []int{}, detect.CTLimits{}, log)
 	if err == nil {
 		t.Fatalf("expected error on empty sshPorts slice; got nil")
+	}
+}
+
+// TestEnsureSSHPortInTcpPortsIn_PortSubstringDoesNotCount is the v1.125 R-1
+// regression guard for the pre-v1.125 substring-presence false positive.
+// Pre-fix the helper used strings.Contains(content, "22") which treated port
+// 22 as "already present" when only 2222 (e.g., DirectAdmin control port)
+// appeared in the elements list — port 22 was then silently NOT injected.
+// On DA-class multi-port hosts (dns2 has DA on :2222 + sshd on :22 + :55000)
+// the operator's :22 sshd listener would not reach the rendered allow-set.
+//
+// v1.125 R-1 fix: parse the tcp_ports_in elements list and compare each
+// trimmed token against the port literal — eliminates substring false
+// positives.
+func TestEnsureSSHPortInTcpPortsIn_PortSubstringDoesNotCount(t *testing.T) {
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	input := `set tcp_ports_in {
+	elements = { 2222, 80, 443 }
+}`
+	out := ensureSSHPortInTcpPortsIn(input, 22, log)
+	// Port 22 MUST be injected as an exact whole token (not masked by "2222").
+	if !regexp.MustCompile(`(^|[^0-9])22([^0-9]|$)`).MatchString(out) {
+		t.Fatalf("expected exact port 22 to be injected as a whole token; got:\n%s", out)
+	}
+	// Original 2222 entry must still be present.
+	if !strings.Contains(out, "2222") {
+		t.Errorf("original port 2222 lost from output:\n%s", out)
+	}
+	// Idempotency on the new strict-presence check.
+	out2 := ensureSSHPortInTcpPortsIn(out, 22, log)
+	if out2 != out {
+		t.Errorf("strict-presence check is NOT idempotent: second call mutated content:\n%s\n---vs---\n%s", out, out2)
+	}
+}
+
+// TestEnsureSSHPortInTcpPortsIn_AdditionalSubstringDoesNotCount covers the
+// 80-vs-8080 / 443-vs-44300 / 22-vs-2222 family of substring false positives
+// in one parametrized test. Each row: template has only the *masking* port
+// (no whole-token match for the *target* port); helper MUST inject the
+// target port; output MUST contain target as a whole numeric token AND
+// preserve the masking entry.
+func TestEnsureSSHPortInTcpPortsIn_AdditionalSubstringDoesNotCount(t *testing.T) {
+	tests := []struct {
+		name        string
+		template    string
+		target      int
+		maskingPort string // numeric token already in template that contains target as substring
+	}{
+		{"22 vs 2222 (DA control)", `set tcp_ports_in { elements = { 2222 } }`, 22, "2222"},
+		{"80 vs 8080 (alt-http)", `set tcp_ports_in { elements = { 8080 } }`, 80, "8080"},
+		{"443 vs 44300", `set tcp_ports_in { elements = { 44300 } }`, 443, "44300"},
+		{"22 vs 522 (suffix mask)", `set tcp_ports_in { elements = { 522 } }`, 22, "522"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			log := newRenderTestLogger(t)
+			defer log.Close()
+			out := ensureSSHPortInTcpPortsIn(tt.template, tt.target, log)
+			targetStr := strconv.Itoa(tt.target)
+			// Exact whole-token match for target.
+			tokRe := regexp.MustCompile(`(^|[^0-9])` + targetStr + `([^0-9]|$)`)
+			if !tokRe.MatchString(out) {
+				t.Errorf("target port %d not injected as whole token; got:\n%s", tt.target, out)
+			}
+			// Masking port preserved.
+			if !strings.Contains(out, tt.maskingPort) {
+				t.Errorf("masking port %s lost from output:\n%s", tt.maskingPort, out)
+			}
+		})
+	}
+}
+
+// TestRenderNftablesConfMultiPort_PrimaryFirst_SSHPortSubstitution is the
+// v1.125 R-1 end-to-end guard for the primary-first contract: when
+// sshPorts = [55000, 22] (primary 55000 placed first by DetectSSHPorts via
+// primaryFirstPorts), the rendered nftables.conf MUST have __SSH_PORT__
+// substituted with 55000 (the primary), not with 22 (the additional port).
+//
+// Without this test, the dns2-class regression would be: SSH_CLIENT=55000
+// → primary=55000 → ports=[22,55000] (UNORDERED) → __SSH_PORT__ replaced
+// with 22 → per-IP SSH rate-limit rule applied to wrong port. The fix
+// (primaryFirstPorts) makes ports=[55000,22] so sshPorts[0]=55000 and
+// __SSH_PORT__ correctly substitutes 55000.
+func TestRenderNftablesConfMultiPort_PrimaryFirst_SSHPortSubstitution(t *testing.T) {
+	log := newRenderTestLogger(t)
+	defer log.Close()
+	mock := executor.NewMockExecutor()
+	// Template with __SSH_PORT__ placeholder (per-IP rate-limit rule
+	// canonical line) + a tcp_ports_in set that already has the primary
+	// (so the post-substitution path exercises both code paths).
+	mock.Files["/etc/nftban/nftables.conf"] = []byte(`# Simulated template
+table ip nftban {
+	set tcp_ports_in {
+		type inet_service
+		elements = { 55000, 80, 443 }
+	}
+	chain input {
+		ct state new tcp dport __SSH_PORT__ ct count over 15 counter drop comment "SSH rate-limit"
+	}
+}
+`)
+
+	// Primary-first slice as DetectSSHPorts would emit on SSH_CLIENT=55000.
+	err := RenderNftablesConfMultiPort(mock, []int{55000, 22}, detect.CTLimits{SSH: 15, HTTP: 200, Mail: 30}, log)
+	if err != nil {
+		t.Fatalf("RenderNftablesConfMultiPort: %v", err)
+	}
+
+	written, ok := mock.WrittenFiles["/etc/nftban/nftables.conf"]
+	if !ok {
+		t.Fatal("RenderNftablesConfMultiPort did not write /etc/nftban/nftables.conf")
+	}
+	out := string(written)
+
+	// __SSH_PORT__ substitution MUST use the primary (55000), not the
+	// additional port (22). Look for the canonical rate-limit line.
+	if !strings.Contains(out, "tcp dport 55000 ct count over 15") {
+		t.Errorf("__SSH_PORT__ substitution did not use primary=55000; rendered output:\n%s", out)
+	}
+	// And it must NOT have replaced with the additional port.
+	if strings.Contains(out, "tcp dport 22 ct count over 15") {
+		t.Errorf("__SSH_PORT__ substitution incorrectly used additional port 22 instead of primary 55000; rendered output:\n%s", out)
+	}
+	// Additional port (22) MUST be injected into tcp_ports_in allow-set
+	// as a whole token (and not be masked by the existing 55000 entry).
+	tokRe := regexp.MustCompile(`(^|[^0-9])22([^0-9]|$)`)
+	if !tokRe.MatchString(out) {
+		t.Errorf("additional port 22 not injected as whole token into tcp_ports_in; rendered output:\n%s", out)
 	}
 }
