@@ -105,12 +105,22 @@ func (l *Lock) Path() string {
 func Acquire(path string) (*Lock, error) {
 	// Ensure parent directory exists. State-dir is typically created by
 	// fhs.EnsureDirectories in phasePrepare; acquire fires earlier than
-	// that so we mkdir defensively.
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	// that so we mkdir defensively. Mode 0750 (group-readable, not
+	// world-readable) matches gosec G302 expectations for state-dir
+	// contents; matches `/var/lib/nftban/state/` permissions installed
+	// by the package payload.
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return nil, fmt.Errorf("installer-lock: create dir %s: %w", filepath.Dir(path), err)
 	}
 
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
+	// Open lock file with mode 0600 (owner-only). The installer runs as
+	// root; the lock file holds only the holder PID (informational) and
+	// the flock state (kernel-tracked). No reader other than root needs
+	// access. gosec G304 false-positive: `path` is bounded by the caller
+	// to state.LockFilePath(cfg.stateDir) which is a fixed-suffix join
+	// of the validated state-dir; not user-controlled input.
+	// #nosec G304 -- path is bounded by state.LockFilePath helper
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("installer-lock: open %s: %w", path, err)
 	}
@@ -120,8 +130,10 @@ func Acquire(path string) (*Lock, error) {
 	// keep the lock held — flock succeeds in that case (no contention,
 	// new Acquire overwrites the stale PID record).
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		// Contention OR I/O error.
-		f.Close()
+		// Contention OR I/O error. f.Close error intentionally ignored
+		// (already in an error-return path; close error doesn't change
+		// the outcome).
+		_ = f.Close()
 		if err == syscall.EWOULDBLOCK {
 			// EWOULDBLOCK means a process IS holding the flock right
 			// now (kernel guarantee — flock is auto-released on holder
@@ -141,7 +153,9 @@ func Acquire(path string) (*Lock, error) {
 	// prior holder).
 	if err := writeLockPID(f, os.Getpid()); err != nil {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		f.Close()
+		// f.Close error intentionally ignored — already returning an
+		// error to the caller; cleanup is best-effort.
+		_ = f.Close()
 		return nil, fmt.Errorf("installer-lock: write pid: %w", err)
 	}
 
@@ -172,6 +186,10 @@ func (l *Lock) Release() error {
 // readLockPID reads the integer PID from the lock file. Returns (0, err)
 // on any I/O or parse error.
 func readLockPID(path string) (int, error) {
+	// gosec G304 false-positive: `path` is bounded by callers to
+	// state.LockFilePath(cfg.stateDir) — a fixed-suffix join of the
+	// validated state-dir. Not user-controlled input.
+	// #nosec G304 -- path is bounded by state.LockFilePath helper
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
