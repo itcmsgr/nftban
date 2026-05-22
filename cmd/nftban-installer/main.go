@@ -274,16 +274,24 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	// spec invoke nftban-installer without --force), so legitimate package
 	// upgrades on COMMITTED hosts are unaffected by this gate.
 	//
-	// --force alone still works for non-COMMITTED states (the typical
+	// --force alone still works for non-completed states (the typical
 	// recovery path from StateFailedRebuild / StateFailedRender / etc.):
 	// the helper shouldRefuseForceRecommit only refuses when ALL THREE
-	// conditions hold (force=true AND state==COMMITTED AND allowRecommit=false).
+	// conditions hold (force=true AND state IN {COMMITTED, DEGRADED} AND
+	// allowRecommit=false). V126 Lane A extends the gate-fire state set to
+	// also include DEGRADED — chronic-DEGRADED hosts (e.g., lab2 with
+	// D-DEG-1) are "completed-with-warnings" installs and need the same
+	// destructive-re-run protection as COMMITTED hosts. Genuine failed
+	// installs (StateFailedSwitch/Rebuild/Render/etc.) remain unguarded by
+	// R-4 by design — --force is the legitimate recovery path there.
 	if shouldRefuseForceRecommit(sf.State, cfg.force, cfg.allowRecommit) {
-		fmt.Fprintln(os.Stderr, "error: --force on a COMMITTED install requires --allow-recommit confirmation.")
-		fmt.Fprintln(os.Stderr, "       this gate exists to prevent accidental destructive re-runs of a healthy install.")
-		fmt.Fprintln(os.Stderr, "       if you really want to re-run all phases on this COMMITTED host, add --allow-recommit.")
+		fmt.Fprintf(os.Stderr, "error: --force on a %s install requires --allow-recommit confirmation.\n", sf.State)
+		fmt.Fprintln(os.Stderr, "       this gate exists to prevent accidental destructive re-runs of a completed install.")
+		fmt.Fprintln(os.Stderr, "       DEGRADED state means the install completed with non-fatal assertion failures —")
+		fmt.Fprintln(os.Stderr, "       it is NOT a failed-install recovery scenario (use --repair for that).")
+		fmt.Fprintf(os.Stderr, "       if you really want to re-run all phases on this %s host, add --allow-recommit.\n", sf.State)
 		fmt.Fprintln(os.Stderr, "       if you intended to resume a failed install, use --repair instead of --force.")
-		log.Error("V125 R-4: --force refused on COMMITTED state without --allow-recommit (use --repair to resume failed installs, or add --allow-recommit to confirm destructive re-run)")
+		log.Error("V126 R-4: --force refused on %s state without --allow-recommit (use --repair to resume failed installs, or add --allow-recommit to confirm destructive re-run)", sf.State)
 		return state.ExitRefused
 	}
 
@@ -302,27 +310,51 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	return runInstall(ctx, exec, sf, cfg, log)
 }
 
-// shouldRefuseForceRecommit is the V125 R-4 gate predicate. Returns true if
-// the installer should refuse this run with ExitRefused because the operator
-// passed --force on a COMMITTED state without the --allow-recommit companion.
+// shouldRefuseForceRecommit is the V125 R-4 gate predicate, extended in V126
+// Lane A. Returns true if the installer should refuse this run with
+// ExitRefused because the operator passed --force on a completed-install
+// state ({COMMITTED, DEGRADED}) without the --allow-recommit companion.
 //
 // Pure function over the three inputs; no I/O, no side effects. Extracted so
 // the gate is testable without constructing a full run() context (executor,
 // state file, logger, etc.).
 //
 // Refusal rule (all three must be true):
-//   1. --force was passed
-//   2. install_state is COMMITTED (healthy install)
-//   3. --allow-recommit was NOT passed
+//  1. --force was passed
+//  2. install_state is one of {COMMITTED, DEGRADED} (the "completed install"
+//     states — install reached Validate phase; COMMITTED = clean,
+//     DEGRADED = completed-with-non-fatal-assertion-failures)
+//  3. --allow-recommit was NOT passed
 //
 // All other combinations return false (no refusal):
-//   - --force alone on StateFailedRebuild / StateFailedRender / etc.: allowed
-//     (legitimate recovery path)
-//   - No --force on COMMITTED: allowed (e.g., package-manager postinst with
-//     --rpm/--deb passes no --force; routine package upgrades unaffected)
-//   - --force + --allow-recommit on COMMITTED: allowed (explicit operator intent)
+//   - --force alone on StateFailedSwitch / StateFailedRebuild / StateFailedRender /
+//     StateFailedNoFirewall / StateFailedTakeover: allowed (legitimate recovery
+//     path — the install never reached completion and re-running phases is the
+//     supported way to recover)
+//   - No --force on COMMITTED or DEGRADED: allowed (e.g., package-manager
+//     postinst with --rpm/--deb passes no --force; routine package upgrades
+//     unaffected)
+//   - --force + --allow-recommit on COMMITTED or DEGRADED: allowed (explicit
+//     operator intent)
+//
+// V126 Lane A change: extended the gate-fire set from {COMMITTED} to
+// {COMMITTED, DEGRADED}. Rationale: a DEGRADED install completed all phases
+// (Detect → Plan → Prepare → Switch → Configure → Validate) but ended with
+// non-fatal assertion failures (e.g., chronic D-DEG-1 cascade on lab2). It
+// is semantically closer to COMMITTED than to StateFailedRebuild. Operators
+// running --force on a DEGRADED host without --allow-recommit are not on a
+// legitimate failure-recovery path — they need the same explicit-authorization
+// safety as COMMITTED hosts get. Failure-recovery flows (StateFailed*) are
+// explicitly preserved unguarded; --force is the supported way to retry them.
+//
+// Scope: AUDIT_190_LIFECYCLE/V126_R4_DEGRADED_GATE_EXTENSION_SCOPE.md
+// Reproduction: AUDIT_190_LIFECYCLE/V125_VALIDATE_LAB2_CLOSURE.md (lab2 chronic
+// DEGRADED hit the gap during V125 validation; R-4 active test was
+// inapplicable on DEGRADED state)
 func shouldRefuseForceRecommit(currentState state.InstallState, force, allowRecommit bool) bool {
-	return force && currentState == state.StateCommitted && !allowRecommit
+	return force &&
+		(currentState == state.StateCommitted || currentState == state.StateDegraded) &&
+		!allowRecommit
 }
 
 // runInstall runs all phases in order for a fresh install or upgrade.
