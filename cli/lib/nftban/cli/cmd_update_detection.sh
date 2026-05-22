@@ -63,6 +63,109 @@ _read_history_first_type() {
 }
 
 # -----------------------------------------------------------------------------
+# V126 Lane B: Read the MOST-RECENT successful entry's "type" field from
+# update-history.json. Skips entries with status != "success" (install_fail,
+# verify_fail, etc.). Returns the type string ("rpm" / "deb" / "source") or
+# empty if no successful entry exists.
+#
+# Why: _read_history_first_type returns the OLDEST entry, which catches
+# packaging-family migrations (e.g., source→RPM) but treats them as permanent
+# "mixed" drift even after a clean migration completes. This helper provides
+# the complementary "latest-successful-known-good-state" signal so the
+# detector can distinguish "host is cleanly RPM-migrated" from "host has
+# genuine source/rpm mix".
+#
+# Closes part of D-DNS2-MIXED-HISTORY-AUTODETECT-FALSE-BLOCK
+# (V126_UPDATE_HISTORY_MIXED_INSTALL_DETECTOR_SCOPE.md §3.1).
+#
+# Test-overrides:
+#   NFTBAN_TEST_HISTORY_FILE     - override path to history JSON (for fixtures)
+# -----------------------------------------------------------------------------
+_read_history_last_successful_type() {
+    local f="${NFTBAN_TEST_HISTORY_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-history.json}"
+    [[ -r "$f" ]] || { echo ""; return 0; }
+
+    # Prefer jq if available — pick the type of the first object (newest-first
+    # ordering) whose status == "success". Returns empty if no success entry.
+    if command -v jq &>/dev/null; then
+        jq -r '[.[] | select(.status == "success")][0].type // empty' "$f" 2>/dev/null
+        return 0
+    fi
+
+    # Bash fallback: scan newest-first; track each line's type, emit the type
+    # of the first object whose status field is "success". History entries
+    # are flat JSON objects one-per-array-element; awk-style state machine.
+    # Use a Python one-liner if available (more robust than awk for JSON);
+    # else fall through to a best-effort grep that handles the common shape.
+    if command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+try:
+    with open('$f') as fh:
+        arr = json.load(fh)
+    for ent in arr:
+        if ent.get('status') == 'success':
+            t = ent.get('type', '')
+            if t:
+                print(t)
+            sys.exit(0)
+except Exception:
+    pass
+" 2>/dev/null
+        return 0
+    fi
+
+    # Last-resort grep fallback: limited but covers the canonical formatter
+    # output (one entry per array element with status before type, or vice
+    # versa, on adjacent lines within one record). We walk the file once,
+    # buffering the type-seen-so-far within the current record (record
+    # boundaries are blank-comma-brace transitions) and emit when status
+    # == "success" is hit. Imperfect but works for the formatter
+    # internal/installer/history/history.go currently uses.
+    local current_type="" success_type=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ \"type\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+            current_type="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ \"status\"[[:space:]]*:[[:space:]]*\"success\" ]]; then
+            if [[ -n "$current_type" ]]; then
+                success_type="$current_type"
+                break
+            fi
+        fi
+        # Reset current_type at object boundaries (closing brace on its own)
+        if [[ "$line" =~ ^[[:space:]]*\}[[:space:]]*,?[[:space:]]*$ ]]; then
+            current_type=""
+        fi
+    done < "$f"
+    echo "$success_type"
+}
+
+# -----------------------------------------------------------------------------
+# V126 Lane B: Returns 0 if install_state shows the host as a completed
+# wrapper-managed install (INSTALL_STATE=COMMITTED AND AUTHORITY=UPDATE).
+# Non-zero otherwise (including unreadable file).
+#
+# Why: cleanly-migrated source→RPM hosts have install_state COMMITTED +
+# AUTHORITY=UPDATE (the migration ran the wrapper installer to a successful
+# completion). Genuinely broken hosts (mid-failed install, takeover-only,
+# uninitialized) lack this signal. This helper is the third positive-evidence
+# requirement for the migration-clean unblock path (alongside current
+# package-db ownership + latest-successful history type).
+#
+# Test-overrides:
+#   NFTBAN_TEST_INSTALL_STATE_FILE - override path to install_state (for fixtures)
+# -----------------------------------------------------------------------------
+_probe_install_state_committed_update_authority() {
+    local f="${NFTBAN_TEST_INSTALL_STATE_FILE:-${NFTBAN_LIB_DIR_STATE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}/install_state}"
+    [[ -r "$f" ]] || return 1
+    local state authority
+    state=$(grep -E '^INSTALL_STATE=' "$f" 2>/dev/null | head -1 | cut -d= -f2-)
+    authority=$(grep -E '^AUTHORITY='   "$f" 2>/dev/null | head -1 | cut -d= -f2-)
+    [[ "$state" == "COMMITTED" && "$authority" == "UPDATE" ]]
+}
+
+# -----------------------------------------------------------------------------
 # Override-aware probes for test fixtures.
 # Real production paths use rpm/dpkg/etc; fixtures inject mocked outputs via
 # the NFTBAN_TEST_* env vars without polluting the rpm/dpkg databases.
@@ -98,9 +201,22 @@ _detect_install_type() {
     # Returns one of: rpm, deb, source, mixed, unknown
     #
     # V108 Item 6 (dns2-derived): adds history.json probe + mixed/source classes.
+    # V126 Lane B (D-DNS2-MIXED-HISTORY-AUTODETECT-FALSE-BLOCK): adds the
+    # migration-clean positive-evidence path so cleanly source→RPM (or DEB)
+    # migrated hosts no longer classify as "mixed" permanently. The v1.108
+    # strict-detection reads the OLDEST history entry; if that's non-rpm and
+    # rpm-db owns the package, the host is flagged "mixed". v1.126 extends:
+    # check the MOST-RECENT successful history type AND install_state
+    # COMMITTED+AUTHORITY=UPDATE — if both confirm the current family, the
+    # host is treated as cleanly migrated to that family rather than mixed.
+    # All existing v1.125 refusals are preserved (any missing positive
+    # signal falls back to "mixed").
+    #
     # Probe order (deterministic, first-match):
-    #   1. RPM db ownership (with drift check vs history "rpm")
-    #   2. DEB db ownership (with drift check vs history "deb")
+    #   1. RPM db ownership (with drift check vs history "rpm";
+    #      v1.126 migration-clean unblock when last-successful=rpm AND
+    #      install_state=COMMITTED+AUTHORITY=UPDATE)
+    #   2. DEB db ownership (symmetric to RPM)
     #   3. History first-entry "type":"source"          → source
     #   4. History first-entry "type":"rpm" no rpm db   → mixed
     #   5. History first-entry "type":"deb" no dpkg db  → mixed
@@ -115,6 +231,17 @@ _detect_install_type() {
     if _probe_rpm_owns_nftban; then
         # Drift check: rpm db says yes but history says non-rpm
         if [[ -n "$history_type" && "$history_type" != "rpm" ]]; then
+            # V126: migration-clean unblock — was this host cleanly migrated
+            # to RPM? Both signals must confirm:
+            #   a) latest SUCCESS history entry is "rpm"
+            #   b) install_state shows COMMITTED + AUTHORITY=UPDATE
+            local last_successful_type
+            last_successful_type=$(_read_history_last_successful_type)
+            if [[ "$last_successful_type" == "rpm" ]] && \
+               _probe_install_state_committed_update_authority; then
+                echo "rpm"
+                return 0
+            fi
             echo "mixed"
             return 0
         fi
@@ -126,6 +253,14 @@ _detect_install_type() {
     if _probe_dpkg_owns_nftban; then
         # Drift check: dpkg db says yes but history says non-deb
         if [[ -n "$history_type" && "$history_type" != "deb" ]]; then
+            # V126: migration-clean unblock (symmetric to RPM branch above)
+            local last_successful_type
+            last_successful_type=$(_read_history_last_successful_type)
+            if [[ "$last_successful_type" == "deb" ]] && \
+               _probe_install_state_committed_update_authority; then
+                echo "deb"
+                return 0
+            fi
             echo "mixed"
             return 0
         fi
