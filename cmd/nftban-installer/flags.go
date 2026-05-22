@@ -35,7 +35,8 @@ type config struct {
 	rpm         bool   // called from RPM %post
 	deb         bool   // called from DEB postinst
 	repair      bool   // resume from last failed phase
-	force       bool   // re-run all phases ignoring state
+	force         bool // re-run all phases ignoring state (V125 R-4: requires --allow-recommit when state==COMMITTED)
+	allowRecommit bool // V125 R-4: companion to --force; explicit operator confirmation for re-running phases on a COMMITTED state
 	takeover    bool   // approve takeover of conflicting firewalls
 	dryRun      bool   // show what would happen without changes
 	verbose     bool   // full diagnostic logging
@@ -107,6 +108,13 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst")
 	flag.BoolVar(&cfg.repair, "repair", false, "Resume from last failed phase")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
+	// V125 R-4: companion safety flag for --force on a healthy host. When
+	// install_state is COMMITTED, --force alone is REFUSED (V125 R-4 gate
+	// in cmd/nftban-installer/main.go::run); the operator must add
+	// --allow-recommit to confirm explicit destructive intent. --force
+	// alone still works for non-COMMITTED states (recovery from
+	// StateFailedRebuild, StateFailedRender, etc.). Default OFF.
+	flag.BoolVar(&cfg.allowRecommit, "allow-recommit", false, "Explicitly authorize re-running phases on a COMMITTED state (V125 R-4 companion to --force on healthy hosts). Required together with --force when install_state is COMMITTED; ignored otherwise.")
 	flag.BoolVar(&cfg.takeover, "takeover", false, "Approve takeover of conflicting firewalls")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Show what would happen without changes")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Full diagnostic logging")
@@ -228,6 +236,14 @@ func parseFlags() *config {
 			}
 			if cfg.force {
 				fmt.Fprintln(os.Stderr, "error: --force is not valid with --mode=restore")
+				os.Exit(state.ExitFatal)
+			}
+			// V125 R-4: --allow-recommit is a companion to --force. It has
+			// no meaning on its own and definitely no meaning for restore
+			// mode (which doesn't accept --force in the first place).
+			if cfg.allowRecommit {
+				fmt.Fprintln(os.Stderr, "error: --allow-recommit is not valid with --mode=restore")
+				fmt.Fprintln(os.Stderr, "       --allow-recommit is the V125 R-4 companion to --force; restore mode rejects --force.")
 				os.Exit(state.ExitFatal)
 			}
 			if cfg.rpm || cfg.deb || cfg.source {
