@@ -35,6 +35,25 @@ const (
 	StateFailedNoFirewall InstallState = "FAILED_NO_FIREWALL"
 	StateFailedTakeover   InstallState = "FAILED_TAKEOVER"
 
+	// StateFailedPreflightDiskSpace (V125 R-5) is the terminal failure
+	// produced when the disk-space preflight at the end of phaseDetect
+	// determines that the state-dir's filesystem has insufficient free
+	// space to proceed safely (default threshold 500 MB; operator-tunable
+	// via NFTBAN_MIN_DISK_FREE_MB). Refusing here is strictly safer than
+	// proceeding into phasePrepare's dnf/apt installs + file writes,
+	// which would ENOSPC mid-install and leave the host in an
+	// inconsistent state.
+	//
+	// IsApplyTerminal=true (an apply was attempted and a definitive
+	// outcome was reached). IsFailed=true (apply did not succeed).
+	// ExitCode falls through to ExitFailed via the default branch,
+	// matching the pattern of the other StateFailed* values.
+	// ResumePhase falls through to PhaseDetect via the default branch —
+	// after the operator frees disk space, --repair re-runs from
+	// detection (which includes the preflight, so a still-low-disk
+	// host correctly re-refuses).
+	StateFailedPreflightDiskSpace InstallState = "FAILED_PREFLIGHT_DISK_SPACE"
+
 	// StateUninstallPlanning is the terminal state for v1.100 PR-22's
 	// detect + dry-run plan orchestrator. The planner reaches this
 	// state after classifying current authority, probing the optional
@@ -232,6 +251,12 @@ func (s InstallState) IsApplyTerminal() bool {
 		StateFailedRebuild,
 		StateFailedNoFirewall,
 		StateFailedTakeover,
+		// V125 R-5: disk-space preflight refusal is an apply-terminal
+		// outcome — the installer attempted an apply and reached a
+		// definitive refusal. update-history.json should record it so
+		// fleet operators can see "this host refused-install due to
+		// disk space" alongside other failure terminals.
+		StateFailedPreflightDiskSpace,
 		// PR-23: uninstall terminal states represent completed apply
 		// outcomes too. IsApplyTerminal participates in the
 		// history-write gate, but the uninstall-history Option A lock
@@ -289,6 +314,10 @@ func (s InstallState) IsFailed() bool {
 	switch s {
 	case StateFailedSSH, StateFailedAbort, StateFailedRender,
 		StateFailedRebuild, StateFailedNoFirewall, StateFailedTakeover,
+		// V125 R-5: disk-space preflight refusal IS a failure for the
+		// purpose of IsFailed-driven control flow (e.g., ExitCode
+		// default-branch mapping to ExitFailed=2, IsTerminal coverage).
+		StateFailedPreflightDiskSpace,
 		// PR-23 uninstall failure terminal.
 		StateUninstallFailedRelease,
 		// PR-25 restore execution failure terminals (contract §22).
