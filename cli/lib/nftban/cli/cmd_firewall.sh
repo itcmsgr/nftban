@@ -1522,6 +1522,35 @@ firewall_reload() {
         }
     fi
 
+    # Step 4d (v1.126): Re-apply trust providers if any enabled — reload destroys
+    # whitelist_ipv4/6 elements added by `nftban trust enable <PROVIDER>`.
+    # Without this step, any reload (incl. via V120 whitelist-session add/remove
+    # which calls firewall_reload internally) erases trust ranges from the kernel
+    # sets and they don't auto-re-apply — they stay gone until the operator
+    # manually runs `nftban trust enable <PROVIDER>` or `nftban trust update --all`.
+    # Closes D-FIREWALL-RELOAD-DOES-NOT-REMERGE-TRUST-PROVIDERS (fleet-wide latent;
+    # surfaced by V125 srv3 validation 2026-05-22; scope at
+    # AUDIT_190_LIFECYCLE/V126_TRUST_WHITELIST_RELOAD_MERGE_SCOPE.md).
+    # Uses `nftban trust load` CLI subprocess (idempotent over enabled providers;
+    # reads from on-disk /var/lib/nftban/trust/*.txt cache; no network re-fetch).
+    local _any_trust_enabled="false"
+    local _trust_packaged="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/trust.conf"
+    local _trust_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+    local _trust_file
+    for _trust_file in "$_trust_packaged" "$_trust_local"; do
+        if [[ -f "$_trust_file" ]] && \
+           grep -qE '^TRUST_[A-Z]+_ENABLED="true"' "$_trust_file" 2>/dev/null; then
+            _any_trust_enabled="true"
+            break
+        fi
+    done
+    if [[ "$_any_trust_enabled" == "true" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Re-applying trust provider rules..."
+        nftban trust load >/dev/null 2>&1 || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply trust providers. Run: nftban trust load" || true
+        }
+    fi
+
     # Step 5 (v1.50.1): Re-sync feeds — reload destroys sets (delete table + recreate)
     [[ "$quiet" == "false" ]] && echo "Re-syncing threat feeds..."
     if declare -f nftban_feeds_sync_to_nftables &>/dev/null; then
