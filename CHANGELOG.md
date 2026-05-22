@@ -11,6 +11,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.125.0] - 2026-05-22 — V125 install-robustness: 5-lane minimum cut (dns2-derived backlog)
+
+V125 install-robustness release on top of v1.124.1, bundling the five
+narrow Go-only installer-robustness lanes filed in
+`AUDIT_190_LIFECYCLE/V125_INSTALL_ROBUSTNESS_SCOPE.md` §3.1 (the
+"minimum cut"). Each lane was implemented, audited, monitor-verified
+(`go vet`/`go build`/scope-specific `go test`), and merged as a
+separately-shippable narrow PR before this release-prep PR was opened.
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator
+field, no new metric, no new Prometheus label, no Status JSON
+wire-format key, no `install_state` JSON field added (the new
+`StateFailedPreflightDiskSpace` is an enum value within the existing
+`STATE` field, not a new key). `internal/validator/types.go` continues
+to declare `const SchemaVersionCurrent = "1.83.0"`.
+
+**Daemon binary byte-identical to v1.124.1** (and v1.124.0, v1.123.0,
+... v1.114.0). `cmd/nftband/` and `cmd/nftban-core/` are byte-unchanged
+across the V125 R-1..R-5 arc — every lane is confined to the installer
++ state-machine + new preflight-package surface. **13-release
+identical-daemon-binary streak** preserved (v1.114.0 → v1.125.0).
+
+**No metrics changes. No new schema or config keys. No new systemd
+units. No packaging changes** (--rpm / --deb postinst paths unchanged;
+the R-4 `--force` gate and R-5 preflight fire identically on
+package-triggered runs as on operator-initiated runs, providing the
+same operator-friendly improvement). **No polkit changes. No host
+contact** during construction.
+
+### Added — five installer-robustness lanes
+
+**R-1 SSH multi-port detection + render — PR #653 (sq `95c1f119`).**
+Closes the dns2-class operator-lockout vector. The pre-V125 installer's
+`internal/installer/detect/ssh.go::sshFromListener` returned the FIRST
+sshd listener; on multi-port hosts (e.g., dns2 with sshd on `:22 + :55000`),
+the installer picked `:22` and the rendered nftables allow-set covered
+only that port — a fresh install on a host where the operator uses the
+high port would lock them out post-install. R-1 makes `DetectSSHPorts`
+return the full listener list, picks `$SSH_CLIENT`-aware primary,
+extends `RenderNftablesConfMultiPort` to emit all detected ports in
+`tcp_ports_in`, and preserves single-port hosts as byte-identical
+output (the common case is unaffected).
+
+**R-2 installer concurrent-run lock via flock — PR #654 (sq `3911ecf5`).**
+New `internal/installer/lock/` package using `syscall.Flock` with
+`LOCK_EX|LOCK_NB`. Acquired at the top of `cmd/nftban-installer/main.go::main`
+(after flag-parse, before any state mutation; **skipped during
+`--dry-run`** per PR-22B contract). The recorded PID in the lock file
+is informational only — the kernel's flock auto-release on process exit
+is the authoritative lock source (no `/proc/<pid>/comm` over-validation
+per `feedback-trust-kernel-contract`). Closes the state-file race
+corruption class (concurrent operator manual + cron-scheduled repair +
+RPM `%post` triggered).
+
+**R-3 phase context cancellation honor — PR #656 (sq `3898d8cc`).**
+All five phase functions in `cmd/nftban-installer/phases.go`
+(phaseDetect / phasePrepare / phaseSwitch / phaseConfigure /
+phaseValidate) previously discarded their `context.Context` parameter
+(`_ context.Context`), so `--timeout` and SIGINT/SIGTERM could only
+reclaim wall-clock at between-phase boundaries — never from inside a
+long-running phase. R-3 wires `ctx` into each signature and adds 9
+`ctx.Err()` checks at safe interior boundaries (entry guard for every
+phase; before deps.InstallMissing, payload.StageAll, authority.Classify,
+phaseValidate auto-fix retry, etc.). **phaseSwitch SSH Safety Invariant
+preserved**: only ONE interior check in phaseSwitch, placed AFTER
+DisableConflicts but BEFORE the atomic
+`CleanGhostTables → EnableNftables → AssertSSH → Rebuild → AssertSSH →
+RemoveEmergencySSH` chain. Cancelling there leaves emergency-SSH
+protection intact; cancelling anywhere inside the chain would risk
+breaking the invariant.
+
+**R-4 `--force` / `--allow-recommit` safety gate — PR #657 (sq `c6e71909`).**
+The previous `--force` flag re-ran ALL phases on a healthy COMMITTED
+host without any confirmation, re-triggering Switch (re-flushing
+iptables, re-masking CSF if the operator unmasked manually,
+re-rendering config). R-4 adds the `--allow-recommit` companion flag
+and refuses `--force` on `state.StateCommitted` unless `--allow-recommit`
+is also set. Refusal uses `state.ExitRefused` (=5), not the generic
+`ExitFatal`. **Recovery paths unaffected**: `--force` on
+`StateFailedRebuild` / `StateFailedRender` / `StateFailedNoFirewall` /
+`StateFailedTakeover` / `StateDegraded` continues to work without
+`--allow-recommit`. **Package-manager postinst paths unaffected**:
+`packaging/deb/postinst` and the RPM `%post` invoke
+`nftban-installer --rpm` or `--deb` WITHOUT `--force`, so routine
+package upgrades on COMMITTED hosts are unchanged. 11-case truth-table
+test in `cmd/nftban-installer/force_recommit_gate_test.go` locks the
+predicate.
+
+**R-5 disk-space preflight at end of phaseDetect — PR #658 (sq `d0b2e916`).**
+New `internal/installer/preflight/` package with
+`EnsureMinDiskFree(path, minBytes)` using `syscall.Statfs`
+(`Bavail * Bsize` for non-root-available bytes; converted via the
+project's `safeconv.Int64ToUint64OrZero` helper for gosec G115 safety).
+Default threshold 500 MB; `NFTBAN_MIN_DISK_FREE_MB` operator-tunable
+(invalid env values fall back to default per "safety gate, not parser"
+discipline). Called at the END of `phaseDetect`, before any mutation in
+phasePrepare/Switch — closes the ENOSPC-mid-install class. New typed
+terminal `StateFailedPreflightDiskSpace` added to the state machine
+(IsApplyTerminal=true so update-history records the refusal;
+IsFailed=true so ExitCode maps to ExitFailed=2). 16-sub-case test
+matrix locks both `EnsureMinDiskFree` (pass/fail/bad-path) and
+`MinDiskFreeBytes` (default + 4-case valid env + 8-case invalid env).
+
+### Changed — none beyond the additive R-1..R-5 surface above
+
+### Removed — none
+
+### Fixed — operator-facing improvements via R-1, R-4, R-5
+
+Three operator-classifiable defect classes that pre-V125 installer
+behavior allowed:
+- **Dns2-class operator lockout post-install** (R-1).
+- **Accidental destructive recommit on healthy hosts via `--force`** (R-4).
+- **ENOSPC mid-install corruption** (R-5).
+
+### Process / lesson-learned this lane
+
+V125 introduced two installer-entrypoint discipline mechanisms — both
+filed as workspace docs + Claude memory entries — that paid off across
+the R-3/R-4/R-5 PRs:
+
+- `AUDIT_190_LIFECYCLE/V125_INSTALLER_ENTRYPOINT_PRECHECK.md`
+  (operator-readable canonical) + `feedback_installer_entrypoint_precheck.md`
+  (operative Claude memory): 7-question precheck applied BEFORE the first
+  line of code on any PR touching `cmd/nftban-installer/{main,flags,phases}.go`
+  or `internal/installer/{state,lock,executor}/` or any new package
+  called from `main.go` before phase dispatch.
+
+- Workflow-first sub-rule (Q4 addendum): the `.github/workflows/secure-go.yml`
+  workflow runs `gosec` with the `-nosec` flag, which disables inline
+  `#nosec` comment suppression. For G304 (and other suppressible
+  classes), use code-truth sanitization (`filepath.Clean(path)` per
+  the established project convention in `internal/botguard/*`,
+  `internal/loginmon/*`, etc.). For G115 (integer overflow conversion),
+  use `internal/safeconv/*` helpers (per the established convention in
+  `internal/watchdog/collector_system.go`).
+
+Cycle-cost retrospective: R-1 / R-3 / R-4 each landed in **1 CI cycle**;
+R-2 took **5 cycles** (the cautionary tale that triggered the precheck
+filing); R-5 took **2 cycles** (gosec G115 caught on first run; fixed
+via `safeconv.Int64ToUint64OrZero` next push, mirroring the precedent
+in `internal/watchdog/collector_system.go:202-203,266`).
+
+### Forbidden surfaces — zero-touched across the V125 arc
+
+- daemon (`cmd/nftband/`, `cmd/nftban-core/`) — byte-unchanged
+- schema (`internal/validator/`) — 1.83.0 frozen
+- metrics (`internal/metrics/`) — byte-unchanged
+- packaging (`packaging/`) — byte-unchanged
+- `install/systemd/` — byte-unchanged
+- `install/polkit/` — byte-unchanged
+- README PR #586, Dependabot PRs, MASTER_TODO, Bucket-C v0.x tags —
+  all untouched per V125 §0 lane discipline
+
+### Stretch lanes NOT included in v1.125.0
+
+Per operator decision at the gate ("My recommendation: release after R-5
+unless there is a specific urgent stretch-lane reason"), the V125
+scope-spec stretch lanes are explicitly DEFERRED:
+- R-6 deps retry/backoff (~40 LOC)
+- R-7 V120 SSH peer-IP TTY fallback (~30 LOC)
+- R-8 iptables backup before disarm (~100 LOC; MED risk)
+- R-12 nft snapshot-restore on rebuild failure (~50 LOC)
+- R-14 install_state atomic write + schema version (~50 LOC)
+
+These remain in the scope file for v1.125.1 / v1.126 / future cuts.
+
+### v1.125.x hotfix slot
+
+**Not authorized** (latent reservation only — opens only if a v1.125.0
+defect surfaces).
+
+---
+
 ## [v1.124.1] - 2026-05-21 — V124 hotfix: clear Project Health workflow shellcheck baseline
 
 V124 hotfix release on top of v1.124.0, clearing the **`Project Health`
