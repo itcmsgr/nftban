@@ -253,6 +253,40 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 	if cfg.mode == "upgrade" && cfg.dryRun {
 		return runUpdateDryRun(ctx, exec, sf, cfg, log)
 	}
+	// V125 R-4: --force safety gate on a COMMITTED state. The dispatch
+	// paths below (runUpdateApply, runInstall) re-run all phases without
+	// consulting install_state. On a healthy COMMITTED host, an accidental
+	// `nftban-installer --mode=install --takeover --force` would re-trigger
+	// Switch — re-flushing iptables, re-masking CSF if the operator
+	// unmasked manually, re-rendering config — without operator intent
+	// for that destruction.
+	//
+	// Gate placement is intentional:
+	//   - AFTER repair (repair has its own COMMITTED no-op at line 344).
+	//   - AFTER uninstall (operator IS intending to remove a COMMITTED install).
+	//   - AFTER restore (decision-only, no mutation; flags.go also rejects
+	//     --force with --mode=restore at line 237).
+	//   - AFTER upgrade --dry-run (no mutation by design).
+	//   - BEFORE runUpdateApply / runInstall, which ARE the mutating paths.
+	//
+	// Package-manager postinst paths (--rpm / --deb) do NOT pass --force
+	// (verified: packaging/deb/postinst and packaging/build_nftban.sh RPM
+	// spec invoke nftban-installer without --force), so legitimate package
+	// upgrades on COMMITTED hosts are unaffected by this gate.
+	//
+	// --force alone still works for non-COMMITTED states (the typical
+	// recovery path from StateFailedRebuild / StateFailedRender / etc.):
+	// the helper shouldRefuseForceRecommit only refuses when ALL THREE
+	// conditions hold (force=true AND state==COMMITTED AND allowRecommit=false).
+	if shouldRefuseForceRecommit(sf.State, cfg.force, cfg.allowRecommit) {
+		fmt.Fprintln(os.Stderr, "error: --force on a COMMITTED install requires --allow-recommit confirmation.")
+		fmt.Fprintln(os.Stderr, "       this gate exists to prevent accidental destructive re-runs of a healthy install.")
+		fmt.Fprintln(os.Stderr, "       if you really want to re-run all phases on this COMMITTED host, add --allow-recommit.")
+		fmt.Fprintln(os.Stderr, "       if you intended to resume a failed install, use --repair instead of --force.")
+		log.Error("V125 R-4: --force refused on COMMITTED state without --allow-recommit (use --repair to resume failed installs, or add --allow-recommit to confirm destructive re-run)")
+		return state.ExitRefused
+	}
+
 	// v1.99 PR-18 (G3-U5..U10): update apply orchestration. Thin sequencer
 	// over rebuild + validator (see apply_contract.md). INV-U-001/002/003
 	// enforced; no custom apply/recovery/authority logic introduced.
@@ -266,6 +300,29 @@ func run(ctx context.Context, exec executor.Executor, sf *state.StateFile, cfg *
 		return runUpdateApply(ctx, exec, sf, cfg, log)
 	}
 	return runInstall(ctx, exec, sf, cfg, log)
+}
+
+// shouldRefuseForceRecommit is the V125 R-4 gate predicate. Returns true if
+// the installer should refuse this run with ExitRefused because the operator
+// passed --force on a COMMITTED state without the --allow-recommit companion.
+//
+// Pure function over the three inputs; no I/O, no side effects. Extracted so
+// the gate is testable without constructing a full run() context (executor,
+// state file, logger, etc.).
+//
+// Refusal rule (all three must be true):
+//   1. --force was passed
+//   2. install_state is COMMITTED (healthy install)
+//   3. --allow-recommit was NOT passed
+//
+// All other combinations return false (no refusal):
+//   - --force alone on StateFailedRebuild / StateFailedRender / etc.: allowed
+//     (legitimate recovery path)
+//   - No --force on COMMITTED: allowed (e.g., package-manager postinst with
+//     --rpm/--deb passes no --force; routine package upgrades unaffected)
+//   - --force + --allow-recommit on COMMITTED: allowed (explicit operator intent)
+func shouldRefuseForceRecommit(currentState state.InstallState, force, allowRecommit bool) bool {
+	return force && currentState == state.StateCommitted && !allowRecommit
 }
 
 // runInstall runs all phases in order for a fresh install or upgrade.
