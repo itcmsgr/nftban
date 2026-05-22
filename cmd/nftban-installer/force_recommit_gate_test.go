@@ -1,13 +1,13 @@
 // =============================================================================
-// NFTBan v1.125 R-4 — --force / --allow-recommit gate regression test
+// NFTBan v1.125 R-4 / v1.126 Lane A — --force / --allow-recommit gate test
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="nftban-installer-force-recommit-gate-test"
 // meta:type="test"
-// meta:version="1.0.0"
+// meta:version="1.1.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-05-22"
-// meta:description="V125 R-4 regression test: shouldRefuseForceRecommit predicate truth table + parseFlags --allow-recommit registration"
+// meta:description="V125 R-4 + V126 Lane A regression test: shouldRefuseForceRecommit predicate truth table + parseFlags --allow-recommit registration. V126 Lane A extends the gate-fire state set from {COMMITTED} to {COMMITTED, DEGRADED} — chronic-DEGRADED hosts (e.g., lab2 with D-DEG-1) need the same destructive-re-run protection as COMMITTED hosts. Genuine failure-recovery states (StateFailedSwitch/Rebuild/Render/etc.) remain unguarded by R-4 by design."
 // meta:input="None (predicate is pure; flag test manipulates os.Args + flag.CommandLine in isolation)"
 // meta:output="t.Fatal on predicate drift or flag-registration regression"
 // meta:depends="testing,flag,os,internal/installer/state"
@@ -30,17 +30,21 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/state"
 )
 
-// TestShouldRefuseForceRecommit covers the V125 R-4 gate predicate truth
-// table. The predicate is a pure function over (currentState, force,
-// allowRecommit). Extracted from run() so the gate is testable without
-// constructing a full executor + state file + logger.
+// TestShouldRefuseForceRecommit covers the V125 R-4 + V126 Lane A gate
+// predicate truth table. The predicate is a pure function over
+// (currentState, force, allowRecommit). Extracted from run() so the gate
+// is testable without constructing a full executor + state file + logger.
 //
 // Refusal MUST fire only when all three conditions hold simultaneously:
 //   1. --force was passed
-//   2. install_state is COMMITTED
+//   2. install_state is one of {COMMITTED, DEGRADED} (the "completed
+//      install" states; V126 Lane A extended this set from {COMMITTED})
 //   3. --allow-recommit was NOT passed
 //
-// All other combinations MUST allow the run (return false).
+// All other combinations MUST allow the run (return false). Genuine
+// failure-recovery states (StateFailedSwitch / StateFailedRebuild /
+// StateFailedRender / StateFailedNoFirewall / StateFailedTakeover) remain
+// unguarded by R-4 by design — --force is the supported retry path.
 func TestShouldRefuseForceRecommit(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -92,8 +96,45 @@ func TestShouldRefuseForceRecommit(t *testing.T) {
 			wantRefuse:    false,
 		},
 		{
-			name:          "force on StateDegraded without allow-recommit ALLOWS (recovery path)",
+			// V126 Lane A behavior change: DEGRADED is now a completed-install
+			// state for gate purposes (lab2 chronic-DEGRADED reproduction).
+			// Pre-v1.126 this asserted ALLOWS; post-v1.126 the gate REFUSES
+			// without --allow-recommit.
+			name:          "V126: force on StateDegraded without allow-recommit REFUSES (completed-with-warnings)",
 			currentState:  state.StateDegraded,
+			force:         true,
+			allowRecommit: false,
+			wantRefuse:    true,
+		},
+		{
+			// V126 Lane A new positive case: companion to the COMMITTED+
+			// allow-recommit case above; explicit operator intent allows
+			// destructive re-run on a DEGRADED host.
+			name:          "V126: force on StateDegraded with allow-recommit ALLOWS (explicit operator intent)",
+			currentState:  state.StateDegraded,
+			force:         true,
+			allowRecommit: true,
+			wantRefuse:    false,
+		},
+		{
+			// V126 Lane A negative case: NO force on DEGRADED never fires the
+			// gate regardless of --allow-recommit (gate requires force=true).
+			// Mirrors the existing COMMITTED parity cases below.
+			name:          "V126: NO force on StateDegraded ALLOWS (gate requires --force)",
+			currentState:  state.StateDegraded,
+			force:         false,
+			allowRecommit: false,
+			wantRefuse:    false,
+		},
+		{
+			// V126 Lane A: StateFailedTakeover (Switch-phase failure mode in
+			// which takeover-of-conflicting-firewalls failed) is a failure-
+			// recovery state and MUST remain unguarded by R-4 (asymmetric
+			// with COMMITTED/DEGRADED). The existing v1.125 test cases above
+			// cover this; this case re-asserts the boundary explicitly so
+			// it can't drift if cases are reordered.
+			name:          "V126 boundary: force on StateFailedTakeover without allow-recommit ALLOWS (failure recovery — unguarded by R-4 by design)",
+			currentState:  state.StateFailedTakeover,
 			force:         true,
 			allowRecommit: false,
 			wantRefuse:    false,
