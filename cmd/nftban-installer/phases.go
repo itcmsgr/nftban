@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 	"github.com/itcmsgr/nftban/internal/installer/panelfw"
 	"github.com/itcmsgr/nftban/internal/installer/payload"
+	"github.com/itcmsgr/nftban/internal/installer/preflight"
 	"github.com/itcmsgr/nftban/internal/installer/render"
 	"github.com/itcmsgr/nftban/internal/installer/safety"
 	"github.com/itcmsgr/nftban/internal/installer/services"
@@ -169,6 +171,24 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	if pd.decision == authority.Abort {
 		return sf.Transition(state.StateFailedAbort, state.PhaseDetect,
 			"conflicts detected, takeover not approved: "+sf.Conflicts)
+	}
+
+	// V125 R-5: disk-space preflight at the END of phaseDetect, before any
+	// mutation in phasePrepare (dnf/apt install) or phaseSwitch (nft writes,
+	// systemctl operations). Refuses with StateFailedPreflightDiskSpace if
+	// the state-dir's filesystem has insufficient free space (default 500 MB;
+	// operator-tunable via NFTBAN_MIN_DISK_FREE_MB). Closes the ENOSPC-mid-
+	// install class identified in V125_INSTALL_ROBUSTNESS_SCOPE.md §3.1 R-5.
+	//
+	// Path target: the state-dir's filesystem. install_state, the lock file,
+	// and update-history.json all land under /var/lib/nftban; that's also
+	// where phasePrepare's dnf/apt caches will write. Using sf.Path() ensures
+	// the check reflects the actual filesystem the installer will write into,
+	// even when --state-dir overrides the default.
+	stateDir := filepath.Dir(sf.Path())
+	if err := preflight.EnsureMinDiskFree(stateDir, preflight.MinDiskFreeBytes()); err != nil {
+		log.Error("preflight: %v", err)
+		return sf.Transition(state.StateFailedPreflightDiskSpace, state.PhaseDetect, err.Error())
 	}
 
 	log.PhaseEnd("Detect")
