@@ -57,6 +57,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+
+	"github.com/itcmsgr/nftban/internal/safeconv"
 )
 
 // DefaultMinDiskFreeBytes is the V125 R-5 default minimum free space
@@ -97,10 +99,15 @@ func EnsureMinDiskFree(path string, minBytes uint64) error {
 		return fmt.Errorf("preflight: statfs %s: %w", cleanPath, err)
 	}
 	// Bavail = blocks available to non-root; Bsize = fundamental block size.
-	// Multiplication is bounds-safe for any realistic filesystem
-	// (uint64 * positive-int-32-as-uint64 fits in uint64 until total
-	// would exceed 16 EB, well beyond any real-world filesystem).
-	avail := uint64(s.Bavail) * uint64(s.Bsize)
+	// safeconv.Int64ToUint64OrZero is the project's canonical int64→uint64
+	// conversion helper (used by internal/watchdog/collector_system.go for
+	// the identical Statfs.Bsize pattern). It satisfies gosec G115 (the
+	// secure-go.yml workflow runs `gosec -nosec` so inline annotations are
+	// no-ops — only the helper's typed-conversion implementation is
+	// recognized as safe). A negative Bsize from a buggy kernel or
+	// corrupted filesystem returns 0 → avail becomes 0 → the gate refuses
+	// with "insufficient disk space" (correct fail-safe direction).
+	avail := s.Bavail * safeconv.Int64ToUint64OrZero(s.Bsize)
 	if avail < minBytes {
 		return fmt.Errorf("preflight: insufficient disk space at %s: %d bytes available, %d bytes required (set %s to override)",
 			cleanPath, avail, minBytes, EnvMinDiskFreeMB)
