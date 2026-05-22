@@ -79,8 +79,24 @@ type phaseData struct {
 var globalPhaseData phaseData
 
 // phaseDetect discovers SSH port, panel, conflicts, distro, authority decision.
-func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+//
+// V125 R-3: honors ctx cancellation at the phase entry and before the final
+// authority classification. Detection itself is fast (sub-second on healthy
+// hosts) but interior checks let `--timeout` reclaim wall-clock if a single
+// detector hangs on a slow kernel/distro probe.
+func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// V125 R-3: context cancellation guard at phase entry. Returns before
+	// any executor call if the global timeout already fired or the operator
+	// sent SIGINT/SIGTERM during the inter-phase gap. The between-phase
+	// check in main.go is the primary timeout enforcer; this is a defensive
+	// belt that closes the small window where the previous phase returned
+	// just as the timer expired.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseDetect: context cancelled before start: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseDetect, "context cancelled: "+err.Error())
+	}
 
 	// 1. Detect SSH port(s). v1.125 R-1: multi-port-aware — captures the
 	// full list of sshd listener ports (e.g. dns2-class hosts on :22 + :55000)
@@ -132,6 +148,16 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 	log.Detect("ct_limits", "http", fmt.Sprintf("%d", pd.ctLimits.HTTP))
 	log.Detect("ct_limits", "mail", fmt.Sprintf("%d", pd.ctLimits.Mail))
 
+	// V125 R-3: ctx check before authority classification. Classification
+	// itself is a pure function over detected state, but reaching this point
+	// means all detectors completed. If a detector hung close to the
+	// global timeout, we'd rather refuse here than commit a half-detected
+	// classification.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseDetect: context cancelled before authority classification: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseDetect, "context cancelled: "+err.Error())
+	}
+
 	// 6. Authority classification
 	// Read takeover flag from environment or config
 	forceApprove := exec.Getenv("NFTBAN_TAKEOVER") == "1"
@@ -150,8 +176,20 @@ func phaseDetect(_ context.Context, exec executor.Executor, sf *state.StateFile,
 }
 
 // phasePrepare runs dep install, stale cleanup, FHS setup, template rendering, config persistence.
-func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+//
+// V125 R-3: honors ctx cancellation before the three heaviest operations:
+// deps install (dnf/apt — minutes on cold cache), source payload staging
+// (file copies), and nftables.conf render. The fast operations (mkdir,
+// chmod, tmpfiles) are interior to fhs/services packages and reach their
+// own kernel boundaries quickly; we don't add ctx checks for those.
+func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// V125 R-3: context cancellation guard at phase entry.
+	if err := ctx.Err(); err != nil {
+		log.Error("phasePrepare: context cancelled before start: %v", err)
+		return sf.Transition(state.StateFailedRender, state.PhasePrepare, "context cancelled: "+err.Error())
+	}
 
 	// v1.98.x PR-14-pre (G-14-A): Source-install user/group creation.
 	//
@@ -170,6 +208,16 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 		}
 	}
 
+	// V125 R-3: ctx check before deps install — the longest-running
+	// operation in the installer (dnf/apt update + multi-package install
+	// can take minutes on a cold-cache host). The deps package itself
+	// uses exec.RunTimeout with its own per-command timeouts; this check
+	// closes the gap between user/group creation and the first dnf invoke.
+	if err := ctx.Err(); err != nil {
+		log.Error("phasePrepare: context cancelled before deps install: %v", err)
+		return sf.Transition(state.StateFailedRender, state.PhasePrepare, "context cancelled: "+err.Error())
+	}
+
 	// 0. Install missing dependencies (dpkg/rpm lock is released by now)
 	if pd.distro != nil {
 		if err := deps.InstallMissing(exec, pd.distro, log); err != nil {
@@ -184,6 +232,15 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 
 	// 2. Ensure FHS directories exist
 	fhs.EnsureDirectories(exec, log)
+
+	// V125 R-3: ctx check before payload staging (source-install path).
+	// StageAll copies the entire source tree into /usr/lib/nftban — I/O
+	// bound on slow disks and can stall on full filesystems. Operators
+	// running with --timeout should be able to interrupt here.
+	if err := ctx.Err(); err != nil {
+		log.Error("phasePrepare: context cancelled before payload staging: %v", err)
+		return sf.Transition(state.StateFailedRender, state.PhasePrepare, "context cancelled: "+err.Error())
+	}
 
 	// v1.98.x PR-14-pre (G-14-B..G): Source-install payload staging.
 	//
@@ -243,9 +300,27 @@ func phasePrepare(_ context.Context, exec executor.Executor, sf *state.StateFile
 //   - The pre-existing firewall is still running and accepting SSH, OR
 //   - The inet nftban_install_emergency table exists accepting SSH, OR
 //   - The nftban ruleset is loaded with SSH port in tcp_ports_in
-func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+//
+// V125 R-3 placement constraints (carefully chosen to NOT break the invariant):
+//   - Entry-guard ctx check: safe — no kernel mutation has happened yet.
+//   - After step 2 (DisableConflicts) ctx check: safe — the emergency
+//     table is in place and protects SSH; aborting here leaves the host
+//     with emergency SSH only (degraded but reachable). A subsequent
+//     repair or install run cleans up.
+//   - NO ctx check between step 7 (Rebuild) and step 9 (RemoveEmergencySSH)
+//     — those three steps form the atomic chain that hands SSH protection
+//     from the emergency table to the nftban ruleset. Cancelling mid-chain
+//     could leave the host with neither protector.
+func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
 	emergencyInjected := false
+
+	// V125 R-3: context cancellation guard at phase entry. Safe — no
+	// kernel/service mutation has happened yet.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseSwitch: context cancelled before start: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, "context cancelled: "+err.Error())
+	}
 
 	// 1. TAKEOVER / FRESH / AMBIGUOUS: inject emergency SSH table BEFORE any destructive action.
 	// On UPDATE, nftban tables already exist with SSH in sets — no emergency needed.
@@ -275,6 +350,20 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 			return sf.Transition(state.StateFailedTakeover, state.PhaseSwitch, err.Error())
 		}
 		log.StateChange(string(sf.State), "takeover_complete", "conflicts disabled")
+	}
+
+	// V125 R-3: ctx check after DisableConflicts and BEFORE the
+	// CleanGhostTables → EnableNftables → Rebuild atomic chain begins.
+	// Safe boundary: if emergency injection succeeded earlier, the
+	// emergency table is protecting SSH right now. Aborting here leaves
+	// the host with emergency SSH only — degraded but operator-reachable,
+	// and the next install/repair will remove the emergency table cleanly.
+	// Beyond this point, ctx checks are intentionally absent so the
+	// Rebuild → AssertSSHInLiveSet → RemoveEmergencySSH chain remains
+	// atomic and preserves the SSH safety invariant.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseSwitch: context cancelled before ghost-table cleanup: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseSwitch, "context cancelled: "+err.Error())
 	}
 
 	// 3. Clean ghost tables (all paths). Emergency table is NOT cleaned here —
@@ -314,8 +403,25 @@ func phaseSwitch(_ context.Context, exec executor.Executor, sf *state.StateFile,
 }
 
 // phaseConfigure starts daemon, timers, panel, login, whitelist sync.
-func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+//
+// V125 R-3: honors ctx cancellation at phase entry. Interior service
+// operations are short-running systemctl calls; the entry guard plus the
+// existing between-phase check in main.go covers the realistic
+// cancellation surface without splitting service-start ordering.
+func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// V125 R-3: context cancellation guard at phase entry.
+	// StateFailedRebuild is used here (consistent with the between-phase
+	// check pattern in main.go and the other phase ctx guards) because
+	// phaseConfigure has no dedicated FAILED_CONFIGURE state in the
+	// install_state machine — services are runtime concerns and a
+	// cancelled configure leaves the host in a degraded but recoverable
+	// state that `--repair` will resume.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseConfigure: context cancelled before start: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseConfigure, "context cancelled: "+err.Error())
+	}
 
 	// 1. Start daemon (socket + service)
 	services.StartDaemon(exec, log)
@@ -384,8 +490,19 @@ func phaseConfigure(_ context.Context, exec executor.Executor, sf *state.StateFi
 //   5. Re-run assertions (VALIDATE_2) — only post-fix result counts
 //   6. Set immutable flags
 //   7. Final result from VALIDATE_2 (or VALIDATE_1 if no fix needed)
-func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+//
+// V125 R-3: honors ctx cancellation at phase entry and before the
+// auto-fix retry path (VALIDATE_2). The retry path is the only place
+// inside phaseValidate where a meaningful wall-clock budget is at risk
+// — assertions themselves are quick.
+func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
 	pd := &globalPhaseData
+
+	// V125 R-3: context cancellation guard at phase entry.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseValidate: context cancelled before start: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseValidate, "context cancelled: "+err.Error())
+	}
 
 	// 1. Write authority files
 	validate.WriteAuthorityFiles(exec, pd.decision, log)
@@ -415,6 +532,15 @@ func phaseValidate(_ context.Context, exec executor.Executor, sf *state.StateFil
 	failed := validate.FailedNames(results)
 	log.Warn("VALIDATE_1: %d assertions failed: %s", len(failed), strings.Join(failed, ", "))
 	log.Info("attempting bounded safe auto-fix (permissions enforce only, INV-I-011/012)...")
+
+	// V125 R-3: ctx check before the auto-fix retry. VALIDATE_1 has
+	// already run; if the context expired between then and now, prefer
+	// recording the cancellation over launching a 30-second permissions
+	// enforce that the caller no longer wants to wait for.
+	if err := ctx.Err(); err != nil {
+		log.Error("phaseValidate: context cancelled before auto-fix retry: %v", err)
+		return sf.Transition(state.StateFailedRebuild, state.PhaseValidate, "context cancelled: "+err.Error())
+	}
 
 	// Run ONLY permissions enforce — bounded, safe, idempotent (INV-I-011).
 	// This fixes ownership/mode on NFTBan-managed paths only.
