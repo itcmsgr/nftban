@@ -35,8 +35,8 @@ type config struct {
 	rpm         bool   // called from RPM %post
 	deb         bool   // called from DEB postinst
 	repair      bool   // resume from last failed phase
-	force         bool // re-run all phases ignoring state (V125 R-4: requires --allow-recommit when state==COMMITTED)
-	allowRecommit bool // V125 R-4: companion to --force; explicit operator confirmation for re-running phases on a COMMITTED state
+	force         bool // re-run all phases ignoring state (V125 R-4 + V126 Lane A: requires --allow-recommit when state IN {COMMITTED, DEGRADED})
+	allowRecommit bool // V125 R-4 + V126 Lane A: companion to --force; explicit operator confirmation for re-running phases on a completed install state (COMMITTED or DEGRADED)
 	takeover    bool   // approve takeover of conflicting firewalls
 	dryRun      bool   // show what would happen without changes
 	verbose     bool   // full diagnostic logging
@@ -108,13 +108,17 @@ func parseFlags() *config {
 	flag.BoolVar(&cfg.deb, "deb", false, "Called from DEB postinst")
 	flag.BoolVar(&cfg.repair, "repair", false, "Resume from last failed phase")
 	flag.BoolVar(&cfg.force, "force", false, "Re-run all phases ignoring state")
-	// V125 R-4: companion safety flag for --force on a healthy host. When
-	// install_state is COMMITTED, --force alone is REFUSED (V125 R-4 gate
-	// in cmd/nftban-installer/main.go::run); the operator must add
-	// --allow-recommit to confirm explicit destructive intent. --force
-	// alone still works for non-COMMITTED states (recovery from
-	// StateFailedRebuild, StateFailedRender, etc.). Default OFF.
-	flag.BoolVar(&cfg.allowRecommit, "allow-recommit", false, "Explicitly authorize re-running phases on a COMMITTED state (V125 R-4 companion to --force on healthy hosts). Required together with --force when install_state is COMMITTED; ignored otherwise.")
+	// V125 R-4 + V126 Lane A: companion safety flag for --force on a completed
+	// install. When install_state is COMMITTED or DEGRADED, --force alone is
+	// REFUSED (gate in cmd/nftban-installer/main.go::run); the operator must
+	// add --allow-recommit to confirm explicit destructive intent. --force
+	// alone still works for genuine failed-install states (StateFailedSwitch,
+	// StateFailedRebuild, StateFailedRender, etc.) — re-running phases is the
+	// supported recovery path there. V126 added DEGRADED to the gate-fire set
+	// because a DEGRADED install completed all phases with non-fatal
+	// assertion failures and is semantically "completed-with-warnings", not
+	// a failed-install recovery scenario. Default OFF.
+	flag.BoolVar(&cfg.allowRecommit, "allow-recommit", false, "Explicitly authorize re-running phases on a completed install state (V125 R-4 + V126 Lane A companion to --force). Required together with --force when install_state is COMMITTED or DEGRADED. DEGRADED state means the install completed with non-fatal assertion failures — it is still a completed install for safety-gate purposes. For genuine failed installs (StateFailedSwitch/Rebuild/Render/etc.) use --force without --allow-recommit (recovery flow) or use --repair to resume from last failed phase.")
 	flag.BoolVar(&cfg.takeover, "takeover", false, "Approve takeover of conflicting firewalls")
 	flag.BoolVar(&cfg.dryRun, "dry-run", false, "Show what would happen without changes")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Full diagnostic logging")
