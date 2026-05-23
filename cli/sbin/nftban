@@ -1018,6 +1018,22 @@ main() {
 
             echo ""
 
+            # V127 UX-1 item 1.1: explicitly source cmd_status.sh so that
+            # _nftban_protection_state() and the shared $_NFTBAN_VALIDATOR_CACHE
+            # are guaranteed available — pre-V127 the dashboard relied on lazy
+            # auto-load and silently fell back to "UNKNOWN" → UNPROTECTED display
+            # when cmd_status.sh wasn't loaded yet, while `nftban health` and
+            # `nftban status` independently loaded it and got the PROTECTED
+            # verdict — producing the contradictory same-host-same-minute output
+            # the V126 live UX audit flagged. The Go validator cache (line 222
+            # of cmd_status.sh) means this source is essentially free on a hot
+            # dashboard call: no duplicate validator invocations.
+            # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.1)
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_status.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_status.sh" 2>/dev/null || true
+            fi
+
             # v1.46.0: Compact dashboard — protection state + module status
             local _prot_state="UNKNOWN"
             if declare -f _nftban_protection_state >/dev/null 2>&1; then
@@ -1027,8 +1043,9 @@ main() {
             case "$_prot_state" in
                 PROTECTED)   echo "  Protection:  PROTECTED" ;;
                 MONITORING)  echo "  Protection:  MONITORING (no detection modules enabled)" ;;
-                DEGRADED)    echo "  Protection:  DEGRADED" ;;
+                DEGRADED*)   echo "  Protection:  ${_prot_state}" ;;
                 DISABLED)    echo "  Protection:  DISABLED" ;;
+                DOWN)        echo "  Protection:  DOWN" ;;
                 *)           echo "  Protection:  UNPROTECTED" ;;
             esac
 
@@ -1061,9 +1078,24 @@ main() {
                 ps_st="Enabled"
             fi
 
-            # Login Monitor (v1.52.0: runs inside nftband, not standalone service)
+            # V127 UX-1 item 1.1: Login Monitor truth source unified with `nftban health`
+            # via the Go validator's loginmon.effective axis (cached in $_NFTBAN_VALIDATOR_CACHE
+            # from the Protection-state call above). Pre-V127 the dashboard grep-read
+            # NFTBAN_LOGIN_MONITOR_ENABLED (the central observability gate, distinct from the
+            # loginmon module activation state per V104 Lane M Decision B) which produced
+            # "Login Mon: Disabled" while `nftban health` showed loginmon enabled/running.
+            # Falls back to the prior grep path if the validator cache is unavailable.
             local login_st="Disabled"
-            if grep -q "^active" "${_tmpdir}/daemon_active" 2>/dev/null; then
+            if [[ -n "${_NFTBAN_VALIDATOR_CACHE:-}" ]] && command -v jq &>/dev/null; then
+                local _lm_eff
+                _lm_eff=$(echo "$_NFTBAN_VALIDATOR_CACHE" | jq -r '.modules.loginmon.effective // empty' 2>/dev/null)
+                case "$_lm_eff" in
+                    on|enabled|active|running) login_st="Active" ;;
+                    off|disabled|"")           login_st="Disabled" ;;
+                    *)                          login_st="$_lm_eff" ;;
+                esac
+            elif grep -q "^active" "${_tmpdir}/daemon_active" 2>/dev/null; then
+                # Fallback: prior grep path (only when validator cache absent)
                 local _lm_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/login/main.conf"
                 local _lm_en="false"
                 [[ -f "${_lm_conf}.local" ]] && _lm_en=$(grep -m1 '^NFTBAN_LOGIN_MONITOR_ENABLED=' "${_lm_conf}.local" 2>/dev/null | cut -d'"' -f2 || echo "false")

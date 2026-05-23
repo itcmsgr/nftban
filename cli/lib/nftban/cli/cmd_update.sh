@@ -680,25 +680,132 @@ _cmd_update_main() {
         return 1
     fi
 
-    # Show result
-    _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
+    # V127 UX-1 item 1.6: consolidate the final verdict with the installer's
+    # install_state. Pre-V127 the CLI wrapper unconditionally emitted a green
+    # "Updated:" block here even when the Go installer's prior output said
+    # "State: DEGRADED / To fix: nftban-installer --repair" — producing
+    # two contradictory verdicts on the same stdout that all 3 personas
+    # (junior/mid/SRE) flagged as the most damaging text on the system in
+    # the V126 live UX audit. Now we read /var/lib/nftban/state/install_state
+    # (the canonical machine-readable surface the installer writes) and pick
+    # the matching verdict block. Extends the V126.2 architectural principle
+    # ("Go installer is the single source of truth on non-clean exits") from
+    # the postinst path to the nftban update path.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.6)
+    local _install_state_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/install_state"
+    local _installer_state="COMMITTED"  # default: green if state file absent (older installs)
+    if [[ -f "$_install_state_file" ]]; then
+        _installer_state=$(grep -m1 '^INSTALL_STATE=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "COMMITTED")
+    fi
 
-    # Write history entry
-    _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+    case "$_installer_state" in
+        COMMITTED)
+            # Clean success path — emit the green block (existing behavior)
+            _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
+            _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+            rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
 
-    # Clear failure marker on success
-    rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            return 0
+            ;;
 
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Log: $UPDATE_LOG_FILE"
-    echo "  History: nftban update history"
-    echo ""
+        DEGRADED)
+            # Installer reported DEGRADED — emit a single consolidated DEGRADED block
+            # instead of a contradictory green "Updated:" line. The post-install
+            # health/verify steps that ran above (showing "✓ Health check passed"
+            # etc.) reflect kernel state which can be fine even when install_state
+            # is DEGRADED (e.g., the V112.2-era exporter exit-2 transient). Surface
+            # the install_state DEGRADED authoritatively + the canonical repair path.
+            _update_log INFO "=== Update completed DEGRADED: v${current_version} → v${new_version} (${_update_duration}s) ==="
+            _update_write_history "$current_version" "$new_version" "verify_fail" "$install_type" "$_update_duration"
 
-    return 0
+            local _failure_reason
+            _failure_reason=$(grep -m1 '^FAILURE_REASON=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "")
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Update completed in DEGRADED state: v$current_version → v$new_version"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            if [[ -n "$_failure_reason" ]]; then
+                echo "  Reason: $_failure_reason"
+                echo ""
+            fi
+            echo "  The package was upgraded but the installer's post-install validation"
+            echo "  reported non-fatal assertion failures (often a known transient on the"
+            echo "  exporter or related auxiliary service)."
+            echo ""
+            echo "  Recommended:"
+            echo "      sudo nftban-installer --repair       # re-run validation; clears DEGRADED if transient"
+            echo "      nftban support                       # capture diagnostic bundle"
+            echo ""
+            echo "  Kernel-state verification (trust but verify):"
+            echo "      nft list tables"
+            echo "      systemctl is-active nftband"
+            echo "      cat /var/lib/nftban/state/install_state"
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            return 1
+            ;;
+
+        FAILED_*|FAILED)
+            # Installer reported terminal failure — single consolidated FAILED block
+            _update_log ERROR "=== Update FAILED: v${current_version} → v${new_version} (${_update_duration}s); install_state=${_installer_state} ==="
+            _update_write_history "$current_version" "$new_version" "install_fail" "$install_type" "$_update_duration"
+
+            local _failure_reason
+            _failure_reason=$(grep -m1 '^FAILURE_REASON=' "$_install_state_file" 2>/dev/null | cut -d= -f2- || echo "")
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Update FAILED: v$current_version → v$new_version"
+            echo "  install_state: ${_installer_state}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            if [[ -n "$_failure_reason" ]]; then
+                echo "  Reason: $_failure_reason"
+                echo ""
+            fi
+            echo "  See the installer output above for the canonical recovery path."
+            echo "  Common recovery commands:"
+            echo "      sudo nftban-installer --repair       # resume from failed phase"
+            echo "      sudo nftban update rollback          # restore previous version"
+            echo "      nftban support                       # diagnostic bundle"
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            return 2
+            ;;
+
+        *)
+            # Unknown state — fall through to the original green block with a note
+            _update_log WARN "Unrecognized install_state value: ${_installer_state}; falling back to legacy green verdict"
+            _update_log INFO "=== Update completed: v${current_version} → v${new_version} (${_update_duration}s) ==="
+            _update_write_history "$current_version" "$new_version" "success" "$install_type" "$_update_duration"
+            rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/update_failed" 2>/dev/null || true
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Updated: v$current_version → v$new_version (${_update_duration}s)"
+            echo "  (install_state: ${_installer_state})"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Log: $UPDATE_LOG_FILE"
+            echo "  History: nftban update history"
+            echo ""
+            return 0
+            ;;
+    esac
 }
 
 _cmd_update_repair() {
@@ -2306,6 +2413,41 @@ nftban_cmd_update() {
             _cmd_update_help
             ;;
         "")
+            # V127 UX-1 item 1.5: same-version no-op short-circuit (unless --force).
+            # Pre-V127 the no-arg path always ran the full install pipeline (backup,
+            # download, dpkg reinstall, service restart) even on a host already at
+            # latest version, wasting bandwidth and producing service-restart noise
+            # in fleet config-management loops. The Eligible:false signal from the
+            # update-check cache was honored by `nftban update check` but ignored
+            # by the no-arg `nftban update` path. Now: if current==latest AND not
+            # forced, print a calm "already on latest" message and exit 0 in <1s.
+            # `nftban update --force` (or `nftban update force`) bypasses this check.
+            # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.5)
+            if [[ "${_NFTBAN_UPDATE_FORCE:-0}" != "1" ]]; then
+                local _curv _latv _cache_file
+                _curv=$(_get_current_version 2>/dev/null || echo "unknown")
+                _cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
+                # Prefer cache (fast); fall back to live check only if cache absent.
+                if [[ -f "$_cache_file" ]] && command -v jq &>/dev/null; then
+                    _latv=$(jq -r '.latest_version // empty' "$_cache_file" 2>/dev/null)
+                fi
+                if [[ -z "$_latv" ]]; then
+                    _latv=$(_get_latest_release 2>/dev/null || echo "unknown")
+                fi
+                if [[ "$_curv" != "unknown" && "$_latv" != "unknown" && "$_curv" == "$_latv" ]]; then
+                    _update_banner 2>/dev/null || true
+                    echo ""
+                    echo "  Already on latest version: v${_curv}"
+                    echo ""
+                    echo "  No action taken. To force re-install on the same version, run:"
+                    echo "      nftban update --force"
+                    echo ""
+                    echo "  To check for updates explicitly:"
+                    echo "      nftban update check"
+                    echo ""
+                    return 0
+                fi
+            fi
             _cmd_update_main "auto" ""
             ;;
         *)

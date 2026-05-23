@@ -113,11 +113,21 @@ nftban_cmd_health() {
     # v1.83 F2 fix: scan for --json AFTER shift, so subcommand position
     # is excluded. Then build a clean args array without --json so it
     # is never leaked to downstream functions (F1 fix).
+    #
+    # V127 UX-1 item 1.2: also parse --verbose / -v. INFO-severity findings
+    # are filtered from default `nftban health` output (alarm-reduction;
+    # makes the command usable as a fleet-wide signal). Operators who want
+    # INFO details pass --verbose. Like --json, the flag is stripped from
+    # clean_args so it never leaks to downstream subcommand handlers.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.2)
     local json_mode=false
+    local verbose_mode=false
     local -a clean_args=()
     for arg in "$@"; do
         if [[ "$arg" == "--json" ]]; then
             json_mode=true
+        elif [[ "$arg" == "--verbose" || "$arg" == "-v" ]]; then
+            verbose_mode=true
         else
             clean_args+=("$arg")
         fi
@@ -143,7 +153,7 @@ nftban_cmd_health() {
             # DOWN table). The `|| return $?` idiom keeps that exit code as
             # the dispatcher's exit while suppressing the ERR trap that would
             # otherwise print "ERROR: Script failed" on top of the table.
-            nftban_health_cmd_truth "$json_mode" || return $?
+            nftban_health_cmd_truth "$json_mode" "$verbose_mode" || return $?
             ;;
 
         # =================================================================
@@ -193,7 +203,9 @@ nftban_cmd_health() {
             # v1.84: "nftban health json" outputs Go validator truth JSON.
             # For diagnostics JSON, use: nftban health diagnostics --json
             # SF-1 (v1.100.2): see check/truth/axes branch above.
-            nftban_health_cmd_truth "true" || return $?
+            # V127 UX-1 item 1.2: JSON mode is unaffected by the verbose filter
+            # — JSON consumers get the full findings array regardless of severity.
+            nftban_health_cmd_truth "true" "true" || return $?
             ;;
 
         # =================================================================
@@ -402,7 +414,13 @@ EOF
 # =============================================================================
 
 nftban_health_cmd_truth() {
+    # V127 UX-1 item 1.2: 2nd arg is verbose_mode (default false). When false (default),
+    # INFO-severity findings are filtered from the rendered text output to avoid the
+    # "Findings (1): [INFO] VAL-LOGINMON-001" alarming-but-useless display on healthy
+    # idle hosts. JSON mode ignores the filter — JSON consumers get all findings.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.2)
     local json_mode="${1:-false}"
+    local verbose_mode="${2:-false}"
     local validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 
     if [[ ! -x "$validator_bin" ]]; then
@@ -530,13 +548,42 @@ nftban_health_cmd_truth() {
         printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
     done
 
-    # Render findings if any
-    local finding_count
-    finding_count=$(echo "$output" | jq '.findings | length' 2>/dev/null || echo "0")
-    if [[ "$finding_count" -gt 0 ]]; then
-        echo ""
-        echo "  Findings ($finding_count):"
-        echo "$output" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+    # Render findings (V127 UX-1 item 1.2: filter by severity).
+    #
+    # Default (verbose_mode=false): emit only WARN / ERROR findings. If zero remain,
+    # print "Findings: none" instead of an alarming "Findings (1):" header. If INFO
+    # findings exist, mention the count + how to surface them (--verbose). This makes
+    # `nftban health` usable as a fleet-wide signal on healthy idle hosts where the
+    # INFO-only state was reading as "something is wrong" pre-V127.
+    #
+    # Verbose (verbose_mode=true OR called from json|--json branch): emit all findings
+    # regardless of severity. JSON consumers always see the full array.
+    local total_count info_count visible_count
+    total_count=$(echo "$output" | jq '.findings | length' 2>/dev/null || echo "0")
+    info_count=$(echo "$output" | jq '[.findings[] | select(.severity == "info" or .severity == "INFO")] | length' 2>/dev/null || echo "0")
+    if [[ "$verbose_mode" == "true" ]]; then
+        visible_count="$total_count"
+    else
+        visible_count=$((total_count - info_count))
+    fi
+
+    echo ""
+    if [[ "$visible_count" -gt 0 ]]; then
+        echo "  Findings ($visible_count):"
+        if [[ "$verbose_mode" == "true" ]]; then
+            echo "$output" | jq -r '.findings[] | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        else
+            echo "$output" | jq -r '.findings[] | select(.severity != "info" and .severity != "INFO") | "    [\(.severity | ascii_upcase)] \(.code): \(.message)"' 2>/dev/null
+        fi
+        if [[ "$verbose_mode" != "true" && "$info_count" -gt 0 ]]; then
+            echo "    (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        fi
+    else
+        if [[ "$info_count" -gt 0 ]]; then
+            echo "  Findings: none (${info_count} INFO finding(s) hidden — use --verbose to show)"
+        else
+            echo "  Findings: none"
+        fi
     fi
 
     echo ""
