@@ -989,11 +989,15 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo ""
         echo "[NFTBan] To fix: nftban-installer --repair"
     elif [ \$INSTALLER_EXIT -eq 3 ]; then
-        echo "[NFTBan] ========================================"
-        echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — ABORTED"
-        echo "[NFTBan] ========================================"
-        echo "[NFTBan] Conflicting firewalls detected, takeover not approved."
-        echo "[NFTBan] To takeover: NFTBAN_TAKEOVER=1 nftban-installer --rpm --mode=\$INSTALL_MODE"
+        # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
+        # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)
+        # as the single source of truth. Postinst MUST NOT duplicate the message.
+        # Prior message advised "NFTBAN_TAKEOVER=1 nftban-installer --rpm --mode=\$INSTALL_MODE"
+        # which required operator to know \$INSTALL_MODE value and the --rpm flag.
+        # New canonical command is sudo-safe and unified across DEB/RPM:
+        #   sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair
+        # See AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4).
+        :
     else
         echo "[NFTBan] ========================================"
         echo "[NFTBan]  NFTBan v\${NFTBAN_VERSION} — FAILED"

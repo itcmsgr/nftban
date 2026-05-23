@@ -393,10 +393,27 @@ func runInstall(ctx context.Context, exec executor.Executor, sf *state.StateFile
 
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {
-			log.Error("phase %s failed: %v", p.name, err)
+			// V126.2 UX hotfix: for FAILED_AUTHORITY_ABORT only, suppress the cryptic
+			// "[NFTBan ERROR] phase X failed: ..." stdout line because report() emits
+			// the operator-friendly block. The internal log file still gets the error
+			// via ErrorLogOnly so audit trail and diagnostic bundles are unchanged.
+			// Non-ABORT failures preserve existing behavior (ERROR to stdout+log).
+			// Scope: AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4).
+			if sf.State == state.StateFailedAbort {
+				log.ErrorLogOnly("phase %s failed: %v", p.name, err)
+			} else {
+				log.Error("phase %s failed: %v", p.name, err)
+			}
 			log.PhaseEnd(p.name)
 
-			if lb != nil {
+			// V126.2: for FAILED_AUTHORITY_ABORT, skip the lifecycle bridge JSON
+			// event emission to stderr (operator-noise). install_state and the
+			// internal log file still capture the same outcome data, and the
+			// friendly block in report() communicates the action path to the
+			// operator. Lifecycle observers for non-ABORT failures are unchanged
+			// so downstream consumers (CI dashboards, monitoring) continue to
+			// receive their structured events.
+			if lb != nil && sf.State != state.StateFailedAbort {
 				if p.phase == state.PhaseDetect {
 					lb.observeDetect(&globalPhaseData, sf)
 					lb.observePlan(&globalPhaseData)
@@ -479,7 +496,17 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 
 		log.Phase(p.name)
 		if err := p.fn(ctx, exec, sf, log); err != nil {
-			log.Error("repair phase %s failed: %v", p.name, err)
+			// V126.2 UX hotfix: same FAILED_AUTHORITY_ABORT stdout suppression as
+			// the normal-mode handler above. Repair mode CAN also produce
+			// StateFailedAbort if conflicts reappear before takeover is approved
+			// (the second --repair run on an unchanged-state host). Internal log
+			// file unchanged via ErrorLogOnly.
+			// Scope: AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4).
+			if sf.State == state.StateFailedAbort {
+				log.ErrorLogOnly("repair phase %s failed: %v", p.name, err)
+			} else {
+				log.Error("repair phase %s failed: %v", p.name, err)
+			}
 			log.PhaseEnd(p.name)
 			return report(sf, log)
 		}
@@ -514,6 +541,129 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		log.Result("[NFTBan] to generate a diagnostic bundle and optionally submit it for review.")
 		log.Result("")
 		log.Result("[NFTBan] To fix: nftban-installer --repair")
+	case state.StateFailedAbort:
+		// V126.2 UX hotfix: FAILED_AUTHORITY_ABORT gets a dedicated operator-friendly
+		// block. Replaces the generic FAILED block (default case) which offered
+		// `--repair` and `nftban firewall rebuild` as retry hints — both wrong for the
+		// ABORT case (those apply to FAILED_RENDER / FAILED_REBUILD recovery).
+		//
+		// Also replaces the duplicate ABORTED block previously emitted by RPM/DEB
+		// postinst scripts; the Go installer is now the single source of truth for
+		// this message (postinst scripts shall not duplicate it).
+		//
+		// Critical correctness fixes from dns1 evidence + Gemini/ChatGPT review:
+		//   - PRIOR DEB message instructed `NFTBAN_TAKEOVER=1 dpkg --configure nftban-core`
+		//     which fails with "package already installed and configured" because dpkg
+		//     considers the package configured after postinst returned (even with exit 3).
+		//     The verified-working recovery path is `nftban-installer --repair`, which
+		//     handles the FAILED_AUTHORITY_ABORT state-machine resume.
+		//   - PRIOR two-line `export NFTBAN_TAKEOVER=1 / sudo command` form was silently
+		//     stripped by `sudoers env_reset` defaults. The inline `sudo VAR=value command`
+		//     form survives env_reset.
+		//
+		// Scope: AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4)
+		log.Result("")
+		log.Result("════════════════════════════════════════════════════════════════════════════════")
+		log.Result("[!] NFTBan Installation Paused: Existing Firewalls Detected")
+		log.Result("════════════════════════════════════════════════════════════════════════════════")
+		log.Result("")
+		log.Result("NFTBan found other firewall management software on this server:")
+		log.Result("")
+		if sf.Conflicts != "" {
+			for _, c := range strings.Split(sf.Conflicts, ",") {
+				c = strings.TrimSpace(c)
+				if c != "" {
+					log.Result("  • %s", c)
+				}
+			}
+		} else {
+			log.Result("  (detected conflicts could not be enumerated — check /var/log/nftban/installer.log)")
+		}
+		log.Result("")
+		log.Result("For safety, NFTBan did not activate automatically.")
+		log.Result("")
+		log.Result("Running multiple firewall managers at the same time can cause rules to")
+		log.Result("conflict or overwrite each other. In some cases, this can lock you out of")
+		log.Result("the server.")
+		log.Result("")
+		log.Result("NFTBan is installed, but its firewall is NOT active yet.")
+		log.Result("")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("OPTION 1: Let NFTBan Take Control")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("")
+		log.Result("Use this option only if you want NFTBan to become the main firewall manager")
+		log.Result("for this server.")
+		log.Result("")
+		log.Result("Run ONE of these single-line commands as root:")
+		log.Result("")
+		log.Result("   If you normally use sudo (most operators):")
+		log.Result("       sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair")
+		log.Result("")
+		log.Result("   If you are already logged in as root (a # prompt):")
+		log.Result("       NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair")
+		log.Result("")
+		log.Result("This tells NFTBan:")
+		log.Result("    \"I approve firewall takeover. Continue from where the install stopped.\"")
+		log.Result("")
+		log.Result("NFTBan will then disable or clean up the conflicting firewall setup and")
+		log.Result("activate its own nftables firewall.")
+		log.Result("")
+		log.Result("The same command works on Debian/Ubuntu AND on RHEL/CentOS/AlmaLinux/Rocky —")
+		log.Result("the installer binary is the same on every supported distribution.")
+		log.Result("")
+		log.Result("IMPORTANT — do not press Ctrl+C while it is running.")
+		log.Result("    The takeover happens in phases (Detect → Prepare → Switch → Configure →")
+		log.Result("    Validate). Interrupting it can leave the install in an intermediate state")
+		log.Result("    requiring another --repair run.")
+		log.Result("")
+		log.Result("IMPORTANT — do not run dpkg --configure or rpm --reinstall again.")
+		log.Result("    If a package-manager command says \"package nftban-core is already installed")
+		log.Result("    and configured\", that is normal. The package manager has nothing left to do.")
+		log.Result("    Use the --repair command above instead.")
+		log.Result("")
+		log.Result("If this server is managed by a control panel such as DirectAdmin, cPanel,")
+		log.Result("Plesk, or Webmin, make sure you understand which firewall currently protects")
+		log.Result("the server before continuing.")
+		log.Result("")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("OPTION 2: Stop Here")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("")
+		log.Result("If you are not sure, stop here.")
+		log.Result("")
+		log.Result("No firewall takeover has been performed.")
+		log.Result("Your existing firewall setup remains in control.")
+		log.Result("NFTBan will remain installed but inactive until you approve takeover.")
+		log.Result("")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("After Running Option 1: Verify Status")
+		log.Result("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Result("")
+		log.Result("NFTBan health (works on any Linux):")
+		log.Result("    nftban version")
+		log.Result("    systemctl is-active nftband")
+		log.Result("    cat /var/lib/nftban/state/install_state")
+		log.Result("")
+		log.Result("Kernel-firewall actually applied (trust-but-verify):")
+		log.Result("    nft list tables")
+		log.Result("    nft list ruleset | grep -i nftban")
+		log.Result("")
+		log.Result("Optional package-state sanity (if you want extra reassurance):")
+		log.Result("    Debian/Ubuntu:")
+		log.Result("        dpkg -s nftban-core | grep -E \"Status|Version\"")
+		log.Result("        apt-get check")
+		log.Result("    RHEL/CentOS/AlmaLinux/Rocky:")
+		log.Result("        rpm -q nftban-core")
+		log.Result("        dnf check 2>&1 | head -5")
+		log.Result("")
+		log.Result("A healthy install should show:")
+		log.Result("    nftband is active")
+		log.Result("    INSTALL_STATE=COMMITTED")
+		log.Result("    nft tables include: ip nftban, ip6 nftban")
+		log.Result("    nft ruleset includes \"nftban\" rules")
+		log.Result("")
+		log.Result("════════════════════════════════════════════════════════════════════════════════")
 	default:
 		log.Result("[NFTBan] Install/upgrade FAILED.")
 		log.Result("[NFTBan] State: %s", sf.State)
