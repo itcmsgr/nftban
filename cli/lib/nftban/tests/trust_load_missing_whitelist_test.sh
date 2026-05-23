@@ -282,6 +282,69 @@ assert_match "B15: stderr directs to nftban-trust-enable-AWS" \
 
 # Cleanup unsets
 unset TRUST_CLOUDFLARE_ENABLED TRUST_AWS_ENABLED
+# Also clean up the §2.3 whitelist file so §2.5 starts from a clean state
+rm -f "$NFTBAN_CONFIG_DIR/whitelist.d/30-trust-cloudflare.conf"
+
+# -----------------------------------------------------------------------------
+# §2.5 — Per-provider missing-whitelist-file sweep (all 7 providers)
+# -----------------------------------------------------------------------------
+# Proves the §4.6.1 fix is provider-agnostic, not CLOUDFLARE-special. The fix
+# loop iterates TRUST_PROVIDER_LIST with no per-provider branching; this sweep
+# verifies (instead of just trusting) that ALL 7 providers produce identical
+# rc=2 + stderr behavior when enabled-but-missing-file.
+#
+# For each of the 7 providers:
+#   - Enable ONLY that provider (other 6 unset)
+#   - Ensure no whitelist file exists for it
+#   - Invoke nftban_trust_load
+#   - Assert rc=2
+#   - Assert stderr names the specific provider
+#   - Assert stderr directs to `Run: nftban trust enable <PROVIDER>`
+#
+# 7 providers × 3 assertions = 21 new assertions (B16-B36)
+
+ALL_PROVIDERS=(CLOUDFLARE QUICCLOUD AWS GOOGLE AZURE DIGITALOCEAN FASTLY)
+ASSERT_NUM=15  # last was B15 (from §2.4)
+
+for PROVIDER in "${ALL_PROVIDERS[@]}"; do
+    # Clear all 7 enabled-flags so only the current provider will be enabled
+    for P in "${ALL_PROVIDERS[@]}"; do
+        unset "TRUST_${P}_ENABLED" 2>/dev/null || true
+    done
+
+    # Enable only this one provider (env-var with parametric name)
+    export "TRUST_${PROVIDER}_ENABLED=true"
+
+    # Ensure no whitelist file exists for this provider
+    PROVIDER_LOWER=$(echo "$PROVIDER" | tr '[:upper:]' '[:lower:]')
+    rm -f "$NFTBAN_CONFIG_DIR/whitelist.d/30-trust-${PROVIDER_LOWER}.conf"
+
+    CAPTURED_STDOUT=$(mktemp -p "$SANDBOX" stdout.XXX)
+    CAPTURED_STDERR=$(mktemp -p "$SANDBOX" stderr.XXX)
+
+    set +e
+    nftban_trust_load >"$CAPTURED_STDOUT" 2>"$CAPTURED_STDERR"
+    RC=$?
+    set -e
+
+    STDERR="$(cat "$CAPTURED_STDERR")"
+
+    ASSERT_NUM=$((ASSERT_NUM + 1))
+    assert_eq "B${ASSERT_NUM}: ${PROVIDER} alone enabled+missing-file -> rc=2" "2" "$RC"
+
+    ASSERT_NUM=$((ASSERT_NUM + 1))
+    assert_match "B${ASSERT_NUM}: stderr names ${PROVIDER} as the unloadable provider" \
+        "${PROVIDER} is enabled but whitelist file missing" \
+        "$STDERR"
+
+    ASSERT_NUM=$((ASSERT_NUM + 1))
+    assert_match "B${ASSERT_NUM}: stderr directs operator to nftban-trust-enable-${PROVIDER}" \
+        "Run: nftban trust enable ${PROVIDER}" \
+        "$STDERR"
+
+    # Cleanup this provider before next iteration
+    unset "TRUST_${PROVIDER}_ENABLED"
+done
 
 # =============================================================================
 # §3 — Test results
