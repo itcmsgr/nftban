@@ -200,7 +200,12 @@ nftban_config_get_defaults() {
     elif [[ -f "${NFTBAN_CONFD_DIR}/${module}.conf" ]]; then
         conf_file="${NFTBAN_CONFD_DIR}/${module}.conf"
     else
-        echo "{\"error\": \"Configuration file not found for module: ${module}\"}"
+        # V127 UX-1 item 1.9: emit plain ERROR to stderr (was: JSON to stdout).
+        # Stream separation matters for operators scripting against `nftban config get`:
+        # stdout = data, stderr = diagnostics. Returns 1 (unchanged) for nonzero rc.
+        # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.9)
+        echo "ERROR: Configuration file not found for module: ${module}" >&2
+        echo "       Searched: ${NFTBAN_CONFD_DIR}/${module}/main.conf and ${NFTBAN_CONFD_DIR}/${module}.conf" >&2
         return 1
     fi
 
@@ -298,8 +303,13 @@ nftban_config_get_merged() {
     local module="$1"
     local json_mode="${2:-false}"
 
+    # V127 UX-1 item 1.9: propagate errors from nftban_config_get_defaults instead of
+    # swallowing them and emitting success-like JSON. If the inner function fails
+    # (e.g., module not found), the stderr ERROR has already been emitted and we
+    # return the same rc so the caller exits nonzero.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.9)
     local defaults overrides
-    defaults=$(nftban_config_get_defaults "$module")
+    defaults=$(nftban_config_get_defaults "$module") || return $?
     overrides=$(nftban_config_get_overrides "$module")
 
     # Merge JSON objects (overrides take precedence) - use -c for compact output

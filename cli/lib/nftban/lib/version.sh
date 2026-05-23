@@ -73,10 +73,12 @@ NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 readonly NFTBAN_BUILD_DATE
 
 # Component versions (kept in sync with main version)
+# V127 UX-1 item 1.3: GUI/API component slots are NOT shipped in v1.127+ —
+# they were advertised in prior output but never resolved to real binaries.
+# Removed to prevent operator-inventory queries returning ghost components.
+# (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.3)
 readonly NFTBAN_CLI_VERSION="$NFTBAN_VERSION"
 readonly NFTBAN_CORE_VERSION="$NFTBAN_VERSION"
-readonly NFTBAN_GUI_VERSION="$NFTBAN_VERSION"
-readonly NFTBAN_API_VERSION="$NFTBAN_VERSION"
 
 # Compatibility
 readonly NFTBAN_MIN_BASH_VERSION="4.0"
@@ -85,7 +87,7 @@ readonly NFTBAN_MIN_NFT_VERSION="0.9.3"
 # Export all version variables (required for subshells/child processes)
 export NFTBAN_VERSION NFTBAN_VERSION_MAJOR NFTBAN_VERSION_MINOR NFTBAN_VERSION_PATCH
 export NFTBAN_VERSION_NAME NFTBAN_VERSION_DATE NFTBAN_BUILD_DATE
-export NFTBAN_CLI_VERSION NFTBAN_CORE_VERSION NFTBAN_GUI_VERSION NFTBAN_API_VERSION
+export NFTBAN_CLI_VERSION NFTBAN_CORE_VERSION
 export NFTBAN_MIN_BASH_VERSION NFTBAN_MIN_NFT_VERSION
 
 # =============================================================================
@@ -129,6 +131,35 @@ nftban_version_check() {
 
 nftban_version_info() {
     # Print detailed version information
+    # V127 UX-1 item 1.3: GUI/API rows removed (ghost components — see header note above NFTBAN_CLI_VERSION).
+    # V127 UX-1 item 1.4: Adds Update Status block (Installed / Latest / Last checked) so the operator
+    # gets upgrade-eligibility status without running `nftban update check` separately.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 items 1.3 + 1.4)
+
+    # Read update-check cache (populated by `nftban update check`).
+    # Defaults if cache absent: Latest = "not checked yet", Last checked = "never".
+    local _cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
+    local _latest="not checked yet"
+    local _last_checked="never (run: nftban update check)"
+    if [[ -f "$_cache_file" ]]; then
+        # Prefer jq; fall back to grep if jq absent
+        if command -v jq &>/dev/null; then
+            local _v
+            _v=$(jq -r '.latest_version // empty' "$_cache_file" 2>/dev/null)
+            [[ -n "$_v" && "$_v" != "null" ]] && _latest="v${_v}"
+        else
+            local _v
+            _v=$(grep -oP '"latest_version":\s*"\K[^"]+' "$_cache_file" 2>/dev/null | head -1)
+            [[ -n "$_v" ]] && _latest="v${_v}"
+        fi
+        # Last-checked = cache file mtime (more reliable than parsing JSON timestamp)
+        local _mtime
+        _mtime=$(stat -c %Y "$_cache_file" 2>/dev/null || echo "0")
+        if [[ "$_mtime" -gt 0 ]]; then
+            _last_checked=$(date -d "@${_mtime}" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || date -r "$_cache_file" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || echo "unknown")
+        fi
+    fi
+
     cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan Version Information
@@ -142,8 +173,11 @@ Build Date:     ${NFTBAN_BUILD_DATE}
 Components:
   CLI:          ${NFTBAN_CLI_VERSION}
   Core:         ${NFTBAN_CORE_VERSION}
-  GUI:          ${NFTBAN_GUI_VERSION}
-  API:          ${NFTBAN_API_VERSION}
+
+Update Status:
+  Installed:    v${NFTBAN_VERSION}
+  Latest:       ${_latest}
+  Last checked: ${_last_checked}
 
 Requirements:
   Bash:         >= ${NFTBAN_MIN_BASH_VERSION}
