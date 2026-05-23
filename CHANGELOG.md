@@ -11,6 +11,208 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.126.1] - 2026-05-23 — V126.1 trust-load strict-warning hotfix (single-PR hotfix on top of v1.126.0)
+
+V126.1 hotfix release on top of v1.126.0, closing
+`D-NFTBAN-TRUST-LOAD-SILENT-NOOP-WHEN-PROVIDER-ENABLED-VIA-LOCAL-OVERRIDE`
+(P2; surfaced by V126 srv3 Lane C live-host active test 2026-05-23T08:43Z;
+documented in `AUDIT_190_LIFECYCLE/V126_VALIDATE_SRV3_LANE_C_FAIL_CLOSURE.md`
+and root-caused by code audit in `AUDIT_190_LIFECYCLE/V126_1_LANE_C_HOTFIX_SCOPE.md`
+after correcting the initial detection-logic-divergence hypothesis).
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field,
+no new metric, no new Prometheus label, no Status JSON wire-format key,
+no new `install_state` JSON field, no nftables kernel set / chain / table
+name change, no new config key, no new systemd unit, no packaging change.
+
+**Daemon binary byte-identical to v1.126.0** (and v1.125.0, v1.124.1,
+v1.124.0, v1.123.0, ... v1.114.0). The hotfix is confined to two CLI
+shell files plus one new test — `cmd/nftban-installer/` and `cmd/nftband/`
+and `cmd/nftban-core/` are byte-unchanged across the V126 + V126.1 arc.
+**15-release identical-daemon-binary streak** preserved (v1.114.0 →
+v1.126.1).
+
+**No metrics changes. No new schema or config keys. No new systemd
+units. No packaging changes.** No host contact during release-prep
+construction.
+
+### Fixed — trust-load strict warning + non-zero rc
+
+**Single PR #664 (sq `24872bc7`).** Closes
+`D-NFTBAN-TRUST-LOAD-SILENT-NOOP-WHEN-PROVIDER-ENABLED-VIA-LOCAL-OVERRIDE`.
+
+#### Root cause (audit-confirmed)
+
+`nftban_trust_load()` at `cli/lib/nftban/core/nftban_trust.sh:836` iterates
+the 7 supported trust providers. For each enabled provider, it checks for
+the generated whitelist file at
+`/etc/nftban/whitelist.d/30-trust-<provider>.conf`. **If the file is missing,
+the inner block is SILENTLY SKIPPED** (no log, no warning, no exit-code
+change). The function then emits a misleading message "No providers loaded
+— check enabled status" (implies config-state problem; actual cause is
+file-state problem) and returns rc=0.
+
+V126 Lane C's Step 4d in `firewall_reload` (PR #660) invokes
+`nftban trust load >/dev/null 2>&1 || { warning }`. Because trust load
+returns rc=0 despite doing nothing, the warning branch never fires.
+Lane C silently no-ops on every v1.126.0 host where the operator manually
+edited `TRUST_*_ENABLED` in `nftban.conf.local` without running the
+canonical `nftban trust enable <PROVIDER>` mutator, OR where the generated
+whitelist file was removed post-enable by some cleanup or config-reset
+path (srv3's exact state since pre-V125).
+
+**Correction note:** the v1.126.1 hotfix scope's INITIAL hypothesis
+("`nftban trust load` reads config differently than `nftban trust
+status`") was incorrect. Direct code audit on local repo HEAD `fb295bec`
+confirmed both commands use the SAME `_trust_is_enabled` helper, sourced
+through the same `cli/sbin/nftban:127-130` wrapper which sources
+`nftban.conf.local`. Both DO see `TRUST_CLOUDFLARE_ENABLED="true"`. The
+actual divergence is in the downstream inner check for the generated
+whitelist file path. The scope's §2 was rewritten by amendment 3
+(`AMEND_V126_1_HOTFIX_SCOPE_ROOT_CAUSE_CORRECTION`, 2026-05-23) to reflect
+the audit-confirmed mechanism.
+
+#### Fix
+
+**`cli/lib/nftban/core/nftban_trust.sh::nftban_trust_load`** (+28 / −2):
+- Added separate `enabled_but_unloadable` counter (tracks
+  "configured-enabled but whitelist file missing" providers, distinct
+  from the `loaded` success counter).
+- Added explicit `else` branch on the inner `[[ -f "$whitelist_file" ]]`
+  check that emits stderr `[ERROR]` naming the missing file path AND the
+  canonical repair command (`Run: nftban trust enable <PROVIDER>`), logs
+  via `_trust_log "ERROR"` to `/var/log/nftban/trust.log`, and increments
+  the new counter.
+- Returns exit code 2 when `enabled_but_unloadable > 0` (distinct from
+  rc=0 success and from other rc!=0 `_trust_apply_to_nft` failures).
+- Preserves rc=0 behavior when no providers are configured at all (with
+  a new "[!] No providers configured — use 'nftban trust enable
+  <PROVIDER>'" message; no false-positive failures).
+- **NO auto-heal logic added** (per V126.1 scope §4.6.4): the fix is
+  strictly diagnostic + exit-code propagation. Canonical operator repair
+  stays explicit `nftban trust enable <PROVIDER>` (not auto-recreate
+  inside the reload path, which would mask broken trust state and add a
+  network dependency to every `firewall_reload`).
+
+**`cli/lib/nftban/cli/cmd_firewall.sh::firewall_reload` Step 4d**
+(+13 / −2):
+- Removed `2>&1` from the `nftban trust load >/dev/null` invocation (so
+  per-provider stderr errors reach the operator).
+- Updated the warning message from "Run: nftban trust load" (a no-op
+  given the underlying bug) to "Run: nftban trust enable <PROVIDER> (see
+  'nftban trust load' output for which providers)" — the canonical
+  lifecycle repair.
+
+**New test:**
+`cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh` (NEW, 366
+lines, **44 assertions in 5 sections**):
+- **8 static guards (S1-S8)** verify v1.126.1 fix markers are present in
+  modified files; verify NO auto-heal calls (`_trust_download_provider`,
+  `_trust_write_whitelist`) added inside `nftban_trust_load`.
+- **15 behavioral assertions (B1-B15)** in 4 scenarios: CLOUDFLARE alone
+  enabled+missing-file (rc=2 + stderr + canonical-repair-message); no
+  providers configured (rc=0); CLOUDFLARE enabled+whitelist-file-present
+  healthy (rc=0); mixed-state CF healthy + AWS broken (rc=2).
+- **21 per-provider sweep assertions (B16-B36)** added via
+  `AMEND_PR_664_ADD_7_PROVIDER_SWEEP`: loops over ALL 7 supported
+  providers (`CLOUDFLARE` / `QUICCLOUD` / `AWS` / `GOOGLE` / `AZURE` /
+  `DIGITALOCEAN` / `FASTLY`), enables each one in isolation, asserts
+  rc=2 + stderr-names-provider + "Run: nftban trust enable <PROVIDER>"
+  for each. Proves the fix is **provider-agnostic, NOT
+  CLOUDFLARE-special**.
+
+Self-contained sandbox; no root required; no nftables required (stubs
+`_trust_apply_to_nft`); no host contact. **Verified both directions
+pre-merge**: 44/44 PASS on the hotfix source; 8/44 PASS + 36/44 FAIL on
+v1.126.0 source (production code reverted, test kept) — proves the test
+actively reproduces the bug class for ALL providers, not just passively
+validates the fix.
+
+### Operator-visible behavior changes
+
+- **`nftban trust load`** on a host with `TRUST_<PROVIDER>_ENABLED="true"`
+  but `/etc/nftban/whitelist.d/30-trust-<provider>.conf` missing now:
+  - exits **2** (was **0** silent)
+  - emits stderr `[ERROR]` per affected provider naming the missing file
+    path
+  - directs operator to run `nftban trust enable <PROVIDER>` (the
+    canonical lifecycle repair)
+
+- **`nftban firewall reload`** (and internal callers:
+  `whitelist-session add/remove`, takeover re-runs) now surfaces a clear
+  warning when any enabled provider has a missing whitelist file.
+  Previously silent in v1.126.0 because Step 4d's `2>&1 || { warning }`
+  swallowed both the error and the non-zero rc.
+
+- **Healthy-state behavior unchanged**: providers correctly enabled via
+  `nftban trust enable <PROVIDER>` continue to load identically to
+  v1.126.0.
+
+### Operator-action required post-upgrade on V126 Lane C-affected hosts
+
+The hotfix does **NOT** auto-recover srv3's (or any other affected host's)
+existing broken state. Per scope §4.6.4 (no-auto-heal policy), after the
+v1.126.1 RPM/DEB upgrade lands on srv3 / dns2, the operator **MUST** run
+`nftban trust enable CLOUDFLARE` **ONCE per host** to recreate the
+missing whitelist file.
+
+Without this, the strict-warning behavior persists at every
+`firewall_reload`: the operator is told exactly what to do, and the
+warning continues until they do it. After the operator repair runs, the
+active Lane C test from `V126_VALIDATE_SRV3_LANE_C_FAIL_CLOSURE.md` §3
+should PASS (Cloudflare CIDRs survive `firewall_reload`).
+
+### CI baseline
+
+PR #664 final tally: **51 SUCCESS / 2 SKIPPED / 0 FAILURE** across 53
+checks — including Go Build & Test, Build NFTBan Packages, all 5
+Canonization Gates (Install / Restore / Update / Uninstall / Runtime
+Truth), CodeQL, Semgrep, OSV-Scanner, ShellCheck, Bash Validation,
+Documentation Validation, Architecture Policy, Migration Coverage Gate,
+Shell-Delete Guard, Secret Scanning (Gitleaks), Docker, Smoke Test.
+
+### Non-goals (carried forward as separately-gated future debt)
+
+- **7-provider full CLI lifecycle test sweep in CI** (V126.1 scope
+  §5.5.2 — enable → cache/whitelist creation → load → reload → disable
+  → reload). Requires kernel-test harness not currently in CI. Partial
+  coverage achieved via the §2.5 missing-file sweep in this PR (21
+  assertions × 7 providers).
+- **DirectAdmin trust-policy decision lane**
+  (`OPEN_DIRECTADMIN_TRUST_POLICY_DECISION_LANE`) — whether
+  DirectAdmin installs should default to auto-enabling Cloudflare;
+  separate operator-policy decision; NOT mixed into this
+  state-consistency hotfix.
+- **`D-WHITELIST-SYNC-PARTIAL-MISS-AFTER-FIREWALL-RELOAD`** investigation
+  — V126 Lane C closure §6.1 noted transient operator-IP drop from
+  kernel after `firewall_reload`; non-blocking; separate lane.
+- **`D-TRUST-STATUS-DISPLAY-COUNT-STUCK-AT-ZERO`** cosmetic — across
+  lab2 + dns2 + srv3 `nftban trust status` reports `Total IP ranges: 0`
+  despite kernel populated; cosmetic-only, not functional; separate
+  lane.
+- **Single-canonical-resolver refactor** for `_trust_is_enabled` (V126.1
+  §4.1) — downgraded to code-hygiene-secondary after audit confirmed
+  detection logic was already consistent across all callers; defensive
+  future-proofing only; can be deferred indefinitely.
+
+### Hotfix slot
+
+**v1.126.x hotfix slot now CONSUMED by v1.126.1** (latent reservation
+activated for the trust-load strict-warning lane). **v1.126.2+ NOT
+authorized.**
+
+### Workspace artifacts (no PR, no code)
+
+V126.1 design + audit + decision chain filed at `AUDIT_190_LIFECYCLE/`:
+
+- `V126_1_LANE_C_HOTFIX_SCOPE.md` — 3 amendments (root-cause correction,
+  enable/disable contract, provider-matrix); §4.6 primary fix; §5.5
+  7-provider sweep design; §8 acceptance criteria.
+- `V126_VALIDATE_SRV3_LANE_C_FAIL_CLOSURE.md` — V126 srv3 active test
+  failure record that motivated this hotfix.
+
+---
+
 ## [v1.126.0] - 2026-05-23 — V126 install-correctness fix-bundle: 3-lane defect closure (C → B → A)
 
 V126 install-correctness fix-bundle release on top of v1.125.0, bundling
