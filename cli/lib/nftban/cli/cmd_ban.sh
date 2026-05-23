@@ -152,6 +152,42 @@ nftban_cmd_ban() {
     cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_ban_usage || return 1
     cmd_validate_ip "$ip" "$json_mode" nftban_cmd_ban_usage || return 1
 
+    # V127 UX-2 item 1.7: well-known public infrastructure IP guard.
+    # Banning addresses like 8.8.8.8 / 1.1.1.1 / 9.9.9.9 / 208.67.222.222 produces
+    # no security benefit on a typical host and disrupts legitimate name resolution
+    # for the operator's users. Refuse unless --yes (auto_confirm) is set explicitly.
+    # Dry-run path is allowed unconditionally (no mutation) so operators can preview
+    # what the guard would do. JSON mode emits a structured refusal with success=false.
+    # Helper: cli/lib/nftban/lib/nftban_well_known.sh (inline IP map; no /etc/nftban/
+    # fixture; no package payload registration).
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-2 item 1.7)
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_well_known.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nftban_well_known.sh" 2>/dev/null || true
+        if declare -f nftban_is_well_known_infra_ip >/dev/null 2>&1; then
+            local _wk_descr
+            if _wk_descr=$(nftban_is_well_known_infra_ip "$ip"); then
+                if [[ "$auto_confirm" != "true" && "$dry_run" != "true" ]]; then
+                    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+                        json_output "false" '{}' "Refused: ${ip} is well-known public infrastructure (${_wk_descr}). Re-run with --yes to override."
+                    else
+                        nftban_well_known_warn_block "$ip" stderr
+                    fi
+                    return 1
+                fi
+                # Explicit override path: log the override + proceed.
+                if [[ "$auto_confirm" == "true" ]]; then
+                    if [[ "$json_mode" != "true" ]]; then
+                        echo "[!] Well-known infrastructure override accepted: ${ip} (${_wk_descr})" >&2
+                        echo "    Proceeding under explicit --yes confirmation." >&2
+                    fi
+                fi
+                # Dry-run path falls through to the dry-run preview block below;
+                # nothing is mutated either way.
+            fi
+        fi
+    fi
+
     # v1.18.8: Check if IP is whitelisted - warn user before banning
     local whitelist_set
     if [[ "$ip" =~ : ]]; then
