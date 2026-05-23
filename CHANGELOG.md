@@ -11,6 +11,206 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.126.0] - 2026-05-23 — V126 install-correctness fix-bundle: 3-lane defect closure (C → B → A)
+
+V126 install-correctness fix-bundle release on top of v1.125.0, bundling
+three narrow defect-closure lanes filed in
+`AUDIT_190_LIFECYCLE/V126_IMPLEMENTATION_ORDER_PLAN.md` and merged in the
+locked C → B → A order. Each defect was reproduced empirically on a real
+fleet host before scope; each lane was implemented as a separately-
+shippable narrow PR, audited, and CI-clean-on-PR before merge; this
+release-prep PR follows the same 4-file pattern (VERSION + STATUS +
+CHANGELOG + FHS regen) used in every prior release since v1.79.2.
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator
+field, no new metric, no new Prometheus label, no Status JSON
+wire-format key, no new `install_state` JSON field, no new nftables
+kernel set / chain / table name change, no new config key, no new
+systemd unit, no packaging change. `internal/validator/types.go`
+continues to declare `const SchemaVersionCurrent = "1.83.0"`.
+
+**Daemon binary byte-identical to v1.125.0** (and v1.124.1, v1.124.0,
+v1.123.0, ... v1.114.0). Lanes B + C are shell-only; Lane A modifies
+`cmd/nftban-installer/` only. `cmd/nftband/` and `cmd/nftban-core/`
+are byte-unchanged across the V126 arc. **14-release identical-
+daemon-binary streak** preserved (v1.114.0 → v1.126.0).
+
+**No metrics changes. No new schema or config keys. No new systemd
+units. No packaging changes** (`--rpm` / `--deb` postinst paths
+unchanged; Lane A's R-4 gate extension fires identically on
+package-triggered runs as on operator-initiated runs). **No polkit
+changes. No host contact** during release-prep construction.
+
+### Fixed — three install-correctness defect-closure lanes
+
+**Lane C — re-apply trust providers in `firewall_reload` — PR #660 (sq `af904f43`).**
+Closes `D-FIREWALL-RELOAD-DOES-NOT-REMERGE-TRUST-PROVIDERS` (P2,
+fleet-wide latent). Empirical reproduction on srv3 (v1.121.0, 2026-05-22):
+a single `nftban firewall whitelist-session add 192.0.2.122 --ttl 30m`
+invocation called `firewall_reload` internally, which re-applied
+DDoS / portscan / botguard / feeds / geoban — but missed trust
+providers — silently dropping 14 Cloudflare CIDR ranges from kernel
+`whitelist_ipv4` (17 elements → 3 elements). The trust providers had
+been applied by a past `nftban trust enable CLOUDFLARE` invocation,
+persisted across daemon restarts, and were not auto-re-applied. Fix
+adds Step 4d to `cli/lib/nftban/cli/cmd_firewall.sh::firewall_reload`
+between botguard (4c) and feeds (5), invoking `nftban trust load` as
+a sibling CLI subprocess (same pattern as the other re-apply steps),
+gated on `grep TRUST_*_ENABLED="true"` across
+`/etc/nftban/conf.d/trust.conf` + `/etc/nftban/nftban.conf.local`
+(no subprocess fork when no trust providers enabled). New shell
+test `cli/lib/nftban/tests/cmd_firewall_trust_remerge_test.sh` with
+15 assertions (6 regression guards, 1 sequencing assertion, 8 gating
+fixture cases including srv3 shape).
+
+**Lane B — unblock cleanly-migrated hosts in `_detect_install_type` — PR #661 (sq `2f8d9487`).**
+Closes `D-DNS2-MIXED-HISTORY-AUTODETECT-FALSE-BLOCK` (P2). Empirical
+reproduction on dns2 (v1.123.0, post-source-to-RPM migration 2026-05-20):
+`nftban update` refused with exit 13 / `Install Type: mixed` because
+`cli/lib/nftban/cli/cmd_update_detection.sh::_detect_install_type`
+reads the OLDEST history entry via `jq '.[-1].type'` and dns2's oldest
+entry was the 2026-04-30 source install — 23 days old and superseded
+by 3 clean RPM successes on 2026-05-20. The v1.108 author landed the
+oldest-history protection (catches packaging-family migrations
+source → RPM / DEB) without the corresponding unblock-after-clean-
+migration story. Fix extends the rpm-db and dpkg-db drift-check
+predicates with a migration-clean unblock path requiring ALL THREE
+positive signals: (a) package-db ownership, (b) most-recent
+SUCCESSFUL history entry matches current family, (c) `install_state`
+shows `INSTALL_STATE=COMMITTED + AUTHORITY=UPDATE`. All existing
+v1.125 refusals preserved when any positive signal is missing
+(genuinely-broken-source-mixed-with-RPM-files still refuses;
+FAILED_REBUILD with RPM oldest still refuses; TAKEOVER authority
+still refuses). New helpers: `_read_history_last_successful_type`
+(jq + python3 + bash-awk fallback chain) and
+`_probe_install_state_committed_update_authority` (with
+`NFTBAN_TEST_INSTALL_STATE_FILE` env override matching the existing
+`NFTBAN_TEST_HISTORY_FILE` convention). New shell test
+`cli/lib/nftban/tests/cmd_update_detection_v126_test.sh` with 20
+assertions covering the 8-case decision matrix plus 9 direct helper
+tests.
+
+**Lane A — extend R-4 `--force` gate to DEGRADED state — PR #662 (sq `00adedc7`).**
+Closes `D-V125-R4-GAP-DEGRADED-STATE-NOT-GATED` (P2, design-gap).
+Surfaced by lab2 V125 validation 2026-05-22T15:16:09Z: lab2's
+`nftban update` completed as `StateDegraded` (chronic D-DEG-1
+cascade triggered the `failed_units_postinstall_ok` non-fatal
+assertion) instead of `StateCommitted`. The V125 R-4 active test
+(`--force` on COMMITTED → ExitRefused) could not be safely executed
+on lab2 because `--force` on `StateDegraded` did NOT fire the gate
+— it would have re-run all 5 phases on a real host. This revealed
+that chronic-DEGRADED hosts had **no** V125 R-4 protection against
+accidental `--force` re-runs, precisely the protection scenario
+R-4 was designed for. Fix extends
+`cmd/nftban-installer/main.go::shouldRefuseForceRecommit` predicate's
+gate-fire set from `{StateCommitted}` to
+`{StateCommitted, StateDegraded}`. Rationale: `StateDegraded` is a
+non-`StateCommitted` state but does NOT represent failure-recovery
+— it means the install completed all 5 phases (Detect → Plan →
+Prepare → Switch → Configure → Validate) but ended with non-fatal
+assertion failures. Failure-recovery states (`StateFailedSwitch` /
+`StateFailedRebuild` / `StateFailedRender` / `StateFailedNoFirewall`
+/ `StateFailedTakeover`) remain unguarded by R-4 — `--force` is
+the supported retry path there. Error messages now print the actual
+state name via `Fprintf %s` (`error: --force on a DEGRADED install
+requires --allow-recommit confirmation.`) and explicitly name the
+`--repair` escape hatch for genuine failure recovery. `--allow-
+recommit` flag help text updated to name both `COMMITTED` and
+`DEGRADED`. Truth-table test in
+`cmd/nftban-installer/force_recommit_gate_test.go` extended from 10
+cases to 14 cases (test file `meta:version` bumped 1.0.0 → 1.1.0),
+adding: DEGRADED + force + no-recommit → REFUSE (changed from
+ALLOW), DEGRADED + force + allow-recommit → ALLOW (new explicit-
+intent path), no-force on DEGRADED → ALLOW (gate requires force;
+mirrors COMMITTED parity), and explicit StateFailedTakeover
+boundary re-assertion (failure-recovery remains unguarded;
+asymmetric with COMMITTED/DEGRADED).
+
+### Operator-visible behavior changes
+
+- `nftban firewall reload` (and every internal-caller path like
+  `whitelist-session add/remove`, takeover re-runs, etc.) now re-applies
+  trust providers when any `TRUST_*_ENABLED="true"` is set — fixes
+  silent kernel-set drift after reload on hosts with trust providers
+  configured.
+- `nftban update` (and `nftban update github`) on hosts with a
+  source → RPM or source → DEB migration in their history now proceeds
+  via the standard auto-detect path when the migration is clean
+  (`INSTALL_STATE=COMMITTED + AUTHORITY=UPDATE` + last-successful-history
+  matches current package-db family). Previously refused with exit 13
+  `Install Type: mixed`. Genuinely-mixed installs continue to refuse.
+- `nftban-installer --mode=install --takeover --force` on a host with
+  `INSTALL_STATE=DEGRADED` now refuses with `ExitRefused` (5) unless
+  `--allow-recommit` is also passed — closes the protection-gap on
+  chronic-DEGRADED hosts (e.g. lab2's D-DEG-1 cascade class).
+  Failure-recovery states (`StateFailed*`) continue to allow `--force`
+  alone as the supported retry path.
+
+### CI baseline
+
+Post-merge main CI at HEAD `00adedc7` (Lane A merge SHA): **24 SUCCESS
+/ 1 SKIPPED / 0 FAILURE across 25 workflows** — including Go Build &
+Test (canonical signal for Lane A's predicate + new test cases) plus
+all 5 Canonization Gates (Install / Restore / Update / Uninstall /
+Runtime Truth), CodeQL, Semgrep, ShellCheck, Bash Validation, OSV-Scanner,
+Docker, Smoke Test, Documentation Validation, Architecture Policy,
+Migration Coverage Gate, Shell-Delete Guard, Secret Scanning
+(Gitleaks), Fuzz Tests, Project Health, Secure Go, Build NFTBan
+Packages, OpenSSF Scorecard.
+
+### Non-goals (carried forward as separately-gated future debt)
+
+- **D-FHS Phase D-1 Authority Territory Graph filing** — design-only
+  deliverable, deferred since v1.118 Track A.
+- **dns2 fleet validation gates beyond v1.125 Lane B verification** —
+  `EXECUTE_V126_VALIDATE_DNS2` operator-conditional gate.
+- **V117 backlog items B2 / B3 / B4 / B7 / B8** — separate narrow
+  lanes, not in V126 scope.
+- **Schema-UNFREEZE items** — all deferred (PR-M2b-w2..w7 per-module
+  emission waves, PR-M2c new nft named counters, PR-M2d kernel set
+  element annotation cookies, PR-M3 cache v2 + PR-M1 CLI, §F4 metrics
+  beyond 6 PR-M2b-w1 targets, LoginMon subnet Prometheus emission).
+- **Pre-V113 D-* large lanes** — all deferred (D-MET-1, D-MOD-1,
+  D-DNS-1, D-FHS-1..5 implementation, D-SHA-1, D-POL-1, D-SEC-1
+  SEC-FW-BYPASS-ALERT-GAP-001, D-TRP-1 TRANSPORT-001, D-EGM-1,
+  D-PNL-1, D-OSH-1, D-GHC-1, D-WIK-2, D-MIG-1, D-BKT-1 Bucket-C
+  14 v0.x tags **NEVER delete remote** per long-standing policy,
+  D-RECV-INSTALL-RESULT-JSON-PARSE-001 nftbanpro_cms scope, D-LMA-1,
+  R-11, #525 geoip Go panic Lane G).
+- **V125 stretch lanes** — R-6 deps retry, R-7 V120 TTY fallback,
+  R-8 iptables backup, R-12 nft snapshot-restore, R-14 state atomic
+  write remain in the V125 scope file for future cuts.
+- **Bucket-C v0.x tag changes** — FORBIDDEN INDEFINITELY per
+  long-standing operator policy.
+- **MASTER_TODO edits** — FORBIDDEN per workspace control rule
+  locked 2026-05-13.
+
+### Hotfix slot
+
+**v1.126.x hotfix slot not authorized** (latent reservation only —
+opens only if a v1.126.0 defect surfaces in the fleet rollout).
+
+### Workspace artifacts (no PR, no code)
+
+V126 design + decision chain filed at `AUDIT_190_LIFECYCLE/`:
+
+- `V126_IMPLEMENTATION_ORDER_PLAN.md` (304 lines) — order lock:
+  C → B → A; per-lane independence verification; PR strategy;
+  release-bundle policy (Option 1 single bundled v1.126.0); §7
+  acceptance criteria carried forward into this CHANGELOG entry.
+- `V126_TRUST_WHITELIST_RELOAD_MERGE_SCOPE.md` — Lane C scope spec
+  + srv3 empirical reproduction.
+- `V126_UPDATE_HISTORY_MIXED_INSTALL_DETECTOR_SCOPE.md` — Lane B
+  scope spec + dns2 reproduction + 8-case decision matrix.
+- `V126_R4_DEGRADED_GATE_EXTENSION_SCOPE.md` — Lane A scope spec +
+  lab2 V125 validation reproduction.
+- `V125_VALIDATE_LAB2_CLOSURE.md` — lab2 chronic DEGRADED
+  reproduction that surfaced Lane A's defect.
+- `V125_VALIDATE_SRV3_DEFERRED_WHITELIST_KERNEL_SYNC_ANOMALY.md` —
+  srv3 reproduction that surfaced Lane C's defect.
+
+---
+
 ## [v1.125.0] - 2026-05-22 — V125 install-robustness: 5-lane minimum cut (dns2-derived backlog)
 
 V125 install-robustness release on top of v1.124.1, bundling the five
