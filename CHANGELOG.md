@@ -11,6 +11,235 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.126.2] - 2026-05-23 — V126.2 install-abort UX hotfix (single-PR hotfix on top of v1.126.1)
+
+V126.2 message-only **P2-correctness + P3-UX hotfix release** on top of
+v1.126.1, closing `D-INSTALL-AUTHORITY-ABORT-MESSAGE-WRONG-COMMAND` (P2)
+and `D-INSTALL-AUTHORITY-ABORT-MESSAGE-TOO-TECHNICAL` (P3). Surfaced by
+dns1 live-host install 2026-05-23T13:35:53Z when the DEB postinst's
+recovery instruction `NFTBAN_TAKEOVER=1 dpkg --configure nftban-core`
+returned "package nftban-core is already installed and configured" —
+dpkg refuses to re-run postinst once the prior postinst returned (with
+exit 3) because the package is considered configured. Documented in
+`AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md` (REV 4).
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field,
+no new metric, no new Prometheus label, no Status JSON wire-format key,
+no new `install_state` JSON field, no nftables kernel set / chain /
+table name change, no new config key, no new systemd unit, no packaging
+behavior change beyond the de-duplicated postinst messages.
+
+**Daemon binary byte-identical to v1.126.1** (and v1.126.0, v1.125.0,
+v1.124.1, v1.124.0, ... v1.114.0). The hotfix is confined to installer
+Go output formatting + new logger primitive + postinst de-duplication
++ new test file. `cmd/nftband/` and `cmd/nftban-core/` are byte-unchanged.
+**16-release identical-daemon-binary streak** preserved (v1.114.0 →
+v1.126.2).
+
+**No metrics changes. No new schema or config keys. No new systemd
+units. No detector/planner/takeover/firewall logic change.** No host
+contact during release-prep construction.
+
+### Fixed — operator-friendly FAILED_AUTHORITY_ABORT message
+
+**Single PR #666 (sq `7f651153`).** Closes
+`D-INSTALL-AUTHORITY-ABORT-MESSAGE-WRONG-COMMAND` and
+`D-INSTALL-AUTHORITY-ABORT-MESSAGE-TOO-TECHNICAL`.
+
+#### Root cause (audit-confirmed + live-proven on dns1)
+
+When the installer aborts during postinst because conflicting firewalls
+are detected and the operator has not pre-approved takeover (via
+`NFTBAN_TAKEOVER=1`), three confusing/contradictory message blocks
+were emitted in a single failed install:
+
+1. **Go installer Detect-phase ERROR + JSON event dumps**: cryptic
+   `[NFTBan ERROR] phase Detect failed: FAILED_AUTHORITY_ABORT: ...`
+   plus three `{"timestamp":..."event":"detect|plan|result"...}`
+   lines from the lifecycle bridge to stderr.
+
+2. **Go installer generic FAILED summary block** at
+   `cmd/nftban-installer/main.go:498-525`: `[NFTBan] Install/upgrade
+   FAILED.` with `[NFTBan] To retry: /usr/lib/nftban/bin/nftban-
+   installer --repair` and `[NFTBan] Or: nftban firewall rebuild`
+   retry hints — **both wrong for the ABORT case** (those apply to
+   FAILED_RENDER / FAILED_REBUILD recovery).
+
+3. **DEB postinst ABORTED block** at `packaging/deb/postinst:280-281`:
+   `Conflicting firewalls detected, takeover not approved.` and
+   `To takeover: NFTBAN_TAKEOVER=1 dpkg --configure nftban-core` —
+   the only block that surfaced a takeover command, but the command
+   itself was **broken** (dns1 evidence: 3 consecutive attempts all
+   returned "package nftban-core is already installed and configured").
+
+Operator manually discovered `/usr/lib/nftban/bin/nftban-installer
+--repair` as the working recovery path via process of elimination.
+The `--repair` flag is the canonical state-machine recovery for
+FAILED_AUTHORITY_ABORT (resumes from phase DETECT) and works
+identically on both DEB and RPM hosts.
+
+Two-AI scope review (Gemini + ChatGPT) additionally caught:
+
+- **Sudo `env_reset` trap**: the REV 3 two-line `export VAR=...;
+  sudo command` form is silently stripped by `sudoers env_reset`
+  defaults. The inline `sudo VAR=value command` form survives
+  env_reset.
+
+- **Kernel-verification gap**: `systemctl is-active nftband` alone
+  doesn't prove nft rules were actually loaded. Added `nft list
+  tables` + `nft list ruleset | grep -i nftban`.
+
+- **Package-state OBSERVE-ONLY commands** (refining Gemini's
+  `apt-get install -f` suggestion): added `dpkg -s nftban-core`
+  + `apt-get check` for DEB, `rpm -q nftban-core` + `dnf check`
+  for RPM. These are reassurance commands, **not** auto-fix
+  instructions (dns1 evidence shows dpkg state is fine).
+
+- **Ctrl-C interruption hazard**: operator dns1 follow-up evidence
+  showed a second `--repair` attempt interrupted by Ctrl-C left
+  the install in a partial state. Added explicit warning.
+
+#### What changed
+
+5 files / +480 / −13. Scope: message-only across the FAILED_AUTHORITY_
+ABORT path; no logic change to detector, planner, takeover, firewall,
+schema, daemon, or non-ABORT failure handling.
+
+  cmd/nftban-installer/main.go                       +156 / −3
+  cmd/nftban-installer/report_failed_abort_test.go   NEW (294 lines,
+                                                          3 test cases)
+  internal/installer/logging/logger.go               +13 / −0
+  packaging/build_nftban.sh                          +8 / −6
+  packaging/deb/postinst                             +10 / −6
+
+Primary fix (`cmd/nftban-installer/main.go::report()`):
+- New `case state.StateFailedAbort:` in the result-switch, placed
+  BEFORE the existing `default:`. Non-ABORT failures continue to
+  use the default case with existing retry hints — unchanged.
+- Emits a calm structured block: bulleted conflict list from
+  `sf.Conflicts` (with detector-Option-A-gap fallback), both
+  sudo-safe and root-shell command variants, Ctrl-C warning,
+  do-not-re-run-dpkg-configure warning, control-panel awareness
+  note, OPTION 2 "Stop Here" exit path, verification block
+  (NFTBan health + kernel-state + optional package-state).
+
+New `Logger.ErrorLogOnly()` primitive
+(`internal/installer/logging/logger.go`):
+- Writes ERROR-level message to log file but NOT stdout.
+- Used by `main.go` phase-failure handlers (both normal and repair
+  modes) when `sf.State == state.StateFailedAbort`. Suppresses the
+  `[NFTBan ERROR] phase Detect failed:` stdout line; log file
+  unchanged.
+- Non-ABORT failures still emit `log.Error(...)` to both — existing
+  behavior preserved.
+
+Lifecycle bridge JSON event dump suppression:
+- When `sf.State == state.StateFailedAbort`, the phase-failure
+  handler skips `lb.observeDetect/Plan/Result` calls so the
+  `{"timestamp":..."event":"detect|plan|result"...}` JSON dumps
+  do NOT emit to stderr for the ABORT path.
+- `install_state` and internal log capture the same outcome data.
+- Lifecycle observers for non-ABORT states are unchanged.
+
+Postinst de-duplication:
+- `packaging/build_nftban.sh:991-996` (RPM) and
+  `packaging/deb/postinst:276-281` (DEB) `INSTALLER_EXIT=3`
+  branches are now no-op shims with a comment pointing to the Go
+  installer as single source of truth. No duplicate ABORTED block,
+  no broken `dpkg --configure` retry advice.
+
+#### Tests (3 new in `report_failed_abort_test.go`)
+
+- `TestReportFailedAbortV126_2HotfixMessage`: snapshot test of
+  `report()` output for `StateFailedAbort` with full REV 4
+  INCLUDE/EXCLUDE assertions; captures both stdout and stderr;
+  asserts JSON event dumps (`{"timestamp":`) absent from stderr.
+
+- `TestReportFailedAbortV126_2_EmptyConflicts`: empty-CONFLICTS
+  fallback case (detector-Option-A-gap).
+
+- `TestErrorLogOnly_DoesNotEmitToStdout`: unit test for the new
+  primitive — stdout silent, log file preserved with `[ERROR]`
+  level marker.
+
+#### Operator-visible behavior changes
+
+1. FAILED_AUTHORITY_ABORT install output is now a single calm
+   structured block instead of three contradictory blocks.
+
+2. Recovery command is sudo-safe and unified across DEB+RPM
+   (same single-line invocation on every supported distribution).
+
+3. Verification block includes kernel-state checks plus optional
+   package-state observe-only commands.
+
+4. Non-ABORT failure paths (FAILED_RENDER / FAILED_REBUILD /
+   FAILED_SWITCH / FAILED_SSH_UNKNOWN / FAILED_TAKEOVER) are
+   unchanged.
+
+5. Audit trail unchanged: `/var/log/nftban/installer.log`
+   contains the same ERROR line as v1.126.1; only the stdout
+   emission for FAILED_AUTHORITY_ABORT is calmed. `nftban
+   support` diagnostic bundles are byte-identical to v1.126.1.
+
+#### External tooling — breaking string-parse compatibility
+
+String-match consumers of the old DEB/RPM message lines must
+migrate to canonical machine-readable surfaces:
+
+- `install_state.INSTALL_STATE=FAILED_AUTHORITY_ABORT`
+- Installer process exit code `3`
+- `install_state.CONFLICTS=` field
+- `install_state.FAILURE_REASON=` (unchanged from v1.126.1)
+- Internal log file content (still contains ERROR line via
+  `ErrorLogOnly`'s file write)
+
+#### Companion design lanes filed (workspace-only; deferred to v1.127)
+
+- `D_TAKEOVER_PATH_RETROACTIVE_DISARM_GAP_SCOPE.md`: planner cannot
+  retro-disarm CSF artifacts when nftban already owns authority
+  (live-proven on srv2).
+- `D_DETECTOR_OPTION_A_CSF_CONF_GAP_SCOPE.md`: `install_state.
+  CONFLICTS=` can be empty even when `detect.conflicting_firewall=
+  true` JSON event fires.
+- `D_CLI_FIREWALL_CONFLICTS_UNBOUND_VAR_REENTRY_SCOPE.md`:
+  `CONFLICT_NONE: unbound variable` re-entrance bug when `nftban
+  firewall conflicts` is invoked in a shell that already sourced
+  the conflicts lib.
+
+#### Stretch lanes carried forward (each separately gated)
+
+- `OPEN_INSTALLER_LOG_SUPPRESS_DEBUG_JSON_SCOPE`: broader JSON dump
+  suppression for non-ABORT paths (V126.2 only suppresses for ABORT).
+- `OPEN_POSTINST_ALL_STATES_UX_REVIEW_SCOPE`: similar UX pass on
+  DEGRADED + FAILED (non-ABORT) + COMMITTED postinst output.
+- `OPEN_V126_2_DNS1_SPOT_CHECK`: operator runs v1.126.2 install on
+  dns1 in same conflicting-firewall state to verify operator-visible
+  output matches the snapshot.
+- i18n / localization lane (current and proposed messages English-only).
+
+### Compliance / non-goals
+
+v1.126.x hotfix slot now **CONSUMED** by v1.126.1 + v1.126.2 (two-
+revision hotfix lineage; v1.126.3+ NOT authorized). No detector,
+planner, takeover, firewall, schema, or daemon changes. No metrics
+changes. No new schema or config keys. No new systemd units. No
+packaging behavior change beyond de-duplicated postinst messages.
+No polkit changes. No host contact during release-prep construction.
+
+### Release-prep file pattern (matches every prior release since v1.79.2)
+
+  VERSION                                       1.126.1 → 1.126.2
+  STATUS.md                                     banner + Release lane update;
+                                                v1.126.1 demoted to Prior lane
+  CHANGELOG.md                                  new ## [v1.126.2] entry above
+                                                v1.126.1
+  cli/lib/nftban/core/nftban_fhs_spec.sh        header v1.126.1 → v1.126.2
+                                                (path-table body byte-unchanged;
+                                                build/fhs-spec.yaml unchanged)
+
+---
+
 ## [v1.126.1] - 2026-05-23 — V126.1 trust-load strict-warning hotfix (single-PR hotfix on top of v1.126.0)
 
 V126.1 hotfix release on top of v1.126.0, closing
