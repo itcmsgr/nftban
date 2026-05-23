@@ -1546,8 +1546,17 @@ firewall_reload() {
     done
     if [[ "$_any_trust_enabled" == "true" ]]; then
         [[ "$quiet" == "false" ]] && echo "Re-applying trust provider rules..."
-        nftban trust load >/dev/null 2>&1 || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply trust providers. Run: nftban trust load" || true
+        # v1.126.1 (D-NFTBAN-TRUST-LOAD-SILENT-NOOP-WHEN-PROVIDER-ENABLED-VIA-LOCAL-OVERRIDE):
+        # nftban trust load now returns rc=2 when a provider is enabled in config
+        # but its generated whitelist file is missing (per V126_1_LANE_C_HOTFIX_SCOPE.md
+        # §4.6.1). Surface trust load's stderr (instead of `2>&1` swallowing it) so
+        # the operator sees the per-provider "Run: nftban trust enable X" lines
+        # directly. The warning message below references the canonical repair
+        # (`nftban trust enable <PROVIDER>`) instead of the v1.126.0 no-op advice
+        # ("Run: nftban trust load") that would have just re-triggered the same
+        # silent skip.
+        nftban trust load >/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: trust providers enabled but not loadable. Run: nftban trust enable <PROVIDER> (see 'nftban trust load' output for which providers)" || true
         }
     fi
 
