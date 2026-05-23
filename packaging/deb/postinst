@@ -274,11 +274,17 @@ case "$1" in
                 log_info "Some post-install checks failed."
                 log_info "To fix: nftban-installer --repair"
             elif [ $INSTALLER_EXIT -eq 3 ]; then
-                log_info "========================================"
-                log_info " NFTBan — ABORTED"
-                log_info "========================================"
-                log_info "Conflicting firewalls detected, takeover not approved."
-                log_info "To takeover: NFTBAN_TAKEOVER=1 dpkg --configure nftban-core"
+                # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
+                # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)
+                # as the single source of truth. Postinst MUST NOT duplicate the message.
+                #
+                # Prior message advised "NFTBAN_TAKEOVER=1 dpkg --configure nftban-core"
+                # which BROKE (dns1 2026-05-23 evidence): dpkg reports "package already
+                # installed and configured" and refuses to re-run postinst. The verified-
+                # working canonical recovery path is sudo-safe and unified across DEB/RPM:
+                #   sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair
+                # See AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4).
+                :
             else
                 log_error "========================================"
                 log_error " NFTBan — FAILED"

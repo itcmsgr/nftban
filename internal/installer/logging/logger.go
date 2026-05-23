@@ -118,6 +118,19 @@ func (l *Logger) Warn(format string, args ...interface{}) {
 	l.writeFile("WARN", msg)
 }
 
+// ErrorLogOnly writes an error to the log file ONLY, NOT to console.
+// Use when the operator-facing console output is handled by a different code
+// path (e.g., V126.2 FAILED_AUTHORITY_ABORT operator-friendly block emitted
+// by main.go report()) but the log file should still preserve the error for
+// audit/diagnosis. This keeps the machine-readable log unchanged while letting
+// the console show a calmer message.
+//
+// Scope: AUDIT_190_LIFECYCLE/V126_2_INSTALL_ABORT_UX_HOTFIX_SCOPE.md (REV 4)
+func (l *Logger) ErrorLogOnly(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	l.writeFile("ERROR", msg)
+}
+
 // Error logs an error to both console and file.
 func (l *Logger) Error(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
