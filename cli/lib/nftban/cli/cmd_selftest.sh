@@ -109,20 +109,109 @@ nftban_cmd_selftest() {
 # =============================================================================
 
 nftban_selftest_run() {
-    # Use central path from config
+    # V127 UX-1 item 1.8: self-contained smoke test.
+    # If the optional full test suite is installed (NFTBAN_TESTS_DIR/selftest.sh),
+    # invoke it. Otherwise fall back to a built-in minimal smoke test that verifies
+    # the operationally-critical surfaces (binaries present + executable, CLI
+    # responsive, config + state dirs present). Pre-V127 the command exited with
+    # "ERROR: Smoke test script not found" on standard packages that did not ship
+    # the test suite — making `nftban selftest` operationally useless out of the
+    # box. The built-in minimal mode is now the floor; the full external suite
+    # is an additive enhancement when installed.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.8)
+
     local tests_dir="${NFTBAN_TESTS_DIR:-/usr/lib/nftban/tests}"
     local test_script="${tests_dir}/selftest.sh"
 
-    if [[ ! -f "$test_script" ]]; then
-        echo "ERROR: Smoke test script not found at: $test_script" >&2
-        echo "Hint: Run 'sudo ./install.sh tests' to install test suite" >&2
-        return 1
+    if [[ -f "$test_script" ]]; then
+        echo "Running NFTBan Smoke Test Suite (external suite at: $test_script)..."
+        echo ""
+        bash "$test_script" "$@"
+        return $?
     fi
 
-    echo "Running NFTBan Smoke Test Suite..."
+    # Built-in minimal smoke test (always available; no external dependency)
+    echo "Running NFTBan Smoke Test (built-in minimal mode)..."
+    echo "  (Optional: install full test suite at ${tests_dir}/selftest.sh for extended coverage)"
     echo ""
 
-    bash "$test_script" "$@"
+    local _lib_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+    local _pass=0
+    local _fail=0
+    local _check_count=0
+
+    _selftest_assert() {
+        local _name="$1"
+        local _ok="$2"
+        local _detail="${3:-}"
+        _check_count=$((_check_count + 1))
+        if [[ "$_ok" == "0" ]]; then
+            printf "  [PASS] %s\n" "$_name"
+            _pass=$((_pass + 1))
+        else
+            printf "  [FAIL] %s%s\n" "$_name" "${_detail:+ — $_detail}"
+            _fail=$((_fail + 1))
+        fi
+    }
+
+    # 1. Critical binaries present and executable
+    for _bin in nftban-validate nftban-installer nftban-core nftband; do
+        if [[ -x "${_lib_dir}/bin/${_bin}" ]]; then
+            _selftest_assert "binary present + executable: ${_bin}" 0
+        else
+            _selftest_assert "binary present + executable: ${_bin}" 1 "not found at ${_lib_dir}/bin/${_bin}"
+        fi
+    done
+
+    # 2. CLI itself responsive
+    if command -v nftban &>/dev/null; then
+        _selftest_assert "nftban CLI on PATH" 0
+        if nftban version &>/dev/null; then
+            _selftest_assert "nftban version completes" 0
+        else
+            _selftest_assert "nftban version completes" 1 "nftban version returned nonzero"
+        fi
+    else
+        _selftest_assert "nftban CLI on PATH" 1 "nftban not found via command -v"
+    fi
+
+    # 3. systemd queryability (does NOT require service running — just that the unit exists)
+    if command -v systemctl &>/dev/null; then
+        if systemctl list-unit-files nftband.service &>/dev/null; then
+            _selftest_assert "systemd unit registered: nftband.service" 0
+        else
+            _selftest_assert "systemd unit registered: nftband.service" 1 "unit not found"
+        fi
+    fi
+
+    # 4. Config + state dirs present
+    if [[ -d "${NFTBAN_CONFIG_DIR:-/etc/nftban}" ]]; then
+        _selftest_assert "config dir present: ${NFTBAN_CONFIG_DIR:-/etc/nftban}" 0
+    else
+        _selftest_assert "config dir present: ${NFTBAN_CONFIG_DIR:-/etc/nftban}" 1 "directory missing"
+    fi
+    if [[ -d "${NFTBAN_STATE_DIR:-/var/lib/nftban}" ]]; then
+        _selftest_assert "state dir present: ${NFTBAN_STATE_DIR:-/var/lib/nftban}" 0
+    else
+        _selftest_assert "state dir present: ${NFTBAN_STATE_DIR:-/var/lib/nftban}" 1 "directory missing"
+    fi
+
+    # 5. VERSION file readable
+    if [[ -r "${_lib_dir}/VERSION" ]]; then
+        _selftest_assert "VERSION file readable" 0
+    elif [[ -r "/usr/lib/nftban/VERSION" ]]; then
+        _selftest_assert "VERSION file readable (fallback path)" 0
+    else
+        _selftest_assert "VERSION file readable" 1 "not found in expected paths"
+    fi
+
+    echo ""
+    echo "Smoke test summary: ${_pass}/${_check_count} PASS, ${_fail} FAIL"
+    if [[ "$_fail" -gt 0 ]]; then
+        echo "  Some checks failed — run 'nftban health' for detailed diagnostics."
+        return 1
+    fi
+    return 0
 }
 
 nftban_selftest_check_orphans() {
