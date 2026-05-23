@@ -626,7 +626,34 @@ _suggest_actions() {
     local ip="$1"
     local is_banned="$2"
 
+    # V127 UX-2 item 3.2: if the searched IP is well-known public infrastructure
+    # (Cloudflare/Google/Quad9/OpenDNS DNS resolver), prepend an advisory note to
+    # the Quick Actions block so the operator sees the same warning here as they
+    # would on `nftban ban` (cmd_ban.sh UX-2 item 1.7). The advisory is purely
+    # informational on this surface — `nftban search` does not mutate anything.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-2 item 3.2)
+    local _wk_search_descr=""
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_well_known.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nftban_well_known.sh" 2>/dev/null || true
+        if declare -f nftban_is_well_known_infra_ip >/dev/null 2>&1; then
+            _wk_search_descr=$(nftban_is_well_known_infra_ip "$ip" 2>/dev/null) || _wk_search_descr=""
+        fi
+    fi
+
     echo ""
+    if [[ -n "$_wk_search_descr" ]]; then
+        echo "⚠️  Advisory: ${ip} is well-known public infrastructure"
+        echo "───────────────────────────────────────────────────────────────"
+        echo "  ${_wk_search_descr}"
+        echo ""
+        echo "  Banning this address typically disrupts legitimate traffic for"
+        echo "  the protected network without providing a security benefit."
+        echo "  If you intend to ban it anyway, nftban ban will require an"
+        echo "  explicit --yes override:"
+        echo "    nftban ban ${ip} --yes"
+        echo ""
+    fi
     echo "💡 Quick Actions:"
     echo "───────────────────────────────────────────────────────────────"
 
