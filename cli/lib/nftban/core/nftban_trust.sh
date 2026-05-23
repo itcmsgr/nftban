@@ -832,7 +832,16 @@ nftban_trust_update_all() {
 nftban_trust_load() {
     echo "[*] Loading trust whitelists into firewall..."
 
+    # v1.126.1 (D-NFTBAN-TRUST-LOAD-SILENT-NOOP-WHEN-PROVIDER-ENABLED-VIA-LOCAL-OVERRIDE):
+    # Track providers that are enabled in config but cannot load because their
+    # generated whitelist file (/etc/nftban/whitelist.d/30-trust-<provider>.conf)
+    # is missing. Pre-v1.126.1, such providers were silently skipped with rc=0,
+    # masking broken trust state and defeating the v1.126 Lane C `firewall_reload`
+    # Step 4d re-merge attempt. Per V126_1_LANE_C_HOTFIX_SCOPE.md §4.6, the fix
+    # is strict diagnostic + non-zero rc — NO auto-heal; canonical operator
+    # repair stays `nftban trust enable <PROVIDER>`.
     local loaded=0
+    local enabled_but_unloadable=0
     for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
             local whitelist_file
@@ -845,14 +854,29 @@ nftban_trust_load() {
                 else
                     echo "   Failed: $provider"
                 fi
+            else
+                # v1.126.1: provider configured-enabled but whitelist file missing.
+                # Surface to stderr so callers using `>/dev/null 2>&1` (like
+                # cmd_firewall.sh::firewall_reload Step 4d) still see the failure
+                # via the non-zero exit code.
+                echo "[ERROR] $provider is enabled but whitelist file missing: $whitelist_file" >&2
+                echo "[ERROR] Run: nftban trust enable $provider" >&2
+                _trust_log "ERROR" "$provider enabled but whitelist file missing: $whitelist_file (run: nftban trust enable $provider)"
+                ((enabled_but_unloadable++)) || true
             fi
         fi
     done
 
     if (( loaded > 0 )); then
         echo "[OK] $loaded trust provider(s) loaded into firewall"
-    else
-        echo "[!] No providers loaded — check enabled status with 'nftban trust list'"
+    fi
+    if (( enabled_but_unloadable > 0 )); then
+        echo "[!] $enabled_but_unloadable provider(s) enabled but not loaded — see errors above" >&2
+        return 2
+    fi
+    if (( loaded == 0 )); then
+        # No providers configured at all (different from the enabled-but-unloadable case).
+        echo "[!] No providers configured — use 'nftban trust enable <PROVIDER>'"
     fi
     return 0
 }
