@@ -330,10 +330,10 @@ nftban_health_check_auditor_acls() {
                     }
                 fi
             else
-                acl_issues+=("NEEDS ROOT: Run 'sudo nftban health fix permissions' to set ACLs")
+                acl_issues+=("NEEDS ELEVATED PRIVILEGES: Run 'nftban health fix permissions' to set ACLs")
             fi
         else
-            acl_issues+=("FIX: Run 'sudo nftban health fix permissions' or 'sudo nftban permissions enforce'")
+            acl_issues+=("FIX: Run 'nftban health fix permissions' or 'nftban permissions enforce'")
         fi
     fi
 

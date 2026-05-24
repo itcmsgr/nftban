@@ -110,15 +110,42 @@ hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
 _t_assert "A4: zero 'must run as root' / 'Run as root' in CLI surfaces (got: $hits)" "$?"
 
-# A5: 'sudo nftban X' example lines — PR-A.1 INFORMATIONAL ONLY (PR-A.2 hardens).
-# Per v1.128 PR-A split (operator-locked), PR-A.1 covers error/help text +
-# REQUIRES block + Go privilege wording. PR-A.2 will sweep all 79 'sudo
-# nftban X' example lines and harden this assertion to '[[ "$hits" -eq 0 ]]'.
-hits=$(grep -rn 'sudo nftban' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+# A5: 'sudo nftban X' example lines — HARDENED in PR-A.2.
+# Allowed (allowlist via grep -E): 'sudo nftban-installer' (installer/bootstrap
+# binary; not the main CLI and not polkit-covered the same way; documented
+# in feedback_polkit_not_sudo_in_help.md "Allowlist exception").
+hits=$(grep -rn 'sudo nftban ' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -ge 0 ]]  # PR-A.1 phase: pass-through informational
-_t_assert "A5 (PR-A.1 informational; PR-A.2 hardens): 'sudo nftban' example lines remaining: $hits" "$?"
+[[ "$hits" -eq 0 ]]
+_t_assert "A5: zero 'sudo nftban X' example lines in main-CLI examples (got: $hits; 'sudo nftban-installer' allowlisted separately)" "$?"
+
+# A5b: 'sudo nftban-installer' (installer/bootstrap) — informational count
+# (allowlisted; reported for visibility but not asserted to zero)
+hits=$(grep -rn 'sudo nftban-installer' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null | grep -v "/tests/" | wc -l)
+hits=${hits:-0}
+[[ "$hits" -ge 0 ]]  # informational
+_t_assert "A5b (informational; allowlisted): 'sudo nftban-installer' installer/bootstrap references: $hits" "$?"
+
+# A8: PR-A.2 residual sweeps — 'root privileges' / 'NEEDS ROOT' / 'needs root'
+# in operator-facing strings (echo statements + ui_msg calls; internal
+# # comments excluded by the grep filter).
+hits=$(grep -rnE 'root privileges|NEEDS ROOT' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+       | grep -v "/tests/" | _apply_allowlist \
+       | grep -v ':\s*#' \
+       | wc -l)
+hits=${hits:-0}
+[[ "$hits" -eq 0 ]]
+_t_assert "A8: zero 'root privileges' / 'NEEDS ROOT' in operator-facing strings (got: $hits; internal # comments OK)" "$?"
+
+# A9: PR-A.2 ui_msg / echo "needs root" residuals
+hits=$(grep -rnE 'needs root|need root privileges' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+       | grep -v "/tests/" | _apply_allowlist \
+       | grep -v ':\s*#' \
+       | wc -l)
+hits=${hits:-0}
+[[ "$hits" -eq 0 ]]
+_t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing strings (got: $hits)" "$?"
 
 # A6: Zero "(sudo)" parenthetical hints
 hits=$(grep -rn 'privileges (sudo)\|root/sudo' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \

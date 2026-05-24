@@ -160,13 +160,13 @@ WHITELIST:
 
 EXAMPLES:
     # Enable bot scanner detection
-    sudo nftban botscan enable
+    nftban botscan enable
 
     # Check status
     nftban botscan status
 
     # Run manual check (parse recent logs)
-    sudo nftban botscan check
+    nftban botscan check
 
     # List all patterns
     nftban botscan patterns list
@@ -175,7 +175,7 @@ EXAMPLES:
     nftban botscan patterns list enabled
 
     # Add custom pattern
-    sudo nftban botscan patterns add MY_PATTERN "malicious\.php" url-404 3 60 3600 "My pattern"
+    nftban botscan patterns add MY_PATTERN "malicious\.php" url-404 3 60 3600 "My pattern"
 
     # Show detection history
     nftban botscan history

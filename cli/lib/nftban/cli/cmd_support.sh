@@ -1829,7 +1829,7 @@ EXAMPLES:
   nftban support --email               # Email to default recipient
 
 WHEN REPORTING ISSUES:
-  1. Run: sudo nftban support
+  1. Run: nftban support
   2. Review the bundle for sensitive data
   3. Transfer/email the bundle:
      - Use --email to send directly

@@ -143,7 +143,7 @@ ui_input() {
 require_root() {
     # Check root permissions and show error if not root
     if [[ $EUID -ne 0 ]]; then
-        ui_msg "Permission required" "This action needs root. Re-run: sudo nftban menu"
+        ui_msg "Permission required" "This action requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit). Re-run: nftban menu"
         return 1
     fi
 }

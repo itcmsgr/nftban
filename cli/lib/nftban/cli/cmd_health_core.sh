@@ -335,7 +335,7 @@ nftban_health_cmd_fix() {
     if [[ $EUID -eq 0 ]]; then
         echo "Running as: root (can fix everything)"
     else
-        echo "Running as: $(whoami) (can fix owned files, will report what needs root)"
+        echo "Running as: $(whoami) (can fix owned files, will report what requires elevated privileges)"
     fi
     echo ""
 

@@ -765,7 +765,7 @@ nftban_trust_update() {
 
     if ! _trust_is_enabled "$provider"; then
         echo "ERROR: $provider is not enabled" >&2
-        echo "Enable first: sudo nftban trust enable $provider" >&2
+        echo "Enable first: nftban trust enable $provider" >&2
         return 1
     fi
 

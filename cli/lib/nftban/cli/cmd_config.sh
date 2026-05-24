@@ -111,8 +111,8 @@ EXAMPLES:
   nftban config diff                  # Base vs local overrides
   nftban config diff --kernel         # Config vs kernel state
   nftban config get portscan --json   # Module config in JSON
-  sudo nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
-  sudo nftban config apply portscan   # Apply to running service
+  nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
+  nftban config apply portscan   # Apply to running service
 
 EOF
 }

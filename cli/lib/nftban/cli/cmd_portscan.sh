@@ -163,16 +163,16 @@ PROFILE SELECTION:
 
 EXAMPLES:
     # Enable port scan detection
-    sudo nftban portscan enable
+    nftban portscan enable
 
     # Disable port scan detection
-    sudo nftban portscan disable
+    nftban portscan disable
 
     # Show detection status
     nftban portscan status
 
     # Run manual check (parse logs)
-    sudo nftban portscan check
+    nftban portscan check
 
     # Show detected scans
     nftban portscan history
@@ -196,7 +196,7 @@ LOG FILES:
     Tracking database: /var/lib/nftban/portscan/tracker.db
 
 REQUIREMENTS:
-    • Root privileges (for enable/disable commands)
+    • Elevated privileges (members of the nftban group are authorized via PolicyKit/polkit for enable/disable commands)
     • nftables >= 0.9.0
     • Kernel logging enabled
 
@@ -535,7 +535,7 @@ nftban_cmd_portscan() {
                 echo "     Rules: $rule_count logging rules"
             else
                 echo "  ❌ Port scan detection chain not found (IPv4)"
-                echo "     Run 'sudo nftban portscan enable' to create"
+                echo "     Run 'nftban portscan enable' to create"
             fi
 
             if nft list chain "${NFTBAN_TABLE_IPV6}" portscan_detection &>/dev/null; then
