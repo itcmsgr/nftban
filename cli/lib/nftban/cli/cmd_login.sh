@@ -319,7 +319,7 @@ nftban_login_cmd_enable() {
     local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Requires root privileges" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 
@@ -417,7 +417,7 @@ nftban_login_cmd_disable() {
     local config_local="${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Requires root privileges" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 
@@ -970,7 +970,7 @@ nftban_login_cmd_restart() {
     # v1.48.0: Restart nftband daemon (loginmon module), not removed bash service
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Service management requires root privileges" >&2
+        echo "ERROR: Service management — PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 

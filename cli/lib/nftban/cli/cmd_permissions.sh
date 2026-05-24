@@ -157,7 +157,7 @@ SECURITY MODEL:
   ${NFTBAN_LOG_DIR}/*    → nftban:nftban, 0750 (log files)
 
 NOTES:
-  - This command requires root privileges
+  - This command requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)
   - Permissions are automatically enforced during FHS auto-heal
   - Regular permission audits run via 'nftban health check'
 
@@ -228,7 +228,7 @@ nftban_permissions_cmd_enforce() {
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: This command must be run as root" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 

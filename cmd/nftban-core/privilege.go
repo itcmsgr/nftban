@@ -88,5 +88,11 @@ func checkPrivilege() error {
 		return nil
 	}
 
-	return fmt.Errorf("must run as root or with CAP_NET_ADMIN capability (setcap 'cap_net_admin+ep' on binary)")
+	// v1.128 PR-A: error message uses the canonical nftban-group + PolicyKit/polkit
+	// wording per memory/feedback_polkit_not_sudo_in_help.md. The technical
+	// CAP_NET_ADMIN guidance is preserved because it accurately describes
+	// the underlying capability check; only the operator-facing framing
+	// changes to the polkit-aware statement that members of the nftban group
+	// are the canonical authorized users.
+	return fmt.Errorf("PolicyKit/polkit authorization failed or insufficient privileges: members of the nftban group are authorized for supported NFTBan operations via PolicyKit/polkit rules (technical fallback: invoke with EUID 0 or grant CAP_NET_ADMIN capability via setcap 'cap_net_admin+ep' on binary)")
 }

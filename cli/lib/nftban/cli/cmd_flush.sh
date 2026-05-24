@@ -130,18 +130,17 @@ REQUIRES:
     Elevated privileges for mutating subcommands:
       all flush targets (blacklist, whitelist, feeds, geoban, ddos, all).
 
+    Users in the nftban group may be authorized through PolicyKit/polkit
+    rules for supported NFTBan operations.
+
     Read-only modes do not require elevated privileges:
       --dry-run.
-
-    Authorization path depends on installation policy:
-      - PolicyKit/polkit may authorize supported NFTBan operations.
-      - Otherwise run as root or use the site-approved privilege method.
 
 EXIT CODES:
     0   Flush completed (or dry-run completed)
     1   General error (IPC failure, nft command failure)
     2   Unsupported target / invalid argument
-    3   Authorization failed or insufficient privileges for mutating subcommands
+    3   PolicyKit/polkit authorization failed or insufficient privileges
 
 HELP
 }

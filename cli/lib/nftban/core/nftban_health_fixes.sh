@@ -1478,7 +1478,7 @@ nftban_health_fix_polkit() {
     fi
 
     if [[ $failed -gt 0 ]]; then
-        echo "  ⚠ $failed polkit issues could not be fixed (run as root)"
+        echo "  ⚠ $failed polkit issues could not be fixed (requires elevated privileges)"
         return 1
     elif [[ $fixed -eq 0 ]]; then
         echo "  ✓ All polkit rules correct"
