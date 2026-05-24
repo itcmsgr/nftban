@@ -11,6 +11,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.128.0] - 2026-05-24 — V128 CLI text authority alignment release
+
+**Codename:** `V128_CLI_TEXT_AUTHORITY_ALIGNMENT`
+**Scope file:** `AUDIT_190_LIFECYCLE/V128_CLI_TEXT_AUTHORITY_ALIGNMENT_SCOPE.md`
+
+### What's new — canonical authority statement now enforced
+
+```
+Members of the nftban group can run supported NFTBan privileged operations
+through PolicyKit/polkit authorization rules.
+```
+
+This is the operator model. Code-audited against `packaging/polkit-1/rules.d/10-nftban-systemd.rules` (`isInGroup("nftban")`) and `install/systemd/sysusers.d/nftban.conf` (`g nftban -`). The nftban group + polkit IS the authorization path. Root remains a technical fallback for bootstrap/installer scripts only.
+
+### Shipped lanes (PR-A.1 → PR-A.2 → PR-B → PR-C → PR-D, merged in strict order)
+
+- **PR-A.1 (PR [#675](https://github.com/itcmsgr/nftban/pull/675) sq `b3b28121`) — canonical authority wording sweep**: 23 CLI shell files + 1 Go file rewritten to the canonical statement above. Forbidden patterns eliminated: `Run with sudo`, `requires root [privileges]`, `must run as root` / `Run as root`, `(sudo)` parenthetical, `Permission denied (not root)`. The 3 V127 UX-6 PR-F REQUIRES blocks that shipped in v1.127.0 with the wrong `Otherwise run as root or use the site-approved privilege method` wording were corrected here. Test asserts 20 invariants.
+- **PR-A.2 (PR [#676](https://github.com/itcmsgr/nftban/pull/676) sq `53ec9b61`) — sudo nftban example sweep**: 68 main-CLI `sudo nftban X` example lines across 23 CLI shell files rewritten to `nftban X` (zero sudo-first main CLI examples on main). 14 residual `root privileges` / `NEEDS ROOT` / `needs root` operator-facing strings rewritten to canonical. `sudo nftban-installer` and `sudo nftban-core` preserved per installer/bootstrap allowlist. Test hardened to 23 invariants.
+- **PR-B (PR [#677](https://github.com/itcmsgr/nftban/pull/677) sq `44420367`) — top-level CLI command correlation guards**: new deterministic CI gate asserting that canonical commands, cmd_*.sh implementation files, and dispatcher routing remain mutually consistent. Caught real drift: 11 cmd_*.sh files (`benchmark`, `cleanup`, `egress`, `flush`, `preflight`, `pro`, `protect`, `scale`, `snapshot`, `tunnel`, `unprotect`) were missing from the canonical command list since V127 UX-5 — typo suggestions were broken for those names. Canonical list grew 69 → 80. 8 inline-handled commands explicitly allowlisted. **IMPORTANT — see "Limitations" below: this PR covers TOP-LEVEL command correlation only. The deeper subcommand/flag/example doctest correlation is deferred to v1.129.**
+- **PR-C (wiki commit `312fdb3` on `nftban.wiki:master`) — wiki CLI text alignment**: 22 `sudo nftban X` example lines across 6 wiki .md files rewritten to drop sudo; 6 `sudo nftban-core geoip update` rewritten to the canonical polkit-authorized CLI path `nftban geoip update`; 3 residual privilege wording strings in `FHS-Compliance.md` rewritten to canonical. `sudo nftban-installer --repair` preserved in `Installation-Guide.md` per installer/bootstrap allowlist. In-repo `docs/**/*.md` (16 files) and `README.md` were baseline-clean so no Stage 2 main-repo PR was needed.
+- **PR-D (PR [#678](https://github.com/itcmsgr/nftban/pull/678) sq `855c0f49`) — doc clarity lockable lint**: recon found ZERO actionable clarity issues in README + docs/ (the V128 arc PR-A.1 + PR-A.2 + PR-B + PR-C work already brought operator-facing markdown to the canonical state). PR-D ships as the lockable test only — 5 invariants locked against future regression (TODO/XXX/FIXME placeholders, vague qualifier phrases, double negatives, residual sudo/root drift, scope sanity).
+
+### Limitations — honest scope of v1.128 PR-B
+
+**v1.128 PR-B added top-level CLI command correlation guards** to ensure canonical commands and cmd_*.sh implementation files remain aligned. The deeper class — verifying that every `nftban X foo --bar` in help text resolves to a parser branch in `cmd_X.sh` that accepts both `foo` as subcommand AND `--bar` as flag — was **intentionally deferred** to `v1.129 DEEP_CLI_HELP_CODE_DOCTEST_CORRELATION`.
+
+Reason: when prototyped during PR-B development, the naive global-regex extractor produced ~26 "drift" hits with high false-positive rate from helper sub-modules (`cmd_X_<verb>.sh` own their own dispatch), wildcard cases (`*)`), and narrative help text (`"firewall-logs is an alias for ..."` generated a false `is` subcommand). v1.129 will use per-command-family extractors with proper false-positive controls and will additionally verify wiki + docs + README CLI text against actual parser/dispatcher behavior (per operator directive 2026-05-24).
+
+**v1.128 does NOT claim full help/code correlation coverage.** See `V129_DEEP_CLI_HELP_CODE_DOCTEST_CORRELATION_SCOPE.md` for the full v1.129 plan.
+
+### Binary impact
+
+```
+cmd/nftband:       BYTE-IDENTICAL to v1.127.0
+cmd/nftban-core:   differs from v1.127.0 ONLY in the error-string constant at
+                   privilege.go:91 (capability check logic UNCHANGED;
+                   CAP_NET_ADMIN technical guidance preserved verbatim;
+                   function signatures UNCHANGED). No behavior change.
+```
+
+### Schema / wire-format
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field, no new metric, no new Prometheus label, no Status JSON wire-format key, no new `install_state` JSON field, no new nftables kernel set / chain / table name, no new config key, no new systemd unit, no packaging behavior change.
+
+### Out of scope (for v1.128.0)
+
+- No package/systemd/polkit-rule behavior changes (the polkit authority architecture is preserved; only operator-facing wording about it changes)
+- No metrics/portal/schema drift
+- No host contact across any V128 lane (PR-C wiki push is a git-remote operation, not host contact)
+- No new commands or aliases
+- No dispatcher routing / completion / typo handler infrastructure changes (the canonical list grew by 11 entries to fix v1.128 PR-B's discovered drift, but that's an additive correction to the typo suggester's source list, not new commands)
+- No `commands.registry.yml` or `scripts/generate-help.sh` change
+
+### Deferred to v1.129 — `V129_DEEP_CLI_HELP_CODE_DOCTEST_CORRELATION`
+
+Scope filed plan-only in `AUDIT_190_LIFECYCLE/V129_DEEP_CLI_HELP_CODE_DOCTEST_CORRELATION_SCOPE.md`:
+
+- Per-command-family extractors (not one global regex) for subcommand + flag + alias + SEE ALSO + USAGE-shape correlation
+- Across cli/lib/nftban/cli + cli/sbin/nftban + wiki + docs/ + README
+- Each verified against actual parser/dispatcher behavior
+- Estimated PR split: PR-A harness + audit, PR-B.x per-family text fixes, PR-C.x per-bug code fixes (separately gated), PR-D wiki+docs+README after CLI stabilizes, PR-E CI-lock
+
+### Hotfix slot
+
+v1.128.x hotfix slot **not authorized** (latent reservation only — opens only if a v1.128.0 defect surfaces).
+
+---
+
 ## [v1.127.0] - 2026-05-24 — V127 six-lane CLI UX correction release
 
 **Codename:** `V127_FULL_UX_CORRECTION`
