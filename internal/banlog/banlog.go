@@ -61,6 +61,17 @@ const (
 const (
 	StatusBanned   = "BANNED"
 	StatusUnbanned = "UNBANNED"
+
+	// V127 UX-3 item 2.5: idempotent-ban marker.
+	// Emitted when `nftban ban <ip>` is invoked against an IP that is ALREADY
+	// in the relevant blacklist file AND the kernel set is just being
+	// re-synced (no real mutation; no new permanent record being added).
+	// Distinguishes operator-visible "re-sync of existing state" from real
+	// "new ban mutation" — pre-V127 both emitted STATUS=BANNED and operators
+	// could not tell from the log whether a row represented a new ban or
+	// an idempotent re-push to the kernel.
+	// (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.5)
+	StatusResync = "RESYNC"
 )
 
 // BanClass identifies the type of ban for lifecycle tracking (BLC-2).
@@ -73,6 +84,11 @@ const (
 	ClassEscalated = "escalated" // auto-ban with extended TTL (repeat offender)
 	ClassPermanent = "permanent" // auto-ban promoted to permanent (score≥100 or persistent)
 	ClassManual    = "manual"    // operator-issued via nftban ban CLI
+
+	// V127 UX-3 item 2.5: marks an idempotent re-sync as a separate class
+	// so it can be filtered out of "real ban count" aggregations while still
+	// being audited as an event.
+	ClassResync = "resync"
 )
 
 var (
@@ -233,6 +249,17 @@ func LogBanWithID(ip, source, country, reason, banID string) error {
 // Format: DATE|TIME|SOURCE|IP|COUNTRY|UNBANNED|REASON|BAN_ID
 func LogUnbanWithID(ip, source, country, reason, banID string) error {
 	return writeEntryWithReasonAndID(ip, source, country, StatusUnbanned, reason, banID)
+}
+
+// LogResync writes an idempotent-resync entry to bans.log (V127 UX-3 item 2.5).
+// Use when an operator-initiated ban command targets an IP that is ALREADY
+// in the relevant blacklist file AND no real mutation is happening — the
+// kernel set is just being re-pushed in case it drifted from config. The
+// resulting row has STATUS=RESYNC and CLASS=resync so operators (and any
+// downstream consumer) can distinguish re-sync events from real ban events
+// when grep'ing or aggregating bans.log.
+func LogResync(ip, source, country, reason string) error {
+	return writeEntryFull(ip, source, country, StatusResync, reason, "", 0, ClassResync)
 }
 
 // GenerateBanID creates a unique 16-char hex ban correlation ID

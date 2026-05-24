@@ -80,8 +80,16 @@ nftban_stats_generate_dashboard() {
     printf "  %-20s %s\n" "Hostname............" "$(hostname)"
     printf "  %-20s %s → %s\n" "Period.............." "$since" "$until"
     printf "  %-20s %s\n" "Generated..........." "$(date '+%Y-%m-%d %H:%M:%S')"
+    # V127 UX-3 item 2.3: always print a Data source label so operators know which
+    # provenance produced the dashboard. Pre-V127 this line was emitted ONLY when
+    # use_unified_cache=true; the fallback path ran silently, so operators reading
+    # `nftban stats` could not tell whether they were seeing canonical aggregated
+    # values or derived live-aggregation values from the awk fallback.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.3)
     if [[ "$use_unified_cache" == "true" ]]; then
         printf "  %-20s %s\n" "Data source........." "unified cache"
+    else
+        printf "  %-20s %s\n" "Data source........." "DERIVED (cache miss; live aggregation from nftables + bans.log)"
     fi
     echo ""
 
@@ -131,10 +139,15 @@ nftban_stats_generate_dashboard() {
 
     # ─────────────────────────────────────────────────────────────────────
     # FIREWALL (CURRENT)
+    # V127 UX-3 items 2.1/3.1: explicitly label the line item as live-kernel
+    # so it cannot be confused with the BANS BY MODULE (cumulative cache) block
+    # below. Pre-V127 the section header alone was the only disambiguation;
+    # operators reading the line in isolation could not tell the semantic.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 items 2.1/3.1)
     # ─────────────────────────────────────────────────────────────────────
     echo "FIREWALL (CURRENT)"
     echo "───────────────────────────────────────────────────────────"
-    printf "  %-20s %s\n" "Blocked IPs........." "$total_black"
+    printf "  %-20s %s\n" "Blocked IPs (live).." "$total_black"
     printf "  %-20s %s\n" "Whitelisted........." "$whitelist_count"
     echo ""
 
@@ -342,8 +355,20 @@ nftban_stats_generate_dashboard() {
 
     # ─────────────────────────────────────────────────────────────────────
     # BANS BY MODULE (SINGLE SOURCE OF TRUTH from unified cache)
+    # V127 UX-3 items 2.1/3.1: explicit "(cumulative)" header disambiguation
+    # so the operator reading this section cannot confuse the cumulative
+    # ban-counts-per-module values with the live-kernel "Blocked IPs (live)"
+    # value in the FIREWALL (CURRENT) section above. The two are semantically
+    # distinct: live-kernel = "what's actively blocking traffic right now"
+    # vs cumulative = "how many ban events did each module produce since
+    # the cache window started".
+    # V127 UX-3 item 2.2: module-label standardization is already in compliance
+    # via the canonical 5-key set used below (login / portscan / ddos / manual /
+    # feeds). The awk fallback at lines ~375-379 also normalizes variants
+    # (loginmon→login, cli→manual, feed→feeds) before display.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 items 2.1/3.1 + 2.2)
     # ─────────────────────────────────────────────────────────────────────
-    echo "BANS BY MODULE"
+    echo "BANS BY MODULE (cumulative)"
     echo "───────────────────────────────────────────────────────────"
 
     local feeds_total=0 login_count=0 portscan_count=0 ddos_count=0 manual_count=0 suricata_count=0

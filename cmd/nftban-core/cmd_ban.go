@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/banlog"
 	"github.com/itcmsgr/nftban/internal/blacklist"
 	"github.com/itcmsgr/nftban/internal/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
@@ -152,6 +153,27 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 			fmt.Printf("  ⚠️  IP %s is already banned\n", normalizedIP)
 			fmt.Println()
 			fmt.Println("Re-syncing to ensure nftables is up to date...")
+			// V127 UX-3 item 2.5: emit a STATUS=RESYNC banlog entry so operators
+			// can distinguish this idempotent re-push from a real new ban when
+			// grep'ing or aggregating bans.log. Pre-V127 this path was silent
+			// in the log AND the kernel re-push (Step 6 below) emitted STATUS=
+			// BANNED via the daemon, so the log was indistinguishable from a
+			// fresh ban — hiding whether the operator-visible "Re-syncing..."
+			// message reflected a no-op or a real mutation.
+			// (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.5)
+			rsSource := source
+			if rsSource == "" {
+				rsSource = "manual"
+			}
+			rsReason := reason
+			if rsReason == "" {
+				rsReason = "idempotent operator re-sync"
+			}
+			if err := banlog.LogResync(normalizedIP, rsSource, "", rsReason); err != nil {
+				// Don't fail the operator command on banlog write error;
+				// surface as a non-fatal warning. The actual re-sync still proceeds.
+				fmt.Printf("  ⚠️  Note: failed to write RESYNC marker to bans.log: %v\n", err)
+			}
 		} else {
 			// Determine source for file mapping
 			banSource := source
@@ -310,7 +332,31 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	if !alreadyBanned {
 		totalBans++ // Count the one we just added
 	}
-	fmt.Printf("The IP is now blocked by the firewall. (Total bans: %d)\n", totalBans)
+
+	// V127 UX-3 item 2.6: source/set/total breakdown footer.
+	// Pre-V127 the footer was a single inline line: "The IP is now blocked by
+	// the firewall. (Total bans: %d)" — operators could not tell from the
+	// output which named set the entry landed in, or what the per-set count
+	// was, or whether this was a resync vs new entry. The audit (§2.6) flagged
+	// this as a Persona B scriptability blocker. The new footer breaks out
+	// Source, Set, and Total into individual labeled lines that grep/awk
+	// pipelines can parse field-by-field.
+	// (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.6)
+	footerSource := source
+	if footerSource == "" {
+		footerSource = "manual"
+	}
+	footerEventType := "new ban"
+	if alreadyBanned {
+		footerEventType = "resync (idempotent; no new entry)"
+	}
+	fmt.Println("Ban summary:")
+	fmt.Printf("  Source:        %s\n", footerSource)
+	fmt.Printf("  Set:           %s (%s)\n", targetSet, setType)
+	fmt.Printf("  Event type:    %s\n", footerEventType)
+	fmt.Printf("  Total bans:    %d (across all blacklist sets)\n", totalBans)
+	fmt.Println()
+	fmt.Println("The IP is now blocked by the firewall.")
 	if !alreadyBanned && timeoutSeconds == 0 {
 		// Show correct file based on source
 		savedFile := "99-manual.conf"
