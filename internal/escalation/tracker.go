@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/banlog"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
@@ -36,24 +37,47 @@ type BanEntry struct {
 	Reason    string
 }
 
-// LogTempBan logs a temporary ban to the tracking file for escalation tracking
-// This tracks temp bans to detect persistent offenders who should be escalated
+// LogTempBan logs a temporary ban to the tracking file for escalation tracking.
+//
+// V127 UX-3 item 2.4 (A1 facade convergence):
+// Pre-V127 this function wrote a SPACE-DELIMITED legacy format
+// ("2025-11-27T10:00:00Z 1.2.3.4 nftban-sshd SSH brute force") to logPath.
+// Callers passed cfg.BanLog (= /var/log/nftban/bans.log), which is the SAME
+// file internal/banlog/banlog.go::writeEntryFull writes in BLC-1 pipe format
+// to — producing interleaved mixed-format rows that broke nftban stats recent
+// (audit item 2.4).
+//
+// LogTempBan is RETAINED as a backward-compatibility facade so existing
+// call sites (cmd/nftban-core/cmd_ban.go, cmd/nftband/daemon_handlers_ban.go,
+// and any future callers) keep their unchanged signature, but the body now
+// delegates to banlog.LogBanFull so bans.log has ONE writer path and ONE
+// canonical 10-field BLC-1 pipe format.
+//
+// Any future caller of LogTempBan automatically gets BLC-1 — the legacy
+// space-delimited format CANNOT reappear unless this function is rewritten
+// or a new direct-write code path is added (regression test guards against
+// that). For new code, prefer calling banlog.LogBanFull directly with an
+// explicit BanClass; reach for LogTempBan only when wrapping an existing
+// jail/reason-pair shape from legacy escalation callers.
+//
+// The logPath parameter is preserved in the signature for backward
+// compatibility but is NOT used — banlog routes to the canonical path via
+// nftbanconf.MustLoadPaths(). If a legacy caller passes a non-canonical
+// path, the entry STILL lands in /var/log/nftban/bans.log (intentional —
+// the convergence is the whole point).
+//
+// (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.4)
 func LogTempBan(logPath, ip, jail, reason string) error {
-	// TOCTOU-safe file open with O_NOFOLLOW
-	f, err := safety.SafeOpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open ban log: %w", err)
-	}
-	defer f.Close()
-
-	timestamp := time.Now().Format(time.RFC3339)
-	logLine := fmt.Sprintf("%s %s %s %s\n", timestamp, ip, jail, reason)
-
-	if _, err := f.WriteString(logLine); err != nil {
-		return fmt.Errorf("failed to write to ban log: %w", err)
-	}
-
-	return nil
+	_ = logPath // intentionally unused; banlog.LogBanFull routes to canonical path
+	// Map jail -> banlog source via banlog.normalizeSource (called inside
+	// writeEntryFull). "jail" was the fail2ban-era field name; for modern
+	// callers it carries the source string (login/portscan/ddos/etc.) directly.
+	// The escalation-relevant temp-ban shape: country unknown (caller doesn't
+	// have it; banlog defaults to "UNK"), banID empty (LogTempBan callers
+	// don't generate a correlation ID), timeoutSec=0 (we don't know the TTL
+	// at this layer; the kernel set TTL is the source of truth), class=temp
+	// (this function exists specifically for temp bans by name).
+	return banlog.LogBanFull(ip, jail, "", reason, "", 0, banlog.ClassTemp)
 }
 
 // CountRecentBans counts how many times an IP was banned in the given period
