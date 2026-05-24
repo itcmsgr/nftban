@@ -448,13 +448,13 @@ nftban_health_fix_permissions() {
     # Report what needs root
     if [[ $need_root_count -gt 0 ]]; then
         echo ""
-        echo "  ⚠️  Cannot fix $need_root_count permission/ownership issues (need root privileges):"
+        echo "  ⚠️  Cannot fix $need_root_count permission/ownership issues (require elevated privileges; members of the nftban group are authorized via PolicyKit/polkit):"
         for item in "${need_root_fixes[@]}"; do
             echo "     - $item"
         done
         echo ""
-        echo "  💡 Run with root privileges to fix:"
-        echo "     sudo nftban health fix permissions"
+        echo "  💡 Run with elevated privileges to fix (members of the nftban group are authorized via PolicyKit/polkit):"
+        echo "     nftban health fix permissions"
     fi
 
     # Also fix auditor ACLs if running as root
@@ -549,13 +549,13 @@ nftban_health_fix_directories() {
     # Report what needs root
     if [[ $need_root_count -gt 0 ]]; then
         echo ""
-        echo "  ⚠️  Cannot create $need_root_count directories (need root privileges):"
+        echo "  ⚠️  Cannot create $need_root_count directories (require elevated privileges; members of the nftban group are authorized via PolicyKit/polkit):"
         for item in "${need_root_dirs[@]}"; do
             echo "     - $item"
         done
         echo ""
-        echo "  💡 Run with root privileges to fix:"
-        echo "     sudo nftban health fix directories"
+        echo "  💡 Run with elevated privileges to fix (members of the nftban group are authorized via PolicyKit/polkit):"
+        echo "     nftban health fix directories"
     fi
     return 0
 }
@@ -823,7 +823,7 @@ nftban_health_fix_system_config() {
 # Editing manually will cause health check failures.
 #
 # If UID/GID changes (user deleted/recreated), run:
-#   sudo nftban health fix all
+#   nftban health fix all
 #
 # This file is auto-maintained by:
 #   - install.sh (during installation)

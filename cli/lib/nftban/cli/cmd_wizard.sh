@@ -580,7 +580,7 @@ DEFAULTS:
     - IDS: OFF on small environments
 
 EXAMPLES:
-    sudo nftban wizard install    # Run full wizard
+    nftban wizard install    # Run full wizard
     nftban wizard env             # Just show environment
 
 EOF

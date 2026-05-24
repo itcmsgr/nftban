@@ -88,7 +88,7 @@ RECOMMENDED SOLUTION (service-scoped capability):
 TEMPORARY WORKAROUND (not recommended):
   Run the command as root:
 
-  sudo nftban [command]
+  nftban [command]
 
 DOCUMENTATION:
   See /usr/share/nftban/docs/README.capabilities for details

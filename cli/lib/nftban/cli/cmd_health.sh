@@ -356,16 +356,16 @@ EXAMPLES:
     nftban health pro          # Pro subscription status
 
     # Auto-heal during check (combines check + fix)
-    sudo nftban health check --auto-heal
+    nftban health check --auto-heal
 
     # Quiet mode for cron/timer
     nftban health check --auto-heal --quiet
 
     # Manual fix (traditional approach)
-    sudo nftban health fix all
+    nftban health fix all
 
     # Or use 'enforce' (alias for 'fix')
-    sudo nftban health enforce all
+    nftban health enforce all
 
     # Verify installation completeness
     nftban health install

@@ -492,7 +492,7 @@ _whitelist_session_add() {
     fi
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
         return 1
     fi
 
@@ -635,7 +635,7 @@ _whitelist_session_remove() {
     fi
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
         return 1
     fi
 
@@ -698,7 +698,7 @@ _whitelist_session_cleanup() {
     fi
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: root privileges required to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges to write $_NFTBAN_SESSION_WHITELIST_PATH" >&2
         return 1
     fi
 

@@ -1001,19 +1001,19 @@ CATEGORIES:
 
 EXAMPLES:
     # Interactive selection menu (RECOMMENDED!)
-    sudo nftban feeds select
+    nftban feeds select
 
     # List all available feeds
     nftban feeds list
 
     # Enable specific feed
-    sudo nftban feeds enable SPAMHAUS_DROP
+    nftban feeds enable SPAMHAUS_DROP
 
     # Enable all SSH protection feeds
-    sudo nftban feeds enable-category ssh
+    nftban feeds enable-category ssh
 
     # Update all enabled feeds
-    sudo nftban feeds update
+    nftban feeds update
 
     # Check status
     nftban feeds status

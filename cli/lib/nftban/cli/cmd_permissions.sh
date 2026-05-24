@@ -142,13 +142,13 @@ OPTIONS:
 
 EXAMPLES:
   # Check current permissions
-  sudo nftban permissions check
+  nftban permissions check
 
   # Enforce secure permissions
-  sudo nftban permissions enforce
+  nftban permissions enforce
 
   # Preview changes without applying
-  sudo nftban permissions enforce --dry-run
+  nftban permissions enforce --dry-run
 
 SECURITY MODEL:
   /etc/nftban/*        → root:root, 0750/0640 (configs are code-sensitive!)

@@ -338,13 +338,13 @@ CONFIGURATION:
 
 EXAMPLES:
     # Initial setup
-    sudo nftban geoip download
+    nftban geoip download
 
     # Check status
     nftban geoip status
 
     # Update database
-    sudo nftban geoip update
+    nftban geoip update
 
     # Test lookup
     nftban geoip lookup 8.8.8.8

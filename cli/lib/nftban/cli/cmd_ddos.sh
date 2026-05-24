@@ -133,10 +133,10 @@ PROFILE SELECTION:
 
 EXAMPLES:
     # Enable all DDoS protections (based on config)
-    sudo nftban ddos enable
+    nftban ddos enable
 
     # Disable all DDoS protections
-    sudo nftban ddos disable
+    nftban ddos disable
 
     # Show status of all protections
     nftban ddos status
@@ -151,14 +151,14 @@ EXAMPLES:
     nftban ddos mode show
 
     # Set mode to classic
-    sudo nftban ddos mode set classic
+    nftban ddos mode set classic
 
 LOG FILES:
     DDoS protection logs: ${NFTBAN_LOG_DIR}/ddos.log
     Statistics: /var/lib/nftban/ddos/stats.json
 
 REQUIREMENTS:
-    • Root privileges (for enable/disable commands)
+    • Elevated privileges (members of the nftban group are authorized via PolicyKit/polkit for enable/disable commands)
     • nftables >= 0.9.0
     • Linux kernel >= 3.13 (for connection tracking)
 

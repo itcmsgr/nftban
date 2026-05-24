@@ -409,22 +409,22 @@ EXAMPLES:
     nftban trust list
 
     # Enable Cloudflare
-    sudo nftban trust enable CLOUDFLARE
+    nftban trust enable CLOUDFLARE
 
     # Enable AWS
-    sudo nftban trust enable AWS
+    nftban trust enable AWS
 
     # Check status
     nftban trust status
 
     # Update all enabled providers
-    sudo nftban trust update
+    nftban trust update
 
     # Update only Cloudflare
-    sudo nftban trust update CLOUDFLARE
+    nftban trust update CLOUDFLARE
 
     # Disable Google Cloud
-    sudo nftban trust disable GOOGLE
+    nftban trust disable GOOGLE
 
 CONFIGURATION:
     Config file: /etc/nftban/conf.d/trust.conf

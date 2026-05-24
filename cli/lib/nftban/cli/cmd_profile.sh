@@ -83,7 +83,7 @@ _nftban_profile_deprecated_notice() {
     echo "    • Configures optimal settings for your server"
     echo ""
     echo "  Run the wizard:"
-    echo "    sudo nftban wizard"
+    echo "    nftban wizard"
     echo ""
 }
 
@@ -210,13 +210,13 @@ _nftban_profile_show() {
         echo "No configuration file found at: $NFTBAN_CONFIG_LOCAL"
         echo ""
         echo "Run the wizard to configure NFTBan:"
-        echo "  sudo nftban wizard"
+        echo "  nftban wizard"
     fi
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "To reconfigure, run: sudo nftban wizard"
+    echo "To reconfigure, run: nftban wizard"
     echo ""
 
     return 0
@@ -242,8 +242,8 @@ OPTIONS:
     --json, -j          Output in JSON format (machine-readable)
 
 DEPRECATED (use wizard instead):
-    select              → Use: sudo nftban wizard
-    apply <name>        → Use: sudo nftban wizard
+    select              → Use: nftban wizard
+    apply <name>        → Use: nftban wizard
     list                → Static profiles removed
 
 MIGRATION TO WIZARD:
@@ -267,7 +267,7 @@ MIGRATION TO WIZARD:
 
 RUN THE WIZARD:
 
-    sudo nftban wizard
+    nftban wizard
 
 SEE ALSO:
     nftban wizard help       - Wizard help
@@ -344,7 +344,7 @@ nftban_cmd_profile() {
             echo "Available commands: show, help"
             echo ""
             echo "For configuration, use the wizard:"
-            echo "  sudo nftban wizard"
+            echo "  nftban wizard"
             return 1
             ;;
     esac

@@ -86,19 +86,19 @@ OPTIONS:
 
 EXAMPLES:
   # Auto-detect and protect all system IPs
-  sudo nftban whitelist-system sync
+  nftban whitelist-system sync
 
   # Quick sync (skip public IP HTTP lookups)
-  sudo nftban whitelist-system sync --quick
+  nftban whitelist-system sync --quick
 
   # Package upgrade: protect admin SSH session + quick sync
-  sudo nftban whitelist-system sync --quick --protect-session
+  nftban whitelist-system sync --quick --protect-session
 
   # Show protected system IPs
   nftban whitelist-system show
 
   # Protect your current IP from being banned
-  sudo nftban whitelist-system whitelistme
+  nftban whitelist-system whitelistme
 
 WHAT IS AUTO-DETECTED:
   • Localhost (127.0.0.1, ::1)

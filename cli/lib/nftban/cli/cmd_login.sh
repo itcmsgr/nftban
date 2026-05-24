@@ -956,7 +956,7 @@ CONF
 
     if [[ $issues_found -gt $issues_fixed ]]; then
         echo ""
-        echo "Some issues require manual attention or root privileges."
+        echo "Some issues require manual attention or elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)."
         return 1
     elif [[ $issues_found -eq 0 ]]; then
         echo ""
@@ -1270,16 +1270,16 @@ TARGETS:
 
 EXAMPLES:
     # Quick setup (one command - enables all monitoring)
-    sudo nftban login enable
+    nftban login enable
 
     # Check status (shows detected services)
     nftban login status
 
     # Enable all monitoring types
-    sudo nftban login enable all
+    nftban login enable all
 
     # Disable login monitoring
-    sudo nftban login disable
+    nftban login disable
 
     # Send test alert
     nftban login test
