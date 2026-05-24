@@ -11,6 +11,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.129.0] - 2026-05-24 — V129 deep CLI execution/text/log correlation for the §9 representative command battery
+
+**Codename:** `V129_DEEP_CLI_EXECUTION_TEXT_LOG_CORRELATION`
+**Scope file:** `AUDIT_190_LIFECYCLE/V129_DEEP_CLI_EXECUTION_TEXT_LOG_CORRELATION_SCOPE.md`
+**Closure record:** `AUDIT_190_LIFECYCLE/V129_FINAL_CROSSCHECK_SUMMARY.md`
+
+### What v1.129 set out to do
+
+A 3-layer (execution + text + log/state) cross-family validation of the CLI on real DEB + RPM hosts, scoped to the representative §9 command battery. The intent: surface behavioral defects that static audit alone cannot catch, fix the cross-family ones, and reverify on real packages.
+
+### Lanes shipped (PR-A → PR-B → PR-C → PR-D, in strict order)
+
+- **PR-A — static extractor + base-state (workspace-only, no repo PR).** Produced 8 matrices/reports under `AUDIT_190_LIFECYCLE/V129_*`: `BASE_STATE.md`, `COMMAND_EXECUTION_MATRIX.tsv` (39 rows, §9 battery), `CLI_REGISTRY_CROSSCHECK.md`, `REGISTRY_TO_CODE_MATRIX.tsv`, `REGISTRY_TO_HELP_MATRIX.tsv`, `HELP_TO_WIKI_MATRIX.tsv`, `EXIT_CODE_TRUTH_MATRIX.tsv`, `OPERATOR_CORRECTION_REGRESSION_SEEDS_REPORT.md` (10 seeds, all static-PASS).
+- **PR-B — lab executor harness (evidence-only).** Ran the 32-case §9 representative battery on **lab2 (DEB, Ubuntu 24.04 + plesk)**, **dns2 (RPM-el9, CentOS Stream 9 + DirectAdmin)**, and **srv1 (RPM-el10, CentOS Stream 10 + DirectAdmin)** as the `nftban-test` user (member of the `nftban` group). Result: 31/32 exit-code parity across families (the single divergence is `firewall validate --strict` which is host-state-dependent: lab2 has UFW active → rc=20 conflict path; RPM hosts have no UFW). 7 defects classified cross-family. **3 of 10 operator-correction regression seeds failed at runtime despite static PASS**: C-1 (config rc), C-3 (well-known dry-run guard), C-8 (polkit-aware wording). Evidence root: `V129_CLI_EXECUTION_TEXT_LOG_EVIDENCE/{lab2-deb,dns2-rpm,srv1-rpm}/`.
+- **PR-C — fix lane (PR [#680](https://github.com/itcmsgr/nftban/pull/680) sq `21ba927d`).** Closed 6 cross-family defects in 8 files (+350/-31):
+  - **D1 (P1)** — `nftban version --json` emitted no JSON + `NFTBAN_GUI_VERSION: unbound variable`. V127 UX-1 1.3 removed the GUI/API rows from `lib/version.sh` but the JSON heredoc at `cli/lib/nftban/cli/cmd_version.sh:213-218` still referenced them. Dropped the `gui`/`api` keys to match the post-V127-UX-1 component set.
+  - **D4 (P1)** — `nftban health --verbose` returned rc=1 with `Unknown health command: --verbose` because the dispatcher consumed `--verbose` as subcommand. Added a case-block in `cli/lib/nftban/cli/cmd_health.sh` so `--verbose` / `-v` / `--json` as first arg route to the default `check` subcommand and remain visible to the existing flag loop.
+  - **D5 — DOCUMENTED.** Static-audit verification confirmed V127 UX-1 1.9 changed only the stderr discipline, **NOT** the exit code — `nftban_config.sh:209` explicitly comments `Returns 1 (unchanged) for nonzero rc`. The PR-A matrix prediction of rc=2 was wrong. PR-C added an `EXIT CODES` block to `cli/lib/nftban/cli/cmd_config.sh` `show_usage` so operators see the rc=1 contract via `nftban config help`.
+  - **D6.B shell wording (P1)** — the validator's wrapper at `internal/validator/validator.go::ValidateKernel` concatenated nft's upstream stderr verbatim, leaking `(you must be root)` and violating the V128 PR-A.1 polkit-aware wording policy. On permission-denied errors (`Operation not permitted` / `permission denied`), the patch strips the `(you must be root)` substring and substitutes a polkit/capability-aware `Remediation` that mentions `CAP_NET_ADMIN` and is honest about the fact that polkit does not currently authorize direct nft access for the nftban group. **Note:** shell-side wording is fixed in this release; **Go-side end-to-end runtime verification activates when `nftban-validate` is rebuilt by the v1.129.0 package-build cycle**.
+  - **D7 (P0 CRITICAL) — `nftban ban 8.8.8.8 --dry-run` well-known guard bypass.** Root cause: the V127 UX-2 guard condition at `cli/lib/nftban/cli/cmd_ban.sh` was `[[ "$auto_confirm" != "true" && "$dry_run" != "true" ]]` — dry-run silently bypassed the refusal branch, so `nftban ban 8.8.8.8 --dry-run` returned rc=0 with `[DRY-RUN] Would ban IP: 8.8.8.8 ...` — mis-confirming what the live command would do. The corrected condition is `auto_confirm`-only: dry-run is **also** refused unless `--yes` is explicitly set. The `--yes` override still produces a dry-run preview (with explicit override acknowledgement on stderr).
+  - **D8 (P2, RPM-revealed)** — `nftban firewall validate --strict` could print `STRICT PREFLIGHT: PASSED / NFTBan is sole firewall authority - enforce mode OK` while returning rc=1 (the structural validator failed but strict-mode's own conflict checks all passed). Added a `structural_ok` 2nd-arg to `_firewall_validate_strict` in `cli/lib/nftban/cli/cmd_firewall.sh` and emit `STRICT PREFLIGHT: NOT VERIFIED (see Validator Status above) / Conflict checks passed, but the structural validator could not confirm ruleset truth.` when the structural validator did not pass — operator-visible text now agrees with the exit code.
+  - **Tests:** new `cli/lib/nftban/tests/v129_pr_c_runtime_defect_fixes_test.sh` — 17 deterministic assertions covering all 6 defects (17/17 PASS). Updated `cli/lib/nftban/tests/v127_ux2_well_known_test.sh` assertion 1.7 (previously encoded the D7 bug as a feature; now reflects the V129 PR-C corrected `auto_confirm`-only condition). Adjacent V128 PR-A polkit wording sweep + V128 PR-D doc clarity audit + V127 UX-2 well-known guard all green.
+- **PR-D — runtime re-verify + crosscheck closure (workspace-only, no repo PR).** Ran the 13-case post-merge battery on lab2 + dns2 + srv1 via lib-dir overlay (`NFTBAN_LIB_DIR=/tmp/v129-prd-lib` containing a copy of `/usr/lib/nftban` overlaid with the 5 patched `cmd_*.sh` files; production `/usr/lib/nftban` untouched; temp cleaned post-run). Result: **D1, D4, D7, D8 → RUNTIME-VERIFIED cross-family ✓; D5 → DOCUMENTED ✓; D6.B shell-side → VERIFIED ✓ + Go-side → PENDING-PACKAGE-BUILD; D6.A → out of PR-C scope, deferred to v1.130+; D7 P0 → CLOSED cross-family** with the `--yes` override path also verified.
+
+### Binary impact
+
+- **`cmd/nftban-core` differs from v1.128.0** in one localized addition at `internal/validator/validator.go::ValidateKernel`: a permission-denied branch that scrubs the upstream `(you must be root)` substring and substitutes a `CAP_NET_ADMIN`-aware `Remediation`. Function signature unchanged; capability check logic unchanged; non-permission code paths unchanged.
+- **`cmd/nftband` byte-identical to v1.128.0.**
+- The five `cli/lib/nftban/cli/cmd_*.sh` shell files (`cmd_ban.sh`, `cmd_config.sh`, `cmd_firewall.sh`, `cmd_health.sh`, `cmd_version.sh`) are CLI dispatcher artifacts installed under `/usr/lib/nftban/cli/` — packaged, not compiled.
+
+### Schema / wire-format
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field, no new metric, no new Prometheus label, no Status JSON wire-format key, no new `install_state` JSON field, no new nftables kernel set / chain / table name, no new config key, no new systemd unit, no packaging behavior change.
+
+### Limitations — honest scope of v1.129
+
+This release validates the **representative §9 command battery only** (32 cases × 3 hosts). The following were **NOT** in the authorized v1.129 scope and are explicitly NOT claimed as covered by this release:
+
+- **All 77 `cmd_*.sh` files were NOT runtime-verified.** The long-tail (~45 additional commands beyond the §9 set) has zero runtime evidence in this release.
+- **Full subcommand + flag-level help/code correlation is NOT complete.** v1.128 PR-B covered top-level command correlation; v1.129 did not extend to subcommand/flag-level doctest.
+- **Wiki + docs/ + README runtime alignment is NOT complete.** v1.128 PR-C handled wiki statically; no v1.129 runtime audit of wiki/docs/README CLI examples.
+- **D6.A polkit architecture expansion is NOT addressed.** Whether to extend the polkit rules to cover direct `nft` access (e.g., via `pkexec`) vs. document the gap honestly is a design decision deferred to v1.130+.
+- **Live mutating D7 confirmation NOT performed.** The bypass class is closed via the corrected dry-run behavior + the deterministic regression test; the `CONFIRM_D7_WITH_LIVE_TEST` gate (live `nftban ban 8.8.8.8` with cleanup) was never opened.
+- **D7 log/state-write footprint NOT probed.** The `VERIFY_D7_LOG_STATE_WRITE_FOOTPRINT` gate (read-only check of banlog / blacklist / nft set state) was never opened.
+- **Operator-correction regression seeds C-2 (live well-known ban) and C-9 (mutating preflight) were NOT run** — mutating-live, deferred.
+
+### Out of scope (for v1.129.0)
+
+- No package/systemd/polkit-rule behavior changes (the polkit authority architecture is preserved; only operator-facing wording about it changes; the D6.B Remediation now correctly states the polkit-vs-CAP_NET_ADMIN reality for direct nft access)
+- No metrics/portal/schema drift
+- No new commands or aliases
+- No dispatcher routing / completion / typo handler infrastructure changes (V128 PR-B's canonical-list correction stands; v1.129 did not add or remove entries)
+- No `commands.registry.yml` or `scripts/generate-help.sh` change
+- No host contact during release-prep construction (only allowed files touched: `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` — the last is header-version regen only; FHS path-table body byte-unchanged because `build/fhs-spec.yaml` is byte-equal across V129 arc)
+- No v1.128.1 hotfix opened (PR-C closes all P0/P1 from PR-B; v1.128.1 slot remains latent)
+
+### Carry-forward to v1.130 (filed as backlog; each separately authorized)
+
+- D6.A polkit architecture design (extend polkit rules to cover direct nft access via pkexec, OR document the gap honestly)
+- D2 status help exit-code discoverability (P3 optional polish; surface `0/1/2 = PROTECTED/DEGRADED/DOWN` contract in `nftban status help`)
+- D6.B Go-side end-to-end runtime verification on lab2 + dns2 + srv1 (activates automatically with this release's `nftban-validate` rebuild; PR-D shell-side verification is locked, Go-side will be observable on package install)
+- Optional long-tail 77-command runtime battery (extend §9 coverage to the ~45 non-representative commands)
+- Optional subcommand/flag-level help/code doctest correlation (the deeper class deferred from v1.128 PR-B)
+- Optional wiki/docs/README runtime CLI text alignment audit (runtime equivalent of v1.128 PR-C's static sweep)
+- Optional D7 live mutating confirmation + log/state-write footprint probe
+
+### Hotfix slot
+
+v1.129.x hotfix slot **not authorized** (latent reservation only — opens only if a v1.129.0 defect surfaces).
+
+---
+
 ## [v1.128.0] - 2026-05-24 — V128 CLI text authority alignment release
 
 **Codename:** `V128_CLI_TEXT_AUTHORITY_ALIGNMENT`
