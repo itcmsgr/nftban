@@ -82,6 +82,7 @@ grep -q 'V127 UX-6' "$_cmd_flush"
 _t_assert "A4: cmd_flush.sh carries V127 UX-6 scope anchor" "$?"
 
 # A5: functional check via _nftban_help_essential — no banner string appears
+# shellcheck disable=SC1090
 ( source "$_nftban_help" 2>&1; _nftban_help_essential ) 2>&1 | grep -qiE 'nftban v?[0-9]+\.[0-9]+|███|banner'
 ok=$?
 [[ $ok -eq 0 ]] && ok=1 || ok=0
