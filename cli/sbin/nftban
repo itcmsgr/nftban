@@ -1055,8 +1055,6 @@ main() {
             local _tmpdir
             _tmpdir=$(mktemp -d)
             systemctl is-active nftband                 >"${_tmpdir}/daemon_active" 2>/dev/null &
-            systemctl is-active nftban-suricata         >"${_tmpdir}/suri_nftban" 2>/dev/null &
-            systemctl is-active suricata                >"${_tmpdir}/suri_native" 2>/dev/null &
             systemctl is-active nftban-watchdog.timer   >"${_tmpdir}/watchdog_active" 2>/dev/null &
             wait
 
@@ -1103,14 +1101,15 @@ main() {
                 [[ "$_lm_en" == "true" ]] && login_st="Active"
             fi
 
-            # Suricata
-            local suri_st="Not installed"
-            if grep -q "^active" "${_tmpdir}/suri_nftban" 2>/dev/null || \
-               grep -q "^active" "${_tmpdir}/suri_native" 2>/dev/null; then
-                suri_st="Active"
-            elif command -v suricata &>/dev/null; then
-                suri_st="Inactive"
-            fi
+            # V127 UX-4: Suricata row de-surfaced from no-args dashboard per
+            # Option A full de-surface (operator authorization 2026-05-24).
+            # Production cmd_suricata.sh + cmd_suricata_setup.sh + the
+            # nftban_{login,portscan,ddos}_suricata.sh engine code remain
+            # functional and reachable via `nftban suricata <subcmd>`; only
+            # the default operator-facing dashboard row is suppressed here.
+            # Reversible by re-introducing the Suricata block and the
+            # systemctl is-active background probes above.
+            # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-4)
 
             # Watchdog
             local wd_st="Disabled"
@@ -1119,8 +1118,7 @@ main() {
             rm -rf "${_tmpdir}" 2>/dev/null || true
 
             printf "  %-14s %-12s  %-14s %s\n" "DDoS:" "$ddos_st" "Portscan:" "$ps_st"
-            printf "  %-14s %-12s  %-14s %s\n" "Login Mon:" "$login_st" "Suricata:" "$suri_st"
-            printf "  %-14s %-12s\n" "Watchdog:" "$wd_st"
+            printf "  %-14s %-12s  %-14s %s\n" "Login Mon:" "$login_st" "Watchdog:" "$wd_st"
 
             echo ""
             echo "  nftban status          Detailed status"
