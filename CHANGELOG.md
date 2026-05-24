@@ -11,6 +11,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.127.0] - 2026-05-24 — V127 six-lane CLI UX correction release
+
+**Codename:** `V127_FULL_UX_CORRECTION`
+**Scope file:** `AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md`
+
+### What's new
+
+Six narrow CLI UX lanes (UX-1 through UX-6) merged in strict order PR-A → PR-B → PR-C → PR-D → PR-E → PR-F, each separately-shippable and CI-clean-on-PR before this release-prep PR was opened.
+
+- **UX-1 P0 core trust (PR #668 sq `5d14ba6e`)** — no-args dashboard truth-source unification with `nftban health`; `nftban health` INFO-finding filter; `nftban version` GUI/API removal + Installed/Latest/Last-checked rows; `nftban update` same-version no-op + verdict consolidation; selftest self-containment; config stderr error discipline. 23 deterministic tests.
+
+- **UX-2 well-known infrastructure ban/search guard (PR #669 sq `107c0a32`)** — items 1.7 + 3.2 with a new shared helper library covering 16 well-known DNS IPs across 4 providers (Cloudflare/Google/Quad9/OpenDNS). 40 deterministic tests.
+
+- **UX-3 stats + banlog correctness — Option A full Go fix (PR #670 sq `65e1eee7`)** — A1 facade convergence in `internal/escalation/tracker.go::LogTempBan` (delegates to canonical `banlog.LogBanFull` BLC-1 pipe format; eliminates the pre-V127 interleaved mixed-format rows that broke `nftban stats recent`); new `banlog.StatusResync` / `ClassResync` / `LogResync` emitted by `cmd/nftban-core/cmd_ban.go` on the already-banned re-sync path so operators can distinguish RESYNC events from real new bans; labeled `Source: / Set: / Event type: / Total bans:` ban footer; stats label disambiguation `Blocked IPs (live)..` + `BANS BY MODULE (cumulative)`; `Data source: DERIVED` fallback on cache-miss path. **30 deterministic shell tests + 1 Go static guard + 1 Go behavioral runtime test (using `nftbanconf.DefaultConfigFile` as the test seam — no production-code seam added).**
+
+- **UX-4 Suricata display-only de-surfacing — Option A full de-surface (PR #671 sq `29c48bee`)** — no-args dashboard Suricata row removed (Login Mon now pairs with Watchdog); `nftban modes` Suricata-status line removed and reason strings replaced with neutral "Auto-resolved (advanced)" / "Auto-resolved (classic)"; `nftban help` / `--all` filter the suricata row. Production `cmd_suricata.sh` / `cmd_suricata_setup.sh` / `nftban_{login,portscan,ddos}_suricata.sh` / dispatcher routing / completion lists / typo handler all preserved — `nftban suricata <subcmd>` remains reachable. `--json` output preserved (`suricata.running` + `eve.*` keys intact for machine consumers). 31 deterministic tests.
+
+- **UX-5 typo handler + alias/version discoverability (PR #672 sq `729784a9`)** — pure-bash Damerau-Levenshtein edit-distance command suggestion replacing the ~70-line static typo case table (canonical 69-command source list; length-aware thresholds); minimal multi-word fallback preserved (`configtest`/`configaudit`). ALIAS section annotation in `cmd_firewall_logs.sh::_fwlog_help`. SEE ALSO cross-references between `nftban update` and `nftban version`. 43 deterministic tests.
+
+- **UX-6 help-system cleanup with polkit-aware wording (PR #673 sq `614dd4d0`)** — banner suppression in `nftban help` paths; fake `Profile: $profile` footer removed; `cmd_ban.sh` `--async`/`--wait` clarity + EXIT CODES gold-standard upgrade; CTRL+C + REQUIRES (polkit-aware) + EXIT CODES sections on `cmd_flush.sh` / `cmd_update.sh` / `cmd_firewall.sh`. **Mid-review polkit-aware correction** applied: initial D-6 draft used "Run with sudo" framing; operator flagged that NFTBan uses PolicyKit/polkit not sudo as the canonical privilege path; all three destructive REQUIRES blocks rewritten to the "Elevated privileges ... PolicyKit/polkit may authorize ... otherwise run as root or use the site-approved privilege method" template; exit-code-2 wording rewritten to "Authorization failed or insufficient privileges". F5/F6 test assertions added to lock the invariant against regression in PR-F's three touched files. 33 deterministic tests.
+
+### Binary impact
+
+**The identical-daemon-binary streak (v1.114.0 → v1.126.2, then extended to 18 releases by shell-only UX-1 + UX-2) intentionally ENDED at UX-3 by design.** Option A acceptance explicitly authorized the daemon-binary delta as the cost of single-writer canonical BLC-1 format convergence (touches: `internal/banlog/banlog.go` adds `StatusResync` / `ClassResync` / `LogResync`; `internal/escalation/tracker.go::LogTempBan` body rewritten to delegate; `cmd/nftban-core/cmd_ban.go` adds the resync emission + new ban footer).
+
+UX-4, UX-5, and UX-6 are all shell-only and add no further daemon delta — v1.127.0's `cmd/nftband` + `cmd/nftban-core` binaries are byte-identical to PR-C UX-3 output.
+
+### Validation
+
+- **Per-lane lab validation: WAIVED** under `AUDIT_190_LIFECYCLE/V127_UX_VALIDATION_POLICY_AMENDED.md` — per-PR CI + deterministic tests + scope reviews substituted for lab runs across all six UX lanes.
+- **Final consolidated lab validation: SKIPPED** under `SKIP_V127_FINAL_CONSOLIDATED_LAB_VALIDATION = GO` per operator directive `V127_FINAL_LAB_VALIDATION_SKIPPED_OPERATOR_WILL_VALIDATE_MANUALLY`. Operator performs manual runtime/package validation outside this automation lane on their preferred timeline. Documented in `AUDIT_190_LIFECYCLE/V127_FINAL_LAB_VALIDATION_SKIPPED.md`.
+- **Validation evidence in the closure record** therefore consists of per-PR CI results + deterministic-test counts, NOT lab-host runtime evidence.
+
+### Schema / wire-format
+
+**Schema 1.83.0 remains frozen** UNCONDITIONALLY. No new validator field, no new metric, no new Prometheus label, no Status JSON wire-format key, no new `install_state` JSON field, no new nftables kernel set / chain / table name, no new config key, no new systemd unit, no packaging behavior change. The new `banlog.StatusResync = "RESYNC"` + `ClassResync = "resync"` are additive enum values within the existing 10-field BLC-1 pipe format (`DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS`); downstream `cut -d'|' -fN` consumers continue to work unchanged.
+
+### Deferred to v1.128 — `V128_CLI_TEXT_AUTHORITY_ALIGNMENT`
+
+Three follow-up lanes filed plan-only in `AUDIT_190_LIFECYCLE/V128_CLI_TEXT_AUTHORITY_ALIGNMENT_SCOPE.md`, to run in strict order:
+
+1. **POLKIT_AWARE_WORDING_SWEEP** — replace remaining "sudo nftban" / root-first wording across the rest of the CLI surface (scan baseline at v1.127.0 cut: ~79 `sudo nftban` occurrences across ~24 `cli/lib/nftban/**/*.sh` files + ~12 root-first error strings + 1 Go-side wording candidate at `cmd/nftban-core/privilege.go:91`).
+2. **HELP_CODE_CORRELATION_AUDIT** — doctest-style verification that every CLI help example / flag / subcommand / alias / SEE ALSO reference maps to an actual dispatcher/parser path. Must run AFTER #1 so the doctest does not lock in pre-sweep `sudo nftban ...` examples.
+3. **WIKI_CLI_TEXT_ALIGNMENT** — align wiki/docs CLI examples to the final CLI text after lanes 1 and 2.
+
+### Out of scope
+
+- No new commands or aliases.
+- No dispatcher routing / completion / typo-handler infrastructure change.
+- No `commands.registry.yml` change (the cosmetic `Profile: operator` footer line was removed in UX-6 D-7 but the registry schema is untouched).
+- No `scripts/generate-help.sh` schema change (only the footer label removed).
+- No detector/planner/takeover changes.
+- No schema/metrics/portal/polkit-rules/systemd/packaging behavior change.
+- No host contact during any V127 lane or this release-prep.
+
+### Hotfix slot
+
+v1.127.x hotfix slot **not authorized** (latent reservation only — opens only if a v1.127.0 defect surfaces).
+
+---
+
 ## [v1.126.2] - 2026-05-23 — V126.2 install-abort UX hotfix (single-PR hotfix on top of v1.126.1)
 
 V126.2 message-only **P2-correctness + P3-UX hotfix release** on top of
