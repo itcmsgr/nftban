@@ -43,11 +43,12 @@ nftban_print_help() {
         esac
     done
 
-    # Show unified banner if function available
-    if type -t nftban_banner >/dev/null 2>&1; then
-        nftban_banner "help"
-        echo ""
-    fi
+    # V127 UX-6 D-1: banner suppressed in help dispatch path. The no-args
+    # dashboard (cli/sbin/nftban) still renders its own banner — this only
+    # removes the duplicate banner that previously preceded `nftban help`
+    # and `nftban help --all` text output (operator-facing pollution).
+    # Reversible by restoring the nftban_banner call below.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-6 D-1)
 
     if [[ "$show_all" == "true" ]]; then
         # Full help — delegate to generate-help.sh

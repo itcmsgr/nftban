@@ -3153,11 +3153,35 @@ Global options:
   --json        Output results as JSON (for GUI integration)
   -h, --help    Show help for specific subcommand
 
+CTRL+C / INTERRUPTION:
+  Do NOT interrupt rebuild, reset, restore, reload, or takeover with
+  Ctrl+C once execution has started. These operations apply nft rulesets
+  in stages; an interrupted run can leave the kernel between rulesets
+  with partial protection. If a recovery is needed after an interruption,
+  run 'nftban firewall reload' or 'nftban firewall rebuild' from a stable
+  shell to converge back to config.
+
+REQUIRES:
+  Elevated privileges for mutating subcommands:
+    rebuild, reset, restore, reload, takeover, record --write.
+
+  Read-only subcommands do not require elevated privileges:
+    status, stats, validate, conflicts, check, logs, record without --write.
+
+  Authorization path depends on installation policy:
+    - PolicyKit/polkit may authorize supported NFTBan operations.
+    - Otherwise run as root or use the site-approved privilege method.
+
 Exit codes (validate --strict):
   0   OK - NFTBan is sole firewall authority
   10  policykit-1 missing (Debian/Ubuntu)
   20  Firewall conflict (fail2ban/ufw/firewalld/csf active)
   30  NFTables collision (non-NFTBan input hooks)
+
+Exit codes (other subcommands):
+  0   Success
+  1   General error (nft failure, IPC failure)
+  2   Authorization failed or insufficient privileges for mutating subcommands
 
 For detailed help:
   nftban firewall validate --help
