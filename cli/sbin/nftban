@@ -979,6 +979,17 @@ rebuild
 analytics
 support
 support-bundle
+benchmark
+cleanup
+egress
+flush
+preflight
+pro
+protect
+scale
+snapshot
+tunnel
+unprotect
 EOF
 }
 
