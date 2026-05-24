@@ -158,16 +158,25 @@ _modes_resolve_effective() {
 
 # Get reason for effective mode
 # Args: $1 = configured mode, $2 = effective mode, $3 = suricata_running
+#
+# V127 UX-4: reason strings de-surfaced per Option A. Pre-V127 the auto
+# branch emitted operator-facing "Suricata detected" / "No Suricata config"
+# text in the default modes display. Replaced with neutral wording that
+# still distinguishes the two auto-resolution outcomes (advanced vs
+# classic effective mode) without naming the upstream tool. The third
+# parameter is retained so callers in this file (and any external caller)
+# need no signature update; it just no longer drives operator-facing text.
+# (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-4)
 _modes_get_reason() {
     local config_mode="$1"
     local effective_mode="$2"
     local suricata_running="$3"
-    
+
     if [[ "$config_mode" == "auto" ]]; then
         if [[ "$suricata_running" == "true" ]]; then
-            echo "Suricata detected"
+            echo "Auto-resolved (advanced)"
         else
-            echo "No Suricata config"
+            echo "Auto-resolved (classic)"
         fi
     elif [[ "$config_mode" == "$effective_mode" ]]; then
         echo "Manually configured"
@@ -215,29 +224,14 @@ _modes_overview() {
         suricata_running="true"
     fi
     
-    # Check EVE file
-    local eve_age eve_status
-    eve_age=$(_modes_eve_freshness) || true
-    if [[ -n "$eve_age" ]]; then
-        if [[ $eve_age -lt 60 ]]; then
-            eve_status="OK ($(_modes_format_age "$eve_age"))"
-        elif [[ $eve_age -lt 300 ]]; then
-            eve_status="STALE ($(_modes_format_age "$eve_age"))"
-        else
-            eve_status="OLD ($(_modes_format_age "$eve_age"))"
-        fi
-    else
-        eve_status="NOT FOUND"
-    fi
-    
-    # Suricata status string
-    local suricata_status_str
-    if [[ "$suricata_running" == "true" ]]; then
-        suricata_status_str="RUNNING"
-    else
-        suricata_status_str="STOPPED"
-    fi
-    
+    # V127 UX-4: Suricata status string + "Suricata: RUNNING | EVE: ..."
+    # display line removed from default overview per Option A full de-surface.
+    # The suricata_running variable above is retained for _modes_resolve_effective
+    # and _modes_get_reason (internal auto-mode resolution logic), and the
+    # --json output below still emits the suricata.running + eve.* keys
+    # unchanged so machine consumers see no wire-format regression.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-4)
+
     # Read module configurations
     local portscan_config ddos_config login_config
     portscan_config=$(_modes_read_config "PORTSCAN_MODE" "${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf")
@@ -265,8 +259,6 @@ _modes_overview() {
     printf "%-11s  %-8s  %-10s  %-20s\n" "Portscan" "$portscan_config" "$portscan_effective" "$portscan_reason"
     printf "%-11s  %-8s  %-10s  %-20s\n" "DDoS" "$ddos_config" "$ddos_effective" "$ddos_reason"
     printf "%-11s  %-8s  %-10s  %-20s\n" "Login" "$login_config" "$login_effective" "$login_reason"
-    echo ""
-    echo "Suricata: ${suricata_status_str} | EVE: ${eve_status}"
     echo ""
     echo "To change modes:"
     echo "  nftban portscan mode set <auto|classic|suricata|hybrid>"
@@ -369,10 +361,17 @@ _modes_help() {
     echo "    Shows a unified view of detection modes across all protection modules"
     echo "    (Portscan, DDoS, Login). Each module can operate in different modes:"
     echo ""
-    echo "    auto      - Automatically choose based on Suricata availability"
-    echo "    classic   - Traditional log-based detection (no IDS)"
-    echo "    suricata  - Use Suricata IDS for signature-based detection"
-    echo "    hybrid    - Use both classic and Suricata together"
+    # V127 UX-4: Mode descriptions de-surfaced from Suricata-specific wording
+    # per Option A. Mode names remain as the literal valid config values
+    # (auto/classic/hybrid) so operators who need to set a non-default mode
+    # via conf.d/<module>/main.conf still see the canonical enum. The
+    # advanced/IDS-backed mode is documented as "advanced" without naming
+    # the upstream tool; setting it explicitly still requires the literal
+    # underlying mode value documented in the module's own config file.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-4)
+    echo "    auto      - Automatically choose the available detection mode"
+    echo "    classic   - Traditional log-based detection"
+    echo "    hybrid    - Use classic and advanced detection together"
     echo ""
     echo "    The \"Effective\" column shows what mode is actually being used after"
     echo "    auto-detection resolves. The \"Reason\" column explains why."
@@ -391,7 +390,6 @@ _modes_help() {
     echo "    nftban portscan status    # Detailed portscan module status"
     echo "    nftban ddos status        # Detailed DDoS module status"
     echo "    nftban login status       # Detailed login monitor status"
-    echo "    nftban suricata status    # Suricata IDS status"
     echo ""
 }
 

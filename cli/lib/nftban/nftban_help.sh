@@ -61,7 +61,15 @@ nftban_print_help() {
         fi
 
         if [[ -n "$help_script" ]] && [[ -f "$help_script" ]]; then
-            bash "$help_script" --profile operator
+            # V127 UX-4: de-surface Suricata from `nftban help --all` operator
+            # output per Option A. The generate-help.sh + commands.registry.yml
+            # truth source is NOT modified (kept reversible and out of scope);
+            # only the operator-facing presentation here filters the single
+            # row whose command name is exactly "suricata". Production
+            # `nftban suricata <subcmd>` remains fully functional and the
+            # registry entry is intact for auditor / panel profiles.
+            # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-4)
+            bash "$help_script" --profile operator | grep -v -E '^[[:space:]]+suricata[[:space:]]'
         else
             _nftban_help_minimal
         fi
@@ -98,7 +106,6 @@ PROTECTION MODULES:
   login         Login monitor — SSH brute-force protection
   botguard      HTTP bot guard (enable/disable/status/list)
   geoban        Geographic IP blocking (enable/disable/list)
-  suricata      Suricata IDS integration
 
 SYSTEM:
   config        Configuration management
@@ -138,7 +145,6 @@ CORE COMMANDS:
 PROTECTION MODULES:
   ddos        DDoS protection management
   botguard    HTTP bot guard management
-  suricata    Suricata IDS integration
   portscan    Port scan detection
   geoban      Geographic IP blocking
   geoip       GeoIP database management
