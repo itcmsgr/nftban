@@ -1571,6 +1571,13 @@ EXIT CODES:
     1  Update/install failed
     2  Configuration error
 
+SEE ALSO:
+    nftban version             # Show current installed NFTBan version
+    nftban version --update    # Check GitHub for newer version (read-only;
+                               # equivalent to `nftban update check` for
+                               # discovery purposes, does not install)
+    nftban update check        # Check if an update is available (no changes)
+
 EOF
 }
 

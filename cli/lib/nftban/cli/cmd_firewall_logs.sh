@@ -749,8 +749,18 @@ _fwlog_live_view() {
 # =============================================================================
 
 _fwlog_help() {
+    # V127 UX-5 D-8: alias display. nftban firewall-logs is the hyphenated
+    # alias dispatched through cli/sbin/nftban (special-case routing) to the
+    # underlying `nftban firewall logs` two-word command implemented in this
+    # file. Surfaced here so operators reading `nftban firewall-logs help`
+    # understand the relationship and can choose either form.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-5)
     cat <<'EOF'
 NFTBan Firewall Logs - real-time-like firewall log viewer
+
+ALIAS:
+    nftban firewall-logs   -> alias for `nftban firewall logs`
+    Both forms accept the same subcommands and options.
 
 USAGE:
     nftban firewall logs <COMMAND> [OPTIONS]

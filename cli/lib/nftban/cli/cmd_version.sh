@@ -270,6 +270,11 @@ EXAMPLES:
   nftban version --check         # Check system requirements
   nftban version --update        # Check for updates from GitHub
 
+SEE ALSO:
+  nftban update                  # Update NFTBan (auto-detects install type)
+  nftban update check            # Check if an update is available (no changes)
+  nftban update status           # Show install method + update channel
+
 EOF
 }
 
