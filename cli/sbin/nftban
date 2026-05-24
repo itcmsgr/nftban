@@ -835,6 +835,193 @@ nftban_complete() {
 }
 
 # =============================================================================
+# V127 UX-5 item 2.8: typo-tolerant command suggestion (Damerau-Levenshtein)
+# =============================================================================
+# Replaces the prior static typo-case table (which lived inline in the
+# unknown-command branch of main()) with an edit-distance scan over the
+# canonical command list. A minimal static fallback remains BELOW the
+# edit-distance call for multi-word suggestions that distance-against-
+# single-command-names cannot express (e.g., `configtest` -> `config
+# validate`).
+#
+# Algorithm: Damerau-Levenshtein (adjacent transpositions count as 1
+# edit instead of 2), which correctly handles common typos like
+# "bna" -> "ban" or "udpate" -> "update" without false positives from
+# pure Levenshtein.
+#
+# Thresholds (intentionally conservative; UX-5 acceptance):
+#   - input length <= 3 : only suggest dist <= 1   (avoid "abc" -> "ban")
+#   - input length 4-5  : suggest dist <= 2 strong; dist 3 only if runner-up
+#                         is at least 2 worse (unambiguous)
+#   - input length >= 6 : suggest dist <= 2 strong; dist 3-4 only if runner-up
+#                         is at least 2 worse (unambiguous)
+#
+# (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-5)
+
+# Compute Damerau-Levenshtein edit distance between two strings.
+# Adjacent-character transposition counts as 1 edit (not 2).
+# Pure-bash implementation: fine for short strings (commands <= ~20 chars).
+# Echoes the distance to stdout.
+_nftban_damerau_levenshtein() {
+    local s1="$1"
+    local s2="$2"
+    local len1=${#s1}
+    local len2=${#s2}
+
+    # Quick exits
+    if [[ $len1 -eq 0 ]]; then echo "$len2"; return; fi
+    if [[ $len2 -eq 0 ]]; then echo "$len1"; return; fi
+    if [[ "$s1" == "$s2" ]]; then echo 0; return; fi
+
+    local -A d
+    local i j cost del ins sub trans m
+    for ((i = 0; i <= len1; i++)); do d["$i,0"]=$i; done
+    for ((j = 0; j <= len2; j++)); do d["0,$j"]=$j; done
+
+    for ((i = 1; i <= len1; i++)); do
+        for ((j = 1; j <= len2; j++)); do
+            if [[ "${s1:$((i-1)):1}" == "${s2:$((j-1)):1}" ]]; then
+                cost=0
+            else
+                cost=1
+            fi
+            del=$(( d["$((i-1)),$j"] + 1 ))
+            ins=$(( d["$i,$((j-1))"] + 1 ))
+            sub=$(( d["$((i-1)),$((j-1))"] + cost ))
+            m=$del
+            [[ $ins -lt $m ]] && m=$ins
+            [[ $sub -lt $m ]] && m=$sub
+            # Damerau extension: adjacent transposition
+            if [[ $i -gt 1 && $j -gt 1 ]] \
+               && [[ "${s1:$((i-1)):1}" == "${s2:$((j-2)):1}" ]] \
+               && [[ "${s1:$((i-2)):1}" == "${s2:$((j-1)):1}" ]]; then
+                trans=$(( d["$((i-2)),$((j-2))"] + 1 ))
+                [[ $trans -lt $m ]] && m=$trans
+            fi
+            d["$i,$j"]=$m
+        done
+    done
+    echo "${d["$len1,$len2"]}"
+}
+
+# Canonical command list — single source of truth for typo suggestions.
+# Kept in sync with the Level-0 completion list above (cli/sbin/nftban
+# lines ~165-235). NOT exhaustive of every sub-command; that's by design,
+# since the typo handler runs on the top-level command only.
+_nftban_canonical_commands() {
+    cat <<'EOF'
+status
+check
+validate
+health
+version
+help
+hello
+enable
+disable
+restart
+services
+config
+setup
+wizard
+system
+firewall
+firewall-logs
+ban
+unban
+search
+blacklist
+whitelist
+whitelist-system
+profile
+permissions
+polkit
+sync
+ddos
+portscan
+login
+botscan
+botguard
+modes
+feeds
+rbl
+suricata
+trust
+country
+cloudflare
+stats
+report
+metrics
+timers
+watchdog
+queue
+port
+panel
+module
+fhs
+nftables
+geoip
+geoban
+mail
+connector
+zabbix
+menu
+debug
+smoke
+selftest
+list
+test
+emulate
+install
+uninstall
+update
+rebuild
+analytics
+support
+support-bundle
+EOF
+}
+
+# Suggest the closest canonical command for an unknown user input.
+# Echoes the best suggestion to stdout, or nothing if no good match exists.
+# Implements the V127 UX-5 thresholds described above.
+_nftban_suggest_command() {
+    local input="$1"
+    local input_len=${#input}
+    local strong_threshold=2
+    local soft_threshold=4
+
+    # Short inputs need tighter matches (avoid "abc" -> "ban" nonsense).
+    if [[ $input_len -le 3 ]]; then
+        strong_threshold=1
+        soft_threshold=1
+    elif [[ $input_len -le 5 ]]; then
+        strong_threshold=2
+        soft_threshold=3
+    fi
+
+    local cmd dist best_cmd="" best_dist=99 second_best_dist=99
+    while IFS= read -r cmd; do
+        [[ -z "$cmd" ]] && continue
+        dist=$(_nftban_damerau_levenshtein "$input" "$cmd")
+        if [[ $dist -lt $best_dist ]]; then
+            second_best_dist=$best_dist
+            best_dist=$dist
+            best_cmd="$cmd"
+        elif [[ $dist -lt $second_best_dist ]]; then
+            second_best_dist=$dist
+        fi
+    done < <(_nftban_canonical_commands)
+
+    # Threshold gate: strong always, soft only if margin >= 2 (unambiguous).
+    if [[ $best_dist -le $strong_threshold ]]; then
+        echo "$best_cmd"
+    elif [[ $best_dist -le $soft_threshold ]] && [[ $((second_best_dist - best_dist)) -ge 2 ]]; then
+        echo "$best_cmd"
+    fi
+}
+
+# =============================================================================
 # MAIN CLI
 # =============================================================================
 
@@ -1168,112 +1355,33 @@ main() {
             echo -e "${NFTBAN_COLOR_RED}${NFTBAN_COLOR_BOLD}ERROR: Unknown command '${cmd}'${NFTBAN_COLOR_RESET}"
             echo ""
 
-            # Suggest similar commands (typo detection)
+            # V127 UX-5 item 2.8: typo-tolerant command suggestion.
+            # Pre-V127 this branch ran a ~70-line static case statement of
+            # hardcoded typo->command pairs that only matched typos the
+            # author had thought to enumerate. Replaced with Damerau-
+            # Levenshtein edit-distance scan over the canonical command
+            # list (see _nftban_suggest_command above), which naturally
+            # handles common transpositions/insertions/deletions/
+            # substitutions for any command in the canonical list without
+            # per-typo maintenance burden. The minimal fallback case
+            # below remains ONLY for multi-word suggestions that cannot
+            # be expressed as a distance against single-command names.
+            # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-5)
             local suggestion=""
-            case "$cmd" in
-                satus|staus|sattus|statsu|satuts)
-                    suggestion="status"
-                    ;;
-                hfs|HSF|hsf)
-                    suggestion="fhs"
-                    ;;
-                helth|heath|healt|heatlh)
-                    suggestion="health"
-                    ;;
-                geo|geoip-lookup|geo-lookup)
-                    suggestion="geoip"
-                    ;;
-                login-alert|loginalert|logn|lgin)
-                    suggestion="login"
-                    ;;
-                analytic|analyse|analyze)
-                    suggestion="analytics"
-                    ;;
-                bna|bann)
-                    suggestion="ban"
-                    ;;
-                ubnan|unabn)
-                    suggestion="unban"
-                    ;;
-                ddso|dods)
-                    suggestion="ddos"
-                    ;;
-                botgaurd|botgurd|bodguard|bot-guard)
-                    suggestion="botguard"
-                    ;;
-                portscna|portsacn|posrtscan)
-                    suggestion="portscan"
-                    ;;
-                feeed|feds|feed)
-                    suggestion="feeds"
-                    ;;
-                firewll|firewal|firwall)
-                    suggestion="firewall"
-                    ;;
-                modul|moduel)
-                    suggestion="module"
-                    ;;
-                stat|stast)
-                    suggestion="stats"
-                    ;;
-                servcies|servies|serivces)
-                    suggestion="services"
-                    ;;
-                whtielist|whitelsit|whiltelist)
-                    suggestion="whitelist"
-                    ;;
-                blacklsit|blcklist|balcklist|blocklist)
-                    suggestion="blacklist"
-                    ;;
-                searh|serach|seach|sreach|searhc|fnd|find)
-                    suggestion="search"
-                    ;;
-                cofnig|confg|conifg|ocnfig)
-                    suggestion="config"
-                    ;;
-                updaet|updtae|upate|upadte)
-                    suggestion="update"
-                    ;;
-                instal|insatll|intall|intsal)
-                    suggestion="install"
-                    ;;
-                verison|vesion|verion|vsersion)
-                    suggestion="version"
-                    ;;
-                rebulid|rebuid|reubiild)
-                    suggestion="rebuild"
-                    ;;
-                tiemrs|tmiers|itmer)
-                    suggestion="timers"
-                    ;;
-                mterics|metrcs|metircs)
-                    suggestion="metrics"
-                    ;;
-                exprot|exort|exoprt)
-                    suggestion="export"
-                    ;;
-                geoban|geo-ban)
-                    suggestion="geoban"
-                    ;;
-                wathcdog|watchdgo|wacthdog)
-                    suggestion="watchdog"
-                    ;;
-                emualte|emualet|emluate|vreify|verfiy|veirfy)
-                    suggestion="emulate"
-                    ;;
-                suricat|surikata|sruicata)
-                    suggestion="suricata"
-                    ;;
-                unintsall|unisntall|uninstll)
-                    suggestion="uninstall"
-                    ;;
-                configtest)
-                    suggestion="config validate"
-                    ;;
-                configaudit)
-                    suggestion="config audit"
-                    ;;
-            esac
+            suggestion=$(_nftban_suggest_command "$cmd")
+
+            # Minimal multi-word fallback (only for inputs the edit-distance
+            # scan cannot map, since the canonical list is single-token).
+            if [[ -z "$suggestion" ]]; then
+                case "$cmd" in
+                    configtest)
+                        suggestion="config validate"
+                        ;;
+                    configaudit)
+                        suggestion="config audit"
+                        ;;
+                esac
+            fi
 
             if [[ -n "$suggestion" ]]; then
                 echo "Did you mean: ${NFTBAN_COLOR_GREEN}nftban ${suggestion}${NFTBAN_COLOR_RESET}?"
