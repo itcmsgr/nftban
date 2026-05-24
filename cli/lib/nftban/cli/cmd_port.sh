@@ -213,7 +213,7 @@ nftban_cmd_port_help() {
     echo "  These are correlated to compute REAL reachability."
     echo ""
     echo "NOTES:"
-    echo "  - Requires root privileges (sudo)"
+    echo "  - Requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)"
     echo "  - Never trusts config files — reads live kernel + runtime state"
     echo "  - Detects foreign tables (iptables-nft, Docker, CSF artifacts)"
     echo ""
@@ -281,8 +281,8 @@ nftban_cmd_port() {
 
     # Check root for port scanning
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Port scanning requires root privileges" >&2
-        echo "Please run: sudo nftban port $subcmd" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+        echo "Hint: port scanning requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules." >&2
         return 1
     fi
 

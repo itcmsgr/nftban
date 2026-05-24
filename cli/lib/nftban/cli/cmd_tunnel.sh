@@ -217,7 +217,7 @@ EOF
 
 _tunnel_cmd_enable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must run as root to enable tunnel monitoring" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (enable tunnel monitoring)" >&2
         return 1
     fi
 
@@ -280,7 +280,7 @@ _tunnel_cmd_enable() {
 
 _tunnel_cmd_disable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must run as root to disable tunnel monitoring" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (disable tunnel monitoring)" >&2
         return 1
     fi
 

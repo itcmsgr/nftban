@@ -92,7 +92,7 @@ nftban_sync_full() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        nftban_output "error" "This command must be run as root"
+        nftban_output "error" "PolicyKit/polkit authorization failed or insufficient privileges"
         return 1
     fi
 

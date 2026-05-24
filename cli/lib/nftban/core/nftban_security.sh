@@ -113,13 +113,13 @@ nftban_require_root_or_exit() {
     if [[ $EUID -ne 0 ]]; then
         cat <<ERR >&2
 
-ERROR: Root privileges required for ${operation}
+ERROR: PolicyKit/polkit authorization failed or insufficient privileges for ${operation}
 
-This operation requires root access because it modifies system-level
+This operation requires elevated privileges because it modifies system-level
 resources outside of NFTBan's data directories.
 
-Run as root:
-  sudo nftban [command]
+Members of the nftban group are authorized through PolicyKit/polkit rules
+for supported NFTBan operations.
 
 ERR
         exit 1

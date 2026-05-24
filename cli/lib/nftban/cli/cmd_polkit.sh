@@ -103,10 +103,11 @@ nftban_polkit_validate() {
         return 1
     fi
 
-    # Check if running as root for full validation
+    # Check if running with elevated privileges for full validation
     if [[ $EUID -ne 0 ]] && [[ ! "$*" =~ --static-only ]]; then
-        echo "WARNING: Running as non-root. Only static checks will be performed."
-        echo "         Run with sudo for full runtime authorization tests."
+        echo "WARNING: Running without elevated privileges. Only static checks will be performed."
+        echo "         Full runtime authorization tests require elevated privileges"
+        echo "         (members of the nftban group are authorized via PolicyKit/polkit)."
         echo ""
         set -- --static-only "$@"
     fi
@@ -118,10 +119,13 @@ nftban_polkit_validate() {
 }
 
 nftban_polkit_runtime() {
-    # Runtime tests only (requires root)
+    # Runtime tests only (requires elevated privileges — installer/bootstrap-class
+    # operation that creates temporary test users; not polkit-authorized).
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Runtime tests require root privileges" >&2
-        echo "Usage: sudo nftban polkit runtime" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+        echo "Hint: this command requires elevated privileges and may not be available" >&2
+        echo "      through PolicyKit/polkit on this installation (it creates temporary" >&2
+        echo "      test users)." >&2
         return 1
     fi
 
@@ -250,7 +254,7 @@ nftban_polkit_groups() {
                 return 1
             fi
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Adding users to groups requires root privileges" >&2
+                echo "ERROR: Adding users to groups requires elevated privileges and may not be available through PolicyKit/polkit on this installation" >&2
                 return 1
             fi
             echo "Adding user '$user' to group '$group'..."
@@ -265,7 +269,7 @@ nftban_polkit_groups() {
                 return 1
             fi
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Removing users from groups requires root privileges" >&2
+                echo "ERROR: Removing users from groups requires elevated privileges and may not be available through PolicyKit/polkit on this installation" >&2
                 return 1
             fi
             echo "Removing user '$user' from group '$group'..."
@@ -274,7 +278,7 @@ nftban_polkit_groups() {
             ;;
         create)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Creating groups requires root privileges" >&2
+                echo "ERROR: Creating groups requires elevated privileges and may not be available through PolicyKit/polkit on this installation" >&2
                 return 1
             fi
             echo "Creating NFTBan authorization groups..."
@@ -332,7 +336,7 @@ nftban_polkit_rules() {
             ;;
         install)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Installing rules requires root privileges" >&2
+                echo "ERROR: Installing rules requires elevated privileges and may not be available through PolicyKit/polkit on this installation (it writes to /etc/polkit-1/rules.d/)" >&2
                 return 1
             fi
             local src_dir="${NFTBAN_LIB_DIR}/../packaging/polkit-1/rules.d"
@@ -431,7 +435,7 @@ USAGE:
 SUBCOMMANDS:
   validate      Full validation (static + runtime checks)
   static        Static-only checks (no test users needed)
-  runtime       Runtime tests with temporary test users (requires root)
+  runtime       Runtime tests with temporary test users (requires elevated privileges)
   status        Quick status of Polkit rules and groups
   groups        Manage authorization group memberships
   rules         View/install Polkit rule files

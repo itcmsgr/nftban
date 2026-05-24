@@ -163,7 +163,7 @@ nftban_cmd_health() {
             # v1.84: Extended environment/UX diagnostic checks.
             # These are NOT protection truth — they check packaging,
             # permissions, integrations, and optional features.
-            # --auto-heal: trigger fixes for detected issues (requires root)
+            # --auto-heal: trigger fixes for detected issues (requires elevated privileges)
             # --quiet: minimal output (for cron/timer use)
             if [[ "$json_mode" == "true" ]]; then
                 nftban_health_cmd_json "${clean_args[@]}"
@@ -314,10 +314,10 @@ DIAGNOSTICS:
     diagnostics [--auto-heal] [--quiet]
                             Run extended environment checks (shell-based)
                             Checks packaging, permissions, integrations, optional features
-                            --auto-heal: Automatically fix detected issues (requires root)
+                            --auto-heal: Automatically fix detected issues (requires elevated privileges)
                             --quiet: Minimal output (for cron/timer use)
 
-    fix, enforce [target]   Auto-fix common issues (requires root)
+    fix, enforce [target]   Auto-fix common issues (requires elevated privileges)
                             Targets: permissions, directories, services, all
 
     binaries                Check required binaries
@@ -392,7 +392,7 @@ AUTO-FIX CAPABILITIES:
 
 NOTES:
     - Most commands can run as regular user
-    - 'fix' command requires root/sudo privileges
+    - 'fix' command requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)
     - Run 'check' after 'fix' to verify repairs
     - Health checks are non-destructive
 

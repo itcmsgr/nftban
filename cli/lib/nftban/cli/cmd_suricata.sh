@@ -449,7 +449,7 @@ EXAMPLES:
     tail -f ${NFTBAN_LOG_DIR}/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 REQUIREMENTS:
-    - Root privileges (sudo)
+    - Elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)
     - EPEL repository (RHEL/Rocky) or standard repos (Debian/Ubuntu)
     - 2+ cores, 2+ GB RAM recommended
     - Python 3 + pip (for suricata-update)

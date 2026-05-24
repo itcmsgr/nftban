@@ -382,7 +382,7 @@ _nftban_botscan_cmd_config() {
 
 _nftban_botscan_cmd_enable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Requires root privileges" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 
@@ -416,7 +416,7 @@ _nftban_botscan_cmd_enable() {
 
 _nftban_botscan_cmd_disable() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Requires root privileges" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 
@@ -469,7 +469,7 @@ _nftban_botscan_cmd_patterns() {
             ;;
         add)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Requires root privileges" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
             if [[ $# -lt 2 ]]; then
@@ -483,7 +483,7 @@ _nftban_botscan_cmd_patterns() {
             ;;
         remove)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Requires root privileges" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
             if [[ -z "${1:-}" ]]; then
@@ -494,7 +494,7 @@ _nftban_botscan_cmd_patterns() {
             ;;
         enable)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Requires root privileges" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
             if [[ -z "${1:-}" ]]; then
@@ -505,7 +505,7 @@ _nftban_botscan_cmd_patterns() {
             ;;
         disable)
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Requires root privileges" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 return 1
             fi
             if [[ -z "${1:-}" ]]; then

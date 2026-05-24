@@ -345,8 +345,8 @@ _cmd_update_main() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        _update_log ERROR "Update requires root privileges"
-        _update_log INFO "Run: sudo nftban update"
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: update requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
         return 1
     fi
 
@@ -821,8 +821,8 @@ _cmd_update_repair() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        _update_log ERROR "Repair requires root privileges"
-        _update_log INFO "Run: sudo nftban update repair"
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: update repair requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
         return 1
     fi
 
@@ -1580,18 +1580,18 @@ REQUIRES:
       'update force', 'update rollback', 'update repair',
       'update auto-apply'.
 
+    Users in the nftban group may be authorized through PolicyKit/polkit
+    rules for supported NFTBan operations.
+
     Read-only subcommands do not require elevated privileges:
       'update check', 'update status', 'update list',
       'update history', 'update preflight', 'update verify'.
 
-    Authorization path depends on installation policy:
-      - PolicyKit/polkit may authorize supported NFTBan operations.
-      - Otherwise run as root or use the site-approved privilege method.
-
 EXIT CODES:
     0  Success
     1  Update/install failed
-    2  Configuration error
+    2  PolicyKit/polkit authorization failed or insufficient privileges
+    3  Configuration error
 
 SEE ALSO:
     nftban version             # Show current installed NFTBan version
@@ -1679,8 +1679,8 @@ _update_auto_enable() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        _update_log ERROR "Enabling auto-update requires root privileges"
-        _update_log INFO "Run: sudo nftban update auto enable --email EMAIL"
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: enabling auto-update requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules. Then: nftban update auto enable --email EMAIL"
         return 1
     fi
 
@@ -1812,8 +1812,8 @@ _update_auto_disable() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        _update_log ERROR "Disabling auto-update requires root privileges"
-        _update_log INFO "Run: sudo nftban update auto disable"
+        _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
+        _update_log INFO "Hint: disabling auto-update requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
         return 1
     fi
 

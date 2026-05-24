@@ -251,7 +251,7 @@ cmd_require_root() {
     local json_mode="${1:-false}"
 
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        cmd_error "This command must be run as root" "$json_mode"
+        cmd_error "PolicyKit/polkit authorization failed or insufficient privileges" "$json_mode"
         return 1
     fi
     return 0
