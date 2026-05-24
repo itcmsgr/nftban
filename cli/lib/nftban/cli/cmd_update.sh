@@ -1566,6 +1566,28 @@ CONFIGURATION:
     NFTBAN_GIT_BRANCH="main"           # Git branch to track
     NFTBAN_UPDATE_BACKUP_COUNT=3       # Number of backups to keep
 
+CTRL+C / INTERRUPTION:
+    Do NOT interrupt 'nftban update' with Ctrl+C once package installation
+    has started. dpkg/rpm transactions interrupted mid-install can leave
+    the package manager in a broken state requiring manual recovery
+    ('dpkg --configure -a' on Debian/Ubuntu; 'dnf clean all' on RPM).
+    If an update appears stuck, prefer waiting and inspecting logs at
+    journalctl -u nftban-update-apply.service first.
+
+REQUIRES:
+    Elevated privileges for mutating subcommands:
+      'update', 'update github', 'update git', 'update local',
+      'update force', 'update rollback', 'update repair',
+      'update auto-apply'.
+
+    Read-only subcommands do not require elevated privileges:
+      'update check', 'update status', 'update list',
+      'update history', 'update preflight', 'update verify'.
+
+    Authorization path depends on installation policy:
+      - PolicyKit/polkit may authorize supported NFTBan operations.
+      - Otherwise run as root or use the site-approved privilege method.
+
 EXIT CODES:
     0  Success
     1  Update/install failed

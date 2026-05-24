@@ -411,8 +411,14 @@ Options:
   --compact, -q         Compact output (essential info only)
   --dry-run             Show what would happen without executing
   --yes, -y             Skip confirmation prompt for permanent bans
-  --async               Return immediately without waiting for sync
-  --wait                Wait for nftables sync confirmation
+  --async               Return immediately after sending the ban request
+                        to the daemon; do NOT wait for kernel-set
+                        confirmation. Use for high-throughput bulk imports
+                        where caller does not need post-sync verification.
+  --wait                Explicitly wait for nftables kernel-set sync
+                        confirmation before returning. This is the
+                        DEFAULT — flag is accepted for clarity in scripts
+                        that want to be explicit.
   --help, -h            Show this help message
 
 Examples:
@@ -427,8 +433,17 @@ Notes:
   - Without --timeout, ban is permanent until manually removed
   - With --timeout, ban auto-expires after specified seconds
   - IP is added to ${NFTBAN_CONFIG_DIR}/blacklist.d/99-manual.conf
-  - Changes are synced to nftables immediately
+  - Default behavior writes to the blacklist file and waits for the
+    kernel set to confirm sync before returning. --async skips the
+    confirmation wait; the daemon still completes the sync, but the
+    CLI returns before it is observable via 'nft list set ...'.
   - File format: one IP per line, # for comments, blank lines ignored
+
+Exit Codes:
+  0   Ban applied (or queued via --async)
+  1   General error (invalid IP, IPC failure, write failure)
+  2   IP is whitelisted; ban refused
+  3   File path missing or unreadable (with --file)
 
 See also:
   nftban unban <ip>     Remove IP ban
