@@ -70,11 +70,9 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # =============================================================================
 
 _nftban_flush_help() {
-    # Load output module for standard banner
-    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
-
-    # Show standard banner
-    nftban_banner
+    # V127 UX-6 D-1: banner suppressed in help dispatch (the no-args dashboard
+    # banner is rendered separately). nftban_output.sh is no longer sourced
+    # here because nftban_banner is the only symbol it provided to this path.
 
     cat <<'HELP'
 
@@ -120,6 +118,30 @@ WARNING:
     - Emergency recovery (broken config)
     - Debugging firewall issues
     - Starting fresh after misconfiguration
+
+CTRL+C / INTERRUPTION:
+    Do NOT interrupt this command with Ctrl+C once flush has started.
+    nftables set mutations are not transactional from the CLI's perspective;
+    an interrupted flush can leave the kernel set partially emptied while
+    the source files still claim those IPs are banned. Recovery requires
+    'nftban firewall reload' to re-sync from config.
+
+REQUIRES:
+    Elevated privileges for mutating subcommands:
+      all flush targets (blacklist, whitelist, feeds, geoban, ddos, all).
+
+    Read-only modes do not require elevated privileges:
+      --dry-run.
+
+    Authorization path depends on installation policy:
+      - PolicyKit/polkit may authorize supported NFTBan operations.
+      - Otherwise run as root or use the site-approved privilege method.
+
+EXIT CODES:
+    0   Flush completed (or dry-run completed)
+    1   General error (IPC failure, nft command failure)
+    2   Unsupported target / invalid argument
+    3   Authorization failed or insufficient privileges for mutating subcommands
 
 HELP
 }

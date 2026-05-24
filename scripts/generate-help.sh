@@ -259,9 +259,15 @@ Documentation:
   Wiki:    https://github.com/itcmsgr/nftban/wiki
   Issues:  https://github.com/itcmsgr/nftban/issues
 
-Profile: $profile
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
+    # V127 UX-6 D-7: removed cosmetic "Profile: $profile" footer line.
+    # The label was hardcoded operator-facing text that did not reflect any
+    # actual operator-configurable state; auditor/panel profiles continue
+    # to filter via existing should_show_for_profile logic (audience +
+    # panel_expose), so the runtime profile gating is unaffected.
+    # Reversible by restoring the line above.
+    # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-6 D-7)
 }
 
 # =============================================================================
