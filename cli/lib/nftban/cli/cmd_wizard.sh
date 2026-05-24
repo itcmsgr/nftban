@@ -479,8 +479,8 @@ _wizard_enable_modules() {
 cmd_wizard_install() {
     # Check root
     if [[ "$EUID" -ne 0 ]]; then
-        echo "ERROR: Wizard requires root privileges" >&2
-        echo "Usage: sudo nftban wizard install"
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+        echo "Hint: wizard install requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
         return 1
     fi
 

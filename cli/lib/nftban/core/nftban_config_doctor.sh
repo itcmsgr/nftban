@@ -1341,7 +1341,7 @@ _doctor_render_json() {
 _doctor_auto_fix() {
     # Require root for fixes
     if [[ $EUID -ne 0 ]]; then
-        echo "WARNING: --fix requires root privileges, skipping auto-fix" >&2
+        echo "WARNING: --fix requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules); skipping auto-fix" >&2
         return 0
     fi
 
@@ -1447,7 +1447,7 @@ nftban_cmd_config_doctor() {
                 echo "OPTIONS:"
                 echo "  --json              JSON output (machine-readable)"
                 echo "  --brief             Single summary line"
-                echo "  --fix               Auto-fix fixable issues (requires root)"
+                echo "  --fix               Auto-fix fixable issues (requires elevated privileges)"
                 echo "  --module <name>     Audit single module only"
                 echo "  --security          Show security gaps only"
                 echo ""

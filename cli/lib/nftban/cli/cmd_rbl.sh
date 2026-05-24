@@ -881,7 +881,7 @@ nftban_cmd_rbl_enable() {
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must run as root to enable timer" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (enable timer)" >&2
         return 1
     fi
 
@@ -926,7 +926,7 @@ nftban_cmd_rbl_disable() {
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must run as root to disable timer" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (disable timer)" >&2
         return 1
     fi
 
@@ -1176,7 +1176,7 @@ EOF
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Must run as root to modify configuration" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (modify configuration)" >&2
                 return 1
             fi
 
@@ -1222,7 +1222,7 @@ EOF
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Must run as root to modify configuration" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (modify configuration)" >&2
                 return 1
             fi
 
@@ -1305,7 +1305,7 @@ nftban_cmd_rbl_watchlist() {
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Must run as root to modify watchlist" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (modify watchlist)" >&2
                 return 1
             fi
 
@@ -1323,7 +1323,7 @@ nftban_cmd_rbl_watchlist() {
 
             # Check if running as root
             if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: Must run as root to modify watchlist" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (modify watchlist)" >&2
                 return 1
             fi
 

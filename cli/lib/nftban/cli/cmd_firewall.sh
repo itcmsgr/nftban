@@ -357,7 +357,7 @@ Notes:
   - This file is machine-managed: do NOT hand-edit /etc/nftban/whitelist.d/00-session.conf.
   - Permanent operator entries belong in 99-manual.conf (NOT this file).
   - Static host-interface entries belong in 00-system.conf (NOT this file).
-  - Requires root (writes /etc/nftban/whitelist.d/).
+  - Requires elevated privileges (writes /etc/nftban/whitelist.d/); members of the nftban group are authorized via PolicyKit/polkit rules.
 
 V120 (D-UPDATE-OPERATOR-SELF-BAN-GAP-001): closes the operator self-ban gap by
 ensuring `nftban update` / `firewall takeover` / validation workflows
@@ -824,7 +824,7 @@ Env mirror:
   NFTBAN_PANEL_AUTO_TAKEOVER=1   useful for cloud-init / Ansible /
                                  package %post hooks.
 
-Requires root.
+Requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules).
 HELP_EOF
                 return 0
                 ;;
@@ -845,7 +845,7 @@ HELP_EOF
     fi
 
     if [[ $EUID -ne 0 && "$dry_run" == "false" ]]; then
-        echo "ERROR: nftban firewall takeover requires root (mutates: true)." >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (nftban firewall takeover mutates kernel state; members of the nftban group are authorized via PolicyKit/polkit rules)." >&2
         return 1
     fi
 
@@ -3165,12 +3165,11 @@ REQUIRES:
   Elevated privileges for mutating subcommands:
     rebuild, reset, restore, reload, takeover, record --write.
 
+  Users in the nftban group may be authorized through PolicyKit/polkit
+  rules for supported NFTBan operations.
+
   Read-only subcommands do not require elevated privileges:
     status, stats, validate, conflicts, check, logs, record without --write.
-
-  Authorization path depends on installation policy:
-    - PolicyKit/polkit may authorize supported NFTBan operations.
-    - Otherwise run as root or use the site-approved privilege method.
 
 Exit codes (validate --strict):
   0   OK - NFTBan is sole firewall authority
@@ -3181,7 +3180,7 @@ Exit codes (validate --strict):
 Exit codes (other subcommands):
   0   Success
   1   General error (nft failure, IPC failure)
-  2   Authorization failed or insufficient privileges for mutating subcommands
+  2   PolicyKit/polkit authorization failed or insufficient privileges
 
 For detailed help:
   nftban firewall validate --help

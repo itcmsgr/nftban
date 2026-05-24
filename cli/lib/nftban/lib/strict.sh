@@ -195,8 +195,8 @@ nftban_try() {
 # Exits: 1 if not root
 nftban_require_root() {
     if [[ "${EUID}" -ne 0 ]]; then
-        echo "ERROR: This script must be run as root" >&2
-        echo "Try: sudo $0 $*" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+        echo "Hint: this operation requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules." >&2
         exit 1
     fi
 }

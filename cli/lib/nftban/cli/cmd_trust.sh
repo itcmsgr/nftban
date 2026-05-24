@@ -87,8 +87,9 @@ nftban_cmd_trust() {
     case "$action" in
         enable|disable|update|load)
             if [[ "$EUID" -ne 0 ]]; then
-                echo "ERROR: This command requires root privileges" >&2
-                echo "Please run with sudo: sudo nftban trust $action $provider" >&2
+                echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+                echo "Hint: trust $action requires elevated privileges; members of the nftban" >&2
+                echo "      group are authorized via PolicyKit/polkit rules." >&2
                 return 1
             fi
             ;;
