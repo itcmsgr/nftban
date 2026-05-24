@@ -107,8 +107,20 @@ nftban_cmd_health() {
     # Main health command handler
     # Args: subcommand [options]
 
-    local subcommand="${1:-check}"
-    shift || true
+    # V129 PR-C D4: if the first argument is a global flag (not a subcommand),
+    # default subcommand to "check" and leave the flag in $@ so the args loop
+    # below can parse it. Without this, `nftban health --verbose` mis-sets
+    # subcommand="--verbose" and the case below emits "Unknown health command".
+    local subcommand
+    case "${1:-}" in
+        --verbose|-v|--json)
+            subcommand="check"
+            ;;
+        *)
+            subcommand="${1:-check}"
+            shift || true
+            ;;
+    esac
 
     # v1.83 F2 fix: scan for --json AFTER shift, so subcommand position
     # is excluded. Then build a clean args array without --json so it

@@ -170,10 +170,15 @@ else
     _t_assert "1.7 cmd_ban.sh calls helper function" 1 "helper call missing"
 fi
 
-if grep -q '"\$auto_confirm" != "true" && "\$dry_run" != "true"' "$_ban_cli"; then
-    _t_assert "1.7 guard refuses unless --yes (auto_confirm) OR --dry-run" 0
+# V129 PR-C D7: the pre-fix condition `[[ "$auto_confirm" != "true" && "$dry_run" != "true" ]]`
+# bypassed the guard in --dry-run mode (silently mis-confirming "would ban 8.8.8.8" on
+# dry-run preview). The v1.129 corrected condition is auto_confirm-only — dry-run is
+# ALSO refused unless --yes is set. See AUDIT_190_LIFECYCLE/V129_PR_B_LAB2_EXECUTION_REPORT.md
+# §3 D7 + cli/lib/nftban/tests/v129_pr_c_runtime_defect_fixes_test.sh.
+if grep -q 'if \[\[ "\$auto_confirm" != "true" \]\]; then' "$_ban_cli"; then
+    _t_assert "1.7 guard refuses on dry-run AND live unless --yes (V129 PR-C D7 corrected)" 0
 else
-    _t_assert "1.7 guard refuses unless --yes (auto_confirm) OR --dry-run" 1 "conditional pattern missing"
+    _t_assert "1.7 guard refuses on dry-run AND live unless --yes (V129 PR-C D7 corrected)" 1 "post-V129-PR-C auto_confirm-only condition missing"
 fi
 
 if grep -q 'override accepted' "$_ban_cli"; then

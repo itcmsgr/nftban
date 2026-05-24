@@ -212,9 +212,7 @@ nftban_cmd_version() {
   "build_date": "${NFTBAN_BUILD_DATE}",
   "components": {
     "cli": "${NFTBAN_CLI_VERSION}",
-    "core": "${NFTBAN_CORE_VERSION}",
-    "gui": "${NFTBAN_GUI_VERSION}",
-    "api": "${NFTBAN_API_VERSION}"
+    "core": "${NFTBAN_CORE_VERSION}"
   },
   "requirements": {
     "bash_min": "${NFTBAN_MIN_BASH_VERSION}",

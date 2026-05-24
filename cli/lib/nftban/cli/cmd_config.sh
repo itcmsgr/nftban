@@ -114,6 +114,10 @@ EXAMPLES:
   nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
   nftban config apply portscan   # Apply to running service
 
+EXIT CODES:
+  0   Success — command completed and (if applicable) data emitted
+  1   Generic failure — module/config not found, parse error, missing arg
+
 EOF
 }
 

@@ -124,12 +124,23 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 	ruleset, err := LoadRulesetJSON(ctx)
 	if err != nil {
 		result.Status = StatusDown
+		errText := err.Error()
+		message := "Failed to load nftables ruleset: " + errText
+		remediation := "Check nft command availability and permissions"
+		// V129 PR-C D6.B: polkit-aware capability wording when nft fails on
+		// permission. The upstream nft binary emits "(you must be root)" which
+		// contradicts NFTBan's polkit/group-based authorization framing.
+		if strings.Contains(errText, "Operation not permitted") || strings.Contains(errText, "permission denied") {
+			cleaned := strings.TrimSpace(strings.ReplaceAll(errText, "(you must be root)", ""))
+			message = "Failed to load nftables ruleset: " + cleaned
+			remediation = "Direct nft access requires CAP_NET_ADMIN (root or nftban systemd-service context). The nftban group does not currently grant direct nft access through polkit; run via 'systemctl start nftban-firewall-validate' or equivalent privileged path."
+		}
 		result.Findings = append(result.Findings, Finding{
 			Code:        CodeNftFailed,
 			Severity:    SeverityCritical,
 			Component:   "kernel",
-			Message:     "Failed to load nftables ruleset: " + err.Error(),
-			Remediation: "Check nft command availability and permissions",
+			Message:     message,
+			Remediation: remediation,
 		})
 		result.Summary = computeSummary(result)
 		return result, nil // Return result, not error - DOWN is a valid state
