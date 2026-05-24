@@ -1087,10 +1087,14 @@ firewall_validate() {
     # If strict mode, run additional checks
     if [[ "$strict_mode" == "true" ]]; then
         local strict_exit=$VALIDATE_OK
+        # V129 PR-C D8: tell strict mode whether the structural validator passed
+        # so its footer label matches the exit code we'll return.
+        local _struct_ok="true"
+        [[ $validation_result -ne $VALIDATE_OK ]] && _struct_ok="false"
         if [[ "$quiet_mode" == "true" ]]; then
-            _firewall_validate_strict "$output_json" >/dev/null 2>&1 || strict_exit=$?
+            _firewall_validate_strict "$output_json" "$_struct_ok" >/dev/null 2>&1 || strict_exit=$?
         else
-            _firewall_validate_strict "$output_json" || strict_exit=$?
+            _firewall_validate_strict "$output_json" "$_struct_ok" || strict_exit=$?
         fi
 
         # Return the more severe exit code
@@ -1109,7 +1113,12 @@ firewall_validate() {
 _firewall_validate_strict() {
     # Enforce Single Firewall Authority
     # Returns: 0=OK, 10=policykit, 20=conflict, 30=collision, 40=env
+    # V129 PR-C D8: 2nd arg `structural_ok` ("true"/"false") tells strict mode
+    # whether the structural validator passed. When false, the strict-mode
+    # footer MUST NOT say PASSED — the operator must see a UX-consistent
+    # report that matches the nonzero exit code from the caller.
     local json_mode="${1:-false}"
+    local structural_ok="${2:-true}"
 
     [[ "$json_mode" == "false" ]] && echo ""
     [[ "$json_mode" == "false" ]] && echo "STRICT MODE: Single Firewall Authority Check"
@@ -1131,8 +1140,17 @@ _firewall_validate_strict() {
     fi
 
     [[ "$json_mode" == "false" ]] && echo ""
-    [[ "$json_mode" == "false" ]] && echo "STRICT PREFLIGHT: PASSED"
-    [[ "$json_mode" == "false" ]] && echo "NFTBan is sole firewall authority - enforce mode OK"
+    if [[ "$structural_ok" == "true" ]]; then
+        [[ "$json_mode" == "false" ]] && echo "STRICT PREFLIGHT: PASSED"
+        [[ "$json_mode" == "false" ]] && echo "NFTBan is sole firewall authority - enforce mode OK"
+    else
+        # V129 PR-C D8: structural validator did NOT pass. Strict-mode conflict
+        # checks all passed, but we can NOT say PASSED because the caller will
+        # return a nonzero rc reflecting the structural failure. Operator must
+        # see a label that matches the exit code.
+        [[ "$json_mode" == "false" ]] && echo "STRICT PREFLIGHT: NOT VERIFIED (see Validator Status above)"
+        [[ "$json_mode" == "false" ]] && echo "Conflict checks passed, but the structural validator could not confirm ruleset truth."
+    fi
 
     return $VALIDATE_OK
 }
