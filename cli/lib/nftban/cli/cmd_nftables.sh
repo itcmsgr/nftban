@@ -106,19 +106,19 @@ EXAMPLES:
     nftban nftables status
 
     # Restart nftables service
-    sudo nftban nftables restart
+    nftban nftables restart
 
     # Enable nftables at boot
-    sudo nftban nftables enable
+    nftban nftables enable
 
     # View current ruleset
     nftban nftables list
 
     # Check configuration
-    sudo nftban nftables check
+    nftban nftables check
 
 NOTES:
-    - Most commands require root privileges
+    - Most commands require elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)
     - NFTBan manages nftables rules automatically
     - Manual changes to nftables rules may be overwritten by NFTBan
 

@@ -678,13 +678,13 @@ TARGETS:
 
 EXAMPLES:
     # Enable everything
-    sudo nftban enable
+    nftban enable
 
     # Disable Suricata only
-    sudo nftban disable suricata
+    nftban disable suricata
 
     # Restart all services
-    sudo nftban restart
+    nftban restart
 
     # Check status
     nftban services status
@@ -693,7 +693,7 @@ EXAMPLES:
     nftban services status --json
 
     # EMERGENCY: Disable all NFTBan
-    sudo nftban disable all
+    nftban disable all
 
 CONFIGURATION:
     ${NFTBAN_CONFIG_DIR}/conf.d/services.conf        - Service settings

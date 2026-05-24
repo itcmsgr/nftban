@@ -297,7 +297,7 @@ _nftban_mode_set() {
     # Check root privileges
     if [[ $EUID -ne 0 ]]; then
         if [[ "$json_mode" == "true" ]] && declare -f json_error &>/dev/null; then
-            json_error "Root privileges required to change mode"
+            json_error "PolicyKit/polkit authorization failed or insufficient privileges to change mode"
         else
             echo "ERROR: Root privileges required to change mode" >&2
         fi

@@ -528,7 +528,7 @@ nftban_cmd_egress() {
 
     # Check root
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Egress commands require root privileges" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi
 

@@ -446,10 +446,10 @@ EXAMPLES:
   nftban polkit status                    # Quick status check
   nftban polkit validate                  # Full validation (sudo for runtime)
   nftban polkit static                    # Static checks only
-  sudo nftban polkit runtime              # Full runtime tests with test users
+  nftban polkit runtime              # Full runtime tests with test users
   nftban polkit groups list               # List groups and members
-  sudo nftban polkit groups add john      # Add user to operator group
-  sudo nftban polkit groups create        # Create NFTBan groups
+  nftban polkit groups add john      # Add user to operator group
+  nftban polkit groups create        # Create NFTBan groups
   nftban polkit rules list                # List installed rules
   nftban polkit rules view 10-nftban-systemd.rules  # View rule file
   nftban polkit test                      # Test your authorization

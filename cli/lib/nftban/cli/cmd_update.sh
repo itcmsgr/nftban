@@ -778,7 +778,7 @@ _cmd_update_main() {
             echo "  See the installer output above for the canonical recovery path."
             echo "  Common recovery commands:"
             echo "      sudo nftban-installer --repair       # resume from failed phase"
-            echo "      sudo nftban update rollback          # restore previous version"
+            echo "      nftban update rollback          # restore previous version"
             echo "      nftban support                       # diagnostic bundle"
             echo ""
             echo "  Log: $UPDATE_LOG_FILE"
@@ -945,7 +945,7 @@ _cmd_update_repair() {
             _update_log INFO "No backups found"
             if [[ $repair_status -ne 0 ]]; then
                 _update_log WARN "No backup to restore from"
-                _update_log INFO "Try: sudo nftban update force"
+                _update_log INFO "Try: nftban update force"
             fi
         fi
     else
@@ -959,7 +959,7 @@ _cmd_update_repair() {
         echo "  Repair completed successfully"
     else
         echo "  Repair completed with warnings"
-        echo "  If issues persist, try: sudo nftban update force"
+        echo "  If issues persist, try: nftban update force"
         echo "  Or reinstall: sudo dpkg -i --force-all <package.deb>"
     fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -2215,10 +2215,10 @@ Please check the server and review the logs:
   journalctl -u nftban-update-apply.service
 
 To manually update:
-  sudo nftban update
+  nftban update
 
 To rollback:
-  sudo nftban update rollback"
+  nftban update rollback"
     fi
 
     # Load mail module if available
