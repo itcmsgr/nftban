@@ -1,0 +1,120 @@
+# =============================================================================
+# NFTBan - Firewall Validation Service (read-only, on-demand)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-firewall-validate.service"
+# meta:type="systemd"
+# meta:tier="STANDARD"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-05-25"
+# meta:description="On-demand read-only nftables ruleset validation. Triggered by nftban-group operators via systemctl start (polkit-authorized through 10-nftban-systemd.rules whitelist) so the nftban CLI 'firewall validate' works without sudo while preserving the v1.0.19 'no pkexec / no nft polkit' security boundary."
+# meta:input="None (reads kernel nft state)"
+# meta:output="Systemd journal (use: journalctl -u nftban-firewall-validate.service -n 0 -o cat)"
+# meta:depends="/usr/lib/nftban/bin/nftban-validate"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/lib/nftban/bin/nftban-validate"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+#
+# V130 PR-A Option C closure for D6.A: this unit is the polkit-authorized
+# privileged path that nftban-group operators use to read nftables state
+# without holding CAP_NET_ADMIN themselves. The CLI wraps `systemctl start
+# --wait` around this unit and reads the journal output.
+#
+# Architecture invariants (preserved from v1.0.19 security philosophy):
+#   - NO pkexec (this is a systemd unit, polkit-authorized via the existing
+#     allowedUnits whitelist in 10-nftban-systemd.rules)
+#   - NO new polkit authorization for `nft` commands directly
+#   - nftables ONLY accessible via nftban-validate (audited Go binary,
+#     contract: ZERO-SIDE-EFFECT, NEVER writes files, NEVER modifies nft)
+#   - Single whitelist entry; no wildcard
+#
+# Related files:
+#   - cli/lib/nftban/cli/cmd_firewall.sh::firewall_validate (wraps systemctl)
+#   - packaging/polkit-1/rules.d/10-nftban-systemd.rules    (allowedUnits[] += this)
+#   - internal/validator/validator.go::ValidateKernel       (the Go code)
+# =============================================================================
+
+[Unit]
+Description=NFTBan Firewall Validation (read-only, on-demand)
+Documentation=man:nftban(8)
+ConditionPathExists=/usr/lib/nftban/bin/nftban-validate
+# DO NOT add a Requires/After on nftables.service — this unit is meant to be
+# usable even when nftban itself is degraded (operator runs it to diagnose).
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+
+# Run as root because nftban-validate needs CAP_NET_ADMIN to read nft state.
+# This is the same model as nftban-firewall-init.service (which already runs
+# root+CAP_NET_ADMIN under the same hardening template).
+User=root
+Group=root
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# JSON output goes to the journal. Operators (or the nftban firewall validate
+# CLI wrapper) read it with: journalctl -u nftban-firewall-validate.service
+ExecStart=/usr/lib/nftban/bin/nftban-validate --json
+StandardOutput=journal
+StandardError=journal
+
+# Idempotent / DoS protection: cap at 3 starts per 10s to prevent log flood
+# if an operator script loops on this unit.
+StartLimitIntervalSec=10
+StartLimitBurst=3
+
+# =============================================================================
+# Security Hardening (mirrors nftban-firewall-init.service template)
+# =============================================================================
+
+# Filesystem Protection — validator is read-only by Go contract, so the
+# stricter ProtectSystem=strict + no ReadWritePaths is safe.
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+
+# Kernel Protection
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+
+# Namespace Restrictions
+PrivateDevices=yes
+RestrictNamespaces=true
+RestrictRealtime=true
+
+# Privilege Restrictions
+# CAP_NET_ADMIN is required for netlink/nftables read; NoNewPrivileges=no
+# because cap acquisition needs it. Other hardening compensates.
+NoNewPrivileges=no
+
+# Misc Hardening
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+
+# Network Access — netlink for nftables read; no AF_PACKET, no DCCP etc.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# System Call Filtering — read-only validator does not need
+# @debug @mount @module @raw-io @reboot @swap @privileged @resources
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@debug @mount @module @raw-io @reboot @swap @privileged @resources
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+
+# Don't restart — this is oneshot. If it fails, operator sees the failure
+# directly through systemctl's exit code (via --wait).
+Restart=no
+
+# NOTE: no [Install] section — this unit is not enabled at boot; it is only
+# started on demand by nftban-group operators via polkit-authorized systemctl
+# (or directly by root). Adding it to a target would auto-run validation on
+# boot, which is not the intent (nftban-firewall-init.service handles boot).

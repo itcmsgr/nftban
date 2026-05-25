@@ -127,13 +127,17 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 		errText := err.Error()
 		message := "Failed to load nftables ruleset: " + errText
 		remediation := "Check nft command availability and permissions"
-		// V129 PR-C D6.B: polkit-aware capability wording when nft fails on
-		// permission. The upstream nft binary emits "(you must be root)" which
-		// contradicts NFTBan's polkit/group-based authorization framing.
+		// V129 PR-C D6.B + V130 PR-A Option C: polkit-aware capability wording
+		// when nft fails on permission. The upstream nft binary emits
+		// "(you must be root)" which contradicts NFTBan's polkit/group-based
+		// authorization framing. V130 PR-A Option C made the
+		// nftban-firewall-validate.service unit real, so the remediation
+		// reference is now truthful — nftban-group operators trigger the
+		// polkit-authorized oneshot unit which holds CAP_NET_ADMIN.
 		if strings.Contains(errText, "Operation not permitted") || strings.Contains(errText, "permission denied") {
 			cleaned := strings.TrimSpace(strings.ReplaceAll(errText, "(you must be root)", ""))
 			message = "Failed to load nftables ruleset: " + cleaned
-			remediation = "Direct nft access requires CAP_NET_ADMIN (root or nftban systemd-service context). The nftban group does not currently grant direct nft access through polkit; run via 'systemctl start nftban-firewall-validate' or equivalent privileged path."
+			remediation = "Direct nft access requires CAP_NET_ADMIN. The nftban CLI normally routes through nftban-firewall-validate.service for operators in the nftban group (polkit-authorized via /etc/polkit-1/rules.d/10-nftban-systemd.rules); if you reached this message you are either invoking nftban-validate directly OR the v1.130+ service is not installed. Fix: run 'systemctl start --wait nftban-firewall-validate.service' (nftban group polkit-authorized) or invoke nftban-validate from a context that holds CAP_NET_ADMIN."
 		}
 		result.Findings = append(result.Findings, Finding{
 			Code:        CodeNftFailed,
