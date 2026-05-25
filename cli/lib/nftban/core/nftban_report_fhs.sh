@@ -42,6 +42,16 @@ umask 027
 
 declare -g -A NFTBAN_FHS_DIRECTORIES=()  # key: path -> "expected_perms|expected_owner|expected_group|purpose"
 declare -g -A NFTBAN_FHS_STATUS=()       # key: path -> "OK|ERROR|WARNING"
+# V131 PR-A CB-2 fix: NFTBAN_FHS_ACTUAL was referenced at lines :379 and :564
+# (HTML + JSON reports) via `${NFTBAN_FHS_ACTUAL[$path]:-...}` BUT was never
+# declared. Without `declare -A`, bash treats `[$path]` as arithmetic
+# evaluation; when $path is e.g. "/etc/nftban", arithmetic fails with
+# "syntax error: operand expected (error token is '/etc/nftban')" and crashes
+# the report. The `:-` fallback never fires because the crash is at the array
+# subscript step, not the value lookup. Adding the declaration makes the
+# subscript an associative key (string), and the existing fallback handles
+# the "not populated yet" case.
+declare -g -A NFTBAN_FHS_ACTUAL=()       # key: path -> actual filesystem state ("perms|owner|group") or empty
 declare -g NFTBAN_FHS_TIMESTAMP
 NFTBAN_FHS_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_FHS_OUTPUT_FORMAT="${NFTBAN_FHS_OUTPUT_FORMAT:-table}"

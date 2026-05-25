@@ -513,7 +513,12 @@ _verify_feeds() {
         local feed_name
         feed_name=$(basename "$feed_file" | sed 's/\.\(txt\|list\)$//')
         local file_count
-        file_count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null || echo "0")
+        # V131 PR-A CB-3 fix (sibling of line 572): same double-zero pattern.
+        # grep -c on no-match prints "0" + exits 1 → `|| echo "0"` fires
+        # producing "0\n0" → arithmetic crash at line below. Use `|| true`
+        # for errexit suppression (file under set -e) without concat output.
+        file_count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null || true)
+        file_count=${file_count:-0}
         total_file_ips=$((total_file_ips + file_count))
         # v1.19.20 FIX
         ((feeds_checked++)) || true
@@ -569,7 +574,14 @@ _verify_geoban() {
 
     if [[ $blocked_countries -eq 0 ]]; then
         # Alternative: check geoban list command
-        blocked_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || echo "0")
+        # V131 PR-A CB-3 fix: same `grep -c ... || echo "0"` double-zero
+        # pattern as CB-1 — grep -c on no-match prints "0" + exits 1, then
+        # `|| echo "0"` fires and concatenates to "0\n0", which printf %d
+        # below cannot parse ("printf: 0" error). Use `|| true` to suppress
+        # errexit without producing concat output (file is under set -e via
+        # cmd_selftest.sh:1 + cli/sbin/nftban:29). grep -c's "0" is preserved.
+        blocked_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+        blocked_countries=${blocked_countries:-0}
     fi
 
     printf "     Countries blocked: %d\n" "$blocked_countries"

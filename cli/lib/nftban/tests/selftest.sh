@@ -44,7 +44,25 @@ readonly SCRIPT_VERSION="1.0.0"
 DEFAULT_TIMEOUT=30            # seconds per command (default)
 QUICK_TIMEOUT=15              # seconds for quick tests
 CURRENT_TIMEOUT=$DEFAULT_TIMEOUT  # actual timeout to use
-readonly TRACE_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log"
+# V131 PR-A CB-4 fix: the v1.130 PR-C long-tail battery surfaced that
+# running selftest.sh as a non-root operator (e.g. an nftban-group user)
+# leaks `/var/log/nftban/debug_trace.log: Permission denied` on the trace
+# append at line 154 below — the default log dir is root-owned. Compute
+# a writable trace path BEFORE the readonly so the test stays usable for
+# nftban-group operators without a stderr leak. Order of preference:
+#   1) NFTBAN_LOG_DIR (operator-overridden; respected as-is even if not
+#      writable — operator knows what they want)
+#   2) /var/log/nftban (default; used if writable OR creatable)
+#   3) $TMPDIR/nftban-selftest-$EUID/ (writable per-user fallback)
+_st_trace_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+if [[ -z "${NFTBAN_LOG_DIR:-}" ]] \
+   && [[ ! -w "$_st_trace_dir" ]] \
+   && ! mkdir -p "$_st_trace_dir" 2>/dev/null; then
+    _st_trace_dir="${TMPDIR:-/tmp}/nftban-selftest-${EUID}"
+    mkdir -p "$_st_trace_dir" 2>/dev/null || _st_trace_dir="${TMPDIR:-/tmp}"
+fi
+readonly TRACE_LOG="${_st_trace_dir}/debug_trace.log"
+unset _st_trace_dir
 SMOKE_LOG="$(mktemp /tmp/nftban_smoke_XXXXXX.log)"
 readonly SMOKE_LOG
 # shellcheck disable=SC2034  # Reserved for future trace tracking

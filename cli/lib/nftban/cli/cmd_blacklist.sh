@@ -260,7 +260,17 @@ nftban_blacklist_files() {
         local basename
         basename=$(basename "$conf_file")
         local count
-        count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || echo "0")
+        # V131 PR-A CB-1 fix: `grep -c ... 2>/dev/null || echo "0"` produced
+        # "0\n0" when grep matched zero lines — grep -c prints "0" + exits 1,
+        # then `|| echo "0"` ALSO fires concatenating its "0" to grep's
+        # output. The newline then broke `$((total_ips + count))` with a
+        # syntax error. The OLD pattern was also serving as errexit
+        # suppression for `set -e` (sourced from cli/sbin/nftban). Correct
+        # fix: replace `|| echo "0"` with `|| true` — suppresses errexit
+        # without producing concat output; grep -c's own "0" output is
+        # preserved; parameter-default handles file-vanished edge case.
+        count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || true)
+        count=${count:-0}
         total_ips=$((total_ips + count))
 
         echo "──────────────────────────────────────────────────────────────"
