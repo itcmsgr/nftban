@@ -1059,17 +1059,67 @@ firewall_validate() {
         return $VALIDATE_ENV_ERROR
     fi
 
+    # V130 PR-A Option C closure for D6.A: when running as a non-root operator,
+    # route the validator through the polkit-authorized
+    # nftban-firewall-validate.service (oneshot, root+CAP_NET_ADMIN). The
+    # nftban-group members get authorized via the allowedUnits[] whitelist in
+    # 10-nftban-systemd.rules. This preserves the v1.0.19 "no pkexec / no nft
+    # polkit" boundary while making `nftban firewall validate` JustWork without
+    # sudo. If the unit is missing (e.g. partially-upgraded host pre-v1.130),
+    # fall through to direct invocation (which will surface the permission
+    # error with the v1.129 PR-C D6.B polkit-aware Remediation).
+    local _route_via_systemd=false
+    if [[ $EUID -ne 0 ]] \
+       && command -v systemctl >/dev/null 2>&1 \
+       && systemctl cat nftban-firewall-validate.service &>/dev/null; then
+        _route_via_systemd=true
+    fi
+
+    # Helper: emit validator JSON to stdout, set _validator_exit to the
+    # validator's exit code. Uses direct invocation if root; uses
+    # systemctl-then-journal if non-root with the service installed.
+    _invoke_validator_json() {
+        _validator_exit=0
+        if [[ "$_route_via_systemd" == "true" ]]; then
+            local _ts_start
+            _ts_start=$(date +%s)
+            # --wait makes systemctl block until the oneshot finishes; the
+            # exit code reflects whether the unit could be started, not the
+            # ExecMainStatus. Fetch the validator's true rc separately.
+            if ! systemctl start --wait nftban-firewall-validate.service 2>/dev/null; then
+                # Service couldn't even start (e.g. polkit denial on a host
+                # where the user is not in the nftban group). Fall back to
+                # direct invocation so the v1.129 D6.B Remediation surfaces.
+                "$_go_validator" --json 2>/dev/null
+                _validator_exit=$?
+                return $_validator_exit
+            fi
+            local _es
+            _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
+            [[ -n "$_es" ]] && _validator_exit=$_es
+            # Pull the JSON output from this invocation only.
+            journalctl -u nftban-firewall-validate.service --since "@${_ts_start}" -o cat 2>/dev/null
+        else
+            "$_go_validator" --json 2>/dev/null
+            _validator_exit=$?
+        fi
+    }
+
     local validation_result=$VALIDATE_OK
+    local _validator_exit=0
     local go_exit=0
 
     if [[ "$quiet_mode" == "true" ]]; then
-        "$_go_validator" --json >/dev/null 2>&1 || go_exit=$?
+        _invoke_validator_json >/dev/null
+        go_exit=$_validator_exit
     elif [[ "$output_json" == "true" ]]; then
-        "$_go_validator" --json || go_exit=$?
+        _invoke_validator_json
+        go_exit=$_validator_exit
     else
-        # Human-readable: render Go validator JSON as text
+        # Human-readable: render validator JSON as text
         local _val_json
-        _val_json=$("$_go_validator" --json 2>/dev/null) || go_exit=$?
+        _val_json=$(_invoke_validator_json)
+        go_exit=$_validator_exit
         if [[ -n "$_val_json" ]] && command -v jq >/dev/null 2>&1; then
             local _val_status
             _val_status=$(echo "$_val_json" | jq -r '.status' 2>/dev/null)

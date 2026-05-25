@@ -40,12 +40,13 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (27)
+## Services (28)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
 | `nftband.service` | daemon | Main IPC daemon |
 | `nftban-firewall-init.service` | oneshot | Firewall initialization |
+| `nftban-firewall-validate.service` | oneshot | On-demand read-only nftables validation (polkit-authorized for nftban group; closes V130 D6.A) |
 | `nftban-maintenance.service` | oneshot | Maintenance tasks |
 | `nftban-health.service` | oneshot | Health check |
 | `nftban-health-fix.service` | oneshot | Health auto-fix |
