@@ -45,6 +45,13 @@ Documentation=man:nftban(8)
 ConditionPathExists=/usr/lib/nftban/bin/nftban-validate
 # DO NOT add a Requires/After on nftables.service — this unit is meant to be
 # usable even when nftban itself is degraded (operator runs it to diagnose).
+# V130 PR-A.1 D11 fix: StartLimitIntervalSec + StartLimitBurst MUST live in
+# the [Unit] section on systemd 240+. The [Service] placement that v1.130 PR-A
+# shipped was silently ignored (logged "Unknown key name 'StartLimitIntervalSec'
+# in section 'Service', ignoring") which left rate limiting NOT in effect.
+# Cap at 3 starts per 10s to prevent journal flood if an operator script loops.
+StartLimitIntervalSec=10
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
@@ -63,11 +70,6 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 ExecStart=/usr/lib/nftban/bin/nftban-validate --json
 StandardOutput=journal
 StandardError=journal
-
-# Idempotent / DoS protection: cap at 3 starts per 10s to prevent log flood
-# if an operator script loops on this unit.
-StartLimitIntervalSec=10
-StartLimitBurst=3
 
 # =============================================================================
 # Security Hardening (mirrors nftban-firewall-init.service template)
