@@ -911,15 +911,19 @@ firewall_status() {
         if [[ "$v4_ok" == "true" ]]; then
             local _v4_dump
             _v4_dump=$(nft list table $ipv4_table 2>/dev/null || true)
-            v4_sets=$(echo "$_v4_dump" | grep -c "set " || echo 0)
-            v4_chains=$(echo "$_v4_dump" | grep -c "chain " || echo 0)
+            v4_sets=$(echo "$_v4_dump" | grep -c "set " || true)
+            v4_sets=${v4_sets:-0}
+            v4_chains=$(echo "$_v4_dump" | grep -c "chain " || true)
+            v4_chains=${v4_chains:-0}
             v4_elements=$(echo "$_v4_dump" | grep -oP 'elements\s*=\s*\K\d+' | paste -sd+ | bc 2>/dev/null || echo 0)
         fi
         if [[ "$v6_ok" == "true" ]]; then
             local _v6_dump
             _v6_dump=$(nft list table $ipv6_table 2>/dev/null || true)
-            v6_sets=$(echo "$_v6_dump" | grep -c "set " || echo 0)
-            v6_chains=$(echo "$_v6_dump" | grep -c "chain " || echo 0)
+            v6_sets=$(echo "$_v6_dump" | grep -c "set " || true)
+            v6_sets=${v6_sets:-0}
+            v6_chains=$(echo "$_v6_dump" | grep -c "chain " || true)
+            v6_chains=${v6_chains:-0}
             v6_elements=$(echo "$_v6_dump" | grep -oP 'elements\s*=\s*\K\d+' | paste -sd+ | bc 2>/dev/null || echo 0)
         fi
 
@@ -961,12 +965,14 @@ ENDJSON
     echo "Sets:"
     if [[ "$v4_ok" == "true" ]]; then
         local set_count
-        set_count=$(nft list table $ipv4_table 2>/dev/null | grep -c "set " || echo 0)
+        set_count=$(nft list table $ipv4_table 2>/dev/null | grep -c "set " || true)
+        set_count=${set_count:-0}
         echo "  IPv4: ${set_count} sets"
     fi
     if [[ "$v6_ok" == "true" ]]; then
         local set_count6
-        set_count6=$(nft list table $ipv6_table 2>/dev/null | grep -c "set " || echo 0)
+        set_count6=$(nft list table $ipv6_table 2>/dev/null | grep -c "set " || true)
+        set_count6=${set_count6:-0}
         echo "  IPv6: ${set_count6} sets"
     fi
 

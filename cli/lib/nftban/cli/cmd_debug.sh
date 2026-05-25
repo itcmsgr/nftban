@@ -119,8 +119,10 @@ nftban_debug_status() {
         if [[ -f "$trace_log" ]]; then
             trace_size=$(du -b "$trace_log" 2>/dev/null | cut -f1 || echo "0")
             trace_lines=$(wc -l < "$trace_log" 2>/dev/null || echo 0)
-            start_count=$(grep -c '\[START\]' "$trace_log" 2>/dev/null || echo 0)
-            end_count=$(grep -c '\[END\]' "$trace_log" 2>/dev/null || echo 0)
+            start_count=$(grep -c '\[START\]' "$trace_log" 2>/dev/null || true)
+            start_count=${start_count:-0}
+            end_count=$(grep -c '\[END\]' "$trace_log" 2>/dev/null || true)
+            end_count=${end_count:-0}
         fi
         local orphans=$((start_count - end_count))
         [[ $orphans -lt 0 ]] && orphans=0
@@ -160,8 +162,10 @@ nftban_debug_status() {
         echo "Recent Trace Activity:"
         echo "─────────────────────────────────────────"
         local start_count end_count
-        start_count=$(grep -c '\[START\]' "$trace_log" 2>/dev/null || echo 0)
-        end_count=$(grep -c '\[END\]' "$trace_log" 2>/dev/null || echo 0)
+        start_count=$(grep -c '\[START\]' "$trace_log" 2>/dev/null || true)
+        start_count=${start_count:-0}
+        end_count=$(grep -c '\[END\]' "$trace_log" 2>/dev/null || true)
+        end_count=${end_count:-0}
         echo "  START entries: $start_count"
         echo "  END entries:   $end_count"
 
@@ -328,9 +332,9 @@ nftban_debug_trace() {
                 # Manual stats
                 local trace_log="${NFTBAN_DEBUG_TRACE_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log}"
                 if [[ -f "$trace_log" ]]; then
-                    echo "START entries: $(grep -c '\[START\]' "$trace_log" 2>/dev/null || echo 0)"
-                    echo "END entries:   $(grep -c '\[END\]' "$trace_log" 2>/dev/null || echo 0)"
-                    echo "ERROR entries: $(grep -c '\[ERROR\]' "$trace_log" 2>/dev/null || echo 0)"
+                    echo "START entries: $(grep -c '\[START\]' "$trace_log" 2>/dev/null || true)"
+                    echo "END entries:   $(grep -c '\[END\]' "$trace_log" 2>/dev/null || true)"
+                    echo "ERROR entries: $(grep -c '\[ERROR\]' "$trace_log" 2>/dev/null || true)"
                     echo "Log size:      $(du -h "$trace_log" | cut -f1)"
                 else
                     echo "(no trace log)"

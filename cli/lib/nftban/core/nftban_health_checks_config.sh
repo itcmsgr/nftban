@@ -489,7 +489,8 @@ nftban_health_check_cli_errors() {
         done < "$cli_error_log"
     else
         # Fallback: count all ERROR lines
-        recent_errors=$(grep -c "^ERROR:" "$cli_error_log" 2>/dev/null || echo 0)
+        recent_errors=$(grep -c "^ERROR:" "$cli_error_log" 2>/dev/null || true)
+        recent_errors=${recent_errors:-0}
     fi
 
     # Evaluate error count

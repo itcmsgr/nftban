@@ -1107,7 +1107,8 @@ _nft_set_count() {
 
     # Count non-comment, non-empty lines with IP/CIDR patterns
     local count
-    count=$(echo "$text_out" | grep -cE '^\s+[0-9a-fA-F.:/-]+' || echo "0")
+    count=$(echo "$text_out" | grep -cE '^\s+[0-9a-fA-F.:/-]+' || true)
+    count=${count:-0}
     echo "$count"
     return 0
 }

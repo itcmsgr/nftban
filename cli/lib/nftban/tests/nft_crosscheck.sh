@@ -115,7 +115,8 @@ for family in ip ip6; do
 
     # v1.87.2: Use `list table` — plural `list sets <family> <table>` is broken on v1.0.x
     for set_name in $(nft list table "$family" nftban 2>/dev/null | grep -oP '^\tset \K\S+' | tr -d '{'); do
-        nft_count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -cE '^\s+[0-9a-f]' || echo "0")
+        nft_count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -cE '^\s+[0-9a-f]' || true)
+        nft_count=${nft_count:-0}
         log_pass "Set $family/$set_name: $nft_count elements in kernel"
     done
 done

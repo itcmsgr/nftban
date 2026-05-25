@@ -850,10 +850,14 @@ nftban_ddos_classic_status() {
     local penalty_set="${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}"
     if nft list set $table_v4 "$penalty_set" &>/dev/null; then
         local count_10s count_5m count_drop count_ban
-        count_10s=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}" 2>/dev/null | grep -c 'expires' || echo "0")
-        count_5m=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}" 2>/dev/null | grep -c 'expires' || echo "0")
-        count_drop=$(nft list set $table_v4 "${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}" 2>/dev/null | grep -c 'expires' || echo "0")
-        count_ban=$(nft list set $table_v4 "${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}" 2>/dev/null | grep -c 'expires' || echo "0")
+        count_10s=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_10S:-ddos_limit_10s}" 2>/dev/null | grep -c 'expires' || true)
+        count_10s=${count_10s:-0}
+        count_5m=$(nft list set $table_v4 "${DDOS_PENALTY_SET_LIMIT_5M:-ddos_limit_5m}" 2>/dev/null | grep -c 'expires' || true)
+        count_5m=${count_5m:-0}
+        count_drop=$(nft list set $table_v4 "${DDOS_PENALTY_SET_DROP_5M:-ddos_drop_5m}" 2>/dev/null | grep -c 'expires' || true)
+        count_drop=${count_drop:-0}
+        count_ban=$(nft list set $table_v4 "${DDOS_PENALTY_SET_BAN_1H:-ddos_ban_1h}" 2>/dev/null | grep -c 'expires' || true)
+        count_ban=${count_ban:-0}
         echo "  Status: DEPLOYED"
         echo "  Tier 1 (limit 10s): ${count_10s} IPs"
         echo "  Tier 2 (limit 5m):  ${count_5m} IPs"

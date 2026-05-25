@@ -519,7 +519,8 @@ elif ! nft list table ip6 nftban &>/dev/null; then
     fi
 else
     # Tables exist - validate schema structure
-    SCHEMA_ERRORS=$("$NFTBAN_CMD" firewall validate --quiet 2>&1 | grep -c "ERROR" || echo "0")
+    SCHEMA_ERRORS=$("$NFTBAN_CMD" firewall validate --quiet 2>&1 | grep -c "ERROR" || true)
+    SCHEMA_ERRORS=${SCHEMA_ERRORS:-0}
     if [[ "$SCHEMA_ERRORS" -gt 0 ]]; then
         log_warn "Schema validation found $SCHEMA_ERRORS error(s) - attempting rebuild..."
         if "$NFTBAN_CMD" firewall rebuild --quiet 2>/dev/null; then
@@ -688,7 +689,8 @@ if [ -f "$VICTORIA_SCRAPE_CONF" ]; then
     # Check if config has the conflicting double-keep pattern
     if grep -q "action: keep" "$VICTORIA_SCRAPE_CONF" 2>/dev/null; then
         # Count how many "action: keep" lines exist
-        KEEP_COUNT=$(grep -c "action: keep" "$VICTORIA_SCRAPE_CONF" 2>/dev/null || echo "0")
+        KEEP_COUNT=$(grep -c "action: keep" "$VICTORIA_SCRAPE_CONF" 2>/dev/null || true)
+        KEEP_COUNT=${KEEP_COUNT:-0}
 
         if [ "$KEEP_COUNT" -gt 1 ]; then
             log_info "Fixing VictoriaMetrics scrape config (conflicting rules)..."

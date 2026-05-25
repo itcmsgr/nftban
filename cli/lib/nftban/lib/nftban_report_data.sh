@@ -145,7 +145,7 @@ _count_bans_24h() {
     since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
 
     if [[ -f "$ban_log" ]]; then
-        grep -c "^${since}" "$ban_log" 2>/dev/null || echo 0
+        grep -c "^${since}" "$ban_log" 2>/dev/null || true
     else
         echo 0
     fi
@@ -157,7 +157,7 @@ _count_unbans_24h() {
     since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
 
     if [[ -f "$unban_log" ]]; then
-        grep -c "^${since}" "$unban_log" 2>/dev/null || echo 0
+        grep -c "^${since}" "$unban_log" 2>/dev/null || true
     else
         echo 0
     fi
@@ -306,7 +306,8 @@ _get_module_activity() {
 
     if [[ -f "$action_log" ]]; then
         local count
-        count=$(grep "$module" "$action_log" 2>/dev/null | grep -c "^${since}" || echo 0)
+        count=$(grep "$module" "$action_log" 2>/dev/null | grep -c "^${since}" || true)
+        count=${count:-0}
         echo "${count} events"
     else
         echo "0 events"
@@ -337,7 +338,7 @@ _get_geoban_countries() {
 _count_enabled_feeds() {
     local feeds_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
     if [[ -f "$feeds_conf" ]]; then
-        grep -cE "^FEED_.*_ENABLED=\"true\"" "$feeds_conf" 2>/dev/null || echo 0
+        grep -cE "^FEED_.*_ENABLED=\"true\"" "$feeds_conf" 2>/dev/null || true
     else
         echo 0
     fi
@@ -546,14 +547,17 @@ _collect_rbl_info() {
         local watched_count=0
 
         if [[ -f "$state_file" ]]; then
-            listed_count=$(grep -c "=listed|" "$state_file" 2>/dev/null || echo 0)
-            clean_count=$(grep -c "=clean|" "$state_file" 2>/dev/null || echo 0)
+            listed_count=$(grep -c "=listed|" "$state_file" 2>/dev/null || true)
+            listed_count=${listed_count:-0}
+            clean_count=$(grep -c "=clean|" "$state_file" 2>/dev/null || true)
+            clean_count=${clean_count:-0}
         fi
 
         # Count watchlist entries
         local watchlist_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/watchlist.conf"
         if [[ -f "$watchlist_file" ]]; then
-            watched_count=$(grep -v "^#" "$watchlist_file" 2>/dev/null | grep -c '|' || echo 0)
+            watched_count=$(grep -v "^#" "$watchlist_file" 2>/dev/null | grep -c '|' || true)
+            watched_count=${watched_count:-0}
         fi
 
         _rdata[RBL_LISTED_COUNT]="$listed_count"

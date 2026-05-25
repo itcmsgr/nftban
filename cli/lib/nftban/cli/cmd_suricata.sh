@@ -179,7 +179,8 @@ cmd_suricata_stats() {
     if [[ -n "$eve_path" ]] && [[ -f "$eve_path" ]]; then
         eve_size=$(stat -c%s "$eve_path" 2>/dev/null || stat -f%z "$eve_path" 2>/dev/null || echo "0")
         # Count alerts in last 24h (approximate from last 100 lines)
-        alert_count=$(tail -1000 "$eve_path" 2>/dev/null | grep -c '"event_type":"alert"' || echo "0")
+        alert_count=$(tail -1000 "$eve_path" 2>/dev/null | grep -c '"event_type":"alert"' || true)
+        alert_count=${alert_count:-0}
     fi
 
     if [[ "$json_mode" == "true" ]]; then

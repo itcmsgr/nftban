@@ -581,8 +581,10 @@ nftban_panel_directadmin_report() {
 
         # Count IPs
         local ipv4_count ipv6_count
-        ipv4_count=$(nft list set ${NFTBAN_TABLE_IPV4} cloudflare_ipv4 2>/dev/null | grep -c 'elements' || echo "0")
-        ipv6_count=$(nft list set ${NFTBAN_TABLE_IPV6} cloudflare_ipv6 2>/dev/null | grep -c 'elements' || echo "0")
+        ipv4_count=$(nft list set ${NFTBAN_TABLE_IPV4} cloudflare_ipv4 2>/dev/null | grep -c 'elements' || true)
+        ipv4_count=${ipv4_count:-0}
+        ipv6_count=$(nft list set ${NFTBAN_TABLE_IPV6} cloudflare_ipv6 2>/dev/null | grep -c 'elements' || true)
+        ipv6_count=${ipv6_count:-0}
 
         echo "   IPv4 ranges: $ipv4_count"
         echo "   IPv6 ranges: $ipv6_count"

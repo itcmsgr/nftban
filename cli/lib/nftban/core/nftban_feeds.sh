@@ -519,7 +519,8 @@ nftban_feeds_update_single() {
     mv -f "${staging_file}.tmp" "$staging_file"
     local ip_count
     # v1.18.1 FIX: Prevent exit code 1 when parse_result is empty
-    ip_count=$(echo "$parse_result" | grep -c . || echo "0")
+    ip_count=$(echo "$parse_result" | grep -c . || true)
+    ip_count=${ip_count:-0}
 
     # Validate minimum entries
     local min_entries

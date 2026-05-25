@@ -1214,7 +1214,8 @@ nftban_rbl_status() {
     # Check for blacklisted IPs
     local state_file="${NFTBAN_RBL_CACHE_DIR}/state.json"
     if [[ -f "$state_file" ]]; then
-        listed_count=$(grep -c '"listed"' "$state_file" 2>/dev/null || echo 0)
+        listed_count=$(grep -c '"listed"' "$state_file" 2>/dev/null || true)
+        listed_count=${listed_count:-0}
     fi
 
     # Timer status

@@ -493,7 +493,8 @@ _trust_apply_to_nft() {
         ipv4_elements=$(grep -v '^#' "$ipv4_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
         if [[ -n "$ipv4_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV4} whitelist_ipv4 { ${ipv4_elements} }" >> "$nft_fragment"
-            ipv4_count=$(grep -cv '^\s*$\|^#' "$ipv4_cache" 2>/dev/null || echo 0)
+            ipv4_count=$(grep -cv '^\s*$\|^#' "$ipv4_cache" 2>/dev/null || true)
+            ipv4_count=${ipv4_count:-0}
         fi
     fi
 
@@ -503,7 +504,8 @@ _trust_apply_to_nft() {
         ipv6_elements=$(grep -v '^#' "$ipv6_cache" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
         if [[ -n "$ipv6_elements" ]]; then
             echo "add element ${_TRUST_TABLE_IPV6} whitelist_ipv6 { ${ipv6_elements} }" >> "$nft_fragment"
-            ipv6_count=$(grep -cv '^\s*$\|^#' "$ipv6_cache" 2>/dev/null || echo 0)
+            ipv6_count=$(grep -cv '^\s*$\|^#' "$ipv6_cache" 2>/dev/null || true)
+            ipv6_count=${ipv6_count:-0}
         fi
     fi
 

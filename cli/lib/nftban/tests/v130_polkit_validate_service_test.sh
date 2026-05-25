@@ -207,7 +207,8 @@ grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_firewall_cli" \
 # saw rc=0 with empty stdout because the JSON hadn't flushed to journal when
 # the first journalctl call ran). The retry loop is the contract: a bare
 # single journalctl call would re-introduce the D10 UX bug.
-_journalctl_count=$(grep -cE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" || echo 0)
+_journalctl_count=$(grep -cE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" || true)
+_journalctl_count=${_journalctl_count:-0}
 # We expect the journalctl call to appear inside a loop. Two correct patterns:
 #   for _try in ...; do journalctl ...; ...; done
 #   while ...; do journalctl ...; done
