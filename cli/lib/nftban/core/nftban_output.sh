@@ -599,9 +599,12 @@ nftban_get_stats_line() {
 
     ruleset="$(nft -a list ruleset 2>/dev/null)" || return
 
-    tables=$(echo "$ruleset" | grep -cE '^table[[:space:]]' || echo 0)
-    chains=$(echo "$ruleset" | grep -cE '^[[:space:]]*chain[[:space:]]' || echo 0)
-    rules=$(echo "$ruleset" | grep -cE '[[:space:]]handle[[:space:]][0-9]+' || echo 0)
+    tables=$(echo "$ruleset" | grep -cE '^table[[:space:]]' || true)
+    tables=${tables:-0}
+    chains=$(echo "$ruleset" | grep -cE '^[[:space:]]*chain[[:space:]]' || true)
+    chains=${chains:-0}
+    rules=$(echo "$ruleset" | grep -cE '[[:space:]]handle[[:space:]][0-9]+' || true)
+    rules=${rules:-0}
 
     # Count ban set elements (simplified heuristic)
     bans=0

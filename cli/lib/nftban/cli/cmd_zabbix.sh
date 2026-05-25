@@ -757,7 +757,8 @@ _cmd_zabbix_push() {
             # Collect basic metrics
             local version bans_total
             version=$(cat /etc/nftban/VERSION 2>/dev/null || echo "unknown")
-            bans_total=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
+            bans_total=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | grep -c "elements" || true)
+            bans_total=${bans_total:-0}
 
             echo "Sending basic metrics..."
             zabbix_sender -z "$server" -p "$port" -s "$hostname" \

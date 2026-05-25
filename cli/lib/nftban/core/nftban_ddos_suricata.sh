@@ -666,7 +666,8 @@ nftban_ddos_suricata_status() {
     local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
     local blocked_count
-    blocked_count=$(timeout 10s nft list set $table "$set" 2>/dev/null | grep -c "timeout" || echo "0")
+    blocked_count=$(timeout 10s nft list set $table "$set" 2>/dev/null | grep -c "timeout" || true)
+    blocked_count=${blocked_count:-0}
     echo "Currently Blocked: $blocked_count IPs"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

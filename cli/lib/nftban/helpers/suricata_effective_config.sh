@@ -508,7 +508,8 @@ _suricata_record_effective_state() {
 
     if [[ -f "$rules_file" ]]; then
         rules_hash=$(sha256sum "$rules_file" 2>/dev/null | cut -d' ' -f1)
-        rule_count=$(grep -c "^alert\|^drop\|^reject" "$rules_file" 2>/dev/null || echo 0)
+        rule_count=$(grep -c "^alert\|^drop\|^reject" "$rules_file" 2>/dev/null || true)
+        rule_count=${rule_count:-0}
     fi
 
     if [[ -f "${SURICATA_CONFIG_DIR}/enable.conf" ]]; then

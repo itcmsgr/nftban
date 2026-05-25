@@ -531,7 +531,8 @@ nftban_cmd_portscan() {
 
                 # Count rules
                 local rule_count
-                rule_count=$(nft list chain "${NFTBAN_TABLE_IPV4}" portscan_detection 2>/dev/null | grep -c "log prefix" || echo "0")
+                rule_count=$(nft list chain "${NFTBAN_TABLE_IPV4}" portscan_detection 2>/dev/null | grep -c "log prefix" || true)
+                rule_count=${rule_count:-0}
                 echo "     Rules: $rule_count logging rules"
             else
                 echo "  ❌ Port scan detection chain not found (IPv4)"

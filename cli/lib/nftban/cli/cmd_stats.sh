@@ -185,7 +185,8 @@ nftban_stats_cmd_brief() {
     today=$(date +%Y-%m-%d)
     local ban_log="${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}"
     if [[ -f "$ban_log" ]]; then
-        bans_today=$(grep -c "$today" "$ban_log" 2>/dev/null || echo 0)
+        bans_today=$(grep -c "$today" "$ban_log" 2>/dev/null || true)
+        bans_today=${bans_today:-0}
     fi
 
     echo "${banned} banned | ${whitelisted} whitelisted | ${dropped} dropped | ${bans_today} bans today"

@@ -328,8 +328,10 @@ _fwlog_status() {
     local structured_count base_count
     local journal_hour
     journal_hour=$(journalctl -k --since "1 hour ago" --no-pager 2>/dev/null || true)
-    structured_count=$(echo "$journal_hour" | grep -c -F "$LOG_PREFIX" || echo "0")
-    base_count=$(echo "$journal_hour" | grep -c -E "$BASE_SCHEMA_PREFIXES" || echo "0")
+    structured_count=$(echo "$journal_hour" | grep -c -F "$LOG_PREFIX" || true)
+    structured_count=${structured_count:-0}
+    base_count=$(echo "$journal_hour" | grep -c -E "$BASE_SCHEMA_PREFIXES" || true)
+    base_count=${base_count:-0}
 
     echo "  Logs (last hour):"
     echo "    Structured (NFTBAN_FW):    $structured_count entries"

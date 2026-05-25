@@ -463,8 +463,8 @@ _nftban_botguard_list() {
             if [[ "$first" == "true" ]]; then first="false"; else printf ','; fi
             printf '{"name":"%s","ipv4":"%s","ipv6":"%s"}' \
                 "$set_name" \
-                "$(echo "$ipv4_output" | grep -c "timeout" 2>/dev/null || echo 0)" \
-                "$(echo "$ipv6_output" | grep -c "timeout" 2>/dev/null || echo 0)"
+                "$(echo "$ipv4_output" | grep -c "timeout" 2>/dev/null || true)" \
+                "$(echo "$ipv6_output" | grep -c "timeout" 2>/dev/null || true)"
         done
         printf ']}\n'
     else
@@ -652,10 +652,12 @@ _nftban_botguard_stats() {
 
         local v4_count=0 v6_count=0
         if nft list set ip nftban "$set_name" &>/dev/null; then
-            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || echo "0")
+            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || true)
+            v4_count=${v4_count:-0}
         fi
         if nft list set ip6 nftban "${set_name}6" &>/dev/null; then
-            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || echo "0")
+            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || true)
+            v6_count=${v6_count:-0}
         fi
 
         declare "$v4_var=$v4_count"

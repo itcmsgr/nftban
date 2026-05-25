@@ -941,9 +941,11 @@ nftban_geoban_list() {
                 local cc
                 cc=$(basename "${file}" | sed -n 's/50-ban-\(.*\)\.conf/\1/p')
                 local ipv4_count
-                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
+                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || true)
+                ipv4_count=${ipv4_count:-0}
                 local ipv6_count
-                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
+                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || true)
+                ipv6_count=${ipv6_count:-0}
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((++banned_count))
             fi
@@ -965,9 +967,11 @@ nftban_geoban_list() {
                 local cc
                 cc=$(basename "${file}" | sed -n 's/40-whitelist-\(.*\)\.conf/\1/p')
                 local ipv4_count
-                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
+                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || true)
+                ipv4_count=${ipv4_count:-0}
                 local ipv6_count
-                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
+                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || true)
+                ipv6_count=${ipv6_count:-0}
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((++whitelist_count))
             fi

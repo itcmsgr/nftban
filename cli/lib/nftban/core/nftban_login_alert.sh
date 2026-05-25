@@ -412,7 +412,12 @@ nftban_login_digest_count() {
     if command -v jq &>/dev/null; then
         jq 'length' "$digest_file" 2>/dev/null || echo "0"
     else
-        grep -c '"timestamp"' "$digest_file" 2>/dev/null || echo "0"
+        # V131 PR-A.2: capture + numeric fallback so this branch emits a
+        # single integer (parity with the jq branch's "0"); grep -c prints
+        # "0" on no-match, empty on error → coerced to 0.
+        local _tsc
+        _tsc=$(grep -c '"timestamp"' "$digest_file" 2>/dev/null || true)
+        echo "${_tsc:-0}"
     fi
 }
 

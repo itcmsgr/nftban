@@ -316,6 +316,7 @@ _nftban_count_rules() {
     # Count nftables rules consistently for both human and JSON output.
     local count
     count=$(nft -a list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "# handle" 2>/dev/null || true)
+    count=${count:-0}
     echo "${count:-0}"
 }
 
@@ -873,7 +874,8 @@ _status_section_protection() {
     # GeoBan (country blocking module) - separate from GeoIP database
     local geoban_status="DISABLED"
     local banned_countries
-    banned_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || echo "0")
+    banned_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+    banned_countries=${banned_countries:-0}
     banned_countries=$(echo "$banned_countries" | tr -d '\n' | tr -d ' ')
     if [[ "$banned_countries" =~ ^[0-9]+$ ]] && [[ "$banned_countries" -gt 0 ]]; then
         geoban_status="ACTIVE ($banned_countries countries blocked)"
@@ -1850,6 +1852,7 @@ output_json() {
     # GeoBan (country blocking) - separate from GeoIP
     local geoban_enabled=false geoban_countries=0
     geoban_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+    geoban_countries=${geoban_countries:-0}
     geoban_countries="${geoban_countries:-0}"
     [[ "$geoban_countries" =~ ^[0-9]+$ ]] && [[ "$geoban_countries" -gt 0 ]] && geoban_enabled=true
     echo "    \"geoban\": {\"enabled\": $geoban_enabled, \"blocked_countries\": $geoban_countries},"
