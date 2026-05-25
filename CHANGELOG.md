@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.131.0] - 2026-05-25 — post-v1.129 defect-fix bundle (V130 + V131 lanes; v1.130 never tagged)
+
+**Codename:** `V131_POST_V129_DEFECT_FIX_BUNDLE`
+**Scope files:** `AUDIT_190_LIFECYCLE/V130_*`, `AUDIT_190_LIFECYCLE/V131_*`
+
+> **Why v1.131.0 and not v1.130.0:** `main` accumulated both "V130"-labeled work (`#682`, `#683`) and "V131"-labeled work (`#684`, `#685`) after the `v1.129.0` tag with no release cut in between. **v1.130.0 was never tagged.** Rather than retroactively tag a confusing v1.130.0, all four PRs are folded into this single `v1.131.0` release. There is no separate v1.130.0 GitHub release or git tag.
+
+### Added
+- **`nftban-firewall-validate.service`** — a new oneshot systemd unit performing read-only nftables validation while holding `CAP_NET_ADMIN`, so `nftban`-group operators can run `nftban firewall validate` without root (PR #682, D6.A polkit Option C). Adds a corresponding `allowedUnits[]` entry to `packaging/polkit-1/rules.d/10-nftban-systemd.rules`. **This release changes the install payload + polkit surface** (new systemd unit + polkit rule entry) — unlike v1.127/v1.128/v1.129 it is NOT a no-op packaging release.
+
+### Fixed
+- **D6.A** PolicyKit architecture gap for read-only firewall validation — closed via the polkit-authorized validate service above; `internal/validator/validator.go` remediation text now references the real unit (PR #682, sq `090d73b3`).
+- **D10** `nftban firewall validate` showed empty output despite rc=0 — `cmd_firewall.sh` journalctl read now uses a bounded retry loop to survive the journald async-write race (PR #683, sq `c543fc3a`).
+- **D11** `nftban-firewall-validate.service` rate-limit keys were silently ignored — `StartLimitIntervalSec`/`StartLimitBurst` moved from `[Service]` to `[Unit]` (systemd 240+ requirement) (PR #683).
+- **CB-1** `cmd_blacklist.sh` arithmetic crash on zero-match count; **CB-2** `nftban_report_fhs.sh` undeclared associative array caused `/etc/nftban`-as-arithmetic syntax error; **CB-3** `cmd_selftest.sh` printf/count fallback (two occurrences); **CB-4** `tests/selftest.sh` trace-path `Permission denied` leak for non-root operators, now falls back to a per-user path (PR #684, sq `18637c45`).
+- **Double-zero count-fallback bug class** — `VAR=$(... grep -c ... || echo "0")` (and the unquoted `|| echo 0`) produced `0\n0` on no-match, crashing `$((...))` arithmetic and `printf %d`. Swept ~22 files to the safe idiom `|| true` + `${var:-0}`, hoisted one arithmetic-inline `grep -c`, and removed a duplicate fallback line. Both quoted and unquoted variants, including quoted sites whose grep pattern itself contains a pipe (PR #685, sq `488058ad`). A new regression guard (`cli/lib/nftban/tests/v131_pr_a_2_double_zero_sweep_test.sh`) detects all four variants and forbids `grep -c` command-substitution directly inside `$((...))`.
+
+### Unchanged / invariants
+- **Schema 1.83.0 frozen** — no new validator field, metric, Prometheus label, Status JSON key, `install_state` JSON field, nftables set/chain/table, or config key. (The freeze covers wire-format/metrics/config keys; v1.131.0 does add a systemd unit + polkit rule entry, which the freeze does not cover.)
+
+### Validation
+- Per-PR CI green on #682/#683/#684/#685; post-merge `main` CI green at `488058ad`; local suites green (sweep guard 6/6, V131 PR-A 15/15, V130 28/28, V129 17/17, V128 PR-A 23/23, V127 UX-2 40/40); `bash -n` and shellcheck clean across changed files.
+- **PENDING (required before declaring fully shipped):** `EXECUTE_V1_131_0_PACKAGE_INSTALL_VALIDATION` — package-install validation on lab2 (DEB) then one RPM lab, confirming the new `nftban-firewall-validate.service` installs, the polkit `allowedUnits[]` entry is present, maintainer-script cleanup covers the new unit, validate works as an `nftban`-group user, D10/D11 behave, and the double-zero guard passes from the installed tree.
+
+### Release-prep note
+- Only release-prep files touched in the release-prep PR: `VERSION` (1.129.0 → 1.131.0), `STATUS.md`, `CHANGELOG.md`, and `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only; FHS path-table body byte-unchanged). No functional code change in release-prep.
+
+---
+
 ## [v1.129.0] - 2026-05-24 — V129 deep CLI execution/text/log correlation for the §9 representative command battery
 
 **Codename:** `V129_DEEP_CLI_EXECUTION_TEXT_LOG_CORRELATION`
