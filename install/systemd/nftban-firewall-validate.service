@@ -65,9 +65,15 @@ Group=root
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 
-# JSON output goes to the journal. Operators (or the nftban firewall validate
-# CLI wrapper) read it with: journalctl -u nftban-firewall-validate.service
-ExecStart=/usr/lib/nftban/bin/nftban-validate --json
+# V131.1 D13 fix: ExecStart is a thin wrapper (firewall_validate_run.sh) that
+# runs nftban-validate --json and writes the JSON to a GROUP-READABLE file at
+# /run/nftban/firewall-validate/last.json (chgrp nftban, 0640). The CLI reads
+# that file. Previously the CLI read this unit's JSON via journalctl, but a
+# non-root nftban-group operator (the whole point of Option C) cannot read the
+# unit journal without systemd-journal/adm membership, so they saw no result.
+# The wrapper still echoes the JSON to stdout, so StandardOutput=journal keeps
+# the root/audit journal copy, and it PRESERVES the validator exit code.
+ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh
 StandardOutput=journal
 StandardError=journal
 
