@@ -1097,8 +1097,21 @@ firewall_validate() {
             local _es
             _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
             [[ -n "$_es" ]] && _validator_exit=$_es
-            # Pull the JSON output from this invocation only.
-            journalctl -u nftban-firewall-validate.service --since "@${_ts_start}" -o cat 2>/dev/null
+            # V130 PR-A.1 D10 fix: journald is asynchronous to the validator
+            # process exit. A bare journalctl call immediately after `systemctl
+            # start --wait` frequently returns empty output (the JSON hasn't
+            # been flushed to the journal yet). Bounded retry loop: up to 8
+            # tries with 0.1s sleep between = ~800ms wall time worst case.
+            # In practice 1-2 tries succeed once journald flushes. We accept
+            # whatever output we get on the last try (could still be empty
+            # under extreme load — operator can manually run journalctl).
+            local _try _output=""
+            for _try in 1 2 3 4 5 6 7 8; do
+                _output=$(journalctl -u nftban-firewall-validate.service --since "@${_ts_start}" -o cat 2>/dev/null)
+                [[ -n "$_output" ]] && break
+                sleep 0.1
+            done
+            printf '%s' "$_output"
         else
             "$_go_validator" --json 2>/dev/null
             _validator_exit=$?

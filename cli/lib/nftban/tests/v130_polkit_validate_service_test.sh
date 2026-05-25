@@ -93,6 +93,37 @@ if [[ -f "$_unit_file" ]]; then
     grep -qE '^\[Install\]' "$_unit_file" \
         && _t_assert "A9: unit has NO [Install] section (on-demand only)" 1 "unexpected [Install] section" \
         || _t_assert "A9: unit has NO [Install] section (on-demand only)" 0
+
+    # V130 PR-A.1 D11 fix: StartLimitIntervalSec + StartLimitBurst MUST live
+    # in the [Unit] section (systemd 240+ ignores them silently in [Service]).
+    # The check: in the unit file scanned line-by-line, track which section we
+    # are in; record which section StartLimitIntervalSec appears in. Must be
+    # "[Unit]". (PR-B D11 evidence on lab2 systemd 255 confirmed "[Service]"
+    # placement was silently ignored with "Unknown key name" warning.)
+    _sli_section=$(awk '
+        /^\[Unit\]/      { sec="Unit"; next }
+        /^\[Service\]/   { sec="Service"; next }
+        /^\[Install\]/   { sec="Install"; next }
+        /^StartLimitIntervalSec=/ { print sec; exit }
+    ' "$_unit_file")
+    if [[ "$_sli_section" == "Unit" ]]; then
+        _t_assert "A10 (D11): StartLimitIntervalSec is in [Unit] section (systemd 240+ requirement)" 0
+    else
+        _t_assert "A10 (D11): StartLimitIntervalSec is in [Unit] section (systemd 240+ requirement)" 1 \
+            "found in section: [${_sli_section:-NONE}] — systemd 240+ will ignore it silently"
+    fi
+    _slb_section=$(awk '
+        /^\[Unit\]/      { sec="Unit"; next }
+        /^\[Service\]/   { sec="Service"; next }
+        /^\[Install\]/   { sec="Install"; next }
+        /^StartLimitBurst=/ { print sec; exit }
+    ' "$_unit_file")
+    if [[ "$_slb_section" == "Unit" ]]; then
+        _t_assert "A11 (D11): StartLimitBurst is in [Unit] section" 0
+    else
+        _t_assert "A11 (D11): StartLimitBurst is in [Unit] section" 1 \
+            "found in section: [${_slb_section:-NONE}]"
+    fi
 fi
 
 # ----------------------------------------------------------------------------
@@ -170,6 +201,46 @@ grep -qE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" \
 grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_firewall_cli" \
     && _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 0 \
     || _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 1
+
+# V130 PR-A.1 D10 fix: journalctl read MUST retry with bounded backoff to
+# survive the journald async-write race that PR-B observed on lab2 (operator
+# saw rc=0 with empty stdout because the JSON hadn't flushed to journal when
+# the first journalctl call ran). The retry loop is the contract: a bare
+# single journalctl call would re-introduce the D10 UX bug.
+_journalctl_count=$(grep -cE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" || echo 0)
+# We expect the journalctl call to appear inside a loop. Two correct patterns:
+#   for _try in ...; do journalctl ...; ...; done
+#   while ...; do journalctl ...; done
+# Negative pattern: a single bare journalctl call with no surrounding loop.
+if grep -B2 -A3 'journalctl -u nftban-firewall-validate\.service --since' "$_firewall_cli" | grep -qE '(for[[:space:]]+[_a-zA-Z]+|while)'; then
+    _t_assert "D6 (D10 fix): journalctl read is inside a retry loop (survives journald async write)" 0
+else
+    _t_assert "D6 (D10 fix): journalctl read is inside a retry loop (survives journald async write)" 1 \
+        "bare journalctl call without retry loop — D10 UX regression"
+fi
+
+# Retry must be bounded (not infinite). Look for a numeric iteration cap.
+if grep -qE 'for _try in 1 2 3' "$_firewall_cli"; then
+    _t_assert "D7 (D10 fix): retry loop has bounded iterations (no infinite wait)" 0
+else
+    _t_assert "D7 (D10 fix): retry loop has bounded iterations (no infinite wait)" 1
+fi
+
+# Each retry iteration must sleep between attempts (otherwise we burn CPU
+# and likely all 8 tries fire within journald's flush window anyway).
+if grep -qE 'sleep 0?\.[0-9]' "$_firewall_cli" && \
+   awk '/for _try in/,/done/' "$_firewall_cli" | grep -q 'sleep'; then
+    _t_assert "D8 (D10 fix): retry loop sleeps between attempts" 0
+else
+    _t_assert "D8 (D10 fix): retry loop sleeps between attempts" 1
+fi
+
+# Loop exits early once output is captured (don't waste 800ms on every call).
+if awk '/for _try in/,/done/' "$_firewall_cli" | grep -qE '\[\[ -n "\$?_output"? \]\] && break'; then
+    _t_assert "D9 (D10 fix): retry loop short-circuits when output appears" 0
+else
+    _t_assert "D9 (D10 fix): retry loop short-circuits when output appears" 1
+fi
 
 # ----------------------------------------------------------------------------
 # E: validator.go D6.B Remediation text is consistent with the now-real unit
