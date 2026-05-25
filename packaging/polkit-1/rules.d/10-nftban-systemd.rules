@@ -115,6 +115,15 @@ polkit.addRule(function (action, subject) {
             "nftban-rebuild-recovery.service",
             "nftban-rebuild-recovery.timer",
 
+            // NFTBan Firewall Validation (v1.130 PR-A Option C closure for D6.A)
+            // Read-only on-demand validator wrapper. Lets nftban-group operators
+            // run `nftban firewall validate` without sudo by routing through this
+            // polkit-authorized oneshot unit (which holds CAP_NET_ADMIN). Preserves
+            // the v1.0.19 "no pkexec / no nft polkit" boundary — operators do NOT
+            // get direct nft access, only the right to trigger this audited service.
+            // See V130_D6A_POLKIT_DESIGN_ANALYSIS.md for the design rationale.
+            "nftban-firewall-validate.service",
+
             // NFTBan Suricata Integration (wrapper units)
             "nftban-suricata.service",
             "nftban-suricata-update.service",
