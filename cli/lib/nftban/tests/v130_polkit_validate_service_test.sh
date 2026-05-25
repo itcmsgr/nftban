@@ -81,9 +81,13 @@ if [[ -f "$_unit_file" ]]; then
     grep -qE '^CapabilityBoundingSet=CAP_NET_ADMIN' "$_unit_file" \
         && _t_assert "A5: unit's CapabilityBoundingSet is CAP_NET_ADMIN" 0 \
         || _t_assert "A5: unit's CapabilityBoundingSet is CAP_NET_ADMIN" 1
-    grep -qE '^ExecStart=/usr/lib/nftban/bin/nftban-validate --json' "$_unit_file" \
-        && _t_assert "A6: ExecStart invokes nftban-validate --json" 0 \
-        || _t_assert "A6: ExecStart invokes nftban-validate --json" 1
+    # V131.1 D13: ExecStart now points to the firewall_validate_run.sh wrapper
+    # (which runs nftban-validate --json and writes a group-readable file). The
+    # bare `nftban-validate --json` ExecStart was superseded so non-root
+    # nftban-group operators can read the result without journal access.
+    grep -qE '^ExecStart=/usr/lib/nftban/helpers/firewall_validate_run\.sh' "$_unit_file" \
+        && _t_assert "A6 (D13): ExecStart invokes the firewall_validate_run.sh wrapper" 0 \
+        || _t_assert "A6 (D13): ExecStart invokes the firewall_validate_run.sh wrapper" 1
     grep -qE '^StandardOutput=journal' "$_unit_file" \
         && _t_assert "A7: stdout goes to journal" 0 \
         || _t_assert "A7: stdout goes to journal" 1
@@ -192,9 +196,15 @@ grep -qE 'EUID -ne 0' "$_firewall_cli" \
     && _t_assert "D3: cmd_firewall.sh gates the systemd route on \$EUID -ne 0" 0 \
     || _t_assert "D3: cmd_firewall.sh gates the systemd route on \$EUID -ne 0" 1
 
-grep -qE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" \
-    && _t_assert "D4: cmd_firewall.sh reads the validator JSON from journalctl" 0 \
-    || _t_assert "D4: cmd_firewall.sh reads the validator JSON from journalctl" 1
+# V131.1 D13: the PRIMARY validator-output source is now the group-readable
+# /run/nftban/firewall-validate/last.json file the ExecStart wrapper writes,
+# NOT the unit journal (a non-root nftban-group operator cannot read the unit
+# journal without systemd-journal/adm membership). A single best-effort
+# journalctl call remains ONLY as a last-resort root fallback if the file is
+# empty.
+grep -qE 'firewall-validate/last\.json' "$_firewall_cli" \
+    && _t_assert "D4 (D13): cmd_firewall.sh reads the validator JSON from the /run/nftban last.json file" 0 \
+    || _t_assert "D4 (D13): cmd_firewall.sh reads the validator JSON from the /run/nftban last.json file" 1
 
 # Fallback path: if the unit isn't installed (pre-v1.130 host), the CLI still
 # falls through to direct invocation (which surfaces the D6.B Remediation).
@@ -202,45 +212,54 @@ grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_firewall_cli" \
     && _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 0 \
     || _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 1
 
-# V130 PR-A.1 D10 fix: journalctl read MUST retry with bounded backoff to
-# survive the journald async-write race that PR-B observed on lab2 (operator
-# saw rc=0 with empty stdout because the JSON hadn't flushed to journal when
-# the first journalctl call ran). The retry loop is the contract: a bare
-# single journalctl call would re-introduce the D10 UX bug.
-_journalctl_count=$(grep -cE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli" || true)
-_journalctl_count=${_journalctl_count:-0}
-# We expect the journalctl call to appear inside a loop. Two correct patterns:
-#   for _try in ...; do journalctl ...; ...; done
-#   while ...; do journalctl ...; done
-# Negative pattern: a single bare journalctl call with no surrounding loop.
-if grep -B2 -A3 'journalctl -u nftban-firewall-validate\.service --since' "$_firewall_cli" | grep -qE '(for[[:space:]]+[_a-zA-Z]+|while)'; then
-    _t_assert "D6 (D10 fix): journalctl read is inside a retry loop (survives journald async write)" 0
+# V131.1 D13: the D10 journalctl retry loop was superseded. journald read is
+# unreadable for the non-root nftban-group operators Option C exists to serve
+# (no systemd-journal/adm membership), so the CLI now reads the group-readable
+# file the ExecStart wrapper writes. The file read is the contract; the journal
+# call is demoted to a single best-effort root-only fallback.
+
+# D6: the CLI honors the NFTBAN_RUN_DIR override when resolving the run file
+# (so the read path is the same one the wrapper writes, and tests can redirect
+# it on a dev host).
+if grep -qE 'NFTBAN_RUN_DIR' "$_firewall_cli"; then
+    _t_assert "D6 (D13): cmd_firewall.sh resolves the run file under \${NFTBAN_RUN_DIR:-/run/nftban}" 0
 else
-    _t_assert "D6 (D10 fix): journalctl read is inside a retry loop (survives journald async write)" 1 \
-        "bare journalctl call without retry loop — D10 UX regression"
+    _t_assert "D6 (D13): cmd_firewall.sh resolves the run file under \${NFTBAN_RUN_DIR:-/run/nftban}" 1
 fi
 
-# Retry must be bounded (not infinite). Look for a numeric iteration cap.
+# D7: the run file is read AFTER the systemctl start --wait (the wrapper writes
+# it during that run). Verify the file-read appears after the start line.
+_start_ln=$(grep -nE 'systemctl start --wait nftban-firewall-validate\.service' "$_firewall_cli" | head -1 | cut -d: -f1)
+_read_ln=$(grep -nE 'firewall-validate/last\.json' "$_firewall_cli" | head -1 | cut -d: -f1)
+if [[ -n "$_start_ln" && -n "$_read_ln" && "$_read_ln" -gt "$_start_ln" ]]; then
+    _t_assert "D7 (D13): the last.json read happens after 'systemctl start --wait'" 0
+else
+    _t_assert "D7 (D13): the last.json read happens after 'systemctl start --wait'" 1 \
+        "start line=$_start_ln read line=$_read_ln"
+fi
+
+# D8: a single best-effort journalctl call may remain ONLY as a last-resort
+# fallback (root, unusual /run). It must NOT be inside a multi-try retry loop
+# anymore — that was the D10 shape that returned empty for non-root operators.
 if grep -qE 'for _try in 1 2 3' "$_firewall_cli"; then
-    _t_assert "D7 (D10 fix): retry loop has bounded iterations (no infinite wait)" 0
+    _t_assert "D8 (D13): the D10 multi-try journalctl retry loop is gone (file read replaces it)" 1 \
+        "found the old 'for _try in 1 2 3' journalctl retry loop"
 else
-    _t_assert "D7 (D10 fix): retry loop has bounded iterations (no infinite wait)" 1
+    _t_assert "D8 (D13): the D10 multi-try journalctl retry loop is gone (file read replaces it)" 0
 fi
 
-# Each retry iteration must sleep between attempts (otherwise we burn CPU
-# and likely all 8 tries fire within journald's flush window anyway).
-if grep -qE 'sleep 0?\.[0-9]' "$_firewall_cli" && \
-   awk '/for _try in/,/done/' "$_firewall_cli" | grep -q 'sleep'; then
-    _t_assert "D8 (D10 fix): retry loop sleeps between attempts" 0
+# D9: the fallback journalctl read (if present) is gated on an empty file read,
+# i.e. it is a fallback, not the primary source.
+if awk '/firewall-validate\/last\.json/{seen=1} seen && /journalctl -u nftban-firewall-validate/{print; exit}' "$_firewall_cli" | grep -q 'journalctl'; then
+    _t_assert "D9 (D13): the journalctl read (if any) is a fallback AFTER the file read" 0
 else
-    _t_assert "D8 (D10 fix): retry loop sleeps between attempts" 1
-fi
-
-# Loop exits early once output is captured (don't waste 800ms on every call).
-if awk '/for _try in/,/done/' "$_firewall_cli" | grep -qE '\[\[ -n "\$?_output"? \]\] && break'; then
-    _t_assert "D9 (D10 fix): retry loop short-circuits when output appears" 0
-else
-    _t_assert "D9 (D10 fix): retry loop short-circuits when output appears" 1
+    # No journalctl fallback at all is also acceptable (file is the only source).
+    if grep -qE 'journalctl -u nftban-firewall-validate\.service' "$_firewall_cli"; then
+        _t_assert "D9 (D13): the journalctl read (if any) is a fallback AFTER the file read" 1 \
+            "journalctl appears before the file read — file must be primary"
+    else
+        _t_assert "D9 (D13): the journalctl read (if any) is a fallback AFTER the file read" 0
+    fi
 fi
 
 # ----------------------------------------------------------------------------
