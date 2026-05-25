@@ -988,7 +988,8 @@ nftban_health_check_set_sizes() {
             local family="ip"
             [[ "$set_name" == *_ipv6 ]] && family="ip6"
             local count
-            count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || echo "0")
+            count=$(nft list set "$family" nftban "$set_name" 2>/dev/null | grep -c ',' || true)
+            count=${count:-0}
             set_counts["$set_name"]="$count"
         done
     fi

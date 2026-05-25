@@ -753,7 +753,8 @@ _doctor_module_audit() {
                 # Open port count vs detection effectiveness
                 local _tcp_open _port_count
                 _tcp_open=$(_doctor_nft_port_set_values "tcp_ports_in" "ip")
-                _port_count=$(echo "$_tcp_open" | tr ',' '\n' | grep -c '[0-9]' 2>/dev/null || echo "0")
+                _port_count=$(echo "$_tcp_open" | tr ',' '\n' | grep -c '[0-9]' 2>/dev/null || true)
+                _port_count=${_port_count:-0}
                 if (( _port_count > 20 )); then
                     l4_detail="$_port_count open ports — portscan detection effectiveness reduced (INFO)"
                     _doctor_finding "$_SEV_INFO" "module_l4_many_ports" \

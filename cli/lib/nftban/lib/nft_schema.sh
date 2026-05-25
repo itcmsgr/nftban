@@ -736,7 +736,11 @@ nftban_nft_count_set_with_timeout() {
     local set="${3:-blacklist_ipv4}"
 
     # Count lines containing "timeout" keyword
-    nft list set "$family" "$table" "$set" 2>/dev/null | grep -c "timeout" || echo "0"
+    # V131 PR-A.2: capture + numeric fallback so the function always emits a
+    # single integer (grep -c on no-match prints "0"; on error → empty → 0).
+    local _twc
+    _twc=$(nft list set "$family" "$table" "$set" 2>/dev/null | grep -c "timeout" || true)
+    echo "${_twc:-0}"
 }
 
 nftban_nft_count_blacklist() {

@@ -228,6 +228,7 @@ nftban_blacklist_list() {
     local config_count=0
     if [[ -d "$NFTBAN_BLACKLIST_DIR" ]]; then
         config_count=$(grep -vhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | grep -cE '.' || true)
+        config_count=${config_count:-0}
     fi
     echo "Config files: ${config_count} persistent entries in ${NFTBAN_BLACKLIST_DIR}/"
     echo ""
@@ -271,6 +272,7 @@ nftban_blacklist_files() {
         # preserved; parameter-default handles file-vanished edge case.
         count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || true)
         count=${count:-0}
+        count=${count:-0}
         total_ips=$((total_ips + count))
 
         echo "──────────────────────────────────────────────────────────────"
@@ -283,7 +285,8 @@ nftban_blacklist_files() {
         if [[ -n "$ips" ]]; then
             echo "$ips" | sed 's/^/    /'
             local actual_count
-            actual_count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || echo "0")
+            actual_count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || true)
+            actual_count=${actual_count:-0}
             if [[ "$actual_count" -gt 20 ]]; then
                 echo "    ... and $((actual_count - 20)) more"
             fi
@@ -343,6 +346,7 @@ nftban_blacklist_count() {
     local config_count=0
     if [[ -d "$NFTBAN_BLACKLIST_DIR" ]]; then
         config_count=$(grep -vhE '^\s*(#|$)' "${NFTBAN_BLACKLIST_DIR}"/*.conf 2>/dev/null | grep -cE '.' || true)
+        config_count=${config_count:-0}
     fi
 
     if [[ "$json_mode" == "true" ]]; then

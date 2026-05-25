@@ -652,10 +652,12 @@ _nftban_botguard_stats() {
 
         local v4_count=0 v6_count=0
         if nft list set ip nftban "$set_name" &>/dev/null; then
-            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || echo "0")
+            v4_count=$(nft list set ip nftban "$set_name" 2>/dev/null | grep -c "timeout" || true)
+            v4_count=${v4_count:-0}
         fi
         if nft list set ip6 nftban "${set_name}6" &>/dev/null; then
-            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || echo "0")
+            v6_count=$(nft list set ip6 nftban "${set_name}6" 2>/dev/null | grep -c "timeout" || true)
+            v6_count=${v6_count:-0}
         fi
 
         declare "$v4_var=$v4_count"

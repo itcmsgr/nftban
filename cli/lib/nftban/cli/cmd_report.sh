@@ -913,12 +913,14 @@ nftban_report_schedule_remove() {
 
         # Check if anything remains besides headers
         local remaining_entries
-        remaining_entries=$(grep -cE "^[0-9].*nftban report run" "$temp_file" 2>/dev/null || echo "0")
+        remaining_entries=$(grep -cE "^[0-9].*nftban report run" "$temp_file" 2>/dev/null || true)
+        remaining_entries=${remaining_entries:-0}
 
         if [[ "$remaining_entries" -eq 0 ]]; then
             # No report entries left, but keep snapshot/cleanup
             local has_other
-            has_other=$(grep -cE "^[0-9]" "$temp_file" 2>/dev/null || echo "0")
+            has_other=$(grep -cE "^[0-9]" "$temp_file" 2>/dev/null || true)
+            has_other=${has_other:-0}
             if [[ "$has_other" -eq 0 ]]; then
                 rm -f "$NFTBAN_CRON_FILE" "$temp_file"
                 echo "${frequency^} report removed (cron file cleaned up - no entries remaining)"

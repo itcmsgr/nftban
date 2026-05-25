@@ -283,7 +283,8 @@ nftban_health_check_suricata() {
         if [[ "${rules_loaded:-0}" -eq 0 ]]; then
             local rules_file="${DISTRO_PATHS[suricata_rules_dir]:-/var/lib/suricata/rules}/suricata.rules"
             if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then
-                rules_loaded=$(grep -c "^alert" "$rules_file" 2>/dev/null || echo "0")
+                rules_loaded=$(grep -c "^alert" "$rules_file" 2>/dev/null || true)
+                rules_loaded=${rules_loaded:-0}
             fi
         fi
 

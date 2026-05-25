@@ -154,8 +154,11 @@ _count_set_elements() {
     local table="$1"
     local set="$2"
 
-    timeout 10s nft list set $table "$set" 2>/dev/null | grep -c "elements = {" || echo "0"
-    # More accurate count
+    # V131 PR-A.2: removed a stray `grep -c "elements = {" || true` line here.
+    # It echoed a first-pass count that the "More accurate count" below
+    # immediately supersedes — emitting TWO numeric lines, so the caller's
+    # `$(_count_set_elements ...)` captured a multiline value (the same
+    # 0\n0-into-arithmetic bug class). The accurate count is the sole answer.
     local count
     count=$(timeout 10s nft list set $table "$set" 2>/dev/null | grep -oP '(?<=elements = \{ ).*(?= \})' | tr ',' '\n' | wc -l)
     if [[ $count -gt 0 ]]; then echo "$count"; else echo "0"; fi
@@ -360,8 +363,10 @@ _flush_blacklist() {
     count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
 
     # Fallback count method
-    [[ "$count_v4" == "0" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-    [[ "$count_v6" == "0" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    [[ "$count_v4" == "0" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" blacklist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || true)
+    count_v4=${count_v4:-0}
+    [[ "$count_v6" == "0" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" blacklist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || true)
+    count_v6=${count_v6:-0}
 
     echo "Current blacklist:"
     echo "  IPv4: ~$count_v4 entries"
@@ -416,8 +421,10 @@ _flush_whitelist() {
 
     # Count current elements
     local count_v4 count_v6
-    count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" whitelist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-    count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" whitelist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" whitelist_ipv4 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || true)
+    count_v4=${count_v4:-0}
+    count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" whitelist_ipv6 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || true)
+    count_v6=${count_v6:-0}
 
     echo "Current whitelist:"
     echo "  IPv4: ~$count_v4 entries"
@@ -725,8 +732,10 @@ _flush_ddos() {
 
     # Count entries (IPv4 + IPv6)
     local count_v4=0 count_v6=0 count
-    [[ "$_v4_exists" == "true" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || echo "0")
-    [[ "$_v6_exists" == "true" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || echo "0")
+    [[ "$_v4_exists" == "true" ]] && count_v4=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV4" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9]' || true)
+    count_v4=${count_v4:-0}
+    [[ "$_v6_exists" == "true" ]] && count_v6=$(timeout 10s nft list set "$NFTBAN_TABLE_IPV6" ddos_blocked 2>/dev/null | tr ',' '\n' | grep -cE '^[0-9a-f]' || true)
+    count_v6=${count_v6:-0}
     count=$(( count_v4 + count_v6 ))
 
     echo "DDoS blocked IPs: ~$count entries (IPv4: $count_v4, IPv6: $count_v6)"
