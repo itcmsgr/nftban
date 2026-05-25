@@ -254,8 +254,10 @@ nftban_stats_count_rules() {
     # v1.18.0: Use ip nftban table (not inet nftban)
 
     local count_v4 count_v6
-    count_v4=$(nft list table ip nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
-    count_v6=$(nft list table ip6 nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
+    count_v4=$(nft list table ip nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || true)
+    count_v4=${count_v4:-0}
+    count_v6=$(nft list table ip6 nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || true)
+    count_v6=${count_v6:-0}
     echo "$((count_v4 + count_v6))"
 }
 

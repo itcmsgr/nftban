@@ -72,7 +72,8 @@ nftban_report_email_generate() {
         _blocked_v4=$(timeout 10s nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
     fi
     if timeout 10s nft list set ip6 nftban blacklist_ipv6 &>/dev/null; then
-        _blocked_v6=$(timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || echo 0)
+        _blocked_v6=$(timeout 10s nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || true)
+        _blocked_v6=${_blocked_v6:-0}
     fi
     blocked_ips=$(( _blocked_v4 + _blocked_v6 ))
 
@@ -82,7 +83,8 @@ nftban_report_email_generate() {
         _wl_v4=$(timeout 10s nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
     fi
     if timeout 10s nft list set ip6 nftban whitelist_ipv6 &>/dev/null; then
-        _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || echo 0)
+        _wl_v6=$(timeout 10s nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -cE '[0-9a-f:]+/|[0-9a-f]{2,}:' || true)
+        _wl_v6=${_wl_v6:-0}
     fi
     whitelist_count=$(( _wl_v4 + _wl_v6 ))
 

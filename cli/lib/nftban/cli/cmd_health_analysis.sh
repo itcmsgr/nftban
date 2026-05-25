@@ -794,7 +794,8 @@ nftban_health_cmd_botguard() {
     # Allowed crawlers
     if [[ -f "$allowed_conf" ]]; then
         local count
-        count=$(grep -c -v '^#\|^$' "$allowed_conf" 2>/dev/null || echo "0")
+        count=$(grep -c -v '^#\|^$' "$allowed_conf" 2>/dev/null || true)
+        count=${count:-0}
         echo "  Allowed crawlers:    ✅ $allowed_conf ($count entries)"
     else
         echo "  Allowed crawlers:    ⚠️  Missing: $allowed_conf"
@@ -804,7 +805,8 @@ nftban_health_cmd_botguard() {
     # Denied crawlers
     if [[ -f "$denied_conf" ]]; then
         local count
-        count=$(grep -c -v '^#\|^$' "$denied_conf" 2>/dev/null || echo "0")
+        count=$(grep -c -v '^#\|^$' "$denied_conf" 2>/dev/null || true)
+        count=${count:-0}
         echo "  Denied crawlers:     ✅ $denied_conf ($count entries)"
     else
         echo "  Denied crawlers:     ⚠️  Missing: $denied_conf"

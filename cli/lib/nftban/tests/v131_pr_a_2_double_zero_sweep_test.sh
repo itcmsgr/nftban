@@ -43,22 +43,45 @@ echo "==========================================================================
 #    Strip shell comments before scanning so the explanatory comments that
 #    document the old pattern (e.g. cmd_blacklist.sh CB-1 comment) do not trip.
 # ----------------------------------------------------------------------------
+# A1: catches ALL FOUR dangerous variants — grep -c AND grep -cv, with the
+# fallback echo either QUOTED ("0") or UNQUOTED (0). The regex deliberately
+# does NOT use `[^|]*` (which stops at the first '|' and so misses grep
+# patterns that themselves contain a pipe, e.g. grep -cv '^\s*$\|^#').
+# Comments are stripped first so docs/witness lines that mention the old
+# pattern do not trip the scan.
+_A1_RE='grep[[:space:]]+-c[a-zA-Z]*.*\|\|[[:space:]]*echo[[:space:]]+("0"|0)([[:space:]]|\)|;|\||$)'
 _offenders=""
 while IFS= read -r f; do
-    # Remove everything from the first unquoted '#'… cheap approximation:
-    # drop full-line comments and inline `# …` tails. Good enough to exclude
-    # documentation while keeping code.
     if sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*#.*$//' "$f" \
-        | grep -qE 'grep -c[^|]*\|\|[[:space:]]*echo "0"'; then
+        | grep -qE "$_A1_RE"; then
         _offenders+="$f"$'\n'
     fi
-done < <(find "$_scan_root" -type f -name '*.sh' ! -name 'v131_pr_a_2_double_zero_sweep_test.sh')
+done < <(find "$_scan_root" -type f -name '*.sh' ! -name '*_test.sh')
 
 if [[ -z "$_offenders" ]]; then
-    _t_assert "A1: no 'grep -c ... || echo \"0\"' double-zero site remains in executable shell code" 0
+    _t_assert "A1: no grep -c/-cv '|| echo 0' or '|| echo \"0\"' double-zero site remains (both variants)" 0
 else
-    _t_assert "A1: no 'grep -c ... || echo \"0\"' double-zero site remains in executable shell code" 1 \
+    _t_assert "A1: no grep -c/-cv '|| echo 0' or '|| echo \"0\"' double-zero site remains (both variants)" 1 \
         "offending files:"$'\n'"$_offenders"
+fi
+
+# A2: semantic — no arithmetic expansion `$(( ... ))` directly embeds a
+# `grep -c` command substitution. That shape feeds a possibly-multiline or
+# empty count straight into arithmetic (crash), regardless of the fallback
+# token; the safe form hoists the count into a variable first.
+_a2=""
+while IFS= read -r f; do
+    if sed -e 's/[[:space:]]#.*$//' -e 's/^[[:space:]]*#.*$//' "$f" \
+        | grep -qE '\$\(\(.*\$\([^)]*grep[[:space:]]+-c'; then
+        _a2+="$f"$'\n'
+    fi
+done < <(find "$_scan_root" -type f -name '*.sh' ! -name '*_test.sh')
+
+if [[ -z "$_a2" ]]; then
+    _t_assert "A2: no grep -c command-substitution embedded directly inside \$((...)) arithmetic" 0
+else
+    _t_assert "A2: no grep -c command-substitution embedded directly inside \$((...)) arithmetic" 1 \
+        "offending files:"$'\n'"$_a2"
 fi
 
 # ----------------------------------------------------------------------------

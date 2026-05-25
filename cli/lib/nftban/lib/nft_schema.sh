@@ -1291,14 +1291,18 @@ nftban_nft_validate_full() {
     echo ""
     echo "8. Current Set Sizes:"
     local ipv4_wl ipv4_bl ipv4_tcp ipv4_udp ipv6_wl ipv6_bl
-    ipv4_wl=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -c "elements = {" || echo 0)
+    ipv4_wl=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -c "elements = {" || true)
+    ipv4_wl=${ipv4_wl:-0}
     ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oP '\d+(?= elements)' || echo "0")
-    [[ -z "$ipv4_bl" ]] && ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -c "," || echo 0)
+    [[ -z "$ipv4_bl" ]] && ipv4_bl=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -c "," || true)
+    ipv4_bl=${ipv4_bl:-0}
     # shellcheck disable=SC2034  # Reserved for IPv6 stats
-    ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
+    ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || true)
+    ipv6_bl=${ipv6_bl:-0}
     ipv4_tcp=$(nft list set ip nftban tcp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
     ipv4_udp=$(nft list set ip nftban udp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
-    ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
+    ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || true)
+    ipv6_wl=${ipv6_wl:-0}
     local ipv6_tcp ipv6_udp
     ipv6_tcp=$(nft list set ip6 nftban tcp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)
     ipv6_udp=$(nft list set ip6 nftban udp_ports_in 2>/dev/null | { grep -oP 'elements = \{ [^}]+' || true; } | tr ',' '\n' | wc -l || echo 0)

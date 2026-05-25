@@ -272,7 +272,6 @@ nftban_blacklist_files() {
         # preserved; parameter-default handles file-vanished edge case.
         count=$(grep -cvE '^\s*(#|$)' "$conf_file" 2>/dev/null || true)
         count=${count:-0}
-        count=${count:-0}
         total_ips=$((total_ips + count))
 
         echo "──────────────────────────────────────────────────────────────"

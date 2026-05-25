@@ -630,7 +630,8 @@ nftban_enable_all() {
 
     # Check 1: nft rules loaded > 0
     local rules_count=0
-    rules_count=$(nft list ruleset 2>/dev/null | grep -cE '^\s+(type|chain|rule|set)' || echo 0)
+    rules_count=$(nft list ruleset 2>/dev/null | grep -cE '^\s+(type|chain|rule|set)' || true)
+    rules_count=${rules_count:-0}
     if [[ "$rules_count" -eq 0 ]]; then
         validation_failures+=("nft rules: 0 (no firewall rules loaded)")
     fi

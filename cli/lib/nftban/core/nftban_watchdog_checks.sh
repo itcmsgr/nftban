@@ -513,7 +513,8 @@ nftban_watchdog_check_suricata_drift() {
     local rule_count=0
     local rules_file="/var/lib/suricata/rules/suricata.rules"
     if [[ -f "$rules_file" ]]; then
-        rule_count=$(grep -cE '^(alert|drop|reject|pass|rejectsrc|rejectdst|rejectboth)' "$rules_file" 2>/dev/null || echo 0)
+        rule_count=$(grep -cE '^(alert|drop|reject|pass|rejectsrc|rejectdst|rejectboth)' "$rules_file" 2>/dev/null || true)
+        rule_count=${rule_count:-0}
     fi
     WATCHDOG_RESULTS[suricata_rule_count]="$rule_count"
 

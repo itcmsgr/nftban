@@ -202,7 +202,8 @@ nftban_sync_status() {
             local elements_line
             elements_line=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
             if [[ -n "$elements_line" && "$elements_line" != "elements = { }" ]]; then
-                count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9]" || echo 0)
+                count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9]" || true)
+                count=${count:-0}
             fi
         fi
         # Ensure count is a valid integer
@@ -219,7 +220,8 @@ nftban_sync_status() {
             local elements_line
             elements_line=$(timeout 10s nft list set ${NFTBAN_TABLE_IPV6} "$set_name" 2>/dev/null | grep -oE "elements = \{[^}]*\}" || true)
             if [[ -n "$elements_line" && "$elements_line" != "elements = { }" ]]; then
-                count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9a-fA-F:]" || echo 0)
+                count=$(echo "$elements_line" | tr ',' '\n' | grep -cE "[0-9a-fA-F:]" || true)
+                count=${count:-0}
             fi
         fi
         # Ensure count is a valid integer

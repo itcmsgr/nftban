@@ -463,8 +463,8 @@ _nftban_botguard_list() {
             if [[ "$first" == "true" ]]; then first="false"; else printf ','; fi
             printf '{"name":"%s","ipv4":"%s","ipv6":"%s"}' \
                 "$set_name" \
-                "$(echo "$ipv4_output" | grep -c "timeout" 2>/dev/null || echo 0)" \
-                "$(echo "$ipv6_output" | grep -c "timeout" 2>/dev/null || echo 0)"
+                "$(echo "$ipv4_output" | grep -c "timeout" 2>/dev/null || true)" \
+                "$(echo "$ipv6_output" | grep -c "timeout" 2>/dev/null || true)"
         done
         printf ']}\n'
     else

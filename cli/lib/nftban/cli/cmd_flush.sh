@@ -173,7 +173,14 @@ _count_file_ips() {
     for file in "$dir"/$pattern; do
         [[ -f "$file" ]] || continue
         # Count non-comment, non-empty lines
-        count=$((count + $(grep -cE '^[0-9a-fA-F]' "$file" 2>/dev/null || echo 0)))
+        # V131 PR-A.2: hoist the grep -c out of the arithmetic. Inline
+        # `$((count + $(grep -c ... || echo 0)))` would feed "0\n0" straight
+        # into arithmetic on no-match (grep -c prints "0" + exits 1, then
+        # `|| echo 0` appends a second 0) — a hard syntax-error crash. Capture
+        # first with `|| true` + numeric fallback, then add.
+        local _fc
+        _fc=$(grep -cE '^[0-9a-fA-F]' "$file" 2>/dev/null || true)
+        count=$((count + ${_fc:-0}))
     done
 
     echo "$count"
