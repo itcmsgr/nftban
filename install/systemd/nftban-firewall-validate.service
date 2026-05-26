@@ -79,10 +79,21 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # read-only for the (sandboxed) main process. The `+` exemption is required:
 # ReadWritePaths=<subdir> only binds an EXISTING path writable, so the subdir
 # must exist before the sandboxed ExecStart runs. tmpfiles creates it at boot
-# (d /run/nftban/firewall-validate 0750 root nftban); this guarantees it
+# (d /run/nftban/firewall-validate 2750 root nftban); this guarantees it
 # per-start too (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute
 # path is required by systemd for ExecStartPre.
-ExecStartPre=+/usr/bin/install -d -o root -g nftban -m 0750 /run/nftban/firewall-validate
+#
+# V131.3 D13 fix: the dir mode is now SETGID (2750, not 0750). The setgid bit
+# makes a file created in this dir inherit the dir's GROUP (nftban) regardless
+# of the creating process's egid. The wrapper runs as root:root and drops
+# CAP_CHOWN (CapabilityBoundingSet=CAP_NET_ADMIN only), so its `chgrp nftban`
+# on last.json silently fails ("Operation not permitted") — under 0750 the file
+# stayed root:root and nftban-group operators could not read it (D13 still
+# open after v1.131.2). With setgid, last.json lands group nftban automatically
+# WITHOUT needing CAP_CHOWN; the wrapper's `chmod 0640` still works (owner chmod
+# needs no capability) → final file root:nftban 0640 → nftban-group reads it →
+# `Validator Status:` renders. No capability widening required.
+ExecStartPre=+/usr/bin/install -d -o root -g nftban -m 2750 /run/nftban/firewall-validate
 ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh
 StandardOutput=journal
 StandardError=journal
@@ -96,7 +107,7 @@ StandardError=journal
 # firewall_validate_run.sh wrapper, so it needs exactly one writable path.
 # ProtectSystem=strict makes all of /run (and the whole filesystem) read-only;
 # grant write to ONLY the dedicated status subdir, which tmpfiles creates as
-# root:nftban 0750 (d /run/nftban/firewall-validate 0750 root nftban). This
+# setgid root:nftban 2750 (d /run/nftban/firewall-validate 2750 root nftban). This
 # does NOT expose the daemon's /run/nftban (which holds the live socket) and
 # does NOT re-chown /run/nftban — it is the narrowest writable surface that
 # lets the validator drop last.json for nftban-group operators to read.

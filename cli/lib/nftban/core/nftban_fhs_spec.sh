@@ -160,7 +160,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/health"]="0750|nftban|nftban|Health check status cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
-    NFTBAN_FHS_DIRECTORIES["/run/nftban/firewall-validate"]="0750|root|nftban|V131.2 D13 — group-readable handoff dir for nftban-firewall-validate.service output (last.json)"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban/firewall-validate"]="2750|root|nftban|V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"
