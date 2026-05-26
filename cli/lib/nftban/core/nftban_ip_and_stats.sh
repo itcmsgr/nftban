@@ -39,7 +39,16 @@ get_live_ruleset() {
     output=$(nft -j list ruleset 2>&1)
     local rc=$?
     if [[ $rc -ne 0 ]]; then
-        echo "{\"error\": \"Failed to get nftables ruleset: $output\"}" >&2
+        # A15: reframe raw kernel permission errors to the polkit-aware contract
+        # (mirror internal/validator/validator.go) — a direct `nft` read needs
+        # CAP_NET_ADMIN; nftban-group operators are authorized via the
+        # nftban-firewall-validate.service. Never leak "(you must be root)".
+        output="${output//" (you must be root)"/}"
+        if printf '%s' "$output" | grep -qiE 'operation not permitted|permission denied'; then
+            echo "{\"error\": \"Failed to get nftables ruleset (direct nft read requires CAP_NET_ADMIN; nftban-group operators are polkit-authorized via nftban-firewall-validate.service): ${output}\"}" >&2
+        else
+            echo "{\"error\": \"Failed to get nftables ruleset: ${output}\"}" >&2
+        fi
         return 1
     fi
     echo "$output"

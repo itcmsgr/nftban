@@ -60,6 +60,10 @@ _ALLOWLIST_PATTERNS=(
     'cli/lib/nftban/core/nftban_path_security' # technical security warning context
     'cli/lib/nftban/lib/setup_utils\.sh'        # check_root() helper called only from
                                                  # allowlisted setup/install_* scripts
+    '/setup/deploy_'                            # metrics/infra deploy scripts ($0-run install
+                                                 # tooling) — root is a genuine install
+                                                 # requirement, not an nftban polkit-managed
+                                                 # CLI operation (v1.133 PR-B)
 )
 
 # Build a grep -v pipeline filter from the allowlist
@@ -130,22 +134,34 @@ _t_assert "A5b (informational; allowlisted): 'sudo nftban-installer' installer/b
 # A8: PR-A.2 residual sweeps — 'root privileges' / 'NEEDS ROOT' / 'needs root'
 # in operator-facing strings (echo statements + ui_msg calls; internal
 # # comments excluded by the grep filter).
-hits=$(grep -rnE 'root privileges|NEEDS ROOT' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+hits=$(grep -rniE 'root privileges|NEEDS ROOT' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist \
        | grep -v ':\s*#' \
        | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "A8: zero 'root privileges' / 'NEEDS ROOT' in operator-facing strings (got: $hits; internal # comments OK)" "$?"
+_t_assert "A8: zero 'root privileges' / 'NEEDS ROOT' in operator-facing strings, case-insensitive (got: $hits; internal # comments OK)" "$?"
 
 # A9: PR-A.2 ui_msg / echo "needs root" residuals
-hits=$(grep -rnE 'needs root|need root privileges' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+hits=$(grep -rniE 'needs root|need root privileges' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist \
        | grep -v ':\s*#' \
        | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing strings (got: $hits)" "$?"
+_t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing strings, case-insensitive (got: $hits)" "$?"
+
+# A10 (v1.133 PR-B): zero 'Must be root' framing in operator-facing strings
+# (case-insensitive). Excludes # comments and the get_live_ruleset A15 reframe,
+# which legitimately STRIPS the kernel fragment "(you must be root)".
+hits=$(grep -rniE 'must be root' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
+       | grep -v "/tests/" | _apply_allowlist \
+       | grep -v ':\s*#' \
+       | grep -v 'you must be root' \
+       | wc -l)
+hits=${hits:-0}
+[[ "$hits" -eq 0 ]]
+_t_assert "A10: zero 'Must be root' in operator-facing strings, case-insensitive (got: $hits; A15 strip + # comments excluded)" "$?"
 
 # A6: Zero "(sudo)" parenthetical hints
 hits=$(grep -rn 'privileges (sudo)\|root/sudo' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \

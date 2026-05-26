@@ -299,7 +299,7 @@ _nftban_mode_set() {
         if [[ "$json_mode" == "true" ]] && declare -f json_error &>/dev/null; then
             json_error "PolicyKit/polkit authorization failed or insufficient privileges to change mode"
         else
-            echo "ERROR: Root privileges required to change mode" >&2
+            echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges to change mode" >&2
         fi
         return 1
     fi
@@ -384,7 +384,7 @@ HEADER
     echo "  Config File:      $config_local"
     echo ""
     echo "Note: Restart nftban daemon to apply changes:"
-    echo "  sudo systemctl restart nftban"
+    echo "  systemctl restart nftban    # nftban group members are polkit-authorized"
     echo ""
 }
 

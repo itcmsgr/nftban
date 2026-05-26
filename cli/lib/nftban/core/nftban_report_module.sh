@@ -762,8 +762,12 @@ nftban_module_generate_html_report() {
     timestamp=$(date +%Y%m%d_%H%M%S)
     local report_file="${report_dir}/module_report_${timestamp}.html"
 
-    # Ensure report directory exists
+    # Ensure report directory exists (polkit-aware refusal instead of a raw write leak)
     mkdir -p "$report_dir" 2>/dev/null || true
+    if [[ $EUID -ne 0 && ! -w "$report_dir" ]]; then
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (write module report)" >&2
+        return 1
+    fi
 
     # Check if template exists
     if [[ ! -f "$template_path" ]]; then
