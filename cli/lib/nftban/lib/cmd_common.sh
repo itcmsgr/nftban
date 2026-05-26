@@ -274,7 +274,7 @@ ERROR: nftband daemon not running
 The daemon socket was not found at: $socket
 
 Start the daemon with:
-  sudo systemctl start nftband
+  systemctl start nftband    # nftban group members are polkit-authorized
 EOF
         fi
         return 1

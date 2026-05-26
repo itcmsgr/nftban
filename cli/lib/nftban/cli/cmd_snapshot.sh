@@ -78,8 +78,12 @@ nftban_snapshot_create() {
     timestamp=$(date +%Y%m%d-%H%M%S)
     local snapshot_file="${snapshot_dir}/snapshot-${timestamp}.json"
 
-    # Ensure directory exists
-    mkdir -p "$snapshot_dir" || return 1
+    # Ensure directory exists (polkit-aware refusal instead of a raw write leak)
+    mkdir -p "$snapshot_dir" 2>/dev/null || true
+    if [[ $EUID -ne 0 && ! -w "$snapshot_dir" ]]; then
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (create snapshot)" >&2
+        return 1
+    fi
 
     # Collect snapshot data
     {

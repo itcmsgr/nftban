@@ -255,7 +255,7 @@ nftban_resolve_firewall_conflicts() {
 # Usage: nftban_enable_all
 nftban_enable_all() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to enable services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (enable services)" >&2
         return 1
     fi
 
@@ -722,7 +722,7 @@ nftban_enable_all() {
 #                   Without this flag, nft rules remain active in kernel
 nftban_disable_all() {
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to disable services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (disable services)" >&2
         return 1
     fi
 
@@ -824,7 +824,7 @@ nftban_service_start() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to start services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (start services)" >&2
         return 1
     fi
 
@@ -863,7 +863,7 @@ nftban_service_stop() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to stop services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (stop services)" >&2
         return 1
     fi
 
