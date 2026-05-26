@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.132.0] - 2026-05-26 — CLI behavior-truth alignment (PR-C; C1/C2/C3/C5/C7/C8)
+
+**Codename:** `V132_0_PR_C_BEHAVIOR_TRUTH`
+**Scope file:** `AUDIT_190_LIFECYCLE/V129_TILL_V131_TEXT_CODE_DEBT_LEDGER_AND_PLAN.md`
+
+> **Why:** the deferred V129 Layer-B / V130 PR-C long-tail — places where the displayed CLI text or an exit code disagreed with what the code actually does. Truth-alignment only; no feature added.
+
+### Fixed (PR #695, sq `486bc12b`)
+- **C1 `version --json`**: replaced the unconditional `# NFTBAN_CMD_EXIT: version` sentinel echo with the debug-gated `nftban_cmd_exit` helper, so `nftban version --json` emits valid JSON (was JSON followed by a trailing non-JSON sentinel line).
+- **C2 `flush --json`**: removed the advertised-but-unimplemented `--json` flag, its dead parse branch, and the unused `json_mode` variable — help now matches behavior.
+- **C3 `flush` exit codes**: return `rc=2` for an invalid target/option (matches the documented "2 = unsupported target / invalid argument"); removed the documented-but-nonexistent `rc=3` PolicyKit line (flush has no polkit-denial branch).
+- **C5 `stats top jails` → `filters`**: the fail2ban-era `jails` top-type called an undefined function (`nftban_stats_top_jails`) and the dashboard JSON fed both `top_jails` and `top_filters` the same always-empty value. Replaced with a working `filters` top-type backed by the real `nftban_stats_top_sources`; removed the dead double-feed. **This reverses the earlier deliberate "keep top_jails names" decision** (recorded in a prior CHANGELOG entry) — the names are corrected because the backing function never existed. Also removed adjacent stale fail2ban references: the bogus `nftban migrate fail2ban` remediation (no such command), the "Protected with fail2ban" setup claim, the false "fail2ban removed in v2.1" note, the removed fail2ban test-module entry, and the `stats recent` "Jail:" output label (→ "Source:").
+- **C7 `firewall validate --strict`**: documented the reachable exit codes `1` (structural validation failed) and `40` (validator binary missing / environment error), previously undocumented.
+- **C8 `validate` exit-code contract**: the shared `validate_structure` shim returned `2` for a missing/empty/unexpected validator, colliding with the documented "2 = DOWN". It now returns `3` ("validator binary crashed or was unreachable") for those cases and clamps any unexpected validator exit to `3`, so `rc=2` means DOWN only — matching the documented 0/1/2/3 contract. `nftban validate` is the shim's sole runtime caller (`cmd_firewall.sh` no longer uses it) → zero cross-command impact.
+
+### Unchanged / invariants
+- **Shell-only — no Go change.** `cmd/nftband` and `cmd/nftban-core` are byte-identical to v1.131.4. No install-payload, systemd-unit, polkit-rule, or `build/fhs-spec.yaml` change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only (FHS body byte-unchanged).
+- **Docs/wiki verified clean** — no `stats top jails` references and no stale fail2ban claims existed in `docs/`, `README.md`, or the wiki; the staleness was code-only.
+
+### Tests
+- New `cli/lib/nftban/tests/v132_pr_c_behavior_truth_test.sh` (29/0) — static behavior-truth guard covering all six items + the stale-fail2ban sweep.
+- `test_validate_structure_is_shim.sh` N9 assertion flipped to `return 3` (17/0).
+
+### Validation
+- PR #695 CI green (51 success / 2 skip / 0 fail — DEB×4 + RPM×4 build+install, Runtime Truth DEB+EL9, ShellCheck, Shell Quality, parity, payload resolution). Post-merge `main` CI green at `486bc12b`. Local: new guard 29/0, shim 17/0, v129 PR-C / v130 polkit / v131 PR-A / PR-A.2 all green; `bash -n` clean.
+- Shell-only release (no payload/polkit/systemd change; daemon byte-identical) → no new install-surface risk; standard package-install smoke applies (no D13-style gate).
+
+---
+
 ## [v1.131.4] - 2026-05-26 — installer DEGRADED-state correctness hotfix (supersedes v1.131.3)
 
 **Codename:** `V131_4_D13_PAYLOAD_INVENTORY_AND_DEGRADED_REMEDIATION_FIX`
