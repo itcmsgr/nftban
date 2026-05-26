@@ -871,6 +871,13 @@ directories:
       created_by: tmpfiles
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict. 0755 intentional: socket-discovery — non-nftban-group processes (panel adapters, monitoring tools) must stat() the daemon socket; the socket file itself uses unit-level SocketMode=0660 + group ownership for access control. Tightening the parent dir would break socket-discovery for anything outside the nftban group."
 
+    - path: /run/nftban/firewall-validate
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "V131.2 D13 — group-readable handoff dir for nftban-firewall-validate.service output (last.json)"
+      created_by: tmpfiles
+
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
   # ---------------------------------------------------------------------------
