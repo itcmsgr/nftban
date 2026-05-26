@@ -346,7 +346,7 @@ _wizard_show_summary() {
         echo "    Web GUI:               ✓ ENABLED"
         echo "    Metrics exporter:      ✓ ENABLED"
     else
-        echo "    Web GUI & Metrics:     ✗ disabled (enable later: nftban gui enable)"
+        echo "    Web GUI & Metrics:     ✗ disabled"
     fi
 
     echo ""
@@ -455,12 +455,6 @@ _wizard_enable_modules() {
         if [[ "$ROLE_WEB" -eq 1 ]]; then
             nftban feeds enable SPAMHAUS_DROP >/dev/null 2>&1 || true
         fi
-    fi
-
-    # GUI
-    if [[ "$ENABLE_GUI" -eq 1 ]]; then
-        echo "    → Enabling web GUI..."
-        nftban gui enable >/dev/null 2>&1 || echo "      (GUI may need manual setup)"
     fi
 
     # Metrics

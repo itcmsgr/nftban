@@ -1222,6 +1222,8 @@ COMMANDS:
     run                 Run login monitoring (used by service)
     mode [MODE]         Set email alert mode (realtime|digest|both)
     digest [ACTION]     Manage daily digest (status|send|clear)
+    config [--json]     Show login monitoring configuration
+    install [TARGET]    Install/provision login monitoring
     help                Show this help message
 
 NOTE: Login health checks are handled by 'nftban health check --auto-heal'

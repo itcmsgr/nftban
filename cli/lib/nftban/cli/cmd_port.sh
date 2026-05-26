@@ -182,7 +182,7 @@ nftban_cmd_port_help() {
     echo "  nftban port egress enforce           # Enable restrictive outbound policy"
     echo ""
     echo "  # Test outbound before enforcing"
-    echo "  nftban emulate --out 8.8.8.8:443    # Test if HTTPS outbound allowed"
+    echo "  nftban emulate 8.8.8.8 --port 443 --direction out   # Test if HTTPS outbound allowed"
     echo ""
     echo "Note: For full panel management, use: nftban panel directadmin <action>"
     echo "      Actions: enable, disable, status, report, repair, test"

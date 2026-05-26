@@ -152,7 +152,7 @@ CONFIGURATION:
 PROFILE SELECTION:
     Select a pre-configured profile based on server role:
 
-      nftban profile select
+      nftban wizard
 
     Profile examples:
       • Web Server:    10 ports in 5 min, 1-hour temp ban
