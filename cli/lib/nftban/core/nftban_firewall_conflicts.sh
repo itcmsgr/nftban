@@ -118,10 +118,8 @@ nftban_detect_fail2ban() {
         if [[ $status -eq 3 ]]; then
             NFTBAN_FIREWALL_CONFLICTS+=("  CRITICAL: fail2ban creates conflicting nftables rules")
             NFTBAN_FIREWALL_CONFLICTS+=("  └─ Creates 'ip filter' table that conflicts with nftban")
-            NFTBAN_FIREWALL_FIXES+=("Option 1: Disable fail2ban (recommended)")
+            NFTBAN_FIREWALL_FIXES+=("Disable fail2ban — NFTBan's native login monitoring replaces it:")
             NFTBAN_FIREWALL_FIXES+=("  systemctl stop fail2ban && systemctl disable fail2ban")
-            NFTBAN_FIREWALL_FIXES+=("Option 2: Migrate fail2ban jails to nftban")
-            NFTBAN_FIREWALL_FIXES+=("  nftban migrate fail2ban")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
         else
             NFTBAN_FIREWALL_FIXES+=("Consider disabling fail2ban in favor of nftban:")

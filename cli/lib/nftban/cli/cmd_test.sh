@@ -240,7 +240,7 @@ DESCRIPTION:
 
   Tests performed:
     • Core commands (status, health, check)
-    • Module commands (ddos, portscan, fail2ban, feeds)
+    • Module commands (ddos, portscan, login, feeds)
     • Management commands (firewall, whitelist, geoip, ports)
     • Security commands (permissions)
 

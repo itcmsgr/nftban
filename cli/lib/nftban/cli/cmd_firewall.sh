@@ -3266,6 +3266,8 @@ Exit codes (validate --strict):
   10  policykit-1 missing (Debian/Ubuntu)
   20  Firewall conflict (fail2ban/ufw/firewalld/csf active)
   30  NFTables collision (non-NFTBan input hooks)
+  1   Structural validation failed (Go validator reported errors)
+  40  Validator binary missing or environment error
 
 Exit codes (other subcommands):
   0   Success
