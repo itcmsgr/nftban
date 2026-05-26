@@ -60,3 +60,13 @@ cli/cmd_emulate.sh	forward	alias	fwd
 cli/cmd_ban.sh	--json	universal-flag	global json mode
 cli/cmd_config.sh	test	alias	validate
 cli/cmd_config.sh	reload	alias	apply
+cli/cmd_blacklist.sh	rm	alias	remove
+cli/cmd_blacklist.sh	del	alias	remove
+cli/cmd_blacklist.sh	delete	alias	remove
+cli/cmd_blacklist.sh	unban	alias	remove
+cli/cmd_health.sh	detailed	alias	diagnostics
+cli/cmd_sync.sh	full	alias	default (no-arg) full sync
+cli/cmd_sync.sh	validate	undocumented-subcmd	DOC-CANDIDATE: real maintenance subcmd (nftban_sync_validate)
+cli/cmd_portscan.sh	restart	alias	reload
+cli/cmd_portscan.sh	sync	undocumented-subcmd	DOC-CANDIDATE: real subcmd (journalctl log sync; in error-fallback list)
+cli/cmd_sync.sh	status	undocumented-subcmd	DOC-CANDIDATE: real subcmd (nftban_sync_status)
