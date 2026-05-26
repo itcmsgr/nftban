@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.133.0] - 2026-05-26 — CLI UX/text truth-alignment (PR-B wording + PR-D P2 help/code drift)
+
+**Codename:** `V133_0_PR_B_WORDING_AND_PR_D_P2_HELP_DRIFT`
+**Scope file:** `AUDIT_190_LIFECYCLE/V133_SCOPE_PR_B_AND_PR_D_P2.md`
+
+> **Why:** continues the deferred V129 Layer-B / V130 long-tail — operator-facing privilege wording (PR-B) and command-help vs dispatcher drift (PR-D P2). Two separate PRs; UX/doc-truth only, no functional/Go/schema change.
+
+### PR-B — polkit/sudo/raw-permission wording sweep A1–A15 (PR #697, sq `5e7b9b1e`)
+- **A1–A11**: replaced "Must be root to <X> services" / "Root privileges required to change mode" / "sudo systemctl …" hints with the canonical `PolicyKit/polkit authorization failed or insufficient privileges (<action>)` across service management, mode change, and daemon-start hints (`nftban_service_control.sh`, `service_control.sh`, `cmd_system.sh`, `nftban_mode.sh`, `cmd_common.sh`). `nftban_mode.sh` JSON sibling left unchanged (already correct).
+- **A12–A14**: `nftban_pro` / `cmd_snapshot` / `nftban_report_module` now emit the canonical polkit refusal (rc=1) when non-root **and** the target dir is not writable, instead of leaking a raw `Permission denied` from the redirect.
+- **A15**: `get_live_ruleset` strips `(you must be root)` and reframes the `nft` permission error to the polkit/CAP_NET_ADMIN contract (mirrors `internal/validator/validator.go`), preserving the `{"error":…}` JSON shape.
+- Tests: new `v133_pr_b_write_guard_refusal_test.sh` (7/0 — deterministic A15 reframe + real non-root behavioral refusal for A12/A13); `v128_polkit_aware_wording_sweep_test.sh` A8/A9 made case-insensitive + new A10 `Must be root` lock (genuine-root `setup/deploy_metrics.sh` requirement allowlisted).
+
+### PR-D P2 — help/code drift D-01, D-03..D-11 (PR #698, sq `45fc005c`)
+- **D-01 (remove)**: dropped the dead `nftban gui enable` from the wizard (no `gui` command; web GUI retired) — removed the dead invocation + advertised reference.
+- **D-03 (fix example)**: `nftban emulate --out <ip>:<port>` → real `nftban emulate <ip> --port N --direction out` (no `--out` flag exists) in `cmd_port.sh` + `cmd_egress.sh`.
+- **D-04 (re-steer)**: examples/menu pointing at the deprecated `nftban profile select` now use `nftban wizard` (the live path) in `cmd_ddos.sh`, `cmd_portscan.sh`, `cmd_menu.sh`.
+- **D-05..D-11 (document)**: added the dispatched-but-undocumented subcommands to help — `status pending/queue`; `rbl config/stats/test`; `feeds config/stats/test`; `botscan stats/config` (+ error fallback); `geoban stats/test`; `login config/install`; `module duplicates`.
+- **D-02** was already resolved in v1.132.0 PR-C (`fail2ban`→`login` in `cmd_test.sh`).
+- Tests: new `v133_pr_d_p2_help_code_drift_test.sh` (31/0 — each subcommand documented + stale refs `nftban gui` / `emulate --out` / `nftban profile select` gone tree-wide).
+
+### Unchanged / invariants
+- **Shell-only — no Go change.** `cmd/nftband` and `cmd/nftban-core` byte-identical to v1.132.0. No install-payload, systemd-unit, polkit-rule, or `build/fhs-spec.yaml` change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only (FHS body byte-unchanged).
+
+### Validation
+- PR #697 CI green (50/2-skip/0-fail); PR #698 CI green (50/2-skip/0-fail); post-merge `main` CI green at `5e7b9b1e` then `45fc005c`. Local: PR-B guard 7/0, PR-D-P2 guard 31/0, v128 wording, v132 PR-C 29/0, shim 17/0; `bash -n` + FHS `--check` clean.
+
+### Carried to v1.134.0 (not in this release)
+- PR-D **P3** alias allowlist (D-12..D-30) + the full subcommand/flag **doctest guard** (untracked `v130_subcommand_flag_help_code_test.sh`); then **PR-E** docs/wiki/README alignment (last).
+
+---
+
 ## [v1.132.0] - 2026-05-26 — CLI behavior-truth alignment (PR-C; C1/C2/C3/C5/C7/C8)
 
 **Codename:** `V132_0_PR_C_BEHAVIOR_TRUTH`
