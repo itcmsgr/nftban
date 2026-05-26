@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.131.3] - 2026-05-26 — D13 setgid group-ownership repair (supersedes v1.131.2)
+
+**Codename:** `V131_3_D13_SETGID_GROUP_OWNERSHIP_FIX`
+**Scope file:** `AUDIT_190_LIFECYCLE/V131_0_PACKAGE_INSTALL_VALIDATION_REPORT.md`
+
+> **Third and (intended) final D13 layer.** v1.131.1 moved the validator output from journalctl to a `/run` file (blocked by sandbox). v1.131.2 fixed the sandbox *write* (file now created) but the file landed `root:root 0640` — unreadable by the nftban group — so the operator still saw banner-only. v1.131.3 fixes the *group ownership*. **Fleet: skip v1.131.0/.1/.2; install v1.131.3 only after both-family validation.**
+
+### Fixed
+- **D13** (group-ownership layer; PR #691, sq `84460198`): the handoff dir `/run/nftban/firewall-validate` is now **setgid** (`2750 root nftban`) — in both the tmpfiles entry (regenerated from `build/fhs-spec.yaml`) and the `+ExecStartPre=/usr/bin/install -d -o root -g nftban -m 2750 …`. The setgid bit makes the wrapper-written `last.json` inherit group `nftban` automatically, so it becomes **`root:nftban 0640`** and nftban-group operators can read it → `^Validator Status:` renders. **No `CAP_CHOWN` added** (the unit's `chgrp` fails under `CapabilityBoundingSet=CAP_NET_ADMIN`, which is exactly why setgid — not a capability grant — is the fix).
+
+### Unchanged / invariants
+- `CapabilityBoundingSet=CAP_NET_ADMIN` only (no CAP_CHOWN); `ProtectSystem=strict`; narrow `ReadWritePaths=/run/nftban/firewall-validate` (no broad form); wrapper logic untouched (rc preserved, stale cleanup, `chmod 0640`, file-first CLI read); no pkexec; no systemd-journal/adm; **no polkit rule or path change. Schema 1.83.0 frozen.**
+
+### Tests
+- New `v131_3_d13_setgid_group_ownership_test.sh`: asserts the `2750` setgid dir (tmpfiles + ExecStartPre) and a **capability-faithful** behavioral check — runs the wrapper under `systemd-run --property=CapabilityBoundingSet=CAP_NET_ADMIN` and proves `last.json` inherits group `nftban` (mode 0640) **without** chgrp (SKIPs as non-root in CI — the real proof is lab validation). Operator-visibility uses exact `^Validator Status:`; loose `IDLE|PROTECTED` banned. Local suites green; shellcheck + FHS `--check` clean.
+
+### Validation
+- **PENDING (the gate that closes D13):** `EXECUTE_V1_131_3_PACKAGE_INSTALL_VALIDATION` — lab2 DEB + lab4 RPM. **Pass = non-root nftban-group user gets rc=0 + stdout `^Validator Status:`, `last.json` is `root:nftban 0640`, `/run/nftban` stays `nftban:nftban`, root path renders — on BOTH families.** D13 is NOT closed until this passes.
+
+### Release-prep note
+- Only release-prep files touched: `VERSION` (1.131.2 → 1.131.3), `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only).
+
+---
+
 ## [v1.131.2] - 2026-05-26 — D13 sandbox-write repair (supersedes v1.131.1's ineffective fix)
 
 **Codename:** `V131_2_D13_SANDBOX_WRITE_REPAIR`
