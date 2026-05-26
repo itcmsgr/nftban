@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.131.1] - 2026-05-26 — D13 hotfix: Option C validator output for nftban-group operators
+
+**Codename:** `V131_1_D13_OPTION_C_OUTPUT_CAPTURE_FIX`
+**Scope file:** `AUDIT_190_LIFECYCLE/V131_0_PACKAGE_INSTALL_VALIDATION_REPORT.md`
+
+> **Hotfix on v1.131.0.** v1.131.0 shipped the Option C validate service but its operator-facing output path was incomplete after real package install. The **fleet should skip v1.131.0 and move directly to v1.131.1** after validation. No production host had v1.131.0 installed, so D13 had zero production exposure.
+
+### Fixed
+- **D13** (`D13_OPTION_C_JOURNAL_READ_PERMISSION_GAP`, confirmed cross-family DEB+RPM): `nftban firewall validate` for a non-root `nftban`-group operator returned rc=0 and the `nftban-firewall-validate.service` ran correctly, but the CLI read the validator JSON from `journalctl`, which the operator cannot read (not a `systemd-journal`/`adm` member) → **banner-only output** for the exact audience Option C targets. (Distinct from the D10 timing race, which was real-for-root and already fixed.) Fix (PR #687, sq `76b181a7`):
+  - New `cli/lib/nftban/helpers/firewall_validate_run.sh` wrapper (the unit `ExecStart` target) runs `nftban-validate --json` as root+`CAP_NET_ADMIN`, then writes the JSON to **`/run/nftban/firewall-validate/last.json`** (owner `root:nftban`, mode `0640`, pre-run stale cleanup, validator exit code preserved, JSON also echoed to stdout for the root/audit journal copy).
+  - `cli/lib/nftban/cli/cmd_firewall.sh` now reads that file as the **primary** source; the `journalctl` read is demoted to a last-resort root fallback only.
+  - **No pkexec; nftban group NOT added to systemd-journal/adm; no polkit rule or path change.** Family-specific polkit install paths preserved (DEB `/usr/share/polkit-1/rules.d/`, RPM `/etc/polkit-1/rules.d/`) — see `D13_FHS_PARITY_NOTE` (DEB/RPM FHS layout is identical; D13 was a design gap, not path drift).
+
+### Unchanged / invariants
+- **Schema 1.83.0 frozen** — no new validator field, metric, Prometheus label, Status JSON key, `install_state` field, nftables set/chain/table, or config key. The wrapper is package-owned (auto-staged via the existing `cli/lib/nftban/helpers` glob + RPM/DEB `cp -r`); no payload/spec edit.
+
+### Validation
+- Local suites green: D13 test 16/16; `v130_polkit_validate_service_test.sh` re-pointed to the new file-handoff contract 28/28; V131-sweep 6/6; V131-PR-A 15/15; V129 17/17. `bash -n` + shellcheck clean.
+- **PENDING (required before fully-shipped):** `EXECUTE_V1_131_1_PACKAGE_INSTALL_VALIDATION` — lab2 DEB → lab4 RPM. **Pass condition: a non-root `nftban`-group user sees `Validator Status` on both families.**
+
+### Release-prep note
+- Only release-prep files touched: `VERSION` (1.131.0 → 1.131.1), `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only; FHS body byte-unchanged). No functional code change in release-prep.
+
+---
+
 ## [v1.131.0] - 2026-05-25 — post-v1.129 defect-fix bundle (V130 + V131 lanes; v1.130 never tagged)
 
 **Codename:** `V131_POST_V129_DEFECT_FIX_BUNDLE`
