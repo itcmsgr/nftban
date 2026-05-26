@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.131.4] - 2026-05-26 — installer DEGRADED-state correctness hotfix (supersedes v1.131.3)
+
+**Codename:** `V131_4_D13_PAYLOAD_INVENTORY_AND_DEGRADED_REMEDIATION_FIX`
+**Scope file:** `AUDIT_190_LIFECYCLE/V131_3_DEGRADED_ROOT_CAUSE_CORRECTION.md`
+
+> **Why:** live fleet validation of v1.131.3 found **every install latches `install_state=DEGRADED`** even though firewall protection and D13 itself work. Root cause (confirmed on lab4 with a healthy exporter, still DEGRADED): the D13 unit `nftban-firewall-validate.service` (`ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh`, added in #687/#689) referenced a path that was never added to the installer's payload-inventory allow-list, so `systemd_payload_inventory_ok` flagged it "unknown". The `nftban-unified-exporter` exit-2 blip is coincidental/self-healing and is **not** the latch.
+
+### Fixed
+- **D-D13-PAYLOAD-INVENTORY-MISS** (PR #693, sq `7d3eec96`): added `/usr/lib/nftban/helpers/firewall_validate_run.sh` to `defaultInventoryPaths()` in `internal/installer/validate/assertions.go` so `systemd_payload_inventory_ok` passes and installs carrying the D13 unit land **COMMITTED**, not DEGRADED.
+- **D-INSTALL-STATE-BLANK-REASON**: `state.Transition()` now preserves the current failing-assertion reason on a DEGRADED transition (it was cleared by `applyTerminalHygiene`, which is correct only for the clean COMMITTED terminal) — so `FAILURE_REASON=` is populated in `install_state` and `report()` renders the `Issues:` line.
+- **D-DEGRADED-REMEDIATION-CMD-BROKEN**: the DEGRADED remediation no longer prints the bare `nftban-installer --repair` (the binary lives under `/usr/lib/nftban/bin` and is not on the operator's `$PATH` → `command not found`) and **never** prepends `sudo` (operator-facing text follows the nftban-group + PolicyKit/polkit wording policy). It now prints the bare full path `/usr/lib/nftban/bin/nftban-installer --repair` across the Go installer `report()`, the RPM `%post`, the DEB `postinst`, and the `nftban update` CLI.
+
+### Unchanged / invariants
+- **No functional firewall/daemon change**; no `build/fhs-spec.yaml` / systemd-unit / polkit-rule change; **no `CAP_CHOWN`**; `ProtectSystem=strict` + `CapabilityBoundingSet=CAP_NET_ADMIN` preserved; D13 setgid `2750` handoff unchanged. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only (FHS body byte-unchanged).
+
+### Tests
+- `internal/installer/validate/systemd_payload_test.go`: `TestSystemdPayload_D13ValidateUnit_InDefaultInventory` — locks the allow-list entry + a behavioral `PAYLOAD-INVENTORY-001` pass for the real validate-unit shape.
+- `internal/installer/state/file_test.go`: `TestTransitionToDegradedPreservesReason` — DEGRADED keeps `FailureReason`; the existing COMMITTED-clears-reason test still passes.
+
+### Validation
+- PR #693 CI green (61 success / 3 skip / 0 fail) — incl. `Build & Test`, `CodeQL Analysis (Go)`, `Validate systemd ExecStart payload resolution`, `Validate binary consistency (RPM vs DEB)`. Pre-merge lab2 (Go 1.25.0): `go build`/`go vet`/`go test -race` green, no regression.
+- **Package-install validation PENDING (the gate that closes this):** `EXECUTE_V1_131_4_PACKAGE_INSTALL_VALIDATION` must upgrade a v1.131.3 host stuck `DEGRADED` to **`COMMITTED`** (payload-inventory passes; no unknown ExecStart path; D13 still rc=0 + `^Validator Status:` + `last.json root:nftban 0640` + handoff `2750`; nftband active; ip/ip6 nftban tables present; update lock not left active). **Fleet rollout paused at 4/7 until v1.131.4 validates.**
+
+---
+
 ## [v1.131.3] - 2026-05-26 — D13 setgid group-ownership repair (supersedes v1.131.2)
 
 **Codename:** `V131_3_D13_SETGID_GROUP_OWNERSHIP_FIX`
