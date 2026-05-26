@@ -111,10 +111,10 @@ fi
 # ----------------------------------------------------------------------------
 echo "--- B: tmpfiles ---"
 
-if grep -qE '^d /run/nftban/firewall-validate 0750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 0750 root nftban -'" 0
+if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -'" 0
 else
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 0750 root nftban -'" 1
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -'" 1
 fi
 
 # ----------------------------------------------------------------------------
