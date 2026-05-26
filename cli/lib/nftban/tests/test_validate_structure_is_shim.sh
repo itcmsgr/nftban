@@ -222,11 +222,13 @@ else
     assert "body checks 'command -v jq' for jq-missing fallback (Amend-2)" "no"
 fi
 
-# N9: body must use 'return 2' for missing-binary path — Amend-1 contract
-if printf '%s' "$body" | grep -qE '^\s*return 2\b'; then
-    assert "body uses 'return 2' for missing-binary fail (Amend-1)" "yes"
+# N9: missing/unreachable validator must return 3 (PR-C C8 — supersedes the
+#     Amend-1 'return 2'; rc=2 is now reserved for Go status DOWN only, so a
+#     missing/empty/crashed validator can never masquerade as a real DOWN state).
+if printf '%s' "$body" | grep -qE '^\s*return 3\b'; then
+    assert "body uses 'return 3' for missing/unreachable validator (C8)" "yes"
 else
-    assert "body uses 'return 2' for missing-binary fail (Amend-1)" "no"
+    assert "body uses 'return 3' for missing/unreachable validator (C8)" "no"
 fi
 
 echo ""

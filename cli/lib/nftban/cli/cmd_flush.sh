@@ -90,7 +90,6 @@ TARGETS:
 OPTIONS:
     --yes               Skip confirmation prompt
     --dry-run           Show what would be flushed without executing
-    --json              Output in JSON format
 
 EXAMPLES:
     nftban flush blacklist              # Flush all blacklist IPs (with prompt)
@@ -140,7 +139,6 @@ EXIT CODES:
     0   Flush completed (or dry-run completed)
     1   General error (IPC failure, nft command failure)
     2   Unsupported target / invalid argument
-    3   PolicyKit/polkit authorization failed or insufficient privileges
 
 HELP
 }
@@ -854,8 +852,6 @@ nftban_cmd_flush() {
     # Parse options
     local skip_confirm=false
     local dry_run=false
-    # shellcheck disable=SC2034  # Reserved for future JSON output support
-    local json_mode=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -865,10 +861,6 @@ nftban_cmd_flush() {
             --dry-run|-n)
                 dry_run=true
                 ;;
-            --json)
-                # shellcheck disable=SC2034  # Reserved for future JSON output
-                json_mode=true
-                ;;
             --help|-h)
                 _nftban_flush_help
                 return 0
@@ -876,7 +868,7 @@ nftban_cmd_flush() {
             *)
                 echo "Unknown option: $1"
                 _nftban_flush_help
-                return 1
+                return 2
                 ;;
         esac
         shift
@@ -909,7 +901,7 @@ nftban_cmd_flush() {
             echo "Unknown target: $target"
             echo ""
             echo "Valid targets: blacklist, whitelist, feeds, geoban, ddos, all"
-            return 1
+            return 2
             ;;
     esac
 }
