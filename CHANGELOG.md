@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.134.0] - 2026-05-27 — CLI help/code-debt closure (PR-D P3 allowlist + doctest guard + PR-E docs verified)
+
+**Codename:** `V134_0_PR_D_P3_DOCTEST_AND_PR_E_DOCS`
+**Scope file:** `AUDIT_190_LIFECYCLE/V134_SCOPE_PR_D_P3_DOCTEST_AND_PR_E_DOCS.md`
+
+> **Why:** closes the original 61-item V129→V131 text/code debt ledger — the P3 alias allowlist, the CI-enforced help/code doctest guard, and a final docs/wiki alignment pass. Doc/UX/test/CI-truth only; no functional/Go/schema change.
+
+### PR-D P3 alias allowlist — Lane 1 (PR #700, sq `5648887a`)
+- **D-26 (document):** `health rbl` + `health fhs` are real delegating subcommands → added to `cmd_health.sh` help.
+- **D-28 (fix):** `cmd_metrics.sh` error-usage now lists `evidence`/`evidence-json` (matched the main `--help`).
+- **Allowlist manifest** `cli/lib/nftban/tests/v134_help_code_alias_allowlist.tsv`: classifies dispatched-but-intentionally-undocumented tokens (D-12..D-30 + guard-surfaced extras) as alias / internal / universal-flag / deprecated / undocumented-subcmd. New `v134_pr_d_p3_alias_allowlist_test.sh` (11/0) — manifest well-formed + every allowlisted token actually dispatched (no phantoms).
+
+### Help/code doctest guard — Lane 2 (PR #701, sq `9fc3dfe1`)
+- Rebuilt `v130_subcommand_flag_help_code_test.sh` as a robust single-direction guard: every primary-dispatch token a command accepts must be documented in help, allowlisted, or structural. Unparseable families are SKIPPED (reported, not failed) — no prose-extraction false positives. **67 families PASS, 0 fail, 2 skip** (`health_core` helper, `smoke` passthrough).
+- Allowlist extended +10 (`blacklist rm/del/delete/unban`→remove; `health detailed`→diagnostics; `sync full/status/validate`; `portscan restart`→reload/`sync`).
+- **CI-enforced** via two new steps in `.github/workflows/ci-architecture.yml` — future help/code drift now fails the build (the structural lock that would have caught D-05..D-11).
+
+### PR-E docs/wiki/README alignment — Lane 3 (verified, no changes)
+- `docs/` + `README.md` + the `nftban.wiki` repo carry **no** stale CLI references (`stats top jails`, `emulate --out`, `nftban gui`, `profile select`, sudo/root privilege framing); `nftban gui` removal is already correctly documented (`Deprecations-v190.md`). The v1.132–v1.134 CLI changes were removals + added `--help` coverage the docs never documented in stale form. **Verified-aligned — no doc PR needed.**
+
+### Unchanged / invariants
+- **No Go change.** `cmd/nftband` + `cmd/nftban-core` byte-identical to v1.133.0. No install-payload / systemd-unit / polkit-rule / `build/fhs-spec.yaml` change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only.
+
+### Parked / carried forward
+- **DOC-CANDIDATEs** (allowlisted real subcommands the operator may later document): pro `community`, suricata `stats`/`test`, sync `validate`/`status`, portscan `sync`.
+- **v1.135.0** (separate install/update-lifecycle lane, NOT here): D-MAINTENANCE-TIMER-SILENT-ENABLE, D-UPDATE-LOCK-LEFT-BEHIND, D-UPDATE-MIXED-DRIFT, D-EXPORTER-SETTLE-WINDOW, install_state/FAILURE_REASON/remediation finalization (`V135_INSTALL_UPDATE_LIFECYCLE_SCOPE.md`).
+
+### Validation
+- PR #700 CI green (50/2-skip/0-fail); PR #701 CI green (50/2-skip/0-fail); post-merge `main` CI green at `5648887a` + `9fc3dfe1`. Local: doctest guard 67/0/2-skip, Lane-1 allowlist guard 11/0, adjacent suites green; `bash -n` clean.
+
+---
+
 ## [v1.133.0] - 2026-05-26 — CLI UX/text truth-alignment (PR-B wording + PR-D P2 help/code drift)
 
 **Codename:** `V133_0_PR_B_WORDING_AND_PR_D_P2_HELP_DRIFT`
