@@ -419,7 +419,12 @@ func defaultInventoryPaths() map[string]bool {
 		"/usr/lib/nftban/cron/maintenance.sh":                  true,
 		"/usr/lib/nftban/exporters/nftban_unified_exporter.sh": true,
 		"/usr/lib/nftban/helpers/firewall-init-with-delay.sh":  true,
-		"/usr/lib/nftban/scripts/nftban-soak-check.sh":         true,
+		// v1.131.4 (D-D13-PAYLOAD-INVENTORY-MISS): ExecStart of the V130/V131
+		// D13 unit nftban-firewall-validate.service. Added by #687/#689 but
+		// omitted here, so systemd_payload_inventory_ok flagged it "unknown"
+		// → install_state DEGRADED on every install carrying the validate unit.
+		"/usr/lib/nftban/helpers/firewall_validate_run.sh": true,
+		"/usr/lib/nftban/scripts/nftban-soak-check.sh":     true,
 	}
 }
 

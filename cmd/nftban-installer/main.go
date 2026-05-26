@@ -540,7 +540,11 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 		log.Result("[NFTBan]   nftban support")
 		log.Result("[NFTBan] to generate a diagnostic bundle and optionally submit it for review.")
 		log.Result("")
-		log.Result("[NFTBan] To fix: nftban-installer --repair")
+		// v1.131.4 (D-DEGRADED-REMEDIATION-CMD-BROKEN): use the full path —
+		// `nftban-installer` is not on the operator's PATH (it lives under
+		// /usr/lib/nftban/bin), so the bare form printed `command not found`.
+		// Matches the full-path form already used by the FAILED-case siblings.
+		log.Result("[NFTBan] To fix: sudo /usr/lib/nftban/bin/nftban-installer --repair")
 	case state.StateFailedAbort:
 		// V126.2 UX hotfix: FAILED_AUTHORITY_ABORT gets a dedicated operator-friendly
 		// block. Replaces the generic FAILED block (default case) which offered
