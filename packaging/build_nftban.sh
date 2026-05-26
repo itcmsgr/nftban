@@ -987,7 +987,7 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan]   nftban support"
         echo "[NFTBan] to generate a diagnostic bundle for review."
         echo ""
-        echo "[NFTBan] To fix: sudo /usr/lib/nftban/bin/nftban-installer --repair"
+        echo "[NFTBan] To fix: /usr/lib/nftban/bin/nftban-installer --repair"
     elif [ \$INSTALLER_EXIT -eq 3 ]; then
         # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
         # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)
