@@ -54,9 +54,10 @@ validate_structure() {
     # NOTE (v1.80, B80-1 — truth consolidation):
     # This function is now a THIN SHIM over the Go validator (nftban-validate).
     # It exists ONLY for backward compatibility with existing CLI callers:
-    #   - cli/lib/nftban/cli/cmd_validate.sh:103  (nftban validate)
-    #   - cli/lib/nftban/cli/cmd_firewall.sh:453+ (firewall reload/rebuild/reset
-    #                                             validation fallback paths)
+    #   - cli/lib/nftban/cli/cmd_validate.sh:104  (nftban validate) — the SOLE
+    #     runtime caller. cmd_firewall.sh no longer calls this shim (its
+    #     validate path is self-contained — see cmd_firewall.sh:1061), so the
+    #     PR-C C8 exit-code remap below has no cross-command impact.
     #
     # It MUST NOT contain independent validation logic (no jq on nftables JSON,
     # no nft list ruleset, no spec loading). The single source of truth is the
@@ -66,23 +67,26 @@ validate_structure() {
     # Output contract (MUST match legacy shell format byte-for-byte for callers):
     #   JSON: {status:"OK"|"WARNING"|"ERROR", errors:[], warnings:[], info:[]}
     #   Text: "NFTBan Structure Validation" header + status + error/warning lists
-    #   Exit: 0 if status=="OK" or "WARNING", 1 if status=="ERROR"
+    #   Exit (documented `nftban validate` contract — see cmd_validate.sh):
+    #     0 OK/WARNING (PROTECTED/IDLE) · 1 ERROR or Go status degraded (DEGRADED)
+    #     2 Go status down (DOWN) · 3 validator binary missing/empty/crashed
     #
     # Full removal of this shell file (including the still-independent
     # check_ip_or_port and get_firewall_stats below) is v1.81 scope (B80-1).
     # =========================================================================
     #
     # Args: $1 = output_json (true/false)
-    # Returns: 0 if OK/WARNING, 1 if ERROR
+    # Returns: 0 OK/WARNING · 1 ERROR/degraded · 2 down · 3 validator missing/crashed
 
     local output_json="${1:-false}"
     local validator_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 
     # Guardrail: the Go validator binary MUST exist. If it doesn't, we fail
-    # closed with exit code 2 (distinct from generic validation failure so
-    # callers can distinguish "tool missing" from "tool ran but validation
-    # failed"). No independent fallback validation logic — that would
-    # re-create the exact drift risk B80-1 is closing.
+    # closed with exit code 3 ("validator binary crashed or was unreachable"
+    # per the documented `nftban validate` contract) — distinct from 2 (DOWN,
+    # a real protection state) so a missing tool never masquerades as DOWN.
+    # No independent fallback validation logic — that would re-create the exact
+    # drift risk B80-1 is closing. (PR-C C8: was rc=2, collided with DOWN.)
     #
     # NOTE: this fail-closed path must work WITHOUT jq. We use printf with
     # hand-escaped JSON because jq itself may be missing (the jq-missing
@@ -104,7 +108,7 @@ validate_structure() {
             echo "❌ ERRORS (1):"
             echo "  $missing_msg"
         fi
-        return 2
+        return 3
     fi
 
     # Call the Go validator. Capture its exit code — we derive shell exit
@@ -139,7 +143,9 @@ validate_structure() {
             echo "❌ ERRORS (1):"
             echo "  $empty_msg"
         fi
-        return 1
+        # C8: validator ran but produced no output → unreachable/crashed (3),
+        # not DEGRADED (1) — a tool failure, not a protection state.
+        return 3
     fi
 
     # --- jq-missing fallback ---
@@ -281,7 +287,14 @@ validate_structure() {
         return 1
     fi
     if (( go_rc != 0 )); then
-        return "$go_rc"
+        # C8: only documented validator exits pass through — 1 (DEGRADED),
+        # 2 (DOWN). Any other nonzero exit is an unexpected tool failure →
+        # normalize to 3 (crashed/unreachable); never leak an undocumented
+        # code or collide with the 0/1/2 status contract.
+        case "$go_rc" in
+            1|2) return "$go_rc" ;;
+            *)   return 3 ;;
+        esac
     fi
     case "$go_status" in
         down)     return 2 ;;

@@ -270,7 +270,7 @@ nftban_services_show_help() {
     echo "    • curl             Feed downloads (required)"
     echo "    • jq               JSON processing (optional)"
     echo ""
-    echo "NOTE: fail2ban removed in v2.1 - use native login monitoring instead"
+    echo "NOTE: NFTBan does not use fail2ban — it provides native login monitoring instead"
     echo ""
 }
 

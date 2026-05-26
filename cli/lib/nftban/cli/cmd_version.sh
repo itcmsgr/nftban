@@ -240,8 +240,9 @@ EOF
         nftban_version_info
     fi
 
-    # Completion marker for test validation (only on success path)
-    echo "# NFTBAN_CMD_EXIT: version"
+    # Completion marker (debug-gated canonical helper — silent unless NFTBAN_DEBUG=true;
+    # the raw echo here previously corrupted `version --json` output. PR-C C1.)
+    command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "version"
     return 0
 }
 

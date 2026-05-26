@@ -314,7 +314,7 @@ nftban_cmd_setup() {
         echo "  🛡️  Unauthorized access attempts"
         echo ""
         echo "What I protected for you automatically:"
-        echo "  ✅ SSH (port 22) - Protected with fail2ban (brute force protection)"
+        echo "  ✅ SSH (port 22) - Protected by NFTBan login monitoring (brute force protection)"
         echo "  ✅ Basic firewall - Only allows what you need"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

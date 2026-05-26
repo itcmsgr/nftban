@@ -462,7 +462,7 @@ nftban_stats_cmd_dashboard() {
         # Get top data
         local top_ips="[]"
         local top_countries="[]"
-        local top_jails="[]"
+        local top_filters="[]"
 
         if declare -f nftban_stats_top_ips >/dev/null 2>&1; then
             top_ips=$(nftban_stats_top_ips 10 "$since" "$until" 2>/dev/null || echo "[]")
@@ -473,8 +473,10 @@ nftban_stats_cmd_dashboard() {
             total_countries=$(echo "$top_countries" | jq '. | length' 2>/dev/null) || total_countries=0
         fi
 
-        if declare -f nftban_stats_top_jails >/dev/null 2>&1; then
-            top_jails=$(nftban_stats_top_jails 10 "$since" "$until" 2>/dev/null || echo "[]")
+        # C5: "filters" (ban-source breakdown) replaces the old fail2ban-era
+        # "jails" concept; backed by the real nftban_stats_top_sources.
+        if declare -f nftban_stats_top_sources >/dev/null 2>&1; then
+            top_filters=$(nftban_stats_top_sources 10 "$since" "$until" 2>/dev/null || echo "[]")
         fi
 
         # Get portscan statistics from nftban-actions.log
@@ -602,7 +604,7 @@ nftban_stats_cmd_dashboard() {
                 --arg rules_total "$rules_total" \
                 --argjson top_ips "$top_ips" \
                 --argjson top_countries "$top_countries" \
-                --argjson top_jails "$top_jails" \
+                --argjson top_filters "$top_filters" \
                 '{
                     period: {since: $since, until: $until},
                     summary: {
@@ -657,8 +659,7 @@ nftban_stats_cmd_dashboard() {
                     },
                     top_ips: $top_ips,
                     top_countries: $top_countries,
-                    top_jails: $top_jails,
-                    top_filters: $top_jails
+                    top_filters: $top_filters
                 }')
         else
             # Fallback without jq
@@ -666,7 +667,7 @@ nftban_stats_cmd_dashboard() {
             [[ "$portscan_enabled" == "true" ]] && portscan_enabled_json="true"
             local ddos_enabled_json="false"
             [[ "$ddos_enabled" == "true" ]] && ddos_enabled_json="true"
-            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$portscan_enabled_json},\"ddos\":{\"packets_dropped\":$ddos_packets_dropped,\"bytes_dropped\":$ddos_bytes_dropped,\"blocked_24h\":$ddos_blocked_24h,\"blocked_total\":$ddos_blocked_total,\"enabled\":$ddos_enabled_json},\"shared_state\":{\"feeds_active\":$feeds_active,\"feeds_ips\":$feeds_ips,\"rules_total\":$rules_total},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_jails\":$top_jails,\"top_filters\":$top_jails}"
+            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$portscan_enabled_json},\"ddos\":{\"packets_dropped\":$ddos_packets_dropped,\"bytes_dropped\":$ddos_bytes_dropped,\"blocked_24h\":$ddos_blocked_24h,\"blocked_total\":$ddos_blocked_total,\"enabled\":$ddos_enabled_json},\"shared_state\":{\"feeds_active\":$feeds_active,\"feeds_ips\":$feeds_ips,\"rules_total\":$rules_total},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_filters\":$top_filters}"
         fi
 
         json_output "true" "$data"
@@ -698,8 +699,8 @@ nftban_stats_cmd_dashboard() {
 # =============================================================================
 
 nftban_stats_cmd_top() {
-    # Show top lists (IPs, countries, jails)
-    # Usage: nftban stats top [ips|countries|jails] [LIMIT] [--json]
+    # Show top lists (IPs, countries, filters)
+    # Usage: nftban stats top [ips|countries|filters] [LIMIT] [--json]
 
     local type="${1:-ips}"
     local limit="${2:-${STATS_TOP_N:-10}}"
@@ -758,13 +759,13 @@ nftban_stats_cmd_top() {
                     result_data=$(nftban_stats_top_countries "$limit" "$since" "$until" 2>/dev/null || echo "[]")
                 fi
                 ;;
-            jails|jail)
-                if declare -f nftban_stats_top_jails >/dev/null 2>&1; then
-                    result_data=$(nftban_stats_top_jails "$limit" "$since" "$until" 2>/dev/null || echo "[]")
+            filters|filter)
+                if declare -f nftban_stats_top_sources >/dev/null 2>&1; then
+                    result_data=$(nftban_stats_top_sources "$limit" "$since" "$until" 2>/dev/null || echo "[]")
                 fi
                 ;;
             *)
-                json_output "false" '{}' "Unknown top type: $type. Valid types: ips, countries, jails"
+                json_output "false" '{}' "Unknown top type: $type. Valid types: ips, countries, filters"
                 return 1
                 ;;
         esac
@@ -836,8 +837,8 @@ nftban_stats_cmd_top() {
                 return 1
             fi
             ;;
-        jails|jail)
-            echo "Top ${limit} Jails (${since} to ${until})"
+        filters|filter)
+            echo "Top ${limit} Filters (${since} to ${until})"
             if type -t nftban_render_separator >/dev/null 2>&1; then
                 nftban_render_separator "─"
             else
@@ -845,7 +846,7 @@ nftban_stats_cmd_top() {
             fi
             echo ""
             if command -v jq &>/dev/null; then
-                nftban_stats_top_jails "$limit" "$since" "$until" | \
+                nftban_stats_top_sources "$limit" "$since" "$until" | \
                     jq -r '.[] | "\(.name): \(.count) bans"'
             else
                 echo "ERROR: jq is required for formatted output" >&2
@@ -854,7 +855,7 @@ nftban_stats_cmd_top() {
             ;;
         *)
             echo "ERROR: Unknown top type: $type" >&2
-            echo "Valid types: ips, countries, jails" >&2
+            echo "Valid types: ips, countries, filters" >&2
             return 1
             ;;
     esac
@@ -964,7 +965,7 @@ nftban_stats_cmd_ip() {
         echo ""
 
         # Display events
-        echo "$history" | jq -r '.[] | "[\(.action)] \(.timestamp)\n  Jail: \(.jail)\n  Reason: \(.reason)\n"'
+        echo "$history" | jq -r '.[] | "[\(.action)] \(.timestamp)\n  Source: \(.jail)\n  Reason: \(.reason)\n"'
     else
         echo "ERROR: jq is required for formatted output" >&2
         return 1
@@ -1331,7 +1332,7 @@ USAGE:
 COMMANDS:
     dashboard | summary    Show comprehensive statistics dashboard (default)
     trend                  Show 7-day trend analysis with averages
-    top <type> [N]         Show top lists (ips, countries, jails)
+    top <type> [N]         Show top lists (ips, countries, filters)
     ip <IP>                Show ban history for specific IP
     recent [N]             Show recent ban activity
     monitor                Real-time monitoring with auto-refresh
@@ -1351,7 +1352,7 @@ DASHBOARD OPTIONS:
 TOP COMMAND:
     nftban stats top ips 20            Top 20 banned IPs
     nftban stats top countries 10      Top 10 countries
-    nftban stats top jails 5           Top 5 jails
+    nftban stats top filters 5         Top 5 ban filters (sources)
 
 EXPORT OPTIONS:
     --format FORMAT        Export format (json, csv)
