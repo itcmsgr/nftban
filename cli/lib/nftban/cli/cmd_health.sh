@@ -341,6 +341,8 @@ DIAGNOSTICS:
     config [--verbose]      Show module and config status
     posture, security       Check security posture (low noise)
     botguard                Check BotGuard module status
+    rbl                     Check RBL (DNS blocklist) health
+    fhs                     Check FHS compliance (delegates to 'nftban fhs')
 
 MONITORING:
     summary                 One-line health summary

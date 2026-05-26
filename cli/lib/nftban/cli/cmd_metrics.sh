@@ -438,7 +438,7 @@ nftban_cmd_metrics() {
             ;;
         *)
             echo "Unknown command: $subcommand"
-            echo "Usage: nftban metrics {enable|disable|status|pipeline|help}"
+            echo "Usage: nftban metrics {evidence|evidence-json|enable|disable|status|pipeline|help}"
             return 1
             ;;
     esac
