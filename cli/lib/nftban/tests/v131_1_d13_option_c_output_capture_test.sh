@@ -119,6 +119,17 @@ else
     _t_assert "A9: cmd_firewall.sh reads the last.json file" 1
 fi
 
+# A10: V131.2 D13 — the wrapper writes under ProtectSystem=strict, so the unit
+#      MUST grant a narrow ReadWritePaths for the handoff dir, else the write is
+#      blocked and last.json is never created (the v1.131.1 latent failure). This
+#      assertion ensures THIS prior test can no longer pass while the real unit
+#      blocks the write.
+if grep -qE '^ReadWritePaths=/run/nftban/firewall-validate' "$_unit_file"; then
+    _t_assert "A10: unit grants ReadWritePaths for the firewall-validate handoff dir" 0
+else
+    _t_assert "A10: unit grants ReadWritePaths for the firewall-validate handoff dir" 1
+fi
+
 # ----------------------------------------------------------------------------
 # B: behavioral — run the wrapper against a stub validator in a temp dir.
 #    No root / nftban group required (chgrp/chmod are || true on a dev host).

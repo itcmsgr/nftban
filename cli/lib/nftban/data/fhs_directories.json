@@ -858,6 +858,14 @@
         "group": "nftban",
         "description": "Runtime data (PID files, sockets)",
         "created_by": "tmpfiles"
+      },
+      {
+        "path": "/run/nftban/firewall-validate",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "V131.2 D13 — group-readable handoff dir for nftban-firewall-validate.service output (last.json)",
+        "created_by": "tmpfiles"
       }
     ],
     "shared": [
