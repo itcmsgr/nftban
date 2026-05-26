@@ -527,8 +527,12 @@ nftban_pro_disable_remote() {
         fi
     fi
 
-    # Mark Pro as disabled
-    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
+    # Mark Pro as disabled (polkit-aware refusal instead of a raw write leak)
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" 2>/dev/null || true
+    if [[ $EUID -ne 0 && ! -w "$NFTBAN_PRO_DATA_DIR" ]]; then
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (update Pro status)" >&2
+        return 1
+    fi
     printf '{"enabled": false, "reason": "subscription_invalid", "disabled_at": "%s"}\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }
@@ -545,8 +549,12 @@ nftban_pro_enable_remote() {
         fi
     fi
 
-    # Mark Pro as enabled
-    mkdir -p "$NFTBAN_PRO_DATA_DIR" || return 1
+    # Mark Pro as enabled (polkit-aware refusal instead of a raw write leak)
+    mkdir -p "$NFTBAN_PRO_DATA_DIR" 2>/dev/null || true
+    if [[ $EUID -ne 0 && ! -w "$NFTBAN_PRO_DATA_DIR" ]]; then
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (update Pro status)" >&2
+        return 1
+    fi
     printf '{"enabled": true, "enabled_at": "%s"}\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }

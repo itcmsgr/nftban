@@ -98,7 +98,7 @@ nftban_systemd_start() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to start services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (start service)" >&2
         return 1
     fi
 
@@ -117,7 +117,7 @@ nftban_systemd_stop() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to stop services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (stop service)" >&2
         return 1
     fi
 
@@ -136,7 +136,7 @@ nftban_systemd_restart() {
     local service="$1"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to restart services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (restart service)" >&2
         return 1
     fi
 

@@ -343,7 +343,7 @@ nftban_system_restart() {
     local target="${1:-all}"
 
     if [[ $EUID -ne 0 ]]; then
-        echo "ERROR: Must be root to restart services" >&2
+        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (restart services)" >&2
         return 1
     fi
 
