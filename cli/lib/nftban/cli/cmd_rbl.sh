@@ -113,6 +113,9 @@ SUBCOMMANDS:
   alert       Test alert system
   critical    Manage critical IPs (mail, web, panel servers)
   watchlist   Monitor external IPs of interest (customers, partners)
+  config      Show RBL configuration
+  stats       Show RBL statistics
+  test        Test RBL configuration/connectivity
 
 CHECK OPTIONS:
   --ip IP           Check specific IP address

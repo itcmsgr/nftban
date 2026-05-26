@@ -595,6 +595,8 @@ Usage:
   nftban geoban update                     # Update all active countries
   nftban geoban refresh                    # Refresh country IP data from RIRs
   nftban geoban config                     # Show GeoBan configuration
+  nftban geoban stats                      # Show GeoBan statistics
+  nftban geoban test                       # Test GeoBan config/connectivity
   nftban geoban help                       # Show this help
 
 Country Codes:

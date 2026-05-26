@@ -95,6 +95,7 @@ nftban_cmd_module_help() {
     echo "  nftban module license [--save FILE] [--email ADDR]     # License compliance"
     echo "  nftban module author [--save FILE] [--email ADDR]      # Author attribution"
     echo "  nftban module depends [--save FILE] [--email ADDR]     # Dependency analysis"
+    echo "  nftban module duplicates [--save FILE] [--email ADDR]  # Duplicate name/version conflict check"
     echo "  nftban module html-report [--save FILE] [--email ADDR] # HTML report"
     echo "  nftban module mail-report [path] [recipient]           # Mail report"
     echo "  nftban module help                                      # Show this help"

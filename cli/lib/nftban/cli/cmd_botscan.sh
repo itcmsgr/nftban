@@ -76,6 +76,8 @@ COMMANDS:
       patterns disable  Disable a pattern
     history             Show detected bots (last 24 hours)
     test                Test pattern matching against sample URLs
+    stats               Show detection statistics (JSON-capable)
+    config              Show detection configuration
     help                Show this help message
 
 DESCRIPTION:
@@ -746,7 +748,7 @@ nftban_cmd_botscan() {
         *)
             echo "ERROR: Unknown command: $action" >&2
             echo ""
-            echo "Available commands: enable, disable, status, stats, check, patterns, history, test, help"
+            echo "Available commands: enable, disable, status, stats, config, check, patterns, history, test, help"
             echo "Run 'nftban botscan help' for detailed usage information"
             return 1
             ;;

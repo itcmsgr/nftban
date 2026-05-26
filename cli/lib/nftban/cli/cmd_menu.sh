@@ -311,7 +311,7 @@ screen_profile() {
         back "Back")" || return
 
     case "$choice" in
-        select) require_root && run_cmd "Profile Select" nftban profile select ;;
+        select) require_root && run_cmd "Setup Wizard" nftban wizard ;;
         show) run_cmd "Profile Show" nftban profile show ;;
         list) run_cmd "Profile List" nftban profile list ;;
         back) ;;
