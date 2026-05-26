@@ -219,3 +219,27 @@ func TestTransitionFromCleanIdleToCommittedIdempotent(t *testing.T) {
 		t.Errorf("PreflightPassed: want true on successful COMMITTED, got false")
 	}
 }
+
+// TestTransitionToDegradedPreservesReason locks the v1.131.4 fix for
+// D-INSTALL-STATE-BLANK-REASON: DEGRADED is a completed-WITH-issues terminal
+// whose reason (the still-failing assertion names) is CURRENT, not stale
+// carry-over, so — unlike COMMITTED — it must survive applyTerminalHygiene
+// into FAILURE_REASON= and the report() "Issues:" line.
+func TestTransitionToDegradedPreservesReason(t *testing.T) {
+	sf := newDryStateFile(t)
+	const reason = "failed assertions after safe auto-fix: systemd_payload_inventory_ok"
+
+	if err := sf.Transition(StateDegraded, PhaseValidate, reason); err != nil {
+		t.Fatalf("Transition returned unexpected error: %v", err)
+	}
+	if sf.State != StateDegraded {
+		t.Errorf("State: want DEGRADED, got %s", sf.State)
+	}
+	if sf.FailureReason != reason {
+		t.Errorf("FailureReason: want %q, got %q", reason, sf.FailureReason)
+	}
+	// terminal hygiene still applies (PreflightPassed forced true).
+	if !sf.PreflightPassed {
+		t.Errorf("PreflightPassed: want true on terminal, got false")
+	}
+}

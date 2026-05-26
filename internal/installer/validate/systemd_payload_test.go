@@ -622,3 +622,36 @@ func TestSystemdPayload_SymlinkShape(t *testing.T) {
 		t.Errorf("broken symlink must fail SYSTEMD-EXECSTART-001")
 	}
 }
+
+// TestSystemdPayload_D13ValidateUnit_InDefaultInventory locks the v1.131.4 fix
+// for D-D13-PAYLOAD-INVENTORY-MISS: the D13 unit nftban-firewall-validate.service
+// (added #687/#689) has ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh.
+// That path was missing from defaultInventoryPaths(), so systemd_payload_inventory_ok
+// flagged it "unknown" → install_state DEGRADED on every install carrying the unit.
+func TestSystemdPayload_D13ValidateUnit_InDefaultInventory(t *testing.T) {
+	const wrapper = "/usr/lib/nftban/helpers/firewall_validate_run.sh"
+
+	// (a) direct allow-list membership.
+	if !defaultInventoryPaths()[wrapper] {
+		t.Fatalf("defaultInventoryPaths() missing %q (D13 validate-unit ExecStart) — would latch DEGRADED on every install", wrapper)
+	}
+
+	// (b) behavioral: the real validate-unit shape must pass PAYLOAD-INVENTORY-001
+	// against the production inventory set.
+	paths := make([]string, 0, len(defaultInventoryPaths()))
+	for p := range defaultInventoryPaths() {
+		paths = append(paths, p)
+	}
+	svc := ParseUnitFile("nftban-firewall-validate.service",
+		"/usr/lib/systemd/system/nftban-firewall-validate.service",
+		"[Service]\nExecStart="+wrapper+"\n")
+	res := ValidateInstalledSystemdPayload(SystemdPayloadInputs{
+		Units:        []ParsedUnit{svc},
+		PathExists:   pathSet(wrapper),
+		Inventory:    inv(paths...),
+		AllUnitNames: map[string]bool{"nftban-firewall-validate.service": true},
+	})
+	if !res.PayloadInventoryOK() {
+		t.Errorf("PAYLOAD-INVENTORY-001 must pass for the D13 validate unit; got UnknownPayloadRefs=%v", res.UnknownPayloadRefs)
+	}
+}

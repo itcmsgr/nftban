@@ -272,7 +272,7 @@ case "$1" in
                 log_info " NFTBan — DEGRADED"
                 log_info "========================================"
                 log_info "Some post-install checks failed."
-                log_info "To fix: nftban-installer --repair"
+                log_info "To fix: /usr/lib/nftban/bin/nftban-installer --repair"
             elif [ $INSTALLER_EXIT -eq 3 ]; then
                 # V126.2 UX hotfix: FAILED_AUTHORITY_ABORT block is now emitted by the Go
                 # installer (cmd/nftban-installer/main.go report() StateFailedAbort case)

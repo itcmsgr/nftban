@@ -142,6 +142,15 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		// 4 of 6 v1.107.2 rollout hosts (lab2/srv1/srv3/srv4) and confusing for
 		// operator diagnosis. See V108_ITEM5_INSTALL_STATE_HYGIENE_SCOPE.md.
 		sf.applyTerminalHygiene()
+		// v1.131.4 (D-INSTALL-STATE-BLANK-REASON): unlike COMMITTED, DEGRADED is
+		// a completed-WITH-issues terminal whose reason (the still-failing
+		// assertion names) is CURRENT, not stale carry-over. applyTerminalHygiene
+		// cleared FailureReason for the clean COMMITTED path; re-attach the
+		// current reason for DEGRADED so FAILURE_REASON= is populated in the
+		// state file and report() can render the "Issues:" line for the operator.
+		if newState == StateDegraded {
+			sf.FailureReason = reason
+		}
 	}
 	sf.Timestamp = time.Now().UTC()
 	if !sf.DryRun {
