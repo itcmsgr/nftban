@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.131.2] - 2026-05-26 — D13 sandbox-write repair (supersedes v1.131.1's ineffective fix)
+
+**Codename:** `V131_2_D13_SANDBOX_WRITE_REPAIR`
+**Scope file:** `AUDIT_190_LIFECYCLE/V131_2_D13_SANDBOX_WRITE_REPAIR_SCOPE.md`
+
+> **v1.131.1's D13 fix did not work under the real systemd unit.** Live package validation proved the `firewall_validate_run.sh` wrapper — correct standalone — failed under `nftban-firewall-validate.service` because `ProtectSystem=strict` (with no write allowance) makes `/run` read-only: the write failed (`ExecMainStatus=1`), `last.json` was never created, and the nftban-group operator still saw banner-only output. (The v1.131.1 PASS was a false positive: a loose `IDLE|PROTECTED` grep matched a banner word, and the behavioral test ran with `NFTBAN_RUN_DIR=/tmp` outside the sandbox.) **Fleet: skip v1.131.0 AND v1.131.1; install v1.131.2 only after both-family validation.**
+
+### Fixed
+- **D13** (`D13_OPTION_C_JOURNAL_READ_PERMISSION_GAP` → sandbox-write follow-on; PR #689, sq `6ff6f605`): the Option C handoff file now actually gets written under the hardened unit. Changes:
+  - tmpfiles entry (regenerated from `build/fhs-spec.yaml`): `d /run/nftban/firewall-validate 0750 root nftban -` creates the handoff dir with group-readable perms.
+  - `nftban-firewall-validate.service`: **narrow** `ReadWritePaths=/run/nftban/firewall-validate` added while **keeping `ProtectSystem=strict`** (not the broad `/run/nftban`, which would expose the daemon socket; not `RuntimeDirectory=nftban/...`, which would re-chown `/run/nftban` off `nftban:nftban` and break the daemon).
+  - `+`-prefixed `ExecStartPre=+/usr/bin/install -d -o root -g nftban -m 0750 /run/nftban/firewall-validate` runs un-sandboxed to guarantee the subdir exists per-start (since `ReadWritePaths=<subdir>` requires the path to pre-exist).
+  - `firewall_validate_run.sh`: `mkdir` made best-effort (`|| true`); rc preservation, `root:nftban 0640` output, stale cleanup, and stdout journal copy all unchanged.
+
+### Tests
+- New `v131_2_d13_sandbox_write_repair_test.sh`: **sandbox-aware** behavioral assertion runs the wrapper under an actual `systemd-run --property=ProtectSystem=strict` with/without `ReadWritePaths`, proving the handoff file is/is-not created (the assertion class that would have caught the v1.131.1 miss; SKIPs as non-root in CI — the real proof is lab package validation). Operator-visibility checks use exact `^Validator Status:` matching; loose `IDLE|PROTECTED` grep is banned. `v131_1_d13_…` test updated to require the unit's write allowance. Local suites green; shellcheck + FHS `--check` clean.
+
+### Unchanged / invariants
+- **No pkexec; nftban group NOT added to systemd-journal/adm; no polkit rule or path change. `ProtectSystem=strict` preserved. Schema 1.83.0 frozen.**
+
+### Validation
+- **PENDING (the gate that matters):** `EXECUTE_V1_131_2_PACKAGE_INSTALL_VALIDATION` — lab2 DEB + lab4 RPM. **Pass = non-root nftban-group user gets rc=0 + stdout `^Validator Status:`, `/run/nftban/firewall-validate/last.json` is `root:nftban 0640`, `/run/nftban` stays `nftban:nftban`, root path still renders — on BOTH families.** D13 is NOT closed until this passes.
+
+### Release-prep note
+- Only release-prep files touched: `VERSION` (1.131.1 → 1.131.2), `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only).
+
+---
+
 ## [v1.131.1] - 2026-05-26 — D13 hotfix: Option C validator output for nftban-group operators
 
 **Codename:** `V131_1_D13_OPTION_C_OUTPUT_CAPTURE_FIX`
