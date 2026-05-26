@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: MPL-2.0
+# nftban help/code intentional-alias allowlist (v1.134 PR-D P3, Lane 1)
+# =============================================================================
+# Tokens that are DISPATCHED by a command's case statement but intentionally
+# NOT advertised in its help/usage block. The v1.134 PR-D doctest guard
+# (Lane 2) consumes this as its allowlist so help<->code drift for genuine
+# aliases / internal / universal-flag / deprecated tokens does NOT fail CI,
+# while NEW undocumented subcommands still do.
+#
+# Source: read-only recon on main 04f16c84 (post-v1.133.0) — every token below
+# was confirmed dispatched (case label) AND absent from the command's help.
+# NOT included here: D-26 health rbl/fhs (now DOCUMENTED) and D-28 metrics
+# (error-usage FIXED) — those are real fixes in this lane, not allowlist.
+#
+# Format (tab-separated): cmd_file<TAB>token<TAB>class<TAB>canonical_or_note
+#   class ∈ alias | internal | universal-flag | deprecated | undocumented-subcmd
+#   DOC-CANDIDATE notes = genuine subcommands the operator may later prefer to
+#   DOCUMENT (like D-26) rather than keep allowlisted — flagged, not decided.
+# =============================================================================
+cli/cmd_pro.sh	community	undocumented-subcmd	DOC-CANDIDATE: real subcmd (v1.41.0); in error-usage :957 not main help
+cli/cmd_pro.sh	license-check	internal	timer-only internal command
+cli/cmd_stats.sh	attackers	alias	stats top ips
+cli/cmd_stats.sh	--today	universal-flag	dashboard date filter
+cli/cmd_stats.sh	--week	universal-flag	dashboard date filter
+cli/cmd_stats.sh	--brief	universal-flag	one-line brief output (also -b)
+cli/cmd_suricata.sh	stats	undocumented-subcmd	DOC-CANDIDATE: real subcmd (distinct from documented status)
+cli/cmd_suricata.sh	test	undocumented-subcmd	DOC-CANDIDATE: real subcmd
+cli/cmd_suricata.sh	interface	alias	iface
+cli/cmd_debug.sh	on	alias	enable
+cli/cmd_debug.sh	off	alias	disable
+cli/cmd_debug.sh	log	alias	logs
+cli/cmd_services.sh	status	alias	detailed
+cli/cmd_services.sh	list	alias	detailed
+cli/cmd_services.sh	compact	deprecated	summary
+cli/cmd_services.sh	start	alias	fix
+cli/cmd_connector.sh	delete	alias	remove
+cli/cmd_connector.sh	rm	alias	remove
+cli/cmd_polkit.sh	check	alias	validate
+cli/cmd_sync.sh	quick	internal	postinst quick sync
+cli/cmd_sync.sh	--quick	internal	postinst quick sync
+cli/cmd_sync.sh	-q	internal	postinst quick sync
+cli/cmd_selftest.sh	configs	alias	config
+cli/cmd_selftest.sh	orphans	alias	check
+cli/cmd_port.sh	list	deprecated	status
+cli/cmd_update.sh	auto-run	internal	systemd timer-only
+cli/cmd_whitelist.sh	rm	alias	remove
+cli/cmd_whitelist.sh	del	alias	remove
+cli/cmd_whitelist.sh	delete	alias	remove
+cli/cmd_whitelist.sh	show	alias	list
+cli/cmd_whitelist_system.sh	list	alias	show
+cli/cmd_list.sh	ban	alias	banned
+cli/cmd_list.sh	white	alias	whitelist
+cli/cmd_fhs.sh	status	alias	detailed
+cli/cmd_fhs.sh	check	deprecated	status
+cli/cmd_emulate.sh	--protocol	universal-flag	--proto
+cli/cmd_emulate.sh	--dir	universal-flag	--direction
+cli/cmd_emulate.sh	input	alias	in
+cli/cmd_emulate.sh	output	alias	out
+cli/cmd_emulate.sh	forward	alias	fwd
+cli/cmd_ban.sh	--json	universal-flag	global json mode
+cli/cmd_config.sh	test	alias	validate
+cli/cmd_config.sh	reload	alias	apply
