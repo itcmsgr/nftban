@@ -500,6 +500,22 @@ jobs:
         run: bash cli/lib/nftban/tests/test_module_selftest.sh
 
       # =====================================================================
+      # v1.134 PR-D: help/code subcommand correlation gates
+      # =====================================================================
+      # Doctest guard: every primary-dispatch subcommand a command accepts must
+      # be documented in help, declared in the intentional-alias allowlist, or
+      # structural. Catches NEW undocumented subcommands (the drift class that
+      # produced D-05..D-11). Unparseable families are SKIPPED, never failed.
+      - name: Help/code doctest guard (v1.134 PR-D)
+        run: bash cli/lib/nftban/tests/v130_subcommand_flag_help_code_test.sh
+
+      # Allowlist integrity + D-26 (health rbl/fhs documented) + D-28 (metrics
+      # error-usage complete); fails if an allowlisted token is not actually
+      # dispatched (no phantom allowlist entries).
+      - name: Alias allowlist integrity (v1.134 PR-D P3)
+        run: bash cli/lib/nftban/tests/v134_pr_d_p3_alias_allowlist_test.sh
+
+      # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
       # These greps prevent reintroduction of deleted legacy constructs.
