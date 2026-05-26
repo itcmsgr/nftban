@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="firewall_validate_run"
 # meta:type="helper"
-# meta:version="1.131.1"
+# meta:version="1.131.2"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-26"
 # meta:description="V131.1 D13 Option C output-capture wrapper. ExecStart target of nftban-firewall-validate.service: runs the audited read-only nftban-validate --json as root+CAP_NET_ADMIN, then writes the validator JSON to a group-readable file under /run/nftban/firewall-validate/last.json (chgrp nftban, chmod 0640) so nftban-group operators can read the result WITHOUT root and WITHOUT systemd-journal/adm membership. The journal-read path (D10) failed cross-family for non-root operators because the unit journal is not readable by an unprivileged nftban-group member; this file hand-off fixes that. Also echoes the JSON to stdout so the root/audit journal copy is preserved, and PRESERVES the validator exit code (DEGRADED states return non-zero and must propagate)."
@@ -46,7 +46,12 @@ _bin="${NFTBAN_VALIDATE_BIN:-/usr/lib/nftban/bin/nftban-validate}"
 rm -f "$_file" 2>/dev/null || true
 
 # Ensure the runtime dir exists and is group-readable by the nftban group.
-mkdir -p "$_dir"
+# V131.2 D13: the dir is now pre-created by tmpfiles (root:nftban 0750) and
+# bound writable via the unit's ReadWritePaths=/run/nftban/firewall-validate.
+# This mkdir is a best-effort no-op for the standalone/dev path; under the
+# narrow ReadWritePaths a parent-write mkdir of the bound subdir would fail,
+# so it MUST NOT abort the wrapper under set -e before the write attempt.
+mkdir -p "$_dir" 2>/dev/null || true
 chgrp nftban "$_dir" 2>/dev/null || true
 chmod 0750 "$_dir" 2>/dev/null || true
 

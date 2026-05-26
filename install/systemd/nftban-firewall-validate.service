@@ -73,6 +73,16 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # unit journal without systemd-journal/adm membership, so they saw no result.
 # The wrapper still echoes the JSON to stdout, so StandardOutput=journal keeps
 # the root/audit journal copy, and it PRESERVES the validator exit code.
+#
+# V131.2 D13 fix: `+`-prefixed ExecStartPre runs WITHOUT the unit sandbox, so
+# it can create the handoff dir even though ProtectSystem=strict makes /run
+# read-only for the (sandboxed) main process. The `+` exemption is required:
+# ReadWritePaths=<subdir> only binds an EXISTING path writable, so the subdir
+# must exist before the sandboxed ExecStart runs. tmpfiles creates it at boot
+# (d /run/nftban/firewall-validate 0750 root nftban); this guarantees it
+# per-start too (idempotent mkdir+chown+chmod via /usr/bin/install). Absolute
+# path is required by systemd for ExecStartPre.
+ExecStartPre=+/usr/bin/install -d -o root -g nftban -m 0750 /run/nftban/firewall-validate
 ExecStart=/usr/lib/nftban/helpers/firewall_validate_run.sh
 StandardOutput=journal
 StandardError=journal
@@ -81,11 +91,19 @@ StandardError=journal
 # Security Hardening (mirrors nftban-firewall-init.service template)
 # =============================================================================
 
-# Filesystem Protection — validator is read-only by Go contract, so the
-# stricter ProtectSystem=strict + no ReadWritePaths is safe.
+# Filesystem Protection — the stricter ProtectSystem=strict is KEPT. V131.2 D13
+# fix: the unit now WRITES one group-readable handoff file via the
+# firewall_validate_run.sh wrapper, so it needs exactly one writable path.
+# ProtectSystem=strict makes all of /run (and the whole filesystem) read-only;
+# grant write to ONLY the dedicated status subdir, which tmpfiles creates as
+# root:nftban 0750 (d /run/nftban/firewall-validate 0750 root nftban). This
+# does NOT expose the daemon's /run/nftban (which holds the live socket) and
+# does NOT re-chown /run/nftban — it is the narrowest writable surface that
+# lets the validator drop last.json for nftban-group operators to read.
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
+ReadWritePaths=/run/nftban/firewall-validate
 
 # Kernel Protection
 ProtectKernelTunables=true
