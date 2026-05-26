@@ -513,7 +513,7 @@ nftban_cmd_egress_help() {
     echo "  2. nftban port egress audit 48    # Collect 48h of traffic data"
     echo "  3. nftban port egress recommend   # See suggested additions"
     echo "  4. nftban port add <port> tcp out # Add missing ports"
-    echo "  5. nftban emulate --out :443      # Test if port allowed"
+    echo "  5. nftban emulate 8.8.8.8 --port 443 --direction out   # Test if port allowed"
     echo "  6. nftban port egress enforce     # Enable restrictive mode"
     echo ""
 }

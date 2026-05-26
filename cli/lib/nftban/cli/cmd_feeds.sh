@@ -990,6 +990,9 @@ COMMANDS:
     enable-cat <cat>    Enable all feeds in category
     update [feed]       Update feeds (all or specific)
     status              Show detailed status
+    config              Show feeds configuration
+    stats               Show feeds statistics
+    test                Test feed connectivity/configuration
 
     help                Show this help message
 

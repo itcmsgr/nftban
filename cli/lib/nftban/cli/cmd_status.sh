@@ -2037,6 +2037,9 @@ DESCRIPTION:
     • Health check summary
     • Recent activity statistics
 
+SUBCOMMANDS:
+  pending, queue  Show pending/queued daemon operations
+
 EXAMPLES:
   nftban status                Show full status dashboard
   nftban status --json         Output as JSON

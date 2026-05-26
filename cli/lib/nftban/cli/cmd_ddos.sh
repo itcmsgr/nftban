@@ -120,7 +120,7 @@ PROFILE SELECTION:
     Instead of manually configuring DDoS protection, you can select
     a pre-configured profile based on your server role:
 
-      nftban profile select
+      nftban wizard
 
     Available profiles:
       • Web Server      - High HTTP/HTTPS traffic
