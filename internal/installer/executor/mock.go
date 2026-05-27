@@ -62,6 +62,9 @@ type MockExecutor struct {
 	// Services maps "unit" -> active.
 	Services map[string]bool
 
+	// ServicesEnabled maps "unit" -> enabled (is-enabled). v1.135 timer assertion.
+	ServicesEnabled map[string]bool
+
 	// Users maps "name" -> exists.
 	Users map[string]bool
 
@@ -106,6 +109,7 @@ func NewMockExecutor() *MockExecutor {
 		NftTables:        make(map[string]bool),
 		NftSets:          make(map[string]string),
 		Services:         make(map[string]bool),
+		ServicesEnabled:  make(map[string]bool),
 		Users:            make(map[string]bool),
 		Groups:           make(map[string]bool),
 		Env:              make(map[string]string),
@@ -284,8 +288,17 @@ func (m *MockExecutor) ServiceActive(unit string) bool {
 	return m.Services[unit]
 }
 
+func (m *MockExecutor) ServiceEnabled(unit string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ServicesEnabled[unit]
+}
+
 func (m *MockExecutor) ServiceEnable(unit string) error {
 	m.recordCommand("systemctl", "enable", unit)
+	m.mu.Lock()
+	m.ServicesEnabled[unit] = true
+	m.mu.Unlock()
 	return nil
 }
 
@@ -307,6 +320,9 @@ func (m *MockExecutor) ServiceStop(unit string) error {
 
 func (m *MockExecutor) ServiceDisable(unit string) error {
 	m.recordCommand("systemctl", "disable", unit)
+	m.mu.Lock()
+	m.ServicesEnabled[unit] = false
+	m.mu.Unlock()
 	return nil
 }
 

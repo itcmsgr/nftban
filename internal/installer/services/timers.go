@@ -41,10 +41,27 @@ var optionalTimers = []string{
 	"nftban-botscan.timer",
 }
 
+// criticalCoreTimers is the subset of coreTimers whose failure to be enabled
+// + (active OR scheduled) DEGRADES the install (v1.135 D-MAINTENANCE-TIMER-
+// SILENT-ENABLE). nftban-maintenance.timer backs maintenance, trend data,
+// auto-heal, and SSH/IP lockout-prevention. The other core timers are NOT
+// critical here so transient exporter/feed issues never DEGRADE the install.
+var criticalCoreTimers = []string{
+	"nftban-maintenance.timer",
+}
+
+// CriticalCoreTimers returns the critical core timer unit names, for the
+// install_state critical-timer validator (which lives in another package).
+func CriticalCoreTimers() []string {
+	out := make([]string, len(criticalCoreTimers))
+	copy(out, criticalCoreTimers)
+	return out
+}
+
 // ReconcileTimers enables and starts all core timers.
 // Controlled by NFTBAN_RECONCILE_CORE_TIMERS in nftban.conf (default: true).
 func ReconcileTimers(exec executor.Executor, log *logging.Logger) {
-	if !shouldReconcile(exec) {
+	if !ShouldReconcile(exec) {
 		log.Info("timer reconciliation disabled (NFTBAN_RECONCILE_CORE_TIMERS != true)")
 		return
 	}
@@ -66,9 +83,9 @@ func ReconcileTimers(exec executor.Executor, log *logging.Logger) {
 	}
 }
 
-// shouldReconcile checks if NFTBAN_RECONCILE_CORE_TIMERS is set to true
+// ShouldReconcile checks if NFTBAN_RECONCILE_CORE_TIMERS is set to true
 // in nftban.conf or nftban.conf.local. Default: true (reconcile).
-func shouldReconcile(exec executor.Executor) bool {
+func ShouldReconcile(exec executor.Executor) bool {
 	// Check conf.local first (overrides main conf)
 	for _, path := range []string{
 		"/etc/nftban/nftban.conf.local",
