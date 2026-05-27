@@ -222,6 +222,11 @@ func (r *RealExecutor) ServiceActive(unit string) bool {
 	return res.ExitCode == 0
 }
 
+func (r *RealExecutor) ServiceEnabled(unit string) bool {
+	res := r.Run("systemctl", "is-enabled", "--quiet", unit)
+	return res.ExitCode == 0
+}
+
 func (r *RealExecutor) ServiceEnable(unit string) error {
 	res := r.Run("systemctl", "enable", unit)
 	if res.ExitCode != 0 {

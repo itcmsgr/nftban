@@ -102,8 +102,8 @@ func TestTransitionToDegradedSrv4Case(t *testing.T) {
 	if err := sf.Transition(StateDegraded, PhaseValidate, ""); err != nil {
 		t.Fatalf("Transition returned unexpected error: %v", err)
 	}
-	if sf.FailureReason != "" {
-		t.Errorf("FailureReason: want \"\", got %q", sf.FailureReason)
+	if sf.FailureReason != degradedReasonFallback {
+		t.Errorf("FailureReason: want v1.135 fallback %q, got %q", degradedReasonFallback, sf.FailureReason)
 	}
 	if sf.Conflicts != "" {
 		t.Errorf("Conflicts: want \"\" (Authority=UPDATE), got %q", sf.Conflicts)
@@ -119,7 +119,8 @@ func TestTransitionToDegradedSrv4Case(t *testing.T) {
 // TestTransitionToDegradedLab2Case reproduces lab2's v1.107.2 rollout
 // row: AUTHORITY=AMBIGUOUS, CONFLICTS=UFW, FAILURE_REASON describing
 // the UFW conflict. After DEGRADED transition, Conflicts is preserved
-// (Authority is not UPDATE) but FailureReason is cleared.
+// (Authority is not UPDATE); the stale FailureReason is replaced by the
+// v1.135 empty-reason fallback (a DEGRADED terminal is never blank).
 func TestTransitionToDegradedLab2Case(t *testing.T) {
 	sf := newDryStateFile(t)
 	sf.FailureReason = "conflicts detected, takeover not approved: UFW"
@@ -130,8 +131,8 @@ func TestTransitionToDegradedLab2Case(t *testing.T) {
 	if err := sf.Transition(StateDegraded, PhaseValidate, ""); err != nil {
 		t.Fatalf("Transition returned unexpected error: %v", err)
 	}
-	if sf.FailureReason != "" {
-		t.Errorf("FailureReason: want \"\" (terminal hygiene), got %q", sf.FailureReason)
+	if sf.FailureReason != degradedReasonFallback {
+		t.Errorf("FailureReason: want v1.135 fallback %q, got %q", degradedReasonFallback, sf.FailureReason)
 	}
 	if sf.Conflicts != "UFW" {
 		t.Errorf("Conflicts: want %q (preserved because Authority=AMBIGUOUS), got %q",
@@ -139,6 +140,34 @@ func TestTransitionToDegradedLab2Case(t *testing.T) {
 	}
 	if !sf.PreflightPassed {
 		t.Errorf("PreflightPassed: want true, got false")
+	}
+}
+
+// TestTransitionToDegradedEmptyReasonBackstop — v1.135 scope §5: a DEGRADED
+// transition handed an empty reason must NOT leave FAILURE_REASON blank.
+func TestTransitionToDegradedEmptyReasonBackstop(t *testing.T) {
+	sf := newDryStateFile(t)
+	if err := sf.Transition(StateDegraded, PhaseValidate, ""); err != nil {
+		t.Fatalf("Transition error: %v", err)
+	}
+	if sf.FailureReason == "" {
+		t.Errorf("FailureReason: want non-empty fallback, got empty")
+	}
+	if sf.FailureReason != degradedReasonFallback {
+		t.Errorf("FailureReason: want %q, got %q", degradedReasonFallback, sf.FailureReason)
+	}
+}
+
+// TestTransitionToDegradedPreservesTimerReason — a non-empty reason (e.g. the
+// critical-timer assertion) is carried verbatim into FAILURE_REASON.
+func TestTransitionToDegradedPreservesTimerReason(t *testing.T) {
+	sf := newDryStateFile(t)
+	reason := "failed assertions after safe auto-fix: core_timers_active_or_scheduled_ok (critical core timer(s) not enabled+active: nftban-maintenance.timer)"
+	if err := sf.Transition(StateDegraded, PhaseValidate, reason); err != nil {
+		t.Fatalf("Transition error: %v", err)
+	}
+	if sf.FailureReason != reason {
+		t.Errorf("FailureReason: want %q, got %q", reason, sf.FailureReason)
 	}
 }
 
