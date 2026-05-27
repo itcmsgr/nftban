@@ -40,6 +40,26 @@ set -Eeuo pipefail
 [[ -n "${_EXPORTER_JSON_COMPAT_LOADED:-}" ]] && return 0
 _EXPORTER_JSON_COMPAT_LOADED="true"
 
+# v1.136 (exporter exit-2 resilience): bounded-retry read of the
+# concurrently-written stats.json. Echoes the file contents on success (rc 0)
+# only if they parse as a complete JSON document; rc 1 if unreadable/invalid
+# after all attempts. Guards the daemon mid-write race without ever aborting
+# the run. Self-contained (cat/jq/printf/sleep only) so it is unit-testable.
+# Args: $1=path  [$2=attempts (default 3)]  [$3=delay secs (default 0.2)]
+_read_stats_json_retry() {
+    local f="$1" attempts="${2:-3}" delay="${3:-0.2}" i out=""
+    for (( i = 1; i <= attempts; i++ )); do
+        out=$(cat "$f" 2>/dev/null) || out=""
+        if [[ -n "$out" ]] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+            printf '%s' "$out"
+            return 0
+        fi
+        out=""
+        if (( i < attempts )); then sleep "$delay"; fi
+    done
+    return 1
+}
+
 # =============================================================================
 # LEGACY JSON COMPATIBILITY EXPORT
 # =============================================================================
@@ -67,9 +87,16 @@ export_legacy_json() {
 
     mkdir -p "$metrics_dir" || return 1
 
-    # Read stats.json once into a variable (avoid repeated file I/O)
+    # Read stats.json once into a variable (avoid repeated file I/O).
+    # v1.136: stats.json is written concurrently by the daemon; a read that
+    # races a mid-write can see a truncated/invalid file. Use a bounded retry
+    # that only accepts a fully-valid JSON document, so a transient truncation
+    # is retried rather than dropping the legacy-JSON for the whole cycle.
     local stats
-    stats=$(cat "$stats_json" 2>/dev/null) || return 1
+    stats=$(_read_stats_json_retry "$stats_json") || {
+        log_warn "Legacy JSON compat: stats.json unreadable/invalid after retries — skipping this cycle"
+        return 1
+    }
 
     local timestamp
     timestamp=$(date +%s)
