@@ -35,6 +35,18 @@
 
 set -Eeuo pipefail
 
+# v1.136 (exporter exit-2 resilience): permanent ERR trap. Strict mode is KEPT —
+# this does NOT swallow failures; it converts a silent strict-mode abort into a
+# diagnosable journal line (rc + file:line + function + failing command), then
+# re-raises the original rc so behavior is unchanged. errtrace (-E, set above)
+# propagates this trap into the sourced collect/export functions, so an
+# intermittent volatile-read that returns non-zero under errexit is now
+# attributed in the journal instead of exiting silently (status=2/INVALIDARGUMENT
+# observed on monitor). This self-pins the exact failing command on the next
+# occurrence for the Phase-2 surgical guard.
+# shellcheck disable=SC2154  # 'rc' is assigned (rc=$?) inside the single-quoted trap body
+trap 'rc=$?; printf "ERROR: nftban-unified-exporter aborted rc=%s at %s:%s fn=%s cmd=[%s]\n" "$rc" "${BASH_SOURCE[0]##*/}" "${LINENO}" "${FUNCNAME[0]:-main}" "${BASH_COMMAND}" >&2; exit "$rc"' ERR
+
 readonly SCRIPT_VERSION="1.0.0"
 
 # Bootstrap paths (nftban.conf will make them readonly)
