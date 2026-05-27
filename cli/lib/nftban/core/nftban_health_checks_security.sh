@@ -1305,6 +1305,7 @@ nftban_health_check_ruleset_fingerprint() {
     local status=$HEALTH_OK
     local core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
     if [[ ! -x "$core_bin" ]]; then
+        # shellcheck disable=SC2034  # Used by render functions externally
         NFTBAN_HEALTH_RESULTS["ruleset_fingerprint"]=$HEALTH_OK
         return "$HEALTH_OK"
     fi
@@ -1328,6 +1329,7 @@ nftban_health_check_ruleset_fingerprint() {
             :
             ;;
     esac
+    # shellcheck disable=SC2034  # Used by render functions externally
     NFTBAN_HEALTH_RESULTS["ruleset_fingerprint"]=$status
     return "$status"
 }
