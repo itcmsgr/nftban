@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.135.0] - 2026-05-27 — install/update-lifecycle correctness (timers + install_state + update-lock + mixed-drift + exporter-settle)
+
+**Codename:** `V135_INSTALL_UPDATE_LIFECYCLE`
+**Scope file:** `AUDIT_190_LIFECYCLE/V135_INSTALL_UPDATE_LIFECYCLE_SCOPE.md`
+
+> **Why:** make install/update lifecycle state *truthful* — a critical timer that silently fails to enable must not report COMMITTED; an auxiliary metrics blip must not be reported as a protection failure; and the update path must not leave stale locks or wrongly refuse a cleanly-migrated host. First release since the v1.130/v1.131 arc to change installer Go (`internal/installer/…`) — the daemon/installer binary is **not** byte-identical to v1.134.0.
+
+### Phase 1 — critical-timer assertion + install_state finalization (PR #703, sq `196dd03b`)
+- **D-MAINTENANCE-TIMER-SILENT-ENABLE:** a CRITICAL core timer (`nftban-maintenance.timer`) that fails to enable/start now drives `install_state` **DEGRADED** via the new assertion `core_timers_active_or_scheduled_ok`, with the specific timer named in `FAILURE_REASON` — instead of latching COMMITTED on a silent `enableAndStart` warning. `NFTBAN_RECONCILE_CORE_TIMERS=false` is honored as an intentional opt-out (assertion Skips, stays COMMITTED).
+- **install_state/FAILURE_REASON finalization:** `state.Transition` gains an empty-reason backstop (no DEGRADED is ever reason-less); `phaseValidate` folds each failing assertion's detail into `FAILURE_REASON`.
+- New surface: `Executor.ServiceEnabled()`, `services.CriticalCoreTimers()` + exported `ShouldReconcile`, `validate.ValidateCriticalTimers`/`GatherTimerInputs`. `--repair` resumes at Validate; the assertion accepts enabled-or-active so a manual `systemctl enable --now` satisfies it.
+
+### Phase 2 — update-lifecycle lanes (PR #704, sq `442cd580`)
+- **2.1 D-UPDATE-LOCK-LEFT-BEHIND:** `_cmd_update_main` split into a lock wrapper + `_cmd_update_main_locked`; `/run/nftban/update.lock` is released on **every** terminal update path (success / DEGRADED / handled failure) — previously the flock was released on exit but the empty file was left behind (a 2-day stale lock on dns2). `UPDATE_LOCK_FILE` derives from `NFTBAN_RUN_DIR`. Test `cmd_update_lock_cleanup_v135_test.sh` (9/0).
+- **2.2 D-UPDATE-MIXED-DRIFT:** `_probe_rpm_owns_all_binaries` / `_probe_dpkg_owns_all_binaries` (a clean-&-complete on-disk ownership signal — the package db owns *every* core binary) added as a third migration-clean unblock in `_detect_install_type`, so a genuinely migrated EL/DEB host with stale source-era history updates through instead of aborting `mixed`. A genuine source-over-package mix (a binary unowned) still stays `mixed` — **no unsafe bypass**. Test `cmd_update_detection_v135_clean_ownership_test.sh` (10/0; v126 detector regression 20/0).
+- **2.3 D-EXPORTER-SETTLE-WINDOW:** failed **auxiliary** units (the unified exporter) are classified non-fatal — `IsAuxiliaryUnit` routes them to a new `FailedAuxiliaryUnits` bucket and `failed_units_postinstall_ok` only counts protection units — so a transient `nftban-unified-exporter` exit-2 no longer DEGRADES the install (surfaced as a non-fatal warning), with a bounded settle re-poll in the gatherer. `nftband`/`nftban-core`/tables/validator failures stay **hard**. Tests in `validate/systemd_payload_settle_test.go`.
+
+### Real-host package validation (all PASS, recorded under `AUDIT_190_LIFECYCLE/`)
+- **lab2** DEB closing gate on a live **Plesk** host: upgrade → COMMITTED (cleared a real stale exporter-DEGRADED); `mask nftban-maintenance.timer` → DEGRADED naming it → recover → COMMITTED; forced exporter → auxiliary non-fatal. (`V135_PACKAGE_INSTALL_CLOSING_GATE_LAB2_PASS`)
+- **monitor** real DEB **upgrade** `v1.131.4 → v1.135.0`: a genuinely-failing exporter at validate-time classified auxiliary/non-fatal in the wild; A/B lock proof (identical `nftban update local` left a stale lock under v1.131.4, **none** under v1.135.0); `install_type=deb` not `mixed`. (`V135_VALIDATE_MONITOR_UPGRADE_PASS`)
+- **lab4** AlmaLinux 9.7 / **RPM** / **cPanel**: both the EL **upgrade** AND a genuine **clean reinstall** (`INSTALL_MODE=install`) reached COMMITTED with cPanel panel-survival validated, timer-mask→DEGRADED→recover→COMMITTED, exporter→auxiliary, no stale lock, SSH preserved across the uninstall window. (`V135_VALIDATE_LAB4_CLEAN_RPM_INSTALL_PASS`)
+- Coverage spans **DEB + RPM × upgrade + clean-install × Plesk + cPanel + no-panel**.
+
+### Unchanged / invariants
+- **Schema 1.83.0 frozen** — no new validator field / metric / Prometheus label / Status-JSON or `install_state` wire key / config key; install payload unchanged beyond the rebuilt binaries.
+- Installer/daemon Go **did** change (`internal/installer/…`) → binary not byte-identical to v1.134.0; package-install validation on DEB **and** RPM was the closing gate (done, above).
+
+### Parked / follow-up
+- **Non-blocking (NOT a v1.135 regression — exporter script byte-unchanged):** `nftban-unified-exporter` exits 2 intermittently under systemd but exit-0 manually on monitor = pre-existing transient exporter flakiness; v1.135 correctly tolerates it as auxiliary. Parked as a separate investigation lane.
+
+---
+
 ## [v1.134.0] - 2026-05-27 — CLI help/code-debt closure (PR-D P3 allowlist + doctest guard + PR-E docs verified)
 
 **Codename:** `V134_0_PR_D_P3_DOCTEST_AND_PR_E_DOCS`
