@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.137.0] - 2026-05-27 — log durability + escalation integrity + nftban-panel retirement (coupled 3-blocker train)
+
+**Codename:** `V1_137_0_LOG_DURABILITY_PLUS_BLOCKERS`
+**Records:** `NFTBAN_ROADMAP/V1_137_{LOG_DURABILITY_VERIFY_RECORD,BLOCKER_DUXV16_DUXV17_RECORD,BLOCKER_PANEL_GROUP_RETIREMENT_RECORD,PR710_FINAL_TRAIN_REVIEW}.md`
+
+> **Why:** one coupled train closing the operator-flagged log disk-fill plus two correctness blockers the V127/V132 shared-resource audits surfaced. The blockers are coupled (fixing the `bans.log` reader re-activates the persistent-offenders writer race), so they ship together. Shell + packaging + installer-Go; daemon NOT byte-identical (escalation/persistence/nftbanconf/installer changed; the log-durability portion alone was code-identical). Schema 1.83.0 frozen.
+
+### Log durability (PR #710)
+- **B-04** Suricata logrotate policy installed to `/etc/logrotate.d/nftban-suricata` at provisioning (was template-only → `suricata/eve-*.json` unrotated → disk-fill).
+- **B-05** `copytruncate` on the main `nftban.log` stanza; **B-09** `installer.log` + `update.log` covered; **B-01** divergent health-fix fallback removed (single canonical template wins).
+- `logrotate` is now a hard **DEB `Depends` + RPM `Requires`**.
+- **B-12** `internal/nftbanconf/logs.go` rebuilt as the canonical `LogInventory()` authority; a new Go drift-test asserts the templates cover every inventory log with matching frequency/retain. GEO-CLEANUP-001 (`GEOBAN_ENABLED`).
+
+### Escalation reader/writer integrity (PR #710)
+- **D-UXV-16** `escalation.parseBanEntry`/`CountRecentBans` now parse the canonical BLC-1 pipe `bans.log` (was the dead space-delimited format → returned 0 for every IP → repeat-offender→permanent escalation silently never fired); counts only `BANNED` rows.
+- **D-UXV-17** `30-persistent-offenders.conf` converged on a single canonical writer (`persistence.PersistBan`) hardened with a stable sibling-lockfile `flock` across read-modify-rename — eliminates the unlocked-append-vs-rename clobber and normalizes the entry format.
+
+### nftban-panel group retirement (PR #710)
+- Removed the dormant `nftban-panel` package-created authorization identity across `fhs-spec.yaml`/`sysusers.d`, polkit (`30-nftban-panel.rules` + the `nftban-panelctl` wrapper), RPM/DEB packaging, installer payload + assertions, health WARN+self-heal, `cmd_polkit.sh`/`polkit_validator.sh`, and CI runtime-truth. Supersedes the D-NEW-11 KEEP note (its `nftban-panelctl` consumer was uninvoked; the GOTH GUI redesign retired panel integration).
+- **Preserved:** user `nftban`, groups `nftban`/`nftban-auditor`, the auditor read-only tier (`20-nftban-auditor.rules`), and the SEPARATE hosting-panel firewall-takeover subsystem (`--panel-auto-takeover` / `--no-panel` / `cmd_panel.sh`) — conflation trap.
+
+### Unchanged / invariants
+- No schema / metrics-label / portal change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change in release-prep is header-version regen only (FHS body byte-unchanged). Daemon binary changes are confined to the escalation reader, persistence writer, and the panel-identity removal.
+
+### Validation
+- Each blocker independently challenged against real code (audits confirmed). Verified read-only on **lab2 (DEB) + lab4 (EL9 RPM)**: `go test ./...` green, `-race` clean (`ConcurrentNoClobber`/`SameIPDedup`), generator→`sysusers` byte-identical, DEB+RPM builds with panel files absent + `logrotate` Requires intact, log-durability shell suite 35/35.
+- **PR #710 CI green (58 pass / 3 skip / 0 fail)** incl. gosec + health (after a confined CI-fix: shellcheck single-element loop + gosec G302/G304 on the new lock opens → `0600` + `filepath.Clean`). Post-merge `main` green. Merged squash `b9fc3da4`.
+
+### Post-publish
+- Tag/publish after this release-prep merges + `main` CI green. Fleet rollout of the published baseline is separately gated.
+
+---
+
 ## [v1.136.1] - 2026-05-27 — exporter exit-2 Phase 2 (surgical scale-cache guard)
 
 **Codename:** `V1_136_1_EXPORTER_EXIT2_PHASE2`
