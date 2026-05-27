@@ -109,7 +109,9 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 	// the blacklist loaders (internal/blacklist/loader.go, shell *.conf globs)
 	// never parse it as IPs.
 	lockPath := targetFile + ".lock"
-	lockF, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0640) // #nosec G304 -- path derived from validated mapping
+	// 0600 + filepath.Clean: the gosec gate runs with -nosec (inline #nosec is
+	// ignored), so the G302/G304 findings must be eliminated in code, not suppressed.
+	lockF, err := os.OpenFile(filepath.Clean(lockPath), os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open lock %s: %w", lockPath, err)
 	}
@@ -122,7 +124,7 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 
 	// Open the target read-only for the dedup scan (create if missing). The
 	// lockfile above — not this fd — provides mutual exclusion across the rename.
-	f, err := os.OpenFile(targetFile, os.O_RDONLY|os.O_CREATE, 0640) // #nosec G304 -- path derived from validated mapping
+	f, err := os.OpenFile(filepath.Clean(targetFile), os.O_RDONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open %s: %w", targetFile, err)
 	}

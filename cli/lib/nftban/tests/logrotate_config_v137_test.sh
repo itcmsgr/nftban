@@ -140,13 +140,11 @@ if [[ -f "$LOGS_GO" ]]; then
         grep -q "\"$cur\"" "$LOGS_GO" && ok "b12_inventory_has_$cur" || no "b12_inventory_has_$cur" "inventory missing $cur"
     done
     # underscore CLI-errors name must NOT be an inventory entry (hyphen is real)
-    for leg in 'cli_errors.log'; do
-        if grep -qE "Name:[[:space:]]*\"$leg\"" "$LOGS_GO"; then
-            no "b12_no_legacy_$leg" "legacy name $leg still an inventory entry"
-        else
-            ok "b12_no_legacy_$leg"
-        fi
-    done
+    if grep -qE 'Name:[[:space:]]*"cli_errors.log"' "$LOGS_GO"; then
+        no "b12_no_legacy_cli_errors.log" "legacy name cli_errors.log still an inventory entry"
+    else
+        ok "b12_no_legacy_cli_errors.log"
+    fi
     # v1.137 gap close (Option A): plain ddos.log/portscan.log are LIVE writer
     # targets — must be BOTH inventoried AND template-covered (not removed).
     for plain in 'ddos.log' 'portscan.log'; do
