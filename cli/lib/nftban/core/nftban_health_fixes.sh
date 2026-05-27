@@ -1345,11 +1345,11 @@ nftban_health_fix_polkit() {
     local fixed=0
     local failed=0
 
-    # Three canonical rule files (v1.0.19+ naming)
+    # Canonical rule files (v1.0.19+ naming; nftban-panel tier retired v1.137).
+    # Two-tier model: nftban operator (10-) + nftban-auditor read-only (20-).
     local -a rule_files=(
         "10-nftban-systemd.rules"
         "20-nftban-auditor.rules"
-        "30-nftban-panel.rules"
     )
 
     for rule_file in "${rule_files[@]}"; do

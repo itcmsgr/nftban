@@ -68,9 +68,9 @@ func TestEnsure_DebianFamily_CreatesAllEntities(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// 4 groups created (via addgroup --system)
-	if got := countCommand(mock, "addgroup"); got != 4 {
-		t.Errorf("addgroup: got %d calls, want 4", got)
+	// 3 groups created (via addgroup --system); nftban-panel retired in v1.137
+	if got := countCommand(mock, "addgroup"); got != 3 {
+		t.Errorf("addgroup: got %d calls, want 3", got)
 	}
 	// 1 user created (via adduser)
 	if got := countCommand(mock, "adduser"); got != 1 {
@@ -101,8 +101,8 @@ func TestEnsure_RHELFamily_CreatesAllEntities(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if got := countCommand(mock, "groupadd"); got != 4 {
-		t.Errorf("groupadd: got %d calls, want 4", got)
+	if got := countCommand(mock, "groupadd"); got != 3 {
+		t.Errorf("groupadd: got %d calls, want 3", got)
 	}
 	if got := countCommand(mock, "useradd"); got != 1 {
 		t.Errorf("useradd: got %d calls, want 1", got)
@@ -168,7 +168,7 @@ func TestEnsure_UnknownDistro_FallsBackToRHEL(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if countCommand(mock, "groupadd") != 4 {
+	if countCommand(mock, "groupadd") != 3 {
 		t.Errorf("unknown distro did not fall back to groupadd")
 	}
 	if countCommand(mock, "adduser") != 0 {

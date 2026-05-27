@@ -43,11 +43,12 @@ readonly RULE_DIRS=(
     "/usr/share/polkit-1/rules.d"
 )
 
-# Expected rule files (must exist)
+# Expected rule files (must exist).
+# Two-tier model: nftban operator + nftban-auditor read-only.
+# (nftban-panel tier / 30-nftban-panel.rules retired v1.137.)
 readonly EXPECTED_FILES=(
     "10-nftban-systemd.rules"
     "20-nftban-auditor.rules"
-    "30-nftban-panel.rules"
 )
 
 # Obsolete/vulnerable files (must NOT exist)
@@ -59,10 +60,9 @@ readonly OBSOLETE_FILES=(
     "50-nftban-v030.rules"
 )
 
-# Groups
+# Groups (two-tier model; panel group retired v1.137)
 readonly GROUP_OPERATOR="nftban"
 readonly GROUP_AUDITOR="nftban-auditor"
-readonly GROUP_PANEL="nftban-panel"
 
 # Operator: Allowed units (exact whitelist - matches 10-nftban-systemd.rules)
 readonly OPERATOR_UNITS=(
@@ -93,30 +93,8 @@ readonly OPERATOR_VERBS=(
     "try-reload-or-restart"
 )
 
-# Panel: Allowed units (exact whitelist - matches 30-nftban-panel.rules)
-readonly PANEL_UNITS=(
-    "nftband.service"
-    "nftban-core-feeds.service"
-    "nftban-core-geoip.service"
-)
-
-# Panel: Read-only units (status only)
-# shellcheck disable=SC2034  # Reserved for future runtime tests
-readonly PANEL_READONLY_UNITS=(
-    "nftban-core-feeds.timer"
-    "nftban-core-geoip.timer"
-)
-
-# Panel: Allowed verbs (reload + read-only)
-# shellcheck disable=SC2034  # Reserved for future runtime tests
-readonly PANEL_ALLOWED_VERBS=(
-    "status"
-    "show"
-    "is-active"
-    "is-enabled"
-    "is-failed"
-    "reload"
-)
+# Panel tier retired v1.137 — PANEL_UNITS / PANEL_READONLY_UNITS /
+# PANEL_ALLOWED_VERBS removed; two-tier model (operator + auditor) only.
 
 # Auditor: Allowed verbs (read-only only)
 readonly AUDITOR_ALLOWED_VERBS=(
@@ -429,7 +407,6 @@ static_check_group_typos() {
     # Known typos and incorrect group names
     local -a typo_patterns=(
         'nftban-auditors'      # Should be nftban-auditor (singular)
-        'nftban-panels'        # Should be nftban-panel (singular)
         'nftban-operators'     # Should be nftban
         'nftban-admin'         # Doesn't exist
         'nftban-cli'           # Old group name
@@ -446,10 +423,9 @@ static_check_group_typos() {
     done
 
     # Verify correct group names are used
-    local operator_file auditor_file panel_file
+    local operator_file auditor_file
     operator_file=$(find_rule_file "10-nftban-systemd.rules") || true
     auditor_file=$(find_rule_file "20-nftban-auditor.rules") || true
-    panel_file=$(find_rule_file "30-nftban-panel.rules") || true
 
     if [[ -n "$operator_file" ]] && ! grep -q "\"$GROUP_OPERATOR\"" "$operator_file"; then
         log_fail "$operator_file: Missing group '$GROUP_OPERATOR'"
@@ -458,11 +434,6 @@ static_check_group_typos() {
 
     if [[ -n "$auditor_file" ]] && ! grep -q "\"$GROUP_AUDITOR\"" "$auditor_file"; then
         log_fail "$auditor_file: Missing group '$GROUP_AUDITOR'"
-        failed=1
-    fi
-
-    if [[ -n "$panel_file" ]] && ! grep -q "\"$GROUP_PANEL\"" "$panel_file"; then
-        log_fail "$panel_file: Missing group '$GROUP_PANEL'"
         failed=1
     fi
 
@@ -506,33 +477,7 @@ static_check_unit_whitelist() {
         done <<< "$found_units"
     fi
 
-    # Check panel units
-    local panel_file
-    if panel_file=$(find_rule_file "30-nftban-panel.rules"); then
-        log_subheader "Panel Units (30-nftban-panel.rules)"
-
-        local found_units
-        found_units=$(extract_js_array "$panel_file" "allowedUnits")
-
-        for expected in "${PANEL_UNITS[@]}"; do
-            if echo "$found_units" | grep -qx "$expected"; then
-                log_pass "Found expected panel unit: $expected"
-            else
-                log_fail "Missing expected panel unit: $expected"
-                failed=1
-            fi
-        done
-
-        # Panel should NOT have suricata or login-monitor
-        local dangerous_for_panel=("suricata.service" "nftban-login-monitor.service" "nftban-suricata.service")
-        for dangerous in "${dangerous_for_panel[@]}"; do
-            if echo "$found_units" | grep -qx "$dangerous"; then
-                log_fail "Panel should NOT have access to: $dangerous"
-                log_risk HIGH "Panel access to security services is dangerous"
-                failed=1
-            fi
-        done
-    fi
+    # Panel unit-whitelist checks removed (panel tier retired v1.137).
 
     return $failed
 }
@@ -588,31 +533,7 @@ static_check_verb_whitelist() {
         done
     fi
 
-    # Check panel verbs
-    local panel_file
-    if panel_file=$(find_rule_file "30-nftban-panel.rules"); then
-        log_subheader "Panel Verbs (should be reload + read-only)"
-
-        local found_allowed
-        found_allowed=$(extract_js_array "$panel_file" "allowedVerbs")
-
-        # Panel should have reload
-        if echo "$found_allowed" | grep -qx "reload"; then
-            log_pass "Panel has reload verb"
-        else
-            log_fail "Panel missing reload verb"
-            failed=1
-        fi
-
-        # Panel should NOT have start/stop/restart
-        for dangerous in "start" "stop" "restart" "enable" "disable"; do
-            if echo "$found_allowed" | grep -qx "$dangerous"; then
-                log_fail "Panel should NOT have verb: $dangerous"
-                log_risk HIGH "Panel should not control service lifecycle"
-                failed=1
-            fi
-        done
-    fi
+    # Panel verb-whitelist checks removed (panel tier retired v1.137).
 
     return $failed
 }
@@ -643,32 +564,7 @@ static_check_explicit_denials() {
         fi
     fi
 
-    # Check panel has explicit denials
-    local panel_file
-    if panel_file=$(find_rule_file "30-nftban-panel.rules"); then
-        # Check for daemon-reload denial
-        if grep -q 'reload-daemon' "$panel_file" && grep -A3 'reload-daemon' "$panel_file" | grep -q 'Result\.NO'; then
-            log_pass "Panel: daemon-reload explicitly denied"
-        else
-            log_fail "Panel: daemon-reload not explicitly denied"
-            log_risk MEDIUM "Panel should not be able to reload daemon"
-            failed=1
-        fi
-
-        # Check for pkexec denial
-        if grep -q 'policykit\.exec' "$panel_file" && grep -A3 'policykit\.exec' "$panel_file" | grep -q 'Result\.NO'; then
-            log_pass "Panel: pkexec explicitly denied"
-        else
-            log_warn "Panel: pkexec not explicitly denied"
-        fi
-
-        # Check for dangerous verbs denial
-        if grep -q 'deniedVerbs' "$panel_file"; then
-            log_pass "Panel: Has explicit denied verbs list"
-        else
-            log_warn "Panel: No explicit denied verbs list"
-        fi
-    fi
+    # Panel explicit-denial checks removed (panel tier retired v1.137).
 
     return $failed
 }
@@ -717,7 +613,7 @@ static_check_action_scope() {
 # Test users (ephemeral or pre-existing)
 TEST_USER_OPERATOR="${TEST_USER_OPERATOR:-nftban-test-operator}"
 TEST_USER_AUDITOR="${TEST_USER_AUDITOR:-nftban-test-auditor}"
-TEST_USER_PANEL="${TEST_USER_PANEL:-nftban-test-panel}"
+# Panel test user retired v1.137 (panel authorization tier removed).
 
 create_test_users() {
     log_header "Creating Test Users"
@@ -739,21 +635,12 @@ create_test_users() {
     else
         log_info "Test user exists: $TEST_USER_AUDITOR"
     fi
-
-    # Create panel test user
-    if ! id "$TEST_USER_PANEL" &>/dev/null; then
-        useradd -r -s /sbin/nologin -c "NFTBan Polkit Test (Panel)" "$TEST_USER_PANEL"
-        usermod -aG "$GROUP_PANEL" "$TEST_USER_PANEL"
-        log_pass "Created test user: $TEST_USER_PANEL (group: $GROUP_PANEL)"
-    else
-        log_info "Test user exists: $TEST_USER_PANEL"
-    fi
 }
 
 cleanup_test_users() {
     log_header "Cleaning Up Test Users"
 
-    for user in "$TEST_USER_OPERATOR" "$TEST_USER_AUDITOR" "$TEST_USER_PANEL"; do
+    for user in "$TEST_USER_OPERATOR" "$TEST_USER_AUDITOR"; do
         if id "$user" &>/dev/null; then
             userdel -r "$user" 2>/dev/null || true
             log_pass "Removed test user: $user"
@@ -921,67 +808,14 @@ runtime_test_auditor() {
     return $failed
 }
 
-runtime_test_panel() {
-    log_header "Runtime Test: Panel Role ($TEST_USER_PANEL)"
-
-    if ! id "$TEST_USER_PANEL" &>/dev/null; then
-        log_skip "Test user $TEST_USER_PANEL does not exist"
-        return 0
-    fi
-
-    if ! getent group "$GROUP_PANEL" &>/dev/null; then
-        log_skip "Group $GROUP_PANEL does not exist"
-        return 0
-    fi
-
-    local failed=0
-
-    log_subheader "Expected ALLOW: Status queries on core units"
-
-    for unit in "${PANEL_UNITS[@]}"; do
-        if systemctl list-unit-files "$unit" &>/dev/null; then
-            if sudo -u "$TEST_USER_PANEL" systemctl status "$unit" &>/dev/null 2>&1; then
-                log_pass "Panel CAN query: $unit"
-            else
-                log_warn "Panel cannot query: $unit"
-            fi
-        else
-            log_skip "Unit not installed: $unit"
-        fi
-    done
-
-    log_subheader "Expected DENY: Restart/start/stop operations"
-
-    local test_output
-    test_output=$(sudo -u "$TEST_USER_PANEL" systemctl restart nftband.service 2>&1) || true
-    if [[ "$test_output" =~ "denied" ]] || [[ "$test_output" =~ "not authorized" ]] || [[ "$test_output" =~ "Permission" ]]; then
-        log_pass "Panel DENIED restart (correct)"
-    else
-        log_warn "Panel restart test inconclusive: $test_output"
-    fi
-
-    log_subheader "Expected DENY: Access to security services"
-
-    for unit in "suricata.service" "nftban-login-monitor.service"; do
-        if systemctl list-unit-files "$unit" &>/dev/null; then
-            test_output=$(sudo -u "$TEST_USER_PANEL" systemctl reload "$unit" 2>&1) || true
-            if [[ "$test_output" =~ "denied" ]] || [[ "$test_output" =~ "not authorized" ]] || [[ "$test_output" =~ "Permission" ]]; then
-                log_pass "Panel DENIED reload of $unit (correct)"
-            else
-                log_warn "Panel access to $unit test inconclusive"
-            fi
-        fi
-    done
-
-    return $failed
-}
+# runtime_test_panel removed v1.137 (panel authorization tier retired).
 
 runtime_test_nftables_isolation() {
     log_header "Runtime Test: nftables Isolation"
 
     local failed=0
 
-    for user in "$TEST_USER_OPERATOR" "$TEST_USER_AUDITOR" "$TEST_USER_PANEL"; do
+    for user in "$TEST_USER_OPERATOR" "$TEST_USER_AUDITOR"; do
         if ! id "$user" &>/dev/null; then
             continue
         fi
@@ -1130,7 +964,7 @@ main() {
 
         # Check if required groups exist
         local groups_exist=true
-        for group in "$GROUP_OPERATOR" "$GROUP_AUDITOR" "$GROUP_PANEL"; do
+        for group in "$GROUP_OPERATOR" "$GROUP_AUDITOR"; do
             if ! getent group "$group" &>/dev/null; then
                 log_warn "Group does not exist: $group"
                 groups_exist=false
@@ -1140,11 +974,10 @@ main() {
         if [[ "$groups_exist" == true ]]; then
             runtime_test_operator || true
             runtime_test_auditor || true
-            runtime_test_panel || true
             runtime_test_nftables_isolation || true
         else
             log_skip "Skipping runtime tests - required groups do not exist"
-            log_info "Create groups: nftban, nftban-auditor, nftban-panel"
+            log_info "Create groups: nftban, nftban-auditor"
         fi
 
         # Cleanup test users if we created them

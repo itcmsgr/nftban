@@ -183,10 +183,9 @@ polkit.addRule(function (action, subject) {
 // - pkexec creates privilege escalation risk
 // - v1.0.19: Removed entirely
 //
-// Group Separation:
+// Group Separation (two-tier model; nftban-panel tier retired v1.137):
 // - nftban: Operators (full access - THIS FILE)
 // - nftban-auditor: Read-only (see 20-nftban-auditor.rules)
-// - nftban-panel: Limited reload (see 30-nftban-panel.rules)
 //
 // To verify rule is loaded:
 //   pkaction --action-id org.freedesktop.systemd1.manage-units --verbose
@@ -202,6 +201,5 @@ polkit.addRule(function (action, subject) {
 //
 // Related Files:
 // - 20-nftban-auditor.rules: Auditor group (read-only access)
-// - 30-nftban-panel.rules: Panel group (limited reload access)
 //
 // =============================================================================

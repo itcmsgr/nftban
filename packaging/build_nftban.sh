@@ -404,7 +404,6 @@ install -D -m 0750 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
 mkdir -p %{buildroot}/usr/lib/nftban/sbin
 install -m 0755 cli/sbin/nftban-apply %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-confirm %{buildroot}/usr/lib/nftban/sbin/
-install -m 0755 cli/sbin/nftban-panelctl %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-queue-processor %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-rollback %{buildroot}/usr/lib/nftban/sbin/
 install -m 0755 cli/sbin/nftban-service-alert %{buildroot}/usr/lib/nftban/sbin/
@@ -508,10 +507,8 @@ install -D -m 0644 install/systemd/tmpfiles.d/nftban.conf %{buildroot}/usr/lib/t
 # Removed: 60-nftban-services.rules (unsafe wildcard pattern)
 # Consolidated: 10-nftban-core + 20-nftban-suricata → 10-nftban-systemd
 # Added: 20-nftban-auditor.rules (auditor group)
-# Added: 30-nftban-panel.rules (panel group)
 install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-systemd.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-systemd.rules
 install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-auditor.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-auditor.rules
-install -D -m 0644 packaging/polkit-1/rules.d/30-nftban-panel.rules %{buildroot}/etc/polkit-1/rules.d/30-nftban-panel.rules
 
 # SELinux policy files (R39 v1.19.12) - RPM only, DEB uses AppArmor
 mkdir -p %{buildroot}/usr/share/nftban/selinux
@@ -873,13 +870,11 @@ echo ""
 # =============================================================================
 # STEP 1: Create system groups
 # =============================================================================
-# NFTBan v1.0.19 uses 3-group model:
+# NFTBan v1.0.19 uses 2-group model (nftban-panel group retired v1.137):
 #   nftban: All operators (CLI + full service management)
 #   nftban-auditor: Read-only audit access (systemd status queries)
-#   nftban-panel: Panel integration (limited reload access)
 getent group nftban >/dev/null || groupadd -r nftban
 getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
-getent group nftban-panel >/dev/null || groupadd -r nftban-panel
 getent group suricata >/dev/null || groupadd -r suricata
 
 # Backward compatibility: nftban-auditor → nftban-auditor (renamed in v1.0.19)
@@ -1205,7 +1200,6 @@ fi
 # Polkit rules
 /etc/polkit-1/rules.d/10-nftban-systemd.rules
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
-/etc/polkit-1/rules.d/30-nftban-panel.rules
 # Shared data
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
@@ -1614,7 +1608,7 @@ build_deb() {
     # CRITICAL: These scripts are executed by systemd services and MUST have 755 permissions
     # Bug fix v1.9.4: Ensure sbin scripts are always installed with correct permissions
     local sbin_count=0
-    for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
+    for script in nftban-apply nftban-confirm nftban-queue-processor \
                   nftban-botscan-processor nftban-rollback nftban-service-alert; do
         if [[ -f "${PROJECT_ROOT}/cli/sbin/${script}" ]]; then
             install -m 0755 "${PROJECT_ROOT}/cli/sbin/${script}" "${deb_root}/usr/lib/nftban/sbin/"
@@ -1727,7 +1721,6 @@ build_deb() {
     # Bug #18: Debian/Ubuntu use /usr/share/polkit-1/rules.d/ (not /etc/polkit-1/rules.d/)
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-systemd.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-auditor.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/30-nftban-panel.rules" "${deb_root}/usr/share/polkit-1/rules.d/"
 
     # Copy validator spec
     install -m 0644 "${PROJECT_ROOT}/install/share/nftban/specs/structure_default.json" "${deb_root}/usr/share/nftban/specs/"

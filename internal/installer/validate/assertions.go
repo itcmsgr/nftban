@@ -442,7 +442,6 @@ func defaultInventoryPaths() map[string]bool {
 		// Shell-side privileged helpers (cli/sbin/* → /usr/lib/nftban/sbin/)
 		"/usr/lib/nftban/sbin/nftban-apply":             true,
 		"/usr/lib/nftban/sbin/nftban-confirm":           true,
-		"/usr/lib/nftban/sbin/nftban-panelctl":          true,
 		"/usr/lib/nftban/sbin/nftban-queue-processor":   true,
 		"/usr/lib/nftban/sbin/nftban-rollback":          true,
 		"/usr/lib/nftban/sbin/nftban-service-alert":     true,

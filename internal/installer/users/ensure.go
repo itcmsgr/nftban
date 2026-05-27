@@ -63,14 +63,13 @@ const nftbanGecos = "NFTBan system user"
 var systemGroups = []string{
 	"nftban",
 	"nftban-auditor",
-	"nftban-panel",
 	"suricata",
 }
 
 // Ensure creates all NFTBan system users and groups idempotently.
 //
 // Creates (in order):
-//  1. system groups: nftban, nftban-auditor, nftban-panel, suricata
+//  1. system groups: nftban, nftban-auditor, suricata
 //  2. nftban system user (primary group: nftban, home: /var/lib/nftban, shell: nologin)
 //  3. adds root to the nftban group (for config-read access)
 //
