@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.136.0] - 2026-05-27 — exporter exit-2 resilience + diagnosability (Phase 1)
+
+**Codename:** `V1_136_EXPORTER_EXIT2_RESILIENCE`
+**Scope file:** `AUDIT_190_LIFECYCLE/V1_136_EXPORTER_EXIT2_RESILIENCE_SCOPE.md`
+
+> **Why:** the `nftban-unified-exporter` exits `status=2/INVALIDARGUMENT` intermittently under systemd — a volatile-read command returning 2 under `set -Eeuo pipefail`, completely silent in the journal (no `ERR` trap + pervasive `2>/dev/null`). Pre-existing observability defect (`meta:version=1.39.0`, predates v1.135; v1.135 already classified it auxiliary/non-fatal at the install_state layer so it never DEGRADED installs). This lane is **resilience + observability, not emergency remediation** — the `v1.135.x` hotfix slot stayed HOLD/UNAUTHORIZED. Shell-only; daemon byte-identical to v1.135.0.
+
+### Phase 1 (PR #706, sq `7d0a7998`)
+- **`nftban_unified_exporter.sh` — permanent `ERR` trap** placed *after* `set -Eeuo pipefail` (**strict mode preserved**): converts a silent strict-mode abort into a journal line (`rc` + `file:line` + function + failing `$BASH_COMMAND`), then **re-raises the rc** (does not swallow). `errtrace` (`-E`) propagates it into the sourced collect/export functions, so the next intermittent exit-2 **self-pins the exact failing command** for the Phase-2 surgical guard.
+- **`nftban_exporter_json_compat.sh` — `_read_stats_json_retry`**: bounded retry that accepts only fully-valid JSON, so a daemon mid-write truncation of `stats.json` is retried instead of dropping the legacy-JSON cycle. Errexit-clean; never `exit 2`.
+- **No blind broad guard sweep** (per scope) — the unknown failing read waits for the ERR trap to self-pin in production.
+
+### Unchanged / invariants
+- **No code change beyond the exporter scripts above.** `cmd/nftband` + `cmd/nftban-core` byte-identical to v1.135.0. No installer/`install_state`, schema/metrics-label, portal, or service/timer-unit change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only.
+
+### Validation
+- PR #706 CI green (50 / 2-skip / 0-fail); post-merge `main` green at `7d0a7998`.
+- New `exporter_exit2_resilience_v136_test.sh` (15/0): ERR-trap attribution + rc preserved under strict mode; `stats.json` retry valid/missing/truncated/recovers. shellcheck clean.
+
+### Parked / follow-up
+- **Phase 2 (post-release dependency):** v1.136.0 release → monitor upgraded → ERR trap live → next exporter exit-2 logs the exact command/line → `OPEN_V1_136_EXPORTER_EXIT2_PHASE2` surgical guard if still needed.
+- **Deferred (design-only, later release):** `NFTBAN_EXPORTER_DEBUG` config variable — opt-in *verbose* xtrace (strict mode always kept), self-limiting via a lock/timer watchdog that auto-returns to normal so it can't be left on in production.
+
+---
+
 ## [v1.135.0] - 2026-05-27 — install/update-lifecycle correctness (timers + install_state + update-lock + mixed-drift + exporter-settle)
 
 **Codename:** `V135_INSTALL_UPDATE_LIFECYCLE`
