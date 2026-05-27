@@ -380,7 +380,6 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// Auxiliary CLI helpers.
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-apply", dstGlob: "/usr/lib/nftban/sbin/nftban-apply", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-confirm", dstGlob: "/usr/lib/nftban/sbin/nftban-confirm", mode: 0755, policy: policyAlways},
-		{category: "cli-bin", srcRel: "cli/sbin/nftban-panelctl", dstGlob: "/usr/lib/nftban/sbin/nftban-panelctl", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-queue-processor", dstGlob: "/usr/lib/nftban/sbin/nftban-queue-processor", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-rollback", dstGlob: "/usr/lib/nftban/sbin/nftban-rollback", mode: 0755, policy: policyAlways},
 		{category: "cli-bin", srcRel: "cli/sbin/nftban-service-alert", dstGlob: "/usr/lib/nftban/sbin/nftban-service-alert", mode: 0755, policy: policyAlways},

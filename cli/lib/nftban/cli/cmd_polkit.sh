@@ -154,7 +154,7 @@ nftban_polkit_status() {
     local polkit_dir
     polkit_dir=$(nftban_distro_get_polkit_dir)
     local rule_dirs=("$polkit_dir")
-    local expected_files=("10-nftban-systemd.rules" "20-nftban-auditor.rules" "30-nftban-panel.rules")
+    local expected_files=("10-nftban-systemd.rules" "20-nftban-auditor.rules")
     local obsolete_files=("50-nftban-auth.rules" "60-nftban-services.rules")
 
     # Check expected files
@@ -192,7 +192,7 @@ nftban_polkit_status() {
 
     # Check groups
     echo "NFTBan Groups:"
-    for group in "nftban" "nftban-auditor" "nftban-panel"; do
+    for group in "nftban" "nftban-auditor"; do
         if getent group "$group" >/dev/null 2>&1; then
             local members
             members=$(getent group "$group" | cut -d: -f4)
@@ -226,10 +226,9 @@ nftban_polkit_groups() {
             echo "----------------  ----------------  --------------------------------"
             echo "nftban            Operator          Full CLI + service management"
             echo "nftban-auditor    Auditor           Read-only access (status/logs)"
-            echo "nftban-panel      Panel             Limited reload (panel integration)"
             echo ""
 
-            for group in "nftban" "nftban-auditor" "nftban-panel"; do
+            for group in "nftban" "nftban-auditor"; do
                 echo "$group members:"
                 if getent group "$group" >/dev/null 2>&1; then
                     local members
@@ -250,7 +249,7 @@ nftban_polkit_groups() {
             local group="${2:-nftban}"
             if [[ -z "$user" ]]; then
                 echo "Usage: nftban polkit groups add <username> [group]" >&2
-                echo "Groups: nftban (operator), nftban-auditor, nftban-panel" >&2
+                echo "Groups: nftban (operator), nftban-auditor" >&2
                 return 1
             fi
             if [[ $EUID -ne 0 ]]; then
@@ -282,7 +281,7 @@ nftban_polkit_groups() {
                 return 1
             fi
             echo "Creating NFTBan authorization groups..."
-            for group in "nftban" "nftban-auditor" "nftban-panel"; do
+            for group in "nftban" "nftban-auditor"; do
                 if ! getent group "$group" >/dev/null 2>&1; then
                     groupadd -r "$group"
                     echo "  Created: $group"
@@ -354,7 +353,7 @@ nftban_polkit_rules() {
             fi
 
             echo "Installing Polkit rules from $src_dir to $dest_dir..."
-            for f in "10-nftban-systemd.rules" "20-nftban-auditor.rules" "30-nftban-panel.rules"; do
+            for f in "10-nftban-systemd.rules" "20-nftban-auditor.rules"; do
                 if [[ -f "$src_dir/$f" ]]; then
                     cp -v "$src_dir/$f" "$dest_dir/"
                     chmod 644 "$dest_dir/$f"
@@ -396,15 +395,12 @@ nftban_polkit_test() {
         echo "  [OPERATOR] Full CLI and service management access"
     elif echo "$groups" | grep -qw "nftban-auditor"; then
         echo "  [AUDITOR] Read-only access (status, logs, reports)"
-    elif echo "$groups" | grep -qw "nftban-panel"; then
-        echo "  [PANEL] Limited reload access (panel integration)"
     else
         echo "  [NONE] User is not in any NFTBan authorization group"
         echo ""
         echo "To grant access:"
         echo "  sudo usermod -aG nftban $user          # Operator access"
         echo "  sudo usermod -aG nftban-auditor $user  # Auditor access"
-        echo "  sudo usermod -aG nftban-panel $user    # Panel access"
     fi
     echo ""
 
@@ -457,12 +453,10 @@ EXAMPLES:
 AUTHORIZATION GROUPS:
   nftban            Operators - Full CLI and service management
   nftban-auditor    Auditors - Read-only access (status, logs)
-  nftban-panel      Panels - Limited reload for hosting panels
 
 SECURITY MODEL:
   - Operators can start/stop/restart NFTBan services
   - Auditors can only view status (no modifications)
-  - Panels can only reload specific core services
   - nftables access is ALWAYS via IPC to daemon (no direct nft)
 
 For detailed security documentation:

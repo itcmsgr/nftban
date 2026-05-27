@@ -8,7 +8,12 @@
 #
 # Policy: Compress old files, keep reasonable history
 
-# Main application logs (services that can be reloaded)
+# Main application logs
+# v1.137 (B-05): use copytruncate — these files have multiple writers
+# (daemon, watchdog, various scripts) that do NOT all reopen on a single
+# service reload, so the prior rename+create+reload approach left non-
+# login-monitor writers appending to the rotated-away inode. copytruncate
+# truncates in place so every writer keeps writing to the live file.
 /var/log/nftban/nftban.log
 /var/log/nftban/login-monitor.log
 /var/log/nftban/service-alerts.log {
@@ -18,12 +23,8 @@
     delaycompress
     missingok
     notifempty
+    copytruncate
     create 0640 nftban nftban
-    sharedscripts
-    postrotate
-        # Reload any services that need to reopen log files
-        systemctl reload nftban-login-monitor >/dev/null 2>&1 || true
-    endscript
 }
 
 # =============================================================================
@@ -66,9 +67,15 @@
 # =============================================================================
 # These can grow rapidly during attacks - daily rotation with size trigger
 # Use copytruncate for bash scripts appending via >>
+# v1.137: ddos.log + portscan.log are the live module operational/detection logs
+# (nftban_ddos.sh _nftban_ddos_log, nftban_portscan.sh) — previously matched by
+# no stanza (the split -classic/-suricata variants were covered, these were not)
+# → unbounded. Same policy class as the other module logs.
+/var/log/nftban/ddos.log
 /var/log/nftban/ddos-classic.log
 /var/log/nftban/ddos-suricata.log
 /var/log/nftban/login-suricata.log
+/var/log/nftban/portscan.log
 /var/log/nftban/portscan-suricata.log
 /var/log/nftban/portscan-classic.log
 /var/log/nftban/trust.log {
@@ -213,6 +220,24 @@
     notifempty
     copytruncate
     size 100M
+    create 0640 nftban nftban
+}
+
+# =============================================================================
+# Installer + update lifecycle logs (v1.137 — B-09)
+# =============================================================================
+# Written by short-lived processes (nftban-installer, `nftban update`); were
+# previously matched by NO stanza (this file enumerates paths, no *.log
+# wildcard) → unbounded growth. copytruncate is safe for append-then-exit writers.
+/var/log/nftban/installer.log
+/var/log/nftban/update.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
     create 0640 nftban nftban
 }
 

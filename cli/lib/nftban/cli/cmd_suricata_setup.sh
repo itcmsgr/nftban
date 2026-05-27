@@ -285,6 +285,28 @@ cmd_suricata_enable() {
         echo "  ✓ Created $eve_dir"
     fi
 
+    # v1.137 (B-04): install the Suricata logrotate policy into /etc/logrotate.d/.
+    # The package ships it ONLY as a template (/etc/nftban/templates/ +
+    # /usr/lib/nftban/config/); nothing previously copied it into logrotate.d,
+    # so suricata/eve-*.json + fast.log + stats.log grew UNBOUNDED → disk-fill.
+    # Done here (not at package time) because the policy uses `su suricata nftban`
+    # / `create 0640 suricata nftban`, which are only valid once the suricata
+    # user + EVE log dir exist (both just ensured above).
+    local _slr_dst="/etc/logrotate.d/nftban-suricata" _slr_src=""
+    for _c in "${NFTBAN_CONFIG_DIR:-/etc/nftban}/templates/nftban-suricata.logrotate" \
+              "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/config/nftban-suricata.logrotate"; do
+        [[ -f "$_c" ]] && { _slr_src="$_c"; break; }
+    done
+    if [[ -n "$_slr_src" ]]; then
+        if install -D -m 0644 -o root -g root "$_slr_src" "$_slr_dst" 2>/dev/null; then
+            echo "  ✓ Installed Suricata log rotation → $_slr_dst"
+        else
+            echo "  ⚠️  Could not install Suricata log rotation to $_slr_dst (need root)" >&2
+        fi
+    else
+        echo "  ⚠️  Suricata logrotate template not found — eve logs will NOT be rotated" >&2
+    fi
+
     # Check if EVE output is configured to nftban path
     if [[ -f "$suricata_yaml" ]]; then
         local current_eve

@@ -148,10 +148,9 @@ polkit.addRule(function (action, subject) {
 // - /var/lib/nftban/reports/: nftban:nftban-auditor 750
 // - /etc/nftban/: nftban:nftban 750 (auditors use --config-view flag)
 //
-// Comparison to nftban Group:
+// Comparison to nftban Group (two-tier model; nftban-panel tier retired v1.137):
 // - nftban: Full access (start/stop/restart + daemon-reload)
 // - nftban-auditor: Read-only (status/show only)
-// - nftban-panel: Limited reload (specific units only)
 //
 // Testing:
 //   # As auditor group member
@@ -167,7 +166,6 @@ polkit.addRule(function (action, subject) {
 //
 // Related Files:
 // - 10-nftban-systemd.rules: Operator group (full access)
-// - 30-nftban-panel.rules: Panel group (limited reload)
 // - commands.registry.yml: Defines auditor-visible CLI commands
 //
 // =============================================================================

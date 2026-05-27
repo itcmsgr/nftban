@@ -532,22 +532,9 @@ nftban_health_check_polkit() {
             fi
         fi
 
-        # Check if NFTBAN Panel authorization rules are installed (v1.0.19+)
-        local polkit_panel_rules="${polkit_rules_dir}/30-nftban-panel.rules"
-        if [[ ! -f "$polkit_panel_rules" ]]; then
-            polkit_issues+=("WARNING: Polkit panel rules missing at $polkit_panel_rules")
-            polkit_issues+=("Control panel integrations may not work without sudo")
-            polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
-            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-        else
-            # Verify file permissions using shared helper
-            local perms
-            perms=$(nftban_file_perms "$polkit_panel_rules")
-            if [[ "$perms" != "644" ]]; then
-                polkit_issues+=("Polkit panel rules have wrong permissions: $perms (should be 644)")
-                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-            fi
-        fi
+        # NOTE: the nftban-panel polkit tier (30-nftban-panel.rules) was retired in
+        # v1.137. A missing panel rule is no longer a WARNING/DEGRADED condition;
+        # the model is now two-tier (nftban operator + nftban-auditor read-only).
 
         # Check if polkit service is running (using shared library)
         if command -v systemctl >/dev/null 2>&1; then

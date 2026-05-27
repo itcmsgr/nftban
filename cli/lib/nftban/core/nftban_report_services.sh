@@ -50,7 +50,7 @@ if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]] || \
 fi
 
 # Add geoip-database if geoip/geoban is in use or geoip database exists
-if [[ "${NFTBAN_GEOBAN_ENABLED:-false}" == "true" ]] || \
+if [[ "${GEOBAN_ENABLED:-false}" == "true" ]] || \
    [[ -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip" && -n "$(ls "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip/"*.mmdb 2>/dev/null)" ]]; then
     NFTBAN_SERVICE_BINARIES+=("geoip-database")
 fi
