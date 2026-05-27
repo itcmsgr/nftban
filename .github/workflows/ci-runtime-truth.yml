@@ -353,8 +353,15 @@ jobs:
           echo "getent group nftban:           $(getent group nftban || echo '<unresolved>')"
           echo "getent group nftban-auditor:   $(getent group nftban-auditor || echo '<unresolved>')"
           echo "getent passwd nftban:          $(getent passwd nftban || echo '<unresolved>')"
+          # Positive identity contract: the two surviving authorization
+          # tiers (operator + auditor) and the nftban user MUST resolve.
+          # The nftban-panel group was RETIRED in v1.137 (two-tier model);
+          # it is intentionally NOT created and NOT required here.
+          getent passwd nftban >/dev/null || { echo "::error::nftban user missing"; exit 1; }
+          getent group nftban >/dev/null || { echo "::error::nftban group missing"; exit 1; }
+          getent group nftban-auditor >/dev/null || { echo "::error::nftban-auditor group missing"; exit 1; }
           echo "/etc/group nftban entries:"
-          grep -E "^nftban|^nftban-auditor|^nftban-panel|^suricata" /etc/group || echo "  (no nftban entries in /etc/group)"
+          grep -E "^nftban|^nftban-auditor|^suricata" /etc/group || echo "  (no nftban entries in /etc/group)"
           echo "/etc/passwd nftban entries:"
           grep -E "^nftban" /etc/passwd || echo "  (no nftban entries in /etc/passwd)"
           if command -v systemd-userdbd >/dev/null 2>&1 || systemctl list-unit-files systemd-userdbd.service >/dev/null 2>&1; then

@@ -24,30 +24,19 @@ sysusers:
     - name: nftban-auditor
       system: true
       comment: "NFTBan auditor group (read-only report access)"
-    - name: nftban-panel
-      system: true
-      comment: "NFTBan panel group (limited operator actions for hosting panels)"
-      note: |
-        D-NEW-11 closure (Slot 6 / 2026-05-09): KEEP, do NOT decommission.
-        Live consumer: cli/sbin/nftban-panelctl wrapper (PANEL_GROUP="nftban-panel"
-        auth gate at line 55, membership check at lines 154-155).
-        Tier-3 of three-tier polkit model:
-          - 10-nftban-systemd.rules → nftban (operator, full systemd)
-          - 20-nftban-auditor.rules → nftban-auditor (read-only)
-          - 30-nftban-panel.rules  → nftban-panel (read + reload-only)
-        Cascading dependent surfaces verified at v1.107:
-          - cli/sbin/nftban-panelctl (auth gate)
-          - internal/installer/users/ensure.go:66 (identity-ensure)
-          - internal/installer/payload/payload.go:383 (ships nftban-panelctl)
-          - internal/installer/validate/assertions.go:407 (install-validation)
-          - cli/lib/nftban/tests/polkit_validator.sh (rule + group structural validator)
-          - cli/lib/nftban/cli/cmd_polkit.sh (nftban polkit status diagnostic)
-          - cli/lib/nftban/core/nftban_health_checks_security.sh:536 (rule presence check)
-          - cli/lib/nftban/core/nftban_health_fixes.sh:1409 (repair surface)
-        Decommission would force panels into operator tier (over-privileged: gains
-        start/stop/restart) or auditor tier (under-privileged: loses reload).
-        Neither acceptable. See packaging/polkit-1/rules.d/30-nftban-panel.rules
-        header CONSUMERS block for verified-live consumer list.
+    # nftban-panel group RETIRED — v1.137 (OPEN_V1_137_BLOCKER_PANEL_GROUP_RETIREMENT).
+    # This formally SUPERSEDES the prior D-NEW-11 (Slot 6 / 2026-05-09) "KEEP, do NOT
+    # decommission" note that lived here. The KEEP rationale ("live consumer:
+    # cli/sbin/nftban-panelctl wrapper") is obsolete: the GOTH GUI redesign retired
+    # panel integration (panel mgmt via CLI; GUI is display-only), and nftban-panelctl
+    # has NO live invoker (it was only shipped + install-asserted, never executed).
+    # The three-tier polkit model collapses to two surviving tiers:
+    #   - nftban         (operator, 10-nftban-systemd.rules)
+    #   - nftban-auditor (read-only, 20-nftban-auditor.rules)
+    # 30-nftban-panel.rules, the nftban-panelctl wrapper, and every panel-group
+    # create/ship/assert/health/CI surface are removed in this one coordinated lane.
+    # NOTE: hosting-panel firewall takeover (--panel-auto-takeover / --no-panel /
+    # cmd_panel.sh / cPanel·Plesk·DirectAdmin) is a DIFFERENT subsystem — unaffected.
 
   users:
     - name: nftban

@@ -415,7 +415,8 @@ func TestParseFilterSetting(t *testing.T) {
 // =============================================================================
 
 func TestParseBanEntry_ValidLine(t *testing.T) {
-	line := "2026-01-15T10:30:00Z 1.2.3.4 nftban-sshd SSH brute force"
+	// BLC-1 pipe format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS
+	line := "2026-01-15|10:30:00|login|1.2.3.4|US|BANNED|SSH brute force|abc123|3600|temp"
 	entry, err := parseBanEntry(line)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -424,11 +425,14 @@ func TestParseBanEntry_ValidLine(t *testing.T) {
 	if entry.IP != "1.2.3.4" {
 		t.Errorf("IP = %q, want 1.2.3.4", entry.IP)
 	}
-	if entry.Jail != "nftban-sshd" {
-		t.Errorf("Jail = %q, want nftban-sshd", entry.Jail)
+	if entry.Jail != "login" {
+		t.Errorf("Jail (SOURCE) = %q, want login", entry.Jail)
 	}
 	if entry.Reason != "SSH brute force" {
 		t.Errorf("Reason = %q, want 'SSH brute force'", entry.Reason)
+	}
+	if entry.Status != "BANNED" {
+		t.Errorf("Status = %q, want BANNED", entry.Status)
 	}
 	if entry.Timestamp.Year() != 2026 {
 		t.Errorf("Timestamp year = %d, want 2026", entry.Timestamp.Year())
@@ -436,7 +440,8 @@ func TestParseBanEntry_ValidLine(t *testing.T) {
 }
 
 func TestParseBanEntry_MinimalLine(t *testing.T) {
-	line := "2026-01-15T10:30:00Z 1.2.3.4 sshd"
+	// Exactly the 6 mandatory BLC-1 fields (no REASON field present).
+	line := "2026-01-15|10:30:00|login|1.2.3.4|US|BANNED"
 	entry, err := parseBanEntry(line)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -451,7 +456,8 @@ func TestParseBanEntry_MinimalLine(t *testing.T) {
 }
 
 func TestParseBanEntry_InvalidTimestamp(t *testing.T) {
-	line := "not-a-timestamp 1.2.3.4 sshd"
+	// BLC-1-shaped (>=6 fields) but DATE/TIME are not parseable.
+	line := "not-a-date|not-a-time|login|1.2.3.4|US|BANNED"
 	_, err := parseBanEntry(line)
 	if err == nil {
 		t.Error("expected error for invalid timestamp")
@@ -462,7 +468,7 @@ func TestParseBanEntry_TooFewFields(t *testing.T) {
 	tests := []string{
 		"",
 		"only-one",
-		"just two",
+		"a|b|c|d|e", // 5 pipe fields, < 6 required
 	}
 
 	for _, line := range tests {
@@ -470,6 +476,15 @@ func TestParseBanEntry_TooFewFields(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected error for line %q", line)
 		}
+	}
+}
+
+// TestParseBanEntry_RejectsLegacySpaceFormat proves BLC-1 is canonical and the
+// dead space-delimited format is NOT silently accepted (D-UXV-16).
+func TestParseBanEntry_RejectsLegacySpaceFormat(t *testing.T) {
+	line := "2026-01-15T10:30:00Z 1.2.3.4 nftban-sshd SSH brute force"
+	if _, err := parseBanEntry(line); err == nil {
+		t.Error("legacy space-delimited line must be rejected (BLC-1 is canonical)")
 	}
 }
 
