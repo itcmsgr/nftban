@@ -51,8 +51,11 @@ NFTBAN_GIT_REPO="${NFTBAN_GIT_REPO:-/opt/nftban}"
 NFTBAN_GIT_BRANCH="${NFTBAN_GIT_BRANCH:-main}"
 NFTBAN_UPDATE_BACKUP_COUNT="${NFTBAN_UPDATE_BACKUP_COUNT:-3}"
 
-# Lock file for preventing concurrent updates
-readonly UPDATE_LOCK_FILE="/run/nftban/update.lock"
+# Lock file for preventing concurrent updates. Derives from NFTBAN_RUN_DIR
+# (the codebase-wide runtime-dir convention) so it resolves to the real
+# /run/nftban/update.lock in production but can be redirected to a sandbox
+# in tests.
+readonly UPDATE_LOCK_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/update.lock"
 
 # Internal flags (exported for submodules)
 export _NFTBAN_UPDATE_FORCE=0
@@ -333,9 +336,29 @@ _cmd_update_check() {
     return 0
 }
 
+_release_update_lock() {
+    # Release the exclusive update lock held on fd 9 and remove the lock file.
+    # MUST only be called by the flock holder (_cmd_update_main, after a
+    # successful `flock -n 9`). We remove the file BEFORE closing the fd: while
+    # the fd is still open we continue to hold the kernel lock, so no concurrent
+    # updater can exist during the unlink — this is the strongest guarantee that
+    # we never clobber a live updater's lock. Closing fd 9 then releases the
+    # kernel lock. Removing the file prevents the empty left-behind marker that
+    # confused operators (D-UPDATE-LOCK-LEFT-BEHIND, v1.135 — observed as a
+    # 2-day stale /run/nftban/update.lock on dns2).
+    rm -f "$UPDATE_LOCK_FILE" 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
+}
+
 _cmd_update_main() {
-    # Main update command
+    # Main update command (lock wrapper)
     # Args: $1 = source (auto/github/git/local), $2 = version/path (optional)
+    #
+    # Acquires the exclusive update lock, delegates the actual update to
+    # _cmd_update_main_locked, then releases the lock file on EVERY terminal
+    # path (success / DEGRADED / handled failure). Pre-v1.135 the flock fd was
+    # released on process exit but the empty /run/nftban/update.lock file was
+    # left behind (D-UPDATE-LOCK-LEFT-BEHIND).
 
     local source="${1:-auto}"
     local arg="${2:-}"
@@ -343,7 +366,7 @@ _cmd_update_main() {
     _update_banner
     echo ""
 
-    # Check root
+    # Check root (pre-lock — nothing acquired yet, nothing to release)
     if [[ $EUID -ne 0 ]]; then
         _update_log ERROR "PolicyKit/polkit authorization failed or insufficient privileges"
         _update_log INFO "Hint: update requires elevated privileges; members of the nftban group are authorized via PolicyKit/polkit rules."
@@ -352,14 +375,33 @@ _cmd_update_main() {
 
     # Acquire exclusive lock to prevent concurrent updates
     _update_log INFO "Acquiring update lock..."
-    mkdir -p /run/nftban 2>/dev/null || true
+    mkdir -p "${NFTBAN_RUN_DIR:-/run/nftban}" 2>/dev/null || true
     exec 9>"$UPDATE_LOCK_FILE"
     if ! flock -n 9; then
         _update_log ERROR "Another update is in progress"
         _update_log INFO "If no update is running, use 'nftban update force' to clear stale lock"
+        # We did NOT acquire the lock — a live updater holds it. Close our fd
+        # but DO NOT remove the file: it belongs to the running updater.
+        exec 9>&- 2>/dev/null || true
         return 1
     fi
     _update_log INFO "Lock acquired"
+
+    # Run the update body under the held lock, then always release the lock
+    # file (cleanup on success / DEGRADED / handled failure alike).
+    local _update_rc=0
+    _cmd_update_main_locked "$source" "$arg" || _update_rc=$?
+    _release_update_lock
+    return $_update_rc
+}
+
+_cmd_update_main_locked() {
+    # Update body — runs while the caller (_cmd_update_main) holds the exclusive
+    # flock on fd 9. Every terminal `return` here propagates to the wrapper,
+    # which releases the lock file afterward via _release_update_lock.
+
+    local source="${1:-auto}"
+    local arg="${2:-}"
 
     _load_config
 

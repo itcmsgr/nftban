@@ -29,10 +29,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
+
+// auxiliarySettleAttempts / auxiliarySettleDelay bound the re-poll window that
+// lets a transient AUXILIARY-only failure (notably the unified exporter's
+// exit-2 during a package swap) self-heal before it is recorded
+// (D-EXPORTER-SETTLE-WINDOW, v1.135). A protection-critical failure
+// short-circuits the wait immediately. auxiliarySettleDelay is a var so tests
+// can drive the settle logic without real sleeping.
+const auxiliarySettleAttempts = 3
+
+var auxiliarySettleDelay = 2 * time.Second
 
 // DefaultUnitDirs is the canonical systemd unit search path for
 // nftban-owned units. Both vendor and operator-owned dirs are scanned
@@ -138,6 +149,71 @@ func isUnitFilename(name string) bool {
 // surfaces the enumeration failure as an assertion failure instead of
 // silently returning an empty list and false-passing.
 func listFailedNftbanUnits(exec executor.Executor, log *logging.Logger) (findings []FailedUnitFinding, queryErr string) {
+	findings, queryErr = queryFailedNftbanUnitsOnce(exec, log)
+	if queryErr != "" {
+		return findings, queryErr
+	}
+	// v1.135 D-EXPORTER-SETTLE-WINDOW: when the only failures are auxiliary,
+	// give them a bounded settle window to self-heal (the exporter's exit-2
+	// during a package swap recovers within seconds). A protection-critical
+	// failure is never waited on.
+	findings = settleAuxiliaryFailures(findings,
+		func() ([]FailedUnitFinding, string) { return queryFailedNftbanUnitsOnce(exec, log) },
+		auxiliarySettleAttempts,
+		func() { time.Sleep(auxiliarySettleDelay) },
+		log)
+	return findings, ""
+}
+
+// hasProtectionCriticalFailure reports whether any finding is a non-auxiliary
+// (protection-critical) nftban unit. These are never waited on during settle.
+func hasProtectionCriticalFailure(fs []FailedUnitFinding) bool {
+	for _, f := range fs {
+		if IsNftbanUnit(f.Unit) && !IsAuxiliaryUnit(f.Unit) {
+			return true
+		}
+	}
+	return false
+}
+
+// settleAuxiliaryFailures re-polls failed units up to maxAttempts total polls
+// (the first poll is the passed-in initial set) WHILE the only failures are
+// auxiliary, sleeping between polls, to let a transient auxiliary failure
+// recover. It returns as soon as: nothing is failing, a protection-critical
+// unit is failing (fail fast — do not wait), a requery errors (keep what we
+// had), or attempts are exhausted. Pure logic with injected requery+sleep so
+// it is fully unit-testable without real time or systemctl.
+func settleAuxiliaryFailures(
+	initial []FailedUnitFinding,
+	requery func() ([]FailedUnitFinding, string),
+	maxAttempts int,
+	sleep func(),
+	log *logging.Logger,
+) []FailedUnitFinding {
+	cur := initial
+	for attempt := 1; attempt < maxAttempts; attempt++ {
+		if len(cur) == 0 {
+			return cur
+		}
+		if hasProtectionCriticalFailure(cur) {
+			return cur
+		}
+		// Only auxiliary failures remain — wait and re-poll.
+		if log != nil {
+			log.Debug("systemd_payload: auxiliary-only failure(s) present; settle re-poll %d/%d",
+				attempt, maxAttempts-1)
+		}
+		sleep()
+		next, qerr := requery()
+		if qerr != "" {
+			return cur
+		}
+		cur = next
+	}
+	return cur
+}
+
+func queryFailedNftbanUnitsOnce(exec executor.Executor, log *logging.Logger) (findings []FailedUnitFinding, queryErr string) {
 	if !exec.CommandExists("systemctl") {
 		queryErr = "systemctl binary not available — cannot enumerate failed units"
 		if log != nil {
