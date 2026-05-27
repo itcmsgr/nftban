@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.136.1] - 2026-05-27 — exporter exit-2 Phase 2 (surgical scale-cache guard)
+
+**Codename:** `V1_136_1_EXPORTER_EXIT2_PHASE2`
+**Scope file:** `AUDIT_190_LIFECYCLE/V1_136_EXPORTER_EXIT2_PHASE2_SCOPE.md`
+
+> **Why:** the v1.136.0 ERR trap did its job — deployed to monitor (official, checksum-verified asset), it pinned the exact intermittent `status=2/INVALIDARGUMENT` on its first occurrence (run #73565). Root cause: `nftban_unified_exporter_collect.sh:642` `_global_scale=$(jq -r '.scale_mode // "NORMAL"' "$_scale_cache" 2>/dev/null)` reading the daemon-written `/run/nftban/set_counts.json` — a mid-write/truncated cache makes `jq` exit non-zero (the in-`jq` default never applies; parse failed first), the unguarded `$(…)` fails, and `set -Eeuo pipefail` aborts the whole run. Hotfix; shell-only; daemon byte-identical to v1.136.0.
+
+### Phase 2 (PR #708, sq `e5cb7395`)
+- **Surgical guard** in the `set_counts.json` scale block: a one-time `if jq -e . "$_scale_cache" >/dev/null 2>&1` validity gate now wraps **both** pinned reads (per-set line 638 + global line 642). On a transient invalid/truncated cache the exporter emits the safe default (global scale = `NORMAL`) and skips the per-set rows that cycle instead of aborting; a belt-and-suspenders `|| _global_scale="NORMAL"` covers the rewrite-after-validate race.
+- **Strict mode (`set -Eeuo pipefail`) and the v1.136.0 ERR trap are preserved.** Scoped to only this block — no broad sweep.
+
+### Unchanged / invariants
+- **No code change beyond the exporter scale block above.** `cmd/nftband` + `cmd/nftban-core` byte-identical to v1.136.0. No installer/`install_state`, schema/metrics-label, portal, or service/timer-unit change. **Schema 1.83.0 frozen.** `nftban_fhs_spec.sh` change is header-version regen only.
+
+### Validation
+- PR #708 CI green (50 / 2-skip / 0-fail); post-merge `main` green at `e5cb7395`.
+- New `exporter_exit2_phase2_scale_guard_v1361_test.sh` (13/0): truncated/empty/missing-field `set_counts.json` → `NORMAL` with **no non-zero exit** under strict mode; valid cache still yields correct scale. Phase-1 `exporter_exit2_resilience_v136_test.sh` 15/0 intact. shellcheck clean.
+
+### Post-publish
+- Deploy v1.136.1 to monitor + bounded watch confirming `nftban-unified-exporter` no longer exits 2 (no abort on a truncated `set_counts.json`) — closes the exporter exit-2 loop.
+
+---
+
 ## [v1.136.0] - 2026-05-27 — exporter exit-2 resilience + diagnosability (Phase 1)
 
 **Codename:** `V1_136_EXPORTER_EXIT2_RESILIENCE`
