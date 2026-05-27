@@ -216,11 +216,15 @@ ExecStart=/usr/lib/nftban/sbin/rogue-helper
 // (e) Failed unit injected → FAILED-UNIT-POSTINSTALL-001 fails
 // ----------------------------------------------------------------------------
 func TestSystemdPayload_FailedUnit(t *testing.T) {
+	// A failed PROTECTION-critical unit (the Go daemon) is a hard failure.
+	// (v1.135: must use a protection unit here — a failed auxiliary unit like
+	// the exporter no longer fails this invariant; see TestSystemdPayload_
+	// FailedAuxiliaryUnitDoesNotFail.)
 	res := ValidateInstalledSystemdPayload(SystemdPayloadInputs{
 		PathExists: pathSet(),
 		Inventory:  inv(),
 		FailedNftbanUnits: []FailedUnitFinding{
-			{Unit: "nftban-unified-exporter.service", Active: "failed", Sub: "failed", Detail: "exit-code 203/EXEC"},
+			{Unit: "nftband.service", Active: "failed", Sub: "failed", Detail: "exit-code 203/EXEC"},
 		},
 	})
 
@@ -397,7 +401,7 @@ func TestSystemdPayload_NftbanUnitNaming(t *testing.T) {
 		"nftban-maintenance.target":       true,
 
 		// hyphenated nftband-*
-		"nftband-rpc.socket":   true,
+		"nftband-rpc.socket":    true,
 		"nftband-watch.service": true,
 
 		// negatives — name not a complete identifier prefix
@@ -407,11 +411,11 @@ func TestSystemdPayload_NftbanUnitNaming(t *testing.T) {
 		"fake-nftban.service": false,
 
 		// negatives — non-systemd unit suffix
-		"nftban.conf":     false,
-		"nftban.txt":      false,
-		"nftban":          false,
-		"nftban.":         false,
-		"nftban-foo":      false, // missing extension entirely
+		"nftban.conf": false,
+		"nftban.txt":  false,
+		"nftban":      false,
+		"nftban.":     false,
+		"nftban-foo":  false, // missing extension entirely
 	}
 	for name, want := range cases {
 		if got := IsNftbanUnit(name); got != want {

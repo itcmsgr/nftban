@@ -387,6 +387,19 @@ func assertCriticalTimersEnabled(tvr TimerValidationResult, log *logging.Logger)
 func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *logging.Logger) AssertionResult {
 	r := AssertionResult{Name: "failed_units_postinstall_ok", Passed: spr.FailedUnitsOK()}
 	if r.Passed {
+		// v1.135 D-EXPORTER-SETTLE-WINDOW: a failed auxiliary (metrics/
+		// observability) unit does NOT fail this assertion, but it IS
+		// surfaced as a non-fatal warning so operators still see it.
+		if len(spr.FailedAuxiliaryUnits) > 0 {
+			aux := make([]string, 0, len(spr.FailedAuxiliaryUnits))
+			for _, f := range spr.FailedAuxiliaryUnits {
+				aux = append(aux, f.Unit+"("+f.Detail+")")
+			}
+			r.Detail = "auxiliary (non-protection) units degraded — non-fatal: " + strings.Join(aux, "; ")
+			log.Warn("ASSERT failed_units_postinstall_ok: PASS — auxiliary units degraded (non-fatal): %s",
+				strings.Join(aux, "; "))
+			return r
+		}
 		log.Debug("ASSERT failed_units_postinstall_ok: PASS")
 		return r
 	}
@@ -421,11 +434,11 @@ func assertFailedUnitsPostInstall(spr SystemdPayloadValidationResult, log *loggi
 func defaultInventoryPaths() map[string]bool {
 	return map[string]bool{
 		// CLI shim + Go binaries
-		"/usr/sbin/nftban":                              true,
-		"/usr/lib/nftban/bin/nftban-core":               true,
-		"/usr/lib/nftban/bin/nftband":                   true,
-		"/usr/lib/nftban/bin/nftban-validate":           true,
-		"/usr/lib/nftban/bin/nftban-installer":          true,
+		"/usr/sbin/nftban":                     true,
+		"/usr/lib/nftban/bin/nftban-core":      true,
+		"/usr/lib/nftban/bin/nftband":          true,
+		"/usr/lib/nftban/bin/nftban-validate":  true,
+		"/usr/lib/nftban/bin/nftban-installer": true,
 		// Shell-side privileged helpers (cli/sbin/* → /usr/lib/nftban/sbin/)
 		"/usr/lib/nftban/sbin/nftban-apply":             true,
 		"/usr/lib/nftban/sbin/nftban-confirm":           true,

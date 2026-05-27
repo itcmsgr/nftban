@@ -196,6 +196,63 @@ _probe_git_repo_present() {
     [[ -d "${NFTBAN_GIT_REPO:-}/.git" ]]
 }
 
+# -----------------------------------------------------------------------------
+# v1.135 D-UPDATE-MIXED-DRIFT: "clean and complete" on-disk package-ownership
+# probes.
+#
+# These are STRONGER than _probe_rpm_owns_nftban / _probe_dpkg_owns_nftban
+# (which only query the package NAME). They confirm that every core nftban
+# binary actually present on disk is still owned by the package database. A
+# source `make install` over a package install (a genuine mix) leaves at least
+# one core binary unowned, so these probes return non-zero on a real mix while
+# returning 0 on a cleanly package-managed host — even one whose update-history
+# is stale source-era (the dns2 shape, where no nftban-updater update ran after
+# the migration so the last SUCCESS history entry is still "source").
+#
+# Default probe set: both Go daemon binaries under ${NFTBAN_LIB_DIR}/bin.
+# Override for tests via NFTBAN_OWNERSHIP_PROBE_BINS (space/newline-separated).
+# -----------------------------------------------------------------------------
+_nftban_ownership_probe_bins() {
+    if [[ -n "${NFTBAN_OWNERSHIP_PROBE_BINS:-}" ]]; then
+        printf '%s\n' ${NFTBAN_OWNERSHIP_PROBE_BINS}
+        return 0
+    fi
+    local libdir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+    printf '%s\n' "${libdir}/bin/nftban-core" "${libdir}/bin/nftband"
+}
+
+_probe_rpm_owns_all_binaries() {
+    # Returns 0 only if rpm cleanly owns EVERY core nftban binary on disk.
+    if [[ -n "${NFTBAN_TEST_RPM_OWNS_BINARIES:-}" ]]; then
+        [[ "$NFTBAN_TEST_RPM_OWNS_BINARIES" == "yes" ]] && return 0 || return 1
+    fi
+    command -v rpm &>/dev/null || return 1
+    local b had=0
+    while IFS= read -r b; do
+        [[ -n "$b" ]] || continue
+        had=1
+        [[ -e "$b" ]] || return 1             # binary missing → not complete
+        rpm -qf "$b" &>/dev/null || return 1  # unowned by any rpm → not clean
+    done < <(_nftban_ownership_probe_bins)
+    [[ "$had" -eq 1 ]]
+}
+
+_probe_dpkg_owns_all_binaries() {
+    # Returns 0 only if dpkg cleanly owns EVERY core nftban binary on disk.
+    if [[ -n "${NFTBAN_TEST_DPKG_OWNS_BINARIES:-}" ]]; then
+        [[ "$NFTBAN_TEST_DPKG_OWNS_BINARIES" == "yes" ]] && return 0 || return 1
+    fi
+    command -v dpkg &>/dev/null || return 1
+    local b had=0
+    while IFS= read -r b; do
+        [[ -n "$b" ]] || continue
+        had=1
+        [[ -e "$b" ]] || return 1               # binary missing → not complete
+        dpkg -S "$b" &>/dev/null || return 1    # unowned by any deb → not clean
+    done < <(_nftban_ownership_probe_bins)
+    [[ "$had" -eq 1 ]]
+}
+
 _detect_install_type() {
     # Detect how NFTBan was installed.
     # Returns one of: rpm, deb, source, mixed, unknown
@@ -242,6 +299,15 @@ _detect_install_type() {
                 echo "rpm"
                 return 0
             fi
+            # v1.135 D-UPDATE-MIXED-DRIFT: clean & complete on-disk ownership.
+            # If rpm cleanly owns every core binary, the host IS an rpm install
+            # regardless of stale source-era history (dns2 case: migrated but no
+            # nftban-updater update ran post-migration). Partial/incomplete
+            # ownership falls through to "mixed" — no unsafe bypass.
+            if _probe_rpm_owns_all_binaries; then
+                echo "rpm"
+                return 0
+            fi
             echo "mixed"
             return 0
         fi
@@ -258,6 +324,12 @@ _detect_install_type() {
             last_successful_type=$(_read_history_last_successful_type)
             if [[ "$last_successful_type" == "deb" ]] && \
                _probe_install_state_committed_update_authority; then
+                echo "deb"
+                return 0
+            fi
+            # v1.135 D-UPDATE-MIXED-DRIFT: clean & complete on-disk ownership
+            # (symmetric to the rpm branch above).
+            if _probe_dpkg_owns_all_binaries; then
                 echo "deb"
                 return 0
             fi

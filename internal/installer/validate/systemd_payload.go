@@ -90,6 +90,32 @@ func IsNftbanUnit(basename string) bool {
 	return false
 }
 
+// auxiliaryUnitStems lists nftban unit stems (basename without extension)
+// whose failure is an observability/metrics degradation, NOT a loss of
+// firewall protection. A failure in one of these is surfaced as a non-fatal
+// warning and does NOT flip failed_units_postinstall_ok — so a transient
+// auxiliary failure (notably the unified exporter's exit-2 during a package
+// swap, D-EXPORTER-SETTLE-WINDOW) cannot DEGRADE the install or poison an
+// update. Protection-critical units (nftband, nftban-core, firewall-init)
+// are deliberately absent and remain hard failures.
+var auxiliaryUnitStems = map[string]bool{
+	"nftban-unified-exporter": true,
+}
+
+// IsAuxiliaryUnit reports whether an nftban unit basename is an auxiliary
+// (metrics/observability) unit per auxiliaryUnitStems. Non-nftban units are
+// never auxiliary (they are out of scope for these invariants entirely).
+func IsAuxiliaryUnit(basename string) bool {
+	if !IsNftbanUnit(basename) {
+		return false
+	}
+	dot := strings.LastIndexByte(basename, '.')
+	if dot <= 0 {
+		return false
+	}
+	return auxiliaryUnitStems[basename[:dot]]
+}
+
 // ParsedUnit is the minimum subset of a systemd unit file needed for
 // PR26.1 validation. Constructed by the host-side gatherer or by
 // tests directly.
@@ -242,8 +268,16 @@ type SystemdPayloadValidationResult struct {
 	// UnknownPayloadRefs is the PAYLOAD-INVENTORY-001 finding set.
 	UnknownPayloadRefs []UnknownPayloadRef
 
-	// FailedUnits is the FAILED-UNIT-POSTINSTALL-001 finding set.
+	// FailedUnits is the FAILED-UNIT-POSTINSTALL-001 finding set, restricted
+	// to protection-critical units. A non-empty slice fails the invariant.
 	FailedUnits []FailedUnitPostInstall
+
+	// FailedAuxiliaryUnits holds failed nftban units classified as auxiliary
+	// (metrics/observability — see IsAuxiliaryUnit). These are surfaced as a
+	// non-fatal warning and do NOT fail FAILED-UNIT-POSTINSTALL-001 (so a
+	// transient exporter exit-2 cannot DEGRADE the install — D-EXPORTER-
+	// SETTLE-WINDOW, v1.135).
+	FailedAuxiliaryUnits []FailedUnitPostInstall
 
 	// FailedUnitQueryError mirrors SystemdPayloadInputs.FailedUnitQueryError
 	// for the assertion-side detail message. When non-empty,
@@ -319,10 +353,15 @@ func ValidateInstalledSystemdPayload(in SystemdPayloadInputs) SystemdPayloadVali
 		if detail == "" {
 			detail = strings.TrimSpace(f.Active + " " + f.Sub)
 		}
-		res.FailedUnits = append(res.FailedUnits, FailedUnitPostInstall{
-			Unit:   f.Unit,
-			Detail: detail,
-		})
+		entry := FailedUnitPostInstall{Unit: f.Unit, Detail: detail}
+		// v1.135 D-EXPORTER-SETTLE-WINDOW: route auxiliary (metrics/
+		// observability) failures into a separate non-fatal bucket so they
+		// do not flip FailedUnitsOK(). Protection units stay in FailedUnits.
+		if IsAuxiliaryUnit(f.Unit) {
+			res.FailedAuxiliaryUnits = append(res.FailedAuxiliaryUnits, entry)
+			continue
+		}
+		res.FailedUnits = append(res.FailedUnits, entry)
 	}
 
 	res.OK = res.ExecStartOK() && res.TimerPairOK() && res.PayloadInventoryOK() && res.FailedUnitsOK()
