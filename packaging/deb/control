@@ -27,11 +27,11 @@ Depends: ${shlibs:Depends},
          gawk,
          socat,
          iproute2,
+         logrotate,
          polkitd | policykit-1
 Recommends: acl,
             dnsutils,
             mailutils,
-            logrotate,
             netmask,
             whiptail
 Description: Open-source Linux IPS and nftables firewall manager

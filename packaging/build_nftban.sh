@@ -313,6 +313,10 @@ Requires:       bc
 Requires:       gawk
 Requires:       socat
 Requires:       polkit
+# v1.137 (log-durability): logrotate is the rotation mechanism for
+# /etc/logrotate.d/nftban*. Previously undeclared, so a minimal host without it
+# never rotated nftban logs → disk-fill. Make the system rotator a hard dependency.
+Requires:       logrotate
 # ACL required on EL10/Fedora (not in default minimal install)
 %if 0%{?fedora} || 0%{?el10}
 Requires:       acl
@@ -1396,7 +1400,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, polkitd | policykit-1
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
 Recommends: dnsutils, mailutils, netmask, whiptail
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
