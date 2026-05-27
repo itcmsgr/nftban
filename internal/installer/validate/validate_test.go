@@ -87,6 +87,11 @@ func seedCompletePayloadInventory(mock *executor.MockExecutor) {
 	// gatherer fails closed (correct production behavior, but not the
 	// scenario these existing happy-path tests exercise).
 	mock.ExistingCommands["systemctl"] = true
+	// v1.135: RunAssertions now includes core_timers_active_or_scheduled_ok —
+	// mark the critical maintenance timer enabled+active so the happy-path mock
+	// stays "all passing" (mirrors the payload_inventory_ok seeding pattern).
+	mock.Services["nftban-maintenance.timer"] = true
+	mock.ServicesEnabled["nftban-maintenance.timer"] = true
 }
 
 func TestRunAssertions_AllPass(t *testing.T) {

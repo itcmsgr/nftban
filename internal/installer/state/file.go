@@ -128,6 +128,11 @@ func (sf *StateFile) Path() string {
 // filesystem is NOT written. This allows dry-run orchestrators to reuse
 // phase functions that call Transition without tripping the
 // observational-path Stop Condition (PR-22B boundary repair).
+// degradedReasonFallback is used when a DEGRADED transition is handed an empty
+// reason, so FAILURE_REASON is never blank for a completed-with-issues install
+// (v1.135 scope §5: every DEGRADED has a non-empty machine-readable reason).
+const degradedReasonFallback = "degraded: post-install assertions failed (reason unavailable)"
+
 func (sf *StateFile) Transition(newState InstallState, phase Phase, reason string) error {
 	sf.State = newState
 	sf.PhaseReached = string(phase)
@@ -149,6 +154,13 @@ func (sf *StateFile) Transition(newState InstallState, phase Phase, reason strin
 		// current reason for DEGRADED so FAILURE_REASON= is populated in the
 		// state file and report() can render the "Issues:" line for the operator.
 		if newState == StateDegraded {
+			// v1.135 (scope §5): a DEGRADED terminal must NEVER carry an empty
+			// FAILURE_REASON. phaseValidate always supplies a non-empty reason,
+			// but guard against any future caller passing "" so the operator
+			// always sees a machine-readable cause.
+			if reason == "" {
+				reason = degradedReasonFallback
+			}
 			sf.FailureReason = reason
 		}
 	}

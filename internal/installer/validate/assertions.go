@@ -117,6 +117,11 @@ func RunAssertionsWithOpts(exec executor.Executor, sshPort int, log *logging.Log
 		assertFailedUnitsPostInstall(spr, log),
 	)
 
+	// v1.135 CORE-TIMER-ENABLED-001: critical core timers must be enabled +
+	// active/scheduled (or NFTBAN_RECONCILE_CORE_TIMERS=false — intentional).
+	tin := GatherTimerInputs(exec, log)
+	results = append(results, assertCriticalTimersEnabled(ValidateCriticalTimers(tin), log))
+
 	// PR26.2: PANEL-SURVIVAL-001. The framework runs registered
 	// adapters and produces a Fatal verdict per policy; failure
 	// blocks StateCommitted via the existing AllPassed gate.
@@ -356,6 +361,26 @@ func assertSystemdPayloadInventory(spr SystemdPayloadValidationResult, log *logg
 	r.Detail = "nftban-owned paths not in payload inventory: " + strings.Join(parts, "; ")
 	log.Warn("ASSERT systemd_payload_inventory_ok: FAIL — %d unknown: %s",
 		len(spr.UnknownPayloadRefs), strings.Join(parts, "; "))
+	return r
+}
+
+// assertCriticalTimersEnabled — CORE-TIMER-ENABLED-001 (v1.135). A critical
+// core timer (e.g. nftban-maintenance.timer) that is not enabled + active must
+// DEGRADE the install, not land COMMITTED. NFTBAN_RECONCILE_CORE_TIMERS=false
+// is an intentional opt-out (Skipped → PASS). The Detail names the timer(s) so
+// it reaches FAILURE_REASON via phaseValidate.
+func assertCriticalTimersEnabled(tvr TimerValidationResult, log *logging.Logger) AssertionResult {
+	r := AssertionResult{Name: "core_timers_active_or_scheduled_ok", Passed: tvr.OK}
+	if r.Passed {
+		if tvr.Skipped {
+			log.Debug("ASSERT core_timers_active_or_scheduled_ok: PASS (NFTBAN_RECONCILE_CORE_TIMERS=false — intentional)")
+		} else {
+			log.Debug("ASSERT core_timers_active_or_scheduled_ok: PASS")
+		}
+		return r
+	}
+	r.Detail = "critical core timer(s) not enabled+active: " + strings.Join(tvr.Missing, ", ")
+	log.Warn("ASSERT core_timers_active_or_scheduled_ok: FAIL — %s", r.Detail)
 	return r
 }
 

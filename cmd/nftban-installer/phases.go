@@ -584,7 +584,21 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 
 	// Still failing after auto-fix → DEGRADED (INV-I-008)
 	failed2 := validate.FailedNames(results2)
-	reason := "failed assertions after safe auto-fix: " + strings.Join(failed2, ", ")
+	// v1.135: include each failing assertion's Detail (when present) so the
+	// specific cause — e.g. the timer named by core_timers_active_or_scheduled_ok
+	// — reaches FAILURE_REASON, not just the bare assertion name.
+	var reasonParts []string
+	for _, r := range results2 {
+		if r.Passed {
+			continue
+		}
+		if r.Detail != "" {
+			reasonParts = append(reasonParts, r.Name+" ("+r.Detail+")")
+		} else {
+			reasonParts = append(reasonParts, r.Name)
+		}
+	}
+	reason := "failed assertions after safe auto-fix: " + strings.Join(reasonParts, "; ")
 	log.Warn("VALIDATE_2: %d assertions still failed — DEGRADED: %s", len(failed2), reason)
 	return sf.Transition(state.StateDegraded, state.PhaseValidate, reason)
 }

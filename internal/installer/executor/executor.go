@@ -148,6 +148,11 @@ type Executor interface {
 	// ServiceActive returns true if the systemd unit is active.
 	ServiceActive(unit string) bool
 
+	// ServiceEnabled returns true if the systemd unit is enabled
+	// (systemctl is-enabled exit 0). Used by the v1.135 install_state
+	// critical-timer assertion.
+	ServiceEnabled(unit string) bool
+
 	// ServiceEnable enables a systemd unit.
 	ServiceEnable(unit string) error
 
