@@ -22,10 +22,12 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/banlog"
+	"github.com/itcmsgr/nftban/internal/persistence"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
@@ -33,8 +35,9 @@ import (
 type BanEntry struct {
 	Timestamp time.Time
 	IP        string
-	Jail      string
+	Jail      string // BLC-1 SOURCE field
 	Reason    string
+	Status    string // BLC-1 STATUS field (BANNED/UNBANNED/RESYNC)
 }
 
 // LogTempBan logs a temporary ban to the tracking file for escalation tracking.
@@ -102,8 +105,10 @@ func CountRecentBans(logPath, ip string, period time.Duration) (int, error) {
 			continue // Skip malformed lines
 		}
 
-		// Count only bans for this IP after the cutoff time
-		if entry.IP == ip && entry.Timestamp.After(cutoff) {
+		// Count only BANNED events for this IP after the cutoff time.
+		// (BLC-1 also logs UNBANNED/RESYNC rows for the same IP — those are
+		// not bans and must not inflate the repeat-offender count.)
+		if entry.IP == ip && entry.Status == banlog.StatusBanned && entry.Timestamp.After(cutoff) {
 			count++
 		}
 	}
@@ -115,55 +120,57 @@ func CountRecentBans(logPath, ip string, period time.Duration) (int, error) {
 	return count, nil
 }
 
-// parseBanEntry parses a log line into a BanEntry
-// Format: "2025-11-27T10:00:00Z 1.2.3.4 nftban-sshd SSH brute force"
+// parseBanEntry parses a canonical BLC-1 bans.log line into a BanEntry.
+//
+// D-UXV-16 fix: bans.log is written by internal/banlog in BLC-1 pipe format
+// (DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID|TIMEOUT|CLASS), where DATE
+// is "2006-01-02", TIME is "15:04:05", both in local time (see banlog
+// writeEntryFull). The pre-fix parser used strings.Fields + RFC3339 — the
+// long-dead space-delimited format — so it failed on EVERY BLC-1 row, making
+// CountRecentBans return 0 for every IP and silently disabling repeat-offender
+// escalation. BLC-1 is now canonical; the legacy space format is not parsed.
 func parseBanEntry(line string) (*BanEntry, error) {
-	parts := strings.Fields(line)
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("invalid log line: %s", line)
+	fields := strings.Split(line, "|")
+	if len(fields) < 6 {
+		return nil, fmt.Errorf("not a BLC-1 bans.log line: %q", line)
 	}
 
-	timestamp, err := time.Parse(time.RFC3339, parts[0])
+	timestamp, err := time.ParseInLocation("2006-01-02 15:04:05", fields[0]+" "+fields[1], time.Local)
 	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp: %w", err)
+		return nil, fmt.Errorf("invalid BLC-1 timestamp %q %q: %w", fields[0], fields[1], err)
 	}
 
 	reason := ""
-	if len(parts) > 3 {
-		reason = strings.Join(parts[3:], " ")
+	if len(fields) > 6 {
+		reason = fields[6]
 	}
 
 	return &BanEntry{
 		Timestamp: timestamp,
-		IP:        parts[1],
-		Jail:      parts[2],
+		IP:        fields[3],
+		Jail:      fields[2],
 		Reason:    reason,
+		Status:    fields[5],
 	}, nil
 }
 
-// AddToPersistentOffenders adds an IP to the persistent offenders config file
+// AddToPersistentOffenders adds an IP to the persistent offenders config file.
+//
+// D-UXV-17 fix: this used an UNLOCKED O_APPEND write that raced the persistence
+// package's flock+temp+rename writer on the SAME file
+// (blacklist.d/30-persistent-offenders.conf) — a concurrent rename could clobber
+// the appended line, and the two paths emitted different comment formats. It now
+// delegates to persistence.PersistBan, the single canonical writer (stable-lock
+// flock + atomic temp+rename + IP dedup + normalized "IP  # reason" format), so
+// there is exactly ONE writer path for that file.
 func AddToPersistentOffenders(confPath, ip, reason string) error {
-	// Check if already in file
-	exists, err := isInFile(confPath, ip)
-	if err != nil {
-		return err
+	// confPath is <configDir>/blacklist.d/<file>; PersistBan takes the config
+	// root and derives blacklist.d/30-persistent-offenders.conf for source
+	// "persistent" (see persistence fileMapping).
+	configDir := filepath.Dir(filepath.Dir(confPath))
+	if _, _, err := persistence.PersistBan(configDir, ip, reason, "persistent"); err != nil {
+		return fmt.Errorf("failed to persist offender %s: %w", ip, err)
 	}
-	if exists {
-		return nil // Already persistent
-	}
-
-	// Append to file (TOCTOU-safe)
-	f, err := safety.SafeOpenFile(confPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open persistent offenders file: %w", err)
-	}
-	defer f.Close()
-
-	line := fmt.Sprintf("%s  # persistent offender: %s\n", ip, reason)
-	if _, err := f.WriteString(line); err != nil {
-		return fmt.Errorf("failed to write to persistent offenders file: %w", err)
-	}
-
 	return nil
 }
 
@@ -185,32 +192,4 @@ func LogPersistentOffender(logPath, ip, jail string, banCount int) error {
 	}
 
 	return nil
-}
-
-// isInFile checks if an IP already exists in a file
-func isInFile(path, ip string) (bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		// Skip comments and empty lines
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		// Extract IP (first field)
-		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == ip {
-			return true, nil
-		}
-	}
-
-	return false, scanner.Err()
 }

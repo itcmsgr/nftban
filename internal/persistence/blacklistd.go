@@ -100,19 +100,33 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 		return "", "", fmt.Errorf("failed to create blacklist.d: %w", err)
 	}
 
-	// Open file with O_RDWR|O_CREATE for locking and reading
-	f, err := os.OpenFile(targetFile, os.O_RDWR|os.O_CREATE, 0640)
+	// D-UXV-17: serialize the entire read-modify-rename on a STABLE sibling
+	// lockfile that is NEVER renamed. Flocking targetFile's own fd is unsafe
+	// here because the atomic rename below replaces the inode — a concurrent
+	// writer that opens+flocks the new inode is not excluded and can clobber
+	// this write (e.g. the old unlocked AddToPersistentOffenders append, now
+	// also routed through PersistBan). The ".lock" suffix is not "*.conf" so
+	// the blacklist loaders (internal/blacklist/loader.go, shell *.conf globs)
+	// never parse it as IPs.
+	lockPath := targetFile + ".lock"
+	lockF, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0640) // #nosec G304 -- path derived from validated mapping
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open lock %s: %w", lockPath, err)
+	}
+	defer lockF.Close()
+	// G115: Fd() returns uintptr, but a file descriptor always fits in int.
+	if err := syscall.Flock(int(lockF.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115
+		return "", "", fmt.Errorf("failed to lock %s: %w", lockPath, err)
+	}
+	defer func() { _ = syscall.Flock(int(lockF.Fd()), syscall.LOCK_UN) }() // #nosec G115
+
+	// Open the target read-only for the dedup scan (create if missing). The
+	// lockfile above — not this fd — provides mutual exclusion across the rename.
+	f, err := os.OpenFile(targetFile, os.O_RDONLY|os.O_CREATE, 0640) // #nosec G304 -- path derived from validated mapping
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open %s: %w", targetFile, err)
 	}
 	defer f.Close()
-
-	// Acquire exclusive lock
-	// G115: f.Fd() returns uintptr, but file descriptors are small positive ints (safe)
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -: fd always fits in int
-		return "", "", fmt.Errorf("failed to lock %s: %w", targetFile, err)
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -: fd always fits in int
 
 	// Read all existing lines, checking for duplicate IP
 	var lines []string
