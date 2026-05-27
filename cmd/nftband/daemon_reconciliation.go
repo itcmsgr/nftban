@@ -27,6 +27,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/nftlock"
 	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/rulefp"
 )
 
 // startPeriodicReconciliation runs reconciliation on a schedule (v1.34.0)
@@ -77,6 +78,11 @@ func (d *Daemon) runReconciliation(wrapper *opqueue.NFTBackendWrapper) {
 
 	// Check whitelist-blacklist overlap (hash sets only — interval sets too expensive)
 	d.checkWhitelistOverlap(wrapper)
+
+	// SEC-RULEFP (v1.138): verify the live ruleset against the fingerprint baseline.
+	// Record-only — never mutate rules, never refresh the baseline here, never
+	// downgrade protection. A mismatch is logged for the operator / health to act on.
+	d.checkRulesetFingerprint()
 
 	duration := time.Since(start)
 
@@ -171,6 +177,24 @@ func (d *Daemon) checkWhitelistOverlap(wrapper *opqueue.NFTBackendWrapper) {
 	metrics.SetWhitelistOverlapCount(overlapCount)
 	if overlapCount > 0 {
 		log.Printf("[RECONCILE] Whitelist-blacklist overlap: %d IPs in both sets", overlapCount)
+	}
+}
+
+// checkRulesetFingerprint (SEC-RULEFP, v1.138) verifies the live nftban ruleset
+// against the captured fingerprint baseline during periodic reconciliation.
+// It is RECORD-ONLY: it logs a mismatch for the operator / health to act on, and
+// MUST NOT mutate rules, refresh the baseline, or downgrade protection — otherwise
+// an injected rule could silently become the new "truth".
+func (d *Daemon) checkRulesetFingerprint() {
+	status, expected, actual, err := rulefp.VerifyLive(d.ctx, rulefp.BaselineFile)
+	switch status {
+	case rulefp.StatusMismatch:
+		log.Printf("[RULEFP] MISMATCH — live ruleset differs from baseline (possible rule injection / chain-policy flip); expected=%s actual=%s (run 'nftban-core verify-rules' to inspect; 'nftban firewall rebuild' to re-baseline a trusted ruleset)", expected, actual)
+	case rulefp.StatusNFTUnavailable:
+		log.Printf("[RULEFP] verify skipped during reconcile: %v", err)
+	case rulefp.StatusBaselineMissing, rulefp.StatusOK:
+		// OK: nothing to report. BASELINE_MISSING: no baseline captured yet
+		// (a successful apply/rebuild will capture it) — not logged each cycle.
 	}
 }
 

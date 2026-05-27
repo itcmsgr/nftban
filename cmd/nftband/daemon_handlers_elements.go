@@ -26,6 +26,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/persistence"
+	"github.com/itcmsgr/nftban/internal/rulefp"
 	"github.com/itcmsgr/nftban/internal/safety"
 )
 
@@ -177,6 +178,17 @@ func (d *Daemon) handleApplyRulesetRequest(params map[string]any) SocketResponse
 	})
 	if err != nil {
 		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	// SEC-RULEFP (v1.138): on a trusted successful apply (NOT a dry-run --check),
+	// (re)capture the ruleset fingerprint baseline. Capture failure is logged but
+	// MUST NOT fail the apply nor corrupt active firewall state — the ruleset is
+	// already applied; verify-rules would just report BASELINE_MISSING until the
+	// next successful capture. Never captured on a verify path (no self-heal).
+	if !check {
+		if cerr := rulefp.CaptureLive(d.ctx, rulefp.BaselineFile); cerr != nil {
+			log.Printf("[RULEFP] baseline capture after apply failed (non-fatal): %v", cerr)
+		}
 	}
 
 	action := "applied"
