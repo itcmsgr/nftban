@@ -632,14 +632,24 @@ collect_all_metrics() {
                 local _scale_age
                 _scale_age=$(( $(date +%s) - $(stat -c %Y "$_scale_cache" 2>/dev/null || echo 0) ))
                 if [[ "$_scale_age" -lt 120 ]]; then
-                    # Per-set scale level (numeric: 0=NORMAL, 1=LARGE, ..., 5=CRITICAL_SCALE)
-                    while IFS=$'\t' read -r _sname _snum; do
-                        [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum $timestamp\n"
-                    done < <(jq -r '.sets | to_entries[] | [.key, (.value.scale_num | tostring)] | @tsv' "$_scale_cache" 2>/dev/null)
+                    # v1.136.1 (Phase 2): /run/nftban/set_counts.json is daemon-written
+                    # and can be read mid-write (truncated/invalid JSON). jq then exits
+                    # non-zero; under `set -Eeuo pipefail` the unguarded global-scale
+                    # assignment below was the fatal exit-2 (pinned on monitor run
+                    # #73565 by the v1.136.0 ERR trap). Validate the cache once; on a
+                    # transient invalid read emit the safe default (global=NORMAL) and
+                    # skip the per-set rows this cycle instead of aborting the run.
+                    local _global_scale="NORMAL"
+                    if jq -e . "$_scale_cache" >/dev/null 2>&1; then
+                        # Per-set scale level (numeric: 0=NORMAL, 1=LARGE, ..., 5=CRITICAL_SCALE)
+                        while IFS=$'\t' read -r _sname _snum; do
+                            [[ -n "$_sname" ]] && metrics+="nftban_set_scale_level{set=\"${_sname}\"} $_snum $timestamp\n"
+                        done < <(jq -r '.sets | to_entries[] | [.key, (.value.scale_num | tostring)] | @tsv' "$_scale_cache" 2>/dev/null)
 
-                    # Global scale mode (numeric)
-                    local _global_scale
-                    _global_scale=$(jq -r '.scale_mode // "NORMAL"' "$_scale_cache" 2>/dev/null)
+                        # Global scale mode (numeric). Belt-and-suspenders default in case
+                        # the cache is rewritten between the validity check and this read.
+                        _global_scale=$(jq -r '.scale_mode // "NORMAL"' "$_scale_cache" 2>/dev/null) || _global_scale="NORMAL"
+                    fi
                     local _global_num=0
                     case "$_global_scale" in
                         LARGE) _global_num=1 ;; VERY_LARGE) _global_num=2 ;; HUGE) _global_num=3 ;;
