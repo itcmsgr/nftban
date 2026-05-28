@@ -1470,8 +1470,21 @@ collect_all_metrics() {
     # 2. JSON cache (Single Source of Truth for nftban stats and API)
     # This structure EXACTLY matches what nftban_stats.sh dashboard needs
     local json_cache="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}/stats.json"
+    # v1.139.1 hotfix (FHS / distro-compat): the original fallback
+    # `hostname -f 2>/dev/null || hostname` called the SAME missing binary in
+    # both branches — on hosts that ship no `hostname` binary (CentOS Stream 10
+    # / RHEL 10 base install) the exporter would abort rc=127. The fallback
+    # chain below adds three real fallbacks: hostnamectl --static (systemd-
+    # native), uname -n (POSIX, always available), /etc/hostname (kernel-set
+    # nodename source), plus a literal "unknown" last-resort guard so the
+    # exporter never exits 127 on this line regardless of host shape.
     local hostname
-    hostname=$(hostname -f 2>/dev/null || hostname)
+    hostname=$(hostname -f 2>/dev/null \
+        || hostname 2>/dev/null \
+        || hostnamectl --static 2>/dev/null \
+        || uname -n 2>/dev/null \
+        || cat /etc/hostname 2>/dev/null \
+        || echo unknown)
 
     # Build JSON from collected metrics - SINGLE SOURCE OF TRUTH
     # All fields align with nftban_stats.sh generate_dashboard() requirements
