@@ -1102,6 +1102,13 @@ file_permissions:
     group: nftban
     recursive: true
     exclude: "/var/log/nftban/suricata"
+    # v1.139 PR-B (FHS-UNGEN-LOGROTATE-CREATE): authoritative for the
+    # logrotate `create` directive on stanzas covering /var/log/nftban/*
+    # (excluding /var/log/nftban/suricata/*). Bridge-tested by
+    # internal/nftbanconf/logs_logrotate_create_parity_test.go — every
+    # matching `create MODE OWNER GROUP` line in
+    # install/config/nftban.logrotate must equal this triple.
+    logrotate_create: true
 
   # /var/log/nftban/suricata - suricata writes
   - path: /var/log/nftban/suricata
@@ -1110,3 +1117,7 @@ file_permissions:
     owner: suricata
     group: nftban
     recursive: true
+    # v1.139 PR-B: authoritative for the logrotate `create` directive on
+    # stanzas under /var/log/nftban/suricata/* in
+    # install/config/nftban-suricata.logrotate. Parity-tested.
+    logrotate_create: true
