@@ -246,6 +246,17 @@ nftban_health_check_conflicting_firewalls() {
     fi
 
     NFTBAN_HEALTH_RESULTS["conflicting_firewalls"]=$status
+
+    # v1.138 PR-B (SEC-BYPASS-ALERT): emit detected WARNING/CRITICAL firewall
+    # conflicts to service-alerts.log so the operator-actionable signal is no
+    # longer trapped inside in-memory health arrays. Per-service throttling
+    # (default 3600s, override via NFTBAN_ALERT_THROTTLE_SECONDS) prevents spam
+    # across repeated health-timer firings. Best-effort — never aborts the
+    # health check on emitter failure.
+    if declare -F nftban_emit_firewall_conflict_alerts >/dev/null 2>&1; then
+        nftban_emit_firewall_conflict_alerts || true
+    fi
+
     return $status
 }
 

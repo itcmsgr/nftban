@@ -618,6 +618,95 @@ nftban_severity_to_string() {
     esac
 }
 
+# =============================================================================
+# SERVICE-ALERTS EMISSION (v1.138 PR-B, SEC-BYPASS-ALERT)
+# =============================================================================
+# Emit firewall conflict/bypass alerts to service-alerts.log when severity is
+# WARNING (2) or CRITICAL (3). No emission for NONE (0) or INFO (1) — INFO is
+# the deliberate cPHulk-coexists state and is not a real alert.
+#
+# Reads (no detector logic here, no kernel reads): the existing globals
+#   NFTBAN_FIREWALL_CONFLICTS[]  ("TAG: detail" primary lines + indented
+#                                 "  └─ …" sub-lines from nftban_detect_*)
+#   NFTBAN_FIREWALL_SEVERITY     CONFLICT_NONE|INFO|WARNING|CRITICAL
+#
+# Writes (best-effort, never aborts the caller):
+#   ${NFTBAN_LOG_DIR}/service-alerts.log         — one deterministic line per
+#                                                   primary (non-indented) entry
+#   ${NFTBAN_DATA_DIR}/alert_throttle_firewall_<svc>
+#                                                — timestamp; reused on next run
+#                                                   for per-service throttling.
+#
+# Throttle: default 3600s; override via NFTBAN_ALERT_THROTTLE_SECONDS.
+# Namespace: `alert_throttle_firewall_<svc>` — distinct from the OnFailure
+# worker's `alert_throttle_<unit>` so the two cannot collide.
+#
+# Line format (deterministic, grep-testable, non-metric):
+#   [YYYY-MM-DD HH:MM:SS] [SEVERITY] [FW-CONFLICT] service=<name> detail=<short>
+nftban_emit_firewall_conflict_alerts() {
+    # Guard: severity below WARNING → no alert (INFO covers cPHulk coexists).
+    local severity="${NFTBAN_FIREWALL_SEVERITY:-0}"
+    [[ "$severity" -ge "${CONFLICT_WARNING:-2}" ]] || return 0
+    [[ "${#NFTBAN_FIREWALL_CONFLICTS[@]}" -gt 0 ]] || return 0
+
+    local log_dir data_dir alert_log throttle_secs
+    log_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+    data_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+    alert_log="${log_dir}/service-alerts.log"
+    throttle_secs="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
+
+    local severity_str now timestamp
+    severity_str="$(nftban_severity_to_string "$severity")"
+    now="$(date +%s)"
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    # Soft-fail mkdirs: never abort the health check on a permission / fs error.
+    mkdir -p "$log_dir" 2>/dev/null || return 0
+    mkdir -p "$data_dir" 2>/dev/null || return 0
+
+    local entry tag detail svc key throttle_file last_alert age
+    for entry in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
+        # Skip indented sub-entries ("  └─ …", "  CRITICAL: …" produced by
+        # detectors as continuation lines) — only primary "TAG: detail" lines.
+        [[ "$entry" =~ ^[[:space:]] ]] && continue
+
+        # Primary line shape: "TAG: detail" where TAG is uppercase + [-_0-9].
+        if [[ "$entry" =~ ^([A-Z][A-Z0-9_-]*):[[:space:]]+(.+)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+            detail="${BASH_REMATCH[2]}"
+        else
+            continue
+        fi
+
+        svc="${tag,,}"
+        # Throttle key — same sanitization rule as nftban-service-alert worker.
+        key="${svc//[^a-zA-Z0-9_]/_}"
+        throttle_file="${data_dir}/alert_throttle_firewall_${key}"
+
+        if [[ -f "$throttle_file" ]]; then
+            last_alert="$(cat "$throttle_file" 2>/dev/null || echo 0)"
+            [[ "$last_alert" =~ ^[0-9]+$ ]] || last_alert=0
+            age=$(( now - last_alert ))
+            if (( age < throttle_secs )); then
+                continue
+            fi
+        fi
+
+        # Deterministic, grep-testable line. Detail is free-form (kept short
+        # by the detector); the `[FW-CONFLICT]` tag distinguishes these lines
+        # from the OnFailure worker's diagnostic blocks in the same log.
+        printf '[%s] [%s] [FW-CONFLICT] service=%s detail=%s\n' \
+            "$timestamp" "$severity_str" "$svc" "$detail" \
+            >> "$alert_log" 2>/dev/null || continue
+
+        # Update throttle marker. Failure here is non-fatal — worst case the
+        # next run emits a duplicate.
+        echo "$now" > "$throttle_file" 2>/dev/null || true
+    done
+
+    return 0
+}
+
 nftban_report_conflicts_json() {
     # Output conflict report as JSON
     # Useful for API integration
