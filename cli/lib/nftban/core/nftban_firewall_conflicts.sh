@@ -618,6 +618,164 @@ nftban_severity_to_string() {
     esac
 }
 
+# =============================================================================
+# SERVICE-ALERTS EMISSION (v1.138 PR-B, SEC-BYPASS-ALERT)
+# =============================================================================
+# Emit firewall conflict/bypass alerts to service-alerts.log when severity is
+# WARNING (2) or CRITICAL (3). No emission for NONE (0) or INFO (1) — INFO is
+# the deliberate cPHulk-coexists state and is not a real alert.
+#
+# Reads (no detector logic here, no kernel reads): the existing globals
+#   NFTBAN_FIREWALL_CONFLICTS[]  ("TAG: detail" primary lines + indented
+#                                 "  └─ …" sub-lines from nftban_detect_*)
+#   NFTBAN_FIREWALL_SEVERITY     CONFLICT_NONE|INFO|WARNING|CRITICAL
+#
+# Writes (best-effort, never aborts the caller):
+#   ${NFTBAN_LOG_DIR}/service-alerts.log              — one deterministic line
+#                                                       per primary entry
+#   ${NFTBAN_DATA_DIR}/alert_throttle_firewall_<svc>  — last-emit unix timestamp
+#   ${NFTBAN_DATA_DIR}/alert_throttle_firewall_<svc>.sev  — last-emit severity
+#                                                            (R3 escalation gate)
+#   ${NFTBAN_DATA_DIR}/alert_throttle_firewall_<svc>.lock — per-service flock
+#                                                            (R1 parallel safety)
+#
+# Throttle: default 3600s; override via NFTBAN_ALERT_THROTTLE_SECONDS.
+# Namespace: `alert_throttle_firewall_<svc>` — distinct from the OnFailure
+# worker's `alert_throttle_<unit>` so the two cannot collide.
+#
+# Audit residuals R1–R7 from V1_138_PR_B_DUPLICATE_ALERT_LOGS_THIRD_AUDIT.md
+# are closed in this implementation:
+#   R1 — per-service flock around the read/check/emit/write critical section,
+#        so two concurrent invocations (timer + manual `nftban health`) cannot
+#        both observe a stale throttle and both emit. Falls back lock-free if
+#        the `flock` binary is unavailable.
+#   R2 — corrupt/non-numeric throttle file content is treated as stale (0).
+#   R3 — severity escalation (WARNING→CRITICAL) inside the throttle window
+#        re-emits exactly once and stamps the higher severity. The reverse
+#        (CRITICAL stays CRITICAL, or CRITICAL→WARNING) stays throttled.
+#   R4 — future-dated throttle timestamps (clock skew) are clamped to 0 so
+#        the alert is not silently suppressed forever.
+#   R5 — same TAG appearing twice in one array is correctly deduped within
+#        the run (first entry stamps throttle; second entry hits fresh
+#        throttle). Documented + tested.
+#   R6 — non-writable log path: the function exits 0 cleanly (best-effort
+#        contract preserved).
+#   R7 — sanitizer rule below is **firewall-namespace-specific**: it accepts
+#        [a-zA-Z0-9_] and collapses everything else (including '-') to '_'.
+#        This deliberately differs from the OnFailure worker's regex (which
+#        collapses '_' too); both remain namespace-correct because the prefix
+#        `alert_throttle_firewall_` already disambiguates from the worker's
+#        `alert_throttle_`.
+#
+# Line format (deterministic, grep-testable, non-metric):
+#   [YYYY-MM-DD HH:MM:SS] [SEVERITY] [FW-CONFLICT] service=<name> detail=<short>
+nftban_emit_firewall_conflict_alerts() {
+    # Guard: severity below WARNING → no alert (INFO covers cPHulk coexists).
+    local severity="${NFTBAN_FIREWALL_SEVERITY:-0}"
+    [[ "$severity" -ge "${CONFLICT_WARNING:-2}" ]] || return 0
+    [[ "${#NFTBAN_FIREWALL_CONFLICTS[@]}" -gt 0 ]] || return 0
+
+    local log_dir data_dir alert_log throttle_secs
+    log_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+    data_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+    alert_log="${log_dir}/service-alerts.log"
+    throttle_secs="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
+
+    local severity_str now timestamp
+    severity_str="$(nftban_severity_to_string "$severity")"
+    now="$(date +%s)"
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    # R6: soft-fail mkdirs — non-writable log/data dir returns 0 (the contract
+    # is "never abort the health check on emitter trouble"). Lab-tested by
+    # pointing NFTBAN_LOG_DIR at a read-only /proc/sys path.
+    mkdir -p "$log_dir" 2>/dev/null || return 0
+    mkdir -p "$data_dir" 2>/dev/null || return 0
+
+    # Detect flock once per invocation. If absent, fall back to lock-free
+    # best-effort emission (race-prone — accepted for hosts without util-linux).
+    local _have_flock=0
+    if command -v flock >/dev/null 2>&1; then
+        _have_flock=1
+    fi
+
+    local entry tag detail svc key throttle_file sev_file
+    for entry in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
+        # Skip indented sub-entries ("  └─ …", "  CRITICAL: …" produced by
+        # detectors as continuation lines) — only primary "TAG: detail" lines.
+        [[ "$entry" =~ ^[[:space:]] ]] && continue
+
+        # Primary line shape: "TAG: detail" where TAG is uppercase + [-_0-9].
+        if [[ "$entry" =~ ^([A-Z][A-Z0-9_-]*):[[:space:]]+(.+)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+            detail="${BASH_REMATCH[2]}"
+        else
+            continue
+        fi
+
+        svc="${tag,,}"
+        # R7: firewall-namespace sanitizer (keeps underscore; see header).
+        key="${svc//[^a-zA-Z0-9_]/_}"
+        throttle_file="${data_dir}/alert_throttle_firewall_${key}"
+        sev_file="${throttle_file}.sev"
+
+        # R1: critical section under per-service flock. Subshell so `exit`
+        # cleanly releases the lock (FD 9 closes on subshell end). Errors are
+        # swallowed by the outer `|| true` so one bad service can't break others.
+        (
+            if (( _have_flock )); then
+                # Non-blocking: another invocation holds this service's lock
+                # → skip this service in this run.
+                flock -n 9 || exit 2
+            fi
+
+            # R2: parse last-emit timestamp; non-numeric / unreadable → stale (0).
+            # R4: future-dated last_alert (clock skew) → clamp to 0 (stale).
+            local last_alert=0 raw_ts age
+            if [[ -f "$throttle_file" ]]; then
+                raw_ts="$(cat "$throttle_file" 2>/dev/null || true)"
+                if [[ "$raw_ts" =~ ^[0-9]+$ ]]; then
+                    last_alert=$raw_ts
+                fi
+            fi
+            if (( last_alert > now )); then
+                last_alert=0
+            fi
+
+            # R3: parse prior severity; non-numeric / missing → 0.
+            local prior_sev=0 raw_sev
+            if [[ -f "$sev_file" ]]; then
+                raw_sev="$(cat "$sev_file" 2>/dev/null || true)"
+                if [[ "$raw_sev" =~ ^[0-9]+$ ]]; then
+                    prior_sev=$raw_sev
+                fi
+            fi
+
+            # Emit decision:
+            #   - if age >= throttle_secs: emit (window expired).
+            #   - else if severity > prior_sev: emit (escalation override).
+            #   - else: throttle (in-window, no escalation).
+            age=$(( now - last_alert ))
+            if (( age < throttle_secs )) && (( severity <= prior_sev )); then
+                exit 3
+            fi
+
+            # Deterministic, grep-testable, non-metric line.
+            printf '[%s] [%s] [FW-CONFLICT] service=%s detail=%s\n' \
+                "$timestamp" "$severity_str" "$svc" "$detail" \
+                >> "$alert_log" 2>/dev/null || exit 4
+
+            # Stamp throttle + severity. Failure here is non-fatal — the worst
+            # case is a duplicate on the next run.
+            echo "$now" > "$throttle_file" 2>/dev/null || true
+            echo "$severity" > "$sev_file" 2>/dev/null || true
+            exit 0
+        ) 9>>"${throttle_file}.lock" 2>/dev/null || true
+    done
+
+    return 0
+}
+
 nftban_report_conflicts_json() {
     # Output conflict report as JSON
     # Useful for API integration
