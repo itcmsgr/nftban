@@ -11,6 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.139.1] - 2026-05-28 — Hostname-fallback hotfix (PRE-EXISTING distro-compat)
+
+**Codename:** `V1_139_1_HOSTNAME_FALLBACK_HOTFIX`
+**Records:** `NFTBAN_ROADMAP/V1_139_1_{HOSTNAME_FALLBACK_HOTFIX_RECORD,UBUNTU26_INSTALL_VERIFY_RECORD}.md`
+**Rollout kit:** `NFTBAN_ROADMAP/139_1_ROLLOUT/` (9-host bot-runnable kit; operator-locked scope: lab2, lab4, monitor, dns1, dns2, srv1, srv2, srv3, srv4)
+
+> **Why:** the `nftban-unified-exporter`'s hostname fallback at line 1474 read `hostname=$(hostname -f 2>/dev/null || hostname)` — both branches call the SAME `hostname` binary. On hosts that ship no `hostname` binary in PATH (notably the minimal `centos-stream10` Docker base image used in CI's Fresh-install Namespace Guard), both branches failed `command not found` (rc=127) and the exporter aborted. Pre-existing since git-blame `97b2c9297` (2026-02-04) — shipped unchanged in v1.137.0, v1.138.0, v1.139.0. **NOT a v1.139 regression.** Exporter is classified auxiliary at install_state (`IsAuxiliaryUnit`, v1.135), so installs reached COMMITTED on EL10 even when the exporter aborted. **Real-fleet production EL10 hosts (`srv1`, `srv4`) both have `hostname` present — in-production blast radius = zero.** This is defensive hardening.
+
+### Hotfix — single PR ([#720](https://github.com/itcmsgr/nftban/pull/720), sq `b050f7ab`)
+- Extends the fallback chain at `cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh:1474` to 6 links: `hostname -f || hostname || hostnamectl --static || uname -n || cat /etc/hostname || echo unknown`.
+  - `hostnamectl --static` covers EL10 minimal (kept systemd; dropped `hostname` binary).
+  - `uname -n` is POSIX-always.
+  - `/etc/hostname` is the kernel-set nodename source.
+  - `echo unknown` is the bulletproof terminator — the line never exits 127 regardless of host shape.
+- Behavior preserved on Debian/Ubuntu/EL9 — first link still wins where `hostname` is present.
+- New hermetic test `cli/lib/nftban/tests/hostname_fallback_v1_139_1_test.sh` (10 assertions): T1–T6 source-link asserts, T7–T9 PATH-shadow runtime simulations (T7 hostname-shadowed → `hostnamectl` returns real value; T8 hostname+hostnamectl shadowed → `uname -n` returns real value; T9 all 4 fallbacks shadowed → literal `unknown`, rc=0 never 127), T10 regression guard against the original two-call-of-same-binary pattern.
+- **Daemon byte-identical to v1.139.0** (no Go touched). Schema 1.83.0 frozen. 2 files changed (146 insertions, 1 deletion).
+
+### Validation
+- Verified `V1_139_1_HOTFIX_VERIFY_PASS_DEB_AND_RPM` on **lab2** (Ubuntu 24.04 DEB / Go 1.25 / shellcheck 0.9 / mikefarah yq v4.44.1) + **lab4** (AlmaLinux 9.8 EL9 RPM / Go 1.25 / shellcheck 0.10): `bash -n` + `shellcheck` clean; 10/10 test PASS; `generate-fhs-outputs.sh --check` rc=0 (v1.139 FHS gates intact); `go vet`/`go build`/`go test ./internal/nftbanconf/...` PASS (PR-B parity test intact); `staticcheck@v0.7.0 ./...` clean; `gosec -nosec ./...` 0 new findings; DEB + EL9 RPM still-build (12 MB each); PATH-shadow runtime proofs all 3 patterns confirmed.
+- Verified `V1_139_1_HOTFIX_UBUNTU26_VERIFY_PASS` on **Ubuntu 26.04 LTS "resolute"** (`203.0.113.155`, Hetzner FSN1 fresh VPS, systemd 259, nftables 1.1.6) via the CI-built `nftban-ubuntu24.04-amd64.deb` (md5 `1df7e45deb75ea793f829f1977d3c129`): standard `apt-get install` + `NFTBAN_TAKEOVER=1 nftban-installer --repair` reached `INSTALL_STATE=COMMITTED` / `AUTHORITY=TAKEOVER` with 16/16 install assertions PASS; hotfix test 10/10 PASS on the host; exporter ran twice clean (rc=0); `/var/cache/nftban/metrics/stats.json.hostname = "ubuntu-4gb-fsn1-1"` correctly populated via T1; idempotency cycle (apt purge → reinstall) reached COMMITTED again. 5 Ubuntu-26-specific findings recorded as inputs to the v1.140.0 lane (missing `ubuntu-26.conf`/`ubuntu.conf` generic, `nftban uninstall` CLI wrapper absent, Ubuntu's default `inet filter` table blocks reinstall idempotency, systemd 259 path-transition warnings non-fatal, `mailutils` pulled via Recommends).
+- PR #720 CI: **50 / 2-skip / 0-fail** after one infrastructure-flake rerun on `Build NFTBan Packages` (artifact-upload intermediary 403 on `Build DEB (ubuntu22.04)` — same class as the documented container-runtime-125 flake; single `gh run rerun --failed` cleared; matches prior v1.137/v1.139 rerun precedents). All downstream test-install jobs PASS (debian12/13, ubuntu22.04/24.04, alma9, rocky9, centos-stream9, centos-stream10).
+
+### Out of scope (deferred)
+- Ubuntu 26.04 LTS as Tier-1 release target — `v1.140.0` lane (scope at `NFTBAN_ROADMAP/V1_140_0_UBUNTU26_PHASE1_TIGHT_SPEC.md`; controlling Phase-1 spec; operator-locked envelope; HOLD until v1.139.1 publishes).
+- `nftban uninstall` CLI wrapper subcommand — separate lane.
+- Ubuntu `inet filter` postinst handling (CVE-2025-NFTBAN-001 bypass-prevention guard friction) — Phase-2 behavioral.
+- `systemd-tmpfiles --create` exit 73 path-transition warnings — already classified non-fatal; FHS-spec adjacent.
+- All parked lanes (CSF-RESTORE, daemon least-privilege, Registry-2 unification, schema unfreeze, fleet least-privilege) — unchanged.
+
+### Release-prep envelope (this commit)
+Only allowed files touched in this release-prep PR: `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only; FHS body byte-unchanged). No host contact during release-prep construction.
+
+---
+
 ## [v1.139.0] - 2026-05-28 — FHS authority hardening (FHS-TMPFILES-ZZ + FHS-UNGEN-LOGROTATE-CREATE + ATG formalization)
 
 **Codename:** `V1_139_0_FHS_AUTHORITY_HARDENING`
