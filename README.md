@@ -189,10 +189,15 @@ nftban login enable
 nftban geoban enable
 
 # Common operations
-nftban ban 1.2.3.4
+nftban ban 1.2.3.4                       # permanent ban
+nftban ban 1.2.3.4 --timeout 3600        # 1-hour ban (positive integer seconds)
 nftban unban 1.2.3.4
 nftban status
 ```
+
+`--timeout` requires a positive integer (seconds) — non-integer / negative /
+zero / fractional / signed / hex / leading-zero values are rejected at parse
+time with a clear ERROR (since v1.141.0). Omit `--timeout` for a permanent ban.
 
 ---
 
@@ -295,12 +300,17 @@ All packages under `internal/` are implementation details.
 
 ## Requirements
 
-- **Linux**: Rocky/Alma/RHEL 9-10, Ubuntu 22.04+, Debian 12+
+- **Linux**: Rocky / Alma / RHEL 9–10, Ubuntu 22.04 / 24.04 / **26.04 LTS (Resolute Raccoon)**, Debian 12 / 13
 - **nftables**: 1.0+
 - **Bash**: 4.4+
 - **systemd**: 252+
 - **jq**: JSON processor
 - **Go 1.24+**: For building from source (optional)
+
+Ubuntu 26.04 LTS is **Tier-0 (fully supported)** since v1.140.0 — see the
+[Quick Install — Tier 0](#tier-0--primary-platforms) section and the
+[DEB Packages](#deb-packages-ubuntu--debian) table for the install snippet
+and `.deb` URL.
 
 ---
 

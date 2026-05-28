@@ -84,6 +84,18 @@ nftban_cmd_ban() {
                 shift 2
                 ;;
             --timeout)
+                # v1.141 PR-A (BUG-A7/A8): reject non-positive-integer timeouts at
+                # parse time, before any IPC to nftban-core / blacklist.d write /
+                # nft mutation. Prior to v1.141, "abc" / "-5" / "0" / "" / "1.5"
+                # silently propagated to nftban-core which then defaulted to
+                # permanent ban — operator surprise reproduced live in the
+                # cruel-judge review on monitor.example.test.
+                if [[ ! "${2:-}" =~ ^[1-9][0-9]*$ ]]; then
+                    echo "ERROR: --timeout requires a positive integer (seconds); got: '${2:-(missing)}'" >&2
+                    echo "Hint:  nftban ban <ip> --timeout 3600" >&2
+                    echo "       (use no --timeout for permanent ban)" >&2
+                    return 1
+                fi
                 timeout="$2"
                 shift 2
                 ;;

@@ -11,6 +11,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] — v1.141.0 PR-A: CLI parser validation + help inertness
+
+**Codename:** `V1_141_0_PR_A_CLI_PARSER_HELP`
+**Controlling scope:** `NFTBAN_ROADMAP/V1_141_0_CONSOLIDATED_HOTFIX_AND_HARDENING_SCOPE.md`
+**PR:** [#727](https://github.com/itcmsgr/nftban/pull/727)
+
+> **Why:** Two CLI safety gaps surfaced on v1.140.0 baseline. **A7/A8:**
+> `nftban ban <ip> --timeout VALUE` accepted any non-positive-integer
+> VALUE (`abc` / `-5` / `0` / `1.5` / `+10` / `1e3` / `0x10` / `01`) and
+> forwarded it to `nftban-core`, which defaulted to a **permanent ban**
+> on parse failure. **B5–B14:** twelve `nftban <cmd> [<sub>] --help`
+> surfaces ran action code before reaching their own help arm — including
+> one (`nftban export --help`) that **created an output file on disk**
+> before the user got help text. **Daemon byte-identical to v1.140.0**
+> (zero `.go` touched; shell-only). Schema 1.83.0 frozen.
+
+### Parser validation — `cmd_ban.sh`
+
+- `--timeout` now rejects every non-positive-integer VALUE at parse time
+  with a clear `ERROR: --timeout requires a positive integer (seconds)`
+  message and `Hint:` line, rc=1, **before** any IPC to `nftban-core` /
+  `/etc/nftban/blacklist.d/` write / nft mutation.
+- Regex `^[1-9][0-9]*$`. Strict-positive-integer contract: no leading
+  zeros, no signs (even `+`), no fractional / scientific / hex forms.
+- Valid values (`1`, `60`, `3600`, `86400`, etc.) unaffected.
+
+### Help inertness sweep — `cli/sbin/nftban` + four `cmd_*.sh`
+
+- **Top-level dispatcher guard** at `cli/sbin/nftban` runs before the
+  auto-loader and alias case. Covers six top-level subcommands whose cmd
+  file historically ran action code before the help arm executed
+  (`search`, `feeds`, `export`, `suricata`, `geoban`) and three phantom
+  subcommands present in the suggester list with no `cmd_*.sh` backing
+  (`install`, `uninstall`, `rebuild`).
+  - `nftban export --help` previously created an output JSON file on
+    disk (real help-inertness bug). Now rc=0, Usage text, no file write.
+- **Per-arm bypass** in `cmd_firewall.sh::firewall_reload` (B5).
+- **EUID-gate restructure** in `cmd_trust.sh::enable|disable|update` so
+  the polkit-auth check is bypassed for `-h|--help|help` (B6/B7/B8).
+- **Sub-arm bypass** in `cmd_config.sh::get|set|defaults|overrides|reset|reset-all`
+  via `_v141_config_subarg_is_help()` (B11/B12 + four sweep extras).
+
+### Dropped (operator `SELECT_V1_141_0_B9_B10_B13_B14_DROP_OR_ALIAS = drop`)
+
+- `feeds add` / `feeds remove` / `update apply` / `update channel` —
+  documented in the suggester list but with no backing code path. The
+  universal sweep test SKIPs them with the operator-named drop reason;
+  no alias is added.
+
+### Tests (all hermetic, PATH-shadow sandbox)
+
+- `tests/cli_ban_timeout_validation_test.sh` — 12 PASS / 0 FAIL.
+- `tests/cli_ban_timeout_no_mutation_test.sh` — 5 PASS / 0 FAIL.
+- `tests/cli_help_inertness_v141_test.sh` — 13 PASS / 0 FAIL.
+- `tests/cli_help_inertness_universal_test.sh` — 46 PASS / 0 FAIL / 4 SKIP.
+- `tests/rollback_help_guard_v1_139_2_test.sh` (regression) — 10/10 PASS.
+- `bash -n` on every modified shell file — 9 OK.
+- **Total: 86 PASS, 0 FAIL.**
+
+The PATH-shadow sandbox replaces every mutation binary (`nftban-core`,
+`nft`, `systemctl`, `polkitd`, package managers) with a marker-emitting
+stub that flags only **mutating** verbs. Read-only checks (`systemctl
+is-active`, `nft list`) are expected on every CLI invocation including
+help paths and are not flagged.
+
+### Forbidden-path negative control
+
+- 0 `.go` files touched.
+- 0 `internal/` / `cmd/` / `build/` / `packaging/` / `install/` /
+  `systemd/` / `schema/` / `docker/` / `.github/` / `fhs-spec.yaml`
+  changes.
+- 0 schema version bump (Schema 1.83.0 remains frozen).
+- 0 portal / metrics / Go-installer change.
+
+The release-prep envelope (`VERSION`, `STATUS.md`, `CHANGELOG.md`
+finalisation, `nftban_fhs_spec.sh` header-version regen) ships in a
+separate release-prep PR at v1.141.0 tag time.
+
+---
+
 ## [v1.140.0] - 2026-05-28 — Ubuntu 26.04 LTS Tier-1 introduction
 
 **Codename:** `V1_140_0_UBUNTU26_TIER1_INTRO`
