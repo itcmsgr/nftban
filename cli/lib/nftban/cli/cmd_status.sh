@@ -1607,7 +1607,7 @@ output_json() {
     echo "      \"source_index_count\": $source_index_count"
     echo "    },"
 
-    # Add GUI-required fields for dashboard
+    # Add dashboard fields for scripts/API consumers
     # whitelist_ips: Total whitelist count
     local whitelist_count=0
     if command -v nftban_stats_count_whitelist >/dev/null 2>&1; then
@@ -1815,7 +1815,7 @@ output_json() {
     echo "    }"
     echo "  },"
 
-    # System info for GUI
+    # System info for scripts/API
     local uptime_sec
     uptime_sec=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
     local kernel

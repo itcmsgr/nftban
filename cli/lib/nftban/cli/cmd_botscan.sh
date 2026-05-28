@@ -209,7 +209,7 @@ _nftban_botscan_banner() {
 }
 
 # =============================================================================
-# JSON STATS FUNCTION (for API/GUI)
+# JSON STATS FUNCTION (for scripts/API)
 # =============================================================================
 
 _nftban_botscan_stats_json() {

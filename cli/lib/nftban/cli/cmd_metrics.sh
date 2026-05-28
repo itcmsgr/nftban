@@ -12,7 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# meta:description="Manage Prometheus metrics collection independently from Web GUI"
+# meta:description="Manage Prometheus metrics collection"
 # meta:inventory.files=""
 # meta:inventory.binaries="prometheus,node_exporter"
 # meta:inventory.env_vars=""

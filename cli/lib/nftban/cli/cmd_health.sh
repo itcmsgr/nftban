@@ -30,7 +30,7 @@
 #
 # cmd_health_core.sh       - check, summary, json, report, fix
 # cmd_health_components.sh - services, modules, binaries, permissions, geoip, pro, install, registries
-# cmd_health_analysis.sh   - conflicts, config, rbl, posture, gui
+# cmd_health_analysis.sh   - conflicts, config, rbl, posture
 # =============================================================================
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
