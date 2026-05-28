@@ -11,7 +11,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.137.0] - 2026-05-27 — log durability + escalation integrity + nftban-panel retirement (coupled 3-blocker train)
+## [v1.138.0] - 2026-05-28 — firewall integrity & bypass alerting (SEC-RULEFP + SEC-BYPASS-ALERT)
+
+**Codename:** `V1_138_0_FIREWALL_INTEGRITY_AND_BYPASS_ALERT`
+**Records:** `NFTBAN_ROADMAP/V1_138_{FIREWALL_INTEGRITY_SCOPE,PR_A_RULESET_FINGERPRINT_VERIFY_RECORD,PR_B_BYPASS_ALERT_RECORD,PR_B_DUPLICATE_ALERT_LOGS_THIRD_AUDIT}.md`
+
+> **Why:** two operator-flagged undetected-bypass gaps from the v1.136.1 fleet recon, shipped contiguously. (1) No canonical ruleset fingerprint → an injected `nft add rule ... accept` or a chain-policy flip (`drop → accept`) went undetected by the validator's structure-only checks. (2) The 9-detector firewall-conflict library populated WARNING/CRITICAL state on every health-timer run, but that signal was trapped in in-memory arrays — operators had no canonical, grep-testable log line. Schema 1.83.0 frozen; no metrics/portal change; no Registry-2 refactor (PR-C orthogonal, intentionally not opened); CSF-RESTORE + daemon least-privilege remain operator-PARKED.
+
+### SEC-RULEFP — ruleset fingerprint baseline + `verify-rules` (PR [#712](https://github.com/itcmsgr/nftban/pull/712), sq `df281c08`)
+- New `internal/rulefp` package: `Normalize(rulesetText)` strips volatile noise (counter `packets N bytes M`, handles `# handle N`, `last used`, `expires`, dynamic-set `elements = { … }` blocks including multi-line) preserving structural text only; `Digest()` = sha256(Normalize). `CaptureBaseline()` writes the digest atomically (temp + rename, mode `0600` — daemon-owned, no group-read consumer); `Verify()` is **read-only** and never refreshes the baseline (the SEC-RULEFP invariant; tested by `TestVerify_DoesNotRefreshBaseline`).
+- `nftban-core verify-rules` (new CLI subcommand): `--capture` to re-baseline, bare verify to compare. Exit codes: **OK / BASELINE_MISSING = 0, MISMATCH = 2, NFT_UNAVAILABLE = 3**.
+- Daemon (`cmd/nftband`): captures the baseline only after a successful (`!check`) apply in `handleApplyRulesetRequest`; a **record-only** `checkRulesetFingerprint()` runs during periodic reconciliation — logs MISMATCH for operator action, never mutates rules, never auto-heals the baseline.
+- CLI (`cmd_firewall.sh`): `firewall rebuild` captures the baseline only in the exit-0 success branch.
+- Health (`nftban_health_checks_security.sh`): new `nftban_health_check_ruleset_fingerprint()` — MISMATCH → WARNING; BASELINE_MISSING → advisory.
+- Tests: 7 `internal/rulefp` unit tests (deterministic digest, churn immunity incl. multi-line elements, detect injected accept + chain-policy flip, no-auto-refresh) + 19-assert shell wiring/invariant guard.
+- Verified `V1_138_PR_A_RULESET_FINGERPRINT_VERIFY_PASS_DEB_AND_RPM` on lab2 (Ubuntu 24 / Go 1.25) + lab4 (AlmaLinux 9.7 / EL9 / Go 1.25): `gofmt` / `go vet` / `go build` / `go test ./internal/rulefp/` / 19-assert shell guard / **staticcheck ./... CLEAN** / **`gosec -nosec ./...` zero new findings** (the v1.137 `e7a789ee` precedent — inline `#nosec` is stripped by `gosec -nosec`, findings must be code-eliminated) / DEB + EL9 RPM still-build / a controlled live inject (`nft add rule ip nftban input ip saddr 203.0.113.222 drop`) + new-chain structural flip → MISMATCH exit 2 → restore → OK exit 0 / counter/timer/populated-set churn → no false MISMATCH / hosts fully restored (baseline file removed, ruleset diff clean, installed package `nftban-core-1.135.0-1.el9` unchanged).
+- **PR #712 CI green (55 / 1-skip / 0-fail)** including a confined 3-commit CI-fix sequence on the same branch: `08db3947` SC2034 shellcheck (the lab couldn't run shellcheck) + `f66d82da` SA4000 staticcheck (test refactor for tautology pattern) + `21236c6b` gosec G306+G204 (0600 + unrolled exec literals). The lab gate was corrected mid-lane to require `staticcheck ./...` and `gosec -nosec ./...` going forward.
+
+### SEC-BYPASS-ALERT — firewall-conflict alerts to `service-alerts.log` (PR [#713](https://github.com/itcmsgr/nftban/pull/713), sq `12399c23`)
+- New emitter `nftban_emit_firewall_conflict_alerts()` in `cli/lib/nftban/core/nftban_firewall_conflicts.sh` — reads the existing `NFTBAN_FIREWALL_CONFLICTS[]` + `NFTBAN_FIREWALL_SEVERITY` globals (no new detector logic, no kernel reads). Emits only at severity ≥ WARNING (NONE/INFO suppressed; INFO covers the deliberate cPHulk-coexists state).
+- Line shape (deterministic, grep-testable, non-metric): `[YYYY-MM-DD HH:MM:SS] [SEVERITY] [FW-CONFLICT] service=<name> detail=<short>`. The `[FW-CONFLICT]` tag cleanly partitions these rows from the existing OnFailure worker's diagnostic blocks in the same log.
+- **Single wire call** from `nftban_health_check_conflicting_firewalls()` after `NFTBAN_HEALTH_RESULTS["conflicting_firewalls"]` is set; guarded with `declare -F` + `|| true` so an emitter failure cannot break the health check.
+- Per-service throttle in `${NFTBAN_DATA_DIR}/alert_throttle_firewall_<svc>` (default 3600s; env override `NFTBAN_ALERT_THROTTLE_SECONDS`). Distinct namespace from the existing OnFailure worker's `alert_throttle_<unit>`.
+- **Audit residuals R1–R7 closed in-slice** (third audit `V1_138_PR_B_DUPLICATE_ALERT_LOGS_THIRD_AUDIT.md`, operator policy "no debt to a later release"): **R1** per-service `flock -n 9` over `${throttle_file}.lock` (no parallel race between health timer + manual `nftban health`); **R2** non-numeric throttle file → treat as stale; **R3** severity-aware re-emit via sibling `.sev` file — WARNING→CRITICAL escalation inside the throttle window is no longer silently suppressed; **R4** clamp future-dated `last_alert` (clock skew) → 0; **R5** intra-run TAG dedup tested; **R6** non-writable log dir best-effort tested via `/proc/sys/...`; **R7** sanitizer comment rewritten to state the actual firewall-namespace rule and the deliberate divergence from the OnFailure worker (the throttle prefix `alert_throttle_firewall_` already disambiguates).
+- `internal/nftbanconf/logs.go LogInventory()` adds `service-alerts.log` (weekly/4, TemplateMain) — closes the v1.137 B-12 silent inventory-authority gap (the path was already in `install/config/nftban.logrotate` but absent from the Go authority; the drift-test is one-directional, so the extra stanza was silently tolerated).
+- Tests: `service_alerts_v138_test.sh` **27 assertions** (T1–T9a original 16: severity gating, exact line shape, multi-service emission, indented-sub-entry filtering, throttle dedup, throttle expiry, env override, empty-array guard, hyphenated-tag preservation; T10–T15a residual-closure 11: parallel ×5 race → 1 line via flock, corrupt-ts replacement, WARNING→CRITICAL escalation + `.sev` metadata, future-clamp, intra-run TAG dedup, non-writable log dir best-effort).
+- Verified `V1_138_PR_B_BYPASS_ALERT_VERIFY_PASS_DEB_AND_RPM_AFTER_RESIDUAL_CLOSE` on lab2 + lab4: same Go + shell battery as PR-A (including `staticcheck ./...` CLEAN, `gosec -nosec ./...` zero new findings in `internal/nftbanconf/`); `service_alerts_v138_test.sh` 27/0 on both labs; DEB + EL9 RPM still-build; live `/var/log/nftban/service-alerts.log` (absent on labs) untouched (test uses scratch `NFTBAN_LOG_DIR`).
+- **PR #713 CI green (54 / 1-skip / 0-fail)** including the residual-closure commit `6f5ce54f` on top of initial PR-B commit `cbdadcaa`.
+
+### Unchanged / invariants
+- **Schema 1.83.0 frozen.** No metrics-label / portal / Status-JSON wire / installer payload schema change.
+- **PR-C Registry-2 unification** = intentionally NOT opened (orthogonal banner cosmetics; emission did not need panel×distro context).
+- **CSF-RESTORE-on-uninstall** + **daemon least-privilege (`User=root → nftban`)** = operator-PARKED, not cancelled.
+- `nftban_fhs_spec.sh` change in this release-prep is header-version regen only (FHS body byte-unchanged).
+
+### Validation (release-prep, this commit)
+- Each blocker challenged against real code before coding (re-challenge records inside the scope docs).
+- PR #712 CI green (55/1-skip/0-fail) → squash `df281c08` → post-merge `main` 24/1-skip/0-fail.
+- PR #713 CI green (54/1-skip/0-fail) → squash `12399c23` → post-merge `main` 24/1-skip/0-fail.
+- Lab verify recorded for both PRs on DEB + RPM. **No fleet rollout yet — separately gated.**
+
+
 
 **Codename:** `V1_137_0_LOG_DURABILITY_PLUS_BLOCKERS`
 **Records:** `NFTBAN_ROADMAP/V1_137_{LOG_DURABILITY_VERIFY_RECORD,BLOCKER_DUXV16_DUXV17_RECORD,BLOCKER_PANEL_GROUP_RETIREMENT_RECORD,PR710_FINAL_TRAIN_REVIEW}.md`
