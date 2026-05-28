@@ -216,8 +216,27 @@ nftban_get_elapsed() {
 # BANNER FUNCTIONS
 # =============================================================================
 
+# v1.141 PR-B — universal banner-suppression gate.
+# Honors:
+#   NFTBAN_NO_BANNER=1        (env, script-friendly)
+#   NFTBAN_QUIET=1            (env, alias of NO_BANNER for the JSON paths)
+#   NFTBAN_BANNER_MODE=none   (existing pre-v1.141 knob)
+# The dispatcher in cli/sbin/nftban also scans argv for `--no-banner` and
+# exports NFTBAN_NO_BANNER=1 before the cmd_*.sh files are sourced, so
+# --no-banner from anywhere on the command line lands here.
+# (Scope: V1_141_0_CONSOLIDATED_CLI_STATUS_TRUTH_SCOPE.md PR-B E-NO-BANNER.)
+_v141_banner_suppressed() {
+    [[ "${NFTBAN_NO_BANNER:-0}" == "1" ]] && return 0
+    [[ "${NFTBAN_QUIET:-0}" == "1" ]] && return 0
+    [[ "${NFTBAN_BANNER_MODE:-}" == "none" ]] && return 0
+    return 1
+}
+
 # Main banner render function
 nftban_render_banner() {
+    # v1.141 PR-B — universal suppression gate first.
+    _v141_banner_suppressed && return 0
+
     local mode="${1:-${NFTBAN_BANNER_MODE:-full}}"
 
     # Auto-detect mode
@@ -269,6 +288,11 @@ nftban_render_banner_simple() {
 # Now uses unified banner with health indicator for all commands
 # Usage: nftban_banner [mode]
 nftban_banner() {
+    # v1.141 PR-B — universal suppression gate. Applies to every
+    # nftban_banner() callsite (cmd_feeds, cmd_ddos, cmd_portscan,
+    # cmd_status, …) without per-callsite edits.
+    _v141_banner_suppressed && return 0
+
     local mode="${1:-cli}"
     nftban_banner_unified "$mode"
 }
