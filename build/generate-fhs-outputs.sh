@@ -156,19 +156,40 @@ generate_tmpfiles() {
 
 EOF
 
+    # Tmpfiles emission, per group: each group emits its `d` lines first
+    # (current behavior, unchanged), then its `z`/`Z` reconcile lines for
+    # entries that carry `tmpfiles_reconcile: "z"` or `"Z"`. The default
+    # (no `tmpfiles_reconcile` field) emits `d` only — preserves backward
+    # behavior for `created_by: package` / `feature_enable` surfaces.
+    #
+    # Two separate yq projections per group (rather than an inline
+    # if/then/else in the per-record format string) so the script works under
+    # both yq variants — mikefarah/Go yq v4 (the build/CI/lab standard) and
+    # Python/jq-wrapped yq. mikefarah yq v4 rejects jq-style `if … then … else
+    # … end` inside string interpolation; plain `select()` projection is
+    # accepted by both. See V1_139_FHS_AUTHORITY_RECHALLENGE_RECORD.md +
+    # V1_139_PR_A_TMPFILES_ZZ_VERIFY_RECORD.md for the HYBRID rationale.
+    #
+    # `z` adjusts mode/owner of the path itself (non-recursive, safe for dirs
+    # whose contents have varied modes like log files); `Z` is recursive and
+    # used only where every item in the subtree shares the dir's mode.
+
     # Data directories (created_by: tmpfiles)
     echo "# Data directories (/var/lib/nftban)" >> "$TMPFILES_OUT"
     yq -r '.directories.data[] | select(.created_by == "tmpfiles") | "d \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
+    yq -r '.directories.data[] | select(.created_by == "tmpfiles" and (.tmpfiles_reconcile == "z" or .tmpfiles_reconcile == "Z")) | "\(.tmpfiles_reconcile) \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
     echo "" >> "$TMPFILES_OUT"
 
     # Log directories
     echo "# Log directories (/var/log/nftban)" >> "$TMPFILES_OUT"
     yq -r '.directories.logs[] | select(.created_by == "tmpfiles") | "d \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
+    yq -r '.directories.logs[] | select(.created_by == "tmpfiles" and (.tmpfiles_reconcile == "z" or .tmpfiles_reconcile == "Z")) | "\(.tmpfiles_reconcile) \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
     echo "" >> "$TMPFILES_OUT"
 
     # Cache and runtime directories
     echo "# Cache and runtime directories" >> "$TMPFILES_OUT"
     yq -r '.directories.runtime[] | select(.created_by == "tmpfiles") | "d \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
+    yq -r '.directories.runtime[] | select(.created_by == "tmpfiles" and (.tmpfiles_reconcile == "z" or .tmpfiles_reconcile == "Z")) | "\(.tmpfiles_reconcile) \(.path) \(.mode) \(.owner) \(.group) -"' "$FHS_SPEC" >> "$TMPFILES_OUT"
 
     print_status "Generated $TMPFILES_OUT"
 }

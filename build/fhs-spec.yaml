@@ -500,6 +500,7 @@ directories:
       group: nftban
       description: "Application state data (root-owned security boundary)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/banned
       mode: "0750"
@@ -507,6 +508,7 @@ directories:
       group: nftban
       description: "Banned IP state files"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/whitelist
       mode: "0750"
@@ -514,6 +516,7 @@ directories:
       group: nftban
       description: "Whitelist state files"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/feeds
       mode: "0750"
@@ -521,6 +524,7 @@ directories:
       group: nftban
       description: "Threat feed data"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports
       mode: "0750"
@@ -528,6 +532,7 @@ directories:
       group: nftban
       description: "Generated reports"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/baseline
       mode: "0750"
@@ -535,6 +540,7 @@ directories:
       group: nftban
       description: "Baseline reports"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/watchdog
       mode: "0750"
@@ -542,6 +548,7 @@ directories:
       group: nftban
       description: "Watchdog system reports"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/auditors
       mode: "0770"
@@ -549,6 +556,7 @@ directories:
       group: nftban-auditor
       description: "Auditor reports (nftban-auditor group access)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
       note: |
         D-NEW-10 closure (Slot 6 / 2026-05-09): AUTHORITY EXCEPTION — intentional, NOT drift.
         This is the ONLY directory in the /var/lib/nftban tree owned by `nftban-auditor`
@@ -575,6 +583,7 @@ directories:
       group: nftban
       description: "Metrics database"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/snapshots
       mode: "0750"
@@ -582,6 +591,7 @@ directories:
       group: nftban
       description: "Hourly stats snapshots"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/exports
       mode: "0750"
@@ -589,6 +599,7 @@ directories:
       group: nftban
       description: "User data exports (JSON, CSV)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/geoip
       mode: "0750"
@@ -596,6 +607,7 @@ directories:
       group: nftban
       description: "GeoIP database"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats
       mode: "0750"
@@ -603,6 +615,7 @@ directories:
       group: nftban
       description: "Runtime statistics"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats/history
       mode: "0750"
@@ -610,6 +623,7 @@ directories:
       group: nftban
       description: "Stats history"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/stats/profiles
       mode: "0750"
@@ -617,6 +631,7 @@ directories:
       group: nftban
       description: "Stats profiles"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue
       mode: "0750"
@@ -624,6 +639,7 @@ directories:
       group: nftban
       description: "Task queue root"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/pending
       mode: "0750"
@@ -631,6 +647,7 @@ directories:
       group: nftban
       description: "Pending tasks"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/work
       mode: "0750"
@@ -638,6 +655,7 @@ directories:
       group: nftban
       description: "In-progress tasks"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/queue/dlq
       mode: "0750"
@@ -645,6 +663,7 @@ directories:
       group: nftban
       description: "Dead letter queue"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/mailspool
       mode: "0750"
@@ -652,6 +671,7 @@ directories:
       group: nftban
       description: "Failed mail retry queue"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/botguard
       mode: "0750"
@@ -659,6 +679,7 @@ directories:
       group: nftban
       description: "HTTP Bot Guard state (batch signals, decisions)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/tunnel
       mode: "0750"
@@ -666,6 +687,7 @@ directories:
       group: nftban
       description: "DNS tunnel suspicion state (scores, history)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/community
       mode: "0750"
@@ -680,6 +702,7 @@ directories:
       group: nftban
       description: "Analytics state data"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/backup
       mode: "0750"
@@ -687,6 +710,7 @@ directories:
       group: nftban
       description: "Firewall backup snapshots (root-owned for integrity)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/config
       mode: "0750"
@@ -694,6 +718,7 @@ directories:
       group: nftban
       description: "Runtime configuration state"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/login
       mode: "0750"
@@ -701,6 +726,7 @@ directories:
       group: nftban
       description: "Login monitor state data"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/panels
       mode: "0750"
@@ -708,6 +734,7 @@ directories:
       group: nftban
       description: "Panel integration state"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/portscan
       mode: "0750"
@@ -715,6 +742,7 @@ directories:
       group: nftban
       description: "Port scan detection state"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/recorder
       mode: "0750"
@@ -722,6 +750,7 @@ directories:
       group: nftban
       description: "Flight recorder events and snapshots"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/staging
       mode: "0750"
@@ -729,6 +758,7 @@ directories:
       group: nftban
       description: "Feed staging area (temporary download/validation)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/state
       mode: "0750"
@@ -736,6 +766,7 @@ directories:
       group: nftban
       description: "Critical runtime state files"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/suricata
       mode: "0750"
@@ -743,6 +774,7 @@ directories:
       group: nftban
       description: "Suricata integration state"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/update-backups
       mode: "0750"
@@ -750,6 +782,7 @@ directories:
       group: nftban
       description: "Update rollback backups (root-owned for integrity)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/watchdog
       mode: "0750"
@@ -757,6 +790,7 @@ directories:
       group: nftban
       description: "Watchdog reports and state"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/reports/archive
       mode: "0750"
@@ -764,6 +798,7 @@ directories:
       group: nftban
       description: "Archived reports"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/lib/nftban/pro
       mode: "0750"
@@ -771,6 +806,7 @@ directories:
       group: nftban
       description: "Pro subscription data"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
   # ---------------------------------------------------------------------------
   # Logs (nftban:nftban, 750) - Daemon writes, group reads
@@ -782,6 +818,7 @@ directories:
       group: nftban
       description: "Log files"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/watchdog
       mode: "0750"
@@ -789,6 +826,7 @@ directories:
       group: nftban
       description: "Watchdog logs"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/reports
       mode: "0750"
@@ -796,6 +834,7 @@ directories:
       group: nftban
       description: "Report logs"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/rbl
       mode: "0750"
@@ -803,6 +842,7 @@ directories:
       group: nftban
       description: "RBL check cache"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/botguard
       mode: "0750"
@@ -810,6 +850,7 @@ directories:
       group: nftban
       description: "HTTP Bot Guard logs"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/metrics
       mode: "0750"
@@ -817,6 +858,7 @@ directories:
       group: nftban
       description: "Metrics export logs"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/soak
       mode: "0750"
@@ -824,6 +866,7 @@ directories:
       group: nftban
       description: "Soak validation per-run JSON + cron.log (v1.98.1)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /var/log/nftban/suricata
       mode: "0770"
@@ -843,6 +886,7 @@ directories:
       group: nftban
       description: "Cache files"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
       note: "0755 intentional: public-cache traversal — non-sensitive cache contents (timestamps, last-check status) readable by unprivileged tooling. Sensitive subdirs (e.g. /health) are tightened to 0750 individually."
 
     - path: /var/cache/nftban/health
@@ -851,6 +895,7 @@ directories:
       group: nftban
       description: "Health check status cache"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
     - path: /run/nftban
       mode: "0755"
@@ -858,6 +903,7 @@ directories:
       group: nftban
       description: "Runtime data (PID files, sockets)"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
       note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict. 0755 intentional: socket-discovery — non-nftban-group processes (panel adapters, monitoring tools) must stat() the daemon socket; the socket file itself uses unit-level SocketMode=0660 + group ownership for access control. Tightening the parent dir would break socket-discovery for anything outside the nftban group."
 
     - path: /run/nftban/firewall-validate
@@ -866,6 +912,7 @@ directories:
       group: nftban
       description: "V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
       created_by: tmpfiles
+      tmpfiles_reconcile: "z"
 
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
