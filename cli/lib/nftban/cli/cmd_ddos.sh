@@ -66,7 +66,7 @@ COMMANDS:
     disable             Disable all DDoS protections
     reload              Reload DDoS rules (re-reads config, strips SSH, no duplicates)
     status              Show status of all DDoS protections
-    stats               Show DDoS statistics (use --json for GUI)
+    stats               Show DDoS statistics (use --json for scripts/API)
     test                Test DDoS protection rules
     mode                Show or set protection mode (auto|classic|suricata|hybrid)
     help                Show this help message
@@ -172,7 +172,7 @@ HELP
 
 # =============================================================================
 
-# JSON STATS FUNCTION (for API/GUI)
+# JSON STATS FUNCTION (for scripts/API)
 # =============================================================================
 
 _nftban_ddos_stats_json() {
@@ -387,7 +387,7 @@ nftban_cmd_ddos() {
             ;;
 
         stats)
-            # JSON stats for API/GUI - output DDoS statistics
+            # JSON stats for scripts/API - output DDoS statistics
             _nftban_ddos_stats_json "$json_mode"
             ;;
 

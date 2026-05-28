@@ -173,18 +173,17 @@ _wizard_ask_questions() {
         echo "     IDS integration: Skipped (not recommended for small environments)"
     fi
 
-    # GUI/Metrics - only ask if not small environment
-    WANT_GUI=0
+    # Metrics - only ask if not small environment
+    # v1.139.2: GUI surface retired in v1.100.1b (PR #502); only metrics remain.
     WANT_METRICS=0
     if [[ "$PROFILE_ENV" != "small" ]]; then
-        read -rp "     Enable web GUI & metrics? [y/N]: " GUI_CHOICE
-        if [[ "${GUI_CHOICE,,}" == "y" ]]; then
-            WANT_GUI=1
+        read -rp "     Enable Prometheus metrics exporter? [y/N]: " METRICS_CHOICE
+        if [[ "${METRICS_CHOICE,,}" == "y" ]]; then
             # shellcheck disable=SC2034  # Reserved for metrics setup
             WANT_METRICS=1
         fi
     else
-        echo "     GUI & metrics: Skipped (not recommended for small environments)"
+        echo "     Metrics: Skipped (not recommended for small environments)"
     fi
 
     echo ""
@@ -235,11 +234,12 @@ _wizard_compute_config() {
         ENABLE_IDS_INTEGRATION=1
     fi
 
-    # GUI/Metrics - only if user wants AND not small
+    # Metrics - only if user wants AND not small
+    # v1.139.2: ENABLE_GUI pinned to 0; GUI surface retired in v1.100.1b (PR #502).
+    # Variable kept for backward-compat with config-file consumers.
     ENABLE_GUI=0
     ENABLE_METRICS=0
-    if [[ "$WANT_GUI" -eq 1 ]] && [[ "$PROFILE_ENV" != "small" ]]; then
-        ENABLE_GUI=1
+    if [[ "$WANT_METRICS" -eq 1 ]] && [[ "$PROFILE_ENV" != "small" ]]; then
         ENABLE_METRICS=1
     fi
 
@@ -342,11 +342,10 @@ _wizard_show_summary() {
         echo "    IDS integration:       ✗ disabled"
     fi
 
-    if [[ "$ENABLE_GUI" -eq 1 ]]; then
-        echo "    Web GUI:               ✓ ENABLED"
+    if [[ "$ENABLE_METRICS" -eq 1 ]]; then
         echo "    Metrics exporter:      ✓ ENABLED"
     else
-        echo "    Web GUI & Metrics:     ✗ disabled"
+        echo "    Metrics exporter:      ✗ disabled"
     fi
 
     echo ""
@@ -560,7 +559,7 @@ DESCRIPTION:
     Questions asked:
     1. Security Level (standard/strict/paranoid)
     2. Traffic Level (low/medium/high)
-    3. Optional Features (feeds, IDS, GUI)
+    3. Optional Features (feeds, IDS, metrics)
 
     The wizard then:
     - Generates /etc/nftban/nftban.conf.local
@@ -570,7 +569,7 @@ DESCRIPTION:
 DEFAULTS:
     - SSH login monitor: ALWAYS enabled
     - Feeds: OFF (user must opt-in)
-    - GUI/Metrics: OFF on small environments
+    - Metrics: OFF on small environments
     - IDS: OFF on small environments
 
 EXAMPLES:

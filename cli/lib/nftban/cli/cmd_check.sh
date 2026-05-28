@@ -161,7 +161,7 @@ OUTPUT:
     - Full processing path
     - Available actions
 
-  JSON format provides machine-readable data for GUI/scripts.
+  JSON format provides machine-readable data for scripts/API.
 
 EXIT STATUS:
   0  Check completed successfully

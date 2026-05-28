@@ -2387,7 +2387,8 @@ nftban_cmd_update() {
                     repair|--repair|fix)
                         _cmd_update_repair; return $? ;;
                     rollback|--rollback)
-                        _update_banner; echo ""; _do_rollback; return $? ;;
+                        # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help
+                        _update_banner; echo ""; _do_rollback "$@"; return $? ;;
                     list|--list)
                         _update_banner; _list_backups; return $? ;;
                     -*) shift ;;  # Skip unknown flags
@@ -2408,7 +2409,8 @@ nftban_cmd_update() {
                     repair|--repair|fix)
                         _cmd_update_repair; return $? ;;
                     rollback|--rollback)
-                        _update_banner; echo ""; _do_rollback; return $? ;;
+                        # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help
+                        _update_banner; echo ""; _do_rollback "$@"; return $? ;;
                     list|--list)
                         _update_banner; _list_backups; return $? ;;
                     -*) shift ;;
@@ -2429,7 +2431,8 @@ nftban_cmd_update() {
                     repair|--repair|fix)
                         _cmd_update_repair; return $? ;;
                     rollback|--rollback)
-                        _update_banner; echo ""; _do_rollback; return $? ;;
+                        # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help
+                        _update_banner; echo ""; _do_rollback "$@"; return $? ;;
                     list|--list)
                         _update_banner; _list_backups; return $? ;;
                     -*) shift ;;
@@ -2453,9 +2456,14 @@ nftban_cmd_update() {
             _cmd_update_repair
             ;;
         rollback|--rollback|-r)
+            # v1.139.2: pass "$@" so _do_rollback's help-guard sees --help/-h/help.
+            # Prior to v1.139.2, `nftban rollback --help` executed a real rollback
+            # because args were not parsed at any dispatcher site. The guard is
+            # defended-in-depth: implemented in _do_rollback itself so all four
+            # entry points (this one + the github/git/local sub-modes) are safe.
             _update_banner
             echo ""
-            _do_rollback
+            _do_rollback "$@"
             ;;
         list|--list|-l)
             _update_banner

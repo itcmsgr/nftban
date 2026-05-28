@@ -354,7 +354,7 @@ _modes_help() {
     echo "    nftban modes [options]"
     echo ""
     echo "OPTIONS:"
-    echo "    --json      Output in JSON format (for scripts/GUI)"
+    echo "    --json      Output in JSON format (for scripts/API)"
     echo "    help        Show this help message"
     echo ""
     echo "DESCRIPTION:"

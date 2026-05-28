@@ -126,7 +126,7 @@ DESCRIPTION:
 
 EXAMPLES:
   nftban validate              # Human-readable output
-  nftban validate --json       # JSON output for scripts/GUI
+  nftban validate --json       # JSON output for scripts/API
 
 EXIT STATUS:
   0  PROTECTED / IDLE — all checks passed (warnings allowed)

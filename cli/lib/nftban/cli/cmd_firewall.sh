@@ -3249,7 +3249,7 @@ Examples:
   nftban firewall restore fail2ban     # Rollback to fail2ban
 
 Global options:
-  --json        Output results as JSON (for GUI integration)
+  --json        Output results as JSON (for scripts/API integration)
   -h, --help    Show help for specific subcommand
 
 CTRL+C / INTERRUPTION:
@@ -3421,7 +3421,7 @@ Examples:
   # Check if port is allowed
   nftban firewall check 22
 
-  # JSON output (for GUI)
+  # JSON output (for scripts/API)
   nftban firewall check 1.2.3.4 --json
 
 Processing Path:
@@ -3461,7 +3461,7 @@ Examples:
   # Display statistics
   nftban firewall stats
 
-  # JSON output (for GUI)
+  # JSON output (for scripts/API)
   nftban firewall stats --json
 
 Output includes:

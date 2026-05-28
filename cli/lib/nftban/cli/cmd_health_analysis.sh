@@ -3,7 +3,7 @@
 # NFTBan v1.0 - Health Check CLI Command - Analysis Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Analysis health checks: conflicts, config, rbl, posture, gui
+# Purpose: Analysis health checks: conflicts, config, rbl, posture
 #
 # meta:name="cmd_health_analysis"
 # meta:type="cli"
@@ -12,7 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# meta:description="Analysis health checks: conflicts, config, rbl, posture, gui"
+# meta:description="Analysis health checks: conflicts, config, rbl, posture"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""

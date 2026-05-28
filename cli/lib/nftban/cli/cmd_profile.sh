@@ -258,7 +258,7 @@ MIGRATION TO WIZARD:
     2. Asks 3 simple questions:
        • Security Level: minimal / basic / advanced
        • Traffic Level: low / medium / high
-       • Optional Features: feeds, IDS, GUI, metrics
+       • Optional Features: feeds, IDS, metrics
 
     3. Generates optimal configuration:
        • Creates /etc/nftban/nftban.conf.local

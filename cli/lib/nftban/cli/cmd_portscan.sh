@@ -443,7 +443,7 @@ nftban_cmd_portscan() {
             ;;
 
         stats)
-            # JSON stats for API/GUI - output portscan statistics
+            # JSON stats for scripts/API - output portscan statistics
             _nftban_portscan_stats_json "$json_mode"
             ;;
 
