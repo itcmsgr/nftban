@@ -11,7 +11,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.138.0] - 2026-05-28 — firewall integrity & bypass alerting (SEC-RULEFP + SEC-BYPASS-ALERT)
+## [v1.139.0] - 2026-05-28 — FHS authority hardening (FHS-TMPFILES-ZZ + FHS-UNGEN-LOGROTATE-CREATE + ATG formalization)
+
+**Codename:** `V1_139_0_FHS_AUTHORITY_HARDENING`
+**Records:** `NFTBAN_ROADMAP/V1_139_{FHS_AUTHORITY_HARDENING_SCOPE,FHS_AUTHORITY_RECHALLENGE_RECORD,PR_A_TMPFILES_ZZ_VERIFY_RECORD,PR_B_LOGROTATE_CREATE_PARITY_VERIFY_RECORD,PR_C_ATG_FORMALIZATION_RECORD,FHS_AUTHORITY_GRAPH}.md`
+
+> **Why:** the FHS spec is the single declarative source of truth for nftban directories/perms/owners, but the *effective* installed state is produced by a graph of derivative authority surfaces (tmpfiles, sysusers, RPM `%attr`, DEB `dpkg-statoverride`, logrotate, Go fallback perms…). The v1.139 re-challenge identified two real high-drift residuals and one workspace-doc formalization. Schema 1.83.0 frozen; no metrics/portal change; **daemon byte-identical to v1.138.0** (no production Go touched across the three slices). Two surfaces classified as already CI-parity-bounded were deliberately deferred; GAP 3 sysusers recipe-vs-execution remains open but not in this release.
+
+### FHS-TMPFILES-ZZ — tmpfiles reconcile policy (PR [#716](https://github.com/itcmsgr/nftban/pull/716), sq `61558cfa`)
+- The packaged `install/systemd/tmpfiles.d/nftban.conf` carried **47 `d` create-if-missing directives and zero `z`/`Z` reconcile directives**; the gap was at the **generator level** (the script hardcoded `d` prefix in all three yq projections for the data/logs/runtime groups). On systemd < 252, a pre-existing nftban-owned dir with wrong mode/owner silently stayed wrong under `systemd-tmpfiles --create`. On systemd ≥ 252 (Ubuntu 24.04, EL9), `d` itself reconciles — so `z` is belt-and-suspenders + explicit-intent + backward-compat.
+- **HYBRID policy (operator-decided):** every `created_by: tmpfiles` nftban-owned-lifecycle entry gets a sibling **non-recursive `z`** reconcile line via a new `tmpfiles_reconcile` field. Zero recursive `Z` — recursive would clobber file modes inside log/data dirs whose contents have varied modes. Operator-administered surfaces (`created_by: package` / `feature_enable`) are protected via path exclusion. The `/var/lib/nftban/reports/auditors` authority exception (0770 root:nftban-auditor, operator-writable) uses `z` (non-recursive) — does not touch auditor-written report files.
+- **Generator extension:** `build/generate-fhs-outputs.sh generate_tmpfiles()` now emits each group's `d` block followed by a second yq pass for the `z`/`Z` block. Uses only `select(...)` projection — no jq-style `if/then/else/end` (which mikefarah yq v4 rejects). Compatible with both yq variants. The original one-pass extension was caught by lab2 on mikefarah v4.44.1 (the build/CI standard) and re-verified on the production toolchain after the two-pass fix.
+- **Tests:** new `cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh` (10 assertions: per-entry annotation, no-package-leak, count parity, paired d+z, d/z tail match, auditor non-recursive guard, no recursive Z in this PR, generator `--check` PASS).
+- 4 files changed; no production Go. Lab2/lab4 perm-reconcile scratch proof recorded.
+
+### FHS-UNGEN-LOGROTATE-CREATE — logrotate create-mode parity (PR [#717](https://github.com/itcmsgr/nftban/pull/717), sq `7daacb04`)
+- `install/config/nftban.logrotate` + `install/config/nftban-suricata.logrotate` carried hand-authored `create MODE OWNER GROUP` directives with **no generator emitting them from fhs-spec and no parity test asserting they match**. A future fhs-spec mode/owner change (e.g. daemon-least-priv rename of the service user) would silently leave the logrotate `create` lines pointing at the stale identity.
+- **Closure:** new `logrotate_create: true` flag on the two `file_permissions` entries (`/var/log/nftban` and `/var/log/nftban/suricata`); modes/owners/groups unchanged. New Go parity test `internal/nftbanconf/logs_logrotate_create_parity_test.go` (3 functions: `TestLogrotateCreateMatchesFhsSpecAuthorities` main parity, `TestLogrotateCreateAuthorityIsReached` no-dead-authority, `TestLogrotateCreateNftbanLogsOnly` scope guard) asserts every `create` line in both packaged logrotate files matches the matching authority via longest-prefix lookup honoring `exclude`. Uses `gopkg.in/yaml.v3` (already in `go.mod`).
+- 2 files changed; **no logrotate template change** (current modes already matched). **Daemon byte-identical.**
+
+### ATG formalization (PR [#718](https://github.com/itcmsgr/nftban/pull/718), sq `6a7cc9c1`)
+- Workspace promotion: `AUDIT_190_LIFECYCLE/V107_FHS_AUTHORITY_GRAPH_DESIGN_CODE_GAP_CLOSURE.md` (workspace investigation) → `NFTBAN_ROADMAP/V1_139_FHS_AUTHORITY_GRAPH.md` (canonical), with a formalization preamble + GAP-closure status table mapping V107 gaps to v1.139 closures (GAP 2 = CLOSED_BY_PR_716, GAP 4 = CLOSED_BY_PR_717, GAP 5 = closed by v1.137 panel retirement, GAP 1 + GAP 3 deferred). V107 replaced with an 11-line pointer stub matching the existing AUDIT_190_LIFECYCLE→stub pattern.
+- Repo-facing slice: 1 line added to `.claude/CLAUDE.md` under `## Additional Resources` anchoring at the canonical doc.
+
+### Compositional authority-lock now complete on logrotate (v1.137 + v1.139)
+| Axis | Authority | CI gate |
+|---|---|---|
+| WHICH logs exist + HOW OFTEN rotated + HOW MANY retained | `LogInventory()` in `internal/nftbanconf/logs.go` (v1.137 B-12) | `TestLogInventoryCoveredByTemplates` |
+| logrotate `create` MODE OWNER GROUP | `file_permissions` entries with `logrotate_create: true` in `build/fhs-spec.yaml` (v1.139 PR-B) | `TestLogrotateCreateMatchesFhsSpecAuthorities` |
+| tmpfiles `z`/`Z` reconcile of nftban-owned dirs | `tmpfiles_reconcile` annotated entries in `build/fhs-spec.yaml` (v1.139 PR-A) | `cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh` + generator `--check` (ci-architecture.yml) |
+
+A future change to any axis requires reciprocal change in the others, with CI proving it.
+
+### Unchanged / invariants
+- **Schema 1.83.0 frozen.** No metrics/portal/Status-JSON wire/installer-payload schema change.
+- **Daemon byte-identical to v1.138.0.** No production Go touched in PR-A, PR-B, or PR-C (only metadata YAML, generator script, regenerated tmpfiles config, two new test files, and one CLAUDE.md line).
+- `nftban_fhs_spec.sh` change in this release-prep is header-version regen only (FHS body byte-unchanged — the v1.139 generator-script change does not affect this generated output's body content).
+- **FHS-UNGEN (a) Go fallback perms** + **(b) RPM file-level `%attr`** = DEFERRED (re-challenge confirmed both are already CI-parity-bounded). **GAP 3 sysusers recipe-vs-execution** = OPEN, not in v1.139. **CSF-RESTORE / daemon least-privilege / Registry-2** = operator-PARKED.
+
+### Validation (release-prep, this commit)
+- Each lane challenged against real code before coding (re-challenge inside `V1_139_FHS_AUTHORITY_RECHALLENGE_RECORD.md`).
+- PR #716 CI green (51 / 4-skip / 0-fail) → squash `61558cfa` → post-merge main 24/1-skip/0-fail.
+- PR #717 CI green (53 / 3-skip / 0-fail) → squash `7daacb04` → post-merge main 24/1-skip/0-fail.
+- PR #718 CI green (45 / 2-skip / 0-fail) → squash `6a7cc9c1` → post-merge main 24/1-skip/0-fail (after a one-shot `gh run rerun --failed` clearing the known `FuzzParseLogLine` `context deadline exceeded` infrastructure flake; same remediation pattern as v1.137 release-prep, zero code change).
+- Lab verify recorded for both code PRs on DEB + RPM using production mikefarah yq v4.44.1. **No fleet rollout yet — separately gated.**
+
+
 
 **Codename:** `V1_138_0_FIREWALL_INTEGRITY_AND_BYPASS_ALERT`
 **Records:** `NFTBAN_ROADMAP/V1_138_{FIREWALL_INTEGRITY_SCOPE,PR_A_RULESET_FINGERPRINT_VERIFY_RECORD,PR_B_BYPASS_ALERT_RECORD,PR_B_DUPLICATE_ALERT_LOGS_THIRD_AUDIT}.md`
