@@ -111,7 +111,7 @@ func main() {
 		ip := os.Args[2]
 
 		// Parse flags
-		var timeout int = 0  // 0 = permanent
+		var timeout int = 0 // 0 = permanent
 		var reason string = ""
 		var source string = "manual"
 

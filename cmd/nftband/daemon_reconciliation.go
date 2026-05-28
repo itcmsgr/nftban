@@ -138,8 +138,8 @@ func (d *Daemon) checkWhitelistOverlap(wrapper *opqueue.NFTBackendWrapper) {
 
 	// Whitelist/blacklist_manual pairs per address family
 	type setPair struct {
-		whitelist    string
-		manualBans   string
+		whitelist  string
+		manualBans string
 	}
 	pairs := []setPair{
 		{"whitelist_ipv4", "blacklist_manual_ipv4"},
