@@ -219,6 +219,9 @@ jobs:
           - distro: ubuntu24.04
             container: ubuntu:24.04
             name_suffix: ubuntu24.04
+          - distro: ubuntu26.04
+            container: ubuntu:26.04
+            name_suffix: ubuntu26.04
           - distro: debian12
             container: debian:12
             name_suffix: debian12
@@ -391,6 +394,7 @@ jobs:
             "nftban-el10-x86_64.rpm"
             "nftban-ubuntu22.04-amd64.deb"
             "nftban-ubuntu24.04-amd64.deb"
+            "nftban-ubuntu26.04-amd64.deb"
             "nftban-debian12-amd64.deb"
             "nftban-debian13-amd64.deb"
             "nftband-linux-amd64"
@@ -468,6 +472,7 @@ jobs:
 
           DEB Packages (Ubuntu + Debian):
             nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble) - Tier 0
+            nftban-ubuntu26.04-amd64.deb   Ubuntu 26.04 (Resolute) - Tier 0
             nftban-debian12-amd64.deb      Debian 12 (Bookworm) - Tier 0
             nftban-debian13-amd64.deb      Debian 13 (Trixie) - Tier 1
             nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy) - Tier 2
@@ -507,6 +512,9 @@ jobs:
 
              # Ubuntu 24.04 (Noble) - Tier 0
              wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+
+             # Ubuntu 26.04 (Resolute) - Tier 0
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb
 
              # Debian 12 (Bookworm) - Tier 0
              wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
@@ -622,6 +630,7 @@ jobs:
           | Distribution | Package | Tier |
           |--------------|---------|------|
           | Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` | Tier 0 |
+          | Ubuntu 26.04 (Resolute) | `nftban-ubuntu26.04-amd64.deb` | Tier 0 |
           | Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` | Tier 0 |
           | Debian 13 (Trixie) | `nftban-debian13-amd64.deb` | Tier 1 |
           | Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` | Tier 2 |
@@ -702,6 +711,7 @@ jobs:
             "nftban-debian13-amd64.deb"
             "nftban-ubuntu22.04-amd64.deb"
             "nftban-ubuntu24.04-amd64.deb"
+            "nftban-ubuntu26.04-amd64.deb"
             "nftband-linux-amd64"
             "SHA256SUMS.build"
           )
@@ -905,6 +915,10 @@ jobs:
 
           check_package "nftban-ubuntu24.04-amd64.deb" \
             "dpkg-deb -x /tmp/release-verify/nftban-ubuntu24.04-amd64.deb ." || \
+            GATE2_FAILURES=$((GATE2_FAILURES + 1))
+
+          check_package "nftban-ubuntu26.04-amd64.deb" \
+            "dpkg-deb -x /tmp/release-verify/nftban-ubuntu26.04-amd64.deb ." || \
             GATE2_FAILURES=$((GATE2_FAILURES + 1))
 
           rm -rf /tmp/extract

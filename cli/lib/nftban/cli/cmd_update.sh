@@ -213,7 +213,7 @@ EOF
             ;;
         deb)
             echo "    • Debian packages: debian11, debian12, debian13"
-            echo "    • Ubuntu packages: ubuntu20.04, ubuntu22.04, ubuntu24.04"
+            echo "    • Ubuntu packages: ubuntu20.04, ubuntu22.04, ubuntu24.04, ubuntu26.04"
             echo "    • Debian packages MAY work on Ubuntu (with warnings)"
             echo "    • Ubuntu packages will NOT work on Debian"
             ;;
