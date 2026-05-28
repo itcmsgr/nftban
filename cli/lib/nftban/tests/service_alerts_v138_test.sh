@@ -167,10 +167,16 @@ fi
 # -----------------------------------------------------------------------------
 # T6: expire throttle (backdate timestamps) → re-emission allowed
 # -----------------------------------------------------------------------------
-# Backdate each throttle file by 7200s (2h, > default 3600s).
+# Backdate each *timestamp* throttle file by 7200s (2h, > default 3600s).
+# Skip the sibling .sev (severity) and .lock files added for R1/R3 — those
+# are not timestamp stores.
 old_ts=$(( $(date +%s) - 7200 ))
 for f in "$NFTBAN_DATA_DIR"/alert_throttle_firewall_*; do
-    [[ -f "$f" ]] && echo "$old_ts" > "$f"
+    [[ -f "$f" ]] || continue
+    case "$f" in
+        *.sev|*.lock) continue ;;
+    esac
+    echo "$old_ts" > "$f"
 done
 before=$(count_fw_lines)
 nftban_emit_firewall_conflict_alerts
@@ -228,6 +234,166 @@ if [[ -f "$NFTBAN_DATA_DIR/alert_throttle_firewall_iptables_nft" ]]; then
     ok "T9a throttle key sanitized (hyphen→underscore)"
 else
     no "T9a throttle key sanitized (hyphen→underscore)" "throttle file missing"
+fi
+
+# =============================================================================
+# Audit residuals R1–R6 (third-audit closure — operator
+# OPEN_V1_138_PR_B_ALERT_RESIDUALS_CLOSE_NOW = GO)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# T10 (R1): per-service flock prevents duplicate concurrent emit.
+# Five emitters fired in parallel against the SAME single-service array →
+# exactly ONE alert line lands (one wins the lock + stamps throttle; the
+# others either lock-skip or hit fresh throttle). Skipped on hosts without
+# `flock`, where lock-free best-effort is the documented fallback.
+# -----------------------------------------------------------------------------
+if command -v flock >/dev/null 2>&1; then
+    reset_scratch
+    # shellcheck disable=SC2034
+    NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+    # shellcheck disable=SC2034
+    NFTBAN_FIREWALL_CONFLICTS=("FAIL2BAN: parallel race test")
+    pids=()
+    for _ in 1 2 3 4 5; do
+        ( nftban_emit_firewall_conflict_alerts ) &
+        pids+=($!)
+    done
+    for p in "${pids[@]}"; do wait "$p"; done
+    n=$(count_fw_lines)
+    if [[ "$n" -eq 1 ]]; then
+        ok "T10 (R1) parallel x5 emit on one service → exactly 1 line"
+    else
+        no "T10 (R1) parallel x5 emit on one service → exactly 1 line" "got $n"
+    fi
+else
+    ok "T10 (R1) SKIP — flock not installed; lock-free best-effort is documented"
+fi
+
+# -----------------------------------------------------------------------------
+# T11 (R2): corrupt (non-numeric) throttle file → treated as stale → emit.
+# -----------------------------------------------------------------------------
+reset_scratch
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_CONFLICTS=("UFW: corrupt-timestamp test")
+echo "garbage-not-a-number" > "$NFTBAN_DATA_DIR/alert_throttle_firewall_ufw"
+nftban_emit_firewall_conflict_alerts
+if [[ "$(count_fw_lines)" -eq 1 ]]; then
+    ok "T11 (R2) corrupt throttle file → treated as stale, 1 line emitted"
+else
+    no "T11 (R2) corrupt throttle file → treated as stale, 1 line emitted" "got $(count_fw_lines)"
+fi
+# T11a: the corrupt file should have been overwritten with a valid timestamp.
+if [[ -s "$NFTBAN_DATA_DIR/alert_throttle_firewall_ufw" ]] \
+   && grep -qE '^[0-9]+$' "$NFTBAN_DATA_DIR/alert_throttle_firewall_ufw"; then
+    ok "T11a corrupt throttle file replaced with valid numeric timestamp"
+else
+    no "T11a corrupt throttle file replaced with valid numeric timestamp" "still corrupt"
+fi
+
+# -----------------------------------------------------------------------------
+# T12 (R3): severity escalation WARNING→CRITICAL inside throttle window
+# must re-emit exactly once (not silently suppressed). The reverse path
+# (CRITICAL stays CRITICAL) must stay throttled.
+# -----------------------------------------------------------------------------
+reset_scratch
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_CONFLICTS=("FIREWALLD: escalation-test")
+nftban_emit_firewall_conflict_alerts            # 1st: WARNING → 1 line
+# Now escalate within the throttle window (no time advance).
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+nftban_emit_firewall_conflict_alerts            # 2nd: CRITICAL → +1 line (escalation)
+nftban_emit_firewall_conflict_alerts            # 3rd: CRITICAL → 0 (no further escalation)
+n=$(count_fw_lines)
+if [[ "$n" -eq 2 ]]; then
+    ok "T12 (R3) WARNING→CRITICAL in window → escalation re-emits once (2 lines total)"
+else
+    no "T12 (R3) WARNING→CRITICAL in window → escalation re-emits once" "got $n"
+fi
+# T12a: severity ordering on the two lines must be WARNING then CRITICAL.
+if [[ "$(grep -c '\[WARNING\] \[FW-CONFLICT\] service=firewalld' "$ALERT_LOG" 2>/dev/null || echo 0)" -eq 1 ]] \
+   && [[ "$(grep -c '\[CRITICAL\] \[FW-CONFLICT\] service=firewalld' "$ALERT_LOG" 2>/dev/null || echo 0)" -eq 1 ]]; then
+    ok "T12a (R3) emitted lines tagged WARNING + CRITICAL exactly once each"
+else
+    no "T12a (R3) emitted lines tagged WARNING + CRITICAL exactly once each" "tag mismatch"
+fi
+# T12b: .sev file now records CRITICAL (3).
+sev=$(cat "$NFTBAN_DATA_DIR/alert_throttle_firewall_firewalld.sev" 2>/dev/null || echo 0)
+if [[ "$sev" -eq 3 ]]; then
+    ok "T12b (R3) .sev metadata stamped with last severity (CRITICAL=3)"
+else
+    no "T12b (R3) .sev metadata stamped with last severity (CRITICAL=3)" "sev=$sev"
+fi
+
+# -----------------------------------------------------------------------------
+# T13 (R4): future-dated throttle (clock skew) → clamped to stale → emit.
+# -----------------------------------------------------------------------------
+reset_scratch
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_CONFLICTS=("CSF: future-clamp test")
+future_ts=$(( $(date +%s) + 86400 ))  # +1 day
+echo "$future_ts" > "$NFTBAN_DATA_DIR/alert_throttle_firewall_csf"
+nftban_emit_firewall_conflict_alerts
+if [[ "$(count_fw_lines)" -eq 1 ]]; then
+    ok "T13 (R4) future-dated throttle clamped → 1 line emitted"
+else
+    no "T13 (R4) future-dated throttle clamped → 1 line emitted" "got $(count_fw_lines)"
+fi
+# T13a: throttle file overwritten with current (non-future) timestamp.
+new_ts=$(cat "$NFTBAN_DATA_DIR/alert_throttle_firewall_csf" 2>/dev/null || echo 0)
+if (( new_ts > 0 )) && (( new_ts < future_ts )); then
+    ok "T13a (R4) throttle re-stamped with current time (no longer future)"
+else
+    no "T13a (R4) throttle re-stamped with current time (no longer future)" "ts=$new_ts"
+fi
+
+# -----------------------------------------------------------------------------
+# T14 (R5): same TAG appearing twice in one array → exactly ONE alert line
+# (the first stamps throttle; the second hits fresh throttle, no escalation).
+# -----------------------------------------------------------------------------
+reset_scratch
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_CONFLICTS=("FAIL2BAN: first occurrence" "FAIL2BAN: second occurrence")
+nftban_emit_firewall_conflict_alerts
+if [[ "$(count_fw_lines)" -eq 1 ]]; then
+    ok "T14 (R5) same TAG twice in one array → exactly 1 line (intra-run dedup)"
+else
+    no "T14 (R5) same TAG twice in one array → exactly 1 line (intra-run dedup)" "got $(count_fw_lines)"
+fi
+
+# -----------------------------------------------------------------------------
+# T15 (R6): non-writable log dir (mkdir -p fails) → function returns 0,
+# no emission, no host abort. Uses /proc/sys (read-only fs, even for root)
+# to model the failure hermetically without permission games.
+# -----------------------------------------------------------------------------
+reset_scratch
+saved_log_dir="$NFTBAN_LOG_DIR"
+export NFTBAN_LOG_DIR=/proc/sys/kernel/nftban-v138-prb-test-readonly
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+# shellcheck disable=SC2034
+NFTBAN_FIREWALL_CONFLICTS=("FIREWALLD: readonly-dir test")
+nftban_emit_firewall_conflict_alerts; rc=$?
+export NFTBAN_LOG_DIR="$saved_log_dir"
+if [[ "$rc" -eq 0 ]]; then
+    ok "T15 (R6) non-writable log dir → emitter returns 0 (best-effort)"
+else
+    no "T15 (R6) non-writable log dir → emitter returns 0 (best-effort)" "rc=$rc"
+fi
+# T15a: nothing was emitted to the saved scratch log either.
+if [[ "$(count_fw_lines)" -eq 0 ]]; then
+    ok "T15a (R6) no line emitted to scratch log when target dir was unwritable"
+else
+    no "T15a (R6) no line emitted to scratch log when target dir was unwritable" "got $(count_fw_lines)"
 fi
 
 # -----------------------------------------------------------------------------
