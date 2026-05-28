@@ -11,6 +11,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.140.0] - 2026-05-28 — Ubuntu 26.04 LTS Tier-1 introduction
+
+**Codename:** `V1_140_0_UBUNTU26_TIER1_INTRO`
+**Controlling spec:** `NFTBAN_ROADMAP/V1_140_0_UBUNTU26_PHASE1_TIGHT_SPEC.md`
+**Lab validation record:** `NFTBAN_ROADMAP/V140_172_LAB_VALIDATION_RECORD.md` (verdict `V140_172_LAB_VALIDATION_PARTIAL_PASS_B`)
+**Closure:** `NFTBAN_ROADMAP/V1_140_0_RELEASE_CLOSURE.md`
+
+> **Why:** Promotes **Ubuntu 26.04 LTS ("Resolute Raccoon")** from documented Tier-1 stub to operational Tier-0 (fully supported) per `SECURITY.md` taxonomy. CI matrix expansion + 3 new distro confs + 1 hint string + 3 tier-doc reshuffles. **Daemon byte-identical to v1.139.2** (zero Go touched; SHA256-identical confirmed in lab validation). Schema 1.83.0 frozen. Zero packaging dep change.
+
+### CI matrix + release expansion ([#724](https://github.com/itcmsgr/nftban/pull/724), sq `1c0986fb`)
+
+- `.github/workflows/build-packages.yml` — `ubuntu26.04 / ubuntu:26.04 / Tier 0` added to `build-deb` matrix; `tier: 0` added to `test-deb-install` matrix.
+- `.github/workflows/release.yml` — `ubuntu26.04` added to `build-deb` matrix; `nftban-ubuntu26.04-amd64.deb` added to all 5 asset enumerations (replace list, MANIFEST.txt, latest URLs, RELEASE_NOTES tier table, verification list + per-asset check).
+- `.github/workflows/ci-fresh-install-namespace-guard.yml` — `ubuntu26.04` matrix row added + coverage comment updated.
+
+### Distro confs (3 new)
+
+- `etc/nftban/distros/ubuntu-26.conf` — explicit precision: `version = 26.04`, `version_codename = resolute`, `[tier] level = 0`.
+- `etc/nftban/distros/ubuntu.conf` — **generic Ubuntu fallback** (`version = latest`, `version_codename = generic`). **Mandatory:** the shell distro-config loader at `cli/lib/nftban/lib/nftban_distro_config.sh:78-112` has NO forward-fit (only the Go loginmon loader at `internal/loginmon/distroconf/distroconf.go:148-167` does). Without this, every future Ubuntu major requires a release. Closes the v1.139.1 install verify Finding #1 structurally.
+- `etc/nftban/distros/debian.conf` — generic Debian fallback for symmetry + Debian 14+ forward-fit. Same shape as `centos.conf` / `fedora.conf` terminal-fallback pattern.
+
+### CLI hint + tier docs
+
+- `cli/lib/nftban/cli/cmd_update.sh:216` — `ubuntu20.04, ubuntu22.04, ubuntu24.04` → `..., ubuntu26.04`.
+- `SECURITY.md` — Ubuntu 26.04 moved from Tier 1 (Planned) → Tier 0 (Fully supported).
+- `CONTRIBUTING.md` — same tier reshuffle in §1 Supported Platforms.
+- `RELEASE-CHECKLIST.md` — Ubuntu 26.04 flipped from `[ ] warn-only, when available` → `[ ] Build succeeds on Ubuntu 26.04` (required-pass).
+
+### Operator decisions locked (2026-05-28)
+
+- `SELECT_UBUNTU26_TIER1_VERSION = v1.140.0`
+- OQ-1 = (a) promote Ubuntu 26 to repo Tier-0 / fully supported
+- OQ-5 = container build (`runs-on: ubuntu-latest` + Docker `ubuntu:26.04`, matching existing 22/24/debian12/13 pattern; zero dependency on `ubuntu-26.04` runner GA)
+- OQ-6 = AppArmor flip → phase2 (preserves Phase-1 daemon byte-identical; TODO comments at `nftban-core-{geoip,feeds}.service` left as-is)
+- OQ-3 = keep Ubuntu 22.04 Tier-2 (LTS until April 2027)
+- OQ-4 = defer Debian 13 co-promotion (Ubuntu 26 ships alone)
+- Generic `debian.conf` = ship (Debian 14+ forward-fit symmetry)
+
+### Lab validation evidence (`NFTBAN_ROADMAP/V140_172_LAB_VALIDATION_RECORD.md`)
+
+Verdict `V140_172_LAB_VALIDATION_PARTIAL_PASS_B`. **Set B `203.0.113.155` Ubuntu 26.04 LTS — FULL PASS** on every §5.1–§5.7 step:
+- Candidate DEB built natively (sha256 `5981afc5ebfd34ef19f97f8d1a97da68ec27a56af341753003c5d2dddaa89251`, 13.6 MB).
+- Install reached `INSTALL_STATE=COMMITTED` via standard `apt-get install` + `NFTBAN_TAKEOVER=1 nftban-installer --repair`.
+- 16/16 install assertions PASS.
+- `nftban version`: no "No configuration file found" (proves the Phase-1 conf-fix).
+- All 3 new confs (`ubuntu-26.conf` explicit, `ubuntu.conf` generic, `debian.conf` generic) resolve correctly via loader.
+- **Daemon SHA256-identical** between baseline `main @ 3ba23da9` (v1.139.1) and candidate (`nftban-core` sha256 `cd605ca7…`, `nftband` sha256 `b48362cf…`).
+- All negative-control gates PASS (fhs-spec.yaml MD5, deb/control MD5, nftban_fhs_spec.sh MD5, cmd/+internal git diff = empty).
+
+Set A (172.x lab) deferred per operator's `PARTIAL_PASS_B` acceptance: `.3`/`.39` powered off; `.20` is the Ubuntu 24 hypervisor; the Ubuntu 26 guest `tgt-u2604` at `10.88.88.112` didn't authorize the deputy's SSH keys. Operator gate "continue to 140 and lets release the UBUNTU 26" accepted given the SHA256-identical daemon proof.
+
+### Out of scope (deferred to Phase-2 / later lanes; filed in `NFTBAN_PENDINGS_AND_BUGS_CURRENT.md`)
+
+- Canonization workflows (`ci-{install,uninstall,update,restore}-canonization.yml`, `ci-runtime-truth.yml`) — Phase-2.
+- AppArmor + Landlock + Go-1.25 enablement re-test on `nftban-core-{geoip,feeds}.service` — Phase-2 (OQ-6).
+- `nftban uninstall` CLI wrapper — separate lane.
+- Ubuntu `inet filter` postinst handling under CVE-2025-NFTBAN-001 guard — Phase-2 behavioral.
+- systemd 259 path-transition warnings — non-fatal; FHS-spec adjacent.
+- `mailutils` via Recommends — release-notes only.
+- SLSA per-distro provenance — single hermetic Go binary attests for all.
+- All UX-C2 through UX-C6 + RC-CONTRACT-AUDIT + FHS-SPEC-GUI-MENTION deferred from v1.139.2.
+
+### Release-prep envelope (this commit)
+
+Only allowed files touched in this release-prep PR: `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only; FHS body byte-unchanged). No host contact during release-prep construction.
+
+---
+
 ## [v1.139.2] - 2026-05-28 — CLI safety + truth-telling hotfix
 
 **Codename:** `V1_139_2_CLI_SAFETY_AND_TRUTH`
