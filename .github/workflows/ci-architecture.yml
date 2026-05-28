@@ -516,6 +516,25 @@ jobs:
         run: bash cli/lib/nftban/tests/v134_pr_d_p3_alias_allowlist_test.sh
 
       # =====================================================================
+      # v1.139.2 hotfix: CLI safety + truth-telling gates
+      # =====================================================================
+      # Rollback help-guard: `nftban rollback --help` MUST show help text and
+      # MUST NOT trigger a real rollback. Prior to v1.139.2 the dispatcher
+      # invoked _do_rollback without parsing --help; a CLI-audit invocation
+      # downgraded a host. Defense-in-depth guard is at _do_rollback's entry
+      # so every current and future caller is safe.
+      - name: Rollback --help guard (v1.139.2)
+        run: bash cli/lib/nftban/tests/rollback_help_guard_v1_139_2_test.sh
+
+      # CLI exit-code contract: bogus subcommand, ban (no arg), ban (invalid
+      # IP), and update --dry-run MUST return rc>=1 (declared by `nftban --help`
+      # itself: "0 Success / 1 Error / 2 Warning"). Locks the current correct
+      # behavior so a future PR cannot regress to silently swallowing errors
+      # in `nftban X || alert`-style automation.
+      - name: CLI exit-code contract (v1.139.2)
+        run: bash cli/lib/nftban/tests/cli_error_rc_contract_v1_139_2_test.sh
+
+      # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
       # These greps prevent reintroduction of deleted legacy constructs.

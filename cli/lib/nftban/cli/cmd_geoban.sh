@@ -126,7 +126,7 @@ nftban_cmd_geoban() {
     # Map geoban subcommands to geoip subcommands
     case "$subcommand" in
         stats)
-            # Stats command for GUI/API - provides JSON output
+            # Stats command for scripts/API - provides JSON output
             nftban_geoban_stats "$@"
             ;;
         test)
@@ -268,7 +268,7 @@ GEOBAN_ENABLED=\"false\""
 }
 
 # =============================================================================
-# STATS FUNCTION (for API/GUI)
+# STATS FUNCTION (for scripts/API)
 # =============================================================================
 
 nftban_geoban_stats() {

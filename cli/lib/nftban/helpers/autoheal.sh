@@ -191,7 +191,7 @@ if [ -d "${NFTBAN_DATA_DIR}" ]; then
 
     log_info "✅ /var/lib/nftban files fixed (nftban:nftban 0640)"
 fi
-# CRITICAL: Set CAP_NET_ADMIN on nftban-core for GUI ban/unban functionality
+# CRITICAL: Set CAP_NET_ADMIN on nftban-core for ban/unban functionality
 if [ -x "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" ]; then
     setcap cap_net_admin+ep "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" 2>/dev/null || log_warn "Failed to set CAP_NET_ADMIN on nftban-core"
 fi

@@ -185,7 +185,7 @@ nftban_geoip_cmd_lookup() {
 
     case "$format" in
         json)
-            # JSON format for GUI/API
+            # JSON format for scripts/API
             "$nftban_core_bin" geoip lookup "$ip" --json
             ;;
         compact)

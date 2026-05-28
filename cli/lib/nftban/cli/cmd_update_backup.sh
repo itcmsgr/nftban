@@ -79,7 +79,51 @@ _create_backup() {
     fi
 }
 
+_rollback_help() {
+    cat <<'ROLLBACK_HELP'
+nftban rollback — restore the most recent backup snapshot
+
+Usage:
+    nftban rollback              Roll back to the most recent backup
+    nftban rollback --help|-h    Show this help text
+    nftban rollback help
+
+To inspect available backups WITHOUT rolling back:
+    nftban update list           List available backup snapshots
+    nftban update history        Show update history
+
+Backups are stored under:
+    /var/lib/nftban/update/backups/
+
+Notes:
+  * Running 'nftban rollback' with no arguments will replace the current
+    installation with the most recent backup snapshot. This is a destructive
+    operation — there is no undo.
+  * Use 'nftban update list' first to confirm which snapshot will be selected.
+  * Prior to v1.139.2, 'nftban rollback --help' executed a rollback because
+    the dispatcher did not parse --help before invoking the rollback worker.
+    That bug is fixed in v1.139.2 — this help text is now shown instead.
+ROLLBACK_HELP
+    return 0
+}
+
 _do_rollback() {
+    # v1.139.2 hotfix: parse --help|-h|help before doing ANYTHING destructive.
+    # The CLI dispatcher historically passed "$@" through unparsed, so
+    # `nftban rollback --help` invoked a real rollback. Guard every entry to
+    # _do_rollback at the source so all four dispatch sites (top-level rollback
+    # alias + the three update sub-modes github/git/local) are covered with a
+    # single fix, even if a future caller is added.
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help|help)
+                _rollback_help
+                return 0
+                ;;
+        esac
+    done
+
     _update_log INFO "Looking for backups..."
 
     if [[ ! -d "$UPDATE_BACKUP_DIR" ]]; then

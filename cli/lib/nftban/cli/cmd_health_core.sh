@@ -103,7 +103,7 @@ nftban_health_cmd_check() {
     local warning_count="${NFTBAN_HEALTH_WARNING_COUNT:-0}"
 
     # Diagnostics exit codes: 0=OK, 1=WARNING(strict), 2=ERROR
-    # v1.37.1: Warnings about OPTIONAL features (Web GUI, metrics, etc.)
+    # v1.37.1: Warnings about OPTIONAL features (metrics, etc.)
     # must NOT cause non-zero exit. Only real errors (broken firewall,
     # missing binaries, failed checks) should fail.
     # v1.39.0: --strict mode makes warnings return exit 1 (for CI pipelines)
