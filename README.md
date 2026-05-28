@@ -107,6 +107,12 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.
 sudo apt install -y ./nftban-ubuntu24.04-amd64.deb
 ```
 
+#### Ubuntu 26.04 LTS (Resolute Raccoon) — *Tier-0 since v1.140.0*
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb
+sudo apt install -y ./nftban-ubuntu26.04-amd64.deb
+```
+
 #### Debian 12 (Bookworm)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
@@ -157,6 +163,7 @@ sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
 | Tier | Distribution | Version | Package |
 |------|--------------|---------|---------|
 | 0 | Ubuntu | 24.04 (Noble) | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
+| 0 | Ubuntu | 26.04 (Resolute Raccoon) | [nftban-ubuntu26.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb) |
 | 0 | Debian | 12 (Bookworm) | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
 | 1 | Debian | 13 (Trixie) | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
 | 2 | Ubuntu | 22.04 (Jammy) | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
