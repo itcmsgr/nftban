@@ -40,8 +40,8 @@ Security fixes are prioritized for Tier 0 platforms first.
 
 | Tier | Platforms | Support Level |
 |------|-----------|---------------|
-| **Tier 0** | Ubuntu 24.04 LTS, Debian 12, Rocky Linux 9.x | Fully supported |
-| **Tier 1** | Rocky Linux 10.x, Debian 13, Ubuntu 26.04 LTS | Planned |
+| **Tier 0** | Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, Debian 12, Rocky Linux 9.x | Fully supported |
+| **Tier 1** | Rocky Linux 10.x, Debian 13 | Planned |
 | **Tier 2** | Rocky/RHEL 8.x, Ubuntu 22.04 LTS, Debian 11 | Best-effort (legacy) |
 
 ---

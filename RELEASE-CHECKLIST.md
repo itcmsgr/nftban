@@ -9,6 +9,7 @@ Every release must pass this checklist.
 ### Tier 0 (required)
 
 - [ ] Build succeeds on Ubuntu 24.04
+- [ ] Build succeeds on Ubuntu 26.04
 - [ ] Build succeeds on Debian 12
 - [ ] Build succeeds on Rocky Linux 9
 
@@ -16,7 +17,6 @@ Every release must pass this checklist.
 
 - [ ] Rocky Linux 10 (warn-only)
 - [ ] Debian 13 (warn-only)
-- [ ] Ubuntu 26.04 (warn-only, when available)
 
 ---
 

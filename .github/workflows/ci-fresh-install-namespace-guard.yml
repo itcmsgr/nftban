@@ -28,7 +28,7 @@
 # Coverage matrix:
 #   RPM: alma9, rocky9, centos-stream9 (all share rpm-el9 artifact)
 #        centos-stream10 (rpm-el10)
-#   DEB: debian12, debian13, ubuntu22.04, ubuntu24.04
+#   DEB: debian12, debian13, ubuntu22.04, ubuntu24.04, ubuntu26.04
 #
 # Assertions (each with distinct exit code so CI logs are diagnostic):
 #   A1 (exit 2): nftband.service active post-install
@@ -121,6 +121,11 @@ jobs:
             image: ubuntu:24.04
             pkg_type: deb
             artifact: deb-ubuntu24.04
+            systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
+          - distro: ubuntu26.04
+            image: ubuntu:26.04
+            pkg_type: deb
+            artifact: deb-ubuntu26.04
             systemd_install: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl iproute2 nftables jq tar ca-certificates adduser netbase procps
 
     steps:

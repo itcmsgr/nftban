@@ -276,6 +276,9 @@ jobs:
           - distro: ubuntu24.04
             container: ubuntu:24.04
             name_suffix: ubuntu24.04
+          - distro: ubuntu26.04
+            container: ubuntu:26.04
+            name_suffix: ubuntu26.04
           - distro: debian12
             container: debian:12
             name_suffix: debian12
@@ -586,6 +589,10 @@ jobs:
           - distro: ubuntu24.04
             container: ubuntu:24.04
             deb_artifact: deb-ubuntu24.04
+            tier: 0
+          - distro: ubuntu26.04
+            container: ubuntu:26.04
+            deb_artifact: deb-ubuntu26.04
             tier: 0
           - distro: debian12
             container: debian:12
