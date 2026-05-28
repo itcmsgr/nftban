@@ -157,3 +157,4 @@ When writing wiki pages, docs, README sections, or release notes, follow:
 - Full hallucination guide: `/home/commonfolder/LLMAI4NFTBAN/HOW_TO_ASK_ELIMINATE_HALLUCINATION.md`
 - Hallucination detector: `/home/commonfolder/LLMAI4NFTBAN/validators/scripts/detect_hallucinations.sh`
 - Auditor system: `/home/commonfolder/LLMAI4NFTBAN/prompts/hallucination_auditor_system.md`
+- FHS authority graph (canonical): `/home/commonfolder/LLMAI4NFTBAN/NFTBAN_ROADMAP/V1_139_FHS_AUTHORITY_GRAPH.md` — single source of truth for the FHS authority topology (which surface owns which dir/file perms + closure status of historical gaps; v1.139 PR-C formalization).
