@@ -1494,6 +1494,34 @@ firewall_reload() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --help|-h|help)
+                # v1.141 PR-A (BUG-B5): help-guard. Prior to v1.141, this parser
+                # had only --quiet|-q and *) → ERROR; `nftban firewall reload --help`
+                # returned rc=1 with "Unknown option". help is now inert (no nft,
+                # systemctl, daemon IPC, or filesystem mutation).
+                cat <<'FIREWALL_RELOAD_HELP'
+nftban firewall reload — atomic rebuild of nftables ruleset
+
+Usage:
+    nftban firewall reload                Reload + re-apply NFTBan schema + whitelist sync
+    nftban firewall reload --quiet        Reload silently (script-friendly; rc indicates result)
+    nftban firewall reload --help         Show this help text
+
+What it does:
+  * Reloads /etc/nftables.conf via systemd or nft -f (per distro).
+  * Re-applies the NFTBan schema (whitelist, blacklist, etc.) after the kernel
+    ruleset is replaced.
+  * Atomic: kernel never sees an empty/partial ruleset.
+
+Exit codes:
+    0    Reload committed
+    1    Reload failed; previous ruleset retained (or other error)
+    2    Conflict with another firewall manager (UFW, firewalld, etc.)
+
+Privilege: root required (operations on /etc/nftables.conf + nft kernel writes).
+FIREWALL_RELOAD_HELP
+                return 0
+                ;;
             --quiet|-q)
                 quiet=true
                 shift

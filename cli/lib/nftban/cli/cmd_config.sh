@@ -717,8 +717,25 @@ nftban_cmd_config() {
     fi
     echo ""
 
+    # v1.141 PR-A (BUG-B11/B12 + sweep-all): every config sub-arm now intercepts
+    # --help|-h|help as $1 BEFORE the "Module name required" check. Prior to
+    # v1.141, `nftban config get --help` etc. returned rc=1 with "Module name
+    # required" because --help was treated as the module name positional.
+    _v141_config_subarg_is_help() {
+        case "${1:-}" in -h|--help|help) return 0 ;; *) return 1 ;; esac
+    }
+
     case "$subcommand" in
         get)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config get <module> [--json] — read effective module config"
+                echo ""
+                echo "Usage:"
+                echo "    nftban config get <module>            Print KEY=VALUE lines"
+                echo "    nftban config get <module> --json     Print as JSON"
+                echo "    nftban config get --help              Show this help text"
+                return 0
+            fi
             if [[ -z "${1:-}" ]]; then
                 echo "ERROR: Module name required" >&2
                 echo "Usage: nftban config get <module> [--json]" >&2
@@ -728,6 +745,11 @@ nftban_cmd_config() {
             ;;
 
         defaults)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config defaults <module> [--json] — show schema-default module config"
+                echo "Usage: nftban config defaults <module> [--json]"
+                return 0
+            fi
             if [[ -z "${1:-}" ]]; then
                 echo "ERROR: Module name required" >&2
                 echo "Usage: nftban config defaults <module> [--json]" >&2
@@ -737,6 +759,11 @@ nftban_cmd_config() {
             ;;
 
         overrides)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config overrides <module> [--json] — show operator overrides over defaults"
+                echo "Usage: nftban config overrides <module> [--json]"
+                return 0
+            fi
             if [[ -z "${1:-}" ]]; then
                 echo "ERROR: Module name required" >&2
                 echo "Usage: nftban config overrides <module> [--json]" >&2
@@ -746,6 +773,14 @@ nftban_cmd_config() {
             ;;
 
         set)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config set <module> KEY=VALUE — set an operator override"
+                echo ""
+                echo "Usage:"
+                echo "    nftban config set <module> KEY=VALUE  Set override KEY to VALUE for module"
+                echo "    nftban config set --help              Show this help text"
+                return 0
+            fi
             if [[ -z "${1:-}" ]] || [[ -z "${2:-}" ]]; then
                 echo "ERROR: Module name and KEY=VALUE required" >&2
                 echo "Usage: nftban config set <module> KEY=VALUE" >&2
@@ -755,6 +790,11 @@ nftban_cmd_config() {
             ;;
 
         reset)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config reset <module> KEY — remove a single operator override"
+                echo "Usage: nftban config reset <module> KEY"
+                return 0
+            fi
             if [[ -z "${1:-}" ]] || [[ -z "${2:-}" ]]; then
                 echo "ERROR: Module name and KEY required" >&2
                 echo "Usage: nftban config reset <module> KEY" >&2
@@ -764,6 +804,11 @@ nftban_cmd_config() {
             ;;
 
         reset-all)
+            if _v141_config_subarg_is_help "${1:-}"; then
+                echo "nftban config reset-all <module> — remove ALL operator overrides for module"
+                echo "Usage: nftban config reset-all <module>"
+                return 0
+            fi
             if [[ -z "${1:-}" ]]; then
                 echo "ERROR: Module name required" >&2
                 echo "Usage: nftban config reset-all <module>" >&2

@@ -1083,6 +1083,49 @@ main() {
         source "${NFTBAN_LIB_DIR}/nftban_help.sh"
     fi
 
+    # v1.141 PR-A — top-level help-inertness guard.
+    # Runs BEFORE the auto-loader and BEFORE the alias case below, so that:
+    #   - cmd_search prints USAGE only after a banner-action chain that
+    #     historically swallowed --help as the search target;
+    #   - the `export` alias arm doesn't forward `--help` to stats export,
+    #     which creates an output file on disk (real help-inertness bug);
+    #   - cross-module sources from hardcoded /usr/lib/nftban/ paths that
+    #     fail in dev (cmd_geoban → /usr/lib/.../cmd_geoip.sh,
+    #     cmd_suricata → cmd_suricata_rules.sh) don't fire on help paths;
+    #   - phantom commands with no cmd_*.sh backing (install/uninstall/
+    #     rebuild — in the suggester list, not actually implemented)
+    #     produce inert Usage text instead of an "Unknown command" echo.
+    # Pure-shell — no daemon, nft, systemctl, package-manager, or filesystem
+    # mutation. Scope: V1_141_0_CONSOLIDATED_HOTFIX_AND_HARDENING_SCOPE.md PR-A.
+    _v141_args_have_help_flag() {
+        local a
+        for a in "$@"; do
+            case "$a" in -h|--help|help) return 0 ;; esac
+        done
+        return 1
+    }
+    case "$cmd" in
+        search|feeds|export|suricata|geoban|install|uninstall|rebuild)
+            if _v141_args_have_help_flag "$@"; then
+                echo "Usage: nftban $cmd [options]"
+                case "$cmd" in
+                    search)   echo "  Search IPs/ports across feeds, ban lists, whitelists." ;;
+                    feeds)    echo "  Manage and inspect threat-intelligence feeds." ;;
+                    export)   echo "  Export stats snapshot. Alias for 'nftban stats export'." ;;
+                    suricata) echo "  Manage Suricata IDS (install, enable, rules, status, profile)." ;;
+                    geoban)   echo "  Country-based IP blocking (ban, unban, whitelist, list, status, update)." ;;
+                    install|uninstall|rebuild)
+                        echo "  Note: '$cmd' is handled by the distro package (DEB/RPM) and the"
+                        echo "  systemd nftband service — not a CLI subcommand in this build."
+                        ;;
+                esac
+                echo ""
+                echo "For the full command index, run: nftban help"
+                return 0
+            fi
+            ;;
+    esac
+
     # Auto-load modular commands from cli/ directory
     # This keeps the main CLI small and manageable
     local cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_${cmd}.sh"

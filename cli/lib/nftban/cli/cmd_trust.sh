@@ -83,9 +83,27 @@ nftban_cmd_trust() {
         return 1
     fi
 
-    # Check root for state-changing operations
+    # v1.141 PR-A (BUG-B6/B7/B8 + help-inertness contract): if the user is asking
+    # for --help|-h|help on enable|disable|update, BYPASS the EUID gate. Help text
+    # is operator-side guidance and must be readable without root. Prior to v1.141,
+    # `nftban trust enable --help` as non-root short-circuited at the EUID gate
+    # below with rc=1 BEFORE the action arm got a chance to print help.
     case "$action" in
-        enable|disable|update|load)
+        enable|disable|update)
+            case "$provider" in -h|--help|help)
+                # fall through to action arm; action arm handles help itself
+                ;;
+                *)
+                    if [[ "$EUID" -ne 0 ]]; then
+                        echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
+                        echo "Hint: trust $action requires elevated privileges; members of the nftban" >&2
+                        echo "      group are authorized via PolicyKit/polkit rules." >&2
+                        return 1
+                    fi
+                    ;;
+            esac
+            ;;
+        load)
             if [[ "$EUID" -ne 0 ]]; then
                 echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
                 echo "Hint: trust $action requires elevated privileges; members of the nftban" >&2
@@ -100,6 +118,25 @@ nftban_cmd_trust() {
             nftban_trust_list
             ;;
         enable)
+            # v1.141 PR-A (BUG-B6): intercept --help BEFORE invoking nftban_trust_enable
+            # (which upcases ${1^^} and treats --HELP as "Unknown provider").
+            case "$provider" in -h|--help|help)
+                cat <<'TRUST_ENABLE_HELP'
+nftban trust enable <PROVIDER> — enable a trusted-IP provider
+
+Usage:
+    nftban trust enable <PROVIDER>        Enable the named provider
+    nftban trust enable --help            Show this help text
+
+Run `nftban trust list` to see available providers on this host.
+
+Exit codes:
+    0    Provider enabled (or already enabled)
+    1    Unknown provider or enablement failed
+TRUST_ENABLE_HELP
+                return 0
+                ;;
+            esac
             if [[ -z "$provider" ]]; then
                 echo "ERROR: Provider name required" >&2
                 echo "Usage: nftban trust enable <PROVIDER>" >&2
@@ -111,6 +148,24 @@ nftban_cmd_trust() {
             nftban_trust_enable "$provider"
             ;;
         disable)
+            # v1.141 PR-A (BUG-B7): same upcase trap as enable.
+            case "$provider" in -h|--help|help)
+                cat <<'TRUST_DISABLE_HELP'
+nftban trust disable <PROVIDER> — disable a trusted-IP provider
+
+Usage:
+    nftban trust disable <PROVIDER>       Disable the named provider
+    nftban trust disable --help           Show this help text
+
+Run `nftban trust list` to see currently enabled providers.
+
+Exit codes:
+    0    Provider disabled (or already disabled)
+    1    Unknown provider or disable failed
+TRUST_DISABLE_HELP
+                return 0
+                ;;
+            esac
             if [[ -z "$provider" ]]; then
                 echo "ERROR: Provider name required" >&2
                 echo "Usage: nftban trust disable <PROVIDER>" >&2
@@ -119,6 +174,25 @@ nftban_cmd_trust() {
             nftban_trust_disable "$provider"
             ;;
         update)
+            # v1.141 PR-A (BUG-B8): same upcase trap as enable/disable.
+            case "$provider" in -h|--help|help)
+                cat <<'TRUST_UPDATE_HELP'
+nftban trust update [PROVIDER] — refresh trusted-IP provider state
+
+Usage:
+    nftban trust update                   Refresh all enabled providers
+    nftban trust update <PROVIDER>        Refresh only the named provider
+    nftban trust update --help            Show this help text
+
+Run `nftban trust list` to see currently enabled providers.
+
+Exit codes:
+    0    Refresh completed
+    1    Unknown provider or provider not enabled
+TRUST_UPDATE_HELP
+                return 0
+                ;;
+            esac
             if [[ -n "$provider" ]]; then
                 nftban_trust_update "$provider"
             else
