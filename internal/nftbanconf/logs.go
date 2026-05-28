@@ -37,20 +37,21 @@ import (
 type LogCategory string
 
 const (
-	LogCategoryMain        LogCategory = "main"
-	LogCategoryAudit       LogCategory = "audit"
-	LogCategoryBans        LogCategory = "bans"
-	LogCategoryPortscan    LogCategory = "portscan"
-	LogCategoryDDoS        LogCategory = "ddos"
-	LogCategoryLoginAlert  LogCategory = "login_alert"
-	LogCategoryFeeds       LogCategory = "feeds"
-	LogCategoryGeoban      LogCategory = "geoban"
-	LogCategoryCron        LogCategory = "cron"
-	LogCategoryMaintenance LogCategory = "maintenance"
-	LogCategoryCLIErrors   LogCategory = "cli_errors"
-	LogCategorySuricata    LogCategory = "suricata"
-	LogCategoryBotguard    LogCategory = "botguard"
-	LogCategoryDebug       LogCategory = "debug"
+	LogCategoryMain          LogCategory = "main"
+	LogCategoryAudit         LogCategory = "audit"
+	LogCategoryBans          LogCategory = "bans"
+	LogCategoryPortscan      LogCategory = "portscan"
+	LogCategoryDDoS          LogCategory = "ddos"
+	LogCategoryLoginAlert    LogCategory = "login_alert"
+	LogCategoryFeeds         LogCategory = "feeds"
+	LogCategoryGeoban        LogCategory = "geoban"
+	LogCategoryCron          LogCategory = "cron"
+	LogCategoryMaintenance   LogCategory = "maintenance"
+	LogCategoryCLIErrors     LogCategory = "cli_errors"
+	LogCategorySuricata      LogCategory = "suricata"
+	LogCategoryBotguard      LogCategory = "botguard"
+	LogCategoryDebug         LogCategory = "debug"
+	LogCategoryServiceAlerts LogCategory = "service_alerts" // v1.138 PR-B (SEC-BYPASS-ALERT)
 )
 
 // LogTemplate names a packaged logrotate template that executes rotation policy.
@@ -112,6 +113,9 @@ func LogInventory() []LogPolicy {
 		{Name: "nftban.log", Category: LogCategoryMain, Rotation: "weekly", Retain: 4, Template: TemplateMain},
 		{Name: "nftban-actions.log", Category: LogCategoryAudit, Rotation: "daily", Retain: 90, Template: TemplateMain},
 		{Name: "audit.log", Category: LogCategoryAudit, Rotation: "daily", Retain: 90, Template: TemplateMain},
+		// service-alerts.log: OnFailure worker output + v1.138 PR-B firewall-conflict
+		// emissions (SEC-BYPASS-ALERT). weekly/4 matches install/config/nftban.logrotate.
+		{Name: "service-alerts.log", Category: LogCategoryServiceAlerts, Rotation: "weekly", Retain: 4, Template: TemplateMain},
 		{Name: "bans.log", Category: LogCategoryBans, Rotation: "weekly", Retain: 12, Template: TemplateMain},
 		{Name: "portscan.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
 		{Name: "portscan-classic.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
