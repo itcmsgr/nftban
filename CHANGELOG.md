@@ -11,6 +11,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.139.2] - 2026-05-28 — CLI safety + truth-telling hotfix
+
+**Codename:** `V1_139_2_CLI_SAFETY_AND_TRUTH`
+**Records:** `NFTBAN_ROADMAP/139_1_ROLLOUT/UX_HONEST_CRUEL_JUDGE_REVIEW_V1_139_1.md`
+**Closure:** `NFTBAN_ROADMAP/V1_139_2_RELEASE_CLOSURE.md`
+
+> **Why:** Three production CLI defects of the same class — the binary lies to automation — surfaced during the v1.139.1 fleet rollout and an independent UX review. None is a daemon issue; all are CLI text / dispatcher gaps. Daemon byte-identical to v1.139.1.
+
+### Rollback `--help` guard (SHIP-BLOCKER) — PR [#722](https://github.com/itcmsgr/nftban/pull/722)
+- Prior to v1.139.2, `nftban rollback --help` invoked a real rollback because the dispatcher called `_do_rollback` without parsing `--help`. A CLI-audit invocation tripped the bug during the v1.139.1 rollout and downgraded a canary host (lab2 v1.139.1 → v1.133.0).
+- Defense-in-depth fix at `_do_rollback`'s entry in `cli/lib/nftban/cli/cmd_update_backup.sh:82` so every current AND future caller is safe. The 4 dispatch sites in `cli/lib/nftban/cli/cmd_update.sh` (top-level rollback alias + github/git/local sub-modes) now pass `"$@"` so the guard sees the args. New `_rollback_help()` helper renders proper usage text.
+- New hermetic test `cli/lib/nftban/tests/rollback_help_guard_v1_139_2_test.sh` — 10/10 PASS (3 structural + 7 runtime / control).
+
+### CLI exit-code contract test + CI gate (C1 from UX review)
+- The UX review reported four error paths returning rc=0 while printing ERROR text. Code-truth verification against `main @ 3ba23da9` shows all four paths already return rc=1; the review's evidence likely reflects an older installed binary or a `/usr/sbin/nftban` wrapper. Rather than apply theater "fixes" to already-correct code, this release adds a hermetic regression test that locks the current correct behavior as the contract.
+- Locked tier-0 matrix:
+  - `nftban bogus-subcommand` → rc≥1.
+  - `nftban ban` (no arg) → rc≥1.
+  - `nftban ban 999.0.0.1` (invalid IP) → rc≥1.
+  - `nftban update --dry-run` (unimplemented flag) → rc≥1.
+  - Controls: `nftban version`, `nftban help`, `nftban rollback --help` → rc=0.
+- New hermetic test `cli/lib/nftban/tests/cli_error_rc_contract_v1_139_2_test.sh` — 10/10 PASS. CI step "CLI exit-code contract (v1.139.2)" added to `ci-architecture.yml` so any future PR that regresses these paths fails CI.
+
+### GUI retirement (cosmetic)
+- The Web GUI (`cmd_gui.sh`) was structurally retired in v1.100.1b ([PR #502](https://github.com/itcmsgr/nftban/pull/502) "GOTH cross-cutting prune") but 29 stale "Web GUI" / "for GUI" / "for API/GUI" references survived across 19 files. All rewritten to "scripts/API" or "metrics" or removed, including `cmd_wizard.sh` user-facing prompts + status banners (the GUI question is gone; only the Prometheus metrics exporter remains).
+- `ENABLE_GUI=0` pinned for backward-compat with downstream `/etc/nftban/nftban.conf.local` consumers, with v1.139.2 retirement-marker comments citing PR #502. Dead `WANT_GUI` variable removed (shellcheck SC2034).
+- `nftban_fhs_spec.sh:99` "TLS certificates for GUI/API" deliberately NOT touched — it's a generated file; deferred to a separate fhs-spec source-side cleanup lane.
+
+### Validation
+- PR #722 CI: green.
+- Local proofs: bash -n 22/22; rollback test 10/10; rc-contract test 10/10; GUI grep-zero on modified files (2 intentional retention markers only); zero `.go` in diff (daemon byte-identical to v1.139.1); YAML parse clean on touched workflows; envelope = 23 files (cap 30).
+- Post-merge main CI on the squash watchpoint: confirmed before release-prep PR opened.
+- Release-prep main CI on the release-prep squash: confirmed before tag.
+
+### Out of scope (deferred to v1.140.x per UX review's P1/P2/P3 ranking)
+- C2 wall-of-text validation errors — UX redesign across 60+ command modules.
+- C3 cache/kernel drift remediation in `nftban status` — needs design.
+- C4 banner chrome restraint.
+- C5 `--dry-run` flag parity (advertised on `nftban ban`, unimplemented on `nftban update`).
+- C6 inline-sudo guidance on privilege failure.
+- Broader audit of the other 405 `ERROR:` printer sites — separate lane.
+- `nftban_fhs_spec.sh` source-side GUI cleanup — separate fhs-spec lane.
+- Ubuntu 26 / v1.140 Tier-1 introduction — separate lane (lab-first; HARD_HOLD on tag pending 172.x lab validation).
+
+### Release-prep envelope (this commit)
+Only allowed files touched in this release-prep PR: `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header-version regen only; FHS body byte-unchanged). No host contact during release-prep construction.
+
+---
+
 ## [v1.139.1] - 2026-05-28 — Hostname-fallback hotfix (PRE-EXISTING distro-compat)
 
 **Codename:** `V1_139_1_HOSTNAME_FALLBACK_HOTFIX`
