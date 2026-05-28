@@ -123,6 +123,7 @@ NFTBan supports platforms by tier. Only Tier 0 platforms define correctness.
 
 **Tier 0 — Focus (CI-required)**
 - Ubuntu 24.04 LTS
+- Ubuntu 26.04 LTS
 - Debian 12
 - Rocky Linux 9.x
 
@@ -131,7 +132,6 @@ A change is correct only if it builds, installs, and passes receipt-based audit 
 **Tier 1 — Future Planning (Limited CI)**
 - Rocky Linux 10.x
 - Debian 13
-- Ubuntu 26.04 LTS
 
 Rules: Architecture must accommodate. No hardcoded assumptions. Failures do not block Tier 0 releases.
 
