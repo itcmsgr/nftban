@@ -1294,7 +1294,48 @@ nftban_health_check_kernel_parity() {
     return $status
 }
 
+# SEC-RULEFP (v1.138): verify the live nftban ruleset against the captured
+# fingerprint baseline via 'nftban-core verify-rules'.
+#   exit 2 (MISMATCH)        -> security/integrity WARNING (possible rule
+#                               injection or chain-policy flip)
+#   BASELINE_MISSING (exit0) -> deliberate advisory WARNING (run a rebuild to capture)
+#   exit 3 (NFT_UNAVAILABLE) -> skip (not a finding)
+# Read-only: never mutates rules or the baseline.
+nftban_health_check_ruleset_fingerprint() {
+    local status=$HEALTH_OK
+    local core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ ! -x "$core_bin" ]]; then
+        # shellcheck disable=SC2034  # Used by render functions externally
+        NFTBAN_HEALTH_RESULTS["ruleset_fingerprint"]=$HEALTH_OK
+        return "$HEALTH_OK"
+    fi
+
+    local out rc
+    out=$("$core_bin" verify-rules 2>&1)
+    rc=$?
+    case "$rc" in
+        0)
+            if [[ "$out" == *BASELINE_MISSING* ]]; then
+                NFTBAN_HEALTH_WARNINGS+=("Ruleset fingerprint baseline not captured yet — run 'nftban firewall rebuild' to establish the integrity baseline")
+                status=$HEALTH_WARNING
+            fi
+            ;;
+        2)
+            NFTBAN_HEALTH_WARNINGS+=("SECURITY: nftban ruleset fingerprint MISMATCH — the live ruleset differs from the trusted baseline (possible rule injection or chain-policy flip). Inspect with 'nftban-core verify-rules'; re-baseline a trusted ruleset with 'nftban firewall rebuild'")
+            status=$HEALTH_WARNING
+            ;;
+        *)
+            # 3 = NFT_UNAVAILABLE (skip), or other inconclusive — not a finding.
+            :
+            ;;
+    esac
+    # shellcheck disable=SC2034  # Used by render functions externally
+    NFTBAN_HEALTH_RESULTS["ruleset_fingerprint"]=$status
+    return "$status"
+}
+
 # Export functions
+export -f nftban_health_check_ruleset_fingerprint
 export -f nftban_health_check_nftables_security nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_protection nftban_health_check_memory_protection
 export -f nftban_health_check_polkit nftban_health_check_systemd_hardening

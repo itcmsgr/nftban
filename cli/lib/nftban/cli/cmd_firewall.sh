@@ -1815,6 +1815,15 @@ firewall_rebuild() {
 
     # Exit 0 = success, no retry needed
     if [[ $_rebuild_exit -eq 0 ]]; then
+        # SEC-RULEFP (v1.138): capture the ruleset fingerprint baseline ONLY after a
+        # successful rebuild (we are inside the exit-0 branch — never on failure).
+        # Best-effort: a capture failure must not fail the rebuild. Same rulefp
+        # baseline format as the daemon apply hook (nftban-core owns the write).
+        local _rulefp_core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+        if [[ -x "$_rulefp_core" ]]; then
+            "$_rulefp_core" verify-rules --capture >/dev/null 2>&1 || \
+                echo "  ⚠️  ruleset fingerprint baseline capture failed (non-fatal)" >&2
+        fi
         return 0
     fi
 
