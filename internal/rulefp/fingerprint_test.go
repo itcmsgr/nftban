@@ -128,8 +128,13 @@ table ip nftban {
 `
 
 func TestDigest_Deterministic(t *testing.T) {
-	if Digest(baseRuleset) != Digest(baseRuleset) {
-		t.Fatal("digest not deterministic for identical input")
+	// Capture both calls into named locals: same input -> identical digest.
+	// (Splitting the call sites also keeps staticcheck SA4000 happy without
+	// changing the semantics of the determinism check.)
+	a := Digest(baseRuleset)
+	b := Digest(baseRuleset)
+	if a != b {
+		t.Fatalf("digest not deterministic for identical input: %s vs %s", a, b)
 	}
 }
 
