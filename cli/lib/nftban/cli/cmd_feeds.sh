@@ -276,10 +276,13 @@ nftban_feeds_list() {
     done
 
     if [[ "$_feeds_json_mode" == "true" ]]; then
-        # JSON output: array of feed objects
-        local _json='{"feeds":['
-        local _first=true
-        local _categories
+        # v1.141 PR-B (F-FEEDS-JSON): per-feed objects built via jq -n, not
+        # string concatenation. Pre-v1.141 the per-item construction at this
+        # site hand-escaped only backslash + double-quote in description —
+        # newline / unicode / control chars / negative-looking ip counts
+        # would all break the resulting JSON. jq -n + --arg / --argjson gives
+        # correct escaping for free.
+        local _categories _stream=""
         _categories=$(nftban_feeds_get_categories 2>/dev/null) || true
         for _cat in $_categories; do
             local _cat_feeds
@@ -294,15 +297,36 @@ nftban_feeds_list() {
                     local _feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${_feed_lower}.txt"
                     [[ -f "$_feed_file" ]] && _count=$(wc -l < "$_feed_file") || true
                 fi
-                [[ "$_first" == "true" ]] && _first=false || _json+=","
-                # Escape description for JSON
-                _desc="${_desc//\\/\\\\}"
-                _desc="${_desc//\"/\\\"}"
-                _json+="{\"name\":\"$_feed\",\"category\":\"$_cat\",\"enabled\":$_enabled,\"description\":\"$_desc\",\"interval\":\"${_interval:-DAILY}\",\"ips\":$_count}"
+                if command -v jq >/dev/null 2>&1; then
+                    local _obj
+                    _obj=$(jq -n \
+                        --arg name        "$_feed" \
+                        --arg category    "$_cat" \
+                        --arg enabled     "${_enabled:-false}" \
+                        --arg description "${_desc:-}" \
+                        --arg interval    "${_interval:-DAILY}" \
+                        --argjson ips     "${_count:-0}" \
+                        '{
+                            name: $name,
+                            category: $category,
+                            enabled: ($enabled == "true" or $enabled == "1"),
+                            description: $description,
+                            interval: $interval,
+                            ips: $ips
+                        }')
+                    _stream+="${_obj}"$'\n'
+                fi
             done
         done
-        _json+=']}'
-        echo "$_json"
+
+        if command -v jq >/dev/null 2>&1; then
+            local _feeds_array='[]'
+            [[ -n "$_stream" ]] && _feeds_array=$(printf '%s' "$_stream" | jq -s '.')
+            jq -n --argjson feeds "$_feeds_array" '{feeds: $feeds}'
+        else
+            # jq absent fallback: minimal valid JSON without per-feed detail.
+            echo '{"feeds":[],"jq_unavailable":true}'
+        fi
         return 0
     fi
 
@@ -389,74 +413,84 @@ nftban_feeds_status_json() {
     local json_mode="${1:-false}"
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-        # Get all feeds
+        # v1.141 PR-B (F-FEEDS-JSON): per-feed objects built via jq -n, not
+        # string concatenation. Pre-v1.141 the per-item object at this site
+        # was assembled via `printf-style` interpolation of $feed and $mtime
+        # into a hand-quoted JSON literal — breaks the moment a feed name or
+        # mtime carries a quote/backslash/unicode. jq -n with --arg / --argjson
+        # gives correct escaping for free.
         local all_feeds
         all_feeds=$(nftban_feeds_discover_all 2>/dev/null || echo "")
 
-        # Build enabled feeds list
-        local -a enabled_feeds=()
-        local enabled_count=0
-        local total_count=0
-        local total_ips=0
+        local enabled_count=0 total_count=0 total_ips=0
+        # Accumulate per-feed JSON objects (each produced by jq -n) into a
+        # newline-separated stream; jq -s '.' later folds it into one array.
+        local enabled_feeds_stream=""
 
         for feed in $all_feeds; do
             total_count=$((total_count + 1))
             local enabled
             enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+            [[ "$enabled" == "true" ]] || continue
 
-            if [[ "$enabled" == "true" ]]; then
-                enabled_count=$((enabled_count + 1))
-                local feed_lower="${feed,,}"  # Convert to lowercase
-                local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
-                local count=0
-                local mtime=""
+            enabled_count=$((enabled_count + 1))
+            local feed_lower="${feed,,}"
+            local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
+            local count=0 mtime=""
 
-                if [[ -f "$feed_file" ]]; then
-                    count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
-                    # Use library function with fallback
-                    if declare -f nftban_file_mtime >/dev/null 2>&1; then
-                        local mtime_unix
-                        mtime_unix=$(nftban_file_mtime "$feed_file")
-                        mtime=$(date -d "@${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
-                                date -r "${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
-                    else
-                        mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
-                    fi
-                    total_ips=$((total_ips + count))
+            if [[ -f "$feed_file" ]]; then
+                count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
+                if declare -f nftban_file_mtime >/dev/null 2>&1; then
+                    local mtime_unix
+                    mtime_unix=$(nftban_file_mtime "$feed_file")
+                    mtime=$(date -d "@${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null \
+                            || date -r "${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null \
+                            || echo "unknown")
+                else
+                    mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
                 fi
+                total_ips=$((total_ips + count))
+            fi
 
-                enabled_feeds+=("{\"name\":\"$feed\",\"enabled\":true,\"ip_count\":$count,\"last_update\":\"$mtime\"}")
+            if command -v jq >/dev/null 2>&1; then
+                local feed_obj
+                feed_obj=$(jq -n \
+                    --arg name        "$feed" \
+                    --argjson enabled true \
+                    --argjson ip_count "$count" \
+                    --arg last_update "$mtime" \
+                    '{name: $name, enabled: $enabled, ip_count: $ip_count, last_update: $last_update}')
+                enabled_feeds_stream+="${feed_obj}"$'\n'
             fi
         done
 
-        # Build JSON array
-        local feeds_json="["
-        local first=true
-        for feed_json in "${enabled_feeds[@]}"; do
-            [[ "$first" == "false" ]] && feeds_json+=","
-            feeds_json+="$feed_json"
-            first=false
-        done
-        feeds_json+="]"
-
-        # Build response
+        # Build response. Both branches go through jq when available.
         local data
-        if command -v jq &>/dev/null; then
+        if command -v jq >/dev/null 2>&1; then
+            local feeds_array
+            if [[ -n "$enabled_feeds_stream" ]]; then
+                feeds_array=$(printf '%s' "$enabled_feeds_stream" | jq -s '.')
+            else
+                feeds_array='[]'
+            fi
             data=$(jq -n \
-                --arg enabled_count "$enabled_count" \
-                --arg total_count "$total_count" \
-                --arg total_ips "$total_ips" \
-                --argjson feeds "$feeds_json" \
+                --argjson enabled_count "$enabled_count" \
+                --argjson total_count   "$total_count" \
+                --argjson total_ips     "$total_ips" \
+                --argjson feeds         "$feeds_array" \
                 '{
                     summary: {
-                        enabled_count: ($enabled_count | tonumber),
-                        total_count: ($total_count | tonumber),
-                        total_ips: ($total_ips | tonumber)
+                        enabled_count: $enabled_count,
+                        total_count:   $total_count,
+                        total_ips:     $total_ips
                     },
                     enabled_feeds: $feeds
                 }')
         else
-            data="{\"summary\":{\"enabled_count\":$enabled_count,\"total_count\":$total_count,\"total_ips\":$total_ips},\"enabled_feeds\":$feeds_json}"
+            # jq absent fallback: emit a minimal, structurally-valid JSON
+            # without per-feed detail (the names could contain shell-special
+            # chars; we refuse to hand-escape).
+            data="{\"summary\":{\"enabled_count\":$enabled_count,\"total_count\":$total_count,\"total_ips\":$total_ips},\"enabled_feeds\":[],\"jq_unavailable\":true}"
         fi
 
         json_output "true" "$data"

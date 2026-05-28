@@ -393,13 +393,94 @@ nftban_ddos_disable() {
 # PUBLIC API - STATUS
 # =============================================================================
 
+# v1.141 PR-B (J-DDOS) — JSON renderer for `nftban ddos status --json`.
+# Built with jq -n (no string concatenation) so output is valid JSON even
+# when any field carries quotes / unicode / shell-special chars. Fields
+# match the text-mode status section labels exactly.
+_nftban_ddos_status_json() {
+    local mode="${1:-unknown}"
+    local configured_mode="${2:-auto}"
+
+    # Suricata sub-status — best-effort, never block JSON emission.
+    local suricata_binary="unknown" suricata_service="unknown"
+    local suricata_eve="unknown" suricata_available="unknown"
+    local suricata_version=""
+    if type -t nftban_ddos_suricata_binary_exists &>/dev/null; then
+        if nftban_ddos_suricata_binary_exists; then
+            suricata_binary="present"
+            suricata_version=$(suricata -V 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || true)
+        else
+            suricata_binary="absent"
+        fi
+    fi
+    if type -t nftban_ddos_suricata_service_running &>/dev/null; then
+        if nftban_ddos_suricata_service_running; then suricata_service="running"; else suricata_service="stopped"; fi
+    fi
+    if type -t nftban_ddos_suricata_eve_active &>/dev/null; then
+        if nftban_ddos_suricata_eve_active; then suricata_eve="active"; else suricata_eve="stale"; fi
+    fi
+    if type -t nftban_ddos_suricata_is_available &>/dev/null; then
+        if nftban_ddos_suricata_is_available; then suricata_available="available"; else suricata_available="unavailable"; fi
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        jq -n \
+            --arg enabled    "${DDOS_ENABLED:-false}" \
+            --arg cfg_mode   "$configured_mode" \
+            --arg act_mode   "$mode" \
+            --arg s_bin      "$suricata_binary" \
+            --arg s_ver      "$suricata_version" \
+            --arg s_svc      "$suricata_service" \
+            --arg s_eve      "$suricata_eve" \
+            --arg s_avail    "$suricata_available" \
+            '{
+                module: "ddos",
+                enabled: ($enabled == "true" or $enabled == "1"),
+                configured_mode: $cfg_mode,
+                active_mode: $act_mode,
+                suricata: {
+                    binary: $s_bin,
+                    version: (if $s_ver == "" then null else $s_ver end),
+                    service: $s_svc,
+                    eve_log: $s_eve,
+                    available: $s_avail
+                }
+            }'
+        return $?
+    fi
+    # jq absent — emit a minimal hand-built object (still valid JSON; safe
+    # because every value is a known constrained string from above).
+    printf '{"module":"ddos","enabled":%s,"configured_mode":"%s","active_mode":"%s","suricata":{"binary":"%s","service":"%s","eve_log":"%s","available":"%s","jq_unavailable":true}}\n' \
+        "$([[ "${DDOS_ENABLED:-false}" == "true" ]] && echo true || echo false)" \
+        "$configured_mode" "$mode" "$suricata_binary" "$suricata_service" "$suricata_eve" "$suricata_available"
+}
+
+# v1.141 PR-B (J-DDOS): function now takes optional json_mode arg.
+# shellcheck disable=SC2120
+# (Internal callers may invoke without args; `${1:-false}` default handles
+# that. SC2120 over-fires on optional args.)
 nftban_ddos_status() {
+    # v1.141 PR-B (J-DDOS): json_mode-aware status. When called with
+    # json_mode="true", short-circuit ALL decorative chrome (banner +
+    # ━━━ heading bars + text body) and emit a single valid JSON object
+    # constructed via jq -n (no string concatenation). Pre-v1.141 this
+    # function had no json_mode parameter; the dispatcher arm at
+    # cmd_ddos.sh:384 called it bare, producing banner + text on
+    # `nftban ddos status --json` (cruel-judge §3 E_J6).
+    local json_mode="${1:-false}"
+
     _nftban_ddos_load_config
-    _nftban_ddos_banner
 
     local mode
     mode=$(_nftban_ddos_detect_mode)
     local configured_mode="${DDOS_MODE:-auto}"
+
+    if [[ "$json_mode" == "true" ]]; then
+        _nftban_ddos_status_json "$mode" "$configured_mode"
+        return $?
+    fi
+
+    _nftban_ddos_banner
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

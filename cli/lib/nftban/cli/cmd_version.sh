@@ -61,11 +61,15 @@ nftban_check_for_updates() {
     current_version="${NFTBAN_VERSION:-unknown}"
     current_version="${current_version#v}"
 
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "NFTBan Update Check"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
+    # v1.141 PR-B (E-NO-BANNER): suppress decorative ━━━ frame + header
+    # when NFTBAN_NO_BANNER=1 / --no-banner / --json on the command line.
+    if [[ "${NFTBAN_NO_BANNER:-0}" != "1" ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "NFTBan Update Check"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    fi
     printf "  %-20s %s\n" "Installed version:" "v${current_version}"
     printf "  %-20s %s\n" "Repository:" "github.com/${repo}"
     echo ""
@@ -139,8 +143,11 @@ nftban_check_for_updates() {
             ;;
     esac
 
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    # v1.141 PR-B (E-NO-BANNER): suppress trailing decorative frame too.
+    if [[ "${NFTBAN_NO_BANNER:-0}" != "1" ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    fi
     return 0
 }
 

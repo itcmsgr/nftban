@@ -382,8 +382,12 @@ nftban_cmd_ddos() {
             ;;
 
         status)
-            # Show status of all DDoS protections
-            nftban_ddos_status
+            # v1.141 PR-B (J-DDOS): pass json_mode so the core function can
+            # short-circuit to a JSON payload instead of decorative chrome.
+            # Pre-v1.141 this arm called nftban_ddos_status with NO json_mode
+            # arg, producing banner + ━━━ heading bars + text body even on
+            # `nftban ddos status --json` (cruel-judge §3 E_J6).
+            nftban_ddos_status "$json_mode"
             ;;
 
         stats)
