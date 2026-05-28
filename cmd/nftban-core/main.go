@@ -160,6 +160,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "verify-rules":
+		// SEC-RULEFP (v1.138): recompute the canonical ruleset fingerprint and
+		// compare to the captured baseline (--capture re-captures from the live
+		// ruleset). Custom exit codes: OK/BASELINE_MISSING=0, MISMATCH=2, NFT_UNAVAILABLE=3.
+		os.Exit(cmdVerifyRules(os.Args[2:]))
 	case "feeds":
 		if len(os.Args) < 3 {
 			errorWithUsage("feeds", "feeds command requires an action")
