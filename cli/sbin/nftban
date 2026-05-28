@@ -1037,13 +1037,29 @@ _nftban_suggest_command() {
 # =============================================================================
 
 main() {
-    # v1.39.0: Parse global flags before command dispatch
+    # v1.39.0 / v1.141 PR-B: Parse global flags before command dispatch.
+    #   --no-banner    → export NFTBAN_BANNER_MODE=none (pre-v1.141 contract)
+    #                     AND NFTBAN_NO_BANNER=1 (v1.141 PR-B universal gate)
+    #   --json (presence anywhere in argv) → implicitly NFTBAN_NO_BANNER=1
+    #                     so banner/decorative-chrome emitters short-circuit
+    #                     in ddos status / portscan status / feeds status
+    #                     even before the per-subcommand json_mode arg is
+    #                     threaded. The --json flag itself is NOT consumed
+    #                     here — it's left in argv for the subcommand handler
+    #                     to detect and emit the JSON payload.
     local _args=("$@")
     local _filtered=()
     for _arg in "${_args[@]}"; do
         case "$_arg" in
             --no-banner)
                 export NFTBAN_BANNER_MODE="none"
+                export NFTBAN_NO_BANNER=1
+                ;;
+            --json)
+                # Imply NFTBAN_NO_BANNER=1 (PR-B E-NO-BANNER scope) but
+                # do NOT consume the flag; the cmd_*.sh handler must see it.
+                export NFTBAN_NO_BANNER=1
+                _filtered+=("$_arg")
                 ;;
             *)
                 _filtered+=("$_arg")
@@ -1401,13 +1417,18 @@ main() {
                 esac
             fi
 
-            # Show banner
-            nftban_render_banner simple
-            echo ""
+            # v1.141 PR-B (E-NO-BANNER + E1) — the unknown-command path now
+            # routes the entire ERROR block to stderr so `nftban X 2>/dev/null`
+            # gives clean stdout to scripts; banner only fires on tty and
+            # respects the universal _v141_banner_suppressed() gate inside
+            # nftban_render_banner. Pre-v1.141: banner+error went to stdout.
+            # Show banner (suppressed when NFTBAN_NO_BANNER=1 / --no-banner)
+            nftban_render_banner simple >&2
+            echo "" >&2
 
-            # Error message
-            echo -e "${NFTBAN_COLOR_RED}${NFTBAN_COLOR_BOLD}ERROR: Unknown command '${cmd}'${NFTBAN_COLOR_RESET}"
-            echo ""
+            # Error message → stderr per the v1.141 PR-B E1 contract
+            echo -e "${NFTBAN_COLOR_RED}${NFTBAN_COLOR_BOLD}ERROR: Unknown command '${cmd}'${NFTBAN_COLOR_RESET}" >&2
+            echo "" >&2
 
             # V127 UX-5 item 2.8: typo-tolerant command suggestion.
             # Pre-V127 this branch ran a ~70-line static case statement of

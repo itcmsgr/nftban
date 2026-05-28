@@ -439,7 +439,10 @@ nftban_cmd_portscan() {
             ;;
 
         status)
-            nftban_portscan_status
+            # v1.141 PR-B (J-PORT): pass json_mode so the core function
+            # short-circuits to a JSON payload instead of decorative chrome
+            # on `nftban portscan status --json` (cruel-judge §3 E_J7).
+            nftban_portscan_status "$json_mode"
             ;;
 
         stats)

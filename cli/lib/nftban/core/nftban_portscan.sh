@@ -521,10 +521,63 @@ nftban_portscan_disable() {
 # STATUS
 # =============================================================================
 
+# v1.141 PR-B (J-PORT) — JSON renderer for `nftban portscan status --json`.
+# Built with jq -n (no string concatenation) so output is valid JSON. Fields
+# mirror the text-mode status section labels.
+_nftban_portscan_status_json() {
+    local is_enabled="${PORTSCAN_ENABLED:-false}"
+    local auto_ban="${PORTSCAN_AUTO_BAN:-true}"
+    local configured_mode="${PORTSCAN_MODE:-auto}"
+
+    local detected_mode active_mode suricata_available=false
+    detected_mode=$(_nftban_portscan_detect_mode 2>/dev/null || echo "unknown")
+    active_mode="${_PORTSCAN_ACTIVE_MODE:-$detected_mode}"
+    if type -t _nftban_portscan_suricata_is_available &>/dev/null \
+       && _nftban_portscan_suricata_is_available; then
+        suricata_available=true
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        jq -n \
+            --arg enabled    "$is_enabled" \
+            --arg auto_ban   "$auto_ban" \
+            --arg cfg_mode   "$configured_mode" \
+            --arg det_mode   "$detected_mode" \
+            --arg act_mode   "$active_mode" \
+            --argjson suri   "$suricata_available" \
+            '{
+                module: "portscan",
+                enabled: ($enabled == "true" or $enabled == "1"),
+                auto_ban: ($auto_ban == "true" or $auto_ban == "1"),
+                configured_mode: $cfg_mode,
+                detected_mode: $det_mode,
+                active_mode: $act_mode,
+                suricata: { available: $suri }
+            }'
+        return $?
+    fi
+    printf '{"module":"portscan","enabled":%s,"auto_ban":%s,"configured_mode":"%s","detected_mode":"%s","active_mode":"%s","suricata":{"available":%s},"jq_unavailable":true}\n' \
+        "$([[ "$is_enabled" == "true" ]] && echo true || echo false)" \
+        "$([[ "$auto_ban" == "true" ]] && echo true || echo false)" \
+        "$configured_mode" "$detected_mode" "$active_mode" \
+        "$([[ "$suricata_available" == true ]] && echo true || echo false)"
+}
+
 # Get portscan detection status
 nftban_portscan_status() {
+    # v1.141 PR-B (J-PORT): json_mode-aware status. When json_mode="true",
+    # short-circuit ALL decorative chrome and emit valid JSON via jq -n.
+    # Pre-v1.141 had no json_mode parameter; the dispatcher arm at
+    # cmd_portscan.sh:441 called it bare, so `--json` got banner+text.
+    local json_mode="${1:-false}"
+
     # v1.19.20 FIX (B6): Ensure config is loaded before using variables
     nftban_portscan_load_config
+
+    if [[ "$json_mode" == "true" ]]; then
+        _nftban_portscan_status_json
+        return $?
+    fi
 
     # Show unified banner
     if type -t nftban_banner >/dev/null 2>&1; then

@@ -160,11 +160,16 @@ nftban_version_info() {
         fi
     fi
 
+    # v1.141 PR-B (E-NO-BANNER): split decorative ━━━ frame + heading from
+    # data lines so `nftban version 2>/dev/null | grep ^Version` works when
+    # NFTBAN_NO_BANNER=1 / --no-banner / --json is set.
+    if [[ "${NFTBAN_NO_BANNER:-0}" != "1" ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "NFTBan Version Information"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    fi
     cat <<EOF
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NFTBan Version Information
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 Version:        ${NFTBAN_VERSION}
 Name:           ${NFTBAN_VERSION_NAME}
 Release Date:   ${NFTBAN_VERSION_DATE}
@@ -182,9 +187,12 @@ Update Status:
 Requirements:
   Bash:         >= ${NFTBAN_MIN_BASH_VERSION}
   nftables:     >= ${NFTBAN_MIN_NFT_VERSION}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
+    # v1.141 PR-B (E-NO-BANNER): suppress trailing decorative frame too.
+    if [[ "${NFTBAN_NO_BANNER:-0}" != "1" ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    fi
 }
 
 # =============================================================================
