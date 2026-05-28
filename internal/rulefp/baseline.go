@@ -87,8 +87,10 @@ func CaptureBaseline(path, rulesetText string) error {
 	}
 	data = append(data, '\n')
 
+	// The baseline file is daemon-owned (nftband writes, nftban-core verify-rules
+	// + health read — all root). 0600 is sufficient; no group-read consumer.
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil { // #nosec G306 -- 0640 group-readable by design
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write baseline tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -129,21 +131,28 @@ func Verify(path, currentRulesetText string) (status VerifyStatus, expected, act
 // Returns ("", error) only when neither family table can be read (→ caller maps
 // to NFT_UNAVAILABLE). A missing ip6 table alone is not fatal.
 func LiveRuleset(ctx context.Context) (string, error) {
+	// Unrolled per family so every exec.CommandContext argument is a string
+	// literal (no variable subprocess arg — gosec G204-clean under `gosec -nosec`).
+	// Semantics preserved: both families attempted, ip6 absence is soft, and
+	// NFT_UNAVAILABLE is mapped only when BOTH families are unreadable.
 	var combined string
 	var firstErr error
 	got := false
-	for _, fam := range []string{"ip", "ip6"} {
-		// #nosec G204 -- fam is a constant from the literal slice; table name fixed.
-		out, err := exec.CommandContext(ctx, "nft", "list", "table", fam, "nftban").Output()
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		combined += "# family " + fam + "\n" + string(out) + "\n"
+
+	if out, err := exec.CommandContext(ctx, "nft", "list", "table", "ip", "nftban").Output(); err == nil {
+		combined += "# family ip\n" + string(out) + "\n"
 		got = true
+	} else {
+		firstErr = err
 	}
+
+	if out, err := exec.CommandContext(ctx, "nft", "list", "table", "ip6", "nftban").Output(); err == nil {
+		combined += "# family ip6\n" + string(out) + "\n"
+		got = true
+	} else if firstErr == nil {
+		firstErr = err
+	}
+
 	if !got {
 		return "", fmt.Errorf("nft list table failed for all families: %w", firstErr)
 	}
