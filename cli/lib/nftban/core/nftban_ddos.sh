@@ -455,6 +455,10 @@ _nftban_ddos_status_json() {
         "$configured_mode" "$mode" "$suricata_binary" "$suricata_service" "$suricata_eve" "$suricata_available"
 }
 
+# v1.141 PR-B (J-DDOS): function now takes optional json_mode arg.
+# shellcheck disable=SC2120
+# (Internal callers may invoke without args; `${1:-false}` default handles
+# that. SC2120 over-fires on optional args.)
 nftban_ddos_status() {
     # v1.141 PR-B (J-DDOS): json_mode-aware status. When called with
     # json_mode="true", short-circuit ALL decorative chrome (banner +

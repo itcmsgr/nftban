@@ -564,6 +564,10 @@ _nftban_portscan_status_json() {
 }
 
 # Get portscan detection status
+# v1.141 PR-B (J-PORT): function now takes optional json_mode arg.
+# shellcheck disable=SC2120
+# (Some internal callers — e.g. line ~937 — invoke this without args; the
+# `${1:-false}` default handles that. SC2120 over-fires on optional args.)
 nftban_portscan_status() {
     # v1.141 PR-B (J-PORT): json_mode-aware status. When json_mode="true",
     # short-circuit ALL decorative chrome and emit valid JSON via jq -n.
