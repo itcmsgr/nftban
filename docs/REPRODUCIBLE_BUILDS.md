@@ -195,7 +195,7 @@ https://github.com/itcmsgr/nftban/releases/download/vX.Y.Z/SHA256SUMS
 The `SHA256SUMS` file contains checksums for:
 
 - **RPM packages:** `nftban-el9-x86_64.rpm`, `nftban-el10-x86_64.rpm`
-- **DEB packages:** `nftban-ubuntu22.04-amd64.deb`, `nftban-ubuntu24.04-amd64.deb`, `nftban-debian12-amd64.deb`, `nftban-debian13-amd64.deb`
+- **DEB packages:** `nftban-ubuntu22.04-amd64.deb`, `nftban-ubuntu24.04-amd64.deb`, `nftban-ubuntu26.04-amd64.deb`, `nftban-debian12-amd64.deb`, `nftban-debian13-amd64.deb`
 - **Binaries:** `nftban-core-linux-amd64`, `nftband-linux-amd64`
 
 ### Verification Commands
