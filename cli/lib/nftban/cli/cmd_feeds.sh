@@ -193,6 +193,18 @@ nftban_feeds_select() {
         return 0
     fi
 
+    # v1.142 PR-FS (BUG-FS4): the category regex below MUST cover every
+    # category the menu render produces. The menu shows five categories at
+    # main @ 35dead3e — anonymity, email, protection, ssh, web — and the
+    # pre-v1.142 regex hardcoded only four (omitting `anonymity`). Operator
+    # selected SELECT_V1_142_FS4_HARDCODED_OR_DYNAMIC = hardcode + CI drift
+    # test (2026-05-28); the drift test
+    # cli/lib/nftban/tests/cli_feeds_select_input_contract_test.sh
+    # asserts every category present in nftban_feeds_get_by_category()
+    # discovery is matched by these two regexes — any future category that
+    # ships without a regex update will fail CI.
+    local _v142_cat_re='^(anonymity|email|protection|ssh|web)$'
+
     # Process selection
     local feeds_to_enable=()
 
@@ -200,22 +212,27 @@ nftban_feeds_select() {
     if [[ "$selection" == "all" ]]; then
         feeds_to_enable=("${feed_array[@]}")
     # Handle category
-    elif [[ "$selection" =~ ^(protection|ssh|web|email)$ ]]; then
+    elif [[ "$selection" =~ $_v142_cat_re ]]; then
         local cat_feeds
         cat_feeds=$(nftban_feeds_get_by_category "$selection")
         for feed in $cat_feeds; do
             feeds_to_enable+=("$feed")
         done
     else
-        # Parse numbers, ranges, and comma-separated
-        # Split by comma first
-        IFS=',' read -ra parts <<< "$selection"
+        # v1.142 PR-FS (BUG-FS1): accept comma AND/OR whitespace as separators.
+        # The menu help at cmd_feeds.sh:170-180 advertises both `1 3 6` and
+        # `1,3,ssh`; pre-v1.142 the code split ONLY on commas (`IFS=','`), so
+        # the space-advertised form silently produced zero matches when the
+        # entire input collapsed into one un-parseable token. Substitute every
+        # comma with a space and let `read -ra` perform default word-splitting
+        # — the per-`part` regex checks below are unchanged. The previous
+        # `xargs` trim becomes redundant; `read` already trims around IFS.
+        # shellcheck disable=SC2206
+        read -ra parts <<< "${selection//,/ }"
 
         for part in "${parts[@]}"; do
-            part=$(echo "$part" | xargs)  # trim whitespace
-
-            # Check if category
-            if [[ "$part" =~ ^(protection|ssh|web|email)$ ]]; then
+            # Check if category (uses the same regex as the bare-input branch)
+            if [[ "$part" =~ $_v142_cat_re ]]; then
                 local cat_feeds
                 cat_feeds=$(nftban_feeds_get_by_category "$part")
                 for feed in $cat_feeds; do
@@ -240,25 +257,53 @@ nftban_feeds_select() {
         done
     fi
 
-    # Deduplicate
+    # v1.142 PR-FS (BUG-FS2): guard `feeds_to_enable` BEFORE the dedup mapfile.
+    # Pre-v1.142 the dedup ran `printf '%s\n' "${empty[@]}"` which, on an empty
+    # array, still emits ONE newline; `sort -u` keeps it; `mapfile -t` reads
+    # ONE empty-string element. Result: `${#unique_feeds[@]} == 1`, the
+    # empty-check at the OLD post-mapfile site was bypassed, and the loop
+    # printed "Enabling 1 feed(s)…" + "→ Enabling: " (empty feed name) → which
+    # nftban_feeds_enable "" rejected → ERROR printed → ✅ Done! still
+    # printed → rc=0 → silent-success-on-failure (same class as BUG-A7).
+    # The guard now lives BEFORE the mapfile AND returns rc=1, not rc=0.
+    if (( ${#feeds_to_enable[@]} == 0 )); then
+        echo "No valid feeds selected. Try a number (e.g. 3), a range (1-5)," >&2
+        echo "a space- or comma-separated list (1 3 6 or 1,3,6), a category" >&2
+        echo "(anonymity / email / protection / ssh / web), or 'all'." >&2
+        return 1
+    fi
+
+    # Deduplicate (now safe — feeds_to_enable is guaranteed non-empty).
     local unique_feeds=()
     mapfile -t unique_feeds < <(printf '%s\n' "${feeds_to_enable[@]}" | sort -u)
-
-    if [[ ${#unique_feeds[@]} -eq 0 ]]; then
-        echo "No feeds selected."
-        return 0
-    fi
 
     echo ""
     echo "Enabling ${#unique_feeds[@]} feed(s)..."
     echo ""
 
+    # v1.142 PR-FS (BUG-FS3): per-feed rc capture, fail-loud. Pre-v1.142 the
+    # rc of nftban_feeds_enable was discarded, and `echo "✅ Done!"` fired
+    # unconditionally — even when every enable failed (live-reproduced on
+    # `ubuntu-4gb-fsn1-1` v1.140.0: ERROR text + ✅ Done both printed, rc=0).
+    # This violates the v1.139.2 CLI exit-code contract (`nftban X || alert`-
+    # style automation MUST see a non-zero rc on failure). Accumulate the
+    # failed-feed list, print it to stderr when non-empty, and propagate rc.
+    local _v142_rc=0
+    local _v142_failed=()
     for feed in "${unique_feeds[@]}"; do
         echo "→ Enabling: $feed"
-        nftban_feeds_enable "$feed"
+        if ! nftban_feeds_enable "$feed"; then
+            _v142_failed+=("$feed")
+            _v142_rc=1
+        fi
     done
 
     echo ""
+    if (( ${#_v142_failed[@]} > 0 )); then
+        echo "⚠️  ${#_v142_failed[@]} feed(s) failed to enable: ${_v142_failed[*]}" >&2
+        echo "View logs with: tail -f ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log" >&2
+        return $_v142_rc
+    fi
     echo "✅ Done! Feeds enabled and updated."
     echo ""
     echo "View status with: nftban feeds list"
