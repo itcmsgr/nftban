@@ -519,6 +519,41 @@ nftban_feeds_status() {
     local stats
     stats=$(nftban_feeds_get_stats)
     echo "Status: $stats"
+
+    # v1.141 PR-C (D-feed-count): pre-v1.141 'Status:' line conflated three
+    # distinct numbers — number of enabled feed files vs sum of IPs across
+    # those files vs the cached aggregate (which may include deduplicated
+    # or geoban-derived IPs). Surface them separately so consumers can
+    # answer 'how many feeds are enabled' / 'how many IPs across feed files'
+    # / 'what does the cache say' independently. (V1_141_0 §2 D-feed-count.)
+    local _feed_files=0 _feed_ip_total=0 _feed_dir
+    _feed_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+    if [[ -d "$_feed_dir" ]]; then
+        local _all _en
+        _all=$(nftban_feeds_discover_all 2>/dev/null || true)
+        for _en in $_all; do
+            local _is_on
+            _is_on=$(nftban_feeds_get_property "$_en" "ENABLED" 2>/dev/null || echo false)
+            [[ "$_is_on" == "true" ]] || continue
+            local _ff
+            _ff="${_feed_dir}/$(echo "$_en" | tr '[:upper:]' '[:lower:]').txt"
+            if [[ -f "$_ff" ]]; then
+                _feed_files=$((_feed_files + 1))
+                local _ips
+                _ips=$(wc -l < "$_ff" 2>/dev/null || echo 0)
+                _feed_ip_total=$((_feed_ip_total + _ips))
+            fi
+        done
+    fi
+    echo "  Feed file count:  $_feed_files"
+    echo "  Feed IP total:    $_feed_ip_total  (sum across enabled feed files)"
+    if declare -f nftban_stats_get_unified >/dev/null 2>&1; then
+        local _cached_agg
+        _cached_agg=$(nftban_stats_get_unified ".feeds.total" 2>/dev/null || echo "")
+        if [[ -n "$_cached_agg" ]]; then
+            echo "  Cached aggregate: $_cached_agg  (from stats cache; may differ after dedup/geoban merge)"
+        fi
+    fi
     echo ""
 
     # Enabled feeds detail
