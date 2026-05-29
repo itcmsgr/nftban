@@ -122,6 +122,20 @@ Members of the nftban group are authorized through PolicyKit/polkit rules
 for supported NFTBan operations.
 
 ERR
+        # v1.142 UX-C6: emit the actionable re-run hint (sudo user + root
+        # shell forms, with anti-pattern warning). Defensive: cmd_common
+        # may not be sourced when this helper is reached.
+        if declare -f _v142_sudo_hint >/dev/null 2>&1; then
+            _v142_sudo_hint "$operation" "false"
+        else
+            local _bin="${NFTBAN_BIN:-/usr/lib/nftban/bin/nftban}"
+            {
+                echo "Re-run with one of:"
+                echo "  sudo VAR=value ${_bin} <command>     # sudo user"
+                echo "      VAR=value ${_bin} <command>     # root shell"
+                echo "(Do NOT use \`export VAR=value; sudo nftban X\` — export drops at sudo.)"
+            } >&2
+        fi
         exit 1
     fi
 }
