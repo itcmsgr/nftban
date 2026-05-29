@@ -185,8 +185,18 @@ nftban_metrics_enable() {
         return 1
     fi
 
-    # Update config
-    _set_metrics_backend "prometheus"
+    # v1.143 PR-A (FS3-MUTATION): capture _set_metrics_backend rc instead
+    # of discarding it. Pre-v1.143 a failed config update (file permission,
+    # disk full, atomic-write race) silently fell through to the
+    # 'Prometheus Metrics Enabled Successfully!' marker AND function rc=0.
+    # Same FS3 family. The Prometheus stack is already running (Step 2
+    # succeeded); the failure here is config-side only, but it must not
+    # be hidden from the caller. (V1_143_0_PLAN.md §4 PR-A.)
+    if ! _set_metrics_backend "prometheus"; then
+        echo "  ⚠ Prometheus stack started but config write to nftban.conf.local failed" >&2
+        echo "  Restore-on-restart behavior may revert NFTBAN_METRICS_ENABLED." >&2
+        return 1
+    fi
 
     # Final output
     echo ""

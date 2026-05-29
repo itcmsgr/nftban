@@ -730,10 +730,17 @@ nftban_cmd_feeds() {
                 return 1
             fi
 
+            # v1.143 PR-A (FS3-MUTATION): per-iteration rc capture + truthful
+            # final rc + ✅ only on full success. Pre-v1.143 the success-arm
+            # printed `✅ Enabled N feed(s), ❌ Failed N feed(s)` even on
+            # partial failure AND the case-arm fell through with rc=0; the
+            # caller could not tell whether any feed failed. Same FS3 family
+            # as v1.142 PR-FS `nftban_feeds_select`. (V1_143_0_PLAN.md §4 PR-A.)
             echo "⏳ Enabling all feeds in category: $1"
             echo ""
             local enabled_count=0
             local failed_count=0
+            local _v143_failed=()
 
             for feed in $cat_feeds; do
                 echo "  • Enabling $feed..."
@@ -743,6 +750,7 @@ nftban_cmd_feeds() {
                     ((enabled_count++)) || true
                 else
                     echo "    ❌ $feed failed"
+                    _v143_failed+=("$feed")
                     # v1.19.20 FIX
                     ((failed_count++)) || true
                 fi
@@ -752,13 +760,17 @@ nftban_cmd_feeds() {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             if [[ $failed_count -eq 0 ]]; then
                 echo "✅ Successfully enabled and downloaded $enabled_count feed(s) in category '$1'"
+                echo ""
+                echo "Check status: nftban feeds status"
+                echo ""
             else
-                echo "✅ Enabled $enabled_count feed(s), ❌ Failed $failed_count feed(s)"
-                echo "⚠️  Check errors in: ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log"
+                # Partial / total failure: print ⚠ to STDERR (not ✅ to STDOUT)
+                # so script consumers can distinguish via rc AND stderr.
+                echo "⚠️  Enabled $enabled_count feed(s); $failed_count feed(s) failed: ${_v143_failed[*]}" >&2
+                echo "    Check errors in: ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log" >&2
+                echo "" >&2
+                return 1
             fi
-            echo ""
-            echo "Check status: nftban feeds status"
-            echo ""
             ;;
         update)
             # Check CAP_NET_ADMIN capability for nftables modifications

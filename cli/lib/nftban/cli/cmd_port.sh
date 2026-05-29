@@ -939,7 +939,13 @@ nftban_port_allow_add() {
     echo "${port}|${ip}|${proto}|${timeout_seconds}|${comment_text}|${iso_date}" >> "$NFTBAN_PORT_ALLOW_CONFIG"
     chmod 640 "$NFTBAN_PORT_ALLOW_CONFIG"
 
-    # Apply via IPC
+    # v1.143 PR-A (FS3-MUTATION): IPC failure path no longer silently
+    # returns rc=0. Pre-v1.143 a failed `access_allow` printed `⚠ Saved to
+    # config but IPC failed` to stderr and then `return 0` — the caller saw
+    # success rc. Now: IPC failure → rc=1 (config write already succeeded;
+    # the daemon-restart fallback message is still printed for the operator
+    # to know the persistent state). (V1_143_0_PLAN.md §4 PR-A.)
+    local _v143_rc=0
     if nft_ipc_is_daemon_running 2>/dev/null; then
         local params
         params=$(jq -nc \
@@ -957,13 +963,14 @@ nftban_port_allow_add() {
         else
             echo "⚠ Saved to config but IPC failed: $(nft_ipc_error "$response")" >&2
             echo "  Port will be applied on daemon restart" >&2
+            _v143_rc=1
         fi
     else
         echo "✅ Port $port ($proto) access saved for $ip"
         echo "   ℹ Daemon not running — will apply on start"
     fi
 
-    return 0
+    return $_v143_rc
 }
 
 nftban_port_allow_remove() {
@@ -1007,7 +1014,11 @@ nftban_port_allow_remove() {
         fi
     fi
 
-    # Revoke via IPC
+    # v1.143 PR-A (FS3-MUTATION): IPC revoke failure no longer silently rc=0.
+    # Pre-v1.143 the function returned 0 even after `⚠ IPC revoke failed`
+    # to stderr — same FS3 family. Config removal already succeeded; the rc
+    # now reflects whether the kernel-side revoke landed too.
+    local _v143_rc=0
     if nft_ipc_is_daemon_running 2>/dev/null; then
         local params
         params=$(jq -nc \
@@ -1021,13 +1032,14 @@ nftban_port_allow_remove() {
             echo "✅ Port $port ($proto) access revoked from $ip"
         else
             echo "⚠ IPC revoke failed: $(nft_ipc_error "$response")" >&2
+            _v143_rc=1
         fi
     else
         echo "✅ Port $port ($proto) access removed from config"
         echo "   ℹ Daemon not running — change takes effect on start"
     fi
 
-    return 0
+    return $_v143_rc
 }
 
 nftban_port_allow_list() {
@@ -1089,7 +1101,14 @@ nftban_port_allow_flush() {
         echo "✓ Config cleared"
     fi
 
-    # Flush nft sets via IPC
+    # v1.143 PR-A (FS3-MUTATION): per-iteration rc capture + truthful final
+    # marker. Pre-v1.143 the loop's per-set IPC failure was printed to
+    # stderr but swallowed by the unconditional `✅ All per-IP port access
+    # rules flushed` line and `return 0`. Same FS3 family as v1.142 PR-FS
+    # `nftban_feeds_select`. Config-clear already happened above; rc now
+    # reflects whether the kernel-side flush landed.
+    local _v143_rc=0
+    local _v143_failed=()
     if nft_ipc_is_daemon_running 2>/dev/null; then
         local families=("ip" "ip6")
         local sets=("port_allow_tcp" "port_allow_udp")
@@ -1099,15 +1118,25 @@ nftban_port_allow_flush() {
             for set_base in "${sets[@]}"; do
                 if ! nft_ipc_flush_set "${fam} nftban" "${set_base}${suffix}" 2>/dev/null; then
                     echo "  ⚠ Failed to flush ${set_base}${suffix} via IPC" >&2
+                    _v143_failed+=("${fam} ${set_base}${suffix}")
+                    _v143_rc=1
                 fi
             done
         done
-        echo "✅ All per-IP port access rules flushed"
+        if (( _v143_rc == 0 )); then
+            echo "✅ All per-IP port access rules flushed"
+        else
+            # Partial / total failure: replace the success ✅ with a ⚠ AND
+            # propagate rc=1. Config was already cleared above; this signals
+            # the kernel-side mismatch.
+            echo "⚠ Config cleared but ${#_v143_failed[@]} kernel set(s) failed to flush: ${_v143_failed[*]}" >&2
+            echo "  Sets may carry stale entries until daemon restart." >&2
+        fi
     else
         echo "✅ Config cleared (daemon not running — sets empty on start)"
     fi
 
-    return 0
+    return $_v143_rc
 }
 
 nftban_port_allow_help() {
