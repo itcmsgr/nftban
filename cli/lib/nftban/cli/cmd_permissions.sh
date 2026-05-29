@@ -232,7 +232,26 @@ nftban_permissions_cmd_enforce() {
         return 1
     fi
 
-    # Run enforcement
+    # v1.143 PR-B (FS3-DA): rc-truth lock + actionable failure path.
+    # The wrapper already returned $result truthfully — that is what
+    # caused the lab4 v1.142 installer log to print
+    # `permissions enforce failed (exit 1) — non-fatal` at
+    # cmd/nftban-installer/phases.go:573. The installer auto-fix retry
+    # intentionally classifies the warning as non-fatal and re-validates;
+    # this v1.143 fix does NOT touch that consumer (operator-locked
+    # SELECT_V1_143_INSTALL_UPDATE_SCOPE = permission-enforce-only). What
+    # we DO change here:
+    #   (a) the ❌ failure line now goes to STDERR (not stdout) so script
+    #       consumers piping `nftban permissions enforce 2>/dev/null` get
+    #       a clean STDOUT — same E1 contract v1.141 PR-B established for
+    #       the unknown-command path.
+    #   (b) actionable advice (log file location + retry instructions)
+    #       follows the ❌ line, also on stderr. The advice helps the
+    #       audit's R-PERM-1 follow-up: an operator reading the
+    #       installer's swallowed "non-fatal" line now has a path to the
+    #       same evidence the wrapper had.
+    # (Scope: V1_143_0_PLAN.md §4 PR-B. Audit ref: V1_142_LAB4_UPDATE_LOG_
+    # SAFETY_AUDIT.md §4 R-PERM-1.)
     local result=0
     nftban_permissions_enforce_all || result=$?
 
@@ -246,8 +265,14 @@ nftban_permissions_cmd_enforce() {
             echo "✅ Permissions enforced successfully"
         fi
     else
-        echo ""
-        echo "❌ Permission enforcement failed with errors"
+        # v1.143 PR-B: failure → stderr with actionable advice.
+        {
+            echo ""
+            echo "❌ Permission enforcement failed with errors"
+            echo "   See log: ${NFTBAN_LOG_DIR:-/var/log/nftban}/installer.log"
+            echo "   Re-check: nftban permissions check"
+            echo "   Re-run:   sudo nftban permissions enforce"
+        } >&2
     fi
 
     return $result
