@@ -107,7 +107,7 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.
 sudo apt install -y ./nftban-ubuntu24.04-amd64.deb
 ```
 
-#### Ubuntu 26.04 LTS (Resolute Raccoon) — *Tier-0 since v1.140.0*
+#### Ubuntu 26.04 LTS (Resolute Raccoon)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu26.04-amd64.deb
 sudo apt install -y ./nftban-ubuntu26.04-amd64.deb
