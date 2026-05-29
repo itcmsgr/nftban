@@ -11,6 +11,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.142.0] - 2026-05-29 — Cleanup release
+
+**Codename:** `V1_142_0_CLEANUP`
+**Controlling plan:** `NFTBAN_ROADMAP/V1_142_0_CLEANUP_PLAN.md`
+**PRs:** [#731](https://github.com/itcmsgr/nftban/pull/731) (PR-FS, sq `9d406a0f`) + [#732](https://github.com/itcmsgr/nftban/pull/732) (PR-UX-C6, sq `7fc48f4b`)
+**Audit deliverable:** `NFTBAN_ROADMAP/V1_142_RC_AUDIT_2_PUNCHLIST.md` (Phase 1, audit-only, no implementation in v1.142)
+
+> **Why:** v1.142.0 is the disciplined cleanup release on top of v1.141.0. It closes the highest-signal `nftban feeds select` parser cluster (BUG-FS1..FS5, live-reproduced on a v1.140.0 Ubuntu 26 host), adds inline sudo / root-shell guidance to the existing privilege-check helpers, and files the RC-AUDIT-2 Phase 1 punchlist (audit-only — Phase 2 implementation deferred to v1.143.0 per the punchlist's own recommendation). **Daemon byte-identical to v1.141.0** (zero `.go` touched across both PRs; shell + test only). **Schema 1.83.0 frozen.** Zero new metric names, zero portal API change, zero `build/fhs-spec.yaml` body change.
+
+### PR-FS — `nftban feeds select` parser BUG-FS1..FS5 ([#731](https://github.com/itcmsgr/nftban/pull/731), sq `9d406a0f`)
+
+Live-reproduced on `ubuntu-4gb-fsn1-1` v1.140.0 (operator session 2026-05-28): operator input `3 6 11 14 5 3` produced `ERROR + ✅ Done + rc=0`. Four converging defects + a test contract.
+
+- **BUG-FS1 — comma OR space separators**: `cmd_feeds.sh:212` pre-v1.142 `IFS=',' read -ra parts <<< "$selection"` only split on commas. The menu help advertised `1 3 6` AND `1,3,ssh`. Fix: `read -ra parts <<< "${selection//,/ }"` substitutes commas with spaces and lets `read` perform default word-splitting.
+- **BUG-FS2 — empty-array → 1 phantom element**: `mapfile -t unique_feeds < <(printf '%s\n' "${empty[@]}" | sort -u)` on an empty input reads ONE empty string element; the `${#unique_feeds[@]} == 0` guard at the OLD post-mapfile site was bypassed. Fix: guard `${#feeds_to_enable[@]} == 0` BEFORE the mapfile AND return rc=1 (not rc=0) with a usage hint to stderr.
+- **BUG-FS3 — silent `✅ Done` on ERROR**: the rc of `nftban_feeds_enable` was discarded; `echo "✅ Done!"` fired unconditionally even when every enable failed. Same class as BUG-A7 silent-permaban (v1.141 PR-A) and violates the v1.139.2 cli_error_rc contract. Fix: per-feed rc capture into a `failed=()` accumulator; `⚠️ N feed(s) failed: …` to stderr when non-empty; rc propagated; `✅ Done` only on full success.
+- **BUG-FS4 — category regex missing `anonymity`**: pre-v1.142 `^(protection|ssh|web|email)$` omitted the menu's 5th category. Fix: `^(anonymity|email|protection|ssh|web)$`. The new FS4-DRIFT CI test asserts every category that `nftban_feeds_get_by_category()` produces is matched by the regex — adding a new category in the menu without updating the regex fails CI.
+- **BUG-FS5 — test contract**: new hermetic test `cli_feeds_select_input_contract_test.sh` covers all five fixes + mixed-form (`1-3, 5, ssh` → 6 unique feeds; `all` → 14; comma/space/mixed separators all yield same result). 23 PASS / 0 FAIL.
+
+### PR-UX-C6 — inline sudo / root-shell guidance ([#732](https://github.com/itcmsgr/nftban/pull/732), sq `7fc48f4b`)
+
+Closes UX-C6 from the v1.139.2 UX-review residuals. UX-C4 banner restraint was already closed in-train by v1.141 PR-B E-NO-BANNER; this PR ships UX-C6 alone per operator's `SELECT_V1_142_UX_RESIDUAL_SET = C6` decision.
+
+- **New helper `_v142_sudo_hint`** in `lib/cmd_common.sh` — stderr-only, JSON-mode aware. Prints both re-run forms (`sudo VAR=value /usr/lib/nftban/bin/nftban <command>` # sudo user, `VAR=value /usr/lib/nftban/bin/nftban <command>` # root shell) plus explicit anti-pattern warning against `export VAR=value; sudo nftban X` (the export is dropped at the sudo boundary).
+- **Wired into the three central privilege-check helpers**: `cmd_require_root` (direct call after `cmd_error`), `nftban_require_root` in `lib/strict.sh` (defensive `declare -f` guard with inline fallback), `nftban_require_root_or_exit` in `core/nftban_security.sh` (same defensive pattern).
+- **Intentionally NOT in scope**: the 56 inline `EUID -ne 0` check sites scattered across `cli/lib/nftban/cli/*.sh`. Patching them individually would be the broad framework rewrite operator-scope explicitly forbids; the three central helpers are the chokepoint.
+
+### RC-AUDIT-2 Phase 1 — audit-only deliverable (no PR)
+
+Per `SELECT_V1_142_RC_AUDIT_2_PHASE = Phase 1 only`. Punchlist filed at `NFTBAN_ROADMAP/V1_142_RC_AUDIT_2_PUNCHLIST.md` (200 lines, 14 KB). Methodology: classifier walks every `(echo|printf).*ERROR` / `cmd_error` / `cmd_die` site across 77 `cmd_*.sh` + dispatcher, inspects next 3 lines for explicit return/exit gate, classifies as SAFE-wrapper / SAFE-explicit-return / RISKY / DANGER.
+
+**Headline findings:**
+
+| Class | Count | % |
+|---|---|---|
+| SAFE-wrapper (`cmd_error` / `cmd_die`) | 19 | 4.7% |
+| SAFE-explicit-return (≤3 lines after printer) | 345 | 84.6% |
+| RISKY-no-explicit-return (heuristic; all 10 manually inspected = false positives) | 43 | 10.5% |
+| **DANGER-return-0-after-error** | **0** | **0%** |
+| **Total classified sites** | **407** | |
+
+The v1.139.2 RC-contract test was structurally sufficient. The Phase 2 real risk surface is **20 candidate functions with the FS3-class shape** (loop + unconditional success marker), of which ~10 touch mutation paths. The punchlist recommends Phase 2 implementation for **v1.143.0**, not inline v1.142.
+
+### Test evidence — cumulative at PR-UX-C6 merge time
+
+**167 PASS / 0 FAIL** across 15 hermetic suites:
+
+| Test | Result |
+|---|---|
+| `cli_feeds_select_input_contract_test.sh` (v1.142 PR-FS) | 23 PASS / 0 FAIL |
+| `cli_sudo_hint_v142_test.sh` (v1.142 PR-UX-C6) | 19 PASS / 0 FAIL |
+| v1.141 PR-A regressions (4 suites) | 76 PASS / 0 FAIL / 4 SKIP |
+| v1.141 PR-B regressions (4 suites) | 18 PASS / 0 FAIL |
+| v1.141 PR-C regressions (4 suites) | 21 PASS / 0 FAIL |
+| v1.139.2 `rollback_help_guard_v1_139_2_test.sh` | 10 PASS / 0 FAIL |
+
+### Non-goals locked v1.142-wide
+
+- **0 `.go` files** across both PRs. Daemon byte-identical to v1.141.0.
+- **0 `internal/`, `cmd/`, `build/`, `packaging/`, `install/`, `systemd/`, `schema/`, `docker/`, `.github/`, `fhs-spec.yaml` (body)** changes.
+- **Schema 1.83.0 frozen.** Zero new metric names. Zero portal API change. Zero Go-installer change.
+- **0 RC-AUDIT-2 Phase 2 implementation** — deferred to v1.143.0 per the punchlist.
+- **0 log-durability / firewall-integrity / FHS-authority / security work** — those were v1.137 / v1.138 / v1.139.
+- **0 v1.143 work** (module-attribution / detection coverage / SCHEMA-UNFREEZE fork).
+
+### Release-prep envelope (this commit)
+
+Standard 4 files only: `VERSION` (1.141.0 → 1.142.0), `STATUS.md` (banner + lane summary), `CHANGELOG.md` (this entry), `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` 1.141.0 → 1.142.0 ONLY; FHS body byte-identical, line 31..end SHA256 `4e618bd7d4ea379496f6052d3215ce7602e9001ea66f6948c1952c8111d1f242` unchanged from v1.141.0). No host contact during release-prep construction. No tag in this PR; tag follows on the release-prep squash after merge per `TAG_AND_PUBLISH_V1_142_0`.
+
+---
+
 ## [v1.141.0] - 2026-05-29 — Consolidated CLI / status / data-truth correctness
 
 **Codename:** `V1_141_0_CONSOLIDATED_CLI_STATUS_TRUTH`
