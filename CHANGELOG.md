@@ -11,83 +11,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] — v1.141.0 PR-A: CLI parser validation + help inertness
+## [v1.141.0] - 2026-05-29 — Consolidated CLI / status / data-truth correctness
 
-**Codename:** `V1_141_0_PR_A_CLI_PARSER_HELP`
-**Controlling scope:** `NFTBAN_ROADMAP/V1_141_0_CONSOLIDATED_HOTFIX_AND_HARDENING_SCOPE.md`
-**PR:** [#727](https://github.com/itcmsgr/nftban/pull/727)
+**Codename:** `V1_141_0_CONSOLIDATED_CLI_STATUS_TRUTH`
+**Controlling scope:** `NFTBAN_ROADMAP/V1_141_0_CONSOLIDATED_CLI_STATUS_TRUTH_SCOPE.md`
+**PRs:** [#727](https://github.com/itcmsgr/nftban/pull/727) (PR-A, sq `fcdd00bd`) + [#728](https://github.com/itcmsgr/nftban/pull/728) (PR-B, sq `b4d9a028`) + [#729](https://github.com/itcmsgr/nftban/pull/729) (PR-C, sq `d3ff778a`)
 
-> **Why:** Two CLI safety gaps surfaced on v1.140.0 baseline. **A7/A8:**
-> `nftban ban <ip> --timeout VALUE` accepted any non-positive-integer
-> VALUE (`abc` / `-5` / `0` / `1.5` / `+10` / `1e3` / `0x10` / `01`) and
-> forwarded it to `nftban-core`, which defaulted to a **permanent ban**
-> on parse failure. **B5–B14:** twelve `nftban <cmd> [<sub>] --help`
-> surfaces ran action code before reaching their own help arm — including
-> one (`nftban export --help`) that **created an output file on disk**
-> before the user got help text. **Daemon byte-identical to v1.140.0**
-> (zero `.go` touched; shell-only). Schema 1.83.0 frozen.
+> **Why:** v1.141.0 is a consolidated correctness release after the Ubuntu 26.04 Tier-1 introduction in v1.140.0. It closes the CLI / status / data-truth train across three PRs: parser validation and help inertness, JSON / stderr / no-banner discipline, and kernel-authoritative status / count / feed reporting. **Daemon byte-identical to v1.140.0** (zero Go touched across all three PRs — shell + test + docs only). **Schema 1.83.0 frozen.** No new metrics, no portal API change, no packaging or systemd unit change, no `build/fhs-spec.yaml` body change.
 
-### Parser validation — `cmd_ban.sh`
+### PR-A — CLI parser validation + help inertness ([#727](https://github.com/itcmsgr/nftban/pull/727), sq `fcdd00bd`)
 
-- `--timeout` now rejects every non-positive-integer VALUE at parse time
-  with a clear `ERROR: --timeout requires a positive integer (seconds)`
-  message and `Hint:` line, rc=1, **before** any IPC to `nftban-core` /
-  `/etc/nftban/blacklist.d/` write / nft mutation.
-- Regex `^[1-9][0-9]*$`. Strict-positive-integer contract: no leading
-  zeros, no signs (even `+`), no fractional / scientific / hex forms.
-- Valid values (`1`, `60`, `3600`, `86400`, etc.) unaffected.
+Closes **A7 / A8 / B5 / B6 / B7 / B8 / B11 / B12** + four sweep extras + three phantom-subcommand surfaces.
 
-### Help inertness sweep — `cli/sbin/nftban` + four `cmd_*.sh`
+- **A7 / A8 parser** — `cmd_ban.sh` `--timeout` now rejects every non-positive-integer VALUE at parse time with rc=1 (regex `^[1-9][0-9]*$`), **before** any IPC to `nftban-core` / `/etc/nftban/blacklist.d/` write / nft mutation. Pre-v1.141: `abc` / `-5` / `0` / `1.5` / `+10` / `1e3` / `0x10` / `01` silently propagated to `nftban-core`, which defaulted to a **permanent ban**.
+- **B5 / B6 / B7 / B8 / B11 / B12 help inertness** — per-arm bypass in `cmd_firewall.sh::firewall_reload`, `cmd_trust.sh::enable|disable|update` (EUID gate restructured), `cmd_config.sh::get|set|defaults|overrides|reset|reset-all` via `_v141_config_subarg_is_help()`. Plus a **top-level dispatcher guard** at `cli/sbin/nftban` covering `search`, `feeds`, `export`, `suricata`, `geoban` and the phantom subcommands `install` / `uninstall` / `rebuild`. The worst defect closed: `nftban export --help` previously **created an output JSON file on disk** before the user got help text.
+- **Drops** (operator `SELECT_V1_141_0_B9_B10_B13_B14_DROP_OR_ALIAS = drop`): `feeds add` / `feeds remove` / `update apply` / `update channel` — universal sweep test SKIPs with the operator-named drop reason; no alias added.
 
-- **Top-level dispatcher guard** at `cli/sbin/nftban` runs before the
-  auto-loader and alias case. Covers six top-level subcommands whose cmd
-  file historically ran action code before the help arm executed
-  (`search`, `feeds`, `export`, `suricata`, `geoban`) and three phantom
-  subcommands present in the suggester list with no `cmd_*.sh` backing
-  (`install`, `uninstall`, `rebuild`).
-  - `nftban export --help` previously created an output JSON file on
-    disk (real help-inertness bug). Now rc=0, Usage text, no file write.
-- **Per-arm bypass** in `cmd_firewall.sh::firewall_reload` (B5).
-- **EUID-gate restructure** in `cmd_trust.sh::enable|disable|update` so
-  the polkit-auth check is bypassed for `-h|--help|help` (B6/B7/B8).
-- **Sub-arm bypass** in `cmd_config.sh::get|set|defaults|overrides|reset|reset-all`
-  via `_v141_config_subarg_is_help()` (B11/B12 + four sweep extras).
+### PR-B — JSON cleanliness + stderr + no-banner discipline ([#728](https://github.com/itcmsgr/nftban/pull/728), sq `b4d9a028`)
 
-### Dropped (operator `SELECT_V1_141_0_B9_B10_B13_B14_DROP_OR_ALIAS = drop`)
+Closes **J-FEED / J-DDOS / J-PORT / E1 / E-NO-BANNER / F-FEEDS-JSON**.
 
-- `feeds add` / `feeds remove` / `update apply` / `update channel` —
-  documented in the suggester list but with no backing code path. The
-  universal sweep test SKIPs them with the operator-named drop reason;
-  no alias is added.
+- **J-DDOS / J-PORT JSON-mode** — `cmd_ddos.sh:386` + `cmd_portscan.sh:442` now pass `$json_mode` through to `nftban_ddos_status` / `nftban_portscan_status`; the core functions short-circuit ALL decorative chrome (banner + `━━━` heading bars + text body) when `json_mode="true"` and emit valid JSON via `jq -n`. Pre-v1.141: `nftban ddos status --json` and `nftban portscan status --json` got banner + heading + text body, not JSON (cruel-judge §3 E_J6 / E_J7).
+- **F-FEEDS-JSON jq construction** — `cmd_feeds.sh` `nftban_feeds_list --json` and `nftban_feeds_status_json` now build per-feed objects via `jq -n` and fold them into an array via `jq -s '.'`. Pre-v1.141 used hand-built JSON with partial backslash + double-quote escape; broke on descriptions carrying unicode, control chars, or backslashes.
+- **E1 unknown-command stderr** — dispatcher's Unknown-command path (banner + ERROR text + suggestion) is now redirected to `>&2`, leaving STDOUT clean for `nftban X 2>/dev/null`-style script consumers.
+- **E-NO-BANNER universal gate** — `_v141_banner_suppressed()` at the top of `nftban_render_banner` and `nftban_banner` in `core/nftban_output.sh`. Honors `NFTBAN_NO_BANNER=1`, `NFTBAN_QUIET=1`, `NFTBAN_BANNER_MODE=none`. Dispatcher arg-parser at `cli/sbin/nftban main()` now exports `NFTBAN_NO_BANNER=1` on `--no-banner` AND on any `--json` presence so JSON output never gets decorative chrome prefix. `cmd_version.sh` + `lib/version.sh` decorative `━━━` chrome gated, data lines preserved.
 
-### Tests (all hermetic, PATH-shadow sandbox)
+### PR-C — status / count / feed truth (kernel authority) ([#729](https://github.com/itcmsgr/nftban/pull/729), sq `d3ff778a`)
 
-- `tests/cli_ban_timeout_validation_test.sh` — 12 PASS / 0 FAIL.
-- `tests/cli_ban_timeout_no_mutation_test.sh` — 5 PASS / 0 FAIL.
-- `tests/cli_help_inertness_v141_test.sh` — 13 PASS / 0 FAIL.
-- `tests/cli_help_inertness_universal_test.sh` — 46 PASS / 0 FAIL / 4 SKIP.
-- `tests/rollback_help_guard_v1_139_2_test.sh` (regression) — 10/10 PASS.
-- `bash -n` on every modified shell file — 9 OK.
-- **Total: 86 PASS, 0 FAIL.**
+Closes **D-headline / D-cache-wording / D-verify-hint / D-json-fork / D-feed-count**. Operator authority: `SELECT_CACHE_KERNEL_AUTHORITY = kernel`, `SELECT_V1_141_0_PR_C_GO_TOUCH_ALLOWED = no-unless-proven-impossible` — **shell-only landed cleanly. No Go.**
 
-The PATH-shadow sandbox replaces every mutation binary (`nftban-core`,
-`nft`, `systemctl`, `polkitd`, package managers) with a marker-emitting
-stub that flags only **mutating** verbs. Read-only checks (`systemctl
-is-active`, `nft list`) are expected on every CLI invocation including
-help paths and are not flagged.
+- **D-headline + D-cache-wording** — `cmd_status.sh` `_status_section_firewall`: `Banned IPs` headline reports the kernel total (sum of `blacklist_ipv4` + `blacklist_manual_ipv4` + `blacklist_ipv6` + `blacklist_manual_ipv6`). Four-line Automatic / Manual / Total-kernel split shown underneath. Pre-v1.141 `(kernel: N, cache may lag)` footnote is **gone**; cache disagreement now reports `Source-index: <count> (reconciled <N>s ago)` using cache file mtime.
+- **D-verify-hint** — new `Verify kernel (authoritative):` block lists the four copy-pasteable `nft list set` commands so operators can independently confirm enforcement per CLAUDE.md project rule. Gated on `quiet_mode==0 AND ban_count>0`.
+- **D-json-fork** — `cmd_status.sh` `output_json`: `banned_ips` now ALWAYS uses kernel total — matches text headline. New `counts.{authority, kernel_total, kernel_automatic, kernel_manual, kernel_elements, cache_count, source_index_count}`. `authority="kernel"` tells JSON consumers which field is the answer. Pre-v1.141 `banned_ips` preferred cache, producing JSON ↔ text contradiction.
+- **D-feed-count** — `cmd_feeds.sh` `nftban_feeds_status` text mode: three distinct labels (`Feed file count`, `Feed IP total`, `Cached aggregate`) replace the pre-v1.141 single conflated line.
 
-### Forbidden-path negative control
+### Cumulative test evidence (all hermetic; jq required for JSON tests)
 
-- 0 `.go` files touched.
-- 0 `internal/` / `cmd/` / `build/` / `packaging/` / `install/` /
-  `systemd/` / `schema/` / `docker/` / `.github/` / `fhs-spec.yaml`
-  changes.
-- 0 schema version bump (Schema 1.83.0 remains frozen).
-- 0 portal / metrics / Go-installer change.
+| Test | Result |
+|---|---|
+| PR-A: `cli_ban_timeout_validation_test.sh` | 12 PASS / 0 FAIL |
+| PR-A: `cli_ban_timeout_no_mutation_test.sh` | 5 PASS / 0 FAIL |
+| PR-A: `cli_help_inertness_v141_test.sh` | 13 PASS / 0 FAIL |
+| PR-A: `cli_help_inertness_universal_test.sh` | 46 PASS / 0 FAIL / 4 SKIP |
+| PR-B: `cli_no_banner_v141_test.sh` | 6 PASS / 0 FAIL |
+| PR-B: `cli_stderr_contract_v141_test.sh` | 4 PASS / 0 FAIL |
+| PR-B: `cli_json_clean_output_test.sh` | 3 PASS / 0 FAIL |
+| PR-B: `cli_feeds_json_jq_construction_test.sh` | 5 PASS / 0 FAIL |
+| PR-C: `cli_status_count_truth_test.sh` | 6 PASS / 0 FAIL |
+| PR-C: `cli_status_kernel_verify_hint_test.sh` | 7 PASS / 0 FAIL |
+| PR-C: `cli_status_json_no_contradict_test.sh` | 4 PASS / 0 FAIL |
+| PR-C: `cli_feeds_count_truth_test.sh` | 4 PASS / 0 FAIL |
+| v1.139.2 regression: `rollback_help_guard_v1_139_2_test.sh` | 10 PASS / 0 FAIL |
+| v1.139.2 regression: `cli_error_rc_contract_v1_139_2_test.sh` | green via CI gate |
+| **Total at PR-C merge time** | **125 PASS / 0 FAIL** |
 
-The release-prep envelope (`VERSION`, `STATUS.md`, `CHANGELOG.md`
-finalisation, `nftban_fhs_spec.sh` header-version regen) ships in a
-separate release-prep PR at v1.141.0 tag time.
+### Non-goals — forbidden-path negative control (locked v1.141-wide)
+
+- **0 `.go` files** across PR-A + PR-B + PR-C. Daemon `cmd/nftban-core` + `cmd/nftband` **byte-identical to v1.140.0** in `.text/.data/.rodata` expected.
+- 0 `internal/`, `cmd/`, `build/`, `packaging/`, `install/`, `systemd/`, `schema/`, `docker/`, `.github/`, `fhs-spec.yaml` (body) changes.
+- **Schema 1.83.0 frozen.** Zero metric names added or renamed. Zero portal API change. Zero Go-installer change. Zero logrotate or security or FHS body work. Zero v1.142 FS-cluster (feeds-select parser) work.
+
+### Release-prep envelope (this commit)
+
+Standard 4 files only: `VERSION` (1.140.0 → 1.141.0), `STATUS.md` (banner + lane summary), `CHANGELOG.md` (this entry), `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen only; FHS body byte-unchanged). No host contact during release-prep construction. No tag in this PR; tag follows on the release-prep squash after merge per `TAG_AND_PUBLISH_V1_141_0`.
 
 ---
 
