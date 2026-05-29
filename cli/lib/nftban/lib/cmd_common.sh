@@ -244,14 +244,73 @@ EOF
     return 0
 }
 
+# v1.142 UX-C6 — inline sudo / root-shell guidance helper.
+# Prints to STDERR (never STDOUT, never JSON). Caller controls whether to
+# also emit a structured error via cmd_error / json_error first; this
+# helper only adds the actionable re-run hint.
+#
+# Why this exists: the codebase's existing privilege-check helpers
+# (cmd_require_root, nftban_require_root, nftban_require_root_or_exit)
+# previously printed the PolicyKit advisory without the actual command
+# operators need to run. v1.139.2 UX review C6 flagged the gap: an
+# operator hitting EUID-required failure had to know to write
+# `sudo NFTBAN_FORCE=1 /usr/lib/nftban/bin/nftban update` rather than
+# the anti-pattern `export NFTBAN_FORCE=1; sudo nftban update` (the
+# export is lost across the sudo boundary).
+#
+# Args:
+#   $1 — optional operation description (e.g. "ban an IP")
+#   $2 — optional json_mode ("true" suppresses the hint chrome — JSON
+#        consumers got the structured error via the caller's cmd_error /
+#        json_error and don't need re-run guidance in stderr).
+#
+# Output (stderr only, no banner chrome, no decorative ━━━ runs):
+#   (blank line)
+#   Need root for "<operation>". Re-run with one of:
+#     sudo VAR=value /usr/lib/nftban/bin/nftban <command>     # sudo user
+#         VAR=value /usr/lib/nftban/bin/nftban <command>     # root shell
+#   (Inline VAR=value is preserved across the sudo boundary. Do NOT use
+#    `export VAR=value; sudo nftban X` — the export is dropped.)
+#   (blank line)
+#
+# Returns 0 always; never short-circuits the caller's own return value.
+# (Scope: NFTBAN_ROADMAP/V1_142_0_CLEANUP_PLAN.md §2 UX-RESIDUAL UX-C6.)
+_v142_sudo_hint() {
+    local _op="${1:-this operation}"
+    local _json="${2:-false}"
+    [[ "$_json" == "true" ]] && return 0
+    # Resolve the operator-facing binary path. The dispatcher at
+    # /usr/sbin/nftban is the typical wrapper; the actual binary is at
+    # /usr/lib/nftban/bin/nftban-core for daemon calls, but the user-
+    # facing CLI lives at the canonical /usr/lib/nftban/bin/nftban
+    # symlink target. We print the canonical lib path because (a) that
+    # path is stable under PATH rewrites and (b) it bypasses any /usr/
+    # sbin alias that might require its own sudo policy.
+    local _bin="${NFTBAN_BIN:-/usr/lib/nftban/bin/nftban}"
+    {
+        echo ""
+        echo "Need root for \"${_op}\". Re-run with one of:"
+        echo "  sudo VAR=value ${_bin} <command>     # sudo user"
+        echo "      VAR=value ${_bin} <command>     # root shell"
+        echo "(Inline VAR=value is preserved across the sudo boundary. Do NOT use"
+        echo " \`export VAR=value; sudo nftban X\` — the export is dropped.)"
+        echo ""
+    } >&2
+    return 0
+}
+
 # Check if running as root
-# Usage: cmd_require_root "$json_mode"
+# Usage: cmd_require_root "$json_mode" ["operation description"]
 # Returns: 0 if root, 1 otherwise
 cmd_require_root() {
     local json_mode="${1:-false}"
+    local operation="${2:-this operation}"
 
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         cmd_error "PolicyKit/polkit authorization failed or insufficient privileges" "$json_mode"
+        # v1.142 UX-C6: emit actionable re-run guidance on the same error
+        # path. Honors json_mode (no hint chrome in JSON mode).
+        _v142_sudo_hint "$operation" "$json_mode"
         return 1
     fi
     return 0
@@ -435,6 +494,7 @@ export -f cmd_info
 export -f cmd_require_binary
 export -f cmd_require_root
 export -f cmd_require_daemon
+export -f _v142_sudo_hint  # v1.142 UX-C6 — inline sudo / root-shell guidance
 export -f cmd_show_banner
 export -f cmd_section
 export -f cmd_kv
