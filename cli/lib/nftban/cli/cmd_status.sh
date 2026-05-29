@@ -537,20 +537,48 @@ _status_section_firewall() {
     fi
     printf "  %-20s %s\n" "Rules..............." "$rule_count"
 
-    # Count banned IPs (use centralized function)
-    local ban_count=0
-    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
-        ban_count=$(nftban_stats_count_active_bans)
+    # v1.141 PR-C (D-headline + D-cache-wording): kernel is authoritative per
+    # SELECT_CACHE_KERNEL_AUTHORITY=kernel (operator 2026-05-28). Headline
+    # 'Banned IPs' is the sum of kernel blacklist_ipv4 (feed+geoban) +
+    # blacklist_manual_ipv4 (admin) + v6 equivalents. Four-way split shown
+    # below so an operator sees attribution. Pre-v1.141 'cache may lag' is
+    # replaced by an explicit 'reconciled Ns ago' note that only fires when
+    # the source-index disagrees with the kernel. (V1_141_0 §2 D-headline.)
+    local kernel_v4_auto=0 kernel_v4_manual=0 kernel_v6_auto=0 kernel_v6_manual=0
+    if declare -f nftban_nft_count_set >/dev/null 2>&1; then
+        kernel_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+        kernel_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
+        kernel_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+        kernel_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
     fi
-    printf "  %-20s %s\n" "Banned IPs.........." "$ban_count"
+    local _auto_total=$((kernel_v4_auto + kernel_v6_auto))
+    local _manual_total=$((kernel_v4_manual + kernel_v6_manual))
+    local kernel_total=$((_auto_total + _manual_total))
+    # ban_count stays the headline-authority count so existing quick-commands
+    # gating on it works unchanged.
+    local ban_count=$kernel_total
 
-    # v1.38.0: Show footnote if cache and kernel counts differ
-    if declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
-        local _kernel_total
-        _kernel_total=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
-        _kernel_total=${_kernel_total:-0}
-        if [[ "$_kernel_total" != "$ban_count" ]] && [[ "$_kernel_total" -gt 0 ]]; then
-            printf "  %-20s %s\n" "" "(kernel: $_kernel_total, cache may lag)"
+    printf "  %-20s %s\n" "Banned IPs.........." "$kernel_total"
+    printf "  %-20s %s\n" "  Automatic (feeds)." "$_auto_total"
+    printf "  %-20s %s\n" "  Manual (admin)...." "$_manual_total"
+    printf "  %-20s %s\n" "  Total kernel......" "$kernel_total"
+
+    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+        local _cache_count
+        _cache_count=$(nftban_stats_count_active_bans 2>/dev/null || echo "")
+        if [[ -n "$_cache_count" ]] && [[ "$_cache_count" != "$kernel_total" ]]; then
+            local _cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/stats/unified_stats.json"
+            local _stale_msg=""
+            if [[ -f "$_cache_file" ]]; then
+                local _ct _now _age
+                _ct=$(stat -c %Y "$_cache_file" 2>/dev/null || echo 0)
+                _now=$(date +%s)
+                _age=$((_now - _ct))
+                if (( _age >= 0 )); then
+                    _stale_msg=" (reconciled ${_age}s ago)"
+                fi
+            fi
+            printf "  %-20s %s\n" "  Source-index......" "${_cache_count}${_stale_msg}"
         fi
     fi
 
@@ -587,6 +615,22 @@ _status_section_firewall() {
             echo "    View whitelist:      nftban list whitelist"
         fi
         echo "    View all:            nftban list all"
+    fi
+
+    # v1.141 PR-C (D-verify-hint): kernel is the authoritative source per
+    # CLAUDE.md project rule ('Kernel verification (nft list set) proves
+    # enforcement, not CLI output alone'). Print copy-pasteable nft list set
+    # commands so an operator can independently confirm the four blacklist
+    # sets that produced the headline above. Gated on quiet mode AND on
+    # ban_count > 0 so a fresh install with zero bans isn't given advice it
+    # can't act on. (V1_141_0 §2 D-verify-hint.)
+    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 ]]; then
+        echo ""
+        echo "  Verify kernel (authoritative):"
+        echo "    nft list set ip nftban blacklist_ipv4"
+        echo "    nft list set ip nftban blacklist_manual_ipv4"
+        echo "    nft list set ip6 nftban blacklist_ipv6"
+        echo "    nft list set ip6 nftban blacklist_manual_ipv6"
     fi
     echo ""
 }
@@ -1565,34 +1609,35 @@ output_json() {
     fi
     echo "    \"rule_count\": $rule_count,"
 
-    # v1.0: Use unified blacklist_ipv4/ipv6 sets (all bans consolidated)
-    # SINGLE SOURCE OF TRUTH: nftban_stats.sh → nft_schema.sh counting functions
-    local ban_count=0
-    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
-        # Use stats module function (calls nft_schema.sh internally)
-        ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
-    elif declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
-        # Fallback: Use nft_schema.sh centralized counting (fast JSON API)
-        local bl_counts
-        bl_counts=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
-        ban_count=$(echo "$bl_counts" | awk '{print $3}')  # Total is field 3
+    # v1.141 PR-C (D-json-fork): banned_ips is now ALWAYS the kernel total
+    # so the text-mode headline (which also uses kernel total) and the JSON
+    # surface never contradict. The four-way kernel split is exposed under
+    # counts.kernel_{total,automatic,manual} so JSON consumers can attribute
+    # bans to feed/admin sources. cache_count + source_index_count remain
+    # below but are clearly subordinate; counts.authority="kernel" marks
+    # which field consumers should use. (V1_141_0 §2 D-json-fork.)
+    local jk_v4_auto=0 jk_v4_manual=0 jk_v6_auto=0 jk_v6_manual=0
+    if declare -f nftban_nft_count_set >/dev/null 2>&1; then
+        jk_v4_auto=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+        jk_v4_manual=$(nftban_nft_count_set ip nftban blacklist_manual_ipv4 2>/dev/null || echo 0)
+        jk_v6_auto=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+        jk_v6_manual=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
     fi
+    local kernel_automatic=$((jk_v4_auto + jk_v6_auto))
+    local kernel_manual=$((jk_v4_manual + jk_v6_manual))
+    local kernel_count=$((kernel_automatic + kernel_manual))
+    local ban_count=$kernel_count
     echo "    \"banned_ips\": $ban_count,"
 
-    # v1.38.0: Count disambiguation — show all counting sources
-    # kernel_elements: Direct nft kernel query (authoritative)
-    # cache_count: From /var/cache/nftban stats cache (fast, may lag)
-    # source_index_count: From daemon source index (tracks per-module attribution)
-    local kernel_count=0 cache_count=0 source_index_count=0
-    if declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
-        local bl_raw
-        bl_raw=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
-        kernel_count=$(echo "$bl_raw" | awk '{print $3}')
-    fi
+    # v1.141 PR-C (D-json-fork): structured counts subordinate to the
+    # kernel authority computed above. cache_count + source_index_count are
+    # surfaced for transparency / drift detection but `authority`="kernel"
+    # tells JSON consumers which field to trust. kernel_elements is kept as
+    # a backward-compat alias for kernel_total.
+    local cache_count=0 source_index_count=0
     if declare -f nftban_stats_get_unified >/dev/null 2>&1; then
         cache_count=$(nftban_stats_get_unified ".blacklist.total" 2>/dev/null || echo 0)
     fi
-    # Source index count comes from daemon IPC if available
     if [[ -S /run/nftban/nftband.sock ]]; then
         local si_resp
         si_resp=$(nftban_ipc_call "source_index_count" 2>/dev/null || echo "")
@@ -1602,6 +1647,10 @@ output_json() {
         fi
     fi
     echo "    \"counts\": {"
+    echo "      \"authority\": \"kernel\","
+    echo "      \"kernel_total\": $kernel_count,"
+    echo "      \"kernel_automatic\": $kernel_automatic,"
+    echo "      \"kernel_manual\": $kernel_manual,"
     echo "      \"kernel_elements\": $kernel_count,"
     echo "      \"cache_count\": $cache_count,"
     echo "      \"source_index_count\": $source_index_count"
