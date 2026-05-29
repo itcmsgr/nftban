@@ -11,6 +11,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.143.0] - 2026-05-29 — RC-AUDIT-2 Phase 2 cleanup
+
+**Codename:** `V1_143_0_RC_AUDIT_2_PHASE2_CLEANUP`
+**Controlling plan:** `NFTBAN_ROADMAP/V1_143_0_PLAN.md`
+**PRs:** [#735](https://github.com/itcmsgr/nftban/pull/735) (PR-A FS3-MUTATION, sq `b8887e30`) + [#736](https://github.com/itcmsgr/nftban/pull/736) (PR-B FS3-DA, sq `cc587c24`)
+**Audit linkage:** `NFTBAN_ROADMAP/V1_142_RC_AUDIT_2_PUNCHLIST.md` (Phase 1 audit-only filed in v1.142.0) + `NFTBAN_ROADMAP/V1_142_LAB4_UPDATE_LOG_SAFETY_AUDIT.md` R-PERM-1 (closed by PR-B)
+
+> **Why:** v1.143.0 implements the FS3-class loop+success / swallowed-rc cleanup recommended by the v1.142.0 RC-AUDIT-2 Phase 1 punchlist §4-§5. Two batches ship: **FS3-MUTATION** (5 functions on kernel/firewall mutation paths) and **FS3-DA** (2 functions on DirectAdmin + permissions paths, the latter closing the lab4 v1.142 update-log audit's R-PERM-1 finding). **CSF excluded** in any form per operator hard exclusion. **Install/update boundary locked to permission-enforce-only** — this release includes the shell-side producer rc-truth fix for `nftban_permissions_cmd_enforce` but does NOT touch the installer-side consumer (`cmd/nftban-installer/phases.go:571-575`), packaging scriptlets, systemd-tmpfiles policy, session-whitelist sequencing, or `install_state` schema. **Daemon byte-identical to v1.142.0** (zero `.go` touched across both PRs). **Schema 1.83.0 frozen.**
+
+### PR-A — FS3-MUTATION rc-swallow paths ([#735](https://github.com/itcmsgr/nftban/pull/735), sq `b8887e30`)
+
+Five FS3-class fixes — same fix shape as v1.142 PR-FS `nftban_feeds_select`. Per-iteration rc capture into a `failed=()` accumulator, `⚠️` stderr message when non-empty, success marker only on full success, `return $rc` instead of unconditional `return 0`.
+
+- `cmd_feeds.sh::nftban_cmd_feeds` (`feeds enable <category>` arm) — `✅ Enabled N feed(s)` success symbol on partial failure replaced with `⚠️ Enabled N feed(s); M failed: <list>` to STDERR + explicit `return 1`. ✅ Successfully only on full success.
+- `cmd_port.sh::nftban_port_allow_add` — IPC `access_allow` failure path captures `_v143_rc=1`; final `return $_v143_rc` replaces `return 0`. Config-side write already succeeded; rc now signals the kernel-side mismatch.
+- `cmd_port.sh::nftban_port_allow_remove` — Same fix shape on the IPC `access_revoke` failure path.
+- `cmd_port.sh::nftban_port_allow_flush` — Per-set IPC loop with `_v143_failed=()` accumulator; on non-empty: `⚠ Config cleared but N kernel set(s) failed to flush: …` to STDERR + `return $_v143_rc`. ✅ All flushed only on full success.
+- `cmd_metrics.sh::nftban_metrics_enable` — `_set_metrics_backend` rc captured via `if ! _set_metrics_backend …; then return 1; fi`. Prometheus Metrics Enabled Successfully marker only when config-write succeeded.
+
+New test: `cli_fs3_mutation_v143_test.sh` (28 PASS / 0 FAIL). T-DRIFT row asserts five `v1.143 PR-A (FS3-MUTATION)` markers exist in the live `cmd_*.sh` files.
+
+### PR-B — FS3-DA rc-swallow paths ([#736](https://github.com/itcmsgr/nftban/pull/736), sq `cc587c24`)
+
+Two FS3-class fixes — DirectAdmin licensing-critical path + permissions wrapper rc-truth contract lock.
+
+- `cmd_port.sh::nftban_port_allow_directadmin` (CloudFlare arm + final return) — `nftban trust enable CLOUDFLARE && nftban trust update` rc captured into `_v143_da_rc`. Failure printed to STDERR with `⚠️ Failed to enable CloudFlare whitelist / DirectAdmin licensing REQUIRES this — operator action required / Re-run manually: …` Final `return $_v143_da_rc` replaces unconditional `return 0` (licensing-critical failure was previously silent to rc).
+- `cmd_permissions.sh::nftban_permissions_cmd_enforce` (wrapper rc-truth lock) — The wrapper already returned `$result` truthfully (that's what produced the lab4 v1.142 installer's `permissions enforce failed (exit 1) — non-fatal` line at `cmd/nftban-installer/phases.go:573`), but the `❌` failure block went to STDOUT with no actionable advice. Now the failure block (❌ + log location + re-check + re-run advice) goes to STDERR per the v1.141 PR-B E1 contract. rc propagation unchanged (already correct). Contract LOCKED by the new test so a future refactor cannot regress it. **Installer-side consumer at `phases.go:571-575` intentionally UNCHANGED** per operator's `SELECT_V1_143_INSTALL_UPDATE_SCOPE = permission-enforce-only`.
+
+New test: `cli_fs3_da_v143_test.sh` (21 PASS / 0 FAIL). T-DRIFT row asserts three `v1.143 PR-B (FS3-DA)` markers exist in the live `cmd_*.sh` files (cmd_port=2, cmd_permissions=1).
+
+### lab4 update-log audit closure (R-PERM-1)
+
+The 2026-05-29 lab4 v1.139.1 → v1.142.0 update-log safety audit (`V1_142_LAB4_UPDATE_LOG_SAFETY_AUDIT.md`) classified `permissions enforce failed (exit 1) — non-fatal` as **WARN / BUG-CANDIDATE** aligned with the RC-AUDIT-2 FS3-DA batch. PR-B (a) locks the shell-side wrapper rc-truth contract by test, and (b) improves the failure UX so an operator reading the swallowed `non-fatal` line gets the actionable advice the installer log already had. The lab4 update path itself was classified PASS (COMMITTED, 16/16 assertions, 19 s); R-DOC-1 (operator-facing `UPDATE_SAFETY_MODEL.md` note) deliberately deferred from this release.
+
+### Test evidence — cumulative at PR-B merge time
+
+**216 PASS / 0 FAIL** across 17 hermetic suites:
+
+| Suite | Result |
+|---|---|
+| PR-A: `cli_fs3_mutation_v143_test.sh` | 28 PASS / 0 FAIL |
+| PR-B: `cli_fs3_da_v143_test.sh` | 21 PASS / 0 FAIL |
+| v1.142 PR-FS `cli_feeds_select_input_contract` | 23 PASS / 0 FAIL |
+| v1.142 PR-UX-C6 `cli_sudo_hint_v142` | 19 PASS / 0 FAIL |
+| v1.141 PR-A regressions (4 suites) | 76 PASS / 0 FAIL / 4 SKIP |
+| v1.141 PR-B regressions (4 suites) | 18 PASS / 0 FAIL |
+| v1.141 PR-C regressions (4 suites) | 21 PASS / 0 FAIL |
+| v1.139.2 `rollback_help_guard_v1_139_2_test` | 10 PASS / 0 FAIL |
+
+### Four-release zero-Go chain
+
+v1.143.0 continues the **four consecutive releases without `.go` touched** chain:
+
+```
+v1.140.0 (Ubuntu 26 Tier-0) → v1.141.0 (CLI/status/data-truth)
+                          → v1.142.0 (FS parser + UX-C6)
+                          → v1.143.0 (RC-AUDIT-2 Phase 2)
+```
+
+`cmd/nftban-core` + `cmd/nftband` daemon binaries SHA256-identical to v1.140.0 ship across all four releases. `cli/lib/nftban/core/nftban_fhs_spec.sh` body SHA256 `4e618bd7d4ea379496f6052d3215ce7602e9001ea66f6948c1952c8111d1f242` unchanged across the same chain.
+
+### Non-goals locked v1.143-wide
+
+- **0 `.go` files** across PR-A + PR-B. Daemon byte-identical to v1.142.0.
+- **0 `internal/`, `cmd/`, `build/`, `packaging/`, `install/`, `systemd/`, `schema/`, `docker/`, `.github/`, `fhs-spec.yaml` (body)** changes.
+- **Schema 1.83.0 frozen.** Zero metrics labels. Zero portal API change. Zero Go-installer change.
+- **0 CSF / takeover / uninstall-restore / INST-CVE-PARITY work** — operator hard exclusion.
+- **0 broad install/update lifecycle refactor** — only `nftban_permissions_cmd_enforce` shell-side producer rc-truth lock + actionable stderr UX. Installer Go consumer at `phases.go:571-575` unchanged. Package-manager / RPM-DEB-scriptlet / systemd-tmpfiles policy / unsafe-path-transition / session-whitelist-sequencing / `install_state`-schema all untouched.
+- **0 RBL batch** — deferred to v1.144+.
+- **0 HEURISTIC batch** — audit-doc-only; rolled into v1.144 planning instead of inline v1.143.
+- **0 v1.144 work** (module-attribution, detection-coverage, SCHEMA-UNFREEZE fork, metrics expansion).
+
+### Release-prep envelope (this commit)
+
+Standard 4 files only: `VERSION` (1.142.0 → 1.143.0), `STATUS.md` (banner + lane summary), `CHANGELOG.md` (this entry), `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` 1.142.0 → 1.143.0 ONLY; FHS body byte-identical, line 31..end SHA256 `4e618bd7d4ea379496f6052d3215ce7602e9001ea66f6948c1952c8111d1f242` unchanged from v1.141.0 + v1.142.0). No host contact during release-prep construction. No tag in this PR; tag follows on the release-prep squash after merge per `TAG_AND_PUBLISH_V1_143_0`.
+
+---
+
 ## [v1.142.0] - 2026-05-29 — Cleanup release
 
 **Codename:** `V1_142_0_CLEANUP`
