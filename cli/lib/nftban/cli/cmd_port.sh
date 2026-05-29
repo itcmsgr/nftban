@@ -1724,7 +1724,18 @@ nftban_port_allow_directadmin() {
     echo "  • 123 (UDP OUT)    - NTP"
     echo ""
 
-    # Handle CloudFlare whitelist
+    # v1.143 PR-B (FS3-DA): CloudFlare whitelist rc was discarded. The
+    # body above repeatedly stresses that DirectAdmin LICENSING REQUIRES
+    # CloudFlare IPs to be whitelisted ("DirectAdmin licensing servers
+    # are behind CloudFlare CDN. You MUST whitelist CloudFlare IP ranges
+    # for licensing to work!"). Pre-v1.143 the trust enable+update arm
+    # printed ⚠️ to stdout on failure but the function continued to a
+    # downstream `return 0` — the licensing-critical failure was hidden
+    # from the operator's rc, exactly the FS3 family. Now the rc is
+    # captured into _v143_da_rc and propagated at function exit. Trust-
+    # subcommand failures get a stderr ⚠ with manual-remediation advice.
+    # (V1_143_0_PLAN.md §4 PR-B.)
+    local _v143_da_rc=0
     if [[ "$enable_cloudflare" == "yes" ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "Enabling CloudFlare IP Whitelist"
@@ -1738,8 +1749,14 @@ nftban_port_allow_directadmin() {
             echo ""
             echo "CloudFlare IP ranges are now whitelisted for DirectAdmin licensing."
         else
-            echo "⚠️  Failed to enable CloudFlare whitelist"
-            echo "   Please enable manually: nftban trust enable CLOUDFLARE && nftban trust update"
+            # v1.143 PR-B: stderr + rc=1 propagation. Licensing-critical
+            # path; operator must know via rc that DA licensing is at risk.
+            {
+                echo "⚠️  Failed to enable CloudFlare whitelist"
+                echo "    DirectAdmin licensing REQUIRES this — operator action required."
+                echo "    Re-run manually: nftban trust enable CLOUDFLARE && nftban trust update"
+            } >&2
+            _v143_da_rc=1
         fi
         echo ""
     else
@@ -1775,7 +1792,12 @@ nftban_port_allow_directadmin() {
 
     # Exit marker for testing validation
     command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "port"
-    return 0
+
+    # v1.143 PR-B (FS3-DA): return the accumulated rc instead of an
+    # unconditional `return 0`. _v143_da_rc tracks the licensing-critical
+    # CloudFlare whitelist failure above; ports-add failures already
+    # triggered an earlier `return 1` at the `rules_failed > 0` guard.
+    return $_v143_da_rc
 }
 
 # Export function for auto-loading
