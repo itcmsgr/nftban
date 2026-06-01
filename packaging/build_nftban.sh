@@ -393,6 +393,7 @@ echo "\${YQ_SHA256}  yq_linux_amd64" | sha256sum -c - || { echo "yq checksum ver
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
 install -D -m 0755 bin/nftban-validate %{buildroot}/usr/lib/nftban/bin/nftban-validate
+install -D -m 0755 bin/nftban-detect-ssh-ports %{buildroot}/usr/lib/nftban/bin/nftban-detect-ssh-ports
 install -D -m 0755 bin/nftban-installer %{buildroot}/usr/lib/nftban/bin/nftban-installer
 install -D -m 0755 yq_linux_amd64 %{buildroot}/usr/lib/nftban/bin/yq
 # NB-5: privileged binaries ship 0750 (root:nftban), not 0755 (root:root).
@@ -1613,6 +1614,7 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-validate" "${deb_root}/usr/lib/nftban/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-detect-ssh-ports" "${deb_root}/usr/lib/nftban/bin/"
     # NB-5: privileged binaries ship 0750 in .deb payload; postinst converges
     # ownership to root:nftban after the group is created.
     install -m 0750 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
