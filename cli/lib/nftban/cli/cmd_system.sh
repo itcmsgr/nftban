@@ -181,43 +181,43 @@ _nftban_auto_whitelist_ssh_port() {
     local ports_dir="${NFTBAN_CONFIG_DIR}/ports.d"
     local ssh_conf="${ports_dir}/00-ssh.conf"
     local sshd_config="/etc/ssh/sshd_config"
-    local ssh_port="22"
-
-    # Try to detect SSH port from sshd_config
-    if [[ -f "$sshd_config" ]]; then
-        local detected_port
-        detected_port=$(grep -E "^Port\s+" "$sshd_config" 2>/dev/null | awk '{print $2}' | head -1 || true)
-        if [[ -n "$detected_port" && "$detected_port" =~ ^[0-9]+$ ]]; then
-            ssh_port="$detected_port"
-        fi
+    # v1.145 PR-B: detect the full SSH-port union (ListenAddress-aware,
+    # multi-port; ss listeners + sshd_config Port + ListenAddress) instead of
+    # scalar head -1 + ss head -1. Every detected port is whitelisted in
+    # ports.d so all real listeners survive a reload (handles Ubuntu socket
+    # activation and multi-port hosts). ssh_port = primary for display only.
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    local ssh_ports_union=()
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        mapfile -t ssh_ports_union < <(nftban_detect_ssh_ports 2>/dev/null || true)
     fi
-
-    # Fallback: detect from running sshd (handles Ubuntu 24.04 socket activation
-    # where sshd_config Port may not reflect the actual listening port)
-    if [[ "$ssh_port" == "22" ]]; then
-        local ss_port
-        ss_port=$(ss -tlnp 2>/dev/null | grep -E 'sshd|"ssh"' | grep -oP ':(\d+)\s' | head -1 | tr -d ':[:space:]' || true)
-        if [[ -n "$ss_port" && "$ss_port" =~ ^[0-9]+$ && "$ss_port" != "22" ]]; then
-            ssh_port="$ss_port"
-        fi
-    fi
+    [[ ${#ssh_ports_union[@]} -eq 0 ]] && ssh_ports_union=(22)
 
     mkdir -p "$ports_dir" || return 1
 
-    # Create or update SSH port config (Go-compatible PORT/PROTOCOL/DIRECTION format)
-    if [[ ! -f "$ssh_conf" ]] || ! grep -q "^${ssh_port}/" "$ssh_conf" 2>/dev/null; then
-        cat > "$ssh_conf" << EOF
-# Auto-generated SSH port whitelist
-# Created by: nftban system enable
-# Date: $(date -Iseconds)
-# Detected from: $sshd_config
-# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)
-${ssh_port}/T/I
-EOF
+    # Create or update SSH port config (Go PORT/PROTOCOL/DIRECTION). v1.145
+    # PR-B: write EVERY detected SSH port so multi-port / ListenAddress hosts
+    # keep all listeners whitelisted (lockout-safe).
+    local _missing=0 _p
+    for _p in "${ssh_ports_union[@]}"; do
+        if [[ ! -f "$ssh_conf" ]] || ! grep -q "^${_p}/" "$ssh_conf" 2>/dev/null; then
+            _missing=1
+        fi
+    done
+    if [[ "$_missing" -eq 1 ]]; then
+        {
+            echo "# Auto-generated SSH port whitelist"
+            echo "# Created by: nftban system enable"
+            echo "# Date: $(date -Iseconds)"
+            echo "# Detected from: $sshd_config + ss listeners (union)"
+            echo "# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)"
+            for _p in "${ssh_ports_union[@]}"; do echo "${_p}/T/I"; done
+        } > "$ssh_conf"
         chmod 644 "$ssh_conf"
-        echo "  ✅ SSH port whitelisted: $ssh_port/tcp"
+        echo "  ✅ SSH port(s) whitelisted: ${ssh_ports_union[*]}/tcp"
     else
-        echo "  ✅ SSH port already whitelisted: $ssh_port/tcp"
+        echo "  ✅ SSH port(s) already whitelisted: ${ssh_ports_union[*]}/tcp"
     fi
 }
 
