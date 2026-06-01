@@ -299,6 +299,47 @@ _v142_sudo_hint() {
     return 0
 }
 
+# _v144_error_with_hint — concise three-line operator error format.
+#
+# UX-C2 closure (v1.144.0 PR-B): the historical pattern across many
+# cmd_*.sh files was to print a one-line ERROR followed by the full
+# ~30-line show_usage block on every parse error. That's wall-of-text
+# noise — and many error paths don't even need usage context, just a
+# pointer to the right next command. This helper emits at most three
+# stderr lines:
+#
+#   ERROR: <err>
+#     Hint: <hint>            (omitted if empty)
+#     Run:  <runhelp>         (omitted if empty)
+#
+# The full multi-line `show_usage` block remains the rendering for
+# `--help` paths (explicit user request) — it is NOT replaced. Only
+# parse-error paths migrate to this helper. The v1.143.0 rc-contract
+# (rc=1 on ERROR + ERROR-to-STDERR) is preserved: this helper always
+# returns 1 unless an explicit rc override is passed as $4.
+#
+# Args:
+#   $1 — error message (required; the "ERROR: <err>" line)
+#   $2 — optional one-line hint (e.g. "missing --type argument")
+#   $3 — optional "Run: <hint>" cmd string (e.g. "nftban connector help")
+#   $4 — optional rc override (default 1; pass 2 for warning-class)
+#
+# Output: stderr only; no banner, no decorative chrome.
+# Returns: 1 by default; $4 if provided.
+# (Scope: NFTBAN_ROADMAP/V1_144_0_DOC_UX_DRIFT_PLAN.md §3.2 UX-C2.)
+_v144_error_with_hint() {
+    local _err="${1:-Unspecified error}"
+    local _hint="${2:-}"
+    local _runhelp="${3:-}"
+    local _rc="${4:-1}"
+    {
+        echo "ERROR: ${_err}"
+        [[ -n "${_hint}" ]]     && echo "  Hint: ${_hint}"
+        [[ -n "${_runhelp}" ]]  && echo "  Run:  ${_runhelp}"
+    } >&2
+    return "${_rc}"
+}
+
 # Check if running as root
 # Usage: cmd_require_root "$json_mode" ["operation description"]
 # Returns: 0 if root, 1 otherwise
@@ -495,6 +536,7 @@ export -f cmd_require_binary
 export -f cmd_require_root
 export -f cmd_require_daemon
 export -f _v142_sudo_hint  # v1.142 UX-C6 — inline sudo / root-shell guidance
+export -f _v144_error_with_hint  # v1.144.0 PR-B UX-C2 — three-line ERROR/Hint/Run
 export -f cmd_show_banner
 export -f cmd_section
 export -f cmd_kv

@@ -176,10 +176,15 @@ nftban_cmd_whitelist_system() {
             ;;
 
         *)
-            echo "ERROR: Unknown command: $subcommand" >&2
-            echo "" >&2
-            show_usage
-            return 1
+            # v1.144.0 PR-B UX-C2: 3-line ERROR/Hint/Run replaces the
+            # full show_usage block on the unknown-subcommand parse
+            # error path. The `nftban whitelist-system help` path
+            # (above) still renders the full show_usage block.
+            _v144_error_with_hint \
+                "Unknown command: $subcommand" \
+                "Valid subcommands: add, remove, list, init, whitelistme" \
+                "nftban whitelist-system help"
+            return $?
             ;;
     esac
 }
