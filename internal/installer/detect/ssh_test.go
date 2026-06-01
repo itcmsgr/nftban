@@ -501,3 +501,145 @@ func TestSSHPort_LegacySinglePortPathStillWorks(t *testing.T) {
 		t.Errorf("SSHPort source=conf.local: port=%d err=%v, want 44444 nil", port, err)
 	}
 }
+
+// =============================================================================
+// v1.145 PR-B — ListenAddress / AddressFamily parsing + conservative union
+// =============================================================================
+
+func TestListenAddressPort_Forms(t *testing.T) {
+	cases := []struct {
+		line string
+		want int
+	}{
+		{"ListenAddress 0.0.0.0:22", 22},
+		{"ListenAddress 192.0.2.10:55000", 55000},
+		{"ListenAddress [::]:22", 22},
+		{"ListenAddress [2001:db8::10]:55000", 55000},
+		{"  ListenAddress 0.0.0.0:2222  ", 2222},
+		{"listenaddress 10.0.0.1:443", 443}, // case-insensitive
+		{"ListenAddress 0.0.0.0", 0},        // no port
+		{"ListenAddress ::", 0},             // bare IPv6, no port
+		{"ListenAddress 2001:db8::10", 0},   // bare IPv6, no port — the trap
+		{"Port 22", 0},                      // not a ListenAddress line
+		{"# ListenAddress 0.0.0.0:22", 0},   // comment
+	}
+	for _, c := range cases {
+		if got := listenAddressPort(c.line); got != c.want {
+			t.Errorf("listenAddressPort(%q) = %d, want %d", c.line, got, c.want)
+		}
+	}
+}
+
+func TestParseSSHConfig_ListenAddressFallback(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// Port directive wins even if a ListenAddress is also present.
+	mock.Files["/etc/ssh/p"] = []byte("ListenAddress 0.0.0.0:2200\nPort 22\n")
+	if got := parseSSHConfig(mock, "/etc/ssh/p"); got != 22 {
+		t.Errorf("Port should win: got %d, want 22", got)
+	}
+	// ListenAddress-only config falls back to the ListenAddress port.
+	mock.Files["/etc/ssh/la"] = []byte("# no Port line\nListenAddress [::]:55000\n")
+	if got := parseSSHConfig(mock, "/etc/ssh/la"); got != 55000 {
+		t.Errorf("ListenAddress fallback: got %d, want 55000", got)
+	}
+}
+
+// equalInts compares two int slices for order-sensitive equality.
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestDetectSSHPortsUnion(t *testing.T) {
+	noDropins := executor.Result{ExitCode: 1}
+	noListeners := executor.Result{ExitCode: 0, Stdout: ""}
+
+	cases := []struct {
+		name string
+		ss   string // ss -tlnp stdout
+		sshd string // /etc/ssh/sshd_config content
+		want []int  // sorted unique union
+	}{
+		{
+			name: "Port only single",
+			sshd: "Port 22\n",
+			want: []int{22},
+		},
+		{
+			name: "Port only multi",
+			sshd: "Port 22\nPort 55000\n",
+			want: []int{22, 55000},
+		},
+		{
+			name: "ListenAddress only IPv4",
+			sshd: "ListenAddress 0.0.0.0:22\n",
+			want: []int{22},
+		},
+		{
+			name: "ListenAddress only IPv6",
+			sshd: "ListenAddress [::]:55000\n",
+			want: []int{55000},
+		},
+		{
+			name: "mixed IPv4/IPv6 ListenAddress",
+			sshd: "ListenAddress 0.0.0.0:22\nListenAddress [::]:55000\n",
+			want: []int{22, 55000},
+		},
+		{
+			name: "AddressFamily inet + Port",
+			sshd: "AddressFamily inet\nPort 22\n",
+			want: []int{22},
+		},
+		{
+			name: "AddressFamily inet6 + ListenAddress",
+			sshd: "AddressFamily inet6\nListenAddress [2001:db8::10]:55000\n",
+			want: []int{55000},
+		},
+		{
+			name: "bare IPv6 no port is not detected",
+			sshd: "ListenAddress 2001:db8::10\n",
+			want: nil,
+		},
+		{
+			name: "union ss + config sorted unique",
+			ss: `State Recv-Q Send-Q Local:Port Peer Process
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))
+`,
+			sshd: "Port 55000\nListenAddress 0.0.0.0:22\n", // 22 duplicated across ss+config
+			want: []int{22, 55000},
+		},
+		{
+			name: "ss dual-stack",
+			ss: `State Recv-Q Send-Q Local:Port Peer Process
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))
+LISTEN 0 128 [::]:55000 [::]:* users:(("sshd",pid=1,fd=4))
+`,
+			sshd: "",
+			want: []int{22, 55000},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mock := executor.NewMockExecutor()
+			if c.ss != "" {
+				mock.RunResults["ss:-tlnp"] = executor.Result{ExitCode: 0, Stdout: c.ss}
+			} else {
+				mock.RunResults["ss:-tlnp"] = noListeners
+			}
+			mock.RunResults["ls:/etc/ssh/sshd_config.d/"] = noDropins
+			mock.Files["/etc/ssh/sshd_config"] = []byte(c.sshd)
+
+			got := DetectSSHPortsUnion(mock, newTestLogger())
+			if !equalInts(got, c.want) {
+				t.Errorf("DetectSSHPortsUnion() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -267,18 +268,145 @@ func sshFromConfig(exec executor.Executor) int {
 // portLineRe matches "Port NNN" lines in sshd_config.
 var portLineRe = regexp.MustCompile(`(?i)^\s*Port\s+(\d+)`)
 
+// listenAddrLineRe captures the address token of a `ListenAddress <token>`
+// directive. listenAddrBracketRe captures the port of the IPv6 bracketed form
+// `[addr]:port`. v1.145 PR-B: the historical detector parsed only `Port`
+// lines; a sshd_config that declares ports solely via `ListenAddress`
+// (`0.0.0.0:22`, `[::]:55000`, `192.0.2.10:22`, `[2001:db8::10]:55000`) was
+// invisible to the config sources.
+var listenAddrLineRe = regexp.MustCompile(`(?i)^\s*ListenAddress\s+(\S+)`)
+var listenAddrBracketRe = regexp.MustCompile(`^\[.*\]:(\d+)$`)
+
+// listenAddressPort extracts an explicit port from one `ListenAddress` line,
+// or 0 when the line is not a ListenAddress or carries no explicit port.
+// OpenSSH forms:
+//
+//	ListenAddress host             -> no port (0)
+//	ListenAddress host:port        -> IPv4/hostname (exactly one colon)
+//	ListenAddress [ipv6]:port      -> IPv6 with port (bracketed)
+//	ListenAddress 2001:db8::10      -> bare IPv6, NO port (multiple colons, no brackets)
+//
+// The bare-IPv6 case is the trap: a naive `:(\d+)$` would mis-read `::10` as
+// port 10, so a non-bracketed token is only treated as host:port when it has
+// EXACTLY one colon.
+func listenAddressPort(line string) int {
+	m := listenAddrLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return 0
+	}
+	tok := m[1]
+	if bm := listenAddrBracketRe.FindStringSubmatch(tok); bm != nil {
+		return validatePort(bm[1])
+	}
+	if strings.Count(tok, ":") == 1 {
+		return validatePort(tok[strings.LastIndex(tok, ":")+1:])
+	}
+	return 0
+}
+
+// parseSSHConfig returns a single SSH port from one config file. A `Port`
+// directive wins (first occurrence); when no `Port` line is present it falls
+// back to the first `ListenAddress host:port` it finds (v1.145 PR-B — closes
+// the ListenAddress-only blind spot in the single-port config source). Returns
+// 0 when neither is present.
 func parseSSHConfig(exec executor.Executor, path string) int {
 	data, err := exec.ReadFile(path)
 	if err != nil {
 		return 0
 	}
+	listenPort := 0
 	for _, line := range strings.Split(string(data), "\n") {
-		m := portLineRe.FindStringSubmatch(line)
-		if m != nil {
-			return validatePort(m[1])
+		if m := portLineRe.FindStringSubmatch(line); m != nil {
+			if p := validatePort(m[1]); p > 0 {
+				return p
+			}
+		}
+		if listenPort == 0 {
+			if p := listenAddressPort(line); p > 0 {
+				listenPort = p
+			}
 		}
 	}
-	return 0
+	return listenPort
+}
+
+// parseSSHConfigPorts returns ALL SSH ports declared in one config file via
+// `Port` and `ListenAddress` directives (deduped within the file is left to
+// the caller's union). v1.145 PR-B: the runtime conservative-union detector
+// must see every declared port, not just the first.
+func parseSSHConfigPorts(exec executor.Executor, path string) []int {
+	data, err := exec.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var ports []int
+	for _, line := range strings.Split(string(data), "\n") {
+		if m := portLineRe.FindStringSubmatch(line); m != nil {
+			if p := validatePort(m[1]); p > 0 {
+				ports = append(ports, p)
+			}
+			continue
+		}
+		if p := listenAddressPort(line); p > 0 {
+			ports = append(ports, p)
+		}
+	}
+	return ports
+}
+
+// sshConfigAllPorts returns all Port + ListenAddress ports from the main
+// sshd_config and every *.conf drop-in.
+func sshConfigAllPorts(exec executor.Executor) []int {
+	ports := parseSSHConfigPorts(exec, "/etc/ssh/sshd_config")
+	res := exec.Run("ls", "/etc/ssh/sshd_config.d/")
+	if res.ExitCode == 0 {
+		for _, name := range strings.Fields(res.Stdout) {
+			if !strings.HasSuffix(name, ".conf") {
+				continue
+			}
+			path := filepath.Join("/etc/ssh/sshd_config.d", name)
+			ports = append(ports, parseSSHConfigPorts(exec, path)...)
+		}
+	}
+	return ports
+}
+
+// DetectSSHPortsUnion returns the sorted, de-duplicated union of every SSH port
+// nftban can observe: live `ss` listeners + sshd_config/drop-in `Port` and
+// `ListenAddress` directives + the install state file + conf.local `SSH_PORT`.
+//
+// v1.145 PR-B runtime hardening: runtime/timer paths must protect EVERY real
+// SSH listener port (lockout-safe), so they consume this conservative union
+// rather than scalar `head -1` detection. The union is intentionally over-broad
+// across address families — it is applied to BOTH ip and ip6 sets; per-family
+// (ipv4_ports/ipv6_ports) precision is a deferred stronger variant. Blocking
+// rule: missing a real listener port is a lockout blocker; over-broad is not.
+func DetectSSHPortsUnion(exec executor.Executor, log *logging.Logger) []int {
+	seen := make(map[int]bool)
+	var union []int
+	add := func(p int) {
+		if p > 0 && !seen[p] {
+			seen[p] = true
+			union = append(union, p)
+		}
+	}
+	for _, p := range sshAllListeners(exec) {
+		add(p)
+	}
+	for _, p := range sshConfigAllPorts(exec) {
+		add(p)
+	}
+	add(sshFromStateFile(exec))
+	add(sshFromConfLocal(exec))
+	sort.Ints(union)
+	if log != nil && len(union) > 0 {
+		parts := make([]string, len(union))
+		for i, p := range union {
+			parts[i] = strconv.Itoa(p)
+		}
+		log.Detect("ssh", "union", strings.Join(parts, ","))
+	}
+	return union
 }
 
 // sshFromStateFile reads /var/lib/nftban/state/ssh_port_active.state.
