@@ -85,8 +85,22 @@ collect_all_metrics() {
         if systemctl is-active nftband.service &>/dev/null; then
             status=1
             pid=$(cat "${NFTBAN_RUN_DIR}/nftband.pid" 2>/dev/null || echo "0")
-            local start_time
-            start_time=$(systemctl show nftband.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
+            # v1.143.1 EXPORTER-PHASE-3 (Site B): bound the systemd dbus
+            # query with `timeout 2s`. Pre-v1.143.1 the bare
+            # `systemctl show … --value 2>/dev/null || echo ""` could not
+            # survive a SIGTERM mid-systemctl-show — the `||` fallback
+            # only triggers on non-zero exit, but SIGTERM kills the bash
+            # subshell BEFORE `||` evaluates. The v1.139.1 ERR trap pinned
+            # this exact line as rc=143 on ub2604 (Ubuntu 26.04 LTS)
+            # during the v1.142.0 fleet rollout (`collect.sh:89`).
+            # `timeout 2s` caps the dbus query at ~40× p99 healthy latency
+            # so SIGTERM has time to land cleanly on `start_time=""` via
+            # the `|| echo ""` fallback. Scope: V1_143_EXPORTER_EXIT2_
+            # PHASE_3_SCOPE.md §4.2 Option (a) Site B; operator-selected
+            # SELECT_V1_143_EXPORTER_PHASE_3_SITE_B = bounded-timeout,
+            # SELECT_V1_143_EXPORTER_PHASE_3_TIMEOUT_SECONDS = 2.
+            local start_time=""
+            start_time=$(timeout 2s systemctl show nftband.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
             if [[ -n "$start_time" ]]; then
                 local start_epoch
                 start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "$timestamp")
@@ -229,12 +243,30 @@ collect_all_metrics() {
                 bg_emergency=$(echo "$counts_json" | jq -r '((.sets.http_bot_emergency.count // 0) + (.sets.http_bot_emergency6.count // 0))')
             else
                 # Legacy kernel format: .botguard.suspect.ipv4
-                bg_suspect=$(echo "$counts_json" | jq -r '((.botguard.suspect.ipv4 // 0) + (.botguard.suspect.ipv6 // 0))')
-                bg_pending=$(echo "$counts_json" | jq -r '((.botguard.pending.ipv4 // 0) + (.botguard.pending.ipv6 // 0))')
-                bg_allow=$(echo "$counts_json" | jq -r '((.botguard.allow.ipv4 // 0) + (.botguard.allow.ipv6 // 0))')
-                bg_grey=$(echo "$counts_json" | jq -r '((.botguard.grey.ipv4 // 0) + (.botguard.grey.ipv6 // 0))')
-                bg_ban=$(echo "$counts_json" | jq -r '((.botguard.ban.ipv4 // 0) + (.botguard.ban.ipv6 // 0))')
-                bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))')
+                # v1.143.1 EXPORTER-PHASE-3 (Site A): validate the legacy-
+                # kernel `.botguard` shape ONCE before reading the six
+                # per-counter values, then put `|| <var>=0` belt-and-
+                # suspenders on every individual jq call. Pre-v1.143.1 the
+                # six bare `bg_X=$(echo "$counts_json" | jq -r '…')`
+                # pipelines each opened a bash subshell that could die to
+                # SIGTERM mid-pipeline. The v1.139.1 ERR trap pinned this
+                # on srv1 (CentOS Stream 10) at `collect.sh:232` during
+                # the v1.142.0 fleet rollout. The locals at the top of
+                # this block initialize all six bg_* to 0, so if the
+                # validity gate fails or any individual jq call is killed
+                # by SIGTERM, the affected counter stays at the safe
+                # default. Scope: V1_143_EXPORTER_EXIT2_PHASE_3_SCOPE.md
+                # §4.1 Option (a); operator-selected
+                # SELECT_V1_143_EXPORTER_PHASE_3_SITE_A =
+                #   single-validity-gate-plus-belt-and-suspenders.
+                if echo "$counts_json" | jq -e '.botguard' &>/dev/null; then
+                    bg_suspect=$(echo "$counts_json"   | jq -r '((.botguard.suspect.ipv4 // 0)   + (.botguard.suspect.ipv6 // 0))'   2>/dev/null) || bg_suspect=0
+                    bg_pending=$(echo "$counts_json"   | jq -r '((.botguard.pending.ipv4 // 0)   + (.botguard.pending.ipv6 // 0))'   2>/dev/null) || bg_pending=0
+                    bg_allow=$(echo "$counts_json"     | jq -r '((.botguard.allow.ipv4 // 0)     + (.botguard.allow.ipv6 // 0))'     2>/dev/null) || bg_allow=0
+                    bg_grey=$(echo "$counts_json"      | jq -r '((.botguard.grey.ipv4 // 0)      + (.botguard.grey.ipv6 // 0))'      2>/dev/null) || bg_grey=0
+                    bg_ban=$(echo "$counts_json"       | jq -r '((.botguard.ban.ipv4 // 0)       + (.botguard.ban.ipv6 // 0))'       2>/dev/null) || bg_ban=0
+                    bg_emergency=$(echo "$counts_json" | jq -r '((.botguard.emergency.ipv4 // 0) + (.botguard.emergency.ipv6 // 0))' 2>/dev/null) || bg_emergency=0
+                fi
             fi
             # Validate numeric — fall back to 0 if jq returns non-numeric
             [[ "$bg_suspect" =~ ^[0-9]+$ ]] || bg_suspect=0
