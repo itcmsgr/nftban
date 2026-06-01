@@ -2740,22 +2740,11 @@ pro:
           mutates: true
           description: "Submit stats now (called by timer)"
 
-gui:
-  category: intelligence_reporting
-  description: "Web GUI management"
-  risk: setup
-  audience: [cli]
-  capability: service_control
-  mutates: conditional
-  supports_dry_run: false
-  requires_root: true
-  panel_expose: false
-  output_modes: [text]
-  has_json: false
-  examples:
-    - "nftban gui status"
-    - "nftban gui enable"
-    - "nftban gui disable"
+# v1.144.0 PR-A: GUI command entry retired. The Web GUI was retired in v1.139.2
+# (PR #722); there is no cmd_gui.sh, no dispatcher case, and `nftban gui`
+# returns "Unknown command" rc=1. Use `nftban report html-report` for similar
+# functionality or external hosting panels for a browser UI.
+# (D-NFTBAN-GUI-DOC-DRIFT closure; V1_144_0_DOC_UX_DRIFT_PLAN.md §3.1)
 
 geoip:
   category: intelligence_reporting
@@ -3561,13 +3550,12 @@ _metadata:
     - "Arguments with type validation (string, int, bool, enum)"
     - "Zabbix LLD discovery support"
     - "Auto-help generation support"
-  total_commands: 67
+  total_commands: 66  # v1.144.0 PR-A: -1 (gui retired)
   commands_with_json: 46
-  commands_without_json: 11
+  commands_without_json: 10  # v1.144.0 PR-A: -1 (gui retired)
   commands_with_full_options: 27
   missing_json:
     - debug
-    - gui
     - menu
     - profile
     - smoke
@@ -3577,13 +3565,14 @@ _metadata:
     - timers
     - update
     - wizard
+    # gui: retired in v1.144.0 PR-A (was retired functionally in v1.139.2 PR #722)
     # trust: now has JSON support (v1.19.13)
   task_groups:
     setup_discovery: 10
     immediate_action: 12
     active_protection: 9
     infrastructure: 11
-    intelligence_reporting: 12
+    intelligence_reporting: 11  # v1.144.0 PR-A: -1 (gui retired)
     developer_sysadmin: 13
   risk_levels:
     core: 26
