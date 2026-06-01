@@ -38,13 +38,34 @@ var placeholders = []string{
 	"__CT_LIMIT_MAIL__",
 }
 
-// tcpPortsInElementsRe matches the `elements = { … }` line inside a
-// `set tcp_ports_in { … }` block. Group 1 is "elements = {", group 2 is the
-// inner comma-separated port list (possibly multi-line), group 3 is "}". Used
-// by ensureSSHPortInTcpPortsIn to inject the detected SSH port when the
-// template doesn't carry it via __SSH_PORT__ substitution. V121 fix for
-// D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001.
-var tcpPortsInElementsRe = regexp.MustCompile(`(?s)(set tcp_ports_in \{[^{}]*elements = \{)([^}]*)(\})`)
+// portSetElementsRe holds the compiled `elements = { … }` matchers for the
+// named port sets the renderer injects SSH ports into. Group 1 is
+// "set <name> { … elements = {", group 2 is the inner comma-separated element
+// list (possibly multi-line), group 3 is "}". Used by ensureSSHPortsInSet to
+// inject a detected SSH port when the template does not already carry it.
+//
+// V121 introduced this for tcp_ports_in only (D-NONDEFAULT-SSH-PORT-CONFIG-
+// DRIFT-001). v1.145 PR-A generalized it to any named port set so the SAME
+// idempotent injector seeds BOTH tcp_ports_in (the allow-set) and ssh_ports
+// (the set-driven brute-force rate-limit set, `tcp dport @ssh_ports ct count`)
+// from the detected SSH listener ports — no duplicate placeholder machinery.
+// The map is built once at init and only read afterwards (no concurrent
+// writes), so it is safe for parallel renders/tests.
+var portSetElementsRe = map[string]*regexp.Regexp{
+	"tcp_ports_in": regexp.MustCompile(`(?s)(set tcp_ports_in \{[^{}]*elements = \{)([^}]*)(\})`),
+	"ssh_ports":    regexp.MustCompile(`(?s)(set ssh_ports \{[^{}]*elements = \{)([^}]*)(\})`),
+}
+
+// portSetElementsReFor returns the compiled elements matcher for setName.
+// Known sets (tcp_ports_in, ssh_ports) are precompiled; any other name is
+// compiled on demand (QuoteMeta-guarded). Read-only access to the precompiled
+// map keeps the common path race-free.
+func portSetElementsReFor(setName string) *regexp.Regexp {
+	if re, ok := portSetElementsRe[setName]; ok {
+		return re
+	}
+	return regexp.MustCompile(`(?s)(set ` + regexp.QuoteMeta(setName) + ` \{[^{}]*elements = \{)([^}]*)(\})`)
+}
 
 // RenderNftablesConf reads the nftables.conf template, substitutes placeholders,
 // validates syntax, and writes back atomically.
@@ -90,9 +111,17 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 	// Substitute placeholders. __SSH_PORT__ uses the PRIMARY port — the
 	// per-IP rate-limit rule and other single-port references in the
 	// template stay byte-identical to v1.124 behavior for single-port
-	// hosts. For multi-port hosts, the allow-set carries every port (via
-	// ensureSSHPortInTcpPortsIn below) but per-port rate-limit semantics
-	// for additional ports are deferred to V125 stretch / V126+.
+	// hosts. For multi-port hosts, both port sets carry every port (via
+	// ensureSSHPortsInSet below).
+	//
+	// v1.145 PR-A: the SSH ct-count brute-force rate-limit rule reads its
+	// dport from @ssh_ports (set-driven) instead of the previously-hardcoded
+	// __SSH_PORT__ literal. The templates seed `set ssh_ports` with
+	// __SSH_PORT__ (the primary), and the ensureSSHPortsInSet loop below
+	// injects every additional detected port into ssh_ports alongside
+	// tcp_ports_in. This closes Gap 2 from the V1.145 audit: per-port
+	// rate-limit semantics now cover every detected SSH port, and an atomic
+	// set update can move the rate-limit dport without a full ruleset reload.
 	content = strings.ReplaceAll(content, "__SSH_PORT__", strconv.Itoa(primary))
 	content = strings.ReplaceAll(content, "__CT_LIMIT_SSH__", strconv.Itoa(ct.SSH))
 	content = strings.ReplaceAll(content, "__CT_LIMIT_HTTP__", strconv.Itoa(ct.HTTP))
@@ -116,13 +145,30 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 	// V125 R-1 extension — multi-port: inject every detected SSH listener
 	// port (primary AND additional) into the tcp_ports_in elements list, so
 	// operators connecting on any of the host's sshd listener ports survive
-	// a firewall reload. ensureSSHPortInTcpPortsIn is idempotent and
-	// safe-to-call-repeatedly: if a port is already present (e.g., from
-	// __SSH_PORT__ substitution above for the primary), the helper is a
-	// no-op for that port.
+	// a firewall reload.
+	//
+	// v1.145 PR-A — set-driven SSH rate-limit: inject the SAME ports into the
+	// ssh_ports set, which the input chain's brute-force ct-count rule reads
+	// via `tcp dport @ssh_ports`. This keeps the rate-limit dport in parity
+	// with the allow-set for every detected SSH port (the primary arrives via
+	// the __SSH_PORT__ substitution above; additional ports are injected
+	// here). ensureSSHPortsInSet is idempotent and safe-to-call-repeatedly:
+	// if a port is already present in the target set, the helper is a no-op.
 	for _, port := range sshPorts {
-		content = ensureSSHPortInTcpPortsIn(content, port, log)
+		content = ensureSSHPortsInSet(content, "tcp_ports_in", port, log)
+		content = ensureSSHPortsInSet(content, "ssh_ports", port, log)
 	}
+
+	// v1.145 PR-A — normalize: guarantee each port set's elements list holds
+	// every whole numeric token at most once. The strict presence check in
+	// ensureSSHPortsInSet prevents the injector from ADDING a duplicate, but it
+	// does NOT remove a duplicate introduced by __SSH_PORT__ substitution when a
+	// detected SSH port coincides with a hardcoded service port in the template
+	// (e.g. sshPorts=[80] → `elements = { 80, 80, 443 }`). nftables sets cannot
+	// hold duplicate elements, so this pass collapses any such collision. It is
+	// a no-op for the common case (SSH port distinct from 80/443/25/465/587).
+	content = dedupePortSetElements(content, "tcp_ports_in", log)
+	content = dedupePortSetElements(content, "ssh_ports", log)
 
 	// Final sanity check (warning only — injection above should have made
 	// this pass, but a malformed template without any tcp_ports_in set
@@ -163,38 +209,43 @@ func RenderNftablesConfMultiPort(exec executor.Executor, sshPorts []int, ct dete
 	return nil
 }
 
-// ensureSSHPortInTcpPortsIn guarantees the detected SSH port appears as a
-// whole numeric token inside at least one `set tcp_ports_in { … elements = { … } … }`
+// ensureSSHPortsInSet guarantees the detected SSH port appears as a whole
+// numeric token inside at least one `set <setName> { … elements = { … } … }`
 // block in the rendered content. If the port is already present (as a comma-
-// separated element token in any tcp_ports_in elements list), the function
-// is a no-op. Otherwise, for each matched `tcp_ports_in` set block, it
-// injects the port at the head of the elements list, preserving existing
-// entries and formatting.
+// separated element token in any matching elements list), the function is a
+// no-op. Otherwise, for each matched set block, it injects the port at the
+// head of the elements list, preserving existing entries and formatting.
 //
-// V121 fix for D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 — closes the gap where
-// hosts using non-default SSH ports could end up with kernel-only safety
-// (transient) instead of durable-config safety (survives reload/restart/
-// reboot/update).
+// V121 introduced this as ensureSSHPortInTcpPortsIn (hardcoded to
+// tcp_ports_in) to fix D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 — closing the
+// gap where hosts using non-default SSH ports could end up with kernel-only
+// safety (transient) instead of durable-config safety (survives reload/
+// restart/reboot/update).
 //
-// v1.125 R-1 hardening: presence check is now strict (exact numeric token
-// inside the parsed elements list), not a loose strings.Contains substring
-// match. The pre-v1.125 substring check incorrectly treated port 22 as
-// "present" when only 2222 (DirectAdmin control port) appeared anywhere in
-// the content; on DA-class multi-port hosts this caused port 22 to silently
-// not get injected. The new check parses the tcp_ports_in elements
-// regex-match, splits on commas, and compares each trimmed token against
-// the port literal — eliminating false-positive presence detection.
+// v1.145 PR-A generalized it to any named port set so the same idempotent
+// injector seeds both tcp_ports_in (allow-set) and ssh_ports (set-driven
+// brute-force rate-limit, `tcp dport @ssh_ports ct count`) without a second
+// placeholder mechanism. setName MUST be one of the known port sets; the
+// matcher is selected via portSetElementsReFor.
+//
+// v1.125 R-1 hardening (preserved): presence check is strict (exact numeric
+// token inside the parsed elements list), not a loose strings.Contains
+// substring match. The pre-v1.125 substring check incorrectly treated port
+// 22 as "present" when only 2222 (DirectAdmin control port) appeared anywhere
+// in the content; on DA-class multi-port hosts this caused port 22 to
+// silently not get injected. The check parses the elements regex-match,
+// splits on commas, and compares each trimmed token against the port literal
+// — eliminating false-positive presence detection.
 //
 // Idempotent: calling on already-correct content returns content unchanged.
-func ensureSSHPortInTcpPortsIn(content string, sshPort int, log *logging.Logger) string {
+func ensureSSHPortsInSet(content string, setName string, sshPort int, log *logging.Logger) string {
 	portStr := strconv.Itoa(sshPort)
+	re := portSetElementsReFor(setName)
 
-	// Strict presence check (v1.125 R-1 hardening): parse every
-	// tcp_ports_in match's elements list and compare port as a whole
-	// numeric token. Replaces the pre-v1.125 loose strings.Contains
-	// check which was vulnerable to substring false positives (22 vs
-	// 2222, 80 vs 8080, etc.).
-	for _, match := range tcpPortsInElementsRe.FindAllStringSubmatch(content, -1) {
+	// Strict presence check (v1.125 R-1 hardening): parse every match's
+	// elements list and compare port as a whole numeric token. Avoids
+	// substring false positives (22 vs 2222, 80 vs 8080, etc.).
+	for _, match := range re.FindAllStringSubmatch(content, -1) {
 		if len(match) < 4 {
 			continue
 		}
@@ -205,10 +256,10 @@ func ensureSSHPortInTcpPortsIn(content string, sshPort int, log *logging.Logger)
 		}
 	}
 
-	// Slow path: port is missing. Inject into every tcp_ports_in set.
+	// Slow path: port is missing. Inject into every matching set block.
 	injections := 0
-	out := tcpPortsInElementsRe.ReplaceAllStringFunc(content, func(match string) string {
-		groups := tcpPortsInElementsRe.FindStringSubmatch(match)
+	out := re.ReplaceAllStringFunc(content, func(match string) string {
+		groups := re.FindStringSubmatch(match)
 		if len(groups) < 4 {
 			return match
 		}
@@ -231,7 +282,57 @@ func ensureSSHPortInTcpPortsIn(content string, sshPort int, log *logging.Logger)
 	})
 
 	if injections > 0 {
-		log.Info("V121 injected SSH port %d into %d tcp_ports_in set(s) in rendered nftables.conf (template did not carry the port via __SSH_PORT__ or hardcoded list)", sshPort, injections)
+		log.Info("v1.145 injected SSH port %d into %d %s set(s) in rendered nftables.conf (template did not carry the port via __SSH_PORT__)", sshPort, injections, setName)
+	}
+	return out
+}
+
+// dedupePortSetElements rewrites the elements list of every
+// `set <setName> { … elements = { … } … }` block so each whole numeric token
+// appears at most once (first occurrence wins, order preserved). It only
+// rewrites a block that actually contains a duplicate, so the common no-dup
+// case is byte-preserving (original formatting/whitespace untouched).
+//
+// nftables sets cannot hold duplicate elements. The strict presence check in
+// ensureSSHPortsInSet stops the injector from ADDING a duplicate, but it does
+// not remove one created by __SSH_PORT__ substitution when a detected SSH port
+// coincides with a hardcoded service port in the template (e.g. sshPorts=[80]
+// renders tcp_ports_in `{ 80, 80, 443 }`). This pass is the backstop that
+// guarantees no duplicate token reaches nft, independent of operational
+// plausibility (we do not rely on "an SSH port is never 80/443").
+func dedupePortSetElements(content string, setName string, log *logging.Logger) string {
+	re := portSetElementsReFor(setName)
+	removed := 0
+	out := re.ReplaceAllStringFunc(content, func(match string) string {
+		groups := re.FindStringSubmatch(match)
+		if len(groups) < 4 {
+			return match
+		}
+		prefix, inner, suffix := groups[1], groups[2], groups[3]
+		seen := make(map[string]bool)
+		kept := make([]string, 0)
+		dup := false
+		for _, tok := range strings.Split(inner, ",") {
+			t := strings.TrimSpace(tok)
+			if t == "" {
+				continue
+			}
+			if seen[t] {
+				dup = true
+				removed++
+				continue
+			}
+			seen[t] = true
+			kept = append(kept, t)
+		}
+		if !dup {
+			// No duplicate — preserve the original block byte-for-byte.
+			return match
+		}
+		return prefix + " " + strings.Join(kept, ", ") + " " + suffix
+	})
+	if removed > 0 {
+		log.Info("v1.145 removed %d duplicate element token(s) from %s set(s) in rendered nftables.conf", removed, setName)
 	}
 	return out
 }

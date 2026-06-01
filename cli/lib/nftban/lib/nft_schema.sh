@@ -107,6 +107,11 @@ declare -g -A NFTBAN_IPV4_SETS=(
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
 
+    # SSH brute-force rate-limit ports (v1.145 PR-A — set-driven ct-count dport)
+    # The input chain's brute-force rule reads `tcp dport @ssh_ports ct count`,
+    # so this set must exist alongside tcp_ports_in for the base ruleset to load.
+    ["ssh_ports"]="inet_service||SSH ports for set-driven brute-force rate-limit"
+
     # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
     ["http_bot_suspect"]="ipv4_addr|timeout|Kernel-populated HTTP bot suspects"
     ["http_bot_pending"]="ipv4_addr|timeout|Awaiting bot classification"
@@ -171,6 +176,11 @@ declare -g -A NFTBAN_IPV6_SETS=(
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
     ["udp_ports_in"]="inet_service||Allowed UDP ports (inbound)"
     ["udp_ports_out"]="inet_service||Allowed UDP ports (outbound)"
+
+    # SSH brute-force rate-limit ports (v1.145 PR-A — set-driven ct-count dport)
+    # The input chain's brute-force rule reads `tcp dport @ssh_ports ct count`,
+    # so this set must exist alongside tcp_ports_in for the base ruleset to load.
+    ["ssh_ports"]="inet_service||SSH ports for set-driven brute-force rate-limit"
 
     # HTTP Bot Guard sets (v1.21.4 — always in base schema, empty when disabled)
     ["http_bot_suspect6"]="ipv6_addr|timeout|Kernel-populated HTTP bot suspects"
