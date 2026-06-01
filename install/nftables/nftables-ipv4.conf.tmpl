@@ -34,6 +34,13 @@ table ip nftban {
         elements = { 22, 80, 443 }
     }
 
+    # v1.145 PR-A: set-driven SSH brute-force rate-limit (closes Gap 2).
+    set ssh_ports {
+        type inet_service
+        comment "SSH ports for set-driven brute-force rate-limit"
+        elements = { __SSH_PORT__ }
+    }
+
     set tcp_ports_out {
         type inet_service
         comment "Allowed TCP ports (outbound)"
@@ -84,7 +91,7 @@ table ip nftban {
         ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded } counter accept comment "ICMPv4"
 
         # 8. CT LIMITS (DDoS protection - SSH)
-        ct state new tcp dport __SSH_PORT__ ct count over 15 counter drop comment "SSH: max 15 concurrent per IP"
+        ct state new tcp dport @ssh_ports ct count over 15 counter drop comment "SSH: max 15 concurrent per IP — v1.145 PR-A set-driven"
 
         # 9. CT LIMITS (DDoS protection - HTTP/HTTPS/MAIL)
         ct state new tcp dport { 80, 443 } ct count over 150 counter drop comment "HTTP(S): max 150 concurrent per IP"

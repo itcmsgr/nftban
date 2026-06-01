@@ -187,15 +187,14 @@ case "$1" in
         # Must run AFTER nftban group is created. DEB payload ships 0750
         # root:root; postinst converges to root:nftban 0750 so the runtime
         # permissions module does not repeatedly correct drift.
-        # v1.100.1b.A: nftban-ui no longer ships, but the loop tolerates absence.
-        # Old installs may still have /usr/sbin/nftban-ui from a prior package;
-        # the prerm/postrm cleanup paths handle removal of those orphaned files.
-        for _bin in /usr/sbin/nftban; do
-            if [ -f "$_bin" ]; then
-                chown root:nftban "$_bin" 2>/dev/null || true
-                chmod 0750 "$_bin" 2>/dev/null || true
-            fi
-        done
+        # nftban-ui (Web GUI) is decommissioned (GOTH retirement) and no longer
+        # ships, so the only privileged binary to converge here is the nftban
+        # CLI dispatcher. Any orphaned /usr/sbin/nftban-ui left by a pre-GOTH
+        # package is removed by the prerm/postrm cleanup paths, not here.
+        if [ -f /usr/sbin/nftban ]; then
+            chown root:nftban /usr/sbin/nftban 2>/dev/null || true
+            chmod 0750 /usr/sbin/nftban 2>/dev/null || true
+        fi
 
         # --- Critical FHS dirs (Go installer needs state dir to exist) ---
         mkdir -p /var/lib/nftban/state
@@ -289,6 +288,34 @@ case "$1" in
                 log_error "See log: /var/log/nftban/installer.log"
                 log_error "To retry: /usr/lib/nftban/bin/nftban-installer --repair"
                 log_error "Or: nftban firewall rebuild"
+            fi
+
+            # --- v1.145 PR-A.1: upgrade-path SSH rate-limit migration ---
+            # On upgrade the installer's rebuild path (switchop.Rebuild ->
+            # `nftban firewall rebuild`) rebuilds from the v1.145 template
+            # (/usr/lib/nftban/templates/nftables.conf.tpl) and atomically
+            # applies the set-driven SSH brute-force rule (tcp dport @ssh_ports
+            # ct count) via nft -f. This explicit reload is a defense-in-depth
+            # guarantee that an existing v1.142–1.144 install — whose LIVE
+            # kernel still carries the OLD literal `tcp dport <port> ct count`
+            # rule — is migrated to the set-driven form with NO operator action
+            # required.
+            #
+            # Gated: runs ONLY on upgrade, and ONLY when the installer COMMITTED
+            # (0) or DEGRADED (1). Skipped on authority-abort (3) and hard-fail
+            # so it never overrides a deliberate safe/handoff state (e.g. a host
+            # nftban did not take over). `nftban firewall reload` is atomic
+            # (nft -f — the kernel never sees an empty/partial ruleset) and this
+            # call is NON-FATAL: a reload failure is warned and the package
+            # upgrade continues (nft -f retains the previous ruleset on error).
+            if [ "$INSTALL_MODE" = "upgrade" ] && [ "${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ]; then
+                log_info "v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
+                if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
+                    log_info "v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
+                else
+                    log_warn "v1.145: firewall reload did not complete; previous ruleset retained — upgrade continues."
+                    log_warn "v1.145: to finish the migration manually, run: nftban firewall reload"
+                fi
             fi
         else
             log_error "Installer binary not found: $NFTBAN_INSTALLER"
