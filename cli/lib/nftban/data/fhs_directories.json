@@ -394,7 +394,7 @@
         "mode": "0750",
         "owner": "root",
         "group": "nftban",
-        "description": "TLS certificates for GUI/API",
+        "description": "TLS certificates for API",
         "created_by": "package"
       },
       {

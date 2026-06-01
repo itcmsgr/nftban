@@ -96,7 +96,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoban"]="0750|root|nftban|Geographic ban configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoip"]="0750|root|nftban|GeoIP database configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/nftables.d"]="0750|root|nftban|NFTBan-managed nftables include fragments"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/ssl"]="0750|root|nftban|TLS certificates for GUI/API"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/ssl"]="0750|root|nftban|TLS certificates for API"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata"]="0750|root|nftban|Suricata integration configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/profiles"]="0750|root|nftban|Suricata detection profiles"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/config"]="0750|root|nftban|Suricata configuration files"

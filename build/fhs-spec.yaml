@@ -422,7 +422,7 @@ directories:
       mode: "0750"
       owner: root
       group: nftban
-      description: "TLS certificates for GUI/API"
+      description: "TLS certificates for API"
       created_by: package
 
     - path: /etc/nftban/suricata
@@ -997,16 +997,10 @@ conditional:
         created_by: feature_enable
         note: "External service - only create if node_exporter installed"
 
-  # GUI feature directories - created by 'nftban gui enable'
-  gui:
-    condition: "gui_enabled"
-    directories:
-      - path: /etc/nftban/gui
-        mode: "0750"
-        owner: root
-        group: nftban
-        description: "GUI configuration"
-        created_by: feature_enable
+  # GUI feature was retired in v1.139.2 (PR #722) and the feature-directory
+  # entry was removed in v1.144.0 PR-A (FHS-SPEC-GUI-MENTION). There is no
+  # cmd_gui.sh and no `nftban gui enable` command. The /etc/nftban/gui
+  # directory is not created by base nftban.
 
   # Panel directories - created during panel detection/install
   panels:
