@@ -801,9 +801,15 @@ nftban_cmd_feeds() {
             _nftban_feeds_help
             ;;
         *)
-            echo "ERROR: Unknown feeds action: $action" >&2
-            _nftban_feeds_help
-            return 1
+            # v1.144.0 PR-B UX-C2: 3-line ERROR/Hint/Run replaces the
+            # full _nftban_feeds_help block on the unknown-action parse
+            # error path. The `nftban feeds help` path (above) still
+            # renders the full help block.
+            _v144_error_with_hint \
+                "Unknown feeds action: $action" \
+                "Valid: list, enable, disable, status, select, enable-category, refresh, count" \
+                "nftban feeds help"
+            return $?
             ;;
     esac
 }
