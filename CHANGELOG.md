@@ -11,6 +11,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.144.0] - 2026-06-01 — Doc/UX drift cleanup
+
+**Codename:** `V1_144_0_DOC_UX_DRIFT`
+**Controlling plan:** `NFTBAN_ROADMAP/V1_144_0_DOC_UX_DRIFT_PLAN.md` (amended turn 2 to fold in D-UXV-13/14/15)
+**PRs:** [#740](https://github.com/itcmsgr/nftban/pull/740) PR-A (sq `36c1c1b0`) · [#741](https://github.com/itcmsgr/nftban/pull/741) PR-B (sq `83e7340a`) · [#742](https://github.com/itcmsgr/nftban/pull/742) PR-C (sq `43a79026`) · [#743](https://github.com/itcmsgr/nftban/pull/743) PR-D (sq `e76cb49b`)
+
+> **Why:** v1.144.0 is a cleanup release on top of v1.143.1 closing seven converging doc/UX drift defects in four coupled PRs. **Daemon byte-identical to v1.143.1** — zero `.go` touched. **The six-release zero-Go chain `v1.140.0 → v1.141.0 → v1.142.0 → v1.143.0 → v1.143.1 → v1.144.0` holds.** Schema 1.83.0 frozen.
+
+### Closed in this release
+
+- **D-NFTBAN-GUI-DOC-DRIFT** (PR-A) — `nftban gui` was advertised by `nftban help --all` despite no `cmd_gui.sh` ever existing post-v1.139.2 retirement. Source-side fix in `commands.registry.yml` drops the `gui:` entry + `- gui` from `missing_json:` + adjusts counters; `nftban gui` now returns "Unknown command" rc=1 via the dispatcher catch-all (cleanly, via the standard typo-suggestion path).
+- **FHS-SPEC-GUI-MENTION** (PR-A) — `build/fhs-spec.yaml:425` "TLS certificates for GUI/API" → "TLS certificates for API"; `:1000-1015` removed dormant `gui:` feature directory block (`condition: gui_enabled` was never set by any installer). Regenerated `cli/lib/nftban/core/nftban_fhs_spec.sh` — body SHA256 changes from `4e618bd7…1d1f242` to `5cc86594…6906971` per operator `SELECT_V1_144_FHS_BODY_CHAIN_BREAK = accept` (intentional 5-release chain break; the identity was a side-effect, not a contract).
+- **UX-C2** (PR-B) — wall-of-text validation errors. New `_v144_error_with_hint(err, hint, runhelp, rc=1)` helper in `lib/cmd_common.sh` emits ≤3 stderr lines. Migrated 6 cmd_*.sh catch-all parse-error paths to use it: `cmd_config.sh`, `cmd_status.sh`, `cmd_test.sh`, `cmd_whitelist_system.sh`, `cmd_update.sh`, `cmd_feeds.sh`. The full `show_usage` rendering still fires on explicit `--help` paths — only error paths migrated. Top-six target was code-truth-reconciled: cmd_test + cmd_whitelist_system replaced cmd_ban + cmd_firewall (which did not have the show_usage-after-ERROR antipattern).
+- **UX-C5** (PR-B) — `--dry-run` parity. Operator chose the `document` shape: `cmd_update.sh` help block now states `--dry-run is NOT supported on nftban update` (asymmetric vs `nftban ban --dry-run` which IS supported; update mutations span package-manager transactions where dry-run cannot be safely simulated end-to-end) and points to `nftban update check`/`list`/`status` as preview alternatives.
+- **D-UXV-14** (PR-C) — `cmd_connector.sh:234` "Use: nftban connector edit $name" hint dropped. Connector dispatch has no `edit` arm; old hint hit "Unknown command: edit" rc=1. Replaced with canonical idempotent `nftban connector show $name` (inspect) + `nftban connector remove $name && nftban connector add $name [...]` (recreate).
+- **D-UXV-15** (PR-C) — `cmd_port.sh` four broken reload-hint sites (`:260`, `:558`, `:689`, `:693`) all corrected to `nftban firewall reload`. Pre-PR-C: `:260/:689/:693` emitted `nftban reload` (NOT a real command — no `cmd_reload.sh`, no `reload` alias case, absent from `_nftban_canonical_commands()`) and `:558` emitted `nftban port reload` (port dispatch has no `reload` arm). Canonical is `nftban firewall reload` (`cmd_firewall.sh:1490 firewall_reload()` — atomic ruleset rebuild + NFTBan schema re-apply + whitelist sync). **The original 2026-06-01 audit's proposed migration to `nftban reload` was challenge-verified to also be broken; this PR ships the corrected spec.**
+- **D-UXV-13** (PR-D) — new runtime-hint reachability CI guard (class-killer). Reverse-direction guard for the v130 doctest pair: every echo/printf `"nftban X [Y]"` literal in source must resolve to a reachable command. Includes `cli_runtime_hint_reachability_v144_test.sh` (10/10), `cli_help_block_reachability_v144_test.sh` (8/8), `v144_runtime_hint_allowlist.tsv` (4 entries; every row requires explicit `reason` field), and 2 new CI steps in `.github/workflows/ci-architecture.yml`. HARD pass criteria include T3-3/4/5: WOULD-HAVE-CAUGHT all three historical broken hints + the audit's wrong replacement. Legacy parser-heuristic drift (12 sites) is REPORTED but not CI-blocking — tracked as v1.145.x sweep candidates.
+
+### Coupling constraint enforced
+
+PR-C and PR-D landed together per operator `SELECT_V1_144_PR_C_PR_D_COUPLING = both-must-land`. The audit-was-wrong episode is direct evidence that the class-killer guard is required to keep this defect class from recurring.
+
+### Daemon byte-identity preserved
+
+- Zero `.go` files touched across all four implementation PRs (PR-A YAML+regen, PR-B shell+helper+tests, PR-C shell+tests, PR-D test+CI-step).
+- `cmd/nftban-core` + `cmd/nftband` expected SHA256-identical to v1.143.1 build.
+- Six-release zero-Go chain: `v1.140.0 → v1.141.0 → v1.142.0 → v1.143.0 → v1.143.1 → v1.144.0`.
+- **FHS body SHA256 chain BREAKS at v1.144.0** by design: `4e618bd7…1d1f242` (v1.140.0..v1.143.1) → `5cc86594…6906971` (v1.144.0).
+
+### Cumulative test evidence
+
+**306 PASS / 0 FAIL** across 23 hermetic suites at PR-D merge time.
+
+### CI evidence
+
+- PR #740: 52 SUCCESS / 4 SKIPPED / 0 FAIL
+- PR #741: 55/2/0 (after 1× Docker Hub image-pull flake rerun — 4th class occurrence, same as v1.139.1 + v1.143.1; zero code change)
+- PR #742: 52/2/0
+- PR #743: 52/2/0
+- Post-merge main CI on `e76cb49b`: **25 SUCCESS / 1 SKIPPED / 1 FAIL** — the 1 failure is the documented `Dependabot Updates` infrastructure workflow (event=`dynamic`, auto-bumping `github/codeql-action`); same noise pattern as v1.141.0 + v1.143.0 publish windows; NOT a release-CI failure.
+
+### Operator gates honored
+
+```
+OPEN_V1_144_0_DOC_UX_DRIFT_PLAN = GO_PLAN_ONLY
+AMEND_V1_144_0_DOC_UX_DRIFT_PLAN_WITH_D_UXV_13_14_15 = GO_PLAN_ONLY
+SELECT_V1_144_GUI_DRIFT_SHAPE = drop
+SELECT_V1_144_UX_C2_BATCH = top-six-files-only
+SELECT_V1_144_UX_C5_SHAPE = document
+SELECT_V1_144_FHS_BODY_CHAIN_BREAK = accept
+SELECT_V1_144_PR_C_PR_D_COUPLING = both-must-land
+SELECT_V1_144_D_UXV_14_15_VEHICLE = include-in-v1.144.0-doc-UX-drift-train
+SELECT_V1_144_D_UXV_13_GUARD = include-as-4th-sub-PR-in-v1.144.0-doc-UX-drift-train
+OPEN_V1_144_0_DOC_UX_DRIFT_IMPL = GO_IMPLEMENTATION_ONLY
+MERGE_PR_740_WHEN_CI_GREEN = GO
+MERGE_PR_741_WHEN_CI_GREEN = GO
+MERGE_PR_742_AND_743_WHEN_CI_GREEN = GO
+VERIFY_V1_144_0_MAIN_CI_AFTER_PR_A_B_C_D = GO_READ_ONLY  (PASS)
+OPEN_V1_144_0_RELEASE_PREP = GO_RELEASE_PREP
+```
+
+### Post-publish READ-ONLY verification (run after tag publishes)
+
+```bash
+# 1. Verify SHA256 of every asset
+sha256sum -c SHA256SUMS
+
+# 2. Verify FHS spec body SHA256 (NEW value for v1.144.0)
+tail -n +31 /usr/lib/nftban/core/nftban_fhs_spec.sh | sha256sum
+# Expected: 5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971
+
+# 3. Confirm `nftban gui` returns Unknown command (D-NFTBAN-GUI-DOC-DRIFT)
+nftban gui; echo "rc=$?"
+# Expected: rc=1 with "ERROR: Unknown command 'gui'" + typo suggestion
+
+# 4. Confirm `nftban connector add X` shows the canonical recreate hint when X exists
+# (D-UXV-14 — only after at least one connector is configured)
+
+# 5. Confirm `nftban firewall reload` works (D-UXV-15 canonical target)
+nftban firewall reload --help; echo "rc=$?"   # Expected: rc=0 with usage
+
+# 6. Confirm `nftban reload` returns Unknown command (proves the broken hint is dead)
+nftban reload; echo "rc=$?"   # Expected: rc=1 "Unknown command 'reload'"
+
+# 7. Daemon byte-identity check vs v1.143.1
+sha256sum /usr/sbin/nftband   # Expected: same as v1.143.1
+```
+
+---
+
 ## [v1.143.1] - 2026-06-01 — RC-AUDIT-2 Phase 3 — exporter SIGTERM race fixes
 
 **Codename:** `V1_143_1_EXPORTER_EXIT2_PHASE_3`
