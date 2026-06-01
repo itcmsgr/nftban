@@ -11,6 +11,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.143.1] - 2026-06-01 — RC-AUDIT-2 Phase 3 — exporter SIGTERM race fixes
+
+**Codename:** `V1_143_1_EXPORTER_EXIT2_PHASE_3`
+**Controlling scope:** `NFTBAN_ROADMAP/V1_143_EXPORTER_EXIT2_PHASE_3_SCOPE.md`
+**PR:** [#738](https://github.com/itcmsgr/nftban/pull/738) (sq `5d72a9af`)
+
+> **Why:** v1.143.1 is a focused patch release on top of v1.143.0. It closes **two new ERR-trap-pinpointed exporter SIGTERM (rc=143) race sites** surfaced during the v1.142.0 fleet rollout — both pinpointed by the v1.136 ERR trap (which is doing exactly what it was designed for: every Phase-3 pinpoint is a victory for the trap). **Daemon byte-identical to v1.143.0** (zero `.go` touched). **Schema 1.83.0 frozen.** Both fixes mirror the v1.136 Phase 2 surgical pattern at `collect.sh:642` (`set_counts.json`).
+
+### Site A — botguard legacy-kernel jq pipeline (srv1 CentOS Stream 10)
+
+Pre-v1.143.1 `cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh:244` ran six back-to-back `echo "$counts_json" | jq -r '…'` pipelines for `bg_{suspect,pending,allow,grey,ban,emergency}` in the legacy-kernel `else`-branch. Each pipeline opened a bash subshell that could die mid-pipeline if systemd timer fired SIGTERM. The existing post-loop numeric-validity gate caught jq returning empty / non-numeric but did NOT catch SIGTERM killing the bash subshell.
+
+- **Fix:** validity gate `if echo "$counts_json" | jq -e '.botguard'` ONCE before reading the six counters; each per-call jq adds `2>/dev/null) || bg_X=0` belt-and-suspenders. The locals initialized to 0 at line 234 stay safe if the validity gate fails OR any individual jq is SIGTERM-killed.
+
+### Site B — systemctl-show ActiveEnterTimestamp (ub2604 Ubuntu 26.04 LTS)
+
+Pre-v1.143.1 `collect.sh:89` was `start_time=$(systemctl show nftband.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")`. The `|| echo ""` fallback only triggers on non-zero exit; SIGTERM mid-`systemctl show` kills the bash subshell BEFORE `||` can be evaluated — the failure is process-termination, not non-zero exit. systemd dbus latency can take 200-500 ms on a busy host.
+
+- **Fix:** wrap with `timeout 2s` (~40× p99 healthy systemd-show latency). If `systemctl` exceeds the bound, `timeout` returns 124, `||` fires, `start_time` stays empty via the safe-default initialization.
+
+### Tests — `cli_exporter_exit2_phase_3_test.sh` (37 PASS / 0 FAIL)
+
+Stubbed-callable mirror pattern (same shape as v1.142 PR-FS + v1.143 PR-A/B tests). Site A driven by `NF_COUNTS_JSON` env; Site B driven by a **PATH-shadow `systemctl` stub** — NOT a bash function override, because `timeout` spawns via `execvp()` and would not see a function override.
+
+T2-B3 proves the 2s bound actually fires: a 4-second `systemctl`-sleep stub is killed at ~2 s. Observed elapsed = **2011ms** (asserted < 3500ms) — confirming the bound is real (vs the false-positive 15ms I caught while iterating the test, before switching from bash-function to PATH-shadow stub).
+
+T-DRIFT asserts: both `v1.143.1 EXPORTER-PHASE-3 (Site A/B)` markers present in the live exporter; Site A `.botguard` validity gate present; Site A `|| bg_suspect=0` belt-suspenders present; Site B `timeout 2s systemctl show` bound present; **v1.136 Phase 2 `:642` marker still present (regression guard — the prior fix was NOT disturbed)**.
+
+### Five-release zero-Go chain preserved
+
+```
+v1.140.0 (Ubuntu 26 Tier-0) → v1.141.0 (CLI/status/data-truth)
+                          → v1.142.0 (FS parser + UX-C6)
+                          → v1.143.0 (RC-AUDIT-2 Phase 2)
+                          → v1.143.1 (RC-AUDIT-2 Phase 3 — exporter SIGTERM)
+```
+
+`cmd/nftban-core` + `cmd/nftband` daemon binaries SHA256-identical to v1.140.0 ship across all five releases. `cli/lib/nftban/core/nftban_fhs_spec.sh` body SHA256 `4e618bd7d4ea379496f6052d3215ce7602e9001ea66f6948c1952c8111d1f242` unchanged across the same chain.
+
+### Cumulative test evidence at PR-Phase-3 merge time
+
+**253 PASS / 0 FAIL** across 18 hermetic suites:
+
+| Suite | Result |
+|---|---|
+| **NEW: `cli_exporter_exit2_phase_3_test.sh`** | **37 PASS / 0 FAIL** |
+| v1.143 PR-A `cli_fs3_mutation_v143_test` | 28/0 |
+| v1.143 PR-B `cli_fs3_da_v143_test` | 21/0 |
+| v1.142 PR-FS `cli_feeds_select_input_contract` | 23/0 |
+| v1.142 PR-UX-C6 `cli_sudo_hint_v142` | 19/0 |
+| v1.141 PR-A regressions (4 suites) | 76/0/4-SKIP |
+| v1.141 PR-B regressions (4 suites) | 18/0 |
+| v1.141 PR-C regressions (4 suites) | 21/0 |
+| v1.139.2 `rollback_help_guard_v1_139_2_test` | 10/0 |
+
+### Operator authorities honored
+
+- `OPEN_V1_143_EXPORTER_PHASE_3_IMPL = GO_IMPLEMENTATION_ONLY` (2026-06-01)
+- `SELECT_V1_143_EXPORTER_PHASE_3_VEHICLE = v1.143.1`
+- `SELECT_V1_143_EXPORTER_PHASE_3_SITE_A = single-validity-gate-plus-belt-and-suspenders`
+- `SELECT_V1_143_EXPORTER_PHASE_3_SITE_B = bounded-timeout`
+- `SELECT_V1_143_EXPORTER_PHASE_3_TIMEOUT_SECONDS = 2`
+
+### Non-goals locked v1.143.1-wide
+
+- **0 `.go` files**. Daemon byte-identical to v1.143.0.
+- **0 `internal/`, `cmd/`, `build/`, `packaging/`, `install/`, `systemd/`, `schema/`, `docker/`, `.github/`, `fhs-spec.yaml` (body)** changes.
+- **Schema 1.83.0 frozen.** Zero metrics labels. Zero portal API change.
+- **0 ERR-trap removal** — the trap is doing what it was designed for.
+- **0 blanket `2>/dev/null` broadening** — only the specific per-jq / per-systemctl pipes get the belt-and-suspenders.
+- **0 `set -Eeuo pipefail` weakening.**
+- **0 exporter auxiliary-classification change.**
+- **0 v1.136 Phase 2 `:642` refactor** — T-DRIFT regression guard.
+- **0 CSF / takeover / uninstall-restore / INST-CVE-PARITY work.**
+- **0 broad install/update lifecycle refactor.**
+- **0 RBL batch / 0 heuristic batch / 0 fleet rollout debt** (D-NFTBAN-GUI-DOC-DRIFT / D-INSTALL-TIMER-RELOAD all targeted at v1.144+).
+
+### Post-publish verification path (separately gated, READ-ONLY)
+
+Once v1.143.1 publishes, operator may run on srv1 + ub2604:
+
+```bash
+journalctl -u nftban-unified-exporter -n 200 --no-pager | grep -cE 'aborted rc=143'
+```
+
+Expect 0 in the next 24-48h window if the fix landed correctly. If a NEW ERR-trap pinpoint surfaces at a different file:line, that's `D-EXPORTER-EXIT2-PHASE-4` territory — a separate future lane, NOT a v1.143.1 patch.
+
+### Release-prep envelope (this commit)
+
+Standard 4 files only: `VERSION` (1.143.0 → 1.143.1), `STATUS.md` (banner + lane summary), `CHANGELOG.md` (this entry), `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` 1.143.0 → 1.143.1 ONLY; FHS body byte-identical, line 31..end SHA256 `4e618bd7d4ea379496f6052d3215ce7602e9001ea66f6948c1952c8111d1f242` unchanged from v1.141.0 + v1.142.0 + v1.143.0). No host contact during release-prep construction. No tag in this PR; tag follows on the release-prep squash after merge per `TAG_AND_PUBLISH_V1_143_1`.
+
+---
+
 ## [v1.143.0] - 2026-05-29 — RC-AUDIT-2 Phase 2 cleanup
 
 **Codename:** `V1_143_0_RC_AUDIT_2_PHASE2_CLEANUP`
