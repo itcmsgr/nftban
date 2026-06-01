@@ -1,0 +1,68 @@
+# v1.144.0 PR-D — Runtime-hint reachability allowlist
+# =============================================================================
+# Format: file<TAB>line<TAB>literal<TAB>reason
+# All four columns required. # comment lines OK. Bare allowlist entries
+# without a `reason` field are forbidden — every entry must explain WHY
+# the literal is a cross-module reference vs in-module-with-dispatch.
+#
+# This allowlist authorizes intentional cross-module runtime hints. The
+# default reachability rule is: `nftban <X> <Y>` printed in cmd_FILE.sh
+# is reachable iff <X> = FILE-stem (in-module dispatch) AND <Y> is a
+# case-arm in nftban_cmd_<X>()'s primary dispatch. Cross-module hints
+# (e.g., cmd_port.sh advertising 'nftban firewall reload') need explicit
+# allowlist entries.
+#
+# Each row should also state WHY the cross-module reference is correct
+# (canonical alternative, error-path remediation, intentional pointer).
+# Bare "yolo" entries are not accepted — the v1.144.0 D-UXV-13 lane
+# exists precisely because untracked references rot silently.
+#
+# Sweep rule for new entries: prefer fixing the producer to point to a
+# canonical in-module command. If the cross-module reference is the
+# correct intent (e.g., port-related changes need a firewall-level
+# reload to take effect in the kernel), add it here with a `reason`
+# explaining the dependency direction.
+# =============================================================================
+
+# ── D-UXV-15 closure (PR-C) cross-module references ──────────────────────
+# These four sites in cmd_port.sh correctly point to `nftban firewall
+# reload` (canonical implementation at cmd_firewall.sh:1490). Port
+# config changes need a firewall-level reload because the daemon-side
+# rebuild collapses per-port rules into the consolidated nftables
+# ruleset. The `firewall.reload` arm is reachable; the cross-module
+# direction (port → firewall) is the canonical dependency.
+cli/lib/nftban/cli/cmd_port.sh	260	nftban firewall reload	cross-module-canonical: port config changes need firewall.reload (cmd_firewall.sh:1490) to apply
+cli/lib/nftban/cli/cmd_port.sh	558	nftban firewall reload	cross-module-canonical: port config changes need firewall.reload (cmd_firewall.sh:1490) to apply
+cli/lib/nftban/cli/cmd_port.sh	689	nftban firewall reload	cross-module-canonical: port config changes need firewall.reload (cmd_firewall.sh:1490) to apply
+cli/lib/nftban/cli/cmd_port.sh	693	nftban firewall reload	cross-module-canonical: port config changes need firewall.reload (cmd_firewall.sh:1490) to apply
+
+# ── PR-A closure cross-module references ─────────────────────────────────
+# `nftban report html-report` — pointed to from the GUI-retirement comment
+# in commands.registry.yml. The `report` command is canonical; `html-report`
+# is its standard subcommand. Cross-module mention (registry doc → report)
+# is informational, not a dispatch hint.
+# (No entry needed — comment text in YAML is not parsed by this guard.)
+
+# ── PR-B closure cross-module references ─────────────────────────────────
+# `_v144_error_with_hint` "Run:" lines in 6 migrated cmd_*.sh files
+# point operators to per-module `--help` paths. These are SAME-MODULE
+# references (cmd_config.sh → 'nftban config help', etc.) — reachable by
+# default rule. No allowlist needed.
+
+# ── PR-B UX-C5 docnote cross-module references ───────────────────────────
+# cmd_update.sh help text mentions 'nftban update check', 'nftban update
+# list', 'nftban update status' — same-module references — and indirectly
+# 'nftban ban --dry-run' (informational context). The latter is in a
+# parenthetical comment-context inside the heredoc; not a hint.
+# (No entry needed for same-module references.)
+
+# ── Pre-v1.144.0 historical cross-module hints (legitimate canonical pointers) ──
+# These are real cross-module references that predate v1.144.0 and have
+# been audit-verified to be canonical:
+
+# cmd_firewall.sh itself does NOT need self-references (in-module).
+
+# nftban_health_render.sh / nftban_health_checks.sh hints — health
+# subsystem suggests remediation commands. These are intentionally
+# cross-cluster (health → firewall, health → ban, etc.). Re-sweep
+# at v1.145.x if needed; out of scope for v1.144.0 D-UXV-13 lane.
