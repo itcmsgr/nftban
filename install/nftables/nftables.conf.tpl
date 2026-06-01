@@ -132,6 +132,17 @@ table ip nftban {
         elements = { __SSH_PORT__, 80, 443 }
     }
 
+    # v1.145 PR-A: set-driven SSH brute-force rate-limit (closes Gap 2).
+    # The ct-count SSH rule below now reads dport from @ssh_ports instead of
+    # a hardcoded __SSH_PORT__ literal, so a single atomic set update covers
+    # both the allow-set (tcp_ports_in) and the rate-limit dport without a
+    # full ruleset reload.
+    set ssh_ports {
+        type inet_service
+        comment "SSH ports for set-driven brute-force rate-limit"
+        elements = { __SSH_PORT__ }
+    }
+
     set tcp_ports_out {
         type inet_service
         comment "Allowed outbound TCP ports"
@@ -394,7 +405,7 @@ table ip nftban {
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
         # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport __SSH_PORT__ ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP"
+        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP — v1.145 PR-A set-driven"
         ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent per IP"
         ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent per IP"
 
@@ -492,6 +503,13 @@ table ip6 nftban {
         type inet_service
         comment "Allowed inbound TCP ports"
         elements = { __SSH_PORT__, 80, 443 }
+    }
+
+    # v1.145 PR-A: set-driven SSH brute-force rate-limit (v6 — closes Gap 2).
+    set ssh_ports {
+        type inet_service
+        comment "SSH ports for set-driven brute-force rate-limit (v6)"
+        elements = { __SSH_PORT__ }
     }
 
     set tcp_ports_out {
@@ -763,7 +781,7 @@ table ip6 nftban {
         counter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"
 
         # 6. CT LIMITS - DDoS protection (per source IP limits)
-        ct state new tcp dport __SSH_PORT__ ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP"
+        ct state new tcp dport @ssh_ports ct count over __CT_LIMIT_SSH__ counter name input_ct_ssh_drop counter name total_input_drop drop comment "SSH: max __CT_LIMIT_SSH__ concurrent per IP — v1.145 PR-A set-driven"
         ct state new tcp dport { 80, 443 } ct count over __CT_LIMIT_HTTP__ counter name input_ct_http_drop counter name total_input_drop drop comment "HTTP(S): max __CT_LIMIT_HTTP__ concurrent per IP"
         ct state new tcp dport { 25, 465, 587 } ct count over __CT_LIMIT_MAIL__ counter name input_ct_mail_drop counter name total_input_drop drop comment "MAIL: max __CT_LIMIT_MAIL__ concurrent per IP"
 

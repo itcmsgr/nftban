@@ -108,6 +108,7 @@ required_helper_chains=""
 required_sets_v4=$(printf '%s\n' \
     "blacklist_ipv4" \
     "blacklist_manual_ipv4" \
+    "ssh_ports" \
     "tcp_ports_in" \
     "udp_ports_in" \
     "whitelist_ipv4" | sort)
@@ -115,6 +116,7 @@ required_sets_v4=$(printf '%s\n' \
 required_sets_v6=$(printf '%s\n' \
     "blacklist_ipv6" \
     "blacklist_manual_ipv6" \
+    "ssh_ports" \
     "tcp_ports_in" \
     "udp_ports_in" \
     "whitelist_ipv6" | sort)

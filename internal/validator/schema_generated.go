@@ -54,6 +54,7 @@ var GeneratedAllHelperChains = []string{
 var GeneratedRequiredSetsIPv4 = []string{
 	"blacklist_ipv4",
 	"blacklist_manual_ipv4",
+	"ssh_ports",
 	"tcp_ports_in",
 	"udp_ports_in",
 	"whitelist_ipv4",
@@ -63,6 +64,7 @@ var GeneratedRequiredSetsIPv4 = []string{
 var GeneratedRequiredSetsIPv6 = []string{
 	"blacklist_ipv6",
 	"blacklist_manual_ipv6",
+	"ssh_ports",
 	"tcp_ports_in",
 	"udp_ports_in",
 	"whitelist_ipv6",
@@ -80,6 +82,7 @@ var GeneratedAllSetsIPv4 = []string{
 	"http_bot_suspect",
 	"port_allow_tcp_ipv4",
 	"port_allow_udp_ipv4",
+	"ssh_ports",
 	"tcp_ports_in",
 	"tcp_ports_out",
 	"udp_ports_in",
@@ -99,6 +102,7 @@ var GeneratedAllSetsIPv6 = []string{
 	"http_bot_suspect6",
 	"port_allow_tcp_ipv6",
 	"port_allow_udp_ipv6",
+	"ssh_ports",
 	"tcp_ports_in",
 	"tcp_ports_out",
 	"udp_ports_in",

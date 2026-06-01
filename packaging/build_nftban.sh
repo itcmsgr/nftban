@@ -1005,6 +1005,32 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan] To retry: /usr/lib/nftban/bin/nftban-installer --repair"
         echo "[NFTBan] Or: nftban firewall rebuild"
     fi
+
+    # --- v1.145 PR-A.1: upgrade-path SSH rate-limit migration ---
+    # On upgrade the installer's rebuild path (switchop.Rebuild ->
+    # \`nftban firewall rebuild\`) rebuilds from the v1.145 template
+    # (/usr/lib/nftban/templates/nftables.conf.tpl) and atomically applies the
+    # set-driven SSH brute-force rule (tcp dport @ssh_ports ct count) via
+    # nft -f. This explicit reload is a defense-in-depth guarantee that an
+    # existing v1.142-1.144 install — whose LIVE kernel still carries the OLD
+    # literal \`tcp dport <port> ct count\` rule — is migrated to the set-driven
+    # form with NO operator action required.
+    #
+    # Gated: runs ONLY on upgrade (\$1 -ge 2 above sets INSTALL_MODE=upgrade),
+    # and ONLY when the installer COMMITTED (0) or DEGRADED (1). Skipped on
+    # authority-abort (3) and hard-fail so it never overrides a deliberate
+    # safe/handoff state. \`nftban firewall reload\` is atomic (nft -f — the
+    # kernel never sees an empty/partial ruleset) and this call is NON-FATAL:
+    # a reload failure is warned and the package upgrade continues.
+    if [ "\$INSTALL_MODE" = "upgrade" ] && [ "\${INSTALLER_EXIT:-0}" -le 1 ] && [ -x /usr/sbin/nftban ]; then
+        echo "[NFTBan] v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
+        if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
+            echo "[NFTBan] v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
+        else
+            echo "[NFTBan] WARN: v1.145 firewall reload did not complete; previous ruleset retained — upgrade continues."
+            echo "[NFTBan] WARN: to finish the migration manually, run: nftban firewall reload"
+        fi
+    fi
 else
     echo "[NFTBan ERROR] Installer binary not found: \$NFTBAN_INSTALLER"
     echo "[NFTBan ERROR] Package may be corrupt. Try reinstalling."
