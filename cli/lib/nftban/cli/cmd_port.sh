@@ -257,7 +257,7 @@ nftban_cmd_port_help() {
     echo "     cat ${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/90-custom.conf"
     echo ""
     echo "  3. Force reload all ports:"
-    echo "     nftban reload"
+    echo "     nftban firewall reload"
     echo ""
     echo "  4. Verify firewall is initialized:"
     echo "     nftban firewall status"
@@ -555,7 +555,7 @@ nftban_cmd_port() {
                     echo "  systemctl start nftband"
                     echo ""
                     echo "Or reload ports manually after starting daemon:"
-                    echo "  nftban port reload"
+                    echo "  nftban firewall reload"
                 fi
             else
                 echo "⚠ Firewall not initialized - port saved but not active yet"
@@ -686,11 +686,11 @@ nftban_cmd_port() {
                         echo "✅ Port $port is now blocked in firewall"
                     else
                         echo "  ⚠ Could not remove port via daemon" >&2
-                        echo "  Run manually: nftban reload" >&2
+                        echo "  Run manually: nftban firewall reload" >&2
                     fi
                 else
                     echo "  ℹ Daemon not running - port removed from config only"
-                    echo "  Start daemon and reload: systemctl start nftband && nftban reload"
+                    echo "  Start daemon and reload: systemctl start nftband && nftban firewall reload"
                 fi
             else
                 echo "⚠ Firewall not initialized - port removed from config only"

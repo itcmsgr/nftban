@@ -230,8 +230,15 @@ _cmd_connector_add() {
     fi
 
     if _connector_exists "$name"; then
+        # v1.144.0 PR-C D-UXV-14: drop the misleading 'nftban connector edit'
+        # hint. The connector dispatch (this file's nftban_cmd_connector at
+        # the bottom) has NO 'edit' arm — only list/add/remove|delete|rm/
+        # enable/disable/test/show/push/help. Following the old hint hit
+        # the catch-all "Unknown command: edit" rc=1. Replace with the
+        # canonical idempotent recreate pattern.
         _connector_print_error "Connector '$name' already exists"
-        echo "Use: nftban connector edit $name"
+        echo "  nftban connector show $name                                       # inspect"
+        echo "  nftban connector remove $name && nftban connector add $name [...] # recreate"
         return 1
     fi
 
