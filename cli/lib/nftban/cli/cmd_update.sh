@@ -1642,6 +1642,16 @@ SEE ALSO:
                                # discovery purposes, does not install)
     nftban update check        # Check if an update is available (no changes)
 
+NOTES:
+    --dry-run is NOT supported on `nftban update`. (`nftban ban --dry-run`
+    is supported; that asymmetry is intentional — update mutations span
+    package-manager transactions where dry-run cannot be safely simulated
+    end-to-end.) To preview available versions without installing, run:
+        nftban update check       # is an update available?
+        nftban update list        # list backups (post-update rollback targets)
+        nftban update status      # current install info
+    (v1.144.0 PR-B UX-C5; operator decision SELECT_V1_144_UX_C5_SHAPE=document.)
+
 EOF
 }
 
@@ -2534,9 +2544,16 @@ nftban_cmd_update() {
             if [[ "$cmd" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 _cmd_update_main "github" "$cmd"
             else
-                echo "ERROR: Unknown command: $cmd" >&2
-                echo "Run 'nftban update help' for usage" >&2
-                return 1
+                # v1.144.0 PR-B UX-C2: 3-line ERROR/Hint/Run replaces
+                # the 2-line emit on the unknown-command parse error
+                # path. Note: this is also a UX-C5 dry-run surface —
+                # see the help text for the `--dry-run` doc note added
+                # in this same release.
+                _v144_error_with_hint \
+                    "Unknown command: $cmd" \
+                    "Valid: list, latest, channel, check, rollback, history, debug, auto (default); also accepts a version string like 1.144.0" \
+                    "nftban update help"
+                return $?
             fi
             ;;
     esac

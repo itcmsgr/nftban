@@ -358,9 +358,15 @@ nftban_cmd_status() {
                 return 0
                 ;;
             *)
-                echo "ERROR: Unknown option: $1" >&2
-                show_usage >&2
-                return 1
+                # v1.144.0 PR-B UX-C2: 3-line ERROR/Hint/Run replaces the
+                # full show_usage block on the unknown-option parse error
+                # path. The explicit `nftban status --help` path (above)
+                # still renders the full show_usage block.
+                _v144_error_with_hint \
+                    "Unknown option: $1" \
+                    "Valid options: --json, --brief, --counts, --pending, --quick" \
+                    "nftban status --help"
+                return $?
                 ;;
         esac
     done

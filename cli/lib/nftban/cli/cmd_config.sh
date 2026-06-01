@@ -851,10 +851,15 @@ nftban_cmd_config() {
             ;;
 
         *)
-            echo "ERROR: Unknown command: $subcommand" >&2
-            echo "" >&2
-            show_usage
-            return 1
+            # v1.144.0 PR-B UX-C2: 3-line ERROR/Hint/Run replaces the
+            # show_usage wall-of-text on the unknown-subcommand parse error
+            # path. The `nftban config help` path (above) still renders the
+            # full show_usage block — explicit user request, not error.
+            _v144_error_with_hint \
+                "Unknown command: $subcommand" \
+                "Valid subcommands: get, set, defaults, overrides, reset, reset-all, audit, validate, doctor, show, diff, status, apply" \
+                "nftban config help"
+            return $?
             ;;
     esac
 }
