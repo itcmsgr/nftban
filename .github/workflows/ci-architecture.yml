@@ -535,6 +535,34 @@ jobs:
         run: bash cli/lib/nftban/tests/cli_error_rc_contract_v1_139_2_test.sh
 
       # =====================================================================
+      # v1.144.0 PR-D: D-UXV-13 runtime-hint reachability guard (class-killer)
+      # =====================================================================
+      # Reverse-direction guard for the doctest pair at lines 510 + 516 above:
+      # the v130 forward guard checks that every dispatched subcommand is
+      # documented; this v144 reverse guard checks that every echo/printf
+      # 'nftban X Y' literal in cli/sbin/nftban + cli/lib/nftban/cli/cmd_*.sh
+      # resolves to a reachable command. Catches the drift class that
+      # produced D-UXV-14 (cmd_connector.sh:234 'nftban connector edit' —
+      # no edit arm) and D-UXV-15 (cmd_port.sh four sites 'nftban reload' /
+      # 'nftban port reload' — neither command exists; canonical is
+      # 'nftban firewall reload'). Would also have caught the 2026-06-01
+      # audit's incorrect-by-half proposed replacement.
+      #
+      # T3-3/4/5 inside the test are the HARD pass criteria (would-have-
+      # caught the 3 historical broken hints). T3-2 reports legacy
+      # parser-heuristic drift as a v1.145.x sweep candidate (does not
+      # block CI). New broken hints introduced in any future PR will
+      # surface as additional violations and require explicit fix or
+      # allowlist entry with `reason` field.
+      - name: Runtime-hint reachability guard (v1.144.0 PR-D D-UXV-13)
+        run: bash cli/lib/nftban/tests/cli_runtime_hint_reachability_v144_test.sh
+
+      # Companion that locks the allowlist's `reason` field requirement +
+      # restates the would-have-caught hypotheticals as defense-in-depth.
+      - name: Help-block reachability companion (v1.144.0 PR-D)
+        run: bash cli/lib/nftban/tests/cli_help_block_reachability_v144_test.sh
+
+      # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
       # These greps prevent reintroduction of deleted legacy constructs.
