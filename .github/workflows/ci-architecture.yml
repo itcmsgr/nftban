@@ -563,6 +563,31 @@ jobs:
         run: bash cli/lib/nftban/tests/cli_help_block_reachability_v144_test.sh
 
       # =====================================================================
+      # v1.145 SSH-port lifecycle guards (PR-A/PR-B/PR-C2 + PR-G wiring)
+      # =====================================================================
+      # These static guards lock the set-driven SSH brute-force rate-limit
+      # (`tcp dport @ssh_ports ct count`): the ssh_ports set in every template,
+      # its presence in the schema inventory (both families), both-set
+      # (tcp_ports_in + ssh_ports) runtime parity, union detection, and the
+      # apply-path hardening. They existed since v1.145 but were never wired
+      # into CI (v1.145 PR-G audit finding); without these `run:` steps the
+      # guards provided zero regression protection.
+      - name: SSH ssh_ports template set-driven guard (v1.145 PR-A)
+        run: bash cli/lib/nftban/tests/v145_ssh_port_template_set_driven_static_test.sh
+
+      - name: SSH union detection guard (v1.145 PR-B)
+        run: bash cli/lib/nftban/tests/v145_ssh_port_detect_test.sh
+
+      - name: SSH both-set parity runtime guard (v1.145 PR-B)
+        run: bash cli/lib/nftban/tests/v145_pr_b_runtime_static_guard_test.sh
+
+      - name: SSH apply-path hardening guard (v1.145 PR-C2)
+        run: bash cli/lib/nftban/tests/v145_pr_c2_apply_hardening_test.sh
+
+      - name: ssh_ports systemic-alignment invariants (v1.145 PR-G)
+        run: bash cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
+
+      # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
       # These greps prevent reintroduction of deleted legacy constructs.
