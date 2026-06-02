@@ -42,6 +42,7 @@ state. The CLI presents kernel-derived truth.
 - Login brute-force detection across SSH, mail, FTP, panel services
 - Port scan detection (classic + Suricata modes)
 - L3/L4 rate limiting and connection limits
+- Set-driven SSH brute-force connection-rate-limit (`tcp dport @ssh_ports ct count`) — follows every detected sshd listener port across IPv4/IPv6
 - HTTP bot classification with 6 dedicated kernel sets
 - Optional Suricata DPI integration (EVE JSON)
 - 4-axis health model with kernel-derived truth validator
