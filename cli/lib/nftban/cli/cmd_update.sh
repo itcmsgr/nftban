@@ -103,22 +103,22 @@ unset _UPDATE_CLI_DIR _update_modules _module _module_path
 # =============================================================================
 
 _update_detect_ssh_port() {
-    # Detect active SSH port using canonical 3-tier fallback:
-    #   1. State file (most reliable, written by nftban)
-    #   2. sshd_config Port directive
-    #   3. Default 22
-    local ssh_port=22
-    local ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-    if [[ -f "$ssh_port_file" ]]; then
-        local _sp
-        _sp=$(cat "$ssh_port_file" 2>/dev/null) || true
-        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
-    elif [[ -f /etc/ssh/sshd_config ]]; then
-        local _sp
-        _sp=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1) || true
-        [[ "$_sp" =~ ^[0-9]+$ ]] && ssh_port="$_sp"
+    # v1.145 PR-B: return the full SSH-port UNION (ListenAddress-aware,
+    # multi-port), ONE PER LINE, via the shared Go detector — replaces the
+    # scalar state-file/sshd_config `head -1` chain. Callers iterate every
+    # detected port through the dual-surface durability check so a multi-port
+    # or ListenAddress host can't have one of its listeners silently unchecked.
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        local _u
+        _u=$(nftban_detect_ssh_ports 2>/dev/null || true)
+        if [[ -n "$_u" ]]; then
+            printf '%s\n' "$_u"
+            return 0
+        fi
     fi
-    echo "$ssh_port"
+    echo 22
 }
 
 # =============================================================================
@@ -584,46 +584,46 @@ _cmd_update_main_locked() {
     # V2: SSH port reachable in whitelist (V121 dual-surface check —
     # D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001 closure)
     if command -v nft &>/dev/null; then
-        local _ssh_port
-        _ssh_port=$(_update_detect_ssh_port)
-        # Surface 1 (live kernel): SSH port in nft set tcp_ports_in
-        local _ssh_in_kernel=0
+        # v1.145 PR-B: iterate EVERY detected SSH port (union) through the
+        # dual-surface check so a multi-port / ListenAddress host can't have one
+        # of its listeners silently unchecked.
+        local _ssh_port _ssh_ports_all
         local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
         local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-        if nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
-            _ssh_in_kernel=1
-        fi
-        if nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
-            _ssh_in_kernel=1
-        fi
-        # Surface 2 (durable config): SSH port reachable via Mechanism A
-        # (TCP_PORTS_IN includes port) OR Mechanism B (SSH_PORT=port drives
-        # render injection of rendered nftables.conf).
-        local _ssh_in_durable=0
-        # Mechanism A: explicit TCP_PORTS_IN list in operator canonical
-        if [[ -f /etc/nftban/nftban.conf.local ]] && \
-           grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
-            _ssh_in_durable=1
-        fi
-        # Mechanism B: SSH_PORT=<port> drives render injection; verify by
-        # checking the rendered nftables.conf actually carries the port.
-        if [[ $_ssh_in_durable -eq 0 ]] && \
-           [[ -f /etc/nftban/nftban.conf.local ]] && \
-           grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
-           grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
-            _ssh_in_durable=1
-        fi
-        # Report
-        if [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 1 ]]; then
-            _update_log OK "SSH port ${_ssh_port}: present in kernel AND durable config"
-        elif [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 0 ]]; then
-            _update_log WARN "SSH port ${_ssh_port}: present in kernel but NOT in durable config — lockout risk on next reload/reboot. Add SSH_PORT=${_ssh_port} or include ${_ssh_port} in TCP_PORTS_IN in /etc/nftban/nftban.conf.local"
-            # WARN (not FAIL) because the current session is safe; operator
-            # needs to act before next reload to make protection durable.
-        elif [[ $_ssh_in_kernel -eq 0 ]]; then
-            _update_log ERROR "SSH port ${_ssh_port}: NOT in kernel set — lockout risk NOW"
-            _verify_fail=1
-        fi
+        _ssh_ports_all=$(_update_detect_ssh_port)
+        while IFS= read -r _ssh_port; do
+            [[ "$_ssh_port" =~ ^[0-9]+$ ]] || continue
+            # Surface 1 (live kernel): SSH port in nft set tcp_ports_in
+            local _ssh_in_kernel=0
+            if nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+                _ssh_in_kernel=1
+            fi
+            if nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b"; then
+                _ssh_in_kernel=1
+            fi
+            # Surface 2 (durable config): Mechanism A (TCP_PORTS_IN includes
+            # port) OR Mechanism B (SSH_PORT=port drives render injection).
+            local _ssh_in_durable=0
+            if [[ -f /etc/nftban/nftban.conf.local ]] && \
+               grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
+                _ssh_in_durable=1
+            fi
+            if [[ $_ssh_in_durable -eq 0 ]] && \
+               [[ -f /etc/nftban/nftban.conf.local ]] && \
+               grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
+               grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+                _ssh_in_durable=1
+            fi
+            # Report (per detected port)
+            if [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 1 ]]; then
+                _update_log OK "SSH port ${_ssh_port}: present in kernel AND durable config"
+            elif [[ $_ssh_in_kernel -eq 1 && $_ssh_in_durable -eq 0 ]]; then
+                _update_log WARN "SSH port ${_ssh_port}: present in kernel but NOT in durable config — lockout risk on next reload/reboot. Add SSH_PORT=${_ssh_port} or include ${_ssh_port} in TCP_PORTS_IN in /etc/nftban/nftban.conf.local"
+            elif [[ $_ssh_in_kernel -eq 0 ]]; then
+                _update_log ERROR "SSH port ${_ssh_port}: NOT in kernel set — lockout risk NOW"
+                _verify_fail=1
+            fi
+        done <<< "$_ssh_ports_all"
     fi
 
     # V3: Health check severity — exit 2 = critical failure
@@ -1147,29 +1147,33 @@ _cmd_update_preflight() {
 
     # PF5: SSH port in service ports (V121 dual-surface — D-NONDEFAULT-SSH-PORT-CONFIG-DRIFT-001)
     if command -v nft &>/dev/null; then
-        local _ssh_port
-        _ssh_port=$(_update_detect_ssh_port)
-        local _ssh_kernel=0
+        # v1.145 PR-B: check EVERY detected SSH port (union), not just one.
+        local _ssh_port _ssh_ports_all
         local _tbl_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
         local _tbl_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
-        nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
-        nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
-        local _ssh_durable=0
-        if [[ -f /etc/nftban/nftban.conf.local ]] && \
-           grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
-            _ssh_durable=1
-        elif [[ -f /etc/nftban/nftban.conf.local ]] && \
-             grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
-             grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
-            _ssh_durable=1
-        fi
-        if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then
-            _pf_check "SSH port ${_ssh_port} in service ports (kernel + durable config)" "PASS"
-        elif [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 0 ]]; then
-            _pf_check "SSH port ${_ssh_port}: kernel YES, durable config NO — fix nftban.conf.local before next reload" "WARN"
-        else
-            _pf_check "SSH port ${_ssh_port} NOT in service ports" "FAIL"
-        fi
+        _ssh_ports_all=$(_update_detect_ssh_port)
+        while IFS= read -r _ssh_port; do
+            [[ "$_ssh_port" =~ ^[0-9]+$ ]] || continue
+            local _ssh_kernel=0
+            nft list set ${_tbl_v4} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+            nft list set ${_tbl_v6} tcp_ports_in 2>/dev/null | grep >/dev/null 2>&1 "\\b${_ssh_port}\\b" && _ssh_kernel=1
+            local _ssh_durable=0
+            if [[ -f /etc/nftban/nftban.conf.local ]] && \
+               grep -qE "^[[:space:]]*TCP_PORTS_IN=[^#]*\\b${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null; then
+                _ssh_durable=1
+            elif [[ -f /etc/nftban/nftban.conf.local ]] && \
+                 grep -qE "^[[:space:]]*SSH_PORT=[\"']?${_ssh_port}\\b" /etc/nftban/nftban.conf.local 2>/dev/null && \
+                 grep -qE "\\b${_ssh_port}\\b" /etc/nftban/nftables.conf 2>/dev/null; then
+                _ssh_durable=1
+            fi
+            if [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 1 ]]; then
+                _pf_check "SSH port ${_ssh_port} in service ports (kernel + durable config)" "PASS"
+            elif [[ $_ssh_kernel -eq 1 && $_ssh_durable -eq 0 ]]; then
+                _pf_check "SSH port ${_ssh_port}: kernel YES, durable config NO — fix nftban.conf.local before next reload" "WARN"
+            else
+                _pf_check "SSH port ${_ssh_port} NOT in service ports" "FAIL"
+            fi
+        done <<< "$_ssh_ports_all"
     else
         _pf_check "SSH port check: nft not available" "FAIL"
     fi

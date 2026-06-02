@@ -536,6 +536,17 @@ nftban_cmd_port() {
                     if nft_ipc_add_port "$port" "$proto" "$direction" 2>/dev/null; then
                         echo "  ✓ Port $port applied to firewall (IPv4 + IPv6)"
                         add_success=true
+                        # v1.145 PR-B both-set parity: if this port is a detected
+                        # SSH listener, also add it to ssh_ports so the set-driven
+                        # brute-force rate-limit (tcp dport @ssh_ports) covers it.
+                        # shellcheck source=/dev/null
+                        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+                        if declare -f nftban_detect_ssh_ports >/dev/null 2>&1 && \
+                           nftban_detect_ssh_ports 2>/dev/null | grep -qx "$port"; then
+                            nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$port" 2>/dev/null || true
+                            nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$port" 2>/dev/null || true
+                            echo "  ✓ SSH port $port also added to ssh_ports (brute-force parity)"
+                        fi
                     else
                         echo "  ⚠ Could not add port via daemon" >&2
                     fi
@@ -682,6 +693,12 @@ nftban_cmd_port() {
                     # Use atomic delete_port IPC - remove from all sets (both protocols, both directions)
                     if nft_ipc_delete_port "$port" "both" "both" 2>/dev/null; then
                         echo "  ✓ Port $port removed from firewall (IPv4 + IPv6)"
+                        # v1.145 PR-B both-set parity: also remove from ssh_ports.
+                        # The active SSH_CLIENT port is already guarded above, so
+                        # this cannot drop brute-force protection for the live
+                        # session. No-op if the port was not in ssh_ports.
+                        nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$port" 2>/dev/null || true
+                        nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$port" 2>/dev/null || true
                         echo ""
                         echo "✅ Port $port is now blocked in firewall"
                     else

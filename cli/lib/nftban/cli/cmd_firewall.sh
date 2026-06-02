@@ -108,43 +108,19 @@ _firewall_substitute_placeholders() {
         return 1
     fi
 
-    # BUG-2: SSH port detection — sshd_config → ss → state file → nft set → default 22
-    # Priority: authoritative config → runtime → saved state → live firewall → fallback
-    # Previous order (nft set first) caused port 20 (FTP) to be picked as "SSH port"
-    # when the nft set contained stale entries.
+    # v1.145 PR-B: single SSH port for this display/CT-limit context. Uses the
+    # NAMED primary helper (lowest of the detected union via the shared Go
+    # detector: ss + sshd_config Port + ListenAddress + state + conf.local) —
+    # NOT a silent head -1. A single value is acceptable HERE because this only
+    # seeds a per-IP CT-limit/display value; full multi-port firewall
+    # ENFORCEMENT is rendered set-driven (@ssh_ports) and kept in parity by the
+    # maintenance/health autofix paths (which use the full union in both sets).
     local _ssh_port=""
-    # 1. sshd_config (authoritative source of truth for SSH port)
-    _ssh_port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' /etc/ssh/sshd_config 2>/dev/null) || true
-    if [[ -z "$_ssh_port" ]]; then
-        for _inc in /etc/ssh/sshd_config.d/*.conf; do
-            [[ -f "$_inc" ]] || continue
-            _ssh_port=$(grep -m1 -oP '^\s*Port\s+\K[0-9]+' "$_inc" 2>/dev/null) || true
-            [[ -n "$_ssh_port" ]] && break || true
-        done
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    if declare -f nftban_detect_ssh_primary_port >/dev/null 2>&1; then
+        _ssh_port=$(nftban_detect_ssh_primary_port 2>/dev/null) || true
     fi
-    # 2. ss (what sshd is actually listening on)
-    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
-        _ssh_port=$(ss -tlnp 2>/dev/null | grep -oP '"sshd".*:(\K[0-9]+)' | head -1) || true
-    fi
-    # 3. State file
-    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
-        local _ssh_port_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/ssh_port_active.state"
-        [[ -f "$_ssh_port_file" ]] && _ssh_port=$(cat "$_ssh_port_file" 2>/dev/null) || true
-    fi
-    # 4. Live nft set (last resort — may contain stale ports)
-    if [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]]; then
-        if command -v nft &>/dev/null; then
-            local _live_ports
-            _live_ports=$(nft list set ip nftban tcp_ports_in 2>/dev/null | grep -oP 'elements\s*=\s*\{\s*\K[^}]+' | tr ',' '\n' | tr -d ' ') || true
-            while IFS= read -r _p; do
-                [[ "$_p" =~ ^[0-9]+$ ]] || continue
-                [[ "$_p" == "80" || "$_p" == "443" ]] && continue
-                _ssh_port="$_p"
-                break
-            done <<< "${_live_ports:-}"
-        fi
-    fi
-    # 5. Fallback to port 22
     [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
 
     # CT limits — use DDoS config when available, else sensible defaults
