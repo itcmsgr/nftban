@@ -312,8 +312,11 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 		}
 	}
 
-	// 8. Persist SSH port to conf.local and state file
+	// 8. Persist SSH port to conf.local and state file (primary), AND the full
+	// detected union to ports.d so durable port intent never collapses to
+	// primary-only on a shell reload/rebuild (v1.145 lockout fix).
 	render.PersistSSHPort(exec, pd.sshPort, log)
+	render.PersistSSHPortsUnion(exec, pd.sshPorts, log)
 
 	log.PhaseEnd("Prepare")
 	return sf.Transition(state.StatePrepareComplete, state.PhasePrepare, "")

@@ -29,7 +29,42 @@ import (
 const (
 	confLocal    = "/etc/nftban/nftban.conf.local"
 	sshStateFile = "/var/lib/nftban/state/ssh_port_active.state"
+	// portsDSSHFile is the durable SSH-port whitelist consumed by the ports
+	// loader and by the shell reload/rebuild union fallback.
+	portsDSSHFile = "/etc/nftban/ports.d/00-ssh.conf"
 )
+
+// PersistSSHPortsUnion writes EVERY detected SSH listener port to the durable
+// ports.d SSH file, so reload/rebuild and the ports loader keep all listeners
+// whitelisted (lockout-safe) — not just the primary. Without this, a multi-port
+// host's durable port intent collapses to the shipped default (22 only), and a
+// shell render/reload could drop a secondary SSH management port. Idempotent
+// overwrite; format PORT/PROTOCOL/DIRECTION (T=TCP, I=Input).
+func PersistSSHPortsUnion(exec executor.Executor, ports []int, log *logging.Logger) {
+	if len(ports) == 0 {
+		return
+	}
+	var b strings.Builder
+	b.WriteString("# NFTBan SSH port whitelist (machine-generated — full detected union)\n")
+	b.WriteString("# Keeps every detected SSH listener port allowed so reload/rebuild\n")
+	b.WriteString("# cannot collapse a multi-port host to primary-only (lockout-safe).\n")
+	b.WriteString("# Format: PORT/PROTOCOL/DIRECTION (T=TCP, I=Input)\n")
+	seen := make(map[int]bool, len(ports))
+	count := 0
+	for _, p := range ports {
+		if p < 1 || p > 65535 || seen[p] {
+			continue
+		}
+		seen[p] = true
+		b.WriteString(strconv.Itoa(p) + "/T/I\n")
+		count++
+	}
+	if err := exec.WriteFileAtomic(portsDSSHFile, []byte(b.String()), 0644); err != nil {
+		log.Warn("persist SSH union to %s: %v", portsDSSHFile, err)
+		return
+	}
+	log.Info("persisted SSH port union (%d ports) to %s", count, portsDSSHFile)
+}
 
 // PersistSSHPort writes the detected SSH port to conf.local and state file.
 // Also ensures TCP_PORTS_IN includes the SSH port (lockout prevention).
