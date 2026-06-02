@@ -77,6 +77,13 @@ var knownNFTBanSets = map[string]bool{
 	"geoban_ipv4": true, "geoban_ipv6": true,
 	"tcp_ports_in": true, "tcp_ports_out": true,
 	"udp_ports_in": true, "udp_ports_out": true,
+	// v1.145 PR-B2: ssh_ports is the set-driven SSH brute-force rate-limit set
+	// (`tcp dport @ssh_ports ct count`). It MUST be daemon-writable so the
+	// runtime union reconciliation (maintenance/health) can keep every detected
+	// SSH listener port in BOTH tcp_ports_in AND ssh_ports. Without it the IPC
+	// rejected ssh_ports ("invalid set") and multi-port hosts left extra SSH
+	// ports out of the rate-limit set (and the runtime could not self-heal).
+	"ssh_ports": true,
 	// HTTP Bot Guard sets (v1.20.0)
 	"http_bot_suspect": true, "http_bot_suspect6": true,
 	"http_bot_allow": true, "http_bot_allow6": true,

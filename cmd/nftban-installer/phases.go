@@ -108,7 +108,12 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// port callers; install_state SSH_PORT field stays single-int), pd.sshPorts
 	// = full list (consumed by phasePrepare → render.RenderNftablesConfMultiPort
 	// so the rendered nftables.conf allow-set covers every detected port).
-	sshPorts, sshPort, err := detect.DetectSSHPorts(exec, log)
+	// v1.145 PR-B2: render the FULL detected union (ss + sshd_config Port +
+	// ListenAddress + state + conf.local), primary-first — not just the
+	// ss-listener subset DetectSSHPorts returns — so every SSH listener port
+	// is seeded into tcp_ports_in + ssh_ports at install time (no missing port
+	// → no external DROP → no multi-port lockout).
+	sshPorts, sshPort, err := detect.DetectSSHPortsForRender(exec, log)
 	if err != nil {
 		log.Error("SSH port detection failed: %v", err)
 		return sf.Transition(state.StateFailedSSH, state.PhaseDetect, err.Error())

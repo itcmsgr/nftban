@@ -354,6 +354,33 @@ func parseSSHConfigPorts(exec executor.Executor, path string) []int {
 	return ports
 }
 
+// DetectSSHPortsForRender returns the FULL SSH-port union (primary-first) plus
+// the SSH_CLIENT-aware primary, for the installer render path.
+//
+// v1.145 PR-B2: the render must seed EVERY detected SSH port into tcp_ports_in
+// AND ssh_ports, not just the `ss`-listener subset that DetectSSHPorts returns.
+// On a multi-port host where `ss` detection is partial/ordered, DetectSSHPorts
+// could return a subset (observed: 22+55000 but not 2222), leaving the missing
+// port out of the kernel sets → externally DROPPED → lockout for an operator
+// using it. DetectSSHPortsUnion is the authoritative multi-source detector
+// (ss + sshd_config Port + ListenAddress + state + conf.local); this wraps it
+// primary-first for RenderNftablesConfMultiPort. Falls back to DetectSSHPorts'
+// primary when the union is empty.
+func DetectSSHPortsForRender(exec executor.Executor, log *logging.Logger) (ports []int, primary int, err error) {
+	union := DetectSSHPortsUnion(exec, log)
+	_, primary, err = DetectSSHPorts(exec, log)
+	if len(union) == 0 {
+		if err != nil {
+			return nil, 0, err
+		}
+		return []int{primary}, primary, nil
+	}
+	if primary == 0 {
+		primary = selectPrimarySSHPort(union, sshClientLocalPort())
+	}
+	return primaryFirstPorts(union, primary), primary, nil
+}
+
 // sshConfigAllPorts returns all Port + ListenAddress ports from the main
 // sshd_config and every *.conf drop-in.
 func sshConfigAllPorts(exec executor.Executor) []int {
