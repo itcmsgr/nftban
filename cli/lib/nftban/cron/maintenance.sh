@@ -125,14 +125,19 @@ main() {
     # ==========================================================================
     log "INFO" "[1/10] Checking SSH port configuration..."
 
-    # Auto-detect current SSH port from sshd_config
-    SSH_PORT=22
-    if [[ -f "/etc/ssh/sshd_config" ]]; then
-        DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1 || true)
-        if [[ -n "$DETECTED_PORT" ]] && [[ "$DETECTED_PORT" =~ ^[0-9]+$ ]]; then
-            SSH_PORT=$DETECTED_PORT
-        fi
+    # Auto-detect current SSH port(s). v1.145 PR-B: use the union detector
+    # (ListenAddress-aware, multi-port) instead of scalar `head -1` sshd_config
+    # parsing. SSH_PORTS = full union for firewall ENFORCEMENT (every real
+    # listener port protected, lockout-safe); SSH_PORT = primary for the
+    # single-value whitelist/state/alert logic below (display/back-compat).
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    SSH_PORTS=()
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        mapfile -t SSH_PORTS < <(nftban_detect_ssh_ports 2>/dev/null || true)
     fi
+    [[ ${#SSH_PORTS[@]} -eq 0 ]] && SSH_PORTS=(22)
+    SSH_PORT="${SSH_PORTS[0]}"
 
     # Check if SSH port is whitelisted
     SSH_WHITELIST="${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf"
@@ -145,15 +150,21 @@ main() {
         if grep -qE "^${SSH_PORT}/(T|tcp)" "$SSH_WHITELIST" 2>/dev/null; then
             log "INFO" "SSH port check: config OK (port $SSH_PORT whitelisted)"
 
-            # v1.19.20 FIX: Also verify port is in nftables tcp_ports_in set
-            # After firewall rebuild, config may be OK but nftables set is empty
+            # v1.145 PR-B: ensure EVERY detected SSH port is present in BOTH
+            # tcp_ports_in (reachability) AND ssh_ports (brute-force rate-limit
+            # parity), IPv4+IPv6. Additive + idempotent. Removal of stale ports
+            # is conservative and handled in the port-change branch / PR-C.
             if [[ "$_nft_table_available" == "true" ]]; then
-                if ! nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in 2>/dev/null | grep -qw "$SSH_PORT"; then
-                    log "WARN" "SSH port $SSH_PORT in config but NOT in nftables - auto-fixing..."
-                    nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
-                    nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
-                    log "INFO" "SSH port $SSH_PORT added to nftables tcp_ports_in set"
-                fi
+                local _sp _set
+                for _sp in "${SSH_PORTS[@]}"; do
+                    for _set in tcp_ports_in ssh_ports; do
+                        if ! nft list set ${NFTBAN_TABLE_IPV4} "$_set" 2>/dev/null | grep -qw "$_sp"; then
+                            log "WARN" "SSH port $_sp missing from $_set - auto-fixing (both-set parity)..."
+                            nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "$_set" "$_sp" 2>/dev/null || true
+                            nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" "$_set" "$_sp" 2>/dev/null || true
+                        fi
+                    done
+                done
             fi
 
             # Clear alert state if port is now correct (atomic delete - no TOCTOU)
@@ -223,17 +234,32 @@ EOF
                         log "INFO" "SSH port $SSH_PORT added to firewall (via daemon)"
                         # Also add to IPv6 table
                         nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
+                        # v1.145 PR-B both-set parity: ssh_ports must carry the SSH
+                        # port too (brute-force rate-limit rule reads @ssh_ports).
+                        nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$SSH_PORT" 2>/dev/null || true
+                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$SSH_PORT" 2>/dev/null || true
 
-                        # THEN: Remove the OLD port if it was auto-added and is different
+                        # THEN: Remove the OLD port — but ONLY if it is no longer a
+                        # real SSH listener (absent from the detected union) AND is
+                        # not the active SSH_CLIENT session port. v1.145 PR-B:
+                        # conservative removal + both-set parity (tcp_ports_in AND
+                        # ssh_ports). Aggressive removal/apply-verification = PR-C.
                         if [[ -n "$OLD_SSH_PORT" ]]; then
-                            log "INFO" "Removing old SSH port $OLD_SSH_PORT from firewall..."
-                            if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$OLD_SSH_PORT"; then
-                                log "INFO" "Old SSH port $OLD_SSH_PORT removed from IPv4 firewall"
+                            local _active_ssh_port="${SSH_CLIENT##* }"
+                            local _old_still_listener=0 _u
+                            for _u in "${SSH_PORTS[@]}"; do
+                                if [[ "$_u" == "$OLD_SSH_PORT" ]]; then _old_still_listener=1; break; fi
+                            done
+                            if [[ "$_old_still_listener" -eq 0 && "$OLD_SSH_PORT" != "${_active_ssh_port:-}" ]]; then
+                                log "INFO" "Removing stale old SSH port $OLD_SSH_PORT from firewall (both sets)..."
+                                local _dset
+                                for _dset in tcp_ports_in ssh_ports; do
+                                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
+                                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
+                                done
                             else
-                                log "WARN" "Failed to remove old port $OLD_SSH_PORT from IPv4 (may not exist)"
+                                log "INFO" "Keeping old SSH port $OLD_SSH_PORT (still a listener or active session)"
                             fi
-                            # Also remove from IPv6
-                            nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$OLD_SSH_PORT" 2>/dev/null || true
                         fi
 
                         log "INFO" "ALERT: SSH port changed and firewall updated (no lockout risk)"

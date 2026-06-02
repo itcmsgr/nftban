@@ -236,6 +236,18 @@ build_validator() {
     chmod +x "$BIN_DIR/nftban-validate"
     ok "Built: $BIN_DIR/nftban-validate"
 
+    # v1.145 PR-B: SSH-port union detector — pure Go, zero-side-effect, shared
+    # by installer + runtime shell paths via ssh_port_detect.sh.
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+        go build -trimpath -o "$BIN_DIR/nftban-detect-ssh-ports" \
+        -ldflags="$LDFLAGS" \
+        ./cmd/nftban-detect-ssh-ports || {
+        error "Failed to build nftban-detect-ssh-ports"
+        return 1
+    }
+    chmod +x "$BIN_DIR/nftban-detect-ssh-ports"
+    ok "Built: $BIN_DIR/nftban-detect-ssh-ports"
+
     cd "$SCRIPT_DIR"
     return 0
 }
