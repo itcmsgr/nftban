@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.146.0] - 2026-06-03 — install / boot / package-lifecycle authority
+
+**Codename:** `V146_INSTALL_BOOT_LIFECYCLE`
+**Controlling records:** `NFTBAN_ROADMAP/V146_INSTALL_LIFECYCLE_DECISION_AND_IMPL_PLAN.md` · `V146_BOOT_SUFFICIENCY_GATE2_REBOOT_PROOF_RECORD.md` · `V146_SHAPE_B_IMPL_VALIDATION_RECORD.md` · `V146_PHASE_D_LAB_VALIDATION_RECORD.md`
+**PRs:** [#754](https://github.com/itcmsgr/nftban/pull/754) Phase D (sq `31ca2081`) · [#755](https://github.com/itcmsgr/nftban/pull/755) Shape B (sq `b9855cd6`)
+
+> **Why:** the v1.145 SSH-port work exposed an install/boot-lifecycle contradiction in how nftban integrates with the distro `/etc/nftables.conf`. v1.146 fixes the lifecycle authority. **Daemon byte-identical to v1.145.0** (installer/render + packaging only; zero `cmd/nftband`/`cmd/nftban-core` change). **Schema 1.83.0 frozen.**
+
+### Added
+- **`NFTBAN_ALLOW_REMOVE_INET_FILTER=1`** — explicit, deterministic, audit-logged opt-in to remove a populated/operator-owned `inet filter` table during install (no interactive prompt; automation-safe).
+
+### Fixed / Changed
+- **Phase D — fenced include idempotency:** the nftban include in the distro nftables config is now a fenced begin/end block. `IntegrateSystemConf` self-heals files polluted by the pre-v1.146 accumulation bug (collapses duplicate legacy comments to one block; no write when already canonical). The loose case-sensitive `sed '/nftban/d'` remover is replaced by a fenced+legacy-aware strip in DEB `postrm` (purge **and** the previously-missing `remove` branch) and RPM `%postun`.
+- **Phase D — CVE-2025-NFTBAN-001 inet-filter classify-then-act:** empty/default distro skeleton is auto-removed; a populated/operator-owned `inet filter` is **never silently deleted** — DEB fresh install **refuses** (`exit 1` + runbook), RPM fresh install **skips activation** (`exit 0` + verbatim runbook, since rpm `%post` cannot cleanly abort); upgrades warn and continue. RPM `%post` gains the inet-filter guard it previously lacked (DEB/RPM symmetry).
+- **Shape B — distro skeleton neutralization (reboot-proven required):** nftban **keeps** the fenced include (the daemon recreates set *structure* via netlink but does **not** load the rendered `ssh_ports`/`@ssh_ports` rate-limit ruleset — only `nft -f` via the include does), and additionally comments the bare `flush ruleset` (so `systemctl reload nftables.service` can no longer wipe daemon-managed `ip/ip6 nftban` runtime tables) and removes the empty default `table inet filter` skeleton. Reboot-proven on Debian 12 + Ubuntu 24.04 + CentOS Stream 9 (SELinux Enforcing): `ssh_ports` + the rate-limit rule are restored on every reboot; reload-safe; operator content preserved. (Shape A — removing the include — was tested and **rejected**: it silently dropped v1.145 SSH protection every reboot, and on EL Enforcing left no nftban tables at all.)
+
+### Deferred
+- **v1.147 security hardening** (147-A MAC: AppArmor + SELinux `.te`/`.if`/`.fc` incl. the EL daemon-netlink policy → 147-C audit/integrity → 147-B daemon least-privilege) — scoped `SCOPE_READY` (`NFTBAN_ROADMAP/V147_SECURITY_HARDENING_SCOPE.md`); implementation starts only after v1.146 ships. **No SELinux policy work in v1.146.**
+
+---
+
 ## [v1.145.0] - 2026-06-03 — SSH-port lifecycle / multi-port lockout fix
 
 **Codename:** `V145_SSH_PORT_LIFECYCLE`
