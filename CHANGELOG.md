@@ -11,6 +11,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.145.0] - 2026-06-03 — SSH-port lifecycle / multi-port lockout fix
+
+**Codename:** `V145_SSH_PORT_LIFECYCLE`
+**Controlling records:** `NFTBAN_ROADMAP/V145_B2_G_MULTI_DISTRO_MATRIX_VALIDATION.md` · `V145_SHELL_RENDER_PORTSD_UNION_FIX_VALIDATION.md` · `V145_PR750_OSV_EXACT_ID_TRIAGE.md`
+**PRs:** [#745](https://github.com/itcmsgr/nftban/pull/745) PR-A (sq `75d8ea48`) · [#746](https://github.com/itcmsgr/nftban/pull/746) PR-B (sq `1b8305e8`) · [#747](https://github.com/itcmsgr/nftban/pull/747) PR-C2 (sq `1d65c6ae`) · [#749](https://github.com/itcmsgr/nftban/pull/749) PR-B2 (sq `65a608d1`) · [#751](https://github.com/itcmsgr/nftban/pull/751) PR-G (sq `b0ba2387`) · [#752](https://github.com/itcmsgr/nftban/pull/752) OSV maint (sq `a42822f5`) · [#750](https://github.com/itcmsgr/nftban/pull/750) RPM changelog (sq `2d91677e`)
+
+> **Why:** completes the set-driven SSH brute-force rate-limit (`tcp dport @ssh_ports ct count`) so multi-port / ListenAddress hosts can never lose firewall coverage on a secondary SSH port. **Daemon is NOT byte-identical** — this release touches `.go` (nftbackend port-set routing, installer detect/render, daemon writable-set) and `go.mod` (x/net + toolchain 1.25.11), ending the six-release zero-Go chain `v1.140.0 → v1.144.0` by design. **Schema 1.83.0 frozen** — `ssh_ports` is one required internal set inside the existing `ip`/`ip6` tables (not a new table; no external JSON schema bump). Validated **10/10** across the DEB+RPM distro matrix.
+
+### Fixed
+
+- **Multi-port SSH brute-force lockout (SECURITY, PR-B2 [#749]).** On multi-port / ListenAddress hosts the firewall could drop a live SSH listener on a secondary port. Root causes, all closed: (1) the daemon IPC rejected `ssh_ports` (`knownNFTBanSets` now includes it); (2) `Backend.AddElement`/`DeleteElement` treated port-set values as IPs (`invalid IP or CIDR: <port>`) — now routed via `isPortSet()` to `AddPortElements`/`DeletePortElements`; (3) the installer rendered only the primary SSH port — now renders the full detected union (`DetectSSHPortsForRender`); (4) the shell `_firewall_substitute_placeholders` collapsed `firewall reload`/`rebuild` to primary-only (proven kernel regression `tcp_ports_in [22,80,443,55000] → [22,80,443]`) — now substitutes the live union into `__SSH_PORT__`; (5) `ports.d/00-ssh.conf` held only the primary — `PersistSSHPortsUnion` now persists the union.
+- **`report_port` misclassification (PR-G [#751]).** The set-rule scanner reported the set-driven `@ssh_ports ct count … drop` rule as `BLOCKED/MISCONFIG`; it now skips `ct count over` / `limit rate` like the direct-rule scanner.
+
+### Added
+
+- **Set-driven SSH brute-force rate-limit** (PR-A [#745]) — `ssh_ports` set + `tcp dport @ssh_ports ct count` rule, replacing the rendered `__SSH_PORT__` literal.
+- **Runtime SSH-port union detection + parity** (PR-B [#746]) — ss listeners + sshd_config Port + ListenAddress + state + conf.local; `tcp_ports_in`/`ssh_ports` kept in parity.
+- **Apply-path hardening** (PR-C2 [#747]) — live nft-table re-probe + verified state commits.
+- **Systemic alignment + tests** (PR-G [#751]) — `nftban port` help (4→5 managed port sets + ssh_ports semantics: internal, TCP-only, SSH-management-plane; Pure-FTPd/FTP/FTPS use `tcp_ports_in` only); four pre-existing v1.145 shell guards wired into CI + new invariant/negative tests; README/wiki ssh_ports documentation.
+
+### Security
+
+- **OSV gate repaired** (Maintenance [#752]) — advisories published mid-release: `golang.org/x/net 0.52.0 → 0.55.0` (GO-2026-5025…5030) and go directive `1.25.0 → 1.25.11` (GO-2026-5037/5038/5039, stdlib). `go mod tidy` pulled `golang.org/x/sys 0.44.0 → 0.45.0`. `osv-scanner v2.3.3` exits 0. go.mod/go.sum-only; kept separate and auditable (not bundled into any feature PR).
+
+### Changed
+
+- **RPM `%changelog` weekday fix** (Packaging [#750]) — `Mon Mar 24 2026` (a Tuesday) → `Tue`; stricter `rpm` rejected the bogus date.
+
+### Validation
+
+- 10/10 multi-distro lab matrix: DEB Ubuntu 22.04/24.04/26.04 + Debian 11/12/13, RPM AlmaLinux 8/9 + CentOS Stream 9 + Rocky 9 — each with sshd on 22+2222+55000: detector union, all three ports in ip/ip6 `tcp_ports_in` + `ssh_ports`, `firewall reload` preserves all SSH ports, no UDP contamination, SSH reachable. Read-only fleet check: production EL hosts run SELinux Disabled (unaffected) and already run multi-port SSH (srv2 2222+55000, dns2 22+2222).
+
+### Deferred to v1.146 (scoped, not started)
+
+- nftables.service / `/etc/nftables.conf` integration contradiction, postrm idempotency, boot authority, fresh-install inet-filter policy, DEB zstd/dependency runbook, per-EL-major RPM build (`V146_NFTABLES_SERVICE_INSTALL_LIFECYCLE_RECHECK_SCOPE.md`).
+- EL SELinux Enforcing daemon-netlink **policy module** — not polkit (`V146_EL_SELINUX_DAEMON_NETLINK_POLICY_SCOPE.md`).
+- Installer SSH_CLIENT-aware primary selection in the postinst context.
+
 ## [v1.144.0] - 2026-06-01 — Doc/UX drift cleanup
 
 **Codename:** `V1_144_0_DOC_UX_DRIFT`
