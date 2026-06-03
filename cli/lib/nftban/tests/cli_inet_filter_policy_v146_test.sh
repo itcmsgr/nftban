@@ -91,9 +91,15 @@ chmod +x "$BIN/nft"
 # shellcheck source=/dev/null
 . "$FN"
 
-run_classify() { # fixture -> echoes verdict; resets delete marker
+run_classify() { # fixture -> echoes verdict; resets delete marker; override OFF
     NFT_DELETE_MARKER="$TMPD/deleted"; : > "$NFT_DELETE_MARKER"
-    export NFT_DELETE_MARKER NFT_FIXTURE="$1"
+    export NFT_DELETE_MARKER NFT_FIXTURE="$1" NFTBAN_ALLOW_REMOVE_INET_FILTER=0
+    PATH="$BIN:$PATH" _nftban_classify_inet_filter
+}
+
+run_classify_override() { # fixture -> echoes verdict with override ON
+    NFT_DELETE_MARKER="$TMPD/deleted"; : > "$NFT_DELETE_MARKER"
+    export NFT_DELETE_MARKER NFT_FIXTURE="$1" NFTBAN_ALLOW_REMOVE_INET_FILTER=1
     PATH="$BIN:$PATH" _nftban_classify_inet_filter
 }
 
@@ -107,7 +113,15 @@ if [[ -s "$TMPD/deleted" ]]; then ok "T-F3 empty skeleton issued nft delete"; el
 
 v=$(run_classify populated)
 if [[ "$v" == "POPULATED" ]]; then ok "T-F4 populated table -> POPULATED"; else no "T-F4 populated table -> POPULATED" "got '$v'"; fi
-if [[ ! -s "$TMPD/deleted" ]]; then ok "T-F5 populated table NOT deleted (operator content preserved)"; else no "T-F5 populated table NOT deleted" "delete was recorded"; fi
+if [[ ! -s "$TMPD/deleted" ]]; then ok "T-F5 populated table NOT deleted by default (operator content preserved)"; else no "T-F5 populated table NOT deleted by default" "delete was recorded"; fi
+
+# explicit opt-in override: NFTBAN_ALLOW_REMOVE_INET_FILTER=1
+v=$(run_classify_override populated)
+if [[ "$v" == "REMOVED_OVERRIDE" ]]; then ok "T-F6 populated + override -> REMOVED_OVERRIDE"; else no "T-F6 populated + override -> REMOVED_OVERRIDE" "got '$v'"; fi
+if [[ -s "$TMPD/deleted" ]]; then ok "T-F7 override issued nft delete on populated table"; else no "T-F7 override issued nft delete" "no delete recorded"; fi
+# empty skeleton must still REMOVE (not OVERRIDE) even with override set
+v=$(run_classify_override empty)
+if [[ "$v" == "REMOVED" ]]; then ok "T-F8 empty skeleton -> REMOVED even with override (not mislabelled)"; else no "T-F8 empty skeleton -> REMOVED with override" "got '$v'"; fi
 
 # --- T-D: DEB refuse semantics ---------------------------------------------
 if grep -q 'will NOT delete operator-owned' "$POSTINST" && grep -qE '^\s*exit 1' "$POSTINST"; then
@@ -131,6 +145,23 @@ if grep -q '_nftban_classify_inet_filter' "$BUILD"; then
     ok "T-R2 build_nftban.sh defines the classifier (RPM previously had none)"
 else
     no "T-R2 build_nftban.sh defines the classifier" "missing"
+fi
+
+# --- T-O: explicit operator override present + deterministic (both PMs) -----
+for f in "$POSTINST" "$BUILD"; do
+    base=$(basename "$f")
+    if grep -q 'NFTBAN_ALLOW_REMOVE_INET_FILTER' "$f"; then
+        ok "T-O override env var honoured in $base"
+    else
+        no "T-O override env var honoured in $base" "missing"
+    fi
+done
+# no interactive PROMPT in either scriptlet (automation-safe). The -p flag is
+# the interactive-prompt signature; `while read -r` file-iteration is fine.
+if ! grep -qE 'read +-[a-z]*p' "$POSTINST" "$BUILD"; then
+    ok "T-O no interactive 'read -p' prompt in postinst/%post (automation-safe)"
+else
+    no "T-O no interactive 'read -p' prompt in postinst/%post" "found a prompt"
 fi
 
 echo

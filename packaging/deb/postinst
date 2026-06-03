@@ -54,6 +54,16 @@ _nftban_classify_inet_filter() {
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED; return 0
     fi
+    # Populated/operator-owned. Default: NEVER delete. Explicit opt-in
+    # NFTBAN_ALLOW_REMOVE_INET_FILTER=1 authorises a high-risk removal so an
+    # operator can fully automate an install on a host they KNOW carries a
+    # stale/unwanted populated inet filter. No interactive prompt — installs run
+    # non-interactively (apt/dnf -y, cloud-init, panels); a prompt would hang or
+    # be auto-answered unsafely. The override is deterministic + logged.
+    if [ "${NFTBAN_ALLOW_REMOVE_INET_FILTER:-0}" = "1" ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED_OVERRIDE; return 0
+    fi
     echo POPULATED; return 0
 }
 # <<< NFTBAN_INETFILTER_FN_END <<<
@@ -74,7 +84,11 @@ case "$1" in
         _ifverdict=$(_nftban_classify_inet_filter)
         case "$_ifverdict" in
             REMOVED)
-                log_info "Removed empty default 'inet filter' skeleton (CVE-2025-NFTBAN-001 — would shadow nftban)"
+                log_info "Removed default accept-all inet filter skeleton due to CVE-2025-NFTBAN-001 guard."
+                ;;
+            REMOVED_OVERRIDE)
+                log_warn "HIGH-RISK: removed a POPULATED operator-owned 'inet filter' table because NFTBAN_ALLOW_REMOVE_INET_FILTER=1 was set (explicit opt-in)."
+                log_warn "Any firewall rules that table held are now gone. This action was deliberate and is logged here for audit."
                 ;;
             POPULATED)
                 if [ -n "${2:-}" ]; then

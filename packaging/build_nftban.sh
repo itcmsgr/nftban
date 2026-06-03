@@ -931,12 +931,21 @@ _nftban_classify_inet_filter() {
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED; return 0
     fi
+    # Explicit opt-in NFTBAN_ALLOW_REMOVE_INET_FILTER=1 authorises a high-risk
+    # removal of a populated/operator-owned table (deterministic + logged; no
+    # interactive prompt — rpm installs run non-interactively).
+    if [ "\${NFTBAN_ALLOW_REMOVE_INET_FILTER:-0}" = "1" ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED_OVERRIDE; return 0
+    fi
     echo POPULATED; return 0
 }
 _ifverdict=\$(_nftban_classify_inet_filter)
 case "\$_ifverdict" in
     REMOVED)
-        echo "[NFTBan] Removed empty default 'inet filter' skeleton (CVE-2025-NFTBAN-001; would shadow nftban)." ;;
+        echo "[NFTBan] Removed default accept-all inet filter skeleton due to CVE-2025-NFTBAN-001 guard." ;;
+    REMOVED_OVERRIDE)
+        echo "[NFTBan WARN] HIGH-RISK: removed a POPULATED operator-owned 'inet filter' table because NFTBAN_ALLOW_REMOVE_INET_FILTER=1 was set (explicit opt-in). Any rules it held are gone." >&2 ;;
     POPULATED)
         if [ "\$1" -ge 2 ] 2>/dev/null; then
             echo "[NFTBan WARN] Populated 'inet filter' table present - NOT removed (operator-owned)." >&2
