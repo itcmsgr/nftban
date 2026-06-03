@@ -1271,7 +1271,7 @@ fi
 /etc/nftban/templates/nftban-suricata.logrotate
 
 %changelog
-* Mon Mar 24 2026 NFTBan Team <noreply@nftban.com> - 1.39.0-1
+* Tue Mar 24 2026 NFTBan Team <noreply@nftban.com> - 1.39.0-1
 - v1.39.0 Bug Fixes + UX Hardening + Security Quick Wins
 - CIDR ban/unban routing fix, emulate blacklist_manual coverage
 - Install auto-takeover on panel servers
