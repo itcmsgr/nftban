@@ -1,6 +1,42 @@
 #!/bin/sh
 set -e
 
+# =============================================================================
+# v1.146 Phase-D — fenced nftban include remover (drift-checked)
+# -----------------------------------------------------------------------------
+# Removes exactly nftban-owned lines from a distro nftables.conf, preserving all
+# operator content. Twin of Go render.stripNftbanInclude and the RPM %postun
+# copy in packaging/build_nftban.sh. The marker strings and the awk body below
+# MUST match those two byte-for-byte (enforced by the hermetic drift test
+# cli_nftables_include_idempotency_v146_test.sh).
+#
+# Replaces the pre-v1.146 loose `sed -i '/nftban/d'`, which was case-sensitive
+# (orphaned the capitalised "# NFTBan firewall configuration" comment) and only
+# ran on purge — so duplicate comments accumulated and `remove` (non-purge) left
+# a dangling include pointing at a deleted /etc/nftban/nftables.conf.
+# >>> NFTBAN_STRIP_FN_BEGIN >>>
+_nftban_strip_conf_include() {
+    _f="$1"
+    [ -f "$_f" ] || return 0
+    _tmp="${_f}.nftban-strip.$$"
+    awk '
+        $0 == "# >>> nftban firewall include (managed; do not edit between markers) >>>" { infence=1; next }
+        $0 == "# <<< nftban firewall include (managed) <<<" { infence=0; next }
+        infence { next }
+        $0 == "# NFTBan firewall configuration" { next }
+        index($0, "\"/etc/nftban/nftables.conf\"") > 0 { next }
+        { print }
+    ' "$_f" > "$_tmp" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 0; }
+    # Replace in place (cat-redirect preserves inode/owner/mode + statoverride).
+    # Guard against awk truncation: only commit when output is non-empty OR the
+    # original was already empty (a distro nftables.conf is never only-our-lines).
+    if [ -s "$_tmp" ] || [ ! -s "$_f" ]; then
+        cat "$_tmp" > "$_f" 2>/dev/null || true
+    fi
+    rm -f "$_tmp" 2>/dev/null || true
+}
+# <<< NFTBAN_STRIP_FN_END <<<
+
 case "$1" in
     purge)
         # =============================================================================
@@ -61,9 +97,7 @@ case "$1" in
         #  try to reload our tables after we delete them)
         # -----------------------------------------------------------------
         for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-            if [ -f "$nft_conf" ]; then
-                sed -i '/nftban/d' "$nft_conf" 2>/dev/null || true
-            fi
+            _nftban_strip_conf_include "$nft_conf"
         done
 
         # -----------------------------------------------------------------
@@ -152,6 +186,16 @@ case "$1" in
             echo "nftban: Firewall rules flushed (tables preserved for reinstall)."
             echo "nftban: Config preserved in /etc/nftban/. Purge with: apt remove --purge nftban-core"
         fi
+
+        # v1.146 Phase-D D-NFTABLES-POSTRM-MARKER-IDEMPOTENCY (remove-branch gap):
+        # On `remove` (non-purge) the package files are gone, so the distro
+        # include would dangle at a deleted /etc/nftban/nftables.conf — a plain
+        # `systemctl reload nftables.service` would then error on the missing
+        # include. Strip our fenced block here too (config under /etc/nftban is
+        # preserved for reinstall, but the *distro-file* include must not dangle).
+        for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+            _nftban_strip_conf_include "$nft_conf"
+        done
         ;;
 
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

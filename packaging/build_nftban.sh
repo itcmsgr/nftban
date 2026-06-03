@@ -912,6 +912,51 @@ else
 fi
 
 # =============================================================================
+# v1.146 Phase-D: CVE-2025-NFTBAN-001 inet-filter classify-then-act
+# =============================================================================
+# Drift-checked twin of packaging/deb/postinst:_nftban_classify_inet_filter
+# (RPM previously had NO inet-filter guard at all). Empty/default distro
+# skeleton -> auto-remove (both modes; it would shadow nftban). Populated,
+# operator-owned table -> never delete: fresh install prints the runbook and
+# SKIPS activation via exit 0 (rpm %post cannot cleanly abort; a non-zero exit
+# leaves a confusing scriptlet-failed-but-installed state); upgrade warns and
+# continues.
+_nftban_classify_inet_filter() {
+    command -v nft >/dev/null 2>&1 || { echo NONE; return 0; }
+    nft list table inet filter >/dev/null 2>&1 || { echo NONE; return 0; }
+    _rules=\$(nft list table inet filter 2>/dev/null \
+        | grep -vE '^[[:space:]]*(table|chain|type |policy|[}]|#)' \
+        | grep -cE '[^[:space:]]' || true)
+    if [ "\${_rules:-0}" -eq 0 ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED; return 0
+    fi
+    # Explicit opt-in NFTBAN_ALLOW_REMOVE_INET_FILTER=1 authorises a high-risk
+    # removal of a populated/operator-owned table (deterministic + logged; no
+    # interactive prompt — rpm installs run non-interactively).
+    if [ "\${NFTBAN_ALLOW_REMOVE_INET_FILTER:-0}" = "1" ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED_OVERRIDE; return 0
+    fi
+    echo POPULATED; return 0
+}
+_ifverdict=\$(_nftban_classify_inet_filter)
+case "\$_ifverdict" in
+    REMOVED)
+        echo "[NFTBan] Removed default accept-all inet filter skeleton due to CVE-2025-NFTBAN-001 guard." ;;
+    REMOVED_OVERRIDE)
+        echo "[NFTBan WARN] HIGH-RISK: removed a POPULATED operator-owned 'inet filter' table because NFTBAN_ALLOW_REMOVE_INET_FILTER=1 was set (explicit opt-in). Any rules it held are gone." >&2 ;;
+    POPULATED)
+        if [ "\$1" -ge 2 ] 2>/dev/null; then
+            echo "[NFTBan WARN] Populated 'inet filter' table present - NOT removed (operator-owned)." >&2
+            echo "[NFTBan WARN] It may shadow nftban blocking (CVE-2025-NFTBAN-001)." >&2
+        else
+            echo "[NFTBan ERROR] nftban installed but firewall activation was skipped because an operator-owned inet filter table exists. Remove or migrate the conflicting table, then run: nftban-installer --repair" >&2
+            exit 0
+        fi ;;
+esac
+
+# =============================================================================
 # STEP 0: yq link (must happen before Go installer, used by CLI commands)
 # =============================================================================
 if command -v yq >/dev/null 2>&1; then
@@ -1140,10 +1185,32 @@ if [ \$1 -eq 0 ]; then
     rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
     # STEP 3: Remove NFTBan include from nftables.conf BEFORE table deletion
-    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-        if [ -f "\$nft_conf" ]; then
-            sed -i '/nftban/d' "\$nft_conf" 2>/dev/null || true
+    # v1.146 Phase-D fenced remover — drift-checked twin of
+    # packaging/deb/postrm:_nftban_strip_conf_include and Go
+    # render.stripNftbanInclude. The marker strings below MUST match
+    # render.IncludeBeginMarker/IncludeEndMarker byte-for-byte (enforced by
+    # cli_nftables_include_idempotency_v146_test.sh). Replaces the pre-v1.146
+    # loose, case-sensitive \`sed -i '/nftban/d'\` that orphaned the capitalised
+    # legacy comment.
+    _nftban_strip_conf_include() {
+        _f="\$1"
+        [ -f "\$_f" ] || return 0
+        _tmp="\${_f}.nftban-strip.\$\$"
+        awk '
+            \$0 == "# >>> nftban firewall include (managed; do not edit between markers) >>>" { infence=1; next }
+            \$0 == "# <<< nftban firewall include (managed) <<<" { infence=0; next }
+            infence { next }
+            \$0 == "# NFTBan firewall configuration" { next }
+            index(\$0, "\"/etc/nftban/nftables.conf\"") > 0 { next }
+            { print }
+        ' "\$_f" > "\$_tmp" 2>/dev/null || { rm -f "\$_tmp" 2>/dev/null || true; return 0; }
+        if [ -s "\$_tmp" ] || [ ! -s "\$_f" ]; then
+            cat "\$_tmp" > "\$_f" 2>/dev/null || true
         fi
+        rm -f "\$_tmp" 2>/dev/null || true
+    }
+    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+        _nftban_strip_conf_include "\$nft_conf"
     done
 
     # STEP 4: Flush and delete nftables tables (CRITICAL — rules persist otherwise)
