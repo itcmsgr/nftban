@@ -912,6 +912,42 @@ else
 fi
 
 # =============================================================================
+# v1.146 Phase-D: CVE-2025-NFTBAN-001 inet-filter classify-then-act
+# =============================================================================
+# Drift-checked twin of packaging/deb/postinst:_nftban_classify_inet_filter
+# (RPM previously had NO inet-filter guard at all). Empty/default distro
+# skeleton -> auto-remove (both modes; it would shadow nftban). Populated,
+# operator-owned table -> never delete: fresh install prints the runbook and
+# SKIPS activation via exit 0 (rpm %post cannot cleanly abort; a non-zero exit
+# leaves a confusing scriptlet-failed-but-installed state); upgrade warns and
+# continues.
+_nftban_classify_inet_filter() {
+    command -v nft >/dev/null 2>&1 || { echo NONE; return 0; }
+    nft list table inet filter >/dev/null 2>&1 || { echo NONE; return 0; }
+    _rules=\$(nft list table inet filter 2>/dev/null \
+        | grep -vE '^[[:space:]]*(table|chain|type |policy|[}]|#)' \
+        | grep -cE '[^[:space:]]' || true)
+    if [ "\${_rules:-0}" -eq 0 ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED; return 0
+    fi
+    echo POPULATED; return 0
+}
+_ifverdict=\$(_nftban_classify_inet_filter)
+case "\$_ifverdict" in
+    REMOVED)
+        echo "[NFTBan] Removed empty default 'inet filter' skeleton (CVE-2025-NFTBAN-001; would shadow nftban)." ;;
+    POPULATED)
+        if [ "\$1" -ge 2 ] 2>/dev/null; then
+            echo "[NFTBan WARN] Populated 'inet filter' table present - NOT removed (operator-owned)." >&2
+            echo "[NFTBan WARN] It may shadow nftban blocking (CVE-2025-NFTBAN-001)." >&2
+        else
+            echo "[NFTBan ERROR] nftban installed but firewall activation was skipped because an operator-owned inet filter table exists. Remove or migrate the conflicting table, then run: nftban-installer --repair" >&2
+            exit 0
+        fi ;;
+esac
+
+# =============================================================================
 # STEP 0: yq link (must happen before Go installer, used by CLI commands)
 # =============================================================================
 if command -v yq >/dev/null 2>&1; then

@@ -35,6 +35,29 @@ log_info()  { echo "[NFTBan] $*"; }
 log_warn()  { echo "[NFTBan WARN] $*"; }
 log_error() { echo "[NFTBan ERROR] $*"; }
 
+# v1.146 Phase-D — CVE-2025-NFTBAN-001 inet-filter classifier (drift-checked
+# twin of the RPM %post copy in packaging/build_nftban.sh). Classifies a
+# pre-existing `inet filter` table: the benign empty distro skeleton is removed
+# (it would shadow nftban blocking — CVE-2025-NFTBAN-001); a populated,
+# operator-owned table is NEVER deleted (caller decides refuse vs warn).
+# Echoes exactly one token: NONE | REMOVED | POPULATED. The "is it a rule?"
+# heuristic mirrors internal/installer/extfw/detect.go (structural lines —
+# table/chain/type/policy/brace/comment — are not rules).
+# >>> NFTBAN_INETFILTER_FN_BEGIN >>>
+_nftban_classify_inet_filter() {
+    command -v nft >/dev/null 2>&1 || { echo NONE; return 0; }
+    nft list table inet filter >/dev/null 2>&1 || { echo NONE; return 0; }
+    _rules=$(nft list table inet filter 2>/dev/null \
+        | grep -vE '^[[:space:]]*(table|chain|type |policy|[}]|#)' \
+        | grep -cE '[^[:space:]]' || true)
+    if [ "${_rules:-0}" -eq 0 ]; then
+        nft delete table inet filter 2>/dev/null || true
+        echo REMOVED; return 0
+    fi
+    echo POPULATED; return 0
+}
+# <<< NFTBAN_INETFILTER_FN_END <<<
+
 case "$1" in
     configure)
 
@@ -42,21 +65,31 @@ case "$1" in
         # PRE-GO BOOTSTRAP (must run before any nftban binary)
         # =================================================================
 
-        # --- CVE-2025-NFTBAN-001: conflicting inet filter table ---
-        if command -v nft >/dev/null 2>&1; then
-            if nft list table inet filter >/dev/null 2>&1; then
+        # --- CVE-2025-NFTBAN-001: conflicting inet filter table (v1.146 Phase-D) ---
+        # Classify-then-act, shared with RPM %post. Empty/default distro skeleton
+        # is auto-removed in BOTH modes (it would shadow nftban). A populated,
+        # operator-owned table is NEVER deleted: fresh install refuses (exit 1 —
+        # dpkg surfaces postinst failure clearly); upgrade warns and continues
+        # (don't abort a running host's upgrade over an operator's own rules).
+        _ifverdict=$(_nftban_classify_inet_filter)
+        case "$_ifverdict" in
+            REMOVED)
+                log_info "Removed empty default 'inet filter' skeleton (CVE-2025-NFTBAN-001 — would shadow nftban)"
+                ;;
+            POPULATED)
                 if [ -n "${2:-}" ]; then
-                    log_warn "Conflicting 'inet filter' table detected — auto-removing for upgrade"
-                    nft delete table inet filter 2>/dev/null || true
+                    log_warn "Populated 'inet filter' table present — NOT removed (operator-owned)."
+                    log_warn "It may shadow nftban blocking (CVE-2025-NFTBAN-001). If it is the distro"
+                    log_warn "default, run: nft delete table inet filter   (then: nftban firewall reload)"
                 else
-                    log_error "Conflicting 'inet filter' table detected!"
-                    log_error "This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
-                    log_error "Please run: nft delete table inet filter"
-                    log_error "Then re-install the package."
+                    log_error "Conflicting populated 'inet filter' table detected (CVE-2025-NFTBAN-001)."
+                    log_error "nftban will NOT delete operator-owned firewall rules."
+                    log_error "Remove or migrate the conflicting table, then re-install:"
+                    log_error "  nft delete table inet filter"
                     exit 1
                 fi
-            fi
-        fi
+                ;;
+        esac
 
         # --- Remove immutable flags so package manager can overwrite files ---
         for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
