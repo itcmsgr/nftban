@@ -700,7 +700,7 @@ DESCRIPTION:
     - CIDR containment (checks if IP falls within any CIDR range in feeds)
 
     Port Search:
-    - nftables port sets (tcp_ports_in/out, udp_ports_in/out)
+    - nftables port sets (tcp_ports_in/out, udp_ports_in/out, ssh_ports)
     - Port configuration files (${NFTBAN_CONFIG_DIR}/ports.d/*.conf)
 
     If IP/port is found, shows location and details.
@@ -842,6 +842,7 @@ nftban_cmd_search() {
             echo "-------------------------------------------------------------------"
             echo "  X nftables tcp_ports_in/tcp_ports_out sets"
             echo "  X nftables udp_ports_in/udp_ports_out sets"
+            echo "  X nftables ssh_ports set (SSH brute-force rate-limit)"
             echo "  X ${NFTBAN_CONFIG_DIR}/ports.d/*.conf"
             echo ""
             echo "To whitelist this port, use:"

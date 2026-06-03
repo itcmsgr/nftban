@@ -384,6 +384,14 @@ nftban_port_gather_nft_rules() {
         if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([[:alnum:]_-]+) ]]; then
             cur_chain="${BASH_REMATCH[1]}"; continue
         fi
+        # PR-G (v1.145): skip conditional rules (rate-limits / ct count) in the
+        # set-rule scan too, so the set-driven SSH brute-force rule
+        # `... tcp dport @ssh_ports ct count over N ... drop` is NOT recorded as a
+        # base BLOCK on the SSH port (it would surface as fw=BLOCKED / MISCONFIG).
+        # It is expected SSH brute-force protection, not a closed service. Mirrors
+        # the direct-rule guard below (BUG FIX v1.19.23).
+        [[ "$line" =~ ct[[:space:]]+count[[:space:]]+over ]] && continue
+        [[ "$line" =~ limit[[:space:]]+rate ]] && continue
         # Detect set-based rules: tcp dport @tcp_ports_in accept
         # Note: May have 'counter' between set and action
         if [[ "$line" =~ (tcp|udp)[[:space:]]+dport[[:space:]]+@([[:alnum:]_-]+)[[:space:]].*(accept|drop|reject) ]]; then
