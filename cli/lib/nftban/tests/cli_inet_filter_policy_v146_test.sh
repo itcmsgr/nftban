@@ -109,7 +109,7 @@ v=$(run_classify none)
 
 v=$(run_classify empty)
 if [[ "$v" == "REMOVED" ]]; then ok "T-F2 empty skeleton -> REMOVED"; else no "T-F2 empty skeleton -> REMOVED" "got '$v'"; fi
-if [[ -s "$TMPD/deleted" ]]; then ok "T-F3 empty skeleton issued nft delete"; else no "T-F3 empty skeleton issued nft delete" "no delete recorded"; fi
+if [[ -s "$TMPD/deleted" ]]; then ok "T-F3 empty skeleton triggered a table-delete"; else no "T-F3 empty skeleton triggered a table-delete" "no delete recorded"; fi
 
 v=$(run_classify populated)
 if [[ "$v" == "POPULATED" ]]; then ok "T-F4 populated table -> POPULATED"; else no "T-F4 populated table -> POPULATED" "got '$v'"; fi
@@ -118,7 +118,7 @@ if [[ ! -s "$TMPD/deleted" ]]; then ok "T-F5 populated table NOT deleted by defa
 # explicit opt-in override: NFTBAN_ALLOW_REMOVE_INET_FILTER=1
 v=$(run_classify_override populated)
 if [[ "$v" == "REMOVED_OVERRIDE" ]]; then ok "T-F6 populated + override -> REMOVED_OVERRIDE"; else no "T-F6 populated + override -> REMOVED_OVERRIDE" "got '$v'"; fi
-if [[ -s "$TMPD/deleted" ]]; then ok "T-F7 override issued nft delete on populated table"; else no "T-F7 override issued nft delete" "no delete recorded"; fi
+if [[ -s "$TMPD/deleted" ]]; then ok "T-F7 override triggered a table-delete on populated table"; else no "T-F7 override triggered a table-delete" "no delete recorded"; fi
 # empty skeleton must still REMOVE (not OVERRIDE) even with override set
 v=$(run_classify_override empty)
 if [[ "$v" == "REMOVED" ]]; then ok "T-F8 empty skeleton -> REMOVED even with override (not mislabelled)"; else no "T-F8 empty skeleton -> REMOVED with override" "got '$v'"; fi
