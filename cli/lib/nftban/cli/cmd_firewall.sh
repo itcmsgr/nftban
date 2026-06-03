@@ -108,20 +108,36 @@ _firewall_substitute_placeholders() {
         return 1
     fi
 
-    # v1.145 PR-B: single SSH port for this display/CT-limit context. Uses the
-    # NAMED primary helper (lowest of the detected union via the shared Go
-    # detector: ss + sshd_config Port + ListenAddress + state + conf.local) —
-    # NOT a silent head -1. A single value is acceptable HERE because this only
-    # seeds a per-IP CT-limit/display value; full multi-port firewall
-    # ENFORCEMENT is rendered set-driven (@ssh_ports) and kept in parity by the
-    # maintenance/health autofix paths (which use the full union in both sets).
-    local _ssh_port=""
+    # v1.145 lockout fix (HOLD_V145_AND_FIX_SHELL_RENDER_PORTSD_UNION):
+    # __SSH_PORT__ appears ONLY inside `elements = { ... }` for ssh_ports and
+    # tcp_ports_in (both ip and ip6) — there is NO single-value context. So we
+    # substitute the FULL detected SSH union (comma-separated), NOT just the
+    # primary. This keeps EVERY detected SSH listener port in BOTH sets on every
+    # reload/rebuild, so a multi-port host can never collapse to primary-only
+    # and `nftban firewall reload` can never drop an operator connected on a
+    # secondary SSH port. Fallback chain: live union -> ports.d union -> primary
+    # -> 22 (never empty, never primary-only when more ports are live).
+    local _ssh_port="" _ssh_ports_csv=""
     # shellcheck source=/dev/null
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_port_detect.sh" 2>/dev/null || true
+    if declare -f nftban_detect_ssh_ports >/dev/null 2>&1; then
+        _ssh_ports_csv=$(nftban_detect_ssh_ports 2>/dev/null | grep -E '^[0-9]+$' | paste -sd, - 2>/dev/null) || true
+    fi
     if declare -f nftban_detect_ssh_primary_port >/dev/null 2>&1; then
         _ssh_port=$(nftban_detect_ssh_primary_port 2>/dev/null) || true
     fi
     [[ -z "$_ssh_port" || ! "$_ssh_port" =~ ^[0-9]+$ ]] && _ssh_port=22
+    # Fallback to the persisted ports.d SSH union if live detection returned nothing.
+    if [[ -z "$_ssh_ports_csv" ]]; then
+        local _portsd="${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf"
+        if [[ -f "$_portsd" ]]; then
+            _ssh_ports_csv=$(grep -oE '^[0-9]+' "$_portsd" 2>/dev/null | sort -un | paste -sd, - 2>/dev/null) || true
+        fi
+    fi
+    # Final fallback: primary (then 22 via the guard above).
+    [[ -z "$_ssh_ports_csv" ]] && _ssh_ports_csv="$_ssh_port"
+    # Template style: "22, 2222, 55000"
+    _ssh_ports_csv=$(printf '%s' "$_ssh_ports_csv" | sed 's/,/, /g')
 
     # CT limits — use DDoS config when available, else sensible defaults
     local _ct_ssh=15 _ct_http=150 _ct_mail=150
@@ -137,7 +153,7 @@ _firewall_substitute_placeholders() {
     [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
     [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _ct_mail="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
 
-    sed -e "s/__SSH_PORT__/${_ssh_port}/g" \
+    sed -e "s/__SSH_PORT__/${_ssh_ports_csv}/g" \
         -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \

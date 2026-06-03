@@ -37,6 +37,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -446,6 +447,27 @@ type AddElementRequest struct {
 	Timeout int    // seconds, 0 = permanent
 }
 
+// portSets enumerates the named nftables sets whose key type is inet_service
+// (uint16 port numbers) rather than an IP/CIDR. Generic element add/delete must
+// route these through the port-aware path; the IP interval-set path would try to
+// net.ParseIP the element and fail with "invalid IP or CIDR: <port>".
+//
+// v1.145 PR-B2: ssh_ports joined this list. It is the set-driven SSH brute-force
+// rate-limit set (`tcp dport @ssh_ports ct count`). Runtime union reconciliation
+// (maintenance/health/cmd_port) writes detected SSH ports into ssh_ports AND
+// tcp_ports_in via nft_ipc_add_element; both are inet_service sets, so both must
+// route here. Before this, the generic add path treated the port as an IP and
+// silently failed (callers swallow errors with `|| true`), so multi-port hosts
+// could not self-heal missing SSH ports.
+var portSets = map[string]bool{
+	"tcp_ports_in": true, "tcp_ports_out": true,
+	"udp_ports_in": true, "udp_ports_out": true,
+	"ssh_ports": true,
+}
+
+// isPortSet reports whether setName is an inet_service (port) set.
+func isPortSet(setName string) bool { return portSets[setName] }
+
 // AddElement adds an element to any set
 // This is the ONLY authorized add element implementation
 func (b *Backend) AddElement(ctx context.Context, req AddElementRequest) error {
@@ -473,6 +495,32 @@ func (b *Backend) AddElement(ctx context.Context, req AddElementRequest) error {
 		b.stats.Errors++
 		b.stats.LastError = fmt.Sprintf("get table: %v", err)
 		return fmt.Errorf("failed to get table: %w", err)
+	}
+
+	// v1.145 PR-B2: port sets (inet_service / uint16) must NOT go through the
+	// IP interval-set path — AddIPWithTimeout would net.ParseIP the element and
+	// fail with "invalid IP or CIDR: <port>". Route named port sets to the
+	// port-aware path. Timeout is not applicable to port sets (they are
+	// permanent allow/rate-limit sets), so req.Timeout is ignored here.
+	if isPortSet(req.Set) {
+		port, perr := strconv.Atoi(strings.TrimSpace(req.Element))
+		if perr != nil {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("invalid port: %v", perr)
+			return fmt.Errorf("invalid port %q for set %s: %w", req.Element, req.Set, perr)
+		}
+		set, serr := b.nft.GetOrCreatePortSet(table, req.Set)
+		if serr != nil {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("get port set: %v", serr)
+			return fmt.Errorf("failed to get port set: %w", serr)
+		}
+		if aerr := b.nft.AddPortElements(set, []int{port}); aerr != nil {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("add port element: %v", aerr)
+			return fmt.Errorf("nft add port element failed: %w", aerr)
+		}
+		return nil
 	}
 
 	// Get or create set (assume interval set for IP sets)
@@ -529,6 +577,30 @@ func (b *Backend) DeleteElement(ctx context.Context, req DeleteElementRequest) e
 		b.stats.Errors++
 		b.stats.LastError = fmt.Sprintf("get table: %v", err)
 		return fmt.Errorf("failed to get table: %w", err)
+	}
+
+	// v1.145 PR-B2: route port sets to the port-aware delete path (see AddElement).
+	if isPortSet(req.Set) {
+		port, perr := strconv.Atoi(strings.TrimSpace(req.Element))
+		if perr != nil {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("invalid port: %v", perr)
+			return fmt.Errorf("invalid port %q for set %s: %w", req.Element, req.Set, perr)
+		}
+		set, serr := b.nft.GetOrCreatePortSet(table, req.Set)
+		if serr != nil {
+			b.stats.Errors++
+			b.stats.LastError = fmt.Sprintf("get port set: %v", serr)
+			return fmt.Errorf("failed to get port set: %w", serr)
+		}
+		if derr := b.nft.DeletePortElements(set, []int{port}); derr != nil {
+			if !errors.Is(derr, os.ErrNotExist) {
+				b.stats.Errors++
+				b.stats.LastError = fmt.Sprintf("delete port element: %v", derr)
+				return fmt.Errorf("nft delete port element failed: %w", derr)
+			}
+		}
+		return nil
 	}
 
 	// Get set

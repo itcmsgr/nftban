@@ -120,6 +120,22 @@ else
     bad "cmd_port help does not clarify FTP/Pure-FTPd vs ssh_ports boundary"
 fi
 
+echo "== (h) shell reload/rebuild render the SSH UNION, not primary-only (lockout fix) =="
+FW=cli/lib/nftban/cli/cmd_firewall.sh
+# _firewall_substitute_placeholders must source the UNION detector and substitute
+# the comma-joined union into __SSH_PORT__ (which only appears in elements={...}).
+if grep -q 'nftban_detect_ssh_ports' "$FW" && grep -qE 's/__SSH_PORT__/\$\{_ssh_ports_csv\}/' "$FW"; then
+    ok "cmd_firewall substitutes the SSH union (_ssh_ports_csv) into __SSH_PORT__"
+else
+    bad "cmd_firewall still renders primary-only (__SSH_PORT__ not union) — reload could drop a secondary SSH port"
+fi
+# The durable ports.d writer must persist the union (Go PersistSSHPortsUnion).
+if grep -q 'PersistSSHPortsUnion' internal/installer/render/config.go && grep -q 'PersistSSHPortsUnion' cmd/nftban-installer/phases.go; then
+    ok "installer persists the SSH union to ports.d (PersistSSHPortsUnion wired)"
+else
+    bad "installer does not persist the SSH union to ports.d"
+fi
+
 echo ""
 echo "v1.145 PR-G ssh_ports invariants: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]
