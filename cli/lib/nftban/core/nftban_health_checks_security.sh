@@ -765,24 +765,26 @@ EOF
             # v1.48.0: Direct nft commands with verification (replaces unreliable IPC)
             # IPC add/delete was fire-and-forget — claimed success without verifying.
             # Direct nft commands give immediate feedback and guaranteed state change.
-            if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
-                # FIRST: Add new port(s). v1.145 PR-B: add EVERY detected SSH
-                # port to BOTH tcp_ports_in AND ssh_ports (brute-force rate-limit
-                # parity), IPv4+IPv6 — ensure SSH access before removing old.
-                local _add_ok=false _sp _set
+            # v1.145 PR-C2: live apply-readiness re-probe (table + tcp_ports_in +
+            # ssh_ports), add EVERY detected SSH port to BOTH sets (IPv4+IPv6),
+            # then VERIFY the kernel actually carries the port — do NOT trust the
+            # `nft add` return code (it is non-zero when the element already
+            # exists). Success = verified kernel state, never a blind claim.
+            local _hstate _add_ok=false _sp _set
+            _hstate=$(nftban_ssh_apply_state "${NFTBAN_TABLE_IPV4}" 2>/dev/null || echo no-table)
+            if [[ "$_hstate" == "ready" ]]; then
                 for _sp in "${ssh_ports_union[@]}"; do
                     for _set in tcp_ports_in ssh_ports; do
-                        if nft add element ${NFTBAN_TABLE_IPV4} "$_set" "{ $_sp }" 2>/dev/null; then
-                            [[ "$_sp" == "$current_ssh_port" && "$_set" == "tcp_ports_in" ]] && _add_ok=true
-                        fi
+                        nft add element ${NFTBAN_TABLE_IPV4} "$_set" "{ $_sp }" 2>/dev/null || true
                         nft add element ${NFTBAN_TABLE_IPV6} "$_set" "{ $_sp }" 2>/dev/null || true
                     done
                 done
 
-                if [[ "$_add_ok" == "true" ]]; then
-                    ssh_issues+=("AUTO-FIXED: SSH port(s) ${ssh_ports_union[*]} ensured in tcp_ports_in + ssh_ports")
+                if nftban_ssh_port_in_both_sets "${NFTBAN_TABLE_IPV4}" "$current_ssh_port"; then
+                    _add_ok=true
+                    ssh_issues+=("AUTO-FIXED: SSH port(s) ${ssh_ports_union[*]} verified in tcp_ports_in + ssh_ports")
                 else
-                    ssh_issues+=("FAILED: Could not add SSH port(s) to nftables — run: nftban firewall reload")
+                    ssh_issues+=("FAILED: SSH port $current_ssh_port not confirmed in both sets — run: nftban firewall reload")
                 fi
 
                 # THEN: Remove old port — only if it is NOT a current listener
@@ -809,8 +811,10 @@ EOF
                         ssh_issues+=("INFO: Kept old port $old_ssh_port (still a listener or active SSH session)")
                     fi
                 fi
+            elif [[ "$_hstate" == "no-sets" ]]; then
+                ssh_issues+=("WARNING: nftban set-driven schema (tcp_ports_in/ssh_ports) not loaded — config updated but NOT applied. Run: nftban firewall reload")
             else
-                ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")
+                ssh_issues+=("Action required: nftban firewall table absent — config updated but NOT applied. Run: nftban firewall reload")
             fi
 
             status=$HEALTH_WARNING  # Warning — port was changed

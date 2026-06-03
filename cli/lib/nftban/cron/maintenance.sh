@@ -150,29 +150,38 @@ main() {
         if grep -qE "^${SSH_PORT}/(T|tcp)" "$SSH_WHITELIST" 2>/dev/null; then
             log "INFO" "SSH port check: config OK (port $SSH_PORT whitelisted)"
 
-            # v1.145 PR-B: ensure EVERY detected SSH port is present in BOTH
-            # tcp_ports_in (reachability) AND ssh_ports (brute-force rate-limit
-            # parity), IPv4+IPv6. Additive + idempotent. Removal of stale ports
-            # is conservative and handled in the port-change branch / PR-C.
-            if [[ "$_nft_table_available" == "true" ]]; then
-                local _sp _set
-                for _sp in "${SSH_PORTS[@]}"; do
-                    for _set in tcp_ports_in ssh_ports; do
-                        if ! nft list set ${NFTBAN_TABLE_IPV4} "$_set" 2>/dev/null | grep -qw "$_sp"; then
-                            log "WARN" "SSH port $_sp missing from $_set - auto-fixing (both-set parity)..."
-                            nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "$_set" "$_sp" 2>/dev/null || true
-                            nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" "$_set" "$_sp" 2>/dev/null || true
-                        fi
+            # v1.145 PR-C2: re-probe the LIVE kernel (NEVER the once-cached
+            # _nft_table_available) immediately before applying. A table absent
+            # at timer-start but present now must not be skipped; conversely
+            # state must not advance when the kernel is not actually ready.
+            # Ensure EVERY detected SSH port is in BOTH tcp_ports_in AND
+            # ssh_ports (additive, idempotent). Removal stays conservative.
+            local _apply_state _sp _set
+            _apply_state=$(nftban_ssh_apply_state "${NFTBAN_TABLE_IPV4}" 2>/dev/null || echo no-table)
+            case "$_apply_state" in
+                ready)
+                    for _sp in "${SSH_PORTS[@]}"; do
+                        for _set in tcp_ports_in ssh_ports; do
+                            if ! nft list set ${NFTBAN_TABLE_IPV4} "$_set" 2>/dev/null | grep -qw "$_sp"; then
+                                log "WARN" "SSH port $_sp missing from $_set - auto-fixing (both-set parity)..."
+                                nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "$_set" "$_sp" 2>/dev/null || true
+                                nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" "$_set" "$_sp" 2>/dev/null || true
+                            fi
+                        done
                     done
-                done
-            fi
-
-            # Clear alert state if port is now correct (atomic delete - no TOCTOU)
-            rm -f "$SSH_PORT_STATE" 2>/dev/null || true
-
-            # Ensure active port state is current (atomic write)
-            mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
-            echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
+                    # Clear alert state + refresh active-port marker ONLY when the
+                    # kernel is verified ready (PR-C2: never claim success blind).
+                    rm -f "$SSH_PORT_STATE" 2>/dev/null || true
+                    mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
+                    echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
+                    ;;
+                no-table)
+                    log "WARN" "nftban firewall table absent — SSH-port enforcement skipped this run (state NOT advanced). Run: nftban firewall reload"
+                    ;;
+                no-sets)
+                    log "WARN" "nftban set-driven schema (tcp_ports_in/ssh_ports) not loaded — SSH-port enforcement skipped (state NOT advanced). Run: nftban firewall reload"
+                    ;;
+            esac
         else
             # Check if we already alerted about this port change
             if [[ -f "$SSH_PORT_STATE" ]]; then
@@ -223,76 +232,68 @@ EOF
 
             log "INFO" "SSH port $SSH_PORT added to whitelist"
 
-            # ATOMIC firewall update - only update whitelist, don't touch other rules
-            log "INFO" "Atomically updating firewall whitelist for SSH port..."
-            if [[ "$_nft_table_available" == "true" ]]; then
-                # Firewall is active - do atomic whitelist update
-                # This only updates the tcp_ports_in set, not the entire firewall
-                if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports_in >/dev/null 2>&1; then
-                    # FIRST: Add the NEW port (safety - ensure SSH access before removing old)
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT"; then
-                        log "INFO" "SSH port $SSH_PORT added to firewall (via daemon)"
-                        # Also add to IPv6 table
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
-                        # v1.145 PR-B both-set parity: ssh_ports must carry the SSH
-                        # port too (brute-force rate-limit rule reads @ssh_ports).
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$SSH_PORT" 2>/dev/null || true
-                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$SSH_PORT" 2>/dev/null || true
+            # Firewall update for the changed SSH port. v1.145 PR-C2: re-probe
+            # the LIVE kernel (never the once-cached _nft_table_available);
+            # add-before-delete; VERIFY both sets carry the new port; advance the
+            # active-port state ONLY on verified kernel success.
+            log "INFO" "Applying SSH-port change to firewall (verified)..."
+            local _kernel_applied=false
+            local _autofix_state
+            _autofix_state=$(nftban_ssh_apply_state "${NFTBAN_TABLE_IPV4}" 2>/dev/null || echo no-table)
+            if [[ "$_autofix_state" == "ready" ]]; then
+                # FIRST: add the NEW port to BOTH sets (IPv4+IPv6) before removing old.
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports_in "$SSH_PORT" 2>/dev/null || true
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" ssh_ports "$SSH_PORT" 2>/dev/null || true
+                nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" ssh_ports "$SSH_PORT" 2>/dev/null || true
 
-                        # THEN: Remove the OLD port — but ONLY if it is no longer a
-                        # real SSH listener (absent from the detected union) AND is
-                        # not the active SSH_CLIENT session port. v1.145 PR-B:
-                        # conservative removal + both-set parity (tcp_ports_in AND
-                        # ssh_ports). Aggressive removal/apply-verification = PR-C.
-                        if [[ -n "$OLD_SSH_PORT" ]]; then
-                            local _active_ssh_port="${SSH_CLIENT##* }"
-                            local _old_still_listener=0 _u
-                            for _u in "${SSH_PORTS[@]}"; do
-                                if [[ "$_u" == "$OLD_SSH_PORT" ]]; then _old_still_listener=1; break; fi
+                # VERIFY the kernel actually carries the new port in BOTH sets.
+                if nftban_ssh_port_in_both_sets "${NFTBAN_TABLE_IPV4}" "$SSH_PORT"; then
+                    _kernel_applied=true
+                    log "INFO" "SSH port $SSH_PORT verified in tcp_ports_in + ssh_ports (kernel applied)"
+                    # THEN: conservatively remove the OLD port from BOTH sets,
+                    # only if it is no longer a listener and not the active session.
+                    if [[ -n "$OLD_SSH_PORT" ]]; then
+                        local _active_ssh_port="${SSH_CLIENT##* }" _old_still_listener=0 _u
+                        for _u in "${SSH_PORTS[@]}"; do
+                            if [[ "$_u" == "$OLD_SSH_PORT" ]]; then _old_still_listener=1; break; fi
+                        done
+                        if [[ "$_old_still_listener" -eq 0 && "$OLD_SSH_PORT" != "${_active_ssh_port:-}" ]]; then
+                            log "INFO" "Removing stale old SSH port $OLD_SSH_PORT from firewall (both sets)..."
+                            local _dset
+                            for _dset in tcp_ports_in ssh_ports; do
+                                nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
+                                nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
                             done
-                            if [[ "$_old_still_listener" -eq 0 && "$OLD_SSH_PORT" != "${_active_ssh_port:-}" ]]; then
-                                log "INFO" "Removing stale old SSH port $OLD_SSH_PORT from firewall (both sets)..."
-                                local _dset
-                                for _dset in tcp_ports_in ssh_ports; do
-                                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
-                                    nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" "$_dset" "$OLD_SSH_PORT" 2>/dev/null || true
-                                done
-                            else
-                                log "INFO" "Keeping old SSH port $OLD_SSH_PORT (still a listener or active session)"
-                            fi
-                        fi
-
-                        log "INFO" "ALERT: SSH port changed and firewall updated (no lockout risk)"
-                    else
-                        # IPC failed - daemon may be down, try systemctl restart
-                        log "WARN" "Daemon IPC failed, restarting nftables service..."
-                        if systemctl restart nftables 2>/dev/null; then
-                            log "INFO" "Firewall reloaded - SSH port $SSH_PORT now allowed"
                         else
-                            log "WARN" "Reload failed - SSH port whitelisted but not yet applied"
-                            log "WARN" "Please run: systemctl restart nftables"
+                            log "INFO" "Keeping old SSH port $OLD_SSH_PORT (still a listener or active session)"
                         fi
                     fi
                 else
-                    log "WARN" "Whitelist sets not found - firewall may need reinitialization"
+                    log "WARN" "SSH port $SSH_PORT NOT confirmed in kernel sets after add — apply incomplete, active state NOT advanced. Run: nftban firewall reload"
                 fi
+            elif [[ "$_autofix_state" == "no-sets" ]]; then
+                log "WARN" "nftban set-driven schema not loaded (tcp_ports_in/ssh_ports missing) — SSH port whitelisted in config but NOT applied. Run: nftban firewall reload"
             else
-                log "WARN" "Firewall not initialized - whitelist updated but not applied"
-                log "INFO" "Run 'nftban firewall rebuild' to activate firewall"
+                log "WARN" "nftban firewall table absent — SSH port whitelisted in config but NOT applied. Run: nftban firewall reload"
             fi
 
-            # Save alert state to prevent spam (only alert once per port change)
-            # Use atomic writes to prevent TOCTOU race conditions
+            # Alert-dedup marker (independent of apply outcome — prevents spam).
             mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
             echo "$SSH_PORT" > "${SSH_PORT_STATE}.tmp" && mv -f "${SSH_PORT_STATE}.tmp" "$SSH_PORT_STATE"
-            # Update active port state for future cleanup (atomic)
-            echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
+            # v1.145 PR-C2: advance the ACTIVE-port marker ONLY on verified kernel
+            # success — never record success when the kernel did not change.
+            if [[ "$_kernel_applied" == "true" ]]; then
+                echo "$SSH_PORT" > "${SSH_PORT_ACTIVE}.tmp" && mv -f "${SSH_PORT_ACTIVE}.tmp" "$SSH_PORT_ACTIVE"
+            else
+                log "WARN" "Active SSH-port state NOT advanced to $SSH_PORT (kernel apply unverified) — prevents a false 'applied' record."
+            fi
 
             # Send alert via NFTBan unified mail mechanism (ONLY ONCE)
             if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
                 local alert_msg="NFTBan Security Alert: SSH port changed to $SSH_PORT"
                 [[ -n "$OLD_SSH_PORT" ]] && alert_msg+=", old port $OLD_SSH_PORT removed"
-                alert_msg+=", auto-whitelisted and firewall reloaded on $(hostname) at $(date)"
+                alert_msg+=", auto-whitelisted on $(hostname) at $(date) (kernel applied=$_kernel_applied)"
                 nftban_mail_send "$alert_msg" 2>/dev/null || true
             fi
         fi

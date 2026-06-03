@@ -126,3 +126,41 @@ _nftban_ssh_detect_fallback() {
     } 2>/dev/null | grep -E '^[0-9]+$' | awk '$1>=1 && $1<=65535' | sort -un
     )
 }
+
+# =============================================================================
+# v1.145 PR-C2 — apply-path readiness + verification (LIVE, never cached)
+# =============================================================================
+# These replace the once-cached _nft_table_available gate for SSH-port apply
+# blocks. The fw1-class fragility was: _nft_table_available is computed ONCE at
+# maintenance start; if the table is genuinely absent at that instant (reset/
+# rollback/failed-or-fresh init), the false is cached for the whole run and all
+# apply blocks skip — advancing state/config without a kernel change. These
+# helpers re-probe the live kernel immediately before each apply and verify the
+# kernel actually changed before the caller commits state/config.
+
+# nftban_ssh_apply_state <table-spec> — echo the live apply-readiness of a
+# family: "ready" (table + tcp_ports_in + ssh_ports all present),
+# "no-table" (firewall not loaded), or "no-sets" (table present but the
+# v1.145 set-driven schema, incl. ssh_ports, is not loaded → needs reload).
+nftban_ssh_apply_state() {
+    local _tbl="$1"
+    # shellcheck disable=SC2086  # table spec is two words (family name)
+    nft list table $_tbl >/dev/null 2>&1 || { printf 'no-table\n'; return 0; }
+    # shellcheck disable=SC2086
+    if nft list set $_tbl tcp_ports_in >/dev/null 2>&1 && nft list set $_tbl ssh_ports >/dev/null 2>&1; then
+        printf 'ready\n'
+    else
+        printf 'no-sets\n'
+    fi
+}
+
+# nftban_ssh_port_in_both_sets <table-spec> <port> — 0 iff <port> is present in
+# BOTH tcp_ports_in AND ssh_ports in the live kernel (post-apply verification).
+nftban_ssh_port_in_both_sets() {
+    local _tbl="$1" _port="$2"
+    # shellcheck disable=SC2086
+    nft list set $_tbl tcp_ports_in 2>/dev/null | grep -qw "$_port" || return 1
+    # shellcheck disable=SC2086
+    nft list set $_tbl ssh_ports 2>/dev/null | grep -qw "$_port" || return 1
+    return 0
+}
