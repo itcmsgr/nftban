@@ -1,13 +1,13 @@
 // =============================================================================
-// NFTBan v1.146 Phase-D - sysconf fenced-include idempotency tests
+// NFTBan v1.146 - sysconf fenced-include idempotency + Shape-B skeleton tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="installer-render-sysconf-test"
 // meta:type="test"
-// meta:version="1.0.0"
+// meta:version="1.1.0"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-06-03"
-// meta:description="v1.146 Phase-D unit tests for the fenced nftban include writer (IntegrateSystemConf) and its pure stripNftbanInclude twin: collapse of accumulated legacy duplicate comments, single-canonical-block output, no-op idempotency (no write when already canonical), and preservation of all operator-owned distro content (flush ruleset + table inet filter skeleton)."
+// meta:description="v1.146 unit tests for IntegrateSystemConf: Phase-D fenced-include idempotency (one canonical block, legacy duplicate collapse, no-op when already canonical) + Shape-B distro-skeleton neutralization (comment bare flush ruleset, remove default EMPTY inet filter skeleton, PRESERVE a populated/operator-owned inet filter verbatim and genuine operator content). Shape B is reboot-proven required (V146_BOOT_SUFFICIENCY_GATE2_REBOOT_PROOF_RECORD.md)."
 // meta:input="None"
 // meta:output="t.Fatalf/t.Errorf on assertion failure"
 // meta:depends="testing,internal/installer/executor,internal/installer/logging"
@@ -30,42 +30,84 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/logging"
 )
 
+// distroSkeleton is the Debian/Ubuntu default plus a genuine operator sentinel
+// line that must always survive.
+const operatorSentinel = "# OPERATOR_KEEP_ME do not delete"
 const distroSkeleton = `#!/usr/sbin/nft -f
 
 flush ruleset
 
 table inet filter {
 	chain input {
-		type filter hook input priority 0;
+		type filter hook input priority 0; policy accept;
+	}
+	chain forward {
+		type filter hook forward priority 0; policy accept;
+	}
+}
+` + operatorSentinel + "\n"
+
+func countSubstr(s, sub string) int { return strings.Count(s, sub) }
+
+func newTestLogger() *logging.Logger { return logging.New("/dev/null", false) }
+
+// TestNeutralize_EmptySkeletonRemoved_FlushCommented covers the Shape-B pure fn.
+func TestNeutralize_EmptySkeletonRemoved_FlushCommented(t *testing.T) {
+	out := neutralizeDistroSkeleton(distroSkeleton, nil)
+	// bare `flush ruleset` must be gone (commented form retains the words)
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "flush ruleset" {
+			t.Errorf("bare `flush ruleset` survived neutralization:\n%s", out)
+		}
+	}
+	if !strings.Contains(out, "# flush ruleset") {
+		t.Errorf("flush ruleset not commented (expected `# flush ruleset ...`):\n%s", out)
+	}
+	// empty skeleton removed: its inner rule-less chain decls must be gone
+	if strings.Contains(out, "type filter hook input priority 0;") {
+		t.Errorf("empty inet filter skeleton not removed:\n%s", out)
+	}
+	// operator content preserved
+	if !strings.Contains(out, operatorSentinel) {
+		t.Errorf("operator sentinel lost:\n%s", out)
+	}
+	// idempotent: neutralizing already-neutralized content changes nothing
+	if again := neutralizeDistroSkeleton(out, nil); again != out {
+		t.Errorf("neutralize not idempotent:\n--1--\n%s\n--2--\n%s", out, again)
+	}
+}
+
+// TestNeutralize_PopulatedInetFilterPreserved asserts an operator-owned
+// populated inet filter is preserved verbatim (never deleted).
+func TestNeutralize_PopulatedInetFilterPreserved(t *testing.T) {
+	populated := `flush ruleset
+
+table inet filter {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		tcp dport 22 accept
+		ct state established,related accept
 	}
 }
 `
-
-// countSubstr counts non-overlapping occurrences of sub in s.
-func countSubstr(s, sub string) int { return strings.Count(s, sub) }
-
-// assertOperatorContentPreserved fails if the distro skeleton lines were lost.
-func assertOperatorContentPreserved(t *testing.T, body string) {
-	t.Helper()
-	for _, must := range []string{"flush ruleset", "table inet filter", "type filter hook input priority 0;"} {
-		if !strings.Contains(body, must) {
-			t.Errorf("operator content lost: %q missing from:\n%s", must, body)
+	out := neutralizeDistroSkeleton(populated, nil)
+	for _, must := range []string{"table inet filter", "tcp dport 22 accept", "ct state established,related accept"} {
+		if !strings.Contains(out, must) {
+			t.Errorf("populated inet filter content lost (%q):\n%s", must, out)
 		}
+	}
+	// flush ruleset still neutralized even when filter is populated
+	if strings.Contains(out, "\nflush ruleset\n") {
+		t.Errorf("bare flush ruleset survived alongside populated filter:\n%s", out)
 	}
 }
 
 // TestStripNftbanInclude_PureLogic covers the remover twin directly.
 func TestStripNftbanInclude_PureLogic(t *testing.T) {
-	// Polluted file: distro skeleton + a stale fenced block + TWO accumulated
-	// legacy comments + TWO stray legacy includes (the exact pre-v1.146 bug).
 	polluted := distroSkeleton +
 		IncludeBeginMarker + "\n" + IncludeDirective + "\n" + IncludeEndMarker + "\n" +
-		legacyComment + "\n" +
-		IncludeDirective + "\n" +
-		legacyComment + "\n"
-
+		legacyComment + "\n" + IncludeDirective + "\n" + legacyComment + "\n"
 	out := stripNftbanInclude(polluted)
-
 	if strings.Contains(out, IncludeBeginMarker) || strings.Contains(out, IncludeEndMarker) {
 		t.Errorf("fenced markers survived strip:\n%s", out)
 	}
@@ -75,23 +117,22 @@ func TestStripNftbanInclude_PureLogic(t *testing.T) {
 	if strings.Contains(out, "/etc/nftban/nftables.conf") {
 		t.Errorf("include directive survived strip:\n%s", out)
 	}
-	assertOperatorContentPreserved(t, out)
-
-	// Idempotent: stripping clean content changes nothing.
+	if !strings.Contains(out, operatorSentinel) {
+		t.Errorf("operator sentinel lost in strip:\n%s", out)
+	}
 	if again := stripNftbanInclude(out); again != out {
-		t.Errorf("strip not idempotent:\n--first--\n%s\n--second--\n%s", out, again)
+		t.Errorf("strip not idempotent")
 	}
 }
 
-// TestIntegrateSystemConf_FreshAppendsOneFencedBlock asserts a clean distro
-// file gains exactly one fenced block and keeps its content.
-func TestIntegrateSystemConf_FreshAppendsOneFencedBlock(t *testing.T) {
-	log := logging.New("/dev/null", false)
+// TestIntegrateSystemConf_FreshShapeB: one fenced block + skeleton neutralized +
+// operator content preserved.
+func TestIntegrateSystemConf_FreshShapeB(t *testing.T) {
+	log := newTestLogger()
 	defer log.Close()
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton)
-
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
@@ -100,63 +141,58 @@ func TestIntegrateSystemConf_FreshAppendsOneFencedBlock(t *testing.T) {
 		t.Errorf("want exactly 1 fenced block, got %d:\n%s", got, body)
 	}
 	if got := countSubstr(body, IncludeDirective); got != 1 {
-		t.Errorf("want exactly 1 include directive, got %d", got)
+		t.Errorf("want exactly 1 include, got %d", got)
 	}
-	if strings.Contains(body, legacyComment) {
-		t.Errorf("new write must not emit the legacy unfenced comment:\n%s", body)
+	for _, line := range strings.Split(body, "\n") {
+		if strings.TrimSpace(line) == "flush ruleset" {
+			t.Errorf("Shape B: bare flush ruleset not neutralized:\n%s", body)
+		}
 	}
-	assertOperatorContentPreserved(t, body)
+	if strings.Contains(body, "type filter hook input priority 0;") {
+		t.Errorf("Shape B: empty inet filter skeleton not removed:\n%s", body)
+	}
+	if !strings.Contains(body, operatorSentinel) {
+		t.Errorf("operator content lost:\n%s", body)
+	}
 }
 
-// TestIntegrateSystemConf_CollapsesAccumulatedDuplicates asserts the
-// self-healing path: a file polluted by the pre-v1.146 bug (multiple legacy
-// comments + includes) is normalised to a single fenced block.
+// TestIntegrateSystemConf_CollapsesAccumulatedDuplicates: self-heal path.
 func TestIntegrateSystemConf_CollapsesAccumulatedDuplicates(t *testing.T) {
-	log := logging.New("/dev/null", false)
+	log := newTestLogger()
 	defer log.Close()
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
 	m.Files[p] = []byte(distroSkeleton +
 		legacyComment + "\n" + IncludeDirective + "\n" +
-		legacyComment + "\n" + IncludeDirective + "\n" +
 		legacyComment + "\n" + IncludeDirective + "\n")
-
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate: %v", err)
 	}
 	body := string(m.Files[p])
 	if got := countSubstr(body, IncludeBeginMarker); got != 1 {
-		t.Errorf("want exactly 1 fenced block after collapse, got %d:\n%s", got, body)
-	}
-	if got := countSubstr(body, IncludeDirective); got != 1 {
-		t.Errorf("want exactly 1 include after collapse, got %d", got)
+		t.Errorf("want 1 fenced block after collapse, got %d:\n%s", got, body)
 	}
 	if strings.Contains(body, legacyComment) {
-		t.Errorf("accumulated legacy comments not collapsed:\n%s", body)
+		t.Errorf("legacy comments not collapsed:\n%s", body)
 	}
-	assertOperatorContentPreserved(t, body)
 }
 
-// TestIntegrateSystemConf_IdempotentNoWrite asserts that a file already
-// carrying exactly the canonical fenced block is left untouched (no write,
-// mtime preserved).
+// TestIntegrateSystemConf_IdempotentNoWrite: second integrate on an
+// already-neutralized canonical file must not write.
 func TestIntegrateSystemConf_IdempotentNoWrite(t *testing.T) {
-	log := logging.New("/dev/null", false)
+	log := newTestLogger()
 	defer log.Close()
 	m := executor.NewMockExecutor()
 	const p = "/etc/nftables.conf"
-
-	// First integrate establishes the canonical block.
 	m.Files[p] = []byte(distroSkeleton)
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate #1: %v", err)
 	}
-	// Reset the write ledger and integrate again — must be a no-op.
 	m.WrittenFiles = map[string][]byte{}
 	if err := IntegrateSystemConf(m, p, log); err != nil {
 		t.Fatalf("integrate #2: %v", err)
 	}
 	if _, wrote := m.WrittenFiles[p]; wrote {
-		t.Errorf("second integrate wrote despite canonical content (not idempotent)")
+		t.Errorf("second integrate wrote despite canonical+neutralized content (not idempotent):\n%s", string(m.Files[p]))
 	}
 }
