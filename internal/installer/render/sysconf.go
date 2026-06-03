@@ -92,6 +92,89 @@ func stripNftbanInclude(content string) string {
 	return strings.Join(out, "\n")
 }
 
+// inetFilterEmptySkeleton reports whether a captured `table inet filter` block
+// contains only structural declarations (table/chain/type/hook/policy/braces/
+// comments) and no actual rules — i.e. the benign distro default accept-all
+// skeleton. Mirrors the shell inet-filter classifier heuristic. Pure function.
+func inetFilterEmptySkeleton(block []string) bool {
+	for _, l := range block {
+		t := strings.TrimSpace(l)
+		if t == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(t, "table "),
+			strings.HasPrefix(t, "chain "),
+			strings.HasPrefix(t, "type "),
+			strings.HasPrefix(t, "policy "),
+			strings.HasPrefix(t, "#"),
+			strings.HasPrefix(t, "{"),
+			strings.HasPrefix(t, "}"):
+			continue
+		}
+		return false // a rule line
+	}
+	return true
+}
+
+// neutralizeDistroSkeleton implements v1.146 Shape B (reboot-proven required by
+// V146_BOOT_SUFFICIENCY_GATE2_REBOOT_PROOF_RECORD.md). It:
+//   - comments out a bare `flush ruleset` so a `systemctl reload nftables.service`
+//     cannot wipe the daemon-managed ip/ip6 nftban runtime tables, and
+//   - removes the distro default EMPTY `table inet filter` skeleton (which would
+//     shadow nftban blocking and trip the CVE-2025-NFTBAN-001 guard).
+//
+// A POPULATED, operator-owned `inet filter` table is preserved verbatim (never
+// silently deleted) — symmetric with the shell classify-then-act policy. Pure
+// function (log may be nil).
+func neutralizeDistroSkeleton(content string, log *logging.Logger) string {
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+
+		if t == "flush ruleset" {
+			out = append(out, "# flush ruleset  # neutralized by nftban (v1.146 Shape B): a flush here wipes daemon-managed ip/ip6 nftban runtime tables on reload (CVE-2025-NFTBAN-001 / lockout-safety)")
+			if log != nil {
+				log.Info("Shape B: neutralized distro `flush ruleset` in system nftables.conf")
+			}
+			continue
+		}
+
+		if strings.HasPrefix(t, "table inet filter") && strings.Contains(lines[i], "{") {
+			depth := 0
+			j := i
+			for ; j < len(lines); j++ {
+				depth += strings.Count(lines[j], "{") - strings.Count(lines[j], "}")
+				if depth <= 0 {
+					break
+				}
+			}
+			if j >= len(lines) {
+				j = len(lines) - 1
+			}
+			block := lines[i : j+1]
+			if inetFilterEmptySkeleton(block) {
+				out = append(out, "# table inet filter { ... }  # default empty skeleton removed by nftban (v1.146 Shape B): would shadow nftban blocking (CVE-2025-NFTBAN-001)")
+				if log != nil {
+					log.Info("Shape B: removed distro default empty `table inet filter` skeleton")
+				}
+				i = j
+				continue
+			}
+			out = append(out, block...) // populated/operator-owned: preserve verbatim
+			i = j
+			if log != nil {
+				log.Warn("Shape B: populated `table inet filter` preserved (operator-owned); review for nftban shadowing (CVE-2025-NFTBAN-001)")
+			}
+			continue
+		}
+
+		out = append(out, lines[i])
+	}
+	return strings.Join(out, "\n")
+}
+
 // IntegrateSystemConf renders exactly one fenced nftban include block into the
 // system nftables.conf. It first strips any prior nftban contribution (legacy
 // unfenced comment/include, duplicates, or an existing fenced block) so the
@@ -99,9 +182,12 @@ func stripNftbanInclude(content string) string {
 // file. Idempotent: when the file already contains exactly the canonical block
 // and nothing stale, no write occurs (mtime preserved).
 //
-// v1.146 Phase-D NOTE: this does NOT change boot authority — nftban still
-// writes the distro include (Shape A/B is a separate gated decision). It only
-// makes the write fenced + idempotent + duplicate-collapsing.
+// v1.146 Shape B (reboot-proven): nftban KEEPS the distro include (the daemon
+// recreates set structure via netlink but does NOT load the rendered SSH ports
+// / @ssh_ports rate-limit rule — only `nft -f` via this include does, so
+// removing it would silently drop v1.145 protection every reboot). In addition
+// to the fenced include it neutralizes the distro skeleton (flush ruleset +
+// default empty `table inet filter`) via neutralizeDistroSkeleton.
 func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *logging.Logger) error {
 	if nftConfPath == "" {
 		return fmt.Errorf("system nftables.conf path is empty")
@@ -120,11 +206,14 @@ func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *loggin
 	// Normalise: strip any prior nftban lines (collapses accumulated
 	// duplicate legacy comments and removes a previous fenced block), then
 	// append exactly one fresh fenced block.
+	// v1.146 Shape B: strip prior nftban lines, neutralize the distro skeleton
+	// (flush ruleset + default empty inet filter), then append one fenced block.
 	stripped := stripNftbanInclude(original)
-	if !strings.HasSuffix(stripped, "\n") && stripped != "" {
-		stripped += "\n"
+	neutralized := neutralizeDistroSkeleton(stripped, log)
+	if !strings.HasSuffix(neutralized, "\n") && neutralized != "" {
+		neutralized += "\n"
 	}
-	updated := stripped + fencedBlock()
+	updated := neutralized + fencedBlock()
 
 	if updated == original {
 		log.Debug("system nftables.conf already carries the canonical nftban include block")
