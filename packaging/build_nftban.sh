@@ -1140,10 +1140,32 @@ if [ \$1 -eq 0 ]; then
     rm -rf /run/nftban /run/nftban-ui 2>/dev/null || true
 
     # STEP 3: Remove NFTBan include from nftables.conf BEFORE table deletion
-    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
-        if [ -f "\$nft_conf" ]; then
-            sed -i '/nftban/d' "\$nft_conf" 2>/dev/null || true
+    # v1.146 Phase-D fenced remover — drift-checked twin of
+    # packaging/deb/postrm:_nftban_strip_conf_include and Go
+    # render.stripNftbanInclude. The marker strings below MUST match
+    # render.IncludeBeginMarker/IncludeEndMarker byte-for-byte (enforced by
+    # cli_nftables_include_idempotency_v146_test.sh). Replaces the pre-v1.146
+    # loose, case-sensitive \`sed -i '/nftban/d'\` that orphaned the capitalised
+    # legacy comment.
+    _nftban_strip_conf_include() {
+        _f="\$1"
+        [ -f "\$_f" ] || return 0
+        _tmp="\${_f}.nftban-strip.\$\$"
+        awk '
+            \$0 == "# >>> nftban firewall include (managed; do not edit between markers) >>>" { infence=1; next }
+            \$0 == "# <<< nftban firewall include (managed) <<<" { infence=0; next }
+            infence { next }
+            \$0 == "# NFTBan firewall configuration" { next }
+            index(\$0, "\"/etc/nftban/nftables.conf\"") > 0 { next }
+            { print }
+        ' "\$_f" > "\$_tmp" 2>/dev/null || { rm -f "\$_tmp" 2>/dev/null || true; return 0; }
+        if [ -s "\$_tmp" ] || [ ! -s "\$_f" ]; then
+            cat "\$_tmp" > "\$_f" 2>/dev/null || true
         fi
+        rm -f "\$_tmp" 2>/dev/null || true
+    }
+    for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
+        _nftban_strip_conf_include "\$nft_conf"
     done
 
     # STEP 4: Flush and delete nftables tables (CRITICAL — rules persist otherwise)
