@@ -243,6 +243,17 @@ case "$1" in
             chmod 0750 /usr/sbin/nftban 2>/dev/null || true
         fi
 
+        # --- v1.147-A: load the nftband AppArmor profile (complain mode) ---
+        # Loaded before the Go installer starts the daemon so nftband is
+        # confined on first start. Complain logs would-be denials without
+        # enforcing (safe soak; flip to enforce in a follow-up). Strict no-op
+        # when AppArmor is absent.
+        if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ] \
+           && [ -f /etc/apparmor.d/usr.lib.nftban.bin.nftband ]; then
+            apparmor_parser -r -W -T /etc/apparmor.d/usr.lib.nftban.bin.nftband 2>/dev/null || true
+            log_info "AppArmor: nftband profile loaded (complain mode)"
+        fi
+
         # --- Critical FHS dirs (Go installer needs state dir to exist) ---
         mkdir -p /var/lib/nftban/state
         mkdir -p /var/log/nftban

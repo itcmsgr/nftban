@@ -172,7 +172,9 @@ jobs:
 
             # Install build dependencies (curl required for yq download)
             # Note: --allowerasing handles curl-minimal vs curl conflict on Rocky/Alma
-            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
+            # v1.147: selinux-policy-devel needed to compile the nftban SELinux .pp
+            # (spec BuildRequires); without it rpmbuild aborts on Failed build dependencies.
+            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl selinux-policy-devel
 
             # Build RPM
             chmod +x packaging/build_nftban.sh

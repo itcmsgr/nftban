@@ -5,7 +5,7 @@
 # Requirements: selinux-policy-devel, checkpolicy
 
 POLICY_NAME = nftban
-POLICY_VERSION = 1.0.0
+POLICY_VERSION = 1.1.0
 
 all: $(POLICY_NAME).pp
 
