@@ -5,12 +5,17 @@
 #   make -f /usr/share/selinux/devel/Makefile nftban.pp && semodule -i nftban.pp
 #
 # v1.147 (combined daemon+unit hardening + MAC): completes the nftband_t domain
-# so the daemon runs confined under SELinux Enforcing on EL. Operator decisions:
+# so the daemon runs confined under SELinux Enforcing on EL9/EL10. Operator decisions:
 #   SELECT_V147_SELINUX_NNP_STRATEGY    = KEEP_NNP_WITH_NNP_TRANSITION
-#   SELECT_V147_SELINUX_DOMAIN_BREADTH  = ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER
+#   SELECT_V147_SELINUX_DOMAIN_SCOPE    = KEEP_BROAD_TRACK_DEBT
 # The broad rule-set reflects the daemon's CURRENT behaviour (it shells out to
 # bash/nft/iptables/journalctl/systemctl/rpm/ssh and reads several system
-# resources). Tightening is deferred to D-V147-REDUCE-NFTBAND-SHELLOUTS.
+# resources). Tightening is the filed follow-up
+# D-V147-REDUCE-NFTBAND-SHELLOUTS-AND-TIGHTEN-MAC-DOMAIN (do NOT slim until the
+# daemon stops shelling out). Targets: EL9 + EL10. EL8 is out of scope (deferred
+# Tier-2: gen_require below references systemd_userdbd_runtime_t /
+# journalctl_exec_t / systemd_systemctl_exec_t which EL8 refpolicy 3.14.3 lacks;
+# wrap in optional_policy() if EL8 is ever in scope).
 
 policy_module(nftban, 1.2.0)
 
@@ -81,9 +86,13 @@ allow nftband_t nftban_conf_t:file map;
 manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 
-# Logs append/create
+# Logs append/create. NOTE: the dir:watch (inotify) permission is intentionally
+# omitted — it is undefined for class dir in EL8's refpolicy (3.14.3) and breaks
+# the module compile there. Omitting it keeps ONE portable .te across EL8/9/10;
+# EL9/10 validation confirmed 0 AVC without it (daemon does not inotify-watch
+# these dirs in normal operation). Same rationale for syslogd_var_run_t:dir below.
 allow nftband_t nftban_log_t:file { append_file_perms create_file_perms read_file_perms };
-allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms watch };
+allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
 
 # Runtime (PID/lock/socket/json) — own type
 manage_files_pattern(nftband_t, nftban_var_run_t, nftban_var_run_t)
@@ -149,7 +158,7 @@ can_exec(nftband_t, nftband_exec_t)
 can_exec(nftband_t, { iptables_exec_t rpm_exec_t ssh_exec_t journalctl_exec_t systemd_systemctl_exec_t })
 
 # rpm/systemd/journal runtime state the daemon inspects
-allow nftband_t syslogd_var_run_t:dir { getattr open read search watch };
+allow nftband_t syslogd_var_run_t:dir { getattr open read search };
 allow nftband_t systemd_userdbd_runtime_t:dir read;
 allow nftband_t rpm_var_lib_t:dir search;
 allow nftband_t rpm_var_lib_t:file { getattr open read };

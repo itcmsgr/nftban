@@ -1,9 +1,19 @@
 # NFTBan firewall daemon AppArmor profile (v1.147-A)
 # SPDX-License-Identifier: MPL-2.0
 #
-# Ships in COMPLAIN mode (flags=(complain)) for safe fleet soak — logs
-# would-be denials without enforcing. Flip to enforce in a follow-up after
-# soak (operator SELECT_V147_A_APPARMOR_DEFAULT_MODE = complain).
+# Ships in COMPLAIN mode for safe fleet soak — logs would-be denials without
+# enforcing. Flip to enforce in a follow-up after soak (operator
+# SELECT_V147_A_APPARMOR_DEFAULT_MODE = complain).
+#
+# attach_disconnected is REQUIRED, not optional: nftband.service runs the daemon
+# in a private mount namespace (ProtectSystem=strict + ReadWritePaths +
+# ProtectHome). Without attach_disconnected, AppArmor cannot resolve the
+# systemd/dbus runtime sockets (/run/systemd/notify, /run/systemd/private,
+# /run/dbus/system_bus_socket) against the namespace root — it returns
+# "Failed name lookup - disconnected path" → EACCES, the daemon's sd_notify
+# READY=1 never reaches systemd (Type=notify), the unit hangs in "activating"
+# and crash-loops. attach_disconnected attaches such paths to root so the file
+# rules below can match. Verified on Ubuntu 24.04 (D-V147A-APPARMOR-UBUNTU24).
 #
 # Confines ONLY the long-running nftband daemon. The CLI dispatcher
 # (/usr/sbin/nftban) and helper scripts are intentionally NOT confined in
@@ -15,7 +25,7 @@ abi <abi/3.0>,
 
 include <tunables/global>
 
-profile nftband /usr/lib/nftban/bin/nftband flags=(complain) {
+profile nftband /usr/lib/nftban/bin/nftband flags=(complain attach_disconnected) {
   include <abstractions/base>
   include <abstractions/nameservice>
 
@@ -29,6 +39,19 @@ profile nftband /usr/lib/nftban/bin/nftband flags=(complain) {
   network inet6 stream,
   network inet dgram,
   network unix stream,
+  network unix dgram,
+
+  # v1.147 (D-V147A-APPARMOR-UBUNTU24): systemd Type=notify + dbus + systemctl-
+  # child runtime sockets. These need BOTH the file rules below AND the
+  # attach_disconnected profile flag (see header) — the flag makes the paths
+  # resolvable inside the unit's private mount namespace; these rules then grant
+  # access. sd_notify's sendmsg to /run/systemd/notify is mediated as a file op.
+  /run/systemd/notify rw,
+  /run/systemd/private rw,
+  /run/dbus/system_bus_socket rw,
+  /run/nftban/nftband.sock rw,
+  unix (connect, send, receive, bind, listen, accept) type=stream,
+  unix (connect, send, receive) type=dgram,
 
   # own executable
   /usr/lib/nftban/bin/nftband mr,
@@ -45,9 +68,15 @@ profile nftband /usr/lib/nftban/bin/nftband flags=(complain) {
   /run/nftban/{,**} rw,
   /var/cache/nftban/{,**} rw,
 
-  # nft binary (defense-in-depth: daemon uses netlink, but some paths shell out)
-  /{,usr/}sbin/nft rmix,
-  /{,usr/}bin/nft rmix,
+  # v1.147-A fix (D-V147A-APPARMOR-UBUNTU24-PANIC): the daemon shells out
+  # (bash/nft/helpers). Without explicit exec rules, child execs fall into
+  # AppArmor's restrictive `null-` profile, which crash-loops the daemon on
+  # Ubuntu 24.04 even in complain mode. Let child execs INHERIT this profile
+  # (ix) so they are never confined to the crashing null- transition.
+  /{,usr/}bin/* rmix,
+  /{,usr/}sbin/* rmix,
+  /usr/lib/nftban/{helpers,sbin,bin,cron,exporters}/** rmix,
+  /usr/sbin/nftban rmix,
 
   # proc/self + runtime essentials
   @{PROC}/@{pid}/{stat,status,cmdline} r,
