@@ -79,7 +79,7 @@ nftban_cmd_whitelist() {
         add)
             # v1.149.0: explicit whitelist tiers.
             #   (default)      runtime/live only — lost on rebuild/reload/restart
-            #   --static       permanent — writes 99-manual.conf (no expiry; reloaded on rebuild)
+            #   --static       permanent — writes 99-manual.conf (no expiry) + applies live via sync
             #   --ttl <dur>    timed — delegates to `firewall whitelist-session` (00-session.conf)
             #   --session      timed with a default 1h TTL
             local _wl_static="false" _wl_ttl="" ip=""
@@ -405,11 +405,15 @@ nftban_whitelist_add_static_ip() {
     chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
     chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
 
-    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) — survives rebuild/reload/restart."
+    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and applied it live. Durable: re-applied to the live set on every full sync (maintenance timer / daemon restart / reboot)."
 
-    # Apply live immediately (best-effort; the durable file is the source of truth).
+    # Apply live immediately via a FULL sync. `nftban sync` runs the daemon
+    # whitelist loader (LoadWhitelists → reconciles whitelist.d/*.conf, incl. this
+    # file, into the live nft set). `firewall reload` alone does NOT apply it — its
+    # whitelist step is system-IP auto-detection, not the whitelist.d loader
+    # (lab-proven on v1.148.0). Fall back to reload if `sync` is unavailable.
     if command -v nftban >/dev/null 2>&1; then
-        nftban firewall reload >/dev/null 2>&1 || true
+        nftban sync >/dev/null 2>&1 || nftban firewall reload >/dev/null 2>&1 || true
     fi
     return 0
 }
@@ -452,6 +456,11 @@ nftban_whitelist_remove_static_ip() {
 
     # Remove from the live set too (best-effort; may not be present).
     nftban_whitelist_remove_ip "$ip" >/dev/null 2>&1 || true
+    # Reconcile the live set to the now-updated files via full sync, so the entry
+    # is dropped even if it was applied into the CIDR-aware interval set by sync.
+    if command -v nftban >/dev/null 2>&1; then
+        nftban sync >/dev/null 2>&1 || true
+    fi
 
     if [[ "$removed" == "true" ]]; then
         echo "Removed $ip from the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) + live set; rebuild will not resurrect it."
@@ -579,7 +588,7 @@ COMMANDS:
 WHITELIST TIERS:
   runtime   (default add)  live nft set only; DROPPED on the next firewall rebuild/reload/restart.
   timed     (--ttl <dur>)  written to 00-session.conf with an expiry; auto-pruned after the TTL.
-  permanent (--static)     written to 99-manual.conf with NO expiry; reloaded on every rebuild.
+  permanent (--static)     written to 99-manual.conf (no expiry); applied live + re-synced on every full sync.
 
 EXAMPLES:
   nftban whitelist add 192.168.1.100              # runtime only (temporary)
