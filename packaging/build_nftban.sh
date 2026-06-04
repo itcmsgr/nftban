@@ -300,6 +300,11 @@ Source1:        nftban-files.inc
 Source2:        nftban-systemd-install.list
 
 BuildRequires:  systemd-rpm-macros
+# v1.147-A: compile the SELinux policy module (.pp) at build via the refpolicy
+# devel Makefile. checkmodule alone cannot resolve refpolicy interfaces
+# (init_daemon_domain, logging_log_file, ...) used by nftban.te.
+BuildRequires:  selinux-policy-devel
+BuildRequires:  make
 
 Requires:       nftables >= 0.9.0
 Requires:       systemd
@@ -517,14 +522,15 @@ install -D -m 0644 install/selinux/nftban.te %{buildroot}/usr/share/nftban/selin
 install -D -m 0644 install/selinux/nftban.fc %{buildroot}/usr/share/nftban/selinux/nftban.fc
 install -D -m 0644 install/selinux/nftban.if %{buildroot}/usr/share/nftban/selinux/nftban.if
 install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinux/Makefile
-# v1.147-A: compile the policy module at build so %post can semodule -i it
-# without requiring policycoreutils-devel on the target. Guarded: if the build
-# host lacks checkmodule/semodule_package the .pp is simply absent and %post
-# falls back to compile-on-target (or no-ops on SELinux Disabled/absent).
-if command -v checkmodule >/dev/null 2>&1 && command -v semodule_package >/dev/null 2>&1; then
-    ( cd install/selinux && checkmodule -M -m -o nftban.mod nftban.te && semodule_package -o nftban.pp -m nftban.mod -f nftban.fc ) \
+# v1.147-A: compile the policy module (.pp) at build so %post can semodule -i it
+# without requiring selinux-policy-devel on the target. MUST use the refpolicy
+# devel Makefile — checkmodule alone errors on policy_module()/init_daemon_domain
+# (refpolicy m4 interfaces). Guarded: if the devel Makefile is absent the .pp is
+# simply not shipped and %post falls back to compile-on-target (or no-ops).
+if [ -f /usr/share/selinux/devel/Makefile ]; then
+    ( cd install/selinux && make -f /usr/share/selinux/devel/Makefile nftban.pp ) \
         && install -D -m 0644 install/selinux/nftban.pp %{buildroot}/usr/share/nftban/selinux/nftban.pp \
-        || echo "[NFTBan build] SELinux .pp compile skipped/failed; %post will compile on target"
+        || echo "[NFTBan build] SELinux .pp compile failed; %post will compile on target"
 fi
 
 # Validator spec file
@@ -935,9 +941,8 @@ if command -v semodule >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
     _nftban_sel=/usr/share/nftban/selinux
     if [ -f "\$_nftban_sel/nftban.pp" ]; then
         semodule -i "\$_nftban_sel/nftban.pp" 2>/dev/null || true
-    elif command -v checkmodule >/dev/null 2>&1 && command -v semodule_package >/dev/null 2>&1; then
-        ( cd "\$_nftban_sel" && checkmodule -M -m -o nftban.mod nftban.te 2>/dev/null \
-            && semodule_package -o nftban.pp -m nftban.mod -f nftban.fc 2>/dev/null \
+    elif [ -f /usr/share/selinux/devel/Makefile ]; then
+        ( cd "\$_nftban_sel" && make -f /usr/share/selinux/devel/Makefile nftban.pp 2>/dev/null \
             && semodule -i nftban.pp 2>/dev/null ) || true
     fi
     restorecon -R /usr/sbin/nftban /usr/lib/nftban/bin /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban 2>/dev/null || true

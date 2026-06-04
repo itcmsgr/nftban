@@ -48,9 +48,11 @@ if grep -q 'netlink_netfilter_socket' "$TE" && grep -q 'netlink_route_socket' "$
    && grep -Eq 'self:capability \{ net_admin net_raw \}' "$TE"; then
   ok "S4 nftban.te carries netlink + net_admin/net_raw allows"
 else no "S4 .te netlink/capability allows" "missing"; fi
-if grep -qE 'checkmodule .*nftban\.te' "$BUILD" && grep -qE 'install .*nftban\.pp .*selinux/nftban\.pp' "$BUILD"; then
-  ok "S5 build path compiles + ships nftban.pp"
-else no "S5 build ships nftban.pp" "compile/install missing"; fi
+if grep -qE 'make -f /usr/share/selinux/devel/Makefile nftban\.pp' "$BUILD" \
+   && grep -qE 'install .*nftban\.pp .*selinux/nftban\.pp' "$BUILD" \
+   && grep -q 'BuildRequires:  selinux-policy-devel' "$BUILD"; then
+  ok "S5 build compiles nftban.pp via refpolicy devel Makefile + ships it (BuildRequires set)"
+else no "S5 build ships nftban.pp" "compile/install/BuildRequires missing"; fi
 # RPM %post: selinuxenabled-guarded semodule -i (here-strings avoid pipefail SIGPIPE)
 _post_sec=$(awk '/^%post/{p=1} /^%preun|^%postun/{p=0} p' "$BUILD")
 if grep -q 'selinuxenabled' <<<"$_post_sec" && grep -q 'semodule -i' <<<"$_post_sec"; then
