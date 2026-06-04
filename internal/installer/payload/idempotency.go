@@ -54,7 +54,119 @@ const (
 	// edited it). Used for /etc/nftban/nftban.conf, conf.d/*.conf, and the
 	// 99-manual.conf templates.
 	policyConfigNoReplace
+
+	// policyConfigPreserve (v1.148, V148_CONFIG_PRESERVATION_CONTRACT) is the
+	// 3-way "rpm conffile" algorithm for the unified /etc/nftban/conf.d tree:
+	// replace an unmodified config with the new default, but PRESERVE an
+	// operator-modified one (writing the new default as a .nftban-new sidecar +
+	// WARN_CONFIG_LOCAL_PRESERVED). Uses a prior-default baseline under
+	// /usr/share/nftban/defaults/conf.d to tell "unmodified" from "edited".
+	// PACKAGED DEFAULTS are not USER STATE — never blind-overwrite /etc.
+	policyConfigPreserve
 )
+
+// configDefaultsBaseDir holds the as-shipped default of each managed config so
+// the next update can tell an operator-edited file from an untouched one
+// (mirrors how rpm keeps the old %config to drive .rpmnew). v1.148.
+const configDefaultsBaseDir = "/usr/share/nftban/defaults"
+
+// configSidecarSuffix is appended to a preserved local config's path to deliver
+// the new upstream default for manual review (parity with .rpmnew/.dpkg-dist).
+const configSidecarSuffix = ".nftban-new"
+
+// ConfigPreserveAction is the per-file outcome of policyConfigPreserve staging.
+type ConfigPreserveAction string
+
+const (
+	ConfigInstalled ConfigPreserveAction = "installed" // dst absent → seeded with default
+	ConfigUpdated   ConfigPreserveAction = "updated"   // dst == prior default → replaced
+	ConfigPreserved ConfigPreserveAction = "preserved" // dst operator-modified → kept; default → sidecar
+	ConfigUnchanged ConfigPreserveAction = "unchanged" // dst already == new default → no-op
+)
+
+// ConfigPreserveEntry is one row of the config-preservation report (contract §6).
+type ConfigPreserveEntry struct {
+	Path    string
+	Action  ConfigPreserveAction
+	Sidecar string // populated when Action==ConfigPreserved
+}
+
+// baselinePathFor maps a managed /etc config dst to its defaults-baseline path,
+// e.g. /etc/nftban/conf.d/login/main.conf → /usr/share/nftban/defaults/conf.d/login/main.conf.
+func baselinePathFor(dst string) string {
+	return filepath.Join(configDefaultsBaseDir, strings.TrimPrefix(dst, "/etc/nftban"))
+}
+
+// preserveOrStageConfig implements the V148_CONFIG_PRESERVATION_CONTRACT for one
+// file. srcContent is the NEW upstream default. It never blind-overwrites an
+// operator-edited /etc file; it refreshes the defaults baseline so the next
+// update can compare correctly. .conf.local files are never touched (guarded).
+func preserveOrStageConfig(exec executor.Executor, srcContent []byte, dst string, mode os.FileMode, log *logging.Logger) (ConfigPreserveEntry, error) {
+	entry := ConfigPreserveEntry{Path: dst}
+	if isConfigLocal(dst) {
+		log.Debug("payload.preserveOrStageConfig: refusing .conf.local: %s", dst)
+		entry.Action = ConfigPreserved
+		return entry, nil
+	}
+	baseline := baselinePathFor(dst)
+
+	// 1. Fresh: target absent → seed the default.
+	if !exec.FileExists(dst) {
+		if _, err := copyIfChanged(exec, srcContent, dst, mode, log); err != nil {
+			return entry, err
+		}
+		entry.Action = ConfigInstalled
+		log.Info("config: installed default %s", dst)
+		_ = refreshBaseline(exec, srcContent, baseline, mode, log)
+		return entry, nil
+	}
+
+	existing, err := exec.ReadFile(dst)
+	if err != nil {
+		return entry, fmt.Errorf("read %s: %w", dst, err)
+	}
+
+	// Already equal to the new default → nothing to do (still refresh baseline).
+	if bytes.Equal(existing, srcContent) {
+		entry.Action = ConfigUnchanged
+		_ = refreshBaseline(exec, srcContent, baseline, mode, log)
+		return entry, nil
+	}
+
+	// 2. Target == prior packaged default → operator never edited → replace.
+	var priorDefault []byte
+	if exec.FileExists(baseline) {
+		priorDefault, _ = exec.ReadFile(baseline)
+	}
+	if priorDefault != nil && bytes.Equal(existing, priorDefault) {
+		if _, err := copyIfChanged(exec, srcContent, dst, mode, log); err != nil {
+			return entry, err
+		}
+		entry.Action = ConfigUpdated
+		log.Info("config: updated %s (was unchanged from prior default)", dst)
+		_ = refreshBaseline(exec, srcContent, baseline, mode, log)
+		return entry, nil
+	}
+
+	// 3. Target differs from prior default (operator-modified, or no baseline) →
+	//    PRESERVE local; deliver new default as a sidecar; WARN.
+	sidecar := dst + configSidecarSuffix
+	if _, err := copyIfChanged(exec, srcContent, sidecar, mode, log); err != nil {
+		return entry, fmt.Errorf("write sidecar %s: %w", sidecar, err)
+	}
+	entry.Action = ConfigPreserved
+	entry.Sidecar = sidecar
+	log.Warn("WARN_CONFIG_LOCAL_PRESERVED: kept operator-modified %s; new default written to %s (review: diff %s %s)", dst, sidecar, dst, sidecar)
+	_ = refreshBaseline(exec, srcContent, baseline, mode, log)
+	return entry, nil
+}
+
+// refreshBaseline updates the defaults baseline to the new default so the next
+// update's "unmodified?" comparison is against the right prior default.
+func refreshBaseline(exec executor.Executor, srcContent []byte, baseline string, mode os.FileMode, log *logging.Logger) error {
+	_, err := copyIfChanged(exec, srcContent, baseline, mode, log)
+	return err
+}
 
 // copyIfChanged writes src-content to dst only if the content differs from
 // what is already at dst (or if dst does not exist). Returns wrote=true if
