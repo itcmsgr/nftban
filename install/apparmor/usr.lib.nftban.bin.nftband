@@ -1,0 +1,55 @@
+# NFTBan firewall daemon AppArmor profile (v1.147-A)
+# SPDX-License-Identifier: MPL-2.0
+#
+# Ships in COMPLAIN mode (flags=(complain)) for safe fleet soak — logs
+# would-be denials without enforcing. Flip to enforce in a follow-up after
+# soak (operator SELECT_V147_A_APPARMOR_DEFAULT_MODE = complain).
+#
+# Confines ONLY the long-running nftband daemon. The CLI dispatcher
+# (/usr/sbin/nftban) and helper scripts are intentionally NOT confined in
+# 147-A. Loaded by packaging/deb/postinst when AppArmor is present; no-op
+# otherwise. Mirrors the unit's AmbientCapabilities + ReadWritePaths
+# (install/systemd/nftband.service).
+
+abi <abi/3.0>,
+
+include <tunables/global>
+
+profile nftband /usr/lib/nftban/bin/nftband flags=(complain) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # nftables management via netlink (google/nftables) — internal/nftbackend
+  capability net_admin,
+  capability dac_override,
+  network netlink raw,
+
+  # daemon network surfaces (Unix socket + HTTP :9580)
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network unix stream,
+
+  # own executable
+  /usr/lib/nftban/bin/nftband mr,
+
+  # read-only application tree + config
+  /usr/lib/nftban/{,**} r,
+  /etc/nftban/{,**} r,
+
+  # read-write: exactly the nftband.service ReadWritePaths
+  /etc/nftban/blacklist.d/{,**} rw,
+  /etc/nftban/rules.d/{,**} rw,
+  /var/lib/nftban/{,**} rw,
+  /var/log/nftban/{,**} rw,
+  /run/nftban/{,**} rw,
+  /var/cache/nftban/{,**} rw,
+
+  # nft binary (defense-in-depth: daemon uses netlink, but some paths shell out)
+  /{,usr/}sbin/nft rmix,
+  /{,usr/}bin/nft rmix,
+
+  # proc/self + runtime essentials
+  @{PROC}/@{pid}/{stat,status,cmdline} r,
+  /sys/kernel/security/apparmor/.null rw,
+}

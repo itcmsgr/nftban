@@ -5,7 +5,7 @@
 #          semodule_package -o nftban.pp -m nftban.mod
 #          semodule -i nftban.pp
 
-policy_module(nftban, 1.0.0)
+policy_module(nftban, 1.1.0)
 
 ########################################
 # Type Declarations

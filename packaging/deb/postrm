@@ -131,6 +131,14 @@ case "$1" in
         rm -f /etc/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
         rm -f /usr/share/polkit-1/rules.d/*nftban*.rules 2>/dev/null || true
 
+        # v1.147-A: unload + remove the nftband AppArmor profile (guarded; no-op
+        # when AppArmor absent). The profile is a conffile under /etc/apparmor.d/;
+        # unload it from the kernel here and remove the file on purge.
+        if command -v apparmor_parser >/dev/null 2>&1 && [ -f /etc/apparmor.d/usr.lib.nftban.bin.nftband ]; then
+            apparmor_parser -R /etc/apparmor.d/usr.lib.nftban.bin.nftband 2>/dev/null || true
+        fi
+        rm -f /etc/apparmor.d/usr.lib.nftban.bin.nftband 2>/dev/null || true
+
         # Remove yq symlink (only if it points to our bundled binary)
         if [ -L /usr/bin/yq ] && readlink /usr/bin/yq | grep -q nftban; then
             rm -f /usr/bin/yq 2>/dev/null || true
@@ -196,6 +204,13 @@ case "$1" in
         for nft_conf in /etc/sysconfig/nftables.conf /etc/nftables.conf; do
             _nftban_strip_conf_include "$nft_conf"
         done
+
+        # v1.147-A: unload the nftband AppArmor profile (guarded; no-op when
+        # AppArmor absent). On non-purge `remove` the conffile is kept by dpkg
+        # for reinstall — unload from the kernel only, do NOT delete the file.
+        if command -v apparmor_parser >/dev/null 2>&1 && [ -f /etc/apparmor.d/usr.lib.nftban.bin.nftband ]; then
+            apparmor_parser -R /etc/apparmor.d/usr.lib.nftban.bin.nftband 2>/dev/null || true
+        fi
         ;;
 
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

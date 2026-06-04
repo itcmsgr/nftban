@@ -1,0 +1,72 @@
+## <summary>NFTBan firewall daemon SELinux policy interfaces.</summary>
+## <desc>
+##   <p>
+##     Interface stubs for the nftban policy module (v1.147-A). The module
+##     itself (nftban.te) confines the nftband daemon to the nftband_t domain
+##     with the netlink + capability permissions it needs to manage nftables.
+##     These interfaces let other policy compose against nftban types without
+##     editing the base module. Closes D-OSH-1 (.te + .fc shipped, .if missing).
+##   </p>
+## </desc>
+
+########################################
+## <summary>
+##   Execute nftband in the nftband_t domain (automatic domain transition).
+## </summary>
+## <param name="domain">
+##   <summary>Domain allowed to transition.</summary>
+## </param>
+#
+interface(`nftban_domtrans',`
+	gen_require(`
+		type nftband_t, nftband_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	domtrans_pattern($1, nftband_exec_t, nftband_t)
+')
+
+########################################
+## <summary>
+##   Read nftban configuration files (nftban_conf_t).
+## </summary>
+## <param name="domain">
+##   <summary>Domain allowed access.</summary>
+## </param>
+#
+interface(`nftban_read_config',`
+	gen_require(`
+		type nftban_conf_t;
+	')
+
+	files_search_etc($1)
+	read_files_pattern($1, nftban_conf_t, nftban_conf_t)
+	list_dirs_pattern($1, nftban_conf_t, nftban_conf_t)
+')
+
+########################################
+## <summary>
+##   All-in-one administrative access to the nftban daemon domain + types.
+## </summary>
+## <param name="domain">
+##   <summary>Domain allowed access.</summary>
+## </param>
+## <param name="role">
+##   <summary>Role allowed access.</summary>
+## </param>
+## <rolecap/>
+#
+interface(`nftban_admin',`
+	gen_require(`
+		type nftband_t, nftban_conf_t, nftban_var_lib_t;
+		type nftban_log_t, nftban_var_run_t;
+	')
+
+	allow $1 nftband_t:process { ptrace signal_perms };
+	ps_process_pattern($1, nftband_t)
+
+	admin_pattern($1, nftban_conf_t)
+	admin_pattern($1, nftban_var_lib_t)
+	admin_pattern($1, nftban_log_t)
+	admin_pattern($1, nftban_var_run_t)
+')
