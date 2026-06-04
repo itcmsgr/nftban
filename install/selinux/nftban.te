@@ -1,76 +1,159 @@
-# NFTBan SELinux Type Enforcement Policy (R39 v1.19.12)
+# NFTBan SELinux Type Enforcement Policy
 # SPDX-License-Identifier: MPL-2.0
 #
-# Install: checkmodule -M -m -o nftban.mod nftban.te
-#          semodule_package -o nftban.pp -m nftban.mod
-#          semodule -i nftban.pp
+# Build (refpolicy devel — NOT raw checkmodule):
+#   make -f /usr/share/selinux/devel/Makefile nftban.pp && semodule -i nftban.pp
+#
+# v1.147 (combined daemon+unit hardening + MAC): completes the nftband_t domain
+# so the daemon runs confined under SELinux Enforcing on EL. Operator decisions:
+#   SELECT_V147_SELINUX_NNP_STRATEGY    = KEEP_NNP_WITH_NNP_TRANSITION
+#   SELECT_V147_SELINUX_DOMAIN_BREADTH  = ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER
+# The broad rule-set reflects the daemon's CURRENT behaviour (it shells out to
+# bash/nft/iptables/journalctl/systemctl/rpm/ssh and reads several system
+# resources). Tightening is deferred to D-V147-REDUCE-NFTBAND-SHELLOUTS.
 
-policy_module(nftban, 1.1.0)
+policy_module(nftban, 1.2.0)
+
+########################################
+# External type requires
+########################################
+gen_require(`
+	type init_t;
+	type initrc_t;
+	type iptables_exec_t;
+	type rpm_exec_t;
+	type ssh_exec_t;
+	type journalctl_exec_t;
+	type systemd_systemctl_exec_t;
+	type kernel_t;
+	type var_run_t;
+	type syslogd_var_run_t;
+	type systemd_userdbd_runtime_t;
+	type rpm_var_lib_t;
+')
 
 ########################################
 # Type Declarations
 ########################################
-
-# Main daemon type
 type nftband_t;
 type nftband_exec_t;
 init_daemon_domain(nftband_t, nftband_exec_t)
 
-# Config files
 type nftban_conf_t;
 files_config_file(nftban_conf_t)
 
-# Runtime state (var/lib)
 type nftban_var_lib_t;
 files_type(nftban_var_lib_t)
 
-# Log files
 type nftban_log_t;
 logging_log_file(nftban_log_t)
 
-# Runtime socket/PID
 type nftban_var_run_t;
 files_pid_file(nftban_var_run_t)
 
 ########################################
-# Daemon Permissions
+# systemd domain transition (EL9)
 ########################################
+# init_daemon_domain only transitions from initrc_domain/direct_run_init (SysV).
+# Native systemd (init_t) + socket activation (nftband.socket) needs the
+# transition forced from init_t.
+allow init_t nftband_t:process transition;
+type_transition init_t nftband_exec_t:process nftband_t;
+allow nftband_t nftband_exec_t:file entrypoint;
+allow init_t nftband_exec_t:file { read open getattr execute map };
 
-# Config access (read-only)
-allow nftband_t nftban_conf_t:file read_file_perms;
-allow nftband_t nftban_conf_t:dir list_dir_perms;
+# v1.147 KEEP_NNP_WITH_NNP_TRANSITION: nftband.service keeps NoNewPrivileges=true
+# (preserved on ALL hosts — Enforcing, Disabled prod, AppArmor). NNP normally
+# blocks SELinux domain transitions; process2:nnp_transition explicitly permits
+# this one, so we transition into nftband_t WITHOUT relaxing NNP anywhere.
+allow init_t nftband_t:process2 nnp_transition;
+allow initrc_t nftband_t:process2 nnp_transition;
 
-# State access (read-write)
-allow nftband_t nftban_var_lib_t:file manage_file_perms;
-allow nftband_t nftban_var_lib_t:dir manage_dir_perms;
+########################################
+# Own config / state / log / runtime
+########################################
+# Config: read AND write (daemon rewrites conf.local / rendered files).
+manage_files_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
+manage_dirs_pattern(nftband_t, nftban_conf_t, nftban_conf_t)
+allow nftband_t nftban_conf_t:file map;
 
-# Log access (append-only)
-allow nftband_t nftban_log_t:file { append_file_perms create_file_perms };
-allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms };
+# State (var/lib) read-write
+manage_files_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
+manage_dirs_pattern(nftband_t, nftban_var_lib_t, nftban_var_lib_t)
 
-# Runtime files (socket, PID)
-allow nftband_t nftban_var_run_t:file manage_file_perms;
-allow nftband_t nftban_var_run_t:sock_file manage_sock_file_perms;
-allow nftband_t nftban_var_run_t:dir manage_dir_perms;
+# Logs append/create
+allow nftband_t nftban_log_t:file { append_file_perms create_file_perms read_file_perms };
+allow nftband_t nftban_log_t:dir { list_dir_perms add_entry_dir_perms watch };
 
-# Network access
+# Runtime (PID/lock/socket/json) — own type
+manage_files_pattern(nftband_t, nftban_var_run_t, nftban_var_run_t)
+manage_sock_files_pattern(nftband_t, nftban_var_run_t, nftban_var_run_t)
+manage_dirs_pattern(nftband_t, nftban_var_run_t, nftban_var_run_t)
+# /run/nftban files are created at runtime on tmpfs and were getting var_run_t
+# (.fc does not apply to runtime-created files) → daemon could not write its PID
+# and exited. File-name-transition so daemon-created pid-dir files are labelled
+# nftban_var_run_t. (D-V147A: PID-write-denied root cause.)
+files_pid_filetrans(nftband_t, nftban_var_run_t, { file dir sock_file })
+# Belt-and-suspenders for the brief window before relabel / on stock var_run_t.
+allow nftband_t var_run_t:dir { search getattr add_name remove_name write };
+allow nftband_t var_run_t:file { create getattr open read write rename unlink lock map };
+allow nftband_t var_run_t:sock_file { create getattr write unlink };
+
+########################################
+# Network (nftables via netlink + HTTP API + IPC sockets)
+########################################
 allow nftband_t self:tcp_socket create_stream_socket_perms;
 allow nftband_t self:udp_socket create_socket_perms;
 allow nftband_t self:netlink_netfilter_socket create_socket_perms;
-allow nftband_t self:netlink_route_socket create_socket_perms;
-
-# nftables management (critical for firewall control)
-allow nftband_t self:capability { net_admin net_raw };
+allow nftband_t self:netlink_route_socket { create_socket_perms nlmsg_read };
 allow nftband_t self:netlink_nflog_socket create_socket_perms;
+allow nftband_t self:unix_dgram_socket create_socket_perms;
+allow nftband_t self:unix_stream_socket { create_stream_socket_perms connectto };
+corenet_tcp_bind_generic_node(nftband_t)
+corenet_tcp_bind_all_unreserved_ports(nftband_t)
+corenet_tcp_connect_http_port(nftband_t)
+# sd_notify (Type=notify) to systemd over its dgram socket
+allow nftband_t kernel_t:unix_dgram_socket sendto;
 
-# Systemd integration
+########################################
+# Capabilities + process
+########################################
+# net_admin/net_raw: nftables. dac_override/dac_read_search: write nftban-owned
+# dirs + read across ownership. execmem/setpgid: Go runtime + process group.
+allow nftband_t self:capability { net_admin net_raw dac_override dac_read_search };
+allow nftband_t self:process { signal_perms setcap setpgid execmem };
+
+########################################
+# System reads (broad — daemon inspects host state)
+########################################
+kernel_read_system_state(nftband_t)
+kernel_read_network_state(nftband_t)
+sysnet_read_config(nftband_t)
+dev_read_sysfs(nftband_t)
+fs_read_cgroup_files(nftband_t)
+fs_getattr_all_fs(nftband_t)
+auth_use_nsswitch(nftband_t)
+miscfiles_read_generic_certs(nftband_t)
+logging_read_generic_logs(nftband_t)
 init_use_fds(nftband_t)
 init_read_state(nftband_t)
-
-# Process capabilities
-allow nftband_t self:process { signal_perms setcap };
+init_status(nftband_t)
 
 ########################################
-# File Context Specifications
+# Shell-outs (ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER — see D-V147-REDUCE-NFTBAND-SHELLOUTS)
 ########################################
-# See nftban.fc for file context definitions
+# Children inherit nftband_t (execute_no_trans) — the daemon runs them inline.
+corecmd_exec_bin(nftband_t)
+corecmd_exec_shell(nftband_t)
+can_exec(nftband_t, nftband_exec_t)
+can_exec(nftband_t, { iptables_exec_t rpm_exec_t ssh_exec_t journalctl_exec_t systemd_systemctl_exec_t })
+
+# rpm/systemd/journal runtime state the daemon inspects
+allow nftband_t syslogd_var_run_t:dir { getattr open read search watch };
+allow nftband_t systemd_userdbd_runtime_t:dir read;
+allow nftband_t rpm_var_lib_t:dir search;
+allow nftband_t rpm_var_lib_t:file { getattr open read };
+
+########################################
+# File Context Specifications — see nftban.fc
+########################################
