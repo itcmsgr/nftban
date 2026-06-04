@@ -231,3 +231,47 @@ func IntegrateSystemConf(exec executor.Executor, nftConfPath string, log *loggin
 	}
 	return nil
 }
+
+// DisarmSystemConf is the RESTORE-time inverse of IntegrateSystemConf: it strips
+// the nftban-managed include (fenced block + legacy comment + any bare include
+// line) from the distro nftables.conf, using the same drift-checked
+// stripNftbanInclude logic. Once stripped, nftables.service can no longer
+// `nft -f`-load /etc/nftban/nftables.conf and recreate the ip/ip6 nftban tables
+// on boot.
+//
+// v1.148 (delta 2.1, SELECT_V148_RESTORE_SHAPE_B_INCLUDE_DISARM=yes). This is a
+// restore-specific reversal of v1.146 Shape-B boot persistence — NOT a general
+// Shape-B rollback; install/update still call IntegrateSystemConf normally.
+// Idempotent (no-op when the include is already absent); backs up before
+// editing; never deletes /etc/nftban/nftables.conf; leaves all non-nftban
+// config intact (only nftban-owned lines are removed).
+func DisarmSystemConf(exec executor.Executor, nftConfPath string, log *logging.Logger) error {
+	if nftConfPath == "" || !exec.FileExists(nftConfPath) {
+		return nil // nothing to disarm (idempotent)
+	}
+	data, err := exec.ReadFile(nftConfPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", nftConfPath, err)
+	}
+	original := string(data)
+	stripped := stripNftbanInclude(original)
+	if stripped == original {
+		log.Info("RESTORE_SHAPE_B_INCLUDE_DISARMED: %s already free of the nftban include (idempotent no-op)", nftConfPath)
+		return nil
+	}
+	// Back up before editing (operator-recoverable).
+	backup := nftConfPath + ".nftban-restore.bak"
+	if err := exec.WriteFileAtomic(backup, data, 0644); err != nil {
+		log.Warn("could not back up %s before Shape-B include disarm: %v", nftConfPath, err)
+	} else {
+		log.Info("backed up %s -> %s before Shape-B include disarm", nftConfPath, backup)
+	}
+	if !strings.HasSuffix(stripped, "\n") && stripped != "" {
+		stripped += "\n"
+	}
+	if err := exec.WriteFileAtomic(nftConfPath, []byte(stripped), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", nftConfPath, err)
+	}
+	log.Info("RESTORE_SHAPE_B_INCLUDE_DISARMED: removed nftban include from %s (backup %s); nftables.service can no longer recreate ip/ip6 nftban tables on boot", nftConfPath, backup)
+	return nil
+}
