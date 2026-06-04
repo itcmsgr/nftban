@@ -107,7 +107,8 @@ jobs:
             set -e  # Exit on any error
 
             # Install build dependencies (curl required for yq download)
-            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl
+            # v1.147: selinux-policy-devel needed to compile the nftban SELinux .pp (spec BuildRequires)
+            dnf -y install --allowerasing rpm-build rpmdevtools tar gzip systemd-rpm-macros make curl selinux-policy-devel
 
             # Build RPM
             chmod +x packaging/build_nftban.sh
