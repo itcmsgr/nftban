@@ -105,7 +105,7 @@ rm -f "$MANUAL_FILE"
 T1_OUT=$(call_add_static 62.38.150.122 2>&1)
 assert_contains "$T1_OUT" "PERMANENT whitelist"                       "T1.1 stdout confirms permanent"
 assert_contains "$T1_OUT" "applied it live"                          "T1.2 live-apply stated"
-assert_contains "$T1_OUT" "Durable"                                  "T1.2b durability stated"
+assert_contains "$T1_OUT" "survives firewall reload"                 "T1.2b durability stated (BUG-2: survives reload)"
 [[ -f "$MANUAL_FILE" ]] && { printf "  [PASS] %s\n" "T1.3 file created"; PASS=$((PASS+1)); } \
                         || { printf "  [FAIL] %s\n" "T1.3 file created"; FAIL=$((FAIL+1)); FAILED_TESTS+=("T1.3"); }
 T1C=$(cat "$MANUAL_FILE" 2>/dev/null || true)

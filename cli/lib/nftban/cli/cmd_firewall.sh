@@ -1593,6 +1593,21 @@ FIREWALL_RELOAD_HELP
     [[ "$quiet" == "false" ]] && echo "Syncing whitelist..."
     nftban whitelist sync 2>/dev/null || true
 
+    # Step 3b (v1.149 BUG-2): the reload above flushed the whitelist/blacklist sets, and
+    # `nftban whitelist sync` re-applies only auto-detected SYSTEM IPs — NOT the durable
+    # whitelist.d entries (operator `--static` admin IPs) or manual blacklist entries.
+    # Those would stay dropped until the next periodic sync — a transient lockout window
+    # that breaks the WL-STATIC durability promise. Reconcile them from config now via
+    # the daemon. Use the core binary directly with --quick (whitelist/blacklist only,
+    # no feeds/geoban) — calling `nftban sync` here would recurse back into firewall_reload.
+    # No-op if the daemon/core binary is unavailable. (This is NOT the v1.59.1 system-IP
+    # --quick path; it is the daemon LoadWhitelists/LoadBlacklists reconcile from files.)
+    local _core_reconcile="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if [[ -x "$_core_reconcile" ]]; then
+        [[ "$quiet" == "false" ]] && echo "Reconciling durable whitelist.d/blacklist.d entries..."
+        "$_core_reconcile" sync --quick >/dev/null 2>&1 || true
+    fi
+
     # Step 4 (v1.34.0): Re-apply DDoS protection if it was enabled.
     # firewall reload destroys DDoS chains (synproxy, portscan, ddos_protection).
     # Without this step, reload leaves the server unprotected.

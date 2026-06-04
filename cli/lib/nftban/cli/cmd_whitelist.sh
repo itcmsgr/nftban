@@ -405,7 +405,7 @@ nftban_whitelist_add_static_ip() {
     chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
     chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
 
-    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and applied it live. Durable: re-applied to the live set on every full sync (maintenance timer / daemon restart / reboot)."
+    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and applied it live — durable: survives firewall reload, daemon restart, and reboot."
 
     # Apply live immediately via a FULL sync. `nftban sync` runs the daemon
     # whitelist loader (LoadWhitelists → reconciles whitelist.d/*.conf, incl. this
@@ -588,7 +588,7 @@ COMMANDS:
 WHITELIST TIERS:
   runtime   (default add)  live nft set only; DROPPED on the next firewall rebuild/reload/restart.
   timed     (--ttl <dur>)  written to 00-session.conf with an expiry; auto-pruned after the TTL.
-  permanent (--static)     written to 99-manual.conf (no expiry); applied live + re-synced on every full sync.
+  permanent (--static)     written to 99-manual.conf (no expiry); applied live; survives firewall reload/restart/reboot.
 
 EXAMPLES:
   nftban whitelist add 192.168.1.100              # runtime only (temporary)
