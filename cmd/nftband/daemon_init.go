@@ -233,7 +233,7 @@ func (d *Daemon) Run() error {
 	}
 	defer func() {
 		if d.socketLn != nil {
-			d.socketLn.Close()
+			_ = d.socketLn.Close() // best-effort close at shutdown; nothing actionable on error
 		}
 	}()
 
