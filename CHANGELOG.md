@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.148.0] - 2026-06-04 — installer config parity + preservation + reboot-surviving restore disarm
+
+**Codename:** `V148_INSTALL_PARITY_RESTORE_DISARM`
+**Controlling records:** `NFTBAN_ROADMAP/V148_INSTALL_PARITY_RESTORE_DISARM_SCOPE.md`
+**PRs:** [#760](https://github.com/itcmsgr/nftban/pull/760) installer config parity + restore disarm (sq `6fa1b2ac`)
+
+> **Why:** close the source-vs-package config drift, make operator config durable across updates (never lose local `/etc/nftban/conf.d`), and make CSF-restore actually survive a reboot. **Daemon byte-identical to v1.147.0** — zero `cmd/nftband` / `cmd/nftban-core` change. **Schema 1.83.0 frozen.**
+
+### Added
+- **Config preservation (3-way "rpm-conffile" algorithm)** in the Go installer (`internal/installer/payload/idempotency.go::preserveOrStageConfig` + a recursive config walker in `payload.go`): fresh files are seeded, files unmodified from the prior packaged default are updated, and **operator-edited base `.conf` files are preserved** — the new default is delivered as a `.nftban-new` sidecar with a `WARN_CONFIG_LOCAL_PRESERVED` log. Honors `V148_CONFIG_PRESERVATION_CONTRACT` (never lose local config).
+- **Restore disarm steps A.6b + A.6c** (`cmd/nftban-installer/restore_deps_csf.go`): CSF-restore now **masks** exactly four NFTBan-owned units (`nftband.service`, `nftband.socket`, `nftban-maintenance.timer`, `nftban-rebuild-recovery.timer`) and **strips the Shape-B include** from the distro `nftables.conf` (`render.DisarmSystemConf`), so the daemon/socket/timer/exporter/boot-include cannot reactivate after restore.
+- **Restore contract Amendment 4** (`internal/installer/restore/contract.md` Part VII, §§70-71): authorizes the bounded four-unit restore mask + include-strip; the `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` gate is relaxed from a blanket `ServiceMask` forbid to a structural four-unit allow-list pin (unbounded mask still fails).
+
+### Fixed / Changed
+- **Source/RPM/DEB config parity:** the canonical `conf.d` defaults tree now lives under `etc/nftban/conf.d/` and is staged identically by the source-installer and the RPM/DEB packages (`packaging/build_nftban.sh`); `*.conf.local` overrides are never shipped, never written, and never overwritten (operator override layer protected — missing keys fall back to the base default, stale keys ignored, override wins).
+- **Restore survives reboot:** `disable`/`stop` of `nftband.service` alone was re-defeated by four reactivation vectors (socket trigger, exporter `RequiredBy`, always-active `nftban-maintenance.timer` self-heal, the Shape-B boot include); `mask` + include-strip close all four. `/etc/nftban/nftables.conf` is never deleted. Restore-disarm is restore-specific only — normal install/update/reinstall keep Shape-B, socket-activation, and the always-active timer design and `unmask` + re-enable normally.
+
+### Validation
+- **Restore-then-reboot** proven on lab VM: the four-vector disarm holds — no `ip/ip6 nftban` tables recreated past the socket-activation window.
+- Hermetic unit tests: `internal/installer/payload/preserve_v148_test.go` (3-way preserve + `.conf.local` guard), `internal/installer/render/disarm_v148_test.go` (include strip / idempotent / absent-file / preserve-non-nftban / backup), `cmd/nftban-installer/restore_disarm_v148_test.go` (exact four-unit mask bound). PR #760 CI fully green (68 pass / 0 fail).
+
+### Scope / Deferred
+- No daemon code change, no schema bump, no MAC expansion, no whitelist-`--static`, no daemon least-privilege, no audit-log.
+- Deferred: whitelist `--static` (durable temp/perm semantics); portscan SYN rate-alignment; v1.147-B daemon least-privilege; v1.147-C audit/integrity.
+
+---
+
 ## [v1.147.0] - 2026-06-04 — MAC profiles (SELinux + AppArmor)
 
 **Codename:** `V147_MAC_PROFILES`
