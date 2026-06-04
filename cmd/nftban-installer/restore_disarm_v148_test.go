@@ -59,6 +59,32 @@ func TestCSFRestore_A6b_DisarmsSocketAndTableTimers_v148(t *testing.T) {
 			t.Errorf("A.6b did not MASK %s (disable does not hold — dependency-pull / self-heal)", u)
 		}
 	}
+
+	// Amendment 4 §70.2 / §70.6: the mask set must be EXACTLY these four units —
+	// no fewer (each asserted above) and NO EXTRAS. A masked fifth unit would be
+	// an out-of-target restore mutation. Collect every `systemctl mask <unit>`
+	// the disarm issued and require the set to equal maskExpected exactly.
+	masked := map[string]bool{}
+	for _, c := range mock.Commands {
+		if c.Name == "systemctl" && len(c.Args) == 2 && c.Args[0] == "mask" {
+			masked[c.Args[1]] = true
+		}
+	}
+	if len(masked) != len(maskExpected) {
+		t.Errorf("A.6b masked %d units, want exactly %d (Amendment 4 §70.2 four-unit bound); masked=%v", len(masked), len(maskExpected), masked)
+	}
+	for u := range masked {
+		authorized := false
+		for _, e := range maskExpected {
+			if u == e {
+				authorized = true
+				break
+			}
+		}
+		if !authorized {
+			t.Errorf("A.6b masked unauthorized unit %q — Amendment 4 §70.2 bounds mask to %v", u, maskExpected)
+		}
+	}
 	// The socket + timers (armed in this fixture) must also be stopped first.
 	for _, u := range append([]string{nftbandSocketUnit}, nftbanTableTouchingTimers...) {
 		if mock.Services[u] {

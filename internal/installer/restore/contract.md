@@ -1937,6 +1937,81 @@ Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2
 
 ---
 
+# Part VII — Amendment 4 (v1.148 bounded restore-disarm exception)
+
+> **Status:** Locked (operator gate `SELECT_V148_RESTORE_CONTRACT_AMENDMENT = amend-contract-and-relax-g4`, 2026-06-04).
+> **Scope:** Authorizes a narrow, restore-specific systemd-mask + boot-include-strip surface that Amendment 1 §34 ("no service ops beyond the three named units") did not permit. Part VII is normative for the v1.148 restore-disarm path only and does NOT modify §§1–69.
+>
+> **Naming note:** the operator gate text named this "PR-25 Amendment 2", but Part V (§§52–61) already holds Amendment 2 (orphan-NFTBan explicit intent) and Part VI (§§62–69) holds Amendment 3. This amendment therefore takes the next free number, **Amendment 4 / Part VII / §§70–71**. The content is exactly the bounded exception the operator specified; only the ordinal differs to avoid colliding with the existing Amendment 2/3.
+
+## 70. Amendment 4 — pinned sentence + authorized surface
+
+### 70.1 Pinned sentence
+
+> `disable` is not a valid restore-disarm primitive: reboot-proven, every NFTBan table-touching unit is pulled back by design (socket trigger, `Requires=`, exporter `RequiredBy`, always-active timer self-heal, Shape-B boot include). Amendment 4 authorizes the **minimum** boot-persistent disarm — systemd `mask` of four named NFTBan-owned units plus removal of the NFTBan Shape-B include — required to make restore *true* across a reboot, while leaving the surface bounded. This is not a weakening of safety; it corrects the contract to match the validated restore threat model.
+
+### 70.2 Authorized (restore mode MAY)
+
+Restore mode (the Amendment 1 §32 CSF-restore mutation path only) MAY:
+
+1. Perform systemd `mask` operations **only** for the following NFTBan-owned units:
+   - `nftband.service`
+   - `nftband.socket`
+   - `nftban-maintenance.timer`
+   - `nftban-rebuild-recovery.timer`
+2. Remove / comment **only** the NFTBan Shape-B include block from the distro nftables config (`/etc/nftables.conf` and `/etc/sysconfig/nftables.conf`), via `render.DisarmSystemConf` (idempotent, backed up to `*.nftban-restore.bak`, drift-checked marker strip).
+
+These extend the Amendment 1 §31 A.1–A.7 mutation set as new restore steps **A.6b** (mask) and **A.6c** (include-strip), ordered immediately after A.6 (`ServiceStop("nftband.service")`) and before the §32 step 7 safety-net gate.
+
+### 70.3 Forbidden (this amendment does NOT authorize)
+
+- General service masking. The mask allow-list is exactly the four units in §70.2; any other mask target is a contract violation (CI-enforced, §71).
+- Disabling `nftables.service` globally. The boot loader stays; only the NFTBan include is stripped.
+- Deleting `/etc/nftban/nftables.conf`. The NFTBan ruleset file itself is never removed — only the include *reference* from the distro config.
+- Any change to normal install / update / reinstall behavior. Install/update keep Shape-B persistence, keep socket-activation, keep the always-active timer design, and `unmask` + re-enable these units normally. Amendment 4 is reachable ONLY on the restore path.
+- Any new mutation primitive beyond mask + the already-authorized include-strip helper. `ServiceDisable`, `DaemonReload`, raw `Run("systemctl", …)` mutating verbs, and direct `os.*` writes remain forbidden in `restore_deps_csf.go` per Amendment 1 §34 / §43.3.
+- `cmd/nftband` daemon code changes, schema changes — none. Amendment 4 is installer-side only.
+
+### 70.4 Why mask, not disable (reboot evidence)
+
+`disable` was proven insufficient by the v1.148 reboot tests — each unit is re-activated by a distinct vector:
+
+- `nftband.service` — `TriggeredBy=nftband.socket` **and** `RequiredBy=nftban-unified-exporter.service`; restarts on boot via the exporter even when disabled.
+- `nftband.socket` — re-activates the daemon on first connection.
+- `nftban-maintenance.timer` — "Always Active"; self-healed (re-enabled) by the installer `CORE-TIMER-ENABLED-001` auto-fix; its reconcile recreates the tables.
+- `nftban-rebuild-recovery.timer` — table-recreation timer.
+
+`mask` (a `/dev/null` symlink) blocks start by **any** path — socket trigger, `Requires=`, manual start, self-heal — and survives reboot. The Shape-B include strip (A.6c) closes the last vector: `nftables.service` `nft -f`-loading `/etc/nftban/nftables.conf` at boot independent of the daemon.
+
+### 70.5 Invariants — locked, this amendment does NOT modify
+
+- Amendment 1 §31 A.1–A.7 CSF-restore mutation set (mask/include-strip are *additional* restore-disarm steps, not replacements; A.1–A.7 semantics unchanged).
+- Amendment 1 §30.1 applicability gate — Amendment 4's A.6b/A.6c run inside the same §30.1-gated path; they never run outside a CSF restore.
+- Amendment 1 §32.1 safety-net retention — A.6b/A.6c execute **before** the §32 step 7 SSH-still-protected gate, so the disarm lands even if the safety-net gate subsequently refuses; both are non-fatal (logged warnings, never abort the restore).
+- `main.go:132` writeHistory gate (§19.2 layer 4) — untouched; restore mode writes zero history.
+- No expansion to non-CSF firewalls or non-DirectAdmin panels.
+
+### 70.6 Test requirements
+
+- Unit: `restore_disarm_v148_test.go` asserts the mask set is **exactly** the four §70.2 units (no fewer, no extras) and that each is stopped-then-masked; `disarm_v148_test.go` covers the include-strip (strip / idempotent / absent-file / preserve-non-NFTBan-content / backup-before-edit).
+- The existing `TestCSFMutate_4B3csf_HappyPath_NoOutOfTargetMutation` out-of-target allow-list is extended with the legitimate A.6b stop/mask entries for the four units.
+
+## 71. CI gate — `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` relaxation (minimal)
+
+The `G4` forbidden-symbol scan in `.github/workflows/ci-restore-canonization.yml` is amended:
+
+- The blanket `\bexec\.ServiceMask\(` forbid is **removed** (mirroring how PR-26-code-B removed the `\bexec\.ServiceUnmask\(` forbid when ServiceUnmask became authorized for A.1).
+- A dedicated `ServiceMask` allow-list pin replaces it, structurally bounding the call to the four §70.2 units:
+  - (a) every `ServiceMask(…)` argument must be the authorized `maskUnits` range variable — a literal or any other variable fails the gate;
+  - (b) `maskUnits` must be constructed verbatim from the four named identifiers (`nftbandUnit`, `nftbandSocketUnit`, `nftbanTableTouchingTimers…`) — no extra element can be appended;
+  - (c) those identifiers must resolve to exactly `nftband.service` / `nftband.socket`, and `nftbanTableTouchingTimers` must declare exactly the two authorized `.timer` literals.
+- `\bexec\.ServiceDisable\(`, `\bexec\.DaemonReload\(`, raw mutating `Run("systemctl", …)` verbs (incl. `mask`/`unmask`), and direct `os.*` writes remain forbidden — the relaxation is mask-only and bounded.
+- Per-unit runtime enforcement (which units, stop-before-mask) stays in the Go runtime tests against `MockExecutor` (§70.6).
+
+Result: the gate still blocks any **unbounded** mask usage; it permits only the four-unit restore-disarm set this amendment authorizes.
+
+---
+
 ## Amendment history
 
 - **2026-04-20 v1 (seed)** — first committed seed. Lattice v2 + three locked corrections:
@@ -1959,4 +2034,5 @@ Estimated minimum elapsed time (in working-days): step 1+2 = 1 day; step 3+4 = 2
 
 - **2026-04-28 v6 (Amendment 2: Orphan-NFTBan explicit-intent CSF restore path — DOC SEED)** — appends Part V (§§52–61). Authority gap discovered during PR-26-code-E srv3 destructive evidence run: the dispatcher refused at G1/AuthorityNFTBan on a host whose precondition was the canonical "nftban-took-over-from-csf with no prior-record" state, blocking the destructive cycle from running on a real host. Auditor disposition (2026-04-28) approved Option A (narrow explicit-intent override); Options B (different host) and C (manual pre-mutation) rejected. This amendment splits the existing G1/AuthorityNFTBan row into two evaluated-within-Group-1 sub-rows: `G1/AuthorityNFTBan/default` (REFUSE, unchanged behavior for all flag patterns outside the candidate triple) and `G1/AuthorityNFTBan/orphan-intent-candidate` (delegates to the §54 evidence predicate; `G1/AuthorityNFTBan/OrphanProceed` on all-true, `G1/EvidenceMismatch` on any-false). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved. The PROCEED row activates only for `AuthorityNFTBan + NoRecord + DirectAdmin + --panel-auto-takeover + --accept-orphan-nftban + ALL §54.1 evidence rows true → PROCEED PanelNative/csf`. Every other §6 G1 row remains REFUSE under all flag combinations. Adds new invariant `INV-AMD2-EXPLICIT-INTENT-IS-NARROW` (§52.5). §59 Q1 (flag name `--accept-orphan-nftban`) and Q2 (`AmbiguityOrphanNFTBan` REFUSE) locked by auditor disposition 2026-04-28; Q3–Q7 remain open. Doc-only commit; no production code, no CI gate, no host action. Code phase opens in a separate `amendment-2-code-A` PR after this seed merges. Real-host destructive evidence captured by `amendment-2-code-E` after code-A merges; amendment-2-code-E is the merge-blocker for PR-26 final.
 
+- **2026-06-04 v8 (Amendment 4: v1.148 bounded restore-disarm exception)** — appends Part VII (§§70–71). Authority gap discovered during v1.148 install-parity / restore-disarm reboot validation: Amendment 1 §34 ("no service ops beyond the three named units") forbids the systemd `mask` the restore path actually needs. Reboot-proven, `ServiceStop`/`disable` of `nftband.service` is re-defeated by four distinct reactivation vectors — `nftband.socket` trigger, exporter `RequiredBy`, always-active `nftban-maintenance.timer` self-heal, and the Shape-B boot include in the distro nftables config — so the v1.148 restore-disarm dropped its protection every reboot. This amendment authorizes a BOUNDED restore-specific surface: systemd `mask` of exactly four NFTBan-owned units (`nftband.service`, `nftband.socket`, `nftban-maintenance.timer`, `nftban-rebuild-recovery.timer`) as new step A.6b, plus removal of only the NFTBan Shape-B include from `/etc/nftables.conf` / `/etc/sysconfig/nftables.conf` (never deleting `/etc/nftban/nftables.conf`) as new step A.6c — both ordered after §32 A.6 and before the step-7 safety-net gate, both non-fatal. It does NOT authorize general masking, does NOT disable `nftables.service` globally, does NOT change normal install/update/reinstall behavior, adds no daemon/schema change. The `G4-RESTORE-EXEC-NO-OUT-OF-TARGET` gate's blanket `ServiceMask` forbid is replaced with a structural four-unit allow-list pin (mirroring PR-26-code-B's ServiceUnmask precedent); per-unit enforcement stays in `restore_disarm_v148_test.go`. Operator gate `SELECT_V148_RESTORE_CONTRACT_AMENDMENT = amend-contract-and-relax-g4` (2026-06-04). Naming: the gate text said "Amendment 2", but that and Amendment 3 are already taken (Parts V/VI), so this is Amendment 4. Production-code + CI-gate commit (not doc-only): the A.6b/A.6c code already landed on the v1.148 branch; this amendment documents and bounds it.
 - **2026-04-29 v7 (Amendment 3: AmbiguityConflictExternal narrow split for orphan-CSF-on-DA — DOC SEED)** — appends Part VI (§§62–69). Authority gap discovered during dns2 Gate B run #1 (2026-04-29T12:33:02Z): on a real DirectAdmin host with a real CSF install where Gate A canonical takeover succeeded, the classifier returns `Authority=AuthorityAmbiguous + Ambiguity=AmbiguityConflictExternal + external=csf` (because csf-residue — `/etc/csf/`, `/usr/sbin/csf.disabled`, `lfd.service`, etc. — is intact post-canonical-install per §17.2 invariant), and the lattice refused at `G1/AmbiguityConflictExternal` per the locked §6 Group 1 hard-stop. Amendment 2's `G1/AuthorityNFTBan/OrphanProceed` was scoped to `Authority=AuthorityNFTBan` (non-ambiguous classifier state); on srv3 the classifier returned that because srv3 had never had csf installed, on dns2 the classifier returns `AmbiguityConflictExternal` because csf-residue is the post-canonical-install reality. The two states share the same operator intent but reach the lattice through different rule paths. Auditor disposition (2026-04-29) approved Option A (narrow lattice extension mirroring Amendment 2); Options B (manual residue cleanup) and C (classifier semantic patch) rejected. This amendment splits the existing `G1/AmbiguityConflictExternal` row into two evaluated-within-Group-1 sub-rows: `G1/AmbiguityConflictExternal/default` (REFUSE, unchanged behavior for all flag patterns and external authorities outside the candidate quintuple) and `G1/AmbiguityConflictExternal/orphan-intent-candidate-csf` (delegates to the §54/§64 combined predicate). The split is ENTIRELY within Group 1; no later group ever defeats a Group 1 outcome and §5 precedence is preserved. The PROCEED row activates only for `AmbiguityConflictExternal + external=csf + NoRecord + DirectAdmin + --panel-auto-takeover + --accept-orphan-nftban + ALL §54/§64 evidence rows true → PROCEED PanelNative/csf`. Every other §6 G1 row remains REFUSE under all flag combinations; the `AuthorityExternal` G1 hard-stop is unchanged; the `AmbiguityOrphanNFTBan` G1 hard-stop is unchanged. Adds new invariant `INV-AMD3-CONFLICT-EXTERNAL-CSF-NARROW` (§62.5). Doc-only commit; no production code, no CI gate, no host action; no `engine.go` or `engine_test.go` edit; no §54 modification (Amendment 2's predicate stays scoped to AuthorityNFTBan); no classifier semantic change; no §32 ordering change; no new mutation surface. Code phase opens in a separate `amendment-3-code-A` PR after this seed merges. Real-host destructive evidence captured by Gate B retry on dns2 after code-A merges; that retry is the merge-blocker for PR-26 final.
