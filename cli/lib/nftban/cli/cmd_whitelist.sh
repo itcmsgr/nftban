@@ -77,24 +77,73 @@ nftban_cmd_whitelist() {
 
     case "$subcommand" in
         add)
-            # Add IP to whitelist
-            local ip="${1:-}"
-            if [[ -z "$ip" || "$ip" == "--help" || "$ip" == "-h" ]]; then
-                echo "Usage: nftban whitelist add <IP>" >&2
-                echo "Example: nftban whitelist add 192.168.1.100" >&2
-                return 0
+            # v1.149.0: explicit whitelist tiers.
+            #   (default)      runtime/live only — lost on rebuild/reload/restart
+            #   --static       permanent — writes 99-manual.conf (no expiry) + applies live via sync
+            #   --ttl <dur>    timed — delegates to `firewall whitelist-session` (00-session.conf)
+            #   --session      timed with a default 1h TTL
+            local _wl_static="false" _wl_ttl="" ip=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --static)  _wl_static="true"; shift ;;
+                    --ttl)
+                        _wl_ttl="${2:-}"
+                        if [[ -z "$_wl_ttl" ]]; then
+                            echo "ERROR: --ttl requires a duration (e.g. 30m, 1h, 1h30m)" >&2; return 1
+                        fi
+                        shift 2 ;;
+                    --session) [[ -z "$_wl_ttl" ]] && _wl_ttl="1h"; shift ;;
+                    -h|--help) nftban_whitelist_usage; return 0 ;;
+                    --*)       echo "ERROR: Unknown flag for 'whitelist add': $1" >&2; return 1 ;;
+                    *)         if [[ -z "$ip" ]]; then ip="$1"; shift; else echo "ERROR: Unexpected argument: $1" >&2; return 1; fi ;;
+                esac
+            done
+            if [[ -z "$ip" ]]; then
+                echo "Usage: nftban whitelist add [--static | --ttl <dur>] <IP>" >&2
+                echo "Example: nftban whitelist add --static 192.168.1.100" >&2
+                return 1
             fi
-            nftban_whitelist_add_ip "$ip"
+            if [[ "$_wl_static" == "true" && -n "$_wl_ttl" ]]; then
+                echo "ERROR: --static and --ttl/--session are mutually exclusive (permanent vs timed)" >&2
+                return 1
+            fi
+            if [[ -n "$_wl_ttl" ]]; then
+                # Timed tier — reuse the existing session writer (00-session.conf).
+                if command -v nftban >/dev/null 2>&1; then
+                    nftban firewall whitelist-session add "$ip" --ttl "$_wl_ttl"
+                else
+                    echo "ERROR: timed whitelist requires the nftban CLI (firewall whitelist-session)" >&2
+                    return 1
+                fi
+            elif [[ "$_wl_static" == "true" ]]; then
+                nftban_whitelist_add_static_ip "$ip"
+            else
+                nftban_whitelist_add_ip "$ip" && \
+                    echo "NOTE: $ip added to the RUNTIME whitelist only — it will NOT survive firewall rebuild/reload/restart. Use 'nftban whitelist add --static $ip' to persist." >&2
+            fi
             ;;
         remove|rm|del|delete)
-            # Remove IP from whitelist
-            local ip="${1:-}"
-            if [[ -z "$ip" || "$ip" == "--help" || "$ip" == "-h" ]]; then
-                echo "Usage: nftban whitelist remove <IP>" >&2
+            # v1.149.0: --static also removes the durable 99-manual.conf entry so a
+            # rebuild cannot resurrect it; default remove is live-set only (unchanged).
+            local _wl_static="false" ip=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --static)  _wl_static="true"; shift ;;
+                    -h|--help) nftban_whitelist_usage; return 0 ;;
+                    --*)       echo "ERROR: Unknown flag for 'whitelist remove': $1" >&2; return 1 ;;
+                    *)         if [[ -z "$ip" ]]; then ip="$1"; shift; else echo "ERROR: Unexpected argument: $1" >&2; return 1; fi ;;
+                esac
+            done
+            if [[ -z "$ip" ]]; then
+                echo "Usage: nftban whitelist remove [--static] <IP>" >&2
                 echo "Example: nftban whitelist remove 192.168.1.100" >&2
-                return 0
+                return 1
             fi
-            nftban_whitelist_remove_ip "$ip"
+            if [[ "$_wl_static" == "true" ]]; then
+                nftban_whitelist_remove_static_ip "$ip"
+            else
+                nftban_whitelist_remove_ip "$ip"
+            fi
             ;;
         list|show)
             # Show whitelist (v1.59.0: added --json support)
@@ -288,6 +337,139 @@ nftban_whitelist_remove_ip() {
     fi
 }
 
+# =============================================================================
+# v1.149.0 — PERMANENT (--static) whitelist tier (WL-STATIC)
+# =============================================================================
+# Durable operator entries live in whitelist.d/99-manual.conf with NO EXPIRES_AT.
+# The whitelist loader already reads whitelist.d/*.conf on every rebuild and loads
+# non-expiring entries permanently (internal/whitelist/loader.go) — so --static
+# needs no daemon/loader/schema change, only a CLI writer for the durable file.
+_NFTBAN_MANUAL_WHITELIST_PATH="/etc/nftban/whitelist.d/99-manual.conf"
+
+# Ensure 99-manual.conf exists with a header on FIRST creation only. Never clobbers
+# an existing file (shipped %config(noreplace); may carry hand-written operator entries).
+_nftban_whitelist_manual_ensure_header() {
+    [[ -f "$_NFTBAN_MANUAL_WHITELIST_PATH" ]] && return 0
+    mkdir -p "$(dirname "$_NFTBAN_MANUAL_WHITELIST_PATH")"
+    cat > "$_NFTBAN_MANUAL_WHITELIST_PATH" <<'MANUAL_HEADER_EOF'
+# =============================================================================
+# NFTBan Permanent Whitelist (99-manual.conf)
+# =============================================================================
+#
+# Durable operator whitelist entries — NO expiry. Loaded on every firewall
+# rebuild/reload/restart. Managed by `nftban whitelist add --static <ip>`, but
+# safe to hand-edit (one IP or CIDR per line; '#' starts a comment).
+#
+#   nftban whitelist add --static <ip>      # persist here (survives rebuild)
+#   nftban whitelist remove --static <ip>   # remove from here + live set
+#   nftban whitelist add <ip>               # runtime-only (lost on rebuild)
+#   nftban whitelist add --ttl 30m <ip>     # timed/session (00-session.conf)
+#
+# =============================================================================
+
+MANUAL_HEADER_EOF
+    chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+    chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+}
+
+# Add a permanent (no-expiry) entry to 99-manual.conf + apply live. Idempotent
+# (refresh: a prior line for the same IP is dropped before re-append).
+nftban_whitelist_add_static_ip() {
+    local ip="$1"
+
+    if ! nftban_validate_ip "$ip" && ! nftban_validate_cidr "$ip"; then
+        echo "ERROR: Invalid IP/CIDR format: $ip" >&2
+        return 1
+    fi
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: writing $_NFTBAN_MANUAL_WHITELIST_PATH requires root (permanent whitelist)." >&2
+        return 1
+    fi
+
+    _nftban_whitelist_manual_ensure_header
+
+    local tmp
+    tmp=$(mktemp "${_NFTBAN_MANUAL_WHITELIST_PATH}.XXXXXX") || { echo "ERROR: mktemp failed" >&2; return 1; }
+    # Drop any prior line whose first token == ip (idempotent refresh).
+    # shellcheck disable=SC2016
+    awk -v ip="$ip" '
+        { t=$0; gsub(/^[ \t]+/,"",t)
+          if (t=="" || substr(t,1,1)=="#") { print; next }
+          split(t,a,"#"); n=split(a[1],b,/[ \t]+/)
+          if (n>=1 && b[1]==ip) next
+          print }
+    ' "$_NFTBAN_MANUAL_WHITELIST_PATH" > "$tmp"
+    # Append the durable entry — NO EXPIRES_AT (permanent).
+    printf '%s  # ADDED_BY=nftban-whitelist-static\n' "$ip" >> "$tmp"
+    mv "$tmp" "$_NFTBAN_MANUAL_WHITELIST_PATH"
+    chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+    chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+
+    echo "Added $ip to the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) and applied it live — durable: survives firewall reload, daemon restart, and reboot."
+
+    # Apply live immediately via a FULL sync. `nftban sync` runs the daemon
+    # whitelist loader (LoadWhitelists → reconciles whitelist.d/*.conf, incl. this
+    # file, into the live nft set). `firewall reload` alone does NOT apply it — its
+    # whitelist step is system-IP auto-detection, not the whitelist.d loader
+    # (lab-proven on v1.148.0). Fall back to reload if `sync` is unavailable.
+    if command -v nftban >/dev/null 2>&1; then
+        nftban sync >/dev/null 2>&1 || nftban firewall reload >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+# Remove a permanent entry from 99-manual.conf AND the live set, so a rebuild
+# cannot resurrect it.
+nftban_whitelist_remove_static_ip() {
+    local ip="$1"
+
+    if ! nftban_validate_ip "$ip" && ! nftban_validate_cidr "$ip"; then
+        echo "ERROR: Invalid IP/CIDR format: $ip" >&2
+        return 1
+    fi
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: editing $_NFTBAN_MANUAL_WHITELIST_PATH requires root." >&2
+        return 1
+    fi
+
+    local removed="false"
+    if [[ -f "$_NFTBAN_MANUAL_WHITELIST_PATH" ]]; then
+        local tmp
+        tmp=$(mktemp "${_NFTBAN_MANUAL_WHITELIST_PATH}.XXXXXX") || { echo "ERROR: mktemp failed" >&2; return 1; }
+        # shellcheck disable=SC2016
+        if awk -v ip="$ip" '
+            { t=$0; gsub(/^[ \t]+/,"",t)
+              if (t=="" || substr(t,1,1)=="#") { print; next }
+              split(t,a,"#"); n=split(a[1],b,/[ \t]+/)
+              if (n>=1 && b[1]==ip) { dropped=1; next }
+              print }
+            END { exit (dropped?0:1) }
+        ' "$_NFTBAN_MANUAL_WHITELIST_PATH" > "$tmp"; then
+            mv "$tmp" "$_NFTBAN_MANUAL_WHITELIST_PATH"
+            chmod 0640 "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+            chown root:nftban "$_NFTBAN_MANUAL_WHITELIST_PATH" 2>/dev/null || true
+            removed="true"
+        else
+            rm -f "$tmp"
+        fi
+    fi
+
+    # Remove from the live set too (best-effort; may not be present).
+    nftban_whitelist_remove_ip "$ip" >/dev/null 2>&1 || true
+    # Reconcile the live set to the now-updated files via full sync, so the entry
+    # is dropped even if it was applied into the CIDR-aware interval set by sync.
+    if command -v nftban >/dev/null 2>&1; then
+        nftban sync >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$removed" == "true" ]]; then
+        echo "Removed $ip from the PERMANENT whitelist ($_NFTBAN_MANUAL_WHITELIST_PATH) + live set; rebuild will not resurrect it."
+    else
+        echo "INFO: $ip not found in $_NFTBAN_MANUAL_WHITELIST_PATH (also removed from live set if present)."
+    fi
+    return 0
+}
+
 # List whitelisted IPs
 nftban_whitelist_list() {
     # v1.59.0 UX-2: Added --json support for scripting/monitoring
@@ -391,19 +573,29 @@ nftban_whitelist_list() {
 # Show usage
 nftban_whitelist_usage() {
     cat <<'EOF'
-Usage: nftban whitelist <command> [IP]
+Usage: nftban whitelist <command> [options] [IP]
 
 COMMANDS:
-  add <IP>          Add IP to whitelist (permanent protection from banning)
-  remove <IP>       Remove IP from whitelist
-  list              Show all whitelisted IPs
-  sync              Auto-detect and whitelist system IPs
-  whitelistme       Whitelist your current IP (interactive)
+  add <IP>               Add IP to the RUNTIME whitelist only (lost on rebuild/reload/restart)
+  add --static <IP>      Add IP to the PERMANENT whitelist (99-manual.conf; survives rebuild)
+  add --ttl <dur> <IP>   Add IP to a TIMED session whitelist (00-session.conf; auto-expires)
+  remove <IP>            Remove IP from the runtime whitelist (live set only)
+  remove --static <IP>   Remove IP from the permanent whitelist (99-manual.conf) + live set
+  list                   Show all whitelisted IPs
+  sync                   Auto-detect and whitelist system IPs
+  whitelistme            Whitelist your current IP (interactive)
+
+WHITELIST TIERS:
+  runtime   (default add)  live nft set only; DROPPED on the next firewall rebuild/reload/restart.
+  timed     (--ttl <dur>)  written to 00-session.conf with an expiry; auto-pruned after the TTL.
+  permanent (--static)     written to 99-manual.conf (no expiry); applied live; survives firewall reload/restart/reboot.
 
 EXAMPLES:
-  nftban whitelist add 192.168.1.100
-  nftban whitelist add 2001:db8::1
-  nftban whitelist remove 192.168.1.100
+  nftban whitelist add 192.168.1.100              # runtime only (temporary)
+  nftban whitelist add --static 192.168.1.100     # permanent (survives rebuild)
+  nftban whitelist add --static 2001:db8::1        # IPv6 permanent
+  nftban whitelist add --ttl 30m 192.168.1.100    # 30-minute session
+  nftban whitelist remove --static 192.168.1.100  # remove permanent entry + live
   nftban whitelist list
   nftban whitelist sync
 

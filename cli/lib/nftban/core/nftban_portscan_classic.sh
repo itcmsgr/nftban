@@ -753,10 +753,36 @@ nftban_portscan_classic_detect_scan_type() {
     # Check minimum port threshold
     local min_ports="${PORTSCAN_CLASSIC_MIN_PORTS}"
     if [[ $port_count -ge $min_ports ]]; then
-        echo "generic"
+        # v1.149.0 false-ban hardening: the "generic" remainder here is non-rapid
+        # (rapid low-port bursts were already caught by the strobe path above),
+        # single-target (horizontal caught multi-target above), with MIN_PORTS..
+        # (VERTICAL-1) distinct ports — the bursty/NAT/admin multi-service profile.
+        # Require DIVERSITY corroboration before this auto-bans; otherwise downgrade
+        # to log/alert only so a legitimate source is not banned on port-count alone.
+        if _nftban_portscan_classic_generic_corroborated "$port_count"; then
+            echo "generic"
+        else
+            echo "generic-observe"
+        fi
         return 0
     fi
 
+    return 1
+}
+
+# v1.149.0 — corroboration gate for the "generic" classification (classic mode
+# only; suricata mode bans on IDS-alert score and is left untouched). Returns 0
+# (corroborated → may ban) when the distinct-port count reaches the corroboration
+# floor (default: the vertical-scan threshold), else 1 (downgrade to log/alert).
+# Corroboration is diversity-only by design: sensitive-port or event-volume
+# corroboration would re-ban the admin/NAT case this hardening exists to prevent.
+_nftban_portscan_classic_generic_corroborated() {
+    local port_count="$1"
+    # Disabled → restore pre-v1.149 behavior (generic bans at MIN_PORTS).
+    [[ "${PORTSCAN_CLASSIC_GENERIC_CORROBORATE:-true}" != "true" ]] && return 0
+    local floor="${PORTSCAN_CLASSIC_GENERIC_CORROBORATE_PORTS:-}"
+    [[ -z "$floor" ]] && floor="${PORTSCAN_CLASSIC_VERTICAL_PORTS:-10}"
+    [[ "$port_count" -ge "$floor" ]] && return 0
     return 1
 }
 
@@ -770,6 +796,17 @@ nftban_portscan_classic_handle_detection() {
     local scan_type="$2"
 
     local action="${PORTSCAN_CLASSIC_ACTION}"
+
+    # v1.149.0: an uncorroborated "generic" detection is observe-only — it is
+    # logged/alerted but NEVER auto-banned, regardless of PORTSCAN_CLASSIC_ACTION.
+    # This is the false-ban guard for bursty/NAT/admin multi-service traffic.
+    if [[ "$scan_type" == "generic-observe" ]]; then
+        _nftban_portscan_classic_log "INFO" "Observed uncorroborated generic activity from ${ip} (below diversity floor — NOT banned; set PORTSCAN_CLASSIC_GENERIC_CORROBORATE=false to restore legacy banning)"
+        if [[ "$action" == "alert" || "$action" == "block_and_alert" ]]; then
+            nftban_portscan_classic_send_alert "$ip" "generic-observe"
+        fi
+        return 0
+    fi
 
     _nftban_portscan_classic_log "WARN" "Detected ${scan_type} scan from ${ip}"
 
