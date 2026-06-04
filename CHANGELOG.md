@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.149.0] - 2026-06-05 — operational hardening (whitelist --static + portscan corroboration + urgent bug fixes)
+
+**Codename:** `V149_OPERATIONAL_HARDENING`
+**Controlling records:** `NFTBAN_ROADMAP/V1_149_0_OPERATIONAL_HARDENING_SCOPE.md` · `V149_URGENT_BUGS_FOUND.md`
+**PRs:** [#762](https://github.com/itcmsgr/nftban/pull/762) (sq `2064d19d`, four specific lanes)
+
+> **Why:** close the 49.x EL10-prep admin auto-ban incident end-to-end, and fix two HIGH bugs found during the work. **Daemon byte-identical to v1.148.0** (zero `cmd/nftband`/`cmd/nftban-core` change). **Schema 1.83.0 frozen.** Shell-only.
+
+### Added
+- **Whitelist `--static` (permanent tier).** `nftban whitelist add --static <ip>` writes durable `whitelist.d/99-manual.conf` (no `EXPIRES_AT`) and applies it live via `nftban sync`. `add --ttl <dur>` routes to the existing session writer (`00-session.conf`). `remove --static` clears the durable line + live entry. Help rewritten to document the three tiers (runtime / timed / permanent).
+- **Portscan generic-scan corroboration (classic mode only).** New config `PORTSCAN_CLASSIC_GENERIC_CORROBORATE` (+ `_PORTS`). An uncorroborated `generic` detection (non-rapid, single-target, `MIN_PORTS..vertical-1` distinct ports — the bursty/NAT/admin profile) is downgraded to `generic-observe` (log/alert, never banned). Corroborated `generic` (>= the vertical floor) still bans.
+
+### Fixed / Changed
+- **Default `whitelist add`** now prints an honest runtime-only warning (no more false "permanent"); it is unchanged behaviorally (live nft set only).
+- **BUG-1 — `nftban update` crash on fresh hosts.** `cmd_update.sh` declared `local _curv _latv _cache_file` uninitialized; under `set -u`, a host with no update cache (or no jq) left `_latv` unbound → `nftban update` aborted. Initialized the declaration. Regression test added.
+- **BUG-2 — `firewall reload` dropped durable `whitelist.d` entries.** A reload flushed the whitelist/blacklist sets and only re-applied auto-detected system IPs, transiently dropping durable `--static`/manual entries (admin-lockout window). `firewall_reload` now reconciles durable whitelist.d/blacklist.d via `nftban-core sync --quick` (chosen over `nftban sync`, which would recurse into reload). `--static` now survives `firewall reload`.
+- **Portscan:** the `10/sec` SYN log-rate was deliberately **not** raised — code review confirmed it is an anti-flood **log** limiter, not a ban threshold (raising it would feed more events → more false bans).
+
+### Not changed (code-verified safe)
+- **Suricata** portscan (bans on accumulated IDS-alert score) and **DDoS** classic (12-strike escalation ladder + 2h strike prune + whitelist-skip) are already corroborated — left untouched.
+
+### Validation
+- lab2 (Ubuntu 24.04 DEB, candidate built + installed) + lab4 (AlmaLinux 9.8 EL9 RPM): WL-STATIC 28/28, portscan 9/9, BUG-1 4/4; shellcheck `-S warning` clean.
+- Full 7-step `--static` lifecycle proven **live** on lab2: add→LIVE; firewall reload→still LIVE; reload x2→LIVE; daemon restart→LIVE; remove→gone + not live; reload→not resurrected.
+
+### Scope / Deferred
+- Boundaries held: shell-only, schema 1.83.0 frozen, daemon byte-identical, no MAC/least-priv/audit/SEC-RULEFP/RBL/stats work. The broader backlog (RBL defects, live-host geoip/geoban/stats/timer bugs, V1.90 re-sweep residuals, the full `set -u` unbound-var class) is recorded in `NFTBAN_PENDINGS_AND_BUGS_CURRENT.md` for the v1.150 CLI-health lane.
+
+---
+
 ## [v1.148.0] - 2026-06-04 — installer config parity + preservation + reboot-surviving restore disarm
 
 **Codename:** `V148_INSTALL_PARITY_RESTORE_DISARM`
