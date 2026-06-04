@@ -46,8 +46,8 @@ import (
 	"github.com/itcmsgr/nftban/internal/portscan"
 	"github.com/itcmsgr/nftban/internal/safeconv"
 	"github.com/itcmsgr/nftban/internal/safety"
-	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/internal/watchdog"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // Run starts the daemon and blocks until shutdown
@@ -225,7 +225,17 @@ func (d *Daemon) Run() error {
 	if err := d.startSocket(); err != nil {
 		return fmt.Errorf("failed to start socket: %w", err)
 	}
-	defer d.socketLn.Close()
+	// v1.147: guard the deferred close against a nil listener. Under MAC
+	// confinement a systemd-passed socket fd can be mediated to nil (AppArmor
+	// "disconnected path"); degrade gracefully instead of nil-panicking here.
+	if d.socketLn == nil {
+		return fmt.Errorf("socket listener is nil after startSocket (socket activation may have been blocked by MAC confinement)")
+	}
+	defer func() {
+		if d.socketLn != nil {
+			_ = d.socketLn.Close() // best-effort close at shutdown; nothing actionable on error
+		}
+	}()
 
 	// Start HTTP server
 	log.Println("Starting HTTP API...")
@@ -622,4 +632,3 @@ func printHelp() {
 	fmt.Println("    curl http://127.0.0.1:6060/debug/pprof/goroutine?debug=2")
 	fmt.Println()
 }
-

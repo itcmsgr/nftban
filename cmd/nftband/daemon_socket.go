@@ -51,8 +51,8 @@ func init() {
 
 // startSocket starts the Unix socket listener
 // Supports two modes:
-//   1. Socket activation (systemd): uses pre-created socket from nftband.socket
-//   2. Manual start: creates socket directly (for testing/development)
+//  1. Socket activation (systemd): uses pre-created socket from nftband.socket
+//  2. Manual start: creates socket directly (for testing/development)
 func (d *Daemon) startSocket() error {
 	socketPath := getSocketPath()
 
@@ -62,13 +62,19 @@ func (d *Daemon) startSocket() error {
 		log.Printf("Warning: failed to check systemd activation: %v", err)
 	}
 
-	if len(listeners) > 0 {
+	if len(listeners) > 0 && listeners[0] != nil {
 		// Systemd socket activation - use the pre-configured socket
 		// Socket permissions (0660 root:nftban) are set by nftband.socket unit
 		d.socketLn = listeners[0]
 		log.Printf("Using systemd socket activation (socket from nftband.socket)")
 		go d.acceptSocketConnections()
 		return nil
+	}
+	// v1.147: if activation reported listeners but the fd was mediated to nil
+	// under MAC confinement, fall through to manual socket creation rather than
+	// storing a nil listener (which would nil-panic on the deferred close).
+	if len(listeners) > 0 {
+		log.Printf("Warning: systemd reported %d socket(s) but listener[0] is nil (MAC confinement?); creating socket manually", len(listeners))
 	}
 
 	// Manual start - create socket ourselves (for testing/development)

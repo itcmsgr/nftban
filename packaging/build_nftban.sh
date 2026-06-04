@@ -300,6 +300,11 @@ Source1:        nftban-files.inc
 Source2:        nftban-systemd-install.list
 
 BuildRequires:  systemd-rpm-macros
+# v1.147-A: compile the SELinux policy module (.pp) at build via the refpolicy
+# devel Makefile. checkmodule alone cannot resolve refpolicy interfaces
+# (init_daemon_domain, logging_log_file, ...) used by nftban.te.
+BuildRequires:  selinux-policy-devel
+BuildRequires:  make
 
 Requires:       nftables >= 0.9.0
 Requires:       systemd
@@ -515,7 +520,18 @@ install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-auditor.rules %{buildroo
 mkdir -p %{buildroot}/usr/share/nftban/selinux
 install -D -m 0644 install/selinux/nftban.te %{buildroot}/usr/share/nftban/selinux/nftban.te
 install -D -m 0644 install/selinux/nftban.fc %{buildroot}/usr/share/nftban/selinux/nftban.fc
+install -D -m 0644 install/selinux/nftban.if %{buildroot}/usr/share/nftban/selinux/nftban.if
 install -D -m 0644 install/selinux/Makefile %{buildroot}/usr/share/nftban/selinux/Makefile
+# v1.147-A: compile the policy module (.pp) at build so %post can semodule -i it
+# without requiring selinux-policy-devel on the target. MUST use the refpolicy
+# devel Makefile — checkmodule alone errors on policy_module()/init_daemon_domain
+# (refpolicy m4 interfaces). Guarded: if the devel Makefile is absent the .pp is
+# simply not shipped and %post falls back to compile-on-target (or no-ops).
+if [ -f /usr/share/selinux/devel/Makefile ]; then
+    ( cd install/selinux && make -f /usr/share/selinux/devel/Makefile nftban.pp ) \
+        && install -D -m 0644 install/selinux/nftban.pp %{buildroot}/usr/share/nftban/selinux/nftban.pp \
+        || echo "[NFTBan build] SELinux .pp compile failed; %post will compile on target"
+fi
 
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
@@ -912,6 +928,28 @@ else
 fi
 
 # =============================================================================
+# v1.147-A: load the nftban SELinux policy module (D-NFTBAN-EL-SELINUX-DAEMON-NETLINK)
+# =============================================================================
+# The .te/.fc shipped since v1.19.12 but were never compiled or loaded, so on
+# SELinux Enforcing the daemon ran unlabeled (init_t) and its netlink socket was
+# denied ("failed to list tables: socket: permission denied"). Load the module
+# (enforcing nftband_t domain; NOT permissive) and relabel BEFORE the Go
+# installer starts the daemon, so nftband transitions to nftband_t on first
+# start. Prefer the build-shipped nftban.pp; fall back to compile-on-target.
+# Guarded + idempotent + strict no-op on SELinux Disabled/absent.
+if command -v semodule >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
+    _nftban_sel=/usr/share/nftban/selinux
+    if [ -f "\$_nftban_sel/nftban.pp" ]; then
+        semodule -i "\$_nftban_sel/nftban.pp" 2>/dev/null || true
+    elif [ -f /usr/share/selinux/devel/Makefile ]; then
+        ( cd "\$_nftban_sel" && make -f /usr/share/selinux/devel/Makefile nftban.pp 2>/dev/null \
+            && semodule -i nftban.pp 2>/dev/null ) || true
+    fi
+    restorecon -R /usr/sbin/nftban /usr/lib/nftban/bin /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban 2>/dev/null || true
+    unset _nftban_sel
+fi
+
+# =============================================================================
 # v1.146 Phase-D: CVE-2025-NFTBAN-001 inet-filter classify-then-act
 # =============================================================================
 # Drift-checked twin of packaging/deb/postinst:_nftban_classify_inet_filter
@@ -1168,6 +1206,12 @@ fi
 # =============================================================================
 if [ \$1 -eq 0 ]; then
     echo "[NFTBan] Complete removal — cleaning up all artifacts..."
+
+    # v1.147-A: remove the nftban SELinux policy module on final erase
+    # (guarded, idempotent, no-op on SELinux Disabled/absent).
+    if command -v semodule >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
+        semodule -r nftban 2>/dev/null || true
+    fi
 
     # STEP 1: Backup user configuration before removal
     BACKUP_DIR="/var/tmp/nftban-config-backup-\$(date +%%Y%%m%%d-%%H%%M%%S)"
@@ -1713,6 +1757,13 @@ build_deb() {
         fi
     done
     log_info "Installed ${sbin_count} sbin helper scripts"
+
+    # v1.147-A: AppArmor profile for the nftband daemon (DEB only; complain mode).
+    # Loaded by postinst when AppArmor is present; no-op otherwise. Shipped under
+    # /etc/apparmor.d/ so dpkg treats it as a conffile (auto-removed on purge).
+    install -D -m 0644 "${PROJECT_ROOT}/install/apparmor/usr.lib.nftban.bin.nftband" \
+        "${deb_root}/etc/apparmor.d/usr.lib.nftban.bin.nftband"
+    log_info "Installed AppArmor profile (complain mode)"
 
     # Copy VERSION file (WARN-005: ensure it's non-empty)
     if [[ -s "${PROJECT_ROOT}/VERSION" ]]; then
