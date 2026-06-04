@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.147.0] - 2026-06-04 — MAC profiles (SELinux + AppArmor)
+
+**Codename:** `V147_MAC_PROFILES`
+**Controlling records:** `NFTBAN_ROADMAP/V147_B_PLUS_MAC_IMPL_VALIDATION_RECORD.md` · `V147_EL10_VALIDATION_RECORD.md` · `V147_A_MAC_DOCS_AND_WIKI_VALIDATION.md`
+**PRs:** [#758](https://github.com/itcmsgr/nftban/pull/758) MAC profiles + daemon/unit hardening (sq `ca42153c`) · [#757](https://github.com/itcmsgr/nftban/pull/757) superseded
+
+> **Why:** confine the privileged `nftband` daemon as defense-in-depth, and fix the EL SELinux-Enforcing failure where the daemon could not program nftables (`cannot list tables: socket: permission denied`). **Daemon NOT byte-identical to v1.146.0** (two defensive nil-guards). **Schema 1.83.0 frozen; no nftables table/set semantic change.**
+
+### Added
+- **SELinux policy module (`nftban`)** for EL: completes the `nftband_t` domain — labels the daemon `nftband_exec_t`, transitions `init_t → nftband_t` (`type_transition` + entrypoint) while keeping `NoNewPrivileges=true` via `process2:nnp_transition` (NNP not relaxed on any host). Ships `.te`/`.if`/`.fc` + a build-compiled `.pp` (refpolicy devel Makefile); `%post` `semodule -i`, `%postun` `semodule -r` (both `selinuxenabled`-guarded).
+- **AppArmor profile** for Debian/Ubuntu at `/etc/apparmor.d/usr.lib.nftban.bin.nftband`, shipped in **complain** mode with `flags=(complain attach_disconnected)`. Loaded by DEB `postinst` (`apparmor_parser -r`), removed by `postrm`.
+- Operator docs: `docs/security/MAC_PROFILES_SELINUX_APPARMOR.md` + wiki page “MAC Profiles: SELinux and AppArmor”.
+
+### Fixed / Changed
+- **EL SELinux Enforcing:** `nftband` now runs confined in `nftband_t` and manages its nftables objects — fixes `cannot list tables: socket: permission denied`.
+- **AppArmor `attach_disconnected`:** required because the unit’s private mount namespace (`ProtectSystem=strict` + `ReadWritePaths` + `ProtectHome`) otherwise makes `/run/systemd/notify` a “disconnected path”, breaking `sd_notify` and crash-looping the `Type=notify` unit.
+- **Daemon nil-guards** (`daemon_init.go`, `daemon_socket.go`): degrade gracefully (no nil-panic) when a systemd-passed socket fd is mediated to nil under confinement.
+- **CI:** RPM-build containers (`build-packages.yml`) and the release build (`release.yml`) now install `selinux-policy-devel` so the `.pp` compiles.
+
+### Validation
+- **AppArmor (complain):** Ubuntu 22.04 / 24.04 / 26.04 + Debian 12 / 13 (lab) and real Ubuntu 26.04 — active, confined, `sd_notify READY`, 0 panics, 0 disconnected-path, ban verified.
+- **SELinux Enforcing:** EL9 (AlmaLinux 9.7, CentOS Stream 9, Rocky 9.7) and EL10 (CentOS Stream 10, AlmaLinux 10.1, Rocky 10.1) — `nftband_t`, NNP kept, non-permissive, **0 AVC**, ban verified in `blacklist_manual_ipv4`.
+
+### Scope / Deferred
+- **EL8 SELinux Enforcing out of scope** (older refpolicy lacks required types).
+- Deferred: **v1.147-B** daemon least-privilege; **v1.147-C** audit-log uid/gid/pid + whitelist/immutable verification; `D-V147-REDUCE-NFTBAND-SHELLOUTS-AND-TIGHTEN-MAC-DOMAIN`; whitelist `--static`; portscan rate-alignment.
+
+---
+
 ## [v1.146.0] - 2026-06-03 — install / boot / package-lifecycle authority
 
 **Codename:** `V146_INSTALL_BOOT_LIFECYCLE`
