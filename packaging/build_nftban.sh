@@ -449,10 +449,12 @@ mkdir -p %{buildroot}/etc/nftban/conf.d
 cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 # Remove any stale whitelist.txt files (consolidated to whitelist.d/)
 find %{buildroot}/etc/nftban/conf.d -name 'whitelist.txt' -delete 2>/dev/null || true
+# v1.148: never ship .conf.local (operator override surface) — parity with the
+# Go installer's recursive walker, which skips them. Honors the negative rule.
+find %{buildroot}/etc/nftban/conf.d -name '*.conf.local' -delete 2>/dev/null || true
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
-install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
-install -D -m 0640 install/config/conf.d/metrics.conf %{buildroot}/etc/nftban/conf.d/metrics.conf
-install -D -m 0640 install/config/conf.d/persistent.conf %{buildroot}/etc/nftban/conf.d/persistent.conf
+# v1.148 (5-A): watchdog/metrics/persistent.conf moved into canonical
+# etc/nftban/conf.d/ and are now staged by the cp -r above; explicit lines removed.
 
 # Pattern files (patterns.d for botscan)
 mkdir -p %{buildroot}/etc/nftban/patterns.d/botscan
@@ -574,8 +576,8 @@ mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard/profiles
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports,botguard,community}
-# v1.41.0: Community stats config default
-install -m 0644 install/config/conf.d/community_stats.conf.default %{buildroot}/etc/nftban/conf.d/community_stats.conf.default
+# v1.148 (5-A): community_stats.conf.default moved into canonical etc/nftban/conf.d/
+# (staged by the cp -r above); explicit line removed.
 mkdir -p %{buildroot}/var/log/nftban/botguard
 mkdir -p %{buildroot}/var/cache/nftban
 mkdir -p %{buildroot}/run/nftban
@@ -1805,11 +1807,12 @@ build_deb() {
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
     # Remove any stale whitelist.txt files (consolidated to whitelist.d/)
     find "${deb_root}/etc/nftban/conf.d" -name 'whitelist.txt' -delete 2>/dev/null || true
+    # v1.148: never ship .conf.local (operator override surface) — parity with the
+    # Go installer's recursive walker, which skips them. Honors the negative rule.
+    find "${deb_root}/etc/nftban/conf.d" -name '*.conf.local' -delete 2>/dev/null || true
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
-    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
-    # R26-R28: Add missing config files for DEB/RPM parity (v1.19.12)
-    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/metrics.conf" "${deb_root}/etc/nftban/conf.d/metrics.conf"
-    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/persistent.conf" "${deb_root}/etc/nftban/conf.d/persistent.conf"
+    # v1.148 (5-A): watchdog/metrics/persistent.conf moved into canonical
+    # etc/nftban/conf.d/ and staged by the cp -r above; explicit parity lines removed.
 
     # Copy patterns.d directory (botscan patterns)
     cp "${PROJECT_ROOT}/etc/nftban/patterns.d/botscan"/*.patterns "${deb_root}/etc/nftban/patterns.d/botscan/"
@@ -1854,8 +1857,8 @@ build_deb() {
     # (matches source-install staging at internal/installer/payload/payload.go install/helpers entry)
     install -m 0755 "${PROJECT_ROOT}/install/helpers/firewall-init-with-delay.sh" "${deb_root}/usr/lib/nftban/helpers/"
 
-    # v1.41.0: Community stats config default
-    install -m 0644 "${PROJECT_ROOT}/install/config/conf.d/community_stats.conf.default" "${deb_root}/etc/nftban/conf.d/"
+    # v1.148 (5-A): community_stats.conf.default moved into canonical etc/nftban/conf.d/
+    # (staged by the cp -r above); explicit line removed.
 
     # Sysctl tuning profile (v1.38.0)
     install -m 0644 "${PROJECT_ROOT}/install/sysctl/90-nftban.conf" "${deb_root}/etc/sysctl.d/"

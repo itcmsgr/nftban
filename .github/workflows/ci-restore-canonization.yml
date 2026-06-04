@@ -322,11 +322,14 @@ jobs:
           # list). Carving line-exceptions into this gate would recreate
           # the regex-brittleness class the auditor flagged at PR #515.
           forbidden_patterns=(
-            # Service-policy mutations (mask/disable/daemon-reload) are
-            # forbidden by Amendment 1 §34. ServiceUnmask is no longer
-            # forbidden — PR-26-code-B promoted it to authorized typed
-            # method for A.1.
-            '\bexec\.ServiceMask\('
+            # Service-policy mutations (disable/daemon-reload) are forbidden
+            # by Amendment 1 §34. ServiceUnmask is no longer forbidden —
+            # PR-26-code-B promoted it to authorized typed method for A.1.
+            # ServiceMask is no longer blanket-forbidden — PR-25 Amendment 4
+            # (v1.148) authorizes it for a BOUNDED four-unit restore-disarm
+            # set; the dedicated allow-list pin below enforces that bound
+            # (any other mask target still fails). The blanket forbid is
+            # therefore removed here, mirroring the ServiceUnmask precedent.
             '\bexec\.ServiceDisable\('
             '\bexec\.DaemonReload\('
             # Direct OS bypass (must route through the executor).
@@ -399,6 +402,56 @@ jobs:
               esac
             fi
           done < <(echo "$stripped" | grep -n 'NftDeleteTable(' || true)
+
+          # Allow-list pin: ServiceMask (PR-25 Amendment 4 — v1.148 bounded
+          # restore-disarm exception, §70). Amendment 4 authorizes systemd
+          # mask in restore ONLY for the four NFTBan-owned units
+          # (nftband.service, nftband.socket, nftban-maintenance.timer,
+          # nftban-rebuild-recovery.timer) to stop daemon / socket / timer /
+          # exporter / Shape-B-boot-include reactivation after a CSF restore.
+          # ServiceMask is called over a single bounded slice (maskUnits) —
+          # its argument is the range variable, not a literal — so this pin
+          # bounds it structurally in three parts:
+          #   (a) every ServiceMask( call's arg is the authorized maskUnits
+          #       range variable `u` — a literal or any other variable fails;
+          #   (b) maskUnits is constructed verbatim from the four named
+          #       identifiers (no extra elements can be appended);
+          #   (c) the four identifiers resolve to exactly the four authorized
+          #       unit strings (and the timer slice declares only those two).
+          # Per-unit runtime enforcement is in restore_disarm_v148_test.go.
+          if echo "$stripped" | grep -qE '\bexec\.ServiceMask\('; then
+            # (a) no ServiceMask call may target anything but the range var.
+            while IFS= read -r line; do
+              args=$(echo "$line" | grep -oE 'ServiceMask\([^)]*\)' || true)
+              [[ -z "$args" ]] && continue
+              case "$args" in
+                'ServiceMask(u)') ;;
+                *)
+                  echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: unauthorized ServiceMask call — Amendment 4 bounds mask to the maskUnits allow-list: $args"
+                  fail=1
+                  ;;
+              esac
+            done < <(echo "$stripped" | grep -n 'ServiceMask(' || true)
+            # (b) the maskUnits allow-list is constructed verbatim.
+            if ! echo "$stripped" | grep -qE 'maskUnits :?= append\(\[\]string\{nftbandUnit, nftbandSocketUnit\}, nftbanTableTouchingTimers\.\.\.\)'; then
+              echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: ServiceMask present but the bounded maskUnits allow-list construction (Amendment 4 §70) was not found verbatim."
+              fail=1
+            fi
+            # (c) the four identifiers resolve to exactly the four units.
+            echo "$stripped" | grep -qE 'nftbandUnit[[:space:]]+=[[:space:]]+"nftband\.service"' \
+              || { echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: nftbandUnit must equal \"nftband.service\" (Amendment 4 §70)."; fail=1; }
+            echo "$stripped" | grep -qE 'nftbandSocketUnit[[:space:]]+=[[:space:]]+"nftband\.socket"' \
+              || { echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: nftbandSocketUnit must equal \"nftband.socket\" (Amendment 4 §70)."; fail=1; }
+            # The timer slice must contain EXACTLY the two authorized timers
+            # and no other unit literal — bounds the slice membership.
+            timer_block=$(echo "$stripped" | awk '/nftbanTableTouchingTimers = \[\]string\{/{f=1} f{print} /\}/{if(f)exit}')
+            authz_timers=$(echo "$timer_block" | grep -cE '"nftban-(rebuild-recovery|maintenance)\.timer"' || true)
+            all_units=$(echo "$timer_block" | grep -oE '"[^"]+\.(timer|service|socket|target|path)"' | wc -l)
+            if [[ "$authz_timers" -ne 2 || "$all_units" -ne 2 ]]; then
+              echo "::error::G4-RESTORE-EXEC-NO-OUT-OF-TARGET: nftbanTableTouchingTimers must declare EXACTLY the two authorized timers (Amendment 4 §70); found authorized=$authz_timers total-unit-literals=$all_units."
+              fail=1
+            fi
+          fi
 
           if [[ "$fail" -ne 0 ]]; then
             echo "::error::Amendment 1 §30 / §34 violation — restore_deps_csf.go must contain only the closed §31/§32 mutation surface."

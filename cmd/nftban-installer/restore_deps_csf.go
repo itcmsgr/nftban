@@ -51,6 +51,7 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/installer/detect"
 	"github.com/itcmsgr/nftban/internal/installer/executor"
+	"github.com/itcmsgr/nftban/internal/installer/render"
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 )
 
@@ -71,6 +72,11 @@ const (
 	csfBinaryDisabled = "/usr/sbin/csf.disabled"
 	csfServiceUnit    = "csf.service"
 	nftbandUnit       = "nftband.service"
+	// v1.148 (delta 2.1): the daemon's socket re-activation vector. Stopping
+	// nftband.service alone is insufficient — nftband.socket (Requires/After +
+	// Restart=on-failure) re-activates the daemon, which recreates ip/ip6 nftban
+	// tables seconds after restore. The disarm must stop AND disable it.
+	nftbandSocketUnit = "nftband.socket"
 
 	// csfCronPath / lfdCronPath are referenced by A.4 only. A.4
 	// soft-skips in 4B-3-csf because §33 E.5's cron-backup manifest
@@ -81,6 +87,16 @@ const (
 	csfCronPath = "/etc/cron.d/csf-cron"
 	lfdCronPath = "/etc/cron.d/lfd-cron"
 )
+
+// nftbanTableTouchingTimers are the nftban timers that reconcile/recreate the
+// ip/ip6 nftban tables. The restore disarm (A.6b, v1.148, delta 2.1,
+// SELECT_V148_5C = socket-plus-table-touching-timers) stops them so a
+// post-restore timer pass cannot re-apply nftban firewall state. This is the
+// table-touching subset only — NOT all ~21 nftban timers.
+var nftbanTableTouchingTimers = []string{
+	"nftban-rebuild-recovery.timer",
+	"nftban-maintenance.timer",
+}
 
 // =============================================================================
 // Sentinel errors — every refusal path returns a typed sentinel so the
@@ -479,6 +495,62 @@ func mutateToCSFTarget(ctx context.Context, m *productionMutationDep) error {
 		}
 	} else if m.log != nil {
 		m.log.Info("restore csf: A.6 skip — %s already inactive (idempotent)", nftbandUnit)
+	}
+
+	// =========================================================================
+	// §32 step 6b — A.6b: full boot-persistent disarm via MASK (v1.148, delta 2.1).
+	// `disable` is NOT a valid restore-disarm primitive here — every unit is
+	// pulled back by design (reboot-proven):
+	//   - nftband.service: TriggeredBy=nftband.socket AND RequiredBy=
+	//     nftban-unified-exporter.service → restarts on boot via the exporter even
+	//     when disabled.
+	//   - nftband.socket: re-activates the daemon.
+	//   - nftban-maintenance.timer: "Always Active", self-healed (re-enabled) by
+	//     the installer core-timer auto-fix; its reconcile recreates the tables.
+	//   - nftban-rebuild-recovery.timer: table-recreation timer.
+	// MASK blocks start by ANY path (socket trigger, Requires=, manual, self-heal)
+	// and survives reboot. Restore-specific override of the intentional
+	// always-active/socket-activation design: SELECT_V148_RESTORE_MASK_DAEMON_UNITS
+	// + SELECT_V148_RESTORE_MASK_TABLE_TIMERS = yes. install/update/reinstall
+	// unmask + re-enable normally; cmd/nftband daemon code is untouched; only these
+	// four nftban units are masked (NOT all timers, NOT nftables.service).
+	// =========================================================================
+	maskUnits := append([]string{nftbandUnit, nftbandSocketUnit}, nftbanTableTouchingTimers...)
+	for _, u := range maskUnits {
+		if m.exec.ServiceActive(u) {
+			if m.log != nil {
+				m.log.Info("restore csf: A.6b stopping %s", u)
+			}
+			if err := m.exec.ServiceStop(u); err != nil && m.log != nil {
+				m.log.Warn("restore csf: A.6b could not stop %s (non-fatal): %v", u, err)
+			}
+		}
+		if err := m.exec.ServiceMask(u); err != nil {
+			if m.log != nil {
+				m.log.Warn("restore csf: A.6b could not mask %s (non-fatal): %v", u, err)
+			}
+		} else if m.log != nil {
+			m.log.Info("restore csf: A.6b masked %s (blocks re-activation by socket/Requires/self-heal across reboot)", u)
+		}
+	}
+
+	// =========================================================================
+	// §32 step 6c — A.6c: Shape-B boot-include disarm (v1.148, delta 2.1,
+	// SELECT_V148_RESTORE_SHAPE_B_INCLUDE_DISARM=yes). Even with the daemon +
+	// socket + timers disabled, nftables.service still `nft -f`-loads
+	// /etc/nftban/nftables.conf via the v1.146 Shape-B include in the distro
+	// nftables.conf, recreating ip/ip6 nftban tables on the next boot. Restore
+	// strips that include (restore-specific reversal of Shape-B persistence — NOT
+	// a general rollback; install/update keep Shape-B). Idempotent + backed up;
+	// /etc/nftban/nftables.conf itself is never deleted. Both distro paths are
+	// attempted (Debian /etc/nftables.conf, EL /etc/sysconfig/nftables.conf);
+	// each is a no-op when the include is absent. Non-fatal (the service-level
+	// disarm above already succeeded).
+	// =========================================================================
+	for _, p := range []string{"/etc/nftables.conf", "/etc/sysconfig/nftables.conf"} {
+		if err := render.DisarmSystemConf(m.exec, p, m.log); err != nil && m.log != nil {
+			m.log.Warn("restore csf: A.6c could not disarm Shape-B include in %s (non-fatal): %v", p, err)
+		}
 	}
 
 	// =========================================================================

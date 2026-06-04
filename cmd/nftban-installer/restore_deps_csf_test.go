@@ -42,9 +42,9 @@ import (
 // mutateToCSFTarget invocation.
 type csfTestFixture struct {
 	// Evidence
-	priorRecCSF      bool          // true → priorRec set with FirewallType="csf"
-	priorRecActive   bool          // ActiveAtInstall (only meaningful when priorRecCSF)
-	panelDirectAdmin bool          // true → panel = PanelDirectAdmin (E.7)
+	priorRecCSF      bool                   // true → priorRec set with FirewallType="csf"
+	priorRecActive   bool                   // ActiveAtInstall (only meaningful when priorRecCSF)
+	panelDirectAdmin bool                   // true → panel = PanelDirectAdmin (E.7)
 	priorRecOverride *uninstall.PriorRecord // when non-nil, replaces the constructed priorRec
 
 	// Host state
@@ -656,7 +656,7 @@ func TestCSFMutate_4B3csf_NoEarlyNftbanDeletion_OnPreA5Failure(t *testing.T) {
 		priorRecActive:     true,
 		csfDisabledPresent: true,
 		nftbanTablesExist:  true,
-		mvBinaryFailsExit:  1,           // A.3 fails — function returns before A.5
+		mvBinaryFailsExit:  1,          // A.3 fails — function returns before A.5
 		safetyNetSafeFn:    alwaysSafe, // would permit A.7 if reached
 	})
 	err := mutateToCSFTarget(context.Background(), dep)
@@ -787,6 +787,15 @@ func TestCSFMutate_4B3csf_HappyPath_NoOutOfTargetMutation(t *testing.T) {
 		{"systemctl", []string{"enable", csfServiceUnit}},
 		{"systemctl", []string{"start", csfServiceUnit}},
 		{"systemctl", []string{"stop", nftbandUnit}},
+		// v1.148 A.6b: restore masks the daemon + table-recreation units (mask is
+		// required — disable is dependency-pulled / self-healed). All in-target.
+		{"systemctl", []string{"mask", nftbandUnit}},
+		{"systemctl", []string{"mask", nftbandSocketUnit}},
+		{"systemctl", []string{"mask", "nftban-maintenance.timer"}},
+		{"systemctl", []string{"mask", "nftban-rebuild-recovery.timer"}},
+		{"systemctl", []string{"stop", nftbandSocketUnit}},
+		{"systemctl", []string{"stop", "nftban-maintenance.timer"}},
+		{"systemctl", []string{"stop", "nftban-rebuild-recovery.timer"}},
 		// PR-26-code-B: typed Rename records as "rename" (not "mv").
 		{"rename", []string{csfBinaryDisabled, csfBinary}},
 	}

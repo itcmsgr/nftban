@@ -343,6 +343,13 @@ type entry struct {
 	// isDir indicates a directory-glob entry (vs single file).
 	isDir bool
 
+	// recursive (v1.148) selects the recursive config stager: the source dir
+	// (e.g. etc/nftban/conf.d) is walked depth-first, .conf.local is skipped,
+	// .conf.default uses policyAlways (reference), and every other file uses
+	// policyConfigPreserve (the 3-way V148_CONFIG_PRESERVATION_CONTRACT). Only
+	// meaningful together with isDir.
+	recursive bool
+
 	// optional indicates the source may be absent without error (e.g. man
 	// page files that are not always shipped).
 	optional bool
@@ -411,7 +418,18 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 
 		// Shipped nftables template (always overwrite — installer-managed,
 		// never operator-edited here).
-		{category: "templates", srcRel: "cli/lib/nftban/templates/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
+		// v1.148 (delta 1.3): srcRel was "cli/lib/nftban/templates/nftables.conf.tpl"
+		// (non-existent) so the entry silently skipped (optional:true) and source
+		// installs got no template; real path is install/nftables/nftables.conf.tpl
+		// (the same file RPM/DEB stage). Parity fix.
+		{category: "templates", srcRel: "install/nftables/nftables.conf.tpl", dstGlob: "/usr/lib/nftban/templates/nftables.conf.tpl", mode: 0644, policy: policyAlways, optional: true},
+
+		// v1.148 (delta 1.4): top-level nftban_help.sh (registry-driven `--all`
+		// help) sourced by the dispatcher at ${NFTBAN_LIB_DIR}/nftban_help.sh
+		// (cli/sbin/nftban:1097-1099). payload globs per-subdir only, so source
+		// installs missed it and degraded to inline help; RPM/DEB stage it via
+		// cp -r. Parity fix.
+		{category: "shell", srcRel: "cli/lib/nftban/nftban_help.sh", dstGlob: "/usr/lib/nftban/nftban_help.sh", mode: 0644, policy: policyAlways},
 
 		// VERSION file — consumed by cli/lib/nftban/lib/version.sh which is
 		// sourced by every CLI subcommand. Package installs stage it via
@@ -429,10 +447,15 @@ func buildEntries(distro *detect.DistroInfo) []entry {
 		// placeholders. render.RenderNftablesConf (Prepare step 6) reads
 		// this, substitutes, and writes back. Must be staged before render.
 		{category: "configs", srcRel: "install/nftables/nftables.conf", dstGlob: "/etc/nftban/nftables.conf", mode: 0640, policy: policyConfigNoReplace},
-		{category: "configs", srcRel: "install/config/conf.d", srcGlob: "*.conf", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyConfigNoReplace, isDir: true},
-
-		// Default reference templates (.default files — always overwrite).
-		{category: "configs", srcRel: "install/config/conf.d", srcGlob: "*.conf.default", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyAlways, isDir: true},
+		// v1.148 (5-A + V148_CONFIG_PRESERVATION_CONTRACT): single canonical conf.d
+		// tree, staged RECURSIVELY from etc/nftban/conf.d — includes the module
+		// subdirs ddos/portscan/login/geoban/... (delta 1.1, previously only a flat
+		// *.conf glob from install/config/conf.d, which is now retired) and resolves
+		// the connectors.conf content divergence (delta 1.2). policyConfigPreserve =
+		// 3-way preserve: operator-edited files kept + new default to a .nftban-new
+		// sidecar + WARN_CONFIG_LOCAL_PRESERVED; *.conf.local never written;
+		// *.conf.default is a reference (always refreshed). NO blind copy into /etc.
+		{category: "configs", srcRel: "etc/nftban/conf.d", dstGlob: "/etc/nftban/conf.d", mode: 0640, policy: policyConfigPreserve, isDir: true, recursive: true},
 
 		// Distro-aware path registry (always overwrite — installer-owned).
 		{category: "configs", srcRel: "etc/nftban/distros", srcGlob: "*.conf", dstGlob: "/etc/nftban/distros", mode: 0640, policy: policyAlways, isDir: true},
@@ -551,9 +574,128 @@ func Destinations(distro *detect.DistroInfo) []Destination {
 // Returns (wrote, skipped, failed) counters for the orchestrator.
 func stageEntry(exec executor.Executor, srcDir string, e entry, log *logging.Logger) (wrote, skipped, failed int) {
 	if e.isDir {
+		if e.recursive {
+			return stageRecursiveConfig(exec, srcDir, e, log)
+		}
 		return stageGlob(exec, srcDir, e, log)
 	}
 	return stageSingleFile(exec, srcDir, e, log)
+}
+
+// stageRecursiveConfig walks a config tree (e.srcRel under srcDir) depth-first
+// and stages each file into e.dstGlob preserving its relative path. It honours
+// the V148_CONFIG_PRESERVATION_CONTRACT (v1.148): *.conf.local is NEVER written
+// (operator override surface); *.conf.default / *.default are reference files
+// (policyAlways, always refreshed); every other file uses the 3-way
+// policyConfigPreserve (operator-edited files preserved, the new default
+// delivered as a .nftban-new sidecar + WARN_CONFIG_LOCAL_PRESERVED). No blind
+// recursive copy into /etc — every /etc write goes through the preserve logic.
+func stageRecursiveConfig(exec executor.Executor, srcDir string, e entry, log *logging.Logger) (wrote, skipped, failed int) {
+	srcRoot := filepath.Join(srcDir, e.srcRel)
+	if !exec.FileExists(srcRoot) {
+		if e.optional {
+			log.Debug("payload: optional recursive source dir missing: %s", srcRoot)
+			return 0, 1, 0
+		}
+		log.Warn("payload: required recursive source dir missing: %s", srcRoot)
+		return 0, 0, 1
+	}
+
+	var report []ConfigPreserveEntry
+	walkErr := filepath.Walk(srcRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Warn("payload: walk %s: %v", path, err)
+			failed++
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		// Never ship operator-override files (invariant #9).
+		if isConfigLocal(path) {
+			log.Debug("payload: skipping .conf.local source: %s", path)
+			return nil
+		}
+		rel, relErr := filepath.Rel(srcRoot, path)
+		if relErr != nil {
+			log.Warn("payload: rel %s: %v", path, relErr)
+			failed++
+			return nil
+		}
+		dstPath := filepath.Join(e.dstGlob, rel)
+
+		content, rdErr := exec.ReadFile(path)
+		if rdErr != nil {
+			log.Warn("payload: read %s: %v", path, rdErr)
+			failed++
+			return nil
+		}
+
+		// .conf.default / .default reference files: always refresh.
+		if strings.HasSuffix(path, ".conf.default") || strings.HasSuffix(path, ".default") {
+			w, wErr := copyIfChanged(exec, content, dstPath, e.mode, log)
+			if wErr != nil {
+				log.Warn("payload: %v", wErr)
+				failed++
+				return nil
+			}
+			if w {
+				wrote++
+			} else {
+				skipped++
+			}
+			return nil
+		}
+
+		// Everything else (.conf, module main.conf, .yaml, ...): 3-way preserve.
+		ent, pErr := preserveOrStageConfig(exec, content, dstPath, e.mode, log)
+		if pErr != nil {
+			log.Warn("payload: preserve %s: %v", dstPath, pErr)
+			failed++
+			return nil
+		}
+		report = append(report, ent)
+		switch ent.Action {
+		case ConfigInstalled, ConfigUpdated:
+			wrote++
+		default: // ConfigPreserved / ConfigUnchanged
+			skipped++
+		}
+		return nil
+	})
+	if walkErr != nil {
+		log.Warn("payload: recursive walk %s: %v", srcRoot, walkErr)
+	}
+	emitConfigPreservationReport(report, log)
+	return wrote, skipped, failed
+}
+
+// emitConfigPreservationReport logs the per-tree config outcome — the
+// V148_CONFIG_PRESERVATION_CONTRACT §6 report: a summary line plus an explicit
+// list of preserved (operator-kept) files and where their new default landed.
+func emitConfigPreservationReport(report []ConfigPreserveEntry, log *logging.Logger) {
+	if len(report) == 0 {
+		return
+	}
+	var inst, upd, pres, unch int
+	for _, r := range report {
+		switch r.Action {
+		case ConfigInstalled:
+			inst++
+		case ConfigUpdated:
+			upd++
+		case ConfigPreserved:
+			pres++
+		case ConfigUnchanged:
+			unch++
+		}
+	}
+	log.Info("config-preservation report: installed=%d updated=%d preserved=%d unchanged=%d", inst, upd, pres, unch)
+	for _, r := range report {
+		if r.Action == ConfigPreserved && r.Sidecar != "" {
+			log.Info("  preserved (operator-kept): %s — new default at %s", r.Path, r.Sidecar)
+		}
+	}
 }
 
 // stageSingleFile handles one source→dest file pair.
