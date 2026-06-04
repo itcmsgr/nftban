@@ -2517,7 +2517,11 @@ nftban_cmd_update() {
             # `nftban update --force` (or `nftban update force`) bypasses this check.
             # (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-1 item 1.5)
             if [[ "${_NFTBAN_UPDATE_FORCE:-0}" != "1" ]]; then
-                local _curv _latv _cache_file
+                # v1.149 BUG-1: initialize all three. Under `set -u`, an absent update
+                # cache (fresh host) OR missing jq skips the assignment block below, so a
+                # bare `local _latv` left `$_latv` unbound → `[[ -z "$_latv" ]]` aborted
+                # `nftban update` on any host that never ran `nftban update check`.
+                local _curv="" _latv="" _cache_file=""
                 _curv=$(_get_current_version 2>/dev/null || echo "unknown")
                 _cache_file="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/update_available.json"
                 # Prefer cache (fast); fall back to live check only if cache absent.
