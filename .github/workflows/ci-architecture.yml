@@ -587,6 +587,14 @@ jobs:
       - name: ssh_ports systemic-alignment invariants (v1.145 PR-G)
         run: bash cli/lib/nftban/tests/v145_pr_g_ssh_ports_invariants_test.sh
 
+      # External admin SSH-port guard (OBS-SSHPORT-55000-FAMILY): warn-only +
+      # lockout-net. Asserts the guard warns on an external :55000->:22 redirect,
+      # session-whitelists the admin IP via the IPC whitelist-session path only
+      # (no direct nft write), keeps ssh_ports = {22} (REJECT import), and is a
+      # no-op off-session / on dry-run / on opt-out / on re-entry.
+      - name: External admin SSH-port guard (OBS-SSHPORT-55000)
+        run: bash cli/lib/nftban/tests/ssh_admin_port_guard_v150_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
