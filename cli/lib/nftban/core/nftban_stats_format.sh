@@ -99,6 +99,9 @@ nftban_stats_generate_dashboard() {
     local black_v4=0 black_v6=0
     local black_v4_temp=0 black_v4_perm=0
     local black_v6_temp=0 black_v6_perm=0
+    # v1.150 F3: manual hash-set subset (already counted within black_v4/black_v6);
+    # surfaced as its own figure on both cache-hit and cache-miss. IPv4 + IPv6.
+    local manual_v4=0 manual_v6=0
 
     if [[ "$use_unified_cache" == "true" ]]; then
         # Read from unified cache (Single Source of Truth)
@@ -108,6 +111,10 @@ nftban_stats_generate_dashboard() {
         black_v6=$(nftban_stats_get_unified ".blacklist.ipv6.total" "0")
         black_v6_perm=$(nftban_stats_get_unified ".blacklist.ipv6.permanent" "0")
         black_v6_temp=$(nftban_stats_get_unified ".blacklist.ipv6.temporary" "0")
+        # v1.150 F3: manual subset from the cache (already folded into .blacklist.*.total
+        # by the exporter producer). IPv4 + IPv6 symmetric.
+        manual_v4=$(nftban_stats_get_unified ".blacklist_manual.ipv4" "0")
+        manual_v6=$(nftban_stats_get_unified ".blacklist_manual.ipv6" "0")
     else
         # Fallback: Direct nftables query
         # v1.150 HLT-09: count BOTH the interval set (blacklist_ipv4/_ipv6:
@@ -132,6 +139,7 @@ nftban_stats_generate_dashboard() {
             v4m_count=$(echo "$v4m_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=$((black_v4 + ${v4m_count:-0}))
             black_v4_temp=$((black_v4_temp + ${v4m_temp:-0}))
+            manual_v4=${v4m_count:-0}   # v1.150 F3: expose manual subset (cache-miss)
         fi
         black_v4_perm=$((black_v4 - black_v4_temp))
         [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
@@ -151,6 +159,7 @@ nftban_stats_generate_dashboard() {
             v6m_count=$(echo "$v6m_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=$((black_v6 + ${v6m_count:-0}))
             black_v6_temp=$((black_v6_temp + ${v6m_temp:-0}))
+            manual_v6=${v6m_count:-0}   # v1.150 F3: expose manual subset (cache-miss)
         fi
         black_v6_perm=$((black_v6 - black_v6_temp))
         [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
@@ -158,6 +167,8 @@ nftban_stats_generate_dashboard() {
 
     black_v4=${black_v4//[^0-9]/}
     black_v6=${black_v6//[^0-9]/}
+    manual_v4=${manual_v4//[^0-9]/}; manual_v4=${manual_v4:-0}
+    manual_v6=${manual_v6//[^0-9]/}; manual_v6=${manual_v6:-0}
     local total_black
     total_black=$((${black_v4:-0} + ${black_v6:-0}))
 
@@ -183,8 +194,8 @@ nftban_stats_generate_dashboard() {
 
     # Direct bans (blacklist sets) - show IPv4/IPv6 and temp/permanent
     echo "  Direct Bans (nftables):"
-    printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp"
-    printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp"
+    printf "      %-16s %'d (perm: %'d, temp: %'d, manual: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp" "$manual_v4"
+    printf "      %-16s %'d (perm: %'d, temp: %'d, manual: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp" "$manual_v6"
 
     # Count feeds (SINGLE SOURCE OF TRUTH from unified cache)
     local feeds_ipv4_total=0 feeds_ipv6_total=0
