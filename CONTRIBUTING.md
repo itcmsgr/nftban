@@ -210,7 +210,7 @@ journalctl =
 
 ### 8. AI / Automation Rule
 
-Any AI (Claude, etc.) must obey:
+Any AI or automated contributor must obey:
 - README "Official Supported Platforms & Build Contract"
 - This CONTRIBUTING.md
 - No exceptions
