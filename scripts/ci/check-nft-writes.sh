@@ -56,28 +56,36 @@ GO_APPLY_PATTERN='exec\.Command\("nft",\s*"-f"'
 # Matches: nft list, nft get
 NFT_READ_PATTERN='nft[[:space:]]+(list|get)[[:space:]]'
 
-# Allowed paths:
-#   - Daemon implementation (cmd/nftband/, internal/nftbackend/)
-#   - IPC library (nft_ipc.sh)
-#   - Core system operations that require direct nft writes:
-#     health_fixes (repair broken tables/sets/chains)
-#     maintenance (SYNPROXY rule rotation)
-#     autoheal (emergency table recovery)
-#     nft_fragment (botguard set management)
-#     firewall-init-with-delay (snapshot restore at boot)
-#     cmd_firewall (firewall rebuild/restore/flush — root-only operations)
-#     cmd_flush (explicit flush command — root-only)
-#     ddos_classic (DDoS mitigation rules — real-time enforcement)
-#     firewall_conflicts (conflict resolution — root-only)
-#     geoban (country-level blocking rules)
-#     health_checks_security (security verification)
-#     cmd_whitelist (whitelist element management)
-#     cmd_zabbix (monitoring integration)
-#     cmd_health_core (health repair operations)
-#     cmd_firewall_logs (log chain rules)
-#     service_control (nftban disable --flush-rules — daemon may not be running)
-#     nftban_system_ip (whitelist fallback when daemon is down — postinst safety)
-ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|scripts/ci/|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_geoban\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
+# Allowed paths — each entry carries a rationale (v1.150 AUTH-3: allowlist is
+# annotated, not a bare list). Categories: AUTHORITY (the daemon writer),
+# IPC (client lib), RENDER/REPAIR (root-only rebuild/restore/repair),
+# EMERGENCY-GATED (direct write only under NFTBAN_EMERGENCY_MODE / daemon-down),
+# LOW-LEVEL-TOOL (apply/rollback helpers), TEST-ONLY.
+#   AUTHORITY:
+#     cmd/nftband/                — the daemon (sole intended nft writer)
+#     internal/nftbackend/        — Backend: the declared single write authority
+#     internal/setsync/           — NFTManager netlink set ops (shared by the authority)  [v1.150 AUTH-2]
+#   IPC:
+#     nft_ipc.sh                  — shell IPC client (+ gated emergency fallback)
+#   RENDER/REPAIR (root-only):
+#     health_fixes, maintenance, autoheal, nft_fragment, firewall-init-with-delay,
+#     cmd_firewall, cmd_flush, firewall_conflicts, health_checks_security,
+#     cmd_whitelist, cmd_zabbix, cmd_health_core, cmd_firewall_logs
+#   EMERGENCY-GATED:
+#     ddos_classic   — penalty escalation now routes via daemon IPC (v1.150 AUTH-1);
+#                      remaining direct write is the gated NFTBAN_EMERGENCY_MODE fallback only
+#     service_control— nftban disable --flush-rules (daemon may not be running)
+#     nftban_system_ip— whitelist fallback when daemon is down (postinst safety)
+#   LOW-LEVEL-TOOL (extensionless cli/sbin — v1.150 AUTH-2 now in scan scope):
+#     cli/sbin/nftban-apply      — ruleset apply (nft -f)
+#     cli/sbin/nftban-rollback   — emergency rollback (nft -f + table delete)
+#   TEST-ONLY:
+#     scripts/ci/                 — this gate + CI helpers
+#     scripts/test_server_cleanup.sh — lab teardown (nft delete table)
+#     nft_writer_authority_v150_test.sh — asserts ON this policy (contains nft-write
+#                                   text in descriptions/patterns; never runs in production)
+# REMOVED v1.150 AUTH-4: nftban_geoban.sh (0 direct nft writes — routes via nft_ipc_apply_ruleset).
+ALLOWED_REGEX='^(cmd/nftband/|internal/nftbackend/|internal/setsync/|scripts/ci/|scripts/test_server_cleanup\.sh|cli/lib/nftban/tests/nft_writer_authority_v150_test\.sh|cli/sbin/nftban-apply|cli/sbin/nftban-rollback|cli/lib/nftban/lib/nft_ipc\.sh|cli/lib/nftban/core/nftban_health_fixes\.sh|cli/lib/nftban/cron/maintenance\.sh|cli/lib/nftban/helpers/autoheal\.sh|cli/lib/nftban/lib/nft_fragment\.sh|install/helpers/firewall-init-with-delay\.sh|cli/lib/nftban/cli/cmd_firewall\.sh|cli/lib/nftban/cli/cmd_flush\.sh|cli/lib/nftban/core/nftban_ddos_classic\.sh|cli/lib/nftban/core/nftban_firewall_conflicts\.sh|cli/lib/nftban/core/nftban_health_checks_security\.sh|cli/lib/nftban/cli/cmd_whitelist\.sh|cli/lib/nftban/cli/cmd_zabbix\.sh|cli/lib/nftban/cli/cmd_health_core\.sh|cli/lib/nftban/cli/cmd_firewall_logs\.sh|cli/lib/nftban/lib/service_control\.sh|cli/lib/nftban/core/nftban_system_ip\.sh)'
 
 # =============================================================================
 # MAIN
@@ -102,9 +110,20 @@ trap 'rm -f "$WRITE_FILE" "$READ_FILE"' EXIT
 echo "Scanning for WRITE violations..."
 
 # Shell: nft add/delete/flush/insert/create/destroy/replace
+# v1.150 AUTH-2: scan scope widened to scripts/ and the extensionless cli/sbin/*
+# tools (previously blind spots). cli/sbin is scanned WITHOUT the *.sh filter
+# because nftban-apply/nftban-rollback have no extension.
 grep -rn -E "$NFT_WRITE_PATTERN" \
     --include="*.sh" \
-    cli/ pkg/ install/ 2>/dev/null | \
+    cli/ pkg/ install/ scripts/ 2>/dev/null | \
+    grep -v -E "$ALLOWED_REGEX" | \
+    grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' | \
+    grep -v -E 'echo.*nft[[:space:]]+(add|delete|flush)' | \
+    grep -v -E 'printf.*nft[[:space:]]+(add|delete|flush)' \
+    >> "$WRITE_FILE" || true
+
+# Shell: extensionless cli/sbin/* tools (AUTH-2)
+grep -rnI -E "$NFT_WRITE_PATTERN" cli/sbin/ 2>/dev/null | \
     grep -v -E "$ALLOWED_REGEX" | \
     grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' | \
     grep -v -E 'echo.*nft[[:space:]]+(add|delete|flush)' | \
@@ -114,22 +133,30 @@ grep -rn -E "$NFT_WRITE_PATTERN" \
 # Shell: nft -f (apply ruleset)
 grep -rn -E "$NFT_APPLY_PATTERN" \
     --include="*.sh" \
-    cli/ pkg/ install/ 2>/dev/null | \
+    cli/ pkg/ install/ scripts/ 2>/dev/null | \
+    grep -v -E "$ALLOWED_REGEX" | \
+    grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' \
+    >> "$WRITE_FILE" || true
+
+# Shell: nft -f in extensionless cli/sbin/* tools (AUTH-2)
+grep -rnI -E "$NFT_APPLY_PATTERN" cli/sbin/ 2>/dev/null | \
     grep -v -E "$ALLOWED_REGEX" | \
     grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' \
     >> "$WRITE_FILE" || true
 
 # Go: exec.Command("nft", "add/delete/flush...")
+# v1.150 AUTH-2: internal/ added (the authority lives there; a rogue internal/
+# writer using exec was previously invisible to the gate).
 grep -rn -E "$GO_WRITE_PATTERN" \
     --include="*.go" \
-    pkg/ cmd/ 2>/dev/null | \
+    pkg/ cmd/ internal/ 2>/dev/null | \
     grep -v -E "$ALLOWED_REGEX" \
     >> "$WRITE_FILE" || true
 
 # Go: exec.Command("nft", "-f", ...) but NOT "-c", "-f" (validation)
 grep -rn -E "$GO_APPLY_PATTERN" \
     --include="*.go" \
-    pkg/ cmd/ 2>/dev/null | \
+    pkg/ cmd/ internal/ 2>/dev/null | \
     grep -v -E "$ALLOWED_REGEX" | \
     grep -v '"-c"' \
     >> "$WRITE_FILE" || true

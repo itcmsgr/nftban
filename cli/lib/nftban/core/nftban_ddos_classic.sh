@@ -1110,21 +1110,45 @@ nftban_ddos_penalty_scan() {
         strikes_json=$(echo "$strikes_json" | jq --arg ip "$ip" --argjson s "$current_strikes" --argjson t "$now" \
             '.[$ip] = {"strikes": $s, "last_seen": $t}') 2>/dev/null || continue
 
-        # Determine penalty level based on strikes
-        local target_set=""
+        # Determine penalty level based on strikes (+ the matching per-tier
+        # timeout, so the IPC-routed add carries the same expiry the set default
+        # would have applied — behaviour-preserving vs the old direct write).
+        local target_set="" target_timeout=""
         if [[ $current_strikes -ge $((escalate_threshold * 4)) ]]; then
-            target_set="${set_ban}${suffix}"
+            target_set="${set_ban}${suffix}";  target_timeout="${DDOS_PENALTY_TIMEOUT_1H:-1h}"
         elif [[ $current_strikes -ge $((escalate_threshold * 3)) ]]; then
-            target_set="${set_drop}${suffix}"
+            target_set="${set_drop}${suffix}"; target_timeout="${DDOS_PENALTY_TIMEOUT_5M:-5m}"
         elif [[ $current_strikes -ge $((escalate_threshold * 2)) ]]; then
-            target_set="${set_5m}${suffix}"
+            target_set="${set_5m}${suffix}";   target_timeout="${DDOS_PENALTY_TIMEOUT_5M:-5m}"
         elif [[ $current_strikes -ge $escalate_threshold ]]; then
-            target_set="${set_10s}${suffix}"
+            target_set="${set_10s}${suffix}";  target_timeout="${DDOS_PENALTY_TIMEOUT_10S:-10s}"
         fi
 
-        # Add to penalty set if threshold reached
+        # Add to penalty set if threshold reached.
+        # v1.150 AUTH-1: route the escalation write through the daemon IPC
+        # (nft_ipc_add_element) so it goes through the single nftables write
+        # authority (daemon lock + audit), instead of the prior direct
+        # `nft add element` that bypassed the daemon. The explicit per-tier
+        # timeout preserves the penalty set's expiry. A direct-nft fallback is
+        # retained ONLY when the IPC helper/daemon is unavailable AND
+        # NFTBAN_EMERGENCY_MODE=1 (default 0) — so a down daemon cannot silently
+        # stop DDoS escalation, while normal operation stays daemon-only.
         if [[ -n "$target_set" ]]; then
-            if nft add element ${table_fam} ${target_set} "{ $ip }" 2>/dev/null; then
+            local _to_secs _added=0
+            _to_secs=$(_nftban_ddos_timeout_to_seconds "$target_timeout")
+            if declare -f nft_ipc_add_element >/dev/null 2>&1 \
+               && nft_ipc_add_element "${table_fam}" "${target_set}" "$ip" "${_to_secs}" 2>/dev/null; then
+                _added=1
+            elif [[ "${NFTBAN_EMERGENCY_MODE:-0}" == "1" ]] || ! declare -f nft_ipc_add_element >/dev/null 2>&1; then
+                # Emergency / IPC-unavailable fallback (gated): direct nft write.
+                if nft add element ${table_fam} ${target_set} "{ $ip }" 2>/dev/null; then
+                    _added=1
+                    _nftban_ddos_classic_log "WARN" "Penalty via emergency direct-nft (daemon IPC unavailable): ${ip} → ${target_set}"
+                fi
+            else
+                _nftban_ddos_classic_log "WARN" "Penalty skipped — daemon IPC unavailable, NFTBAN_EMERGENCY_MODE=0: ${ip} → ${target_set}"
+            fi
+            if [[ $_added -eq 1 ]]; then
                 _nftban_ddos_classic_log "INFO" "Penalty: ${ip} → ${target_set} (strikes=${current_strikes})"
                 promoted=$((promoted + 1))
             fi
