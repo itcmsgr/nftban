@@ -11,6 +11,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.150.0] - 2026-06-05 — CLI-health truth & cleanup + nft-writer single-authority tightening + stats fixes
+
+**Codename:** `V150_CLI_HEALTH`
+**Controlling records:** `NFTBAN_ROADMAP/V150_FULL_CLI_HEALTH_AUDIT_RECORD.md` · `V150_SCOPE.md` · `V150_LANE_A_LAB_VALIDATION_RECORD.md` · `V150_BAN_UNBAN_SINGLE_AUTHORITY_AUDIT.md` · `V150_NFT_WRITER_AUTHORITY_TIGHTENING_SCOPE.md`
+**PRs:** [#764](https://github.com/itcmsgr/nftban/pull/764) (Lane A, sq `bd2d35e5`) · [#765](https://github.com/itcmsgr/nftban/pull/765) (AUTH, sq `c3ee98d7`) · [#766](https://github.com/itcmsgr/nftban/pull/766) (F2, sq `255bb757`) · [#767](https://github.com/itcmsgr/nftban/pull/767) (F3, sq `3c792944`)
+
+> **Why:** a truth-focused release — make the CLI report what the firewall is actually doing, tighten the single-writer nftables authority, and fix the broken `stats --json`. **Daemon byte-identical to v1.149.0** (zero `cmd/nftband`/`cmd/nftban-core` change across all four lanes; the only Go touched is `internal/nftbanconf/logs.go`, dead-code-eliminated from the daemon). **Schema 1.83.0 frozen.**
+
+### Fixed — CLI-health truth (Lane A)
+- **Stats/status ban counts.** `nftban stats`/`status` no longer report `0` for manual + auto-detect bans — they now read the `blacklist_manual` set (the producer key) instead of a non-existent `.temporary` key. GeoBan state in `status` is read from `/etc/nftban/geoban.d/50-ban-*.conf` instead of a phantom `grep "BLOCKED"` that never matched (status no longer shows DISABLED while countries are banned).
+- **RBL false-CLEAN.** The RBL monitor no longer reports `CLEAN` on a resolver timeout/error or on `host`-only hosts: real exit-code capture (rc 124 → TIMEOUT, non-zero → ERROR — never CLEAN), a dig/nslookup fallback, a cache-dir fix, a real per-run query cap, and `jq`-built JSON.
+- **Health truth.** `nftban health verify` now checks `systemctl is-failed` first, so a *failed* required service/timer is reported as broken instead of passing as “INSTALLATION COMPLETE”; the timer check also flags a failed backing service. `health`/auto-heal target `/usr/lib/systemd/system`.
+- **Timer truth.** `nftban_enable_all` no longer auto-enables `nftban-rollback.timer` (the unit explicitly says “do not auto-enable”); `nftban timers` lists the six previously-omitted shipped timers; the watchdog trend hint is gated on real timer state and the orphaned trend collector is wired so adaptive thresholds populate.
+- **`set -u` unbound-var class.** Initialized conditionally-assigned locals across `nftban update`-adjacent paths and made the dispatcher case-insensitive; fixes crashes on empty-env / fresh hosts.
+- **Stale text / UX.** Removed Fail2Ban mislabels, fixed wrong help/flag hints, hoisted `port --help` above the root gate, dropped a banner on the geoip error path.
+
+### Fixed — log durability / path truth (Lane A)
+- **Unbounded logs.** `security-audit.log` and `portscan-events.log` (real writers, previously rotated by no stanza) gain logrotate stanzas + `logs.go` inventory entries (drift-test guarded); `permissions_audit.log` rotated.
+- **Stats log path.** `nftban stats` reads `bans.log` (the real writer) instead of the singular `ban.log`; phantom `escalations.log`/`unbans.log` metric reads dropped; reports-registry path/fields/rotation corrected; SSH posture reads `sshd_config.d/` drop-ins.
+
+### Added — systemd geoban-refresh timer (Lane A)
+- Ships `nftban-geoban-refresh.{timer,service}` (weekly country-CIDR refresh, distinct from the mmdb `nftban-core-geoip.timer`) in **both** DEB and RPM, with full parity: the canonical systemd install-list, `docs/systemd/UNITS.md` counts, and the generated `%preun`/`prerm` cleanup snippets all updated (auto-enable deferred to a later installer lane; the unit is manageable via `nftban timers`).
+
+### Changed — nft-writer single-authority tightening (AUTH)
+- The DDoS-classic penalty-escalation timer write now routes through the daemon IPC (`nft_ipc_add_element`) instead of a direct `nft add element`, so it goes through the single nftables write authority — with the same per-tier expiry preserved and a direct-write fallback gated behind `NFTBAN_EMERGENCY_MODE` (default **off**).
+- The `scripts/ci/check-nft-writes.sh` guard scan is widened to `scripts/`, the extensionless `cli/sbin/*` tools, and `internal/` Go (former blind spots); the allowlist is annotated per-entry and the stale `nftban_geoban.sh` entry (0 direct writes) is pruned; positive ban/unban-IPC-route and emergency-default-off assertions added. New in-tree doc `docs/ARCHITECTURE-NFT-POLICY.md`.
+
+### Fixed — stats JSON & manual-count cache truth (F2, F3)
+- **F2 — `nftban stats --json` is valid JSON again.** `nftban_stats_top_sources` no longer emits a trailing comma when some source counts are 0 (the awk now emits the separator only between actual objects), which previously broke `stats --json` with `jq: invalid JSON text passed to --argjson`.
+- **F3 — manual blacklist counts visible on the cache path, IPv4/IPv6 symmetric.** The unified-stats-cache exporter now emits a `blacklist_manual{ipv4,ipv6,total}` block and the cache-hit dashboard reads + surfaces it (`manual: N` on the Direct Bans line), so manual bans are visible on both cache-hit and cache-miss paths. Existing `.blacklist` cache fields and perm/temp are preserved; the daemon `watchdog.go` half is deferred to a future daemon lane.
+
+### Validation
+- **Lane A lab-validated** on lab2 (Ubuntu 24.04, DEB) + lab4 (AlmaLinux 9.8, EL9 RPM): both packages build; the v150 hermetic test suite passes on both OSes; `logrotate -d` + the `logs.go` inventory drift-test are green; live systemd checks confirm geoban-refresh installs-but-stays-disabled, `nftban-rollback.timer` stays `static` after `enable-all`, the watchdog trend populates, and `status` GeoBan goes DISABLED→ACTIVE.
+- **AUTH / F2 / F3** are hermetic-tested (nft-writer route + emergency-off; valid-JSON across zero/mixed/all source counts; manual cache-hit/miss + zero-manual + perm/temp-unchanged, all IPv4+IPv6).
+- All four PRs merged CI-green (Policy Gates incl. the widened nft-writer guard, Build & Test, Runtime Truth almalinux-9 + ubuntu-24.04, ShellCheck). Ban/stats truth was validated from code + hermetic tests — **no live direct ban/unban and no direct-nft confirmation** (single-writer / IPC discipline).
+
+### Scope / Deferred
+- Boundaries held: shell/CI/docs only (the single Go file is the DCE'd log inventory), **daemon byte-identical, schema 1.83.0 frozen**. Deferred to later lanes: the daemon-Go half of the manual-count fix (`watchdog.go`), the installer-Go parity lane (Lane B: `feeds.conf`/`cli/etc` staging, suricata-perms, EL MAC), and the remaining register backlog in `NFTBAN_PENDINGS_AND_BUGS_CURRENT.md`.
+
+---
+
 ## [v1.149.0] - 2026-06-05 — operational hardening (whitelist --static + portscan corroboration + urgent bug fixes)
 
 **Codename:** `V149_OPERATIONAL_HARDENING`
