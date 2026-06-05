@@ -122,54 +122,69 @@ reset_state; DETECT_PORTS=$'22\n2222'
 out="$(nftban_ssh_admin_port_audit 2>&1)"
 echo "$out" | grep -qi "is NOT an sshd listener" && no "multi-port: false warning" "$out" || ok "multi-port: no false warning"
 
+echo "=== risk helper: declared-not-listener = at-risk; declared-listener / none = no risk ==="
+reset_state; DETECT_PORTS="22"; export NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
+[[ "$(_nftban_ssh_external_admin_risk_ports)" == "55000" ]] && ok "risk: declared :55000 not a listener → at-risk" || no "risk external" "$(_nftban_ssh_external_admin_risk_ports)"
+reset_state; DETECT_PORTS=$'22\n55000'; export NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
+[[ -z "$(_nftban_ssh_external_admin_risk_ports)" ]] && ok "risk: declared :55000 IS a listener → no risk" || no "risk native"
+reset_state; DETECT_PORTS="22"
+[[ -z "$(_nftban_ssh_external_admin_risk_ports)" ]] && ok "risk: nothing declared → no risk" || no "risk none"
+
 echo "=== S2 lockout-net: external-redirect rebuild (warn + IPC whitelist) ==="
 reset_state; DETECT_PORTS="22"
 export SSH_CLIENT="203.0.113.7 51000 22"
 export NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
 out="$(nftban_ssh_pre_rebuild_lockout_guard rebuild 2>&1)"
-echo "$out" | grep -q "external admin SSH port(s) declared (:55000)" && ok "guard: warns on declared external port" || no "guard warn" "$out"
-echo "$out" | grep -q "will NOT preserve the" && ok "guard: states NAT not preserved" || no "guard nat statement" "$out"
+echo "$out" | grep -q "external admin SSH port(s) (:55000) reach sshd via an EXTERNAL redirect" && ok "guard: warns on external-redirect risk port" || no "guard warn" "$out"
+echo "$out" | grep -q "NOT preserve the" && ok "guard: states NAT not preserved" || no "guard nat statement" "$out"
 grep -q "wl-add 203.0.113.7 --ttl 1h --reason pre-rebuild-lockout-net" "$WL_LOG" \
     && ok "guard: session-whitelists admin IP via IPC (default TTL 1h)" || no "guard wl IPC" "$(cat "$WL_LOG")"
 [[ ! -s "$NFT_WRITE_LOG" ]] && ok "guard: lockout-net uses IPC only — zero direct nft writes" || no "guard nft writes" "$(cat "$NFT_WRITE_LOG")"
 
-echo "=== S2 lockout-net: clean :22 rebuild (no warn, still whitelists admin IP) ==="
+echo "=== S2 NARROWED: normal :22 host is a TRUE no-op (no warn, no whitelist, no nested reload) ==="
 reset_state; DETECT_PORTS="22"
 export SSH_CLIENT="198.51.100.9 40000 22"
 out="$(nftban_ssh_pre_rebuild_lockout_guard rebuild 2>&1)"
-echo "$out" | grep -qi "external admin SSH port" && no "clean rebuild: should not warn external" "$out" || ok "clean rebuild: no external-port warning"
-grep -q "wl-add 198.51.100.9 --ttl 1h --reason pre-rebuild-lockout-net" "$WL_LOG" \
-    && ok "clean rebuild: still session-whitelists admin IP (general lockout-net)" || no "clean rebuild wl" "$(cat "$WL_LOG")"
+[[ -z "$out" ]] && ok "normal :22: no output (no warning)" || no "normal :22 silent" "$out"
+[[ ! -s "$WL_LOG" ]] && ok "normal :22: no session-whitelist call (so no nested reload)" || no "normal :22 wl" "$(cat "$WL_LOG")"
+echo "$out" | grep -qi "external admin SSH port" && no "normal :22: must not warn external" "$out" || ok "normal :22: no external warning"
 
-echo "=== S2 custom TTL ==="
-reset_state; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_PREREBUILD_LOCKOUT_TTL="2h"
+echo "=== S2 NARROWED: native :55000 listener declared is a TRUE no-op ==="
+reset_state; DETECT_PORTS=$'22\n55000'
+export SSH_CLIENT="203.0.113.7 51000 55000" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
+out="$(nftban_ssh_pre_rebuild_lockout_guard rebuild 2>&1)"
+[[ -z "$out" ]] && ok "native :55000: no output (no warning)" || no "native :55000 silent" "$out"
+[[ ! -s "$WL_LOG" ]] && ok "native :55000: no forced whitelist (in-authority listener)" || no "native :55000 wl" "$(cat "$WL_LOG")"
+
+echo "=== S2 custom TTL (risk path) ==="
+reset_state; DETECT_PORTS="22"; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000" NFTBAN_PREREBUILD_LOCKOUT_TTL="2h"
 nftban_ssh_pre_rebuild_lockout_guard takeover >/dev/null 2>&1
 grep -q "wl-add 203.0.113.7 --ttl 2h --reason pre-takeover-lockout-net" "$WL_LOG" \
     && ok "guard: honors NFTBAN_PREREBUILD_LOCKOUT_TTL + per-op reason" || no "guard custom ttl/reason" "$(cat "$WL_LOG")"
 
-echo "=== S2 dry-run: no whitelist write ==="
-reset_state; export SSH_CLIENT="203.0.113.7 51000 22"
+echo "=== S2 dry-run (risk path): no whitelist write ==="
+reset_state; DETECT_PORTS="22"; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
 out="$(nftban_ssh_pre_rebuild_lockout_guard rebuild --dry-run 2>&1)"
 echo "$out" | grep -q "dry-run: would session-whitelist" && ok "dry-run: reports intent" || no "dry-run report" "$out"
 [[ ! -s "$WL_LOG" ]] && ok "dry-run: no whitelist mutation" || no "dry-run no mutation" "$(cat "$WL_LOG")"
 
-echo "=== S2 opt-out: NFTBAN_NO_PREREBUILD_LOCKOUT=1 ==="
-reset_state; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_NO_PREREBUILD_LOCKOUT=1
-nftban_ssh_pre_rebuild_lockout_guard rebuild >/dev/null 2>&1
-[[ ! -s "$WL_LOG" ]] && ok "opt-out: no whitelist, no warn" || no "opt-out" "$(cat "$WL_LOG")"
+echo "=== S2 opt-out beats risk: NFTBAN_NO_PREREBUILD_LOCKOUT=1 ==="
+reset_state; DETECT_PORTS="22"; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000" NFTBAN_NO_PREREBUILD_LOCKOUT=1
+out="$(nftban_ssh_pre_rebuild_lockout_guard rebuild 2>&1)"
+{ [[ ! -s "$WL_LOG" ]] && [[ -z "$out" ]]; } && ok "opt-out: no whitelist, no warn (even with risk)" || no "opt-out" "$(cat "$WL_LOG") | $out"
 
-echo "=== S2 re-entry guard: no recursion ==="
-reset_state; export SSH_CLIENT="203.0.113.7 51000 22" _NFTBAN_PREREBUILD_GUARD_ACTIVE=1
+echo "=== S2 re-entry beats risk: no recursion ==="
+reset_state; DETECT_PORTS="22"; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000" _NFTBAN_PREREBUILD_GUARD_ACTIVE=1
 nftban_ssh_pre_rebuild_lockout_guard reload >/dev/null 2>&1
 [[ ! -s "$WL_LOG" ]] && ok "re-entry: guard short-circuits (no recursive whitelist)" || no "re-entry" "$(cat "$WL_LOG")"
 
-echo "=== S2 not-in-ssh-session: no-op ==="
-reset_state
+echo "=== S2 not-in-ssh beats risk: no-op ==="
+reset_state; DETECT_PORTS="22"; export NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
 nftban_ssh_pre_rebuild_lockout_guard rebuild >/dev/null 2>&1
-[[ ! -s "$WL_LOG" ]] && ok "no ssh session: guard is a no-op" || no "no-ssh no-op" "$(cat "$WL_LOG")"
+[[ ! -s "$WL_LOG" ]] && ok "no ssh session: guard is a no-op (even with risk declared)" || no "no-ssh no-op" "$(cat "$WL_LOG")"
 
 echo "=== invariant: guard NEVER imports the external port (ssh_ports unchanged) ==="
-reset_state; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
+reset_state; DETECT_PORTS="22"; export SSH_CLIENT="203.0.113.7 51000 22" NFTBAN_EXTERNAL_ADMIN_SSH_PORTS="55000"
 nftban_ssh_pre_rebuild_lockout_guard rebuild >/dev/null 2>&1
 [[ ! -s "$NFT_WRITE_LOG" ]] && ok "REJECT-C upheld: no ssh_ports import / no nft write at all" || no "import invariant" "$(cat "$NFT_WRITE_LOG")"
 
