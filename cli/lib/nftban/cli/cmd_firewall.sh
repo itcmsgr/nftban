@@ -188,6 +188,11 @@ nftban_cmd_firewall() {
         echo ""
     fi
 
+    # OBS-SSHPORT-55000-FAMILY: external admin SSH-port warn-only + lockout-net guard.
+    # Defines nftban_ssh_pre_rebuild_lockout_guard + nftban_ssh_admin_port_audit; safe no-op
+    # when not in an SSH session / on opt-out. shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/ssh_admin_port_guard.sh" 2>/dev/null || true
+
     case "$subcommand" in
         help|-h|--help)
             show_firewall_help
@@ -200,6 +205,7 @@ nftban_cmd_firewall() {
         init)
             # v1.38.0: BUG-002 — alias to rebuild (firewall init was never implemented)
             shift
+            nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
             firewall_rebuild "$@"
             ;;
         validate)
@@ -228,10 +234,12 @@ nftban_cmd_firewall() {
             ;;
         reload)
             shift
+            nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
         rebuild)
             shift
+            nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
         reset)
@@ -260,11 +268,18 @@ nftban_cmd_firewall() {
             ;;
         takeover)
             shift
+            nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;
         whitelist-session)
             shift
             firewall_whitelist_session "$@"
+            ;;
+        ssh-audit|ssh-port-audit)
+            # OBS-SSHPORT-55000-FAMILY: read-only report of sshd listeners vs ssh_ports
+            # vs declared external admin ports (NFTBAN_EXTERNAL_ADMIN_SSH_PORTS).
+            shift
+            nftban_ssh_admin_port_audit "$@"
             ;;
         *)
             echo "ERROR: Unknown firewall subcommand: $subcommand" >&2
@@ -3255,6 +3270,7 @@ Validation & Diagnostics:
   check         Check if IP or port is blocked/allowed
   logs          View and filter firewall logs
   record        Snapshot current nft schema to JSON for audit/comparison
+  ssh-audit     Report sshd listeners vs ssh_ports vs declared external admin ports
 
 Operations:
   init          Initialize firewall tables (alias for rebuild)
@@ -3280,6 +3296,9 @@ Examples:
   nftban firewall record --json        # Output to stdout
   nftban firewall record --diff file   # Compare against baseline
 
+  # SSH admin-port audit (external :55000->:22 redirect class)
+  nftban firewall ssh-audit            # sshd listeners vs ssh_ports vs declared
+
   # Recovery operations
   nftban firewall rebuild              # Fix corruption
   nftban firewall reset --force        # Full reset
@@ -3289,6 +3308,20 @@ Examples:
 Global options:
   --json        Output results as JSON (for scripts/API integration)
   -h, --help    Show help for specific subcommand
+
+EXTERNAL ADMIN SSH PORT (lockout-net):
+  If admin SSH arrives on a port that is an EXTERNAL redirect/NAT to the real
+  sshd listener (e.g. :55000 -> :22 via firewalld/iptables-nft/provider/panel),
+  nftban does NOT own that redirect: ssh_ports stays the real listener set and a
+  rebuild/takeover may transiently disrupt the external port. Before rebuild /
+  reload / takeover, nftban session-whitelists your active SSH source IP (via the
+  IPC whitelist-session path) so SSH survives by IP regardless of the port.
+    - Declare the external port for a precise warning:
+        export NFTBAN_EXTERNAL_ADMIN_SSH_PORTS=55000
+    - Opt out of the pre-rebuild lockout-net:  NFTBAN_NO_PREREBUILD_LOCKOUT=1
+    - Lockout-net TTL (default 1h):            NFTBAN_PREREBUILD_LOCKOUT_TTL=2h
+  nftban will NOT import the external port into ssh_ports and will NOT recreate
+  the NAT — keep the redirect in the host firewall layer.
 
 CTRL+C / INTERRUPTION:
   Do NOT interrupt rebuild, reset, restore, reload, or takeover with
