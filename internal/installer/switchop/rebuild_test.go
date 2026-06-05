@@ -18,6 +18,9 @@
 package switchop
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -68,5 +71,74 @@ func TestRebuild_Failure(t *testing.T) {
 	// Verify install-failed marker was written
 	if !mock.FileExists("/run/nftban/install_failed") {
 		t.Error("expected install_failed marker to be written")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// v1.151 BUG-REBUILD-DEGRADED-EMPTY-REASON: degraded rebuild must log a real
+// reason and must NOT log the self-contradictory "completed (exit 1)".
+// ----------------------------------------------------------------------------
+
+func readLog(t *testing.T) (*logging.Logger, func() string) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "installer.log")
+	l := logging.New(p, false)
+	return l, func() string {
+		l.Close()
+		b, _ := os.ReadFile(p)
+		return string(b)
+	}
+}
+
+func TestRebuild_DegradedReason_FromStdout_NoContradiction(t *testing.T) {
+	// Real recoverable case: exit 1 with EMPTY stderr; reason is on stdout.
+	mock := executor.NewMockExecutor()
+	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{
+		ExitCode: 1, Stderr: "", Stdout: "base schema applied\nmodule chains pending daemon",
+	}
+	log, dump := readLog(t)
+	if err := Rebuild(mock, log); err != nil {
+		t.Fatalf("exit 1 (DEGRADED) must not error: %v", err)
+	}
+	out := dump()
+	if !strings.Contains(out, "DEGRADED (exit 1): module chains pending daemon") {
+		t.Errorf("expected reason recovered from stdout; got:\n%s", out)
+	}
+	if strings.Contains(out, "completed (exit 1)") {
+		t.Errorf("must NOT log self-contradictory 'completed (exit 1)'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "finished DEGRADED (exit 1)") {
+		t.Errorf("expected 'finished DEGRADED (exit 1)' wording; got:\n%s", out)
+	}
+}
+
+func TestRebuild_DegradedEmptyOutput_StaticReason(t *testing.T) {
+	// exit 1 with empty stderr AND empty stdout → static fallback reason (never blank).
+	mock := executor.NewMockExecutor()
+	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{ExitCode: 1}
+	log, dump := readLog(t)
+	_ = Rebuild(mock, log)
+	out := dump()
+	if !strings.Contains(out, "DEGRADED (exit 1): base schema loaded; module chains deferred to daemon start") {
+		t.Errorf("expected static fallback reason (never blank); got:\n%s", out)
+	}
+	if strings.Contains(out, "completed (exit 1)") {
+		t.Errorf("must NOT log 'completed (exit 1)'; got:\n%s", out)
+	}
+}
+
+func TestRebuild_Success_PlainCompleted(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	mock.RunResults["/usr/sbin/nftban:firewall:rebuild"] = executor.Result{ExitCode: 0}
+	log, dump := readLog(t)
+	if err := Rebuild(mock, log); err != nil {
+		t.Fatalf("exit 0 must not error: %v", err)
+	}
+	out := dump()
+	if !strings.Contains(out, "firewall rebuild completed") {
+		t.Errorf("expected 'firewall rebuild completed'; got:\n%s", out)
+	}
+	if strings.Contains(out, "completed (exit") {
+		t.Errorf("exit 0 must log plain 'completed', not 'completed (exit N)'; got:\n%s", out)
 	}
 }

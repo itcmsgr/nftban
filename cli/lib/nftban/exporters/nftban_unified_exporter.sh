@@ -44,8 +44,17 @@ set -Eeuo pipefail
 # attributed in the journal instead of exiting silently (status=2/INVALIDARGUMENT
 # observed on monitor). This self-pins the exact failing command on the next
 # occurrence for the Phase-2 surgical guard.
+#
+# v1.151 D-EXPORTER-EXIT2-PHASE-4 (signal-aware, class-killer): a SIGTERM/SIGINT
+# (rc>=128) can interrupt ANY command mid-collection (timer TimeoutStopSec, systemd
+# stop, slow collection killed) — that is NOT a logic error, it is the auxiliary,
+# idempotent collector being asked to stop ("next scheduled run will collect"). The
+# ERR trap previously logged it as ERROR: at whatever random line SIGTERM landed on
+# (whack-a-mole vs the v1.143.1 Phase-3 per-site guards). Now: rc>=128 → one INFO line
+# (graceful interruption, no ERROR); rc<128 (real command/logic failure) keeps the
+# loud diagnosable ERROR: line + re-raises rc. EXIT/TERM cleanup trap (below) still runs.
 # shellcheck disable=SC2154  # 'rc' is assigned (rc=$?) inside the single-quoted trap body
-trap 'rc=$?; printf "ERROR: nftban-unified-exporter aborted rc=%s at %s:%s fn=%s cmd=[%s]\n" "$rc" "${BASH_SOURCE[0]##*/}" "${LINENO}" "${FUNCNAME[0]:-main}" "${BASH_COMMAND}" >&2; exit "$rc"' ERR
+trap 'rc=$?; if [[ "$rc" -ge 128 ]]; then printf "INFO: nftban-unified-exporter interrupted by signal (rc=%s) at %s:%s; next scheduled run will collect\n" "$rc" "${BASH_SOURCE[0]##*/}" "${LINENO}" >&2; exit "$rc"; fi; printf "ERROR: nftban-unified-exporter aborted rc=%s at %s:%s fn=%s cmd=[%s]\n" "$rc" "${BASH_SOURCE[0]##*/}" "${LINENO}" "${FUNCNAME[0]:-main}" "${BASH_COMMAND}" >&2; exit "$rc"' ERR
 
 readonly SCRIPT_VERSION="1.0.0"
 
