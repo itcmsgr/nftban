@@ -88,67 +88,15 @@ if ! declare -f nftban_path_get_safe_output >/dev/null 2>&1; then
 fi
 
 # =============================================================================
-# SHARED STATE API HELPER - NO CLI OVERHEAD
+# STATS DATA SOURCE — nft/CLI path (v1.150 HLT-02-shell)
 # =============================================================================
-# Optional shared-state API short-circuit (returns fast if a daemon-side
-# basic-stats endpoint is reachable). Falls back to nft CLI calls otherwise.
+# v1.150 HLT-02-shell: the former API-first short-circuit (a GET to
+# /api/v1/basic-stats) was dead — that endpoint is unregistered in the daemon
+# mux, so the request always 404'd and silently fell back to the nft/CLI path.
+# The dead fast-path (nftban_stats_get_basic_from_api +
+# nftban_stats_get_counts_optimized) is removed; stats now always reads counts
+# from nft_schema.sh (the single source of truth) via the CLI path below.
 # =============================================================================
-
-# nftban_stats_get_basic_from_api attempts to fetch basic stats from the API
-# Returns: JSON with banned_ipv4, banned_ipv6, whitelist_ipv4, whitelist_ipv6, etc.
-# Exit code: 0 on success, 1 if API unavailable (caller should fall back to CLI)
-nftban_stats_get_basic_from_api() {
-    local api_url="${NFTBAN_API_URL:-http://127.0.0.1:8080}"
-    local api_endpoint="/api/v1/basic-stats"
-    local timeout=2  # Fast timeout - if API slow, fall back to CLI
-
-    # Check if curl available
-    if ! command -v curl &>/dev/null; then
-        return 1
-    fi
-
-    # Try to fetch from API (requires valid session or localhost exemption)
-    local response
-    response=$(curl -s --max-time "$timeout" "${api_url}${api_endpoint}" 2>/dev/null) || return 1
-
-    # Check if response is valid JSON with success=true
-    if command -v jq &>/dev/null; then
-        local success
-        success=$(echo "$response" | jq -r '.success // false' 2>/dev/null)
-        if [[ "$success" == "true" ]]; then
-            # Extract data and output
-            echo "$response" | jq -r '.data'
-            return 0
-        fi
-    fi
-
-    return 1
-}
-
-# nftban_stats_get_counts_optimized gets ban/whitelist counts with API-first approach
-# Sets variables: black_v4, black_v6, whitelist_v4, whitelist_v6, feeds_active, feeds_ips
-# Returns: 0 if API used (fast), 1 if CLI fallback used (slow)
-nftban_stats_get_counts_optimized() {
-    local api_data
-
-    # Try API first (NO CLI overhead - data from watchdog netlink)
-    if api_data=$(nftban_stats_get_basic_from_api 2>/dev/null); then
-        # Parse API response
-        if command -v jq &>/dev/null; then
-            black_v4=$(echo "$api_data" | jq -r '.banned_ipv4 // 0')
-            black_v6=$(echo "$api_data" | jq -r '.banned_ipv6 // 0')
-            whitelist_v4=$(echo "$api_data" | jq -r '.whitelist_ipv4 // 0')
-            whitelist_v6=$(echo "$api_data" | jq -r '.whitelist_ipv6 // 0')
-            feeds_active=$(echo "$api_data" | jq -r '.feeds_active // 0')
-            feeds_ips=$(echo "$api_data" | jq -r '.feeds_ips // 0')
-            rules_total=$(echo "$api_data" | jq -r '.rules_total // 0')
-            return 0  # API success
-        fi
-    fi
-
-    # Fall back to CLI (slower - direct nft calls)
-    return 1
-}
 
 # =============================================================================
 # SUBCOMMAND: BRIEF (v1.37.1)
@@ -163,7 +111,9 @@ nftban_stats_cmd_brief() {
     if declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
         local json
         json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
-        banned=$(echo "$json" | jq -r '.blacklist.total // 0' 2>/dev/null || echo 0)
+        # v1.150 13.1-shell: include blacklist_manual (manual + auto-detect
+        # bans, disjoint hash set) so the headline matches `nftban status`.
+        banned=$(echo "$json" | jq -r '(.blacklist.total // 0) + (.blacklist_manual.total // 0)' 2>/dev/null || echo 0)
         whitelisted=$(echo "$json" | jq -r '.whitelist.total // 0' 2>/dev/null || echo 0)
     else
         # Fallback: count from cache or nft directly
@@ -183,7 +133,10 @@ nftban_stats_cmd_brief() {
     # Today's bans from log
     local today
     today=$(date +%Y-%m-%d)
-    local ban_log="${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}"
+    # v1.150 LOG-03: the real writer is bans.log (plural); the singular
+    # ban.log default never matched, so "bans today" was always 0 when
+    # NFTBAN_BAN_LOG was unset.
+    local ban_log="${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}"
     if [[ -f "$ban_log" ]]; then
         bans_today=$(grep -c "$today" "$ban_log" 2>/dev/null || true)
         bans_today=${bans_today:-0}
@@ -366,28 +319,24 @@ nftban_stats_cmd_dashboard() {
         local total_countries=0
 
         # Count total bans from log
-        if [[ -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}" ]]; then
-            total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG}" 2>/dev/null || true)
+        # v1.150 LOG-03: real writer is bans.log (plural).
+        if [[ -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}" ]]; then
+            total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}" 2>/dev/null || true)
         fi
 
-        # Count active bans - TRY API FIRST (NO CLI overhead when watchdog running)
-        # Falls back to nft CLI only if API unavailable
+        # Count active bans via nft/CLI path (single source of truth).
+        # v1.150 HLT-02-shell: the API-first short-circuit was deleted (dead
+        # 404 endpoint); counts now always come from nft_schema.sh.
+        # v1.150 13.1-shell: temp_v4/temp_v6 read the producer's REAL
+        # `.blacklist_manual` keys (manual + auto-detect bans, hash set). The
+        # old `.temporary` keys never existed in nft_schema.sh output, so the
+        # manual/auto-detect bans always rendered as 0.
         local temp_v4=0 temp_v6=0 black_v4=0 black_v6=0 feed_v4=0 feed_v6=0
         local whitelist_v4=0 whitelist_v6=0 geoban_v4=0 geoban_v6=0
         local feeds_active=0 feeds_ips=0 rules_total=0
 
-        # Try optimized API-first approach (reads from shared state - NO CLI)
-        if nftban_stats_get_counts_optimized 2>/dev/null; then
-            # API success - variables already set by function
-            # Note: API provides aggregated counts, not per-source breakdown
-            temp_v4=0
-            temp_v6=0
-            feed_v4=0
-            feed_v6=0
-            geoban_v4=0
-            geoban_v6=0
         # Use centralized nft_schema.sh functions (SINGLE SOURCE OF TRUTH)
-        elif declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
+        if declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
             # Use centralized JSON-based counting (fast O(1) via nft JSON API)
             local counts_json
             counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
@@ -395,8 +344,9 @@ nftban_stats_cmd_dashboard() {
             if command -v jq &>/dev/null && [[ -n "$counts_json" ]]; then
                 black_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
                 black_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
-                temp_v4=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
-                temp_v6=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
+                # v1.150 13.1-shell: manual + auto-detect bans (blacklist_manual).
+                temp_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // 0')
+                temp_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // 0')
 
                 # Whitelist from centralized function
                 local wl_counts
@@ -449,6 +399,20 @@ nftban_stats_cmd_dashboard() {
             feed_v6=0
             geoban_v4=0
             geoban_v6=0
+        fi
+
+        # v1.150 13.2: geoban has NO separate kernel IP set — its CIDRs are
+        # loaded into the blacklist_* sets (already counted in black_v4/v6), so
+        # geoban_v4/v6 (IP counts) stay 0 to avoid double-counting. The
+        # meaningful geoban metric is the number of blocked COUNTRIES, read from
+        # the real config dir /etc/nftban/geoban.d/50-ban-*.conf (mirrors the
+        # exporter at exporters/nftban_unified_exporter_collect.sh).
+        local geoban_countries=0
+        local _geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+        if [[ -d "$_geoban_dir" ]]; then
+            geoban_countries=$(find "$_geoban_dir" -maxdepth 1 -name '50-ban-*.conf' -type f 2>/dev/null | wc -l)
+            geoban_countries=${geoban_countries//[^0-9]/}
+            geoban_countries=${geoban_countries:-0}
         fi
 
         # Calculate totals
@@ -583,6 +547,7 @@ nftban_stats_cmd_dashboard() {
                 --arg feed_v6 "$feed_v6" \
                 --arg geoban_v4 "$geoban_v4" \
                 --arg geoban_v6 "$geoban_v6" \
+                --arg geoban_countries "$geoban_countries" \
                 --arg whitelist_v4 "$whitelist_v4" \
                 --arg whitelist_v6 "$whitelist_v6" \
                 --arg total_temp "$total_temp" \
@@ -631,7 +596,8 @@ nftban_stats_cmd_dashboard() {
                         geoban: {
                             total: ($total_geoban | tonumber),
                             ipv4: ($geoban_v4 | tonumber),
-                            ipv6: ($geoban_v6 | tonumber)
+                            ipv6: ($geoban_v6 | tonumber),
+                            countries_blocked: ($geoban_countries | tonumber)
                         },
                         whitelist: {
                             total: ($total_whitelist | tonumber),
@@ -1019,10 +985,13 @@ nftban_stats_cmd_recent() {
         # Tail mode
         echo "Following ban log (Ctrl+C to exit)..."
         echo ""
+        # v1.150 LOG-03: default to bans.log (plural — the real writer).
+        # v1.150 LOG-04: bans.log schema is DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+        # (not the 7-field Fail2Ban shape). Map the read fields to that schema.
         # shellcheck disable=SC2034  # Structured log parsing - only some fields used
-        tail -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
-            printf "[%s] %s | %-16s | %-12s | %s\n" \
-                "$(date +%H:%M:%S)" "$timestamp" "$ip" "$action" "$jail"
+        tail -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}" | while IFS='|' read -r ban_date ban_time source ip country status reason; do
+            printf "[%s] %s %s | %-16s | %-12s | %s\n" \
+                "$(date +%H:%M:%S)" "$ban_date" "$ban_time" "$ip" "$status" "$source"
         done
     else
         # JSON output mode
@@ -1414,7 +1383,7 @@ CONFIGURATION:
     /etc/nftban/conf.d/stats.conf      Statistics configuration
     /var/lib/nftban/metrics/           Metrics database
     /var/lib/nftban/snapshots/         Hourly snapshots
-    ${NFTBAN_LOG_DIR}/ban.log            Primary data source
+    ${NFTBAN_LOG_DIR}/bans.log           Primary data source
 
 For automated reports, see: nftban report help
 EOF
