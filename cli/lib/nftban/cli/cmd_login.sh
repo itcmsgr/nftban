@@ -365,6 +365,18 @@ nftban_login_cmd_enable() {
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "true" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SU" "true" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SUDO" "true" "$config_local"
+            # v1.150 (MOD-06): also flip LOGIN_ENABLED=true for the Go daemon
+            # loginmon module (mirrors the service/default branch). Previously
+            # `enable all` set only the alert keys, so detection stayed at the
+            # daemon default — `login enable all` over-claimed.
+            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
+            if [[ ! -f "$login_main_local" ]]; then
+                mkdir -p "$(dirname "$login_main_local")" || true
+                echo "# NFTBan Login Monitor - User Overrides" > "$login_main_local"
+                chmod 640 "$login_main_local"
+                chown root:nftban "$login_main_local" 2>/dev/null || true
+            fi
+            _nftban_login_set_config "LOGIN_ENABLED" "true" "$login_main_local"
             echo "✅ All login monitoring enabled (ssh, su, sudo)"
             ;;
         service|"")
@@ -448,6 +460,13 @@ nftban_login_cmd_disable() {
             ;;
         all)
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "false" "$config_local"
+            # v1.150 (MOD-06): mirror the enable-all LOGIN_ENABLED write — flip
+            # the Go daemon loginmon switch off too (only if the override file
+            # exists; no need to create it just to disable).
+            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
+            if [[ -f "$login_main_local" ]]; then
+                _nftban_login_set_config "LOGIN_ENABLED" "false" "$login_main_local"
+            fi
             echo "✅ All login monitoring disabled"
             ;;
         service|"")

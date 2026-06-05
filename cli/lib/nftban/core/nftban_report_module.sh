@@ -86,8 +86,23 @@ nftban_module_extract_meta() {
 
     local file="$1"
     local tag="$2"
+    local line value
 
-    grep -E "^#[[:space:]]*meta:${tag}=" "$file" 2>/dev/null | head -1 | sed -E "s/^#[[:space:]]*meta:${tag}=(.*)/\1/" | sed 's/^"//' | sed 's/"$//' || echo ""
+    # v1.150 (13.6): non-greedy / anchored extraction. The previous greedy
+    # `meta:${tag}=(.*)` captured to end-of-line, so on a single-line-meta lib
+    # (`# meta:name="foo" meta:type="core"`) the NAME cell swallowed everything
+    # past the first closing quote → garbage. Prefer the quoted form
+    # `meta:${tag}="([^"]*)"` (stops at the first closing quote); fall back to
+    # the unquoted single-token form for bare values.
+    line=$(grep -E "^#[[:space:]]*meta:${tag}=" "$file" 2>/dev/null | head -1) || true
+    [[ -z "$line" ]] && { echo ""; return 0; }
+    if [[ "$line" =~ meta:${tag}=\"([^\"]*)\" ]]; then
+        value="${BASH_REMATCH[1]}"
+    else
+        # Unquoted: take the first whitespace-delimited token after '='.
+        value=$(printf '%s\n' "$line" | sed -E "s/^#[[:space:]]*meta:${tag}=//" | awk '{print $1}')
+    fi
+    printf '%s\n' "$value"
 }
 
 nftban_module_extract_license() {
@@ -601,14 +616,18 @@ nftban_module_render_table() {
         printf "║  NFTBan Modules                 %-12s    ║\n" "$short_ts"
         echo "╚════════════════════════════════════════════════════════╝"
         echo ""
+        # v1.150 (MOD-10): column header is "PRESENT", not "STATUS". This column
+        # is derived from file path / exec-bit only (every shipped module reads
+        # ENABLED) — it reflects whether the module file is present/loaded, NOT
+        # feature-health. The "STATUS" header invited that misread.
         printf "%-25s %-10s %-8s %-10s %-40s\n" \
-            "NAME" "VERSION" "TYPE" "STATUS" "PATH"
+            "NAME" "VERSION" "TYPE" "PRESENT" "PATH"
         echo "────────────────────────────────────────────────────────"
     elif [[ "$NFTBAN_MODULE_OUTPUT_FORMAT" == "md" ]]; then
-        echo "| NAME | VERSION | TYPE | STATUS | PATH | DEPENDS |"
+        echo "| NAME | VERSION | TYPE | PRESENT | PATH | DEPENDS |"
         echo "|:---|:---|:---:|:---:|:---|:---|"
     elif [[ "$NFTBAN_MODULE_OUTPUT_FORMAT" == "csv" ]]; then
-        echo "NAME,VERSION,TYPE,STATUS,PATH,DEPENDS"
+        echo "NAME,VERSION,TYPE,PRESENT,PATH,DEPENDS"
     fi
 
     # Sort by module name

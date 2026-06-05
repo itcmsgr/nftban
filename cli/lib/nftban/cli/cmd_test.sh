@@ -65,7 +65,7 @@ test_cmd() {
     total=$((total + 1))
 
     # Run command with timeout
-    local output
+    local output=""
     local exit_code=0
     # R17: Use mktemp for secure temp files (v1.19.12)
     local tmp_out

@@ -1281,7 +1281,10 @@ _check_firewall_conflicts() {
     local severity=$?
 
     # CRITICAL (3) = hard fail, WARNING (2) = fail in strict mode
-    if [[ $severity -ge $CONFLICT_WARNING ]]; then
+    # v1.150 (16.2): the conflicts library now always declares CONFLICT_*
+    # above its load-guard, but reference them with defaults here so a
+    # missing/partly-loaded library can never abort under `set -u`.
+    if [[ $severity -ge ${CONFLICT_WARNING:-2} ]]; then
         [[ "$json_mode" == "false" ]] && echo "[FAIL] Firewall authority conflict detected"
         for conflict in "${NFTBAN_FIREWALL_CONFLICTS[@]}"; do
             [[ "$json_mode" == "false" ]] && echo "       $conflict" || true
@@ -1292,7 +1295,7 @@ _check_firewall_conflicts() {
             [[ "$json_mode" == "false" ]] && echo "       $fix" || true
         done
         return 1
-    elif [[ $severity -eq $CONFLICT_INFO ]]; then
+    elif [[ $severity -eq ${CONFLICT_INFO:-1} ]]; then
         [[ "$json_mode" == "false" ]] && echo "[OK] Firewall conflicts: Minor (non-blocking)"
         return 0
     else

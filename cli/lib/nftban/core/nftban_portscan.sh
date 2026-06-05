@@ -251,7 +251,7 @@ _nftban_portscan_load_modules() {
     local core_dir="${lib_dir}/core"
 
     # Also check for dev paths
-    local dev_core_dir
+    local dev_core_dir=""
     if [[ -d "${BASH_SOURCE[0]%/*}" ]]; then
         dev_core_dir="${BASH_SOURCE[0]%/*}"
     fi
