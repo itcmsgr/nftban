@@ -76,6 +76,9 @@ collect_all_metrics() {
     # Blacklist active counts (declared at function level for JSON cache and EXTENDED group)
     local active_v4=0 active_v6=0 active_total=0
     local blacklist_v4_perm=0 blacklist_v4_temp=0 blacklist_v6_perm=0 blacklist_v6_temp=0
+    # v1.150 F3: manual hash-set subset (blacklist_manual_ipv4/_ipv6), exposed in
+    # the cache so the cache-hit dashboard can surface it. IPv4 + IPv6 symmetric.
+    local manual_v4=0 manual_v6=0
     if group_active "live"; then
 
         # --- Daemon Metrics ---
@@ -158,6 +161,9 @@ collect_all_metrics() {
                     bl_manual_v6=$(echo "$counts_json" | jq -r '.sets.blacklist_manual_ipv6.count // 0')
                     active_v4=$((bl_interval_v4 + bl_manual_v4))
                     active_v6=$((bl_interval_v6 + bl_manual_v6))
+                    # v1.150 F3: expose the manual subset (already summed into active_*).
+                    manual_v4=$bl_manual_v4
+                    manual_v6=$bl_manual_v6
                     # Temp/perm split not available from daemon cache — report all as permanent
                     blacklist_v4_temp=0
                     blacklist_v6_temp=0
@@ -167,6 +173,13 @@ collect_all_metrics() {
                     # Legacy kernel format: .blacklist.ipv4
                     active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
                     active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                    # v1.150 F3: legacy format omitted the manual hash set — fold it in for
+                    # parity with the other branches (.blacklist.*.total = interval + manual)
+                    # and expose the subset. IPv4 + IPv6 symmetric.
+                    manual_v4=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv4 // .sets.blacklist_manual_ipv4.count // 0')
+                    manual_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // .sets.blacklist_manual_ipv6.count // 0')
+                    active_v4=$((active_v4 + manual_v4))
+                    active_v6=$((active_v6 + manual_v6))
                     blacklist_v4_temp=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
                     blacklist_v6_temp=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
                     blacklist_v4_perm=$(echo "$counts_json" | jq -r '.permanent.ipv4 // 0')
@@ -183,6 +196,9 @@ collect_all_metrics() {
             fb_manual_v6=$(nftban_nft_count_set ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo 0)
             active_v4=$((fb_interval_v4 + fb_manual_v4))
             active_v6=$((fb_interval_v6 + fb_manual_v6))
+            # v1.150 F3: expose the manual subset (already summed into active_*).
+            manual_v4=$fb_manual_v4
+            manual_v6=$fb_manual_v6
             blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo 0)
             blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
             blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
@@ -1545,6 +1561,11 @@ collect_all_metrics() {
       "temporary": ${blacklist_v6_temp:-0}
     },
     "total": ${active_total:-0}
+  },
+  "blacklist_manual": {
+    "ipv4": ${manual_v4:-0},
+    "ipv6": ${manual_v6:-0},
+    "total": $(( ${manual_v4:-0} + ${manual_v6:-0} ))
   },
   "whitelist": {
     "ipv4": ${whitelist_v4:-0},
