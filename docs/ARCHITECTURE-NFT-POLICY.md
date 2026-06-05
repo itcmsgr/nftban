@@ -40,6 +40,8 @@ These are allowlisted in `scripts/ci/check-nft-writes.sh` (each with a one-line 
 
 A write **outside** these allowlisted paths is a violation and fails CI.
 
+**Note — external admin SSH-port lockout-net.** The pre-rebuild/reload/takeover lockout-net (`cli/lib/nftban/lib/ssh_admin_port_guard.sh`, OBS-SSHPORT-55000-FAMILY) makes **no** direct nft write: it session-whitelists the admin source IP through the existing IPC `whitelist-session` path, so it is **not** a new exception. See [`SSH-EXTERNAL-ADMIN-PORT.md`](SSH-EXTERNAL-ADMIN-PORT.md).
+
 ## 4. CI enforcement contract
 
 `scripts/ci/check-nft-writes.sh` (wired in `ci-architecture.yml`, "Policy Gates"):
