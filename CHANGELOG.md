@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recreating/preserving the external NAT/redirect** — nftban is an ingress IPS, not a NAT manager; the `:55000 → :22` redirect stays host-managed (firewalld/iptables-nft/panel/provider).
 
 ### Scope / Validation
-- **Shell + CI + docs only** — `0 cmd/nftband`, `0 cmd/nftban-core`, `0 internal` Go, `0` schema. New 30/30 hermetic test (`ssh_admin_port_guard_v150_test.sh`) wired as a CI step; new operator doc `docs/SSH-EXTERNAL-ADMIN-PORT.md` (plain-English root cause + verbatim CLI text, asserted by the test); `docs/ARCHITECTURE-NFT-POLICY.md` notes the lockout-net is not a new nft-write exception.
+- **Shell + CI + docs only** — `0 cmd/nftband`, `0 cmd/nftban-core`, `0 internal` Go, `0` schema. New 36/36 hermetic test (`ssh_admin_port_guard_v150_test.sh`) wired as a CI step; new operator doc `docs/SSH-EXTERNAL-ADMIN-PORT.md` (plain-English root cause + verbatim CLI text, asserted by the test); `docs/ARCHITECTURE-NFT-POLICY.md` notes the lockout-net is not a new nft-write exception.
 - Merged CI-green: Policy Gates, Shell Quality, ShellCheck, Runtime Truth almalinux-9 + ubuntu-24.04, all DEB (debian12/13, ubuntu22/24/26) + RPM (el9/el10, alma9, centos-stream9/10, rocky9) build & install, CodeQL, Semgrep, OSV, docs.
 - **Deploy target:** srv1 + dns2 first, then resume the remaining fleet rollout on v1.150.1.
 
