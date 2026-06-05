@@ -195,7 +195,10 @@ nftban_rbl_reverse_ip() {
         # v1.19.0: Full IPv6 nibble-format reverse (R23)
         # Example: 2001:db8::1 -> 1.0.0.0...8.b.d.0.1.0.0.2
         # First expand to full 32-char hex form
-        local expanded
+        # v1.150 (16.6): initialize so the no-python3 path doesn't trip `set -u`
+        # (the `if command -v python3` block below is skipped when absent, which
+        # used to leave `expanded` unbound for the `[[ -n "$expanded" ]]` test).
+        local expanded=""
         if command -v python3 &>/dev/null; then
             expanded=$(python3 -c "
 import ipaddress
@@ -389,6 +392,18 @@ nftban_rbl_check_ip_parallel() {
             rbl_list+=("${rbl_domain}:${rbl_url}")
         done < <(nftban_rbl_load_providers)
 
+        # v1.150 (11.5): enforce the per-run query cap in the PARENT, before
+        # fan-out. The per-query _NFTBAN_RBL_QUERY_COUNT increment lives inside
+        # `( … ) &` background subshells, so it never propagates back here and
+        # the cap never tripped on the parallel path. Bound the number of
+        # providers dispatched to min(count, MAX_QUERIES_PER_RUN) when the cap
+        # is set and > 0.
+        local _max_queries="${NFTBAN_RBL_MAX_QUERIES_PER_RUN:-0}"
+        if [[ "$_max_queries" =~ ^[0-9]+$ ]] && [[ "$_max_queries" -gt 0 ]] \
+           && [[ "${#rbl_list[@]}" -gt "$_max_queries" ]]; then
+            rbl_list=("${rbl_list[@]:0:$_max_queries}")
+        fi
+
         # Run DNS lookups in parallel using background jobs
         local pids=()
         local job_count=0
@@ -450,32 +465,33 @@ nftban_rbl_check_ip_parallel() {
 
                 if [[ "$format" == "json" ]]; then
                     [[ $first -eq 0 ]] && echo ","
-                    echo "    {"
-                    echo "      \"rbl\": \"$rbl_domain\","
-                    echo "      \"status\": \"listed\","
-                    echo "      \"reason\": \"$txt_record\","
-                    echo "      \"url\": \"$rbl_url\""
-                    echo -n "    }"
+                    # v1.150 (11.6): build the object with jq so a TXT record
+                    # containing " \ or newline can't corrupt the JSON.
+                    nftban_rbl_json_listed_obj "$rbl_domain" "$txt_record" "$rbl_url"
                     first=0
                 else
                     echo "❌ LISTED: $rbl_domain"
                     [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
                     echo "   Info: $rbl_url"
                 fi
-            elif [[ "$result" == "TIMEOUT" ]]; then
+            elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]]; then
+                # v1.150 (11.3): ERROR/RATE_LIMITED counted as degraded, never CLEAN.
                 # v1.19.20 FIX
                 ((timeout_count++)) || true
 
+                local _status_lc
+                case "$result" in
+                    TIMEOUT)      _status_lc="timeout" ;;
+                    ERROR)        _status_lc="error" ;;
+                    RATE_LIMITED) _status_lc="rate_limited" ;;
+                esac
+
                 if [[ "$format" == "json" ]]; then
                     [[ $first -eq 0 ]] && echo ","
-                    echo "    {"
-                    echo "      \"rbl\": \"$rbl_domain\","
-                    echo "      \"status\": \"timeout\","
-                    echo "      \"url\": \"$rbl_url\""
-                    echo -n "    }"
+                    nftban_rbl_json_status_obj "$rbl_domain" "$_status_lc" "$rbl_url"
                     first=0
                 else
-                    echo "⏱️  TIMEOUT: $rbl_domain"
+                    echo "⏱️  ${result}: $rbl_domain"
                 fi
             else
                 # v1.19.20 FIX
@@ -575,6 +591,50 @@ nftban_rbl_load_providers() {
 # DNS LOOKUP FUNCTIONS
 # =============================================================================
 
+# v1.150 (11.6): JSON object builders. The RBL TXT "reason" field is attacker-
+# influenced data (it is whatever the remote blocklist returns) and may contain
+# `"`, `\`, or newlines, which broke the old string-concat JSON. Build the
+# object with `jq -n --arg` so every field is properly escaped. `jq` is already
+# a hard dependency on the JSON path (see nftban_rbl_status).
+nftban_rbl_json_listed_obj() {
+    # Args: $1 = rbl domain, $2 = reason (raw TXT), $3 = info url
+    local rbl="$1" reason="$2" url="$3"
+    if command -v jq &>/dev/null; then
+        jq -n --arg rbl "$rbl" --arg reason "$reason" --arg url "$url" \
+            '{rbl: $rbl, status: "listed", reason: $reason, url: $url}'
+    else
+        # Fallback: no jq — emit a minimal object with the unsafe field dropped
+        # rather than risk corrupt JSON. (jq is expected to be present.)
+        printf '{"rbl":%s,"status":"listed","url":%s}' \
+            "$(_nftban_rbl_json_str "$rbl")" "$(_nftban_rbl_json_str "$url")"
+    fi
+}
+
+nftban_rbl_json_status_obj() {
+    # Args: $1 = rbl domain, $2 = status (timeout|error|rate_limited), $3 = url
+    local rbl="$1" status="$2" url="$3"
+    if command -v jq &>/dev/null; then
+        jq -n --arg rbl "$rbl" --arg status "$status" --arg url "$url" \
+            '{rbl: $rbl, status: $status, url: $url}'
+    else
+        printf '{"rbl":%s,"status":%s,"url":%s}' \
+            "$(_nftban_rbl_json_str "$rbl")" \
+            "$(_nftban_rbl_json_str "$status")" \
+            "$(_nftban_rbl_json_str "$url")"
+    fi
+}
+
+_nftban_rbl_json_str() {
+    # Minimal JSON string escaper for the no-jq fallback path.
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    printf '"%s"' "$s"
+}
+
 nftban_rbl_check_ip() {
     # Check single IP against all RBL providers
     # Args: $1 = IP address
@@ -615,32 +675,33 @@ nftban_rbl_check_ip() {
 
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
-                echo "    {"
-                echo "      \"rbl\": \"$rbl_domain\","
-                echo "      \"status\": \"listed\","
-                echo "      \"reason\": \"$txt_record\","
-                echo "      \"url\": \"$rbl_url\""
-                echo -n "    }"
+                # v1.150 (11.6): jq-escaped object (raw TXT can contain " \ newline).
+                nftban_rbl_json_listed_obj "$rbl_domain" "$txt_record" "$rbl_url"
                 first=0
             else
                 echo "❌ LISTED: $rbl_domain"
                 [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
                 echo "   Info: $rbl_url"
             fi
-        elif [[ "$result" == "TIMEOUT" ]]; then
+        elif [[ "$result" == "TIMEOUT" ]] || [[ "$result" == "ERROR" ]] || [[ "$result" == "RATE_LIMITED" ]]; then
+            # v1.150 (11.3): ERROR/RATE_LIMITED are non-clean unknowns — count
+            # them with timeouts (degraded) rather than silently as CLEAN.
             # v1.19.20 FIX
             ((timeout_count++)) || true
 
+            local _status_lc
+            case "$result" in
+                TIMEOUT)      _status_lc="timeout" ;;
+                ERROR)        _status_lc="error" ;;
+                RATE_LIMITED) _status_lc="rate_limited" ;;
+            esac
+
             if [[ "$format" == "json" ]]; then
                 [[ $first -eq 0 ]] && echo ","
-                echo "    {"
-                echo "      \"rbl\": \"$rbl_domain\","
-                echo "      \"status\": \"timeout\","
-                echo "      \"url\": \"$rbl_url\""
-                echo -n "    }"
+                nftban_rbl_json_status_obj "$rbl_domain" "$_status_lc" "$rbl_url"
                 first=0
             else
-                echo "⏱️  TIMEOUT: $rbl_domain"
+                echo "⏱️  ${result}: $rbl_domain"
             fi
         else
             # v1.19.20 FIX
@@ -670,11 +731,37 @@ nftban_rbl_check_ip() {
     fi
 }
 
+# v1.150 (11.1): resolver-binary selection. `host` is preferred (its output
+# is what the legacy parsers expect), then `dig`, then `nslookup`. If NONE of
+# them exists we MUST NOT pretend the answer was empty (= false CLEAN); callers
+# treat an empty selection as "no resolver → ERROR/unknown".
+nftban_rbl_resolver() {
+    # Output: the name of the first available resolver binary, or empty.
+    if command -v host &>/dev/null; then
+        echo "host"
+    elif command -v dig &>/dev/null; then
+        echo "dig"
+    elif command -v nslookup &>/dev/null; then
+        echo "nslookup"
+    else
+        echo ""
+    fi
+}
+
 nftban_rbl_dns_lookup() {
     # Perform DNS A record lookup for RBL
     # Args: $1 = reversed IP (4.3.2.1)
     #       $2 = RBL domain (zen.spamhaus.org)
-    # Output: LISTED, CLEAN, or TIMEOUT
+    # Output: LISTED, CLEAN, TIMEOUT, or ERROR
+    #
+    # v1.150 (11.1/11.3): capture the resolver's real exit code (no `|| true`,
+    # which used to mask rc and make the TIMEOUT branch dead) and never collapse
+    # a resolver failure / missing binary into CLEAN.
+    #   rc==124        → TIMEOUT (the `timeout` SIGTERM exit)
+    #   rc!=0 (other)  → ERROR   (resolver failed — NOT a clean verdict)
+    #   rc==0 + empty  → CLEAN   (NXDOMAIN / not listed)
+    #   rc==0 + 127/8  → LISTED  (RFC 5782 valid response)
+    #   rc==0 + other  → CLEAN   (non-127/8 response is invalid per RFC 5782)
 
     local reversed_ip="$1"
     local rbl_domain="$2"
@@ -689,31 +776,69 @@ nftban_rbl_dns_lookup() {
         return 0
     fi
 
-    # Perform DNS lookup with timeout
-    local dns_result
-    dns_result=$(timeout "$timeout" host -t A "$lookup_host" 2>/dev/null) || true
-    local exit_code=$?
+    # v1.150 (11.1): no resolver at all → unknown, never CLEAN.
+    local resolver
+    resolver=$(nftban_rbl_resolver)
+    if [[ -z "$resolver" ]]; then
+        echo "ERROR"
+        return 0
+    fi
 
-    if [[ $exit_code -eq 124 ]]; then
+    # Perform DNS lookup with timeout. Capture rc WITHOUT `|| true` (which would
+    # force rc=0 and resurrect the dead-TIMEOUT bug). Use `|| rc=$?`, which is
+    # set -e-safe AND preserves the resolver's real exit code (rc==124 for the
+    # `timeout` SIGTERM, rc==1 for host NXDOMAIN/failure, etc).
+    # NOTE: `if ! cmd; then rc=$?` does NOT work here — inside the `then` branch
+    # $? reflects the negated `! cmd` result (0), not cmd's exit code.
+    local dns_result="" rc=0
+    case "$resolver" in
+        host)
+            dns_result=$(timeout "$timeout" host -t A "$lookup_host" 2>/dev/null) || rc=$?
+            ;;
+        dig)
+            # dig +short emits one address per line (or empty for NXDOMAIN).
+            dns_result=$(timeout "$timeout" dig +short A "$lookup_host" 2>/dev/null) || rc=$?
+            ;;
+        nslookup)
+            dns_result=$(timeout "$timeout" nslookup -type=A "$lookup_host" 2>/dev/null) || rc=$?
+            ;;
+    esac
+
+    if [[ $rc -eq 124 ]]; then
         echo "TIMEOUT"
         return 0
     fi
 
-    if [[ -z "$dns_result" ]] || echo "$dns_result" | grep -q "not found\|NXDOMAIN"; then
+    if [[ $rc -ne 0 ]]; then
+        # host returns rc=1 on NXDOMAIN (not listed); dig/nslookup return rc=0
+        # with empty output. For `host`, distinguish "not found" (= CLEAN) from
+        # a genuine resolver/network failure (= ERROR).
+        if [[ "$resolver" == "host" ]] && \
+           printf '%s' "$dns_result" | grep -qi "not found\|NXDOMAIN\|has no .* record"; then
+            echo "CLEAN"
+        else
+            echo "ERROR"
+        fi
+        return 0
+    fi
+
+    if [[ -z "$dns_result" ]] || printf '%s' "$dns_result" | grep -qi "not found\|NXDOMAIN"; then
         echo "CLEAN"
         return 0
     fi
 
     # v1.19.0: RFC 5782 validation - responses must be in 127.0.0.0/8 (R23)
     local response_ip
-    response_ip=$(echo "$dns_result" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
+    response_ip=$(printf '%s' "$dns_result" | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
     if [[ -n "$response_ip" ]] && [[ "$response_ip" =~ ^127\. ]]; then
         echo "LISTED"
     elif [[ -n "$response_ip" ]]; then
         # Non-127.x.x.x response is invalid per RFC 5782 - treat as CLEAN
         echo "CLEAN"
     else
-        echo "LISTED"
+        # rc==0 but no parseable A record (e.g. nslookup header text only) →
+        # treat as CLEAN (a resolver success that returned no listing address).
+        echo "CLEAN"
     fi
 }
 
@@ -722,16 +847,37 @@ nftban_rbl_get_txt_record() {
     # Args: $1 = reversed IP (4.3.2.1)
     #       $2 = RBL domain
     # Output: TXT record content (or empty)
+    #
+    # v1.150 (11.1): same resolver fallback as the A-record path. Empty output
+    # here is only a "no reason text" signal (the LISTED verdict was already
+    # decided by nftban_rbl_dns_lookup), so empty-on-failure is acceptable.
 
     local reversed_ip="$1"
     local rbl_domain="$2"
     local lookup_host="${reversed_ip}.${rbl_domain}"
     local timeout="${NFTBAN_RBL_TIMEOUT:-4}"
 
-    # Get TXT record
-    timeout "$timeout" host -t TXT "$lookup_host" 2>/dev/null | \
-        grep -oP '(?<=").*(?=")' | \
-        head -n1 || echo ""
+    local resolver
+    resolver=$(nftban_rbl_resolver)
+    [[ -z "$resolver" ]] && { echo ""; return 0; }
+
+    case "$resolver" in
+        host)
+            timeout "$timeout" host -t TXT "$lookup_host" 2>/dev/null | \
+                grep -oP '(?<=").*(?=")' | \
+                head -n1 || echo ""
+            ;;
+        dig)
+            # dig +short TXT yields quoted strings; strip the surrounding quotes.
+            timeout "$timeout" dig +short TXT "$lookup_host" 2>/dev/null | \
+                head -n1 | sed -E 's/^"(.*)"$/\1/' || echo ""
+            ;;
+        nslookup)
+            timeout "$timeout" nslookup -type=TXT "$lookup_host" 2>/dev/null | \
+                grep -oP '(?<=text = ").*(?=")' | \
+                head -n1 || echo ""
+            ;;
+    esac
 }
 
 # =============================================================================
@@ -1416,6 +1562,9 @@ export -f nftban_rbl_watchlist_add
 export -f nftban_rbl_watchlist_remove
 export -f nftban_rbl_watchlist_list
 export -f nftban_rbl_check_ip_parallel
+export -f nftban_rbl_resolver
+export -f nftban_rbl_json_listed_obj
+export -f nftban_rbl_json_status_obj
 export -f nftban_rbl_log
 export -f nftban_rbl_update_counters
 export -f nftban_rbl_get_counters
