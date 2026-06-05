@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.150.1] - 2026-06-05 — external admin SSH-port guard (warn-only + lockout-net)
+
+**Codename:** `OBS_SSHPORT_55000`
+**Controlling records:** `NFTBAN_ROADMAP/SSHPORT_55000_EXTERNAL_REDIRECT_SURVIVES_REBUILD_SCOPE.md` · `V150_FLEET_ROLLOUT_RECORD.md` (srv1 triage)
+**PR:** [#769](https://github.com/itcmsgr/nftban/pull/769) (sq `dbf7d8f3`)
+
+> **Why:** a small, lockout-adjacent hotfix on top of v1.150.0 for the `OBS-SSHPORT-55000-FAMILY` host-config class (srv1, dns2). On hosts where admin SSH arrives on an **external** redirect/NAT port (e.g. `:55000 → :22` via firewalld / iptables-nft / provider / panel), a `nftban firewall rebuild`/`takeover` — which disarms competing firewall layers — can transiently drop that external port. `sshd` listens only on `:22`, so nftban correctly renders `ssh_ports = { 22 }` and has no source that can see `:55000` (no conntrack); `:22` is never at risk. **Pre-existing host-config debt, NOT a v1.150 regression** (behaves identically v1.142↔v1.150). **Daemon byte-identical to v1.150.0; schema 1.83.0 frozen.**
+
+### Added — `nftban firewall ssh-audit`
+- A read-only report comparing **sshd listeners** vs nftban **`ssh_ports`** vs operator-declared external admin ports (`NFTBAN_EXTERNAL_ADMIN_SSH_PORTS`), flagging an external `:55000 → :22` redirect that nftban does not own. (Alias: `ssh-port-audit`.)
+
+### Added — pre-rebuild lockout-net (warn-only + IPC whitelist)
+- Before `firewall rebuild`/`reload`/`takeover`, nftban now **warns** when an external admin SSH port is declared/mismatched and **session-whitelists the active admin source IP** through the existing IPC `whitelist-session` path, so SSH survives **by IP** regardless of the external port. Recursion-guarded; opt-out `NFTBAN_NO_PREREBUILD_LOCKOUT=1`; TTL `NFTBAN_PREREBUILD_LOCKOUT_TTL` (default `1h`).
+- **No direct nft write** — the lockout-net uses the sanctioned single-writer IPC path only (`check-nft-writes.sh` stays at 0 WRITE violations).
+
+### Rejected by design
+- **Importing `:55000` into `ssh_ports`** — `ssh_ports` drives the brute-force rate-limit on the real sshd *listener*; sshd is not on `:55000`, so importing it would be wrong and unsafe (and would not restore the external redirect).
+- **Recreating/preserving the external NAT/redirect** — nftban is an ingress IPS, not a NAT manager; the `:55000 → :22` redirect stays host-managed (firewalld/iptables-nft/panel/provider).
+
+### Scope / Validation
+- **Shell + CI + docs only** — `0 cmd/nftband`, `0 cmd/nftban-core`, `0 internal` Go, `0` schema. New 30/30 hermetic test (`ssh_admin_port_guard_v150_test.sh`) wired as a CI step; new operator doc `docs/SSH-EXTERNAL-ADMIN-PORT.md` (plain-English root cause + verbatim CLI text, asserted by the test); `docs/ARCHITECTURE-NFT-POLICY.md` notes the lockout-net is not a new nft-write exception.
+- Merged CI-green: Policy Gates, Shell Quality, ShellCheck, Runtime Truth almalinux-9 + ubuntu-24.04, all DEB (debian12/13, ubuntu22/24/26) + RPM (el9/el10, alma9, centos-stream9/10, rocky9) build & install, CodeQL, Semgrep, OSV, docs.
+- **Deploy target:** srv1 + dns2 first, then resume the remaining fleet rollout on v1.150.1.
+
+---
+
 ## [v1.150.0] - 2026-06-05 — CLI-health truth & cleanup + nft-writer single-authority tightening + stats fixes
 
 **Codename:** `V150_CLI_HEALTH`
