@@ -100,11 +100,30 @@ nftban_ssh_admin_port_audit() {
     return 0
 }
 
+# _nftban_ssh_external_admin_risk_ports — print the declared external admin ports that
+# are NOT a real sshd listener (i.e. the external :55000->:22 redirect risk class).
+# Empty output = no risk: a normal :22 host (nothing declared) or a host where the
+# declared port is a genuine sshd listener (already in ssh_ports via normal detection).
+_nftban_ssh_external_admin_risk_ports() {
+    local declared listeners p
+    declared=$(nftban_ssh_external_admin_ports) || true
+    [[ -z "$declared" ]] && return 0
+    listeners=$(_nftban_ssh_listeners 2>/dev/null) || true
+    while IFS= read -r p; do
+        [[ -z "$p" ]] && continue
+        # If the declared port is a real listener it is in-authority (no risk); skip it.
+        printf '%s\n' "$listeners" | grep -qx "$p" || printf '%s\n' "$p"
+    done <<< "$declared"
+}
+
 # nftban_ssh_pre_rebuild_lockout_guard <op> [op-args...] — S2: called BEFORE a
-# rebuild/reload/takeover. Warns on an external-admin-port mismatch and ensures the
-# active admin source IP is session-whitelisted (IPC lockout-net), so SSH survives by
-# IP regardless of the external redirect. No-op when not in an SSH session, on dry-run,
-# on opt-out, or on re-entry (the lockout-net's own reload must not recurse).
+# rebuild/reload/takeover. NARROWED (operator N1 decision 2026-06-05): acts ONLY on the
+# external-admin-port RISK class — a declared NFTBAN_EXTERNAL_ADMIN_SSH_PORTS port that
+# is NOT a real sshd listener (external :55000->:22 redirect). For that class it WARNS
+# and session-whitelists the active admin source IP (IPC lockout-net), so SSH survives
+# by IP while the external redirect is disturbed. It is a TRUE no-op on a normal :22
+# host and on a host with a native :55000 listener (no warning, no whitelist, no nested
+# reload), as well as when not in an SSH session, on dry-run, on opt-out, or on re-entry.
 nftban_ssh_pre_rebuild_lockout_guard() {
     local op="${1:-rebuild}"; shift 2>/dev/null || true
     # re-entry / recursion guard: whitelist-session add itself triggers a reload.
@@ -112,17 +131,18 @@ nftban_ssh_pre_rebuild_lockout_guard() {
     [[ "${NFTBAN_NO_PREREBUILD_LOCKOUT:-0}" == "1" ]] && return 0
     local admin_ip; admin_ip=$(nftban_ssh_active_admin_ip 2>/dev/null) || return 0
     [[ -z "$admin_ip" ]] && return 0
+    # NARROWED gate: only the external-admin-port risk class triggers warn + lockout-net.
+    # Normal :22 / native :55000-listener hosts have no risk → true no-op below.
+    local risk; risk=$(_nftban_ssh_external_admin_risk_ports | paste -sd, -) || true
+    [[ -z "$risk" ]] && return 0
     local dry=0 a
     for a in "$@"; do case "$a" in --dry-run|-n) dry=1 ;; esac; done
-    local declared; declared=$(nftban_ssh_external_admin_ports | paste -sd, -) || true
-    if [[ -n "$declared" ]]; then
-        local ssh_set; ssh_set=$(_nftban_ssh_ports_kernel | paste -sd, -) || true
-        {
-            echo "  ⚠ NFTBan ${op}: external admin SSH port(s) declared (:${declared})."
-            echo "    nftban ssh_ports stays the ACTUAL sshd listener set (${ssh_set:-?}); nftban will NOT preserve the"
-            echo "    external NAT/redirect for :${declared} (host-managed: firewalld/iptables-nft/provider)."
-        } >&2
-    fi
+    local ssh_set; ssh_set=$(_nftban_ssh_ports_kernel | paste -sd, -) || true
+    {
+        echo "  ⚠ NFTBan ${op}: external admin SSH port(s) (:${risk}) reach sshd via an EXTERNAL redirect/NAT,"
+        echo "    not an sshd listener. nftban ssh_ports stays the ACTUAL listener set (${ssh_set:-?}); nftban will"
+        echo "    NOT preserve the external NAT/redirect for :${risk} (host-managed: firewalld/iptables-nft/provider)."
+    } >&2
     if [[ $dry -eq 1 ]]; then
         echo "  (dry-run: would session-whitelist ${admin_ip} as a ${op} lockout-net; no change made)" >&2
         return 0
@@ -142,5 +162,5 @@ nftban_ssh_pre_rebuild_lockout_guard() {
 }
 
 export -f nftban_ssh_external_admin_ports nftban_ssh_active_admin_ip nftban_ssh_active_admin_port \
-          _nftban_ssh_ports_kernel _nftban_ssh_listeners nftban_ssh_admin_port_audit \
-          nftban_ssh_pre_rebuild_lockout_guard 2>/dev/null || true
+          _nftban_ssh_ports_kernel _nftban_ssh_listeners _nftban_ssh_external_admin_risk_ports \
+          nftban_ssh_admin_port_audit nftban_ssh_pre_rebuild_lockout_guard 2>/dev/null || true
