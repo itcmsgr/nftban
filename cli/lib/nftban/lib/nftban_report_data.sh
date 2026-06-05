@@ -152,15 +152,12 @@ _count_bans_24h() {
 }
 
 _count_unbans_24h() {
-    local unban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/unbans.log"
-    local since
-    since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
-
-    if [[ -f "$unban_log" ]]; then
-        grep -c "^${since}" "$unban_log" 2>/dev/null || true
-    else
-        echo 0
-    fi
+    # v1.150 (LOG-06): unbans are NOT TRACKED. The previous source,
+    # ${NFTBAN_LOG_DIR}/unbans.log, has no writer anywhere in the codebase, so
+    # this count was always 0 while falsely implying a real source. Report a
+    # truthful, hard-coded 0 rather than reading a phantom log file. (If an
+    # unban-event writer is added later, restore the date-scan here.)
+    echo 0
 }
 
 _count_unique_ips_24h() {
@@ -628,6 +625,48 @@ nftban_report_rbl_table() {
 # =============================================================================
 
 # Collect security posture data - NOT audit-level, just essential hardening status
+# _ssh_effective_directive <directive-lowercase> <main-config-path>
+# Returns the EFFECTIVE value of an sshd directive, accounting for
+# /etc/ssh/sshd_config.d/*.conf drop-in overrides (v1.150 / 15.5).
+#
+# Resolution order:
+#   1. `sshd -T` — authoritative merged config (only when runnable as root).
+#   2. Manual merge of the main file + drop-ins (lexical order; last wins).
+# Directive matching is case-insensitive, matching sshd's own behaviour.
+# Echoes "yes" when nothing is found, preserving the prior conservative default
+# (treat an unspecified PasswordAuthentication/PermitRootLogin as risky).
+_ssh_effective_directive() {
+    local directive="$1" main_config="$2"
+    local value=""
+
+    # 1. Authoritative: sshd -T emits the fully-merged effective config with
+    #    lowercased directive names. Only attempt when we can actually run it.
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]] && command -v sshd >/dev/null 2>&1; then
+        local teff
+        teff=$(sshd -T 2>/dev/null | awk -v d="$directive" 'tolower($1)==d {print $2; exit}')
+        if [[ -n "$teff" ]]; then
+            echo "$teff"
+            return 0
+        fi
+    fi
+
+    # 2. Fallback: scan the main file then the drop-in dir. sshd reads the main
+    #    file's Include lines (conventionally sshd_config.d/*.conf) in lexical
+    #    order; later occurrences override earlier ones, so the LAST match wins.
+    local f match
+    for f in "$main_config" /etc/ssh/sshd_config.d/*.conf; do
+        [[ -f "$f" ]] || continue
+        match=$(grep -iE "^[[:space:]]*${directive}[[:space:]]" "$f" 2>/dev/null | awk '{print $2}' | tail -n1)
+        [[ -n "$match" ]] && value="$match"
+    done
+
+    if [[ -n "$value" ]]; then
+        echo "$value"
+    else
+        echo "yes"
+    fi
+}
+
 _collect_posture_info() {
     local -n _pdata="$1"
     local issues=0
@@ -635,11 +674,19 @@ _collect_posture_info() {
     local posture_details=""
 
     # 1. SSH hardening basics (most impactful)
+    # v1.150 (15.5): resolve the EFFECTIVE sshd posture, not just the main file.
+    # Modern sshd splits config across /etc/ssh/sshd_config.d/*.conf drop-ins,
+    # which can override the main file. Prefer `sshd -T` (the authoritative
+    # effective config) when available; otherwise fall back to scanning the main
+    # file plus the drop-in directory (last matching value wins, mirroring how
+    # sshd merges Include'd files in lexical order).
     local ssh_config="/etc/ssh/sshd_config"
     if [[ -f "$ssh_config" ]]; then
+        local pass_auth root_login
+        pass_auth=$(_ssh_effective_directive "passwordauthentication" "$ssh_config")
+        root_login=$(_ssh_effective_directive "permitrootlogin" "$ssh_config")
+
         # PasswordAuthentication (should be "no" for key-only)
-        local pass_auth
-        pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
         if [[ "$pass_auth" == "yes" ]]; then
             # v1.19.20 FIX
             ((warnings++)) || true
@@ -647,8 +694,6 @@ _collect_posture_info() {
         fi
 
         # PermitRootLogin (should be "no" or "prohibit-password")
-        local root_login
-        root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
         if [[ "$root_login" == "yes" ]]; then
             # v1.19.20 FIX
             ((warnings++)) || true

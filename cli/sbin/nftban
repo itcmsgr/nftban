@@ -277,8 +277,15 @@ nftban_complete() {
                 echo "help"
                 ;;
             module)
+                # v1.150 (CLI-06): regenerated from nftban_cmd_module subcommands.
                 echo "list"
                 echo "summary"
+                echo "json"
+                echo "validate"
+                echo "license"
+                echo "author"
+                echo "depends"
+                echo "duplicates"
                 echo "html-report"
                 echo "mail-report"
                 echo "help"
@@ -369,17 +376,26 @@ nftban_complete() {
                 echo "help"
                 ;;
             health)
+                # v1.150 (CLI-06): regenerated from nftban_cmd_health subcommands.
+                # report/services/modules/permissions were REMOVED in v1.39.0 and
+                # are intentionally dropped from completion.
                 echo "check"
-                echo "report"
+                echo "diagnostics"
                 echo "fix"
-                echo "fhs"
-                echo "services"
-                echo "modules"
-                echo "conflicts"
-                echo "botguard"
-                echo "permissions"
                 echo "summary"
+                echo "json"
+                echo "binaries"
+                echo "geoip"
+                echo "registries"
                 echo "install"
+                echo "verify"
+                echo "conflicts"
+                echo "config"
+                echo "rbl"
+                echo "botguard"
+                echo "fhs"
+                echo "posture"
+                echo "help"
                 ;;
             blacklist)
                 echo "add"
@@ -392,9 +408,15 @@ nftban_complete() {
                 echo "help"
                 ;;
             whitelist)
-                echo "sync"
+                # v1.150 (CLI-06): regenerated from nftban_cmd_whitelist subcommands.
+                echo "add"
+                echo "remove"
+                echo "list"
                 echo "show"
+                echo "sync"
                 echo "whitelistme"
+                echo "--static"
+                echo "--ttl"
                 echo "help"
                 ;;
             status)
@@ -1069,6 +1091,13 @@ main() {
     set -- "${_filtered[@]+"${_filtered[@]}"}"
 
     local cmd="${1:-hello}"
+    # v1.150 (16.7): case-insensitive top-level command dispatch.
+    # All canonical command names + aliases in the dispatch case statements are
+    # lowercase, so `nftban STATS` should resolve to `stats` rather than fall
+    # through to "Unknown command". Lowercase ONLY the top-level command token;
+    # subcommand args ("$@") are left untouched so case-sensitive values
+    # (IPs, country codes, file paths, etc.) are preserved.
+    cmd="${cmd,,}"
 
     # Special completion endpoint for bash completion
     # IMPORTANT: Check this BEFORE loading modules (for performance)
@@ -1087,11 +1116,10 @@ main() {
         exit 1
     fi
 
-    # Load JSON helper for --json support (optional)
-    if [[ -f "${NFTBAN_LIB_DIR}/json_output.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/json_output.sh"
-    fi
+    # v1.150 (15.13-sbin): removed dead `source ${NFTBAN_LIB_DIR}/json_output.sh`.
+    # The canonical JSON helper lives at helpers/json_output.sh (sourced by the
+    # commands that need it); no json_output.sh ever existed at NFTBAN_LIB_DIR
+    # root, so the guarded source was always a no-op.
 
     # Load grouped help system (optional, graceful fallback)
     if [[ -f "${NFTBAN_LIB_DIR}/nftban_help.sh" ]]; then

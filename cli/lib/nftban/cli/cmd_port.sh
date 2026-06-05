@@ -292,6 +292,18 @@ nftban_cmd_port() {
     local subcmd="${1:-status}"
     shift || true
 
+    # v1.150 (CLI-01): help must be reachable without root. The EUID/polkit gate
+    # below previously ran before the help branch, so `nftban port help` /
+    # `nftban port --help` failed with "authorization failed" for a non-root
+    # user. Short-circuit help here, above the privilege gate (help is pure
+    # text — no scan, no nft/firewall mutation).
+    case "$subcmd" in
+        help|--help|-h)
+            nftban_cmd_port_help
+            return 0
+            ;;
+    esac
+
     # Check root for port scanning
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2

@@ -33,17 +33,24 @@
 
 set -Eeuo pipefail
 
-# Prevent double-loading
-[[ -n "${_NFTBAN_FIREWALL_CONFLICTS_LOADED:-}" ]] && return 0
-_NFTBAN_FIREWALL_CONFLICTS_LOADED=1
-
 # =============================================================================
 # CONFLICT SEVERITY LEVELS
 # =============================================================================
+# v1.150 (15.10/16.2): these constants are declared BEFORE the load-guard
+# return so they are always bound. The load-guard skips re-running the function
+# definitions on a re-source, but if `_NFTBAN_FIREWALL_CONFLICTS_LOADED` is
+# inherited (e.g. exported into a child shell that re-sources this file under
+# `set -u`), an early return would otherwise leave CONFLICT_* unbound and abort
+# the first bare reference (`$CONFLICT_NONE`). Keeping the declares above the
+# guard makes double-sourcing safe.
 declare -g CONFLICT_NONE=0
 declare -g CONFLICT_INFO=1
 declare -g CONFLICT_WARNING=2
 declare -g CONFLICT_CRITICAL=3
+
+# Prevent double-loading (functions/arrays below are re-initialised only once)
+[[ -n "${_NFTBAN_FIREWALL_CONFLICTS_LOADED:-}" ]] && return 0
+_NFTBAN_FIREWALL_CONFLICTS_LOADED=1
 
 # Global arrays to store detected conflicts
 declare -ga NFTBAN_FIREWALL_CONFLICTS=()

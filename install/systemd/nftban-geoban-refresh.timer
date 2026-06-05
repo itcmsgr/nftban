@@ -1,0 +1,55 @@
+# =============================================================================
+# NFTBan - GeoBan Country CIDR Refresh Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-geoban-refresh.timer"
+# meta:type="systemd"
+# meta:tier="OPTIONAL"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-06-05"
+# meta:description="Timer for weekly GeoBan country CIDR refresh"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-geoban-refresh.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+#
+# CADENCE: weekly. Country CIDR allocations change slowly, so a weekly refresh
+# matches the conservative cadence of the sibling nftban-core-geoip.timer
+# (weekly mmdb update). The time is staggered from that unit (geoip = Sun 02:30,
+# rbl-check = 02:00/14:00) to spread outbound-download load: GeoBan runs Mon 03:30.
+#
+# NOTE: This lane (Lane A) only SHIPS the unit. Installer auto-enable wiring is
+# Lane B; until then it is manageable via `nftban timers`.
+
+[Unit]
+Description=NFTBan - Weekly GeoBan Country CIDR Refresh Timer
+Documentation=https://github.com/itcmsgr/nftban
+# Timer triggers nftban-geoban-refresh.service (implicit by name match)
+# No explicit Requires needed - the service is self-contained
+
+[Timer]
+# Run weekly on Mondays at 03:30 AM (staggered from geoip at Sun 02:30
+# and rbl-check at 02:00/14:00)
+OnCalendar=Mon *-*-* 03:30:00
+
+# Also run 30 minutes after boot
+OnBootSec=30min
+
+# Run if missed (e.g., system was off)
+Persistent=true
+
+# JITTER: 30m variance for a weekly task
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
+
+[Install]
+WantedBy=timers.target

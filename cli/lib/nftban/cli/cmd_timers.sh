@@ -56,6 +56,13 @@ readonly NFTBAN_TIMERS=(
     "nftban-rbl-check.timer"
     "nftban-pro-license.timer"
     "nftban-pro-inventory.timer"
+    # TMR-02: previously-omitted shipped timers (install/systemd/*.timer)
+    "nftban-botscan.timer"
+    "nftban-community-stats.timer"
+    "nftban-rebuild-recovery.timer"
+    "nftban-report-daily.timer"
+    "nftban-soak.timer"
+    "nftban-tunnel.timer"
 )
 
 # Timer descriptions
@@ -75,6 +82,12 @@ declare -A TIMER_DESC=(
     ["nftban-rbl-check.timer"]="RBL check (every 12h)"
     ["nftban-pro-license.timer"]="Pro license validation (every 6h)"
     ["nftban-pro-inventory.timer"]="Pro daily inventory (04:00)"
+    ["nftban-botscan.timer"]="Bot scanner sweep"
+    ["nftban-community-stats.timer"]="Anonymous community stats submission"
+    ["nftban-rebuild-recovery.timer"]="Deferred firewall rebuild recovery"
+    ["nftban-report-daily.timer"]="Daily report generation"
+    ["nftban-soak.timer"]="Soak validation run"
+    ["nftban-tunnel.timer"]="Tunnel suspicion scan"
 )
 
 # =============================================================================
@@ -438,6 +451,16 @@ TIMERS:
   nftban-rollback.timer            Rollback availability check
   nftban-update-check.timer        Daily update check (03:30 AM)
   nftban-update-apply.timer        Weekly auto-update apply (Sunday 4:00 AM)
+  nftban-watchdog.timer            System watchdog (every 120s)
+  nftban-rbl-check.timer           RBL check (every 12h)
+  nftban-pro-license.timer         Pro license validation (every 6h)
+  nftban-pro-inventory.timer       Pro daily inventory (04:00)
+  nftban-botscan.timer             Bot scanner sweep
+  nftban-community-stats.timer     Anonymous community stats submission
+  nftban-rebuild-recovery.timer    Deferred firewall rebuild recovery
+  nftban-report-daily.timer        Daily report generation
+  nftban-soak.timer                Soak validation run
+  nftban-tunnel.timer              Tunnel suspicion scan
 
 EXAMPLES:
   nftban timers                         # Show status

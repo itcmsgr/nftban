@@ -130,7 +130,9 @@ nftban_cmd_geoip() {
             nftban_geoip_cmd_help
             ;;
         *)
-            nftban_banner
+            # v1.150 (TXT-07): no decorative banner on the error path. The
+            # banner printed to stdout while the error goes to stderr, so
+            # `nftban geoip <bad> 2>/dev/null` left a bare banner with no error.
             echo "ERROR: Unknown geoip command: $subcommand" >&2
             echo "Run 'nftban geoip help' for usage information" >&2
             return 1

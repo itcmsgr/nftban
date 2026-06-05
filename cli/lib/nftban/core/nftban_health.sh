@@ -211,7 +211,14 @@ nftban_health_verify_installation() {
 
     for timer in "${required_timers[@]}"; do
         if systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer"; then
-            if systemctl is-active --quiet "$timer" 2>/dev/null; then
+            # HLT-04: a failed-but-enabled unit must NOT pass as OK. Check
+            # is-failed FIRST so a failed timer is recorded as broken (status=2),
+            # not swallowed by the "ENABLED (stopped)" branch below.
+            if systemctl is-failed --quiet "$timer" 2>/dev/null; then
+                printf "  ✖ %-30s FAILED\n" "$timer"
+                missing_required+=("Timer: $timer FAILED (${timer_desc[$timer]})")
+                timer_missing=$((timer_missing + 1))
+            elif systemctl is-active --quiet "$timer" 2>/dev/null; then
                 printf "  ✔ %-30s ACTIVE\n" "$timer"
                 timer_ok=$((timer_ok + 1))
             elif systemctl is-enabled --quiet "$timer" 2>/dev/null; then
@@ -256,7 +263,14 @@ nftban_health_verify_installation() {
 
     for svc in "${required_services[@]}"; do
         if systemctl list-unit-files "$svc" --no-legend 2>/dev/null | grep -q "^$svc"; then
-            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+            # HLT-04: a failed-but-enabled service must NOT pass as OK. Check
+            # is-failed FIRST so a failed service is recorded as broken
+            # (status=2), not swallowed by the "ENABLED (stopped)" branch below.
+            if systemctl is-failed --quiet "$svc" 2>/dev/null; then
+                printf "  ✖ %-30s FAILED\n" "$svc"
+                missing_required+=("Service: $svc FAILED")
+                svc_missing=$((svc_missing + 1))
+            elif systemctl is-active --quiet "$svc" 2>/dev/null; then
                 printf "  ✔ %-30s ACTIVE\n" "$svc"
                 svc_ok=$((svc_ok + 1))
             elif systemctl is-enabled --quiet "$svc" 2>/dev/null; then

@@ -414,9 +414,11 @@ _build_legacy_dynamic() {
     feed_health_json=$(_build_legacy_feed_health)
 
     # Ban details: escalations, persistent, recidivist (not in stats.json)
+    # v1.150 (LOG-05): escalations_total is NOT TRACKED. The previous source,
+    # ${NFTBAN_LOG_DIR}/escalations.log, has no writer anywhere in the codebase,
+    # so the metric was always 0 (and falsely implied a real source). Report a
+    # truthful, hard-coded 0 rather than reading a phantom log file.
     local bd_escalations=0 bd_persistent=0 bd_recidivist=0
-    local escalation_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/escalations.log"
-    [[ -f "$escalation_log" ]] && bd_escalations=$(wc -l < "$escalation_log" 2>/dev/null || echo "0")
     local permanent_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/permanent.list"
     [[ -f "$permanent_file" ]] && { bd_persistent=$(grep -cE "^[0-9]" "$permanent_file" 2>/dev/null) || bd_persistent=0; }
     local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"

@@ -213,12 +213,26 @@ _nftban_botguard_enable() {
     # Apply nft fragment: create sets + rules + jump chains
     # shellcheck source=/dev/null
     source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" || true
+    # v1.150 (MOD-05): capture the fragment rc. Previously a fragment failure
+    # only warned, then the function unconditionally claimed "enabled" + rc=0
+    # while HTTP_BOTGUARD_ENABLED=true was already persisted → BotGuard inert
+    # but reported active. Keep the config write (so a later `nftban rebuild`
+    # picks it up) but make the result honest: do NOT claim "enabled", and
+    # return non-zero so callers/automation see the failure.
+    local fragment_rc=0
     if declare -f nft_fragment_enable_module &>/dev/null; then
-        nft_fragment_enable_module "botguard" || {
-            if [[ "$json_mode" != "true" ]]; then
-                echo "WARNING: Failed to apply nft rules. Run: nftban rebuild"
-            fi
-        }
+        nft_fragment_enable_module "botguard" || fragment_rc=$?
+    fi
+
+    if [[ $fragment_rc -ne 0 ]]; then
+        if [[ "$json_mode" == "true" ]]; then
+            printf '{"status":"error","message":"HTTP Bot Guard configured but rules NOT applied","hint":"run: nftban rebuild","rules_applied":false}\n'
+        else
+            echo "ERROR: HTTP Bot Guard configured but rules were NOT applied." >&2
+            echo "       The config is saved (HTTP_BOTGUARD_ENABLED=true) but the firewall" >&2
+            echo "       rules failed to load. Run: nftban rebuild" >&2
+        fi
+        return 1
     fi
 
     # Auto-restart nftband to activate immediately

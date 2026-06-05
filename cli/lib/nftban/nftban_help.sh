@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.12.5 - Help System Wrapper
+# NFTBan - Help System Wrapper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for generate-help.sh (single source of truth)

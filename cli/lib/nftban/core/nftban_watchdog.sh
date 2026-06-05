@@ -629,6 +629,14 @@ nftban_watchdog_run() {
     # Append to JSONL trend log (every cycle for trend analysis)
     _watchdog_append_trend
 
+    # 13.7: also feed the hourly trend store (trend_hourly.json) that
+    # nftban_watchdog_trend_averages/_thresholds read from. This collector
+    # previously had ZERO callers, so the `watchdog trends` averages/thresholds
+    # always rendered empty. Wire it into the active run path here (non-fatal;
+    # it re-reads the already-populated WATCHDOG_RESULTS). The working JSONL
+    # path above is left untouched.
+    nftban_watchdog_trend_collect >/dev/null 2>&1 || true
+
     # Cleanup old reports periodically
     nftban_watchdog_cleanup_old >/dev/null
 
@@ -838,7 +846,14 @@ nftban_watchdog_trend_display() {
         echo "  No trend data available yet."
         echo "  Trend data is collected every 15 minutes by the maintenance timer."
         echo ""
-        echo "  Enable timer: nftban timers enable nftban-maintenance.timer"
+        # 13.7(a): only advise enabling the timer when it is actually disabled.
+        # If the timer is already enabled, the absence of data just means no
+        # maintenance cycle has run yet — say so instead of a misleading hint.
+        if ! systemctl is-enabled --quiet nftban-maintenance.timer 2>/dev/null; then
+            echo "  Enable timer: nftban timers enable nftban-maintenance.timer"
+        else
+            echo "  The maintenance timer is enabled; data accrues after the next maintenance cycle."
+        fi
         return 0
     fi
 

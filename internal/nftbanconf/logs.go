@@ -52,6 +52,7 @@ const (
 	LogCategoryBotguard      LogCategory = "botguard"
 	LogCategoryDebug         LogCategory = "debug"
 	LogCategoryServiceAlerts LogCategory = "service_alerts" // v1.138 PR-B (SEC-BYPASS-ALERT)
+	LogCategorySecurityAudit LogCategory = "security_audit" // v1.150 LOG-01 (nftban_path_security.sh)
 )
 
 // LogTemplate names a packaged logrotate template that executes rotation policy.
@@ -117,7 +118,13 @@ func LogInventory() []LogPolicy {
 		// emissions (SEC-BYPASS-ALERT). weekly/4 matches install/config/nftban.logrotate.
 		{Name: "service-alerts.log", Category: LogCategoryServiceAlerts, Rotation: "weekly", Retain: 4, Template: TemplateMain},
 		{Name: "bans.log", Category: LogCategoryBans, Rotation: "weekly", Retain: 12, Template: TemplateMain},
+		// security-audit.log: path-security audit events (nftban_path_security.sh).
+		// weekly/12 matches install/config/nftban.logrotate (v1.150 LOG-01).
+		{Name: "security-audit.log", Category: LogCategorySecurityAudit, Rotation: "weekly", Retain: 12, Template: TemplateMain},
 		{Name: "portscan.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
+		// portscan-events.log: per-event scan records (nftban_portscan_classic.sh),
+		// high volume. daily/30 matches install/config/nftban.logrotate (v1.150 LOG-02).
+		{Name: "portscan-events.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
 		{Name: "portscan-classic.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
 		{Name: "portscan-suricata.log", Category: LogCategoryPortscan, Rotation: "daily", Retain: 30, Template: TemplateMain},
 		{Name: "ddos.log", Category: LogCategoryDDoS, Rotation: "daily", Retain: 30, Template: TemplateMain},
