@@ -417,9 +417,8 @@ nftban_stats_top_sources() {
             printf '%d login\n%d portscan\n%d ddos\n%d manual\n%d feeds\n%d suricata\n' \
                 "$login" "$portscan" "$ddos" "$manual" "$feeds" "$suricata" | \
             sort -rn | head -n "$limit" | \
-            awk 'BEGIN{printf "["}
-                 NR>1{printf ","}
-                 $1 > 0 {printf "{\"name\":\"%s\",\"count\":%d}", $2, $1}
+            awk 'BEGIN{printf "["; n=0}
+                 $1 > 0 { if (n++) printf ","; printf "{\"name\":\"%s\",\"count\":%d}", $2, $1 }
                  END{printf "]"}'
             return 0
         fi
