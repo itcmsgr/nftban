@@ -1,10 +1,18 @@
 # NFTBan Log Rotation Configuration
 # Install to: /etc/logrotate.d/nftban
 #
-# Rotates:
-# - /var/log/nftban/*.log (weekly, 4 weeks)
+# Rotates (this file enumerates EXACT paths, not a *.log wildcard — every
+# nftban-owned log must be listed in an explicit stanza below or it is NOT
+# rotated; the logs.go LogInventory() + drift-test is the bridge that proves
+# every inventoried /var/log/nftban log is covered here):
+# - Enumerated /var/log/nftban/*.log files (see stanzas below; frequencies vary)
+# - One /var/lib/nftban/permissions_audit.log audit log (weekly, 12)
 # - /var/lib/nftban/reports/* (monthly, 3 months)
-# - Suricata logs (handled separately)
+# - Suricata logs (handled separately, /etc/logrotate.d/nftban-suricata)
+#
+# NOTE: there is intentionally no catch-all `/var/log/nftban/*.log` safety
+# stanza (it would double-rotate the exact-path stanzas and silently mask a
+# missing inventory entry). Add new logs as explicit stanzas + a logs.go entry.
 #
 # Policy: Compress old files, keep reasonable history
 
@@ -108,6 +116,43 @@
     missingok
     notifempty
     copytruncate
+    create 0640 nftban nftban
+}
+
+# =============================================================================
+# Security audit log (v1.150 — LOG-01)
+# =============================================================================
+# Writer: nftban_path_security.sh appends path-security audit events to
+# ${NFTBAN_LOG_DIR}/security-audit.log. Was previously matched by NO stanza
+# (this file enumerates exact paths, no *.log wildcard) → unbounded growth.
+# Same policy class as the other weekly audit/module logs.
+/var/log/nftban/security-audit.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
+# =============================================================================
+# Portscan events log (v1.150 — LOG-02)
+# =============================================================================
+# Writer: nftban_portscan_classic.sh appends per-event scan records to
+# ${NFTBAN_LOG_DIR}/portscan-events.log. High volume during an active scan and
+# was previously matched by NO stanza → unbounded growth. Daily + size cap,
+# same policy class as the other module operational logs.
+/var/log/nftban/portscan-events.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 100M
     create 0640 nftban nftban
 }
 
@@ -233,6 +278,25 @@
 /var/log/nftban/update.log {
     weekly
     rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
+# =============================================================================
+# Permissions audit log (v1.150 — LOG-11)
+# =============================================================================
+# Writer: nftban_permissions.sh appends permission-enforcement audit entries to
+# ${NFTBAN_VAR_DIR:-/var/lib/nftban}/permissions_audit.log. NOTE: this log lives
+# under /var/lib (the data dir), NOT /var/log — it is intentionally outside the
+# usual log directory, so it gets its own explicit stanza here. Low volume but
+# previously had no rotation → unbounded.
+/var/lib/nftban/permissions_audit.log {
+    weekly
+    rotate 12
     compress
     delaycompress
     missingok

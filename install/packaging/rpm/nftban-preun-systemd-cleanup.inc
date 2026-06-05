@@ -47,6 +47,8 @@ for unit in \
     nftban-core-geoip.timer \
     nftban-firewall-init.service \
     nftban-firewall-validate.service \
+    nftban-geoban-refresh.service \
+    nftban-geoban-refresh.timer \
     nftban-health-fix.service \
     nftban-health.service \
     nftban-health.timer \

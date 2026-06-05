@@ -934,7 +934,7 @@ nftban_check_updates_banner() {
     local cache_file="${NFTBAN_CACHE_DIR}/update_check"
     local cache_ttl="${NFTBAN_UPDATE_TTL:-86400}" # 24 hours default
     local repo="${NFTBAN_REPO:-itcmsgr/nftban}"
-    local current_version latest_version
+    local current_version latest_version=""
 
     # Get current version
     current_version="$(nftban_get_version)"

@@ -362,9 +362,13 @@ nftban_cmd_status() {
                 # full show_usage block on the unknown-option parse error
                 # path. The explicit `nftban status --help` path (above)
                 # still renders the full show_usage block.
+                # v1.150 CLI-02: hint now lists ONLY tokens the parser above
+                # actually accepts. The old hint advertised --counts/--pending/
+                # --quick (none handled) so an operator following it re-hit the
+                # same error.
                 _v144_error_with_hint \
                     "Unknown option: $1" \
-                    "Valid options: --json, --brief, --counts, --pending, --quick" \
+                    "Valid options: --json/-j, --brief/-b, --quiet/-q, pending, queue, --help" \
                     "nftban status --help"
                 return $?
                 ;;
@@ -596,8 +600,17 @@ _status_section_firewall() {
     printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
 
     # Check master switch
+    # v1.150 MOD-09: source the BASE services.conf first, then the .local
+    # override. Pre-v1.150 only the .local file was sourced, so NFTBAN_ENABLED=false
+    # set in the base services.conf was ignored and status reported ENABLED.
     local master_enabled="true"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" 2>/dev/null || true
+        master_enabled="${NFTBAN_ENABLED:-true}"
+    fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" 2>/dev/null || true
         master_enabled="${NFTBAN_ENABLED:-true}"
     fi
@@ -922,11 +935,19 @@ _status_section_protection() {
     printf "  %-20s %s\n" "GeoIP..............." "$geoip_status"
 
     # GeoBan (country blocking module) - separate from GeoIP database
+    # v1.150 HLT-08: count banned countries by the real geoban.d/50-ban-*.conf
+    # files. The previous `geoban list | grep -c "BLOCKED"` never matched: the
+    # list output emits "🚫 Banned Countries:" plus country lines, never the
+    # token "BLOCKED", so geoban always showed DISABLED even with countries
+    # actively banned. The file count mirrors nftban_geoban.sh and the exporter.
     local geoban_status="DISABLED"
-    local banned_countries
-    banned_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+    local banned_countries=0
+    local _geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+    if [[ -d "$_geoban_dir" ]]; then
+        banned_countries=$(find "$_geoban_dir" -maxdepth 1 -name '50-ban-*.conf' -type f 2>/dev/null | wc -l)
+    fi
+    banned_countries=${banned_countries//[^0-9]/}
     banned_countries=${banned_countries:-0}
-    banned_countries=$(echo "$banned_countries" | tr -d '\n' | tr -d ' ')
     if [[ "$banned_countries" =~ ^[0-9]+$ ]] && [[ "$banned_countries" -gt 0 ]]; then
         geoban_status="ACTIVE ($banned_countries countries blocked)"
     fi
@@ -1905,10 +1926,17 @@ output_json() {
     echo "    \"geoip\": {\"installed\": $geoip_installed},"
 
     # GeoBan (country blocking) - separate from GeoIP
+    # v1.150 HLT-08: count banned countries by the real geoban.d/50-ban-*.conf
+    # files (mirrors the terminal-mode fix). The old `geoban list | grep -c
+    # "BLOCKED"` never matched the list output, so JSON status reported geoban
+    # disabled with 0 countries even while countries were actively banned.
     local geoban_enabled=false geoban_countries=0
-    geoban_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+    local _json_geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+    if [[ -d "$_json_geoban_dir" ]]; then
+        geoban_countries=$(find "$_json_geoban_dir" -maxdepth 1 -name '50-ban-*.conf' -type f 2>/dev/null | wc -l)
+    fi
+    geoban_countries=${geoban_countries//[^0-9]/}
     geoban_countries=${geoban_countries:-0}
-    geoban_countries="${geoban_countries:-0}"
     [[ "$geoban_countries" =~ ^[0-9]+$ ]] && [[ "$geoban_countries" -gt 0 ]] && geoban_enabled=true
     echo "    \"geoban\": {\"enabled\": $geoban_enabled, \"blocked_countries\": $geoban_countries},"
 

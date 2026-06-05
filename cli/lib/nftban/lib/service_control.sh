@@ -514,17 +514,19 @@ nftban_enable_all() {
     local tmr_metrics="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     local tmr_feeds="${NFTBAN_TIMER_FEEDS:-nftban-core-feeds.timer}"
     local tmr_suricata="${NFTBAN_TIMER_SURICATA_UPDATE:-nftban-suricata-update.timer}"
-    # Snapshot/rollback timers (no config var yet — use known names)
-    local tmr_snapshot="nftban-snapshot.timer"
-    local tmr_rollback="nftban-rollback.timer"
+    # TMR-01: Snapshot/rollback timers are apply/confirm-managed, NOT
+    # auto-enabled. nftban-rollback.timer is started by nftban-apply and stopped
+    # by nftban-confirm (its unit's [Install] explicitly says "Do NOT
+    # auto-enable" — auto-enabling fails on fresh install before any
+    # backup.rules exists). The snapshot timer is paired with it under the same
+    # apply/confirm lifecycle. They are intentionally omitted from core_timers
+    # below so they stay confirm-managed rather than force-enabled here.
 
     # Core timers — ALWAYS enabled (non-negotiable)
     local core_timers=(
         "$tmr_health"
         "$tmr_maintenance"
         "$tmr_watchdog"
-        "$tmr_snapshot"
-        "$tmr_rollback"
     )
     for timer in "${core_timers[@]}"; do
         if systemctl list-unit-files "$timer" &>/dev/null 2>&1; then

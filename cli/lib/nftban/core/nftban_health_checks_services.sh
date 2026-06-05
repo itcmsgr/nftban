@@ -532,7 +532,10 @@ nftban_health_check_timers() {
                 done
                 if [[ -n "$timer_file" ]]; then
                     echo "  🔧 Auto-heal: Installing $timer..."
-                    if cp "$timer_file" /etc/systemd/system/ 2>/dev/null && systemctl daemon-reload 2>/dev/null; then
+                    # TMR-08: heal into the packaging location
+                    # (/usr/lib/systemd/system) — not /etc/systemd/system — so
+                    # the unit stays package-owned and survives upgrades.
+                    if cp "$timer_file" /usr/lib/systemd/system/ 2>/dev/null && systemctl daemon-reload 2>/dev/null; then
                         timer_issues+=("✓ Installed $timer")
                     else
                         timer_issues+=("❌ Failed to install $timer")
@@ -540,6 +543,16 @@ nftban_health_check_timers() {
                 fi
             fi
             continue
+        fi
+
+        # HLT-05: the .timer may be enabled+active while its backing .service
+        # has failed on its last run (a silently-broken job). Check is-failed on
+        # the backing <stem>.service and surface it as an ERROR with a hint.
+        local backing_service="${timer%.timer}.service"
+        if systemctl is-failed --quiet "$backing_service" 2>/dev/null; then
+            timer_issues+=("✖ $backing_service - FAILED (last run of ${timer} job failed)")
+            timer_issues+=("FIX: systemctl status $backing_service; systemctl reset-failed $backing_service")
+            [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
         fi
 
         # Check if enabled

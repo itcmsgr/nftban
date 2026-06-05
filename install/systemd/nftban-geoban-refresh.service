@@ -1,0 +1,89 @@
+# =============================================================================
+# NFTBan - GeoBan Country CIDR Refresh Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-geoban-refresh.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-06-05"
+# meta:description="Refresh active GeoBan country CIDR sets"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/geoban/main.conf"
+# meta:inventory.systemd_units="nftban-geoban-refresh.timer"
+# meta:inventory.network="outbound"
+# meta:inventory.privileges="root"
+# =============================================================================
+#
+# Distinct from nftban-core-geoip.service: that unit updates the GeoIP *mmdb*
+# database (the Go `nftban-core geoip update` path). This unit re-downloads the
+# country CIDR lists for the countries already selected with `nftban geoip ban`
+# so that long-lived hosts pick up upstream CIDR churn instead of fetching once
+# and never refreshing again (register item 13.4).
+#
+# Conditional execution: this is a no-op when GeoBan is not configured. The
+# ExecCondition skips the run entirely when the GeoBan config is absent; when
+# present-but-disabled the command's own GEOBAN_ENABLED check returns cleanly
+# (see nftban_geoban_check_enabled in core/nftban_geoban.sh). This mirrors how
+# other refresh units stay quiet when their feature is off.
+#
+# NOTE: This lane (Lane A) only SHIPS the unit. Installer auto-enable wiring
+# (adding it to the enabled timer set) is Lane B. Until then it is manageable
+# via `nftban timers` and the usual `systemctl enable --now` path.
+
+[Unit]
+Description=NFTBan - GeoBan Country CIDR Refresh
+Documentation=https://github.com/itcmsgr/nftban
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# Skip the run entirely when GeoBan is not configured on this host.
+ExecCondition=/usr/bin/test -f /etc/nftban/conf.d/geoban/main.conf
+
+# Refresh all active GeoBan country CIDR sets.
+ExecStart=/usr/sbin/nftban geoip refresh
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-geoban-refresh
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+
+# Network access for upstream CIDR-list downloads.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Filesystem access (GeoBan CIDR files + state live under /var/lib/nftban).
+ReadWritePaths=/var/lib/nftban
+
+# Timeout (allow up to 10 minutes for all active countries to refresh).
+TimeoutStartSec=600
+TimeoutStopSec=30
+
+# Resource limits
+CPUQuota=50%
+MemoryMax=256M
+TasksMax=50
+
+[Install]
+WantedBy=multi-user.target

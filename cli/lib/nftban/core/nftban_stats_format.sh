@@ -110,6 +110,12 @@ nftban_stats_generate_dashboard() {
         black_v6_temp=$(nftban_stats_get_unified ".blacklist.ipv6.temporary" "0")
     else
         # Fallback: Direct nftables query
+        # v1.150 HLT-09: count BOTH the interval set (blacklist_ipv4/_ipv6:
+        # feed + geoban bans) AND the manual hash set (blacklist_manual_ipv4/
+        # _ipv6: manual + auto-detect bans). Pre-v1.150 this fallback counted
+        # only the interval set, so on a cache miss the dashboard undercounted
+        # by every manually/auto-detected ban (mirror of nft_schema.sh
+        # nftban_nft_count_set ip nftban blacklist_manual_ipv4).
         if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
             local v4_output
             v4_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
@@ -117,9 +123,18 @@ nftban_stats_generate_dashboard() {
             black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=${black_v4:-0}
             black_v4_temp=${black_v4_temp:-0}
-            black_v4_perm=$((black_v4 - black_v4_temp))
-            [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
         fi
+        # v1.150 HLT-09: add manual/auto-detect bans (hash set, disjoint).
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_manual_ipv4 &>/dev/null 2>&1; then
+            local v4m_output v4m_count v4m_temp
+            v4m_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV4}" blacklist_manual_ipv4 2>/dev/null || true)
+            v4m_temp=$(echo "$v4m_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
+            v4m_count=$(echo "$v4m_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v4=$((black_v4 + ${v4m_count:-0}))
+            black_v4_temp=$((black_v4_temp + ${v4m_temp:-0}))
+        fi
+        black_v4_perm=$((black_v4 - black_v4_temp))
+        [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
         if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
             local v6_output
             v6_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
@@ -127,9 +142,18 @@ nftban_stats_generate_dashboard() {
             black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=${black_v6:-0}
             black_v6_temp=${black_v6_temp:-0}
-            black_v6_perm=$((black_v6 - black_v6_temp))
-            [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
         fi
+        # v1.150 HLT-09: add manual/auto-detect IPv6 bans (hash set, disjoint).
+        if timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_manual_ipv6 &>/dev/null 2>&1; then
+            local v6m_output v6m_count v6m_temp
+            v6m_output=$(timeout 10s nft list set "${NFTBAN_TABLE_IPV6}" blacklist_manual_ipv6 2>/dev/null || true)
+            v6m_temp=$(echo "$v6m_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
+            v6m_count=$(echo "$v6m_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v6=$((black_v6 + ${v6m_count:-0}))
+            black_v6_temp=$((black_v6_temp + ${v6m_temp:-0}))
+        fi
+        black_v6_perm=$((black_v6 - black_v6_temp))
+        [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
     fi
 
     black_v4=${black_v4//[^0-9]/}
@@ -210,14 +234,20 @@ nftban_stats_generate_dashboard() {
         # Read from unified cache
         geoban_total=$(nftban_stats_get_unified ".geoban.countries_blocked" "0")
     else
-        # Fallback: Scan geoban config files
-        local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
+        # Fallback: Scan geoban config files.
+        # v1.150 13.2: the real geoban config dir is /etc/nftban/geoban.d and
+        # banned-country files are named 50-ban-<CC>.conf with MODE=...ban
+        # (nftban_geoban.sh writes them there). The pre-v1.150 path scanned
+        # ${DATA_DIR}/geoban/*.conf for MODE=...block — a dir/token that never
+        # existed, so geoban always showed 0 even with countries banned.
+        # geoban has NO separate kernel IP set (CIDRs load into blacklist_*);
+        # this is purely a config-dir reader fix.
+        local geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
         if [[ -d "$geoban_dir" ]]; then
             local blocked_countries=0
             shopt -s nullglob 2>/dev/null || true
-            for file in "$geoban_dir"/*.conf; do
-                # v1.19.20 FIX
-                [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && { ((blocked_countries++)) || true; }
+            for file in "$geoban_dir"/50-ban-*.conf; do
+                [[ -f "$file" ]] && grep -q "^MODE=.*ban" "$file" 2>/dev/null && { ((blocked_countries++)) || true; }
             done
             shopt -u nullglob 2>/dev/null || true
             geoban_total=$blocked_countries

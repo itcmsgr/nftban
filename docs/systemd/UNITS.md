@@ -14,7 +14,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 > `OnBootSec=` directives where applicable. The unit file is authoritative; this
 > table is a curated projection.
 
-## Timers (21)
+## Timers (22)
 
 | Timer | Schedule | Purpose |
 |-------|----------|---------|
@@ -29,6 +29,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-pro-inventory.timer` | Daily 4:00 + boot+30m | Pro inventory collection |
 | `nftban-pro-license.timer` | Every 6h + boot+5m | License validation |
 | `nftban-core-geoip.timer` | Weekly Sun 2:30 + boot+30m | GeoIP database update |
+| `nftban-geoban-refresh.timer` | Weekly Mon 3:30 + persistent | GeoBan country-CIDR refresh |
 | `nftban-suricata-update.timer` | Weekly Sun 3:40 + boot+30m | Suricata rules update |
 | `nftban-update-check.timer` | Daily 3:30 | Update availability check |
 | `nftban-update-apply.timer` | Weekly Sun 4:00 | Auto-update apply (gated) |
@@ -40,7 +41,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (28)
+## Services (29)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -57,6 +58,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-watchdog.service` | oneshot | Watchdog check |
 | `nftban-core-feeds.service` | oneshot | Feed updates |
 | `nftban-core-geoip.service` | oneshot | GeoIP updates |
+| `nftban-geoban-refresh.service` | oneshot | GeoBan country-CIDR refresh (`nftban geoip refresh`) |
 | `nftban-rbl-check.service` | oneshot | RBL check |
 | `nftban-update-check.service` | oneshot | Update check (unprivileged) |
 | `nftban-update-apply.service` | oneshot | Auto-update apply (gated) |

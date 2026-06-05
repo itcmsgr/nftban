@@ -130,14 +130,14 @@ nftban_sync_full() {
         echo ""
         nftban_output "success" "Firewall sync completed successfully"
         nftban_output "info" "Tables: ip nftban (IPv4) + ip6 nftban (IPv6)"
-        nftban_output "info" "Runtime state: Fail2Ban bans preserved"
+        nftban_output "info" "Runtime state: NFTBan runtime bans preserved"
         return 0
     elif [[ $exit_code -eq 1 ]] && echo "$sync_output" | grep -qE "(sync completed|rules applied|validation passed|Sync complete)"; then
         # Exit 1 but output indicates success - treat as success
         echo ""
         nftban_output "success" "Firewall sync completed successfully"
         nftban_output "info" "Tables: ip nftban (IPv4) + ip6 nftban (IPv6)"
-        nftban_output "info" "Runtime state: Fail2Ban bans preserved"
+        nftban_output "info" "Runtime state: NFTBan runtime bans preserved"
         return 0
     else
         echo ""
@@ -272,17 +272,17 @@ ALGORITHM:
   1. Read static config (whitelist, blacklist, ports)
   2. Build feed sets (Go internal/feeds) - <2s for 50,000+ IPs
   3. Build geoban sets (Go internal/geoban) - <2s for 2,259 CIDRs
-  4. Dump Fail2Ban runtime state (temp_ban_*, temp_whitelist_*)
+  4. Dump NFTBan runtime state (temp_ban_*, temp_whitelist_*)
   5. Generate new ruleset (rules.new.nft)
   6. Validate (nft -c -f)
   7. Snapshot current rules (automatic backup)
   8. Apply new rules (nft -f)
-  9. Restore Fail2Ban bans (preserve runtime state)
+  9. Restore NFTBan runtime bans (preserve runtime state)
   10. Cleanup old snapshots (keep 10 most recent)
 
 FEATURES:
   - Atomic transaction (all-or-nothing)
-  - Preserves Fail2Ban runtime bans
+  - Preserves NFTBan runtime bans
   - Automatic validation before apply
   - Automatic rollback snapshots
   - 100x faster than bash (GeoBan: 120s → 2s)

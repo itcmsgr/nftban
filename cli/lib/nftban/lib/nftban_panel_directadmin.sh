@@ -24,7 +24,14 @@ readonly _NFTBAN_PANEL_DIRECTADMIN_LOADED=1
 # =============================================================================
 
 nftban_panel_directadmin_help() {
-    cat <<'EOF'
+    # v1.150 (15.12): don't hardcode SSH on 22 in the help. Resolve the SSH
+    # safety/test port the firewall actually preserves (recovery.conf's
+    # NFTBAN_SSH_TEST_PORT, or the SSH_PORT env), so the displayed Key Ports
+    # match the conf.d safety exclusion on hosts that moved SSH off 22.
+    local _da_ssh_port="${NFTBAN_SSH_TEST_PORT:-${SSH_PORT:-22}}"
+    # Unquoted heredoc: the body contains no other shell-special chars, so only
+    # ${_da_ssh_port} expands.
+    cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan DirectAdmin Integration - Comprehensive Panel Support
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -69,14 +76,14 @@ Actions:
                         • Reports any issues found
 
 DirectAdmin Ports Configured:
-  TCP INPUT:  20,21,22,25,53,80,110,143,443,465,587,993,995,2222,35000:35999
-  TCP OUTPUT: 20,21,22,25,53,80,110,113,143,443,465,587,993,995,2222
+  TCP INPUT:  20,21,${_da_ssh_port},25,53,80,110,143,443,465,587,993,995,2222,35000:35999
+  TCP OUTPUT: 20,21,${_da_ssh_port},25,53,80,110,113,143,443,465,587,993,995,2222
   UDP INPUT:  20,21,53,80,443,853
   UDP OUTPUT: 20,21,53,113,123,443,853
 
 Key Ports:
   2222        - DirectAdmin Web Panel
-  22          - SSH
+  ${_da_ssh_port}          - SSH (safety port; preserved from ports.d/)
   80/443      - HTTP/HTTPS (including QUIC/HTTP3)
   25/587/465  - SMTP/Submission
   20/21       - FTP
