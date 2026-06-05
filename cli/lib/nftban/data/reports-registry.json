@@ -247,7 +247,7 @@
     "total_bans": {
       "description": "Total number of bans (cumulative)",
       "type": "counter",
-      "source": "ban.log",
+      "source": "bans.log",
       "prometheus_name": "nftban_bans_total"
     },
     "active_bans": {
@@ -330,11 +330,11 @@
 
   "log_files": {
     "ban_log": {
-      "path": "/var/log/nftban/ban.log",
+      "path": "/var/log/nftban/bans.log",
       "format": "pipe_separated",
-      "fields": ["timestamp", "id", "jail", "ip", "reason", "action", "timeout"],
-      "rotation": "daily",
-      "retention_days": 90
+      "fields": ["DATE", "TIME", "SOURCE", "IP", "COUNTRY", "STATUS", "REASON"],
+      "rotation": "weekly",
+      "retention_days": 84
     },
     "actions_log": {
       "path": "/var/log/nftban/nftban-actions.log",

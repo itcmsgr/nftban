@@ -560,13 +560,38 @@ nftban_health_cmd_posture() {
     echo "SSH Configuration"
     echo "  ─────────────────────────────────────"
 
+    # v1.150 (15.5): resolve the EFFECTIVE sshd posture. Drop-in overrides live
+    # in /etc/ssh/sshd_config.d/*.conf and can flip the main file's values.
+    # Prefer `sshd -T` (authoritative merged config, root-only); otherwise merge
+    # the main file with the drop-ins (last matching value wins, lexical order).
+    # Case-insensitive directive match, matching sshd. Defaults to "yes" when a
+    # directive is absent, preserving the prior conservative warning behaviour.
+    _ssh_effective_directive() {
+        local directive="$1" main_config="$2" value=""
+        if [[ "${EUID:-$(id -u)}" -eq 0 ]] && command -v sshd >/dev/null 2>&1; then
+            local teff
+            teff=$(sshd -T 2>/dev/null | awk -v d="$directive" 'tolower($1)==d {print $2; exit}')
+            if [[ -n "$teff" ]]; then
+                echo "$teff"
+                return 0
+            fi
+        fi
+        local f match
+        for f in "$main_config" /etc/ssh/sshd_config.d/*.conf; do
+            [[ -f "$f" ]] || continue
+            match=$(grep -iE "^[[:space:]]*${directive}[[:space:]]" "$f" 2>/dev/null | awk '{print $2}' | tail -n1)
+            [[ -n "$match" ]] && value="$match"
+        done
+        if [[ -n "$value" ]]; then echo "$value"; else echo "yes"; fi
+    }
+
     local ssh_config="/etc/ssh/sshd_config"
     if [[ -f "$ssh_config" ]]; then
         # v1.19.20 FIX
         ((total_checks++)) || true
         # PasswordAuthentication
         local pass_auth
-        pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        pass_auth=$(_ssh_effective_directive "passwordauthentication" "$ssh_config")
         if [[ "$pass_auth" == "no" ]]; then
             printf "  %-28s ✅ Disabled (key-only)\n" "PasswordAuthentication"
         else
@@ -579,7 +604,7 @@ nftban_health_cmd_posture() {
         ((total_checks++)) || true
         # PermitRootLogin
         local root_login
-        root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        root_login=$(_ssh_effective_directive "permitrootlogin" "$ssh_config")
         if [[ "$root_login" == "no" || "$root_login" == "prohibit-password" ]]; then
             printf "  %-28s ✅ %s\n" "PermitRootLogin" "$root_login"
         else
@@ -592,7 +617,7 @@ nftban_health_cmd_posture() {
         ((total_checks++)) || true
         # X11Forwarding
         local x11_fwd
-        x11_fwd=$(grep -E "^X11Forwarding" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        x11_fwd=$(_ssh_effective_directive "x11forwarding" "$ssh_config")
         if [[ "$x11_fwd" == "no" ]]; then
             printf "  %-28s ✅ Disabled\n" "X11Forwarding"
         else
