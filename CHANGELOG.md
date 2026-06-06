@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.151.0] - 2026-06-06 — small cleanup / trust-output hotfix
+
+**Codename:** `V151_TRUST_OUTPUT`
+**Controlling record:** `NFTBAN_ROADMAP/V151_CLEANUP_SCOPE.md`
+**PR:** [#773](https://github.com/itcmsgr/nftban/pull/773) (sq `a6d57e89`)
+
+> **Why:** clean up confusing/false install/update/runtime output without touching the daemon, schema, or CSF. **Daemon byte-identical to v1.150.1** (`0 cmd/nftband`, `0 cmd/nftban-core`); **schema 1.83.0 frozen**; **no CSF**. Installer-Go limited to panelfw + rebuild-log (output/decision wording only).
+
+### Fixed — panelfw weak DirectAdmin false-positive
+- On a no-panel host whose alt-SSH listens on `:2222`, a single weak signal previously printed `detected panel id=directadmin confidence=weak` and validated/printed the full DirectAdmin port set (`35000-35999`) as if confirmed. `internal/installer/panelfw/panelfw.go` now gates validation/printing on `Confidence != "weak"` — a weak detection logs "weak signal ignored; no confirmed panel" and is treated as no-panel. It was never applied to the kernel (a validation/host-env false positive, not policy application). Strong (≥3-signal) detections are unaffected.
+
+### Fixed — exporter `rc=143` false-error class-killer (D-EXPORTER-EXIT2-PHASE-4)
+- The unified-exporter ERR trap (`cli/lib/nftban/exporters/nftban_unified_exporter.sh:48`) logged a SIGTERM/SIGINT (`rc>=128`) as `ERROR: aborted` at whatever command the signal interrupted — noisy false errors on every timer-killed collection. It is now **signal-aware**: `rc>=128` → one graceful `INFO` line (`interrupted by signal; next scheduled run will collect`), no `ERROR:`; `rc<128` (a real failure) keeps the loud diagnosable line. Ends the v1.143.1 per-site whack-a-mole. The exporter is auxiliary (metrics-only).
+
+### Fixed — `nftban version` Build Date truth
+- `cli/lib/nftban/lib/version.sh` computed `Build Date` as `$(date)` at runtime, so `nftban version` always showed the current clock (useless for support / CVE-patch tracking). It now resolves a real build stamp: build-stamp file → `rpm` BUILDTIME → `"unknown"` — **never the current clock**.
+
+### Fixed — degraded-rebuild log truth (installer)
+- `internal/installer/switchop/rebuild.go` logged `firewall rebuild DEGRADED (exit 1): ` (blank reason) followed by the self-contradictory `completed (exit 1)`, which reads as a failed takeover and tempts a Ctrl+C/rollback at the worst moment. It now logs a real reason (stderr → last stdout line → static "base schema loaded; module chains deferred to daemon start") and a non-contradictory `finished DEGRADED (exit 1) — recovery expected`; exit 0 logs a plain `completed`.
+
+### Validation
+- **Go (lab2, go1.25):** `gofmt`/`go vet ./...`/`go build ./...` clean; `panelfw_test.go` (+2: weak-skip, strong-finalizes) and `rebuild_test.go` (+3: degraded-reason-from-stdout, static-fallback, plain-completed) PASS.
+- **Shell (local):** `exporter_sigterm_graceful_v151_test.sh` 11/0, `version_build_date_v151_test.sh` 8/0; shellcheck clean; `check-nft-writes.sh` 0 WRITE violations.
+- First of the cleanup train: v1.151 → v1.152 (feeds+stats truth) → v1.153 (UX-consistency).
+
+---
+
 ## [v1.150.1] - 2026-06-05 — external admin SSH-port guard (warn-only + lockout-net)
 
 **Codename:** `OBS_SSHPORT_55000`
