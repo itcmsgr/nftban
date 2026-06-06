@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.155.0] - 2026-06-07 — SSH-port lifecycle / srv1 unblocker
+
+**Codename:** `V155_SSH_PORT_LIFECYCLE`
+**Controlling record:** `NFTBAN_ROADMAP/V155_SSH_PORT_LIFECYCLE_SCOPE.md`
+**PR:** [#781](https://github.com/itcmsgr/nftban/pull/781) (sq `5681dd72`)
+
+> **Why:** remove the srv1 / external-`:55000` ambiguity blocking the fleet rollout by adding the two missing SSH lifecycle pieces + a reproducible proof procedure. **Read-only; shell + tests + docs only.** `0` Go · `0 cmd/nftband` (daemon byte-identical to v1.154.0) · `0` schema (1.83.0 frozen) · no direct nft writes · no CSF. nftban is an ingress IPS, not a NAT manager; the external `:55000→:22` redirect stays host-managed; `:22` is never at risk; `ssh_ports` = the real sshd listeners only.
+
+### Added — socket-activated SSH port-mismatch warning (PR-1, item 3.2)
+- `cli/lib/nftban/lib/ssh_admin_port_guard.sh` gains `nftban_ssh_socket_port_mismatch_audit` (surfaced via `nftban firewall ssh-audit`): on a **socket-activated** sshd, when the configured Port (`sshd -T`) ≠ the actual listeners (the `ssh.socket` unit was not restarted after a config change), emit ONE calm warning naming the class + the verbatim remediation `systemctl daemon-reload && systemctl restart ssh.socket`. Read-only — never restarts; warns to stderr only when configured≠listening AND socket-activated AND both sides readable (otherwise silent).
+
+### Added — SSH-port-change lifecycle validator (PR-2, item 3.3)
+- `tools/validation/ssh_port_change_lifecycle_validate.sh` (read-only) asserts: every sshd listener ∈ `tcp_ports_in` ∧ ∈ `ssh_ports`; the brute-force ct-count rule references `@ssh_ports`; and there is no literal `tcp dport <sshport>` for ssh (must use the set). Env-injectable (`NFTBAN_VALIDATE_RULESET_FILE` / `NFTBAN_VALIDATE_LISTENERS`) for hermetic testing; on a host it auto-collects via `nft list ruleset` + the guard lib (read-only). Wired into CI (`ci-architecture.yml`).
+
+### Added — SSH-PORT-LIFECYCLE docs / OBS-SSHPORT decision matrix (PR-3, docs only)
+- `docs/SSH-PORT-LIFECYCLE.md` — the socket-activation pitfall + lifecycle invariants, the **read-only** srv1/dns2 external-`:55000` reproduction/observation procedure, and a decision matrix for the two srv1 gates. The on-host srv1 proof is recorded as a **separate post-release read-only gate** (full lifecycle proof). Cross-linked from `docs/SSH-EXTERNAL-ADMIN-PORT.md`.
+
+> **Envelope:** shell + tests + docs only — `0` Go · `0 cmd/nftband` (daemon byte-identical to v1.154.0; chain v1.147→v1.154.0 daemon-frozen holds) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no direct nft · no CSF · no host mutation. **Tests:** `ssh_socket_port_mismatch_v155` 15/0 · `ssh_port_change_lifecycle_v155` 17/0; regression `ssh_admin_port_guard_v150` 36/0; shellcheck 0.9.0 + `bash -n` clean. CI on PR #781: 52 pass / 0 fail / 2 skip (Socket + Go-Security, both expected; 0 Go) after one `Build Go binaries` setup-go/toolchain TLS-timeout flake rerun. Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). **No fleet rollout in this lane; srv1 proof = separate post-release read-only gate.**
+
+---
+
 ## [v1.154.0] - 2026-06-06 — install timer-reload hardening
 
 **Codename:** `V154_INSTALL_TIMER_RELOAD`
