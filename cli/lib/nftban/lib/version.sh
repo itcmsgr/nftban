@@ -69,7 +69,30 @@ readonly NFTBAN_VERSION_PATCH
 # Version details
 readonly NFTBAN_VERSION_NAME="Linux IPS & nftables Firewall"
 readonly NFTBAN_VERSION_DATE="2026-03-18"
-NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
+
+# v1.151 BUG-VERSION-BUILD-DATE-RUNTIME: "Build Date" must reflect the PACKAGE
+# build, not the current clock. The old `$(date)` here made `nftban version`
+# print the run-second on every invocation (useless for support / CVE-patch
+# tracking). Resolution order — NEVER the current clock:
+#   1. a build-written stamp file (forward-compat; future packaging may write it)
+#   2. the package manager's recorded BUILD time (rpm) — real on RPM hosts
+#   3. "unknown" — honest fallback (source builds / DEB without a stamp)
+_nftban_resolve_build_date() {
+    local _stamp="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/.build_date" _d _t
+    if [[ -r "$_stamp" ]]; then
+        _d=$(head -n1 "$_stamp" 2>/dev/null | tr -d '\r')
+        [[ -n "$_d" ]] && { printf '%s' "$_d"; return 0; }
+    fi
+    if command -v rpm >/dev/null 2>&1; then
+        _t=$(rpm -q --qf '%{BUILDTIME}' nftban-core 2>/dev/null) || _t=""
+        if [[ "$_t" =~ ^[0-9]+$ ]]; then
+            _d=$(date -u -d "@${_t}" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null) || _d=""
+            [[ -n "$_d" ]] && { printf '%s' "$_d"; return 0; }
+        fi
+    fi
+    printf 'unknown'
+}
+NFTBAN_BUILD_DATE="$(_nftban_resolve_build_date)"
 readonly NFTBAN_BUILD_DATE
 
 # Component versions (kept in sync with main version)
