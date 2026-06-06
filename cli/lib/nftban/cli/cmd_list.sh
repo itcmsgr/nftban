@@ -309,6 +309,12 @@ nftban_cmd_list() {
                 sorted_keys+=("$key")
             done < <(printf '%s\n' "${!all_ips[@]}" | sort)
 
+            # v1.153 UX-A4: clamp the IP column in the HUMAN table so a long
+            # IPv6 CIDR (e.g. 2400:cb00:…:ffff/128, up to 51 chars) cannot push
+            # the Type/Version columns out of alignment. The clamp affects the
+            # human view ONLY — the --json path above emits the full, unclamped
+            # IP value. Width 40 matches the "%-40s" column header above.
+            local _ipcol_w=40
             for ip in "${sorted_keys[@]}"; do
                 local meta="${all_ips[$ip]}"
                 local set_name="${meta%:*}"
@@ -316,7 +322,14 @@ nftban_cmd_list() {
                 local icon=""
                 [[ "$set_name" == "blacklist" ]] && icon="🚫"
                 [[ "$set_name" == "whitelist" ]] && icon="✅"
-                printf "  %s %-40s %-12s %-8s\n" "$icon" "$ip" "$set_name" "$ip_version"
+                # Display value: clamp to the column width with an ASCII '...'
+                # marker so the table stays aligned (ASCII keeps printf's byte
+                # padding == visual padding). Full value remains in --json.
+                local ip_disp="$ip"
+                if (( ${#ip_disp} > _ipcol_w )); then
+                    ip_disp="${ip_disp:0:_ipcol_w-3}..."
+                fi
+                printf "  %s %-40s %-12s %-8s\n" "$icon" "$ip_disp" "$set_name" "$ip_version"
             done
         else
             echo ""
