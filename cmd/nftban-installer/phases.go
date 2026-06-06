@@ -550,6 +550,15 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	// 4. Set immutable flags on security-critical files (G8)
 	validate.SetImmutableFlags(exec, log)
 
+	// 5. D-INSTALL-TIMER-RELOAD hardening (v1.154.0): conditional daemon-reload
+	// + restart of any nftban timer left in the dns2-class wedged state
+	// (active but never scheduled — Trigger=n/a). Single call site; covers all
+	// terminal paths below (VALIDATE_1 COMMITTED, VALIDATE_2 COMMITTED, and
+	// DEGRADED) because it runs after every unit/permission mutation in this
+	// phase has settled and before any state transition. Warn-only / non-fatal,
+	// matching the existing installer daemon-reload at phaseSwitch step 6.
+	services.RestartWedgedTimers(ctx, exec, log, services.KnownTimers())
+
 	if validate.AllPassed(results) {
 		log.Info("all post-install assertions passed — COMMITTED")
 		_ = exec.Remove(fhs.InstallFailedMarker)
