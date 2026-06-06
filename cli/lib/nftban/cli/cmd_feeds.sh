@@ -224,11 +224,20 @@ nftban_feeds_select() {
         # `1,3,ssh`; pre-v1.142 the code split ONLY on commas (`IFS=','`), so
         # the space-advertised form silently produced zero matches when the
         # entire input collapsed into one un-parseable token. Substitute every
-        # comma with a space and let `read -ra` perform default word-splitting
-        # — the per-`part` regex checks below are unchanged. The previous
-        # `xargs` trim becomes redundant; `read` already trims around IFS.
+        # comma with a space, then word-split on whitespace.
+        #
+        # v1.152 (BUG-FEEDS-SELECT-NONFUNCTIONAL): the v1.142 fix assumed
+        # `read -ra` would use *default* word-splitting — WRONG. strict.sh
+        # (sourced by the whole CLI) sets `IFS=$'\n\t'` (no space), so a bare
+        # `read -ra parts <<< "4 12 11 10 3"` put the ENTIRE string into one
+        # element → every multi-number / comma selection failed the `^[0-9]+$`
+        # per-part regex ("No valid feeds selected"); only a single number
+        # survived. Set IFS to whitespace for THIS read so space/tab/newline
+        # split correctly regardless of the inherited strict-mode IFS.
+        # (Root-caused via lab4 live trace; the prior CI stub ran without
+        # strict.sh's IFS, so it stayed green while the feature was broken.)
         # shellcheck disable=SC2206
-        read -ra parts <<< "${selection//,/ }"
+        IFS=$' \t\n' read -ra parts <<< "${selection//,/ }"
 
         for part in "${parts[@]}"; do
             # Check if category (uses the same regex as the bare-input branch)

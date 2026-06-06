@@ -192,10 +192,13 @@ nftban_stats_generate_dashboard() {
     echo "PROTECTION BREAKDOWN"
     echo "───────────────────────────────────────────────────────────"
 
-    # Direct bans (blacklist sets) - show IPv4/IPv6 and temp/permanent
+    # Direct bans (blacklist sets) - show IPv4/IPv6 and temp/permanent.
+    # v1.152 (13.10): total = perm + temp (the producer now reports a reconciled
+    # split on every path); `manual` is a SUBSET of total (decision: subset-of-total),
+    # so it is labelled "incl. manual" to read as included-within, not additive.
     echo "  Direct Bans (nftables):"
-    printf "      %-16s %'d (perm: %'d, temp: %'d, manual: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp" "$manual_v4"
-    printf "      %-16s %'d (perm: %'d, temp: %'d, manual: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp" "$manual_v6"
+    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp" "$manual_v4"
+    printf "      %-16s %'d (perm: %'d, temp: %'d; incl. manual: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp" "$manual_v6"
 
     # Count feeds (SINGLE SOURCE OF TRUTH from unified cache)
     local feeds_ipv4_total=0 feeds_ipv6_total=0
