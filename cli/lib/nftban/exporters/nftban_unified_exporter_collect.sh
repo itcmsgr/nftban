@@ -180,10 +180,18 @@ collect_all_metrics() {
                     manual_v6=$(echo "$counts_json" | jq -r '.blacklist_manual.ipv6 // .sets.blacklist_manual_ipv6.count // 0')
                     active_v4=$((active_v4 + manual_v4))
                     active_v6=$((active_v6 + manual_v6))
-                    blacklist_v4_temp=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
-                    blacklist_v6_temp=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
-                    blacklist_v4_perm=$(echo "$counts_json" | jq -r '.permanent.ipv4 // 0')
-                    blacklist_v6_perm=$(echo "$counts_json" | jq -r '.permanent.ipv6 // 0')
+                    # v1.152 (13.10): the legacy `.blacklist.<fam>` format carries NO
+                    # perm/temp split — the old `.permanent`/`.temporary` reads were
+                    # ALWAYS absent → 0, so total (active) never reconciled with
+                    # perm+temp (live "5 (perm:0 temp:0 manual:2)"). Report all-as-
+                    # permanent, exactly like the daemon-cache branch above, so
+                    # perm+temp == total; `manual_v*` stays a labeled SUBSET of total
+                    # (operator decision SELECT_V152_1310_MANUAL_SEMANTICS=subset-of-total).
+                    # A real perm/temp split is a daemon-side concern (deferred Lane C).
+                    blacklist_v4_temp=0
+                    blacklist_v6_temp=0
+                    blacklist_v4_perm=$active_v4
+                    blacklist_v6_perm=$active_v6
                 fi
             fi
         elif command -v nft &>/dev/null; then
