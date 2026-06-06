@@ -321,9 +321,33 @@ nftban_banner_unified() {
     # The cache file is still written by nftban-health.timer for other
     # consumers (nftban_get_cached_health) but is NOT a posture truth source.
 
+    # v1.153 PR-B universal suppression gate (NOBANNER-CONSIST). Honors
+    # --no-banner / --plain / --quiet / NFTBAN_NO_BANNER / NFTBAN_QUIET /
+    # NFTBAN_BANNER_MODE=none uniformly — every callsite flows through here.
+    _v141_banner_suppressed && return 0
+
     # Skip for non-interactive or JSON mode
     [[ "${NFTBAN_BANNER_MODE:-auto}" == "none" ]] && return 0
     [[ "${NFTBAN_OUTPUT_JSON:-false}" == "true" ]] && return 0
+
+    # v1.153 PR-B (UX-A3/UX-C4): resolve the REAL subcommand. Callsites that
+    # pass no mode default to "cli" — replace that with the dispatcher-exported
+    # NFTBAN_SUBCOMMAND so "Cmd:" is honest and the full-box gate is correct.
+    if [[ "$mode" == "cli" && -n "${NFTBAN_SUBCOMMAND:-}" ]]; then
+        mode="${NFTBAN_SUBCOMMAND}"
+    fi
+
+    # v1.153 PR-B: restrict the decorative full box to version / status /
+    # first-run (hello). Every other subcommand prints a single-line header
+    # instead, so `nftban list`, `nftban firewall`, … no longer emit the full
+    # box. This is the ONE banner path — known and unknown commands alike.
+    case "$mode" in
+        version|status|hello|first-run|"") : ;;  # full box allowed
+        *)
+            nftban_render_banner_simple
+            return 0
+            ;;
+    esac
 
     # Get version
     local version
