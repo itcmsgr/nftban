@@ -41,6 +41,52 @@ var optionalTimers = []string{
 	"nftban-botscan.timer",
 }
 
+// allKnownTimers is the canonical, exhaustive list of every nftban systemd
+// timer unit shipped under install/systemd/*.timer. It is the single source of
+// truth for any code that must iterate over the full set of nftban timers
+// (e.g. the D-INSTALL-TIMER-RELOAD post-install wedge-recovery hardening in
+// timers_post_install.go).
+//
+// coreTimers / optionalTimers above are reconcile-policy SUBSETS of this list;
+// this slice is the SUPERSET. If a new install/systemd/*.timer is added (or one
+// is removed), this slice MUST be updated — the drift-parity test
+// (timers_post_install_parity_test.go) fails otherwise.
+var allKnownTimers = []string{
+	"nftban-botscan.timer",
+	"nftban-community-stats.timer",
+	"nftban-core-feeds.timer",
+	"nftban-core-geoip.timer",
+	"nftban-geoban-refresh.timer",
+	"nftban-health.timer",
+	"nftban-maintenance.timer",
+	"nftban-pro-inventory.timer",
+	"nftban-pro-license.timer",
+	"nftban-queue.timer",
+	"nftban-rbl-check.timer",
+	"nftban-rebuild-recovery.timer",
+	"nftban-report-daily.timer",
+	"nftban-rollback.timer",
+	"nftban-snapshot.timer",
+	"nftban-soak.timer",
+	"nftban-suricata-update.timer",
+	"nftban-tunnel.timer",
+	"nftban-unified-exporter.timer",
+	"nftban-update-apply.timer",
+	"nftban-update-check.timer",
+	"nftban-watchdog.timer",
+}
+
+// KnownTimers returns a copy of the canonical full list of nftban timer unit
+// names (every install/systemd/*.timer). Callers that need to iterate all
+// nftban timers — such as the post-install wedge-recovery hardening — use this
+// rather than duplicating a const list. The returned slice is a copy; callers
+// may sort/mutate it freely.
+func KnownTimers() []string {
+	out := make([]string, len(allKnownTimers))
+	copy(out, allKnownTimers)
+	return out
+}
+
 // criticalCoreTimers is the subset of coreTimers whose failure to be enabled
 // + (active OR scheduled) DEGRADES the install (v1.135 D-MAINTENANCE-TIMER-
 // SILENT-ENABLE). nftban-maintenance.timer backs maintenance, trend data,
