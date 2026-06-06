@@ -200,7 +200,7 @@ _nftban_protection_state_validator() {
         # v1.84 A2-1: Go validator is required. No legacy fallback.
         echo "ERROR: Go validator not found at $_NFTBAN_VALIDATOR_BIN" >&2
         echo "DOWN"
-        return
+        return 1   # v1.152 BUG-S1a: ERROR-marked path must return rc>=1 (v1.139.2 rc-contract); DOWN sentinel still on stdout
     fi
 
     # Call validator with JSON output (or reuse cache)
@@ -215,7 +215,7 @@ _nftban_protection_state_validator() {
         # v1.84 A2-1: Validator failure = DOWN. No legacy fallback.
         echo "ERROR: Go validator returned empty output" >&2
         echo "DOWN"
-        return
+        return 1   # v1.152 BUG-S1b: ERROR-marked path must return rc>=1 (v1.139.2 rc-contract); DOWN sentinel still on stdout
     fi
 
     # v1.83 Win-3: Cache for downstream reuse (banner, health render)
@@ -420,7 +420,7 @@ output_brief() {
     # Exit codes: 0=PROTECTED, 1=DEGRADED, 2=DOWN
 
     local protection_state_raw
-    protection_state_raw=$(_nftban_protection_state)
+    protection_state_raw=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e (exit-code mapped from base_state below)
     local base_state="${protection_state_raw%%:*}"
     local reason="${protection_state_raw#*:}"
     [[ "$reason" == "$base_state" ]] && reason=""
@@ -1544,7 +1544,7 @@ output_terminal() {
 
     # v1.66.0: Use unified protection state function (single source of truth)
     local protection_state
-    protection_state=$(_nftban_protection_state)
+    protection_state=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e
     local _base_state="${protection_state%%:*}"
 
     # Header with version and state
@@ -1592,7 +1592,7 @@ output_json() {
 
     # v1.66.0: Use unified protection state function (single source of truth)
     local json_state_raw
-    json_state_raw=$(_nftban_protection_state)
+    json_state_raw=$(_nftban_protection_state) || true   # v1.152 BUG-S1a/b: DOWN now returns rc>=1; keep the string, don't abort under set -e (json path)
     local json_base_state="${json_state_raw%%:*}"
     local json_reason="${json_state_raw#*:}"
     [[ "$json_reason" == "$json_base_state" ]] && json_reason=""
