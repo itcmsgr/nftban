@@ -97,6 +97,7 @@ Recommended on srv1/dns2-class hosts: set `NFTBAN_EXTERNAL_ADMIN_SSH_PORTS` to t
 
 ## 6. Related
 
+- SSH-port lifecycle (socket activation + invariants + srv1 gate): [`SSH-PORT-LIFECYCLE.md`](SSH-PORT-LIFECYCLE.md) — v1.155 companion: the socket-activation Port-change pitfall, the lifecycle invariants the validator checks, the read-only OBS-SSHPORT observation procedure, and the srv1 decision matrix.
 - nftables single-writer policy: [`ARCHITECTURE-NFT-POLICY.md`](ARCHITECTURE-NFT-POLICY.md) — the lockout-net writes only through the sanctioned IPC `whitelist-session` path (no direct nft).
 - SSH-port detection authority: `cli/lib/nftban/lib/ssh_port_detect.sh`, `cmd/nftban-detect-ssh-ports` (sources: `ss` listeners + `sshd_config` Port/ListenAddress + state + `conf.local`; **no conntrack source**).
 - Register entry: `OBS-SSHPORT-55000-FAMILY` in `NFTBAN_PENDINGS_AND_BUGS_CURRENT.md` (cluster 3, SSH-port lifecycle).
