@@ -72,6 +72,56 @@ _nftban_ssh_listeners() {
     fi
 }
 
+# _nftban_sshd_configured_ports — read-only: the Port value(s) sshd is CONFIGURED with
+# (from `sshd -T`), sorted-unique numeric. This is the EFFECTIVE config, which on a
+# socket-activated sshd may differ from what is actually being listened on (the socket
+# unit owns the ListenStream until it is restarted). Empty if sshd is unavailable.
+_nftban_sshd_configured_ports() {
+    command -v sshd >/dev/null 2>&1 || return 0
+    sshd -T 2>/dev/null | awk '/^port /{print $2}' | grep -E '^[0-9]+$' | sort -un || true
+}
+
+# _nftban_ssh_socket_activated — read-only: succeed (rc 0) iff sshd is socket-activated,
+# i.e. an ssh.socket / sshd.socket unit is active. On such a host a changed `Port` in
+# sshd_config does NOT take effect until that socket unit is restarted, because the
+# socket unit (not sshd) owns the ListenStream. Returns 1 on a plain sshd.service host.
+_nftban_ssh_socket_activated() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    local u st
+    for u in ssh.socket sshd.socket; do
+        st="$(systemctl is-active "$u" 2>/dev/null || true)"
+        [[ "$st" == "active" ]] && return 0
+    done
+    return 1
+}
+
+# nftban_ssh_socket_port_mismatch_audit — PR-1 (item 3.2): on a SOCKET-ACTIVATED sshd,
+# detect when the configured Port (`sshd -T`) no longer matches the actual listeners
+# (the socket unit was not restarted after the config change). Read-only: no nft, no
+# restart. Emits ONE calm warning naming the class + the VERBATIM remediation when, and
+# only when, configured != listening AND sshd is socket-activated. Silent otherwise.
+nftban_ssh_socket_port_mismatch_audit() {
+    # Only socket-activated sshd has this pitfall; plain sshd.service applies Port on
+    # reload, so configured==listening by construction → nothing to warn about.
+    _nftban_ssh_socket_activated || return 0
+    local configured listening
+    configured="$(_nftban_sshd_configured_ports | paste -sd, -)" || true
+    listening="$(_nftban_ssh_listeners 2>/dev/null | sort -un | paste -sd, -)" || true
+    # If we cannot read either side, do not guess.
+    [[ -z "$configured" || -z "$listening" ]] && return 0
+    [[ "$configured" == "$listening" ]] && return 0
+    {
+        echo "  ⚠ socket-activated sshd port mismatch: sshd is CONFIGURED for :${configured}"
+        echo "    but is actually LISTENING on :${listening}. On a socket-activated sshd the"
+        echo "    ssh.socket unit owns the ListenStream, so a changed Port in sshd_config does"
+        echo "    not take effect until the socket unit is restarted. nftban protects the REAL"
+        echo "    listeners; ssh_ports follows :${listening} until the socket is reloaded. To apply"
+        echo "    the configured port, restart the socket unit:"
+        echo "      systemctl daemon-reload && systemctl restart ssh.socket"
+    } >&2
+    return 0
+}
+
 # nftban_ssh_admin_port_audit — S1: read-only report of sshd listeners vs ssh_ports vs
 # declared external admin ports + the active admin session, flagging external redirects.
 nftban_ssh_admin_port_audit() {
@@ -97,6 +147,9 @@ nftban_ssh_admin_port_audit() {
         fi
     done < <(nftban_ssh_external_admin_ports)
     [[ $mismatch -eq 0 ]] && echo "  ✓ no external-admin-port mismatch (ssh_ports reflects the real sshd listeners)."
+    # PR-1 (item 3.2): socket-activated sshd port-mismatch section (text-mode; warns to
+    # stderr only on a real mismatch, otherwise silent — does not break audit output).
+    nftban_ssh_socket_port_mismatch_audit || true
     return 0
 }
 
@@ -163,4 +216,5 @@ nftban_ssh_pre_rebuild_lockout_guard() {
 
 export -f nftban_ssh_external_admin_ports nftban_ssh_active_admin_ip nftban_ssh_active_admin_port \
           _nftban_ssh_ports_kernel _nftban_ssh_listeners _nftban_ssh_external_admin_risk_ports \
+          _nftban_sshd_configured_ports _nftban_ssh_socket_activated nftban_ssh_socket_port_mismatch_audit \
           nftban_ssh_admin_port_audit nftban_ssh_pre_rebuild_lockout_guard 2>/dev/null || true
