@@ -180,12 +180,47 @@ cmd_error() {
         json_error "$message"
     else
         echo "ERROR: $message" >&2
+        # v1.153 UX-C2: parse-error paths must NOT reprint the ~30-line usage
+        # block. When a usage_func is supplied we instead emit a single
+        # actionable pointer line. The full usage text remains available via the
+        # explicit `--help` path (which calls the usage_func directly). We derive
+        # the command name from the conventional usage-func name
+        # (nftban_cmd_<name>_usage -> <name>) so the hint points at the right
+        # --help. Falls back to a generic pointer when the name is unconventional.
         if [[ -n "$usage_func" ]] && declare -f "$usage_func" &>/dev/null; then
-            echo "" >&2
-            "$usage_func" >&2
+            local _cmd_name="$usage_func"
+            _cmd_name="${_cmd_name#nftban_cmd_}"   # strip leading nftban_cmd_
+            _cmd_name="${_cmd_name%_usage}"        # strip trailing _usage
+            _cmd_name="${_cmd_name//_/ }"          # underscores -> spaces (subcmds)
+            if [[ -n "$_cmd_name" && "$_cmd_name" != "$usage_func" ]]; then
+                echo "  Run 'nftban ${_cmd_name} --help' for more" >&2
+            else
+                echo "  Run 'nftban <command> --help' for more" >&2
+            fi
         fi
     fi
     return 1
+}
+
+# v1.153 UX-C6 — _require_root_or_sudo_hint: a small guard that prints the
+# inline sudo / root-shell re-run guidance (via _v142_sudo_hint) when the
+# caller is not root, and returns non-zero so the caller can abort. Unlike
+# cmd_require_root this does NOT also emit the PolicyKit advisory line — it is
+# the minimal "you need root, here is how" guard for command entry points that
+# want the hint without the full advisory. Returns 0 when already root.
+#
+# Usage: _require_root_or_sudo_hint ["operation description"] ["$json_mode"]
+_require_root_or_sudo_hint() {
+    local operation="${1:-this operation}"
+    local json_mode="${2:-false}"
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        if [[ "$json_mode" != "true" ]]; then
+            echo "ERROR: '${operation}' requires root privileges" >&2
+        fi
+        _v142_sudo_hint "$operation" "$json_mode"
+        return 1
+    fi
+    return 0
 }
 
 # Print warning message (JSON-aware, doesn't return error)
@@ -537,6 +572,7 @@ export -f cmd_require_root
 export -f cmd_require_daemon
 export -f _v142_sudo_hint  # v1.142 UX-C6 — inline sudo / root-shell guidance
 export -f _v144_error_with_hint  # v1.144.0 PR-B UX-C2 — three-line ERROR/Hint/Run
+export -f _require_root_or_sudo_hint  # v1.153 UX-C6 — root guard + inline sudo hint
 export -f cmd_show_banner
 export -f cmd_section
 export -f cmd_kv

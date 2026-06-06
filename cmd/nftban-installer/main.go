@@ -527,10 +527,18 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 
 	switch sf.State {
 	case state.StateCommitted:
-		log.Result("[NFTBan] Install/upgrade completed successfully.")
+		// v1.153 UX-T4 (message wording only): COMMITTED means every phase
+		// committed with no non-fatal warnings tallied — report completion in
+		// mechanism-accurate terms rather than the bare "successfully" claim.
+		log.Result("[NFTBan] Install/upgrade completed (state: COMMITTED, no warnings).")
 		log.Result("[NFTBan] State: COMMITTED")
 	case state.StateDegraded:
-		log.Result("[NFTBan] Install/upgrade completed with warnings.")
+		// v1.153 UX-T4 (message wording only): DEGRADED is the
+		// committed-with-non-fatal-warnings outcome — say "with warnings"
+		// explicitly so the operator-facing line is selected by the warning
+		// outcome, not the bare success wording. (Flow unchanged: the state
+		// machine still decides COMMITTED vs DEGRADED.)
+		log.Result("[NFTBan] Install/upgrade completed with warnings (non-fatal).")
 		log.Result("[NFTBan] State: DEGRADED")
 		if sf.FailureReason != "" {
 			log.Result("[NFTBan] Issues: %s", sf.FailureReason)

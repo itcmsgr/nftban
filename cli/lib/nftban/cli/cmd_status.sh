@@ -673,9 +673,22 @@ _status_section_authority() {
 
     echo "AUTHORITY"
     echo "───────────────────────────────────────────────────────────────"
-    printf "  %-20s %s\n" "Install authority..." "$authority"
-    if [[ -n "$conflicts" ]]; then
-        printf "  %-20s %s\n" "Active conflicts...." "$conflicts"
+    # v1.153 UX-A1: frame the authority block by what it actually means.
+    # When nftban holds authority (NOT AMBIGUOUS), the recorded CONFLICTS are
+    # legacy firewalls that were *neutralized* at takeover — they are no longer
+    # fighting nftban. The pre-v1.153 line read "Active conflicts.... UFW,…"
+    # which mis-implied four firewalls still contending. Only the AMBIGUOUS
+    # path means they are genuinely still active (handled below).
+    if [[ "$authority" == "AMBIGUOUS" ]]; then
+        nftban_kv "Firewall authority" "⚠️  AMBIGUOUS"
+        if [[ -n "$conflicts" ]]; then
+            nftban_kv "Active conflicts" "$conflicts"
+        fi
+    else
+        nftban_kv "Firewall authority" "🔒 EXCLUSIVE ($authority)"
+        if [[ -n "$conflicts" ]]; then
+            nftban_kv "Legacy firewalls" "🛡️ NEUTRALIZED: $conflicts"
+        fi
     fi
     if [[ "$authority" == "AMBIGUOUS" && -n "$conflicts" ]]; then
         echo ""
@@ -716,7 +729,10 @@ _status_section_protection() {
 
     # Suricata IDS (check binary + service + EVE freshness for consistent reporting)
     # Matches the same 3-tier check used by portscan and ddos modules
-    local suricata_status="NOT INSTALLED"
+    # v1.153 UX-A5: Suricata is an optional add-on — say so, and use one
+    # consistent "not installed (optional add-on)" term (not the bare
+    # "NOT INSTALLED" that read like a fault).
+    local suricata_status="[i] not installed (optional add-on)"
     local suricata_eve_ok=false
     local eve_threshold="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
     if command -v suricata &>/dev/null; then
@@ -784,7 +800,7 @@ _status_section_protection() {
             suricata_status="INSTALLED (stopped)"
         fi
     fi
-    printf "  %-20s %s\n" "Suricata IDS........" "$suricata_status"
+    nftban_kv "Suricata IDS" "$suricata_status"
 
     # DDoS Protection — v1.83 DUP-3: read from validator JSON, not config+kernel
     local ddos_status="DISABLED"
@@ -1172,10 +1188,14 @@ _status_section_health() {
     fi
 
     # v1.66.0: If firewall is PROTECTED, don't show misleading ERROR from optional checks
+    # v1.153 UX-A6: this is the HEALTH section's own roll-up, not a second
+    # authoritative posture verdict. Label it "Health" so the authoritative
+    # firewall posture is stated once (in the State line), and the health
+    # roll-up reads as diagnostics rather than a competing PROTECTED claim.
     if [[ "$_health_base_state" == "PROTECTED" ]] && [[ "$health_status" == *"ERROR"* || "$health_status" == *"CRITICAL"* ]]; then
-        printf "  %-20s %s\n" "Overall Status......" "PROTECTED (info notices)"
+        nftban_kv "Health" "OK (info notices)"
     else
-        printf "  %-20s %s\n" "Overall Status......" "$health_status"
+        nftban_kv "Health" "$health_status"
     fi
 
     # Check binary integrity (show warning if corrupted)
@@ -1379,15 +1399,38 @@ _status_section_timers() {
     local timer_count=0
     local timer_active=0
     local timer_output=""
+    # v1.153 UX-A2: partition timers into CORE (always-on, must run) vs
+    # OPTIONAL (config-gated, off by design) so the summary stops reading the
+    # bare "8 / 16" as a 50% failure. The core set mirrors the always-enabled
+    # timers in lib/service_control.sh (health, maintenance, watchdog + the
+    # default-on geoip). FAILED counts only core timers that are enabled but
+    # not active — an optional disabled timer is not a failure.
+    local -A core_timer=(
+        ["nftban-health.timer"]=1
+        ["nftban-maintenance.timer"]=1
+        ["nftban-watchdog.timer"]=1
+        ["nftban-core-geoip.timer"]=1
+    )
+    local core_installed=0 core_active=0
+    local optional_installed=0 optional_disabled=0
+    local timer_failed=0
 
     for timer in "${!timer_desc[@]}"; do
         if systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "$timer"; then
             timer_count=$((timer_count + 1))
             local status_text="INACTIVE"
             local next_run=""
+            local _is_core=0
+            [[ -n "${core_timer[$timer]:-}" ]] && _is_core=1
+            if [[ $_is_core -eq 1 ]]; then
+                core_installed=$((core_installed + 1))
+            else
+                optional_installed=$((optional_installed + 1))
+            fi
 
             if _unit_is_active "$timer"; then
                 timer_active=$((timer_active + 1))
+                [[ $_is_core -eq 1 ]] && core_active=$((core_active + 1))
 
                 # Get time left until next trigger
                 # systemctl show gives seconds until next elapse (reliable, locale-independent)
@@ -1418,6 +1461,22 @@ _status_section_timers() {
                 fi
             elif systemctl is-enabled "$timer" >/dev/null 2>&1; then
                 status_text="ENABLED (stopped)"
+                # Enabled-but-not-active is only a failure for a core timer;
+                # an optional timer that is enabled-but-stopped is counted as a
+                # core failure only when core, else treated as disabled/optional.
+                if [[ $_is_core -eq 1 ]]; then
+                    timer_failed=$((timer_failed + 1))
+                else
+                    optional_disabled=$((optional_disabled + 1))
+                fi
+            else
+                # Inactive + not enabled = disabled by design for optional,
+                # a failure for a core timer that should always run.
+                if [[ $_is_core -eq 1 ]]; then
+                    timer_failed=$((timer_failed + 1))
+                else
+                    optional_disabled=$((optional_disabled + 1))
+                fi
             fi
 
             # Format timer name (remove .timer suffix and prefix)
@@ -1433,11 +1492,14 @@ _status_section_timers() {
     done
 
     if [[ $timer_count -gt 0 ]]; then
-        printf "  %-20s %s\n" "Active timers......." "$timer_active / $timer_count"
+        # v1.153 UX-A2: report core vs optional vs failed instead of a bare
+        # ratio that reads as a failure. Example:
+        #   Core 4/4 active · Optional 8 disabled · Failed 0
+        nftban_kv "Active timers" "Core ${core_active}/${core_installed} active · Optional ${optional_disabled} disabled · Failed ${timer_failed}"
         echo ""
         echo -n "$timer_output"
     else
-        printf "  %-20s %s\n" "Active timers......." "None installed"
+        nftban_kv "Active timers" "None installed"
     fi
 
     # Timer status explanation
@@ -2039,8 +2101,9 @@ check_service_clean() {
     padded_name="${padded_name// /.}"
 
     # Check if unit exists
+    # v1.153 UX-A5: one consistent term — "not installed (optional add-on)".
     if ! systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q "$unit"; then
-        printf "  %s NOT INSTALLED (optional)\n" "$padded_name"
+        printf "  %s not installed (optional add-on)\n" "$padded_name"
         return 0
     fi
 

@@ -321,9 +321,33 @@ nftban_banner_unified() {
     # The cache file is still written by nftban-health.timer for other
     # consumers (nftban_get_cached_health) but is NOT a posture truth source.
 
+    # v1.153 PR-B universal suppression gate (NOBANNER-CONSIST). Honors
+    # --no-banner / --plain / --quiet / NFTBAN_NO_BANNER / NFTBAN_QUIET /
+    # NFTBAN_BANNER_MODE=none uniformly — every callsite flows through here.
+    _v141_banner_suppressed && return 0
+
     # Skip for non-interactive or JSON mode
     [[ "${NFTBAN_BANNER_MODE:-auto}" == "none" ]] && return 0
     [[ "${NFTBAN_OUTPUT_JSON:-false}" == "true" ]] && return 0
+
+    # v1.153 PR-B (UX-A3/UX-C4): resolve the REAL subcommand. Callsites that
+    # pass no mode default to "cli" — replace that with the dispatcher-exported
+    # NFTBAN_SUBCOMMAND so "Cmd:" is honest and the full-box gate is correct.
+    if [[ "$mode" == "cli" && -n "${NFTBAN_SUBCOMMAND:-}" ]]; then
+        mode="${NFTBAN_SUBCOMMAND}"
+    fi
+
+    # v1.153 PR-B: restrict the decorative full box to version / status /
+    # first-run (hello). Every other subcommand prints a single-line header
+    # instead, so `nftban list`, `nftban firewall`, … no longer emit the full
+    # box. This is the ONE banner path — known and unknown commands alike.
+    case "$mode" in
+        version|status|hello|first-run|"") : ;;  # full box allowed
+        *)
+            nftban_render_banner_simple
+            return 0
+            ;;
+    esac
 
     # Get version
     local version
@@ -1076,6 +1100,41 @@ nftban_output() {
 
 # Export function for subshells
 export -f nftban_output 2>/dev/null || true
+
+# =============================================================================
+# SHARED LABEL / COLUMN CONVENTION (v1.153 CMD-CONSIST)
+# =============================================================================
+# One key/value line convention for the report-style commands (status,
+# health, stats, firewall, timers). Pre-v1.153 each section hand-rolled its
+# own `printf "  %-20s %s\n"` with hand-typed dot runs of varying width,
+# which drifted across commands. nftban_kv centralizes that single format so
+# the label column lines up everywhere.
+#
+# Behavior is purely cosmetic — it formats a label + value. No data is
+# computed or changed. The label is right-padded to NFTBAN_KV_WIDTH (default
+# 20) using '.' leaders, matching the historical dot-leader look, then the
+# value follows after one space.
+#
+# Usage: nftban_kv "Label" "value"
+#        nftban_kv "Label" "value" 24      # custom label width
+# Output (stdout): "  Label............... value"
+NFTBAN_KV_WIDTH="${NFTBAN_KV_WIDTH:-20}"
+nftban_kv() {
+    local label="${1:-}"
+    local value="${2:-}"
+    local width="${3:-$NFTBAN_KV_WIDTH}"
+    # Build a dot-leader label padded to width, matching the historical
+    # "Label.............." look used across the status sections. Only the
+    # TRAILING padding is converted to dots — internal spaces in multi-word
+    # labels ("Firewall authority") are preserved.
+    local pad_len=$(( width - ${#label} ))
+    (( pad_len < 1 )) && pad_len=1
+    local dots
+    dots=$(printf '%*s' "$pad_len" '')
+    dots="${dots// /.}"
+    printf "  %s%s %s\n" "$label" "$dots" "$value"
+}
+export -f nftban_kv 2>/dev/null || true
 
 # =============================================================================
 # FOOTER - Debug & Module Info

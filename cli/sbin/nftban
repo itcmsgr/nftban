@@ -1077,6 +1077,18 @@ main() {
                 export NFTBAN_BANNER_MODE="none"
                 export NFTBAN_NO_BANNER=1
                 ;;
+            --plain|--quiet)
+                # v1.153 PR-B NOBANNER-CONSIST: --plain / --quiet now suppress
+                # the banner universally via the same gate as --no-banner. The
+                # flags are NOT consumed — like --json they are left in argv so
+                # subcommands that implement their own --quiet semantics (e.g.
+                # `nftban status --quiet` sets quiet_mode) still see them. We
+                # only set the banner-suppression env here.
+                export NFTBAN_BANNER_MODE="none"
+                export NFTBAN_NO_BANNER=1
+                export NFTBAN_QUIET=1
+                _filtered+=("$_arg")
+                ;;
             --json)
                 # Imply NFTBAN_NO_BANNER=1 (PR-B E-NO-BANNER scope) but
                 # do NOT consume the flag; the cmd_*.sh handler must see it.
@@ -1098,6 +1110,13 @@ main() {
     # subcommand args ("$@") are left untouched so case-sensitive values
     # (IPs, country codes, file paths, etc.) are preserved.
     cmd="${cmd,,}"
+
+    # v1.153 PR-B (UX-A3/UX-C4): export the resolved top-level subcommand so the
+    # unified banner renderer can label "Cmd:" with the REAL subcommand instead
+    # of the hard-coded "cli" that callsites passing no mode previously produced.
+    # Also drives the full-box-vs-one-line decision (full box only for
+    # version/status/first-run; every other subcommand gets a one-line header).
+    export NFTBAN_SUBCOMMAND="$cmd"
 
     # Special completion endpoint for bash completion
     # IMPORTANT: Check this BEFORE loading modules (for performance)

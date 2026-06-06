@@ -56,11 +56,22 @@ log_fail() { echo "  FAIL  $*"; FAIL=$((FAIL + 1)); }
 # the section function is self-contained and reads only ${NFTBAN_STATE_DIR}.
 run_authority_section() {
     # Extract _status_section_authority() definition from cmd_status.sh
-    # and execute it. The function depends only on grep + printf + echo.
+    # and execute it. The function depends on grep + printf + echo and, as of
+    # v1.153 (UX-A1 / CMD-CONSIST), the shared nftban_kv label helper. Provide
+    # a minimal local nftban_kv mirroring core/nftban_output.sh so the section
+    # can be exercised in isolation without sourcing the full runtime.
     awk '/^_status_section_authority\(\) \{/,/^\}/' \
         "$NFTBAN_LIB_DIR/cli/cmd_status.sh" > "$SANDBOX/section.sh"
     # shellcheck source=/dev/null
-    ( source "$SANDBOX/section.sh"; _status_section_authority )
+    (
+        nftban_kv() {
+            local label="${1:-}" value="${2:-}" width="${3:-20}"
+            local pad_len=$(( width - ${#label} )); (( pad_len < 1 )) && pad_len=1
+            local dots; dots=$(printf '%*s' "$pad_len" ''); dots="${dots// /.}"
+            printf "  %s%s %s\n" "$label" "$dots" "$value"
+        }
+        source "$SANDBOX/section.sh"; _status_section_authority
+    )
 }
 
 write_state() {
@@ -88,11 +99,13 @@ if echo "$F1_OUT" | grep -q "^AUTHORITY$"; then
 else
     log_fail "F1: AUTHORITY header missing"
 fi
-if echo "$F1_OUT" | grep -qE "Install authority\.+ AMBIGUOUS"; then
-    log_pass "F1: Install authority field shows AMBIGUOUS"
+# v1.153 UX-A1: AMBIGUOUS authority now renders "Firewall authority..⚠️  AMBIGUOUS"
+if echo "$F1_OUT" | grep -qE "Firewall authority\.+ .*AMBIGUOUS"; then
+    log_pass "F1: Firewall authority field shows AMBIGUOUS"
 else
     log_fail "F1: Install authority field missing/wrong"
 fi
+# AMBIGUOUS path keeps the literal "Active conflicts" wording (genuinely active)
 if echo "$F1_OUT" | grep -qE "Active conflicts\.+ csf,lfd"; then
     log_pass "F1: Active conflicts field shows csf,lfd"
 else
@@ -136,8 +149,9 @@ fi
 echo "F2: AUTHORITY=UPDATE, CONFLICTS="
 write_state "AUTHORITY=UPDATE" "CONFLICTS="
 F2_OUT=$(run_authority_section)
-if echo "$F2_OUT" | grep -qE "Install authority\.+ UPDATE"; then
-    log_pass "F2: Install authority field shows UPDATE"
+# v1.153 UX-A1: non-AMBIGUOUS authority renders "Firewall authority..🔒 EXCLUSIVE (UPDATE)"
+if echo "$F2_OUT" | grep -qE "Firewall authority\.+ .*EXCLUSIVE \(UPDATE\)"; then
+    log_pass "F2: Firewall authority field shows EXCLUSIVE (UPDATE)"
 else
     log_fail "F2: Install authority field missing/wrong"
 fi
@@ -182,8 +196,9 @@ fi
 echo "F5: AUTHORITY=AMBIGUOUS, CONFLICTS= (ambiguity from orphan table, no external conflict)"
 write_state "AUTHORITY=AMBIGUOUS" "CONFLICTS="
 F5_OUT=$(run_authority_section)
-if echo "$F5_OUT" | grep -qE "Install authority\.+ AMBIGUOUS"; then
-    log_pass "F5: Install authority field shows AMBIGUOUS"
+# v1.153 UX-A1: AMBIGUOUS without conflicts still shows "Firewall authority..⚠️  AMBIGUOUS"
+if echo "$F5_OUT" | grep -qE "Firewall authority\.+ .*AMBIGUOUS"; then
+    log_pass "F5: Firewall authority field shows AMBIGUOUS"
 else
     log_fail "F5: Install authority field missing/wrong"
 fi
