@@ -95,7 +95,13 @@ nftban_health_fix_auditor_acls() {
     if [[ $acl_errors -eq 0 ]]; then
         echo "  ✓ Auditor ACLs configured successfully"
     else
-        echo "  ⚠ Some auditor ACLs could not be set ($acl_errors errors)"
+        # v1.153 UX-T1: name the warning class instead of silently swallowing.
+        # These setfacl/chown failures on intentionally root-owned FHS child
+        # dirs are non-fatal (the auditor read-only convenience layer is
+        # optional). The stable id WARN_PERMISSIONS_ENFORCE_NONFATAL makes the
+        # message greppable in install/health logs and signals "expected,
+        # non-fatal" rather than reading as an unexplained error.
+        echo "  ⚠ WARN_PERMISSIONS_ENFORCE_NONFATAL: ${acl_errors} auditor ACL(s) could not be set on root-owned FHS dirs (non-fatal; optional read-only auditor layer)"
     fi
 
     return 0
@@ -129,7 +135,15 @@ nftban_health_fix_permissions() {
             if systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null; then
                 echo "  ✓ FHS runtime directories restored via tmpfiles.d"
             else
-                echo "  ⚠ systemd-tmpfiles returned non-zero (some dirs may not exist yet)"
+                # v1.153 UX-T2: name the warning class. systemd-tmpfiles can
+                # exit non-zero (commonly exit 73 / EX_CANTCREAT-class) when it
+                # canonicalizes ownership on design-correct, intentionally
+                # root-owned FHS dirs, or when some dirs do not exist yet. This
+                # is non-fatal — the explicit ownership-enforcement step below
+                # is the defense-in-depth backstop. The stable id
+                # WARN_TMPFILES_73 makes it greppable and signals "expected,
+                # non-fatal" rather than an unexplained failure.
+                echo "  ⚠ WARN_TMPFILES_73: systemd-tmpfiles returned non-zero (tmpfiles canonicalization of design-correct ownership, or dirs not yet present); non-fatal — explicit ownership enforcement follows"
             fi
         fi
 

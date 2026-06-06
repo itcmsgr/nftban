@@ -45,6 +45,7 @@ package panelfw
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -301,15 +302,42 @@ func computeFatal(policy PanelPolicy) bool {
 	return policy.RequirePanelSuccess
 }
 
-// portsToString renders a port slice as a stable comma-separated
-// string for log output.
+// portsToString renders a port slice as a stable, compact string for log
+// output. v1.153 UX-T3 (display wording only): contiguous runs are
+// range-compressed (e.g. 35000..35999 becomes "35000-35999") so a 1000-port
+// passive-FTP range no longer prints ~1000 comma-separated entries. The set of
+// ports represented is unchanged — this is purely how the log line reads.
 func portsToString(ps []int) string {
 	if len(ps) == 0 {
 		return "[]"
 	}
-	parts := make([]string, len(ps))
-	for i, p := range ps {
-		parts[i] = fmt.Sprintf("%d", p)
+	// Sort a copy so range detection is deterministic regardless of input order;
+	// the caller's slice is not modified.
+	sorted := make([]int, len(ps))
+	copy(sorted, ps)
+	sort.Ints(sorted)
+
+	var parts []string
+	runStart := sorted[0]
+	prev := sorted[0]
+	flush := func(start, end int) {
+		if start == end {
+			parts = append(parts, fmt.Sprintf("%d", start))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", start, end))
+		}
 	}
+	for i := 1; i < len(sorted); i++ {
+		p := sorted[i]
+		if p == prev || p == prev+1 {
+			// same value (dedup) or contiguous — extend the current run
+			prev = p
+			continue
+		}
+		flush(runStart, prev)
+		runStart = p
+		prev = p
+	}
+	flush(runStart, prev)
 	return "[" + strings.Join(parts, ",") + "]"
 }

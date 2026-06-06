@@ -85,33 +85,42 @@ nftban_print_help() {
 # =============================================================================
 
 _nftban_help_essential() {
+    # v1.153 UX-A7: surface the same ⚡/⚠️ risk markers the `help --all` view
+    # carries, so the short list flags state-changing verbs at a glance.
+    #   ⚡ = state-changing (mutates kernel/config); ⚠️ = advanced / use with
+    #   caution. Unmarked = read-only. Markers mirror the registry risk class
+    #   (commands.registry.yml) and scripts/generate-help.sh RISK_ICONS, no
+    #   behavior change.
     cat <<'EOF'
 USAGE:
   nftban <command> [subcommand] [options]
 
 ESSENTIAL COMMANDS:
-  status        System status overview
-  health        Diagnostics and auto-repair
-  ban           Ban an IP address
-  unban         Remove IP ban
-  list          List banned/whitelisted IPs
-  search        Search IP across all sets
-  blacklist     Blacklist management (add/remove/list/flush)
-  whitelist     Whitelist management (add/remove/list)
-  feeds         Threat intelligence feeds
-  firewall      Firewall management (reload/rebuild/record)
+     status        System status overview
+     health        Diagnostics and auto-repair
+  ⚡ ban           Ban an IP address
+  ⚡ unban         Remove IP ban
+     list          List banned/whitelisted IPs
+     search        Search IP across all sets
+  ⚡ blacklist     Blacklist management (add/remove/list/flush)
+  ⚡ whitelist     Whitelist management (add/remove/list)
+  ⚡ feeds         Threat intelligence feeds
+  ⚠️ firewall      Firewall management (reload/rebuild/record)
 
 PROTECTION MODULES:
-  ddos          DDoS protection (enable/disable/status)
-  portscan      Port scan detection (enable/disable/status)
-  login         Login monitor — SSH brute-force protection
-  botguard      HTTP bot guard (enable/disable/status/list)
-  geoban        Geographic IP blocking (enable/disable/list)
+  ⚡ ddos          DDoS protection (enable/disable/status)
+  ⚡ portscan      Port scan detection (enable/disable/status)
+  ⚡ login         Login monitor — SSH brute-force protection
+  ⚡ botguard      HTTP bot guard (enable/disable/status/list)
+  ⚡ geoban        Geographic IP blocking (enable/disable/list)
 
 SYSTEM:
-  config        Configuration management
-  version       Version information
-  update        Update NFTBan
+  ⚡ config        Configuration management
+     version       Version information
+  ⚠️ update        Update NFTBan
+
+LEGEND:
+  ⚡ state-changing    ⚠️ advanced / use with caution    (unmarked = read-only)
 
 EXIT CODES:
   0  Success    1  Error    2  Warning
