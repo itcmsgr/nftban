@@ -595,6 +595,23 @@ jobs:
       - name: External admin SSH-port guard (OBS-SSHPORT-55000)
         run: bash cli/lib/nftban/tests/ssh_admin_port_guard_v150_test.sh
 
+      # v1.155 PR-1 (item 3.2): socket-activated sshd port-mismatch warning.
+      # Asserts the guard warns ONLY when configured (sshd -T) != listening (ss)
+      # AND sshd is socket-activated, prints the exact remediation hint
+      # (`systemctl daemon-reload && systemctl restart ssh.socket`), and is
+      # silent when ports match or on a plain sshd.service. Hermetic.
+      - name: Socket-activated SSH port-mismatch warning (v1.155 PR-1)
+        run: bash cli/lib/nftban/tests/ssh_socket_port_mismatch_v155_test.sh
+
+      # v1.155 PR-2 (item 3.3): SSH-port-change lifecycle validator invariants.
+      # Exercises tools/validation/ssh_port_change_lifecycle_validate.sh against a
+      # good rendered-ruleset fixture (exit 0) and four injected drifts (listener
+      # not in ssh_ports / not in tcp_ports_in; literal `tcp dport 22 ct count`
+      # instead of @ssh_ports; missing @ssh_ports rule), each failing with the
+      # right invariant message. Hermetic (inputs injected via env).
+      - name: SSH-port-change lifecycle validator (v1.155 PR-2)
+        run: bash cli/lib/nftban/tests/ssh_port_change_lifecycle_v155_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
