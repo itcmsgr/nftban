@@ -388,3 +388,65 @@ func TestEvaluateAdapters_NilLoggerTolerated(t *testing.T) {
 		t.Errorf("nil logger + empty adapters + default policy should be non-fatal")
 	}
 }
+
+// ----------------------------------------------------------------------------
+// v1.151 BUG-PANELFW-WEAK-DA-FALSE-POSITIVE: a "weak" detection (single
+// host-env signal, e.g. a bare :2222 listener on a no-panel host) must NOT be
+// validated or have its panel port set printed as if confirmed.
+// ----------------------------------------------------------------------------
+
+func TestFake_WeakDetection_NotValidated_FallsToNoPanel(t *testing.T) {
+	fake := &FakePanelAdapter{
+		IDValue: "directadmin",
+		DetectResult: PanelDetection{
+			ID:         "directadmin",
+			Detected:   true,
+			Confidence: "weak", // single indicator → must be ignored
+			Evidence:   []string{"listener-tcp:2222"},
+		},
+		RequiredTCP: []int{35000, 35999}, // would be printed if (wrongly) finalized
+	}
+	res := EvaluateAdapters(context.Background(), executor.NewMockExecutor(), newTestLogger(),
+		[]PanelAdapter{fake}, DefaultPolicy())
+
+	// Weak → not confirmed → no panel ports queried/validated/printed.
+	if fake.RequiredCalls != 0 || fake.ReachabilityCalls != 0 {
+		t.Errorf("weak detection must NOT validate/print ports; got Required=%d Reachability=%d",
+			fake.RequiredCalls, fake.ReachabilityCalls)
+	}
+	// Falls through to no-panel (DefaultPolicy allows absent → non-fatal).
+	if res.Detection.Detected {
+		t.Errorf("weak detection must NOT be reported as a confirmed panel")
+	}
+	if res.PortsApplied {
+		t.Errorf("PortsApplied must be false for a weak (unconfirmed) detection")
+	}
+	if res.Fatal {
+		t.Errorf("weak-only host with AllowPanelAbsent=true must be non-fatal; got %#v", res)
+	}
+	if fake.DetectCalls != 1 {
+		t.Errorf("Detect should be called once; got %d", fake.DetectCalls)
+	}
+}
+
+// Regression guard: a STRONG detection still finalizes (validates + applies ports).
+func TestFake_StrongDetection_StillFinalizes(t *testing.T) {
+	fake := &FakePanelAdapter{
+		IDValue: "directadmin",
+		DetectResult: PanelDetection{
+			ID:         "directadmin",
+			Detected:   true,
+			Confidence: "strong",
+		},
+		RequiredTCP: []int{2222, 2086},
+	}
+	res := EvaluateAdapters(context.Background(), executor.NewMockExecutor(), newTestLogger(),
+		[]PanelAdapter{fake}, DefaultPolicy())
+	if fake.RequiredCalls != 1 || fake.ReachabilityCalls != 1 {
+		t.Errorf("strong detection must validate/apply ports; got Required=%d Reachability=%d",
+			fake.RequiredCalls, fake.ReachabilityCalls)
+	}
+	if !res.PortsApplied || !res.Detection.Detected {
+		t.Errorf("strong detection must finalize as a confirmed panel; got %#v", res)
+	}
+}

@@ -231,6 +231,16 @@ func EvaluateAdapters(ctx context.Context, exec executor.Executor, log *logging.
 		if !det.Detected {
 			continue
 		}
+		// v1.151 BUG-PANELFW-WEAK-DA-FALSE-POSITIVE: a "weak" detection is a single
+		// host-environment signal (e.g. a bare alt-SSH listener such as :2222 on a
+		// no-panel host), not a confirmed panel. It must NOT be validated or have its
+		// panel port set printed as if integrated. Treat it as not-confirmed and keep
+		// scanning; if no adapter is confirmed the host falls through to no-panel.
+		if det.Confidence == "weak" {
+			log.Info("panelfw: weak %s signal ignored (confidence=weak); no confirmed panel — not validating or printing panel ports",
+				string(det.ID))
+			continue
+		}
 		log.Info("panelfw: detected panel id=%s confidence=%s",
 			string(det.ID), det.Confidence)
 		return finalizeDetected(ctx, exec, log, a, det, policy)
