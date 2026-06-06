@@ -1078,6 +1078,41 @@ nftban_output() {
 export -f nftban_output 2>/dev/null || true
 
 # =============================================================================
+# SHARED LABEL / COLUMN CONVENTION (v1.153 CMD-CONSIST)
+# =============================================================================
+# One key/value line convention for the report-style commands (status,
+# health, stats, firewall, timers). Pre-v1.153 each section hand-rolled its
+# own `printf "  %-20s %s\n"` with hand-typed dot runs of varying width,
+# which drifted across commands. nftban_kv centralizes that single format so
+# the label column lines up everywhere.
+#
+# Behavior is purely cosmetic — it formats a label + value. No data is
+# computed or changed. The label is right-padded to NFTBAN_KV_WIDTH (default
+# 20) using '.' leaders, matching the historical dot-leader look, then the
+# value follows after one space.
+#
+# Usage: nftban_kv "Label" "value"
+#        nftban_kv "Label" "value" 24      # custom label width
+# Output (stdout): "  Label............... value"
+NFTBAN_KV_WIDTH="${NFTBAN_KV_WIDTH:-20}"
+nftban_kv() {
+    local label="${1:-}"
+    local value="${2:-}"
+    local width="${3:-$NFTBAN_KV_WIDTH}"
+    # Build a dot-leader label padded to width, matching the historical
+    # "Label.............." look used across the status sections. Only the
+    # TRAILING padding is converted to dots — internal spaces in multi-word
+    # labels ("Firewall authority") are preserved.
+    local pad_len=$(( width - ${#label} ))
+    (( pad_len < 1 )) && pad_len=1
+    local dots
+    dots=$(printf '%*s' "$pad_len" '')
+    dots="${dots// /.}"
+    printf "  %s%s %s\n" "$label" "$dots" "$value"
+}
+export -f nftban_kv 2>/dev/null || true
+
+# =============================================================================
 # FOOTER - Debug & Module Info
 # =============================================================================
 
