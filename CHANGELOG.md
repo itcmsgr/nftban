@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.154.0] - 2026-06-06 — install timer-reload hardening
+
+**Codename:** `V154_INSTALL_TIMER_RELOAD`
+**Controlling record:** `NFTBAN_ROADMAP/OPEN_INSTALL_UPDATE_TIMER_RELOAD_HARDENING_PLAN.md`
+**PR:** [#779](https://github.com/itcmsgr/nftban/pull/779) (sq `11ded868`)
+
+> **Why:** self-heal the post-install systemd timer-wedge class (D-INSTALL-TIMER-RELOAD). On the v1.142.0 fleet rollout one host (dns2) finished install with `nftban-unified-exporter.timer` stuck `active (elapsed)` + `Trigger: n/a` + 0 runs/24h; the manual fix was `systemctl daemon-reload && systemctl restart <timer>`. The installer now performs that recovery automatically — **only for wedged timers**. **installer-Go only.**
+
+### Fixed — post-install timer wedge / elapsed-timer recovery (D-INSTALL-TIMER-RELOAD)
+- New `internal/installer/services/timers_post_install.go` — `RestartWedgedTimers`: at the end of installer `phaseValidate` (after `SetImmutableFlags`, before the `StateCommitted` transition), issue `daemon-reload`, then restart **only** timers showing the wedge signature (`ActiveState=active` with no next-elapse). **Warn-only / non-fatal**; probe errors are treated as healthy (zero false positives — never restarts a healthy or inactive timer).
+- `internal/installer/services/timers.go` — 22-timer single-source-of-truth superset + `KnownTimers()` accessor (no duplicate const in `cmd/nftban-installer`).
+- `cmd/nftban-installer/phases.go` — single call site, placed to cover all three `phaseValidate` terminal paths (including the VALIDATE_1-pass path where the dns2 wedge actually occurred).
+- Tests: `timers_post_install_test.go` (mock wedge-recovery — exactly the wedged timers restarted, errors non-fatal, none-wedged is a no-op) + `timers_post_install_parity_test.go` (drift-parity: `KnownTimers()` ≡ `install/systemd/*.timer`, fails CI if a `.timer` is added without updating coverage).
+
+> **Envelope:** installer-Go only — **`cmd/nftband` daemon byte-identical to v1.153.0** (chain v1.147→v1.153.0 holds) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no CSF · no UX/shell spillover. The installer binary (`cmd/nftban-installer` / `internal/installer`) **does** change — intentional; installer byte-identity is not frozen. **Validation (lab2 go1.25.11, rebased on v1.153.0 main `f1a92d3a`):** `go vet ./...` rc=0 · `go build ./...` rc=0 · `go test -race` PASS (internal/installer/services + cmd/nftban-installer) · `go mod tidy` clean. CI on PR #779: 68 pass / 0 fail / 1 skip (Socket, expected); post-merge main CI 14/0. Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). Cleanup train: v1.151 → v1.152 → v1.153 → **v1.154** (this).
+
+---
+
 ## [v1.153.0] - 2026-06-06 — UX consistency / output-truth polish
 
 **Codename:** `V153_UX_CONSISTENCY`
