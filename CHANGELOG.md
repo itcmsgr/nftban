@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.152.0] - 2026-06-06 — feeds + stats truth cleanup
+
+**Codename:** `V152_FEEDS_STATS_TRUTH`
+**Controlling record:** `NFTBAN_ROADMAP/V152_FEEDS_STATS_TRUTH_SCOPE.md`
+**PR:** [#775](https://github.com/itcmsgr/nftban/pull/775) (sq `496168bf`)
+
+> **Why:** fix user-visible CLI/data-truth defects. **Shell + tests only — daemon byte-identical to v1.151.0** (`0 cmd/nftband`, `0 cmd/nftban-core`, `0 internal` Go); **schema 1.83.0 frozen**; **no CSF**.
+
+### Fixed — `nftban feeds select` non-functional under strict IFS (BUG-FEEDS-SELECT-NONFUNCTIONAL)
+- `strict.sh` sets `IFS=$'\n\t'` (no space) for the whole CLI, so `cmd_feeds.sh:231` `read -ra parts <<< "${selection//,/ }"` collapsed multi-number / comma input into ONE un-parseable token → "No valid feeds selected" for every multi/comma selection (a single number survived). Fixed: `IFS=$' \t\n' read -ra parts <<< …` so space/tab/newline split correctly regardless of the inherited strict-mode IFS. Root-caused via a live trace on lab4; the prior CI stub ran without strict-mode IFS, so it stayed green while the feature was broken.
+
+### Fixed — stats producer/consumer total ≠ perm+temp+manual (13.10)
+- The unified-exporter legacy branch read the always-absent `.permanent`/`.temporary` cache keys → `perm=0, temp=0` while total (active) = blacklist+manual, so `nftban stats` showed an unreconciled `IPv4 5 (perm: 0, temp: 0, manual: 2)`. The producer now reports all-as-permanent (like the daemon-cache branch) so **total = perm + temp** on every path (daemon-cache, legacy, nft-fallback), IPv4 + IPv6; `manual` is a labelled **subset** (`incl. manual`), not additive. A real perm/temp split is a daemon-side concern (deferred).
+
+### Fixed — `nftban status` DOWN exit-code contract (BUG-S1a/S1b)
+- The two ERROR+DOWN paths in `_nftban_protection_state_validator` (validator-missing, validator-empty) did `echo DOWN; return` (bare) → rc=0, violating the v1.139.2 rc-contract. Now `return 1`, with the three plain `var=$(_nftban_protection_state)` captures guarded with `|| true` so the DOWN sentinel is still used and the top-level exit stays mapped from `base_state` (DOWN → 2). Behavior-preserving at the top level.
+
+### Tests
+- `feeds_select_strict_e2e_v152_test.sh` (13/0) — parse under `IFS=$'\n\t'`, single/multi/comma/mixed/range/category/empty.
+- `stats_producer_reconcile_v152_test.sh` (10/0) — all 3 producer branches reconcile (total=perm+temp; manual⊆total), IPv4+IPv6 + consumer label.
+- `status_rc_contract_v152_test.sh` (7/0) — DOWN paths return rc≥1, captures guarded, DOWN→exit 2 preserved.
+
+### Deferred (recorded, not in this release)
+- `BUG-CtCount-feeds` (feed-counter unification) — became a broader helper-refactor.
+- 6 other `read -ra … <<<` sites without an `IFS=` prefix (`cmd_emulate.sh:186`, `nftban_tunnel.sh:116/360/383`, `nftban_portscan_classic.sh:640/732`) — separate read-only triage.
+
+---
+
 ## [v1.151.0] - 2026-06-06 — small cleanup / trust-output hotfix
 
 **Codename:** `V151_TRUST_OUTPUT`
