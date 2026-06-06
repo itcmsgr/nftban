@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.153.0] - 2026-06-06 — UX consistency / output-truth polish
+
+**Codename:** `V153_UX_CONSISTENCY`
+**Controlling record:** `NFTBAN_ROADMAP/V153_UX_CONSISTENCY_SCOPE.md`
+**PR:** [#777](https://github.com/itcmsgr/nftban/pull/777) (sq `82572f91`)
+
+> **Why:** make CLI output consistent and honest — mechanisms not adjectives; never claim *validated/completed/protected* unless kernel-proven. **Broad-output-only UX lane (6 commits A–F).** `0 cmd/nftband` (daemon byte-identical to v1.152.0) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no direct nft · no CSF; installer-Go limited to **message wording only** (`panelfw.go` port-range display + `main.go` completion message).
+
+### Changed — status output-truth + cross-command consistency (PR-A, UX-A1/A2/A5/A6 + CMD-CONSIST)
+- `cmd_status.sh` authority block reworded so neutralized legacy firewalls no longer read as active conflicts (`Firewall authority.. 🔒 EXCLUSIVE` / `Legacy firewalls.... 🛡️ NEUTRALIZED:`); timers line reads `Core N/N active · Optional M disabled · Failed 0` (was a misleading `8 / 16`); modules mark `(optional add-on)` with one term per service; the authoritative posture is stated once (the health roll-up is relabelled "Health" diagnostics, not a competing verdict). New shared `nftban_kv` label helper for consistent dot-leader columns.
+
+### Changed — banner discipline + universal suppression (PR-B, UX-A3/UX-C4/13.11)
+- One banner path; `Cmd:` shows the real subcommand (was `cli`); the full box is restricted to `version`/`status`/first-run, subcommands print a one-line header. `--no-banner`/`--plain`/`--quiet` (and `NFTBAN_NO_BANNER`) honored universally via a single gate in the renderer (`--json` unaffected).
+
+### Changed — error-text normalization (PR-C, UX-C2 + UX-C6)
+- Error paths print a 3-line form (`ERROR: <fault>` / `Hint: <one-line>` / `Run 'nftban <cmd> --help' for more`) instead of reprinting the full ~30-line usage block; EUID≠0 failures emit an inline sudo / root-shell hint.
+
+### Changed — list table format (PR-D, UX-A4)
+- The human `nftban list all` IPv6 column is width-clamped/CIDR-shortened so Type/Version stay aligned; the full range remains in `--json`.
+
+### Changed — installer-output wording (PR-E, UX-T1..T4 — wording only)
+- Named WARN classes (`WARN_PERMISSIONS_ENFORCE_NONFATAL`, `WARN_TMPFILES_73`) emitted in the editable `nftban_health_fixes.sh` (**not** the gate-frozen generated `nftban_fhs_spec.sh`); installer-Go `panelfw.go` port-range display compresses contiguous ranges; `main.go` says "completed with warnings (non-fatal)" on the DEGRADED path. No installer behavior/flow change.
+
+### Changed — help / output-truth sweep (PR-F, UX-A7)
+- Short `nftban help` gains the ⚡/⚠️ markers on state-changing verbs; remaining unproven `validated`/`completed`/`protected`/`success` claims downgraded to mechanism-accurate wording.
+
+> **Envelope:** shell + tests + installer-Go wording only — `0 cmd/nftband` (daemon byte-identical to v1.152.0) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · `0` VERSION-drift · no direct nft · no CSF; VERSION/STATUS.md/CHANGELOG.md/`nftban_fhs_spec.sh`-body untouched by the feature PR. **Tests:** 6 new hermetic suites — `status_consistency_v153` 15/0 · `banner_nobanner_v153` 16/0 · `error_text_3line_v153` 12/0 · `list_ipv6_clamp_v153` 10/0 · `installer_wording_v153` 13/0 · `help_verb_icons_v153` 22/0; 10 regression guards green; shellcheck 0.9.0 rc=0; Go (lab2 go1.25.11) mod-tidy/vet/build/race PASS; `check-nft-writes` 0. Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). Cleanup train: v1.151 → v1.152 → **v1.153** (this) → v1.154 (install-timer-reload).
+
+---
+
 ## [v1.152.0] - 2026-06-06 — feeds + stats truth cleanup
 
 **Codename:** `V152_FEEDS_STATS_TRUTH`
