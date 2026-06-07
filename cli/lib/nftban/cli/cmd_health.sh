@@ -390,7 +390,11 @@ EXAMPLES:
     nftban health config --verbose   # Include config file paths
 
     # Security posture (low noise check)
-    nftban health posture            # SSH, sudo, systemd hardening basics
+    nftban health posture            # SSH, sudo, systemd, MAC (AppArmor/SELinux)
+    # Posture is advisory (never changes exit code). Compact summary also shows in
+    # 'nftban status'. Posture output is text-only; --json is accepted but the
+    # posture subcommand does not serialize posture fields as JSON
+    # (see docs/security/MAC_PROFILES_SELINUX_APPARMOR.md §12).
 
 HEALTH STATUS CODES:
     ✅ OK       - All checks passed

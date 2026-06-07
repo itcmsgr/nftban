@@ -201,6 +201,85 @@ the profile's file rules apply, which restores `sd_notify` readiness.
   shell-outs, then tighten both the SELinux domain and the AppArmor profile and
   consider flipping AppArmor to enforce.
 
+## 12. Health posture surface map
+
+*As of v1.158.* NFTBan reports security posture on two surfaces. Both are
+**advisory** — a posture WARN never changes the exit code of `nftban status`,
+`nftban health`, or the installer. Posture is a low-noise summary, not a security
+audit (use `lynis`/`oscap` for that).
+
+| Surface | Command | Detail level | Source |
+|---|---|---|---|
+| Compact | `nftban status` | one line + per-advisory `→` rows | `_collect_posture_info` (`nftban_report_data.sh`) |
+| Detailed | `nftban health posture` / `nftban health check` | full per-check rows + remediation hints | `nftban_health_cmd_posture` (`cmd_health_analysis.sh`) |
+
+### What posture covers
+- **SSH** — effective `PasswordAuthentication` / `PermitRootLogin` / `X11Forwarding`.
+  Resolved from the **effective** sshd config (`sshd -T` when runnable as root,
+  else the main file merged with `sshd_config.d/*.conf` drop-ins). Added v1.150.
+- **Sudo** — files in `/etc/sudoers.d` carrying **broad** `NOPASSWD: ALL`
+  (constrained command-specific NOPASSWD is *not* flagged; NFTBan's own scoped
+  sudoers file is excluded by design).
+- **Systemd hardening** — `NoNewPrivileges` (and `PrivateTmp`/`ProtectSystem` in
+  the detailed view) on the NFTBan units.
+- **Config integrity** — drift of `/etc/nftban` files vs the install checksums.
+- **MAC posture** — *new in v1.158* — whether NFTBan's own AppArmor profile
+  (`nftband`) / SELinux module (`nftban`) is loaded and enforcing. See §6 for the
+  underlying operator commands and §13 below for the verdict model.
+
+### Intentionally excluded (and why)
+- **`rp_filter`** — high false-positive rate (asymmetric / multi-homed routing and
+  some hosting/panel setups legitimately disable it). Not flagged by default.
+  Deferred to an opt-in advisory.
+- **Panel admin ports** (e.g. `2222` / `2087` / `8443` listening) — *open ≠
+  insecure*; that is the control panel's job. Belongs to panel-firewall handling,
+  not posture.
+- **iptables/ipset/ebtables line-count "bypass"** — compat views and Docker are
+  legitimate; on iptables-nft hosts NFTBan's own rules appear via translation.
+  Firewall-conflict / rule-fingerprint detection owns this, not posture.
+- **sysctl network hardening** (`tcp_syncookies` / `accept_redirects` /
+  `log_martians`) — a narrow low-FP subset is **deferred** (a separate optional
+  lane), not shipped in v1.158.
+
+### `--json` behavior (documented, not a regression)
+`nftban health posture` accepts `--json` (it is parsed and **stripped** by the
+`nftban health` dispatcher before the subcommand runs, so it never errors), but the
+**posture subcommand emits human-readable text only** — it does **not** serialize
+posture fields as JSON. For machine-readable posture today, use the compact posture
+fields surfaced via the status data collector (`_collect_posture_info` populates
+`POSTURE_STATUS` / `POSTURE_DETAILS` / `POSTURE_WARNINGS` / `POSTURE_ISSUES`, which
+`nftban status --json` already serializes through its own status-JSON path). A
+dedicated structured `health posture --json` schema is a future item; this section
+documents current behavior so callers do not assume a JSON posture document exists.
+
+## 13. MAC posture verdicts (v1.158)
+
+The MAC posture summary is read-only and non-root-graceful (no crash and no noisy
+stderr when the tooling is absent). It is **distro-aware**: it does not WARN about a
+MAC system the host does not run.
+
+**AppArmor** (detected via `aa-status`, else `/sys/kernel/security/apparmor/profiles`):
+
+| Condition | Verdict |
+|---|---|
+| `nftband` profile loaded and **enforcing** | PASS |
+| AppArmor enabled but `nftband` profile **missing** or **complain-only** | WARN (advisory) |
+| AppArmor not available / not enabled | INFO / N/A (no WARN — including on SELinux-primary RPM hosts) |
+
+**SELinux** (detected via `getenforce` / `sestatus`, modules via `semodule -l`):
+
+| Condition | Verdict |
+|---|---|
+| **Enforcing** and the `nftban` module is loaded | PASS |
+| Enforcing/Permissive with the `nftban` module **missing**, or **Permissive** while a module is expected | WARN (advisory) |
+| SELinux not available / Disabled | INFO / N/A (no WARN — including on Debian/Ubuntu) |
+
+The compact `nftban status` line stays terse (e.g. `→ MAC: AppArmor enforcing`,
+`→ MAC: SELinux enforcing`, or no MAC row when not applicable) and only contributes
+to the advisory count when the verdict is an actual WARN. The detailed
+`nftban health posture` view shows the MAC system, the profile/module status, the
+enforcement mode, and a remediation hint when missing or not-enforcing.
+
 ## See also
 - `docs/THREAT_MODEL.md`
 - `docs/systemd/` (unit hardening)
