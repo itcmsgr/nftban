@@ -60,20 +60,34 @@ jobs:
           YQ_VERSION=$(grep -oh 'YQ_VERSION="[0-9.]*"' packaging/build_nftban.sh | head -1 | cut -d'"' -f2)
           echo "yq version: $YQ_VERSION"
 
-          curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq_linux_amd64
-          ACTUAL_SHA=$(sha256sum /tmp/yq_linux_amd64 | cut -d' ' -f1)
+          # v1.157 PR-A: route the fetch through the shared fetch_verified
+          # helper (retry + fail-fast + bounded timeouts + atomic write +
+          # checksum verify) so a transient blip no longer turns into a hard
+          # SHA-mismatch failure on a partial body. The helper verifies the
+          # checksum internally; on failure we re-download once to compute the
+          # actual SHA for the "bundled checksum is outdated" maintainer hint.
+          # shellcheck source=packaging/lib/fetch_verified.sh
+          . packaging/lib/fetch_verified.sh
+          YQ_URL="https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
 
-          echo "Expected: $YQ_SHA256"
-          echo "Actual:   $ACTUAL_SHA"
-
-          if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
-            echo "ERROR: yq checksum mismatch!"
-            echo "The bundled checksum is outdated. Update with:"
-            echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+          if fetch_verified "$YQ_URL" "$YQ_SHA256" /tmp/yq_linux_amd64; then
+            echo "✅ yq checksum validated successfully"
+          else
+            echo "ERROR: yq fetch/verify failed."
+            echo "Re-downloading to report the actual checksum (network blip vs. outdated pin)..."
+            if curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+                    --connect-timeout 10 --max-time 120 -sS \
+                    -o /tmp/yq_linux_amd64.actual "$YQ_URL"; then
+              ACTUAL_SHA=$(sha256sum /tmp/yq_linux_amd64.actual | cut -d' ' -f1)
+              echo "Expected: $YQ_SHA256"
+              echo "Actual:   $ACTUAL_SHA"
+              if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
+                echo "The bundled checksum is outdated. Update with:"
+                echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+              fi
+            fi
             exit 1
           fi
-
-          echo "✅ yq checksum validated successfully"
 
   # ==========================================================================
   # BUILD GO BINARIES
@@ -82,6 +96,12 @@ jobs:
     needs: validate-dependencies
     name: Build Go binaries
     runs-on: ubuntu-latest
+    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.11); this job
+    # only runs ./build.sh (go build of our module), so GOTOOLCHAIN=local avoids
+    # a redundant toolchain re-download. Compiler version unchanged (1.25.11),
+    # so binary output stays byte-reproducible.
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -91,7 +111,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          go-version: '1.25.11'
 
       - name: Build binaries
         run: |
@@ -165,6 +186,15 @@ jobs:
       - name: Build RPM in ${{ matrix.distro }} container
         run: |
           chmod +x bin/*
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # MFST-HOTFIX-B2: strict mode — surface rpmbuild failures to CI
             # instead of swallowing them. Mirror release.yml's pattern.
@@ -306,6 +336,15 @@ jobs:
       - name: Build DEB in ${{ matrix.distro }} container
         run: |
           chmod +x bin/*
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # MFST-C6 / F-1: strict mode — surface dpkg-deb failures to CI
             # instead of swallowing them. Mirror RPM step pattern (post-#571).
@@ -463,6 +502,15 @@ jobs:
         if: steps.download.outcome == 'success'
         run: |
           mkdir -p parity-out
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
@@ -632,6 +680,15 @@ jobs:
         if: steps.download.outcome == 'success'
         run: |
           mkdir -p parity-out
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \

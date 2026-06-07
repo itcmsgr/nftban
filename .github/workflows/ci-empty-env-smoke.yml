@@ -46,6 +46,11 @@ jobs:
   empty-env-smoke:
     name: Empty-Env Smoke Guard (H4)
     runs-on: ubuntu-latest
+    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.11); a single
+    # unconditional setup-go feeds every go command in this job, so
+    # GOTOOLCHAIN=local safely avoids a redundant toolchain re-download.
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -53,7 +58,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          go-version: '1.25.11'
 
       # ------------------------------------------------------------------
       # H4.1 — CLI empty-env smoke (shell). Hermetic test: runs the CLI

@@ -52,7 +52,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          # GOTOOLCHAIN=local intentionally NOT set: this job `go install`s
+          # third-party tools (staticcheck, gosec) whose own go directive may
+          # require a newer toolchain; local would block that auto-fetch.
+          go-version: '1.25.11'
 
       - name: Cache Go build
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.3.0

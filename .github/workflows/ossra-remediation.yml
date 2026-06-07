@@ -35,7 +35,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25.x"
+  # v1.157 PR-C: pin exact patch (was the moving "1.25.x" range; matches
+  # go.mod `go 1.25.11`) so the toolchain patch never moves mid-build.
+  GO_VERSION: "1.25.11"
 
 jobs:
   license-compliance:

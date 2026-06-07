@@ -48,6 +48,12 @@ jobs:
   build-binaries:
     name: Build Go binaries
     runs-on: ubuntu-latest
+    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.11); a single
+    # unconditional setup-go feeds the build, so GOTOOLCHAIN=local avoids a
+    # redundant toolchain re-download. Compiler version is unchanged (1.25.11),
+    # so binary output stays byte-reproducible.
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -57,7 +63,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          go-version: '1.25.11'
 
       - name: Build binaries
         run: |
@@ -552,6 +559,17 @@ jobs:
           # Remove leading spaces from heredoc
           sed -i 's/^          //' VERIFY.txt
 
+      # v1.157 PR-D: pre-download + cache syft via the sbom-action's own
+      # download-syft sub-action (same pinned SHA) BEFORE the SBOM step. The
+      # SBOM step then reuses the cached binary instead of fetching syft fresh
+      # from github.com, which intermittently returned HTTP 504 and hard-failed
+      # the release. syft-version is pinned to the action's current default so
+      # the SBOM output is unchanged.
+      - name: Pre-download + cache syft (SBOM tool)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.42.3
+
       - name: Generate SBOM (Software Bill of Materials)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
@@ -560,6 +578,9 @@ jobs:
           output-file: dist/packages/sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
+          # v1.157 PR-D: pin syft to the pre-cached version so the step reuses
+          # the cached binary (no fresh github.com download / HTTP 504).
+          syft-version: v1.42.3
 
       # v1.19.0: Validate SBOM is valid SPDX JSON (R26)
       - name: Validate SBOM
