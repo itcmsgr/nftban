@@ -458,22 +458,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - distro: centos-stream9
-            container: quay.io/centos/centos:stream9
-            rpm_artifact: rpm-el9
-            tier: 0
-          - distro: centos-stream10
-            container: quay.io/centos/centos:stream10
-            rpm_artifact: rpm-el10
-            tier: 1
+          # Canonical RPM install targets only (operator 2026-06-07): EL9 = Rocky 9,
+          # EL10 = AlmaLinux 10. CentOS Stream + Alma 9 install legs removed (can be a
+          # separate distro-validation lane later, not part of every release matrix).
           - distro: rocky9
             container: rockylinux:9
             rpm_artifact: rpm-el9
             tier: 0
-          - distro: alma9
-            container: almalinux:9
-            rpm_artifact: rpm-el9
-            tier: 0
+          - distro: alma10
+            container: almalinux:10
+            rpm_artifact: rpm-el10
+            tier: 1
 
     steps:
       # Checkout required so docker mount of $(pwd)/scripts/ resolves to a real
