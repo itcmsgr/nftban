@@ -559,6 +559,17 @@ jobs:
           # Remove leading spaces from heredoc
           sed -i 's/^          //' VERIFY.txt
 
+      # v1.157 PR-D: pre-download + cache syft via the sbom-action's own
+      # download-syft sub-action (same pinned SHA) BEFORE the SBOM step. The
+      # SBOM step then reuses the cached binary instead of fetching syft fresh
+      # from github.com, which intermittently returned HTTP 504 and hard-failed
+      # the release. syft-version is pinned to the action's current default so
+      # the SBOM output is unchanged.
+      - name: Pre-download + cache syft (SBOM tool)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.42.3
+
       - name: Generate SBOM (Software Bill of Materials)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
@@ -567,6 +578,9 @@ jobs:
           output-file: dist/packages/sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
+          # v1.157 PR-D: pin syft to the pre-cached version so the step reuses
+          # the cached binary (no fresh github.com download / HTTP 504).
+          syft-version: v1.42.3
 
       # v1.19.0: Validate SBOM is valid SPDX JSON (R26)
       - name: Validate SBOM
