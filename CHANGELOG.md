@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.157.0] - 2026-06-07 — CI / release fetch hardening
+
+**Codename:** `V157_CI_FETCH_HARDENING`
+**Controlling record:** `NFTBAN_ROADMAP/V157_CI_FETCH_HARDENING_SCOPE.md`
+**PR:** [#785](https://github.com/itcmsgr/nftban/pull/785) (sq `29eb4c12`)
+
+> **Why:** the release pipeline kept hard-failing on transient external downloads (yq partial download → SHA mismatch, syft HTTP 504, Docker base-image pull timeouts, Go toolchain TLS timeout) — correct-to-fail but too brittle. Make every build-time fetch resilient. **CI / workflow / build-script only — 0 runtime/daemon/schema/CSF change; daemon byte-identical to v1.156.0.**
+
+### Changed — resilient build-time fetches
+- **PR-A** — new shared `packaging/lib/fetch_verified.sh` (`curl --fail --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 10 --max-time 120 -sS` → SHA256 verify → atomic `mv`; fails closed; cleans temp). All 3 yq fetch sites use it (RPM `%install` heredoc inlines the identical hardened curl). YQ pins unchanged. Hermetic test (`fetch_verified_v157_test.sh`) 7/0.
+- **PR-B** — 3-attempt `docker pull` backoff (3/9/27s) before every `docker run` (Build RPM/DEB + Test RPM/DEB) → kills the `registry-1.docker.io` exit-125 class.
+- **PR-C** — pinned all 18 `setup-go` sites `1.25` → `1.25.11` (matches go.mod toolchain; patch can't move) + `GOTOOLCHAIN=local` on build-our-module jobs (reasons inline for the ones deliberately excluded).
+- **PR-D** — syft/SBOM: cache syft via `download-syft` pre-step + pin `syft-version: v1.42.3` so the SBOM step reuses the cache (the HTTP-504 source). SBOM output unchanged.
+- **Fix** (`FIX_V157_PR_A_DUPLICATE_RPM_INSTALL`) — PR-A's first cut put the literal token `%install` in a comment inside the spec `%install` body; **rpm 4.16 (EL9) + EL10 parse that as a second `%install` section** (`error: line 116: second %install`), failing Build RPM el9/el10. (rpm 4.18 on lab2 is lenient — didn't reproduce.) Reworded the comment (no token); added guard test `rpm_spec_single_install_v157_test.sh` (asserts exactly one `^%install$`). Proven on real EL9 rpm 4.16.1.3: pre-fix errored, post-fix clean.
+
+> **Envelope:** CI/workflow/build-script only — `0 cmd/nftband` (daemon byte-identical to v1.156.0; chain v1.147→v1.156.0 daemon-frozen holds) · `0 cmd/nftban-core` · `0 internal` · `0 cli` runtime · `0` schema (1.83.0 frozen) · no CSF. PR-E (auto-rerun) deferred. **Validation:** lab2 shellcheck + `bash -n` clean; `fetch_verified_v157` 7/0; `rpm_spec_single_install_v157` 6/0; 18/18 workflows valid YAML; EL9 rpm-4.16 spec-parse proof. CI on PR #785: 67 pass / 0 fail / 4 skip (el9 + el10 RPM pass). Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). Next: v1.158 = security-posture MAC, then srv1 SSHPORT proof, then fleet rollout.
+
+---
+
 ## [v1.156.0] - 2026-06-07 — installer/CI rollout-safety cleanup
 
 **Codename:** `V156_INSTALLER_CI_ROLLOUT_SAFETY`
