@@ -11,7 +11,7 @@
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files="/etc/nftban/nftban.conf"
-// meta:inventory.systemd_units="nftban-maintenance.timer, nftban-health.timer, nftban-unified-exporter.timer, nftban-core-geoip.timer, nftban-core-feeds.timer, nftban-watchdog.timer, nftban-queue.timer, nftban-update-check.timer"
+// meta:inventory.systemd_units="nftban-maintenance.timer, nftban-health.timer, nftban-unified-exporter.timer, nftban-core-geoip.timer, nftban-core-feeds.timer, nftban-watchdog.timer, nftban-queue.timer, nftban-update-check.timer, nftban-geoban-refresh.timer"
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
 // =============================================================================
@@ -34,6 +34,7 @@ var coreTimers = []string{
 	"nftban-watchdog.timer",
 	"nftban-queue.timer",
 	"nftban-update-check.timer",
+	"nftban-geoban-refresh.timer",
 }
 
 // optionalTimers are started only if their unit file exists (panel-dependent).
