@@ -766,6 +766,40 @@ nftban_health_cmd_posture() {
     echo ""
 
     # ───────────────────────────────────────────────────────────────────────
+    # 5. MAC POSTURE (AppArmor / SELinux) — v1.158
+    # ───────────────────────────────────────────────────────────────────────
+    # Read-only, non-root-graceful, distro-aware. WARN is advisory only (feeds
+    # `warnings`, never `issues`) so health does not fail solely because a MAC
+    # profile is missing/not-enforcing. The detection helper lives in
+    # nftban_report_data.sh (sourced above when available).
+    echo "Mandatory Access Control (MAC)"
+    echo "  ─────────────────────────────────────"
+    if declare -f _nftban_mac_posture >/dev/null 2>&1; then
+        ((total_checks++)) || true
+        local _mac_line _mac_system _mac_verdict _mac_mode _mac_summary _mac_detail
+        _mac_line=$(_nftban_mac_posture 2>/dev/null) || _mac_line="none|INFO|n/a|MAC not applicable|"
+        IFS='|' read -r _mac_system _mac_verdict _mac_mode _mac_summary _mac_detail <<<"$_mac_line"
+        case "$_mac_verdict" in
+            PASS)
+                printf "  %-28s ✅ %s\n" "MAC profile" "$_mac_summary"
+                [[ -n "$_mac_detail" ]] && printf "      %s\n" "$_mac_detail"
+                ;;
+            WARN)
+                printf "  %-28s ⚠️  %s\n" "MAC profile" "$_mac_summary"
+                [[ -n "$_mac_detail" ]] && printf "      FIX: %s\n" "$_mac_detail"
+                ((warnings++)) || true
+                ;;
+            *)  # INFO / N/A — not applicable on this host; never a warning
+                printf "  %-28s ℹ️  %s\n" "MAC profile" "$_mac_summary"
+                [[ -n "$_mac_detail" ]] && printf "      %s\n" "$_mac_detail"
+                ;;
+        esac
+    else
+        printf "  %-28s ℹ️  %s\n" "MAC profile" "MAC detection unavailable"
+    fi
+    echo ""
+
+    # ───────────────────────────────────────────────────────────────────────
     # SUMMARY
     # ───────────────────────────────────────────────────────────────────────
     echo "─────────────────────────────────────────"
