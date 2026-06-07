@@ -179,6 +179,15 @@ jobs:
       - name: Build RPM in ${{ matrix.distro }} container
         run: |
           chmod +x bin/*
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # MFST-HOTFIX-B2: strict mode — surface rpmbuild failures to CI
             # instead of swallowing them. Mirror release.yml's pattern.
@@ -320,6 +329,15 @@ jobs:
       - name: Build DEB in ${{ matrix.distro }} container
         run: |
           chmod +x bin/*
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # MFST-C6 / F-1: strict mode — surface dpkg-deb failures to CI
             # instead of swallowing them. Mirror RPM step pattern (post-#571).
@@ -477,6 +495,15 @@ jobs:
         if: steps.download.outcome == 'success'
         run: |
           mkdir -p parity-out
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
@@ -646,6 +673,15 @@ jobs:
         if: steps.download.outcome == 'success'
         run: |
           mkdir -p parity-out
+          # v1.157 PR-B: retry the base-image pull (transient registry-1.docker.io
+          # timeouts caused exit-125 hard failures). 3 attempts, backoff 3/9/27s.
+          ok=0
+          for delay in 3 9 27; do
+            if docker pull "${{ matrix.container }}"; then ok=1; break; fi
+            echo "docker pull ${{ matrix.container }} failed — retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
           docker run --rm \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
