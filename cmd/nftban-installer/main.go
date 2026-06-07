@@ -521,16 +521,41 @@ func runRepair(ctx context.Context, exec executor.Executor, sf *state.StateFile,
 
 // Phase implementations are in phases.go, wiring detect/render/switchop/services/validate.
 
+// committedSummaryLine builds the operator-facing COMMITTED summary line.
+//
+// v1.160 PR-A (warning truth-accounting): COMMITTED means every phase committed
+// and the validate assertions passed — it does NOT mean zero non-fatal warnings
+// occurred. When warnings were tallied, the line says so (with the count and the
+// log path to inspect) instead of the previous unconditional "no warnings".
+// Pure function (no Logger dependency) so the wording is unit-testable.
+func committedSummaryLine(warnCount int, logPath string) string {
+	if warnCount == 0 {
+		return "[NFTBan] Install/upgrade completed (state: COMMITTED, no warnings)."
+	}
+	noun := "warning"
+	if warnCount != 1 {
+		noun = "warnings"
+	}
+	return fmt.Sprintf(
+		"[NFTBan] Install/upgrade completed (state: COMMITTED, with %d %s — non-fatal; see %s).",
+		warnCount, noun, logPath,
+	)
+}
+
 // report prints the final status and returns the process exit code.
 func report(sf *state.StateFile, log *logging.Logger) int {
 	log.Info("")
 
 	switch sf.State {
 	case state.StateCommitted:
-		// v1.153 UX-T4 (message wording only): COMMITTED means every phase
-		// committed with no non-fatal warnings tallied — report completion in
-		// mechanism-accurate terms rather than the bare "successfully" claim.
-		log.Result("[NFTBan] Install/upgrade completed (state: COMMITTED, no warnings).")
+		// v1.160 PR-A (warning truth-accounting): the v1.153 "no warnings"
+		// wording was aspirational — COMMITTED is decided by validate
+		// assertions, never by whether non-fatal warnings occurred, so the
+		// summary used to claim "no warnings" even when WARN lines printed
+		// (dns1 emitted two and still said "no warnings"). committedSummaryLine
+		// now branches on log.WarnCount() so the clause matches reality, while
+		// the COMMITTED/DEGRADED state selection itself is unchanged.
+		log.Result("%s", committedSummaryLine(log.WarnCount(), log.LogPath()))
 		log.Result("[NFTBan] State: COMMITTED")
 	case state.StateDegraded:
 		// v1.153 UX-T4 (message wording only): DEGRADED is the

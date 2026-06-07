@@ -25,6 +25,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"time"
 
@@ -48,18 +49,70 @@ type lifecycleBridge struct {
 	dryRun bool
 }
 
-// newLifecycleBridge creates a bridge that writes lifecycle events to stderr.
+// newLifecycleBridge creates a bridge that writes lifecycle events to the
+// installer's structured log file by default (v1.160 PR-B).
+//
+// Before v1.160 the lifecycle logger wrote raw JSON ({"event":"detect"…}, plan,
+// result) to os.Stderr — the operator console — interleaved with human phase
+// lines, and the events were not preserved in any structured log. v1.160 PR-B
+// routes the JSON to the same persistent installer log file the dual logger
+// writes to, so the events are kept for post-mortem without cluttering the
+// console. Console JSON is opt-in via NFTBAN_LIFECYCLE_JSON=1 or NFTBAN_DEBUG=1.
+//
+// This change is WHERE-only — the events produced and their timing are
+// unchanged (INV-I-004: lifecycle remains observational). The StateFailedAbort
+// suppression in main.go is untouched.
 func newLifecycleBridge(installerMode string, dryRun bool, log *logging.Logger) *lifecycleBridge {
 	mode := mapInstallerMode(installerMode)
 
+	w := lifecycleWriter(log.FileWriter(), lifecycleConsoleOptIn(), os.Stderr, log)
+
 	lb := &lifecycleBridge{
-		logger: lifecycle.NewLogger(os.Stderr, mode, false),
+		logger: lifecycle.NewLogger(w, mode, false),
 		mode:   mode,
 		dryRun: dryRun,
 	}
 
 	log.Info("lifecycle bridge initialized (mode=%s, dry_run=%v, observational only)", mode, dryRun)
 	return lb
+}
+
+// lifecycleConsoleOptIn reports whether the operator asked for lifecycle JSON on
+// the console. v1.160 PR-B: env-gated to match the existing NFTBAN_LIFECYCLE
+// style (no CLI flag needed). NFTBAN_LIFECYCLE_JSON=1 is the explicit knob;
+// NFTBAN_DEBUG=1 also enables it for general debugging.
+func lifecycleConsoleOptIn() bool {
+	return os.Getenv("NFTBAN_LIFECYCLE_JSON") == "1" || os.Getenv("NFTBAN_DEBUG") == "1"
+}
+
+// lifecycleWriter selects the io.Writer for lifecycle JSON events (v1.160 PR-B).
+//
+// Routing:
+//   - default (no console opt-in): the structured log file, if available.
+//   - console opt-in true: file + console via io.MultiWriter (or console alone
+//     if no file is available) — this restores the pre-v1.160 console behavior
+//     additively.
+//   - no file and no opt-in: io.Discard, with a one-line Debug note so the
+//     reason the events are dropped is recorded (the dual logger is in
+//     console-only mode, so there is nowhere durable to send them).
+//
+// Pure aside from the optional Debug note; the writers are injected so the
+// routing decision is unit-testable. `console` is normally os.Stderr.
+func lifecycleWriter(file io.Writer, consoleOptIn bool, console io.Writer, log *logging.Logger) io.Writer {
+	if consoleOptIn {
+		if file != nil {
+			return io.MultiWriter(file, console)
+		}
+		return console
+	}
+	if file != nil {
+		return file
+	}
+	// No durable sink and no opt-in: discard, but record why.
+	if log != nil {
+		log.Debug("lifecycle JSON discarded: no installer log file open and no console opt-in (NFTBAN_LIFECYCLE_JSON/NFTBAN_DEBUG)")
+	}
+	return io.Discard
 }
 
 // observeDetect records the DETECT stage from installer phase data.

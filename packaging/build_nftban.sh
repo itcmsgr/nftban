@@ -721,11 +721,12 @@ if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; 
     # Differentiate iptables-nft (conflicts) vs iptables-legacy (co-exists)
     IPT_VERSION=\$(iptables --version 2>/dev/null || echo "")
     if echo "\$IPT_VERSION" | grep -q "nf_tables"; then
-        echo "[!] WARNING: iptables-nft detected (iptables-over-nftables wrapper)"
+        # v1.160: soften to advisory wording (CHECK 4 remains the authoritative
+        # active-conflict gate). Detection unchanged: iptables --version | grep nf_tables.
+        echo "[i] INFO: iptables-nft detected (advisory)"
         echo "    iptables-nft translates iptables rules into nftables and may"
         echo "    create conflicting tables (e.g. 'ip filter')."
         echo "    Recommended: switch to iptables-legacy or remove iptables-nft"
-        LEGACY_FOUND=1
     else
         echo "[i] INFO: iptables detected (co-exists with nftables)"
         echo "    iptables-legacy uses a separate kernel API from nftables."
@@ -734,18 +735,73 @@ if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; 
     fi
 fi
 
+# v1.160: state-aware firewall package wording.
+# CHECK 2 reports package PRESENCE + STATE as an advisory; CHECK 4 below remains
+# the authoritative ACTIVE-conflict gate. Previously CHECK 2 warned purely on
+# package presence, contradicting CHECK 4's service-state result ("No conflicting
+# firewall services detected"). Now both stages agree: present-but-inactive is an
+# advisory here, not a conflict. State helpers are guarded with command -v systemctl
+# so a host without systemd degrades to a plain "installed" advisory.
+
+# nftban_fw_pkg_wording: classify an installed firewall package by service state
+# and print state-aware wording. Mirrored verbatim in the DEB preinst and unit-
+# tested via cli/lib/nftban/tests/firewall_pkg_wording_v160.sh.
+#   \$1 = display name (e.g. "firewalld" / "ufw")
+#   \$2 = systemd unit name (e.g. "firewalld" / "ufw")
+#   \$3 = remove-hint command (e.g. "dnf remove firewalld")
+#   \$4 = active-override: "active"/"inactive"/"" — when non-empty, used instead of
+#         systemctl is-active (lets ufw pass its 'ufw status' result).
+# Sets LEGACY_FOUND=1 only for the active case (true conflict now).
+nftban_fw_pkg_wording() {
+    fw_name="\$1"; fw_unit="\$2"; fw_remove="\$3"; fw_active_override="\$4"
+    fw_active=0; fw_enabled=0; fw_masked=0
+
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-masked "\$fw_unit" >/dev/null 2>&1; then
+            fw_masked=1
+        fi
+        if [ "\$(systemctl is-enabled "\$fw_unit" 2>/dev/null)" = "masked" ]; then
+            fw_masked=1
+        fi
+        if systemctl is-enabled "\$fw_unit" >/dev/null 2>&1; then
+            fw_enabled=1
+        fi
+        if [ -z "\$fw_active_override" ] && systemctl is-active "\$fw_unit" >/dev/null 2>&1; then
+            fw_active=1
+        fi
+    fi
+    if [ "\$fw_active_override" = "active" ]; then
+        fw_active=1
+    fi
+
+    if [ "\$fw_active" -eq 1 ]; then
+        echo "[!] WARNING: \$fw_name is installed and ACTIVE (conflicts with nftables)"
+        echo "    NFTBan manages nftables directly. An active \$fw_name will conflict."
+        echo "    Recommended: \$fw_remove (or stop/disable \$fw_unit)"
+        LEGACY_FOUND=1
+    elif [ "\$fw_masked" -eq 1 ]; then
+        echo "[i] INFO: \$fw_name is installed but masked — will not start; acceptable"
+    elif [ "\$fw_enabled" -eq 1 ]; then
+        echo "[!] WARNING: \$fw_name is installed and enabled but inactive"
+        echo "    It will start on boot and may then conflict with NFTBan."
+        echo "    Recommended: disable \$fw_unit if unused"
+    else
+        echo "[i] INFO: \$fw_name is installed but inactive — no conflict now"
+        echo "    Remove (\$fw_remove) or keep it disabled."
+    fi
+}
+
 if command -v ufw >/dev/null 2>&1; then
-    echo "[!] WARNING: ufw installed (manages nftables/iptables backend)"
-    echo "    NFTBan manages nftables directly. ufw may conflict."
-    echo "    Recommended: dnf remove ufw"
-    LEGACY_FOUND=1
+    # ufw: prefer its own status for the active determination.
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        nftban_fw_pkg_wording "ufw" "ufw" "dnf remove ufw" "active"
+    else
+        nftban_fw_pkg_wording "ufw" "ufw" "dnf remove ufw" "inactive"
+    fi
 fi
 
 if command -v firewall-cmd >/dev/null 2>&1; then
-    echo "[!] WARNING: firewalld installed (conflicts with nftables)"
-    echo "    NFTBan manages nftables directly. firewalld should be removed."
-    echo "    Recommended: dnf remove firewalld"
-    LEGACY_FOUND=1
+    nftban_fw_pkg_wording "firewalld" "firewalld" "dnf remove firewalld" ""
 fi
 
 if [ \$LEGACY_FOUND -eq 0 ]; then
