@@ -390,7 +390,7 @@ done < %{_sourcedir}/nftban-files.inc
 # SHA256 verified before bundling in package.
 # v1.157 PR-A: hardened fetch (retry + fail-fast + bounded timeouts + atomic
 # write + checksum verify). Identical behaviour to packaging/lib/fetch_verified.sh
-# but inlined here because this runs inside rpmbuild's %install sandbox where the
+# but inlined here because this runs inside the rpmbuild install scriptlet where the
 # helper file is not staged/sourceable. A transient blip no longer leaves a
 # bad/partial body that the SHA pin then hard-fails on.
 YQ_VERSION="4.44.1"
