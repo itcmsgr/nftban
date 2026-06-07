@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.158.0] - 2026-06-07 — security-posture MAC visibility
+
+**Codename:** `V158_SECURITY_POSTURE_MAC`
+**Controlling record:** `NFTBAN_SECURITY_POSTURE_GAP_ANALYSIS.md`
+**PR:** [#787](https://github.com/itcmsgr/nftban/pull/787) (sq `411a98d9`)
+
+> **Why:** surface Mandatory Access Control (AppArmor/SELinux) protection state in the existing posture output — a narrow visibility add, **advisory-only**, no posture rewrite. The existing `nftban health posture` / `_collect_posture_info` / `sshd -T` effective-config / broad-only NOPASSWD logic are **extended, not rebuilt**. `0 cmd/nftband` (daemon byte-identical to v1.157.0) · `0 cmd/nftban-core` · `0 internal` · `0` schema (1.83.0 frozen) · no CSF.
+
+### Added — MAC posture summary (AppArmor + SELinux)
+- `cli/lib/nftban/lib/nftban_report_data.sh` `_collect_posture_info` + `cli/lib/nftban/cli/cmd_health_analysis.sh` (detailed) + `cmd_status.sh` (compact) now report MAC protection state. **AppArmor:** `aa-status`/securityfs; nftband profile; PASS loaded+enforcing / WARN missing-or-complain / INFO absent. **SELinux:** `getenforce` + `semodule -l`; nftban module; PASS Enforcing+module / WARN mismatch-or-missing / INFO absent. **Distro-aware** (no AppArmor WARN on SELinux-primary hosts; no SELinux WARN on Debian/Ubuntu). **Advisory-only** — MAC WARN increments `warnings`, never `issues`; health/install exit-code semantics unchanged; non-root-safe.
+
+### Added — posture surface-map doc + JSON-behavior note (PR-A)
+- `docs/security/MAC_PROFILES_SELINUX_APPARMOR.md` §12/§13: compact `nftban status` vs detailed `nftban health posture`/`health check`; the advisory model; the `--json` finding (`health posture` is text-only — machine-readable posture is via the status-JSON `POSTURE_*` fields); intentionally-excluded rp_filter / panel-port / iptables-line-count + deferred sysctl. New test `mac_posture_v158_test.sh` (13/0, all 8 required cases).
+
+### Changed — CI: canonical RPM install matrix only
+- `.github/workflows/build-packages.yml` Test-RPM-install matrix trimmed to the canonical release targets: **EL9 = Rocky 9, EL10 = AlmaLinux 10** (removed centos-stream9, centos-stream10, alma9 install legs). Build RPM matrix already canonical (rockylinux:9 / almalinux:10) — unchanged. README download links unaffected (assets are `nftban-el9/el10-x86_64.rpm`, distro-agnostic). CI-only.
+
+### Deferred / unchanged
+- **sysctl posture deferred** (PR-C — `tcp_syncookies`/`accept_redirects`/`log_martians`/`rp_filter` advisory-only/opt-in; not in this release).
+- No daemon/schema/runtime change (verified: 0 `cmd/nftband`, 0 Go, 0 schema; daemon byte-identical to v1.157.0; chain v1.147→v1.157.0 holds).
+
+> **Envelope:** shell + tests + docs + CI-matrix only. **Tests:** `mac_posture_v158` 13/0; `stats_status_truth_v150` regression PASS; shellcheck + `bash -n` clean. CI on PR #787: 52 pass / 0 fail / 2 skip (RPM install legs = rocky9 + alma10 only). Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). Next: srv1 SSHPORT proof, then fleet rollout.
+
+---
+
 ## [v1.157.0] - 2026-06-07 — CI / release fetch hardening
 
 **Codename:** `V157_CI_FETCH_HARDENING`
