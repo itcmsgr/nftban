@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.159.0] - 2026-06-07 — hotfix: geoban-refresh skips when geoip helper absent
+
+**Codename:** `V159_GEOBAN_REFRESH_DEGRADE_FIX`
+**Controlling record:** `NFTBAN_ROADMAP/V158_FLEET_ROLLOUT_RECORD.md`
+**PR:** [#789](https://github.com/itcmsgr/nftban/pull/789) (sq `dab45096`)
+
+> **Why:** **`BUG-GEOBAN-REFRESH-UNSHIPPED-GEOIP-DEGRADES-INSTALL`** (HIGH, fleet-rollout blocker, found on lab2 during the v1.158 rollout). v1.156 added `nftban-geoban-refresh.timer` to the installer core-timer set; its service runs `nftban geoip refresh`, which needs the `nftban-geoip` helper (`core/nftban_geoban.sh`: `bin/.real/nftban-geoip-$(uname -m)` or `bin/nftban-geoip` fallback) — **not shipped** in the base package. The service's only `ExecCondition` checked the geoban config (package-owned, ships `GEOBAN_ENABLED="true"`), so on upgrade it ran and **hard-failed** → installer `failed_units_postinstall_ok` → `INSTALL_STATE=DEGRADED` (every host). Latent pre-v1.156 (timer shipped-disabled).
+
+### Fixed — `nftban-geoban-refresh.service` skips (not fails) when the geoip helper is absent
+- Added a 2nd `ExecCondition` gating on the geoip helper binary (mirrors the resolver in `core/nftban_geoban.sh`). A failed `ExecCondition` marks the unit **skipped (condition-not-met), NOT failed** → no longer trips the install assertion. **`ExecStart` unchanged** — if the helper is installed later, the service runs normally.
+- Regression lock `cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh` (7/0): config+geoip ExecConditions present, ExecStart intact, missing→skip, `.real`→run, fallback→run, non-exec→skip. `systemd-analyze verify` rc=0 (lab2).
+
+> **Envelope:** systemd-unit + test only — `0 cmd/nftband` (daemon byte-identical to v1.158.0; chain v1.147→v1.158.0 holds) · `0 cmd/nftban-core` · `0` Go · `0` schema (1.83.0 frozen) · no CSF · no firewall behaviour change. CI on PR #789: 53 pass / 0 fail / 4 skip. Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). **Process lesson recorded** (`TEST_LESSON_GEOBAN_REFRESH_V159`): default-enabled timer/service lanes must test the real first-run host outcome, not just enablement. lab2 (already v1.158-DEGRADED) recovers via a one-time `systemctl reset-failed` after the v1.159 upgrade; the other 8 hosts upgrade v1.150.1→v1.159.0 directly and skip cleanly. Then fleet rollout resumes. Hygiene bundle = v1.160.
+
+---
+
 ## [v1.158.0] - 2026-06-07 — security-posture MAC visibility
 
 **Codename:** `V158_SECURITY_POSTURE_MAC`
