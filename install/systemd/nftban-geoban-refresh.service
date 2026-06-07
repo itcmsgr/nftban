@@ -49,6 +49,17 @@ Group=root
 # Skip the run entirely when GeoBan is not configured on this host.
 ExecCondition=/usr/bin/test -f /etc/nftban/conf.d/geoban/main.conf
 
+# v1.159: also skip (not fail) when the geoip helper binary is absent. The CIDR
+# refresh needs the nftban-geoip helper (see GEOIP_BINARY resolution in
+# core/nftban_geoban.sh: arch-specific bin/.real/nftban-geoip-$(uname -m) or the
+# bin/nftban-geoip fallback). That binary is not shipped in the base package, so
+# on hosts without it the run cannot succeed — a MISSING binary is part of "not
+# set up". A failed ExecCondition marks the unit skipped (condition-not-met),
+# NOT failed, so it does not trip the installer's failed_units_postinstall_ok
+# assertion (fixes BUG-GEOBAN-REFRESH-UNSHIPPED-GEOIP-DEGRADES-INSTALL, where
+# v1.156 enabling this timer turned a latent gap into INSTALL_STATE=DEGRADED).
+ExecCondition=/bin/sh -c 'test -x /usr/lib/nftban/bin/.real/nftban-geoip-$(uname -m) || test -x /usr/lib/nftban/bin/nftban-geoip'
+
 # Refresh all active GeoBan country CIDR sets.
 ExecStart=/usr/sbin/nftban geoip refresh
 
