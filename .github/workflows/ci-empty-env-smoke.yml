@@ -1,0 +1,148 @@
+# =============================================================================
+# NFTBan — CI: Empty-Env Smoke Guard (H4)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# H4 — the next guard in the H-series (after H3.2 Migration Coverage Gate and
+# H3.3 Shell-Delete Guard). The internal H-series spec (H3.1) lives in an
+# audit/wiki workspace and is intentionally NOT shipped in this repo; the
+# concrete assertions are inlined here.
+#
+# What H4 asserts (rollout-safety): the read-only CLI + installer entrypoints
+# survive a SCRUBBED / empty environment. NFTBan's shell runs under
+# `set -Eeuo pipefail`, so any code path that dereferences an environment
+# variable without a `${VAR:-default}` would abort with an "unbound variable"
+# diagnostic on a host with a minimal env (cron, a systemd ExecStart with a
+# clean environment, a freshly-scrubbed login). This gate runs version/help
+# under `env -i` (only PATH + NFTBAN_LIB_DIR passed through) and fails if the
+# entrypoint crashes on an unbound variable.
+#
+# Read-only commands ONLY (version, help, --version, -h). No host mutation.
+# =============================================================================
+
+name: Empty-Env Smoke Guard (H4)
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'cli/**'
+      - 'cmd/nftban-installer/**'
+      - 'internal/installer/**'
+      - 'cli/lib/nftban/tests/cli_empty_env_smoke_v156_test.sh'
+      - '.github/workflows/ci-empty-env-smoke.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-empty-env-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  empty-env-smoke:
+    name: Empty-Env Smoke Guard (H4)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
+        with:
+          go-version: '1.25'
+
+      # ------------------------------------------------------------------
+      # H4.1 — CLI empty-env smoke (shell). Hermetic test: runs the CLI
+      # entrypoint (version, help, status --help) under `env -i` with only
+      # PATH + NFTBAN_LIB_DIR and asserts no unbound-variable crash under
+      # `set -u`. No host install needed — runs straight from the checkout.
+      # ------------------------------------------------------------------
+      - name: H4.1 — CLI empty-env smoke (no set -u unbound crash)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x cli/lib/nftban/tests/cli_empty_env_smoke_v156_test.sh
+          bash cli/lib/nftban/tests/cli_empty_env_smoke_v156_test.sh
+
+      # ------------------------------------------------------------------
+      # H4.2 — installer empty-env smoke (Go binary). Build the installer,
+      # then run its read-only `--version` and `-h` under a scrubbed env.
+      # `--version` prints the version line and exits 0; `-h` prints usage
+      # via the flag package and exits 2 (Go's default for -h). Neither
+      # mutates anything. We fail only on an unexpected crash signature
+      # (panic / runtime error) — both invocations are read-only.
+      # ------------------------------------------------------------------
+      - name: H4.2 — build installer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p bin
+          go build -trimpath -o bin/nftban-installer ./cmd/nftban-installer/
+          test -x bin/nftban-installer
+
+      - name: H4.2 — installer --version under empty env (read-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rc=0
+          out=$(env -i PATH="/usr/sbin:/usr/bin:/sbin:/bin" \
+                  ./bin/nftban-installer --version 2>&1) || rc=$?
+          echo "$out"
+          echo "installer --version exit code: $rc"
+          if grep -qiE 'panic:|runtime error|goroutine [0-9]+ \[' <<<"$out"; then
+            echo "::error::H4.2 FAIL: installer --version panicked under empty env"
+            exit 1
+          fi
+          if [[ "$rc" != "0" ]]; then
+            echo "::error::H4.2 FAIL: installer --version expected rc=0 under empty env, got rc=$rc"
+            exit 1
+          fi
+          # Must actually print a version line (proves the read-only path ran).
+          grep -qi 'nftban-installer' <<<"$out" || {
+            echo "::error::H4.2 FAIL: installer --version produced no version line"
+            exit 1
+          }
+          echo "H4.2 PASS — installer --version clean under empty env"
+
+      - name: H4.2 — installer -h under empty env (read-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rc=0
+          # -h with no -mode is a usage request; the flag package prints usage
+          # to stderr and exits 2. We assert no panic and the documented rc.
+          out=$(env -i PATH="/usr/sbin:/usr/bin:/sbin:/bin" \
+                  ./bin/nftban-installer -h 2>&1) || rc=$?
+          echo "$out"
+          echo "installer -h exit code: $rc"
+          if grep -qiE 'panic:|runtime error|goroutine [0-9]+ \[' <<<"$out"; then
+            echo "::error::H4.2 FAIL: installer -h panicked under empty env"
+            exit 1
+          fi
+          case "$rc" in
+            0|2) echo "H4.2 PASS — installer -h clean under empty env (rc=$rc)" ;;
+            *) echo "::error::H4.2 FAIL: installer -h unexpected rc=$rc under empty env"; exit 1 ;;
+          esac
+          # Usage text must mention a known flag (proves flag.Usage ran).
+          grep -qi -- '-mode' <<<"$out" || {
+            echo "::error::H4.2 FAIL: installer -h printed no usage"
+            exit 1
+          }
+
+  summary:
+    name: Empty-Env Smoke Guard summary
+    needs: empty-env-smoke
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verdict
+        run: |
+          if [[ "${{ needs.empty-env-smoke.result }}" != "success" ]]; then
+            echo "::error::Empty-Env Smoke Guard (H4) FAILED — see job output"
+            exit 1
+          fi
+          echo "Empty-Env Smoke Guard (H4) PASSED"
