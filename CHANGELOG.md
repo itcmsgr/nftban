@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.160.0] - 2026-06-08 — update-log operator-output truth
+
+**Codename:** `V160_UPDATE_LOG_TRUTH_FIXES`
+**Controlling record:** `NFTBAN_ROADMAP/V159_UPDATE_LOG_TRUTH_CROSSFAMILY_TRIAGE.md`
+**PR:** [#791](https://github.com/itcmsgr/nftban/pull/791) (sq `02fbab23`)
+
+> **Why:** the v1.150.1→v1.159.0 fleet rollout surfaced cross-family (RPM + DEB) operator-output truth defects on otherwise-successful (`COMMITTED`) updates — warnings that vanished from the final summary, raw lifecycle JSON in the human console, self-contradicting firewall-conflict wording, and a spurious permissions-enforce error on hosts without optional modules. Triage `V159_UPDATE_LOG_TRUTH_CROSSFAMILY_TRIAGE.md` (read-only, srv1 RPM + dns1 DEB).
+
+### Fixed — installer warning accounting (PR-A)
+- The installer `Logger` now tallies non-fatal warnings (`WarnCount`/`Warnings`, mutex-guarded); the final COMMITTED summary prints `"COMMITTED, no warnings"` only when the count is 0, else `"COMMITTED, with N warning(s) — non-fatal; see <log>"`. Previously a `[NFTBan WARN]` line (e.g. `systemd-tmpfiles exit 73`, `permissions enforce exit 1`) could print while the summary still claimed "no warnings". (`internal/installer/logging/logger.go`, `cmd/nftban-installer/main.go`)
+
+### Fixed — lifecycle JSON routing (PR-B)
+- Lifecycle `detect`/`plan`/`result` JSON events now route to the structured installer log by default instead of the operator console; opt-in console echo via `NFTBAN_LIFECYCLE_JSON=1` or `NFTBAN_DEBUG=1`. Observation semantics unchanged. (`cmd/nftban-installer/lifecycle_bridge.go`, `internal/installer/logging/logger.go`)
+
+### Fixed — firewall package-vs-service conflict wording (PR-C)
+- Prerequisite checks (RPM `build_nftban.sh` + DEB `preinst`) are now state-aware for firewalld/ufw: installed+active → conflict warning; installed+enabled-but-inactive → startup-risk; installed+disabled/inactive → advisory; installed+masked → informational; absent → clean. The active-service gate (CHECK-4) is unchanged, so the two stages no longer contradict. No iptables line-count detection; all non-fatal. (`packaging/build_nftban.sh`, `packaging/deb/preinst`)
+
+### Fixed — permissions-enforce skips absent optional-module paths (PR-D)
+- `nftban permissions enforce` now SKIPs (does not error) when an optional-module target directory or owner user is absent (e.g. `/var/log/nftban/suricata` / the `suricata` user on a host without Suricata) → returns rc=0 there; real `chown`/`chmod` failures on required paths still error as before. Fixes the srv4 `permissions enforce failed (exit 1)` + the matching `nftban fhs` "Missing 1". (`cli/lib/nftban/core/nftban_permissions.sh`)
+
+### Notes
+- **Envelope:** installer-Go + packaging-shell + tests only — **`0 cmd/nftband` (daemon byte-identical to v1.159.0; chain v1.147→v1.159.0 holds)** · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no CSF · no firewall behaviour change. The installer/core binaries change intentionally; the daemon does not.
+- **Tests:** `logger_warncount` / `committed_summary` / `lifecycle_routing` (Go); `firewall_pkg_wording_v160` 8/0 + `permissions_optional_module_skip_v160` 5/0 (shell). lab2: `go build`+`go test` ok, gofmt clean, `build/generate-fhs-outputs.sh --check` rc=0, `cmd/nftband` tree `85a2de3e…` unchanged. CI on PR #791: 69 pass / 0 fail / 3 skip; post-merge main green.
+
 ## [v1.159.0] - 2026-06-07 — hotfix: geoban-refresh skips when geoip helper absent
 
 **Codename:** `V159_GEOBAN_REFRESH_DEGRADE_FIX`
