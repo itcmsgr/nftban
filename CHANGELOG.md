@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.156.0] - 2026-06-07 — installer/CI rollout-safety cleanup
+
+**Codename:** `V156_INSTALLER_CI_ROLLOUT_SAFETY`
+**Controlling record:** `NFTBAN_ROADMAP/V156_INSTALLER_CI_ROLLOUT_SAFETY_SCOPE.md`
+**PR:** [#783](https://github.com/itcmsgr/nftban/pull/783) (sq `eb143701`)
+
+> **Why:** small, bounded, rollout-relevant items that make fleet deployment safer — no broad parity rewrite, no daemon/schema decisions. `0 cmd/nftband` (daemon byte-identical to v1.155.0) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no CSF · no Lane-C daemon-Go. The installer binary (`cmd/nftban-installer` / `internal/installer`) changes intentionally.
+
+### Changed — geoban-refresh.timer enabled as a best-effort core timer (PR-A)
+- `internal/installer/services/timers.go` adds `nftban-geoban-refresh.timer` to `coreTimers` (best-effort `enableAndStart`; **not** `criticalCoreTimers`). Closes the v1.150 "geoban timer installed-but-disabled" caveat. Hermetic enablement tests added.
+
+### Added — empty-env smoke CI guard (PR-B, H4)
+- `.github/workflows/ci-empty-env-smoke.yml`: runs the CLI (`version`/`help`/`status --help`) and the installer (`--version`/`-h`) under `env -i` to catch `set -u`/unbound-variable crashes — read-only, no mutation. Hermetic test `cli_empty_env_smoke_v156_test.sh`.
+
+### Added — installer.log `[PHASE]` boundary markers (PR-C)
+- `cmd/nftban-installer/phases.go` emits `[PHASE] <name> start` / `[PHASE] <name> end` across all five phases (logging-string only; no flow change) — greppable phase boundaries for rollout triage. Parity test (`phase_markers_test.go`) fails CI if a future phase lacks markers.
+
+### Fixed — strict-IFS `read -ra` on portscan timestamp splitters (PR-D)
+- `cli/lib/nftban/core/nftban_portscan_classic.sh`: the two space-joined timestamp splitters now use `IFS=$' \t\n' read -ra` (a bare `read -ra` inherits the CLI's strict `IFS=$'\n\t'` and collapses them — same family as the v1.152 feeds-select fix). Test `read_ra_ifs_v156_test.sh`. The `cmd_emulate`/`nftban_tunnel` candidates already set `IFS` inline (safe) → left as recorded triage.
+
+> **Envelope:** installer-Go + CI + shell + tests — `0 cmd/nftband` (daemon byte-identical to v1.155.0; chain v1.147→v1.155.0 daemon-frozen holds) · `0 cmd/nftban-core` · `0` schema (1.83.0 frozen) · no CSF · no Lane-C daemon-Go. Installer binary intentionally changes. **Validation (lab2 go1.25.11):** `go vet ./...` clean · `go build ./...` rc=0 · `go test -race` PASS (internal/installer/services + cmd/nftban-installer) · `go mod tidy` clean; `shellcheck -S warning` clean; empty-env 4/0 · read-ra 6/0. CI on PR #783: 71 pass / 0 fail / 1 skip. Release-prep touches only `VERSION`, `STATUS.md`, `CHANGELOG.md`, `cli/lib/nftban/core/nftban_fhs_spec.sh` (header `meta:version` regen; FHS body byte-unchanged — SHA256 `5cc865943fe21c31499739216e25582142e155fecbd20a8adba0cb62c6906971`). **No fleet rollout in this lane.**
+
+---
+
 ## [v1.155.0] - 2026-06-07 — SSH-port lifecycle / srv1 unblocker
 
 **Codename:** `V155_SSH_PORT_LIFECYCLE`
