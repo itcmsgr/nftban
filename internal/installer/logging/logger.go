@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,12 +34,26 @@ const DefaultLogPath = "/var/log/nftban/installer.log"
 // The log file is append-only — every install/update/repair run is preserved
 // as a contiguous block delimited by RunHeader/RunFooter for post-mortem analysis.
 type Logger struct {
-	console   io.Writer
-	logFile   *os.File
-	verbose   bool
-	runStart  time.Time
+	console    io.Writer
+	logFile    *os.File
+	verbose    bool
+	runStart   time.Time
 	phaseStart time.Time
-	logPath   string
+	logPath    string
+
+	// v1.160 PR-A (warning truth-accounting): tally non-fatal warnings so the
+	// final operator summary can report them honestly. Before v1.160, Warn()
+	// only printed + appended to the logfile and incremented nothing, so the
+	// COMMITTED summary said "no warnings" even when WARN lines were emitted
+	// (e.g. systemd-tmpfiles exit 73, permissions enforce failed). The summary
+	// COMMITTED/DEGRADED selection is decided by validate assertions, not by
+	// warnings — so the count is the only honest source for the warning clause.
+	//
+	// Guarded by mu because Warn() is reachable from the SIGINT/SIGTERM signal
+	// handler goroutine (main.go) concurrently with the main phase loop.
+	mu        sync.Mutex
+	warnCount int
+	warnings  []string
 }
 
 // New creates a Logger. logPath may be empty to use DefaultLogPath.
@@ -78,6 +93,24 @@ func (l *Logger) LogPath() string {
 	return l.logPath
 }
 
+// FileWriter returns the open log-file handle as an io.Writer, or nil if no log
+// file could be opened (console-only mode). v1.160 PR-B: the lifecycle bridge
+// uses this to route structured lifecycle JSON to the same persistent installer
+// log instead of the operator console. Returns the *os.File directly; writes to
+// it are appended at the current file offset (the file is opened O_APPEND), so
+// lifecycle JSON interleaves cleanly with the dual-logger's own file lines.
+//
+// Note: the returned handle is the same one Logger writes to; both write paths
+// are line-oriented appends and the lifecycle logger emits whole-line JSON, so
+// no additional locking is introduced here (the historical Logger file writes
+// were already unsynchronized).
+func (l *Logger) FileWriter() io.Writer {
+	if l.logFile == nil {
+		return nil
+	}
+	return l.logFile
+}
+
 // RunHeader writes a clear delimiter block marking the start of an installer run.
 // This is essential for finding where a specific install/update begins in the log.
 func (l *Logger) RunHeader(version, mode, hostname, osInfo string) {
@@ -109,13 +142,43 @@ func (l *Logger) Info(format string, args ...interface{}) {
 	l.writeFile("INFO", msg)
 }
 
-// Warn logs a warning to both console and file.
+// Warn logs a warning to both console and file. The warning is also tallied
+// (count + captured message) so the final summary can report it honestly.
+// Warnings remain NON-FATAL — printing/file-writing behavior is unchanged from
+// before v1.160; only the accounting (v1.160 PR-A) is added.
 func (l *Logger) Warn(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	ts := time.Now().Format("15:04:05")
 
 	fmt.Fprintf(l.console, "[NFTBan WARN] %s %s\n", ts, msg)
 	l.writeFile("WARN", msg)
+
+	// v1.160 PR-A: tally the warning under the mutex (Warn is reachable from
+	// the signal-handler goroutine).
+	l.mu.Lock()
+	l.warnCount++
+	l.warnings = append(l.warnings, msg)
+	l.mu.Unlock()
+}
+
+// WarnCount returns the number of non-fatal warnings emitted via Warn() so far.
+// v1.160 PR-A: the final operator summary uses this to decide whether the
+// COMMITTED line should mention warnings.
+func (l *Logger) WarnCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.warnCount
+}
+
+// Warnings returns a copy of the warning messages emitted via Warn() so far.
+// v1.160 PR-A: returns a copy so callers cannot mutate the logger's slice and
+// so the read is consistent under the mutex.
+func (l *Logger) Warnings() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, len(l.warnings))
+	copy(out, l.warnings)
+	return out
 }
 
 // ErrorLogOnly writes an error to the log file ONLY, NOT to console.

@@ -316,7 +316,13 @@ perms_enforce_log_files() {
         perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chmod 0640 {} \;
 
         # Handle suricata directory specially: suricata:nftban so Suricata can write, nftban can read
-        if [[ -d "$PERMS_LOG/suricata" ]]; then
+        # v1.160: optional-module skip. On a host WITHOUT Suricata the directory is
+        # absent and the suricata user does not exist; skip silently rather than
+        # erroring (this legacy fallback runs when nftban_fhs_enforce_file_rules is
+        # not defined). Absent optional-module target => SKIP, not error.
+        if [[ ! -d "$PERMS_LOG/suricata" ]]; then
+            perms_say "Skipping absent optional path: $PERMS_LOG/suricata (Suricata not provisioned)"
+        elif [[ -d "$PERMS_LOG/suricata" ]]; then
             perms_say "Securing suricata log directory and files (suricata:nftban)"
             # Add suricata to nftban group if not already (must come first)
             if id suricata >/dev/null 2>&1 && ! id -nG suricata 2>/dev/null | grep -qw nftban; then
@@ -365,10 +371,24 @@ perms_enforce_from_fhs_spec() {
         # Parse spec: mode|owner|group|description
         IFS='|' read -r exp_mode exp_owner exp_group _description <<< "$spec"
 
+        # v1.160: optional-module path handling.
+        # Some FHS dirs belong to optional modules (notably Suricata) whose owner
+        # user only exists when that module is provisioned (e.g. /var/log/nftban/suricata
+        # owned by suricata:nftban). On a host WITHOUT the module the owner user is
+        # absent. Previously the create branch below ran `install -d -o suricata`,
+        # which fails (no such user) and incremented errors -> nftban_permissions_enforce_all
+        # rc=1 -> "permissions enforce failed (exit 1)" WARN on otherwise-fine hosts.
+        # Resolve the effective owner up front: if the expected (non-root) owner user
+        # does not exist, fall back to root for both the create AND the fix paths.
+        local _eff_owner="$exp_owner"
+        if [[ "$exp_owner" != "root" ]] && ! id -u "$exp_owner" >/dev/null 2>&1; then
+            _eff_owner="root"
+        fi
+
         # Check if directory exists
         if [[ ! -d "$path" ]]; then
             perms_say "Creating missing directory: $path"
-            if ! perms_run install -d -o "$exp_owner" -g "$exp_group" -m "$exp_mode" "$path"; then
+            if ! perms_run install -d -o "$_eff_owner" -g "$exp_group" -m "$exp_mode" "$path"; then
                 perms_err "Failed to create: $path"
                 # v1.19.20 FIX
                 ((errors++)) || true
@@ -391,10 +411,9 @@ perms_enforce_from_fhs_spec() {
         # Check and fix ownership
         # v1.27.0: If expected owner doesn't exist as system user, fall back to root
         # (e.g., suricata user only exists when suricata is installed)
-        local _eff_owner="$exp_owner"
-        if [[ "$exp_owner" != "root" ]] && ! id "$exp_owner" &>/dev/null; then
-            _eff_owner="root"
-        fi
+        # v1.160: _eff_owner is now resolved once at the top of the loop body and
+        # reused here (and in the create branch above) so an absent optional-module
+        # owner never causes an enforcement error.
         if [[ "$act_owner" != "$_eff_owner" || "$act_group" != "$exp_group" ]]; then
             perms_say "Fixing ownership: $path ($act_owner:$act_group → $_eff_owner:$exp_group)"
             if ! perms_run chown "$_eff_owner:$exp_group" "$path"; then
