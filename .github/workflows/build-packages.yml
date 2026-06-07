@@ -60,20 +60,34 @@ jobs:
           YQ_VERSION=$(grep -oh 'YQ_VERSION="[0-9.]*"' packaging/build_nftban.sh | head -1 | cut -d'"' -f2)
           echo "yq version: $YQ_VERSION"
 
-          curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /tmp/yq_linux_amd64
-          ACTUAL_SHA=$(sha256sum /tmp/yq_linux_amd64 | cut -d' ' -f1)
+          # v1.157 PR-A: route the fetch through the shared fetch_verified
+          # helper (retry + fail-fast + bounded timeouts + atomic write +
+          # checksum verify) so a transient blip no longer turns into a hard
+          # SHA-mismatch failure on a partial body. The helper verifies the
+          # checksum internally; on failure we re-download once to compute the
+          # actual SHA for the "bundled checksum is outdated" maintainer hint.
+          # shellcheck source=packaging/lib/fetch_verified.sh
+          . packaging/lib/fetch_verified.sh
+          YQ_URL="https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
 
-          echo "Expected: $YQ_SHA256"
-          echo "Actual:   $ACTUAL_SHA"
-
-          if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
-            echo "ERROR: yq checksum mismatch!"
-            echo "The bundled checksum is outdated. Update with:"
-            echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+          if fetch_verified "$YQ_URL" "$YQ_SHA256" /tmp/yq_linux_amd64; then
+            echo "✅ yq checksum validated successfully"
+          else
+            echo "ERROR: yq fetch/verify failed."
+            echo "Re-downloading to report the actual checksum (network blip vs. outdated pin)..."
+            if curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+                    --connect-timeout 10 --max-time 120 -sS \
+                    -o /tmp/yq_linux_amd64.actual "$YQ_URL"; then
+              ACTUAL_SHA=$(sha256sum /tmp/yq_linux_amd64.actual | cut -d' ' -f1)
+              echo "Expected: $YQ_SHA256"
+              echo "Actual:   $ACTUAL_SHA"
+              if [[ "$YQ_SHA256" != "$ACTUAL_SHA" ]]; then
+                echo "The bundled checksum is outdated. Update with:"
+                echo "  YQ_SHA256=\"$ACTUAL_SHA\""
+              fi
+            fi
             exit 1
           fi
-
-          echo "✅ yq checksum validated successfully"
 
   # ==========================================================================
   # BUILD GO BINARIES
