@@ -48,7 +48,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          # GOTOOLCHAIN=local intentionally NOT set: this job installs the
+          # third-party osv-scanner tool, whose go directive may require a
+          # newer toolchain; local would block that auto-fetch.
+          go-version: '1.25.11'
 
       - name: Install OSV-Scanner
         run: |

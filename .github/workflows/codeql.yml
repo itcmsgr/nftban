@@ -48,7 +48,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.6.0
         with:
-          go-version: '1.25'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.11`).
+          # GOTOOLCHAIN=local intentionally NOT set: CodeQL drives its own Go
+          # autobuild; forcing local could interfere with its build resolution.
+          go-version: '1.25.11'
 
       - name: Cache Go modules
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.3.0

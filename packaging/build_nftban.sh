@@ -387,12 +387,24 @@ while IFS= read -r dir_line; do
 done < %{_sourcedir}/nftban-files.inc
 
 # Download yq at BUILD time (supply-chain safe - not at install time)
-# SHA256 verified before bundling in package
+# SHA256 verified before bundling in package.
+# v1.157 PR-A: hardened fetch (retry + fail-fast + bounded timeouts + atomic
+# write + checksum verify). Identical behaviour to packaging/lib/fetch_verified.sh
+# but inlined here because this runs inside the rpmbuild install scriptlet where the
+# helper file is not staged/sourceable. A transient blip no longer leaves a
+# bad/partial body that the SHA pin then hard-fails on.
 YQ_VERSION="4.44.1"
 YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
 echo "Downloading yq v\${YQ_VERSION} for bundling..."
-curl -sL "https://github.com/mikefarah/yq/releases/download/v\${YQ_VERSION}/yq_linux_amd64" -o yq_linux_amd64
-echo "\${YQ_SHA256}  yq_linux_amd64" | sha256sum -c - || { echo "yq checksum verification failed!"; exit 1; }
+yq_tmp=\$(mktemp ./.yq_fetch.XXXXXX)
+curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \\
+     --connect-timeout 10 --max-time 120 -sS \\
+     -o "\${yq_tmp}" \\
+     "https://github.com/mikefarah/yq/releases/download/v\${YQ_VERSION}/yq_linux_amd64" \\
+     || { echo "yq download failed!"; rm -f "\${yq_tmp}"; exit 1; }
+echo "\${YQ_SHA256}  \${yq_tmp}" | sha256sum -c - \\
+     || { echo "yq checksum verification failed!"; rm -f "\${yq_tmp}"; exit 1; }
+mv -f "\${yq_tmp}" yq_linux_amd64
 
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
@@ -1736,12 +1748,20 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-installer" "${deb_root}/usr/lib/nftban/bin/"
 
     # Download yq at BUILD time (supply-chain safe - not at install time)
-    # SHA256 verified before bundling in package
+    # SHA256 verified before bundling in package.
+    # v1.157 PR-A: use the shared fetch_verified helper (retry + fail-fast +
+    # atomic write + checksum verify) so a transient blip no longer leaves a
+    # bad/partial body that the SHA pin then hard-fails on.
     local YQ_VERSION="4.44.1"
     local YQ_SHA256="6dc2d0cd4e0caca5aeffd0d784a48263591080e4a0895abe69f3a76eb50d1ba3"
     log_info "Downloading yq v${YQ_VERSION} for bundling..."
-    curl -sL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o "${BUILD_DIR}/yq_linux_amd64"
-    echo "${YQ_SHA256}  ${BUILD_DIR}/yq_linux_amd64" | sha256sum -c - || { log_error "yq checksum verification failed!"; exit 1; }
+    # shellcheck source=packaging/lib/fetch_verified.sh
+    . "${SCRIPT_DIR}/lib/fetch_verified.sh"
+    fetch_verified \
+        "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" \
+        "${YQ_SHA256}" \
+        "${BUILD_DIR}/yq_linux_amd64" \
+        || { log_error "yq checksum verification failed!"; exit 1; }
     install -m 0755 "${BUILD_DIR}/yq_linux_amd64" "${deb_root}/usr/lib/nftban/bin/yq"
     log_info "yq v${YQ_VERSION} bundled (SHA256 verified)"
 
