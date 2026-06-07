@@ -635,9 +635,14 @@ nftban_portscan_classic_cleanup_old_entries() {
         local new_timestamps=""
         local has_recent=false
 
-        # Use read -ra to properly split into array
+        # Use read -ra to properly split into array. v1.156 PR-D: timestamps
+        # are space-joined (see assignment "${current_timestamps} ${timestamp}"
+        # at the tracker), so split on whitespace EXPLICITLY. A bare read -ra
+        # would inherit a strict IFS=$'\n\t' (strict.sh) from the caller and
+        # collapse the whole string into one element — same bug family as the
+        # v1.152 feeds-select fix.
         local -a ts_array
-        read -ra ts_array <<< "$timestamps"
+        IFS=$' \t\n' read -ra ts_array <<< "$timestamps"
 
         for ts in "${ts_array[@]}"; do
             # Skip empty or non-numeric entries
@@ -727,9 +732,11 @@ nftban_portscan_classic_detect_scan_type() {
     # Check for strobe scan (rapid scanning of common ports)
     if [[ $port_count -ge $strobe_ports ]]; then
         local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
-        # Convert to array, filtering empty elements
+        # Convert to array, filtering empty elements. v1.156 PR-D: timestamps
+        # are space-joined, so split on whitespace EXPLICITLY — a bare read -ra
+        # would collapse them into one element under a strict IFS=$'\n\t' caller.
         local -a ts_array
-        read -ra ts_array <<< "$timestamps"
+        IFS=$' \t\n' read -ra ts_array <<< "$timestamps"
         local ts_count=${#ts_array[@]}
 
         if [[ $ts_count -gt 1 ]]; then

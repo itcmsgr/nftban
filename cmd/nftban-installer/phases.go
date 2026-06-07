@@ -80,6 +80,36 @@ type phaseData struct {
 // This is intentionally package-level since phases run sequentially in a single process.
 var globalPhaseData phaseData
 
+// phaseNames is the canonical set of installer phase identifiers used for the
+// greppable [PHASE] boundary markers (v1.156 PR-C). The strings are stable,
+// lowercase, and MUST match the phase function set 1:1 (phaseDetect →
+// "detect", phasePrepare → "prepare", phaseSwitch → "switch",
+// phaseConfigure → "configure", phaseValidate → "validate"). The parity test
+// (phase_markers_test.go) fails if a phase function is added/removed without
+// updating this set, so a new phase cannot silently ship without markers.
+var phaseNames = []string{
+	"detect",
+	"prepare",
+	"switch",
+	"configure",
+	"validate",
+}
+
+// phaseStartMarker / phaseEndMarker are logging-string-only boundary markers
+// written to installer.log so post-mortem tooling can grep phase boundaries
+// (e.g. `grep '\[PHASE\] switch' installer.log`). They emit NO control-flow
+// effect — purely an Info log line. "start" is emitted at the top of each
+// phase function; "end" only on the successful terminal return (an error
+// transition deliberately leaves no "end" marker, which is itself a signal
+// that the phase did not complete).
+func phaseStartMarker(log *logging.Logger, name string) {
+	log.Info("[PHASE] %s start", name)
+}
+
+func phaseEndMarker(log *logging.Logger, name string) {
+	log.Info("[PHASE] %s end", name)
+}
+
 // phaseDetect discovers SSH port, panel, conflicts, distro, authority decision.
 //
 // V125 R-3: honors ctx cancellation at the phase entry and before the final
@@ -87,6 +117,7 @@ var globalPhaseData phaseData
 // hosts) but interior checks let `--timeout` reclaim wall-clock if a single
 // detector hangs on a slow kernel/distro probe.
 func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	phaseStartMarker(log, "detect")
 	pd := &globalPhaseData
 
 	// V125 R-3: context cancellation guard at phase entry. Returns before
@@ -197,6 +228,7 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	log.PhaseEnd("Detect")
+	phaseEndMarker(log, "detect")
 	return sf.Transition(state.StateDetectComplete, state.PhaseDetect, "")
 }
 
@@ -208,6 +240,7 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 // chmod, tmpfiles) are interior to fhs/services packages and reach their
 // own kernel boundaries quickly; we don't add ctx checks for those.
 func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	phaseStartMarker(log, "prepare")
 	pd := &globalPhaseData
 
 	// V125 R-3: context cancellation guard at phase entry.
@@ -319,6 +352,7 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	render.PersistSSHPortsUnion(exec, pd.sshPorts, log)
 
 	log.PhaseEnd("Prepare")
+	phaseEndMarker(log, "prepare")
 	return sf.Transition(state.StatePrepareComplete, state.PhasePrepare, "")
 }
 
@@ -340,6 +374,7 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 //     from the emergency table to the nftban ruleset. Cancelling mid-chain
 //     could leave the host with neither protector.
 func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	phaseStartMarker(log, "switch")
 	pd := &globalPhaseData
 	emergencyInjected := false
 
@@ -427,6 +462,7 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	}
 
 	log.PhaseEnd("Switch")
+	phaseEndMarker(log, "switch")
 	return sf.Transition(state.StateSwitchComplete, state.PhaseSwitch, "")
 }
 
@@ -437,6 +473,7 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 // existing between-phase check in main.go covers the realistic
 // cancellation surface without splitting service-start ordering.
 func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	phaseStartMarker(log, "configure")
 	pd := &globalPhaseData
 
 	// V125 R-3: context cancellation guard at phase entry.
@@ -505,6 +542,7 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 	services.RestartPolkit(exec, log)
 
 	log.PhaseEnd("Configure")
+	phaseEndMarker(log, "configure")
 	return sf.Transition(state.StateServicesComplete, state.PhaseConfigure, "")
 }
 
@@ -524,6 +562,7 @@ func phaseConfigure(ctx context.Context, exec executor.Executor, sf *state.State
 // inside phaseValidate where a meaningful wall-clock budget is at risk
 // — assertions themselves are quick.
 func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateFile, log *logging.Logger) error {
+	phaseStartMarker(log, "validate")
 	pd := &globalPhaseData
 
 	// V125 R-3: context cancellation guard at phase entry.
@@ -562,6 +601,7 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	if validate.AllPassed(results) {
 		log.Info("all post-install assertions passed — COMMITTED")
 		_ = exec.Remove(fhs.InstallFailedMarker)
+		phaseEndMarker(log, "validate")
 		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
 	}
 
@@ -596,6 +636,7 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 	if validate.AllPassed(results2) {
 		log.Info("VALIDATE_2: all assertions passed after safe auto-fix — COMMITTED")
 		_ = exec.Remove(fhs.InstallFailedMarker)
+		phaseEndMarker(log, "validate")
 		return sf.Transition(state.StateCommitted, state.PhaseValidate, "")
 	}
 
