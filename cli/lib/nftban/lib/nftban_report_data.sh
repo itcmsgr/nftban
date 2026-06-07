@@ -667,6 +667,161 @@ _ssh_effective_directive() {
     fi
 }
 
+# -----------------------------------------------------------------------------
+# MAC posture detection (v1.158) — AppArmor + SELinux, read-only, non-root-safe.
+#
+# Reports whether NFTBan's OWN MAC profile/module is loaded and enforcing:
+#   - AppArmor profile name : nftband   (install/apparmor/usr.lib.nftban.bin.nftband)
+#   - SELinux module  name  : nftban    (semodule -i nftban.pp; lists as "nftban")
+#
+# Distro-aware: it does NOT WARN about a MAC system the host does not run
+# (no AppArmor WARN on SELinux/RPM hosts; no SELinux WARN on Debian/Ubuntu).
+#
+# Echoes one pipe-delimited line, then sub-results:
+#   SYSTEM|VERDICT|MODE|SUMMARY|DETAIL
+# where
+#   SYSTEM  = apparmor | selinux | none
+#   VERDICT = PASS | WARN | INFO
+#   MODE    = enforcing | complain | permissive | disabled | n/a | unknown
+#   SUMMARY = short compact phrase (e.g. "AppArmor enforcing")
+#   DETAIL  = longer human sentence for the detailed view / remediation
+#
+# All command lookups are guarded; missing tooling degrades to INFO, never WARN,
+# never crash, no noisy stderr.
+# -----------------------------------------------------------------------------
+_nftban_mac_posture() {
+    # Run with relaxed errexit/pipefail: this function intentionally probes
+    # commands that may be absent and runs greps that legitimately find no match.
+    # A non-zero from any of those must NOT abort the function before it echoes
+    # its result line. Callers guard the call too (`... || fallback`), but make
+    # the function self-contained so it is safe under any caller's `set -e`.
+    local _saved_opts
+    _saved_opts=$(set +o)
+    set +eo pipefail
+
+    local aa_profile="nftband"      # AppArmor profile name (the daemon)
+    local se_module="nftban"        # SELinux module name
+    local _result=""
+
+    # Single exit point: restore the caller's shell options, emit, return.
+    _mac_emit() { _result="$1"; }
+
+    # --- AppArmor -------------------------------------------------------------
+    # Prefer aa-status; fall back to the securityfs profiles list if readable.
+    local aa_present="no" aa_enabled="no" aa_profile_state=""
+    if command -v aa-status >/dev/null 2>&1; then
+        aa_present="yes"
+        local aa_out
+        # aa-status exits non-zero when AppArmor is not enabled; tolerate it.
+        aa_out=$(aa-status 2>/dev/null) || true
+        if [[ -n "$aa_out" ]]; then
+            aa_enabled="yes"
+            # Look for the nftband profile and its mode. aa-status prints e.g.
+            # "   /usr/lib/nftban/bin/nftband (enforce)" or "(complain)".
+            local aa_line
+            aa_line=$(printf '%s\n' "$aa_out" | grep -E "(^|[/ ])${aa_profile}( |\()|/nftband( |\()" 2>/dev/null | head -n1)
+            if [[ -n "$aa_line" ]]; then
+                if printf '%s' "$aa_line" | grep -qi 'enforce'; then
+                    aa_profile_state="enforce"
+                elif printf '%s' "$aa_line" | grep -qi 'complain'; then
+                    aa_profile_state="complain"
+                else
+                    aa_profile_state="loaded"
+                fi
+            fi
+        fi
+    elif [[ -r "${NFTBAN_AA_PROFILES_FILE:-/sys/kernel/security/apparmor/profiles}" ]]; then
+        aa_present="yes"
+        aa_enabled="yes"
+        local aa_line
+        aa_line=$(grep -E "(^|/)${aa_profile} " "${NFTBAN_AA_PROFILES_FILE:-/sys/kernel/security/apparmor/profiles}" 2>/dev/null | head -n1)
+        if [[ -n "$aa_line" ]]; then
+            # Format: "<profile name> (enforce)" / "(complain)"
+            if printf '%s' "$aa_line" | grep -qi 'enforce'; then
+                aa_profile_state="enforce"
+            elif printf '%s' "$aa_line" | grep -qi 'complain'; then
+                aa_profile_state="complain"
+            else
+                aa_profile_state="loaded"
+            fi
+        fi
+    fi
+
+    if [[ "$aa_enabled" == "yes" ]]; then
+        case "$aa_profile_state" in
+            enforce)
+                _mac_emit "apparmor|PASS|enforcing|AppArmor enforcing|AppArmor profile '${aa_profile}' is loaded and enforcing." ;;
+            complain)
+                _mac_emit "apparmor|WARN|complain|AppArmor complain-only|AppArmor profile '${aa_profile}' is loaded in complain mode (not enforcing). Enforce with: aa-enforce /etc/apparmor.d/usr.lib.nftban.bin.nftband" ;;
+            loaded)
+                _mac_emit "apparmor|PASS|enforcing|AppArmor loaded|AppArmor profile '${aa_profile}' is loaded." ;;
+            *)
+                _mac_emit "apparmor|WARN|unknown|AppArmor profile missing|AppArmor is enabled but the NFTBan profile '${aa_profile}' is not loaded. Load with: apparmor_parser -r /etc/apparmor.d/usr.lib.nftban.bin.nftband" ;;
+        esac
+    fi
+
+    # --- SELinux --------------------------------------------------------------
+    # Prefer getenforce; sestatus is a secondary signal. Module via semodule -l.
+    # Skipped when AppArmor already produced a verdict (a host runs one primary
+    # MAC system; AppArmor-on-Debian/Ubuntu takes precedence here).
+    local se_mode="" se_present="no"
+    if [[ -z "$_result" ]]; then
+        if command -v getenforce >/dev/null 2>&1; then
+            se_present="yes"
+            se_mode=$(getenforce 2>/dev/null | tr '[:upper:]' '[:lower:]') || se_mode=""
+        elif command -v sestatus >/dev/null 2>&1; then
+            se_present="yes"
+            # "Current mode:                   enforcing"
+            se_mode=$(sestatus 2>/dev/null | awk -F: '/Current mode/{gsub(/^[ \t]+/,"",$2); print tolower($2); exit}') || se_mode=""
+        fi
+    fi
+
+    if [[ -z "$_result" && "$se_present" == "yes" && -n "$se_mode" && "$se_mode" != "disabled" ]]; then
+        # SELinux is active (enforcing or permissive). Is the NFTBan module loaded?
+        local se_module_loaded="no"
+        if command -v semodule >/dev/null 2>&1; then
+            if semodule -l 2>/dev/null | grep -qiE "(^|[[:space:]])${se_module}([[:space:]]|$)"; then
+                se_module_loaded="yes"
+            fi
+        else
+            se_module_loaded="unknown"
+        fi
+
+        if [[ "$se_mode" == "enforcing" ]]; then
+            if [[ "$se_module_loaded" == "yes" ]]; then
+                _mac_emit "selinux|PASS|enforcing|SELinux enforcing|SELinux is Enforcing and the NFTBan module '${se_module}' is loaded."
+            elif [[ "$se_module_loaded" == "unknown" ]]; then
+                _mac_emit "selinux|INFO|enforcing|SELinux enforcing|SELinux is Enforcing; cannot confirm the NFTBan module (semodule unavailable)."
+            else
+                _mac_emit "selinux|WARN|enforcing|SELinux module missing|SELinux is Enforcing but the NFTBan module '${se_module}' is not loaded. Load with: semodule -i /usr/share/nftban/selinux/nftban.pp"
+            fi
+        else
+            # permissive (active but not enforcing)
+            if [[ "$se_module_loaded" == "yes" ]]; then
+                _mac_emit "selinux|WARN|permissive|SELinux permissive|SELinux is Permissive (not enforcing); the NFTBan module '${se_module}' is loaded but not enforced. Set Enforcing for confinement."
+            else
+                _mac_emit "selinux|WARN|permissive|SELinux permissive|SELinux is Permissive and the NFTBan module '${se_module}' is not loaded."
+            fi
+        fi
+    fi
+
+    # --- Neither MAC system active -------------------------------------------
+    # Distinguish "tooling present but disabled" from "no MAC system at all".
+    if [[ -z "$_result" ]]; then
+        if [[ "$aa_present" == "yes" || "$se_present" == "yes" ]]; then
+            _mac_emit "none|INFO|disabled|MAC not enabled|A MAC system is present but not enabled (AppArmor/SELinux disabled). Not applicable."
+        else
+            _mac_emit "none|INFO|n/a|MAC not applicable|No AppArmor/SELinux tooling detected on this host. Not applicable."
+        fi
+    fi
+
+    unset -f _mac_emit
+    # Restore the caller's original shell options before returning.
+    eval "$_saved_opts" 2>/dev/null || true
+    printf '%s\n' "$_result"
+    return 0
+}
+
 _collect_posture_info() {
     local -n _pdata="$1"
     local issues=0
@@ -771,6 +926,24 @@ _collect_posture_info() {
             ((warnings++)) || true
             posture_details+="Config: ${drift_count} file(s) modified; "
         fi
+    fi
+
+    # 5. MAC posture (v1.158) — AppArmor / SELinux for NFTBan's own profile.
+    # Read-only, non-root-graceful, distro-aware (no WARN on a host that does not
+    # run that MAC system). Only an actual WARN contributes to the advisory count
+    # and the compact details; PASS/INFO are recorded for callers but stay quiet
+    # in the compact line so a healthy/N-A host shows no MAC noise.
+    local mac_line mac_system mac_verdict mac_mode mac_summary mac_detail
+    mac_line=$(_nftban_mac_posture 2>/dev/null) || mac_line="none|INFO|n/a|MAC not applicable|"
+    IFS='|' read -r mac_system mac_verdict mac_mode mac_summary mac_detail <<<"$mac_line"
+    _pdata[POSTURE_MAC_SYSTEM]="${mac_system:-none}"
+    _pdata[POSTURE_MAC_VERDICT]="${mac_verdict:-INFO}"
+    _pdata[POSTURE_MAC_MODE]="${mac_mode:-n/a}"
+    _pdata[POSTURE_MAC_SUMMARY]="${mac_summary:-}"
+    _pdata[POSTURE_MAC_DETAIL]="${mac_detail:-}"
+    if [[ "$mac_verdict" == "WARN" ]]; then
+        ((warnings++)) || true
+        posture_details+="MAC: ${mac_summary}; "
     fi
 
     # Determine overall posture status

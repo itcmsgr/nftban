@@ -1287,9 +1287,12 @@ _status_section_health() {
         security_status="${security_issues} systemd issue(s)"
     fi
 
-    # Get posture status + details (SSH, sudo, systemd, config integrity)
+    # Get posture status + details (SSH, sudo, systemd, config integrity, MAC)
     local posture_status="PROTECTED"
     local posture_details=""
+    local posture_mac_verdict="INFO"
+    local posture_mac_summary=""
+    local posture_mac_system="none"
     if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" 2>/dev/null || true
@@ -1298,6 +1301,13 @@ _status_section_health() {
             _collect_posture_info _posture_data 2>/dev/null || true
             posture_status="${_posture_data[POSTURE_STATUS]:-OK}"
             posture_details="${_posture_data[POSTURE_DETAILS]:-}"
+            # v1.158: compact MAC posture row (advisory-only). Shown when a MAC
+            # system applies (PASS or WARN); the WARN already feeds the advisory
+            # count + posture_details via the collector, so here we only surface a
+            # terse PASS row. N/A (no MAC system) shows nothing.
+            posture_mac_verdict="${_posture_data[POSTURE_MAC_VERDICT]:-INFO}"
+            posture_mac_summary="${_posture_data[POSTURE_MAC_SUMMARY]:-}"
+            posture_mac_system="${_posture_data[POSTURE_MAC_SYSTEM]:-none}"
             unset _posture_data
         fi
     fi
@@ -1327,6 +1337,14 @@ _status_section_health() {
             done
             unset IFS
         fi
+    fi
+
+    # v1.158: terse MAC posture row. A WARN is already surfaced above (it feeds
+    # posture_details + the advisory count). Here we add a quiet PASS row so the
+    # operator can see MAC is actually enforcing; N/A (no MAC system) prints
+    # nothing to avoid noise on hosts without that MAC system.
+    if [[ "$posture_mac_system" != "none" && "$posture_mac_verdict" == "PASS" && -n "$posture_mac_summary" ]]; then
+        printf "      → MAC: %s\n" "$posture_mac_summary"
     fi
 
     # Show hints if not OK (only in non-quiet mode)
