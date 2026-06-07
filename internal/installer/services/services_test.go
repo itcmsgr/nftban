@@ -89,6 +89,65 @@ func TestReconcileTimers_Default(t *testing.T) {
 	}
 }
 
+// TestReconcileTimers_GeobanRefreshEnabled — v1.156 PR-A. The geoban-refresh
+// timer ships under install/systemd/ and is listed in the install set, but
+// before v1.156 it was absent from coreTimers, so a default install left it
+// installed-but-not-auto-enabled. This asserts the reconcile (coreTimers) loop
+// now issues BOTH `systemctl enable` and `systemctl start` for it, matching the
+// best-effort enableAndStart path used by the other core timers (it is NOT in
+// criticalCoreTimers — failure must not DEGRADE the install).
+func TestReconcileTimers_GeobanRefreshEnabled(t *testing.T) {
+	mock := executor.NewMockExecutor()
+	// No config file → default is reconcile=true.
+	ReconcileTimers(mock, newTestLogger())
+
+	enabled, started := false, false
+	for _, cmd := range mock.Commands {
+		if cmd.Name != "systemctl" || len(cmd.Args) < 2 {
+			continue
+		}
+		if cmd.Args[1] != "nftban-geoban-refresh.timer" {
+			continue
+		}
+		switch cmd.Args[0] {
+		case "enable":
+			enabled = true
+		case "start":
+			started = true
+		}
+	}
+	if !enabled {
+		t.Error("expected nftban-geoban-refresh.timer to be enabled (added to coreTimers in v1.156 PR-A)")
+	}
+	if !started {
+		t.Error("expected nftban-geoban-refresh.timer to be started (best-effort enableAndStart)")
+	}
+}
+
+// TestGeobanRefreshTimerInCoreTimers asserts the geoban-refresh timer is a
+// member of the coreTimers reconcile set but is NOT in criticalCoreTimers
+// (best-effort, must not DEGRADE the install on failure).
+func TestGeobanRefreshTimerInCoreTimers(t *testing.T) {
+	const geoban = "nftban-geoban-refresh.timer"
+
+	inCore := false
+	for _, n := range coreTimers {
+		if n == geoban {
+			inCore = true
+			break
+		}
+	}
+	if !inCore {
+		t.Errorf("%s must be in coreTimers (v1.156 PR-A)", geoban)
+	}
+
+	for _, n := range criticalCoreTimers {
+		if n == geoban {
+			t.Errorf("%s must NOT be in criticalCoreTimers — keep best-effort", geoban)
+		}
+	}
+}
+
 func TestReconcileTimers_Disabled(t *testing.T) {
 	mock := executor.NewMockExecutor()
 	mock.Files["/etc/nftban/nftban.conf"] = []byte("NFTBAN_RECONCILE_CORE_TIMERS=\"false\"\n")
