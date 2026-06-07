@@ -132,9 +132,13 @@ source "$CORE_DIR/nftban_permissions.sh"
 # Reduce the FHS directory map to a minimal, deterministic pair:
 #   one core dir (root-owned) + one suricata-owned log dir (optional module).
 unset NFTBAN_FHS_DIRECTORIES
-# shellcheck disable=SC2034  # consumed by perms_enforce_from_fhs_spec in the sourced module
 declare -gA NFTBAN_FHS_DIRECTORIES=()
+# Per-assignment disable: the array is read by perms_enforce_from_fhs_spec in the
+# sourced module, which ShellCheck cannot follow (SC2034 false positive). The
+# directive only applies to the line that follows it, so each assignment needs it.
+# shellcheck disable=SC2034
 NFTBAN_FHS_DIRECTORIES["$SB/var/core"]="0750|nftban|nftban|core dir"
+# shellcheck disable=SC2034
 NFTBAN_FHS_DIRECTORIES["$SB/log/suricata"]="0770|suricata|nftban|Suricata EVE logs"
 
 echo "=== (a) suricata user ABSENT + dir ABSENT => enforce rc=0 (skip/fallback, no error) ==="
