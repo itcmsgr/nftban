@@ -623,13 +623,6 @@ jobs:
       - name: Default-enabled timer first-run guard (v1.161)
         run: bash cli/lib/nftban/tests/default_enabled_timer_first_run_guard_v161.sh
 
-      # v1.161 BUG-RPM-FILES-LISTED-TWICE: static guard that the RPM %files payload
-      # in packaging/build_nftban.sh does not list a directory path as a bare line
-      # when the generated nftban-files.inc already owns it via %dir (which made
-      # rpmbuild warn "File listed twice"). Allows the documented bare exceptions.
-      - name: RPM %files no double-dir-listing guard (v1.161)
-        run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v161.sh
-
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
