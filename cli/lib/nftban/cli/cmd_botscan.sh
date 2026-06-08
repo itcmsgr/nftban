@@ -298,7 +298,14 @@ _nftban_botscan_stats_json() {
         else
             local enabled_json="false"
             [[ "$botscan_enabled" == "true" ]] && enabled_json="true"
-            data="{\"botscan\":{\"enabled\":$enabled_json,\"action_mode\":\"$action_mode\",\"patterns_total\":$patterns_total,\"patterns_enabled\":$patterns_enabled,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total}}"
+            # v1.167 PR-2 (B): escape the only free-form string field
+            # ($action_mode) so a value containing a quote/backslash/newline
+            # cannot break the hand-built JSON in the no-jq fallback path.
+            local action_mode_esc="$action_mode"
+            if declare -f json_escape >/dev/null 2>&1; then
+                action_mode_esc=$(json_escape "$action_mode")
+            fi
+            data="{\"botscan\":{\"enabled\":$enabled_json,\"action_mode\":\"$action_mode_esc\",\"patterns_total\":$patterns_total,\"patterns_enabled\":$patterns_enabled,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total}}"
         fi
 
         json_output "true" "$data"
