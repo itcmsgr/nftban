@@ -583,6 +583,14 @@ install -m 0755 scripts/nftban-soak-check.sh %{buildroot}/usr/lib/nftban/scripts
 mkdir -p %{buildroot}/usr/lib/nftban/tests
 find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildroot}/usr/lib/nftban/tests/ \;
 
+# v1.165 PR-B: the lib payload dirs are listed as <dir>/* in the manifest below,
+# but the rpm /<dir>/* glob does NOT match dotfiles, so any staged dotfile (e.g.
+# tests/.gitkeep brought in by the recursive cp above) would be left unpackaged
+# and fail the strict EL9/EL10 build. Strip dotfiles from the buildroot lib tree
+# so every /usr/lib/nftban/<dir>/* line is complete. No real shipped file under
+# /usr/lib/nftban is a dotfile.
+find %{buildroot}/usr/lib/nftban -name '.*' -type f -delete
+
 # Config directories (must match the files manifest)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,access.d}
 mkdir -p %{buildroot}/etc/nftban/conf.d/botguard
@@ -1376,21 +1384,24 @@ fi
 %include %{_sourcedir}/nftban-files.inc
 # Binary entry point (explicit attr; NOT a directory)
 %attr(0750,root,nftban) /usr/sbin/nftban
-# Package payload trees (bare paths -> recursive include of files within generator-owned dirs)
-/usr/lib/nftban/bin
-/usr/lib/nftban/sbin
+# v1.165 PR-B: payload dir CONTENTS only (<dir>/*); the dir nodes themselves are
+# %dir-owned by the generator manifest (%include nftban-files.inc) so listing the
+# bare dir here too made strict rpm 4.16 (EL9/EL10) warn "File listed twice".
+# Dotfiles under these dirs are stripped earlier in the build so /* is complete.
+/usr/lib/nftban/bin/*
+/usr/lib/nftban/sbin/*
 /usr/lib/nftban/VERSION
 /usr/lib/nftban/BUILD_TARGET
-/usr/lib/nftban/cli
-/usr/lib/nftban/core
-/usr/lib/nftban/lib
-/usr/lib/nftban/cron
-/usr/lib/nftban/helpers
-/usr/lib/nftban/setup
-/usr/lib/nftban/exporters
-/usr/lib/nftban/tests
-/usr/lib/nftban/data
-/usr/lib/nftban/health
+/usr/lib/nftban/cli/*
+/usr/lib/nftban/core/*
+/usr/lib/nftban/lib/*
+/usr/lib/nftban/cron/*
+/usr/lib/nftban/helpers/*
+/usr/lib/nftban/setup/*
+/usr/lib/nftban/exporters/*
+/usr/lib/nftban/tests/*
+/usr/lib/nftban/data/*
+/usr/lib/nftban/health/*
 /usr/lib/nftban/*.sh
 %doc /usr/lib/nftban/README.md
 # v1.50.0: template with placeholders (always replaced on upgrade, NOT %config)
