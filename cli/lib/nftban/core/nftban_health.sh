@@ -515,6 +515,7 @@ nftban_health_check_all() {
     nftban_health_check_set_sizes || { ((warnings++)) || true; }
     nftban_health_check_conflicting_firewalls || { ((warnings++)) || true; }
     nftban_health_check_ruleset_fingerprint || { ((warnings++)) || true; }
+    nftban_health_check_immutable_flags || { ((warnings++)) || true; }
     nftban_health_check_ssh_port || { ((warnings++)) || true; }
     nftban_health_check_systemd_hardening || { ((warnings++)) || true; }
     nftban_health_check_memory_protection || { ((warnings++)) || true; }
