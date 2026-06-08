@@ -556,6 +556,12 @@ find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl;
     install -D -m 0644 "\$tmpl" "%{buildroot}/usr/share/nftban/templates/\$rel_path"
 done
 
+# v1.166 PR-C: the template subdirs are listed as <dir>/* in the manifest, and
+# the rpm /<dir>/* glob does NOT match dotfiles. Strip dotfiles from the staged
+# templates tree so no hidden file is left unpackaged on the strict EL9/EL10
+# build. No real shipped template is a dotfile.
+find %{buildroot}/usr/share/nftban/templates -name '.*' -type f -delete
+
 # Man page deliberately not shipped (registry-canonical since v1.95.0).
 # PR #646 deleted the source files; V123 B-1 residual-refs PR completed
 # the surrounding cleanup across DEB+RPM symmetrically — see build_deb()
@@ -1421,7 +1427,17 @@ fi
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
 # Shared data
 /usr/share/nftban/specs/structure_default.json
-/usr/share/nftban/templates
+# v1.166 PR-C: template subdir CONTENTS only (<dir>/*); the dir nodes are
+# %dir-owned by the generator manifest (%include nftban-files.inc). Listing the
+# bare /usr/share/nftban/templates dir here too made strict rpm 4.16 (EL9/EL10)
+# warn "File listed twice". email/ + partials/ now have generator %dir too (so
+# their staged .html are no longer orphaned). zabbix/ stays an empty generator-
+# owned %dir (no source content -> no /* line). Dotfiles are stripped in the
+# install section above so /* is complete.
+/usr/share/nftban/templates/mail/*
+/usr/share/nftban/templates/reports/*
+/usr/share/nftban/templates/email/*
+/usr/share/nftban/templates/partials/*
 /usr/share/nftban/selinux
 /usr/share/bash-completion/completions/nftban
 %attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml

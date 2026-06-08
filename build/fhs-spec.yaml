@@ -946,6 +946,20 @@ directories:
       description: "Report templates"
       created_by: package
 
+    - path: /usr/share/nftban/templates/email
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Email templates (HTML)"
+      created_by: package
+
+    - path: /usr/share/nftban/templates/partials
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Email/report partial templates (HTML)"
+      created_by: package
+
     - path: /usr/share/nftban/templates/zabbix
       mode: "0755"
       owner: root
