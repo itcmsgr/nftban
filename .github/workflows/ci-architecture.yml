@@ -643,6 +643,17 @@ jobs:
       - name: Static nftables fallback is set-driven (v1.162 PR-B)
         run: bash cli/lib/nftban/tests/static_nftables_ssh_set_driven_v162.sh
 
+      # v1.165 PR-A: generated-spec comment-macro lint. rpm 4.16 (EL9/EL10)
+      # parses a bare unescaped %install token in a SPEC COMMENT as a second
+      # %install section (`error: second %install`) and fails Build RPM
+      # el9/el10 deterministically — this bit twice (v1.157 FIX_V157_PR_A,
+      # v1.164 PR-C revert) because rpm 4.18 (lab2) + rpm 6.x are lenient and
+      # miss it. This hermetic static guard catches the class BEFORE the
+      # expensive el9/el10 rpmbuild: zero %install outside the single section
+      # header, and no bare RPM section macro in any generated-spec comment.
+      - name: RPM spec has no section macro in a comment (v1.165 PR-A)
+        run: bash cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
