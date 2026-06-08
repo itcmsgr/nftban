@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.167.0] - 2026-06-08 — UX residual (CLI output-truth + hygiene)
+
+**Codename:** `V167_UX_RESIDUAL`
+**Controlling record:** `NFTBAN_ROADMAP/V167_UX_RESIDUAL_SCOPE.md`
+**PRs:** [#806](https://github.com/itcmsgr/nftban/pull/806) (PR-1, sq `c7bd820d`) · [#807](https://github.com/itcmsgr/nftban/pull/807) (PR-2, sq `251b29a0`) · [#808](https://github.com/itcmsgr/nftban/pull/808) (PR-3, sq `0c3f157f`)
+
+> **Why:** close the open UX-residual debts. A v1.166 code-challenge found over half the original list (UX-C2/C3/C4/C6, RC-CONTRACT, several §10/§13/§15 items) was already fixed in v1.141–v1.153 and verified-closed; this lane ships the genuinely-open remainder. **Shell/CLI only** — daemon `cmd/nftband` byte-identical (chain v1.147→v1.167; tree `85a2de3e…`); schema 1.83.0 frozen; FHS body byte-unchanged; no `internal/validator` Go touched.
+
+### Fixed — feed-counter drift (BUG-CtCount-feeds) [PR-1]
+- New shared helpers `cli/lib/nftban/lib/nftban_feed_counters.sh`: `nftban_feed_ips_total()` (enabled-feed IP sum) + `nftban_feed_file_count()` (enabled-feed file count). The three previously-independent total computations — `cmd_status.sh` (was `find … *.txt | wc -l` over **all** files incl. disabled/orphans), `core/nftban_stats_collect.sh` (cat-all), `cmd_feeds.sh` aggregates — now route through the helpers, ending the drift. The v1.141 labelled surfaces ("Feed file count" / "Feed IP total") are preserved; per-single-feed displays untouched. Test `feed_counters_unify_v167_test.sh` 4/0.
+
+### Changed — CLI output-truth + flag-parity [PR-2]
+- **JSON safety:** the no-jq fallback paths in `cmd_botscan.sh` (`action_mode`) and `cmd_debug.sh` (`trace_log`/`log_level`) now escape via the existing `helpers/json_output.sh json_escape()` — no more invalid JSON on quotes/backslash/newline. jq-primary paths unchanged.
+- **`nftban update --dry-run`** now emits an explicit hint (`ERROR: --dry-run is not supported for 'nftban update'` / use `nftban update check`, rc=1) instead of the generic "Unknown command".
+- **`nftban-validate` INFO filtering** is now **shell-side** in `cmd_firewall.sh firewall_validate()` — INFO-severity findings are dropped by default (matching `nftban health`), with `--verbose` / `NFTBAN_VALIDATE_VERBOSE=1` to show them. `--json` output is unaffected and **no `internal/validator` Go was modified** (UX-INFO stays a shell post-filter in this lane).
+- **Stats label-casing** aligned (`unified cache` → `UNIFIED CACHE`). The lone `DERIVED` token is a logic-backed cache-miss data-source label (pinned by `v127_ux3` test), not spec residue → retained. Test `cli_output_truth_v167_test.sh` 16/0.
+
+### Removed — orphan shell modules [PR-3]
+- Deleted 10 confirmed-orphan modules (zero inbound real references; staged by RPM `cp -r` but never sourced → dead bytes): `lib/{colors,nft_lock,exporter_utils,nftban_metrics_modes,nftban_vm_enterprise}.sh`, `exporters/nftban_metrics_wrapper.sh`, `core/{nftban_config_safe,nftban_report_engine,nftban_secure_mode,path_validator}.sh`. Anti-orphan guard `no_reintroduced_orphan_modules_v167_test.sh` 11/0. No packaging-spec/FHS edit needed (the recursive `cp -r` drops them).
+
+### Not shipped (separate lanes)
+- **WIKI_ALIGN_V166** — wiki is its own repo; plain-text alignment (4 drift files: stale version, Webmin ×2, a Redis example), **no release number**, done separately.
+- v1.168 state-write atomicity §4.1–4.3 (daemon-Go) · daemon-Go · schema · FHS/packaging · BUG-Explain / `nftban why`.
+
+### Notes
+- **Envelope:** shell/CLI only — `0 cmd/nftband` (daemon byte-identical, tree `85a2de3e…`) · `0` schema (1.83.0 frozen) · `0` FHS body/generator · no packaging/switchop/runtime/firewall change. Three file-disjoint PRs.
+- **Validation:** the 3 v167 tests + 5 existing UX regression guards green; shellcheck + `bash -n` clean; `check-nft-writes` PASS; `generate-fhs-outputs.sh --check` rc=0. CI #806/#807/#808 green (one Docker-Hub `ubuntu:24.04` pull-timeout infra flake rerun-cleared); post-merge main `0c3f157f` green (25 success / 1 skip / 0 fail). The release-prep commit changes only `VERSION`/`STATUS.md`/`CHANGELOG.md`/`nftban_fhs_spec.sh` header — the FHS body (incl. the v1.166 `email`/`partials` ownership) is byte-unchanged.
+
 ## [v1.166.0] - 2026-06-08 — RPM templates %files dedup via FHS-generator correction
 
 **Codename:** `V166_RPM_TEMPLATES_FHS_DEDUP`
