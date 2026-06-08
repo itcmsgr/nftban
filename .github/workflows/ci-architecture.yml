@@ -643,6 +643,21 @@ jobs:
       - name: Static nftables fallback is set-driven (v1.162 PR-B)
         run: bash cli/lib/nftban/tests/static_nftables_ssh_set_driven_v162.sh
 
+      # v1.164 BUG-RPM-FILES-LISTED-TWICE: the RPM %files in build_nftban.sh both
+      # %include nftban-files.inc (which %dir-owns every package dir) AND used to
+      # repeat those dirs as bare payload paths, so strict rpm 4.16/EL9 saw each
+      # %dir node twice ("File listed twice"). v1.164 converts the
+      # /usr/lib/nftban payload dirs to <dir>/* (inc keeps sole %dir ownership),
+      # drops the now-empty tests/ line (its .gitkeep is stripped in %install so
+      # /* would error "contains no files"), and keeps two DOCUMENTED bare
+      # exceptions (templates: un-%dir'd email/+partials/ the generator does not
+      # own yet; selinux: no inc %dir, so its bare line is sole owner). This guard
+      # asserts no path is BOTH a bare %files payload line AND an inc %dir entry
+      # (minus the allowlist), the /* conversions are present, tests/ is dropped,
+      # and the %install .gitkeep strip exists. Hermetic / repo-static.
+      - name: RPM %files no double dir listing guard (v1.164)
+        run: bash cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v164.sh
+
       # =====================================================================
       # v1.86 B86-4: Contract Enforcement — Legacy Regression Blockers
       # =====================================================================
