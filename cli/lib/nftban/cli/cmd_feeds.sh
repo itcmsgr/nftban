@@ -40,6 +40,13 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" || return 1
 fi
+
+# Load shared feed-counter helpers (v1.167 PR-1: single source of truth for
+# feed IP-total / enabled-file-count surfaces — BUG-CtCount-feeds)
+# shellcheck source=/usr/lib/nftban/lib/nftban_feed_counters.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_feed_counters.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_feed_counters.sh" || return 1
+fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
@@ -580,24 +587,38 @@ nftban_feeds_status() {
     # or geoban-derived IPs). Surface them separately so consumers can
     # answer 'how many feeds are enabled' / 'how many IPs across feed files'
     # / 'what does the cache say' independently. (V1_141_0 §2 D-feed-count.)
-    local _feed_files=0 _feed_ip_total=0 _feed_dir
-    _feed_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
-    if [[ -d "$_feed_dir" ]]; then
-        local _all _en
-        _all=$(nftban_feeds_discover_all 2>/dev/null || true)
-        for _en in $_all; do
-            local _is_on
-            _is_on=$(nftban_feeds_get_property "$_en" "ENABLED" 2>/dev/null || echo false)
-            [[ "$_is_on" == "true" ]] || continue
-            local _ff
-            _ff="${_feed_dir}/$(echo "$_en" | tr '[:upper:]' '[:lower:]').txt"
-            if [[ -f "$_ff" ]]; then
-                _feed_files=$((_feed_files + 1))
-                local _ips
-                _ips=$(wc -l < "$_ff" 2>/dev/null || echo 0)
-                _feed_ip_total=$((_feed_ip_total + _ips))
-            fi
-        done
+    # v1.167 PR-1 (BUG-CtCount-feeds): the two labelled surfaces below are now
+    # computed by the shared helpers — the SAME enabled-feed resolution this
+    # block introduced in v1.141 PR-C, lifted into lib/nftban_feed_counters.sh
+    # so cmd_status / the exporter / here all agree. "Feed file count" stays a
+    # FILE count (nftban_feed_file_count); "Feed IP total" stays an IP total
+    # (nftban_feed_ips_total). Fallback keeps the old inline logic if the helper
+    # is somehow unavailable.
+    local _feed_files=0 _feed_ip_total=0
+    if declare -f nftban_feed_file_count >/dev/null 2>&1 \
+        && declare -f nftban_feed_ips_total >/dev/null 2>&1; then
+        _feed_files=$(nftban_feed_file_count)
+        _feed_ip_total=$(nftban_feed_ips_total)
+    else
+        local _feed_dir
+        _feed_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        if [[ -d "$_feed_dir" ]]; then
+            local _all _en
+            _all=$(nftban_feeds_discover_all 2>/dev/null || true)
+            for _en in $_all; do
+                local _is_on
+                _is_on=$(nftban_feeds_get_property "$_en" "ENABLED" 2>/dev/null || echo false)
+                [[ "$_is_on" == "true" ]] || continue
+                local _ff
+                _ff="${_feed_dir}/$(echo "$_en" | tr '[:upper:]' '[:lower:]').txt"
+                if [[ -f "$_ff" ]]; then
+                    _feed_files=$((_feed_files + 1))
+                    local _ips
+                    _ips=$(wc -l < "$_ff" 2>/dev/null || echo 0)
+                    _feed_ip_total=$((_feed_ip_total + _ips))
+                fi
+            done
+        fi
     fi
     echo "  Feed file count:  $_feed_files"
     echo "  Feed IP total:    $_feed_ip_total  (sum across enabled feed files)"
@@ -892,12 +913,26 @@ nftban_feeds_stats() {
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all 2>/dev/null || echo "")
 
+    # v1.167 PR-1 (BUG-CtCount-feeds): the IP AGGREGATE is unified via the
+    # shared nftban_feed_ips_total() helper (enabled-only, same resolution as
+    # cmd_status / the exporter). total_feeds / enabled_count remain counted in
+    # this loop (they are not feed-file counters). Fallback sums inline.
     for feed in $all_feeds; do
         ((total_feeds++)) || true
         local enabled
         enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
         if [[ "$enabled" == "true" ]]; then
             ((enabled_count++)) || true
+        fi
+    done
+
+    if declare -f nftban_feed_ips_total >/dev/null 2>&1; then
+        total_ips=$(nftban_feed_ips_total)
+    else
+        for feed in $all_feeds; do
+            local enabled_f
+            enabled_f=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+            [[ "$enabled_f" == "true" ]] || continue
             local feed_lower="${feed,,}"
             local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
             if [[ -f "$feed_file" ]]; then
@@ -905,8 +940,8 @@ nftban_feeds_stats() {
                 count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
                 total_ips=$((total_ips + count))
             fi
-        fi
-    done
+        done
+    fi
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         local data

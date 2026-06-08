@@ -40,6 +40,19 @@ umask 027
 [[ -n "${NFTBAN_STATS_COLLECT_LOADED:-}" ]] && return 0
 readonly NFTBAN_STATS_COLLECT_LOADED=1
 
+# Load shared feed-counter helpers (v1.167 PR-1: single source of truth for
+# the feed IP-total surface — BUG-CtCount-feeds). Best-effort; helpers degrade
+# to 0 if the feeds-discovery lib is unreachable.
+if ! declare -f nftban_feed_ips_total >/dev/null 2>&1; then
+    _nfc_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_feed_counters.sh"
+    [[ -f "$_nfc_lib" ]] || _nfc_lib="$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_feed_counters.sh"
+    if [[ -f "$_nfc_lib" ]]; then
+        # shellcheck source=/usr/lib/nftban/lib/nftban_feed_counters.sh
+        source "$_nfc_lib" 2>/dev/null || true
+    fi
+    unset _nfc_lib
+fi
+
 # =============================================================================
 # CORE METRICS COLLECTION
 # =============================================================================
@@ -321,14 +334,23 @@ nftban_stats_ban_sources() {
 
     # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
-        # No ban log — still check for loaded feed IPs
+        # No ban log — still check for loaded feed IPs.
+        # v1.167 PR-1: feed IP-total unified via nftban_feed_ips_total()
+        # (BUG-CtCount-feeds). Replaces the prior cat-all `wc -l`, which summed
+        # EVERY .txt (incl. disabled/orphan feeds); the helper sums only ENABLED
+        # feed files (canonical v1.141 PR-C resolution), matching the other
+        # feed IP surfaces.
         local feed_total=0
-        local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
-        if [[ -d "$feeds_dir" ]]; then
-            # shellcheck disable=SC2312  # cat in subshell is fine here
-            feed_total=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
-            feed_total=${feed_total:-0}
+        if declare -f nftban_feed_ips_total >/dev/null 2>&1; then
+            feed_total=$(nftban_feed_ips_total)
+        else
+            local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+            if [[ -d "$feeds_dir" ]]; then
+                # shellcheck disable=SC2312  # cat in subshell is fine here
+                feed_total=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
+            fi
         fi
+        feed_total=${feed_total:-0}
         echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":$feed_total,\"suricata\":0}"
         return 0
     fi
@@ -360,15 +382,21 @@ nftban_stats_ban_sources() {
         local log_feeds
         log_feeds=$(echo "$result" | jq -r '.feeds // 0')
         if [[ "$log_feeds" == "0" ]]; then
-            local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
-            if [[ -d "$feeds_dir" ]]; then
-                local feed_count
-                # shellcheck disable=SC2312  # cat in subshell is fine here
-                feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
-                feed_count=${feed_count:-0}
-                if [[ "$feed_count" -gt 0 ]]; then
-                    result=$(echo "$result" | jq -c ".feeds = $feed_count")
+            # v1.167 PR-1: feed IP-total unified via nftban_feed_ips_total()
+            # (BUG-CtCount-feeds) — same enabled-only resolution as above.
+            local feed_count=0
+            if declare -f nftban_feed_ips_total >/dev/null 2>&1; then
+                feed_count=$(nftban_feed_ips_total)
+            else
+                local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+                if [[ -d "$feeds_dir" ]]; then
+                    # shellcheck disable=SC2312  # cat in subshell is fine here
+                    feed_count=$(cat "$feeds_dir"/*.txt 2>/dev/null | wc -l || true)
                 fi
+            fi
+            feed_count=${feed_count:-0}
+            if [[ "$feed_count" -gt 0 ]]; then
+                result=$(echo "$result" | jq -c ".feeds = $feed_count")
             fi
         fi
     fi
