@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.165.0] - 2026-06-08 — RPM packaging correctness + hidden spec-parser hardening
+
+**Codename:** `V165_RPM_FILES_DEDUP_LINT_FIRST`
+**Controlling record:** `NFTBAN_ROADMAP/V165_RPM_FILES_DEDUP_LINT_FIRST_SCOPE.md`
+**PRs:** [#801](https://github.com/itcmsgr/nftban/pull/801) (PR-A, sq `888dc67c`) · [#802](https://github.com/itcmsgr/nftban/pull/802) (PR-B, sq `848ac6b1`)
+
+> **Why:** two build-time-only RPM packaging fixes — a hidden rpm-4.16 spec-comment parser hazard and the long-standing `/usr/lib/nftban` "File listed twice" warning. No runtime, no firewall, no daemon, no schema change. Daemon `cmd/nftband` byte-identical (chain v1.147→v1.165; tree `85a2de3e…`); schema 1.83.0 frozen; FHS body byte-unchanged (no FHS-generator change).
+
+### Added — generated-spec comment-macro guard (PR-A)
+- New hermetic CI guard `cli/lib/nftban/tests/rpm_spec_no_section_macro_in_comment_v165_test.sh`, wired into Policy Gates **before** any rpmbuild. rpm **4.16** (EL9/EL10) parses a bare unescaped `%install` token inside a generated-spec **comment** as a *second* `%install` section (`error: second %install`) and fails Build RPM el9/el10 deterministically; rpm 4.18 (lab2) / 6.x are lenient and miss it — so this bit twice (v1.157 `FIX_V157_PR_A`, v1.164 PR-C revert). The guard asserts exactly one `%install` section header, no stray `%install` token, and no bare RPM section macro in any spec comment, with a live self-test. Ground-truth verified on **srv2 (rpm 4.16.1.3)**: only `%install` is fatal-in-comment, but the full section-macro family is forbidden defensively. Seven existing benign comments reworded to drop literal `%post`/`%files` tokens. (`packaging/build_nftban.sh`, `.github/workflows/ci-architecture.yml`)
+
+### Changed — lib-dir RPM `%files` dedup (PR-B)
+- The 12 generator-owned `/usr/lib/nftban` payload dirs (`bin sbin cli core lib cron helpers setup exporters tests data health`) are listed as `<dir>/*` instead of bare paths, so `%include nftban-files.inc` keeps **sole** `%dir` ownership — removing the benign `warning: File listed twice` on strict rpm 4.16. (`packaging/build_nftban.sh`)
+- A `%install` dotfile strip — `find %{buildroot}/usr/lib/nftban -name '.*' -type f -delete` — prevents the rpm `<dir>/*` glob (which skips dotfiles) from orphaning `tests/.gitkeep` (the exact v1.161 `/*` "Installed (but unpackaged)" failure). `VERSION`, `BUILD_TARGET`, `*.sh`, `%doc README.md` stay explicit.
+- New hermetic guard `cli/lib/nftban/tests/rpm_files_no_double_dir_listing_v165_test.sh` (dedup shape + strip + no bare-line∩inc-`%dir`), CI-wired.
+
+### Not shipped (separate lanes)
+- **PR-C templates/FHS correction** — the `templates/email` + `templates/partials` subdirs have staged content but no inc `%dir`, so deduping the bare `/usr/share/nftban/templates` line requires an FHS-generator change that **changes the FHS body** (different validation profile, abortable). Deferred to **v1.166** (`OPEN_RPM_FILES_DEDUP_PR_C_SCOPE`).
+- schema changes · daemon-Go · runtime/firewall behavior.
+
+### Notes
+- **Envelope:** packaging-build-script + tests + CI only — `0 cmd/nftband` (daemon byte-identical, tree `85a2de3e…`) · `0` schema (1.83.0 frozen) · no CSF · no FHS-generator change · FHS body byte-unchanged. The shipped DEB/RPM packages change intentionally (cleaner `%files`).
+- **Validation:** PR-A guard 5/0 · PR-B guard 15/0 · v157 guard 6/0 (all hermetic). A **hermetic mini-rpmbuild** (mirroring inc `%dir` + `/*` + the strip, with a planted `tests/.gitkeep`) proved no "File listed twice" and no unpackaged `.gitkeep` — a rpm-version-independent check, so it holds for EL9/EL10. CI #801 + #802: Build RPM el9/el10 ✅, Policy Gates / Semgrep / ShellCheck ✅. Both post-merge mains green (Docker-Hub `registry-1.docker.io` pull-timeout infra flakes on el10/DEB26/Buildx were rerun-cleared; el9 — the strict rpm-4.16 `%files` judge — passed throughout).
+
 ## [v1.164.0] - 2026-06-08 — switchop classify-content safety
 
 **Codename:** `V164_SWITCHOP_CLASSIFY_EMPTY`
